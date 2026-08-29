@@ -1,10 +1,9 @@
 # Last confirmed deployed
 
-Worker deploys: still none. This file is the source of truth for
-`<base>` in every future bundle (§4 of docs/change-and-promotion-model.md)
-— update it to the commit SHA after you've confirmed a deploy landed,
-for **each** Worker, since vf-app and vf-licence are promoted
-independently.
+This file is the source of truth for `<base>` in every future bundle
+(§4 of docs/change-and-promotion-model.md) — update it to the commit
+SHA after you've confirmed a deploy landed, for **each** Worker, since
+vf-app and vf-licence are promoted independently.
 
 | Worker | commit SHA | confirmed at |
 |---|---|---|
