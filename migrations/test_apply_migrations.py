@@ -192,8 +192,7 @@ class RemoteAppliedFilenamesTest(unittest.TestCase):
     def test_rows_missing_filename_key_raise_diagnosable_error_not_a_keyerror(self):
         # Reproduces the exact live failure: rows came back from wrangler
         # but without a "filename" key, causing a bare KeyError with no
-        # explanation. Likely cause (not confirmed): a _migrations table
-        # left behind, in some other shape, by an earlier failed attempt.
+        # explanation.
         def record_and_respond(args, **kwargs):
             if "--json" in args:
                 payload = [{"results": [{"some_other_column": "x"}]}]
@@ -208,6 +207,63 @@ class RemoteAppliedFilenamesTest(unittest.TestCase):
         self.assertNotIsInstance(ctx.exception, KeyError)
         self.assertIn("some_other_column", message)
         self.assertIn("vf-app-poc", message, "the diagnostic command shown must target the real database")
+
+    def test_reproduces_the_exact_import_stats_shape_seen_live(self):
+        # The literal row reported back after the --yes fix:
+        # {'Total queries executed': 1, 'Rows read': 1, 'Rows written': 0,
+        #  'Database size (MB)': '0.02'} — import/upload statistics, not
+        # query results. Root cause: the SELECT was going through --file,
+        # which routes through a bulk-import path instead of returning
+        # row data. This test locks in that the SELECT now goes through
+        # --command instead, which is what fixes it.
+        def record_and_respond(args, **kwargs):
+            if any(a.startswith("--command=SELECT filename") for a in args):
+                payload = [{"results": [{"filename": "0001_rule_engine_schema.sql"}]}]
+                return fake_completed(stdout=json.dumps(payload))
+            if any(a.startswith("--file=") for a in args):
+                # What --file actually returned live, reproduced exactly.
+                stats = [
+                    {
+                        "results": [
+                            {
+                                "Total queries executed": 1,
+                                "Rows read": 1,
+                                "Rows written": 0,
+                                "Database size (MB)": "0.02",
+                            }
+                        ]
+                    }
+                ]
+                return fake_completed(stdout=json.dumps(stats))
+            return fake_completed()
+
+        with patch("apply_migrations.subprocess.run", side_effect=record_and_respond):
+            result = am.remote_applied_filenames("vf-app-poc")
+
+        self.assertEqual(result, {"0001_rule_engine_schema.sql"})
+
+    def test_select_query_uses_command_not_file(self):
+        calls = []
+
+        def record_and_respond(args, **kwargs):
+            calls.append(args)
+            if "--json" in args:
+                return fake_completed(stdout=json.dumps([{"results": []}]))
+            return fake_completed()
+
+        with patch("apply_migrations.subprocess.run", side_effect=record_and_respond):
+            am.remote_applied_filenames("some-db")
+
+        select_call = calls[1]
+        self.assertTrue(
+            any(a.startswith("--command=") for a in select_call),
+            f"expected the SELECT to use --command, got {select_call!r}",
+        )
+        self.assertFalse(
+            any(a.startswith("--file=") for a in select_call),
+            "the SELECT must not use --file — that's the bug this fixes "
+            "(--file returns import stats, not row data)",
+        )
 
 
 class ApplyRemoteTest(unittest.TestCase):

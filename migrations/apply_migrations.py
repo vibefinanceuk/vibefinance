@@ -231,6 +231,38 @@ def replay(verbose: bool = True) -> None:
         print(f"replay OK — {len(migrations)} migration(s), all assertions held.")
 
 
+def _run_wrangler_command(database_name: str, sql: str, *, json_output: bool = False) -> subprocess.CompletedProcess:
+    """Run a short, single-line SQL statement against remote D1 via
+    wrangler's --command flag — for reads that need row data back.
+
+    Not --file. A live run against real Cloudflare infrastructure
+    revealed that `wrangler d1 execute --file=...` does not return
+    query row data at all: it appears to route through a bulk
+    import/upload code path that reports execution statistics instead
+    ("Total queries executed", "Rows read", "Rows written", "Database
+    size (MB)" — human-readable stats keys, not SQL result columns).
+    --file remains correct for writes (DDL, INSERTs), where only
+    success/failure matters and the tokenization bug it fixed only ever
+    applied to large multi-statement bodies. For a short single-line
+    SELECT like the bookkeeping-table query, --command is what every
+    basic wrangler example actually uses to get row data back as JSON,
+    and the earlier tokenization bug never applied to input this short.
+    """
+    args = [
+        "npx",
+        "wrangler",
+        "d1",
+        "execute",
+        database_name,
+        "--remote",
+        f"--command={sql}",
+        "--yes",
+    ]
+    if json_output:
+        args.append("--json")
+    return subprocess.run(args, capture_output=True, text=True)
+
+
 def _run_wrangler_sql_file(database_name: str, sql: str, *, json_output: bool = False) -> subprocess.CompletedProcess:
     """Run a SQL string against remote D1 via wrangler's --file flag.
 
@@ -337,8 +369,8 @@ def parse_wrangler_json(stdout: str, stderr: str, *, context: str) -> object:
 def remote_applied_filenames(database_name: str) -> set[str]:
     """Query the remote D1 database's bookkeeping table via wrangler."""
     ensure_remote_bookkeeping(database_name)
-    result = _run_wrangler_sql_file(
-        database_name, f"SELECT filename FROM {BOOKKEEPING_TABLE};", json_output=True
+    result = _run_wrangler_command(
+        database_name, f"SELECT filename FROM {BOOKKEEPING_TABLE}", json_output=True
     )
     if result.returncode != 0:
         raise RuntimeError(
@@ -357,30 +389,35 @@ def remote_applied_filenames(database_name: str) -> set[str]:
         )
     rows = payload[0]["results"]
     if rows and "filename" not in rows[0]:
-        # A live run got exactly here: rows existed but had no
-        # "filename" key. The likely explanation is a _migrations
-        # table left behind by one of the earlier failed attempts (the
-        # "Unknown argument" runs, before --file replaced --command) —
-        # possibly created with a truncated or malformed CREATE TABLE
-        # statement. ensure_remote_bookkeeping()'s CREATE TABLE IF NOT
-        # EXISTS then silently no-ops against that broken table forever,
-        # since it already exists. This is a hypothesis, not a confirmed
-        # cause — surfacing the actual row shape rather than guessing
-        # a fix for it blind, same discipline as parse_wrangler_json.
+        # Live run history on this: the first time this fired, the row
+        # shape was {'Total queries executed': 1, 'Rows read': 1, ...}
+        # — import/upload statistics, not query results. That was
+        # because the query was run via --file, which turned out to
+        # route through a bulk-import code path instead of returning
+        # row data (fixed above: this query now goes through
+        # _run_wrangler_command, i.e. --command, which every basic
+        # wrangler example uses for getting rows back as JSON). So the
+        # "leftover malformed table from an earlier failed attempt"
+        # theory this message used to lead with is probably wrong —
+        # left as a fallback thing to check only if this still fires
+        # after that fix, not the first thing to suspect.
         raise RuntimeError(
-            "the remote _migrations table exists but its rows don't have "
-            "a 'filename' column — this looks like it could be a table "
-            "left behind by an earlier failed attempt (before the --file "
-            "fix) rather than the shape this script creates. Actual row "
-            f"shape: {rows[0]!r}\n\n"
-            "To check directly: npx wrangler d1 execute "
+            "the remote _migrations table's query results don't have a "
+            "'filename' column — if this looks like execution statistics "
+            "(keys like 'Rows read', 'Database size (MB)') rather than "
+            "actual row data, something is still routing this query "
+            "through --file instead of --command; that was the cause "
+            "the one other time this fired. Actual row shape: "
+            f"{rows[0]!r}\n\n"
+            "If it doesn't look like statistics, check the table's real "
+            "schema directly: npx wrangler d1 execute "
             f"{database_name} --remote --json --command="
             "\"SELECT sql FROM sqlite_master WHERE type='table' AND "
             "name='_migrations'\"\n"
-            "If that shows an unexpected schema, dropping the table "
-            "(npx wrangler d1 execute "
+            "Only if THAT shows an unexpected schema is dropping the "
+            "table (npx wrangler d1 execute "
             f"{database_name} --remote --command=\"DROP TABLE "
-            "_migrations\") and re-running is safe here specifically "
+            "_migrations\") and re-running the right move — safe here "
             "because no migration has successfully completed against "
             "this database yet — there is nothing legitimate to lose."
         )
