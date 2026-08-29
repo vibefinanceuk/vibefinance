@@ -123,6 +123,14 @@ class RunWranglerSqlFileTest(unittest.TestCase):
             am._run_wrangler_sql_file("some-db", "SELECT 1;")
         self.assertNotIn("--json", run.call_args.args[0])
 
+    def test_includes_yes_flag_to_avoid_hanging_on_confirmation_prompt(self):
+        # wrangler d1 execute --remote can prompt for interactive
+        # confirmation; Cloudflare's own docs recommend --yes for
+        # CI/automation. A subprocess has no TTY to answer that prompt.
+        with patch("apply_migrations.subprocess.run", return_value=fake_completed()) as run:
+            am._run_wrangler_sql_file("some-db", "SELECT 1;")
+        self.assertIn("--yes", run.call_args.args[0])
+
 
 class EnsureRemoteBookkeepingTest(unittest.TestCase):
     def test_calls_wrangler_with_create_if_not_exists_ddl(self):
@@ -180,6 +188,26 @@ class RemoteAppliedFilenamesTest(unittest.TestCase):
         with patch("apply_migrations.subprocess.run", side_effect=record_and_respond):
             result = am.remote_applied_filenames("some-db")
         self.assertEqual(result, set())
+
+    def test_rows_missing_filename_key_raise_diagnosable_error_not_a_keyerror(self):
+        # Reproduces the exact live failure: rows came back from wrangler
+        # but without a "filename" key, causing a bare KeyError with no
+        # explanation. Likely cause (not confirmed): a _migrations table
+        # left behind, in some other shape, by an earlier failed attempt.
+        def record_and_respond(args, **kwargs):
+            if "--json" in args:
+                payload = [{"results": [{"some_other_column": "x"}]}]
+                return fake_completed(stdout=json.dumps(payload))
+            return fake_completed()
+
+        with patch("apply_migrations.subprocess.run", side_effect=record_and_respond):
+            with self.assertRaises(RuntimeError) as ctx:
+                am.remote_applied_filenames("vf-app-poc")
+
+        message = str(ctx.exception)
+        self.assertNotIsInstance(ctx.exception, KeyError)
+        self.assertIn("some_other_column", message)
+        self.assertIn("vf-app-poc", message, "the diagnostic command shown must target the real database")
 
 
 class ApplyRemoteTest(unittest.TestCase):

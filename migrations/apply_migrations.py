@@ -263,6 +263,14 @@ def _run_wrangler_sql_file(database_name: str, sql: str, *, json_output: bool = 
             database_name,
             "--remote",
             f"--file={tmp_path}",
+            # --remote can prompt for interactive confirmation
+            # ("Ok to proceed?") — documented Cloudflare guidance is to
+            # pass --yes for CI/automation use. subprocess.run here has
+            # no TTY to answer that prompt, and an unanswered prompt is
+            # a very plausible explanation for empty/malformed stdout on
+            # earlier runs, even though it hasn't been confirmed as the
+            # root cause of any specific failure seen so far.
+            "--yes",
         ]
         if json_output:
             args.append("--json")
@@ -348,6 +356,34 @@ def remote_applied_filenames(database_name: str) -> set[str]:
             f"the first element): {payload!r}"
         )
     rows = payload[0]["results"]
+    if rows and "filename" not in rows[0]:
+        # A live run got exactly here: rows existed but had no
+        # "filename" key. The likely explanation is a _migrations
+        # table left behind by one of the earlier failed attempts (the
+        # "Unknown argument" runs, before --file replaced --command) —
+        # possibly created with a truncated or malformed CREATE TABLE
+        # statement. ensure_remote_bookkeeping()'s CREATE TABLE IF NOT
+        # EXISTS then silently no-ops against that broken table forever,
+        # since it already exists. This is a hypothesis, not a confirmed
+        # cause — surfacing the actual row shape rather than guessing
+        # a fix for it blind, same discipline as parse_wrangler_json.
+        raise RuntimeError(
+            "the remote _migrations table exists but its rows don't have "
+            "a 'filename' column — this looks like it could be a table "
+            "left behind by an earlier failed attempt (before the --file "
+            "fix) rather than the shape this script creates. Actual row "
+            f"shape: {rows[0]!r}\n\n"
+            "To check directly: npx wrangler d1 execute "
+            f"{database_name} --remote --json --command="
+            "\"SELECT sql FROM sqlite_master WHERE type='table' AND "
+            "name='_migrations'\"\n"
+            "If that shows an unexpected schema, dropping the table "
+            "(npx wrangler d1 execute "
+            f"{database_name} --remote --command=\"DROP TABLE "
+            "_migrations\") and re-running is safe here specifically "
+            "because no migration has successfully completed against "
+            "this database yet — there is nothing legitimate to lose."
+        )
     return {row["filename"] for row in rows}
 
 
