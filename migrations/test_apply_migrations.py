@@ -12,7 +12,9 @@ Run with: python3 migrations/test_apply_migrations.py
 
 import json
 import os
+import sqlite3
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -300,6 +302,90 @@ class ApplyRemoteTest(unittest.TestCase):
         # Only the bookkeeping-ensure and the SELECT should have run —
         # nothing that would actually write the migration's DDL.
         self.assertEqual(len(calls), 2)
+
+
+class ForeignKeyEnforcementTest(unittest.TestCase):
+    """Covers a real gap found while testing the vf-licence chain: D1
+    enforces foreign keys by default (confirmed against Cloudflare's
+    own D1 docs, not assumed), but plain SQLite — and therefore Python's
+    sqlite3 module, and therefore --replay-only before this fix — does
+    not. Without PRAGMA foreign_keys = ON, replay could pass on an FK
+    violation that real D1 would reject, making the local check weaker
+    than production for exactly the kind of mistake foreign keys exist
+    to catch."""
+
+    def test_replay_rejects_a_row_violating_a_foreign_key(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            (tmp_path / "0001_fk_test.sql").write_text(
+                "CREATE TABLE parents (id TEXT PRIMARY KEY);\n"
+                "CREATE TABLE children (id TEXT PRIMARY KEY, parent_id TEXT REFERENCES parents(id));\n"
+                "INSERT INTO children (id, parent_id) VALUES ('c1', 'does-not-exist');\n"
+            )
+            with self.assertRaises(sqlite3.IntegrityError):
+                am.replay(migrations_dir=tmp_path, verbose=False)
+
+    def test_replay_accepts_a_row_that_satisfies_its_foreign_key(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            (tmp_path / "0001_fk_test.sql").write_text(
+                "CREATE TABLE parents (id TEXT PRIMARY KEY);\n"
+                "CREATE TABLE children (id TEXT PRIMARY KEY, parent_id TEXT REFERENCES parents(id));\n"
+                "INSERT INTO parents (id) VALUES ('p1');\n"
+                "INSERT INTO children (id, parent_id) VALUES ('c1', 'p1');\n"
+            )
+            # Should not raise.
+            am.replay(migrations_dir=tmp_path, verbose=False)
+
+
+class MigrationsDirParameterTest(unittest.TestCase):
+    """Covers --migrations-dir, added so vf-licence's control-plane
+    schema can have its own independent chain against a different
+    database without duplicating the runner. load_migrations() defaults
+    to DEFAULT_MIGRATIONS_DIR (this script's own directory) when no
+    directory is given, preserving the original vf-app-poc behaviour
+    unchanged."""
+
+    def test_replay_uses_the_given_directory_not_the_default(self):
+        import io
+        import contextlib
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            (tmp_path / "0001_other_schema.sql").write_text(
+                "CREATE TABLE customers (id TEXT PRIMARY KEY);\n"
+                "-- ASSERT: SELECT count(*) FROM customers == 0\n"
+            )
+            captured = io.StringIO()
+            with contextlib.redirect_stdout(captured):
+                am.replay(migrations_dir=tmp_path, verbose=True)
+            output = captured.getvalue()
+
+            # The weak version of this test only checked replay() didn't
+            # raise — which it wouldn't even if the default vf-app-poc
+            # chain ran instead, since that chain is self-consistent on
+            # its own. Checking exactly which filename got printed is
+            # what actually distinguishes "used the given directory"
+            # from "silently fell back to the default".
+            self.assertIn("0001_other_schema.sql", output)
+            self.assertNotIn("0001_rule_engine_schema.sql", output)
+
+    def test_default_directory_is_unaffected_when_none_is_given(self):
+        # The real regression this guards against: a refactor that
+        # changes the default parameter value, silently breaking every
+        # existing --replay-only invocation for vf-app-poc that doesn't
+        # pass --migrations-dir.
+        migrations = am.load_migrations()
+        filenames = {m.filename for m in migrations}
+        self.assertIn("0001_rule_engine_schema.sql", filenames)
+
+    def test_load_migrations_from_a_custom_directory_finds_only_that_directorys_files(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            (tmp_path / "0001_control_plane.sql").write_text("CREATE TABLE x (id TEXT);\n")
+            migrations = am.load_migrations(migrations_dir=tmp_path)
+            filenames = {m.filename for m in migrations}
+            self.assertEqual(filenames, {"0001_control_plane.sql"})
 
 
 if __name__ == "__main__":

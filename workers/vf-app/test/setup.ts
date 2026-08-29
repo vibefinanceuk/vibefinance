@@ -7,6 +7,7 @@ import { env } from "cloudflare:test";
 // the bundler resolve it before the Worker ever starts, the same way
 // application source would import any other module.
 import schemaSql from "../../../migrations/0001_rule_engine_schema.sql?raw";
+import licenceCacheSql from "../../../migrations/0002_licence_cache.sql?raw";
 
 // Another known divergence from production, on top of the one below:
 // D1's exec() splits its input by newline and executes each non-empty
@@ -58,6 +59,7 @@ const TABLES_IN_DROP_ORDER = [
   "rule_versions",
   "rules",
   "rule_sets",
+  "licence_cache",
 ];
 
 export async function applyTestSchema(): Promise<void> {
@@ -65,4 +67,5 @@ export async function applyTestSchema(): Promise<void> {
     await env.DB.exec(`DROP TABLE IF EXISTS ${table};`);
   }
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(schemaSql)));
+  await env.DB.exec(toOneStatementPerLine(stripSqlComments(licenceCacheSql)));
 }

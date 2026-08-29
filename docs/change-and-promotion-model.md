@@ -398,12 +398,15 @@ The model above is portable. These are the values it needs:
   `workers/vf-licence` (deployed name `vf-licence`). See
   docs/decisions/0001-worker-split-and-tenant-resolution.md for why these
   two and not one.
-- **Shared code directory**: `shared/` — imported by `vf-app` today
-  (`@vibefinance/shared`); not currently imported by `vf-licence`, which
-  is deliberately self-contained (see its src/index.ts doc comment).
-  If that changes, §5's "module imported by more than one Worker" row
-  applies to it from that point on.
-- **Migrations**: `migrations/`, runner is `migrations/apply_migrations.py`.
+- **Shared code directory**: `shared/` — imported by both `vf-app` and
+  `vf-licence` (`@vibefinance/shared`) as of `shared/licensing/`. A
+  change here now means both Workers deploy back to back — see §5's
+  "module imported by more than one Worker" row, which applies for
+  real starting with this bundle, not hypothetically.
+- **Migrations**: two independent chains, one per database —
+  `migrations/` (against `vf-app-poc`) and
+  `workers/vf-licence/migrations/` (against `vf-licence-poc`), both run
+  by the same `migrations/apply_migrations.py --migrations-dir <dir>`.
 - **Last-confirmed-deployed record**: `DEPLOYED.md` at repo root, one row
   per Worker and one row per database, since the two Workers are promoted
   independently.
@@ -413,10 +416,12 @@ The model above is portable. These are the values it needs:
   |---|---|
   | `workers/vf-app/src/**` | `vf-app` |
   | `workers/vf-licence/src/**` | `vf-licence` |
-  | `shared/**` | `vf-app` today; add `vf-licence` to this row if it ever imports `shared` |
-  | `migrations/*.sql` | the migration run against the database(s) that use that schema; a Worker deploy only if its code reads the new shape |
-  | a Worker's `wrangler.jsonc` (bindings, compat date/flags) | that Worker |
+  | `shared/**` | **both `vf-app` and `vf-licence`, back to back** — both import it as of `shared/licensing/` |
+  | `migrations/*.sql` | the migration run against `vf-app-poc`; a `vf-app` deploy only if its code reads the new shape |
+  | `workers/vf-licence/migrations/*.sql` | the migration run against `vf-licence-poc` (`--migrations-dir workers/vf-licence/migrations`); a `vf-licence` deploy only if its code reads the new shape |
+  | a Worker's `wrangler.jsonc` (bindings, compat date/flags, vars, triggers) | that Worker |
   | a Worker's `wrangler.test.jsonc` | nothing ships — test-only, see the divergences entry on why it exists separately from `wrangler.jsonc` |
+  | `scripts/*` | nothing ships — run locally by the operator, never deployed |
   | `eslint.config.js`, `*.test.ts`, `docs/**`, this file | nothing |
 
 - **Known divergences between local preview and production** (found
@@ -504,6 +509,31 @@ The model above is portable. These are the values it needs:
      regression the next time someone runs `tsc` directly and sees red.
      `npm test` (which runs `vitest`, not `tsc`) is unaffected and
      remains the real check.
+  9. `apply_migrations.py --replay-only` used to be a strictly weaker
+     check than real D1 for foreign key violations: D1 enforces FK
+     constraints by default (Cloudflare's own docs: "identical to the
+     behaviour you would observe when setting PRAGMA foreign_keys = on
+     in SQLite for every transaction"), but plain SQLite — and
+     therefore Python's `sqlite3` module — defaults this off. Confirmed
+     directly (a fresh `sqlite3` connection's own `PRAGMA foreign_keys`
+     reports `0`), not assumed from the conflicting claims found while
+     researching this. Fixed by adding `PRAGMA foreign_keys = ON` to
+     the replay connection; the resulting `sqlite3.IntegrityError` on a
+     real violation is caught and reported the same way every other
+     failure mode in this tool is, not as a bare traceback.
+  10. `vitest` (this repo's actual test runner, via `esbuild`) does not
+      type-check — it transpiles and runs. Two real bugs shipped past a
+      fully green `npm test` and were only caught by `npx tsc --noEmit`:
+      a `Uint8Array<ArrayBufferLike>` vs. `BufferSource` generic
+      mismatch in `shared/licensing/token.ts` (harmless at runtime,
+      real at the type level), and `workers/vf-app/src/index.ts`'s
+      `scheduled()` handler being declared with 2 parameters instead of
+      the real Workers platform's 3 (`event, env, ctx`) — invisible to
+      every test because nothing in this repo called it with fewer
+      arguments than it needed. Neither is fixed by running `tsc` more
+      often by habit; both are the kind of thing worth remembering to
+      run it for before trusting a green `npm test` completely,
+      especially after touching a public function signature.
 
 - **Rollout rule for a chain applied to many databases**: not yet
   decided — the Blueprint lists this as open ("not decided, and waiting

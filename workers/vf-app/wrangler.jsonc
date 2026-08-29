@@ -27,5 +27,29 @@
   // equivalent, so this has never been invoked from this session.
   "ai": {
     "binding": "AI"
+  },
+
+  // The licensing contract (Blueprint build order step 4, "Subsystem
+  // three"). See docs/decisions/0003-licensing-signed-token.md.
+  // LICENCE_SIGNING_PUBLIC_KEY is not sensitive — the corresponding
+  // private key never leaves vf-licence — so it's a plain var, not a
+  // secret. CUSTOMER_ID must match the id this customer was provisioned
+  // with in vf-licence (`customers.id`), and LICENCE_SERVER_URL is
+  // wherever that instance actually lives.
+  "vars": {
+    "LICENCE_SIGNING_PUBLIC_KEY": "REPLACE_WITH_REAL_PUBLIC_KEY_JWK",
+    "LICENCE_SERVER_URL": "https://vf-licence.vibefinance.workers.dev",
+    "CUSTOMER_ID": "REPLACE_WITH_REAL_CUSTOMER_ID"
+  },
+
+  // The scheduled refresh — src/index.ts's scheduled() handler is the
+  // only place this Worker calls out to vf-licence; fetch() never does
+  // ("no network call in the hot path", Blueprint). Every 6 hours is
+  // arbitrary and easy to change — the token's own default 48h
+  // lifetime (workers/vf-licence/src/token-route.ts) is what actually
+  // bounds how stale the cached state can get if a run or two is
+  // missed.
+  "triggers": {
+    "crons": ["0 */6 * * *"]
   }
 }

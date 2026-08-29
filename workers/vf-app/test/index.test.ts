@@ -3,8 +3,30 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { applyTestSchema } from "./setup.js";
 import type { CompiledRuleSet } from "@vibefinance/shared";
 
+async function seedActiveLicence(): Promise<void> {
+  // Every existing test below predates the licence gate and expects to
+  // reach its own handler, not be turned away at 402 — this keeps them
+  // testing what they were written to test. The gate itself gets its
+  // own describe block further down.
+  const claims = {
+    customerId: "test-customer",
+    plan: "standard",
+    features: [],
+    volumeEntitlement: 10000,
+    status: "active",
+    issuedAt: new Date().toISOString(),
+    expiresAt: new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString(),
+  };
+  await env.DB.prepare(
+    "INSERT INTO licence_cache (id, claims_json, fetched_at) VALUES (1, ?, ?)"
+  )
+    .bind(JSON.stringify(claims), new Date().toISOString())
+    .run();
+}
+
 beforeEach(async () => {
   await applyTestSchema();
+  await seedActiveLicence();
 });
 
 describe("GET /health", () => {
@@ -133,5 +155,70 @@ describe("POST /rules/compile", () => {
     });
     expect(res.status).toBe(500);
     expect(await res.json()).toEqual({ error: "AI binding not configured" });
+  });
+});
+
+describe("licence enforcement — the gate applied to mutating endpoints", () => {
+  async function setLicenceStatus(status: "active" | "warned" | "blocked", reason?: string) {
+    await env.DB.prepare("DELETE FROM licence_cache WHERE id = 1").run();
+    const claims = {
+      customerId: "test-customer",
+      plan: "standard",
+      features: [],
+      volumeEntitlement: 10000,
+      status,
+      statusReason: reason,
+      issuedAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString(),
+    };
+    await env.DB.prepare(
+      "INSERT INTO licence_cache (id, claims_json, fetched_at) VALUES (1, ?, ?)"
+    )
+      .bind(JSON.stringify(claims), new Date().toISOString())
+      .run();
+  }
+
+  it("402s /rules/evaluate when the cached licence is blocked", async () => {
+    await setLicenceStatus("blocked", "non-payment");
+    const res = await SELF.fetch("https://example.com/rules/evaluate", {
+      method: "POST",
+      body: JSON.stringify({ ruleSet: { id: "x", mode: "first_match", rules: [] }, facts: {}, invoiceId: "i1" }),
+    });
+    expect(res.status).toBe(402);
+    expect(await res.json()).toEqual({ error: "processing blocked", reason: "non-payment" });
+  });
+
+  it("402s /rules/compile when no licence has ever been cached — the bootstrap default", async () => {
+    await env.DB.prepare("DELETE FROM licence_cache WHERE id = 1").run();
+    const res = await SELF.fetch("https://example.com/rules/compile", {
+      method: "POST",
+      body: JSON.stringify({ ruleSetId: "rs1", sourceText: "anything" }),
+    });
+    expect(res.status).toBe(402);
+    const body = (await res.json()) as { reason: string };
+    expect(body.reason).toContain("no licence has been provisioned");
+  });
+
+  it("does not block on a 'warned' status — only 'blocked' restricts", async () => {
+    await setLicenceStatus("warned", "payment overdue");
+    // Seed a real rule_sets row for the FK the invoice_runs write
+    // depends on — otherwise a missing-FK 500 would make this test
+    // accidentally pass the "not 402" assertion for the wrong reason.
+    await env.DB.prepare("INSERT INTO rule_sets (id, name, mode, status) VALUES (?, ?, ?, ?)")
+      .bind("x", "test set", "first_match", "active")
+      .run();
+    const res = await SELF.fetch("https://example.com/rules/evaluate", {
+      method: "POST",
+      body: JSON.stringify({ ruleSet: { id: "x", mode: "first_match", rules: [] }, facts: {}, invoiceId: "i1" }),
+    });
+    // Reaches the real handler and succeeds — confirms the gate let it
+    // through, not just that something other than a 402 came back.
+    expect(res.status).toBe(200);
+  });
+
+  it("leaves /health unaffected by a blocked licence — read-only, not lights out", async () => {
+    await setLicenceStatus("blocked", "non-payment");
+    const res = await SELF.fetch("https://example.com/health");
+    expect(res.status).toBe(200);
   });
 });

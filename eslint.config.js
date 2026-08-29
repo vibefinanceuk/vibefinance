@@ -5,6 +5,7 @@
 // exempt — it is the one place the binding is legitimately touched.
 import js from "@eslint/js";
 import tseslint from "typescript-eslint";
+import globals from "globals";
 
 const bannedBindings = ["DB", "TENANT_DB", "TENANT_KV"];
 
@@ -23,6 +24,27 @@ export default [
         // workspace just to satisfy the linter.
         projectService: false,
       },
+    },
+    rules: {
+      // An underscore-prefixed parameter is intentionally unused
+      // (e.g. Workers handler signatures like `scheduled(_event, env,
+      // _ctx)` where the platform requires the parameter but this
+      // Worker doesn't need it yet). This was working by accident
+      // until now — ESLint's default "after-used" behaviour only flags
+      // an unused arg if nothing *after* it is used, so `_event`
+      // before a used `env` was silently fine while a trailing unused
+      // `_ctx` was not. Explicit is better than relying on which
+      // position happens to be silent.
+      "@typescript-eslint/no-unused-vars": ["error", { argsIgnorePattern: "^_" }],
+    },
+  },
+  {
+    // scripts/ runs under plain Node (the operator's machine), not the
+    // Workers runtime — process, console, TextEncoder etc. are real
+    // globals there, not undefined names.
+    files: ["scripts/**/*.{js,mjs,ts}"],
+    languageOptions: {
+      globals: { ...globals.node },
     },
   },
   {

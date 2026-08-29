@@ -60,7 +60,7 @@ import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
-MIGRATIONS_DIR = Path(__file__).resolve().parent
+DEFAULT_MIGRATIONS_DIR = Path(__file__).resolve().parent
 ASSERT_RE = re.compile(r"^--\s*ASSERT(?:\s+(ALWAYS))?:\s*(.+)$")
 # Greedy .* on the left finds the RIGHTMOST operator occurrence, per the
 # documented rule that comparisons inside the query must be subqueried.
@@ -127,8 +127,8 @@ def parse_expected(raw: str) -> object:
     return raw
 
 
-def load_migrations() -> list[Migration]:
-    files = sorted(MIGRATIONS_DIR.glob("*.sql"), key=lambda p: p.name)
+def load_migrations(migrations_dir: Path = DEFAULT_MIGRATIONS_DIR) -> list[Migration]:
+    files = sorted(migrations_dir.glob("*.sql"), key=lambda p: p.name)
     migrations: list[Migration] = []
     for path in files:
         text = path.read_text()
@@ -196,9 +196,18 @@ def check_assertion(conn: sqlite3.Connection, assertion: Assertion) -> None:
         )
 
 
-def replay(verbose: bool = True) -> None:
-    migrations = load_migrations()
+def replay(migrations_dir: Path = DEFAULT_MIGRATIONS_DIR, verbose: bool = True) -> None:
+    migrations = load_migrations(migrations_dir)
     conn = sqlite3.connect(":memory:")
+    # D1 enforces foreign key constraints by default — "identical to
+    # the behaviour you would observe when setting PRAGMA foreign_keys
+    # = on in SQLite for every transaction" (Cloudflare's own D1 docs).
+    # Plain SQLite defaults this OFF (confirmed directly: a fresh
+    # sqlite3 connection's own PRAGMA foreign_keys reports 0). Without
+    # this line, --replay-only would silently accept an FK violation
+    # that real D1 would reject, making replay a weaker check than
+    # production for exactly the kind of mistake FKs exist to catch.
+    conn.execute("PRAGMA foreign_keys = ON")
     conn.executescript(BOOKKEEPING_DDL)
 
     standing_assertions: list[Assertion] = []
@@ -424,8 +433,13 @@ def remote_applied_filenames(database_name: str) -> set[str]:
     return {row["filename"] for row in rows}
 
 
-def apply_remote(database_name: str, dry_run: bool, refresh_checksums: bool) -> None:
-    migrations = load_migrations()
+def apply_remote(
+    database_name: str,
+    dry_run: bool,
+    refresh_checksums: bool,
+    migrations_dir: Path = DEFAULT_MIGRATIONS_DIR,
+) -> None:
+    migrations = load_migrations(migrations_dir)
     applied = remote_applied_filenames(database_name)
     pending = [m for m in migrations if m.filename not in applied]
 
@@ -476,19 +490,48 @@ def main() -> None:
         default="vf-app-poc",
         help="D1 database name for --remote operations (default: vf-app-poc)",
     )
+    parser.add_argument(
+        "--migrations-dir",
+        default=None,
+        help=(
+            "Directory containing the *.sql chain to run, for a database "
+            "other than vf-app-poc's (default: this script's own "
+            "directory, migrations/ at the repo root). Each database gets "
+            "its own independent chain and its own _migrations "
+            "bookkeeping table on that database — the chains do not "
+            "share numbering or state. Example: "
+            "--migrations-dir workers/vf-licence/migrations "
+            "--database vf-licence-poc"
+        ),
+    )
     args = parser.parse_args()
+    migrations_dir = Path(args.migrations_dir) if args.migrations_dir else DEFAULT_MIGRATIONS_DIR
 
     if args.replay_only:
         try:
-            replay()
+            replay(migrations_dir)
         except (AssertionFailure, ValueError) as exc:
             print(f"REPLAY FAILED: {exc}", file=sys.stderr)
+            sys.exit(1)
+        except sqlite3.Error as exc:
+            # A real constraint violation (FK, CHECK, UNIQUE, NOT NULL)
+            # or a genuine SQL syntax error — found live: enabling FK
+            # enforcement (above) surfaced this as a raw traceback
+            # before this except clause existed. Caught here so it
+            # reads the same as every other failure mode this tool
+            # produces, not a special case.
+            print(f"REPLAY FAILED: {type(exc).__name__}: {exc}", file=sys.stderr)
             sys.exit(1)
         return
 
     if args.remote:
         try:
-            apply_remote(args.database, dry_run=args.dry_run, refresh_checksums=args.refresh_checksums)
+            apply_remote(
+                args.database,
+                dry_run=args.dry_run,
+                refresh_checksums=args.refresh_checksums,
+                migrations_dir=migrations_dir,
+            )
         except (RuntimeError, ChecksumDrift) as exc:
             print(f"ERROR: {exc}", file=sys.stderr)
             sys.exit(1)
