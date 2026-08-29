@@ -55,6 +55,7 @@ import re
 import sqlite3
 import subprocess
 import sys
+import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -229,25 +230,51 @@ def replay(verbose: bool = True) -> None:
         print(f"replay OK — {len(migrations)} migration(s), all assertions held.")
 
 
-def ensure_remote_bookkeeping(database_name: str) -> None:
-    """Create the bookkeeping table on the remote database if it isn't
-    there yet. Idempotent — safe to call on every --remote invocation,
-    not just the first."""
-    ddl = BOOKKEEPING_DDL.strip()
-    result = subprocess.run(
-        [
+def _run_wrangler_sql_file(database_name: str, sql: str, *, json_output: bool = False) -> subprocess.CompletedProcess:
+    """Run a SQL string against remote D1 via wrangler's --file flag.
+
+    Not --command. A live run against real Cloudflare infrastructure
+    failed with a confusing "Unknown argument" error when a large,
+    multi-line, multi-statement migration body was passed inline via
+    --command — something between Python's subprocess, npx, and
+    wrangler's own argument parser was mis-tokenizing it (the error
+    contained a fragment of the migration filename, which should never
+    have been anywhere near the argument parser). --file is wrangler's
+    documented mechanism for exactly this case (running a .sql file,
+    as opposed to a short ad hoc query) and sidesteps the whole class of
+    problem rather than working around one instance of it. Cloudflare's
+    own docs and every example found use the single-token `--file=path`
+    form specifically (not `--file path` as two separate argv entries)
+    — matched exactly here rather than assumed equivalent, given the
+    bug this fixes was itself an argument-tokenization problem.
+    """
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix=".sql", delete=False, encoding="utf-8"
+    ) as tmp:
+        tmp.write(sql)
+        tmp_path = tmp.name
+    try:
+        args = [
             "npx",
             "wrangler",
             "d1",
             "execute",
             database_name,
             "--remote",
-            "--command",
-            ddl,
-        ],
-        capture_output=True,
-        text=True,
-    )
+            f"--file={tmp_path}",
+        ]
+        if json_output:
+            args.append("--json")
+        return subprocess.run(args, capture_output=True, text=True)
+    finally:
+        Path(tmp_path).unlink(missing_ok=True)
+
+
+def ensure_remote_bookkeeping(database_name: str) -> None:
+    """Create the bookkeeping table on the remote database if it isn't
+    there yet. Idempotent — safe to call on every --remote invocation,
+    not just the first."""
+    result = _run_wrangler_sql_file(database_name, BOOKKEEPING_DDL.strip())
     if result.returncode != 0:
         raise RuntimeError(
             f"could not create the bookkeeping table on {database_name!r} "
@@ -258,20 +285,8 @@ def ensure_remote_bookkeeping(database_name: str) -> None:
 def remote_applied_filenames(database_name: str) -> set[str]:
     """Query the remote D1 database's bookkeeping table via wrangler."""
     ensure_remote_bookkeeping(database_name)
-    result = subprocess.run(
-        [
-            "npx",
-            "wrangler",
-            "d1",
-            "execute",
-            database_name,
-            "--remote",
-            "--json",
-            "--command",
-            f"SELECT filename FROM {BOOKKEEPING_TABLE}",
-        ],
-        capture_output=True,
-        text=True,
+    result = _run_wrangler_sql_file(
+        database_name, f"SELECT filename FROM {BOOKKEEPING_TABLE};", json_output=True
     )
     if result.returncode != 0:
         raise RuntimeError(
@@ -307,20 +322,7 @@ def apply_remote(database_name: str, dry_run: bool, refresh_checksums: bool) -> 
 INSERT INTO {BOOKKEEPING_TABLE} (filename, checksum)
 VALUES ('{migration.filename}', '{migration.checksum}');
 """
-        result = subprocess.run(
-            [
-                "npx",
-                "wrangler",
-                "d1",
-                "execute",
-                database_name,
-                "--remote",
-                "--command",
-                full_sql,
-            ],
-            capture_output=True,
-            text=True,
-        )
+        result = _run_wrangler_sql_file(database_name, full_sql)
         if result.returncode != 0:
             print(result.stderr, file=sys.stderr)
             raise RuntimeError(

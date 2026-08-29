@@ -444,11 +444,23 @@ The model above is portable. These are the values it needs:
      `_migrations` bookkeeping table before confirming it existed. Fixed
      by having `remote_applied_filenames()` call the new
      `ensure_remote_bookkeeping()` first (idempotent — safe on every
-     run, not just the first). Covered by
-     `migrations/test_apply_migrations.py` with a mocked `subprocess`,
-     since this session has no credentials to exercise the real
-     `--remote` path; `--replay-only` remains the only mode tested
-     against something real.
+     run, not just the first).
+  6. A second, more serious bug in the same script was found only by
+     running it against real Cloudflare infrastructure, not offline:
+     `wrangler d1 execute --command` with the full multi-line migration
+     body inlined as a single CLI argument failed with `Unknown
+     argument: 0001_rule_engine_schema` — a fragment of the migration
+     *filename* appearing where a stray flag would, strongly suggesting
+     something between Python's subprocess, npx, and wrangler's own
+     argument parser was mis-tokenizing the large inline string. Fixed
+     by writing the SQL to a temp file and using wrangler's documented
+     `--file=path` flag instead (confirmed against Cloudflare's own
+     docs and examples — all of which use `--file=path`, not
+     `--file path`, so that exact form is what's used here rather than
+     assumed equivalent). Both bugs are covered by
+     `migrations/test_apply_migrations.py` with a mocked `subprocess`;
+     `--replay-only` remains the only mode tested against something
+     real.
 - **Rollout rule for a chain applied to many databases**: not yet
   decided — the Blueprint lists this as open ("not decided, and waiting
   on a real customer"). `apply_migrations.py --remote` currently takes a

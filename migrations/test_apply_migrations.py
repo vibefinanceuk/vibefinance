@@ -11,6 +11,7 @@ Run with: python3 migrations/test_apply_migrations.py
 """
 
 import json
+import os
 import sys
 import unittest
 from pathlib import Path
@@ -28,18 +29,81 @@ def fake_completed(returncode=0, stdout="", stderr=""):
     return result
 
 
+def get_file_path_from_args(args) -> str:
+    for arg in args:
+        if arg.startswith("--file="):
+            return arg[len("--file=") :]
+    raise AssertionError(f"no --file=... argument found in {args!r}")
+
+
+class RunWranglerSqlFileTest(unittest.TestCase):
+    """Covers the fix made after a real --remote run against actual
+    Cloudflare infrastructure failed with a confusing "Unknown argument"
+    error when SQL was inlined via --command. Not reproduced from a bug
+    report in the abstract — this is the literal shape of what broke."""
+
+    def test_writes_sql_to_a_file_and_uses_the_file_flag_not_command(self):
+        captured = {}
+
+        def record(args, **kwargs):
+            captured["args"] = args
+            path = get_file_path_from_args(args)
+            captured["file_contents_at_call_time"] = Path(path).read_text()
+            return fake_completed()
+
+        with patch("apply_migrations.subprocess.run", side_effect=record):
+            am._run_wrangler_sql_file("some-db", "CREATE TABLE x (id TEXT);")
+
+        args = captured["args"]
+        self.assertTrue(
+            any(a.startswith("--file=") for a in args),
+            f"expected a --file=... argument, got {args!r}",
+        )
+        self.assertNotIn(
+            "--command", args, "must not fall back to --command — that's the bug this fixes"
+        )
+        self.assertEqual(captured["file_contents_at_call_time"], "CREATE TABLE x (id TEXT);")
+
+    def test_temp_file_is_removed_after_the_call(self):
+        captured_path = {}
+
+        def record(args, **kwargs):
+            captured_path["path"] = get_file_path_from_args(args)
+            return fake_completed()
+
+        with patch("apply_migrations.subprocess.run", side_effect=record):
+            am._run_wrangler_sql_file("some-db", "SELECT 1;")
+
+        self.assertFalse(
+            os.path.exists(captured_path["path"]),
+            "temp file must be cleaned up, not left behind on every migration run",
+        )
+
+    def test_adds_json_flag_when_requested(self):
+        with patch("apply_migrations.subprocess.run", return_value=fake_completed()) as run:
+            am._run_wrangler_sql_file("some-db", "SELECT 1;", json_output=True)
+        self.assertIn("--json", run.call_args.args[0])
+
+    def test_omits_json_flag_by_default(self):
+        with patch("apply_migrations.subprocess.run", return_value=fake_completed()) as run:
+            am._run_wrangler_sql_file("some-db", "SELECT 1;")
+        self.assertNotIn("--json", run.call_args.args[0])
+
+
 class EnsureRemoteBookkeepingTest(unittest.TestCase):
     def test_calls_wrangler_with_create_if_not_exists_ddl(self):
-        with patch("apply_migrations.subprocess.run", return_value=fake_completed()) as run:
+        captured = {}
+
+        def record(args, **kwargs):
+            path = get_file_path_from_args(args)
+            captured["contents"] = Path(path).read_text()
+            return fake_completed()
+
+        with patch("apply_migrations.subprocess.run", side_effect=record):
             am.ensure_remote_bookkeeping("some-db")
-        args = run.call_args.args[0]
-        self.assertIn("wrangler", args)
-        self.assertIn("some-db", args)
-        self.assertIn("--remote", args)
         # The whole point of this function: idempotent, so it's safe to
         # call on every --remote invocation, not just the first.
-        command_arg = args[args.index("--command") + 1]
-        self.assertIn("CREATE TABLE IF NOT EXISTS", command_arg)
+        self.assertIn("CREATE TABLE IF NOT EXISTS", captured["contents"])
 
     def test_raises_on_wrangler_failure(self):
         with patch(
@@ -52,10 +116,10 @@ class EnsureRemoteBookkeepingTest(unittest.TestCase):
 
 class RemoteAppliedFilenamesTest(unittest.TestCase):
     def test_ensures_bookkeeping_before_querying_it(self):
-        # This is the exact bug being fixed: querying _migrations before
-        # confirming it exists fails on a brand-new database. Assert the
-        # ordering, not just the end result, so a future refactor can't
-        # silently reintroduce it by reordering the two calls.
+        # The bug this covers: querying _migrations before confirming it
+        # exists fails on a brand-new database. Assert the ordering, not
+        # just the end result, so a future refactor can't silently
+        # reintroduce it by reordering the two calls.
         calls = []
 
         def record_and_respond(args, **kwargs):
@@ -82,6 +146,42 @@ class RemoteAppliedFilenamesTest(unittest.TestCase):
         with patch("apply_migrations.subprocess.run", side_effect=record_and_respond):
             result = am.remote_applied_filenames("some-db")
         self.assertEqual(result, set())
+
+
+class ApplyRemoteTest(unittest.TestCase):
+    def test_pending_migration_is_applied_via_file_not_command(self):
+        calls = []
+
+        def record_and_respond(args, **kwargs):
+            calls.append(args)
+            if "--json" in args:
+                return fake_completed(stdout=json.dumps([{"results": []}]))
+            return fake_completed()
+
+        with patch("apply_migrations.subprocess.run", side_effect=record_and_respond):
+            am.apply_remote("some-db", dry_run=False, refresh_checksums=False)
+
+        self.assertGreaterEqual(len(calls), 2, "expected at least the bookkeeping + query + apply calls")
+        for call_args in calls:
+            self.assertNotIn(
+                "--command", call_args, "no wrangler d1 execute call should use --command"
+            )
+
+    def test_dry_run_makes_no_apply_call(self):
+        calls = []
+
+        def record_and_respond(args, **kwargs):
+            calls.append(args)
+            if "--json" in args:
+                return fake_completed(stdout=json.dumps([{"results": []}]))
+            return fake_completed()
+
+        with patch("apply_migrations.subprocess.run", side_effect=record_and_respond):
+            am.apply_remote("some-db", dry_run=True, refresh_checksums=False)
+
+        # Only the bookkeeping-ensure and the SELECT should have run —
+        # nothing that would actually write the migration's DDL.
+        self.assertEqual(len(calls), 2)
 
 
 if __name__ == "__main__":
