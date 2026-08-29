@@ -42,32 +42,45 @@ Reasons for Workers AI specifically, over the alternatives:
 - **Runs at the edge**, same latency profile as everything else in the
   request path.
 
-## What's not confirmed, and why
+## What's confirmed live, as of 29 August 2026
 
-This session has no Cloudflare credentials, and Workers AI has no free
-local-simulation path the way D1 does — using it, even in local dev,
-touches the real account and incurs real usage charges (Cloudflare's
-own docs say so explicitly). So:
+Two real requests against the deployed `vf-app`, not a test double:
 
-- The actual response shape from `env.AI.run()` for this model is
-  **not confirmed**. `compiler-model.ts`'s `extractResponseText()`
-  defensively handles three plausible shapes (the classic Workers AI
-  `{ response }`, the OpenAI-style `{ choices: [{ message: { content
-  } }] }`, and a nested `{ result: { response } }`) plus a
-  stringify-and-continue fallback, specifically so an unanticipated
-  shape produces something `parseModelOutput()` can at least attempt
-  to parse — which itself treats unparseable input as a refusal, never
-  a crash — rather than throwing.
-- **Output quality for this specific task is entirely unmeasured.**
-  gpt-oss-120b was chosen for infrastructure fit (binding, no new
-  billing, edge latency), not because its structured-output reliability
-  for a closed-vocabulary compilation task has been benchmarked against
-  alternatives. The refusal boundary in `shared/compiler/parse.ts`
-  exists precisely so a model that hallucinates plausible-looking but
-  invalid vocabulary fails safely rather than fails silently — but a
-  model that refuses *too often*, or produces a technically-valid rule
-  that doesn't actually mean what the customer said, would only show up
-  against real sentences.
+- `"route anything over 5000 euros to finance"` — correctly **refused**,
+  reason: the sentence doesn't specify which amount field (total,
+  total with VAT, net, amount due) to compare. This is the refusal
+  boundary working exactly as designed on its first real request, not
+  a failure — the sentence genuinely is ambiguous, and approximating it
+  by guessing a field would have been the liability the whole design
+  exists to avoid.
+- `"route anything where the total amount with VAT is over 5000 euros
+  to finance"` — correctly **compiled** to `BT-112 greater_than 5000`
+  with a `route_to` action, and persisted to `rule_versions` with
+  `approved_by` correctly `null` (queried directly from D1 afterward,
+  not inferred from the HTTP response).
+
+This also confirmed, as a side effect, that `wrangler d1 execute
+--json`'s response shape
+(`[{"results": [...], "success": true, "meta": {...}}]`) — assumed by
+`migrations/apply_migrations.py`'s `parse_wrangler_json` — is correct.
+
+## What's still not confirmed
+
+One successful example is evidence the wiring works, not a quality
+benchmark. Still open:
+
+- **The real `env.AI.run()` response shape** turned out to need no
+  defensive fallback for this one request — the classic `{ response }`
+  shape was what came back — but that's one data point, not a
+  guarantee it's the only shape this model family ever returns.
+- **Output quality for this specific task is still effectively
+  unmeasured.** One correct compile and one correct refusal is
+  promising, not a benchmark. Whether gpt-oss-120b reliably picks the
+  *right* field when a sentence is under-specified in a less obvious
+  way than "which amount", or reliably refuses rather than
+  hallucinates on genuinely out-of-vocabulary requests, needs volume —
+  real customer sentences, or at minimum a deliberate adversarial test
+  set — not two hand-picked examples.
 
 ## Alternatives considered and not chosen here
 
@@ -79,8 +92,10 @@ own docs say so explicitly). So:
 
 ## Revisit when
 
-Real customer sentences exist to compile against. At that point,
-compare refusal rate and rule-correctness (does the compiled rule
-actually mean what the sentence said, not just "does it validate")
-across at least gpt-oss-120b and one external-API option before
-treating this as settled rather than provisional.
+Enough real customer sentences exist to measure refusal rate and
+rule-correctness (does the compiled rule actually mean what the
+sentence said, not just "does it validate") in volume, across at least
+gpt-oss-120b and one external-API option, before treating this as
+settled rather than provisional. Two hand-run examples confirm the
+pipe works; they don't answer whether this is the right model.
+

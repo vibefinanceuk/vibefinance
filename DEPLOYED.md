@@ -7,8 +7,8 @@ vf-app and vf-licence are promoted independently.
 
 | Worker | commit SHA | confirmed at |
 |---|---|---|
-| vf-app | `e2a4bcc` | 29 August 2026 — https://vf-app.vibefinance.workers.dev/health returns `{"status":"ok"}` |
-| vf-licence | `e2a4bcc` | 29 August 2026 — https://vf-licence.vibefinance.workers.dev/health returns `{"status":"ok"}` |
+| vf-app | `d63f392` | 29 August 2026 — `/health` ok; `POST /rules/compile` confirmed live end-to-end (real Workers AI call → correct field selection → D1 persistence with `approved_by` null) |
+| vf-licence | `e2a4bcc` | 29 August 2026 — https://vf-licence.vibefinance.workers.dev/health returns `{"status":"ok"}` (unchanged since — no code changes to this Worker since its last deploy) |
 
 ## D1
 
