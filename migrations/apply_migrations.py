@@ -51,6 +51,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 import re
 import sqlite3
 import subprocess
@@ -282,6 +283,49 @@ def ensure_remote_bookkeeping(database_name: str) -> None:
         )
 
 
+def parse_wrangler_json(stdout: str, stderr: str, *, context: str) -> object:
+    """Parse wrangler's --json output, defensively.
+
+    A live run produced a JSONDecodeError with an empty parse position
+    (line 1, column 1) and no visible wrangler output in the traceback
+    at all -- meaning either stdout was genuinely empty, or it contained
+    something this function never showed the operator, making the
+    failure undiagnosable from the error alone. Two things fixed here:
+    first, try to recover if wrangler printed a non-JSON banner line
+    before the actual JSON (some CLIs mix status text into stdout
+    despite --json); second, and more important than any parsing
+    cleverness, if that doesn't work either, fail with the *raw* stdout
+    and stderr included in the error message, so the next failure
+    report contains the actual wrangler output instead of a bare
+    Python traceback with nothing to diagnose from.
+    """
+    stripped = stdout.strip()
+    if stripped:
+        try:
+            return json.loads(stripped)
+        except json.JSONDecodeError:
+            pass
+        # Look for a line that starts a JSON value and try parsing from
+        # there — handles a banner/warning line printed before the JSON.
+        for i, ch in enumerate(stripped):
+            if ch in "[{":
+                try:
+                    return json.loads(stripped[i:])
+                except json.JSONDecodeError:
+                    break
+
+    def _truncated(s: str, limit: int = 4000) -> str:
+        return s if len(s) <= limit else s[:limit] + f"... [{len(s) - limit} more chars truncated]"
+
+    raise RuntimeError(
+        f"could not parse wrangler's output as JSON while {context}. "
+        f"This is the actual output wrangler produced — please include it "
+        f"verbatim if reporting this:\n"
+        f"--- stdout ---\n{_truncated(stdout) or '(empty)'}\n"
+        f"--- stderr ---\n{_truncated(stderr) or '(empty)'}"
+    )
+
+
 def remote_applied_filenames(database_name: str) -> set[str]:
     """Query the remote D1 database's bookkeeping table via wrangler."""
     ensure_remote_bookkeeping(database_name)
@@ -294,10 +338,16 @@ def remote_applied_filenames(database_name: str) -> set[str]:
             "migration been applied yet? has `wrangler login` been run?):\n"
             f"{result.stderr}"
         )
-    import json
-
-    payload = json.loads(result.stdout)
-    rows = payload[0]["results"] if payload else []
+    payload = parse_wrangler_json(
+        result.stdout, result.stderr, context="querying the bookkeeping table"
+    )
+    if not isinstance(payload, list) or not payload or "results" not in payload[0]:
+        raise RuntimeError(
+            f"wrangler's JSON output for the bookkeeping query had an "
+            f"unexpected shape (expected a list with a 'results' key in "
+            f"the first element): {payload!r}"
+        )
+    rows = payload[0]["results"]
     return {row["filename"] for row in rows}
 
 

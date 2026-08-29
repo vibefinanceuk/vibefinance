@@ -36,6 +36,40 @@ def get_file_path_from_args(args) -> str:
     raise AssertionError(f"no --file=... argument found in {args!r}")
 
 
+class ParseWranglerJsonTest(unittest.TestCase):
+    """Covers a real live failure: json.loads(result.stdout) raised
+    JSONDecodeError with no visible wrangler output anywhere in the
+    error, making it undiagnosable from the traceback alone."""
+
+    def test_parses_clean_json_directly(self):
+        payload = am.parse_wrangler_json(
+            json.dumps([{"results": []}]), "", context="test"
+        )
+        self.assertEqual(payload, [{"results": []}])
+
+    def test_recovers_json_preceded_by_a_banner_line(self):
+        noisy = "⛅️ wrangler 4.45.3\nSome status line\n" + json.dumps([{"results": []}])
+        payload = am.parse_wrangler_json(noisy, "", context="test")
+        self.assertEqual(payload, [{"results": []}])
+
+    def test_genuinely_empty_stdout_raises_with_stdout_and_stderr_visible(self):
+        # This is the exact live failure this covers: json.loads("")
+        # used to raise JSONDecodeError with nothing else in the error
+        # message. The fix must put the raw output IN the exception, so
+        # the next failure report is diagnosable without another
+        # round trip.
+        with self.assertRaises(RuntimeError) as ctx:
+            am.parse_wrangler_json("", "some stderr content", context="a test query")
+        message = str(ctx.exception)
+        self.assertIn("a test query", message)
+        self.assertIn("some stderr content", message)
+
+    def test_unparseable_garbage_raises_with_the_garbage_visible(self):
+        with self.assertRaises(RuntimeError) as ctx:
+            am.parse_wrangler_json("not json at all {{{", "", context="a test query")
+        self.assertIn("not json at all", str(ctx.exception))
+
+
 class RunWranglerSqlFileTest(unittest.TestCase):
     """Covers the fix made after a real --remote run against actual
     Cloudflare infrastructure failed with a confusing "Unknown argument"
