@@ -1,9 +1,13 @@
 import { resolveTenant } from "@vibefinance/shared";
 import { evaluateRuleSet, validateRule } from "@vibefinance/shared";
 import type { CompiledRuleSet, InvoiceFacts } from "@vibefinance/shared";
+import { COMPILER_MODEL_ID, createWorkersAiCompilerModel } from "./compiler-model.js";
+import type { AiRunnable } from "./compiler-model.js";
+import { handleCompileRequest } from "./compile-route.js";
 
 export interface Env {
   DB?: D1Database;
+  AI?: AiRunnable;
 }
 
 interface EvaluateRequestBody {
@@ -94,6 +98,27 @@ export default {
 
     if (url.pathname === "/rules/evaluate" && request.method === "POST") {
       return handleEvaluate(request, env);
+    }
+
+    if (url.pathname === "/rules/compile" && request.method === "POST") {
+      const { db } = resolveTenant(request, env);
+      if (!env.AI) {
+        return json({ error: "AI binding not configured" }, 500);
+      }
+      let body: unknown;
+      try {
+        body = await request.json();
+      } catch {
+        return json({ error: "invalid JSON body" }, 400);
+      }
+      const model = createWorkersAiCompilerModel(env.AI);
+      const result = await handleCompileRequest(
+        model,
+        COMPILER_MODEL_ID,
+        db,
+        (body ?? {}) as Record<string, unknown>
+      );
+      return json(result.body, result.status);
     }
 
     return json({ error: "not found" }, 404);

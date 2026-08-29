@@ -415,6 +415,8 @@ The model above is portable. These are the values it needs:
   | `workers/vf-licence/src/**` | `vf-licence` |
   | `shared/**` | `vf-app` today; add `vf-licence` to this row if it ever imports `shared` |
   | `migrations/*.sql` | the migration run against the database(s) that use that schema; a Worker deploy only if its code reads the new shape |
+  | a Worker's `wrangler.jsonc` (bindings, compat date/flags) | that Worker |
+  | a Worker's `wrangler.test.jsonc` | nothing ships — test-only, see the divergences entry on why it exists separately from `wrangler.jsonc` |
   | `eslint.config.js`, `*.test.ts`, `docs/**`, this file | nothing |
 
 - **Known divergences between local preview and production** (found
@@ -478,6 +480,30 @@ The model above is portable. These are the values it needs:
      (the workaround its own error message suggests), per Cloudflare's
      own troubleshooting order: verify the package is actually
      installed before aliasing around a resolution failure.
+  7. Declaring an `ai` binding in a Worker's `wrangler.jsonc` breaks
+     **every** test in that Worker under `@cloudflare/vitest-pool-workers`,
+     not just tests that touch it — the pool tries to open a real remote
+     connection for any declared `ai` binding before a single test runs,
+     since Workers AI has no local-simulation equivalent to D1's, and
+     that connection needs `CLOUDFLARE_API_TOKEN`, which this session
+     doesn't have. `workers/vf-app/wrangler.test.jsonc` is a deliberate
+     near-duplicate of `wrangler.jsonc` without the `ai` block, used only
+     by `vitest.config.ts`; the `d1_databases` block must be kept in
+     sync by hand between the two files (accepted trade-off — see the
+     file's own comment for why the `database_id` half of that can't
+     actually drift into a real problem).
+  8. The root-level `npx tsc --noEmit` has never actually been a clean
+     check for this repo — confirmed by running it against the commit
+     immediately before this one, not assumed: it already failed with
+     `Cannot find module 'cloudflare:test'` for every test file that
+     imports it, because the root `tsconfig.json` doesn't know about the
+     ambient types `@cloudflare/vitest-pool-workers` provides at
+     test-run time through its own mechanism, separate from the project-
+     wide compile. Not introduced by anything in this session; recorded
+     here because it's the kind of gap that's easy to mistake for a
+     regression the next time someone runs `tsc` directly and sees red.
+     `npm test` (which runs `vitest`, not `tsc`) is unaffected and
+     remains the real check.
 
 - **Rollout rule for a chain applied to many databases**: not yet
   decided — the Blueprint lists this as open ("not decided, and waiting

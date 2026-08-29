@@ -115,3 +115,23 @@ describe("POST /rules/evaluate", () => {
     expect(res.status).toBe(404);
   });
 });
+
+describe("POST /rules/compile", () => {
+  it("500s cleanly when the AI binding is not configured, through the real router", async () => {
+    // wrangler.test.jsonc deliberately omits the `ai` binding (see its
+    // own comment: declaring it makes vitest-pool-workers require a
+    // real remote connection this session has no credentials for). So
+    // in this test environment, env.AI genuinely is undefined — this
+    // exercises the real guard against that real condition, not a
+    // simulated one. The deeper compile logic (validation, D1 writes,
+    // refusal handling) is tested directly against handleCompileRequest
+    // in test/compile-route.test.ts with a fake model, since a request
+    // that reaches the model here would need real AI credentials.
+    const res = await SELF.fetch("https://example.com/rules/compile", {
+      method: "POST",
+      body: JSON.stringify({ ruleSetId: "rs1", sourceText: "anything" }),
+    });
+    expect(res.status).toBe(500);
+    expect(await res.json()).toEqual({ error: "AI binding not configured" });
+  });
+});

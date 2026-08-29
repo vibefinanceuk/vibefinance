@@ -82,6 +82,42 @@ export type DerivedField = (typeof DERIVED_FIELDS)[number];
 export type Operator = (typeof OPERATORS)[number];
 export type ActionType = (typeof ACTIONS)[number];
 
+// Human-readable descriptions, one source of truth reused by both the
+// compiler's prompt (shared/compiler/vocabulary-doc.ts) and anywhere
+// else the vocabulary needs to be explained to a person or a model.
+// Kept here rather than duplicated, so a field can never describe
+// itself differently in two places.
+export const FIELD_DESCRIPTIONS: Record<InvoiceField, string> = {
+  "BT-3": "type code (e.g. invoice vs. credit note)",
+  "BT-5": "currency",
+  "BT-2": "issue date",
+  "BT-9": "due date",
+  "BT-10": "buyer reference",
+  "BT-13": "purchase order reference",
+  "BT-31": "seller VAT id",
+  "BT-40": "seller country",
+  "BT-48": "buyer VAT id",
+  "BT-106": "sum of line net amounts",
+  "BT-110": "total VAT",
+  "BT-112": "total with VAT",
+  "BT-115": "amount due",
+  "BT-129": "quantity",
+  "BT-131": "line net amount",
+  "BT-151": "VAT category",
+  "BT-152": "VAT rate",
+  "BG-20": "allowances",
+  "BG-21": "charges",
+};
+
+export const DERIVED_FIELD_DESCRIPTIONS: Record<DerivedField, string> = {
+  direction: "'payable' or 'receivable'",
+  "party.first_document": "true if this is the first document from this party",
+  "po.matched": "true if the invoice matches a purchase order",
+  "po.variance_pct": "percentage variance between invoice and PO amount",
+  "mandate.channel": "the e-invoicing channel/mandate this document arrived through",
+  "validation.passed": "true if the document passed standard validation",
+};
+
 export function isKnownField(field: string): boolean {
   if ((INVOICE_FIELDS as readonly string[]).includes(field)) return true;
   if ((DERIVED_FIELDS as readonly string[]).includes(field)) return true;

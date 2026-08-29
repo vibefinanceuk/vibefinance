@@ -18,5 +18,14 @@
       "database_name": "vf-app-poc",
       "database_id": "REPLACE_WITH_REAL_D1_DATABASE_ID"
     }
-  ]
+  ],
+
+  // The NL-to-rule compiler (Blueprint build order step 2). See
+  // docs/decisions/0002-compiler-model-choice.md and
+  // src/compiler-model.ts. Workers AI usage incurs real cost per
+  // request once deployed — unlike D1, there's no free local
+  // equivalent, so this has never been invoked from this session.
+  "ai": {
+    "binding": "AI"
+  }
 }
