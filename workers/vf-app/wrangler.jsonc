@@ -16,7 +16,7 @@
     {
       "binding": "DB",
       "database_name": "vf-app-poc",
-      "database_id": "REPLACE_WITH_REAL_D1_DATABASE_ID"
+      "database_id": "7cac2188-4fce-46e1-a555-2b2ac852f494"
     }
   ]
 }
