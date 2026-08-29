@@ -463,6 +463,21 @@ The model above is portable. These are the values it needs:
      - The bookkeeping table (`_migrations`) needs its own idempotent
        `CREATE TABLE IF NOT EXISTS` step before it's ever queried, since
        a brand-new D1 database won't have it yet.
+  6. `npx wrangler deploy` from inside a Worker directory (e.g.
+     `workers/vf-app`) fails to resolve `@vibefinance/shared` — an npm
+     workspace package with no build step, `main` pointing straight at
+     `index.ts` — with `Could not resolve "@vibefinance/shared"`, until
+     `npm install` has been run from the **repo root** at least once.
+     Not a wrangler or esbuild bug: the workspace symlink
+     (`node_modules/@vibefinance/shared` → `../../shared`) that makes
+     the import resolvable at all is created by the root-level install,
+     and running `npm install` from inside a Worker subdirectory alone
+     does not create it. Confirmed on 29 August 2026 — `npm install` at
+     the repo root, no code or config change, resolved it. Worth
+     checking this before reaching for Wrangler's `alias` config field
+     (the workaround its own error message suggests), per Cloudflare's
+     own troubleshooting order: verify the package is actually
+     installed before aliasing around a resolution failure.
 
 - **Rollout rule for a chain applied to many databases**: not yet
   decided — the Blueprint lists this as open ("not decided, and waiting
