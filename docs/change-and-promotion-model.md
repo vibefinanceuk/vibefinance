@@ -439,28 +439,31 @@ The model above is portable. These are the values it needs:
      `.npmrc`) — a plain install hits a real npm arborist bug
      (`Cannot read properties of null (reading 'edgesOut')`), not a
      dependency conflict that needs resolving by hand.
-  5. `apply_migrations.py --remote`'s first-ever run against a brand-new
-     D1 database used to fail before applying anything: it queried the
-     `_migrations` bookkeeping table before confirming it existed. Fixed
-     by having `remote_applied_filenames()` call the new
-     `ensure_remote_bookkeeping()` first (idempotent — safe on every
-     run, not just the first).
-  6. A second, more serious bug in the same script was found only by
-     running it against real Cloudflare infrastructure, not offline:
-     `wrangler d1 execute --command` with the full multi-line migration
-     body inlined as a single CLI argument failed with `Unknown
-     argument: 0001_rule_engine_schema` — a fragment of the migration
-     *filename* appearing where a stray flag would, strongly suggesting
-     something between Python's subprocess, npx, and wrangler's own
-     argument parser was mis-tokenizing the large inline string. Fixed
-     by writing the SQL to a temp file and using wrangler's documented
-     `--file=path` flag instead (confirmed against Cloudflare's own
-     docs and examples — all of which use `--file=path`, not
-     `--file path`, so that exact form is what's used here rather than
-     assumed equivalent). Both bugs are covered by
-     `migrations/test_apply_migrations.py` with a mocked `subprocess`;
-     `--replay-only` remains the only mode tested against something
-     real.
+  5. `apply_migrations.py --remote` took six rounds against real
+     Cloudflare infrastructure to get right, and **is now confirmed
+     working** — `0001_rule_engine_schema.sql` applied successfully
+     against the real `vf-app-poc` database on 29 August 2026 (see
+     `DEPLOYED.md`). The individual bugs and fixes are in the git log
+     (`cae2429`, `c29052c`, `4ed7104`, `a3e72d5`, `98daf1e`); the
+     lessons worth carrying forward without re-reading all five:
+     - `wrangler d1 execute --remote` can prompt for interactive
+       confirmation; pass `--yes` for any non-interactive/scripted use.
+     - `--file=path` (writes) and `--command="..."` (reads) are **not**
+       interchangeable despite both accepting arbitrary SQL: `--file`
+       appears to route through a bulk import/upload path that reports
+       execution statistics instead of returning query rows, so any
+       code that needs row data back must use `--command` — but
+       `--command` breaks on large multi-line/multi-statement SQL
+       (mis-tokenized somewhere between subprocess, npx, and wrangler's
+       own argument parser), so DDL and other write-only statements
+       must use `--file` instead. The two failure modes only became
+       distinguishable by running against real infrastructure and
+       reading wrangler's actual output — none of this was guessable
+       from the CLI's `--help` text or general docs alone.
+     - The bookkeeping table (`_migrations`) needs its own idempotent
+       `CREATE TABLE IF NOT EXISTS` step before it's ever queried, since
+       a brand-new D1 database won't have it yet.
+
 - **Rollout rule for a chain applied to many databases**: not yet
   decided — the Blueprint lists this as open ("not decided, and waiting
   on a real customer"). `apply_migrations.py --remote` currently takes a
