@@ -229,8 +229,35 @@ def replay(verbose: bool = True) -> None:
         print(f"replay OK — {len(migrations)} migration(s), all assertions held.")
 
 
+def ensure_remote_bookkeeping(database_name: str) -> None:
+    """Create the bookkeeping table on the remote database if it isn't
+    there yet. Idempotent — safe to call on every --remote invocation,
+    not just the first."""
+    ddl = BOOKKEEPING_DDL.strip()
+    result = subprocess.run(
+        [
+            "npx",
+            "wrangler",
+            "d1",
+            "execute",
+            database_name,
+            "--remote",
+            "--command",
+            ddl,
+        ],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"could not create the bookkeeping table on {database_name!r} "
+            f"(check `wrangler login` and the database name):\n{result.stderr}"
+        )
+
+
 def remote_applied_filenames(database_name: str) -> set[str]:
     """Query the remote D1 database's bookkeeping table via wrangler."""
+    ensure_remote_bookkeeping(database_name)
     result = subprocess.run(
         [
             "npx",

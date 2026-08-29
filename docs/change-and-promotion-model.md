@@ -439,6 +439,16 @@ The model above is portable. These are the values it needs:
      `.npmrc`) — a plain install hits a real npm arborist bug
      (`Cannot read properties of null (reading 'edgesOut')`), not a
      dependency conflict that needs resolving by hand.
+  5. `apply_migrations.py --remote`'s first-ever run against a brand-new
+     D1 database used to fail before applying anything: it queried the
+     `_migrations` bookkeeping table before confirming it existed. Fixed
+     by having `remote_applied_filenames()` call the new
+     `ensure_remote_bookkeeping()` first (idempotent — safe on every
+     run, not just the first). Covered by
+     `migrations/test_apply_migrations.py` with a mocked `subprocess`,
+     since this session has no credentials to exercise the real
+     `--remote` path; `--replay-only` remains the only mode tested
+     against something real.
 - **Rollout rule for a chain applied to many databases**: not yet
   decided — the Blueprint lists this as open ("not decided, and waiting
   on a real customer"). `apply_migrations.py --remote` currently takes a
