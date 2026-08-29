@@ -1,0 +1,15 @@
+{
+  "name": "@vibefinance/vf-licence",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.22.0",
+    "wrangler": "^4.127.1",
+    "vitest": "4.1.0"
+  }
+}

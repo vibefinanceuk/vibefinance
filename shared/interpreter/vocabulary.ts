@@ -1,0 +1,99 @@
+/**
+ * The closed vocabulary the rule language is built from. See Blueprint,
+ * "Subsystem one" — "The vocabulary is closed, and that is the feature."
+ *
+ * These lists are the contract between the (future) natural-language
+ * compiler and this interpreter: the compiler may only ever emit
+ * references found here, and this file is what "closed" means in code
+ * rather than in prose. Extending it is a deliberate, reviewed change —
+ * never an inferred one, and never done implicitly by the compiler.
+ */
+
+// Fields sourced directly from the EN 16931 semantic model, addressed by
+// Business Term id exactly as the standard, the customer's tax adviser,
+// ERP vendor and auditor already use it.
+export const INVOICE_FIELDS = [
+  "BT-3", // type code
+  "BT-5", // currency
+  "BT-2", // issue date
+  "BT-9", // due date
+  "BT-10", // buyer reference
+  "BT-13", // purchase order ref
+  "BT-31", // seller VAT id
+  "BT-40", // seller country
+  "BT-48", // buyer VAT id
+  "BT-106", // sum of line net
+  "BT-110", // total VAT
+  "BT-112", // total with VAT
+  "BT-115", // amount due
+  "BT-129", // quantity
+  "BT-131", // line net amount
+  "BT-151", // VAT category
+  "BT-152", // VAT rate
+  "BG-20", // allowances
+  "BG-21", // charges
+] as const;
+
+// Fields the platform derives — never mistaken for something the
+// document itself said. Parameterised fields (term.absent) are matched
+// by prefix at validation time.
+export const DERIVED_FIELDS = [
+  "direction",
+  "party.first_document",
+  "po.matched",
+  "po.variance_pct",
+  "mandate.channel",
+  "validation.passed",
+] as const;
+
+export const DERIVED_FIELD_PREFIXES = ["term.absent("] as const;
+
+export const OPERATORS = [
+  "is",
+  "is_not",
+  "in",
+  "not_in",
+  "greater_than",
+  "less_than",
+  "between",
+  "starts_with",
+  "contains",
+  "is_present",
+  "is_empty",
+  "older_than_days",
+  "within_days",
+] as const;
+
+export const ACTIONS = [
+  "route_to",
+  "require_second_approval",
+  "assign_cost_centre",
+  "hold_until",
+  "flag",
+  "reject",
+  "tag",
+  "set_field",
+  "notify",
+  "escalate_after",
+] as const;
+
+export type InvoiceField = (typeof INVOICE_FIELDS)[number];
+export type DerivedField = (typeof DERIVED_FIELDS)[number];
+export type Operator = (typeof OPERATORS)[number];
+export type ActionType = (typeof ACTIONS)[number];
+
+export function isKnownField(field: string): boolean {
+  if ((INVOICE_FIELDS as readonly string[]).includes(field)) return true;
+  if ((DERIVED_FIELDS as readonly string[]).includes(field)) return true;
+  return DERIVED_FIELD_PREFIXES.some(
+    (prefix) => field.startsWith(prefix) && field.endsWith(")")
+  );
+}
+
+export function isKnownOperator(op: string): op is Operator {
+  return (OPERATORS as readonly string[]).includes(op);
+}
+
+export function isKnownAction(action: string): action is ActionType {
+  return (ACTIONS as readonly string[]).includes(action);
+}

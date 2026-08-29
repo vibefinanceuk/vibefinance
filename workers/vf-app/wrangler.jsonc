@@ -1,0 +1,22 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "vf-app",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-01",
+  "compatibility_flags": ["nodejs_compat"],
+
+  // Today's tenant-resolution shape (route 1, see
+  // docs/decisions/0001-worker-split-and-tenant-resolution.md): one
+  // deployment per customer, each with its own binding. This file is the
+  // per-customer variable — every other customer's wrangler.jsonc differs
+  // only in `database_id` (and eventually `database_name`), never in
+  // application code. Nothing in src/ may reference this binding except
+  // shared/tenant.ts.
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "vf-app-poc",
+      "database_id": "REPLACE_WITH_REAL_D1_DATABASE_ID"
+    }
+  ]
+}

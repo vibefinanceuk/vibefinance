@@ -1,0 +1,68 @@
+import { env } from "cloudflare:test";
+// Bundled at build time via Vite's `?raw` import — not read at runtime.
+// Tests run inside the real workerd sandbox (that's the point: the real
+// code path, not a mock), and an arbitrary host-filesystem readFileSync
+// from within that sandbox does not reliably resolve project-relative
+// paths, even with nodejs_compat. Importing the file as a module lets
+// the bundler resolve it before the Worker ever starts, the same way
+// application source would import any other module.
+import schemaSql from "../../../migrations/0001_rule_engine_schema.sql?raw";
+
+// Another known divergence from production, on top of the one below:
+// D1's exec() splits its input by newline and executes each non-empty
+// line as its own statement — it does not parse multi-line SQL the way
+// a normal client would. A multi-line CREATE TABLE therefore has to be
+// collapsed onto one line per statement before exec() will accept it.
+// This is D1-specific; migrations/apply_migrations.py's --replay-only
+// mode uses Python's sqlite3.executescript(), which has no such
+// restriction, so this collapsing step exists only here.
+function stripSqlComments(sql: string): string {
+  return sql
+    .split("\n")
+    .filter((line) => !line.trim().startsWith("--"))
+    .join("\n");
+}
+
+function toOneStatementPerLine(sql: string): string {
+  const collapsed = sql.replace(/\s+/g, " ").trim();
+  return collapsed
+    .split(";")
+    .map((stmt) => stmt.trim())
+    .filter((stmt) => stmt.length > 0)
+    .map((stmt) => `${stmt};`)
+    .join("\n");
+}
+
+// The known divergence from production this local preview has (§7 of the
+// change-and-promotion model asks that these be written down rather than
+// reported as defects): this applies the migration's SQL directly via
+// D1's exec, bypassing migrations/apply_migrations.py entirely — so the
+// ASSERT / ASSERT ALWAYS machinery is NOT exercised here. That machinery
+// is covered separately by `python3 migrations/apply_migrations.py
+// --replay-only`. This setup only needs the schema to exist so the Worker
+// has real tables to read and write against the real D1 binding.
+// A third known divergence: storage does not appear to reset between
+// individual `it()` blocks within this pool-workers version (no
+// isolatedStorage option was found in this release — checked the
+// compiled source directly rather than assuming). Re-running the raw
+// CREATE TABLE statements on a persisted database throws "table already
+// exists". Rather than depend on framework isolation behaviour that
+// isn't confirmed to exist here, applyTestSchema drops every table
+// first (children before parents, for the foreign keys) so each test
+// gets a genuinely clean schema regardless of what the pool does or
+// does not reset.
+const TABLES_IN_DROP_ORDER = [
+  "invoice_run_steps",
+  "invoice_runs",
+  "rule_examples",
+  "rule_versions",
+  "rules",
+  "rule_sets",
+];
+
+export async function applyTestSchema(): Promise<void> {
+  for (const table of TABLES_IN_DROP_ORDER) {
+    await env.DB.exec(`DROP TABLE IF EXISTS ${table};`);
+  }
+  await env.DB.exec(toOneStatementPerLine(stripSqlComments(schemaSql)));
+}

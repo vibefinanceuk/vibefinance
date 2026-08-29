@@ -1,0 +1,188 @@
+import {
+  isKnownAction,
+  isKnownField,
+  isKnownOperator,
+} from "./vocabulary.js";
+import type {
+  Condition,
+  CompiledRule,
+  CompiledRuleSet,
+  InvoiceFacts,
+  RuleNode,
+  RuleSetOutcome,
+  StepTrace,
+} from "./types.js";
+
+/**
+ * Hold this line (Blueprint, "Subsystem one"): the rule language must
+ * never become Turing-complete. Nesting is bounded so that "how deep can
+ * a rule go" has a fixed answer independent of any particular rule —
+ * that answer has to survive being stated in a security review.
+ */
+export const MAX_COMBINATOR_DEPTH = 5;
+
+export class RuleValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "RuleValidationError";
+  }
+}
+
+/**
+ * Validate a rule against the closed vocabulary before it is ever stored
+ * or executed. This is the boundary the (future) natural-language
+ * compiler's output must cross — "refusal as a first-class output" means
+ * the compiler calls this and reports failure back to the author rather
+ * than storing something this function would reject.
+ */
+export function validateRule(rule: CompiledRule): void {
+  validateNode(rule.conditions, 0);
+  if (rule.actions.length === 0) {
+    throw new RuleValidationError(`rule ${rule.id}: at least one action is required`);
+  }
+  for (const action of rule.actions) {
+    if (!isKnownAction(action.type)) {
+      throw new RuleValidationError(
+        `rule ${rule.id}: unknown action "${action.type}" — not in the closed vocabulary`
+      );
+    }
+  }
+}
+
+function validateNode(node: RuleNode, depth: number): void {
+  if (depth > MAX_COMBINATOR_DEPTH) {
+    throw new RuleValidationError(
+      `combinator nesting exceeds MAX_COMBINATOR_DEPTH (${MAX_COMBINATOR_DEPTH})`
+    );
+  }
+  if ("all" in node) {
+    if (node.all.length === 0) {
+      throw new RuleValidationError("empty 'all' combinator");
+    }
+    for (const child of node.all) validateNode(child, depth + 1);
+    return;
+  }
+  if ("any" in node) {
+    if (node.any.length === 0) {
+      throw new RuleValidationError("empty 'any' combinator");
+    }
+    for (const child of node.any) validateNode(child, depth + 1);
+    return;
+  }
+  validateCondition(node);
+}
+
+function validateCondition(condition: Condition): void {
+  if (!isKnownField(condition.field)) {
+    throw new RuleValidationError(
+      `unknown field "${condition.field}" — not in the closed vocabulary`
+    );
+  }
+  if (!isKnownOperator(condition.operator)) {
+    throw new RuleValidationError(
+      `unknown operator "${condition.operator}" — not in the closed vocabulary`
+    );
+  }
+  const needsValue = !["is_present", "is_empty"].includes(condition.operator);
+  if (needsValue && condition.value === undefined) {
+    throw new RuleValidationError(
+      `condition on "${condition.field}" with operator "${condition.operator}" requires a value`
+    );
+  }
+}
+
+/** Resolve a field reference (including parameterised term.absent(BT-n)) against invoice facts. */
+function resolveField(field: string, facts: InvoiceFacts): unknown {
+  if (field.startsWith("term.absent(") && field.endsWith(")")) {
+    const bt = field.slice("term.absent(".length, -1);
+    return facts[bt] === undefined || facts[bt] === null;
+  }
+  return facts[field];
+}
+
+function evaluateCondition(condition: Condition, facts: InvoiceFacts): boolean {
+  const actual = resolveField(condition.field, facts);
+  const { operator, value } = condition;
+
+  switch (operator) {
+    case "is":
+      return actual === value;
+    case "is_not":
+      return actual !== value;
+    case "in":
+      return Array.isArray(value) && value.includes(actual);
+    case "not_in":
+      return Array.isArray(value) && !value.includes(actual);
+    case "greater_than":
+      return typeof actual === "number" && typeof value === "number" && actual > value;
+    case "less_than":
+      return typeof actual === "number" && typeof value === "number" && actual < value;
+    case "between": {
+      if (typeof actual !== "number" || !Array.isArray(value) || value.length !== 2) return false;
+      const [low, high] = value as [number, number];
+      return actual >= low && actual <= high;
+    }
+    case "starts_with":
+      return typeof actual === "string" && typeof value === "string" && actual.startsWith(value);
+    case "contains":
+      return typeof actual === "string" && typeof value === "string" && actual.includes(value);
+    case "is_present":
+      return actual !== undefined && actual !== null;
+    case "is_empty":
+      return actual === undefined || actual === null || actual === "";
+    case "older_than_days": {
+      if (typeof actual !== "string" || typeof value !== "number") return false;
+      const ageMs = Date.now() - Date.parse(actual);
+      return ageMs > value * 86_400_000;
+    }
+    case "within_days": {
+      if (typeof actual !== "string" || typeof value !== "number") return false;
+      const ageMs = Date.now() - Date.parse(actual);
+      return ageMs >= 0 && ageMs <= value * 86_400_000;
+    }
+    default: {
+      // Unreachable given validateRule ran first, but keeps the switch
+      // exhaustive rather than silently falling through on a future
+      // vocabulary addition that forgets to update this function.
+      const exhaustive: never = operator as never;
+      throw new RuleValidationError(`unhandled operator "${exhaustive}"`);
+    }
+  }
+}
+
+function evaluateNode(node: RuleNode, facts: InvoiceFacts): boolean {
+  if ("all" in node) return node.all.every((child) => evaluateNode(child, facts));
+  if ("any" in node) return node.any.some((child) => evaluateNode(child, facts));
+  return evaluateCondition(node, facts);
+}
+
+/**
+ * Run one rule set against one invoice's facts. Pure function: same
+ * inputs, same outcome, every time — the property the Blueprint's
+ * support argument depends on ("reproduces on your laptop from two
+ * inputs: their rules and the invoice").
+ */
+export function evaluateRuleSet(
+  ruleSet: CompiledRuleSet,
+  facts: InvoiceFacts
+): RuleSetOutcome {
+  const trace: StepTrace[] = [];
+  const matchedActions: RuleSetOutcome["actions"] = [];
+
+  for (const [index, rule] of ruleSet.rules.entries()) {
+    const matched = evaluateNode(rule.conditions, facts);
+    trace.push({ seq: index, ruleId: rule.id, ruleVersion: rule.version, matched });
+    if (matched) {
+      matchedActions.push(...rule.actions);
+      if (ruleSet.mode === "first_match") {
+        return { outcome: "matched", actions: matchedActions, trace };
+      }
+    }
+  }
+
+  return {
+    outcome: matchedActions.length > 0 ? "matched" : "no_match",
+    actions: matchedActions,
+    trace,
+  };
+}

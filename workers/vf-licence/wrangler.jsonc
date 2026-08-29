@@ -1,0 +1,20 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "vf-licence",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-01",
+  "compatibility_flags": ["nodejs_compat"],
+
+  // A separate database from every vf-app instance, by design (see
+  // docs/decisions/0001-worker-split-and-tenant-resolution.md): this
+  // Worker must never be reachable from a customer's bindings, and no
+  // customer content may ever cross into it — only cross-customer
+  // control-plane data (customers, licences, usage counts).
+  "d1_databases": [
+    {
+      "binding": "CONTROL_DB",
+      "database_name": "vf-licence-poc",
+      "database_id": "REPLACE_WITH_REAL_D1_DATABASE_ID"
+    }
+  ]
+}

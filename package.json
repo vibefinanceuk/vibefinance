@@ -1,0 +1,24 @@
+{
+  "name": "vibefinance",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "shared",
+    "workers/*"
+  ],
+  "scripts": {
+    "test": "npm run test --workspaces --if-present",
+    "lint": "eslint .",
+    "migrate:replay": "python3 migrations/apply_migrations.py --replay-only",
+    "migrate:dry-run": "python3 migrations/apply_migrations.py --dry-run --remote",
+    "migrate:apply": "python3 migrations/apply_migrations.py --remote"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260829.1",
+    "@eslint/js": "^9.39.5",
+    "eslint": "^9.13.0",
+    "typescript": "^5.6.3",
+    "typescript-eslint": "^8.68.0",
+    "vitest": "4.1.0"
+  }
+}
