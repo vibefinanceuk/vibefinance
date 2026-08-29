@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { isKnownAction, isKnownField, isKnownOperator } from "./vocabulary.js";
+import {
+  DERIVED_FIELDS,
+  DERIVED_FIELD_DESCRIPTIONS,
+  FIELD_DESCRIPTIONS,
+  INVOICE_FIELDS,
+  isKnownAction,
+  isKnownField,
+  isKnownOperator,
+} from "./vocabulary.js";
 
 describe("closed vocabulary", () => {
   it("accepts a BT-addressed invoice field", () => {
@@ -33,5 +41,17 @@ describe("closed vocabulary", () => {
   it("accepts every documented action and rejects an invented one", () => {
     expect(isKnownAction("require_second_approval")).toBe(true);
     expect(isKnownAction("execute_script")).toBe(false);
+  });
+
+  it("has a description for every invoice field — a check, not a comment, so a field added without one is caught", () => {
+    for (const field of INVOICE_FIELDS) {
+      expect(FIELD_DESCRIPTIONS[field], `missing description for ${field}`).toBeTruthy();
+    }
+  });
+
+  it("has a description for every derived field", () => {
+    for (const field of DERIVED_FIELDS) {
+      expect(DERIVED_FIELD_DESCRIPTIONS[field], `missing description for ${field}`).toBeTruthy();
+    }
   });
 });

@@ -1,0 +1,30 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "vf-app",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-01",
+  "compatibility_flags": ["nodejs_compat"],
+
+  // Deliberately a near-duplicate of wrangler.jsonc, missing the `ai`
+  // block. Found live: merely declaring an `ai` binding in the config
+  // that @cloudflare/vitest-pool-workers loads makes it try to
+  // establish a real remote connection for that binding before any
+  // test runs — even tests that never touch it — because Workers AI
+  // has no local-simulation equivalent to D1's, and that connection
+  // needs CLOUDFLARE_API_TOKEN, which this session doesn't have. Every
+  // test in this Worker would fail to even start otherwise, not just
+  // the ones that exercise the compiler.
+  //
+  // Trade-off accepted: the d1_databases block below must be kept in
+  // sync with wrangler.jsonc by hand. Both declare the same binding
+  // name and database_name; only database_id could plausibly drift,
+  // and tests don't depend on its value (Miniflare creates local
+  // storage keyed by binding name, not by this id).
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "vf-app-poc",
+      "database_id": "REPLACE_WITH_REAL_D1_DATABASE_ID"
+    }
+  ]
+}

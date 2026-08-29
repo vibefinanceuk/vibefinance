@@ -16,11 +16,12 @@ what's actually confirmed live.
 ## Layout
 
 ```
-shared/                  interpreter, tenant resolution — imported by Workers
+shared/                  interpreter, compiler, tenant resolution — imported by Workers
   interpreter/            the closed-vocabulary rule engine (vocabulary, types, evaluate)
+  compiler/               NL-to-rule compiler: prompt, refusal boundary, vendor-agnostic model interface
   tenant.ts                the one place a tenant-scoped binding may be touched
 workers/
-  vf-app/                 the product Worker
+  vf-app/                 the product Worker (interpreter, compiler, evaluate/compile routes)
   vf-licence/              the control-plane Worker (customers, licences, usage)
 migrations/               numbered, append-only SQL chain + the runner
 docs/
