@@ -65,7 +65,21 @@ from migrate_all import FleetCustomer, fetch_fleet  # noqa: E402
 
 VF_APP_DIR = Path(__file__).parent.parent / "workers" / "vf-app"
 BASE_CONFIG_PATH = VF_APP_DIR / "wrangler.jsonc"
-GENERATED_CONFIG_DIR_NAME = ".deploy-generated"
+
+
+def generated_config_filename(customer_id: str) -> str:
+    """Deliberately a flat filename directly inside vf_app_dir, never a
+    subdirectory. Found live: an earlier version of this script put
+    generated configs one directory level deeper
+    (.deploy-generated/<customer>.wrangler.json), which silently broke
+    `main: "src/index.ts"` — that relative path, copied through
+    unchanged from the base config, then resolved relative to the
+    GENERATED file's own (one-level-deeper) location instead of
+    vf_app_dir, and wrangler could no longer find the real entry point.
+    A flat file directly alongside the real wrangler.jsonc sidesteps
+    this entirely: every relative path in the base config continues to
+    mean exactly what it always meant, with no rewriting needed."""
+    return f".deploy-generated.{customer_id}.wrangler.json"
 
 
 @dataclass
@@ -155,21 +169,19 @@ def deploy_one(
         )
 
     config = build_customer_config(base_config, customer)
-    generated_dir = vf_app_dir / GENERATED_CONFIG_DIR_NAME
-    generated_dir.mkdir(parents=True, exist_ok=True)
-    config_path = generated_dir / f"{customer.id}.wrangler.json"
+    config_filename = generated_config_filename(customer.id)
+    config_path = vf_app_dir / config_filename
     config_path.write_text(json.dumps(config, indent=2))
 
     run = run_subprocess or _real_run_subprocess
-    # Always cwd=vf_app_dir, always a shallow relative --config path
-    # from there — see this module's own docstring and
-    # docs/decisions/0012-deploy-all.md for why: wrangler resolves
-    # paths like `main` relative to the config file's own location
-    # (confirmed against Cloudflare's own docs, not assumed), and a
-    # known, currently-open wrangler bug mishandles nested relative
-    # --config paths supplied from a parent directory.
-    relative_config = f"{GENERATED_CONFIG_DIR_NAME}/{customer.id}.wrangler.json"
-    result = run(["npx", "wrangler", "deploy", "--config", relative_config], vf_app_dir)
+    # Always cwd=vf_app_dir, always a flat filename with no directory
+    # component at all — see generated_config_filename's own comment,
+    # and this module's docstring, for the two distinct path-resolution
+    # problems this avoids: a known wrangler bug with nested relative
+    # --config paths from a parent directory, and (found live) `main`
+    # silently breaking if the generated file itself lived one level
+    # deeper than vf_app_dir.
+    result = run(["npx", "wrangler", "deploy", "--config", config_filename], vf_app_dir)
 
     if result.returncode == 0:
         last_line = result.stdout.strip().splitlines()[-1] if result.stdout.strip() else "(no output)"
@@ -242,7 +254,7 @@ def main() -> None:
         "Reminder: this script never sets secrets. A newly deployed customer needs "
         "VF_LICENCE_API_KEY set by hand before their licence refresh or usage push will work:\n"
         f"  cd {VF_APP_DIR}\n"
-        f"  npx wrangler secret put VF_LICENCE_API_KEY --config {GENERATED_CONFIG_DIR_NAME}/<customer>.wrangler.json"
+        f"  npx wrangler secret put VF_LICENCE_API_KEY --config .deploy-generated.<customer>.wrangler.json"
     )
 
     sys.exit(1 if any(r.status == "failed" for r in results) else 0)

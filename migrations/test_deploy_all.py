@@ -26,6 +26,7 @@ from deploy_all import (  # noqa: E402
     deploy_all,
     deploy_one,
     format_summary,
+    generated_config_filename,
     load_base_config,
     strip_jsonc_comments,
 )
@@ -168,15 +169,55 @@ class TestDeployOne(unittest.TestCase):
             self.assertEqual(cwd, vf_app_dir)
             self.assertIn("--config", args)
             config_arg = args[args.index("--config") + 1]
-            # Shallow, relative, no parent-directory traversal — the
-            # exact shape that avoids the known wrangler --config bug.
+            # Flat filename, no directory component at all — the exact
+            # shape that avoids both the known wrangler --config bug
+            # AND the main-resolution bug found live (see
+            # generated_config_filename's own comment).
             self.assertFalse(config_arg.startswith("/"))
             self.assertFalse(config_arg.startswith(".."))
+            self.assertNotIn("/", config_arg)
 
             generated_path = vf_app_dir / config_arg
             self.assertTrue(generated_path.exists())
             written = json.loads(generated_path.read_text())
             self.assertEqual(written["name"], "vf-app-acme")
+
+    def test_the_critical_property_found_live_main_actually_resolves_to_a_real_file(self):
+        # This is the property that was actually broken: an earlier
+        # version of this script wrote the generated config one
+        # directory level deeper than vf_app_dir, which silently broke
+        # `main: "src/index.ts"` at real deploy time — wrangler
+        # resolved it relative to the generated file's own (wrong)
+        # location and reported the entry point missing. Confirmed the
+        # fix here by actually resolving the path the way wrangler
+        # itself would, against a real file on disk, not by inspecting
+        # the config's shape alone.
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            vf_app_dir = Path(tmp)
+            # A self-contained fake entry point — this test must not
+            # depend on or touch the real repository's own src/index.ts.
+            (vf_app_dir / "src").mkdir()
+            (vf_app_dir / "src" / "index.ts").write_text("// fake entry point for this test\n")
+
+            def fake_run(args, cwd):
+                return fake_subprocess_result(0, stdout="Deployed\n")
+
+            deploy_one(COMPLETE_CUSTOMER, self.base, run_subprocess=fake_run, vf_app_dir=vf_app_dir)
+
+            config_filename = generated_config_filename(COMPLETE_CUSTOMER.id)
+            config_path = vf_app_dir / config_filename
+            written = json.loads(config_path.read_text())
+
+            # The actual rule wrangler follows, confirmed against
+            # Cloudflare's own docs: `main` resolves relative to the
+            # config file's own directory.
+            resolved_main = config_path.parent / written["main"]
+            self.assertTrue(
+                resolved_main.exists(),
+                f"main '{written['main']}' does not resolve to a real file from {config_path.parent}",
+            )
 
     def test_reports_failure_on_a_nonzero_exit_code(self):
         import tempfile

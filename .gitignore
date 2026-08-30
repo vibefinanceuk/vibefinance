@@ -9,5 +9,7 @@ __pycache__/
 # see docs/decisions/0012-deploy-all.md. Machine-generated, always
 # reconstructible from the fleet manifest plus the checked-in
 # wrangler.jsonc; never a second source of truth to keep in sync by
-# hand.
-workers/*/.deploy-generated/
+# hand. Flat files directly inside each Worker's own directory,
+# deliberately not a subdirectory — see deploy_all.py's own comment on
+# why a subdirectory silently broke `main` path resolution live.
+workers/*/.deploy-generated.*.wrangler.json

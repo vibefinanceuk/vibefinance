@@ -51,17 +51,50 @@ paths inside a `wrangler.jsonc` (like `main`) resolve relative to the
 *config file's own location*, not the working directory. Separately,
 a currently-open `workers-sdk` GitHub issue documents `wrangler`
 mishandling a nested relative `--config` path supplied from a parent
-directory. Both point to the same safe design, adopted here: every
-generated per-customer config is written *inside*
-`workers/vf-app/.deploy-generated/`, and `wrangler` is always invoked
-with `cwd=workers/vf-app` and a shallow, single-level relative
-`--config` path from there — never a path reaching up into a parent
-directory, never run from outside `workers/vf-app`.
+directory. Both point to the same safe design: every generated
+per-customer config is written as a flat file *directly inside*
+`workers/vf-app/` — no subdirectory at all, see the next section for
+why that specific detail matters — and `wrangler` is always invoked
+with `cwd=workers/vf-app` and a bare filename as the `--config`
+argument, never a path reaching into a parent directory, never run
+from outside `workers/vf-app`.
 
-Generated configs are gitignored (`workers/*/.deploy-generated/`),
+Generated configs are gitignored (`workers/*/.deploy-generated.*.wrangler.json`),
 consistent with them being purely derived, always reconstructible
 from the fleet manifest plus the one committed file — never a second
 source of truth.
+
+## A real bug, found on the first live run — not a hypothetical
+
+The first genuine attempt to run this against production failed:
+`✘ [ERROR] The entry-point file at "src/index.ts" was not found.` The
+first version of this script wrote each generated config into a
+*subdirectory* (`workers/vf-app/.deploy-generated/<customer>.wrangler.json`)
+— one directory level deeper than the real `wrangler.jsonc`. Since
+`main: "src/index.ts"` is copied through unchanged, and (per the
+verified behaviour above) resolves relative to the *generated* file's
+own location, wrangler correctly looked for
+`workers/vf-app/.deploy-generated/src/index.ts` — which genuinely
+doesn't exist. This was exactly the class of problem the design
+verification above was meant to avoid, reintroduced one level down by
+nesting the generated file itself, not just by a bad `--config` path.
+
+Fixed by writing each generated config as a **flat file directly
+inside `workers/vf-app/`** — `.deploy-generated.<customer>.wrangler.json`,
+no subdirectory at all — so every relative path already in the base
+config, `main` included, continues to mean exactly what it always
+meant, with nothing needing rewriting.
+
+A new test was added specifically for the property that broke: it
+resolves `main` relative to where the generated config will actually
+live, against a real file on disk (a self-contained fake entry point,
+not the real repository's own — this test doesn't touch the actual
+codebase), and confirms it exists. The earlier, subdirectory-based
+tests had checked the *shape* of the generated config and the
+`--config` argument, but never checked whether `main`, interpreted the
+way wrangler itself interprets it, actually resolved to anything real
+— confirmed by reintroducing the subdirectory bug and watching this
+specific new test catch it before restoring the fix.
 
 ## Parsing JSONC without a library
 
