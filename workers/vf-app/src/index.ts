@@ -10,6 +10,7 @@ import { pushUsage } from "./usage.js";
 import { handleConfirmExample, handleListExamples } from "./examples-route.js";
 import { handleActivateRule } from "./activate-route.js";
 import { handleLicenceRefresh } from "./licence-refresh-route.js";
+import { loadActiveRuleSet } from "./rule-set-loader.js";
 
 export interface Env {
   DB?: D1Database;
@@ -142,7 +143,15 @@ function createUsagePusher(service: Fetcher, apiKey: string): import("./usage.js
 }
 
 interface EvaluateRequestBody {
-  ruleSet: CompiledRuleSet;
+  /** Either this OR ruleSetId, never both — see handleEvaluate. Kept
+   * for testing/reproduction: given an exact ruleSet and facts, the
+   * outcome is fully reproducible without touching D1 at all. */
+  ruleSet?: CompiledRuleSet;
+  /** Loads the currently-activated, currently-effective rules for this
+   * rule set from D1 — see rule-set-loader.ts. This is what makes an
+   * activated rule (docs/decisions/0007-rule-approval.md) actually
+   * govern real evaluation, not just sit as an approved database row. */
+  ruleSetId?: string;
   facts: InvoiceFacts;
   invoiceId: string;
 }
@@ -164,14 +173,35 @@ async function handleEvaluate(request: Request, env: Env): Promise<Response> {
     return json({ error: "invalid JSON body" }, 400);
   }
 
-  const { ruleSet, facts, invoiceId } = body;
-  if (!ruleSet || !facts || !invoiceId) {
-    return json({ error: "ruleSet, facts and invoiceId are required" }, 400);
+  const { ruleSet: inlineRuleSet, ruleSetId, facts, invoiceId } = body;
+  if (!facts || !invoiceId) {
+    return json({ error: "facts and invoiceId are required" }, 400);
+  }
+  // Exactly one of the two, never a silent preference between them —
+  // an ambiguous request that supplied both would otherwise have its
+  // ruleSetId quietly ignored, which is exactly the kind of thing
+  // worth erroring on rather than guessing.
+  if ((inlineRuleSet && ruleSetId) || (!inlineRuleSet && !ruleSetId)) {
+    return json({ error: "exactly one of ruleSet or ruleSetId is required" }, 400);
+  }
+
+  let ruleSet: CompiledRuleSet;
+  if (inlineRuleSet) {
+    ruleSet = inlineRuleSet;
+  } else {
+    const loaded = await loadActiveRuleSet(db, ruleSetId as string);
+    if (!loaded) {
+      return json({ error: `rule set ${ruleSetId} does not exist` }, 404);
+    }
+    ruleSet = loaded;
   }
 
   // Refusal as a first-class output (Blueprint, "Subsystem one"): a rule
   // that doesn't validate against the closed vocabulary is reported back
-  // rather than silently run or silently dropped.
+  // rather than silently run or silently dropped. Re-validated here even
+  // for a D1-loaded rule set, which was already validated once at
+  // compile time — never trust your own storage blindly, same
+  // discipline as licence-cache.ts's readLicenceState.
   for (const rule of ruleSet.rules) {
     try {
       validateRule(rule);

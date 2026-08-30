@@ -75,20 +75,39 @@ guard, the zero-examples guard, and the already-activated guard were
 each deliberately disabled in turn and confirmed to cause a real test
 failure — not just asserted to exist in a comment.
 
-## The scope boundary, stated plainly
+## The scope boundary, stated plainly (closed 30 August 2026)
 
-This is the one thing about this bundle worth being very clear about,
-because it would be easy to read "rule activation" as "activated rules
-now run" — **they don't, yet**. `POST /rules/evaluate` takes its
-`ruleSet` directly from the request body today; it does not load
-activated rules from D1 at all. Activating a rule version updates
-`rule_versions.approved_by` / `approved_at` / `effective_from` — real,
-persisted, and gate-checked — but nothing in this bundle wires that
-state into what `/rules/evaluate` actually executes. That's a genuinely
-separate piece of work: teaching `/rules/evaluate` (or a new endpoint)
-to load a rule set from D1, filtered to versions that are both
-`enabled` and currently `effective`, rather than trusting whatever the
-caller sends. Not built here, not silently implied as already done.
+This was the one thing about the original bundle worth being very
+clear about, because it would have been easy to read "rule activation"
+as "activated rules now run" — at the time, **they didn't**.
+`POST /rules/evaluate` took its `ruleSet` directly from the request
+body only; it never loaded activated rules from D1 at all.
+
+Closed the same day: `rule-set-loader.ts`'s `loadActiveRuleSet()` now
+loads a rule set from D1, filtered to exactly the rules that should
+actually govern evaluation — `rules.enabled = 1`, that version's
+`approved_by IS NOT NULL` (never reachable without every worked
+example having been confirmed first — activate-route.ts's own gate),
+and `now` falling within `[effective_from, effective_to)`.
+`POST /rules/evaluate` now accepts *either* an inline `ruleSet`
+(kept, for testing and reproduction — see below) *or* a `ruleSetId`
+that triggers this load, and refuses ambiguity outright: providing
+both, or neither, is a 400, never a silent preference between them.
+
+Proven, not just asserted: each filtering condition (approval, enabled,
+effective-from, effective-to) was independently disabled in the real
+query and confirmed to cause a real test failure — including one real
+false positive caught along the way, where the first version of the
+"excludes an unapproved rule" test passed even with the approval check
+entirely removed, because its `effective_from` was left at its null
+default, which was independently excluding the row for an unrelated
+reason. Fixed by isolating the test properly before trusting it.
+
+The inline `ruleSet` path is deliberately kept, not removed — it's
+what makes "given an exact ruleSet and known facts, the outcome is
+fully reproducible" (the Blueprint's own support argument) actually
+true without needing D1 access to reconstruct a past decision, and it
+remains useful for testing a rule before it's ever activated.
 
 ## What's still open
 
@@ -100,9 +119,10 @@ caller sends. Not built here, not silently implied as already done.
   `compile-route.ts` still hardcodes `version = 1` for every new rule;
   there's no path to compiling a v2 of an existing rule, so activation
   and confirmation only ever apply to a rule's first and only version
-  today.
-- `/rules/evaluate` not sourcing from D1 at all — the scope boundary
-  above, the natural next piece of work this leaves open.
+  today. `loadActiveRuleSet`'s multi-version selection logic (highest
+  qualifying version wins) is written defensively for when this
+  changes, but is entirely unexercised by any real data yet.
+- `/rules/evaluate` — closed, see above.
 
 ## Addendum, found deploying this bundle: `POST /licence/refresh`
 

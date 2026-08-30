@@ -136,6 +136,72 @@ describe("POST /rules/evaluate", () => {
     const res = await SELF.fetch("https://example.com/does-not-exist");
     expect(res.status).toBe(404);
   });
+
+  it("loads and evaluates against activated rules from D1 when given ruleSetId instead of ruleSet", async () => {
+    await env.DB.prepare("INSERT INTO rules (id, rule_set_id, sort_order, enabled) VALUES (?, ?, ?, 1)")
+      .bind("tax-review-non-eu", "rs1", 0)
+      .run();
+    await env.DB.prepare(
+      `INSERT INTO rule_versions
+         (rule_id, version, source_text, compiled_json, compiled_by, approved_by, approved_at, effective_from)
+       VALUES (?, 1, ?, ?, ?, ?, ?, ?)`
+    )
+      .bind(
+        "tax-review-non-eu",
+        "test source",
+        JSON.stringify({ conditions: ruleSet.rules[0].conditions, actions: ruleSet.rules[0].actions }),
+        "test-model",
+        "alice@example.com",
+        "2026-01-01T00:00:00.000Z",
+        "2026-01-01T00:00:00.000Z"
+      )
+      .run();
+
+    const res = await SELF.fetch("https://example.com/rules/evaluate", {
+      method: "POST",
+      body: JSON.stringify({ ruleSetId: "rs1", facts: { "BT-40": "US" }, invoiceId: "inv-3" }),
+    });
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { outcome: string };
+    expect(body.outcome).toBe("matched");
+  });
+
+  it("reports no_match — not an error — for a rule set with no activated rules yet", async () => {
+    // rs1 exists (seeded in beforeEach) but has no rules at all in
+    // this test — a legitimate state before anything is activated,
+    // not a failure.
+    const res = await SELF.fetch("https://example.com/rules/evaluate", {
+      method: "POST",
+      body: JSON.stringify({ ruleSetId: "rs1", facts: { "BT-40": "US" }, invoiceId: "inv-4" }),
+    });
+    expect(res.status).toBe(200);
+    expect((await res.json() as { outcome: string }).outcome).toBe("no_match");
+  });
+
+  it("400s when both ruleSet and ruleSetId are provided — never a silent preference", async () => {
+    const res = await SELF.fetch("https://example.com/rules/evaluate", {
+      method: "POST",
+      body: JSON.stringify({ ruleSet, ruleSetId: "rs1", facts: {}, invoiceId: "inv-5" }),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it("400s when neither ruleSet nor ruleSetId is provided", async () => {
+    const res = await SELF.fetch("https://example.com/rules/evaluate", {
+      method: "POST",
+      body: JSON.stringify({ facts: {}, invoiceId: "inv-6" }),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it("404s when ruleSetId refers to a rule set that does not exist", async () => {
+    const res = await SELF.fetch("https://example.com/rules/evaluate", {
+      method: "POST",
+      body: JSON.stringify({ ruleSetId: "does-not-exist", facts: {}, invoiceId: "inv-7" }),
+    });
+    expect(res.status).toBe(404);
+  });
 });
 
 describe("POST /rules/compile", () => {
