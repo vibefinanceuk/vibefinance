@@ -144,12 +144,16 @@ to today).
 customer, admin-authenticated via `GET /customers` and
 `PATCH /customers/:id/fleet-metadata`. `migrations/migrate_all.py`
 reads that manifest and runs `apply_migrations.py --remote` against
-every customer with a database configured, continuing past any one
-customer's failure rather than stopping the whole fleet. See
-`docs/decisions/0011-fleet-tooling.md`, including a real,
-currently-blocking gap the manifest design surfaced: every customer's
-Worker needs a unique name, which the config didn't previously account
-for. `deploy-all` and code-version reporting remain open.
+every customer with a database configured; `migrations/deploy_all.py`
+reads the same manifest and deploys each customer's `vf-app` Worker,
+constructing a real per-customer `wrangler.jsonc` at deploy time from
+the one committed file rather than duplicating it — see
+`docs/decisions/0011-fleet-tooling.md` and
+`docs/decisions/0012-deploy-all.md`. Both scripts share the same
+continue-on-error discipline (one customer's failure never stops the
+rest of the fleet) and the same honest boundary: neither creates a D1
+database or sets a secret — those remain deliberate, separate, manual
+steps. Code-version reporting remains open.
 
 ## The one rule enforced by tooling, not convention
 

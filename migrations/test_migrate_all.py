@@ -54,7 +54,10 @@ class TestFetchFleet(unittest.TestCase):
 
         customers = fetch_fleet("https://x", "real-admin-key", http_get=fake_get)
         self.assertEqual(len(customers), 2)
-        self.assertEqual(customers[0], FleetCustomer(id="acme", d1_database_name="vf-app-poc"))
+        self.assertEqual(
+            customers[0],
+            FleetCustomer(id="acme", d1_database_name="vf-app-poc", worker_name="vf-app"),
+        )
         self.assertEqual(customers[1], FleetCustomer(id="globex", d1_database_name=None))
 
     def test_raises_with_a_clear_message_on_a_non_200(self):
@@ -70,6 +73,33 @@ class TestFetchFleet(unittest.TestCase):
             return 200, json.dumps({"customers": []})
 
         self.assertEqual(fetch_fleet("https://x", "key", http_get=fake_get), [])
+
+    def test_parses_the_full_set_of_fields_deploy_all_needs(self):
+        def fake_get(url, headers):
+            body = json.dumps({
+                "customers": [
+                    {
+                        "id": "acme",
+                        "d1DatabaseName": "vf-app-poc",
+                        "workerName": "vf-app",
+                        "d1DatabaseId": "7cac2188-4fce-46e1-a555-2b2ac852f494",
+                        "locale": "en",
+                    }
+                ]
+            })
+            return 200, body
+
+        customers = fetch_fleet("https://x", "key", http_get=fake_get)
+        self.assertEqual(
+            customers[0],
+            FleetCustomer(
+                id="acme",
+                d1_database_name="vf-app-poc",
+                worker_name="vf-app",
+                d1_database_id="7cac2188-4fce-46e1-a555-2b2ac852f494",
+                locale="en",
+            ),
+        )
 
 
 class TestMigrateOne(unittest.TestCase):

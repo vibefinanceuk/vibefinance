@@ -113,9 +113,8 @@ never the session, per `docs/change-and-promotion-model.md` §9.
 
 ## What's still open
 
-- `deploy-all` — a genuinely separate design question (how a
-  per-customer `wrangler.jsonc` gets constructed or found at deploy
-  time), not started.
+- `deploy-all` — settled and built, see
+  `docs/decisions/0012-deploy-all.md`.
 - Code-version reporting ("who's on what version," the code half) —
   schema-version reporting is straightforward given the existing
   per-database migration bookkeeping table, but no deployed Worker

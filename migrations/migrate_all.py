@@ -55,6 +55,12 @@ DEFAULT_LICENCE_URL = "https://vf-licence.vibefinance.workers.dev"
 class FleetCustomer:
     id: str
     d1_database_name: Optional[str]
+    # Added for deploy_all.py's use (see docs/decisions/0012-deploy-all.md)
+    # — defaulted so every existing construction of this dataclass
+    # (migrate_all.py's own tests included) remains valid unchanged.
+    worker_name: Optional[str] = None
+    d1_database_id: Optional[str] = None
+    locale: Optional[str] = None
 
 
 @dataclass
@@ -103,7 +109,13 @@ def fetch_fleet(licence_url: str, admin_api_key: str, http_get: Optional[HttpGet
         raise RuntimeError(f"GET {licence_url}/customers returned HTTP {status}: {body}")
     data = json.loads(body)
     return [
-        FleetCustomer(id=c["id"], d1_database_name=c.get("d1DatabaseName"))
+        FleetCustomer(
+            id=c["id"],
+            d1_database_name=c.get("d1DatabaseName"),
+            worker_name=c.get("workerName"),
+            d1_database_id=c.get("d1DatabaseId"),
+            locale=c.get("locale"),
+        )
         for c in data["customers"]
     ]
 
