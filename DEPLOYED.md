@@ -7,7 +7,7 @@ vf-app and vf-licence are promoted independently.
 
 | Worker | commit SHA | confirmed at |
 |---|---|---|
-| vf-app | `9011dbb` | 30 August 2026 — two bundles confirmed live since the last update. Locale-aware messages: `LOCALE: "de"` deployed and confirmed producing German text across two independent routes (`/rules/evaluate`'s validation message and `/rules/compile`'s 404), then reverted to `"en"`. org/authority/profiles: all six new tables exercised together live — a unit, a user tied to it, a role built from the closed permission vocabulary, a role assignment, and an authority limit, then confirmed with a single query joining `org_users`, `org_user_roles`, `org_roles`, and `org_authority_limits` and returning the exact expected row; separately confirmed a role with an unknown permission is correctly refused (`422`) rather than silently stored. |
+| vf-app | `cd3d847` | 30 August 2026 — user authentication and enforcement confirmed live, end to end. A real `org_users` row (Alice) created; `POST /rules/compile` correctly returned `401` with no credentials and succeeded with Alice's real key. `POST .../confirm` and `POST .../activate` called with no `confirmedBy`/`activatedBy` in the body at all — both correctly recorded `alice@acme.com` anyway, derived entirely from her authenticated key, confirmed via direct D1 query (`approved_by: "alice@acme.com"`), not inferred from the HTTP response alone. |
 | vf-licence | `0a2b61c` | 30 August 2026 — `POST /customers/Acme/rotate-key` succeeded with the real `ADMIN_API_KEY`; the resulting per-customer key was confirmed to actually authenticate (`POST /usage/push` from `vf-app` succeeded using it); separately confirmed `POST /usage` correctly rejects an unauthenticated request (`{"error":"unauthorized"}`) claiming inflated numbers for `Acme` — the real security property, not just the happy path |
 
 ## D1
@@ -117,3 +117,16 @@ confirmed a role with an unknown permission is correctly refused
 (`422`), the closed vocabulary actually holding on real infrastructure,
 not just in tests. Full account in
 `docs/decisions/0009-org-authority-profiles.md`.
+
+30 August 2026: user authentication and enforcement (closes the
+largest gap left by decision 0009). Confirmed live end to end: a real
+user (Alice) created via `POST /org/users`; `POST /rules/compile`
+correctly `401`'d with no key and succeeded with hers; the confirm and
+activate steps were called with no `confirmedBy`/`activatedBy` in the
+body at all, yet both correctly recorded her real identity
+(`alice@acme.com`) anyway — proving the fields are genuinely derived
+from the authenticated key, not accepted from the client. A real
+`wrangler` authentication hiccup was hit and resolved mid-deployment
+(a stale OAuth session — fixed with `wrangler login`), unrelated to
+this bundle's own code. Full account in
+`docs/decisions/0010-user-authentication-and-enforcement.md`.
