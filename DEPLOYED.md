@@ -7,14 +7,14 @@ vf-app and vf-licence are promoted independently.
 
 | Worker | commit SHA | confirmed at |
 |---|---|---|
-| vf-app | `0a2b61c` | 30 August 2026 — `POST /usage/push` succeeds end-to-end with `VF_LICENCE_API_KEY` configured (a real secret, not a var); a real, freshly-timestamped row landed in `vf-licence-poc`'s `usage_periods`, confirmed via direct D1 query, not inferred from the HTTP response |
+| vf-app | `ffd69d5` | 30 August 2026 — the full worked-examples/rule-activation pipeline confirmed end-to-end on live infrastructure: `POST /rules/compile` (with the `max_tokens` fix) produced `examples.status: "generated", count: 2`; both examples confirmed via `POST /rules/examples/:id/confirm`; `POST /rules/:ruleId/versions/1/activate` succeeded, and the resulting `approved_by`/`approved_at`/`effective_from` were confirmed via direct D1 query, not inferred from the HTTP response. `POST /licence/refresh` separately confirmed working, unblocking a real bootstrap-blocked state (`licence_cache` had never been populated by the cron). |
 | vf-licence | `0a2b61c` | 30 August 2026 — `POST /customers/Acme/rotate-key` succeeded with the real `ADMIN_API_KEY`; the resulting per-customer key was confirmed to actually authenticate (`POST /usage/push` from `vf-app` succeeded using it); separately confirmed `POST /usage` correctly rejects an unauthenticated request (`{"error":"unauthorized"}`) claiming inflated numbers for `Acme` — the real security property, not just the happy path |
 
 ## D1
 
 | database | last migration applied | confirmed at |
 |---|---|---|
-| vf-app-poc | 0002_licence_cache.sql (0001 also applied) | 30 August 2026 — `apply_migrations.py --remote` reports "nothing to apply", confirming both are recorded in the remote `_migrations` table |
+| vf-app-poc | 0002_licence_cache.sql (0001 also applied) | 30 August 2026 — `licence_cache` confirmed populated via `POST /licence/refresh`; `rule_examples` (existing since 0001, unused until this session) confirmed genuinely written to and read from via the full compile→confirm→activate flow, queried directly |
 | vf-licence-poc | 0003_customer_api_keys.sql (0001, 0002 also applied) | 30 August 2026 — `apply_migrations.py --remote` reports "applied" for 0003; `Acme`'s `api_key_hash` confirmed populated (previously `NULL`) via the successful rotate-key + authenticated usage-push round trip |
 
 ## Incident record
@@ -53,4 +53,31 @@ rotation endpoint without downtime — confirmed both that the new key
 works and that an unauthenticated request is genuinely rejected, not
 just that the happy path succeeds. Full account in
 `docs/decisions/0006-endpoint-authentication.md`.
+
+30 August 2026: the first real attempt to compile a rule after
+deploying worked-examples/activation hit `{"error":"processing
+blocked","reason":"no licence has been provisioned for this instance
+yet"}` — `licence_cache` had never been populated, since the only
+thing that writes it (the 6-hourly `scheduled()` cron) genuinely
+hadn't fired yet since `VF_LICENCE_API_KEY` was configured. Confirmed
+directly (`SELECT * FROM licence_cache` returned nothing) before
+building the fix: `POST /licence/refresh`, an on-demand equivalent,
+deliberately not licence-gated (gating it would make the exact
+bootstrap-blocked state it exists to fix permanently unrecoverable via
+the API). Full account in `docs/decisions/0007-rule-approval.md`'s
+addendum.
+
+30 August 2026: `generateExamples` (the worked-examples step of rule
+compilation) failed live with `finish_reason: "length"`,
+`content: null` — `gpt-oss-120b`, a reasoning model, had spent its
+entire response budget on internal chain-of-thought before ever
+writing the JSON answer. Confirmed against Cloudflare's own changelog
+that `max_tokens` defaults to 256, far too small for a reasoning
+model's combined reasoning-plus-answer output; `compiler-model.ts` had
+never set it explicitly. Fixed with `max_tokens: 4096`. Confirmed live
+immediately after: the same compile request that previously refused
+its examples produced `examples.status: "generated", count: 2`, and
+the full compile→confirm→activate pipeline completed successfully
+end-to-end for the first time. Full account in
+`docs/decisions/0002-compiler-model-choice.md`.
 
