@@ -12,8 +12,34 @@ beforeEach(async () => {
   await applyTestSchema();
 });
 
+/**
+ * A fake Service Binding — production wires env.LICENCE_SERVICE via
+ * wrangler.jsonc's `services` block (see its own comment on why: a
+ * plain global fetch() to vf-licence's workers.dev URL from inside
+ * vf-app silently 404s, confirmed live, since Cloudflare blocks
+ * Worker-to-Worker fetches to workers.dev URLs as an anti-loop
+ * measure). Declaring a real `services` binding in the test-only
+ * wrangler config would need either a live remote connection or a
+ * second auxiliary Worker running in the test pool — neither
+ * available here — so tests inject this fake directly onto the env
+ * object instead, exactly the same pattern already used for AI and
+ * the licence public key.
+ */
+function fakeService(handler: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>): Fetcher {
+  return { fetch: vi.fn(handler) } as unknown as Fetcher;
+}
+
+/** Pulls the first URL argument out of a mock's recorded calls, typed
+ * as unknown[] rather than a destructured tuple — avoids fighting
+ * TypeScript's Array.find() overloads over a narrower tuple type
+ * that mock.calls doesn't actually have. */
+function firstCallUrl(calls: unknown[][]): string | undefined {
+  const found = calls.find((call) => typeof call[0] === "string");
+  return found ? (found[0] as string) : undefined;
+}
+
 describe("scheduled() — the licence refresh trigger", () => {
-  it("fetches from LICENCE_SERVER_URL, verifies, and caches the result", async () => {
+  it("fetches the licence token via the service binding, verifies, and caches the result", async () => {
     const keyPair = await crypto.subtle.generateKey(KEY_ALGORITHM, true, ["sign", "verify"]);
     const privateKeyJwk = await crypto.subtle.exportKey("jwk", keyPair.privateKey);
     const publicKeyJwk = await crypto.subtle.exportKey("jwk", keyPair.publicKey);
@@ -29,24 +55,20 @@ describe("scheduled() — the licence refresh trigger", () => {
     };
     const token = await signLicenceToken(claims, privateKeyJwk);
 
-    const fetchSpy = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValue(new Response(JSON.stringify({ token }), { status: 200 }));
+    const service = fakeService(async () => new Response(JSON.stringify({ token }), { status: 200 }));
 
     const env: Env = {
       ...testEnv,
-      LICENCE_SIGNING_PUBLIC_KEY: publicKeyJwk, // a real object now, not a JSON string
-      LICENCE_SERVER_URL: "https://vf-licence.example.workers.dev",
+      LICENCE_SIGNING_PUBLIC_KEY: publicKeyJwk,
+      LICENCE_SERVICE: service,
       CUSTOMER_ID: "acme",
     };
 
     await worker.scheduled?.({} as ScheduledEvent, env, {} as ExecutionContext);
 
-    expect(fetchSpy).toHaveBeenCalledWith("https://vf-licence.example.workers.dev/licences/acme/token");
+    expect(service.fetch).toHaveBeenCalledWith("https://vf-licence.internal/licences/acme/token");
     const state = await readLicenceState(testEnv.DB);
     expect(state).toEqual({ known: true, claims });
-
-    fetchSpy.mockRestore();
   });
 
   it("does nothing and does not throw when required env vars are missing", async () => {
@@ -64,18 +86,11 @@ describe("scheduled() — the licence refresh trigger", () => {
     // }, a genuine object, just not a valid JWK. Confirms a
     // newly-cloned, not-yet-configured instance fails safe rather than
     // throwing on deploy or on its first scheduled run.
-    //
-    // Mocked (not just spied) this time: usage push is now a genuinely
-    // independent block (see the "independence" describe further down)
-    // and legitimately calls fetch even when the licence key is
-    // broken. An unmocked spy here would let that real fetch through
-    // to an actual DNS lookup against a fake domain, the same failure
-    // mode already caught once before in this file.
-    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("{}", { status: 200 }));
+    const service = fakeService(async () => new Response("{}", { status: 200 }));
     const env: Env = {
       ...testEnv,
       LICENCE_SIGNING_PUBLIC_KEY: { REPLACE_WITH_REAL_PUBLIC_KEY_JWK: true },
-      LICENCE_SERVER_URL: "https://vf-licence.example.workers.dev",
+      LICENCE_SERVICE: service,
       CUSTOMER_ID: "acme",
     };
     await expect(
@@ -84,74 +99,70 @@ describe("scheduled() — the licence refresh trigger", () => {
 
     // The assertion that actually matters: the licence-token URL
     // specifically was never called, rejected by the type guard before
-    // any network attempt — not "fetch was never called at all", which
-    // no longer holds now that usage push is an independent block that
-    // legitimately does call fetch regardless of the licence key.
-    const licenceCall = fetchSpy.mock.calls.find(([url]) => String(url).includes("/licences/"));
-    expect(licenceCall).toBeUndefined();
+    // any network attempt — not "the service was never called at
+    // all", which doesn't hold now that usage push is an independent
+    // block that legitimately calls the same service regardless of
+    // the licence key.
+    const calls = (service.fetch as ReturnType<typeof vi.fn>).mock.calls as unknown[][];
+    const licenceUrl = firstCallUrl(calls.filter((call) => (call[0] as string).includes("/licences/")));
+    expect(licenceUrl).toBeUndefined();
     const state = await readLicenceState(testEnv.DB);
     expect(state).toEqual({ known: false });
-    fetchSpy.mockRestore();
   });
 
-  it("does not cache anything when the fetch returns a non-2xx status", async () => {
+  it("does not cache anything when the service binding returns a non-2xx status", async () => {
     const keyPair = await crypto.subtle.generateKey(KEY_ALGORITHM, true, ["sign", "verify"]);
     const publicKeyJwk = await crypto.subtle.exportKey("jwk", keyPair.publicKey);
 
-    const fetchSpy = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValue(new Response("unauthorized", { status: 401 }));
+    const service = fakeService(async () => new Response("unauthorized", { status: 401 }));
 
     const env: Env = {
       ...testEnv,
-      LICENCE_SIGNING_PUBLIC_KEY: publicKeyJwk, // a real object now, not a JSON string
-      LICENCE_SERVER_URL: "https://vf-licence.example.workers.dev",
+      LICENCE_SIGNING_PUBLIC_KEY: publicKeyJwk,
+      LICENCE_SERVICE: service,
       CUSTOMER_ID: "acme",
     };
 
     await worker.scheduled?.({} as ScheduledEvent, env, {} as ExecutionContext);
     const state = await readLicenceState(testEnv.DB);
     expect(state).toEqual({ known: false });
-
-    fetchSpy.mockRestore();
   });
 });
 
 describe("scheduled() — the usage push, same cron", () => {
-  it("pushes a real usage report to LICENCE_SERVER_URL/usage", async () => {
-    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("{}", { status: 200 }));
+  it("pushes a real usage report via the service binding", async () => {
+    const service = fakeService(async () => new Response("{}", { status: 200 }));
     const env: Env = {
       ...testEnv,
-      LICENCE_SERVER_URL: "https://vf-licence.example.workers.dev",
+      LICENCE_SERVICE: service,
       CUSTOMER_ID: "acme",
     };
 
     await worker.scheduled?.({} as ScheduledEvent, env, {} as ExecutionContext);
 
-    const usageCall = fetchSpy.mock.calls.find(([url]) => String(url).endsWith("/usage"));
-    expect(usageCall).toBeDefined();
-    const [, init] = usageCall as [string, RequestInit];
+    const calls = (service.fetch as ReturnType<typeof vi.fn>).mock.calls as unknown[][];
+    const usageUrl = firstCallUrl(calls.filter((call) => (call[0] as string).endsWith("/usage")));
+    expect(usageUrl).toBeDefined();
+    const usageCall = calls.find((call) => (call[0] as string).endsWith("/usage"));
+    const init = usageCall?.[1] as RequestInit;
     const body = JSON.parse(init.body as string);
     expect(body).toMatchObject({ customerId: "acme", invoicesProcessed: 0 });
-
-    fetchSpy.mockRestore();
   });
 
   it("still runs when LICENCE_SIGNING_PUBLIC_KEY is missing — usage push needs none of the licence-verification config", async () => {
-    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("{}", { status: 200 }));
+    const service = fakeService(async () => new Response("{}", { status: 200 }));
     const env: Env = {
       ...testEnv,
       // Deliberately no LICENCE_SIGNING_PUBLIC_KEY at all.
-      LICENCE_SERVER_URL: "https://vf-licence.example.workers.dev",
+      LICENCE_SERVICE: service,
       CUSTOMER_ID: "acme",
     };
 
     await worker.scheduled?.({} as ScheduledEvent, env, {} as ExecutionContext);
 
-    const usageCall = fetchSpy.mock.calls.find(([url]) => String(url).endsWith("/usage"));
-    expect(usageCall).toBeDefined();
-
-    fetchSpy.mockRestore();
+    const calls = (service.fetch as ReturnType<typeof vi.fn>).mock.calls as unknown[][];
+    const usageUrl = firstCallUrl(calls.filter((call) => (call[0] as string).endsWith("/usage")));
+    expect(usageUrl).toBeDefined();
   });
 
   it("a failing usage push does not prevent the licence refresh from succeeding", async () => {
@@ -169,8 +180,8 @@ describe("scheduled() — the usage push, same cron", () => {
     };
     const token = await signLicenceToken(claims, privateKeyJwk);
 
-    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async (url) => {
-      if (String(url).endsWith("/usage")) {
+    const service = fakeService(async (input) => {
+      if (String(input).endsWith("/usage")) {
         throw new Error("usage endpoint unreachable");
       }
       return new Response(JSON.stringify({ token }), { status: 200 });
@@ -179,7 +190,7 @@ describe("scheduled() — the usage push, same cron", () => {
     const env: Env = {
       ...testEnv,
       LICENCE_SIGNING_PUBLIC_KEY: publicKeyJwk,
-      LICENCE_SERVER_URL: "https://vf-licence.example.workers.dev",
+      LICENCE_SERVICE: service,
       CUSTOMER_ID: "acme",
     };
 
@@ -191,7 +202,5 @@ describe("scheduled() — the usage push, same cron", () => {
     // have succeeded despite the usage push failing.
     const state = await readLicenceState(testEnv.DB);
     expect(state).toEqual({ known: true, claims });
-
-    fetchSpy.mockRestore();
   });
 });

@@ -65,6 +65,22 @@
     "CUSTOMER_ID": "Acme"
   },
 
+  // Worker-to-Worker calls to vf-licence go through this Service
+  // Binding, not a plain fetch() to vf-licence's workers.dev URL —
+  // confirmed live that the latter silently 404s (Cloudflare blocks a
+  // Worker fetching another Worker's workers.dev URL as an anti-loop
+  // measure; the request never even reaches the target Worker). See
+  // docs/decisions/0005-service-binding.md and src/index.ts's
+  // LICENCE_SERVICE comment. `service` names the target Worker exactly
+  // as it's deployed (`name` in vf-licence's own wrangler.jsonc) — this
+  // only works because both Workers are in the same Cloudflare account.
+  "services": [
+    {
+      "binding": "LICENCE_SERVICE",
+      "service": "vf-licence"
+    }
+  ],
+
   // The scheduled refresh — src/index.ts's scheduled() handler is the
   // only place this Worker calls out to vf-licence; fetch() never does
   // ("no network call in the hot path", Blueprint). Every 6 hours is

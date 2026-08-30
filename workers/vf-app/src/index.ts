@@ -28,11 +28,40 @@ export interface Env {
    * (isPublicKeyJwk, below), not trusted from the type system.
    */
   LICENCE_SIGNING_PUBLIC_KEY?: unknown;
-  /** The base URL of this customer's vf-licence instance to fetch a
-   * token from, e.g. "https://vf-licence.vibefinance.workers.dev". */
+  /**
+   * No longer used by any code path in this Worker — see
+   * LICENCE_SERVICE's comment for why. Kept declared, not removed,
+   * because it's still useful for a human to know where this
+   * instance's vf-licence actually lives (manual `curl` debugging,
+   * exactly how the workers.dev restriction below was first
+   * diagnosed), and removing it would be unnecessary config churn for
+   * no functional benefit.
+   */
   LICENCE_SERVER_URL?: string;
   /** This customer's id, matching the `customers.id` row in vf-licence. */
   CUSTOMER_ID?: string;
+  /**
+   * A Service Binding to vf-licence — the correct, Cloudflare-documented
+   * way for one Worker to call another within the same account.
+   * Confirmed live: a plain global `fetch()` to vf-licence's
+   * `*.workers.dev` URL from *inside* vf-app silently 404s — Cloudflare
+   * blocks a Worker from fetching another Worker's workers.dev URL as
+   * an anti-loop measure, and the request never even reaches the
+   * target Worker (confirmed with `wrangler tail` showing nothing).
+   * Calls from outside a Worker (a browser, curl, this session's own
+   * verify-live-key-match.mjs) are unaffected — only Worker-to-Worker
+   * calls hit this. See docs/decisions/0005-service-binding.md.
+   *
+   * This binding only works because vf-app and vf-licence are
+   * deployed to the same Cloudflare account — a genuinely self-hosted
+   * customer instance in a *different* account cannot use a service
+   * binding at all and would need a different mechanism entirely
+   * (a real public hostname plus the `global_fetch_strictly_public`
+   * compatibility flag, or a custom domain). Out of scope for now;
+   * flagged in the decision doc as a real limitation, not silently
+   * assumed to be solved by this fix.
+   */
+  LICENCE_SERVICE?: Fetcher;
 }
 
 /**
@@ -52,13 +81,17 @@ function isPublicKeyJwk(value: unknown): value is JsonWebKey {
 
 /**
  * Builds the real UsagePusher — the only place this Worker sends usage
- * data to vf-licence. Reuses LICENCE_SERVER_URL, the same var the
- * licence-token fetch uses, since both point at the same control-plane
- * instance.
+ * data to vf-licence, via the Service Binding (see Env.LICENCE_SERVICE's
+ * own comment on why not a plain fetch to a workers.dev URL). The host
+ * portion of the URL is never actually used for routing by a service
+ * binding — the binding itself determines which Worker receives the
+ * request — but a well-formed URL is still needed so vf-licence's own
+ * `new URL(request.url)` parsing has something valid to read the path
+ * from.
  */
-function createUsagePusher(serverUrl: string): import("./usage.js").UsagePusher {
+function createUsagePusher(service: Fetcher): import("./usage.js").UsagePusher {
   return async (report) => {
-    const res = await fetch(`${serverUrl}/usage`, {
+    const res = await service.fetch("https://vf-licence.internal/usage", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(report),
@@ -208,10 +241,10 @@ export default {
     // so a future "sync now" UI can show it immediately.
     if (url.pathname === "/usage/push" && request.method === "POST") {
       const { db } = resolveTenant(request, env);
-      if (!env.LICENCE_SERVER_URL || !env.CUSTOMER_ID) {
-        return json({ error: "LICENCE_SERVER_URL and CUSTOMER_ID must be configured" }, 500);
+      if (!env.LICENCE_SERVICE || !env.CUSTOMER_ID) {
+        return json({ error: "LICENCE_SERVICE and CUSTOMER_ID must be configured" }, 500);
       }
-      const result = await handleUsagePush(db, env.CUSTOMER_ID, createUsagePusher(env.LICENCE_SERVER_URL));
+      const result = await handleUsagePush(db, env.CUSTOMER_ID, createUsagePusher(env.LICENCE_SERVICE));
       return json(result.body, result.status);
     }
 
@@ -242,7 +275,7 @@ export default {
     // synthetic one is used) and swallows its own failures — retried
     // next cron cycle regardless of what the other block did.
 
-    if (isPublicKeyJwk(env.LICENCE_SIGNING_PUBLIC_KEY) && env.LICENCE_SERVER_URL && env.CUSTOMER_ID) {
+    if (isPublicKeyJwk(env.LICENCE_SIGNING_PUBLIC_KEY) && env.LICENCE_SERVICE && env.CUSTOMER_ID) {
       // A scheduled trigger has no incoming Request — resolveTenant's
       // request parameter is documented as unused today (reserved for
       // routes 2/3, see shared/tenant.ts), so a synthetic one satisfies
@@ -255,10 +288,10 @@ export default {
       try {
         const { db } = resolveTenant(new Request("https://scheduled-trigger.internal/"), env);
         const publicKeyJwk = env.LICENCE_SIGNING_PUBLIC_KEY;
-        const serverUrl = env.LICENCE_SERVER_URL;
+        const service = env.LICENCE_SERVICE;
         const customerId = env.CUSTOMER_ID;
         await refreshLicenceCache(db, publicKeyJwk, async () => {
-          const res = await fetch(`${serverUrl}/licences/${customerId}/token`);
+          const res = await service.fetch(`https://vf-licence.internal/licences/${customerId}/token`);
           if (!res.ok) {
             throw new Error(`licence fetch returned HTTP ${res.status}`);
           }
@@ -274,13 +307,13 @@ export default {
     }
 
     // Usage push (Blueprint's usage_periods — see
-    // docs/decisions/0004-usage-telemetry.md). Needs only
-    // LICENCE_SERVER_URL and CUSTOMER_ID, not the signing key at all —
-    // pushing doesn't verify anything.
-    if (env.LICENCE_SERVER_URL && env.CUSTOMER_ID) {
+    // docs/decisions/0004-usage-telemetry.md). Needs only the service
+    // binding and CUSTOMER_ID, not the signing key at all — pushing
+    // doesn't verify anything.
+    if (env.LICENCE_SERVICE && env.CUSTOMER_ID) {
       try {
         const { db } = resolveTenant(new Request("https://scheduled-trigger.internal/"), env);
-        await pushUsage(db, new Date(), env.CUSTOMER_ID, createUsagePusher(env.LICENCE_SERVER_URL));
+        await pushUsage(db, new Date(), env.CUSTOMER_ID, createUsagePusher(env.LICENCE_SERVICE));
       } catch {
         // Deliberately silent — retried next cron cycle, or via the
         // on-demand /usage/push endpoint at any time in between.

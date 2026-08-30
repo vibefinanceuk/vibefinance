@@ -534,6 +534,21 @@ The model above is portable. These are the values it needs:
       often by habit; both are the kind of thing worth remembering to
       run it for before trusting a green `npm test` completely,
       especially after touching a public function signature.
+  11. A plain `fetch()` from *inside* a deployed Worker to another
+      Worker's `*.workers.dev` URL silently 404s — confirmed live, the
+      first time either scheduled inter-Worker call was ever actually
+      exercised in production rather than from a terminal. Not a bug in
+      this codebase; a deliberate Cloudflare anti-loop restriction on
+      `workers.dev` subdomains, confirmed against Cloudflare's own docs.
+      Fixed with a Service Binding (`workers/vf-app/wrangler.jsonc`'s
+      `services` block) — see docs/decisions/0005-service-binding.md
+      for the full diagnosis and fix. Declaring a `services` binding in
+      `wrangler.test.jsonc` would hit the same class of problem the
+      `ai` binding did (a real remote connection, or a second auxiliary
+      Worker, neither available here) — tests inject a fake
+      `Fetcher`-shaped object directly onto `env` instead, the same
+      established pattern as the `ai` binding and the licence public
+      key.
 
 - **Rollout rule for a chain applied to many databases**: not yet
   decided — the Blueprint lists this as open ("not decided, and waiting

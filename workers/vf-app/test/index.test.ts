@@ -234,18 +234,18 @@ describe("licence enforcement — the gate applied to mutating endpoints", () =>
 });
 
 describe("POST /usage/push", () => {
-  it("500s cleanly when LICENCE_SERVER_URL/CUSTOMER_ID are not configured, through the real router", async () => {
-    // wrangler.test.jsonc declares neither var — this exercises the
-    // real guard against that real condition. The deeper push logic
-    // (computing the report, calling the pusher, handling a pusher
-    // failure) is tested directly against handleUsagePush in
-    // test/usage-route.test.ts with a fake pusher, since a request
-    // that reaches the pusher here would need a real vf-licence to
-    // talk to.
+  it("500s cleanly when LICENCE_SERVICE/CUSTOMER_ID are not configured, through the real router", async () => {
+    // wrangler.test.jsonc declares no `services` binding — this
+    // exercises the real guard against that real condition. The
+    // deeper push logic (computing the report, calling the pusher,
+    // handling a pusher failure) is tested directly against
+    // handleUsagePush in test/usage-route.test.ts with a fake pusher,
+    // since a request that reaches the pusher here would need a real
+    // vf-licence to talk to.
     const res = await SELF.fetch("https://example.com/usage/push", { method: "POST" });
     expect(res.status).toBe(500);
     expect(await res.json()).toEqual({
-      error: "LICENCE_SERVER_URL and CUSTOMER_ID must be configured",
+      error: "LICENCE_SERVICE and CUSTOMER_ID must be configured",
     });
   });
 });
