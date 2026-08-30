@@ -37,9 +37,9 @@
   // with in vf-licence (`customers.id`), and LICENCE_SERVER_URL is
   // wherever that instance actually lives.
   "vars": {
-    "LICENCE_SIGNING_PUBLIC_KEY": "REPLACE_WITH_REAL_PUBLIC_KEY_JWK",
+    "LICENCE_SIGNING_PUBLIC_KEY": "{\"key_ops\":[\"verify\"],\"ext\":true,\"kty\":\"EC\",\"x\":\"g3VUG-jdiWnb9yvOq86rzAkvcE0efLnP02zpEQqkDPI\",\"y\":\"hOJTk34XXAqTKod8t_98LHbchzbmDSZeHaVY3V16Gac\",\"crv\":\"P-256\"}",
     "LICENCE_SERVER_URL": "https://vf-licence.vibefinance.workers.dev",
-    "CUSTOMER_ID": "REPLACE_WITH_REAL_CUSTOMER_ID"
+    "CUSTOMER_ID": "Acme"
   },
 
   // The scheduled refresh — src/index.ts's scheduled() handler is the
