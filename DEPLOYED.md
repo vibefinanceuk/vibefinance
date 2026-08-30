@@ -164,3 +164,27 @@ third party being scraped. A new test exercises the previously-
 untestable request-construction code directly (mocking
 `urllib.request.urlopen`, no live network needed) and was confirmed to
 catch the exact regression by deliberately reverting the fix first.
+
+30 August 2026: `deploy_all.py` (Blueprint build order step 5, the
+second and final half of fleet tooling — decision 0012) hit a real
+bug on its first genuine live run: `"The entry-point file at
+'src/index.ts' was not found."` A subtle path-resolution mistake —
+the generated per-customer config lived one directory level deeper
+than the real `wrangler.jsonc`, silently breaking `main`'s relative
+path — found despite having correctly verified the *general*
+principle against Cloudflare's own docs beforehand; verifying a
+principle and applying it correctly everywhere it matters turned out
+to be two different things worth checking separately. Fixed by
+writing generated configs as flat files, no subdirectory, confirmed
+by a new test that resolves `main` exactly the way `wrangler` itself
+does, against a real file on disk.
+
+Confirmed live immediately after, twice over: `deploy_all.py
+--customer Acme` reported `1 succeeded, 0 failed, 0 skipped` with a
+real Cloudflare `Current Version ID`; then, separately,
+`POST /licence/refresh` against the freshly redeployed Worker
+returned `{"status":"refreshed",...}` — confirming the redeploy left
+`VF_LICENCE_API_KEY`, the Service Binding to `vf-licence`, and the
+whole authentication chain genuinely intact, not just that the deploy
+command exited cleanly. Full account in
+`docs/decisions/0012-deploy-all.md`.
