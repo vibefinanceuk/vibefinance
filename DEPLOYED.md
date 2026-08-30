@@ -7,14 +7,14 @@ vf-app and vf-licence are promoted independently.
 
 | Worker | commit SHA | confirmed at |
 |---|---|---|
-| vf-app | `d1a7c42` | 30 August 2026 — the natural-language-to-enforced-evaluation pipeline confirmed complete, end-to-end, on live infrastructure: `POST /rules/compile` produced worked examples; both confirmed; the rule activated; then `POST /rules/evaluate` with `ruleSetId` (not an inline `ruleSet`) loaded that exact activated rule from D1 and correctly returned `"matched"` for `BT-112: 8640` and `"no_match"` for `BT-112: 3000` — both directions of the same activated rule proven live, not just the happy path. |
+| vf-app | `9011dbb` | 30 August 2026 — two bundles confirmed live since the last update. Locale-aware messages: `LOCALE: "de"` deployed and confirmed producing German text across two independent routes (`/rules/evaluate`'s validation message and `/rules/compile`'s 404), then reverted to `"en"`. org/authority/profiles: all six new tables exercised together live — a unit, a user tied to it, a role built from the closed permission vocabulary, a role assignment, and an authority limit, then confirmed with a single query joining `org_users`, `org_user_roles`, `org_roles`, and `org_authority_limits` and returning the exact expected row; separately confirmed a role with an unknown permission is correctly refused (`422`) rather than silently stored. |
 | vf-licence | `0a2b61c` | 30 August 2026 — `POST /customers/Acme/rotate-key` succeeded with the real `ADMIN_API_KEY`; the resulting per-customer key was confirmed to actually authenticate (`POST /usage/push` from `vf-app` succeeded using it); separately confirmed `POST /usage` correctly rejects an unauthenticated request (`{"error":"unauthorized"}`) claiming inflated numbers for `Acme` — the real security property, not just the happy path |
 
 ## D1
 
 | database | last migration applied | confirmed at |
 |---|---|---|
-| vf-app-poc | 0002_licence_cache.sql (0001 also applied) | 30 August 2026 — `licence_cache` confirmed populated via `POST /licence/refresh`; `rule_examples` (existing since 0001, unused until this session) confirmed genuinely written to and read from via the full compile→confirm→activate flow, queried directly |
+| vf-app-poc | 0003_org_authority_profiles.sql (0001, 0002 also applied) | 30 August 2026 — `apply_migrations.py --remote` reports "applied" for 0003; all six new tables confirmed genuinely holding related data together via a live join query (`org_users` × `org_user_roles` × `org_roles` × `org_authority_limits`), not just isolated single-table inserts |
 | vf-licence-poc | 0003_customer_api_keys.sql (0001, 0002 also applied) | 30 August 2026 — `apply_migrations.py --remote` reports "applied" for 0003; `Acme`'s `api_key_hash` confirmed populated (previously `NULL`) via the successful rotate-key + authenticated usage-push round trip |
 
 ## Incident record
@@ -94,3 +94,26 @@ the same activated rule correctly firing and correctly staying silent,
 loaded from D1 both times. Full account in
 `docs/decisions/0007-rule-approval.md`.
 
+30 August 2026: locale-aware messages (Blueprint build order step 6,
+narrowed to the small, genuinely customer-facing subset of `vf-app`'s
+API — most strings in this codebase are operator/deployment-facing and
+deliberately not translated). Confirmed live across two independent
+routes: `LOCALE: "de"` produced the correct German text for both
+`/rules/evaluate`'s validation message and `/rules/compile`'s 404,
+proving the translation wiring is consistent rather than a single
+lucky path. Full account in
+`docs/decisions/0008-locale-aware-messages.md`.
+
+30 August 2026: the org/authority/profiles schema (schema plus a
+minimal CRUD API, deliberately no authentication or enforcement yet —
+a scope chosen explicitly before writing any code). CIUS profile
+identifiers were verified against a live web search before being
+hardcoded, given this whole product's purpose is EN 16931/Peppol
+compliance. Confirmed live: a unit, a user, a role built from the
+closed permission vocabulary, a role assignment, and an authority
+limit, all created successfully, then confirmed genuinely related via
+a single query joining four of the six new tables; separately
+confirmed a role with an unknown permission is correctly refused
+(`422`), the closed vocabulary actually holding on real infrastructure,
+not just in tests. Full account in
+`docs/decisions/0009-org-authority-profiles.md`.
