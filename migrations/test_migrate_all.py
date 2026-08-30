@@ -20,9 +20,12 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 
+from unittest.mock import MagicMock, patch
+
 from migrate_all import (  # noqa: E402
     FleetCustomer,
     MigrationResult,
+    _real_http_get,
     fetch_fleet,
     format_summary,
     migrate_all,
@@ -151,6 +154,39 @@ class TestMigrateAll(unittest.TestCase):
         ]
         results = migrate_all(customers, FAKE_SCRIPT, run_subprocess=fake_run)
         self.assertEqual([r.status for r in results], ["success", "skipped", "success"])
+
+
+class TestRealHttpGet(unittest.TestCase):
+    # The one function this whole test file deliberately cannot fully
+    # exercise without a real network call — but the request
+    # construction itself (which headers get sent) is real code, not
+    # network I/O, and is worth testing directly. Found live: a real
+    # request without a proper User-Agent was rejected by Cloudflare's
+    # own edge-level bot protection (error 1010) before ever reaching
+    # vf-licence. This test exists specifically so that regression
+    # can't silently reappear.
+    def test_sends_a_real_user_agent_and_the_caller_supplied_headers(self):
+        captured_request = {}
+
+        def fake_urlopen(req, timeout=30):
+            captured_request["headers"] = dict(req.headers)
+            captured_request["url"] = req.full_url
+            mock_response = MagicMock()
+            mock_response.status = 200
+            mock_response.read.return_value = b'{"customers":[]}'
+            mock_response.__enter__ = lambda self: mock_response
+            mock_response.__exit__ = lambda self, *a: None
+            return mock_response
+
+        with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+            status, body = _real_http_get("https://x/customers", {"Authorization": "Bearer key123"})
+
+        self.assertEqual(status, 200)
+        # Request() title-cases header keys internally (e.g. "User-agent").
+        headers_lower = {k.lower(): v for k, v in captured_request["headers"].items()}
+        self.assertIn("user-agent", headers_lower)
+        self.assertNotIn("python-urllib", headers_lower["user-agent"].lower())
+        self.assertEqual(headers_lower["authorization"], "Bearer key123")
 
 
 class TestFormatSummary(unittest.TestCase):

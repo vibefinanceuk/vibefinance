@@ -69,7 +69,22 @@ HttpGet = Callable[[str, dict], tuple[int, str]]
 
 
 def _real_http_get(url: str, headers: dict) -> tuple[int, str]:
-    req = urllib.request.Request(url, headers=headers)
+    # Found live: Cloudflare's own edge-level bot protection returned a
+    # plain-text "error code: 1010" (Cloudflare's own error, never
+    # reaching the Worker at all — confirmed against Cloudflare's own
+    # error-code documentation, not guessed) for this exact request.
+    # The most commonly cited cause is Python's urllib default
+    # User-Agent ("Python-urllib/3.x"), a well-known, easily
+    # fingerprinted non-browser signature. Sent honestly here — this is
+    # the operator's own infrastructure, not a third party being
+    # scraped, so identifying the tool plainly rather than impersonating
+    # a real browser is both the more transparent and the simpler fix.
+    full_headers = {
+        "User-Agent": "VibeFinance-migrate-all/1.0 (+fleet migration tool)",
+        "Accept": "application/json",
+        **headers,
+    }
+    req = urllib.request.Request(url, headers=full_headers)
     try:
         with urllib.request.urlopen(req, timeout=30) as resp:
             return resp.status, resp.read().decode("utf-8")
