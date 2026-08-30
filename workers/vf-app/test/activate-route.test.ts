@@ -118,4 +118,10 @@ describe("handleActivateRule — the core safety property: activation requires c
       .first();
     expect(row).toEqual({ approved_by: "alice@example.com" });
   });
+
+  it("translates its messages when given a non-English locale", async () => {
+    const result = await handleActivateRule(env.DB, "rule-1", 1, "alice@example.com", "de");
+    expect(result.status).toBe(404);
+    expect(result.body).toEqual({ error: "Regel rule-1, Version 1, existiert nicht" });
+  });
 });

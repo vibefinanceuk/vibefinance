@@ -11,6 +11,9 @@ import { handleConfirmExample, handleListExamples } from "./examples-route.js";
 import { handleActivateRule } from "./activate-route.js";
 import { handleLicenceRefresh } from "./licence-refresh-route.js";
 import { loadActiveRuleSet } from "./rule-set-loader.js";
+import { resolveLocale, t } from "./i18n.js";
+import type { LicenceState } from "./licence-cache.js";
+import type { Locale } from "./i18n.js";
 
 export interface Env {
   DB?: D1Database;
@@ -78,6 +81,16 @@ export interface Env {
    * never committed.
    */
   VF_LICENCE_API_KEY?: string;
+  /**
+   * This customer's language for the genuinely customer-facing subset
+   * of API messages — see docs/decisions/0008-locale-aware-messages.md
+   * and src/i18n.ts's own comment on scope. Any unset or unrecognised
+   * value falls back to English (resolveLocale), never an error — a
+   * missing or misconfigured LOCALE degrades gracefully rather than
+   * breaking anything. Same "one Worker per customer, configured via
+   * vars" pattern as CUSTOMER_ID.
+   */
+  LOCALE?: string;
 }
 
 /**
@@ -163,26 +176,43 @@ function json(body: unknown, status = 200): Response {
   });
 }
 
+/**
+ * Builds the 402 response for a blocked licence state — was three
+ * separately-typed-out copies of this exact logic (one per gated
+ * route), now one, which is also the only place this needed to learn
+ * about locale. `statusReason` (when set) is an operator-authored free
+ * text field on the licence token itself, not one of this file's own
+ * fixed message keys — deliberately left untranslated, since there is
+ * no fixed catalog entry for arbitrary operator prose to look up.
+ */
+function blockedResponse(licenceState: LicenceState, locale: Locale): Response {
+  const reason = licenceState.known
+    ? licenceState.claims.statusReason ?? t("licenceBlockedFallback", locale)
+    : t("noLicenceProvisioned", locale);
+  return json({ error: t("processingBlocked", locale), reason }, 402);
+}
+
 async function handleEvaluate(request: Request, env: Env): Promise<Response> {
   const { db } = resolveTenant(request, env);
+  const locale = resolveLocale(env.LOCALE);
 
   let body: EvaluateRequestBody;
   try {
     body = (await request.json()) as EvaluateRequestBody;
   } catch {
-    return json({ error: "invalid JSON body" }, 400);
+    return json({ error: t("invalidJsonBody", locale) }, 400);
   }
 
   const { ruleSet: inlineRuleSet, ruleSetId, facts, invoiceId } = body;
   if (!facts || !invoiceId) {
-    return json({ error: "facts and invoiceId are required" }, 400);
+    return json({ error: t("factsInvoiceIdRequired", locale) }, 400);
   }
   // Exactly one of the two, never a silent preference between them —
   // an ambiguous request that supplied both would otherwise have its
   // ruleSetId quietly ignored, which is exactly the kind of thing
   // worth erroring on rather than guessing.
   if ((inlineRuleSet && ruleSetId) || (!inlineRuleSet && !ruleSetId)) {
-    return json({ error: "exactly one of ruleSet or ruleSetId is required" }, 400);
+    return json({ error: t("exactlyOneRuleSetRequired", locale) }, 400);
   }
 
   let ruleSet: CompiledRuleSet;
@@ -191,7 +221,7 @@ async function handleEvaluate(request: Request, env: Env): Promise<Response> {
   } else {
     const loaded = await loadActiveRuleSet(db, ruleSetId as string);
     if (!loaded) {
-      return json({ error: `rule set ${ruleSetId} does not exist` }, 404);
+      return json({ error: t("ruleSetDoesNotExist", locale, { ruleSetId: ruleSetId as string }) }, 404);
     }
     ruleSet = loaded;
   }
@@ -202,12 +232,19 @@ async function handleEvaluate(request: Request, env: Env): Promise<Response> {
   // for a D1-loaded rule set, which was already validated once at
   // compile time — never trust your own storage blindly, same
   // discipline as licence-cache.ts's readLicenceState.
+  //
+  // Only the wrapper message is translated — `detail` (the underlying
+  // RuleValidationError's own message, e.g. "unknown field...") comes
+  // from shared/interpreter/evaluate.ts, genuinely shared code between
+  // both compile and evaluate paths, not something this route owns.
+  // Left in English deliberately, not silently glossed over — see
+  // docs/decisions/0008-locale-aware-messages.md.
   for (const rule of ruleSet.rules) {
     try {
       validateRule(rule);
     } catch (err) {
       return json(
-        { error: `rule ${rule.id} rejected by the closed vocabulary`, detail: String(err) },
+        { error: t("ruleRejectedByVocabulary", locale, { ruleId: rule.id }), detail: String(err) },
         422
       );
     }
@@ -269,10 +306,7 @@ export default {
       const { db } = resolveTenant(request, env);
       const licenceState = await readLicenceState(db);
       if (isBlocked(licenceState)) {
-        const reason = licenceState.known
-          ? licenceState.claims.statusReason ?? "licence blocked"
-          : "no licence has been provisioned for this instance yet";
-        return json({ error: "processing blocked", reason }, 402);
+        return blockedResponse(licenceState, resolveLocale(env.LOCALE));
       }
     }
 
@@ -282,6 +316,7 @@ export default {
 
     if (url.pathname === "/rules/compile" && request.method === "POST") {
       const { db } = resolveTenant(request, env);
+      const locale = resolveLocale(env.LOCALE);
       if (!env.AI) {
         return json({ error: "AI binding not configured" }, 500);
       }
@@ -289,14 +324,15 @@ export default {
       try {
         body = await request.json();
       } catch {
-        return json({ error: "invalid JSON body" }, 400);
+        return json({ error: t("invalidJsonBody", locale) }, 400);
       }
       const model = createWorkersAiCompilerModel(env.AI);
       const result = await handleCompileRequest(
         model,
         COMPILER_MODEL_ID,
         db,
-        (body ?? {}) as Record<string, unknown>
+        (body ?? {}) as Record<string, unknown>,
+        locale
       );
       return json(result.body, result.status);
     }
@@ -367,42 +403,38 @@ export default {
     const confirmMatch = url.pathname.match(/^\/rules\/examples\/([^/]+)\/confirm$/);
     if (confirmMatch && request.method === "POST") {
       const { db } = resolveTenant(request, env);
+      const locale = resolveLocale(env.LOCALE);
       const licenceState = await readLicenceState(db);
       if (isBlocked(licenceState)) {
-        const reason = licenceState.known
-          ? licenceState.claims.statusReason ?? "licence blocked"
-          : "no licence has been provisioned for this instance yet";
-        return json({ error: "processing blocked", reason }, 402);
+        return blockedResponse(licenceState, locale);
       }
       let body: unknown;
       try {
         body = await request.json();
       } catch {
-        return json({ error: "invalid JSON body" }, 400);
+        return json({ error: t("invalidJsonBody", locale) }, 400);
       }
       const confirmedBy = (body as Record<string, unknown> | null)?.confirmedBy;
-      const result = await handleConfirmExample(db, confirmMatch[1], confirmedBy);
+      const result = await handleConfirmExample(db, confirmMatch[1], confirmedBy, locale);
       return json(result.body, result.status);
     }
 
     const activateMatch = url.pathname.match(/^\/rules\/([^/]+)\/versions\/(\d+)\/activate$/);
     if (activateMatch && request.method === "POST") {
       const { db } = resolveTenant(request, env);
+      const locale = resolveLocale(env.LOCALE);
       const licenceState = await readLicenceState(db);
       if (isBlocked(licenceState)) {
-        const reason = licenceState.known
-          ? licenceState.claims.statusReason ?? "licence blocked"
-          : "no licence has been provisioned for this instance yet";
-        return json({ error: "processing blocked", reason }, 402);
+        return blockedResponse(licenceState, locale);
       }
       let body: unknown;
       try {
         body = await request.json();
       } catch {
-        return json({ error: "invalid JSON body" }, 400);
+        return json({ error: t("invalidJsonBody", locale) }, 400);
       }
       const activatedBy = (body as Record<string, unknown> | null)?.activatedBy;
-      const result = await handleActivateRule(db, activateMatch[1], Number(activateMatch[2]), activatedBy);
+      const result = await handleActivateRule(db, activateMatch[1], Number(activateMatch[2]), activatedBy, locale);
       return json(result.body, result.status);
     }
 

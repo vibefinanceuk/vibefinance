@@ -1,4 +1,6 @@
 import type { RouteResult } from "./examples-route.js";
+import { t } from "./i18n.js";
+import type { Locale } from "./i18n.js";
 
 interface VersionRow {
   approved_by: string | null;
@@ -29,10 +31,11 @@ export async function handleActivateRule(
   db: D1Database,
   ruleId: string,
   version: number,
-  activatedBy: unknown
+  activatedBy: unknown,
+  locale: Locale = "en"
 ): Promise<RouteResult> {
   if (typeof activatedBy !== "string" || !activatedBy) {
-    return { status: 400, body: { error: "activatedBy (string) is required" } };
+    return { status: 400, body: { error: t("activatedByRequired", locale) } };
   }
 
   const versionRow = await db
@@ -40,12 +43,12 @@ export async function handleActivateRule(
     .bind(ruleId, version)
     .first<VersionRow>();
   if (!versionRow) {
-    return { status: 404, body: { error: `rule ${ruleId} version ${version} does not exist` } };
+    return { status: 404, body: { error: t("ruleVersionDoesNotExist", locale, { ruleId, version }) } };
   }
   if (versionRow.approved_by) {
     return {
       status: 409,
-      body: { error: "already activated", approvedBy: versionRow.approved_by },
+      body: { error: t("alreadyActivated", locale), approvedBy: versionRow.approved_by },
     };
   }
 
@@ -56,7 +59,7 @@ export async function handleActivateRule(
   if (examples.results.length === 0) {
     return {
       status: 409,
-      body: { error: "cannot activate: no worked examples exist for this rule version" },
+      body: { error: t("cannotActivateNoExamples", locale) },
     };
   }
   const unconfirmedCount = examples.results.filter((e) => !e.confirmed_by).length;
@@ -64,7 +67,10 @@ export async function handleActivateRule(
     return {
       status: 409,
       body: {
-        error: `cannot activate: ${unconfirmedCount} of ${examples.results.length} example(s) not yet confirmed`,
+        error: t("cannotActivateUnconfirmed", locale, {
+          unconfirmed: unconfirmedCount,
+          total: examples.results.length,
+        }),
       },
     };
   }

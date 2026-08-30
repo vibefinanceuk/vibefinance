@@ -85,4 +85,10 @@ describe("handleConfirmExample", () => {
       .first();
     expect(other).toEqual({ confirmed_by: null });
   });
+
+  it("translates its messages when given a non-English locale", async () => {
+    const result = await handleConfirmExample(env.DB, "does-not-exist", "alice@example.com", "es");
+    expect(result.status).toBe(404);
+    expect(result.body).toEqual({ error: "El ejemplo does-not-exist no existe" });
+  });
 });

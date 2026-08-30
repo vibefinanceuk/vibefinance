@@ -1,3 +1,6 @@
+import { t } from "./i18n.js";
+import type { Locale } from "./i18n.js";
+
 export interface RouteResult {
   status: number;
   body: Record<string, unknown>;
@@ -12,7 +15,9 @@ interface ExampleRow {
 
 /** GET /rules/:ruleId/versions/:version/examples — lets the author (or
  * a future UI) see every worked example a compiled rule generated,
- * and which ones are still unconfirmed. */
+ * and which ones are still unconfirmed. No error strings to localize
+ * here — returns data or an empty list, never a customer-facing
+ * message. */
 export async function handleListExamples(
   db: D1Database,
   ruleId: string,
@@ -45,15 +50,16 @@ export async function handleListExamples(
 export async function handleConfirmExample(
   db: D1Database,
   exampleId: string,
-  confirmedBy: unknown
+  confirmedBy: unknown,
+  locale: Locale = "en"
 ): Promise<RouteResult> {
   if (typeof confirmedBy !== "string" || !confirmedBy) {
-    return { status: 400, body: { error: "confirmedBy (string) is required" } };
+    return { status: 400, body: { error: t("confirmedByRequired", locale) } };
   }
 
   const existing = await db.prepare("SELECT id FROM rule_examples WHERE id = ?").bind(exampleId).first();
   if (!existing) {
-    return { status: 404, body: { error: `example ${exampleId} does not exist` } };
+    return { status: 404, body: { error: t("exampleDoesNotExist", locale, { exampleId }) } };
   }
 
   await db.prepare("UPDATE rule_examples SET confirmed_by = ? WHERE id = ?").bind(confirmedBy, exampleId).run();

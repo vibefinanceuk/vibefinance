@@ -2,6 +2,8 @@ import { SELF, env } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
 import { applyTestSchema } from "./setup.js";
 import type { CompiledRuleSet } from "@vibefinance/shared";
+import worker from "../src/index.js";
+import type { Env } from "../src/index.js";
 
 async function seedActiveLicence(): Promise<void> {
   // Every existing test below predates the licence gate and expects to
@@ -451,5 +453,68 @@ describe("POST /licence/refresh", () => {
     await env.DB.prepare("DELETE FROM licence_cache WHERE id = 1").run();
     const res = await SELF.fetch("https://example.com/licence/refresh", { method: "POST" });
     expect(res.status).not.toBe(402);
+  });
+});
+
+describe("LOCALE — genuinely customer-facing messages translate through the real router", () => {
+  // SELF.fetch can't inject a custom env per request (it uses the
+  // ambient wrangler.test.jsonc config, which declares no LOCALE at
+  // all) — so these call the exported Worker's fetch() directly with
+  // a custom env, spreading the real ambient testEnv for DB/etc, the
+  // exact same pattern already used for scheduled()'s own tests
+  // elsewhere in this file's sibling, scheduled.test.ts.
+
+  it("translates the licence-blocked message when LOCALE is set", async () => {
+    await env.DB.prepare("DELETE FROM licence_cache WHERE id = 1").run();
+    const customEnv: Env = { ...env, LOCALE: "de" };
+    const request = new Request("https://example.com/rules/evaluate", {
+      method: "POST",
+      body: JSON.stringify({ ruleSet: { id: "x", mode: "first_match", rules: [] }, facts: {}, invoiceId: "i1" }),
+    });
+    const res = await worker.fetch(request, customEnv);
+    expect(res.status).toBe(402);
+    const body = (await res.json()) as { error: string; reason: string };
+    expect(body.error).toBe("Verarbeitung blockiert");
+    expect(body.reason).toBe("Für diese Instanz wurde noch keine Lizenz bereitgestellt");
+  });
+
+  it("falls back to English for an unrecognised LOCALE, never throwing", async () => {
+    await env.DB.prepare("DELETE FROM licence_cache WHERE id = 1").run();
+    const customEnv: Env = { ...env, LOCALE: "not-a-real-locale" };
+    const request = new Request("https://example.com/rules/evaluate", {
+      method: "POST",
+      body: JSON.stringify({ ruleSet: { id: "x", mode: "first_match", rules: [] }, facts: {}, invoiceId: "i1" }),
+    });
+    const res = await worker.fetch(request, customEnv);
+    expect(res.status).toBe(402);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("processing blocked");
+  });
+
+  it("translates a validation message from handleEvaluate itself", async () => {
+    // seedActiveLicence() already ran in the top-level beforeEach —
+    // no need to call it again here, and doing so would violate
+    // licence_cache's own primary key.
+    const customEnv: Env = { ...env, LOCALE: "fr" };
+    const request = new Request("https://example.com/rules/evaluate", {
+      method: "POST",
+      body: JSON.stringify({ facts: {}, invoiceId: "i1" }), // neither ruleSet nor ruleSetId
+    });
+    const res = await worker.fetch(request, customEnv);
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("Un seul des deux, ruleSet ou ruleSetId, est requis");
+  });
+
+  it("defaults to English when LOCALE is not set at all", async () => {
+    await env.DB.prepare("DELETE FROM licence_cache WHERE id = 1").run();
+    const customEnv: Env = { ...env, LOCALE: undefined };
+    const request = new Request("https://example.com/rules/evaluate", {
+      method: "POST",
+      body: JSON.stringify({ ruleSet: { id: "x", mode: "first_match", rules: [] }, facts: {}, invoiceId: "i1" }),
+    });
+    const res = await worker.fetch(request, customEnv);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("processing blocked");
   });
 });

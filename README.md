@@ -98,6 +98,21 @@ authenticate as another. See
 `docs/decisions/0006-endpoint-authentication.md`, including the exact
 operational sequencing this requires on first deploy.
 
+## Locale-aware messages
+
+The small, genuinely customer-facing subset of `vf-app`'s API
+responses (rule-compile/confirm/activate validation messages, the
+licence-blocked message) can be rendered in German, French, Spanish,
+Italian, or Dutch instead of English, via a per-deployment `LOCALE` var
+— the same "one Worker per customer, configured via vars" pattern
+already used for `CUSTOMER_ID`. Most strings in this codebase are
+deliberately *not* translated (operator/deployment errors, the
+compiler's own LLM-generated text) — see
+`docs/decisions/0008-locale-aware-messages.md` for exactly what's in
+scope and why "translations & branding" turned out to be a much
+smaller feature than it sounds, given there's no customer-facing UI
+yet to attach branding to at all.
+
 ## The one rule enforced by tooling, not convention
 
 No application code reads a tenant-scoped binding (`env.DB` and similar)

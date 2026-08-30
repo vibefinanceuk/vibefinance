@@ -49,7 +49,11 @@
   // leaves vf-licence — so this is a plain var, not a secret.
   // CUSTOMER_ID must match the id this customer was provisioned with
   // in vf-licence (`customers.id`), and LICENCE_SERVER_URL is wherever
-  // that instance actually lives.
+  // that instance actually lives. LOCALE governs the genuinely
+  // customer-facing subset of API messages — see
+  // docs/decisions/0008-locale-aware-messages.md and src/i18n.ts for
+  // the full supported set (en, de, fr, es, it, nl); any unset or
+  // unrecognised value falls back to English, never an error.
   "vars": {
     "LICENCE_SIGNING_PUBLIC_KEY": {
       "key_ops": [
@@ -62,7 +66,8 @@
       "crv": "P-256"
     },
     "LICENCE_SERVER_URL": "https://vf-licence.vibefinance.workers.dev",
-    "CUSTOMER_ID": "Acme"
+    "CUSTOMER_ID": "Acme",
+    "LOCALE": "en"
   },
 
   // Worker-to-Worker calls to vf-licence go through this Service

@@ -242,3 +242,20 @@ describe("handleCompileRequest — a refusal", () => {
     expect(count).toEqual({ n: 0 });
   });
 });
+
+describe("handleCompileRequest — locale", () => {
+  it("translates its static validation messages when given a non-English locale", async () => {
+    const model = fakeModel("irrelevant");
+    const result = await handleCompileRequest(
+      model,
+      "test-model@v1",
+      env.DB,
+      { sourceText: "some rule" }, // ruleSetId missing
+      "it"
+    );
+    expect(result.status).toBe(400);
+    expect(result.body).toEqual({
+      error: "ruleSetId e sourceText (entrambi come stringhe) sono obbligatori",
+    });
+  });
+});

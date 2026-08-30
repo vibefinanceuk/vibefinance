@@ -1,5 +1,7 @@
 import { compileRule, generateExamples } from "@vibefinance/shared";
 import type { CompilerModel } from "@vibefinance/shared";
+import { t } from "./i18n.js";
+import type { Locale } from "./i18n.js";
 
 export interface CompileRequestBody {
   ruleSetId?: unknown;
@@ -17,16 +19,23 @@ export interface CompileRouteResult {
  * and the real (local) D1 binding — this session has no Cloudflare
  * credentials to call the real AI binding, so the model is always
  * injected here, never constructed internally.
+ *
+ * `locale` only affects the two static validation messages below —
+ * the model's own refusal reason (both for the rule itself and for
+ * its worked examples) is deliberately left untranslated. See
+ * docs/decisions/0008-locale-aware-messages.md on why that's a
+ * different kind of problem than swapping a fixed string.
  */
 export async function handleCompileRequest(
   model: CompilerModel,
   compiledBy: string,
   db: D1Database,
-  body: CompileRequestBody
+  body: CompileRequestBody,
+  locale: Locale = "en"
 ): Promise<CompileRouteResult> {
   const { ruleSetId, sourceText } = body;
   if (typeof ruleSetId !== "string" || !ruleSetId || typeof sourceText !== "string" || !sourceText) {
-    return { status: 400, body: { error: "ruleSetId and sourceText (both strings) are required" } };
+    return { status: 400, body: { error: t("ruleSetIdSourceTextRequired", locale) } };
   }
 
   const ruleSetExists = await db
@@ -34,7 +43,7 @@ export async function handleCompileRequest(
     .bind(ruleSetId)
     .first();
   if (!ruleSetExists) {
-    return { status: 404, body: { error: `rule set ${ruleSetId} does not exist` } };
+    return { status: 404, body: { error: t("ruleSetDoesNotExist", locale, { ruleSetId }) } };
   }
 
   const outcome = await compileRule(model, sourceText);
