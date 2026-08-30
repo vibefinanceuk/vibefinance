@@ -8,7 +8,7 @@ vf-app and vf-licence are promoted independently.
 | Worker | commit SHA | confirmed at |
 |---|---|---|
 | vf-app | `cd3d847` | 30 August 2026 — user authentication and enforcement confirmed live, end to end. A real `org_users` row (Alice) created; `POST /rules/compile` correctly returned `401` with no credentials and succeeded with Alice's real key. `POST .../confirm` and `POST .../activate` called with no `confirmedBy`/`activatedBy` in the body at all — both correctly recorded `alice@acme.com` anyway, derived entirely from her authenticated key, confirmed via direct D1 query (`approved_by: "alice@acme.com"`), not inferred from the HTTP response alone. |
-| vf-licence | `0a2b61c` | 30 August 2026 — `POST /customers/Acme/rotate-key` succeeded with the real `ADMIN_API_KEY`; the resulting per-customer key was confirmed to actually authenticate (`POST /usage/push` from `vf-app` succeeded using it); separately confirmed `POST /usage` correctly rejects an unauthenticated request (`{"error":"unauthorized"}`) claiming inflated numbers for `Acme` — the real security property, not just the happy path |
+| vf-licence | `8029d0a` | 30 August 2026 — fleet tooling (Blueprint build order step 5) confirmed live, end to end. `GET /customers` and `PATCH /customers/:id/fleet-metadata` both confirmed working with a freshly rotated `ADMIN_API_KEY`; Acme's real fleet metadata (`worker_name`, `d1_database_name`, `d1_database_id`, `locale`) backfilled and confirmed persisted via a direct re-query, not inferred from the response alone. `migrations/migrate_all.py` (a local script, not a Worker — see its own row in the incident record below) then successfully read that manifest and ran a real migration check against Acme's live database: `1 succeeded, 0 failed, 0 skipped`. |
 
 ## D1
 
@@ -130,3 +130,37 @@ from the authenticated key, not accepted from the client. A real
 (a stale OAuth session — fixed with `wrangler login`), unrelated to
 this bundle's own code. Full account in
 `docs/decisions/0010-user-authentication-and-enforcement.md`.
+
+30 August 2026: fleet tooling (Blueprint build order step 5 — the
+last item on the numbered list). `vf-licence`'s `customers` table
+extended with deployment metadata rather than a separate manifest;
+designing it surfaced a real, currently-blocking gap before it ever
+caused a live failure — every customer's Worker needs a unique name,
+which the config had never accounted for. `migrations/migrate_all.py`
+built on top of the already-proven `apply_migrations.py`, with
+continue-on-error proven by deliberately breaking it (stop on first
+failure) and watching a specific test catch a customer being skipped
+entirely. Confirmed live end to end: the fleet manifest read with a
+real admin key, Acme's real metadata backfilled and persisted, and a
+genuine `1 succeeded, 0 failed, 0 skipped` migration run against
+Acme's live database. Full account in
+`docs/decisions/0011-fleet-tooling.md`.
+
+30 August 2026: the first live run of `migrate_all.py` hit two real
+environment issues neither could be caught from this development
+session, which has no path to live Cloudflare infrastructure at all.
+First, a macOS Python certificate-trust gap (`SSLCertVerificationError`
+— python.org's installer doesn't wire up trusted root certificates by
+default; fixed by running the bundled `Install Certificates.command`).
+Second, and more interesting: Cloudflare's own edge-level bot
+protection rejected the request outright with a plain-text
+`error code: 1010`, confirmed against Cloudflare's own error-code
+documentation — Python's default `urllib` User-Agent
+(`Python-urllib/3.x`) is a well-known, easily fingerprinted non-browser
+signature. Fixed by sending a real, honest User-Agent
+(`VibeFinance-migrate-all/1.0`) rather than impersonating a browser,
+since this is the operator's own infrastructure calling itself, not a
+third party being scraped. A new test exercises the previously-
+untestable request-construction code directly (mocking
+`urllib.request.urlopen`, no live network needed) and was confirmed to
+catch the exact regression by deliberately reverting the fix first.
