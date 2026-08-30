@@ -87,3 +87,25 @@ describe("endpoint authentication, through the real router", () => {
     expect(res.status).toBe(401);
   });
 });
+
+describe("the fleet manifest, through the real router", () => {
+  it("401s GET /customers with no Authorization header", async () => {
+    const res = await SELF.fetch("https://example.com/customers");
+    expect(res.status).toBe(401);
+  });
+
+  it("401s GET /customers with a wrong admin key", async () => {
+    const res = await SELF.fetch("https://example.com/customers", {
+      headers: { Authorization: "Bearer definitely-not-the-real-key" },
+    });
+    expect(res.status).toBe(401);
+  });
+
+  it("401s PATCH .../fleet-metadata with no Authorization header", async () => {
+    const res = await SELF.fetch("https://example.com/customers/acme/fleet-metadata", {
+      method: "PATCH",
+      body: JSON.stringify({ workerName: "vf-app-acme" }),
+    });
+    expect(res.status).toBe(401);
+  });
+});

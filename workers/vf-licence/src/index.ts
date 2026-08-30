@@ -19,6 +19,7 @@ import { handleUpsertLicence } from "./licences-route.js";
 import { handleIssueToken } from "./token-route.js";
 import { handleReportUsage } from "./usage-route.js";
 import { handleRotateKey } from "./rotate-key-route.js";
+import { handleListCustomers, handleSetFleetMetadata } from "./fleet-route.js";
 import { extractBearerToken, isValidAdminKey, isValidCustomerKey } from "./auth.js";
 
 export interface Env {
@@ -80,19 +81,31 @@ export default {
       return json({ error: "CONTROL_DB binding not configured" }, 500);
     }
 
-    // Admin-only routes: provisioning and key management. A single
-    // shared secret, not per-customer — see Env.ADMIN_API_KEY's own
-    // comment and docs/decisions/0006-endpoint-authentication.md.
+    // Admin-only routes: provisioning, key management, and the fleet
+    // manifest (Blueprint build order step 5 — see
+    // docs/decisions/0011-fleet-tooling.md). A single shared secret,
+    // not per-customer — see Env.ADMIN_API_KEY's own comment and
+    // docs/decisions/0006-endpoint-authentication.md. The fleet
+    // manifest is admin-only for the same reason provisioning is: it
+    // is cross-customer administrative data, not something any single
+    // customer's own credential should be able to read or change.
     const rotateMatch = url.pathname.match(/^\/customers\/([^/]+)\/rotate-key$/);
+    const fleetMetadataMatch = url.pathname.match(/^\/customers\/([^/]+)\/fleet-metadata$/);
     const isAdminRoute =
-      (url.pathname === "/customers" && request.method === "POST") ||
+      (url.pathname === "/customers" && (request.method === "POST" || request.method === "GET")) ||
       (url.pathname === "/licences" && request.method === "POST") ||
-      (rotateMatch !== null && request.method === "POST");
+      (rotateMatch !== null && request.method === "POST") ||
+      (fleetMetadataMatch !== null && request.method === "PATCH");
     if (isAdminRoute) {
       const providedKey = extractBearerToken(request);
       if (!isValidAdminKey(providedKey, env.ADMIN_API_KEY)) {
         return json({ error: "unauthorized" }, 401);
       }
+    }
+
+    if (url.pathname === "/customers" && request.method === "GET") {
+      const result = await handleListCustomers(env.CONTROL_DB);
+      return json(result.body, result.status);
     }
 
     if (url.pathname === "/customers" && request.method === "POST") {
@@ -103,6 +116,21 @@ export default {
         return json({ error: "invalid JSON body" }, 400);
       }
       const result = await handleCreateCustomer(env.CONTROL_DB, (body ?? {}) as Record<string, unknown>);
+      return json(result.body, result.status);
+    }
+
+    if (fleetMetadataMatch && request.method === "PATCH") {
+      let body: unknown;
+      try {
+        body = await request.json();
+      } catch {
+        return json({ error: "invalid JSON body" }, 400);
+      }
+      const result = await handleSetFleetMetadata(
+        env.CONTROL_DB,
+        fleetMetadataMatch[1],
+        (body ?? {}) as Record<string, unknown>
+      );
       return json(result.body, result.status);
     }
 

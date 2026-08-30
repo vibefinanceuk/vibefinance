@@ -137,6 +137,20 @@ bootstrap deadlock; `/licence/refresh`, a deliberate escape hatch;
 authority-limit enforcement, which has no integration point to attach
 to today).
 
+## Fleet tooling
+
+`vf-licence`'s `customers` table now doubles as the fleet manifest —
+`worker_name`, `d1_database_name`, `d1_database_id`, and `locale` per
+customer, admin-authenticated via `GET /customers` and
+`PATCH /customers/:id/fleet-metadata`. `migrations/migrate_all.py`
+reads that manifest and runs `apply_migrations.py --remote` against
+every customer with a database configured, continuing past any one
+customer's failure rather than stopping the whole fleet. See
+`docs/decisions/0011-fleet-tooling.md`, including a real,
+currently-blocking gap the manifest design surfaced: every customer's
+Worker needs a unique name, which the config didn't previously account
+for. `deploy-all` and code-version reporting remain open.
+
 ## The one rule enforced by tooling, not convention
 
 No application code reads a tenant-scoped binding (`env.DB` and similar)
