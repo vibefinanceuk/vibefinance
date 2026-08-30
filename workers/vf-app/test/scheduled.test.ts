@@ -7,6 +7,7 @@ import { readLicenceState } from "../src/licence-cache.js";
 import { applyTestSchema } from "./setup.js";
 
 const KEY_ALGORITHM = { name: "ECDSA", namedCurve: "P-256" } as const;
+const FAKE_API_KEY = "test-vf-licence-api-key";
 
 beforeEach(async () => {
   await applyTestSchema();
@@ -39,7 +40,7 @@ function firstCallUrl(calls: unknown[][]): string | undefined {
 }
 
 describe("scheduled() — the licence refresh trigger", () => {
-  it("fetches the licence token via the service binding, verifies, and caches the result", async () => {
+  it("fetches the licence token via the service binding, authenticated, verifies, and caches the result", async () => {
     const keyPair = await crypto.subtle.generateKey(KEY_ALGORITHM, true, ["sign", "verify"]);
     const privateKeyJwk = await crypto.subtle.exportKey("jwk", keyPair.privateKey);
     const publicKeyJwk = await crypto.subtle.exportKey("jwk", keyPair.publicKey);
@@ -62,11 +63,15 @@ describe("scheduled() — the licence refresh trigger", () => {
       LICENCE_SIGNING_PUBLIC_KEY: publicKeyJwk,
       LICENCE_SERVICE: service,
       CUSTOMER_ID: "acme",
+      VF_LICENCE_API_KEY: FAKE_API_KEY,
     };
 
     await worker.scheduled?.({} as ScheduledEvent, env, {} as ExecutionContext);
 
-    expect(service.fetch).toHaveBeenCalledWith("https://vf-licence.internal/licences/acme/token");
+    expect(service.fetch).toHaveBeenCalledWith(
+      "https://vf-licence.internal/licences/acme/token",
+      expect.objectContaining({ headers: { Authorization: `Bearer ${FAKE_API_KEY}` } })
+    );
     const state = await readLicenceState(testEnv.DB);
     expect(state).toEqual({ known: true, claims });
   });
@@ -76,6 +81,33 @@ describe("scheduled() — the licence refresh trigger", () => {
     await expect(
       worker.scheduled?.({} as ScheduledEvent, env, {} as ExecutionContext)
     ).resolves.not.toThrow();
+    const state = await readLicenceState(testEnv.DB);
+    expect(state).toEqual({ known: false });
+  });
+
+  it("does nothing when VF_LICENCE_API_KEY is missing, even if everything else is configured", async () => {
+    // The new guard specifically: a correct public key, service
+    // binding, and customer id are not enough on their own — without
+    // this customer's own API key, vf-licence would reject the
+    // request anyway, so this must fail closed before ever attempting
+    // the call, not rely on vf-licence's 401 to stop it.
+    const keyPair = await crypto.subtle.generateKey(KEY_ALGORITHM, true, ["sign", "verify"]);
+    const publicKeyJwk = await crypto.subtle.exportKey("jwk", keyPair.publicKey);
+    const service = fakeService(async () => new Response("{}", { status: 200 }));
+
+    const env: Env = {
+      ...testEnv,
+      LICENCE_SIGNING_PUBLIC_KEY: publicKeyJwk,
+      LICENCE_SERVICE: service,
+      CUSTOMER_ID: "acme",
+      // Deliberately no VF_LICENCE_API_KEY.
+    };
+
+    await worker.scheduled?.({} as ScheduledEvent, env, {} as ExecutionContext);
+
+    const calls = (service.fetch as ReturnType<typeof vi.fn>).mock.calls as unknown[][];
+    const licenceUrl = firstCallUrl(calls.filter((call) => (call[0] as string).includes("/licences/")));
+    expect(licenceUrl).toBeUndefined();
     const state = await readLicenceState(testEnv.DB);
     expect(state).toEqual({ known: false });
   });
@@ -92,6 +124,7 @@ describe("scheduled() — the licence refresh trigger", () => {
       LICENCE_SIGNING_PUBLIC_KEY: { REPLACE_WITH_REAL_PUBLIC_KEY_JWK: true },
       LICENCE_SERVICE: service,
       CUSTOMER_ID: "acme",
+      VF_LICENCE_API_KEY: FAKE_API_KEY,
     };
     await expect(
       worker.scheduled?.({} as ScheduledEvent, env, {} as ExecutionContext)
@@ -121,6 +154,7 @@ describe("scheduled() — the licence refresh trigger", () => {
       LICENCE_SIGNING_PUBLIC_KEY: publicKeyJwk,
       LICENCE_SERVICE: service,
       CUSTOMER_ID: "acme",
+      VF_LICENCE_API_KEY: FAKE_API_KEY,
     };
 
     await worker.scheduled?.({} as ScheduledEvent, env, {} as ExecutionContext);
@@ -130,23 +164,41 @@ describe("scheduled() — the licence refresh trigger", () => {
 });
 
 describe("scheduled() — the usage push, same cron", () => {
-  it("pushes a real usage report via the service binding", async () => {
+  it("pushes a real usage report via the service binding, authenticated", async () => {
     const service = fakeService(async () => new Response("{}", { status: 200 }));
     const env: Env = {
       ...testEnv,
       LICENCE_SERVICE: service,
       CUSTOMER_ID: "acme",
+      VF_LICENCE_API_KEY: FAKE_API_KEY,
+    };
+
+    await worker.scheduled?.({} as ScheduledEvent, env, {} as ExecutionContext);
+
+    const calls = (service.fetch as ReturnType<typeof vi.fn>).mock.calls as unknown[][];
+    const usageCall = calls.find((call) => (call[0] as string).endsWith("/usage"));
+    expect(usageCall).toBeDefined();
+    const init = usageCall?.[1] as RequestInit;
+    const headers = init.headers as Record<string, string>;
+    expect(headers.Authorization).toBe(`Bearer ${FAKE_API_KEY}`);
+    const body = JSON.parse(init.body as string);
+    expect(body).toMatchObject({ customerId: "acme", invoicesProcessed: 0 });
+  });
+
+  it("does not run when VF_LICENCE_API_KEY is missing, even with everything else configured", async () => {
+    const service = fakeService(async () => new Response("{}", { status: 200 }));
+    const env: Env = {
+      ...testEnv,
+      LICENCE_SERVICE: service,
+      CUSTOMER_ID: "acme",
+      // Deliberately no VF_LICENCE_API_KEY.
     };
 
     await worker.scheduled?.({} as ScheduledEvent, env, {} as ExecutionContext);
 
     const calls = (service.fetch as ReturnType<typeof vi.fn>).mock.calls as unknown[][];
     const usageUrl = firstCallUrl(calls.filter((call) => (call[0] as string).endsWith("/usage")));
-    expect(usageUrl).toBeDefined();
-    const usageCall = calls.find((call) => (call[0] as string).endsWith("/usage"));
-    const init = usageCall?.[1] as RequestInit;
-    const body = JSON.parse(init.body as string);
-    expect(body).toMatchObject({ customerId: "acme", invoicesProcessed: 0 });
+    expect(usageUrl).toBeUndefined();
   });
 
   it("still runs when LICENCE_SIGNING_PUBLIC_KEY is missing — usage push needs none of the licence-verification config", async () => {
@@ -156,6 +208,7 @@ describe("scheduled() — the usage push, same cron", () => {
       // Deliberately no LICENCE_SIGNING_PUBLIC_KEY at all.
       LICENCE_SERVICE: service,
       CUSTOMER_ID: "acme",
+      VF_LICENCE_API_KEY: FAKE_API_KEY,
     };
 
     await worker.scheduled?.({} as ScheduledEvent, env, {} as ExecutionContext);
@@ -192,6 +245,7 @@ describe("scheduled() — the usage push, same cron", () => {
       LICENCE_SIGNING_PUBLIC_KEY: publicKeyJwk,
       LICENCE_SERVICE: service,
       CUSTOMER_ID: "acme",
+      VF_LICENCE_API_KEY: FAKE_API_KEY,
     };
 
     await expect(

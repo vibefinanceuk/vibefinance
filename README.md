@@ -72,6 +72,18 @@ refresh's cron and behind `POST /usage/push` for on-demand reporting —
 see `docs/decisions/0004-usage-telemetry.md` for why those are the same
 capability, not two different code paths.
 
+## Endpoint authentication
+
+`vf-licence`'s provisioning endpoints (`POST /customers`,
+`POST /licences`, key rotation) are protected by a single shared
+`ADMIN_API_KEY`. Each customer's own machine-to-machine calls
+(`GET /licences/:id/token`, `POST /usage`) are protected by a random
+key generated for that customer at creation — shown once in plaintext,
+only its hash ever stored, and critically, one customer's key can never
+authenticate as another. See
+`docs/decisions/0006-endpoint-authentication.md`, including the exact
+operational sequencing this requires on first deploy.
+
 ## The one rule enforced by tooling, not convention
 
 No application code reads a tenant-scoped binding (`env.DB` and similar)

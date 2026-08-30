@@ -4,6 +4,7 @@ import { env } from "cloudflare:test";
 // an arbitrary host-path readFileSync does not reliably resolve.
 import schemaSql from "../migrations/0001_control_plane_schema.sql?raw";
 import usagePeriodsSql from "../migrations/0002_usage_periods.sql?raw";
+import apiKeysSql from "../migrations/0003_customer_api_keys.sql?raw";
 
 function stripSqlComments(sql: string): string {
   return sql
@@ -35,4 +36,5 @@ export async function applyTestSchema(): Promise<void> {
   }
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(schemaSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(usagePeriodsSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(apiKeysSql)));
 }

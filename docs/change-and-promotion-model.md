@@ -423,7 +423,6 @@ The model above is portable. These are the values it needs:
   | a Worker's `wrangler.test.jsonc` | nothing ships — test-only, see the divergences entry on why it exists separately from `wrangler.jsonc` |
   | `scripts/*` | nothing ships — run locally by the operator, never deployed |
   | `eslint.config.js`, `*.test.ts`, `docs/**`, this file | nothing |
-
 - **Known divergences between local preview and production** (found
   while building the first test suite, not asserted from memory —
   documented in `workers/vf-app/test/setup.ts`):

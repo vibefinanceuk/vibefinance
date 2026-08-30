@@ -1,0 +1,27 @@
+-- 0003_customer_api_keys.sql
+-- Endpoint authentication (see docs/decisions/0006-endpoint-authentication.md).
+-- ADMIN_API_KEY (protects POST /customers, POST /licences, key
+-- rotation) is a single shared secret and lives only as a Cloudflare
+-- Worker secret, never in this database. Per-customer authentication
+-- (protects GET /licences/:id/token, POST /usage — the calls each
+-- customer's own vf-app instance makes) needs a real per-row column,
+-- since it must be possible to look up "does THIS key belong to THIS
+-- customer" for an arbitrary customer.
+
+-- Existing table, not a fresh CREATE — customers already has one real
+-- row (Acme) as of this migration. ALTER TABLE ADD COLUMN with no
+-- DEFAULT leaves every existing row NULL, which is the correct state:
+-- Acme has no key yet and cannot authenticate to the per-customer
+-- endpoints until an operator calls the rotation endpoint this bundle
+-- also adds, once, to backfill one. New customers created after this
+-- migration always get a real key at creation time (enforced in
+-- application code, in customers-route.ts — not something this schema
+-- can enforce for future inserts without blocking the one already-NULL
+-- row this migration itself creates).
+ALTER TABLE customers ADD COLUMN api_key_hash TEXT;
+
+-- Standing invariant: never an empty string — that would mean a bug in
+-- the generation/hashing path stored a blank value instead of either a
+-- real hash or NULL. NULL (no key yet) is a valid, expected state;
+-- an empty string is not.
+-- ASSERT ALWAYS: SELECT count(*) FROM customers WHERE api_key_hash = '' == 0

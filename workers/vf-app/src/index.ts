@@ -62,6 +62,18 @@ export interface Env {
    * assumed to be solved by this fix.
    */
   LICENCE_SERVICE?: Fetcher;
+  /**
+   * This customer's own API key for vf-licence's per-customer
+   * endpoints (GET /licences/:id/token, POST /usage) — see
+   * docs/decisions/0006-endpoint-authentication.md. Unlike the signing
+   * public key, this genuinely is sensitive: whoever holds it can
+   * fetch this customer's licence token and push usage numbers as
+   * this customer. Set via `wrangler secret put VF_LICENCE_API_KEY`,
+   * using the plaintext key shown exactly once when this customer was
+   * created (or last had its key rotated) on vf-licence — never a var,
+   * never committed.
+   */
+  VF_LICENCE_API_KEY?: string;
 }
 
 /**
@@ -89,11 +101,11 @@ function isPublicKeyJwk(value: unknown): value is JsonWebKey {
  * `new URL(request.url)` parsing has something valid to read the path
  * from.
  */
-function createUsagePusher(service: Fetcher): import("./usage.js").UsagePusher {
+function createUsagePusher(service: Fetcher, apiKey: string): import("./usage.js").UsagePusher {
   return async (report) => {
     const res = await service.fetch("https://vf-licence.internal/usage", {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: { "content-type": "application/json", Authorization: `Bearer ${apiKey}` },
       body: JSON.stringify(report),
     });
     if (!res.ok) {
@@ -241,10 +253,14 @@ export default {
     // so a future "sync now" UI can show it immediately.
     if (url.pathname === "/usage/push" && request.method === "POST") {
       const { db } = resolveTenant(request, env);
-      if (!env.LICENCE_SERVICE || !env.CUSTOMER_ID) {
-        return json({ error: "LICENCE_SERVICE and CUSTOMER_ID must be configured" }, 500);
+      if (!env.LICENCE_SERVICE || !env.CUSTOMER_ID || !env.VF_LICENCE_API_KEY) {
+        return json({ error: "LICENCE_SERVICE, CUSTOMER_ID and VF_LICENCE_API_KEY must be configured" }, 500);
       }
-      const result = await handleUsagePush(db, env.CUSTOMER_ID, createUsagePusher(env.LICENCE_SERVICE));
+      const result = await handleUsagePush(
+        db,
+        env.CUSTOMER_ID,
+        createUsagePusher(env.LICENCE_SERVICE, env.VF_LICENCE_API_KEY)
+      );
       return json(result.body, result.status);
     }
 
@@ -275,7 +291,12 @@ export default {
     // synthetic one is used) and swallows its own failures — retried
     // next cron cycle regardless of what the other block did.
 
-    if (isPublicKeyJwk(env.LICENCE_SIGNING_PUBLIC_KEY) && env.LICENCE_SERVICE && env.CUSTOMER_ID) {
+    if (
+      isPublicKeyJwk(env.LICENCE_SIGNING_PUBLIC_KEY) &&
+      env.LICENCE_SERVICE &&
+      env.CUSTOMER_ID &&
+      env.VF_LICENCE_API_KEY
+    ) {
       // A scheduled trigger has no incoming Request — resolveTenant's
       // request parameter is documented as unused today (reserved for
       // routes 2/3, see shared/tenant.ts), so a synthetic one satisfies
@@ -290,8 +311,11 @@ export default {
         const publicKeyJwk = env.LICENCE_SIGNING_PUBLIC_KEY;
         const service = env.LICENCE_SERVICE;
         const customerId = env.CUSTOMER_ID;
+        const apiKey = env.VF_LICENCE_API_KEY;
         await refreshLicenceCache(db, publicKeyJwk, async () => {
-          const res = await service.fetch(`https://vf-licence.internal/licences/${customerId}/token`);
+          const res = await service.fetch(`https://vf-licence.internal/licences/${customerId}/token`, {
+            headers: { Authorization: `Bearer ${apiKey}` },
+          });
           if (!res.ok) {
             throw new Error(`licence fetch returned HTTP ${res.status}`);
           }
@@ -308,12 +332,17 @@ export default {
 
     // Usage push (Blueprint's usage_periods — see
     // docs/decisions/0004-usage-telemetry.md). Needs only the service
-    // binding and CUSTOMER_ID, not the signing key at all — pushing
-    // doesn't verify anything.
-    if (env.LICENCE_SERVICE && env.CUSTOMER_ID) {
+    // binding, CUSTOMER_ID and this customer's own API key — not the
+    // signing key at all, since pushing doesn't verify anything.
+    if (env.LICENCE_SERVICE && env.CUSTOMER_ID && env.VF_LICENCE_API_KEY) {
       try {
         const { db } = resolveTenant(new Request("https://scheduled-trigger.internal/"), env);
-        await pushUsage(db, new Date(), env.CUSTOMER_ID, createUsagePusher(env.LICENCE_SERVICE));
+        await pushUsage(
+          db,
+          new Date(),
+          env.CUSTOMER_ID,
+          createUsagePusher(env.LICENCE_SERVICE, env.VF_LICENCE_API_KEY)
+        );
       } catch {
         // Deliberately silent — retried next cron cycle, or via the
         // on-demand /usage/push endpoint at any time in between.

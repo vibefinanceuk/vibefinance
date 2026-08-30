@@ -234,9 +234,9 @@ describe("licence enforcement — the gate applied to mutating endpoints", () =>
 });
 
 describe("POST /usage/push", () => {
-  it("500s cleanly when LICENCE_SERVICE/CUSTOMER_ID are not configured, through the real router", async () => {
-    // wrangler.test.jsonc declares no `services` binding — this
-    // exercises the real guard against that real condition. The
+  it("500s cleanly when LICENCE_SERVICE/CUSTOMER_ID/VF_LICENCE_API_KEY are not configured, through the real router", async () => {
+    // wrangler.test.jsonc declares no `services` binding and no secret
+    // — this exercises the real guard against that real condition. The
     // deeper push logic (computing the report, calling the pusher,
     // handling a pusher failure) is tested directly against
     // handleUsagePush in test/usage-route.test.ts with a fake pusher,
@@ -245,7 +245,7 @@ describe("POST /usage/push", () => {
     const res = await SELF.fetch("https://example.com/usage/push", { method: "POST" });
     expect(res.status).toBe(500);
     expect(await res.json()).toEqual({
-      error: "LICENCE_SERVICE and CUSTOMER_ID must be configured",
+      error: "LICENCE_SERVICE, CUSTOMER_ID and VF_LICENCE_API_KEY must be configured",
     });
   });
 });

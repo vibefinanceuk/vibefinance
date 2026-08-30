@@ -1,3 +1,5 @@
+import { generateApiKey, hashApiKey } from "./auth.js";
+
 export interface CreateCustomerBody {
   id?: unknown;
   name?: unknown;
@@ -36,10 +38,17 @@ export async function handleCreateCustomer(
     return { status: 409, body: { error: `customer ${id} already exists` } };
   }
 
+  // The plaintext key exists only in this response — only its hash is
+  // ever stored, from this point on (see docs/decisions/
+  // 0006-endpoint-authentication.md). If it's lost, the fix is
+  // rotating it (POST /customers/:id/rotate-key), never recovering it.
+  const apiKey = generateApiKey();
+  const apiKeyHash = await hashApiKey(apiKey);
+
   await db
-    .prepare("INSERT INTO customers (id, name, region, instance_url) VALUES (?, ?, ?, ?)")
-    .bind(id, name, region, instanceUrl)
+    .prepare("INSERT INTO customers (id, name, region, instance_url, api_key_hash) VALUES (?, ?, ?, ?, ?)")
+    .bind(id, name, region, instanceUrl, apiKeyHash)
     .run();
 
-  return { status: 201, body: { id, name, region, instanceUrl } };
+  return { status: 201, body: { id, name, region, instanceUrl, apiKey } };
 }

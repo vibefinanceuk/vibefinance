@@ -81,6 +81,14 @@
     }
   ],
 
+  // VF_LICENCE_API_KEY is deliberately not declared here — it's a
+  // secret, this customer's own key for vf-licence's per-customer
+  // endpoints, set via `wrangler secret put VF_LICENCE_API_KEY` using
+  // the plaintext shown once at customer creation or last rotation.
+  // Unlike LICENCE_SIGNING_PUBLIC_KEY above, this genuinely is
+  // sensitive — never a var, never committed. See
+  // docs/decisions/0006-endpoint-authentication.md.
+
   // The scheduled refresh — src/index.ts's scheduled() handler is the
   // only place this Worker calls out to vf-licence; fetch() never does
   // ("no network call in the hot path", Blueprint). Every 6 hours is
