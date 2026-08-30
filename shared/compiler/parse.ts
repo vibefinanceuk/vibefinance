@@ -13,7 +13,9 @@ interface RawRefusedShape {
   reason: string;
 }
 
-function truncate(s: string, limit = 2000): string {
+/** Exported for reuse by examples.ts's own refusal messages — same
+ * reasoning as extractJson's export just above. */
+export function truncate(s: string, limit = 2000): string {
   return s.length <= limit ? s : s.slice(0, limit) + `... [${s.length - limit} more chars truncated]`;
 }
 
@@ -23,8 +25,16 @@ function truncate(s: string, limit = 2000): string {
  * reliably follow "respond with only JSON" instructions. Same defensive
  * shape as migrations/apply_migrations.py's parse_wrangler_json: try a
  * direct parse, then look for the first '{' and parse from there.
+ *
+ * Exported for reuse by examples.ts's response parsing — deliberately
+ * the same function, not a second near-identical one, so a future fix
+ * to this extraction logic doesn't need to be applied twice. This is
+ * also why examples.ts's model response is specified as a JSON object
+ * (`{"examples": [...]}`) rather than a bare array: this function's
+ * bracket-matching is `{`/`}`-based, and reusing it unchanged was
+ * preferred over writing a second, subtly different array variant.
  */
-function extractJson(raw: string): unknown | undefined {
+export function extractJson(raw: string): unknown | undefined {
   const stripped = raw.trim();
   try {
     return JSON.parse(stripped);

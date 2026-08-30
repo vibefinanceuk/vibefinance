@@ -1,4 +1,4 @@
-import { compileRule } from "@vibefinance/shared";
+import { compileRule, generateExamples } from "@vibefinance/shared";
 import type { CompilerModel } from "@vibefinance/shared";
 
 export interface CompileRequestBody {
@@ -59,8 +59,8 @@ export async function handleCompileRequest(
   // Append-only: a new rule and its first version. approved_by/
   // approved_at are left null — "A person activated this. Never
   // auto-promote a generated rule." (Blueprint, rule_versions). This
-  // draft has no effect on invoice evaluation until someone approves it
-  // through a separate step (Blueprint build order step 3, not this one).
+  // draft has no effect on invoice evaluation until someone confirms
+  // its examples and activates it — see activate-route.ts.
   await db.batch([
     db
       .prepare("INSERT INTO rules (id, rule_set_id, sort_order, enabled) VALUES (?, ?, ?, 1)")
@@ -79,6 +79,37 @@ export async function handleCompileRequest(
       ),
   ]);
 
+  // Worked examples (Blueprint, build order step 3): a separate model
+  // call from the compile above, so a failure here never undoes the
+  // rule itself — it's already validly compiled and stored. Without
+  // examples, though, activate-route.ts's "at least one example, all
+  // confirmed" requirement can never be satisfied, so a rule whose
+  // examples failed to generate is stuck as a permanent draft until
+  // this is retried (no retry endpoint yet — matches the same
+  // raw-DB-access-for-now precedent as rule_sets provisioning).
+  const examplesOutcome = await generateExamples(model, outcome.conditions, outcome.actions);
+  let examplesSummary: Record<string, unknown>;
+  if (examplesOutcome.kind === "generated") {
+    const inserts = examplesOutcome.examples.map((example) =>
+      db
+        .prepare(
+          `INSERT INTO rule_examples (id, rule_id, rule_version, invoice_json, expect_match)
+           VALUES (?, ?, ?, ?, ?)`
+        )
+        .bind(
+          crypto.randomUUID(),
+          ruleId,
+          version,
+          JSON.stringify(example.invoice),
+          example.expectMatch ? 1 : 0
+        )
+    );
+    await db.batch(inserts);
+    examplesSummary = { status: "generated", count: examplesOutcome.examples.length };
+  } else {
+    examplesSummary = { status: "refused", reason: examplesOutcome.reason };
+  }
+
   return {
     status: 201,
     body: {
@@ -88,6 +119,7 @@ export async function handleCompileRequest(
       ruleSetId,
       conditions: outcome.conditions,
       actions: outcome.actions,
+      examples: examplesSummary,
     },
   };
 }

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   MAX_COMBINATOR_DEPTH,
   RuleValidationError,
+  evaluateConditions,
   evaluateRuleSet,
   validateRule,
 } from "./evaluate.js";
@@ -218,5 +219,54 @@ describe("evaluateRuleSet — operators", () => {
   it("term.absent(BT-n) reads through to the referenced field's absence", () => {
     expect(runCondition("term.absent(BT-13)", "is", true, {})).toBe(true);
     expect(runCondition("term.absent(BT-13)", "is", true, { "BT-13": "PO-1" })).toBe(false);
+  });
+});
+
+describe("evaluateConditions — single-rule evaluation independent of a rule set", () => {
+  it("returns true when the conditions match", () => {
+    const conditions: RuleNode = { field: "BT-48", operator: "is_empty" };
+    expect(evaluateConditions(conditions, {})).toBe(true);
+  });
+
+  it("returns false when the conditions don't match", () => {
+    const conditions: RuleNode = { field: "BT-48", operator: "is_empty" };
+    expect(evaluateConditions(conditions, { "BT-48": "DE123456789" })).toBe(false);
+  });
+
+  it("agrees with evaluateRuleSet for the exact same rule and facts", () => {
+    // The property that actually matters for reusing this in example
+    // verification: evaluateConditions must not be a parallel
+    // reimplementation that could silently drift from what production
+    // evaluation actually does.
+    const conditions: RuleNode = {
+      all: [
+        { field: "BT-48", operator: "is_empty" },
+        { field: "BT-40", operator: "not_in", value: ["DE", "FR"] },
+      ],
+    };
+    const rule: CompiledRule = { id: "r1", version: 1, conditions, actions: [{ type: "flag" }] };
+    const ruleSet: CompiledRuleSet = { id: "rs1", mode: "first_match", rules: [rule] };
+
+    const matchingFacts: InvoiceFacts = { "BT-40": "US" };
+    const nonMatchingFacts: InvoiceFacts = { "BT-40": "DE" };
+
+    expect(evaluateConditions(conditions, matchingFacts)).toBe(
+      evaluateRuleSet(ruleSet, matchingFacts).outcome === "matched"
+    );
+    expect(evaluateConditions(conditions, nonMatchingFacts)).toBe(
+      evaluateRuleSet(ruleSet, nonMatchingFacts).outcome === "matched"
+    );
+  });
+
+  it("respects combinator nesting the same way evaluateRuleSet does", () => {
+    const conditions: RuleNode = {
+      any: [
+        { field: "BT-3", operator: "is", value: "381" },
+        { all: [{ field: "BT-112", operator: "greater_than", value: 10000 }] },
+      ],
+    };
+    expect(evaluateConditions(conditions, { "BT-3": "381" })).toBe(true);
+    expect(evaluateConditions(conditions, { "BT-112": 15000 })).toBe(true);
+    expect(evaluateConditions(conditions, { "BT-112": 500 })).toBe(false);
   });
 });

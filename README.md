@@ -72,6 +72,16 @@ refresh's cron and behind `POST /usage/push` for on-demand reporting —
 see `docs/decisions/0004-usage-telemetry.md` for why those are the same
 capability, not two different code paths.
 
+## Worked examples and rule activation
+
+Every compiled rule also gets worked invoice examples generated for
+it, re-verified against the real interpreter before being stored (the
+model's own claim about whether an example matches is never trusted
+blindly). A rule can only be activated once every example is confirmed
+by a person — see `docs/decisions/0007-rule-approval.md`, including a
+scope boundary worth reading: activation updates D1, it doesn't yet
+change what `/rules/evaluate` actually runs.
+
 ## Endpoint authentication
 
 `vf-licence`'s provisioning endpoints (`POST /customers`,

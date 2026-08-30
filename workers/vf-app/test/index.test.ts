@@ -249,3 +249,115 @@ describe("POST /usage/push", () => {
     });
   });
 });
+
+describe("worked examples & activation routes, through the real router", () => {
+  async function seedRuleWithExamples(): Promise<{ ruleId: string; exampleIds: string[] }> {
+    await env.DB.prepare("INSERT INTO rule_sets (id, name, mode, status) VALUES (?, ?, ?, ?)")
+      .bind("rs1", "test set", "first_match", "draft")
+      .run();
+    const ruleId = "rule-1";
+    await env.DB.prepare("INSERT INTO rules (id, rule_set_id, sort_order, enabled) VALUES (?, ?, ?, 1)")
+      .bind(ruleId, "rs1", 0)
+      .run();
+    await env.DB.prepare(
+      "INSERT INTO rule_versions (rule_id, version, source_text, compiled_json, compiled_by) VALUES (?, 1, ?, ?, ?)"
+    )
+      .bind(ruleId, "test source", "{}", "test-model")
+      .run();
+    const exampleIds = ["ex-1", "ex-2"];
+    await env.DB.prepare(
+      "INSERT INTO rule_examples (id, rule_id, rule_version, invoice_json, expect_match) VALUES (?, ?, 1, ?, 1)"
+    )
+      .bind(exampleIds[0], ruleId, "{}")
+      .run();
+    await env.DB.prepare(
+      "INSERT INTO rule_examples (id, rule_id, rule_version, invoice_json, expect_match) VALUES (?, ?, 1, ?, 0)"
+    )
+      .bind(exampleIds[1], ruleId, "{}")
+      .run();
+    return { ruleId, exampleIds };
+  }
+
+  it("GET lists examples through the real router, unauthenticated by licence status", async () => {
+    const { ruleId } = await seedRuleWithExamples();
+    // Deliberately no seedActiveLicence override here beyond the
+    // top-level beforeEach's — this route is meant to work regardless,
+    // proven properly further down in its own blocked-licence test.
+    const res = await SELF.fetch(`https://example.com/rules/${ruleId}/versions/1/examples`);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { examples: unknown[] };
+    expect(body.examples).toHaveLength(2);
+  });
+
+  it("listing examples is not blocked by licence status — read-only, not lights out", async () => {
+    const { ruleId } = await seedRuleWithExamples();
+    await env.DB.prepare("DELETE FROM licence_cache WHERE id = 1").run();
+    const res = await SELF.fetch(`https://example.com/rules/${ruleId}/versions/1/examples`);
+    expect(res.status).toBe(200);
+  });
+
+  it("POST confirms an example through the real router", async () => {
+    const { exampleIds } = await seedRuleWithExamples();
+    const res = await SELF.fetch(`https://example.com/rules/examples/${exampleIds[0]}/confirm`, {
+      method: "POST",
+      body: JSON.stringify({ confirmedBy: "alice@example.com" }),
+    });
+    expect(res.status).toBe(200);
+
+    const row = await env.DB.prepare("SELECT confirmed_by FROM rule_examples WHERE id = ?")
+      .bind(exampleIds[0])
+      .first();
+    expect(row).toEqual({ confirmed_by: "alice@example.com" });
+  });
+
+  it("confirming is blocked when the licence is blocked", async () => {
+    const { exampleIds } = await seedRuleWithExamples();
+    await env.DB.prepare("DELETE FROM licence_cache WHERE id = 1").run();
+    const res = await SELF.fetch(`https://example.com/rules/examples/${exampleIds[0]}/confirm`, {
+      method: "POST",
+      body: JSON.stringify({ confirmedBy: "alice@example.com" }),
+    });
+    expect(res.status).toBe(402);
+  });
+
+  it("POST activates a rule through the real router once every example is confirmed", async () => {
+    const { ruleId, exampleIds } = await seedRuleWithExamples();
+    for (const id of exampleIds) {
+      await SELF.fetch(`https://example.com/rules/examples/${id}/confirm`, {
+        method: "POST",
+        body: JSON.stringify({ confirmedBy: "alice@example.com" }),
+      });
+    }
+
+    const res = await SELF.fetch(`https://example.com/rules/${ruleId}/versions/1/activate`, {
+      method: "POST",
+      body: JSON.stringify({ activatedBy: "alice@example.com" }),
+    });
+    expect(res.status).toBe(200);
+
+    const row = await env.DB.prepare("SELECT approved_by FROM rule_versions WHERE rule_id = ?")
+      .bind(ruleId)
+      .first();
+    expect(row).toEqual({ approved_by: "alice@example.com" });
+  });
+
+  it("activation is refused through the real router when an example is still unconfirmed", async () => {
+    const { ruleId } = await seedRuleWithExamples();
+    // Neither example confirmed.
+    const res = await SELF.fetch(`https://example.com/rules/${ruleId}/versions/1/activate`, {
+      method: "POST",
+      body: JSON.stringify({ activatedBy: "alice@example.com" }),
+    });
+    expect(res.status).toBe(409);
+  });
+
+  it("activating is blocked when the licence is blocked", async () => {
+    const { ruleId } = await seedRuleWithExamples();
+    await env.DB.prepare("DELETE FROM licence_cache WHERE id = 1").run();
+    const res = await SELF.fetch(`https://example.com/rules/${ruleId}/versions/1/activate`, {
+      method: "POST",
+      body: JSON.stringify({ activatedBy: "alice@example.com" }),
+    });
+    expect(res.status).toBe(402);
+  });
+});

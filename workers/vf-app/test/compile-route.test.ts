@@ -8,6 +8,18 @@ function fakeModel(response: string): CompilerModel {
   return { compile: vi.fn().mockResolvedValue(response) };
 }
 
+/** A model that responds differently to the compile prompt vs. the
+ * examples prompt, distinguished by content — the two calls happen in
+ * a fixed order in practice, but keying off content rather than call
+ * count keeps this robust to that changing. */
+function fakeModelWithExamples(compileResponse: string, examplesResponse: string): CompilerModel {
+  return {
+    compile: vi.fn().mockImplementation(async (prompt: string) => {
+      return prompt.includes("worked examples") ? examplesResponse : compileResponse;
+    }),
+  };
+}
+
 async function seedRuleSet(id: string): Promise<void> {
   await env.DB.prepare("INSERT INTO rule_sets (id, name, mode, status) VALUES (?, ?, ?, ?)")
     .bind(id, "test rule set", "first_match", "draft")
@@ -116,6 +128,74 @@ describe("handleCompileRequest — a successful compile", () => {
     const secondRow = await env.DB.prepare("SELECT sort_order FROM rules WHERE id = ?").bind(secondId).first();
     expect(firstRow).toEqual({ sort_order: 0 });
     expect(secondRow).toEqual({ sort_order: 1 });
+  });
+});
+
+describe("handleCompileRequest — worked examples (Blueprint build order step 3)", () => {
+  it("generates and stores examples alongside a successful compile", async () => {
+    await seedRuleSet("rs1");
+    const model = fakeModelWithExamples(
+      JSON.stringify({
+        status: "compiled",
+        conditions: { field: "BT-112", operator: "greater_than", value: 1000 },
+        actions: [{ type: "require_second_approval" }],
+      }),
+      JSON.stringify({
+        examples: [
+          { invoice: { "BT-112": 5000 }, expectMatch: true },
+          { invoice: { "BT-112": 200 }, expectMatch: false },
+        ],
+      })
+    );
+
+    const result = await handleCompileRequest(model, "test-model@v1", env.DB, {
+      ruleSetId: "rs1",
+      sourceText: "require a second approval for anything over 1000",
+    });
+
+    expect(result.status).toBe(201);
+    expect(result.body.examples).toEqual({ status: "generated", count: 2 });
+
+    const body = result.body as { ruleId: string };
+    const rows = await env.DB.prepare(
+      "SELECT invoice_json, expect_match, confirmed_by FROM rule_examples WHERE rule_id = ? ORDER BY expect_match DESC"
+    )
+      .bind(body.ruleId)
+      .all();
+    expect(rows.results).toEqual([
+      { invoice_json: '{"BT-112":5000}', expect_match: 1, confirmed_by: null },
+      { invoice_json: '{"BT-112":200}', expect_match: 0, confirmed_by: null },
+    ]);
+  });
+
+  it("still stores the rule when example generation is refused — the rule is not undone", async () => {
+    await seedRuleSet("rs1");
+    // Reusing the compile response for the examples call means
+    // parseExamplesResponse sees a shape with no "examples" array —
+    // a genuine refusal, not a contrived one.
+    const model = fakeModel(
+      JSON.stringify({
+        status: "compiled",
+        conditions: { field: "BT-3", operator: "is_present" },
+        actions: [{ type: "flag" }],
+      })
+    );
+
+    const result = await handleCompileRequest(model, "test-model@v1", env.DB, {
+      ruleSetId: "rs1",
+      sourceText: "flag anything with a type code",
+    });
+
+    expect(result.status).toBe(201);
+    expect((result.body.examples as { status: string }).status).toBe("refused");
+
+    const body = result.body as { ruleId: string };
+    const ruleRow = await env.DB.prepare("SELECT id FROM rules WHERE id = ?").bind(body.ruleId).first();
+    expect(ruleRow).toBeTruthy();
+    const exampleCount = await env.DB.prepare("SELECT count(*) AS n FROM rule_examples WHERE rule_id = ?")
+      .bind(body.ruleId)
+      .first();
+    expect(exampleCount).toEqual({ n: 0 });
   });
 });
 

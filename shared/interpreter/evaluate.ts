@@ -157,6 +157,18 @@ function evaluateNode(node: RuleNode, facts: InvoiceFacts): boolean {
 }
 
 /**
+ * Evaluate one rule's conditions against a single set of facts,
+ * independent of a full rule set. The compiler's example-generation
+ * step (shared/compiler/examples.ts) uses this to verify a model's
+ * claimed match/no-match outcome against the exact same logic that
+ * runs in production — never trusting the model's own claim about
+ * what its example does, checking it.
+ */
+export function evaluateConditions(conditions: RuleNode, facts: InvoiceFacts): boolean {
+  return evaluateNode(conditions, facts);
+}
+
+/**
  * Run one rule set against one invoice's facts. Pure function: same
  * inputs, same outcome, every time — the property the Blueprint's
  * support argument depends on ("reproduces on your laptop from two

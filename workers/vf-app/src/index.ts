@@ -7,6 +7,8 @@ import { handleCompileRequest } from "./compile-route.js";
 import { isBlocked, readLicenceState, refreshLicenceCache } from "./licence-cache.js";
 import { handleUsagePush } from "./usage-route.js";
 import { pushUsage } from "./usage.js";
+import { handleConfirmExample, handleListExamples } from "./examples-route.js";
+import { handleActivateRule } from "./activate-route.js";
 
 export interface Env {
   DB?: D1Database;
@@ -261,6 +263,66 @@ export default {
         env.CUSTOMER_ID,
         createUsagePusher(env.LICENCE_SERVICE, env.VF_LICENCE_API_KEY)
       );
+      return json(result.body, result.status);
+    }
+
+    // Worked examples & activation (Blueprint build order step 3): the
+    // enforcement point for "A person activated this. Never
+    // auto-promote a generated rule." Confirming and activating are
+    // gated the same way /rules/compile is — a blocked customer
+    // shouldn't be able to keep authoring and promoting new rules
+    // either. Listing is a plain read of existing draft state, not
+    // gated, matching "read-only, not lights out" elsewhere in this
+    // file. Scope boundary, stated in activate-route.ts's own
+    // comment: activating updates rule_versions in D1 but does not,
+    // on its own, change what /rules/evaluate does above — that
+    // endpoint still takes its ruleSet from the request body.
+    const examplesListMatch = url.pathname.match(/^\/rules\/([^/]+)\/versions\/(\d+)\/examples$/);
+    if (examplesListMatch && request.method === "GET") {
+      const { db } = resolveTenant(request, env);
+      const result = await handleListExamples(db, examplesListMatch[1], Number(examplesListMatch[2]));
+      return json(result.body, result.status);
+    }
+
+    const confirmMatch = url.pathname.match(/^\/rules\/examples\/([^/]+)\/confirm$/);
+    if (confirmMatch && request.method === "POST") {
+      const { db } = resolveTenant(request, env);
+      const licenceState = await readLicenceState(db);
+      if (isBlocked(licenceState)) {
+        const reason = licenceState.known
+          ? licenceState.claims.statusReason ?? "licence blocked"
+          : "no licence has been provisioned for this instance yet";
+        return json({ error: "processing blocked", reason }, 402);
+      }
+      let body: unknown;
+      try {
+        body = await request.json();
+      } catch {
+        return json({ error: "invalid JSON body" }, 400);
+      }
+      const confirmedBy = (body as Record<string, unknown> | null)?.confirmedBy;
+      const result = await handleConfirmExample(db, confirmMatch[1], confirmedBy);
+      return json(result.body, result.status);
+    }
+
+    const activateMatch = url.pathname.match(/^\/rules\/([^/]+)\/versions\/(\d+)\/activate$/);
+    if (activateMatch && request.method === "POST") {
+      const { db } = resolveTenant(request, env);
+      const licenceState = await readLicenceState(db);
+      if (isBlocked(licenceState)) {
+        const reason = licenceState.known
+          ? licenceState.claims.statusReason ?? "licence blocked"
+          : "no licence has been provisioned for this instance yet";
+        return json({ error: "processing blocked", reason }, 402);
+      }
+      let body: unknown;
+      try {
+        body = await request.json();
+      } catch {
+        return json({ error: "invalid JSON body" }, 400);
+      }
+      const activatedBy = (body as Record<string, unknown> | null)?.activatedBy;
+      const result = await handleActivateRule(db, activateMatch[1], Number(activateMatch[2]), activatedBy);
       return json(result.body, result.status);
     }
 
