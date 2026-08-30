@@ -31,13 +31,29 @@
 
   // The licensing contract (Blueprint build order step 4, "Subsystem
   // three"). See docs/decisions/0003-licensing-signed-token.md.
-  // LICENCE_SIGNING_PUBLIC_KEY is not sensitive — the corresponding
-  // private key never leaves vf-licence — so it's a plain var, not a
-  // secret. CUSTOMER_ID must match the id this customer was provisioned
-  // with in vf-licence (`customers.id`), and LICENCE_SERVER_URL is
-  // wherever that instance actually lives.
+  //
+  // LICENCE_SIGNING_PUBLIC_KEY is a genuine nested JSON object, not a
+  // JSON string pasted in as text. This matters: an earlier version of
+  // this file stored the key as an escaped string, which is exactly
+  // the kind of thing that's easy to get subtly wrong by hand — and
+  // once actually did, when a mistakenly-pasted PRIVATE key (which
+  // does have a `d` field the public key lacks) went out as a plain,
+  // non-secret var. Cloudflare's own docs confirm `vars` supports real
+  // JSON objects directly, delivered to the Worker already parsed
+  // (env.LICENCE_SIGNING_PUBLIC_KEY is a JS object, not a string
+  // needing JSON.parse() — see src/index.ts's isPublicKeyJwk()). Paste
+  // the public key's JWK fields directly below, unescaped, exactly as
+  // scripts/generate-licence-keypair.mjs prints them.
+  //
+  // Not sensitive either way — the corresponding private key never
+  // leaves vf-licence — so this is a plain var, not a secret.
+  // CUSTOMER_ID must match the id this customer was provisioned with
+  // in vf-licence (`customers.id`), and LICENCE_SERVER_URL is wherever
+  // that instance actually lives.
   "vars": {
-    "LICENCE_SIGNING_PUBLIC_KEY": "REPLACE_WITH_REAL_PUBLIC_KEY_JWK",
+    "LICENCE_SIGNING_PUBLIC_KEY": {
+      "REPLACE_WITH_REAL_PUBLIC_KEY_JWK": true
+    },
     "LICENCE_SERVER_URL": "https://vf-licence.vibefinance.workers.dev",
     "CUSTOMER_ID": "REPLACE_WITH_REAL_CUSTOMER_ID"
   },
