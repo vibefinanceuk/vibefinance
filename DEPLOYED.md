@@ -7,7 +7,7 @@ vf-app and vf-licence are promoted independently.
 
 | Worker | commit SHA | confirmed at |
 |---|---|---|
-| vf-app | `ffd69d5` | 30 August 2026 — the full worked-examples/rule-activation pipeline confirmed end-to-end on live infrastructure: `POST /rules/compile` (with the `max_tokens` fix) produced `examples.status: "generated", count: 2`; both examples confirmed via `POST /rules/examples/:id/confirm`; `POST /rules/:ruleId/versions/1/activate` succeeded, and the resulting `approved_by`/`approved_at`/`effective_from` were confirmed via direct D1 query, not inferred from the HTTP response. `POST /licence/refresh` separately confirmed working, unblocking a real bootstrap-blocked state (`licence_cache` had never been populated by the cron). |
+| vf-app | `d1a7c42` | 30 August 2026 — the natural-language-to-enforced-evaluation pipeline confirmed complete, end-to-end, on live infrastructure: `POST /rules/compile` produced worked examples; both confirmed; the rule activated; then `POST /rules/evaluate` with `ruleSetId` (not an inline `ruleSet`) loaded that exact activated rule from D1 and correctly returned `"matched"` for `BT-112: 8640` and `"no_match"` for `BT-112: 3000` — both directions of the same activated rule proven live, not just the happy path. |
 | vf-licence | `0a2b61c` | 30 August 2026 — `POST /customers/Acme/rotate-key` succeeded with the real `ADMIN_API_KEY`; the resulting per-customer key was confirmed to actually authenticate (`POST /usage/push` from `vf-app` succeeded using it); separately confirmed `POST /usage` correctly rejects an unauthenticated request (`{"error":"unauthorized"}`) claiming inflated numbers for `Acme` — the real security property, not just the happy path |
 
 ## D1
@@ -80,4 +80,17 @@ its examples produced `examples.status: "generated", count: 2`, and
 the full compile→confirm→activate pipeline completed successfully
 end-to-end for the first time. Full account in
 `docs/decisions/0002-compiler-model-choice.md`.
+
+30 August 2026: closed the scope boundary named explicitly when rule
+activation shipped — until this point, activating a rule updated
+`rule_versions` in D1 but `POST /rules/evaluate` never loaded from D1
+at all, only from an inline request body. `rule-set-loader.ts` now
+loads exactly the rules that are enabled, approved, and currently
+effective; `POST /rules/evaluate` accepts a `ruleSetId` alongside the
+original inline `ruleSet` (kept, for reproducibility). Confirmed live
+in both directions with the exact rule activated earlier in the same
+session: `BT-112: 8640` → `"matched"`, `BT-112: 3000` → `"no_match"` —
+the same activated rule correctly firing and correctly staying silent,
+loaded from D1 both times. Full account in
+`docs/decisions/0007-rule-approval.md`.
 
