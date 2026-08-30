@@ -9,15 +9,43 @@ import { isBlocked, readLicenceState, refreshLicenceCache } from "./licence-cach
 export interface Env {
   DB?: D1Database;
   AI?: AiRunnable;
-  /** JSON string of a JWK-format ECDSA P-256 public key. Not sensitive
-   * — the corresponding private key never leaves vf-licence — so this
-   * is a plain `vars` entry in wrangler.jsonc, not a secret. */
-  LICENCE_SIGNING_PUBLIC_KEY?: string;
+  /**
+   * A JWK-format ECDSA P-256 public key, as a genuine nested JSON
+   * object in wrangler.jsonc's `vars` — not a JSON-string-inside-a-
+   * string. Cloudflare delivers a JSON `vars` value to the Worker
+   * already parsed (confirmed against their own docs: "JSON variable
+   * values that evaluate to string values are exposed as the parsed
+   * value" — the same applies to object values on the native `env`
+   * binding, not just the process.env compatibility shim). Not
+   * sensitive — the corresponding private key never leaves vf-licence
+   * — so this is a plain var, not a secret.
+   *
+   * Typed as `unknown` rather than `JsonWebKey` because there's no
+   * schema enforcement between wrangler.jsonc and this interface — a
+   * wrong or placeholder value must be validated at the point of use
+   * (isPublicKeyJwk, below), not trusted from the type system.
+   */
+  LICENCE_SIGNING_PUBLIC_KEY?: unknown;
   /** The base URL of this customer's vf-licence instance to fetch a
    * token from, e.g. "https://vf-licence.vibefinance.workers.dev". */
   LICENCE_SERVER_URL?: string;
   /** This customer's id, matching the `customers.id` row in vf-licence. */
   CUSTOMER_ID?: string;
+}
+
+/**
+ * A minimal structural check, not full JWK validation — just enough to
+ * distinguish "a real public key" from "the wrangler.jsonc placeholder,
+ * still unfilled" or "genuinely missing", both of which
+ * scheduled() below treats identically (do nothing, stay on cached
+ * state). crypto.subtle.importKey() is the actual authority on whether
+ * this is a well-formed key; this only decides whether it's worth
+ * calling that at all.
+ */
+function isPublicKeyJwk(value: unknown): value is JsonWebKey {
+  if (typeof value !== "object" || value === null) return false;
+  const v = value as Record<string, unknown>;
+  return v.kty === "EC" && typeof v.crv === "string" && typeof v.x === "string" && typeof v.y === "string";
 }
 
 interface EvaluateRequestBody {
@@ -167,7 +195,7 @@ export default {
    * calls this with fewer than 3 arguments in production.
    */
   async scheduled(_event: ScheduledEvent, env: Env, _ctx: ExecutionContext): Promise<void> {
-    if (!env.LICENCE_SIGNING_PUBLIC_KEY || !env.LICENCE_SERVER_URL || !env.CUSTOMER_ID) {
+    if (!isPublicKeyJwk(env.LICENCE_SIGNING_PUBLIC_KEY) || !env.LICENCE_SERVER_URL || !env.CUSTOMER_ID) {
       // Deliberately silent rather than throwing: a misconfigured
       // instance should keep running on its last-known cached state
       // (or stay blocked, if it never had one) exactly as if the fetch
@@ -191,12 +219,7 @@ export default {
     } catch {
       return;
     }
-    let publicKeyJwk: JsonWebKey;
-    try {
-      publicKeyJwk = JSON.parse(env.LICENCE_SIGNING_PUBLIC_KEY);
-    } catch {
-      return;
-    }
+    const publicKeyJwk = env.LICENCE_SIGNING_PUBLIC_KEY;
     const serverUrl = env.LICENCE_SERVER_URL;
     const customerId = env.CUSTOMER_ID;
     await refreshLicenceCache(db, publicKeyJwk, async () => {

@@ -35,7 +35,7 @@ describe("scheduled() — the licence refresh trigger", () => {
 
     const env: Env = {
       ...testEnv,
-      LICENCE_SIGNING_PUBLIC_KEY: JSON.stringify(publicKeyJwk),
+      LICENCE_SIGNING_PUBLIC_KEY: publicKeyJwk, // a real object now, not a JSON string
       LICENCE_SERVER_URL: "https://vf-licence.example.workers.dev",
       CUSTOMER_ID: "acme",
     };
@@ -58,6 +58,38 @@ describe("scheduled() — the licence refresh trigger", () => {
     expect(state).toEqual({ known: false });
   });
 
+  it("does nothing when LICENCE_SIGNING_PUBLIC_KEY is still the unfilled wrangler.jsonc placeholder", async () => {
+    // The exact shape wrangler.jsonc ships with before an operator
+    // fills in a real key — { "REPLACE_WITH_REAL_PUBLIC_KEY_JWK": true
+    // }, a genuine object, just not a valid JWK. Confirms a
+    // newly-cloned, not-yet-configured instance fails safe rather than
+    // throwing on deploy or on its first scheduled run.
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+    const env: Env = {
+      ...testEnv,
+      LICENCE_SIGNING_PUBLIC_KEY: { REPLACE_WITH_REAL_PUBLIC_KEY_JWK: true },
+      LICENCE_SERVER_URL: "https://vf-licence.example.workers.dev",
+      CUSTOMER_ID: "acme",
+    };
+    await expect(
+      worker.scheduled?.({} as ScheduledEvent, env, {} as ExecutionContext)
+    ).resolves.not.toThrow();
+
+    // The assertion that actually matters here: rejected by the type
+    // guard *before* ever attempting a network call, not merely "ended
+    // up with no cached state" — which a real fetch failure (e.g. DNS)
+    // would also produce, making this test pass for the wrong reason.
+    // Caught live: the first version of this test had no fetchSpy at
+    // all and passed even with the guard broken, because an unmocked
+    // fetch to a fake domain failed with a real DNS error inside
+    // workerd, landing on the same { known: false } outcome by
+    // coincidence.
+    expect(fetchSpy).not.toHaveBeenCalled();
+    const state = await readLicenceState(testEnv.DB);
+    expect(state).toEqual({ known: false });
+    fetchSpy.mockRestore();
+  });
+
   it("does not cache anything when the fetch returns a non-2xx status", async () => {
     const keyPair = await crypto.subtle.generateKey(KEY_ALGORITHM, true, ["sign", "verify"]);
     const publicKeyJwk = await crypto.subtle.exportKey("jwk", keyPair.publicKey);
@@ -68,7 +100,7 @@ describe("scheduled() — the licence refresh trigger", () => {
 
     const env: Env = {
       ...testEnv,
-      LICENCE_SIGNING_PUBLIC_KEY: JSON.stringify(publicKeyJwk),
+      LICENCE_SIGNING_PUBLIC_KEY: publicKeyJwk, // a real object now, not a JSON string
       LICENCE_SERVER_URL: "https://vf-licence.example.workers.dev",
       CUSTOMER_ID: "acme",
     };

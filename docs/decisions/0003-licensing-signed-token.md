@@ -91,7 +91,32 @@ all. 6 hours between refresh attempts against a 48h token lifetime
 leaves comfortable headroom for a missed run or two before anything
 would actually expire.
 
-## What's deferred, on purpose, and why this bundle stops here
+## Config storage: a real JSON object in `vars`, not an escaped string
+
+`LICENCE_SIGNING_PUBLIC_KEY` was originally stored as a JSON string
+pasted into a `wrangler.jsonc` string value — meaning the operator had
+to hand-escape every inner `"` in the JWK. This bit for real: on first
+deploy, the private key (which happens to have a `d` field the public
+key lacks, easy to not notice) got pasted into that slot by mistake,
+was committed to a plaintext `vars` entry (not a secret), and briefly
+went live — visible in the Cloudflare dashboard and `wrangler deploy`
+output. Caught from the deploy output itself (the field width in the
+CLI's truncated preview happened to show `"key_ops":["sign"]`, the
+private key's own marker) before any real customer was provisioned,
+and fully rotated: new keypair generated, old one confirmed never
+committed to git (`git log -p --all` on the file: zero matches),
+private key replaced in `vf-licence`'s secret, public key replaced in
+`vf-app`'s var, both Workers redeployed.
+
+Fixed properly rather than just more carefully: `wrangler.jsonc`
+supports genuine nested JSON objects in `vars` (confirmed against
+Cloudflare's own docs, not assumed — their own example:
+`"SERVICE_X_DATA": { "URL": "...", "MY_ID": 123 }`), delivered to the
+Worker already parsed on `env`, no `JSON.parse()` needed. The escaping
+step — the actual source of the mistake — no longer exists as a step
+at all, for this or any future customer's `wrangler.jsonc`.
+
+
 
 - **Idempotent usage-period telemetry** (`usage_periods`, Blueprint's
   own next line after "the offline grace path"). This is additive —
