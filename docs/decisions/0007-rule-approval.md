@@ -103,3 +103,32 @@ caller sends. Not built here, not silently implied as already done.
   today.
 - `/rules/evaluate` not sourcing from D1 at all — the scope boundary
   above, the natural next piece of work this leaves open.
+
+## Addendum, found deploying this bundle: `POST /licence/refresh`
+
+The first real attempt to use this feature live hit `{"error":"processing
+blocked","reason":"no licence has been provisioned for this instance
+yet"}` — not a bug in this bundle, but the same class of problem
+already found and fixed for usage telemetry
+(`docs/decisions/0004-usage-telemetry.md`): the only thing that
+populates `licence_cache` is the 6-hourly `scheduled()` cron, and a
+recently (re)configured instance has no way to force that sooner.
+Confirmed directly — `SELECT * FROM licence_cache` on the live
+`vf-app-poc` returned nothing at all.
+
+Fixed the same way usage telemetry was: `POST /licence/refresh`, an
+on-demand equivalent of the cron's licence-fetch block, sharing its
+fetcher-construction logic (`createLicenceFetcher`, extracted from
+`scheduled()`'s previously-inline closure so both call sites can't
+drift apart) rather than a second copy. Deliberately **not**
+licence-gated, and for a sharper reason than `/usage/push`'s: gating
+this behind `isBlocked()` would make the bootstrap-blocked state (no
+cache row at all) permanently unrecoverable via the API — the state
+this endpoint exists to fix is exactly the state a gate would use to
+block it.
+
+Its fail-open property was proven the same way the underlying
+`refreshLicenceCache` function's was originally: a failed on-demand
+refresh must report the *prior* cached state, not a cleared one —
+deliberately broken and confirmed to cause a real test failure before
+being trusted.

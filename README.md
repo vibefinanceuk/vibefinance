@@ -80,7 +80,9 @@ model's own claim about whether an example matches is never trusted
 blindly). A rule can only be activated once every example is confirmed
 by a person — see `docs/decisions/0007-rule-approval.md`, including a
 scope boundary worth reading: activation updates D1, it doesn't yet
-change what `/rules/evaluate` actually runs.
+change what `/rules/evaluate` actually runs. That doc also covers
+`POST /licence/refresh`, an on-demand alternative to the 6-hourly cron
+for when a freshly (re)configured instance can't afford to wait.
 
 ## Endpoint authentication
 

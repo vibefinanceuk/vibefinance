@@ -361,3 +361,29 @@ describe("worked examples & activation routes, through the real router", () => {
     expect(res.status).toBe(402);
   });
 });
+
+describe("POST /licence/refresh", () => {
+  it("500s cleanly when required config is missing, through the real router", async () => {
+    // wrangler.test.jsonc declares no `services` binding and no
+    // secrets — this exercises the real guard against that real
+    // condition, matching /usage/push's own equivalent test. The
+    // deeper refresh logic (real fetch, real verify, real fail-open
+    // behaviour) is tested directly against handleLicenceRefresh in
+    // test/licence-refresh-route.test.ts, since a request that reaches
+    // that logic here would need a real vf-licence to talk to.
+    const res = await SELF.fetch("https://example.com/licence/refresh", { method: "POST" });
+    expect(res.status).toBe(500);
+  });
+
+  it("is reachable even when the cached licence state is already blocked — the bootstrap-recovery case this exists for", async () => {
+    // The property that actually matters: this route must never be
+    // gated by isBlocked(), or the exact state it exists to fix
+    // (no cache, or a stale blocked cache) would make it permanently
+    // unreachable via the API. Confirms it reaches the real "config
+    // missing" 500 rather than a 402 — proving the licence gate never
+    // ran at all for this route.
+    await env.DB.prepare("DELETE FROM licence_cache WHERE id = 1").run();
+    const res = await SELF.fetch("https://example.com/licence/refresh", { method: "POST" });
+    expect(res.status).not.toBe(402);
+  });
+});

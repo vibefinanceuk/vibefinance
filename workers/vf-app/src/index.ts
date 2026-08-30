@@ -9,6 +9,7 @@ import { handleUsagePush } from "./usage-route.js";
 import { pushUsage } from "./usage.js";
 import { handleConfirmExample, handleListExamples } from "./examples-route.js";
 import { handleActivateRule } from "./activate-route.js";
+import { handleLicenceRefresh } from "./licence-refresh-route.js";
 
 export interface Env {
   DB?: D1Database;
@@ -91,6 +92,30 @@ function isPublicKeyJwk(value: unknown): value is JsonWebKey {
   if (typeof value !== "object" || value === null) return false;
   const v = value as Record<string, unknown>;
   return v.kty === "EC" && typeof v.crv === "string" && typeof v.x === "string" && typeof v.y === "string";
+}
+
+/**
+ * Builds the real LicenceTokenFetcher — used by both the scheduled
+ * cron and the on-demand POST /licence/refresh route (see
+ * licence-refresh-route.ts's own comment on why that endpoint exists:
+ * the same "cron hasn't fired yet" problem already found and fixed for
+ * usage telemetry). Extracted here specifically so both call sites
+ * share one implementation rather than two copies that could drift.
+ */
+function createLicenceFetcher(service: Fetcher, customerId: string, apiKey: string) {
+  return async () => {
+    const res = await service.fetch(`https://vf-licence.internal/licences/${customerId}/token`, {
+      headers: { Authorization: `Bearer ${apiKey}` },
+    });
+    if (!res.ok) {
+      throw new Error(`licence fetch returned HTTP ${res.status}`);
+    }
+    const payload = (await res.json()) as { token?: string };
+    if (typeof payload.token !== "string") {
+      throw new Error("licence fetch response had no token field");
+    }
+    return payload.token;
+  };
 }
 
 /**
@@ -246,6 +271,31 @@ export default {
       return json(result.body, result.status);
     }
 
+    // On-demand licence refresh — the same fix already applied to
+    // usage telemetry, for the identical class of problem: the only
+    // thing that otherwise populates licence_cache is the 6-hourly
+    // scheduled() cron, and a freshly deployed instance has no way to
+    // force that sooner. Found live: a real deploy needed this before
+    // its first cron fire ever happened. Deliberately NOT licence-
+    // gated — see licence-refresh-route.ts's own comment on why that
+    // would make the exact state this endpoint exists to fix
+    // permanently unrecoverable.
+    if (url.pathname === "/licence/refresh" && request.method === "POST") {
+      const { db } = resolveTenant(request, env);
+      if (!isPublicKeyJwk(env.LICENCE_SIGNING_PUBLIC_KEY) || !env.LICENCE_SERVICE || !env.CUSTOMER_ID || !env.VF_LICENCE_API_KEY) {
+        return json(
+          { error: "LICENCE_SIGNING_PUBLIC_KEY, LICENCE_SERVICE, CUSTOMER_ID and VF_LICENCE_API_KEY must all be configured" },
+          500
+        );
+      }
+      const result = await handleLicenceRefresh(
+        db,
+        env.LICENCE_SIGNING_PUBLIC_KEY,
+        createLicenceFetcher(env.LICENCE_SERVICE, env.CUSTOMER_ID, env.VF_LICENCE_API_KEY)
+      );
+      return json(result.body, result.status);
+    }
+
     // On-demand usage push (Blueprint's usage_periods, made idempotent
     // and "as fresh as asked for" rather than a once-per-period batch —
     // see docs/decisions/0004-usage-telemetry.md). Deliberately not
@@ -374,19 +424,7 @@ export default {
         const service = env.LICENCE_SERVICE;
         const customerId = env.CUSTOMER_ID;
         const apiKey = env.VF_LICENCE_API_KEY;
-        await refreshLicenceCache(db, publicKeyJwk, async () => {
-          const res = await service.fetch(`https://vf-licence.internal/licences/${customerId}/token`, {
-            headers: { Authorization: `Bearer ${apiKey}` },
-          });
-          if (!res.ok) {
-            throw new Error(`licence fetch returned HTTP ${res.status}`);
-          }
-          const payload = (await res.json()) as { token?: string };
-          if (typeof payload.token !== "string") {
-            throw new Error("licence fetch response had no token field");
-          }
-          return payload.token;
-        });
+        await refreshLicenceCache(db, publicKeyJwk, createLicenceFetcher(service, customerId, apiKey));
       } catch {
         // Deliberately silent — see the block comment above.
       }
