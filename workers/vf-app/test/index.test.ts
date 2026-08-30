@@ -518,3 +518,92 @@ describe("LOCALE — genuinely customer-facing messages translate through the re
     expect(body.error).toBe("processing blocked");
   });
 });
+
+describe("org/authority/profiles routes, through the real router", () => {
+  it("creates a unit through the real router", async () => {
+    const res = await SELF.fetch("https://example.com/org/units", {
+      method: "POST",
+      body: JSON.stringify({ id: "u1", name: "Finance" }),
+    });
+    expect(res.status).toBe(201);
+    const row = await env.DB.prepare("SELECT name FROM org_units WHERE id = ?").bind("u1").first();
+    expect(row).toEqual({ name: "Finance" });
+  });
+
+  it("is not blocked by licence status — an administrative action, not gated product usage", async () => {
+    await env.DB.prepare("DELETE FROM licence_cache WHERE id = 1").run();
+    const res = await SELF.fetch("https://example.com/org/units", {
+      method: "POST",
+      body: JSON.stringify({ id: "u1", name: "Finance" }),
+    });
+    expect(res.status).not.toBe(402);
+  });
+
+  it("creates a user through the real router", async () => {
+    const res = await SELF.fetch("https://example.com/org/users", {
+      method: "POST",
+      body: JSON.stringify({ id: "usr1", email: "a@b.com", name: "Alice" }),
+    });
+    expect(res.status).toBe(201);
+  });
+
+  it("creates a role through the real router", async () => {
+    const res = await SELF.fetch("https://example.com/org/roles", {
+      method: "POST",
+      body: JSON.stringify({ id: "r1", name: "Admin", permissions: ["rules.activate"] }),
+    });
+    expect(res.status).toBe(201);
+  });
+
+  it("422s a role with an unknown permission through the real router", async () => {
+    const res = await SELF.fetch("https://example.com/org/roles", {
+      method: "POST",
+      body: JSON.stringify({ id: "r1", name: "Admin", permissions: ["not_a_real_permission"] }),
+    });
+    expect(res.status).toBe(422);
+  });
+
+  it("assigns a role to a user through the real router", async () => {
+    await SELF.fetch("https://example.com/org/users", {
+      method: "POST",
+      body: JSON.stringify({ id: "usr1", email: "a@b.com", name: "Alice" }),
+    });
+    await SELF.fetch("https://example.com/org/roles", {
+      method: "POST",
+      body: JSON.stringify({ id: "r1", name: "Admin" }),
+    });
+    const res = await SELF.fetch("https://example.com/org/users/usr1/roles", {
+      method: "POST",
+      body: JSON.stringify({ roleId: "r1" }),
+    });
+    expect(res.status).toBe(201);
+  });
+
+  it("sets an authority limit through the real router", async () => {
+    await SELF.fetch("https://example.com/org/users", {
+      method: "POST",
+      body: JSON.stringify({ id: "usr1", email: "a@b.com", name: "Alice" }),
+    });
+    const res = await SELF.fetch("https://example.com/org/users/usr1/authority-limits", {
+      method: "POST",
+      body: JSON.stringify({ currency: "EUR", maxAmount: 5000 }),
+    });
+    expect(res.status).toBe(200);
+  });
+
+  it("sets a CIUS profile through the real router", async () => {
+    const res = await SELF.fetch("https://example.com/org/profiles", {
+      method: "POST",
+      body: JSON.stringify({ id: "p1", ciusProfile: "xrechnung" }),
+    });
+    expect(res.status).toBe(201);
+  });
+
+  it("422s an unknown CIUS profile through the real router", async () => {
+    const res = await SELF.fetch("https://example.com/org/profiles", {
+      method: "POST",
+      body: JSON.stringify({ id: "p1", ciusProfile: "not_a_real_profile" }),
+    });
+    expect(res.status).toBe(422);
+  });
+});

@@ -14,6 +14,14 @@ import { loadActiveRuleSet } from "./rule-set-loader.js";
 import { resolveLocale, t } from "./i18n.js";
 import type { LicenceState } from "./licence-cache.js";
 import type { Locale } from "./i18n.js";
+import {
+  handleAssignRole,
+  handleCreateRole,
+  handleCreateUnit,
+  handleCreateUser,
+  handleSetAuthorityLimit,
+  handleSetProfile,
+} from "./org-route.js";
 
 export interface Env {
   DB?: D1Database;
@@ -435,6 +443,95 @@ export default {
       }
       const activatedBy = (body as Record<string, unknown> | null)?.activatedBy;
       const result = await handleActivateRule(db, activateMatch[1], Number(activateMatch[2]), activatedBy, locale);
+      return json(result.body, result.status);
+    }
+
+    // org/authority/profiles (Blueprint's org/authority/profiles
+    // subsystem — see docs/decisions/0009-org-authority-profiles.md):
+    // minimal CRUD, deliberately no authentication and no permission
+    // enforcement — these routes create the data a future bundle
+    // would check against, not check it themselves yet. Deliberately
+    // NOT licence-gated either: managing a customer's own org
+    // structure is an administrative/setup action, not the product
+    // usage /rules/compile and /rules/evaluate are gated for — a
+    // blocked customer should still be able to manage their own
+    // people and roles.
+    if (url.pathname === "/org/units" && request.method === "POST") {
+      const { db } = resolveTenant(request, env);
+      let body: unknown;
+      try {
+        body = await request.json();
+      } catch {
+        return json({ error: t("invalidJsonBody", resolveLocale(env.LOCALE)) }, 400);
+      }
+      const result = await handleCreateUnit(db, (body ?? {}) as Record<string, unknown>);
+      return json(result.body, result.status);
+    }
+
+    if (url.pathname === "/org/users" && request.method === "POST") {
+      const { db } = resolveTenant(request, env);
+      let body: unknown;
+      try {
+        body = await request.json();
+      } catch {
+        return json({ error: t("invalidJsonBody", resolveLocale(env.LOCALE)) }, 400);
+      }
+      const result = await handleCreateUser(db, (body ?? {}) as Record<string, unknown>);
+      return json(result.body, result.status);
+    }
+
+    if (url.pathname === "/org/roles" && request.method === "POST") {
+      const { db } = resolveTenant(request, env);
+      let body: unknown;
+      try {
+        body = await request.json();
+      } catch {
+        return json({ error: t("invalidJsonBody", resolveLocale(env.LOCALE)) }, 400);
+      }
+      const result = await handleCreateRole(db, (body ?? {}) as Record<string, unknown>);
+      return json(result.body, result.status);
+    }
+
+    const assignRoleMatch = url.pathname.match(/^\/org\/users\/([^/]+)\/roles$/);
+    if (assignRoleMatch && request.method === "POST") {
+      const { db } = resolveTenant(request, env);
+      let body: unknown;
+      try {
+        body = await request.json();
+      } catch {
+        return json({ error: t("invalidJsonBody", resolveLocale(env.LOCALE)) }, 400);
+      }
+      const roleId = (body as Record<string, unknown> | null)?.roleId;
+      const result = await handleAssignRole(db, assignRoleMatch[1], roleId);
+      return json(result.body, result.status);
+    }
+
+    const authorityLimitMatch = url.pathname.match(/^\/org\/users\/([^/]+)\/authority-limits$/);
+    if (authorityLimitMatch && request.method === "POST") {
+      const { db } = resolveTenant(request, env);
+      let body: unknown;
+      try {
+        body = await request.json();
+      } catch {
+        return json({ error: t("invalidJsonBody", resolveLocale(env.LOCALE)) }, 400);
+      }
+      const result = await handleSetAuthorityLimit(
+        db,
+        authorityLimitMatch[1],
+        (body ?? {}) as Record<string, unknown>
+      );
+      return json(result.body, result.status);
+    }
+
+    if (url.pathname === "/org/profiles" && request.method === "POST") {
+      const { db } = resolveTenant(request, env);
+      let body: unknown;
+      try {
+        body = await request.json();
+      } catch {
+        return json({ error: t("invalidJsonBody", resolveLocale(env.LOCALE)) }, 400);
+      }
+      const result = await handleSetProfile(db, (body ?? {}) as Record<string, unknown>);
       return json(result.body, result.status);
     }
 
