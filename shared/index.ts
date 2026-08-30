@@ -4,3 +4,4 @@ export * from "./interpreter/vocabulary.js";
 export * from "./interpreter/evaluate.js";
 export * from "./compiler/index.js";
 export * from "./licensing/index.js";
+export * from "./usage/index.js";

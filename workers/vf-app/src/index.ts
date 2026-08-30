@@ -5,6 +5,8 @@ import { COMPILER_MODEL_ID, createWorkersAiCompilerModel } from "./compiler-mode
 import type { AiRunnable } from "./compiler-model.js";
 import { handleCompileRequest } from "./compile-route.js";
 import { isBlocked, readLicenceState, refreshLicenceCache } from "./licence-cache.js";
+import { handleUsagePush } from "./usage-route.js";
+import { pushUsage } from "./usage.js";
 
 export interface Env {
   DB?: D1Database;
@@ -46,6 +48,25 @@ function isPublicKeyJwk(value: unknown): value is JsonWebKey {
   if (typeof value !== "object" || value === null) return false;
   const v = value as Record<string, unknown>;
   return v.kty === "EC" && typeof v.crv === "string" && typeof v.x === "string" && typeof v.y === "string";
+}
+
+/**
+ * Builds the real UsagePusher — the only place this Worker sends usage
+ * data to vf-licence. Reuses LICENCE_SERVER_URL, the same var the
+ * licence-token fetch uses, since both point at the same control-plane
+ * instance.
+ */
+function createUsagePusher(serverUrl: string): import("./usage.js").UsagePusher {
+  return async (report) => {
+    const res = await fetch(`${serverUrl}/usage`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(report),
+    });
+    if (!res.ok) {
+      throw new Error(`usage push returned HTTP ${res.status}`);
+    }
+  };
 }
 
 interface EvaluateRequestBody {
@@ -178,6 +199,22 @@ export default {
       return json(result.body, result.status);
     }
 
+    // On-demand usage push (Blueprint's usage_periods, made idempotent
+    // and "as fresh as asked for" rather than a once-per-period batch —
+    // see docs/decisions/0004-usage-telemetry.md). Deliberately not
+    // licence-gated; see usage-route.ts's own comment. A real
+    // product-facing endpoint from the start, not an operator-only
+    // debug route — the response includes the full report just pushed,
+    // so a future "sync now" UI can show it immediately.
+    if (url.pathname === "/usage/push" && request.method === "POST") {
+      const { db } = resolveTenant(request, env);
+      if (!env.LICENCE_SERVER_URL || !env.CUSTOMER_ID) {
+        return json({ error: "LICENCE_SERVER_URL and CUSTOMER_ID must be configured" }, 500);
+      }
+      const result = await handleUsagePush(db, env.CUSTOMER_ID, createUsagePusher(env.LICENCE_SERVER_URL));
+      return json(result.body, result.status);
+    }
+
     return json({ error: "not found" }, 404);
   },
 
@@ -195,43 +232,59 @@ export default {
    * calls this with fewer than 3 arguments in production.
    */
   async scheduled(_event: ScheduledEvent, env: Env, _ctx: ExecutionContext): Promise<void> {
-    if (!isPublicKeyJwk(env.LICENCE_SIGNING_PUBLIC_KEY) || !env.LICENCE_SERVER_URL || !env.CUSTOMER_ID) {
-      // Deliberately silent rather than throwing: a misconfigured
-      // instance should keep running on its last-known cached state
-      // (or stay blocked, if it never had one) exactly as if the fetch
-      // had failed — not crash the scheduled trigger entirely, which
-      // Cloudflare would then retry and log as a failing cron with no
-      // clearer signal than this.
-      return;
-    }
-    // A scheduled trigger has no incoming Request — resolveTenant's
-    // request parameter is documented as unused today (reserved for
-    // routes 2/3, see shared/tenant.ts), so a synthetic one satisfies
-    // the discipline without a scheduled()-specific exception to the
-    // no-restricted-properties rule. Every binding access in this
-    // Worker goes through resolveTenant, including this one — a
-    // missing DB binding surfaces as resolveTenant's own
-    // TenantResolutionError, caught here and treated the same as any
-    // other misconfiguration (silent, stay on cached state).
-    let db: D1Database;
-    try {
-      ({ db } = resolveTenant(new Request("https://scheduled-trigger.internal/"), env));
-    } catch {
-      return;
-    }
-    const publicKeyJwk = env.LICENCE_SIGNING_PUBLIC_KEY;
-    const serverUrl = env.LICENCE_SERVER_URL;
-    const customerId = env.CUSTOMER_ID;
-    await refreshLicenceCache(db, publicKeyJwk, async () => {
-      const res = await fetch(`${serverUrl}/licences/${customerId}/token`);
-      if (!res.ok) {
-        throw new Error(`licence fetch returned HTTP ${res.status}`);
+    // Two independent jobs, same cron trigger (see wrangler.jsonc's
+    // triggers.crons) — deliberately not one combined guard. A missing
+    // or invalid public key must not also block usage reporting, which
+    // needs none of the licence-verification config; likewise a usage
+    // push failure must never prevent the licence refresh from being
+    // attempted. Each block resolves its own db (a scheduled trigger
+    // has no incoming Request; see the comment further down on why a
+    // synthetic one is used) and swallows its own failures — retried
+    // next cron cycle regardless of what the other block did.
+
+    if (isPublicKeyJwk(env.LICENCE_SIGNING_PUBLIC_KEY) && env.LICENCE_SERVER_URL && env.CUSTOMER_ID) {
+      // A scheduled trigger has no incoming Request — resolveTenant's
+      // request parameter is documented as unused today (reserved for
+      // routes 2/3, see shared/tenant.ts), so a synthetic one satisfies
+      // the discipline without a scheduled()-specific exception to the
+      // no-restricted-properties rule. Every binding access in this
+      // Worker goes through resolveTenant, including this one — a
+      // missing DB binding surfaces as resolveTenant's own
+      // TenantResolutionError, caught here and treated the same as any
+      // other misconfiguration (silent, stay on cached state).
+      try {
+        const { db } = resolveTenant(new Request("https://scheduled-trigger.internal/"), env);
+        const publicKeyJwk = env.LICENCE_SIGNING_PUBLIC_KEY;
+        const serverUrl = env.LICENCE_SERVER_URL;
+        const customerId = env.CUSTOMER_ID;
+        await refreshLicenceCache(db, publicKeyJwk, async () => {
+          const res = await fetch(`${serverUrl}/licences/${customerId}/token`);
+          if (!res.ok) {
+            throw new Error(`licence fetch returned HTTP ${res.status}`);
+          }
+          const payload = (await res.json()) as { token?: string };
+          if (typeof payload.token !== "string") {
+            throw new Error("licence fetch response had no token field");
+          }
+          return payload.token;
+        });
+      } catch {
+        // Deliberately silent — see the block comment above.
       }
-      const payload = (await res.json()) as { token?: string };
-      if (typeof payload.token !== "string") {
-        throw new Error("licence fetch response had no token field");
+    }
+
+    // Usage push (Blueprint's usage_periods — see
+    // docs/decisions/0004-usage-telemetry.md). Needs only
+    // LICENCE_SERVER_URL and CUSTOMER_ID, not the signing key at all —
+    // pushing doesn't verify anything.
+    if (env.LICENCE_SERVER_URL && env.CUSTOMER_ID) {
+      try {
+        const { db } = resolveTenant(new Request("https://scheduled-trigger.internal/"), env);
+        await pushUsage(db, new Date(), env.CUSTOMER_ID, createUsagePusher(env.LICENCE_SERVER_URL));
+      } catch {
+        // Deliberately silent — retried next cron cycle, or via the
+        // on-demand /usage/push endpoint at any time in between.
       }
-      return payload.token;
-    });
+    }
   },
 };

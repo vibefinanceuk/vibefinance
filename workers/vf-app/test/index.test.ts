@@ -158,8 +158,7 @@ describe("POST /rules/compile", () => {
   });
 });
 
-describe("licence enforcement — the gate applied to mutating endpoints", () => {
-  async function setLicenceStatus(status: "active" | "warned" | "blocked", reason?: string) {
+describe("licence enforcement — the gate applied to mutating endpoints", () => {  async function setLicenceStatus(status: "active" | "warned" | "blocked", reason?: string) {
     await env.DB.prepare("DELETE FROM licence_cache WHERE id = 1").run();
     const claims = {
       customerId: "test-customer",
@@ -220,5 +219,33 @@ describe("licence enforcement — the gate applied to mutating endpoints", () =>
     await setLicenceStatus("blocked", "non-payment");
     const res = await SELF.fetch("https://example.com/health");
     expect(res.status).toBe(200);
+  });
+
+  it("does NOT block /usage/push even when the licence is blocked", async () => {
+    // Deliberately outside the enforcement gate — see usage-route.ts's
+    // own comment on why. Config isn't set in wrangler.test.jsonc, so
+    // this hits the 500 "not configured" guard, not a 402 — the
+    // property under test is that it's never 402, regardless of what
+    // else stops it.
+    await setLicenceStatus("blocked", "non-payment");
+    const res = await SELF.fetch("https://example.com/usage/push", { method: "POST" });
+    expect(res.status).not.toBe(402);
+  });
+});
+
+describe("POST /usage/push", () => {
+  it("500s cleanly when LICENCE_SERVER_URL/CUSTOMER_ID are not configured, through the real router", async () => {
+    // wrangler.test.jsonc declares neither var — this exercises the
+    // real guard against that real condition. The deeper push logic
+    // (computing the report, calling the pusher, handling a pusher
+    // failure) is tested directly against handleUsagePush in
+    // test/usage-route.test.ts with a fake pusher, since a request
+    // that reaches the pusher here would need a real vf-licence to
+    // talk to.
+    const res = await SELF.fetch("https://example.com/usage/push", { method: "POST" });
+    expect(res.status).toBe(500);
+    expect(await res.json()).toEqual({
+      error: "LICENCE_SERVER_URL and CUSTOMER_ID must be configured",
+    });
   });
 });

@@ -3,6 +3,7 @@ import { env } from "cloudflare:test";
 // via ?raw, not read at runtime — tests run inside real workerd, where
 // an arbitrary host-path readFileSync does not reliably resolve.
 import schemaSql from "../migrations/0001_control_plane_schema.sql?raw";
+import usagePeriodsSql from "../migrations/0002_usage_periods.sql?raw";
 
 function stripSqlComments(sql: string): string {
   return sql
@@ -26,11 +27,12 @@ function toOneStatementPerLine(sql: string): string {
 // functions above), and storage does not appear to reset between it()
 // blocks in this pool-workers version, so every table is dropped and
 // recreated before each test rather than relying on framework isolation.
-const TABLES_IN_DROP_ORDER = ["licences", "customers"];
+const TABLES_IN_DROP_ORDER = ["usage_periods", "licences", "customers"];
 
 export async function applyTestSchema(): Promise<void> {
   for (const table of TABLES_IN_DROP_ORDER) {
     await env.CONTROL_DB.exec(`DROP TABLE IF EXISTS ${table};`);
   }
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(schemaSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(usagePeriodsSql)));
 }

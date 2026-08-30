@@ -16,18 +16,20 @@ what's actually confirmed live.
 ## Layout
 
 ```
-shared/                  interpreter, compiler, licensing, tenant resolution — imported by Workers
+shared/                  interpreter, compiler, licensing, usage, tenant resolution — imported by Workers
   interpreter/            the closed-vocabulary rule engine (vocabulary, types, evaluate)
   compiler/               NL-to-rule compiler: prompt, refusal boundary, vendor-agnostic model interface
   licensing/              signed licence tokens: sign/verify (real Web Crypto, no mocks needed)
+  usage/                  the UsageReport shape both Workers agree on
   tenant.ts                the one place a tenant-scoped binding may be touched
 workers/
-  vf-app/                 the product Worker (interpreter, compiler, licence cache/enforcement, evaluate/compile routes)
-  vf-licence/              the control-plane Worker (customers, licences, signed tokens)
+  vf-app/                 the product Worker (interpreter, compiler, licence cache/enforcement, usage push, evaluate/compile routes)
+  vf-licence/              the control-plane Worker (customers, licences, signed tokens, usage ingestion)
     migrations/             its own independent chain, against a different database — see --migrations-dir below
 migrations/               numbered, append-only SQL chain for vf-app-poc + the runner
 scripts/
   generate-licence-keypair.mjs   run locally to generate the real signing key — never in chat, never committed
+  verify-live-key-match.mjs      confirms a live vf-app/vf-licence keypair actually match, without printing either
 docs/
   change-and-promotion-model.md
   decisions/               recorded architecture decisions and alternatives considered
@@ -59,6 +61,16 @@ failing closed (blocking) if it's never successfully fetched one at
 all. See `docs/decisions/0003-licensing-signed-token.md`. The signing
 keypair is generated locally with `scripts/generate-licence-keypair.mjs`
 — the private key is never pasted into chat or committed.
+
+## Usage telemetry
+
+`vf-app` reports counts-only usage (invoices processed, rules
+evaluated, outcome breakdown — never supplier names, amounts, or
+anything re-identifiable) to `vf-licence`, idempotently keyed on
+`(customer_id, period_key)`. The same push logic runs on the licence
+refresh's cron and behind `POST /usage/push` for on-demand reporting —
+see `docs/decisions/0004-usage-telemetry.md` for why those are the same
+capability, not two different code paths.
 
 ## The one rule enforced by tooling, not convention
 

@@ -8,14 +8,16 @@
  * per customer.
  *
  * Customers, licences and the signed token are implemented here.
- * Idempotent usage-period ingestion and the payment webhook — Blueprint
- * build order: "Payments last — the webhook is the easy part" — remain
- * a later build step.
+ * Idempotent usage-period ingestion (see usage-route.ts) is also
+ * implemented — the payment webhook alone remains a later build step,
+ * per the Blueprint's own build order: "Payments last — the webhook is
+ * the easy part."
  */
 
 import { handleCreateCustomer } from "./customers-route.js";
 import { handleUpsertLicence } from "./licences-route.js";
 import { handleIssueToken } from "./token-route.js";
+import { handleReportUsage } from "./usage-route.js";
 
 export interface Env {
   CONTROL_DB?: D1Database;
@@ -94,6 +96,17 @@ export default {
       const keyResult = parsePrivateKey(env);
       if (!keyResult.ok) return keyResult.response;
       const result = await handleIssueToken(env.CONTROL_DB, keyResult.key, tokenMatch[1]);
+      return json(result.body, result.status);
+    }
+
+    if (url.pathname === "/usage" && request.method === "POST") {
+      let body: unknown;
+      try {
+        body = await request.json();
+      } catch {
+        return json({ error: "invalid JSON body" }, 400);
+      }
+      const result = await handleReportUsage(env.CONTROL_DB, (body ?? {}) as Record<string, unknown>);
       return json(result.body, result.status);
     }
 
