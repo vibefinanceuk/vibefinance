@@ -20,7 +20,7 @@ describe("isKnownPermission", () => {
 
 describe("isKnownPermissionList", () => {
   it("accepts an array of entirely known permissions", () => {
-    expect(isKnownPermissionList(["rules.compile", "rules.activate"])).toBe(true);
+    expect(isKnownPermissionList(["Admin.RuleManagement", "AP.Approve"])).toBe(true);
   });
 
   it("accepts an empty array", () => {
@@ -28,11 +28,11 @@ describe("isKnownPermissionList", () => {
   });
 
   it("rejects an array with even one unknown permission", () => {
-    expect(isKnownPermissionList(["rules.compile", "delete_everything"])).toBe(false);
+    expect(isKnownPermissionList(["Admin.RuleManagement", "delete_everything"])).toBe(false);
   });
 
   it("rejects a non-array value", () => {
-    expect(isKnownPermissionList("rules.compile")).toBe(false);
+    expect(isKnownPermissionList("Admin.RuleManagement")).toBe(false);
     expect(isKnownPermissionList(undefined)).toBe(false);
   });
 });

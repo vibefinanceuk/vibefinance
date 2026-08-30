@@ -9,6 +9,7 @@ import {
   handleSetAuthorityLimit,
   handleSetProfile,
 } from "../src/org-route.js";
+import { authenticateUser } from "../src/user-auth.js";
 
 beforeEach(async () => {
   await applyTestSchema();
@@ -91,6 +92,27 @@ describe("handleCreateUser", () => {
     const row = await env.DB.prepare("SELECT locale FROM org_users WHERE id = ?").bind("usr1").first();
     expect(row).toEqual({ locale: "de" });
   });
+
+  it("returns a real API key in the response, and stores only its hash — never the plaintext", async () => {
+    const result = await handleCreateUser(env.DB, { id: "usr1", email: "a@b.com", name: "Alice" });
+    const { apiKey } = result.body as { apiKey: string };
+    expect(apiKey).toBeTruthy();
+
+    const row = await env.DB.prepare("SELECT api_key_hash FROM org_users WHERE id = ?")
+      .bind("usr1")
+      .first<{ api_key_hash: string }>();
+    expect(row?.api_key_hash).toBeTruthy();
+    expect(row?.api_key_hash).not.toBe(apiKey);
+    expect(row?.api_key_hash).not.toContain(apiKey);
+  });
+
+  it("the returned key actually authenticates this user", async () => {
+    const result = await handleCreateUser(env.DB, { id: "usr1", email: "a@b.com", name: "Alice" });
+    const { apiKey } = result.body as { apiKey: string };
+    const request = new Request("https://x", { headers: { Authorization: `Bearer ${apiKey}` } });
+    const authenticated = await authenticateUser(env.DB, request);
+    expect(authenticated?.id).toBe("usr1");
+  });
 });
 
 describe("handleCreateRole — the closed permission vocabulary", () => {
@@ -98,11 +120,11 @@ describe("handleCreateRole — the closed permission vocabulary", () => {
     const result = await handleCreateRole(env.DB, {
       id: "r1",
       name: "AP Manager",
-      permissions: ["rules.activate", "org.manage_authority_limits"],
+      permissions: ["AP.Approve", "Admin.UserManagement"],
     });
     expect(result.status).toBe(201);
     const row = await env.DB.prepare("SELECT permissions_json FROM org_roles WHERE id = ?").bind("r1").first();
-    expect(row).toEqual({ permissions_json: '["rules.activate","org.manage_authority_limits"]' });
+    expect(row).toEqual({ permissions_json: '["AP.Approve","Admin.UserManagement"]' });
   });
 
   it("creates a role with no permissions at all — a legitimate empty container", async () => {
@@ -114,7 +136,7 @@ describe("handleCreateRole — the closed permission vocabulary", () => {
     const result = await handleCreateRole(env.DB, {
       id: "r1",
       name: "Sketchy Role",
-      permissions: ["rules.activate", "delete_everything"],
+      permissions: ["AP.Approve", "delete_everything"],
     });
     expect(result.status).toBe(422);
     const row = await env.DB.prepare("SELECT id FROM org_roles WHERE id = ?").bind("r1").first();

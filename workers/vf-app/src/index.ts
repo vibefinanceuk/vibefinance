@@ -22,6 +22,8 @@ import {
   handleSetAuthorityLimit,
   handleSetProfile,
 } from "./org-route.js";
+import { requirePermission } from "./enforce.js";
+import { handleRotateUserKey } from "./user-rotate-key-route.js";
 
 export interface Env {
   DB?: D1Database;
@@ -204,6 +206,11 @@ async function handleEvaluate(request: Request, env: Env): Promise<Response> {
   const { db } = resolveTenant(request, env);
   const locale = resolveLocale(env.LOCALE);
 
+  const auth = await requirePermission(db, request, "AP.Validate");
+  if (!auth.authorized) {
+    return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", locale) }, auth.status);
+  }
+
   let body: EvaluateRequestBody;
   try {
     body = (await request.json()) as EvaluateRequestBody;
@@ -325,6 +332,10 @@ export default {
     if (url.pathname === "/rules/compile" && request.method === "POST") {
       const { db } = resolveTenant(request, env);
       const locale = resolveLocale(env.LOCALE);
+      const auth = await requirePermission(db, request, "Admin.RuleManagement");
+      if (!auth.authorized) {
+        return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", locale) }, auth.status);
+      }
       if (!env.AI) {
         return json({ error: "AI binding not configured" }, 500);
       }
@@ -404,6 +415,11 @@ export default {
     const examplesListMatch = url.pathname.match(/^\/rules\/([^/]+)\/versions\/(\d+)\/examples$/);
     if (examplesListMatch && request.method === "GET") {
       const { db } = resolveTenant(request, env);
+      const locale = resolveLocale(env.LOCALE);
+      const auth = await requirePermission(db, request, "AP.Review");
+      if (!auth.authorized) {
+        return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", locale) }, auth.status);
+      }
       const result = await handleListExamples(db, examplesListMatch[1], Number(examplesListMatch[2]));
       return json(result.body, result.status);
     }
@@ -416,14 +432,17 @@ export default {
       if (isBlocked(licenceState)) {
         return blockedResponse(licenceState, locale);
       }
-      let body: unknown;
-      try {
-        body = await request.json();
-      } catch {
-        return json({ error: t("invalidJsonBody", locale) }, 400);
+      const auth = await requirePermission(db, request, "AP.Review");
+      if (!auth.authorized) {
+        return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", locale) }, auth.status);
       }
-      const confirmedBy = (body as Record<string, unknown> | null)?.confirmedBy;
-      const result = await handleConfirmExample(db, confirmMatch[1], confirmedBy, locale);
+      // confirmedBy is derived from the authenticated identity, never
+      // trusted from the request body — "The customer said yes, this
+      // is what I meant" (Blueprint, rule_examples.confirmed_by) has to
+      // actually mean the person who confirmed it, not whatever string
+      // a client happened to send. Before real auth existed, this field
+      // was just a client-supplied claim anyone could spoof for free.
+      const result = await handleConfirmExample(db, confirmMatch[1], auth.user.email, locale);
       return json(result.body, result.status);
     }
 
@@ -435,14 +454,20 @@ export default {
       if (isBlocked(licenceState)) {
         return blockedResponse(licenceState, locale);
       }
-      let body: unknown;
-      try {
-        body = await request.json();
-      } catch {
-        return json({ error: t("invalidJsonBody", locale) }, 400);
+      const auth = await requirePermission(db, request, "AP.Approve");
+      if (!auth.authorized) {
+        return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", locale) }, auth.status);
       }
-      const activatedBy = (body as Record<string, unknown> | null)?.activatedBy;
-      const result = await handleActivateRule(db, activateMatch[1], Number(activateMatch[2]), activatedBy, locale);
+      // Same reasoning as confirmedBy above — "A person activated this"
+      // (Blueprint, rule_versions.approved_by) now means the actual
+      // authenticated person, not a spoofable request-body string.
+      const result = await handleActivateRule(
+        db,
+        activateMatch[1],
+        Number(activateMatch[2]),
+        auth.user.email,
+        locale
+      );
       return json(result.body, result.status);
     }
 
@@ -532,6 +557,19 @@ export default {
         return json({ error: t("invalidJsonBody", resolveLocale(env.LOCALE)) }, 400);
       }
       const result = await handleSetProfile(db, (body ?? {}) as Record<string, unknown>);
+      return json(result.body, result.status);
+    }
+
+    // User key rotation — same purpose as vf-licence's
+    // POST /customers/:id/rotate-key: the only way to recover from a
+    // lost or leaked key. Not authenticated by permission itself
+    // (matching the rest of /org/* — see the comment above), since
+    // requiring a permission to rotate a key would reintroduce the
+    // exact bootstrap problem this whole subsystem avoids elsewhere.
+    const rotateUserKeyMatch = url.pathname.match(/^\/org\/users\/([^/]+)\/rotate-key$/);
+    if (rotateUserKeyMatch && request.method === "POST") {
+      const { db } = resolveTenant(request, env);
+      const result = await handleRotateUserKey(db, rotateUserKeyMatch[1]);
       return json(result.body, result.status);
     }
 

@@ -1,5 +1,6 @@
 import { isKnownCiusProfile } from "./profiles.js";
 import { isKnownPermissionList } from "./permissions.js";
+import { generateApiKey, hashApiKey } from "./user-auth.js";
 
 export interface RouteResult {
   status: number;
@@ -87,12 +88,23 @@ export async function handleCreateUser(db: D1Database, body: CreateUserBody): Pr
     }
   }
 
+  // The plaintext key exists only in this response — only its hash is
+  // ever stored, from this point on. Same discipline as
+  // vf-licence's customer keys (docs/decisions/0006-endpoint-
+  // authentication.md): if it's lost, the fix is rotating it
+  // (POST /org/users/:id/rotate-key), never recovering it.
+  const apiKey = generateApiKey();
+  const apiKeyHash = await hashApiKey(apiKey);
+
   await db
-    .prepare("INSERT INTO org_users (id, email, name, unit_id, locale) VALUES (?, ?, ?, ?, ?)")
-    .bind(id, email, name, unitId ?? null, locale ?? null)
+    .prepare("INSERT INTO org_users (id, email, name, unit_id, locale, api_key_hash) VALUES (?, ?, ?, ?, ?, ?)")
+    .bind(id, email, name, unitId ?? null, locale ?? null, apiKeyHash)
     .run();
 
-  return { status: 201, body: { id, email, name, unitId: unitId ?? null, locale: locale ?? null, status: "active" } };
+  return {
+    status: 201,
+    body: { id, email, name, unitId: unitId ?? null, locale: locale ?? null, status: "active", apiKey },
+  };
 }
 
 interface CreateRoleBody {

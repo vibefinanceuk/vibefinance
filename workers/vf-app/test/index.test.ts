@@ -4,6 +4,8 @@ import { applyTestSchema } from "./setup.js";
 import type { CompiledRuleSet } from "@vibefinance/shared";
 import worker from "../src/index.js";
 import type { Env } from "../src/index.js";
+import { generateApiKey, hashApiKey } from "../src/user-auth.js";
+import { PERMISSIONS } from "../src/permissions.js";
 
 async function seedActiveLicence(): Promise<void> {
   // Every existing test below predates the licence gate and expects to
@@ -26,9 +28,58 @@ async function seedActiveLicence(): Promise<void> {
     .run();
 }
 
+/**
+ * Seeds a user holding every known permission and returns their real
+ * API key — same reasoning as seedActiveLicence: every test below
+ * predates real auth and expects to reach its own handler, not be
+ * turned away at 401/403. The permission gate itself gets its own
+ * describe block further down, testing 401/403 specifically with a
+ * deliberately under-permissioned or unauthenticated request.
+ */
+async function seedFullyAuthorizedUser(): Promise<string> {
+  const apiKey = generateApiKey();
+  const hash = await hashApiKey(apiKey);
+  await env.DB.prepare("INSERT INTO org_users (id, email, name, api_key_hash) VALUES (?, ?, ?, ?)")
+    .bind("test-user", "test-user@example.com", "Test User", hash)
+    .run();
+  await env.DB.prepare("INSERT INTO org_roles (id, name, permissions_json) VALUES (?, ?, ?)")
+    .bind("test-role", "Test Role", JSON.stringify(PERMISSIONS))
+    .run();
+  await env.DB.prepare("INSERT INTO org_user_roles (user_id, role_id) VALUES (?, ?)")
+    .bind("test-user", "test-role")
+    .run();
+  return apiKey;
+}
+
+let authorizedApiKey: string;
+
+/** For 403 tests specifically: a real, authenticated user who simply
+ * lacks the permission a route requires — distinct from an
+ * unauthenticated request (401), and needed to prove the two are
+ * genuinely told apart, not collapsed into one generic rejection. */
+async function seedUserWithPermissions(permissions: string[]): Promise<string> {
+  const id = crypto.randomUUID();
+  const apiKey = generateApiKey();
+  const hash = await hashApiKey(apiKey);
+  await env.DB.prepare("INSERT INTO org_users (id, email, name, api_key_hash) VALUES (?, ?, ?, ?)")
+    .bind(id, `${id}@example.com`, "Limited User", hash)
+    .run();
+  const roleId = crypto.randomUUID();
+  await env.DB.prepare("INSERT INTO org_roles (id, name, permissions_json) VALUES (?, ?, ?)")
+    .bind(roleId, "Limited Role", JSON.stringify(permissions))
+    .run();
+  await env.DB.prepare("INSERT INTO org_user_roles (user_id, role_id) VALUES (?, ?)").bind(id, roleId).run();
+  return apiKey;
+}
+
+function authHeaders(): Record<string, string> {
+  return { Authorization: `Bearer ${authorizedApiKey}` };
+}
+
 beforeEach(async () => {
   await applyTestSchema();
   await seedActiveLicence();
+  authorizedApiKey = await seedFullyAuthorizedUser();
 });
 
 describe("GET /health", () => {
@@ -73,6 +124,7 @@ describe("POST /rules/evaluate", () => {
   it("evaluates and writes an append-only execution log to real D1", async () => {
     const res = await SELF.fetch("https://example.com/rules/evaluate", {
       method: "POST",
+      headers: authHeaders(),
       body: JSON.stringify({
         ruleSet,
         facts: { "BT-40": "US" },
@@ -119,6 +171,7 @@ describe("POST /rules/evaluate", () => {
 
     const res = await SELF.fetch("https://example.com/rules/evaluate", {
       method: "POST",
+      headers: authHeaders(),
       body: JSON.stringify({ ruleSet: badRuleSet, facts: {}, invoiceId: "inv-2" }),
     });
 
@@ -161,6 +214,7 @@ describe("POST /rules/evaluate", () => {
 
     const res = await SELF.fetch("https://example.com/rules/evaluate", {
       method: "POST",
+      headers: authHeaders(),
       body: JSON.stringify({ ruleSetId: "rs1", facts: { "BT-40": "US" }, invoiceId: "inv-3" }),
     });
 
@@ -175,6 +229,7 @@ describe("POST /rules/evaluate", () => {
     // not a failure.
     const res = await SELF.fetch("https://example.com/rules/evaluate", {
       method: "POST",
+      headers: authHeaders(),
       body: JSON.stringify({ ruleSetId: "rs1", facts: { "BT-40": "US" }, invoiceId: "inv-4" }),
     });
     expect(res.status).toBe(200);
@@ -184,6 +239,7 @@ describe("POST /rules/evaluate", () => {
   it("400s when both ruleSet and ruleSetId are provided — never a silent preference", async () => {
     const res = await SELF.fetch("https://example.com/rules/evaluate", {
       method: "POST",
+      headers: authHeaders(),
       body: JSON.stringify({ ruleSet, ruleSetId: "rs1", facts: {}, invoiceId: "inv-5" }),
     });
     expect(res.status).toBe(400);
@@ -192,6 +248,7 @@ describe("POST /rules/evaluate", () => {
   it("400s when neither ruleSet nor ruleSetId is provided", async () => {
     const res = await SELF.fetch("https://example.com/rules/evaluate", {
       method: "POST",
+      headers: authHeaders(),
       body: JSON.stringify({ facts: {}, invoiceId: "inv-6" }),
     });
     expect(res.status).toBe(400);
@@ -200,6 +257,7 @@ describe("POST /rules/evaluate", () => {
   it("404s when ruleSetId refers to a rule set that does not exist", async () => {
     const res = await SELF.fetch("https://example.com/rules/evaluate", {
       method: "POST",
+      headers: authHeaders(),
       body: JSON.stringify({ ruleSetId: "does-not-exist", facts: {}, invoiceId: "inv-7" }),
     });
     expect(res.status).toBe(404);
@@ -219,6 +277,7 @@ describe("POST /rules/compile", () => {
     // that reaches the model here would need real AI credentials.
     const res = await SELF.fetch("https://example.com/rules/compile", {
       method: "POST",
+      headers: authHeaders(),
       body: JSON.stringify({ ruleSetId: "rs1", sourceText: "anything" }),
     });
     expect(res.status).toBe(500);
@@ -276,6 +335,7 @@ describe("licence enforcement — the gate applied to mutating endpoints", () =>
       .run();
     const res = await SELF.fetch("https://example.com/rules/evaluate", {
       method: "POST",
+      headers: authHeaders(),
       body: JSON.stringify({ ruleSet: { id: "x", mode: "first_match", rules: [] }, facts: {}, invoiceId: "i1" }),
     });
     // Reaches the real handler and succeeds — confirms the gate let it
@@ -351,7 +411,9 @@ describe("worked examples & activation routes, through the real router", () => {
     // Deliberately no seedActiveLicence override here beyond the
     // top-level beforeEach's — this route is meant to work regardless,
     // proven properly further down in its own blocked-licence test.
-    const res = await SELF.fetch(`https://example.com/rules/${ruleId}/versions/1/examples`);
+    const res = await SELF.fetch(`https://example.com/rules/${ruleId}/versions/1/examples`, {
+      headers: authHeaders(),
+    });
     expect(res.status).toBe(200);
     const body = (await res.json()) as { examples: unknown[] };
     expect(body.examples).toHaveLength(2);
@@ -360,22 +422,66 @@ describe("worked examples & activation routes, through the real router", () => {
   it("listing examples is not blocked by licence status — read-only, not lights out", async () => {
     const { ruleId } = await seedRuleWithExamples();
     await env.DB.prepare("DELETE FROM licence_cache WHERE id = 1").run();
-    const res = await SELF.fetch(`https://example.com/rules/${ruleId}/versions/1/examples`);
+    const res = await SELF.fetch(`https://example.com/rules/${ruleId}/versions/1/examples`, {
+      headers: authHeaders(),
+    });
     expect(res.status).toBe(200);
   });
 
-  it("POST confirms an example through the real router", async () => {
+  it("401s listing examples with no credentials at all", async () => {
+    const { ruleId } = await seedRuleWithExamples();
+    const res = await SELF.fetch(`https://example.com/rules/${ruleId}/versions/1/examples`);
+    expect(res.status).toBe(401);
+  });
+
+  it("POST confirms an example through the real router, recording the authenticated identity", async () => {
     const { exampleIds } = await seedRuleWithExamples();
     const res = await SELF.fetch(`https://example.com/rules/examples/${exampleIds[0]}/confirm`, {
       method: "POST",
-      body: JSON.stringify({ confirmedBy: "alice@example.com" }),
+      headers: authHeaders(),
     });
     expect(res.status).toBe(200);
 
     const row = await env.DB.prepare("SELECT confirmed_by FROM rule_examples WHERE id = ?")
       .bind(exampleIds[0])
       .first();
-    expect(row).toEqual({ confirmed_by: "alice@example.com" });
+    // The authenticated user's own email, not anything a client could
+    // put in a request body.
+    expect(row).toEqual({ confirmed_by: "test-user@example.com" });
+  });
+
+  it("ignores a spoofed confirmedBy in the request body — identity comes from the authenticated key, never the client", async () => {
+    const { exampleIds } = await seedRuleWithExamples();
+    const res = await SELF.fetch(`https://example.com/rules/examples/${exampleIds[0]}/confirm`, {
+      method: "POST",
+      headers: authHeaders(),
+      // A client claiming to be someone else entirely — before real
+      // auth existed, this field was trusted outright.
+      body: JSON.stringify({ confirmedBy: "someone-else@attacker.example" }),
+    });
+    expect(res.status).toBe(200);
+    const row = await env.DB.prepare("SELECT confirmed_by FROM rule_examples WHERE id = ?")
+      .bind(exampleIds[0])
+      .first();
+    expect(row).toEqual({ confirmed_by: "test-user@example.com" });
+  });
+
+  it("401s confirming an example with no credentials at all", async () => {
+    const { exampleIds } = await seedRuleWithExamples();
+    const res = await SELF.fetch(`https://example.com/rules/examples/${exampleIds[0]}/confirm`, {
+      method: "POST",
+    });
+    expect(res.status).toBe(401);
+  });
+
+  it("403s confirming an example when authenticated but lacking the AP.Review permission", async () => {
+    const { exampleIds } = await seedRuleWithExamples();
+    const key = await seedUserWithPermissions(["Admin.RuleManagement"]); // wrong permission on purpose
+    const res = await SELF.fetch(`https://example.com/rules/examples/${exampleIds[0]}/confirm`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${key}` },
+    });
+    expect(res.status).toBe(403);
   });
 
   it("confirming is blocked when the licence is blocked", async () => {
@@ -383,30 +489,46 @@ describe("worked examples & activation routes, through the real router", () => {
     await env.DB.prepare("DELETE FROM licence_cache WHERE id = 1").run();
     const res = await SELF.fetch(`https://example.com/rules/examples/${exampleIds[0]}/confirm`, {
       method: "POST",
-      body: JSON.stringify({ confirmedBy: "alice@example.com" }),
+      headers: authHeaders(),
     });
     expect(res.status).toBe(402);
   });
 
-  it("POST activates a rule through the real router once every example is confirmed", async () => {
+  it("POST activates a rule through the real router once every example is confirmed, recording the authenticated identity", async () => {
     const { ruleId, exampleIds } = await seedRuleWithExamples();
     for (const id of exampleIds) {
       await SELF.fetch(`https://example.com/rules/examples/${id}/confirm`, {
         method: "POST",
-        body: JSON.stringify({ confirmedBy: "alice@example.com" }),
+        headers: authHeaders(),
       });
     }
 
     const res = await SELF.fetch(`https://example.com/rules/${ruleId}/versions/1/activate`, {
       method: "POST",
-      body: JSON.stringify({ activatedBy: "alice@example.com" }),
+      headers: authHeaders(),
     });
     expect(res.status).toBe(200);
 
     const row = await env.DB.prepare("SELECT approved_by FROM rule_versions WHERE rule_id = ?")
       .bind(ruleId)
       .first();
-    expect(row).toEqual({ approved_by: "alice@example.com" });
+    expect(row).toEqual({ approved_by: "test-user@example.com" });
+  });
+
+  it("401s activating a rule with no credentials at all", async () => {
+    const { ruleId } = await seedRuleWithExamples();
+    const res = await SELF.fetch(`https://example.com/rules/${ruleId}/versions/1/activate`, { method: "POST" });
+    expect(res.status).toBe(401);
+  });
+
+  it("403s activating a rule when authenticated but lacking the AP.Approve permission", async () => {
+    const { ruleId } = await seedRuleWithExamples();
+    const key = await seedUserWithPermissions(["AP.Review"]); // wrong permission on purpose
+    const res = await SELF.fetch(`https://example.com/rules/${ruleId}/versions/1/activate`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${key}` },
+    });
+    expect(res.status).toBe(403);
   });
 
   it("activation is refused through the real router when an example is still unconfirmed", async () => {
@@ -414,7 +536,7 @@ describe("worked examples & activation routes, through the real router", () => {
     // Neither example confirmed.
     const res = await SELF.fetch(`https://example.com/rules/${ruleId}/versions/1/activate`, {
       method: "POST",
-      body: JSON.stringify({ activatedBy: "alice@example.com" }),
+      headers: authHeaders(),
     });
     expect(res.status).toBe(409);
   });
@@ -424,7 +546,7 @@ describe("worked examples & activation routes, through the real router", () => {
     await env.DB.prepare("DELETE FROM licence_cache WHERE id = 1").run();
     const res = await SELF.fetch(`https://example.com/rules/${ruleId}/versions/1/activate`, {
       method: "POST",
-      body: JSON.stringify({ activatedBy: "alice@example.com" }),
+      headers: authHeaders(),
     });
     expect(res.status).toBe(402);
   });
@@ -498,6 +620,7 @@ describe("LOCALE — genuinely customer-facing messages translate through the re
     const customEnv: Env = { ...env, LOCALE: "fr" };
     const request = new Request("https://example.com/rules/evaluate", {
       method: "POST",
+      headers: authHeaders(),
       body: JSON.stringify({ facts: {}, invoiceId: "i1" }), // neither ruleSet nor ruleSetId
     });
     const res = await worker.fetch(request, customEnv);
@@ -550,7 +673,7 @@ describe("org/authority/profiles routes, through the real router", () => {
   it("creates a role through the real router", async () => {
     const res = await SELF.fetch("https://example.com/org/roles", {
       method: "POST",
-      body: JSON.stringify({ id: "r1", name: "Admin", permissions: ["rules.activate"] }),
+      body: JSON.stringify({ id: "r1", name: "Admin", permissions: ["AP.Approve"] }),
     });
     expect(res.status).toBe(201);
   });

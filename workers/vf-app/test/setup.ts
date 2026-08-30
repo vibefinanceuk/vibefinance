@@ -9,6 +9,7 @@ import { env } from "cloudflare:test";
 import schemaSql from "../../../migrations/0001_rule_engine_schema.sql?raw";
 import licenceCacheSql from "../../../migrations/0002_licence_cache.sql?raw";
 import orgAuthorityProfilesSql from "../../../migrations/0003_org_authority_profiles.sql?raw";
+import orgUserApiKeysSql from "../../../migrations/0004_org_user_api_keys.sql?raw";
 
 // Another known divergence from production, on top of the one below:
 // D1's exec() splits its input by newline and executes each non-empty
@@ -76,4 +77,5 @@ export async function applyTestSchema(): Promise<void> {
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(schemaSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(licenceCacheSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(orgAuthorityProfilesSql)));
+  await env.DB.exec(toOneStatementPerLine(stripSqlComments(orgUserApiKeysSql)));
 }

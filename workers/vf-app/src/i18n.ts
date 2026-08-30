@@ -32,7 +32,9 @@ export type MessageKey =
   | "ruleVersionDoesNotExist"
   | "alreadyActivated"
   | "cannotActivateNoExamples"
-  | "cannotActivateUnconfirmed";
+  | "cannotActivateUnconfirmed"
+  | "unauthorized"
+  | "forbidden";
 
 type MessageParams = Record<string, string | number>;
 
@@ -168,6 +170,22 @@ const MESSAGES: Record<MessageKey, Record<Locale, string>> = {
     es: "No se puede activar: {unconfirmed} de {total} ejemplo(s) aún sin confirmar",
     it: "Impossibile attivare: {unconfirmed} esempio/i su {total} non ancora confermato/i",
     nl: "Activeren niet mogelijk: {unconfirmed} van {total} voorbeeld(en) nog niet bevestigd",
+  },
+  unauthorized: {
+    en: "unauthorized",
+    de: "Nicht autorisiert",
+    fr: "Non autorisé",
+    es: "No autorizado",
+    it: "Non autorizzato",
+    nl: "Niet geautoriseerd",
+  },
+  forbidden: {
+    en: "you do not have permission to do this",
+    de: "Sie sind nicht berechtigt, diese Aktion auszuführen",
+    fr: "Vous n'êtes pas autorisé à effectuer cette action",
+    es: "No tiene permiso para realizar esta acción",
+    it: "Non si dispone dell'autorizzazione per eseguire questa azione",
+    nl: "U heeft geen toestemming om deze actie uit te voeren",
   },
 };
 

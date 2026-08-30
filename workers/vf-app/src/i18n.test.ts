@@ -73,6 +73,8 @@ describe("t — completeness across every locale and message key", () => {
     "alreadyActivated",
     "cannotActivateNoExamples",
     "cannotActivateUnconfirmed",
+    "unauthorized",
+    "forbidden",
   ];
 
   it("every supported locale has a real, non-empty, distinct-from-English translation for every key", () => {

@@ -116,16 +116,26 @@ yet to attach branding to at all.
 ## Organisation, authority limits, and CIUS profiles
 
 A customer's own org structure (`org_units`, optionally hierarchical),
-real individual people (`org_users` — no credentials or session
-concept yet, data only), customer-definable roles built from a closed
-permission vocabulary (`org_roles`), per-user monetary approval
-ceilings (`org_authority_limits`), and which CIUS profile(s) a customer
-issues/receives invoices under (`org_profiles`) — schema plus minimal
-CRUD, deliberately no authentication or permission enforcement yet.
-See `docs/decisions/0009-org-authority-profiles.md`, including how the
-CIUS profile identifiers were verified against a live source before
-being hardcoded, since this product's whole purpose is EN 16931/Peppol
-compliance and getting that wrong would matter.
+real individual people (`org_users`), customer-definable roles built
+from a closed permission vocabulary (`org_roles`), per-user monetary
+approval ceilings (`org_authority_limits`), and which CIUS profile(s) a
+customer issues/receives invoices under (`org_profiles`) — see
+`docs/decisions/0009-org-authority-profiles.md`.
+
+## User authentication and enforcement
+
+Real people can now authenticate to `vf-app` with a per-user API key
+(same generate-once, hash-only-stored pattern as `vf-licence`'s admin
+and customer keys), and the rules workflow — compile, evaluate, review,
+approve — actually checks permissions before letting anything through.
+`confirmedBy`/`activatedBy` are derived from the authenticated identity,
+never a client-supplied string. Permissions are namespaced by business
+role category (`AP.*`, `AR.*`, `Admin.*`, `System.*`) — see
+`docs/decisions/0010-user-authentication-and-enforcement.md`, including
+what's deliberately not enforced yet (`/org/*` management, to avoid a
+bootstrap deadlock; `/licence/refresh`, a deliberate escape hatch;
+authority-limit enforcement, which has no integration point to attach
+to today).
 
 ## The one rule enforced by tooling, not convention
 
