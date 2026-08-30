@@ -66,6 +66,25 @@ export function createWorkersAiCompilerModel(ai: AiRunnable): CompilerModel {
     async compile(prompt: string): Promise<string> {
       const raw = await ai.run(COMPILER_MODEL_ID, {
         messages: [{ role: "user", content: prompt }],
+        // Found live: without this, a real request came back with
+        // finish_reason: "length" and content: null — gpt-oss-120b is
+        // a reasoning model that emits an internal chain-of-thought
+        // trace before its actual answer, and burned through the
+        // entire response budget on that reasoning alone before ever
+        // reaching the JSON content examples.ts asked for. Confirmed
+        // against Cloudflare's own changelog, not guessed: "We fixed a
+        // bug where max_tokens defaults were not properly being
+        // respected — max_tokens now correctly defaults to 256" — far
+        // too small for a reasoning model, especially for
+        // examples.ts's longer, multi-example prompts. 4096 is
+        // generous relative to gpt-oss-120b's 128K context window and
+        // this isn't a hot path (rule authoring, not invoice
+        // evaluation), so the cost/latency tradeoff of headroom here
+        // is favourable. Not confirmed to fully eliminate truncation
+        // for every prompt — the honest claim is "addresses the
+        // specific, diagnosed cause of the one real failure seen so
+        // far," not "impossible now."
+        max_tokens: 4096,
       });
       return extractResponseText(raw);
     },

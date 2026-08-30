@@ -15,6 +15,16 @@ describe("createWorkersAiCompilerModel — defensive response shape handling", (
     expect(input).toMatchObject({ messages: [{ role: "user", content: "test prompt" }] });
   });
 
+  it("sets a generous max_tokens — found live: without this, a real request truncated with finish_reason: 'length' and content: null, the model having spent its entire (Cloudflare-documented 256-token) default budget on internal reasoning before ever reaching the actual JSON answer", async () => {
+    const run = vi.fn().mockResolvedValue({ response: "ok" });
+    const ai: AiRunnable = { run };
+    const model = createWorkersAiCompilerModel(ai);
+    await model.compile("test prompt");
+
+    const [, input] = run.mock.calls[0];
+    expect((input as { max_tokens: number }).max_tokens).toBeGreaterThan(256);
+  });
+
   it("extracts text from the classic Workers AI { response } shape", async () => {
     const ai: AiRunnable = { run: vi.fn().mockResolvedValue({ response: "hello" }) };
     const model = createWorkersAiCompilerModel(ai);

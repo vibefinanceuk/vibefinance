@@ -82,6 +82,33 @@ benchmark. Still open:
   real customer sentences, or at minimum a deliberate adversarial test
   set — not two hand-picked examples.
 
+## A real reasoning-model gap, found live: `max_tokens`
+
+`generateExamples` (docs/decisions/0007-rule-approval.md) hit a real
+production failure: `finish_reason: "length"`, `content: null`. The
+raw response showed the model's `reasoning`/`reasoning_content` fields
+full of genuine chain-of-thought about the task — it never got past
+that to actually write the JSON answer.
+
+Confirmed against Cloudflare's own changelog, not guessed: *"We fixed
+a bug where max_tokens defaults were not properly being respected —
+max_tokens now correctly defaults to 256."* `gpt-oss-120b` is a
+reasoning model (OpenAI's own docs describe it as such); 256 tokens is
+nowhere near enough for both an internal reasoning trace and a
+multi-example structured answer. `compiler-model.ts` never set
+`max_tokens` at all — an oversight that happened to not matter for the
+main compile call (a short answer, 3–4 fields) but broke immediately
+on `examples.ts`'s longer prompt and longer expected output.
+
+Fixed by explicitly setting `max_tokens: 4096`. Cloudflare's own blog
+also documents a `reasoning: {"effort": "..."}` parameter that could
+reduce reasoning-token consumption directly, but only shown against
+their newer `/ai/v1/responses` endpoint, not the `env.AI.run()` +
+`messages` shape this code actually uses — not confirmed compatible
+with the call shape in use, so not added speculatively. `max_tokens`
+alone is the fix actually shipped, because it's the one parameter with
+direct, confirmed evidence behind it.
+
 ## Alternatives considered and not chosen here
 
 | option | why not, for now |
