@@ -98,6 +98,47 @@ or re-litigate this; it inherits the same deferral, on purpose.
   customer's actual jurisdiction has been confirmed with counsel —
   never a hardcoded constant.
 
+## Addendum, 31 August 2026: generated PDFs for electronic-only invoices
+
+The design above implicitly assumed a document always exists to be
+received and stored. That's true for a scanned PDF or a JPEG — it's
+not true for a genuinely electronic invoice: raw Peppol UBL/XML,
+structured data with no native visual form at all. An operator or
+approver can't meaningfully review a UBL document directly; a
+human-readable rendering has to be *generated* from the structured
+facts before it's reviewable at all. This is standard, well-established
+practice in e-invoicing specifically for this reason — real Peppol
+Access Points commonly render a visual representation from the
+underlying EN 16931 data for exactly this purpose, not as a
+convenience but as a practical necessity.
+
+This splits document handling into two genuinely different cases,
+where the original design only had one:
+
+- **A native document exists** (a scanned PDF, a JPEG). Store the
+  original as-is — the design above, unchanged.
+- **No native document exists** (pure electronic UBL/XML). Generate a
+  PDF rendering from the invoice's structured facts, then store *that*
+  the same way — same bucket, same key structure
+  (`{customer}/{year}/{invoice_id}.pdf`), same retention discipline.
+  The two cases are mutually exclusive per invoice, not additive: an
+  invoice either arrived with a native document or it didn't.
+
+The generated rendering is worth retaining, not just producing
+on-the-fly for display. It represents what an approver actually looked
+at when they made a decision — the same reproducibility instinct
+already threaded through this whole project (a rule's own version at
+the time it fired, decision 0014; an invoice's facts as loaded at
+evaluation time, decision 0017), extended here to "what did a human
+actually see," not just "what did the system compute."
+
+This reuses data already in place, not a new input: `invoice_headers`
+and `invoice_lines` (decision 0017) already hold exactly the
+structured facts a rendering step would need — header and line data,
+already persisted, already queryable. Generation is a new *capability*
+(something has to turn structured facts into a laid-out PDF), not a
+new data source.
+
 ## What building this would actually require
 
 - A D1 migration adding an R2 object-key reference to `invoice_runs`.
@@ -108,6 +149,11 @@ or re-litigate this; it inherits the same deferral, on purpose.
   system does not currently receive raw invoice files at all, only
   extracted facts, so this depends on a not-yet-built ingestion path
   upstream of the interpreter.
+- **A PDF rendering capability**, per the addendum above — something
+  that turns an invoice's structured facts (already persisted via
+  decision 0017) into a laid-out, human-readable PDF for the
+  electronic-only case. A genuinely separate piece of work from
+  ingestion or storage — nothing today does this.
 - Real, jurisdiction-specific retention periods, confirmed with
   counsel, before any lifecycle rule is configured.
 
@@ -118,5 +164,14 @@ or re-litigate this; it inherits the same deferral, on purpose.
 - The ingestion path — nothing upstream of the interpreter currently
   handles a raw document at all, so R2 retention has no real input to
   attach to yet even once the storage side exists.
+- **Which rendering technology or approach** would actually produce
+  the generated PDF — deliberately not speculated on here; a real
+  choice for whoever builds this, not something to guess at in a
+  design record.
+- **When generation happens** — proactively at ingestion time for
+  every electronic invoice, or on demand only when an operator
+  actually opens one for review. A real, unresolved trade-off (upfront
+  cost across every invoice vs. latency the first time someone opens
+  one), not decided here.
 - The 500-Worker fleet ceiling — deliberately deferred, not this
   decision's problem to solve, tracked here so it isn't lost.
