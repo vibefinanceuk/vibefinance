@@ -7,7 +7,7 @@ vf-app and vf-licence are promoted independently.
 
 | Worker | commit SHA | confirmed at |
 |---|---|---|
-| vf-app | `cd3d847` | 30 August 2026 — user authentication and enforcement confirmed live, end to end. A real `org_users` row (Alice) created; `POST /rules/compile` correctly returned `401` with no credentials and succeeded with Alice's real key. `POST .../confirm` and `POST .../activate` called with no `confirmedBy`/`activatedBy` in the body at all — both correctly recorded `alice@acme.com` anyway, derived entirely from her authenticated key, confirmed via direct D1 query (`approved_by: "alice@acme.com"`), not inferred from the HTTP response alone. |
+| vf-app | `077175b` | 31 August 2026 — rule versioning confirmed live, end to end. Recompiling under an ambiguous sentence ("flag anything over 1000 euros") was correctly refused by the model — genuine AI non-determinism, not a bug, confirmed by immediately retrying with an unambiguous sentence and getting `version: 2, isNewVersionOfExistingRule: true` for the exact same `ruleId`. Both v2 worked examples confirmed; activation confirmed v1's `effective_to` set to the exact same millisecond as v2's `effective_from` (`2026-08-31T15:14:07.248Z` both sides), via direct D1 query, not the response alone. The real proof: the same `BT-112: 3000` invoice that returned `no_match` under v1 on 30 August returned `matched` under v2 this time, with the response trace explicitly showing `ruleVersion: 2` as the one that actually fired. |
 | vf-licence | `8029d0a` | 30 August 2026 — fleet tooling (Blueprint build order step 5) confirmed live, end to end. `GET /customers` and `PATCH /customers/:id/fleet-metadata` both confirmed working with a freshly rotated `ADMIN_API_KEY`; Acme's real fleet metadata (`worker_name`, `d1_database_name`, `d1_database_id`, `locale`) backfilled and confirmed persisted via a direct re-query, not inferred from the response alone. `migrations/migrate_all.py` (a local script, not a Worker — see its own row in the incident record below) then successfully read that manifest and ran a real migration check against Acme's live database: `1 succeeded, 0 failed, 0 skipped`. |
 
 ## D1
@@ -188,3 +188,21 @@ returned `{"status":"refreshed",...}` — confirming the redeploy left
 whole authentication chain genuinely intact, not just that the deploy
 command exited cleanly. Full account in
 `docs/decisions/0012-deploy-all.md`.
+
+31 August 2026: rule versioning confirmed live. Recompiling the exact
+rule activated on 30 August, under the ambiguous sentence "flag
+anything over 1000 euros," was correctly refused by the model — the
+same sentence that had compiled unambiguously the first time, a real,
+expected instance of AI output non-determinism rather than a bug, and
+confirmed a refused recompile left the rule's existing version
+completely untouched before retrying. An unambiguous sentence
+("the total amount with VAT is over 1000 euros") compiled cleanly to
+`version: 2` of the same `ruleId`. Both v2 worked examples confirmed;
+activating v2 was confirmed, via direct D1 query, to have set v1's
+`effective_to` to the exact same millisecond as v2's `effective_from`
+— a genuinely clean handoff, not just a claimed one. The real proof
+this whole feature exists for: the identical `BT-112: 3000` invoice
+that returned `no_match` on 30 August (under v1's 5000 threshold)
+returned `matched` this time under v2's 1000 threshold, with the
+response's own trace explicitly naming `ruleVersion: 2` as the one
+that fired. Full account in `docs/decisions/0014-rule-versioning.md`.
