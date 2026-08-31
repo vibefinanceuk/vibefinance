@@ -169,6 +169,18 @@ found by that safety net actually doing its job — a statement-ordering
 mistake inside the activation batch, and the new migration never
 having been wired into the test schema in the first place.
 
+## A generic process/workflow engine (design only)
+
+A substantial design conversation, not yet built: a stage-and-task
+workflow engine serving AP, AR, and Expense Management alike, with
+the existing rule interpreter as its deterministic decision layer.
+Branching process definitions, subject-agnostic process instances,
+team-plus-permission task eligibility, two distinct AI-agent shapes
+(fact-producing vs. task-acting), and a shared historical-invoice-
+facts query framework. See `docs/decisions/0015-process-workflow-
+engine.md` for the full reasoning and every genuinely open question —
+nothing in it is implemented yet.
+
 ## The one rule enforced by tooling, not convention
 
 No application code reads a tenant-scoped binding (`env.DB` and similar)
