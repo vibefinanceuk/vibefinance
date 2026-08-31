@@ -61,6 +61,39 @@ doesn't yet consume `route_to`'s new meaning for anything real. Flagged
 here so it isn't lost: this needs revisiting once the workflow engine
 actually acts on `route_to` for the first time.
 
+## Addendum, 31 August 2026: the deferred prompt gap became a real live bug
+
+The deferral above was reasonable when written, but it hid a bigger
+gap than it named: `ACTIONS` had never had a `FIELD_DESCRIPTIONS`-style
+completeness discipline at all — only fields did. Every action's own
+expected `params` shape was undocumented anywhere the compiler could
+see, `assign_task` included. This surfaced live, not in review: the
+first real compile of an `assign_task` rule, once decision 0019's
+workflow engine actually existed to consume it, produced
+`{"assignee": "AP team", "required_permission": "AP.Approve"}` —
+plausible-sounding, and completely incompatible with what the engine
+actually reads (`{"team"/"user", "permission"}`). Nothing had ever
+told the model the real shape, so it invented one.
+
+Fixed properly, not just patched: `vocabulary.ts` gained
+`ACTION_DESCRIPTIONS`, mirroring `FIELD_DESCRIPTIONS` exactly,
+including the same completeness test — every action in `ACTIONS` now
+has a real description, with the exact expected params keys spelled
+out for any action that takes them, not just `assign_task` and
+`route_to`. `vocabulary-doc.ts` renders these into the prompt instead
+of a bare comma-separated action-name list. `prompt.ts`'s worked
+example was corrected at the same time — the stale `route_to`/`queue`
+shape replaced with the current `{"stage": "..."}` meaning, and a
+second worked example added showing `assign_task`'s real shape.
+
+The lesson worth keeping, not just the fix: an unenforced
+documentation gap for one part of the vocabulary (actions) sat
+harmlessly for as long as nothing consumed action params downstream —
+and became a real, live-caught bug the moment something finally did.
+The same completeness discipline already applied to fields should have
+been applied to actions from the start, not retrofitted after a real
+compile against a real deployment found the gap.
+
 ## `assign_task` — a new closed-vocabulary action
 
 Added to `ACTIONS` in `vocabulary.ts`, the same "deliberate, reviewed,
@@ -137,11 +170,9 @@ independently before being wired together.
 
 ## What's still open
 
-- Process instances and stage visits — the runtime machinery that
-  moves a real invoice through a process automatically, spawning tasks
-  from fired rules rather than creating them directly via API. Not
-  started.
-- The `prompt.ts` follow-up named above.
+- ~~Process instances and stage visits~~ — built in decision 0019.
+- ~~The `prompt.ts` follow-up named above~~ — fixed in the addendum
+  above, once decision 0019 gave it a real consumer.
 - Whether the universal-permission-check-regardless-of-path decision
   holds once real usage patterns emerge — explicitly flagged as
   provisional.

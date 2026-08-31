@@ -119,6 +119,33 @@ export const DERIVED_FIELD_DESCRIPTIONS: Record<DerivedField, string> = {
   "validation.passed": "true if the document passed standard validation",
 };
 
+// Same discipline as FIELD_DESCRIPTIONS above, and for the same
+// reason it turned out to matter in practice: an action with no
+// documented param shape leaves the compiler to invent one on its
+// own. That's exactly what happened live before this existed —
+// assign_task's params were undocumented, so the model produced
+// {assignee, required_permission} while the workflow engine
+// (decision 0019) expected {team/user, permission}, and the mismatch
+// was only caught by a real compile against a real deployment, not by
+// anything in this codebase. Every action gets a real params shape
+// documented here now, not just the two that happen to have real
+// consumers today — the same completeness discipline as fields,
+// enforced by a test, not left to be caught live again.
+export const ACTION_DESCRIPTIONS: Record<ActionType, string> = {
+  route_to: 'advance the process to a named stage — params: { "stage": "<stage id>" }',
+  require_second_approval: "flags that this invoice needs a second approver — no params",
+  assign_cost_centre: 'sets a cost centre on the invoice — params: { "value": "<cost centre>" }',
+  hold_until: 'holds the invoice until a date — params: { "date": "<ISO date>" }',
+  flag: "marks the invoice for attention — no params",
+  reject: "rejects the invoice outright — no params",
+  tag: 'attaches an arbitrary label — params: { "value": "<tag>" }',
+  set_field: 'sets a field\'s value — params: { "field": "<field>", "value": <value> }',
+  notify: 'sends a notification — params: { "target": "<who or what to notify>" }',
+  escalate_after: 'escalates if untouched past a duration — params: { "after": "<duration, e.g. \\"2d\\">" }',
+  assign_task:
+    'creates a task — params: exactly one of { "team": "<team id>" } or { "user": "<user id>" }, plus { "permission": "<permission>" }',
+};
+
 export function isKnownField(field: string): boolean {
   if ((INVOICE_FIELDS as readonly string[]).includes(field)) return true;
   if ((DERIVED_FIELDS as readonly string[]).includes(field)) return true;

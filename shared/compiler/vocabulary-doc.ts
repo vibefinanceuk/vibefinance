@@ -1,5 +1,6 @@
 import {
   ACTIONS,
+  ACTION_DESCRIPTIONS,
   DERIVED_FIELDS,
   DERIVED_FIELD_DESCRIPTIONS,
   DERIVED_FIELD_PREFIXES,
@@ -29,6 +30,10 @@ export function buildVocabularyDoc(): string {
     (p) => `  ${p}BT-n) — true if that Business Term is absent from the invoice`
   ).join("\n");
 
+  const actionLines = ACTIONS.map(
+    (a) => `  ${a} — ${ACTION_DESCRIPTIONS[a]}`
+  ).join("\n");
+
   return `INVOICE FIELDS (from the standard):
 ${fieldLines}
 
@@ -39,8 +44,11 @@ ${parameterisedLines}
 OPERATORS:
   ${OPERATORS.join(", ")}
 
-ACTIONS:
-  ${ACTIONS.join(", ")}
+ACTIONS (with the exact params shape each one expects — use these
+keys precisely; a plausible-sounding alternative like "assignee"
+instead of "team"/"user" will not be understood by anything that
+consumes this action downstream):
+${actionLines}
 
 RULES ABOUT THE VOCABULARY:
 - You may ONLY use fields, operators and actions from the lists above.

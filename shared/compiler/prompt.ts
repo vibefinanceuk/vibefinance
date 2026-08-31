@@ -30,7 +30,7 @@ If the sentence CANNOT be expressed using only the vocabulary above:
   "reason": "<a short, specific explanation of what's missing — this is shown to the person who wrote the sentence>"
 }`;
 
-const WORKED_EXAMPLE = `Example sentence: "When the buyer VAT id is missing and the seller is outside the EU, route it to tax review"
+const WORKED_EXAMPLE = `Example sentence: "When the buyer VAT id is missing and the seller is outside the EU, assign a task to the AP team requiring the AP.Approve permission"
 Example output:
 {
   "status": "compiled",
@@ -40,7 +40,17 @@ Example output:
       { "field": "BT-40", "operator": "not_in", "value": ["DE", "FR", "NL", "IE", "ES", "IT"] }
     ]
   },
-  "actions": [ { "type": "route_to", "params": { "queue": "tax_review" } } ]
+  "actions": [ { "type": "assign_task", "params": { "team": "AP team", "permission": "AP.Approve" } } ]
+}
+
+A second example, showing route_to (advancing a process to a named
+stage — never a team or queue, that meaning was retired):
+Example sentence: "If the invoice is from a US supplier, skip straight to payment-eligible"
+Example output:
+{
+  "status": "compiled",
+  "conditions": { "field": "BT-40", "operator": "is", "value": "US" },
+  "actions": [ { "type": "route_to", "params": { "stage": "payment-eligible" } } ]
 }`;
 
 export function buildCompilerPrompt(sourceText: string): string {

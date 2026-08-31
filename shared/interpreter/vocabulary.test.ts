@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  ACTIONS,
+  ACTION_DESCRIPTIONS,
   DERIVED_FIELDS,
   DERIVED_FIELD_DESCRIPTIONS,
   FIELD_DESCRIPTIONS,
@@ -56,6 +58,12 @@ describe("closed vocabulary", () => {
   it("has a description for every derived field", () => {
     for (const field of DERIVED_FIELDS) {
       expect(DERIVED_FIELD_DESCRIPTIONS[field], `missing description for ${field}`).toBeTruthy();
+    }
+  });
+
+  it("has a description for every action — the exact gap that let assign_task's params drift from what the workflow engine expects", () => {
+    for (const action of ACTIONS) {
+      expect(ACTION_DESCRIPTIONS[action], `missing description for ${action}`).toBeTruthy();
     }
   });
 });

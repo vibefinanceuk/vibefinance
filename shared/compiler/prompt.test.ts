@@ -14,6 +14,14 @@ describe("buildCompilerPrompt", () => {
     expect(prompt).toContain("route_to");
   });
 
+  it("teaches assign_task's real params shape and route_to's current meaning — the exact gap a live compile once fell through", () => {
+    const prompt = buildCompilerPrompt("test");
+    expect(prompt).toContain('"team": "<team id>"');
+    expect(prompt).toContain('"user": "<user id>"');
+    expect(prompt).not.toContain('"queue"'); // the retired route_to JSON shape, never shown as an example again
+    expect(prompt).toContain('"stage": "<stage id>"');
+  });
+
   it("instructs refusal as an explicit, first-class option rather than approximation", () => {
     const prompt = buildCompilerPrompt("test");
     expect(prompt.toLowerCase()).toContain("refus");
