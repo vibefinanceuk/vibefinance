@@ -7,7 +7,7 @@ vf-app and vf-licence are promoted independently.
 
 | Worker | commit SHA | confirmed at |
 |---|---|---|
-| vf-app | `6221166` | 31 August 2026 — invoice facts storage confirmed live, end to end, including a real test-design lesson applied live: an initial evaluation against `real-inv-1` came back `no_match`, but the invoice's persisted facts had no `BT-112` at all — the same ambiguous result the automated test suite's own first draft was caught producing, unable to distinguish "loaded correctly, field genuinely absent" from "loading silently failed." Corrected by updating the invoice with `BT-112: 3000` and re-evaluating with no `facts` in the request at all — the response came back `matched`, with the trace explicitly showing `ruleVersion: 2, matched: true` on the exact rule whose 1000 threshold only 3000 (not the older rule's 5000) clears. Genuine, unambiguous proof persisted facts were loaded and used. |
+| vf-app | `b694d34` | 31 August 2026 — the full workflow engine (decisions 0018/0019) confirmed live, end to end, including two real bugs caught by live testing itself and fixed before this was proven: (1) `assign_task`'s compiled params (`{team, permission}`) had never actually been taught to the compiler, which first produced an incompatible `{assignee, required_permission}` shape — fixed by adding a real completeness discipline for action descriptions, mirroring the one fields already had; (2) `URL.pathname` was never decoded anywhere in `index.ts`, so a compiler-generated team name containing a space (`"AP team"`) broke every dynamic route that matched on it — fixed by decoding once, at the root. With both fixed, a real invoice instance was created, visited with `BT-112: 3000`, and cascaded automatically through the automatic `Received` stage before the real rule at `Approval` genuinely matched and spawned one real task, confirmed via direct D1 query (`owner_team_id: "AP team"`, `required_permission: "AP.Approve"`) rather than the response alone. That task was claimed and completed by Alice through the real routes, and the instance was confirmed, via a fresh D1 query, to have advanced itself all the way to `status: "completed"`, `current_stage_id: "payment-eligible"` — with no further explicit call after completing the task. |
 | vf-licence | `8029d0a` | 30 August 2026 — fleet tooling (Blueprint build order step 5) confirmed live, end to end. `GET /customers` and `PATCH /customers/:id/fleet-metadata` both confirmed working with a freshly rotated `ADMIN_API_KEY`; Acme's real fleet metadata (`worker_name`, `d1_database_name`, `d1_database_id`, `locale`) backfilled and confirmed persisted via a direct re-query, not inferred from the response alone. `migrations/migrate_all.py` (a local script, not a Worker — see its own row in the incident record below) then successfully read that manifest and ran a real migration check against Acme's live database: `1 succeeded, 0 failed, 0 skipped`. |
 
 ## D1
@@ -224,3 +224,38 @@ threshold 3000 clears and the older rule's 5000 threshold does not —
 genuine, unambiguous confirmation that persisted facts were loaded
 from D1 and actually used, not inferred from a result that could have
 meant either outcome.
+
+31 August 2026: the full workflow engine confirmed live, end to end
+— and two real bugs live testing itself caught along the way, neither
+found in review. First: the first real compile of an `assign_task`
+rule against the deployed engine produced
+`{"assignee": "AP team", "required_permission": "AP.Approve"}` —
+plausible-sounding, and completely incompatible with what the engine
+actually reads. Root cause: `ACTIONS` had no `FIELD_DESCRIPTIONS`-style
+completeness discipline at all, so nothing had ever told the compiler
+what params shape any action expects. Fixed by adding
+`ACTION_DESCRIPTIONS`, mirroring the existing field discipline
+exactly, correcting the compiler's own stale worked example at the
+same time (`docs/decisions/0018-process-definitions-and-tasks.md`'s
+own addendum). Second, hit immediately after redeploying: adding
+Alice to the resulting team (named `"AP team"`, with a space, by the
+compiler itself) failed with `"team AP%20team does not exist"` —
+`URL.pathname` had never actually been decoded anywhere in
+`index.ts`, so every dynamic path segment across eleven separate
+routes was silently receiving raw, still-encoded text. Fixed once, at
+the root, rather than patched at each call site
+(`docs/decisions/0020-url-path-decoding.md`).
+
+With both fixed and redeployed, the full run: a real invoice instance
+was created and visited with `BT-112: 3000`, cascading automatically
+through the automatic `Received` stage before the real, activated
+rule at `Approval` genuinely matched and spawned one real task —
+confirmed via direct D1 query (`owner_team_id: "AP team"`,
+`required_permission: "AP.Approve"`), not the response alone. That
+task was claimed and completed by Alice through the real
+`/tasks/:id/claim` and `/tasks/:id/complete` routes, and a fresh D1
+query confirmed the instance had advanced itself all the way to
+`status: "completed"`, `current_stage_id: "payment-eligible"` — with
+no further explicit call after completing the task. The exact
+property `docs/decisions/0019-process-instances-and-stage-visits.md`
+was built around, proven for real rather than only in a test.
