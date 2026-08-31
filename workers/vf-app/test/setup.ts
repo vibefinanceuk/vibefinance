@@ -13,6 +13,7 @@ import orgUserApiKeysSql from "../../../migrations/0004_org_user_api_keys.sql?ra
 import ruleVersioningInvariantSql from "../../../migrations/0005_rule_versioning_invariant.sql?raw";
 import orgTeamsSql from "../../../migrations/0006_org_teams.sql?raw";
 import invoiceFactsSql from "../../../migrations/0007_invoice_facts.sql?raw";
+import processesStagesTasksSql from "../../../migrations/0008_processes_stages_tasks.sql?raw";
 
 // Another known divergence from production, on top of the one below:
 // D1's exec() splits its input by newline and executes each non-empty
@@ -58,6 +59,9 @@ function toOneStatementPerLine(sql: string): string {
 // gets a genuinely clean schema regardless of what the pool does or
 // does not reset.
 const TABLES_IN_DROP_ORDER = [
+  "tasks",
+  "process_stages",
+  "processes",
   "invoice_lines",
   "invoice_headers",
   "invoice_run_steps",
@@ -88,4 +92,5 @@ export async function applyTestSchema(): Promise<void> {
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(ruleVersioningInvariantSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(orgTeamsSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(invoiceFactsSql)));
+  await env.DB.exec(toOneStatementPerLine(stripSqlComments(processesStagesTasksSql)));
 }

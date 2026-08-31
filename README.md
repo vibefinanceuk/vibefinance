@@ -207,6 +207,24 @@ writing lesson: an early version of the by-`invoiceId` test used a
 rule set that matched even on completely empty facts, so it couldn't
 actually prove real data was loaded.
 
+## Process definitions and tasks
+
+`processes` and `process_stages` — the definition layer of the
+workflow engine, reusing the rule engine directly (one rule set per
+stage). `route_to` is redefined to mean "advance to a specific stage,"
+never "send to a team" as an earlier test rule once used it — a
+deliberate change requiring no interpreter update at all, since action
+params have always been opaque to the interpreter. `tasks` carry
+exactly one owner (a team or a named user, enforced at the database
+layer), with claiming and completing both implemented as single,
+atomic conditional `UPDATE`s — proven by deliberately breaking the
+atomicity and watching a real double-claim get caught before the fix
+was restored. See `docs/decisions/0018-process-definitions-and-tasks.md`,
+including a genuinely new authentication shape: claim/complete check a
+*dynamic* permission (the task's own `required_permission`), not a
+fixed one hardcoded to the route like every other permission-gated
+route in this codebase.
+
 ## The one rule enforced by tooling, not convention
 
 No application code reads a tenant-scoped binding (`env.DB` and similar)

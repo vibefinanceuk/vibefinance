@@ -25,6 +25,9 @@ import {
 import { requirePermission } from "./enforce.js";
 import { handleAddTeamMember, handleCreateTeam } from "./team-route.js";
 import { handleUpsertInvoice } from "./invoice-facts-route.js";
+import { handleCreateProcess, handleCreateStage } from "./process-route.js";
+import { handleClaimTask, handleCompleteTask, handleCreateTask } from "./task-route.js";
+import type { Permission } from "./permissions.js";
 import { handleRotateUserKey } from "./user-rotate-key-route.js";
 
 export interface Env {
@@ -659,6 +662,82 @@ export default {
       }
       const userId = (body as Record<string, unknown> | null)?.userId;
       const result = await handleAddTeamMember(db, addTeamMemberMatch[1], userId);
+      return json(result.body, result.status);
+    }
+
+    // Processes and stages — decisions 0015 and 0018. Deliberately
+    // unauthenticated, same reasoning as teams above: definition-time
+    // setup, not gated product usage.
+    if (url.pathname === "/processes" && request.method === "POST") {
+      const { db } = resolveTenant(request, env);
+      let body: unknown;
+      try {
+        body = await request.json();
+      } catch {
+        return json({ error: t("invalidJsonBody", resolveLocale(env.LOCALE)) }, 400);
+      }
+      const result = await handleCreateProcess(db, (body ?? {}) as Record<string, unknown>);
+      return json(result.body, result.status);
+    }
+
+    const createStageMatch = url.pathname.match(/^\/processes\/([^/]+)\/stages$/);
+    if (createStageMatch && request.method === "POST") {
+      const { db } = resolveTenant(request, env);
+      let body: unknown;
+      try {
+        body = await request.json();
+      } catch {
+        return json({ error: t("invalidJsonBody", resolveLocale(env.LOCALE)) }, 400);
+      }
+      const result = await handleCreateStage(db, createStageMatch[1], (body ?? {}) as Record<string, unknown>);
+      return json(result.body, result.status);
+    }
+
+    // Tasks — decision 0018. Creation is unauthenticated for now, the
+    // same as processes/stages/teams above — a deliberate, temporary
+    // state: tasks are created directly via this API as a stand-in
+    // for the not-yet-built automatic path (a rule's assign_task
+    // action, once process instances and stage visits exist). Claim
+    // and complete are genuinely different: identity matters directly
+    // (who claimed it, who completed it), so both authenticate first,
+    // then check the TASK'S OWN required_permission — looked up per
+    // task, not a fixed permission hardcoded to this route the way
+    // every other permission-gated route in this codebase works.
+    if (url.pathname === "/tasks" && request.method === "POST") {
+      const { db } = resolveTenant(request, env);
+      let body: unknown;
+      try {
+        body = await request.json();
+      } catch {
+        return json({ error: t("invalidJsonBody", resolveLocale(env.LOCALE)) }, 400);
+      }
+      const result = await handleCreateTask(db, (body ?? {}) as Record<string, unknown>);
+      return json(result.body, result.status);
+    }
+
+    const claimTaskMatch = url.pathname.match(/^\/tasks\/([^/]+)\/claim$/);
+    const completeTaskMatch = url.pathname.match(/^\/tasks\/([^/]+)\/complete$/);
+    if ((claimTaskMatch || completeTaskMatch) && request.method === "POST") {
+      const { db } = resolveTenant(request, env);
+      const locale = resolveLocale(env.LOCALE);
+      const taskId = (claimTaskMatch ?? completeTaskMatch)![1];
+
+      const taskRow = await db
+        .prepare("SELECT required_permission FROM tasks WHERE id = ?")
+        .bind(taskId)
+        .first<{ required_permission: string }>();
+      if (!taskRow) {
+        return json({ error: `task ${taskId} does not exist` }, 404);
+      }
+
+      const auth = await requirePermission(db, request, taskRow.required_permission as Permission);
+      if (!auth.authorized) {
+        return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", locale) }, auth.status);
+      }
+
+      const result = claimTaskMatch
+        ? await handleClaimTask(db, taskId, auth.user.id)
+        : await handleCompleteTask(db, taskId, auth.user.id);
       return json(result.body, result.status);
     }
 

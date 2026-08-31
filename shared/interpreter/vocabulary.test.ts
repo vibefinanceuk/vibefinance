@@ -43,6 +43,10 @@ describe("closed vocabulary", () => {
     expect(isKnownAction("execute_script")).toBe(false);
   });
 
+  it("accepts assign_task — added for decision 0018's task ownership model", () => {
+    expect(isKnownAction("assign_task")).toBe(true);
+  });
+
   it("has a description for every invoice field — a check, not a comment, so a field added without one is caught", () => {
     for (const field of INVOICE_FIELDS) {
       expect(FIELD_DESCRIPTIONS[field], `missing description for ${field}`).toBeTruthy();

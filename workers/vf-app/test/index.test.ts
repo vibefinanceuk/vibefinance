@@ -980,3 +980,81 @@ describe("team routes, through the real router (decision 0016)", () => {
     expect(res.status).toBe(409);
   });
 });
+
+describe("task routes, through the real router (decision 0018)", () => {
+  async function seedProcessStageAndTeamTask(): Promise<{ taskId: string }> {
+    await SELF.fetch("https://example.com/processes", {
+      method: "POST",
+      body: JSON.stringify({ id: "p1", name: "AP" }),
+    });
+    await SELF.fetch("https://example.com/processes/p1/stages", {
+      method: "POST",
+      body: JSON.stringify({ id: "s1", name: "Approval", sequence: 1 }),
+    });
+    await SELF.fetch("https://example.com/org/teams", {
+      method: "POST",
+      body: JSON.stringify({ id: "team1", name: "AP Team" }),
+    });
+    // authHeaders()'s own user, "test-user", holds every permission —
+    // added to the team here specifically so claim/complete can be
+    // exercised as that identity through the real, authenticated
+    // router path.
+    await SELF.fetch("https://example.com/org/teams/team1/members", {
+      method: "POST",
+      body: JSON.stringify({ userId: "test-user" }),
+    });
+    await SELF.fetch("https://example.com/tasks", {
+      method: "POST",
+      body: JSON.stringify({ id: "task1", stageId: "s1", teamId: "team1", requiredPermission: "AP.Approve" }),
+    });
+    return { taskId: "task1" };
+  }
+
+  it("401s claiming a task with no credentials at all", async () => {
+    const { taskId } = await seedProcessStageAndTeamTask();
+    const res = await SELF.fetch(`https://example.com/tasks/${taskId}/claim`, { method: "POST" });
+    expect(res.status).toBe(401);
+  });
+
+  it("403s claiming a task when authenticated but lacking the task's own required permission", async () => {
+    const { taskId } = await seedProcessStageAndTeamTask();
+    // The permission gate runs before team membership is ever
+    // checked, so this 403s for the right reason regardless of team
+    // membership — a real key, just missing AP.Approve specifically.
+    const limitedKey = await seedUserWithPermissions(["AP.Validate"]);
+    const res = await SELF.fetch(`https://example.com/tasks/${taskId}/claim`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${limitedKey}` },
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("claims and completes a task through the real router, recording the real authenticated identity", async () => {
+    const { taskId } = await seedProcessStageAndTeamTask();
+    const claimRes = await SELF.fetch(`https://example.com/tasks/${taskId}/claim`, {
+      method: "POST",
+      headers: authHeaders(),
+    });
+    expect(claimRes.status).toBe(200);
+    const claimBody = (await claimRes.json()) as { claimedBy: string };
+    expect(claimBody.claimedBy).toBe("test-user");
+
+    const completeRes = await SELF.fetch(`https://example.com/tasks/${taskId}/complete`, {
+      method: "POST",
+      headers: authHeaders(),
+    });
+    expect(completeRes.status).toBe(200);
+    const row = await env.DB.prepare("SELECT claimed_by, completed_by FROM tasks WHERE id = ?")
+      .bind(taskId)
+      .first();
+    expect(row).toEqual({ claimed_by: "test-user", completed_by: "test-user" });
+  });
+
+  it("404s claiming a task that does not exist, through the real router", async () => {
+    const res = await SELF.fetch("https://example.com/tasks/does-not-exist/claim", {
+      method: "POST",
+      headers: authHeaders(),
+    });
+    expect(res.status).toBe(404);
+  });
+});

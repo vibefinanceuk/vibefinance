@@ -75,6 +75,7 @@ export const ACTIONS = [
   "set_field",
   "notify",
   "escalate_after",
+  "assign_task",
 ] as const;
 
 export type InvoiceField = (typeof INVOICE_FIELDS)[number];
