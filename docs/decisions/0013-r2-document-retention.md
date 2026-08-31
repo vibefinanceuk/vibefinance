@@ -112,32 +112,53 @@ Access Points commonly render a visual representation from the
 underlying EN 16931 data for exactly this purpose, not as a
 convenience but as a practical necessity.
 
-This splits document handling into two genuinely different cases,
+This splits document handling into three genuinely different cases,
 where the original design only had one:
 
-- **A native document exists** (a scanned PDF, a JPEG). Store the
-  original as-is — the design above, unchanged.
-- **No native document exists** (pure electronic UBL/XML). Generate a
-  PDF rendering from the invoice's structured facts, then store *that*
+- **A native document exists, and nothing more** (a scanned PDF, a
+  JPEG). Store the original as-is — the design above, unchanged.
+- **No native document exists** (pure electronic UBL/XML — XRechnung
+  and plain Peppol BIS are the real examples among this project's own
+  five supported CIUS profiles, decision 0009). Generate a PDF
+  rendering from the invoice's structured facts, then store *that*
   the same way — same bucket, same key structure
   (`{customer}/{year}/{invoice_id}.pdf`), same retention discipline.
-  The two cases are mutually exclusive per invoice, not additive: an
-  invoice either arrived with a native document or it didn't.
+- **A hybrid document** — Factur-X, the third relevant profile among
+  this project's own five. The invoice, as actually received, *is* a
+  PDF/A-3 file (PDF/A-3 specifically, since earlier PDF/A revisions
+  don't permit embedded file attachments), with the same structured
+  EN 16931 data embedded inside it as an attached XML file, not sent
+  alongside it separately. Store the received PDF/A-3 exactly as-is —
+  the same mechanism as the first case, no generation involved at
+  all — and separately extract the embedded XML to populate
+  structured facts, feeding the same ingestion path the second case's
+  data originates from. One received file does double duty: it's the
+  retained, human-readable document *and* the source the structured
+  facts get extracted from.
 
-The generated rendering is worth retaining, not just producing
-on-the-fly for display. It represents what an approver actually looked
-at when they made a decision — the same reproducibility instinct
-already threaded through this whole project (a rule's own version at
-the time it fired, decision 0014; an invoice's facts as loaded at
-evaluation time, decision 0017), extended here to "what did a human
-actually see," not just "what did the system compute."
+The three cases are mutually exclusive per invoice, not additive: an
+invoice arrives in exactly one of these three shapes, determined by
+its CIUS profile, not chosen per invoice.
+
+The generated rendering (second case only) is worth retaining, not
+just producing on-the-fly for display. It represents what an approver
+actually looked at when they made a decision — the same
+reproducibility instinct already threaded through this whole project
+(a rule's own version at the time it fired, decision 0014; an
+invoice's facts as loaded at evaluation time, decision 0017), extended
+here to "what did a human actually see," not just "what did the
+system compute."
 
 This reuses data already in place, not a new input: `invoice_headers`
 and `invoice_lines` (decision 0017) already hold exactly the
 structured facts a rendering step would need — header and line data,
 already persisted, already queryable. Generation is a new *capability*
 (something has to turn structured facts into a laid-out PDF), not a
-new data source.
+new data source. The hybrid case needs a different capability
+entirely — extracting an embedded XML attachment out of a received
+PDF/A-3, not generating anything — which is really an extension of
+the not-yet-built ingestion path already named below, not a third
+separate thing to build.
 
 ## What building this would actually require
 
@@ -148,7 +169,11 @@ new data source.
 - A decision on who actually uploads the source document to R2 — this
   system does not currently receive raw invoice files at all, only
   extracted facts, so this depends on a not-yet-built ingestion path
-  upstream of the interpreter.
+  upstream of the interpreter. For a hybrid (Factur-X) document
+  specifically, that path also needs to extract the embedded XML
+  attachment out of the received PDF/A-3 to populate structured facts
+  — the received file is both stored and parsed, not just one or the
+  other.
 - **A PDF rendering capability**, per the addendum above — something
   that turns an invoice's structured facts (already persisted via
   decision 0017) into a laid-out, human-readable PDF for the
