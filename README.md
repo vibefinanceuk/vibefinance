@@ -190,6 +190,23 @@ kept separate from `org_roles` (permission vs. routing are different
 questions). No task, claiming, or eligibility logic yet — this is the
 foundation those depend on. See `docs/decisions/0016-teams.md`.
 
+## Invoice facts storage
+
+`invoice_headers` and `invoice_lines` — the first real persistence of
+invoice *facts* (as opposed to evaluation outcomes) anywhere in this
+system, closing two of decision 0015's three named gaps at once.
+`POST /invoices` upserts header and line facts; `POST /rules/evaluate`
+now accepts an optional `facts` — when omitted, current persisted
+facts are loaded by `invoiceId` instead, reusing that field rather
+than adding a third one alongside `ruleSet`/`ruleSetId`. Facts are
+deliberately mutable (an upsert, not versioned like `rule_versions`),
+since decision 0015's fact-producing agents are meant to enrich them
+over an invoice's lifecycle. See
+`docs/decisions/0017-invoice-facts-storage.md`, including a real test-
+writing lesson: an early version of the by-`invoiceId` test used a
+rule set that matched even on completely empty facts, so it couldn't
+actually prove real data was loaded.
+
 ## The one rule enforced by tooling, not convention
 
 No application code reads a tenant-scoped binding (`env.DB` and similar)

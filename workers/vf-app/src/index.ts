@@ -24,6 +24,7 @@ import {
 } from "./org-route.js";
 import { requirePermission } from "./enforce.js";
 import { handleAddTeamMember, handleCreateTeam } from "./team-route.js";
+import { handleUpsertInvoice } from "./invoice-facts-route.js";
 import { handleRotateUserKey } from "./user-rotate-key-route.js";
 
 export interface Env {
@@ -176,7 +177,14 @@ interface EvaluateRequestBody {
    * activated rule (docs/decisions/0007-rule-approval.md) actually
    * govern real evaluation, not just sit as an approved database row. */
   ruleSetId?: string;
-  facts: InvoiceFacts;
+  /** Optional as of decision 0017 — when omitted, persisted facts for
+   * invoiceId are loaded from invoice_headers instead. Kept optional
+   * rather than mutually exclusive with invoiceId the way ruleSet/
+   * ruleSetId are: invoiceId already existed and already meant "the
+   * id of the invoice being evaluated" (used for the execution log
+   * regardless), so it does double duty as the fact-lookup key too,
+   * rather than introducing a third, confusingly-similar field. */
+  facts?: InvoiceFacts;
   invoiceId: string;
 }
 
@@ -219,8 +227,8 @@ async function handleEvaluate(request: Request, env: Env): Promise<Response> {
     return json({ error: t("invalidJsonBody", locale) }, 400);
   }
 
-  const { ruleSet: inlineRuleSet, ruleSetId, facts, invoiceId } = body;
-  if (!facts || !invoiceId) {
+  const { ruleSet: inlineRuleSet, ruleSetId, facts: inlineFacts, invoiceId } = body;
+  if (!invoiceId) {
     return json({ error: t("factsInvoiceIdRequired", locale) }, 400);
   }
   // Exactly one of the two, never a silent preference between them —
@@ -229,6 +237,28 @@ async function handleEvaluate(request: Request, env: Env): Promise<Response> {
   // worth erroring on rather than guessing.
   if ((inlineRuleSet && ruleSetId) || (!inlineRuleSet && !ruleSetId)) {
     return json({ error: t("exactlyOneRuleSetRequired", locale) }, 400);
+  }
+
+  // Facts: inline, exactly as before, or loaded from invoice_headers
+  // by invoiceId when omitted — see decision 0017. Loading reads
+  // whatever is CURRENTLY stored, not a frozen historical snapshot;
+  // invoice facts are deliberately mutable (an enrichment agent may
+  // add to them over an invoice's lifecycle once the workflow engine
+  // exists), unlike rule_versions' own immutable-once-activated
+  // design. Anyone needing a specific, frozen reproduction still has
+  // the inline `facts` path, unchanged.
+  let facts: InvoiceFacts;
+  if (inlineFacts) {
+    facts = inlineFacts;
+  } else {
+    const headerRow = await db
+      .prepare("SELECT facts_json FROM invoice_headers WHERE id = ?")
+      .bind(invoiceId)
+      .first<{ facts_json: string }>();
+    if (!headerRow) {
+      return json({ error: t("invoiceDoesNotExist", locale, { invoiceId }) }, 404);
+    }
+    facts = JSON.parse(headerRow.facts_json) as InvoiceFacts;
   }
 
   let ruleSet: CompiledRuleSet;
@@ -318,7 +348,11 @@ export default {
     // results. Only 'blocked' restricts; 'warned' and unset states
     // that ARE known do not. Absence of any cached state at all is
     // still blocked — see licence-cache.ts's isBlocked() doc comment.
-    if (url.pathname === "/rules/evaluate" || url.pathname === "/rules/compile") {
+    if (
+      url.pathname === "/rules/evaluate" ||
+      url.pathname === "/rules/compile" ||
+      url.pathname === "/invoices"
+    ) {
       const { db } = resolveTenant(request, env);
       const licenceState = await readLicenceState(db);
       if (isBlocked(licenceState)) {
@@ -328,6 +362,29 @@ export default {
 
     if (url.pathname === "/rules/evaluate" && request.method === "POST") {
       return handleEvaluate(request, env);
+    }
+
+    // Persisted invoice facts (decision 0017) — real product usage,
+    // the same as compile/evaluate, so licence-gated above and
+    // permission-gated here the same way. Reuses AP.Validate rather
+    // than a new permission: storing an invoice's facts is naturally
+    // part of the same "an invoice enters the system" capability
+    // /rules/evaluate already requires that permission for.
+    if (url.pathname === "/invoices" && request.method === "POST") {
+      const { db } = resolveTenant(request, env);
+      const locale = resolveLocale(env.LOCALE);
+      const auth = await requirePermission(db, request, "AP.Validate");
+      if (!auth.authorized) {
+        return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", locale) }, auth.status);
+      }
+      let body: unknown;
+      try {
+        body = await request.json();
+      } catch {
+        return json({ error: t("invalidJsonBody", locale) }, 400);
+      }
+      const result = await handleUpsertInvoice(db, (body ?? {}) as Record<string, unknown>);
+      return json(result.body, result.status);
     }
 
     if (url.pathname === "/rules/compile" && request.method === "POST") {

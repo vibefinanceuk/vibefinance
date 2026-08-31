@@ -36,7 +36,8 @@ export type MessageKey =
   | "unauthorized"
   | "forbidden"
   | "ruleIdMustBeString"
-  | "ruleDoesNotExistInRuleSet";
+  | "ruleDoesNotExistInRuleSet"
+  | "invoiceDoesNotExist";
 
 type MessageParams = Record<string, string | number>;
 
@@ -204,6 +205,14 @@ const MESSAGES: Record<MessageKey, Record<Locale, string>> = {
     es: "La regla {ruleId} no existe en el conjunto de reglas {ruleSetId}",
     it: "La regola {ruleId} non esiste nel set di regole {ruleSetId}",
     nl: "Regel {ruleId} bestaat niet in regelset {ruleSetId}",
+  },
+  invoiceDoesNotExist: {
+    en: "invoice {invoiceId} does not exist",
+    de: "Rechnung {invoiceId} existiert nicht",
+    fr: "La facture {invoiceId} n'existe pas",
+    es: "La factura {invoiceId} no existe",
+    it: "La fattura {invoiceId} non esiste",
+    nl: "Factuur {invoiceId} bestaat niet",
   },
 };
 

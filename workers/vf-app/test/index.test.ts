@@ -262,6 +262,66 @@ describe("POST /rules/evaluate", () => {
     });
     expect(res.status).toBe(404);
   });
+
+  it("loads persisted facts by invoiceId when facts is omitted (decision 0017)", async () => {
+    // Deliberately a rule that requires an EXACT, present value — not
+    // reusing the outer `ruleSet`, whose is_empty/not_in conditions
+    // both evaluate true even on completely empty facts, which would
+    // make this test pass whether or not real persisted facts were
+    // actually loaded at all.
+    const exactMatchRuleSet: CompiledRuleSet = {
+      id: "rs-exact",
+      mode: "first_match",
+      rules: [
+        {
+          id: "us-supplier",
+          version: 1,
+          conditions: { field: "BT-40", operator: "is", value: "US" },
+          actions: [{ type: "flag" }],
+        },
+      ],
+    };
+    await env.DB.prepare("INSERT INTO rule_sets (id, name, mode, status) VALUES (?, ?, ?, ?)")
+      .bind("rs-exact", "exact match test", "first_match", "active")
+      .run();
+    await SELF.fetch("https://example.com/invoices", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ id: "inv-8", facts: { "BT-40": "US" } }),
+    });
+    const res = await SELF.fetch("https://example.com/rules/evaluate", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ ruleSet: exactMatchRuleSet, invoiceId: "inv-8" }), // no `facts` at all
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { outcome: string };
+    expect(body.outcome).toBe("matched"); // only possible if BT-40: "US" was genuinely loaded from storage
+  });
+
+  it("prefers inline facts over persisted ones when both could apply — inline always wins when explicitly given", async () => {
+    await SELF.fetch("https://example.com/invoices", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ id: "inv-9", facts: { "BT-40": "US" } }), // persisted: would match
+    });
+    const res = await SELF.fetch("https://example.com/rules/evaluate", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ ruleSet, facts: { "BT-40": "DE" }, invoiceId: "inv-9" }), // inline: DE never matches this ruleSet
+    });
+    const body = (await res.json()) as { outcome: string };
+    expect(body.outcome).toBe("no_match");
+  });
+
+  it("404s when facts is omitted and no invoice with that id has ever been stored", async () => {
+    const res = await SELF.fetch("https://example.com/rules/evaluate", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ ruleSet, invoiceId: "never-stored" }),
+    });
+    expect(res.status).toBe(404);
+  });
 });
 
 describe("POST /rules/compile", () => {

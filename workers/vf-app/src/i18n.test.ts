@@ -77,6 +77,7 @@ describe("t — completeness across every locale and message key", () => {
     "forbidden",
     "ruleIdMustBeString",
     "ruleDoesNotExistInRuleSet",
+    "invoiceDoesNotExist",
   ];
 
   it("every supported locale has a real, non-empty, distinct-from-English translation for every key", () => {
