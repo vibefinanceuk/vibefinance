@@ -29,15 +29,20 @@ interface ActiveRuleRow {
  * `rules.sort_order` governs evaluation order, same as
  * evaluateRuleSet already assumes for an inline ruleSet.
  *
- * Multi-version selection: only ever tested against a rule with a
- * single version, since compile-route.ts still hardcodes `version = 1`
- * for every new rule (the same gap decision 0007 already names). If a
- * rule somehow has more than one row matching every condition above —
- * not possible today, but written defensively for when versioning
- * exists — the highest version number wins, on the theory that a
- * later version is the more recent authorial intent. This selection
- * rule is unexercised by any real data yet; flagged here rather than
- * silently assumed correct.
+ * Multi-version selection: exercised by real data as of decision
+ * 0014-rule-versioning.md — activate-route.ts now closes a rule's
+ * previously-open version when a new one activates, so under normal
+ * operation exactly one row ever matches. If a rule somehow has more
+ * than one row matching every condition above — written defensively
+ * for that case — the highest version number wins, on the theory that
+ * a later version is the more recent authorial intent. As of
+ * migrations/0005_rule_versioning_invariant.sql, this scenario is
+ * additionally refused at the database layer by a partial unique
+ * index (confirmed: even a direct INSERT bypassing all application
+ * code cannot construct it) — this tiebreak logic is defense-in-depth
+ * for a database that predates that migration or one where the
+ * constraint has somehow been dropped, not a path expected to run in
+ * normal operation.
  */
 export async function loadActiveRuleSet(
   db: D1Database,

@@ -259,3 +259,182 @@ describe("handleCompileRequest — locale", () => {
     });
   });
 });
+
+describe("handleCompileRequest — rule versioning", () => {
+  const compiledResponse = (threshold: number) =>
+    JSON.stringify({
+      status: "compiled",
+      conditions: { field: "BT-112", operator: "greater_than", value: threshold },
+      actions: [{ type: "flag" }],
+    });
+
+  async function compileNewRule(ruleSetId: string, threshold: number): Promise<string> {
+    const model = fakeModel(compiledResponse(threshold));
+    const result = await handleCompileRequest(model, "test-model@v1", env.DB, {
+      ruleSetId,
+      sourceText: `flag anything over ${threshold}`,
+    });
+    return (result.body as { ruleId: string }).ruleId;
+  }
+
+  it("400s when ruleId is not a string", async () => {
+    await seedRuleSet("rs1");
+    const model = fakeModel("irrelevant");
+    const result = await handleCompileRequest(model, "test-model@v1", env.DB, {
+      ruleSetId: "rs1",
+      sourceText: "flag anything over 1000",
+      ruleId: 42,
+    });
+    expect(result.status).toBe(400);
+    expect(model.compile).not.toHaveBeenCalled();
+  });
+
+  it("404s when ruleId does not exist at all, without ever calling the model", async () => {
+    await seedRuleSet("rs1");
+    const model = fakeModel("irrelevant");
+    const result = await handleCompileRequest(model, "test-model@v1", env.DB, {
+      ruleSetId: "rs1",
+      sourceText: "flag anything over 1000",
+      ruleId: "does-not-exist",
+    });
+    expect(result.status).toBe(404);
+    expect(model.compile).not.toHaveBeenCalled();
+  });
+
+  it("404s when ruleId exists but belongs to a different rule set — refuses to silently move a rule", async () => {
+    await seedRuleSet("rs1");
+    await seedRuleSet("rs2");
+    const ruleId = await compileNewRule("rs1", 1000);
+
+    const model = fakeModel(compiledResponse(2000));
+    const result = await handleCompileRequest(model, "test-model@v1", env.DB, {
+      ruleSetId: "rs2", // wrong rule set for this ruleId
+      sourceText: "flag anything over 2000",
+      ruleId,
+    });
+    expect(result.status).toBe(404);
+    expect(model.compile).not.toHaveBeenCalled();
+  });
+
+  it("with no ruleId, always creates a new rule at version 1 — the original, unchanged behaviour", async () => {
+    await seedRuleSet("rs1");
+    const ruleIdA = await compileNewRule("rs1", 1000);
+    const ruleIdB = await compileNewRule("rs1", 2000);
+    expect(ruleIdA).not.toBe(ruleIdB);
+    const versions = await env.DB.prepare("SELECT version FROM rule_versions WHERE rule_id IN (?, ?)")
+      .bind(ruleIdA, ruleIdB)
+      .all();
+    expect(versions.results).toEqual([{ version: 1 }, { version: 1 }]);
+  });
+
+  it("with a real ruleId, compiles version 2 of the SAME rule — not a new rule", async () => {
+    await seedRuleSet("rs1");
+    const ruleId = await compileNewRule("rs1", 1000);
+
+    const model = fakeModel(compiledResponse(2000));
+    const result = await handleCompileRequest(model, "test-model@v1", env.DB, {
+      ruleSetId: "rs1",
+      sourceText: "flag anything over 2000",
+      ruleId,
+    });
+
+    expect(result.status).toBe(201);
+    const body = result.body as { ruleId: string; version: number; isNewVersionOfExistingRule: boolean };
+    expect(body.ruleId).toBe(ruleId); // same rule id, not a new one
+    expect(body.version).toBe(2);
+    expect(body.isNewVersionOfExistingRule).toBe(true);
+
+    // Only one row in `rules` — recompiling never creates a second one.
+    const ruleCount = await env.DB.prepare("SELECT count(*) AS n FROM rules WHERE id = ?").bind(ruleId).first();
+    expect(ruleCount).toEqual({ n: 1 });
+
+    // Both versions genuinely exist side by side in rule_versions.
+    const versions = await env.DB.prepare("SELECT version FROM rule_versions WHERE rule_id = ? ORDER BY version")
+      .bind(ruleId)
+      .all();
+    expect(versions.results).toEqual([{ version: 1 }, { version: 2 }]);
+  });
+
+  it("computes the next version as MAX(version) + 1, not count + 1 — confirmed with a real v3", async () => {
+    await seedRuleSet("rs1");
+    const ruleId = await compileNewRule("rs1", 1000);
+    await handleCompileRequest(
+      fakeModel(compiledResponse(2000)),
+      "test-model@v1",
+      env.DB,
+      { ruleSetId: "rs1", sourceText: "v2", ruleId }
+    );
+    const result = await handleCompileRequest(
+      fakeModel(compiledResponse(3000)),
+      "test-model@v1",
+      env.DB,
+      { ruleSetId: "rs1", sourceText: "v3", ruleId }
+    );
+    expect((result.body as { version: number }).version).toBe(3);
+  });
+
+  it("a new version's worked examples are tied to the new version only, never mixed with the old version's", async () => {
+    await seedRuleSet("rs1");
+    const examplesResponse = (threshold: number) =>
+      JSON.stringify({
+        examples: [
+          { invoice: { "BT-112": threshold + 500 }, expectMatch: true },
+          { invoice: { "BT-112": threshold - 500 }, expectMatch: false },
+        ],
+      });
+
+    const v1Model = fakeModelWithExamples(compiledResponse(1000), examplesResponse(1000));
+    const v1Result = await handleCompileRequest(v1Model, "test-model@v1", env.DB, {
+      ruleSetId: "rs1",
+      sourceText: "v1",
+    });
+    const ruleId = (v1Result.body as { ruleId: string }).ruleId;
+
+    const v1ExampleCount = await env.DB.prepare(
+      "SELECT count(*) AS n FROM rule_examples WHERE rule_id = ? AND rule_version = 1"
+    )
+      .bind(ruleId)
+      .first();
+    expect((v1ExampleCount as { n: number }).n).toBeGreaterThan(0);
+
+    const v2Model = fakeModelWithExamples(compiledResponse(2000), examplesResponse(2000));
+    await handleCompileRequest(v2Model, "test-model@v1", env.DB, {
+      ruleSetId: "rs1",
+      sourceText: "v2",
+      ruleId,
+    });
+    const v2ExampleCount = await env.DB.prepare(
+      "SELECT count(*) AS n FROM rule_examples WHERE rule_id = ? AND rule_version = 2"
+    )
+      .bind(ruleId)
+      .first();
+    expect((v2ExampleCount as { n: number }).n).toBeGreaterThan(0);
+
+    // v1's examples are still there too — recompiling never touches
+    // or deletes a prior version's data.
+    const v1Again = await env.DB.prepare(
+      "SELECT count(*) AS n FROM rule_examples WHERE rule_id = ? AND rule_version = 1"
+    )
+      .bind(ruleId)
+      .first();
+    expect((v1Again as { n: number }).n).toEqual((v1ExampleCount as { n: number }).n);
+  });
+
+  it("a refused recompile leaves the existing rule and its versions completely untouched", async () => {
+    await seedRuleSet("rs1");
+    const ruleId = await compileNewRule("rs1", 1000);
+
+    const refusingModel = fakeModel(JSON.stringify({ status: "refused", reason: "can't express this" }));
+    const result = await handleCompileRequest(refusingModel, "test-model@v1", env.DB, {
+      ruleSetId: "rs1",
+      sourceText: "something unexpressable",
+      ruleId,
+    });
+
+    expect(result.status).toBe(422);
+    const versions = await env.DB.prepare("SELECT version FROM rule_versions WHERE rule_id = ?")
+      .bind(ruleId)
+      .all();
+    expect(versions.results).toEqual([{ version: 1 }]); // still just v1, no partial v2 row
+  });
+});

@@ -219,3 +219,143 @@ describe("loadActiveRuleSet — ordering and content", () => {
     expect(result?.rules.map((r) => r.id)).toEqual(["activated"]);
   });
 });
+
+describe("loadActiveRuleSet — real multi-version data (rule versioning, decision 0014)", () => {
+  // This file's own header comment used to say the multi-version
+  // selection logic below was "unexercised by any real data yet" —
+  // true when it was written, since compile-route.ts hardcoded every
+  // rule to version 1. Now that a rule can genuinely have more than
+  // one version (activate-route.ts closes the old one's effective_to
+  // when a new one activates), these tests exercise that logic for
+  // real for the first time, not just defensively.
+
+  async function seedSecondVersion(
+    ruleId: string,
+    version: number,
+    compiledJson: string,
+    opts: { approvedBy?: string | null; effectiveFrom?: string | null; effectiveTo?: string | null } = {}
+  ): Promise<void> {
+    await env.DB.prepare(
+      `INSERT INTO rule_versions
+         (rule_id, version, source_text, compiled_json, compiled_by, approved_by, approved_at, effective_from, effective_to)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+      .bind(
+        ruleId,
+        version,
+        "test source",
+        compiledJson,
+        "test-model",
+        opts.approvedBy ?? null,
+        opts.approvedBy ? "2026-01-01T00:00:00.000Z" : null,
+        opts.effectiveFrom ?? null,
+        opts.effectiveTo ?? null
+      )
+      .run();
+  }
+
+  it("with v1 closed and v2 open (the real, correct state after a real activation), returns v2's conditions — not v1's", async () => {
+    await seedRuleSet("rs1");
+    // v1: was active Jan–June, now superseded.
+    await seedRule({
+      ruleId: "r1",
+      ruleSetId: "rs1",
+      sortOrder: 0,
+      approvedBy: "alice",
+      effectiveFrom: "2026-01-01T00:00:00.000Z",
+      effectiveTo: "2026-06-01T00:00:00.000Z",
+      compiledJson: JSON.stringify({
+        conditions: { field: "BT-112", operator: "greater_than", value: 5000 },
+        actions: [{ type: "flag" }],
+      }),
+    });
+    // v2: active June onward — the real "now" (August) falls inside this window.
+    await seedSecondVersion(
+      "r1",
+      2,
+      JSON.stringify({
+        conditions: { field: "BT-112", operator: "greater_than", value: 1000 },
+        actions: [{ type: "route_to", params: { queue: "finance" } }],
+      }),
+      { approvedBy: "bob", effectiveFrom: "2026-06-01T00:00:00.000Z" }
+    );
+
+    const result = await loadActiveRuleSet(env.DB, "rs1", NOW);
+    expect(result?.rules).toHaveLength(1);
+    expect(result?.rules[0]).toEqual({
+      id: "r1",
+      version: 2,
+      conditions: { field: "BT-112", operator: "greater_than", value: 1000 },
+      actions: [{ type: "route_to", params: { queue: "finance" } }],
+    });
+  });
+
+  it("querying at a point in time when only v1 was ever active returns v1 — historical reproducibility genuinely holds", async () => {
+    await seedRuleSet("rs1");
+    await seedRule({
+      ruleId: "r1",
+      ruleSetId: "rs1",
+      sortOrder: 0,
+      approvedBy: "alice",
+      effectiveFrom: "2026-01-01T00:00:00.000Z",
+      effectiveTo: "2026-06-01T00:00:00.000Z",
+      compiledJson: JSON.stringify({
+        conditions: { field: "BT-112", operator: "greater_than", value: 5000 },
+        actions: [{ type: "flag" }],
+      }),
+    });
+    await seedSecondVersion(
+      "r1",
+      2,
+      JSON.stringify({
+        conditions: { field: "BT-112", operator: "greater_than", value: 1000 },
+        actions: [{ type: "route_to", params: { queue: "finance" } }],
+      }),
+      { approvedBy: "bob", effectiveFrom: "2026-06-01T00:00:00.000Z" }
+    );
+
+    // A point in time back when only v1 was ever in force — the
+    // Blueprint's own reproducibility argument: a historical
+    // evaluation must be reconstructible using the version that was
+    // genuinely active then, not today's.
+    const marchOf2026 = new Date("2026-03-01T00:00:00.000Z");
+    const result = await loadActiveRuleSet(env.DB, "rs1", marchOf2026);
+    expect(result?.rules[0].version).toBe(1);
+    expect(result?.rules[0].conditions).toEqual({ field: "BT-112", operator: "greater_than", value: 5000 });
+  });
+
+  it("the documented defensive tiebreak logic remains, though the scenario it defends against is now provably unreachable", async () => {
+    // Attempted to construct "two versions simultaneously open" via a
+    // direct INSERT, bypassing application logic entirely, the same
+    // way an anomalous data state or a bug elsewhere might. It's no
+    // longer possible: 0005_rule_versioning_invariant.sql's partial
+    // unique index refuses it at the database layer, even here. That
+    // is a genuinely good outcome, not a test failure to work around —
+    // proof the index protects this property regardless of which code
+    // path would have violated it. The MAX(version) tiebreak logic in
+    // loadActiveRuleSet remains as defense-in-depth for a database
+    // that predates this migration, or one where the constraint has
+    // somehow been dropped — see rule-set-loader.ts's own comment.
+    await seedRuleSet("rs1");
+    await seedRule({
+      ruleId: "r1",
+      ruleSetId: "rs1",
+      sortOrder: 0,
+      approvedBy: "alice",
+      effectiveFrom: "2026-01-01T00:00:00.000Z",
+      effectiveTo: null,
+    });
+    let threw = false;
+    try {
+      await seedSecondVersion(
+        "r1",
+        2,
+        JSON.stringify({ conditions: { field: "BT-112", operator: "greater_than", value: 1000 }, actions: [{ type: "flag" }] }),
+        { approvedBy: "bob", effectiveFrom: "2026-02-01T00:00:00.000Z" }
+      );
+    } catch {
+      threw = true;
+    }
+    expect(threw).toBe(true);
+  });
+});

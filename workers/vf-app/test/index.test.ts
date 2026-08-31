@@ -578,6 +578,135 @@ describe("POST /licence/refresh", () => {
   });
 });
 
+describe("rule versioning end-to-end, through the real router (decision 0014)", () => {
+  // Seeded directly via D1, not through POST /rules/compile — that
+  // route needs the real env.AI binding, which this test environment
+  // doesn't have (see the existing "500s cleanly when the AI binding
+  // is not configured" test above), and compile-route.ts's own
+  // versioning logic is already thoroughly covered at the unit level
+  // in test/compile-route.test.ts. What's genuinely new and worth
+  // proving through the real router here is what happens AFTER a
+  // rule compiles: does activating v2 actually change what live
+  // evaluation returns, end to end, through real HTTP requests.
+  async function seedVersion(ruleId: string, version: number, threshold: number): Promise<void> {
+    await env.DB.prepare(
+      "INSERT INTO rule_versions (rule_id, version, source_text, compiled_json, compiled_by) VALUES (?, ?, ?, ?, ?)"
+    )
+      .bind(
+        ruleId,
+        version,
+        `flag anything over ${threshold}`,
+        JSON.stringify({
+          conditions: { field: "BT-112", operator: "greater_than", value: threshold },
+          actions: [{ type: "flag" }],
+        }),
+        "test-model"
+      )
+      .run();
+    await env.DB.prepare(
+      "INSERT INTO rule_examples (id, rule_id, rule_version, invoice_json, expect_match) VALUES (?, ?, ?, ?, 1)"
+    )
+      .bind(crypto.randomUUID(), ruleId, version, JSON.stringify({ "BT-112": threshold + 500 }))
+      .run();
+  }
+
+  it("activating v2 of a rule changes what live evaluation returns — v1 is superseded, not deleted", async () => {
+    await env.DB.prepare("INSERT INTO rule_sets (id, name, mode, status) VALUES (?, ?, ?, ?)")
+      .bind("rs1", "test set", "first_match", "draft")
+      .run();
+    const ruleId = "rule-1";
+    await env.DB.prepare("INSERT INTO rules (id, rule_set_id, sort_order, enabled) VALUES (?, ?, ?, 1)")
+      .bind(ruleId, "rs1", 0)
+      .run();
+
+    // v1: flags anything over 5000.
+    await seedVersion(ruleId, 1, 5000);
+    const v1Examples = (
+      await (
+        await SELF.fetch(`https://example.com/rules/${ruleId}/versions/1/examples`, { headers: authHeaders() })
+      ).json()
+    ) as { examples: { id: string }[] };
+    for (const ex of v1Examples.examples) {
+      const res = await SELF.fetch(`https://example.com/rules/examples/${ex.id}/confirm`, {
+        method: "POST",
+        headers: authHeaders(),
+      });
+      expect(res.status).toBe(200);
+    }
+    const v1ActivateRes = await SELF.fetch(`https://example.com/rules/${ruleId}/versions/1/activate`, {
+      method: "POST",
+      headers: authHeaders(),
+    });
+    expect(v1ActivateRes.status).toBe(200);
+
+    // Confirm v1 genuinely governs evaluation before v2 exists at all.
+    const beforeV2 = await SELF.fetch("https://example.com/rules/evaluate", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ ruleSetId: "rs1", facts: { "BT-112": 6000 }, invoiceId: "inv-1" }),
+    });
+    expect((await beforeV2.json() as { outcome: string }).outcome).toBe("matched");
+
+    // v2 of the SAME rule: flags anything over 1000 instead.
+    await seedVersion(ruleId, 2, 1000);
+
+    // v2 compiled but not yet activated — evaluation must still use v1.
+    const stillV1 = await SELF.fetch("https://example.com/rules/evaluate", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ ruleSetId: "rs1", facts: { "BT-112": 2000 }, invoiceId: "inv-2" }),
+    });
+    // 2000 is below v1's 5000 threshold — v1, still the only active
+    // version, must not match.
+    expect((await stillV1.json() as { outcome: string }).outcome).toBe("no_match");
+
+    const v2Examples = (
+      await (
+        await SELF.fetch(`https://example.com/rules/${ruleId}/versions/2/examples`, { headers: authHeaders() })
+      ).json()
+    ) as { examples: { id: string }[] };
+    for (const ex of v2Examples.examples) {
+      await SELF.fetch(`https://example.com/rules/examples/${ex.id}/confirm`, {
+        method: "POST",
+        headers: authHeaders(),
+      });
+    }
+    const v2ActivateRes = await SELF.fetch(`https://example.com/rules/${ruleId}/versions/2/activate`, {
+      method: "POST",
+      headers: authHeaders(),
+    });
+    expect(v2ActivateRes.status).toBe(200);
+
+    // Now v2 governs: the same 2000-value invoice that was a no_match
+    // under v1's 5000 threshold now matches under v2's 1000 threshold.
+    const afterV2 = await SELF.fetch("https://example.com/rules/evaluate", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ ruleSetId: "rs1", facts: { "BT-112": 2000 }, invoiceId: "inv-3" }),
+    });
+    expect((await afterV2.json() as { outcome: string }).outcome).toBe("matched");
+
+    // v1 is superseded, never deleted — its full history remains
+    // directly queryable, matching the append-only reproducibility
+    // guarantee this whole system is built around.
+    const v1Row = await env.DB.prepare(
+      "SELECT approved_by, effective_to FROM rule_versions WHERE rule_id = ? AND version = 1"
+    )
+      .bind(ruleId)
+      .first<{ approved_by: string; effective_to: string | null }>();
+    expect(v1Row?.approved_by).toBe("test-user@example.com");
+    expect(v1Row?.effective_to).toBeTruthy(); // closed, not deleted
+
+    const v2Row = await env.DB.prepare(
+      "SELECT approved_by, effective_to FROM rule_versions WHERE rule_id = ? AND version = 2"
+    )
+      .bind(ruleId)
+      .first<{ approved_by: string; effective_to: string | null }>();
+    expect(v2Row?.approved_by).toBe("test-user@example.com");
+    expect(v2Row?.effective_to).toBeNull(); // the one currently open
+  });
+});
+
 describe("LOCALE — genuinely customer-facing messages translate through the real router", () => {
   // SELF.fetch can't inject a custom env per request (it uses the
   // ambient wrangler.test.jsonc config, which declares no LOCALE at

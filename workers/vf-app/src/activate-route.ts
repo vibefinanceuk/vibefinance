@@ -20,12 +20,23 @@ interface ExampleConfirmationRow {
  * examples and can never satisfy this, by construction, not by a
  * special case here.
  *
- * Scope boundary, stated plainly rather than silently implied:
- * activating a rule version updates rule_versions' approval columns in
- * D1. It does not, on its own, change what /rules/evaluate actually
- * does — that endpoint takes its ruleSet directly from the request
- * body today, not by loading activated rules from this database. See
- * docs/decisions/0007-rule-approval.md.
+ * Activating a version also closes any previously-open version of the
+ * SAME rule — see docs/decisions/0014-rule-versioning.md. A clean
+ * handoff: the old version's effective_to is set to the exact same
+ * timestamp as the new version's effective_from, so there is never a
+ * gap (a moment with no version in force) or an overlap (two versions
+ * simultaneously eligible) at the database level. The old version's
+ * row is never altered beyond that — its own history (who approved
+ * it, when, and the window it was actually in force) stays intact and
+ * queryable, matching the append-only spirit of invoice_runs: any
+ * historical evaluation must remain reproducible using the version
+ * that was genuinely in force at the time, not today's.
+ *
+ * `loadActiveRuleSet` (rule-set-loader.ts) already loads activated
+ * rules into real evaluation — this closed a scope boundary that used
+ * to exist here, in an earlier bundle. Activating a version now
+ * really does change what `/rules/evaluate` returns for callers using
+ * `ruleSetId`, not just what this database records.
  */
 export async function handleActivateRule(
   db: D1Database,
@@ -76,12 +87,31 @@ export async function handleActivateRule(
   }
 
   const now = new Date().toISOString();
-  await db
-    .prepare(
-      "UPDATE rule_versions SET approved_by = ?, approved_at = ?, effective_from = ? WHERE rule_id = ? AND version = ?"
-    )
-    .bind(activatedBy, now, now, ruleId, version)
-    .run();
+  // Order matters here, and is the reason this is two statements in a
+  // specific sequence rather than one combined UPDATE: SQLite checks a
+  // UNIQUE constraint immediately per statement within a batch, not
+  // deferred until the whole batch commits. Activating the new version
+  // BEFORE closing the old one would, for one statement's duration,
+  // leave both the old and the new version simultaneously matching
+  // "approved and still open" — exactly what
+  // 0005_rule_versioning_invariant.sql's partial unique index exists to
+  // forbid, and it does: that ordering was tried, and this exact
+  // scenario failed with a real UNIQUE constraint violation before
+  // being corrected to the order below. Close first, then open — at
+  // no point during the batch does more than one version match.
+  await db.batch([
+    db
+      .prepare(
+        `UPDATE rule_versions SET effective_to = ?
+         WHERE rule_id = ? AND version < ? AND approved_by IS NOT NULL AND effective_to IS NULL`
+      )
+      .bind(now, ruleId, version),
+    db
+      .prepare(
+        "UPDATE rule_versions SET approved_by = ?, approved_at = ?, effective_from = ? WHERE rule_id = ? AND version = ?"
+      )
+      .bind(activatedBy, now, now, ruleId, version),
+  ]);
 
   return { status: 200, body: { ruleId, version, approvedBy: activatedBy, approvedAt: now, effectiveFrom: now } };
 }

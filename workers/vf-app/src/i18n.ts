@@ -34,7 +34,9 @@ export type MessageKey =
   | "cannotActivateNoExamples"
   | "cannotActivateUnconfirmed"
   | "unauthorized"
-  | "forbidden";
+  | "forbidden"
+  | "ruleIdMustBeString"
+  | "ruleDoesNotExistInRuleSet";
 
 type MessageParams = Record<string, string | number>;
 
@@ -186,6 +188,22 @@ const MESSAGES: Record<MessageKey, Record<Locale, string>> = {
     es: "No tiene permiso para realizar esta acción",
     it: "Non si dispone dell'autorizzazione per eseguire questa azione",
     nl: "U heeft geen toestemming om deze actie uit te voeren",
+  },
+  ruleIdMustBeString: {
+    en: "ruleId, if provided, must be a string",
+    de: "ruleId muss, sofern angegeben, eine Zeichenkette sein",
+    fr: "ruleId, si fourni, doit être une chaîne de caractères",
+    es: "ruleId, si se proporciona, debe ser una cadena de texto",
+    it: "ruleId, se fornito, deve essere una stringa",
+    nl: "ruleId moet, indien opgegeven, een tekenreeks zijn",
+  },
+  ruleDoesNotExistInRuleSet: {
+    en: "rule {ruleId} does not exist in rule set {ruleSetId}",
+    de: "Regel {ruleId} existiert nicht im Regelwerk {ruleSetId}",
+    fr: "La règle {ruleId} n'existe pas dans le jeu de règles {ruleSetId}",
+    es: "La regla {ruleId} no existe en el conjunto de reglas {ruleSetId}",
+    it: "La regola {ruleId} non esiste nel set di regole {ruleSetId}",
+    nl: "Regel {ruleId} bestaat niet in regelset {ruleSetId}",
   },
 };
 

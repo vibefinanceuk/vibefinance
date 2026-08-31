@@ -155,6 +155,20 @@ rest of the fleet) and the same honest boundary: neither creates a D1
 database or sets a secret — those remain deliberate, separate, manual
 steps. Code-version reporting remains open.
 
+## Rule versioning
+
+`POST /rules/compile` accepts an optional `ruleId` to recompile an
+existing rule into a new version rather than creating a brand new one
+— `MAX(existing versions) + 1`, never a count. Activating a new
+version closes the previously-open version's `effective_to` at the
+exact moment the new one's `effective_from` begins: a clean handoff,
+full history preserved, enforced by application logic and backed by a
+partial unique index at the database layer. See
+`docs/decisions/0014-rule-versioning.md`, including two real bugs
+found by that safety net actually doing its job — a statement-ordering
+mistake inside the activation batch, and the new migration never
+having been wired into the test schema in the first place.
+
 ## The one rule enforced by tooling, not convention
 
 No application code reads a tenant-scoped binding (`env.DB` and similar)
