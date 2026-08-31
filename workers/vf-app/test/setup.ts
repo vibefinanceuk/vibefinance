@@ -11,6 +11,7 @@ import licenceCacheSql from "../../../migrations/0002_licence_cache.sql?raw";
 import orgAuthorityProfilesSql from "../../../migrations/0003_org_authority_profiles.sql?raw";
 import orgUserApiKeysSql from "../../../migrations/0004_org_user_api_keys.sql?raw";
 import ruleVersioningInvariantSql from "../../../migrations/0005_rule_versioning_invariant.sql?raw";
+import orgTeamsSql from "../../../migrations/0006_org_teams.sql?raw";
 
 // Another known divergence from production, on top of the one below:
 // D1's exec() splits its input by newline and executes each non-empty
@@ -63,6 +64,8 @@ const TABLES_IN_DROP_ORDER = [
   "rules",
   "rule_sets",
   "licence_cache",
+  "org_team_members",
+  "org_teams",
   "org_authority_limits",
   "org_user_roles",
   "org_profiles",
@@ -80,4 +83,5 @@ export async function applyTestSchema(): Promise<void> {
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(orgAuthorityProfilesSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(orgUserApiKeysSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(ruleVersioningInvariantSql)));
+  await env.DB.exec(toOneStatementPerLine(stripSqlComments(orgTeamsSql)));
 }

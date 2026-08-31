@@ -859,3 +859,64 @@ describe("org/authority/profiles routes, through the real router", () => {
     expect(res.status).toBe(422);
   });
 });
+
+describe("team routes, through the real router (decision 0016)", () => {
+  it("creates a team through the real router", async () => {
+    const res = await SELF.fetch("https://example.com/org/teams", {
+      method: "POST",
+      body: JSON.stringify({ id: "t1", name: "AP Team" }),
+    });
+    expect(res.status).toBe(201);
+    const row = await env.DB.prepare("SELECT name FROM org_teams WHERE id = ?").bind("t1").first();
+    expect(row).toEqual({ name: "AP Team" });
+  });
+
+  it("is not blocked by licence status — an administrative action, not gated product usage", async () => {
+    await env.DB.prepare("DELETE FROM licence_cache WHERE id = 1").run();
+    const res = await SELF.fetch("https://example.com/org/teams", {
+      method: "POST",
+      body: JSON.stringify({ id: "t1", name: "AP Team" }),
+    });
+    expect(res.status).not.toBe(402);
+  });
+
+  it("adds a member to a team through the real router", async () => {
+    await SELF.fetch("https://example.com/org/teams", {
+      method: "POST",
+      body: JSON.stringify({ id: "t1", name: "AP Team" }),
+    });
+    await SELF.fetch("https://example.com/org/users", {
+      method: "POST",
+      body: JSON.stringify({ id: "usr1", email: "a@b.com", name: "Alice" }),
+    });
+    const res = await SELF.fetch("https://example.com/org/teams/t1/members", {
+      method: "POST",
+      body: JSON.stringify({ userId: "usr1" }),
+    });
+    expect(res.status).toBe(201);
+    const row = await env.DB.prepare("SELECT * FROM org_team_members WHERE team_id = ? AND user_id = ?")
+      .bind("t1", "usr1")
+      .first();
+    expect(row).toEqual({ team_id: "t1", user_id: "usr1" });
+  });
+
+  it("409s adding a duplicate member through the real router", async () => {
+    await SELF.fetch("https://example.com/org/teams", {
+      method: "POST",
+      body: JSON.stringify({ id: "t1", name: "AP Team" }),
+    });
+    await SELF.fetch("https://example.com/org/users", {
+      method: "POST",
+      body: JSON.stringify({ id: "usr1", email: "a@b.com", name: "Alice" }),
+    });
+    await SELF.fetch("https://example.com/org/teams/t1/members", {
+      method: "POST",
+      body: JSON.stringify({ userId: "usr1" }),
+    });
+    const res = await SELF.fetch("https://example.com/org/teams/t1/members", {
+      method: "POST",
+      body: JSON.stringify({ userId: "usr1" }),
+    });
+    expect(res.status).toBe(409);
+  });
+});

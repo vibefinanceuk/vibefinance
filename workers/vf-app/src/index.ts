@@ -23,6 +23,7 @@ import {
   handleSetProfile,
 } from "./org-route.js";
 import { requirePermission } from "./enforce.js";
+import { handleAddTeamMember, handleCreateTeam } from "./team-route.js";
 import { handleRotateUserKey } from "./user-rotate-key-route.js";
 
 export interface Env {
@@ -570,6 +571,37 @@ export default {
     if (rotateUserKeyMatch && request.method === "POST") {
       const { db } = resolveTenant(request, env);
       const result = await handleRotateUserKey(db, rotateUserKeyMatch[1]);
+      return json(result.body, result.status);
+    }
+
+    // Teams — decisions 0015 (process/workflow engine design) and
+    // 0016 (teams). Deliberately unauthenticated, same reasoning as
+    // every other /org/* route above: administrative/setup activity,
+    // not gated product usage, and gating it would risk the same
+    // bootstrap deadlock avoided everywhere else in this subsystem.
+    if (url.pathname === "/org/teams" && request.method === "POST") {
+      const { db } = resolveTenant(request, env);
+      let body: unknown;
+      try {
+        body = await request.json();
+      } catch {
+        return json({ error: t("invalidJsonBody", resolveLocale(env.LOCALE)) }, 400);
+      }
+      const result = await handleCreateTeam(db, (body ?? {}) as Record<string, unknown>);
+      return json(result.body, result.status);
+    }
+
+    const addTeamMemberMatch = url.pathname.match(/^\/org\/teams\/([^/]+)\/members$/);
+    if (addTeamMemberMatch && request.method === "POST") {
+      const { db } = resolveTenant(request, env);
+      let body: unknown;
+      try {
+        body = await request.json();
+      } catch {
+        return json({ error: t("invalidJsonBody", resolveLocale(env.LOCALE)) }, 400);
+      }
+      const userId = (body as Record<string, unknown> | null)?.userId;
+      const result = await handleAddTeamMember(db, addTeamMemberMatch[1], userId);
       return json(result.body, result.status);
     }
 

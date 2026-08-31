@@ -181,6 +181,15 @@ facts query framework. See `docs/decisions/0015-process-workflow-
 engine.md` for the full reasoning and every genuinely open question —
 nothing in it is implemented yet.
 
+## Teams
+
+The first genuinely buildable slice of the process/workflow engine
+design — `org_teams` and `org_team_members`, a group of users a task
+could one day be assigned to and claimed by any member, deliberately
+kept separate from `org_roles` (permission vs. routing are different
+questions). No task, claiming, or eligibility logic yet — this is the
+foundation those depend on. See `docs/decisions/0016-teams.md`.
+
 ## The one rule enforced by tooling, not convention
 
 No application code reads a tenant-scoped binding (`env.DB` and similar)
