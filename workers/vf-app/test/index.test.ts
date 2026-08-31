@@ -1058,3 +1058,106 @@ describe("task routes, through the real router (decision 0018)", () => {
     expect(res.status).toBe(404);
   });
 });
+
+describe("process instances and stage visits, through the real router (decision 0019)", () => {
+  async function seedActivatedRuleSet(id: string, compiledJson: Record<string, unknown>): Promise<void> {
+    await env.DB.prepare("INSERT INTO rule_sets (id, name, mode, status) VALUES (?, ?, ?, ?)")
+      .bind(id, "test", "first_match", "active")
+      .run();
+    const ruleId = crypto.randomUUID();
+    await env.DB.prepare("INSERT INTO rules (id, rule_set_id, sort_order, enabled) VALUES (?, ?, 0, 1)").bind(ruleId, id).run();
+    await env.DB.prepare(
+      `INSERT INTO rule_versions (rule_id, version, source_text, compiled_json, compiled_by, approved_by, approved_at, effective_from)
+       VALUES (?, 1, ?, ?, ?, ?, ?, ?)`
+    )
+      .bind(ruleId, "test rule", JSON.stringify(compiledJson), "test-model", "test-user", "2026-01-01T00:00:00.000Z", "2026-01-01T00:00:00.000Z")
+      .run();
+  }
+
+  it("a real invoice moves through a full process end to end, an approval task blocking until completed", async () => {
+    // Standard AP: Received (automatic) -> Approval (spawns a task
+    // above 1000) -> Payment-eligible (automatic terminal stage).
+    await seedActivatedRuleSet("rs-approval", {
+      conditions: { field: "BT-112", operator: "greater_than", value: 1000 },
+      actions: [{ type: "assign_task", params: { team: "ap-team", permission: "AP.Approve" } }],
+    });
+    await SELF.fetch("https://example.com/processes", { method: "POST", body: JSON.stringify({ id: "p1", name: "Standard AP" }) });
+    await SELF.fetch("https://example.com/processes/p1/stages", {
+      method: "POST",
+      body: JSON.stringify({ id: "s1", name: "Received", sequence: 1 }),
+    });
+    await SELF.fetch("https://example.com/processes/p1/stages", {
+      method: "POST",
+      body: JSON.stringify({ id: "s2", name: "Approval", sequence: 2, ruleSetId: "rs-approval" }),
+    });
+    await SELF.fetch("https://example.com/processes/p1/stages", {
+      method: "POST",
+      body: JSON.stringify({ id: "s3", name: "Payment-eligible", sequence: 3 }),
+    });
+    await SELF.fetch("https://example.com/org/teams", { method: "POST", body: JSON.stringify({ id: "ap-team", name: "AP team" }) });
+    await SELF.fetch("https://example.com/org/teams/ap-team/members", {
+      method: "POST",
+      body: JSON.stringify({ userId: "test-user" }),
+    });
+
+    const createRes = await SELF.fetch("https://example.com/processes/p1/instances", {
+      method: "POST",
+      body: JSON.stringify({ subjectType: "invoice", subjectId: "real-inv-1" }),
+    });
+    expect(createRes.status).toBe(201);
+    const instanceId = (await createRes.json() as { id: string }).id;
+
+    const visitRes = await SELF.fetch(`https://example.com/process-instances/${instanceId}/visit`, {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ facts: { "BT-112": 3000 } }),
+    });
+    expect(visitRes.status).toBe(200);
+    const visitBody = (await visitRes.json()) as { status: string; currentStageId: string };
+    expect(visitBody.status).toBe("in_progress");
+    expect(visitBody.currentStageId).toBe("s2"); // blocked at Approval, a real task now exists
+
+    const taskRow = await env.DB.prepare("SELECT id FROM tasks WHERE stage_id = 's2'").first<{ id: string }>();
+    expect(taskRow).toBeTruthy();
+
+    const claimRes = await SELF.fetch(`https://example.com/tasks/${taskRow!.id}/claim`, { method: "POST", headers: authHeaders() });
+    expect(claimRes.status).toBe(200);
+    const completeRes = await SELF.fetch(`https://example.com/tasks/${taskRow!.id}/complete`, { method: "POST", headers: authHeaders() });
+    expect(completeRes.status).toBe(200);
+
+    // Completing the task, through the real route, should have
+    // automatically pushed the instance all the way to completion —
+    // no further explicit call needed.
+    const instanceRow = await env.DB.prepare("SELECT status, current_stage_id FROM process_instances WHERE id = ?")
+      .bind(instanceId)
+      .first();
+    expect(instanceRow).toEqual({ status: "completed", current_stage_id: "s3" });
+  });
+
+  it("401s visiting a stage with no credentials at all", async () => {
+    await SELF.fetch("https://example.com/processes", { method: "POST", body: JSON.stringify({ id: "p1", name: "AP" }) });
+    await SELF.fetch("https://example.com/processes/p1/stages", { method: "POST", body: JSON.stringify({ id: "s1", name: "Received", sequence: 1 }) });
+    const created = await SELF.fetch("https://example.com/processes/p1/instances", {
+      method: "POST",
+      body: JSON.stringify({ subjectType: "invoice", subjectId: "inv-1" }),
+    });
+    const instanceId = (await created.json() as { id: string }).id;
+    const res = await SELF.fetch(`https://example.com/process-instances/${instanceId}/visit`, {
+      method: "POST",
+      body: JSON.stringify({ facts: {} }),
+    });
+    expect(res.status).toBe(401);
+  });
+
+  it("is blocked when the licence is blocked, matching /rules/evaluate's own gate", async () => {
+    await env.DB.prepare("DELETE FROM licence_cache WHERE id = 1").run();
+    await SELF.fetch("https://example.com/processes", { method: "POST", body: JSON.stringify({ id: "p1", name: "AP" }) });
+    await SELF.fetch("https://example.com/processes/p1/stages", { method: "POST", body: JSON.stringify({ id: "s1", name: "Received", sequence: 1 }) });
+    const res = await SELF.fetch("https://example.com/process-instances/anything/visit", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ facts: {} }),
+    });
+    expect(res.status).toBe(402);
+  });
+});

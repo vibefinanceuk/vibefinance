@@ -26,6 +26,7 @@ import { requirePermission } from "./enforce.js";
 import { handleAddTeamMember, handleCreateTeam } from "./team-route.js";
 import { handleUpsertInvoice } from "./invoice-facts-route.js";
 import { handleCreateProcess, handleCreateStage } from "./process-route.js";
+import { handleCreateProcessInstance, onTaskCompleted, visitCurrentStage } from "./workflow-engine.js";
 import { handleClaimTask, handleCompleteTask, handleCreateTask } from "./task-route.js";
 import type { Permission } from "./permissions.js";
 import { handleRotateUserKey } from "./user-rotate-key-route.js";
@@ -354,7 +355,8 @@ export default {
     if (
       url.pathname === "/rules/evaluate" ||
       url.pathname === "/rules/compile" ||
-      url.pathname === "/invoices"
+      url.pathname === "/invoices" ||
+      /^\/process-instances\/[^/]+\/visit$/.test(url.pathname)
     ) {
       const { db } = resolveTenant(request, env);
       const licenceState = await readLicenceState(db);
@@ -738,6 +740,57 @@ export default {
       const result = claimTaskMatch
         ? await handleClaimTask(db, taskId, auth.user.id)
         : await handleCompleteTask(db, taskId, auth.user.id);
+      // A successful completion may unblock the owning process
+      // instance (decision 0019) — checked here, not inside
+      // handleCompleteTask itself, to avoid a circular import between
+      // task-route.ts and workflow-engine.ts (the engine already
+      // imports handleCreateTask the other way).
+      if (completeTaskMatch && result.status === 200) {
+        await onTaskCompleted(db, taskId);
+      }
+      return json(result.body, result.status);
+    }
+
+    // Process instances and stage visits — decision 0019, the runtime
+    // machinery decision 0018 explicitly deferred. Creation stays
+    // unauthenticated, matching /processes and /processes/:id/stages
+    // above (the same administrative-setup reasoning). Visiting a
+    // stage is where real evaluation happens — matching
+    // /rules/evaluate's own AP.Validate gate, since this is the exact
+    // same capability (evaluating a rule set against facts), just
+    // reached through the workflow engine instead of directly.
+    const createInstanceMatch = url.pathname.match(/^\/processes\/([^/]+)\/instances$/);
+    if (createInstanceMatch && request.method === "POST") {
+      const { db } = resolveTenant(request, env);
+      let body: unknown;
+      try {
+        body = await request.json();
+      } catch {
+        return json({ error: t("invalidJsonBody", resolveLocale(env.LOCALE)) }, 400);
+      }
+      const result = await handleCreateProcessInstance(db, createInstanceMatch[1], (body ?? {}) as Record<string, unknown>);
+      return json(result.body, result.status);
+    }
+
+    const visitMatch = url.pathname.match(/^\/process-instances\/([^/]+)\/visit$/);
+    if (visitMatch && request.method === "POST") {
+      const { db } = resolveTenant(request, env);
+      const locale = resolveLocale(env.LOCALE);
+      const auth = await requirePermission(db, request, "AP.Validate");
+      if (!auth.authorized) {
+        return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", locale) }, auth.status);
+      }
+      let body: unknown;
+      try {
+        body = await request.json();
+      } catch {
+        return json({ error: t("invalidJsonBody", locale) }, 400);
+      }
+      const facts = ((body ?? {}) as Record<string, unknown>).facts;
+      if (typeof facts !== "object" || facts === null || Array.isArray(facts)) {
+        return json({ error: "facts (object) is required" }, 400);
+      }
+      const result = await visitCurrentStage(db, visitMatch[1], facts as InvoiceFacts);
       return json(result.body, result.status);
     }
 

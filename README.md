@@ -225,6 +225,22 @@ including a genuinely new authentication shape: claim/complete check a
 fixed one hardcoded to the route like every other permission-gated
 route in this codebase.
 
+## Process instances and stage visits — the workflow engine runs
+
+`process_instances` and `stage_visits`/`stage_visit_steps` — the
+runtime machinery 0018 deferred. A real invoice moves through a real
+process's stages, each stage's rule set evaluated against supplied
+facts, cascading freely through automatic stages and blocking only
+where fired rules spawn real, open tasks — advancing again
+automatically once the last one completes. Proven fully end to end
+through the real router: a real invoice, a real approval task, claimed
+and completed through the real `/tasks/:id/complete` route, the
+instance confirmed to reach completion with no further explicit call.
+See `docs/decisions/0019-process-instances-and-stage-visits.md`,
+including an honest, deliberate scope boundary: task-completion-
+triggered advancement only cascades through automatic stages, since
+there are no facts available at that point to evaluate a real one.
+
 ## The one rule enforced by tooling, not convention
 
 No application code reads a tenant-scoped binding (`env.DB` and similar)
