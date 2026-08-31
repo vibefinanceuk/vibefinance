@@ -339,8 +339,26 @@ async function handleEvaluate(request: Request, env: Env): Promise<Response> {
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
+    // Decoded exactly once, used everywhere below — URL.pathname
+    // preserves percent-encoding rather than decoding it (a genuine,
+    // easy-to-miss gotcha), so every dynamic path segment captured
+    // via regex throughout this file was silently receiving raw,
+    // still-encoded text (e.g. "AP%20team" instead of "AP team") until
+    // this was caught live: a compiler-generated team name containing
+    // a space broke every route matching on it. Decoding once, here,
+    // fixes the root cause for all of them at once rather than
+    // patching each capture site individually and risking missing
+    // one. A malformed percent-encoding (invalid, not just unusual)
+    // is refused with a clean 400 rather than throwing an unhandled
+    // exception into a raw 500.
+    let pathname: string;
+    try {
+      pathname = decodeURIComponent(url.pathname);
+    } catch {
+      return json({ error: "malformed URL path" }, 400);
+    }
 
-    if (url.pathname === "/health") {
+    if (pathname === "/health") {
       return json({ status: "ok" });
     }
 
@@ -353,10 +371,10 @@ export default {
     // that ARE known do not. Absence of any cached state at all is
     // still blocked — see licence-cache.ts's isBlocked() doc comment.
     if (
-      url.pathname === "/rules/evaluate" ||
-      url.pathname === "/rules/compile" ||
-      url.pathname === "/invoices" ||
-      /^\/process-instances\/[^/]+\/visit$/.test(url.pathname)
+      pathname === "/rules/evaluate" ||
+      pathname === "/rules/compile" ||
+      pathname === "/invoices" ||
+      /^\/process-instances\/[^/]+\/visit$/.test(pathname)
     ) {
       const { db } = resolveTenant(request, env);
       const licenceState = await readLicenceState(db);
@@ -365,7 +383,7 @@ export default {
       }
     }
 
-    if (url.pathname === "/rules/evaluate" && request.method === "POST") {
+    if (pathname === "/rules/evaluate" && request.method === "POST") {
       return handleEvaluate(request, env);
     }
 
@@ -375,7 +393,7 @@ export default {
     // than a new permission: storing an invoice's facts is naturally
     // part of the same "an invoice enters the system" capability
     // /rules/evaluate already requires that permission for.
-    if (url.pathname === "/invoices" && request.method === "POST") {
+    if (pathname === "/invoices" && request.method === "POST") {
       const { db } = resolveTenant(request, env);
       const locale = resolveLocale(env.LOCALE);
       const auth = await requirePermission(db, request, "AP.Validate");
@@ -392,7 +410,7 @@ export default {
       return json(result.body, result.status);
     }
 
-    if (url.pathname === "/rules/compile" && request.method === "POST") {
+    if (pathname === "/rules/compile" && request.method === "POST") {
       const { db } = resolveTenant(request, env);
       const locale = resolveLocale(env.LOCALE);
       const auth = await requirePermission(db, request, "Admin.RuleManagement");
@@ -428,7 +446,7 @@ export default {
     // gated — see licence-refresh-route.ts's own comment on why that
     // would make the exact state this endpoint exists to fix
     // permanently unrecoverable.
-    if (url.pathname === "/licence/refresh" && request.method === "POST") {
+    if (pathname === "/licence/refresh" && request.method === "POST") {
       const { db } = resolveTenant(request, env);
       if (!isPublicKeyJwk(env.LICENCE_SIGNING_PUBLIC_KEY) || !env.LICENCE_SERVICE || !env.CUSTOMER_ID || !env.VF_LICENCE_API_KEY) {
         return json(
@@ -451,7 +469,7 @@ export default {
     // product-facing endpoint from the start, not an operator-only
     // debug route — the response includes the full report just pushed,
     // so a future "sync now" UI can show it immediately.
-    if (url.pathname === "/usage/push" && request.method === "POST") {
+    if (pathname === "/usage/push" && request.method === "POST") {
       const { db } = resolveTenant(request, env);
       if (!env.LICENCE_SERVICE || !env.CUSTOMER_ID || !env.VF_LICENCE_API_KEY) {
         return json({ error: "LICENCE_SERVICE, CUSTOMER_ID and VF_LICENCE_API_KEY must be configured" }, 500);
@@ -475,7 +493,7 @@ export default {
     // comment: activating updates rule_versions in D1 but does not,
     // on its own, change what /rules/evaluate does above — that
     // endpoint still takes its ruleSet from the request body.
-    const examplesListMatch = url.pathname.match(/^\/rules\/([^/]+)\/versions\/(\d+)\/examples$/);
+    const examplesListMatch = pathname.match(/^\/rules\/([^/]+)\/versions\/(\d+)\/examples$/);
     if (examplesListMatch && request.method === "GET") {
       const { db } = resolveTenant(request, env);
       const locale = resolveLocale(env.LOCALE);
@@ -487,7 +505,7 @@ export default {
       return json(result.body, result.status);
     }
 
-    const confirmMatch = url.pathname.match(/^\/rules\/examples\/([^/]+)\/confirm$/);
+    const confirmMatch = pathname.match(/^\/rules\/examples\/([^/]+)\/confirm$/);
     if (confirmMatch && request.method === "POST") {
       const { db } = resolveTenant(request, env);
       const locale = resolveLocale(env.LOCALE);
@@ -509,7 +527,7 @@ export default {
       return json(result.body, result.status);
     }
 
-    const activateMatch = url.pathname.match(/^\/rules\/([^/]+)\/versions\/(\d+)\/activate$/);
+    const activateMatch = pathname.match(/^\/rules\/([^/]+)\/versions\/(\d+)\/activate$/);
     if (activateMatch && request.method === "POST") {
       const { db } = resolveTenant(request, env);
       const locale = resolveLocale(env.LOCALE);
@@ -544,7 +562,7 @@ export default {
     // usage /rules/compile and /rules/evaluate are gated for — a
     // blocked customer should still be able to manage their own
     // people and roles.
-    if (url.pathname === "/org/units" && request.method === "POST") {
+    if (pathname === "/org/units" && request.method === "POST") {
       const { db } = resolveTenant(request, env);
       let body: unknown;
       try {
@@ -556,7 +574,7 @@ export default {
       return json(result.body, result.status);
     }
 
-    if (url.pathname === "/org/users" && request.method === "POST") {
+    if (pathname === "/org/users" && request.method === "POST") {
       const { db } = resolveTenant(request, env);
       let body: unknown;
       try {
@@ -568,7 +586,7 @@ export default {
       return json(result.body, result.status);
     }
 
-    if (url.pathname === "/org/roles" && request.method === "POST") {
+    if (pathname === "/org/roles" && request.method === "POST") {
       const { db } = resolveTenant(request, env);
       let body: unknown;
       try {
@@ -580,7 +598,7 @@ export default {
       return json(result.body, result.status);
     }
 
-    const assignRoleMatch = url.pathname.match(/^\/org\/users\/([^/]+)\/roles$/);
+    const assignRoleMatch = pathname.match(/^\/org\/users\/([^/]+)\/roles$/);
     if (assignRoleMatch && request.method === "POST") {
       const { db } = resolveTenant(request, env);
       let body: unknown;
@@ -594,7 +612,7 @@ export default {
       return json(result.body, result.status);
     }
 
-    const authorityLimitMatch = url.pathname.match(/^\/org\/users\/([^/]+)\/authority-limits$/);
+    const authorityLimitMatch = pathname.match(/^\/org\/users\/([^/]+)\/authority-limits$/);
     if (authorityLimitMatch && request.method === "POST") {
       const { db } = resolveTenant(request, env);
       let body: unknown;
@@ -611,7 +629,7 @@ export default {
       return json(result.body, result.status);
     }
 
-    if (url.pathname === "/org/profiles" && request.method === "POST") {
+    if (pathname === "/org/profiles" && request.method === "POST") {
       const { db } = resolveTenant(request, env);
       let body: unknown;
       try {
@@ -629,7 +647,7 @@ export default {
     // (matching the rest of /org/* — see the comment above), since
     // requiring a permission to rotate a key would reintroduce the
     // exact bootstrap problem this whole subsystem avoids elsewhere.
-    const rotateUserKeyMatch = url.pathname.match(/^\/org\/users\/([^/]+)\/rotate-key$/);
+    const rotateUserKeyMatch = pathname.match(/^\/org\/users\/([^/]+)\/rotate-key$/);
     if (rotateUserKeyMatch && request.method === "POST") {
       const { db } = resolveTenant(request, env);
       const result = await handleRotateUserKey(db, rotateUserKeyMatch[1]);
@@ -641,7 +659,7 @@ export default {
     // every other /org/* route above: administrative/setup activity,
     // not gated product usage, and gating it would risk the same
     // bootstrap deadlock avoided everywhere else in this subsystem.
-    if (url.pathname === "/org/teams" && request.method === "POST") {
+    if (pathname === "/org/teams" && request.method === "POST") {
       const { db } = resolveTenant(request, env);
       let body: unknown;
       try {
@@ -653,7 +671,7 @@ export default {
       return json(result.body, result.status);
     }
 
-    const addTeamMemberMatch = url.pathname.match(/^\/org\/teams\/([^/]+)\/members$/);
+    const addTeamMemberMatch = pathname.match(/^\/org\/teams\/([^/]+)\/members$/);
     if (addTeamMemberMatch && request.method === "POST") {
       const { db } = resolveTenant(request, env);
       let body: unknown;
@@ -670,7 +688,7 @@ export default {
     // Processes and stages — decisions 0015 and 0018. Deliberately
     // unauthenticated, same reasoning as teams above: definition-time
     // setup, not gated product usage.
-    if (url.pathname === "/processes" && request.method === "POST") {
+    if (pathname === "/processes" && request.method === "POST") {
       const { db } = resolveTenant(request, env);
       let body: unknown;
       try {
@@ -682,7 +700,7 @@ export default {
       return json(result.body, result.status);
     }
 
-    const createStageMatch = url.pathname.match(/^\/processes\/([^/]+)\/stages$/);
+    const createStageMatch = pathname.match(/^\/processes\/([^/]+)\/stages$/);
     if (createStageMatch && request.method === "POST") {
       const { db } = resolveTenant(request, env);
       let body: unknown;
@@ -705,7 +723,7 @@ export default {
     // then check the TASK'S OWN required_permission — looked up per
     // task, not a fixed permission hardcoded to this route the way
     // every other permission-gated route in this codebase works.
-    if (url.pathname === "/tasks" && request.method === "POST") {
+    if (pathname === "/tasks" && request.method === "POST") {
       const { db } = resolveTenant(request, env);
       let body: unknown;
       try {
@@ -717,8 +735,8 @@ export default {
       return json(result.body, result.status);
     }
 
-    const claimTaskMatch = url.pathname.match(/^\/tasks\/([^/]+)\/claim$/);
-    const completeTaskMatch = url.pathname.match(/^\/tasks\/([^/]+)\/complete$/);
+    const claimTaskMatch = pathname.match(/^\/tasks\/([^/]+)\/claim$/);
+    const completeTaskMatch = pathname.match(/^\/tasks\/([^/]+)\/complete$/);
     if ((claimTaskMatch || completeTaskMatch) && request.method === "POST") {
       const { db } = resolveTenant(request, env);
       const locale = resolveLocale(env.LOCALE);
@@ -759,7 +777,7 @@ export default {
     // /rules/evaluate's own AP.Validate gate, since this is the exact
     // same capability (evaluating a rule set against facts), just
     // reached through the workflow engine instead of directly.
-    const createInstanceMatch = url.pathname.match(/^\/processes\/([^/]+)\/instances$/);
+    const createInstanceMatch = pathname.match(/^\/processes\/([^/]+)\/instances$/);
     if (createInstanceMatch && request.method === "POST") {
       const { db } = resolveTenant(request, env);
       let body: unknown;
@@ -772,7 +790,7 @@ export default {
       return json(result.body, result.status);
     }
 
-    const visitMatch = url.pathname.match(/^\/process-instances\/([^/]+)\/visit$/);
+    const visitMatch = pathname.match(/^\/process-instances\/([^/]+)\/visit$/);
     if (visitMatch && request.method === "POST") {
       const { db } = resolveTenant(request, env);
       const locale = resolveLocale(env.LOCALE);

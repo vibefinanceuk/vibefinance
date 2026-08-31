@@ -90,6 +90,16 @@ describe("GET /health", () => {
   });
 });
 
+describe("malformed URL paths, through the real router", () => {
+  it("400s cleanly on invalid percent-encoding rather than throwing a raw 500", async () => {
+    // A lone "%" not followed by two valid hex digits makes
+    // decodeURIComponent throw — confirmed refused cleanly, not left
+    // to crash the request.
+    const res = await SELF.fetch("https://example.com/org/teams/%E0%A4%A/members", { method: "POST" });
+    expect(res.status).toBe(400);
+  });
+});
+
 describe("POST /rules/evaluate", () => {
   const ruleSet: CompiledRuleSet = {
     id: "rs1",
@@ -929,6 +939,30 @@ describe("team routes, through the real router (decision 0016)", () => {
     expect(res.status).toBe(201);
     const row = await env.DB.prepare("SELECT name FROM org_teams WHERE id = ?").bind("t1").first();
     expect(row).toEqual({ name: "AP Team" });
+  });
+
+  it("a team id containing a space works correctly through a real, percent-encoded URL — a real live-caught bug", async () => {
+    // URL.pathname preserves percent-encoding rather than decoding it
+    // — a genuine gotcha that let every dynamic path segment in this
+    // file silently receive raw, still-encoded text until a real
+    // compiler-generated team name ("AP team") broke it live.
+    await SELF.fetch("https://example.com/org/teams", {
+      method: "POST",
+      body: JSON.stringify({ id: "AP team", name: "AP Team" }),
+    });
+    await SELF.fetch("https://example.com/org/users", {
+      method: "POST",
+      body: JSON.stringify({ id: "usr1", email: "a@b.com", name: "Alice" }),
+    });
+    const res = await SELF.fetch("https://example.com/org/teams/AP%20team/members", {
+      method: "POST",
+      body: JSON.stringify({ userId: "usr1" }),
+    });
+    expect(res.status).toBe(201);
+    const row = await env.DB.prepare("SELECT * FROM org_team_members WHERE team_id = ? AND user_id = ?")
+      .bind("AP team", "usr1")
+      .first();
+    expect(row).toEqual({ team_id: "AP team", user_id: "usr1" });
   });
 
   it("is not blocked by licence status — an administrative action, not gated product usage", async () => {
