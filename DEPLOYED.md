@@ -7,7 +7,7 @@ vf-app and vf-licence are promoted independently.
 
 | Worker | commit SHA | confirmed at |
 |---|---|---|
-| vf-app | `077175b` | 31 August 2026 — rule versioning confirmed live, end to end. Recompiling under an ambiguous sentence ("flag anything over 1000 euros") was correctly refused by the model — genuine AI non-determinism, not a bug, confirmed by immediately retrying with an unambiguous sentence and getting `version: 2, isNewVersionOfExistingRule: true` for the exact same `ruleId`. Both v2 worked examples confirmed; activation confirmed v1's `effective_to` set to the exact same millisecond as v2's `effective_from` (`2026-08-31T15:14:07.248Z` both sides), via direct D1 query, not the response alone. The real proof: the same `BT-112: 3000` invoice that returned `no_match` under v1 on 30 August returned `matched` under v2 this time, with the response trace explicitly showing `ruleVersion: 2` as the one that actually fired. |
+| vf-app | `6221166` | 31 August 2026 — invoice facts storage confirmed live, end to end, including a real test-design lesson applied live: an initial evaluation against `real-inv-1` came back `no_match`, but the invoice's persisted facts had no `BT-112` at all — the same ambiguous result the automated test suite's own first draft was caught producing, unable to distinguish "loaded correctly, field genuinely absent" from "loading silently failed." Corrected by updating the invoice with `BT-112: 3000` and re-evaluating with no `facts` in the request at all — the response came back `matched`, with the trace explicitly showing `ruleVersion: 2, matched: true` on the exact rule whose 1000 threshold only 3000 (not the older rule's 5000) clears. Genuine, unambiguous proof persisted facts were loaded and used. |
 | vf-licence | `8029d0a` | 30 August 2026 — fleet tooling (Blueprint build order step 5) confirmed live, end to end. `GET /customers` and `PATCH /customers/:id/fleet-metadata` both confirmed working with a freshly rotated `ADMIN_API_KEY`; Acme's real fleet metadata (`worker_name`, `d1_database_name`, `d1_database_id`, `locale`) backfilled and confirmed persisted via a direct re-query, not inferred from the response alone. `migrations/migrate_all.py` (a local script, not a Worker — see its own row in the incident record below) then successfully read that manifest and ran a real migration check against Acme's live database: `1 succeeded, 0 failed, 0 skipped`. |
 
 ## D1
@@ -206,3 +206,21 @@ that returned `no_match` on 30 August (under v1's 5000 threshold)
 returned `matched` this time under v2's 1000 threshold, with the
 response's own trace explicitly naming `ruleVersion: 2` as the one
 that fired. Full account in `docs/decisions/0014-rule-versioning.md`.
+
+31 August 2026: invoice facts storage confirmed live, including a
+real live catch worth recording. The first evaluation against a
+freshly stored invoice (`facts: {"BT-40":"US"}`, no `BT-112`) came
+back `no_match` — a correct result, but not distinguishing proof: the
+same result would occur if fact-loading had silently failed and
+defaulted to empty facts, exactly the ambiguity the automated test
+suite's own first draft was separately caught producing and fixed
+before being trusted (see `docs/decisions/0017-invoice-facts-
+storage.md`). The same standard was applied live rather than accepted
+on the first, ambiguous result: the invoice was updated with
+`BT-112: 3000`, and re-evaluated with no `facts` field in the request
+at all. The response came back `matched`, with the trace explicitly
+showing `ruleVersion: 2, matched: true` on the rule whose 1000
+threshold 3000 clears and the older rule's 5000 threshold does not —
+genuine, unambiguous confirmation that persisted facts were loaded
+from D1 and actually used, not inferred from a result that could have
+meant either outcome.
