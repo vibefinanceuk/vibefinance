@@ -1,13 +1,11 @@
 import {
   ACTIONS,
   ACTION_DESCRIPTIONS,
-  DERIVED_FIELDS,
-  DERIVED_FIELD_DESCRIPTIONS,
   DERIVED_FIELD_PREFIXES,
-  FIELD_DESCRIPTIONS,
-  INVOICE_FIELDS,
   OPERATORS,
+  VOCABULARIES,
 } from "../interpreter/vocabulary.js";
+import type { VocabularyName } from "../interpreter/vocabulary.js";
 import { MAX_COMBINATOR_DEPTH } from "../interpreter/evaluate.js";
 
 /**
@@ -18,26 +16,42 @@ import { MAX_COMBINATOR_DEPTH } from "../interpreter/evaluate.js";
  * actually accept. If it did, the model would confidently emit
  * something valid-looking that gets refused downstream, which is a
  * worse failure than either side just being wrong consistently.
+ *
+ * vocabulary defaults to "invoice" — every caller written before
+ * decision 0022's multi-vocabulary support existed renders exactly
+ * the same prompt text it always did, unchanged.
  */
-export function buildVocabularyDoc(): string {
-  const fieldLines = INVOICE_FIELDS.map(
-    (f) => `  ${f} — ${FIELD_DESCRIPTIONS[f]}`
-  ).join("\n");
-  const derivedLines = DERIVED_FIELDS.map(
-    (f) => `  ${f} — ${DERIVED_FIELD_DESCRIPTIONS[f]}`
-  ).join("\n");
-  const parameterisedLines = DERIVED_FIELD_PREFIXES.map(
-    (p) => `  ${p}BT-n) — true if that Business Term is absent from the invoice`
-  ).join("\n");
+export function buildVocabularyDoc(vocabulary: VocabularyName = "invoice"): string {
+  const v = VOCABULARIES[vocabulary];
+  const fieldLines = v.fields.map((f) => `  ${f} — ${v.fieldDescriptions[f]}`).join("\n");
+  const derivedLines = v.derivedFields.map((f) => `  ${f} — ${v.derivedFieldDescriptions[f]}`).join("\n");
+  // term.absent(BT-n) is inherently an invoice/EN-16931 concept — a
+  // Business Term either appears on an invoice or it doesn't. Nothing
+  // analogous exists for expense fields, so this section is only
+  // rendered for the invoice vocabulary rather than confusing the
+  // model with a concept that has no meaning for what it's actually
+  // compiling.
+  const parameterisedLines =
+    vocabulary === "invoice"
+      ? DERIVED_FIELD_PREFIXES.map(
+          (p) => `  ${p}BT-n) — true if that Business Term is absent from the invoice`
+        ).join("\n")
+      : "";
 
   const actionLines = ACTIONS.map(
     (a) => `  ${a} — ${ACTION_DESCRIPTIONS[a]}`
   ).join("\n");
 
-  return `INVOICE FIELDS (from the standard):
+  const fieldsHeading = vocabulary === "invoice" ? "INVOICE FIELDS (from the standard):" : "EXPENSE FIELDS:";
+  const derivedHeading =
+    vocabulary === "invoice"
+      ? "PLATFORM-DERIVED FIELDS (never invoice data, always platform-computed):"
+      : "PLATFORM-DERIVED FIELDS (never submitted by the employee, always platform-computed):";
+
+  return `${fieldsHeading}
 ${fieldLines}
 
-PLATFORM-DERIVED FIELDS (never invoice data, always platform-computed):
+${derivedHeading}
 ${derivedLines}
 ${parameterisedLines}
 

@@ -256,6 +256,22 @@ real use anywhere in this codebase. See
 what this genuinely doesn't test — the real AI compiler, and whether
 Expense (no EN 16931 grounding at all) would hold up the same way.
 
+## Multi-vocabulary support, and Expense proves the harder hypothesis
+
+The real infrastructure decision 0015 flagged as a prerequisite before
+a second domain could exist: `isKnownField`, `validateRule`, the
+compiler's prompt, and `compileRule` all gained an optional vocabulary
+parameter, defaulting to `"invoice"` everywhere for full backward
+compatibility. `rule_sets` gained a closed `vocabulary` column. A
+genuinely new, authored Expense field vocabulary (`category`,
+`amount`, `receipt_attached`, and others — no EN 16931 grounding at
+all) then proved the harder hypothesis decision 0021 explicitly
+deferred: a real expense rule correctly matches a large, receiptless
+Travel expense and spawns a real task, and a single differing field
+(a receipt being attached) correctly prevents it. Every change proven
+by deliberately breaking it and watching a real test fail first. See
+`docs/decisions/0022-expense-vocabulary.md`.
+
 ## The one rule enforced by tooling, not convention
 
 No application code reads a tenant-scoped binding (`env.DB` and similar)

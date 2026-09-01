@@ -96,6 +96,44 @@ describe("validateRule — the refusal boundary", () => {
     };
     expect(() => validateRule(rule)).toThrow(RuleValidationError);
   });
+
+  it("defaults to the invoice vocabulary — an existing caller passing no third argument sees unchanged behaviour", () => {
+    const rule: CompiledRule = {
+      id: "r9",
+      version: 1,
+      conditions: { field: "BT-112", operator: "greater_than", value: 1000 },
+      actions: [{ type: "flag" }],
+    };
+    expect(() => validateRule(rule)).not.toThrow();
+  });
+
+  it("accepts an expense field when the expense vocabulary is explicitly requested", () => {
+    const rule: CompiledRule = {
+      id: "r10",
+      version: 1,
+      conditions: { field: "category", operator: "is", value: "Travel" },
+      actions: [{ type: "flag" }],
+    };
+    expect(() => validateRule(rule, "expense")).not.toThrow();
+  });
+
+  it("the critical isolation property: an invoice field is refused under the expense vocabulary, and vice versa", () => {
+    const invoiceFieldRule: CompiledRule = {
+      id: "r11",
+      version: 1,
+      conditions: { field: "BT-112", operator: "greater_than", value: 1000 },
+      actions: [{ type: "flag" }],
+    };
+    expect(() => validateRule(invoiceFieldRule, "expense")).toThrow(RuleValidationError);
+
+    const expenseFieldRule: CompiledRule = {
+      id: "r12",
+      version: 1,
+      conditions: { field: "category", operator: "is", value: "Travel" },
+      actions: [{ type: "flag" }],
+    };
+    expect(() => validateRule(expenseFieldRule, "invoice")).toThrow(RuleValidationError);
+  });
 });
 
 describe("evaluateRuleSet — the worked example from the Blueprint", () => {

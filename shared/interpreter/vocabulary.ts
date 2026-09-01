@@ -48,6 +48,33 @@ export const DERIVED_FIELDS = [
 
 export const DERIVED_FIELD_PREFIXES = ["term.absent("] as const;
 
+// Expense management's own field vocabulary — authored, not
+// translated, per decision 0015's own framing: unlike invoice fields,
+// there is no external standard (no EN 16931 equivalent) to ground
+// these in, so their legitimacy has to come from this review, not an
+// external document. Deliberately plain, readable names rather than
+// an invented "EX-N" numbering scheme mimicking BT-* — that would
+// falsely imply a standard that doesn't exist. Kept small and
+// illustrative on purpose: enough to prove the vocabulary-sharing
+// design generalizes to a domain with no invoice underneath it at
+// all (decision 0015's "genuinely hard case"), not a comprehensive
+// expense module.
+export const EXPENSE_FIELDS = [
+  "category",
+  "amount",
+  "currency",
+  "submitted_date",
+  "employee_id",
+  "cost_centre",
+  "receipt_attached",
+  "trip_end_date",
+  "description",
+] as const;
+
+export const EXPENSE_DERIVED_FIELDS = [
+  "employee.first_submission",
+] as const;
+
 export const OPERATORS = [
   "is",
   "is_not",
@@ -80,6 +107,8 @@ export const ACTIONS = [
 
 export type InvoiceField = (typeof INVOICE_FIELDS)[number];
 export type DerivedField = (typeof DERIVED_FIELDS)[number];
+export type ExpenseField = (typeof EXPENSE_FIELDS)[number];
+export type ExpenseDerivedField = (typeof EXPENSE_DERIVED_FIELDS)[number];
 export type Operator = (typeof OPERATORS)[number];
 export type ActionType = (typeof ACTIONS)[number];
 
@@ -119,6 +148,22 @@ export const DERIVED_FIELD_DESCRIPTIONS: Record<DerivedField, string> = {
   "validation.passed": "true if the document passed standard validation",
 };
 
+export const EXPENSE_FIELD_DESCRIPTIONS: Record<ExpenseField, string> = {
+  category: "the expense category, e.g. Travel, Meals, Software, Office Supplies",
+  amount: "the expense amount",
+  currency: "the currency the amount is in",
+  submitted_date: "the date the expense was submitted for reimbursement",
+  employee_id: "the id of the employee who submitted the expense",
+  cost_centre: "the cost centre this expense should be charged against",
+  receipt_attached: "true if a receipt was attached to the submission",
+  trip_end_date: "the end date of the trip this expense relates to, if any",
+  description: "a free-text description of the expense",
+};
+
+export const EXPENSE_DERIVED_FIELD_DESCRIPTIONS: Record<ExpenseDerivedField, string> = {
+  "employee.first_submission": "true if this is the first expense this employee has ever submitted",
+};
+
 // Same discipline as FIELD_DESCRIPTIONS above, and for the same
 // reason it turned out to matter in practice: an action with no
 // documented param shape leaves the compiler to invent one on its
@@ -146,9 +191,44 @@ export const ACTION_DESCRIPTIONS: Record<ActionType, string> = {
     'creates a task — params: exactly one of { "team": "<team id>" } or { "user": "<user id>" }, plus { "permission": "<permission>" }',
 };
 
-export function isKnownField(field: string): boolean {
-  if ((INVOICE_FIELDS as readonly string[]).includes(field)) return true;
-  if ((DERIVED_FIELDS as readonly string[]).includes(field)) return true;
+// A closed set of named vocabularies — the real infrastructure
+// decision 0015 flagged as necessary before a second domain could
+// exist at all: "validateRule(), isKnownField()... currently check
+// against ONE global, module-level vocabulary. This has to become
+// parameterized." Operators and actions stay shared across every
+// vocabulary (confirmed empirically, not just assumed, by decision
+// 0021's AR test) — only field lists vary per domain, which is all
+// this registry actually holds.
+export const VOCABULARIES = {
+  invoice: {
+    fields: INVOICE_FIELDS as readonly string[],
+    fieldDescriptions: FIELD_DESCRIPTIONS as Record<string, string>,
+    derivedFields: DERIVED_FIELDS as readonly string[],
+    derivedFieldDescriptions: DERIVED_FIELD_DESCRIPTIONS as Record<string, string>,
+  },
+  expense: {
+    fields: EXPENSE_FIELDS as readonly string[],
+    fieldDescriptions: EXPENSE_FIELD_DESCRIPTIONS as Record<string, string>,
+    derivedFields: EXPENSE_DERIVED_FIELDS as readonly string[],
+    derivedFieldDescriptions: EXPENSE_DERIVED_FIELD_DESCRIPTIONS as Record<string, string>,
+  },
+} as const;
+
+export const VOCABULARY_NAMES = Object.keys(VOCABULARIES) as VocabularyName[];
+export type VocabularyName = keyof typeof VOCABULARIES;
+
+export function isKnownVocabulary(name: string): name is VocabularyName {
+  return name in VOCABULARIES;
+}
+
+// Defaults to 'invoice' — every existing caller written before
+// vocabularies existed at all continues checking exactly what it
+// always checked, unchanged. Only a caller that explicitly asks for
+// 'expense' sees the new field list.
+export function isKnownField(field: string, vocabulary: VocabularyName = "invoice"): boolean {
+  const v = VOCABULARIES[vocabulary];
+  if (v.fields.includes(field)) return true;
+  if (v.derivedFields.includes(field)) return true;
   return DERIVED_FIELD_PREFIXES.some(
     (prefix) => field.startsWith(prefix) && field.endsWith(")")
   );

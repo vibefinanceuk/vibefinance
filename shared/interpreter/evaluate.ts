@@ -3,6 +3,7 @@ import {
   isKnownField,
   isKnownOperator,
 } from "./vocabulary.js";
+import type { VocabularyName } from "./vocabulary.js";
 import type {
   Condition,
   CompiledRule,
@@ -34,9 +35,14 @@ export class RuleValidationError extends Error {
  * compiler's output must cross — "refusal as a first-class output" means
  * the compiler calls this and reports failure back to the author rather
  * than storing something this function would reject.
+ *
+ * vocabulary defaults to "invoice" — every caller written before
+ * decision 0022's multi-vocabulary support existed continues checking
+ * exactly what it always checked, unchanged, unless it explicitly asks
+ * for a different one.
  */
-export function validateRule(rule: CompiledRule): void {
-  validateNode(rule.conditions, 0);
+export function validateRule(rule: CompiledRule, vocabulary: VocabularyName = "invoice"): void {
+  validateNode(rule.conditions, 0, vocabulary);
   if (rule.actions.length === 0) {
     throw new RuleValidationError(`rule ${rule.id}: at least one action is required`);
   }
@@ -49,7 +55,7 @@ export function validateRule(rule: CompiledRule): void {
   }
 }
 
-function validateNode(node: RuleNode, depth: number): void {
+function validateNode(node: RuleNode, depth: number, vocabulary: VocabularyName): void {
   if (depth > MAX_COMBINATOR_DEPTH) {
     throw new RuleValidationError(
       `combinator nesting exceeds MAX_COMBINATOR_DEPTH (${MAX_COMBINATOR_DEPTH})`
@@ -59,21 +65,21 @@ function validateNode(node: RuleNode, depth: number): void {
     if (node.all.length === 0) {
       throw new RuleValidationError("empty 'all' combinator");
     }
-    for (const child of node.all) validateNode(child, depth + 1);
+    for (const child of node.all) validateNode(child, depth + 1, vocabulary);
     return;
   }
   if ("any" in node) {
     if (node.any.length === 0) {
       throw new RuleValidationError("empty 'any' combinator");
     }
-    for (const child of node.any) validateNode(child, depth + 1);
+    for (const child of node.any) validateNode(child, depth + 1, vocabulary);
     return;
   }
-  validateCondition(node);
+  validateCondition(node, vocabulary);
 }
 
-function validateCondition(condition: Condition): void {
-  if (!isKnownField(condition.field)) {
+function validateCondition(condition: Condition, vocabulary: VocabularyName): void {
+  if (!isKnownField(condition.field, vocabulary)) {
     throw new RuleValidationError(
       `unknown field "${condition.field}" — not in the closed vocabulary`
     );

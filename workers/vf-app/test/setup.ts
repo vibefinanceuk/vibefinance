@@ -15,6 +15,7 @@ import orgTeamsSql from "../../../migrations/0006_org_teams.sql?raw";
 import invoiceFactsSql from "../../../migrations/0007_invoice_facts.sql?raw";
 import processesStagesTasksSql from "../../../migrations/0008_processes_stages_tasks.sql?raw";
 import processInstancesSql from "../../../migrations/0009_process_instances_and_stage_visits.sql?raw";
+import ruleSetsVocabularySql from "../../../migrations/0010_rule_sets_vocabulary.sql?raw";
 
 // Another known divergence from production, on top of the one below:
 // D1's exec() splits its input by newline and executes each non-empty
@@ -98,4 +99,5 @@ export async function applyTestSchema(): Promise<void> {
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(invoiceFactsSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(processesStagesTasksSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(processInstancesSql)));
+  await env.DB.exec(toOneStatementPerLine(stripSqlComments(ruleSetsVocabularySql)));
 }

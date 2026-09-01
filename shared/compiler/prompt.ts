@@ -1,4 +1,5 @@
 import { buildVocabularyDoc } from "./vocabulary-doc.js";
+import type { VocabularyName } from "../interpreter/vocabulary.js";
 
 /**
  * The exact two JSON shapes the model is allowed to produce. Kept as a
@@ -53,14 +54,33 @@ Example output:
   "actions": [ { "type": "route_to", "params": { "stage": "payment-eligible" } } ]
 }`;
 
-export function buildCompilerPrompt(sourceText: string): string {
-  return `You are compiling a business rule for an invoice-processing system. A customer has described a rule in their own words. Your job is to translate it into a strict, closed vocabulary — never to write general-purpose code, and never to approximate something the vocabulary can't express.
+const EXPENSE_WORKED_EXAMPLE = `Example sentence: "If the expense category is Travel and no receipt is attached, assign a task to the finance team requiring the Expense.Review permission"
+Example output:
+{
+  "status": "compiled",
+  "conditions": {
+    "all": [
+      { "field": "category", "operator": "is", "value": "Travel" },
+      { "field": "receipt_attached", "operator": "is", "value": false }
+    ]
+  },
+  "actions": [ { "type": "assign_task", "params": { "team": "finance team", "permission": "Expense.Review" } } ]
+}`;
 
-${buildVocabularyDoc()}
+const SYSTEM_DESCRIPTION: Record<VocabularyName, string> = {
+  invoice: "an invoice-processing system",
+  expense: "an expense-management system",
+};
+
+export function buildCompilerPrompt(sourceText: string, vocabulary: VocabularyName = "invoice"): string {
+  const workedExample = vocabulary === "expense" ? EXPENSE_WORKED_EXAMPLE : WORKED_EXAMPLE;
+  return `You are compiling a business rule for ${SYSTEM_DESCRIPTION[vocabulary]}. A customer has described a rule in their own words. Your job is to translate it into a strict, closed vocabulary — never to write general-purpose code, and never to approximate something the vocabulary can't express.
+
+${buildVocabularyDoc(vocabulary)}
 
 ${OUTPUT_CONTRACT}
 
-${WORKED_EXAMPLE}
+${workedExample}
 
 The customer's sentence:
 "${sourceText}"

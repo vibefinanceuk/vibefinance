@@ -1,5 +1,6 @@
 import { RuleValidationError, validateRule } from "../interpreter/evaluate.js";
 import type { CompiledRule, RuleAction, RuleNode } from "../interpreter/types.js";
+import type { VocabularyName } from "../interpreter/vocabulary.js";
 import type { CompileOutcome } from "./types.js";
 
 interface RawCompiledShape {
@@ -75,7 +76,7 @@ function isRawRefused(value: unknown): value is RawRefusedShape {
  * "It can only ever produce something the interpreter already runs"
  * (Blueprint, build order) is enforced here, not trusted from the model.
  */
-export function parseModelOutput(raw: string): CompileOutcome {
+export function parseModelOutput(raw: string, vocabulary: VocabularyName = "invoice"): CompileOutcome {
   const parsed = extractJson(raw);
 
   if (parsed === undefined) {
@@ -114,7 +115,7 @@ export function parseModelOutput(raw: string): CompileOutcome {
     actions: parsed.actions,
   };
   try {
-    validateRule(stub);
+    validateRule(stub, vocabulary);
   } catch (err) {
     if (err instanceof RuleValidationError) {
       return {

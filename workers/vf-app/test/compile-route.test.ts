@@ -26,6 +26,12 @@ async function seedRuleSet(id: string): Promise<void> {
     .run();
 }
 
+async function seedExpenseRuleSet(id: string): Promise<void> {
+  await env.DB.prepare("INSERT INTO rule_sets (id, name, mode, status, vocabulary) VALUES (?, ?, ?, ?, ?)")
+    .bind(id, "test expense rule set", "first_match", "draft", "expense")
+    .run();
+}
+
 beforeEach(async () => {
   await applyTestSchema();
 });
@@ -436,5 +442,62 @@ describe("handleCompileRequest — rule versioning", () => {
       .bind(ruleId)
       .all();
     expect(versions.results).toEqual([{ version: 1 }]); // still just v1, no partial v2 row
+  });
+});
+
+describe("handleCompileRequest — rule sets carry their own vocabulary (decision 0022)", () => {
+  it("compiling against a plain rule set (defaulted to 'invoice') uses the invoice vocabulary in the prompt", async () => {
+    await seedRuleSet("rs-invoice");
+    const model = fakeModel(
+      JSON.stringify({
+        status: "compiled",
+        conditions: { field: "BT-112", operator: "greater_than", value: 1000 },
+        actions: [{ type: "flag" }],
+      })
+    );
+    await handleCompileRequest(model, "test-model@v1", env.DB, { ruleSetId: "rs-invoice", sourceText: "flag over 1000" });
+    const promptSent = (model.compile as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+    expect(promptSent).toContain("BT-112");
+    expect(promptSent).not.toContain("EXPENSE FIELDS");
+  });
+
+  it("compiling against an expense rule set sends the expense field vocabulary in the prompt, not invoice fields", async () => {
+    await seedExpenseRuleSet("rs-expense");
+    const model = fakeModel(
+      JSON.stringify({
+        status: "compiled",
+        conditions: { field: "category", operator: "is", value: "Travel" },
+        actions: [{ type: "flag" }],
+      })
+    );
+    const result = await handleCompileRequest(model, "test-model@v1", env.DB, {
+      ruleSetId: "rs-expense",
+      sourceText: "flag Travel expenses",
+    });
+    expect(result.status).toBe(201);
+    const promptSent = (model.compile as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+    expect(promptSent).toContain("EXPENSE FIELDS");
+    expect(promptSent).toContain("category");
+    expect(promptSent).not.toContain("BT-112");
+  });
+
+  it("the critical property: a hallucinated invoice field is refused when compiling against an expense rule set — through the real route, not just the compiler function directly", async () => {
+    await seedExpenseRuleSet("rs-expense-2");
+    const model = fakeModel(
+      JSON.stringify({
+        status: "compiled",
+        conditions: { field: "BT-112", operator: "greater_than", value: 1000 },
+        actions: [{ type: "flag" }],
+      })
+    );
+    const result = await handleCompileRequest(model, "test-model@v1", env.DB, {
+      ruleSetId: "rs-expense-2",
+      sourceText: "flag large amounts",
+    });
+    expect(result.status).toBe(422);
+    const ruleCount = await env.DB.prepare("SELECT count(*) AS n FROM rules WHERE rule_set_id = ?")
+      .bind("rs-expense-2")
+      .first();
+    expect(ruleCount).toEqual({ n: 0 }); // refused — nothing stored
   });
 });

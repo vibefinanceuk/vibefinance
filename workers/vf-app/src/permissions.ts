@@ -48,6 +48,15 @@ const AP_PERMISSIONS = [
 const AR_PERMISSIONS = ["AR.Validate", "AR.Approve", "AR.Issue", "AR.Remind", "AR.Collect", "AR.Analysis"] as const;
 
 /**
+ * Expense management — added alongside decision 0022's expense field
+ * vocabulary, the same "add now, unused, clearly flagged" precedent
+ * as AR_PERMISSIONS above. No route in this system approves or
+ * reviews an expense today; this exists so the permission vocabulary
+ * doesn't need reshaping later when that functionality does.
+ */
+const EXPENSE_PERMISSIONS = ["Expense.Submit", "Expense.Approve", "Expense.Review"] as const;
+
+/**
  * Administrative capabilities. UserManagement, ConfigManagement, and
  * RuleManagement all have real routes behind them today
  * (POST /org/users and friends; POST /org/units and /org/profiles;
@@ -80,6 +89,7 @@ const SYSTEM_PERMISSIONS = ["System.UsagePush", "System.LicenceRefresh"] as cons
 export const PERMISSIONS = [
   ...AP_PERMISSIONS,
   ...AR_PERMISSIONS,
+  ...EXPENSE_PERMISSIONS,
   ...ADMIN_PERMISSIONS,
   ...SYSTEM_PERMISSIONS,
 ] as const;

@@ -4,11 +4,18 @@ import {
   ACTION_DESCRIPTIONS,
   DERIVED_FIELDS,
   DERIVED_FIELD_DESCRIPTIONS,
+  EXPENSE_DERIVED_FIELDS,
+  EXPENSE_DERIVED_FIELD_DESCRIPTIONS,
+  EXPENSE_FIELDS,
+  EXPENSE_FIELD_DESCRIPTIONS,
   FIELD_DESCRIPTIONS,
   INVOICE_FIELDS,
+  VOCABULARIES,
+  VOCABULARY_NAMES,
   isKnownAction,
   isKnownField,
   isKnownOperator,
+  isKnownVocabulary,
 } from "./vocabulary.js";
 
 describe("closed vocabulary", () => {
@@ -65,5 +72,41 @@ describe("closed vocabulary", () => {
     for (const action of ACTIONS) {
       expect(ACTION_DESCRIPTIONS[action], `missing description for ${action}`).toBeTruthy();
     }
+  });
+});
+
+describe("multi-vocabulary support (decision 0022) — the real prerequisite decision 0015 flagged before a second domain could exist", () => {
+  it("has a description for every expense field — the same completeness discipline as invoice fields", () => {
+    for (const field of EXPENSE_FIELDS) {
+      expect(EXPENSE_FIELD_DESCRIPTIONS[field], `missing description for ${field}`).toBeTruthy();
+    }
+  });
+
+  it("has a description for every expense derived field", () => {
+    for (const field of EXPENSE_DERIVED_FIELDS) {
+      expect(EXPENSE_DERIVED_FIELD_DESCRIPTIONS[field], `missing description for ${field}`).toBeTruthy();
+    }
+  });
+
+  it("isKnownField defaults to the invoice vocabulary — every pre-existing caller sees unchanged behaviour", () => {
+    expect(isKnownField("BT-112")).toBe(true); // an invoice field, no vocabulary argument at all
+    expect(isKnownField("category")).toBe(false); // an expense field must NOT leak into the default
+  });
+
+  it("isKnownField('category', 'expense') is true, but isKnownField('category', 'invoice') is false — real isolation, not just presence", () => {
+    expect(isKnownField("category", "expense")).toBe(true);
+    expect(isKnownField("category", "invoice")).toBe(false);
+  });
+
+  it("the reverse holds too — an invoice field is not known under the expense vocabulary", () => {
+    expect(isKnownField("BT-112", "invoice")).toBe(true);
+    expect(isKnownField("BT-112", "expense")).toBe(false);
+  });
+
+  it("isKnownVocabulary and VOCABULARY_NAMES agree with the real registry", () => {
+    expect(isKnownVocabulary("invoice")).toBe(true);
+    expect(isKnownVocabulary("expense")).toBe(true);
+    expect(isKnownVocabulary("not_a_real_vocabulary")).toBe(false);
+    expect(VOCABULARY_NAMES.sort()).toEqual(Object.keys(VOCABULARIES).sort());
   });
 });

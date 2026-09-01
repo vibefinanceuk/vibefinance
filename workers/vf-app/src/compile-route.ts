@@ -1,4 +1,5 @@
 import { compileRule, generateExamples } from "@vibefinance/shared";
+import type { VocabularyName } from "@vibefinance/shared";
 import type { CompilerModel } from "@vibefinance/shared";
 import { t } from "./i18n.js";
 import type { Locale } from "./i18n.js";
@@ -47,9 +48,9 @@ export async function handleCompileRequest(
   }
 
   const ruleSetExists = await db
-    .prepare("SELECT id FROM rule_sets WHERE id = ?")
+    .prepare("SELECT id, vocabulary FROM rule_sets WHERE id = ?")
     .bind(ruleSetId)
-    .first();
+    .first<{ id: string; vocabulary: VocabularyName }>();
   if (!ruleSetExists) {
     return { status: 404, body: { error: t("ruleSetDoesNotExist", locale, { ruleSetId }) } };
   }
@@ -84,7 +85,12 @@ export async function handleCompileRequest(
     isNewRule = true;
   }
 
-  const outcome = await compileRule(model, sourceText);
+  // Compiled and validated against the rule set's own recorded
+  // vocabulary (decision 0022) — not always "invoice." A rule
+  // compiling for an expense rule set sees the expense field
+  // vocabulary in its prompt, and anything referencing an invoice
+  // field is refused, not silently accepted.
+  const outcome = await compileRule(model, sourceText, ruleSetExists.vocabulary);
 
   // Refusal as a first-class output (Blueprint, "Subsystem one"): a
   // sentence the model can't express in the closed vocabulary is
