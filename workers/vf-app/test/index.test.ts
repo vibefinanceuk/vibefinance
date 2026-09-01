@@ -1722,3 +1722,39 @@ describe("cost centres, through the real router (decision 0031)", () => {
     expect(body.visit.visits[0].tasksCreated).toBe(1); // the real, parsed BT-133 correctly matched the real rule
   });
 });
+
+describe("supplier history, through the real router (decision 0032)", () => {
+  it("returns a real supplier's history through the real HTTP route", async () => {
+    await SELF.fetch("https://example.com/invoices", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ id: "hist-live-1", supplierVatId: "DE-hist-live", invoiceNumber: "H1", facts: {} }),
+    });
+
+    const res = await SELF.fetch("https://example.com/suppliers/DE-hist-live/history");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { supplierVatId: string; history: Array<{ id: string }> };
+    expect(body.supplierVatId).toBe("DE-hist-live");
+    expect(body.history.map((h) => h.id)).toEqual(["hist-live-1"]);
+  });
+
+  it("returns an empty history, not an error, for a supplier with no invoices at all", async () => {
+    const res = await SELF.fetch("https://example.com/suppliers/DE-nobody/history");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { history: unknown[] };
+    expect(body.history).toEqual([]);
+  });
+
+  it("respects a real ?limit= query parameter through the real route", async () => {
+    for (let i = 0; i < 3; i++) {
+      await SELF.fetch("https://example.com/invoices", {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({ id: `hist-limit-${i}`, supplierVatId: "DE-hist-limit", facts: {} }),
+      });
+    }
+    const res = await SELF.fetch("https://example.com/suppliers/DE-hist-limit/history?limit=2");
+    const body = (await res.json()) as { history: unknown[] };
+    expect(body.history).toHaveLength(2);
+  });
+});

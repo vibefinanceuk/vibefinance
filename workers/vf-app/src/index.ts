@@ -30,6 +30,7 @@ import { handleUpsertExpenseReport } from "./expense-facts-route.js";
 import { handleCreateProcess, handleCreateStage } from "./process-route.js";
 import { handleCreateIntakeChannel } from "./intake-channel-route.js";
 import { handleCaptureIntake, handleCaptureUblXml, handleIntakeStats } from "./intake-capture-route.js";
+import { getSupplierHistory } from "./invoice-history.js";
 import { handleCreateProcessInstance, onTaskCompleted, visitCurrentStage } from "./workflow-engine.js";
 import { handleClaimTask, handleCompleteTask, handleCreateTask } from "./task-route.js";
 import type { Permission } from "./permissions.js";
@@ -865,6 +866,22 @@ export default {
       const { db } = resolveTenant(request, env);
       const result = await handleIntakeStats(db, intakeStatsMatch[1]);
       return json(result.body, result.status);
+    }
+
+    // Supplier history (decision 0032) — the historical, queryable
+    // invoice-facts framework decision 0015 originally called for. The
+    // operator-UI use case named directly: someone reviewing one
+    // invoice naturally wants to see what else this supplier has
+    // sent. Unauthenticated for now, matching intake-stats's own
+    // reasoning immediately above.
+    const supplierHistoryMatch = pathname.match(/^\/suppliers\/([^/]+)\/history$/);
+    if (supplierHistoryMatch && request.method === "GET") {
+      const { db } = resolveTenant(request, env);
+      const limitParam = url.searchParams.get("limit");
+      const parsedLimit = limitParam !== null ? Number(limitParam) : undefined;
+      const limit = parsedLimit !== undefined && !Number.isNaN(parsedLimit) ? parsedLimit : undefined;
+      const history = await getSupplierHistory(db, supplierHistoryMatch[1], limit);
+      return json({ supplierVatId: supplierHistoryMatch[1], history }, 200);
     }
 
     // Tasks — decision 0018. Creation is unauthenticated for now, the

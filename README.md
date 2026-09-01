@@ -425,6 +425,25 @@ centre reference, sent as raw XML, correctly matched a real rule and
 spawned a real task. See
 `docs/decisions/0031-cost-centre-vs-org-units.md`.
 
+## The historical, queryable invoice-facts framework
+
+Decision 0015's own last remaining original gap, coupled to line-item
+facts (decision 0027) and unbuildable until that landed. Carried
+decision 0015's own already-specified design through directly: one
+shared query interface, multiple purpose-built methods per real
+consumer, not separate ad-hoc implementations. Decision 0028's
+duplicate-confidence scoring — a real, live, deployed feature —
+already had exactly this kind of standalone query; `findSimilarInvoices`
+extracts it into the shared `invoice-history.ts`, with every existing
+duplicate-detection test confirmed passing unmodified immediately
+after the refactor. Two new methods give decision 0015's own named
+future consumers a real home: `getSupplierHistory` (the operator-UI
+use case, exposed as a real `GET` endpoint) and `getMonthlyTotals`
+(the analytics-page use case, "totals by month," decision 0015's own
+example). A real `SUM()`-over-`NULL` edge case, the same class already
+found once in `intake-stats`, was caught and fixed the same way. See
+`docs/decisions/0032-historical-invoice-facts-framework.md`.
+
 ## The one rule enforced by tooling, not convention
 
 No application code reads a tenant-scoped binding (`env.DB` and similar)

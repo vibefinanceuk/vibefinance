@@ -1,5 +1,6 @@
 import type { InvoiceFacts } from "@vibefinance/shared";
 import type { RouteResult } from "./org-route.js";
+import { findSimilarInvoices } from "./invoice-history.js";
 
 /**
  * Persists invoice header and line facts — see docs/decisions/
@@ -87,6 +88,14 @@ function isValidLine(line: unknown): line is InvoiceLineInput {
  * project has favored everywhere else. Compares against every other
  * invoice already on file from the same supplier; the maximum score
  * against any single candidate wins, not a sum across candidates.
+ *
+ * The candidate lookup itself was extracted into findSimilarInvoices
+ * (decision 0032) — this function now supplies only the scoring logic
+ * on top of it, exactly the split decision 0015 originally called
+ * for: a shared, general lookup, with each real consumer's own
+ * comparison logic layered on top rather than duplicated into its own
+ * query. Behavior is unchanged — every existing test for this
+ * function still holds, unmodified.
  */
 async function computeDuplicateConfidence(
   db: D1Database,
@@ -98,17 +107,14 @@ async function computeDuplicateConfidence(
 ): Promise<number> {
   if (!supplierVatId) return 0;
 
-  const candidates = await db
-    .prepare("SELECT invoice_number, total_with_vat, issue_date FROM invoice_headers WHERE supplier_vat_id = ? AND id != ?")
-    .bind(supplierVatId, excludeId)
-    .all<{ invoice_number: string | null; total_with_vat: number | null; issue_date: string | null }>();
+  const candidates = await findSimilarInvoices(db, { excludeId, supplierVatId });
 
   let maxScore = 0;
-  for (const candidate of candidates.results) {
+  for (const candidate of candidates) {
     let score = 0;
-    if (invoiceNumber !== null && candidate.invoice_number === invoiceNumber) score += 0.6;
-    if (totalWithVat !== null && candidate.total_with_vat === totalWithVat) score += 0.25;
-    if (issueDate !== null && candidate.issue_date === issueDate) score += 0.15;
+    if (invoiceNumber !== null && candidate.invoiceNumber === invoiceNumber) score += 0.6;
+    if (totalWithVat !== null && candidate.totalWithVat === totalWithVat) score += 0.25;
+    if (issueDate !== null && candidate.issueDate === issueDate) score += 0.15;
     maxScore = Math.max(maxScore, score);
   }
   return maxScore;
