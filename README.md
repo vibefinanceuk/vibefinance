@@ -286,6 +286,19 @@ that doesn't fit it. Both stay free strings — closed-value enforcement
 previously unflagged gap this surfaced and deliberately declined to
 build. See `docs/decisions/0023-intake-stage-convention.md`.
 
+## Intake channels: a real, per-process managed list
+
+A direct follow-up to 0023: not just a free string with example
+values, but a genuine, customer-managed list — `intake_channels`,
+scoped per process (not per vocabulary, since AP and AR share the
+invoice vocabulary but need different channel lists), mirroring
+`org_teams`'s own shape exactly. Adding a channel nobody anticipated
+when a process was first set up is an ordinary API call, proven both
+at the unit level and through the real router. Deliberately not wired
+into rule validation — the same closed-value-enforcement question
+decision 0023 already declined stays declined here too. See
+`docs/decisions/0024-intake-channels.md`.
+
 ## The one rule enforced by tooling, not convention
 
 No application code reads a tenant-scoped binding (`env.DB` and similar)

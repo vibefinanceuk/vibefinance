@@ -1093,6 +1093,46 @@ describe("task routes, through the real router (decision 0018)", () => {
   });
 });
 
+describe("intake channels, through the real router (decision 0024)", () => {
+  it("creates a channel through the real router", async () => {
+    await SELF.fetch("https://example.com/processes", { method: "POST", body: JSON.stringify({ id: "ap-live", name: "Standard AP" }) });
+    const res = await SELF.fetch("https://example.com/processes/ap-live/intake-channels", {
+      method: "POST",
+      body: JSON.stringify({ id: "ic1", name: "Email" }),
+    });
+    expect(res.status).toBe(201);
+  });
+
+  it("the real point of this feature: adding a genuinely new, previously unanticipated channel is an ordinary successful call, live", async () => {
+    await SELF.fetch("https://example.com/processes", { method: "POST", body: JSON.stringify({ id: "ap-live", name: "Standard AP" }) });
+    for (const name of ["Email", "Mailroom", "EDI"]) {
+      await SELF.fetch("https://example.com/processes/ap-live/intake-channels", {
+        method: "POST",
+        body: JSON.stringify({ id: crypto.randomUUID(), name }),
+      });
+    }
+    // A channel nobody anticipated when this process was first set
+    // up — no code change, no deployment, just a normal API call.
+    const res = await SELF.fetch("https://example.com/processes/ap-live/intake-channels", {
+      method: "POST",
+      body: JSON.stringify({ id: crypto.randomUUID(), name: "New Supplier Integration" }),
+    });
+    expect(res.status).toBe(201);
+    const count = await env.DB.prepare("SELECT count(*) AS n FROM intake_channels WHERE process_id = 'ap-live'").first();
+    expect(count).toEqual({ n: 4 });
+  });
+
+  it("is not blocked by licence status — an administrative action, not gated product usage", async () => {
+    await env.DB.prepare("DELETE FROM licence_cache WHERE id = 1").run();
+    await SELF.fetch("https://example.com/processes", { method: "POST", body: JSON.stringify({ id: "p1", name: "AP" }) });
+    const res = await SELF.fetch("https://example.com/processes/p1/intake-channels", {
+      method: "POST",
+      body: JSON.stringify({ id: "ic1", name: "Email" }),
+    });
+    expect(res.status).not.toBe(402);
+  });
+});
+
 describe("process instances and stage visits, through the real router (decision 0019)", () => {
   async function seedActivatedRuleSet(id: string, compiledJson: Record<string, unknown>): Promise<void> {
     await env.DB.prepare("INSERT INTO rule_sets (id, name, mode, status) VALUES (?, ?, ?, ?)")

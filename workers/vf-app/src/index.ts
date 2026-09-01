@@ -26,6 +26,7 @@ import { requirePermission } from "./enforce.js";
 import { handleAddTeamMember, handleCreateTeam } from "./team-route.js";
 import { handleUpsertInvoice } from "./invoice-facts-route.js";
 import { handleCreateProcess, handleCreateStage } from "./process-route.js";
+import { handleCreateIntakeChannel } from "./intake-channel-route.js";
 import { handleCreateProcessInstance, onTaskCompleted, visitCurrentStage } from "./workflow-engine.js";
 import { handleClaimTask, handleCompleteTask, handleCreateTask } from "./task-route.js";
 import type { Permission } from "./permissions.js";
@@ -710,6 +711,23 @@ export default {
         return json({ error: t("invalidJsonBody", resolveLocale(env.LOCALE)) }, 400);
       }
       const result = await handleCreateStage(db, createStageMatch[1], (body ?? {}) as Record<string, unknown>);
+      return json(result.body, result.status);
+    }
+
+    // Intake channels — decisions 0023/0024. A real, per-process,
+    // customer-managed list: adding a new channel is an ordinary API
+    // call, not a code change. Unauthenticated, matching every other
+    // /processes/* definition-time route above.
+    const createIntakeChannelMatch = pathname.match(/^\/processes\/([^/]+)\/intake-channels$/);
+    if (createIntakeChannelMatch && request.method === "POST") {
+      const { db } = resolveTenant(request, env);
+      let body: unknown;
+      try {
+        body = await request.json();
+      } catch {
+        return json({ error: t("invalidJsonBody", resolveLocale(env.LOCALE)) }, 400);
+      }
+      const result = await handleCreateIntakeChannel(db, createIntakeChannelMatch[1], (body ?? {}) as Record<string, unknown>);
       return json(result.body, result.status);
     }
 
