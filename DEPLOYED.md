@@ -7,7 +7,7 @@ vf-app and vf-licence are promoted independently.
 
 | Worker | commit SHA | confirmed at |
 |---|---|---|
-| vf-app | `b694d34` | 31 August 2026 — the full workflow engine (decisions 0018/0019) confirmed live, end to end, including two real bugs caught by live testing itself and fixed before this was proven: (1) `assign_task`'s compiled params (`{team, permission}`) had never actually been taught to the compiler, which first produced an incompatible `{assignee, required_permission}` shape — fixed by adding a real completeness discipline for action descriptions, mirroring the one fields already had; (2) `URL.pathname` was never decoded anywhere in `index.ts`, so a compiler-generated team name containing a space (`"AP team"`) broke every dynamic route that matched on it — fixed by decoding once, at the root. With both fixed, a real invoice instance was created, visited with `BT-112: 3000`, and cascaded automatically through the automatic `Received` stage before the real rule at `Approval` genuinely matched and spawned one real task, confirmed via direct D1 query (`owner_team_id: "AP team"`, `required_permission: "AP.Approve"`) rather than the response alone. That task was claimed and completed by Alice through the real routes, and the instance was confirmed, via a fresh D1 query, to have advanced itself all the way to `status: "completed"`, `current_stage_id: "payment-eligible"` — with no further explicit call after completing the task. |
+| vf-app | `d2ae667` | 1 September 2026 — duplicate detection and the structured-column-merge fix (decision 0028) confirmed deployed and pushed. No live walkthrough was performed for this one, by choice — unlike the entries above, nothing here has been directly exercised against the real deployment yet; the confirmation is the person's own report that it's live, plus the full local test suite (422 tests) and a fresh-clone sweep before the bundle was ever handed off. |
 | vf-licence | `8029d0a` | 30 August 2026 — fleet tooling (Blueprint build order step 5) confirmed live, end to end. `GET /customers` and `PATCH /customers/:id/fleet-metadata` both confirmed working with a freshly rotated `ADMIN_API_KEY`; Acme's real fleet metadata (`worker_name`, `d1_database_name`, `d1_database_id`, `locale`) backfilled and confirmed persisted via a direct re-query, not inferred from the response alone. `migrations/migrate_all.py` (a local script, not a Worker — see its own row in the incident record below) then successfully read that manifest and ran a real migration check against Acme's live database: `1 succeeded, 0 failed, 0 skipped`. |
 
 ## D1
@@ -259,3 +259,17 @@ query confirmed the instance had advanced itself all the way to
 no further explicit call after completing the task. The exact
 property `docs/decisions/0019-process-instances-and-stage-visits.md`
 was built around, proven for real rather than only in a test.
+
+1 September 2026: duplicate detection and the structured-column-merge
+fix (decision 0028) confirmed deployed and pushed, per the person's
+own report — recorded honestly, not overstated: no live walkthrough
+was performed for this one. Everything behind it was proven locally —
+422 tests including the weighted scoring's own critical properties
+(the supplier gate refusing to score coincidental cross-supplier
+matches; an original invoice's own stored score confirmed unchanged
+after a near-identical later submission arrives; the real prerequisite
+bug — structured columns never reaching rule evaluation — deliberately
+reproduced and confirmed to fail before the fix was trusted) — and a
+fresh-clone sweep before the bundle was ever handed off, but nothing
+here has yet been directly exercised against the real, running
+deployment the way the workflow engine and per-line evaluation were.
