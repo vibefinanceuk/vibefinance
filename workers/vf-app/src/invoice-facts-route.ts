@@ -25,6 +25,7 @@ interface UpsertInvoiceBody {
   currency?: unknown;
   issueDate?: unknown;
   totalWithVat?: unknown;
+  mandateChannel?: unknown;
   facts?: unknown;
   lines?: unknown;
 }
@@ -45,7 +46,7 @@ function isValidLine(line: unknown): line is InvoiceLineInput {
  * fully replaces its line set — never a partial, ambiguous merge.
  */
 export async function handleUpsertInvoice(db: D1Database, body: UpsertInvoiceBody): Promise<RouteResult> {
-  const { id, supplierVatId, currency, issueDate, totalWithVat, facts, lines } = body;
+  const { id, supplierVatId, currency, issueDate, totalWithVat, mandateChannel, facts, lines } = body;
   if (typeof id !== "string" || !id) {
     return { status: 400, body: { error: "id (string) is required" } };
   }
@@ -72,7 +73,7 @@ export async function handleUpsertInvoice(db: D1Database, body: UpsertInvoiceBod
       ? db
           .prepare(
             `UPDATE invoice_headers
-             SET supplier_vat_id = ?, currency = ?, issue_date = ?, total_with_vat = ?, facts_json = ?, updated_at = ?
+             SET supplier_vat_id = ?, currency = ?, issue_date = ?, total_with_vat = ?, mandate_channel = ?, facts_json = ?, updated_at = ?
              WHERE id = ?`
           )
           .bind(
@@ -80,6 +81,7 @@ export async function handleUpsertInvoice(db: D1Database, body: UpsertInvoiceBod
             (currency as string) ?? null,
             (issueDate as string) ?? null,
             (totalWithVat as number) ?? null,
+            (mandateChannel as string) ?? null,
             JSON.stringify(facts ?? {}),
             now,
             id
@@ -87,8 +89,8 @@ export async function handleUpsertInvoice(db: D1Database, body: UpsertInvoiceBod
       : db
           .prepare(
             `INSERT INTO invoice_headers
-               (id, supplier_vat_id, currency, issue_date, total_with_vat, facts_json, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+               (id, supplier_vat_id, currency, issue_date, total_with_vat, mandate_channel, facts_json, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
           )
           .bind(
             id,
@@ -96,6 +98,7 @@ export async function handleUpsertInvoice(db: D1Database, body: UpsertInvoiceBod
             (currency as string) ?? null,
             (issueDate as string) ?? null,
             (totalWithVat as number) ?? null,
+            (mandateChannel as string) ?? null,
             JSON.stringify(facts ?? {}),
             now,
             now

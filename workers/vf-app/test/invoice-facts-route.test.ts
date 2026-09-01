@@ -125,4 +125,15 @@ describe("handleUpsertInvoice", () => {
     expect(second.created_at).toBe(first?.created_at);
     expect(second.updated_at).not.toBe(first?.updated_at);
   });
+
+  it("promotes mandateChannel to a real, queryable column — not buried in facts_json", async () => {
+    const result = await handleUpsertInvoice(env.DB, {
+      id: "inv-2",
+      facts: { "BT-3": "380" },
+      mandateChannel: "Email",
+    });
+    expect(result.status).toBe(201);
+    const row = await env.DB.prepare("SELECT mandate_channel FROM invoice_headers WHERE id = ?").bind("inv-2").first();
+    expect(row).toEqual({ mandate_channel: "Email" });
+  });
 });

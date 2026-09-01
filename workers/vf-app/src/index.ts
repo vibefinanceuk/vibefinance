@@ -25,6 +25,7 @@ import {
 import { requirePermission } from "./enforce.js";
 import { handleAddTeamMember, handleCreateTeam } from "./team-route.js";
 import { handleUpsertInvoice } from "./invoice-facts-route.js";
+import { handleUpsertExpenseReport } from "./expense-facts-route.js";
 import { handleCreateProcess, handleCreateStage } from "./process-route.js";
 import { handleCreateIntakeChannel } from "./intake-channel-route.js";
 import { handleCreateProcessInstance, onTaskCompleted, visitCurrentStage } from "./workflow-engine.js";
@@ -375,6 +376,7 @@ export default {
       pathname === "/rules/evaluate" ||
       pathname === "/rules/compile" ||
       pathname === "/invoices" ||
+      pathname === "/expenses" ||
       /^\/process-instances\/[^/]+\/visit$/.test(pathname)
     ) {
       const { db } = resolveTenant(request, env);
@@ -408,6 +410,29 @@ export default {
         return json({ error: t("invalidJsonBody", locale) }, 400);
       }
       const result = await handleUpsertInvoice(db, (body ?? {}) as Record<string, unknown>);
+      return json(result.body, result.status);
+    }
+
+    // Persisted expense report facts (decision 0025) — the first
+    // storage subsystem Expense has ever gotten, mirroring
+    // /invoices exactly. Reuses Expense.Submit for the same reason
+    // /invoices reuses AP.Validate: storing an expense report's facts
+    // is naturally part of the "an expense enters the system"
+    // capability, not a separate action requiring its own permission.
+    if (pathname === "/expenses" && request.method === "POST") {
+      const { db } = resolveTenant(request, env);
+      const locale = resolveLocale(env.LOCALE);
+      const auth = await requirePermission(db, request, "Expense.Submit");
+      if (!auth.authorized) {
+        return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", locale) }, auth.status);
+      }
+      let body: unknown;
+      try {
+        body = await request.json();
+      } catch {
+        return json({ error: t("invalidJsonBody", locale) }, 400);
+      }
+      const result = await handleUpsertExpenseReport(db, (body ?? {}) as Record<string, unknown>);
       return json(result.body, result.status);
     }
 

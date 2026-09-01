@@ -299,6 +299,21 @@ into rule validation — the same closed-value-enforcement question
 decision 0023 already declined stays declined here too. See
 `docs/decisions/0024-intake-channels.md`.
 
+## Intake channel in the real routes, and Expense gets storage for the first time
+
+`mandate_channel` promoted from an opaque part of `invoice_headers`'s
+facts blob to a real, queryable column — small, cheap, fully backward
+compatible. The bigger piece: `expense_reports` and `POST /expenses`
+give Expense its first real storage anywhere, mirroring decision
+0017's own invoice facts storage almost exactly — a single flat table
+rather than a header/lines split, since Expense's own fields were
+never modeled as a multi-line document the way an invoice genuinely
+is. `POST /expenses` reuses `Expense.Submit`, its first real backing
+anywhere in this codebase, and is licence-gated the same way
+`/invoices` already is. Both confirmed live through the real router,
+including a genuine permission-specific `403`. See
+`docs/decisions/0025-intake-channel-in-routes-and-expense-storage.md`.
+
 ## The one rule enforced by tooling, not convention
 
 No application code reads a tenant-scoped binding (`env.DB` and similar)

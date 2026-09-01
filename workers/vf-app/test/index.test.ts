@@ -1133,6 +1133,76 @@ describe("intake channels, through the real router (decision 0024)", () => {
   });
 });
 
+describe("mandate_channel and expense report storage, through the real router (decision 0025)", () => {
+  it("POST /invoices persists mandateChannel as a real column", async () => {
+    const res = await SELF.fetch("https://example.com/invoices", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ id: "inv-mc-1", facts: { "BT-3": "380" }, mandateChannel: "Mailroom" }),
+    });
+    expect(res.status).toBe(201);
+    const row = await env.DB.prepare("SELECT mandate_channel FROM invoice_headers WHERE id = ?").bind("inv-mc-1").first();
+    expect(row).toEqual({ mandate_channel: "Mailroom" });
+  });
+
+  it("401s POST /invoices with no credentials, same as before this change", async () => {
+    const res = await SELF.fetch("https://example.com/invoices", {
+      method: "POST",
+      body: JSON.stringify({ id: "inv-mc-2", facts: {}, mandateChannel: "Mailroom" }),
+    });
+    expect(res.status).toBe(401);
+  });
+
+  it("POST /expenses persists a real expense report, requiring Expense.Submit", async () => {
+    const res = await SELF.fetch("https://example.com/expenses", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({
+        id: "exp-live-1",
+        employeeId: "dana",
+        category: "Travel",
+        amount: 850,
+        receiptAttached: false,
+        intakeChannel: "iPhone App",
+        facts: {},
+      }),
+    });
+    expect(res.status).toBe(201);
+    const row = await env.DB.prepare("SELECT category, amount, receipt_attached, intake_channel FROM expense_reports WHERE id = ?")
+      .bind("exp-live-1")
+      .first();
+    expect(row).toEqual({ category: "Travel", amount: 850, receipt_attached: 0, intake_channel: "iPhone App" });
+  });
+
+  it("401s POST /expenses with no credentials", async () => {
+    const res = await SELF.fetch("https://example.com/expenses", {
+      method: "POST",
+      body: JSON.stringify({ id: "exp-live-2", category: "Travel" }),
+    });
+    expect(res.status).toBe(401);
+  });
+
+  it("403s POST /expenses for a user lacking Expense.Submit specifically", async () => {
+    const limitedKey = await seedUserWithPermissions(["AP.Validate"]); // real key, wrong permission
+    const res = await SELF.fetch("https://example.com/expenses", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${limitedKey}` },
+      body: JSON.stringify({ id: "exp-live-3", category: "Travel" }),
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("is blocked when the licence is blocked, matching /invoices's own gate", async () => {
+    await env.DB.prepare("DELETE FROM licence_cache WHERE id = 1").run();
+    const res = await SELF.fetch("https://example.com/expenses", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ id: "exp-live-4", category: "Travel" }),
+    });
+    expect(res.status).toBe(402);
+  });
+});
+
 describe("process instances and stage visits, through the real router (decision 0019)", () => {
   async function seedActivatedRuleSet(id: string, compiledJson: Record<string, unknown>): Promise<void> {
     await env.DB.prepare("INSERT INTO rule_sets (id, name, mode, status) VALUES (?, ?, ?, ?)")
