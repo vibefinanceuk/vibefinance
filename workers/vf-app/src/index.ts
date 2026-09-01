@@ -28,7 +28,7 @@ import { handleUpsertInvoice, mergeStructuredInvoiceFacts } from "./invoice-fact
 import { handleUpsertExpenseReport } from "./expense-facts-route.js";
 import { handleCreateProcess, handleCreateStage } from "./process-route.js";
 import { handleCreateIntakeChannel } from "./intake-channel-route.js";
-import { handleCaptureIntake, handleIntakeStats } from "./intake-capture-route.js";
+import { handleCaptureIntake, handleCaptureUblXml, handleIntakeStats } from "./intake-capture-route.js";
 import { handleCreateProcessInstance, onTaskCompleted, visitCurrentStage } from "./workflow-engine.js";
 import { handleClaimTask, handleCompleteTask, handleCreateTask } from "./task-route.js";
 import type { Permission } from "./permissions.js";
@@ -805,6 +805,35 @@ export default {
         return json({ error: t("invalidJsonBody", locale) }, 400);
       }
       const result = await handleCaptureIntake(db, captureMatch[1], (body ?? {}) as Record<string, unknown>);
+      return json(result.body, result.status);
+    }
+
+    // Real UBL/XML document capture (decision 0030) — parses a
+    // genuine Peppol BIS Billing 3.0 or Self-Billing 3.0 document and
+    // delegates into the exact same handleCaptureIntake orchestration
+    // above, unchanged. The raw XML is the request body itself, not
+    // wrapped in JSON — an optional ?id=... query parameter overrides
+    // the auto-generated id, matching handleCaptureUblXml's own
+    // reasoning for why a real invoice number isn't safe to use as
+    // this system's own id directly. Same gating as the JSON path.
+    const captureXmlMatch = pathname.match(/^\/intake-channels\/([^/]+)\/capture-xml$/);
+    if (captureXmlMatch && request.method === "POST") {
+      const { db } = resolveTenant(request, env);
+      const locale = resolveLocale(env.LOCALE);
+      const licenceState = await readLicenceState(db);
+      if (isBlocked(licenceState)) {
+        return blockedResponse(licenceState, locale);
+      }
+      const auth = await requirePermission(db, request, "AP.Validate");
+      if (!auth.authorized) {
+        return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", locale) }, auth.status);
+      }
+      const xml = await request.text();
+      if (!xml) {
+        return json({ error: "a raw XML request body is required" }, 400);
+      }
+      const idOverride = url.searchParams.get("id") ?? undefined;
+      const result = await handleCaptureUblXml(db, captureXmlMatch[1], xml, idOverride);
       return json(result.body, result.status);
     }
 

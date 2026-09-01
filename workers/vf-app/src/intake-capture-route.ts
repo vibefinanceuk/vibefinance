@@ -1,4 +1,5 @@
 import type { InvoiceFacts } from "@vibefinance/shared";
+import { parseUblInvoice, UblParseError } from "@vibefinance/shared";
 import type { RouteResult } from "./org-route.js";
 import { handleUpsertInvoice, mergeStructuredInvoiceFacts } from "./invoice-facts-route.js";
 import { handleCreateProcessInstance, visitCurrentStage } from "./workflow-engine.js";
@@ -49,6 +50,27 @@ async function recordCaptureEvent(
     .run();
 }
 
+/**
+ * A single canonical line shape flows through this whole file — raw
+ * BT-* fields plus lineNumber, the same shape a rule condition
+ * actually checks against (BT-131, not "amount"). handleUpsertInvoice
+ * and visitCurrentStage each need a DIFFERENT derived shape from it,
+ * though: storage wants amount/description/costCentre as real,
+ * explicit columns; evaluation wants the raw BT-* fields directly, the
+ * same way header facts already work. A real gap this bundle's own
+ * tests caught: passing the same raw-BT-code lines to both without
+ * this conversion silently stored every line's amount as NULL, since
+ * handleUpsertInvoice was never looking at "BT-131" at all.
+ */
+function toStorageLine(line: InvoiceFacts & { lineNumber: number }): Record<string, unknown> {
+  const { lineNumber, ...rest } = line;
+  return {
+    lineNumber,
+    amount: rest["BT-131"],
+    facts: rest,
+  };
+}
+
 export async function handleCaptureIntake(db: D1Database, channelId: string, body: CaptureIntakeBody): Promise<RouteResult> {
   const channel = await db
     .prepare("SELECT id, process_id, name FROM intake_channels WHERE id = ?")
@@ -66,6 +88,8 @@ export async function handleCaptureIntake(db: D1Database, channelId: string, bod
     return { status: 400, body: { error: "id (string) is required" } };
   }
 
+  const canonicalLines = body.lines as Array<InvoiceFacts & { lineNumber: number }> | undefined;
+
   // Store facts, reusing handleUpsertInvoice's own logic exactly —
   // including duplicate-confidence scoring (decision 0028) for free.
   // mandate.channel defaults to the channel's own name, the caller
@@ -74,6 +98,7 @@ export async function handleCaptureIntake(db: D1Database, channelId: string, bod
     ...body,
     id,
     mandateChannel: (mandateChannel as string) ?? channel.name,
+    lines: canonicalLines?.map(toStorageLine),
   });
   if (upsertResult.status >= 400) {
     const reason = (upsertResult.body as { error?: string }).error ?? "invoice facts were rejected";
@@ -122,7 +147,7 @@ export async function handleCaptureIntake(db: D1Database, channelId: string, bod
     invoice_number: (body.invoiceNumber as string) ?? null,
     duplicate_confidence: (upsertResult.body as { duplicateConfidence?: number }).duplicateConfidence ?? null,
   });
-  const lines = body.lines as Array<InvoiceFacts & { lineNumber: number }> | undefined;
+  const lines = canonicalLines;
   const visitResult = await visitCurrentStage(db, instanceId, mergedFacts, lines);
 
   return {
@@ -134,6 +159,67 @@ export async function handleCaptureIntake(db: D1Database, channelId: string, bod
       visit: visitResult.body,
     },
   };
+}
+
+/**
+ * Real document capture (decision 0030) — parses a genuine UBL 2.1
+ * document (Peppol BIS Billing 3.0, or Self-Billing 3.0, the same
+ * underlying shape per decision 0026) and delegates straight into
+ * handleCaptureIntake, unchanged — the same store/instantiate/visit
+ * orchestration, the same event logging, the same content-agnostic
+ * philosophy. This function's only job is turning raw XML into the
+ * facts shape that orchestration already expects.
+ *
+ * id defaults to a fresh, generated UUID — a real invoice number
+ * (BT-1) is not safe to use directly as this system's own id, since
+ * two different suppliers could coincidentally reuse the same number;
+ * decision 0028's own duplicate-confidence scoring is what actually
+ * detects that relationship, not id collision. A caller who wants
+ * their own id can still supply one explicitly.
+ */
+export async function handleCaptureUblXml(
+  db: D1Database,
+  channelId: string,
+  xml: string,
+  idOverride?: string
+): Promise<RouteResult> {
+  let parsed: { facts: InvoiceFacts; lines: Array<InvoiceFacts & { lineNumber: number }> };
+  try {
+    parsed = parseUblInvoice(xml);
+  } catch (err) {
+    if (err instanceof UblParseError) {
+      // A parse failure happens before handleCaptureIntake is ever
+      // called, so none of its own rejection logging runs — logged
+      // explicitly here instead. A malformed document is exactly the
+      // kind of exception intake_capture_events exists to make
+      // visible, not silently drop.
+      const channelExists = await db.prepare("SELECT id FROM intake_channels WHERE id = ?").bind(channelId).first();
+      if (channelExists) {
+        await recordCaptureEvent(db, channelId, "rejected", err.message, null);
+      }
+      return { status: 422, body: { error: err.message } };
+    }
+    throw err;
+  }
+
+  const { facts, lines } = parsed;
+  const id = idOverride ?? crypto.randomUUID();
+
+  // The parser's own facts already carry the real BT-* structured
+  // values (BT-1, BT-31, and the rest); handleUpsertInvoice still
+  // needs them as its own explicit, structured parameters to persist
+  // them as real columns, not just inside the opaque facts blob —
+  // pulled back out here rather than parsed twice.
+  return handleCaptureIntake(db, channelId, {
+    id,
+    invoiceNumber: facts["BT-1"] as string | undefined,
+    issueDate: facts["BT-2"] as string | undefined,
+    currency: facts["BT-5"] as string | undefined,
+    supplierVatId: facts["BT-31"] as string | undefined,
+    totalWithVat: facts["BT-112"] as number | undefined,
+    facts,
+    lines,
+  });
 }
 
 /**

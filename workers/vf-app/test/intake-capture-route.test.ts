@@ -1,7 +1,7 @@
 import { env } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
 import { applyTestSchema } from "./setup.js";
-import { handleCaptureIntake, handleIntakeStats } from "../src/intake-capture-route.js";
+import { handleCaptureIntake, handleCaptureUblXml, handleIntakeStats } from "../src/intake-capture-route.js";
 import { handleCreateProcess, handleCreateStage } from "../src/process-route.js";
 import { handleCreateIntakeChannel } from "../src/intake-channel-route.js";
 import { handleCreateTeam } from "../src/team-route.js";
@@ -179,5 +179,85 @@ describe("handleIntakeStats", () => {
     const result = await handleIntakeStats(env.DB, "p11");
     const body = result.body as { channels: Array<{ channelId: string }> };
     expect(body.channels.map((c) => c.channelId)).toEqual(["ic11"]);
+  });
+});
+
+const SAMPLE_UBL_INVOICE = `<?xml version="1.0" encoding="UTF-8"?>
+<Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"
+         xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
+         xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">
+  <cbc:ID>INV-XML-1</cbc:ID>
+  <cbc:IssueDate>2026-08-01</cbc:IssueDate>
+  <cbc:DocumentCurrencyCode>EUR</cbc:DocumentCurrencyCode>
+  <cac:AccountingSupplierParty>
+    <cac:Party>
+      <cac:PostalAddress><cac:Country><cbc:IdentificationCode>DE</cbc:IdentificationCode></cac:Country></cac:PostalAddress>
+      <cac:PartyTaxScheme><cbc:CompanyID>DE555666777</cbc:CompanyID></cac:PartyTaxScheme>
+    </cac:Party>
+  </cac:AccountingSupplierParty>
+  <cac:LegalMonetaryTotal>
+    <cbc:TaxInclusiveAmount currencyID="EUR">1200.00</cbc:TaxInclusiveAmount>
+  </cac:LegalMonetaryTotal>
+  <cac:InvoiceLine>
+    <cbc:ID>1</cbc:ID>
+    <cbc:InvoicedQuantity>2</cbc:InvoicedQuantity>
+    <cbc:LineExtensionAmount>1200.00</cbc:LineExtensionAmount>
+  </cac:InvoiceLine>
+</Invoice>`;
+
+describe("handleCaptureUblXml (decision 0030)", () => {
+  it("a genuine UBL document is parsed and captured through the exact same orchestration as JSON capture", async () => {
+    await seedProcessWithChannel("px1", "icx1", "EDI");
+    const result = await handleCaptureUblXml(env.DB, "icx1", SAMPLE_UBL_INVOICE);
+    expect(result.status).toBe(201);
+
+    // The real, structured columns were genuinely populated from the
+    // parsed XML, not just the opaque facts blob.
+    const body = result.body as { instanceId: string };
+    const header = await env.DB.prepare(
+      "SELECT supplier_vat_id, invoice_number, total_with_vat FROM invoice_headers"
+    ).first();
+    expect(header).toEqual({ supplier_vat_id: "DE555666777", invoice_number: "INV-XML-1", total_with_vat: 1200 });
+
+    const lineRow = await env.DB.prepare("SELECT amount FROM invoice_lines").first();
+    expect(lineRow).toEqual({ amount: 1200 });
+
+    const instance = await env.DB.prepare("SELECT status FROM process_instances WHERE id = ?").bind(body.instanceId).first();
+    expect(instance).toEqual({ status: "completed" });
+  });
+
+  it("an explicit id override is used instead of a generated one", async () => {
+    await seedProcessWithChannel("px2", "icx2", "EDI");
+    await handleCaptureUblXml(env.DB, "icx2", SAMPLE_UBL_INVOICE, "my-own-id");
+    const header = await env.DB.prepare("SELECT id FROM invoice_headers").first();
+    expect(header).toEqual({ id: "my-own-id" });
+  });
+
+  it("a generated id is used when no override is given — a real invoice number is never used as this system's own id directly", async () => {
+    await seedProcessWithChannel("px3", "icx3", "EDI");
+    await handleCaptureUblXml(env.DB, "icx3", SAMPLE_UBL_INVOICE);
+    const header = await env.DB.prepare("SELECT id, invoice_number FROM invoice_headers").first<{ id: string; invoice_number: string }>();
+    expect(header?.invoice_number).toBe("INV-XML-1");
+    expect(header?.id).not.toBe("INV-XML-1"); // a real, generated UUID, not the raw invoice number
+  });
+
+  it("a genuinely malformed XML document is refused with a 422 and a real, specific reason — no instance created", async () => {
+    await seedProcessWithChannel("px4", "icx4", "EDI");
+    const result = await handleCaptureUblXml(env.DB, "icx4", "<Invoice><ID>unclosed");
+    expect(result.status).toBe(422);
+    const instanceCount = await env.DB.prepare("SELECT count(*) AS n FROM process_instances").first<{ n: number }>();
+    expect(instanceCount?.n).toBe(0);
+  });
+
+  it("a rejected XML capture is still logged as a real intake_capture_events row — exceptions from bad documents are visible in analytics too", async () => {
+    await seedProcessWithChannel("px5", "icx5", "EDI");
+    await handleCaptureUblXml(env.DB, "icx5", "not xml at all");
+    const event = await env.DB.prepare("SELECT outcome FROM intake_capture_events WHERE channel_id = ?").bind("icx5").first();
+    expect(event).toEqual({ outcome: "rejected" });
+  });
+
+  it("404s when the channel does not exist, without ever attempting to parse the XML", async () => {
+    const result = await handleCaptureUblXml(env.DB, "does-not-exist", SAMPLE_UBL_INVOICE);
+    expect(result.status).toBe(404);
   });
 });

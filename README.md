@@ -387,6 +387,24 @@ records every capture attempt, accepted or rejected, and
 this system, built because real analytics was explicitly asked for.
 See `docs/decisions/0029-intake-capture.md`.
 
+## Real UBL invoice parsing
+
+The one piece intake capture deliberately deferred — turning a real
+document into the facts everything downstream already knew what to do
+with. Scoped to UBL 2.1 first, the deterministic half of document
+parsing, not the harder PDF/receipt extraction that needs real OCR.
+Every field mapping was checked directly against the real Peppol BIS
+Billing 3.0 specification, not trusted from memory — which caught two
+real bugs before they shipped: `fast-xml-parser`'s own parser doesn't
+throw on malformed XML (fixed using the library's separate validator),
+and the spec's own worked example shows a party can carry more than
+one `PartyTaxScheme`, which a first version of this parser would have
+silently mishandled. Wiring the parser into intake capture surfaced
+two more genuine, pre-existing gaps — a lines-shape mismatch between
+storage and evaluation, and parse failures never being logged as
+capture events — both fixed generally, not just for the XML path. See
+`docs/decisions/0030-ubl-invoice-parsing.md`.
+
 ## The one rule enforced by tooling, not convention
 
 No application code reads a tenant-scoped binding (`env.DB` and similar)

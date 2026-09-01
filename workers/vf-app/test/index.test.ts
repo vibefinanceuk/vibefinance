@@ -1527,3 +1527,113 @@ describe("intake capture, through the real router (decision 0029)", () => {
     expect(body.channels).toEqual([{ channelId: "ic-live-3", channelName: "Email", accepted: 1, rejected: 1 }]);
   });
 });
+
+describe("real UBL XML capture, through the real router (decision 0030)", () => {
+  const SAMPLE_UBL = `<?xml version="1.0" encoding="UTF-8"?>
+<Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"
+         xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
+         xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">
+  <cbc:ID>INV-ROUTER-1</cbc:ID>
+  <cbc:DocumentCurrencyCode>EUR</cbc:DocumentCurrencyCode>
+  <cac:AccountingSupplierParty>
+    <cac:Party>
+      <cac:PartyTaxScheme><cbc:CompanyID>DE111222333</cbc:CompanyID></cac:PartyTaxScheme>
+    </cac:Party>
+  </cac:AccountingSupplierParty>
+  <cac:LegalMonetaryTotal>
+    <cbc:TaxInclusiveAmount currencyID="EUR">640.00</cbc:TaxInclusiveAmount>
+  </cac:LegalMonetaryTotal>
+</Invoice>`;
+
+  it("a real raw XML request body is parsed and captured through the real HTTP route", async () => {
+    await SELF.fetch("https://example.com/processes", { method: "POST", body: JSON.stringify({ id: "p-xml-1", name: "AP XML" }) });
+    await SELF.fetch("https://example.com/processes/p-xml-1/stages", {
+      method: "POST",
+      body: JSON.stringify({ id: "s1", name: "Received", sequence: 1 }),
+    });
+    await SELF.fetch("https://example.com/processes/p-xml-1/intake-channels", {
+      method: "POST",
+      body: JSON.stringify({ id: "ic-xml-1", name: "EDI" }),
+    });
+
+    const res = await SELF.fetch("https://example.com/intake-channels/ic-xml-1/capture-xml", {
+      method: "POST",
+      headers: { ...authHeaders(), "content-type": "application/xml" },
+      body: SAMPLE_UBL,
+    });
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as { instanceId: string };
+
+    const header = await env.DB.prepare("SELECT supplier_vat_id, total_with_vat FROM invoice_headers").first();
+    expect(header).toEqual({ supplier_vat_id: "DE111222333", total_with_vat: 640 });
+
+    const instance = await env.DB.prepare("SELECT status FROM process_instances WHERE id = ?").bind(body.instanceId).first();
+    expect(instance).toEqual({ status: "completed" });
+  });
+
+  it("an explicit ?id= query parameter overrides the generated id", async () => {
+    await SELF.fetch("https://example.com/processes", { method: "POST", body: JSON.stringify({ id: "p-xml-2", name: "AP XML" }) });
+    await SELF.fetch("https://example.com/processes/p-xml-2/stages", {
+      method: "POST",
+      body: JSON.stringify({ id: "s1", name: "Received", sequence: 1 }),
+    });
+    await SELF.fetch("https://example.com/processes/p-xml-2/intake-channels", {
+      method: "POST",
+      body: JSON.stringify({ id: "ic-xml-2", name: "EDI" }),
+    });
+
+    await SELF.fetch("https://example.com/intake-channels/ic-xml-2/capture-xml?id=my-real-id", {
+      method: "POST",
+      headers: { ...authHeaders(), "content-type": "application/xml" },
+      body: SAMPLE_UBL,
+    });
+    const header = await env.DB.prepare("SELECT id FROM invoice_headers").first();
+    expect(header).toEqual({ id: "my-real-id" });
+  });
+
+  it("400s when the request body is empty", async () => {
+    await SELF.fetch("https://example.com/processes", { method: "POST", body: JSON.stringify({ id: "p-xml-3", name: "AP" }) });
+    await SELF.fetch("https://example.com/processes/p-xml-3/intake-channels", {
+      method: "POST",
+      body: JSON.stringify({ id: "ic-xml-3", name: "EDI" }),
+    });
+    const res = await SELF.fetch("https://example.com/intake-channels/ic-xml-3/capture-xml", {
+      method: "POST",
+      headers: authHeaders(),
+      body: "",
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it("422s malformed XML through the real route, with no instance created", async () => {
+    await SELF.fetch("https://example.com/processes", { method: "POST", body: JSON.stringify({ id: "p-xml-4", name: "AP" }) });
+    await SELF.fetch("https://example.com/processes/p-xml-4/intake-channels", {
+      method: "POST",
+      body: JSON.stringify({ id: "ic-xml-4", name: "EDI" }),
+    });
+    const res = await SELF.fetch("https://example.com/intake-channels/ic-xml-4/capture-xml", {
+      method: "POST",
+      headers: authHeaders(),
+      body: "<Invoice><ID>unclosed",
+    });
+    expect(res.status).toBe(422);
+  });
+
+  it("401s with no credentials", async () => {
+    const res = await SELF.fetch("https://example.com/intake-channels/anything/capture-xml", {
+      method: "POST",
+      body: SAMPLE_UBL,
+    });
+    expect(res.status).toBe(401);
+  });
+
+  it("is blocked when the licence is blocked, matching every other real product route", async () => {
+    await env.DB.prepare("DELETE FROM licence_cache WHERE id = 1").run();
+    const res = await SELF.fetch("https://example.com/intake-channels/anything/capture-xml", {
+      method: "POST",
+      headers: authHeaders(),
+      body: SAMPLE_UBL,
+    });
+    expect(res.status).toBe(402);
+  });
+});
