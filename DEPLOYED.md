@@ -7,7 +7,7 @@ vf-app and vf-licence are promoted independently.
 
 | Worker | commit SHA | confirmed at |
 |---|---|---|
-| vf-app | `d2ae667` | 1 September 2026 — duplicate detection and the structured-column-merge fix (decision 0028) confirmed deployed and pushed. No live walkthrough was performed for this one, by choice — unlike the entries above, nothing here has been directly exercised against the real deployment yet; the confirmation is the person's own report that it's live, plus the full local test suite (422 tests) and a fresh-clone sweep before the bundle was ever handed off. |
+| vf-app | `8c12de0` | 1 September 2026 — real UBL invoice parsing (decision 0030) confirmed live, end to end, followed by a real bug fix also confirmed live. A genuine Peppol BIS Billing 3.0 XML document, sent as a raw `POST` to `/intake-channels/ic-new/capture-xml`, correctly parsed every field, correctly cascaded through the automatic `received` stage, and correctly matched the real, pre-existing `BT-112 > 1000` rule on `ap-live` — confirmed via a direct D1 query, not the response alone (`supplier_vat_id: DE900800700`, `invoice_number: INV-LIVE-XML-001`, `total_with_vat: 2500`, `mandate_channel` auto-defaulted to the channel's own name). That same live check surfaced a real, genuine gap — the capture response never actually returned the invoice's own generated `id` — fixed and then reconfirmed live: a second real capture through the same channel came back with a real `id` field present directly in the response, no D1 query needed to find it. |
 | vf-licence | `8029d0a` | 30 August 2026 — fleet tooling (Blueprint build order step 5) confirmed live, end to end. `GET /customers` and `PATCH /customers/:id/fleet-metadata` both confirmed working with a freshly rotated `ADMIN_API_KEY`; Acme's real fleet metadata (`worker_name`, `d1_database_name`, `d1_database_id`, `locale`) backfilled and confirmed persisted via a direct re-query, not inferred from the response alone. `migrations/migrate_all.py` (a local script, not a Worker — see its own row in the incident record below) then successfully read that manifest and ran a real migration check against Acme's live database: `1 succeeded, 0 failed, 0 skipped`. |
 
 ## D1
@@ -273,3 +273,35 @@ reproduced and confirmed to fail before the fix was trusted) — and a
 fresh-clone sweep before the bundle was ever handed off, but nothing
 here has yet been directly exercised against the real, running
 deployment the way the workflow engine and per-line evaluation were.
+
+1 September 2026: real UBL invoice parsing (decision 0030) confirmed
+live, end to end, including a real deploy issue and a real bug found
+along the way, both resolved and confirmed before this was trusted.
+The first deploy attempt failed with "Could not resolve
+fast-xml-parser" -- diagnosed properly rather than guessed at, by
+reproducing the exact same bundling step locally via `wrangler deploy
+--dry-run` (which succeeded), narrowing the cause to `npm install`
+never having been run after pulling the bundle. Confirmed correct:
+running it fixed the real deploy.
+
+With that resolved, a genuine Peppol BIS Billing 3.0 XML document was
+sent as a raw POST to a real intake channel on the original `ap-live`
+process. It correctly parsed every field, cascaded through the
+automatic `received` stage on its own, and correctly matched the
+real, pre-existing `BT-112 > 1000` rule -- confirmed via a direct D1
+query, not the response alone. That same live check surfaced a real,
+honest mistake: an assumption stated in conversation that the
+invoice's id would default to its own invoice number was wrong --
+the code deliberately generates a fresh UUID instead, exactly as
+decision 0030 already documented, and the mistake was owned and
+corrected in the same turn rather than left standing. Querying by
+`invoice_number` instead confirmed every field was genuinely correct.
+
+That same check surfaced a second, real gap: the capture response
+never actually returned the invoice's own generated id at all, so a
+caller had no way to look their own row up afterward except by a
+field like `invoice_number`. Fixed generally in `handleCaptureIntake`
+itself, proven by deliberate revert-and-reproduce locally, then
+confirmed live a second time: a repeat capture through the same real
+channel came back with a real `id` field present directly in the
+response.
