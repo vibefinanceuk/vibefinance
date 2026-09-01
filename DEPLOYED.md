@@ -7,7 +7,7 @@ vf-app and vf-licence are promoted independently.
 
 | Worker | commit SHA | confirmed at |
 |---|---|---|
-| vf-app | `8c12de0` | 1 September 2026 — real UBL invoice parsing (decision 0030) confirmed live, end to end, followed by a real bug fix also confirmed live. A genuine Peppol BIS Billing 3.0 XML document, sent as a raw `POST` to `/intake-channels/ic-new/capture-xml`, correctly parsed every field, correctly cascaded through the automatic `received` stage, and correctly matched the real, pre-existing `BT-112 > 1000` rule on `ap-live` — confirmed via a direct D1 query, not the response alone (`supplier_vat_id: DE900800700`, `invoice_number: INV-LIVE-XML-001`, `total_with_vat: 2500`, `mandate_channel` auto-defaulted to the channel's own name). That same live check surfaced a real, genuine gap — the capture response never actually returned the invoice's own generated `id` — fixed and then reconfirmed live: a second real capture through the same channel came back with a real `id` field present directly in the response, no D1 query needed to find it. |
+| vf-app | `f3f5034` | 1 September 2026 — cost centre vs. `org_units` (decision 0031) confirmed live. `POST /org/cost-centres` created a real cost centre (`CC-100`, "Engineering") against production infrastructure, confirming the schema, route, and deploy all genuinely work end to end — the `BT-133`/`parseUblInvoice` half of this decision was already proven live earlier via the full raw-XML-to-fired-rule pipeline. |
 | vf-licence | `8029d0a` | 30 August 2026 — fleet tooling (Blueprint build order step 5) confirmed live, end to end. `GET /customers` and `PATCH /customers/:id/fleet-metadata` both confirmed working with a freshly rotated `ADMIN_API_KEY`; Acme's real fleet metadata (`worker_name`, `d1_database_name`, `d1_database_id`, `locale`) backfilled and confirmed persisted via a direct re-query, not inferred from the response alone. `migrations/migrate_all.py` (a local script, not a Worker — see its own row in the incident record below) then successfully read that manifest and ran a real migration check against Acme's live database: `1 succeeded, 0 failed, 0 skipped`. |
 
 ## D1
@@ -305,3 +305,15 @@ itself, proven by deliberate revert-and-reproduce locally, then
 confirmed live a second time: a repeat capture through the same real
 channel came back with a real `id` field present directly in the
 response.
+
+1 September 2026: cost centre vs. `org_units` (decision 0031)
+confirmed live. `POST /org/cost-centres` created a real cost centre
+(`CC-100`, "Engineering") against production infrastructure. The
+larger, more technically substantial half of this decision — `BT-133`
+added to the closed vocabulary, `parseUblInvoice` extended to extract
+it, and the full raw-XML-to-fired-rule pipeline correctly matching a
+real per-line rule on a real cost centre reference — was already
+proven live in the same session as decision 0030's own confirmation;
+this entry closes the loop on the newer piece specifically: the real,
+customer-managed list itself, genuinely reachable and working end to
+end against the real deployment.
