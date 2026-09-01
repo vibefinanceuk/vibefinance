@@ -150,9 +150,16 @@ export async function handleCaptureIntake(db: D1Database, channelId: string, bod
   const lines = canonicalLines;
   const visitResult = await visitCurrentStage(db, instanceId, mergedFacts, lines);
 
+  // id is always echoed back — for the JSON path the caller already
+  // supplied it themselves, but for handleCaptureUblXml's own
+  // auto-generated id (decision 0030), this was the ONLY way to learn
+  // what id actually got assigned — found live, against the real
+  // deployment, when a caller had no way to look their own row back
+  // up afterward except by a field like invoice_number.
   return {
     status: 201,
     body: {
+      id,
       instanceId,
       channelId,
       processId: channel.process_id,

@@ -241,6 +241,14 @@ describe("handleCaptureUblXml (decision 0030)", () => {
     expect(header?.id).not.toBe("INV-XML-1"); // a real, generated UUID, not the raw invoice number
   });
 
+  it("the response body echoes back the real generated id — a real gap found live: without this, a caller has no way to look their own row up afterward", async () => {
+    await seedProcessWithChannel("px3b", "icx3b", "EDI");
+    const result = await handleCaptureUblXml(env.DB, "icx3b", SAMPLE_UBL_INVOICE);
+    const body = result.body as { id: string };
+    const header = await env.DB.prepare("SELECT id FROM invoice_headers").first<{ id: string }>();
+    expect(body.id).toBe(header?.id); // the id actually returned matches the id actually stored, not just present
+  });
+
   it("a genuinely malformed XML document is refused with a 422 and a real, specific reason — no instance created", async () => {
     await seedProcessWithChannel("px4", "icx4", "EDI");
     const result = await handleCaptureUblXml(env.DB, "icx4", "<Invoice><ID>unclosed");

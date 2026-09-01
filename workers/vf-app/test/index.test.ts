@@ -1562,10 +1562,10 @@ describe("real UBL XML capture, through the real router (decision 0030)", () => 
       body: SAMPLE_UBL,
     });
     expect(res.status).toBe(201);
-    const body = (await res.json()) as { instanceId: string };
+    const body = (await res.json()) as { id: string; instanceId: string };
 
-    const header = await env.DB.prepare("SELECT supplier_vat_id, total_with_vat FROM invoice_headers").first();
-    expect(header).toEqual({ supplier_vat_id: "DE111222333", total_with_vat: 640 });
+    const header = await env.DB.prepare("SELECT id, supplier_vat_id, total_with_vat FROM invoice_headers").first();
+    expect(header).toEqual({ id: body.id, supplier_vat_id: "DE111222333", total_with_vat: 640 });
 
     const instance = await env.DB.prepare("SELECT status FROM process_instances WHERE id = ?").bind(body.instanceId).first();
     expect(instance).toEqual({ status: "completed" });

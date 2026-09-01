@@ -109,3 +109,25 @@ as every other fix in this bundle.
   coincidentally reuse the same invoice number; decision 0028's own
   duplicate-confidence scoring is what actually detects that
   relationship, not id collision.
+
+## Addendum, 1 September 2026: a real gap found live, fixed
+
+Deployed and proven against real infrastructure: a genuine UBL
+invoice, sent as raw XML, correctly parsed every field, correctly
+triggered a real, pre-existing rule (`BT-112 > 1000` on the original
+`ap-live` process), and correctly spawned a real task — the full
+pipeline working end to end for the first time.
+
+Confirming the stored row afterward surfaced a real, genuine gap:
+`handleCaptureIntake`'s response never actually returned the invoice's
+own `id` — for the JSON capture path this never mattered, since the
+caller always supplies `id` themselves, but for `handleCaptureUblXml`'s
+auto-generated id, the response gave no way to look the row back up
+afterward except by a field like `invoice_number`. Fixed generally,
+in `handleCaptureIntake` itself, not just for the XML path: the
+response now always echoes back the real `id`, whether caller-supplied
+or generated. Proven directly — the fix was deliberately reverted and
+the exact gap reproduced before being restored, and a live query
+confirmed the returned id matches the id actually stored, not just
+that a value is present.
+
