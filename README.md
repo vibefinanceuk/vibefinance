@@ -272,6 +272,20 @@ Travel expense and spawns a real task, and a single differing field
 by deliberately breaking it and watching a real test fail first. See
 `docs/decisions/0022-expense-vocabulary.md`.
 
+## "Intake" as a recommended first stage
+
+`process_stages` never constrained stage names, so an "Intake" stage
+needed no new infrastructure — this is a documented convention, not an
+enforced one. `mandate.channel` (already in the closed vocabulary,
+shared by AP and AR) had its description enriched with real example
+values instead of a generic one, since the compiler's prompt renders
+it verbatim; Expense gets its own analogous field, `intake.channel`,
+rather than reusing a field named after an e-invoicing-specific term
+that doesn't fit it. Both stay free strings — closed-value enforcement
+(validating a condition's *value*, not just its field name) is a real,
+previously unflagged gap this surfaced and deliberately declined to
+build. See `docs/decisions/0023-intake-stage-convention.md`.
+
 ## The one rule enforced by tooling, not convention
 
 No application code reads a tenant-scoped binding (`env.DB` and similar)

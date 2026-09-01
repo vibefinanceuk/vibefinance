@@ -73,6 +73,7 @@ export const EXPENSE_FIELDS = [
 
 export const EXPENSE_DERIVED_FIELDS = [
   "employee.first_submission",
+  "intake.channel",
 ] as const;
 
 export const OPERATORS = [
@@ -144,7 +145,14 @@ export const DERIVED_FIELD_DESCRIPTIONS: Record<DerivedField, string> = {
   "party.first_document": "true if this is the first document from this party",
   "po.matched": "true if the invoice matches a purchase order",
   "po.variance_pct": "percentage variance between invoice and PO amount",
-  "mandate.channel": "the e-invoicing channel/mandate this document arrived through",
+  // Enriched with real example values, per decision 0023's "Intake"
+  // convention — a free string, deliberately not a closed enum (see
+  // that decision for why enforcement was explicitly declined). The
+  // examples below are illustrative, shown to the compiler's own
+  // model via this same description, not an exhaustive or enforced
+  // list.
+  "mandate.channel":
+    "the channel this document arrived through — e.g. Email, Mailroom, EDI, Tax Authority, Supplier Portal (AP); Billing System A, Billing System B, Order Fulfillment A, Order Fulfillment B (AR). A free string, not a closed enum.",
   "validation.passed": "true if the document passed standard validation",
 };
 
@@ -162,6 +170,17 @@ export const EXPENSE_FIELD_DESCRIPTIONS: Record<ExpenseField, string> = {
 
 export const EXPENSE_DERIVED_FIELD_DESCRIPTIONS: Record<ExpenseDerivedField, string> = {
   "employee.first_submission": "true if this is the first expense this employee has ever submitted",
+  // mandate.channel's own expense-domain equivalent — a differently
+  // named field rather than reusing mandate.channel across
+  // vocabularies, since "mandate" is an e-invoicing-specific term
+  // with no meaning for an expense submission. Free string, not a
+  // closed enum, matching mandate.channel's own choice. A mobile app
+  // is a real anticipated channel, not yet built — listed as an
+  // example the same "add now, clearly flagged, unbacked" precedent
+  // already used for AR_PERMISSIONS and Expense.* before either had a
+  // real route behind it.
+  "intake.channel":
+    "how this expense was submitted — e.g. Manual Entry, iPhone App (a future channel, not yet built), Corporate Card Feed. A free string, not a closed enum.",
 };
 
 // Same discipline as FIELD_DESCRIPTIONS above, and for the same

@@ -33,3 +33,18 @@ describe("buildCompilerPrompt", () => {
     expect(prompt).toContain(long);
   });
 });
+
+describe("buildCompilerPrompt — Intake channel examples (decision 0023)", () => {
+  it("the invoice prompt shows real AP and AR mandate.channel example values", () => {
+    const prompt = buildCompilerPrompt("test");
+    expect(prompt).toContain("Mailroom");
+    expect(prompt).toContain("Billing System A");
+  });
+
+  it("the expense prompt shows real intake.channel example values, including the anticipated iPhone App channel", () => {
+    const prompt = buildCompilerPrompt("test", "expense");
+    expect(prompt).toContain("intake.channel");
+    expect(prompt).toContain("iPhone App");
+    expect(prompt).not.toContain("Mailroom"); // an AP-specific example, not expense's
+  });
+});
