@@ -33,6 +33,14 @@ import type { InvoiceFacts } from "../interpreter/types.js";
  * single element and would have silently failed to extract BT-31/
  * BT-48 for a document shaped exactly like that example.
  *
+ * BT-133 (line accounting/cost centre reference, cbc:AccountingCost)
+ * was added after decision 0028's own gap-hunting discipline was
+ * applied to cost_centre: a real database column had existed since
+ * decision 0017, but the field had never been added to
+ * INVOICE_FIELDS at all — no invoice rule could ever reference it.
+ * Verified against the real spec before adding it, the same
+ * discipline as every other field here.
+ *
  * Credit notes are a deliberate, explicit scope boundary, not an
  * oversight: they use an entirely different root element
  * (<CreditNote>, with CreditNoteLine/CreditedQuantity rather than
@@ -177,6 +185,8 @@ export function parseUblInvoice(xml: string): ParsedUblInvoice {
     if (quantity !== undefined) lineFacts["BT-129"] = quantity;
     const lineNet = getNumber(line?.LineExtensionAmount);
     if (lineNet !== undefined) lineFacts["BT-131"] = lineNet;
+    const accountingCost = getText(line?.AccountingCost);
+    if (accountingCost !== undefined) lineFacts["BT-133"] = accountingCost;
     return lineFacts;
   });
 

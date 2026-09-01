@@ -405,6 +405,26 @@ storage and evaluation, and parse failures never being logged as
 capture events — both fixed generally, not just for the XML path. See
 `docs/decisions/0030-ubl-invoice-parsing.md`.
 
+## Cost centre vs. `org_units`
+
+The single most-repeated open question in this project — named across
+eight decisions without ever being resolved. Confirmed against the
+real EN 16931 standard: `BT-133` ("Invoice line Buyer accounting
+reference") is a financial/accounting construct, genuinely different
+from `org_units`' organizational/authority one — the two often
+correlate but are never guaranteed to. `invoice_lines.cost_centre` had
+existed as a real column since decision 0017 but was never added to
+`INVOICE_FIELDS` — the exact same class of gap `BT-1` turned out to be
+before decision 0028. Closed by adding `BT-133`, extending
+`parseUblInvoice` to extract it, and building a real, customer-managed
+`cost_centres` list — deliberately global, not scoped per-process the
+way `intake_channels` is, since a cost centre is a company-wide
+financial construct, not tied to how something enters one specific
+process. Proven end to end: a real UBL document with a real cost
+centre reference, sent as raw XML, correctly matched a real rule and
+spawned a real task. See
+`docs/decisions/0031-cost-centre-vs-org-units.md`.
+
 ## The one rule enforced by tooling, not convention
 
 No application code reads a tenant-scoped binding (`env.DB` and similar)

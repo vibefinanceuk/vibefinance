@@ -82,6 +82,30 @@ describe("parseUblInvoice — a genuine, well-formed sample", () => {
   });
 });
 
+describe("parseUblInvoice — BT-133 (line accounting/cost centre reference)", () => {
+  const WITH_ACCOUNTING_COST = `<?xml version="1.0"?>
+<Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"
+         xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
+         xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">
+  <cbc:ID>INV-CC-1</cbc:ID>
+  <cac:InvoiceLine>
+    <cbc:ID>1</cbc:ID>
+    <cbc:LineExtensionAmount>500.00</cbc:LineExtensionAmount>
+    <cbc:AccountingCost>CC-200</cbc:AccountingCost>
+  </cac:InvoiceLine>
+  <cac:InvoiceLine>
+    <cbc:ID>2</cbc:ID>
+    <cbc:LineExtensionAmount>300.00</cbc:LineExtensionAmount>
+  </cac:InvoiceLine>
+</Invoice>`;
+
+  it("extracts a real cost centre reference where present, and omits it where absent — never a false empty value", () => {
+    const { lines } = parseUblInvoice(WITH_ACCOUNTING_COST);
+    expect(lines[0]["BT-133"]).toBe("CC-200");
+    expect(lines[1]["BT-133"]).toBeUndefined();
+  });
+});
+
 describe("parseUblInvoice — a single line, not an array", () => {
   const SINGLE_LINE = SAMPLE_UBL_INVOICE.replace(
     /<cac:InvoiceLine>[\s\S]*<\/cac:InvoiceLine>\s*<cac:InvoiceLine>[\s\S]*?<\/cac:InvoiceLine>/,

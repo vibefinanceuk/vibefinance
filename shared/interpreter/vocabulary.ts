@@ -29,6 +29,7 @@ export const INVOICE_FIELDS = [
   "BT-115", // amount due
   "BT-129", // quantity
   "BT-131", // line net amount
+  "BT-133", // line accounting/cost centre reference
   "BT-151", // VAT category
   "BT-152", // VAT rate
   "BG-20", // allowances
@@ -137,6 +138,7 @@ export const FIELD_DESCRIPTIONS: Record<InvoiceField, string> = {
   "BT-115": "amount due",
   "BT-129": "quantity",
   "BT-131": "line net amount",
+  "BT-133": "the accounting/cost centre reference for this line — where this cost gets booked in the buyer's own financial accounts. A genuinely separate concept from org_units (decision 0009): a financial/accounting construct, not an organizational/authority one — the two are not guaranteed to correspond 1:1.",
   "BT-151": "VAT category",
   "BT-152": "VAT rate",
   "BG-20": "allowances",

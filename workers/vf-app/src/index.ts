@@ -22,6 +22,7 @@ import {
   handleSetAuthorityLimit,
   handleSetProfile,
 } from "./org-route.js";
+import { handleCreateCostCentre } from "./cost-centre-route.js";
 import { requirePermission } from "./enforce.js";
 import { handleAddTeamMember, handleCreateTeam } from "./team-route.js";
 import { handleUpsertInvoice, mergeStructuredInvoiceFacts } from "./invoice-facts-route.js";
@@ -622,6 +623,22 @@ export default {
         return json({ error: t("invalidJsonBody", resolveLocale(env.LOCALE)) }, 400);
       }
       const result = await handleCreateUnit(db, (body ?? {}) as Record<string, unknown>);
+      return json(result.body, result.status);
+    }
+
+    // Cost centres — decision 0031. A real, customer-managed list,
+    // deliberately global rather than scoped to any process — matches
+    // /org/units's own reasoning above, not gated by licence status
+    // (a blocked customer should still be able to manage this too).
+    if (pathname === "/org/cost-centres" && request.method === "POST") {
+      const { db } = resolveTenant(request, env);
+      let body: unknown;
+      try {
+        body = await request.json();
+      } catch {
+        return json({ error: t("invalidJsonBody", resolveLocale(env.LOCALE)) }, 400);
+      }
+      const result = await handleCreateCostCentre(db, (body ?? {}) as Record<string, unknown>);
       return json(result.body, result.status);
     }
 

@@ -1637,3 +1637,88 @@ describe("real UBL XML capture, through the real router (decision 0030)", () => 
     expect(res.status).toBe(402);
   });
 });
+
+describe("cost centres, through the real router (decision 0031)", () => {
+  it("creates a real, global cost centre through the real router", async () => {
+    const res = await SELF.fetch("https://example.com/org/cost-centres", {
+      method: "POST",
+      body: JSON.stringify({ id: "CC-LIVE-1", name: "Engineering" }),
+    });
+    expect(res.status).toBe(201);
+    const row = await env.DB.prepare("SELECT name FROM cost_centres WHERE id = ?").bind("CC-LIVE-1").first();
+    expect(row).toEqual({ name: "Engineering" });
+  });
+
+  it("409s a duplicate id through the real router", async () => {
+    await SELF.fetch("https://example.com/org/cost-centres", { method: "POST", body: JSON.stringify({ id: "CC-LIVE-2", name: "Sales" }) });
+    const res = await SELF.fetch("https://example.com/org/cost-centres", {
+      method: "POST",
+      body: JSON.stringify({ id: "CC-LIVE-2", name: "Marketing" }),
+    });
+    expect(res.status).toBe(409);
+  });
+
+  it("is not blocked by licence status — an administrative action, not gated product usage", async () => {
+    await env.DB.prepare("DELETE FROM licence_cache WHERE id = 1").run();
+    const res = await SELF.fetch("https://example.com/org/cost-centres", {
+      method: "POST",
+      body: JSON.stringify({ id: "CC-LIVE-3", name: "Facilities" }),
+    });
+    expect(res.status).not.toBe(402);
+  });
+
+  it("a real UBL invoice with BT-133 on one line correctly triggers a rule referencing it, end to end from raw XML through evaluation", async () => {
+    const ruleSetId = "rs-cc-live";
+    await env.DB.prepare("INSERT INTO rule_sets (id, name, mode, status) VALUES (?, ?, ?, ?)").bind(ruleSetId, "test", "first_match", "active").run();
+    const ruleId = crypto.randomUUID();
+    await env.DB.prepare("INSERT INTO rules (id, rule_set_id, sort_order, enabled) VALUES (?, ?, 0, 1)").bind(ruleId, ruleSetId).run();
+    await env.DB.prepare(
+      `INSERT INTO rule_versions (rule_id, version, source_text, compiled_json, compiled_by, approved_by, approved_at, effective_from)
+       VALUES (?, 1, ?, ?, ?, ?, ?, ?)`
+    )
+      .bind(
+        ruleId,
+        "test",
+        JSON.stringify({
+          conditions: { field: "BT-133", operator: "is", value: "CC-999" },
+          actions: [{ type: "assign_task", params: { team: "cc-team", permission: "AP.Approve" } }],
+        }),
+        "test-model",
+        "alice",
+        "2026-01-01T00:00:00.000Z",
+        "2026-01-01T00:00:00.000Z"
+      )
+      .run();
+    await SELF.fetch("https://example.com/processes", { method: "POST", body: JSON.stringify({ id: "p-cc-live", name: "AP CC" }) });
+    await SELF.fetch("https://example.com/processes/p-cc-live/stages", {
+      method: "POST",
+      body: JSON.stringify({ id: "review", name: "Review", sequence: 1, ruleSetId, evaluationScope: "line" }),
+    });
+    await SELF.fetch("https://example.com/org/teams", { method: "POST", body: JSON.stringify({ id: "cc-team", name: "CC Team" }) });
+    await SELF.fetch("https://example.com/processes/p-cc-live/intake-channels", {
+      method: "POST",
+      body: JSON.stringify({ id: "ic-cc-live", name: "EDI" }),
+    });
+
+    const xmlWithAccountingCost = `<?xml version="1.0"?>
+<Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"
+         xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
+         xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">
+  <cbc:ID>INV-CC-LIVE-1</cbc:ID>
+  <cac:InvoiceLine>
+    <cbc:ID>1</cbc:ID>
+    <cbc:LineExtensionAmount>400.00</cbc:LineExtensionAmount>
+    <cbc:AccountingCost>CC-999</cbc:AccountingCost>
+  </cac:InvoiceLine>
+</Invoice>`;
+
+    const res = await SELF.fetch("https://example.com/intake-channels/ic-cc-live/capture-xml", {
+      method: "POST",
+      headers: { ...authHeaders(), "content-type": "application/xml" },
+      body: xmlWithAccountingCost,
+    });
+    const body = (await res.json()) as { visit: { status: string; visits: Array<{ tasksCreated: number }> } };
+    expect(body.visit.status).toBe("in_progress");
+    expect(body.visit.visits[0].tasksCreated).toBe(1); // the real, parsed BT-133 correctly matched the real rule
+  });
+});
