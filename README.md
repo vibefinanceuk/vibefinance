@@ -241,6 +241,21 @@ including an honest, deliberate scope boundary: task-completion-
 triggered advancement only cascades through automatic stages, since
 there are no facts available at that point to evaluate a real one.
 
+## Accounts Receivable proves the vocabulary-sharing hypothesis
+
+Decision 0015 flagged, without resolving, whether AP and AR could
+genuinely share one field vocabulary. This checks it: a rule using
+only existing vocabulary (`direction`, `older_than_days`,
+`assign_task`) correctly fires AR collection tasks against overdue
+receivables and correctly never fires against equally-overdue payables
+— proven with zero production code changes, only new tests against
+already-built infrastructure. `AR.Collect`, a permission noted as
+having "zero backing capability" since decision 0009, gets its first
+real use anywhere in this codebase. See
+`docs/decisions/0021-accounts-receivable-vocabulary-test.md`, including
+what this genuinely doesn't test — the real AI compiler, and whether
+Expense (no EN 16931 grounding at all) would hold up the same way.
+
 ## The one rule enforced by tooling, not convention
 
 No application code reads a tenant-scoped binding (`env.DB` and similar)
