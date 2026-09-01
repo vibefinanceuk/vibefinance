@@ -24,10 +24,11 @@ import {
 } from "./org-route.js";
 import { requirePermission } from "./enforce.js";
 import { handleAddTeamMember, handleCreateTeam } from "./team-route.js";
-import { handleUpsertInvoice } from "./invoice-facts-route.js";
+import { handleUpsertInvoice, mergeStructuredInvoiceFacts } from "./invoice-facts-route.js";
 import { handleUpsertExpenseReport } from "./expense-facts-route.js";
 import { handleCreateProcess, handleCreateStage } from "./process-route.js";
 import { handleCreateIntakeChannel } from "./intake-channel-route.js";
+import { handleCaptureIntake, handleIntakeStats } from "./intake-capture-route.js";
 import { handleCreateProcessInstance, onTaskCompleted, visitCurrentStage } from "./workflow-engine.js";
 import { handleClaimTask, handleCompleteTask, handleCreateTask } from "./task-route.js";
 import type { Permission } from "./permissions.js";
@@ -288,13 +289,7 @@ async function handleEvaluate(request: Request, env: Env): Promise<Response> {
       return json({ error: t("invoiceDoesNotExist", locale, { invoiceId }) }, 404);
     }
     facts = JSON.parse(headerRow.facts_json) as InvoiceFacts;
-    if (headerRow.invoice_number !== null) facts["BT-1"] = headerRow.invoice_number;
-    if (headerRow.supplier_vat_id !== null) facts["BT-31"] = headerRow.supplier_vat_id;
-    if (headerRow.currency !== null) facts["BT-5"] = headerRow.currency;
-    if (headerRow.issue_date !== null) facts["BT-2"] = headerRow.issue_date;
-    if (headerRow.total_with_vat !== null) facts["BT-112"] = headerRow.total_with_vat;
-    if (headerRow.mandate_channel !== null) facts["mandate.channel"] = headerRow.mandate_channel;
-    if (headerRow.duplicate_confidence !== null) facts["invoice.duplicate_confidence"] = headerRow.duplicate_confidence;
+    facts = mergeStructuredInvoiceFacts(facts, headerRow);
   }
 
   let ruleSet: CompiledRuleSet;
@@ -783,6 +778,46 @@ export default {
         return json({ error: t("invalidJsonBody", resolveLocale(env.LOCALE)) }, 400);
       }
       const result = await handleCreateIntakeChannel(db, createIntakeChannelMatch[1], (body ?? {}) as Record<string, unknown>);
+      return json(result.body, result.status);
+    }
+
+    // Intake capture — decision 0029, the document/receipt ingestion
+    // path decisions 0013/0015/0019/0023/0024/0025/0026 all flagged
+    // without closing. Real product usage — the same as /invoices,
+    // whose own storage logic this reuses directly — so gated the
+    // same way: AP.Validate, licence-checked.
+    const captureMatch = pathname.match(/^\/intake-channels\/([^/]+)\/capture$/);
+    if (captureMatch && request.method === "POST") {
+      const { db } = resolveTenant(request, env);
+      const locale = resolveLocale(env.LOCALE);
+      const licenceState = await readLicenceState(db);
+      if (isBlocked(licenceState)) {
+        return blockedResponse(licenceState, locale);
+      }
+      const auth = await requirePermission(db, request, "AP.Validate");
+      if (!auth.authorized) {
+        return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", locale) }, auth.status);
+      }
+      let body: unknown;
+      try {
+        body = await request.json();
+      } catch {
+        return json({ error: t("invalidJsonBody", locale) }, 400);
+      }
+      const result = await handleCaptureIntake(db, captureMatch[1], (body ?? {}) as Record<string, unknown>);
+      return json(result.body, result.status);
+    }
+
+    // Intake analytics (decision 0029) — real volume/exception
+    // reporting per channel, not just "query D1 directly." The first
+    // GET/read endpoint in this system; unauthenticated for now,
+    // matching the same administrative-visibility reasoning as
+    // /processes and /processes/:id/stages, worth revisiting once
+    // real customer-facing dashboards exist.
+    const intakeStatsMatch = pathname.match(/^\/processes\/([^/]+)\/intake-stats$/);
+    if (intakeStatsMatch && request.method === "GET") {
+      const { db } = resolveTenant(request, env);
+      const result = await handleIntakeStats(db, intakeStatsMatch[1]);
       return json(result.body, result.status);
     }
 

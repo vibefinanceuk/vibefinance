@@ -1,3 +1,4 @@
+import type { InvoiceFacts } from "@vibefinance/shared";
 import type { RouteResult } from "./org-route.js";
 
 /**
@@ -10,6 +11,40 @@ import type { RouteResult } from "./org-route.js";
  * flagged as missing. This bundle is what happens once facts exist,
  * not how they get extracted from a raw document.
  */
+
+/**
+ * Merges an invoice_headers row's structured columns into a parsed
+ * facts object, under each column's real vocabulary field name — only
+ * when the column is actually set. A NULL column must never overwrite
+ * a genuine value already present in facts_json.
+ *
+ * Extracted as a shared function rather than left inline in one route
+ * (decision 0028's own fix, originally written only for /rules/
+ * evaluate) after the exact same gap was found a second time in
+ * intake-capture-route.ts — the same correctness bug shouldn't get a
+ * second, separate place to hide.
+ */
+export interface InvoiceHeaderStructuredColumns {
+  supplier_vat_id: string | null;
+  currency: string | null;
+  issue_date: string | null;
+  total_with_vat: number | null;
+  mandate_channel: string | null;
+  invoice_number: string | null;
+  duplicate_confidence: number | null;
+}
+
+export function mergeStructuredInvoiceFacts(facts: InvoiceFacts, row: InvoiceHeaderStructuredColumns): InvoiceFacts {
+  const merged = { ...facts };
+  if (row.invoice_number !== null) merged["BT-1"] = row.invoice_number;
+  if (row.supplier_vat_id !== null) merged["BT-31"] = row.supplier_vat_id;
+  if (row.currency !== null) merged["BT-5"] = row.currency;
+  if (row.issue_date !== null) merged["BT-2"] = row.issue_date;
+  if (row.total_with_vat !== null) merged["BT-112"] = row.total_with_vat;
+  if (row.mandate_channel !== null) merged["mandate.channel"] = row.mandate_channel;
+  if (row.duplicate_confidence !== null) merged["invoice.duplicate_confidence"] = row.duplicate_confidence;
+  return merged;
+}
 
 interface InvoiceLineInput {
   lineNumber?: unknown;

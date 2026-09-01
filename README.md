@@ -367,6 +367,26 @@ merge was deliberately removed. Fixed generally, for every structured
 column, not just the new ones. See
 `docs/decisions/0028-duplicate-detection.md`.
 
+## Intake capture — the document/receipt ingestion path
+
+The largest, most-repeated gap in this project, flagged across seven
+decisions without ever being closed. Turned out to be almost entirely
+reuse: store facts, create a process instance for a channel's own
+process, visit it immediately — one continuous call, using
+`handleUpsertInvoice`, `handleCreateProcessInstance`, and
+`visitCurrentStage` exactly as they already existed. Intake stays
+deliberately content-agnostic — a thin document still becomes an
+instance and advances normally; content quality is Validate's job,
+caught downstream by a customer's own rule set, not Intake's. The same
+structured-column-merge bug decision 0028 found once in
+`/rules/evaluate` was found a second time here by this bundle's own
+tests — fixed properly this time by extracting the merge into a
+shared function used by both call sites. `intake_capture_events`
+records every capture attempt, accepted or rejected, and
+`GET /processes/:id/intake-stats` is the first real `GET` endpoint in
+this system, built because real analytics was explicitly asked for.
+See `docs/decisions/0029-intake-capture.md`.
+
 ## The one rule enforced by tooling, not convention
 
 No application code reads a tenant-scoped binding (`env.DB` and similar)

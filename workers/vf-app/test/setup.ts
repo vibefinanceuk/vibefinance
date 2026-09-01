@@ -20,6 +20,7 @@ import intakeChannelsSql from "../../../migrations/0011_intake_channels.sql?raw"
 import mandateChannelExpenseReportsSql from "../../../migrations/0012_mandate_channel_and_expense_reports.sql?raw";
 import perLineEvaluationSql from "../../../migrations/0013_per_line_evaluation.sql?raw";
 import duplicateDetectionSql from "../../../migrations/0014_duplicate_detection.sql?raw";
+import intakeCaptureEventsSql from "../../../migrations/0015_intake_capture_events.sql?raw";
 
 // Another known divergence from production, on top of the one below:
 // D1's exec() splits its input by newline and executes each non-empty
@@ -65,6 +66,7 @@ function toOneStatementPerLine(sql: string): string {
 // gets a genuinely clean schema regardless of what the pool does or
 // does not reset.
 const TABLES_IN_DROP_ORDER = [
+  "intake_capture_events",
   "expense_reports",
   "intake_channels",
   "stage_visit_steps",
@@ -110,4 +112,5 @@ export async function applyTestSchema(): Promise<void> {
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(mandateChannelExpenseReportsSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(perLineEvaluationSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(duplicateDetectionSql)));
+  await env.DB.exec(toOneStatementPerLine(stripSqlComments(intakeCaptureEventsSql)));
 }

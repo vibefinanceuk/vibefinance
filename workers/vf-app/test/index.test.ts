@@ -1447,3 +1447,83 @@ describe("per-line evaluation, through the real router (decision 0027)", () => {
     expect(res.status).toBe(422);
   });
 });
+
+describe("intake capture, through the real router (decision 0029)", () => {
+  it("a real capture through a real channel: stores facts, creates an instance, visits it, all in one call — through the actual HTTP route", async () => {
+    await SELF.fetch("https://example.com/processes", { method: "POST", body: JSON.stringify({ id: "p-intake-1", name: "AP Intake" }) });
+    await SELF.fetch("https://example.com/processes/p-intake-1/stages", {
+      method: "POST",
+      body: JSON.stringify({ id: "intake", name: "Intake", sequence: 1 }),
+    });
+    await SELF.fetch("https://example.com/processes/p-intake-1/intake-channels", {
+      method: "POST",
+      body: JSON.stringify({ id: "ic-live-1", name: "Email" }),
+    });
+
+    const res = await SELF.fetch("https://example.com/intake-channels/ic-live-1/capture", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ id: "cap-live-1", facts: {} }),
+    });
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as { instanceId: string; processId: string };
+    expect(body.processId).toBe("p-intake-1");
+
+    const instance = await env.DB.prepare("SELECT status FROM process_instances WHERE id = ?").bind(body.instanceId).first();
+    expect(instance).toEqual({ status: "completed" });
+  });
+
+  it("401s a capture with no credentials", async () => {
+    await SELF.fetch("https://example.com/processes", { method: "POST", body: JSON.stringify({ id: "p-intake-2", name: "AP" }) });
+    await SELF.fetch("https://example.com/processes/p-intake-2/stages", {
+      method: "POST",
+      body: JSON.stringify({ id: "s1", name: "Received", sequence: 1 }),
+    });
+    await SELF.fetch("https://example.com/processes/p-intake-2/intake-channels", {
+      method: "POST",
+      body: JSON.stringify({ id: "ic-live-2", name: "Email" }),
+    });
+    const res = await SELF.fetch("https://example.com/intake-channels/ic-live-2/capture", {
+      method: "POST",
+      body: JSON.stringify({ id: "cap-live-2", facts: {} }),
+    });
+    expect(res.status).toBe(401);
+  });
+
+  it("is blocked when the licence is blocked, matching /invoices's own gate", async () => {
+    await env.DB.prepare("DELETE FROM licence_cache WHERE id = 1").run();
+    const res = await SELF.fetch("https://example.com/intake-channels/anything/capture", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ id: "cap-live-3", facts: {} }),
+    });
+    expect(res.status).toBe(402);
+  });
+
+  it("GET intake-stats reports real volume through the real router — the first GET endpoint in this system", async () => {
+    await SELF.fetch("https://example.com/processes", { method: "POST", body: JSON.stringify({ id: "p-intake-3", name: "AP" }) });
+    await SELF.fetch("https://example.com/processes/p-intake-3/stages", {
+      method: "POST",
+      body: JSON.stringify({ id: "s1", name: "Received", sequence: 1 }),
+    });
+    await SELF.fetch("https://example.com/processes/p-intake-3/intake-channels", {
+      method: "POST",
+      body: JSON.stringify({ id: "ic-live-3", name: "Email" }),
+    });
+    await SELF.fetch("https://example.com/intake-channels/ic-live-3/capture", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ id: "cap-live-4", facts: {} }),
+    });
+    await SELF.fetch("https://example.com/intake-channels/ic-live-3/capture", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ facts: {} }), // no id -> rejected
+    });
+
+    const res = await SELF.fetch("https://example.com/processes/p-intake-3/intake-stats");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { channels: Array<{ channelId: string; accepted: number; rejected: number }> };
+    expect(body.channels).toEqual([{ channelId: "ic-live-3", channelName: "Email", accepted: 1, rejected: 1 }]);
+  });
+});
