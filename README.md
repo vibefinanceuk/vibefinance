@@ -314,6 +314,22 @@ anywhere in this codebase, and is licence-gated the same way
 including a genuine permission-specific `403`. See
 `docs/decisions/0025-intake-channel-in-routes-and-expense-storage.md`.
 
+## Peppol BIS Self-Billing 3.0, and the mobile-app mapping question (design note)
+
+A design conversation, not built: whether an employee expense app
+could feed the formal Peppol Self-Billing 3.0 pipeline rather than
+decision 0022's informal Expense vocabulary. Confirmed via search that
+Self-Billing 3.0 is a genuine EN 16931 CIUS — structurally the same
+`BT-*` vocabulary as AP/AR, just buyer-generated. The real
+distinguishing axis turned out not to be *who* submits an expense but
+*which pipeline* a company routes it through — `rule_sets.vocabulary`
+(decision 0022) already supports both choices with zero further
+changes. The one genuinely new question surfaced: a fact-shape mapping
+layer (raw app fields → formal `BT-*` fields) that has never been
+built anywhere in this system — the same long-standing document
+ingestion gap (decisions 0013/0015/0019), now with a concrete shape.
+See `docs/decisions/0026-peppol-self-billing-and-mobile-mapping.md`.
+
 ## The one rule enforced by tooling, not convention
 
 No application code reads a tenant-scoped binding (`env.DB` and similar)
