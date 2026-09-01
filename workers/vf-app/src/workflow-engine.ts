@@ -23,6 +23,15 @@ import type { RouteResult } from "./org-route.js";
  * real tasks (blocking) or the process completes. Bounded — see
  * MAX_STAGES_PER_VISIT — the same "never Turing-complete" discipline
  * MAX_COMBINATOR_DEPTH already applies to rule nesting.
+ *
+ * Per-line evaluation (decision 0027): a stage whose evaluation_scope
+ * is 'line' evaluates its rule set once per supplied line, merging
+ * header facts with that line's own facts each time — decision 0015's
+ * own confirmed example, each line checked against its own cost
+ * centre threshold independently. Lines must be supplied inline to
+ * this call, the same deliberate scope boundary already applied to
+ * header facts — no auto-loading from invoice_lines by subject id,
+ * matching decision 0019's own already-stated boundary.
  */
 
 const MAX_STAGES_PER_VISIT = 50;
@@ -38,7 +47,10 @@ interface StageRow {
   process_id: string;
   sequence: number;
   rule_set_id: string | null;
+  evaluation_scope: string;
 }
+
+type LineInput = InvoiceFacts & { lineNumber: number };
 
 interface CreateInstanceBody {
   subjectType?: unknown;
@@ -81,7 +93,7 @@ export async function handleCreateProcessInstance(
 async function nextStageInSequence(db: D1Database, processId: string, currentSequence: number): Promise<StageRow | null> {
   return db
     .prepare(
-      "SELECT id, process_id, sequence, rule_set_id FROM process_stages WHERE process_id = ? AND sequence > ? ORDER BY sequence ASC LIMIT 1"
+      "SELECT id, process_id, sequence, rule_set_id, evaluation_scope FROM process_stages WHERE process_id = ? AND sequence > ? ORDER BY sequence ASC LIMIT 1"
     )
     .bind(processId, currentSequence)
     .first<StageRow>();
@@ -92,13 +104,14 @@ async function nextStageInSequence(db: D1Database, processId: string, currentSeq
  * any) against the supplied facts, and cascades forward — advancing
  * through automatic stages, stopping at the first stage whose fired
  * rules spawn real tasks, or completing the instance if it runs off
- * the end of the process. The same facts are used for every stage
- * visited in this one call.
+ * the end of the process. The same facts (and lines, for a 'line'-
+ * scoped stage) are used for every stage visited in this one call.
  */
 export async function visitCurrentStage(
   db: D1Database,
   instanceId: string,
-  facts: InvoiceFacts
+  facts: InvoiceFacts,
+  lines?: LineInput[]
 ): Promise<RouteResult> {
   const instance = await db
     .prepare("SELECT id, process_id, current_stage_id, status FROM process_instances WHERE id = ?")
@@ -117,7 +130,7 @@ export async function visitCurrentStage(
 
   for (let i = 0; i < MAX_STAGES_PER_VISIT; i++) {
     const stage = await db
-      .prepare("SELECT id, process_id, sequence, rule_set_id FROM process_stages WHERE id = ?")
+      .prepare("SELECT id, process_id, sequence, rule_set_id, evaluation_scope FROM process_stages WHERE id = ?")
       .bind(currentStageId)
       .first<StageRow>();
     if (!stage) {
@@ -155,31 +168,62 @@ export async function visitCurrentStage(
     if (!ruleSet) {
       return { status: 500, body: { error: `rule set ${stage.rule_set_id} for stage ${stage.id} does not exist` } };
     }
-    const result = evaluateRuleSet(ruleSet, facts);
+
+    // Header scope: one evaluation, against facts alone — exactly the
+    // existing behaviour, unchanged. Line scope: one evaluation per
+    // supplied line, merging header facts with that line's own facts
+    // each time. Every evaluation runs, and every result is collected,
+    // BEFORE anything is written to D1 — the stage_visits row has to
+    // exist before any task can reference it via its own
+    // stage_visit_id foreign key, so task creation happens last, not
+    // interleaved with evaluation.
+    const evaluations: Array<{ facts: InvoiceFacts; lineNumber: number | null }> =
+      stage.evaluation_scope === "line"
+        ? (lines ?? []).map((line) => ({ facts: { ...facts, ...line }, lineNumber: line.lineNumber }))
+        : [{ facts, lineNumber: null }];
 
     const visitId = crypto.randomUUID();
-    const stepStatements = result.trace.map((step, idx) =>
-      db
-        .prepare(
-          "INSERT INTO stage_visit_steps (stage_visit_id, seq, rule_id, rule_version, matched) VALUES (?, ?, ?, ?, ?)"
-        )
-        .bind(visitId, idx, step.ruleId, step.ruleVersion, step.matched ? 1 : 0)
-    );
+    let anyMatched = false;
+    const routeTargets = new Set<string>();
+    const stepStatements: D1PreparedStatement[] = [];
+    const pendingTaskActions: Array<{ params: Record<string, unknown>; lineNumber: number | null }> = [];
+    let stepSeq = 0;
+
+    for (const evaluation of evaluations) {
+      const result = evaluateRuleSet(ruleSet, evaluation.facts);
+      if (result.outcome === "matched") anyMatched = true;
+
+      for (const step of result.trace) {
+        stepStatements.push(
+          db
+            .prepare(
+              "INSERT INTO stage_visit_steps (stage_visit_id, seq, rule_id, rule_version, matched, line_number) VALUES (?, ?, ?, ?, ?, ?)"
+            )
+            .bind(visitId, stepSeq++, step.ruleId, step.ruleVersion, step.matched ? 1 : 0, evaluation.lineNumber)
+        );
+      }
+
+      for (const action of result.actions.filter((a) => a.type === "route_to")) {
+        routeTargets.add((action.params?.stage as string) ?? "");
+      }
+      for (const action of result.actions.filter((a) => a.type === "assign_task")) {
+        pendingTaskActions.push({ params: (action.params ?? {}) as Record<string, unknown>, lineNumber: evaluation.lineNumber });
+      }
+    }
+
     await db.batch([
       db
         .prepare("INSERT INTO stage_visits (id, process_instance_id, stage_id, outcome) VALUES (?, ?, ?, ?)")
-        .bind(visitId, currentInstanceId, stage.id, result.outcome),
+        .bind(visitId, currentInstanceId, stage.id, anyMatched ? "matched" : "no_match"),
       ...stepStatements,
     ]);
 
     // route_to (redefined, decision 0018, to mean "advance to this
-    // stage") — collect every distinct target named across all fired
-    // actions. More than one distinct target is genuinely ambiguous;
-    // refused rather than silently resolved, the same discipline as
-    // the compiler's own refusal boundary.
-    const routeTargets = new Set(
-      result.actions.filter((a) => a.type === "route_to").map((a) => (a.params?.stage as string) ?? "")
-    );
+    // stage") — collect every distinct target named across every
+    // fired action, across every line evaluated. More than one
+    // distinct target is genuinely ambiguous; refused rather than
+    // silently resolved, the same discipline as the compiler's own
+    // refusal boundary.
     if (routeTargets.size > 1) {
       return {
         status: 409,
@@ -201,12 +245,13 @@ export async function visitCurrentStage(
     }
 
     // assign_task — spawn a real task for each one, tied to this
-    // visit. Reuses handleCreateTask directly rather than
-    // reimplementing task creation.
-    const assignActions = result.actions.filter((a) => a.type === "assign_task");
+    // visit and, for a line-scope evaluation, to the specific line
+    // responsible. Each matching line spawns its own separate task —
+    // decision 0015's own confirmed behaviour — since different lines
+    // can genuinely need different approvers. Now safe: the
+    // stage_visits row this references was already inserted above.
     let tasksCreated = 0;
-    for (const action of assignActions) {
-      const params = (action.params ?? {}) as Record<string, unknown>;
+    for (const { params, lineNumber } of pendingTaskActions) {
       const createResult = await handleCreateTask(db, {
         id: crypto.randomUUID(),
         stageId: stage.id,
@@ -218,11 +263,14 @@ export async function visitCurrentStage(
         return { status: 500, body: { error: `assign_task fired an invalid task: ${JSON.stringify(createResult.body)}` } };
       }
       const newTaskId = (createResult.body as { id: string }).id;
-      await db.prepare("UPDATE tasks SET stage_visit_id = ? WHERE id = ?").bind(visitId, newTaskId).run();
+      await db
+        .prepare("UPDATE tasks SET stage_visit_id = ?, line_number = ? WHERE id = ?")
+        .bind(visitId, lineNumber, newTaskId)
+        .run();
       tasksCreated++;
     }
 
-    visitsThisCall.push({ stageId: stage.id, outcome: result.outcome, tasksCreated });
+    visitsThisCall.push({ stageId: stage.id, outcome: anyMatched ? "matched" : "no_match", tasksCreated });
 
     if (tasksCreated > 0) {
       // Blocked — real, open tasks now exist for this visit. The
@@ -235,7 +283,7 @@ export async function visitCurrentStage(
     let next: StageRow | null = null;
     if (routeTarget) {
       next = await db
-        .prepare("SELECT id, process_id, sequence, rule_set_id FROM process_stages WHERE id = ?")
+        .prepare("SELECT id, process_id, sequence, rule_set_id, evaluation_scope FROM process_stages WHERE id = ?")
         .bind(routeTarget)
         .first<StageRow>();
     } else {

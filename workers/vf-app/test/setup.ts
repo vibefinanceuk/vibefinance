@@ -18,6 +18,7 @@ import processInstancesSql from "../../../migrations/0009_process_instances_and_
 import ruleSetsVocabularySql from "../../../migrations/0010_rule_sets_vocabulary.sql?raw";
 import intakeChannelsSql from "../../../migrations/0011_intake_channels.sql?raw";
 import mandateChannelExpenseReportsSql from "../../../migrations/0012_mandate_channel_and_expense_reports.sql?raw";
+import perLineEvaluationSql from "../../../migrations/0013_per_line_evaluation.sql?raw";
 
 // Another known divergence from production, on top of the one below:
 // D1's exec() splits its input by newline and executes each non-empty
@@ -106,4 +107,5 @@ export async function applyTestSchema(): Promise<void> {
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(ruleSetsVocabularySql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(intakeChannelsSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(mandateChannelExpenseReportsSql)));
+  await env.DB.exec(toOneStatementPerLine(stripSqlComments(perLineEvaluationSql)));
 }

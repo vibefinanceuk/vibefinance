@@ -1305,3 +1305,78 @@ describe("process instances and stage visits, through the real router (decision 
     expect(res.status).toBe(402);
   });
 });
+
+describe("per-line evaluation, through the real router (decision 0027)", () => {
+  async function seedLineRuleSet(id: string, compiledJson: Record<string, unknown>): Promise<void> {
+    await env.DB.prepare("INSERT INTO rule_sets (id, name, mode, status) VALUES (?, ?, ?, ?)")
+      .bind(id, "test", "first_match", "active")
+      .run();
+    const ruleId = crypto.randomUUID();
+    await env.DB.prepare("INSERT INTO rules (id, rule_set_id, sort_order, enabled) VALUES (?, ?, 0, 1)").bind(ruleId, id).run();
+    await env.DB.prepare(
+      `INSERT INTO rule_versions (rule_id, version, source_text, compiled_json, compiled_by, approved_by, approved_at, effective_from)
+       VALUES (?, 1, ?, ?, ?, ?, ?, ?)`
+    )
+      .bind(ruleId, "test", JSON.stringify(compiledJson), "test-model", "alice", "2026-01-01T00:00:00.000Z", "2026-01-01T00:00:00.000Z")
+      .run();
+  }
+
+  it("a real invoice with two lines, one over threshold: exactly one task, tied to the right line, through the real HTTP route", async () => {
+    await seedLineRuleSet("rs-line-live", {
+      conditions: { field: "BT-131", operator: "greater_than", value: 500 },
+      actions: [{ type: "assign_task", params: { team: "line-team", permission: "AP.Approve" } }],
+    });
+    await SELF.fetch("https://example.com/processes", { method: "POST", body: JSON.stringify({ id: "p-line", name: "Line AP" }) });
+    await SELF.fetch("https://example.com/processes/p-line/stages", {
+      method: "POST",
+      body: JSON.stringify({ id: "s1", name: "Line Review", sequence: 1, ruleSetId: "rs-line-live", evaluationScope: "line" }),
+    });
+    await SELF.fetch("https://example.com/org/teams", { method: "POST", body: JSON.stringify({ id: "line-team", name: "Line Team" }) });
+    await SELF.fetch("https://example.com/org/teams/line-team/members", { method: "POST", body: JSON.stringify({ userId: "test-user" }) });
+
+    const created = await SELF.fetch("https://example.com/processes/p-line/instances", {
+      method: "POST",
+      body: JSON.stringify({ subjectType: "invoice", subjectId: "inv-line-1" }),
+    });
+    const instanceId = (await created.json() as { id: string }).id;
+
+    const res = await SELF.fetch(`https://example.com/process-instances/${instanceId}/visit`, {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({
+        facts: {},
+        lines: [
+          { lineNumber: 1, "BT-131": 100 },
+          { lineNumber: 2, "BT-131": 900 },
+        ],
+      }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { status: string };
+    expect(body.status).toBe("in_progress");
+
+    const task = await env.DB.prepare("SELECT owner_team_id, line_number FROM tasks WHERE stage_id = 's1'")
+      .first<{ owner_team_id: string; line_number: number }>();
+    expect(task).toEqual({ owner_team_id: "line-team", line_number: 2 });
+  });
+
+  it("422s when a supplied line is missing a numeric lineNumber", async () => {
+    await SELF.fetch("https://example.com/processes", { method: "POST", body: JSON.stringify({ id: "p-line-2", name: "Line AP" }) });
+    await SELF.fetch("https://example.com/processes/p-line-2/stages", {
+      method: "POST",
+      body: JSON.stringify({ id: "s1", name: "Received", sequence: 1 }),
+    });
+    const created = await SELF.fetch("https://example.com/processes/p-line-2/instances", {
+      method: "POST",
+      body: JSON.stringify({ subjectType: "invoice", subjectId: "inv-line-2" }),
+    });
+    const instanceId = (await created.json() as { id: string }).id;
+
+    const res = await SELF.fetch(`https://example.com/process-instances/${instanceId}/visit`, {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ facts: {}, lines: [{ amount: 100 }] }),
+    });
+    expect(res.status).toBe(422);
+  });
+});

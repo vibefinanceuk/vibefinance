@@ -32,19 +32,28 @@ interface CreateStageBody {
   name?: unknown;
   sequence?: unknown;
   ruleSetId?: unknown;
+  evaluationScope?: unknown;
 }
+
+const KNOWN_EVALUATION_SCOPES = ["header", "line"] as const;
 
 export async function handleCreateStage(
   db: D1Database,
   processId: string,
   body: CreateStageBody
 ): Promise<RouteResult> {
-  const { id, name, sequence, ruleSetId } = body;
+  const { id, name, sequence, ruleSetId, evaluationScope } = body;
   if (typeof id !== "string" || !id || typeof name !== "string" || !name || typeof sequence !== "number") {
     return { status: 400, body: { error: "id, name (strings) and sequence (number) are required" } };
   }
   if (ruleSetId !== undefined && (typeof ruleSetId !== "string" || !ruleSetId)) {
     return { status: 400, body: { error: "ruleSetId, if provided, must be a non-empty string" } };
+  }
+  if (
+    evaluationScope !== undefined &&
+    !KNOWN_EVALUATION_SCOPES.includes(evaluationScope as (typeof KNOWN_EVALUATION_SCOPES)[number])
+  ) {
+    return { status: 400, body: { error: `evaluationScope, if provided, must be one of: ${KNOWN_EVALUATION_SCOPES.join(", ")}` } };
   }
 
   const processExists = await db.prepare("SELECT id FROM processes WHERE id = ?").bind(processId).first();
@@ -69,10 +78,11 @@ export async function handleCreateStage(
     return { status: 409, body: { error: `sequence ${sequence} is already used by another stage in this process` } };
   }
 
+  const scope = (evaluationScope as string) ?? "header";
   await db
-    .prepare("INSERT INTO process_stages (id, process_id, name, sequence, rule_set_id) VALUES (?, ?, ?, ?, ?)")
-    .bind(id, processId, name, sequence, (ruleSetId as string) ?? null)
+    .prepare("INSERT INTO process_stages (id, process_id, name, sequence, rule_set_id, evaluation_scope) VALUES (?, ?, ?, ?, ?, ?)")
+    .bind(id, processId, name, sequence, (ruleSetId as string) ?? null, scope)
     .run();
 
-  return { status: 201, body: { id, processId, name, sequence, ruleSetId: ruleSetId ?? null } };
+  return { status: 201, body: { id, processId, name, sequence, ruleSetId: ruleSetId ?? null, evaluationScope: scope } };
 }

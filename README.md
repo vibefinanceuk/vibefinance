@@ -330,6 +330,24 @@ built anywhere in this system — the same long-standing document
 ingestion gap (decisions 0013/0015/0019), now with a concrete shape.
 See `docs/decisions/0026-peppol-self-billing-and-mobile-mapping.md`.
 
+## Per-line rule evaluation
+
+`invoice_lines` had been write-only since decision 0017 — every route
+that touched it only ever `DELETE`d and re-`INSERT`ed; nothing ever
+read a line back, confirmed directly rather than assumed. Closed here:
+`process_stages` gains a closed `evaluation_scope` (`'header'`/
+`'line'`, defaulting to `'header'` — full backward compatibility,
+confirmed by the entire pre-existing suite passing unmodified first).
+A `'line'`-scope stage evaluates once per supplied line, merging
+header and line facts each time; each matching line spawns its own
+separate task, decision 0015's own confirmed behavior, now actually
+built. A real ordering hazard was caught during design, not after a
+failing test: `tasks.stage_visit_id`'s own foreign key meant every
+line's evaluation had to be collected before any row was written, not
+interleaved with it — the same class of statement-ordering discipline
+decision 0014 already had to get right once. See
+`docs/decisions/0027-per-line-rule-evaluation.md`.
+
 ## The one rule enforced by tooling, not convention
 
 No application code reads a tenant-scoped binding (`env.DB` and similar)

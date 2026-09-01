@@ -851,7 +851,25 @@ export default {
       if (typeof facts !== "object" || facts === null || Array.isArray(facts)) {
         return json({ error: "facts (object) is required" }, 400);
       }
-      const result = await visitCurrentStage(db, visitMatch[1], facts as InvoiceFacts);
+      // Lines — decision 0027, for a 'line'-scope stage. Optional:
+      // omitted entirely for a header-scope stage, matching the
+      // engine's own default. If provided, each entry needs a real
+      // numeric lineNumber the same way POST /invoices's own lines
+      // input already requires one.
+      const rawLines = ((body ?? {}) as Record<string, unknown>).lines;
+      if (rawLines !== undefined && !Array.isArray(rawLines)) {
+        return json({ error: "lines, if provided, must be an array" }, 400);
+      }
+      const lines = rawLines as Array<Record<string, unknown>> | undefined;
+      if (lines && !lines.every((l) => typeof l.lineNumber === "number")) {
+        return json({ error: "one or more lines is missing a numeric lineNumber" }, 422);
+      }
+      const result = await visitCurrentStage(
+        db,
+        visitMatch[1],
+        facts as InvoiceFacts,
+        lines as Array<InvoiceFacts & { lineNumber: number }> | undefined
+      );
       return json(result.body, result.status);
     }
 

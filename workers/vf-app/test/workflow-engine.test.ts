@@ -252,3 +252,111 @@ describe("visitCurrentStage — route_to", () => {
     expect(result.status).toBe(422);
   });
 });
+
+describe("visitCurrentStage — per-line evaluation (decision 0027)", () => {
+  async function seedTwoLineProcess(): Promise<string> {
+    // Decision 0015's own confirmed example: each line checked
+    // against its own cost centre's threshold, independently.
+    await handleCreateProcess(env.DB, { id: "p1", name: "AP" });
+    await seedRuleSet("rs-line", {
+      conditions: { field: "BT-131", operator: "greater_than", value: 500 },
+      actions: [{ type: "assign_task", params: { team: "team1", permission: "AP.Approve" } }],
+    });
+    await handleCreateStage(env.DB, "p1", { id: "s1", name: "Line Review", sequence: 1, ruleSetId: "rs-line", evaluationScope: "line" });
+    await handleCreateStage(env.DB, "p1", { id: "s2", name: "Payment-eligible", sequence: 2 });
+    await handleCreateTeam(env.DB, { id: "team1", name: "AP Team" });
+    await handleCreateUser(env.DB, { id: "usr1", email: "a@b.com", name: "Alice" });
+    await handleAddTeamMember(env.DB, "team1", "usr1");
+    const created = await handleCreateProcessInstance(env.DB, "p1", { subjectType: "invoice", subjectId: "inv-1" });
+    return (created.body as { id: string }).id;
+  }
+
+  it("a header-scope stage ignores any supplied lines entirely — unchanged, backward-compatible behaviour", async () => {
+    await handleCreateProcess(env.DB, { id: "p1", name: "AP" });
+    await seedRuleSet("rs1", {
+      conditions: { field: "BT-112", operator: "greater_than", value: 1000 },
+      actions: [{ type: "flag" }],
+    });
+    await handleCreateStage(env.DB, "p1", { id: "s1", name: "Approval", sequence: 1, ruleSetId: "rs1" }); // no evaluationScope -> defaults to header
+    const created = await handleCreateProcessInstance(env.DB, "p1", { subjectType: "invoice", subjectId: "inv-1" });
+    const instanceId = (created.body as { id: string }).id;
+
+    const result = await visitCurrentStage(env.DB, instanceId, { "BT-112": 500 }, [
+      { lineNumber: 1, "BT-131": 99999 }, // would match if this were somehow read — it must not be
+    ]);
+    expect((result.body as { status: string }).status).toBe("completed"); // BT-112 500 doesn't match; lines never touched
+  });
+
+  it("two lines, one over threshold: exactly one task is created, tied to the correct line number", async () => {
+    const instanceId = await seedTwoLineProcess();
+    const result = await visitCurrentStage(env.DB, instanceId, {}, [
+      { lineNumber: 1, "BT-131": 100 }, // below threshold
+      { lineNumber: 2, "BT-131": 900 }, // above threshold
+    ]);
+    expect(result.status).toBe(200);
+    expect((result.body as { status: string }).status).toBe("in_progress");
+
+    const tasks = await env.DB.prepare("SELECT line_number FROM tasks WHERE stage_id = 's1'").all<{ line_number: number }>();
+    expect(tasks.results).toEqual([{ line_number: 2 }]);
+  });
+
+  it("two lines, BOTH over threshold: two independent tasks, each tied to its own line", async () => {
+    const instanceId = await seedTwoLineProcess();
+    await visitCurrentStage(env.DB, instanceId, {}, [
+      { lineNumber: 1, "BT-131": 700 },
+      { lineNumber: 2, "BT-131": 900 },
+    ]);
+    const tasks = await env.DB.prepare("SELECT line_number FROM tasks WHERE stage_id = 's1' ORDER BY line_number").all<{
+      line_number: number;
+    }>();
+    expect(tasks.results).toEqual([{ line_number: 1 }, { line_number: 2 }]);
+  });
+
+  it("no line over threshold: no tasks, the instance advances and completes on its own", async () => {
+    const instanceId = await seedTwoLineProcess();
+    const result = await visitCurrentStage(env.DB, instanceId, {}, [
+      { lineNumber: 1, "BT-131": 50 },
+      { lineNumber: 2, "BT-131": 80 },
+    ]);
+    expect((result.body as { status: string }).status).toBe("completed");
+    const taskCount = await env.DB.prepare("SELECT count(*) AS n FROM tasks").first<{ n: number }>();
+    expect(taskCount?.n).toBe(0);
+  });
+
+  it("header facts are merged into every line's evaluation — a line-scope condition can reference header fields too", async () => {
+    await handleCreateProcess(env.DB, { id: "p1", name: "AP" });
+    await seedRuleSet("rs-mixed", {
+      conditions: {
+        all: [
+          { field: "BT-40", operator: "is", value: "US" }, // a header field
+          { field: "BT-131", operator: "greater_than", value: 500 }, // a line field
+        ],
+      },
+      actions: [{ type: "assign_task", params: { team: "team1", permission: "AP.Approve" } }],
+    });
+    await handleCreateStage(env.DB, "p1", { id: "s1", name: "Line Review", sequence: 1, ruleSetId: "rs-mixed", evaluationScope: "line" });
+    await handleCreateTeam(env.DB, { id: "team1", name: "AP Team" });
+    const created = await handleCreateProcessInstance(env.DB, "p1", { subjectType: "invoice", subjectId: "inv-2" });
+    const instanceId = (created.body as { id: string }).id;
+
+    const result = await visitCurrentStage(env.DB, instanceId, { "BT-40": "US" }, [{ lineNumber: 1, "BT-131": 900 }]);
+    expect((result.body as { status: string }).status).toBe("in_progress"); // matched: header US + line over 500
+  });
+
+  it("stage_visit_steps records the line_number for a line-scope evaluation, and NULL for header-scope", async () => {
+    const instanceId = await seedTwoLineProcess();
+    await visitCurrentStage(env.DB, instanceId, {}, [
+      { lineNumber: 1, "BT-131": 100 },
+      { lineNumber: 2, "BT-131": 900 },
+    ]);
+    const steps = await env.DB.prepare(
+      `SELECT line_number, matched FROM stage_visit_steps sv
+       JOIN stage_visits v ON v.id = sv.stage_visit_id
+       WHERE v.stage_id = 's1' ORDER BY sv.seq`
+    ).all<{ line_number: number; matched: number }>();
+    expect(steps.results).toEqual([
+      { line_number: 1, matched: 0 },
+      { line_number: 2, matched: 1 },
+    ]);
+  });
+});
