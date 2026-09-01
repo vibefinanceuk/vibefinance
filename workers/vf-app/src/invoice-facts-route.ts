@@ -26,6 +26,7 @@ interface UpsertInvoiceBody {
   issueDate?: unknown;
   totalWithVat?: unknown;
   mandateChannel?: unknown;
+  invoiceNumber?: unknown;
   facts?: unknown;
   lines?: unknown;
 }
@@ -37,6 +38,48 @@ function isValidLine(line: unknown): line is InvoiceLineInput {
 }
 
 /**
+ * Decision 0028's weighted duplicate score. Supplier is the gate —
+ * without a matching supplier, nothing else is meaningful evidence of
+ * duplication; two different suppliers with a coincidentally similar
+ * amount is just coincidence, not partial duplication. Given a
+ * matching supplier, three independently-weighted signals sum toward
+ * 1.0: an exact invoice number match (0.6, the single strongest
+ * signal — suppliers essentially never legitimately reuse invoice
+ * numbers), an exact total amount match (0.25), and an exact issue
+ * date match (0.15). Deliberately simple and explainable — exact
+ * match only, no fuzzy string matching — easy to justify to an
+ * auditor, the same explainability-over-cleverness discipline this
+ * project has favored everywhere else. Compares against every other
+ * invoice already on file from the same supplier; the maximum score
+ * against any single candidate wins, not a sum across candidates.
+ */
+async function computeDuplicateConfidence(
+  db: D1Database,
+  excludeId: string,
+  supplierVatId: string | null,
+  invoiceNumber: string | null,
+  totalWithVat: number | null,
+  issueDate: string | null
+): Promise<number> {
+  if (!supplierVatId) return 0;
+
+  const candidates = await db
+    .prepare("SELECT invoice_number, total_with_vat, issue_date FROM invoice_headers WHERE supplier_vat_id = ? AND id != ?")
+    .bind(supplierVatId, excludeId)
+    .all<{ invoice_number: string | null; total_with_vat: number | null; issue_date: string | null }>();
+
+  let maxScore = 0;
+  for (const candidate of candidates.results) {
+    let score = 0;
+    if (invoiceNumber !== null && candidate.invoice_number === invoiceNumber) score += 0.6;
+    if (totalWithVat !== null && candidate.total_with_vat === totalWithVat) score += 0.25;
+    if (issueDate !== null && candidate.issue_date === issueDate) score += 0.15;
+    maxScore = Math.max(maxScore, score);
+  }
+  return maxScore;
+}
+
+/**
  * Upsert, not insert-only — an invoice's facts are expected to be
  * refined over an invoice's lifecycle (a correction, an enrichment
  * agent adding a derived fact once the workflow engine exists), the
@@ -44,9 +87,16 @@ function isValidLine(line: unknown): line is InvoiceLineInput {
  * is mutable rather than versioned-and-immutable like rule_versions.
  * Calling this again for the same id replaces the header's facts and
  * fully replaces its line set — never a partial, ambiguous merge.
+ *
+ * Duplicate confidence (decision 0028) is computed and stored on
+ * every upsert — the invoice being submitted, never a retroactive
+ * rescore of anything already on file. An earlier invoice was
+ * submitted first; it shouldn't suddenly read as "a duplicate" just
+ * because something similar arrives later. The later submission is
+ * the one whose score reflects the match.
  */
 export async function handleUpsertInvoice(db: D1Database, body: UpsertInvoiceBody): Promise<RouteResult> {
-  const { id, supplierVatId, currency, issueDate, totalWithVat, mandateChannel, facts, lines } = body;
+  const { id, supplierVatId, currency, issueDate, totalWithVat, mandateChannel, invoiceNumber, facts, lines } = body;
   if (typeof id !== "string" || !id) {
     return { status: 400, body: { error: "id (string) is required" } };
   }
@@ -68,20 +118,37 @@ export async function handleUpsertInvoice(db: D1Database, body: UpsertInvoiceBod
   const now = new Date().toISOString();
   const existing = await db.prepare("SELECT id FROM invoice_headers WHERE id = ?").bind(id).first();
 
+  const resolvedSupplierVatId = (supplierVatId as string) ?? null;
+  const resolvedInvoiceNumber = (invoiceNumber as string) ?? null;
+  const resolvedTotalWithVat = (totalWithVat as number) ?? null;
+  const resolvedIssueDate = (issueDate as string) ?? null;
+
+  const duplicateConfidence = await computeDuplicateConfidence(
+    db,
+    id,
+    resolvedSupplierVatId,
+    resolvedInvoiceNumber,
+    resolvedTotalWithVat,
+    resolvedIssueDate
+  );
+
   const statements = [
     existing
       ? db
           .prepare(
             `UPDATE invoice_headers
-             SET supplier_vat_id = ?, currency = ?, issue_date = ?, total_with_vat = ?, mandate_channel = ?, facts_json = ?, updated_at = ?
+             SET supplier_vat_id = ?, currency = ?, issue_date = ?, total_with_vat = ?, mandate_channel = ?,
+                 invoice_number = ?, duplicate_confidence = ?, facts_json = ?, updated_at = ?
              WHERE id = ?`
           )
           .bind(
-            (supplierVatId as string) ?? null,
+            resolvedSupplierVatId,
             (currency as string) ?? null,
-            (issueDate as string) ?? null,
-            (totalWithVat as number) ?? null,
+            resolvedIssueDate,
+            resolvedTotalWithVat,
             (mandateChannel as string) ?? null,
+            resolvedInvoiceNumber,
+            duplicateConfidence,
             JSON.stringify(facts ?? {}),
             now,
             id
@@ -89,16 +156,19 @@ export async function handleUpsertInvoice(db: D1Database, body: UpsertInvoiceBod
       : db
           .prepare(
             `INSERT INTO invoice_headers
-               (id, supplier_vat_id, currency, issue_date, total_with_vat, mandate_channel, facts_json, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+               (id, supplier_vat_id, currency, issue_date, total_with_vat, mandate_channel,
+                invoice_number, duplicate_confidence, facts_json, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
           )
           .bind(
             id,
-            (supplierVatId as string) ?? null,
+            resolvedSupplierVatId,
             (currency as string) ?? null,
-            (issueDate as string) ?? null,
-            (totalWithVat as number) ?? null,
+            resolvedIssueDate,
+            resolvedTotalWithVat,
             (mandateChannel as string) ?? null,
+            resolvedInvoiceNumber,
+            duplicateConfidence,
             JSON.stringify(facts ?? {}),
             now,
             now
@@ -129,6 +199,6 @@ export async function handleUpsertInvoice(db: D1Database, body: UpsertInvoiceBod
 
   return {
     status: existing ? 200 : 201,
-    body: { id, lineCount: lineInputs.length },
+    body: { id, lineCount: lineInputs.length, duplicateConfidence },
   };
 }

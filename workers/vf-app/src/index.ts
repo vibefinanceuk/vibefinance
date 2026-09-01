@@ -253,18 +253,48 @@ async function handleEvaluate(request: Request, env: Env): Promise<Response> {
   // exists), unlike rule_versions' own immutable-once-activated
   // design. Anyone needing a specific, frozen reproduction still has
   // the inline `facts` path, unchanged.
+  //
+  // A real gap fixed here (decision 0028): the structured columns
+  // (supplier_vat_id and the rest) were stored purely for querying,
+  // never actually merged into what a rule evaluating a persisted
+  // invoice could see — a rule referencing mandate.channel, say,
+  // would never see a value for it unless the caller had separately
+  // duplicated it inside `facts` too. Each structured column is
+  // merged in under its real vocabulary field name, only when it's
+  // actually set — a NULL column must never overwrite a genuine value
+  // already present in facts_json.
   let facts: InvoiceFacts;
   if (inlineFacts) {
     facts = inlineFacts;
   } else {
     const headerRow = await db
-      .prepare("SELECT facts_json FROM invoice_headers WHERE id = ?")
+      .prepare(
+        `SELECT facts_json, supplier_vat_id, currency, issue_date, total_with_vat,
+                mandate_channel, invoice_number, duplicate_confidence
+         FROM invoice_headers WHERE id = ?`
+      )
       .bind(invoiceId)
-      .first<{ facts_json: string }>();
+      .first<{
+        facts_json: string;
+        supplier_vat_id: string | null;
+        currency: string | null;
+        issue_date: string | null;
+        total_with_vat: number | null;
+        mandate_channel: string | null;
+        invoice_number: string | null;
+        duplicate_confidence: number | null;
+      }>();
     if (!headerRow) {
       return json({ error: t("invoiceDoesNotExist", locale, { invoiceId }) }, 404);
     }
     facts = JSON.parse(headerRow.facts_json) as InvoiceFacts;
+    if (headerRow.invoice_number !== null) facts["BT-1"] = headerRow.invoice_number;
+    if (headerRow.supplier_vat_id !== null) facts["BT-31"] = headerRow.supplier_vat_id;
+    if (headerRow.currency !== null) facts["BT-5"] = headerRow.currency;
+    if (headerRow.issue_date !== null) facts["BT-2"] = headerRow.issue_date;
+    if (headerRow.total_with_vat !== null) facts["BT-112"] = headerRow.total_with_vat;
+    if (headerRow.mandate_channel !== null) facts["mandate.channel"] = headerRow.mandate_channel;
+    if (headerRow.duplicate_confidence !== null) facts["invoice.duplicate_confidence"] = headerRow.duplicate_confidence;
   }
 
   let ruleSet: CompiledRuleSet;

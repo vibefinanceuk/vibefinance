@@ -348,6 +348,25 @@ interleaved with it — the same class of statement-ordering discipline
 decision 0014 already had to get right once. See
 `docs/decisions/0027-per-line-rule-evaluation.md`.
 
+## Duplicate detection
+
+`BT-1` (Invoice number) had never been added to the closed vocabulary
+at all — the single most natural anchor for duplicate detection, and
+no rule could reference it before this. `invoice.duplicate_confidence`
+is a weighted score (not a boolean, per the explicit ask): supplier
+match is a hard gate, then invoice number (60%), amount (25%), and
+issue date (15%) sum toward 1.0 given a matching supplier. A
+customer-configurable threshold needed no new mechanism at all — it's
+just an ordinary rule condition using `greater_than`, already in the
+closed vocabulary. Investigating this surfaced a real prerequisite
+bug predating the decision entirely: `invoice_headers`' structured
+columns had been stored purely for querying since decision 0017, but
+never actually merged into what a rule sees when evaluating a
+persisted invoice — confirmed directly by a test that failed when the
+merge was deliberately removed. Fixed generally, for every structured
+column, not just the new ones. See
+`docs/decisions/0028-duplicate-detection.md`.
+
 ## The one rule enforced by tooling, not convention
 
 No application code reads a tenant-scoped binding (`env.DB` and similar)

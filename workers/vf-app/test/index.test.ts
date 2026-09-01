@@ -309,6 +309,73 @@ describe("POST /rules/evaluate", () => {
     expect(body.outcome).toBe("matched"); // only possible if BT-40: "US" was genuinely loaded from storage
   });
 
+  it("a rule referencing mandate.channel — a STRUCTURED column, never inside facts_json — genuinely sees its value when loaded by invoiceId (decision 0028, the real gap fixed alongside duplicate detection)", async () => {
+    const channelRuleSet: CompiledRuleSet = {
+      id: "rs-channel",
+      mode: "first_match",
+      rules: [
+        {
+          id: "email-channel",
+          version: 1,
+          conditions: { field: "mandate.channel", operator: "is", value: "Email" },
+          actions: [{ type: "flag" }],
+        },
+      ],
+    };
+    await env.DB.prepare("INSERT INTO rule_sets (id, name, mode, status) VALUES (?, ?, ?, ?)")
+      .bind("rs-channel", "channel test", "first_match", "active")
+      .run();
+    // mandateChannel supplied as its OWN structured parameter — never
+    // placed inside `facts` at all.
+    await SELF.fetch("https://example.com/invoices", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ id: "inv-channel-1", mandateChannel: "Email", facts: {} }),
+    });
+    const res = await SELF.fetch("https://example.com/rules/evaluate", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ ruleSet: channelRuleSet, invoiceId: "inv-channel-1" }),
+    });
+    const body = (await res.json()) as { outcome: string };
+    expect(body.outcome).toBe("matched");
+  });
+
+  it("a rule referencing invoice.duplicate_confidence sees the real, computed score when loaded by invoiceId", async () => {
+    const dupRuleSet: CompiledRuleSet = {
+      id: "rs-dup-eval",
+      mode: "first_match",
+      rules: [
+        {
+          id: "high-confidence",
+          version: 1,
+          conditions: { field: "invoice.duplicate_confidence", operator: "greater_than", value: 0.5 },
+          actions: [{ type: "assign_task", params: { team: "dup-team", permission: "AP.Approve" } }],
+        },
+      ],
+    };
+    await env.DB.prepare("INSERT INTO rule_sets (id, name, mode, status) VALUES (?, ?, ?, ?)")
+      .bind("rs-dup-eval", "dup test", "first_match", "active")
+      .run();
+    await SELF.fetch("https://example.com/invoices", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ id: "inv-dup-original", supplierVatId: "DE-eval", invoiceNumber: "X1", totalWithVat: 500, facts: {} }),
+    });
+    await SELF.fetch("https://example.com/invoices", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ id: "inv-dup-copy", supplierVatId: "DE-eval", invoiceNumber: "X1", totalWithVat: 500, facts: {} }),
+    });
+    const res = await SELF.fetch("https://example.com/rules/evaluate", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ ruleSet: dupRuleSet, invoiceId: "inv-dup-copy" }),
+    });
+    const body = (await res.json()) as { outcome: string };
+    expect(body.outcome).toBe("matched"); // 0.85 (number + amount match, different/absent date) > 0.5
+  });
+
   it("prefers inline facts over persisted ones when both could apply — inline always wins when explicitly given", async () => {
     await SELF.fetch("https://example.com/invoices", {
       method: "POST",

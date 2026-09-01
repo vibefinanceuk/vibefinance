@@ -13,6 +13,7 @@
 // Business Term id exactly as the standard, the customer's tax adviser,
 // ERP vendor and auditor already use it.
 export const INVOICE_FIELDS = [
+  "BT-1", // invoice number
   "BT-3", // type code
   "BT-5", // currency
   "BT-2", // issue date
@@ -44,6 +45,7 @@ export const DERIVED_FIELDS = [
   "po.variance_pct",
   "mandate.channel",
   "validation.passed",
+  "invoice.duplicate_confidence",
 ] as const;
 
 export const DERIVED_FIELD_PREFIXES = ["term.absent("] as const;
@@ -119,6 +121,7 @@ export type ActionType = (typeof ACTIONS)[number];
 // Kept here rather than duplicated, so a field can never describe
 // itself differently in two places.
 export const FIELD_DESCRIPTIONS: Record<InvoiceField, string> = {
+  "BT-1": "the supplier's own invoice number",
   "BT-3": "type code (e.g. invoice vs. credit note)",
   "BT-5": "currency",
   "BT-2": "issue date",
@@ -152,8 +155,10 @@ export const DERIVED_FIELD_DESCRIPTIONS: Record<DerivedField, string> = {
   // model via this same description, not an exhaustive or enforced
   // list.
   "mandate.channel":
-    "the channel this document arrived through — e.g. Email, Mailroom, EDI, Tax Authority, Supplier Portal (AP); Billing System A, Billing System B, Order Fulfillment A, Order Fulfillment B (AR). A free string, not a closed enum.",
+    "the channel this document arrived through. AP examples: Email, Mailroom, EDI, Tax Authority, Supplier Portal. AR examples: Billing System A, Billing System B, Order Fulfillment A, Order Fulfillment B. A free string, not a closed enum.",
   "validation.passed": "true if the document passed standard validation",
+  "invoice.duplicate_confidence":
+    "a weighted score from 0.0 to 1.0 estimating how likely this invoice is to duplicate another already on file from the same supplier — computed from an exact match on invoice number (60%), total amount (25%), and issue date (15%); zero if the supplier doesn't match at all. Not a boolean — compare it against whatever threshold a rule chooses with greater_than.",
 };
 
 export const EXPENSE_FIELD_DESCRIPTIONS: Record<ExpenseField, string> = {
