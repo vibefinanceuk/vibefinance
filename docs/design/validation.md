@@ -1,7 +1,8 @@
 # Design: Line Extraction and Validation
 
-Status: **design only — nothing here is built.** Written 2 September
-2026, prompted by a real extraction failure.
+Status: **the validation stage is built and verified live** (decision
+0044). Line extraction and multi-page input remain designed only.
+Written 2 September 2026, prompted by a real extraction failure.
 
 ## 1. The failure that prompted this
 

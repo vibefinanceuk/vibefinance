@@ -110,3 +110,46 @@ block an invoice.
 - **Whether validation should also run at intake**, rather than only
   during a stage visit. Explicit is consistent with how every other
   stage works; automatic would be convenient. Unresolved.
+
+---
+
+## Addendum — persisting the result
+
+Found the moment it mattered, live. Establishing whether a real
+invoice had passed validation required joining `stage_visits` to
+`stage_visit_steps`, reading which rule id had matched, and looking
+that rule up to infer what it must have tested.
+
+That is detective work. For a regulatory product, *"why was this
+invoice held?"* should be answerable directly from the record.
+
+Validation results were computed at the start of a stage visit,
+handed to rule evaluation as derived facts, and discarded. The rules
+saw them; nothing else ever did.
+
+`stage_visits` now carries `validation_passed`,
+`validation_failures` and `validation_checked`.
+
+**On the visit, not the invoice.** Validation describes a *moment* of
+evaluation, not a permanent property of a document. The same invoice
+re-visited after a correction produces a second row with its own
+result, and both survive — which is exactly the history an audit
+needs, and exactly what writing onto `invoice_headers` would destroy
+by overwriting. Tested directly: two visits, two verdicts, both
+retained.
+
+**Recorded only for rule-evaluating stages.** An automatic stage
+never consults validation, so claiming a result there would assert
+something that did not happen. Those rows stay NULL.
+
+**All three columns are nullable, and NULL means "not recorded".**
+Every row predating this migration has no honest value to backfill,
+and NULL is genuinely different from "passed". Inventing a value
+would be the same fabrication this whole decision exists to prevent.
+
+Four standing invariants, each watched to fail: the columns move
+together, the verdict is a real boolean, a failure list never appears
+without a verdict, and a passing verdict never carries failures. The
+last would catch a genuine bug — verdict and list come from the same
+result object, so any disagreement means they were written from
+different sources.

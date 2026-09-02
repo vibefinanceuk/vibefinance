@@ -127,7 +127,8 @@ export async function visitCurrentStage(
   // is where facts meet rules, and computing it once for the whole
   // visit means every stage evaluates against the same validation
   // state rather than a shifting one.
-  const facts = mergeValidationFacts(rawFacts, validateInvoiceFacts(rawFacts, lines));
+  const validation = validateInvoiceFacts(rawFacts, lines);
+  const facts = mergeValidationFacts(rawFacts, validation);
   const instance = await db
     .prepare("SELECT id, process_id, current_stage_id, status FROM process_instances WHERE id = ?")
     .bind(instanceId)
@@ -228,8 +229,29 @@ export async function visitCurrentStage(
 
     await db.batch([
       db
-        .prepare("INSERT INTO stage_visits (id, process_instance_id, stage_id, outcome) VALUES (?, ?, ?, ?)")
-        .bind(visitId, currentInstanceId, stage.id, anyMatched ? "matched" : "no_match"),
+        .prepare(
+          // Validation is recorded on the visit, not the invoice: it
+          // describes a MOMENT of evaluation, not a permanent
+          // property of a document. A re-visit after a correction
+          // produces a second row with its own result, and both
+          // survive — which is exactly the history an audit needs and
+          // exactly what writing it onto invoice_headers would
+          // destroy.
+          //
+          // Recorded only for rule-evaluating stages. An automatic
+          // stage never consults validation, so claiming a result
+          // there would assert something that did not happen.
+          "INSERT INTO stage_visits (id, process_instance_id, stage_id, outcome, validation_passed, validation_failures, validation_checked) VALUES (?, ?, ?, ?, ?, ?, ?)"
+        )
+        .bind(
+          visitId,
+          currentInstanceId,
+          stage.id,
+          anyMatched ? "matched" : "no_match",
+          validation.passed ? 1 : 0,
+          validation.failures.join(","),
+          validation.checked.join(",")
+        ),
       ...stepStatements,
     ]);
 

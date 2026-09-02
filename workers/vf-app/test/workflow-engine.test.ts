@@ -429,3 +429,119 @@ describe("validation facts reach rule evaluation (decision 0044)", () => {
     expect((result.body as { visits: { outcome: string }[] }).visits[0].outcome).toBe("matched");
   });
 });
+
+describe("validation results are recorded on the stage visit (0044 addendum)", () => {
+  async function setupWithRule(compiled: Record<string, unknown>) {
+    await handleCreateProcess(env.DB, { id: "p-rec", name: "Recorded" });
+    await seedRuleSet("rs-rec", compiled);
+    await handleCreateStage(env.DB, "p-rec", { id: "s-rec", name: "Check", sequence: 1, ruleSetId: "rs-rec" });
+    const created = await handleCreateProcessInstance(env.DB, "p-rec", {
+      subjectType: "invoice",
+      subjectId: "inv-rec",
+    });
+    return (created.body as { id: string }).id;
+  }
+
+  const ALWAYS = {
+    id: "r1",
+    conditions: { all: [{ field: "BT-1", operator: "is_present" }] },
+    actions: [{ type: "flag", params: {} }],
+  };
+
+  async function visitRow(instanceId: string) {
+    return env.DB.prepare(
+      "SELECT validation_passed, validation_failures, validation_checked FROM stage_visits WHERE process_instance_id = ?"
+    )
+      .bind(instanceId)
+      .first<{ validation_passed: number; validation_failures: string; validation_checked: string }>();
+  }
+
+  it("records a failure, so the audit trail answers 'why was this held' directly", async () => {
+    // The gap this closes: establishing whether a real invoice passed
+    // validation previously meant joining two tables and inferring
+    // from which rule id had matched.
+    const instanceId = await setupWithRule(ALWAYS);
+    await visitCurrentStage(env.DB, instanceId, { "BT-1": "SKELS26003894" });
+
+    const row = await visitRow(instanceId);
+    expect(row?.validation_passed).toBe(0);
+    expect(row?.validation_failures).toBe("total_missing");
+  });
+
+  it("records a pass, with an empty failure list rather than null", async () => {
+    const instanceId = await setupWithRule(ALWAYS);
+    await visitCurrentStage(env.DB, instanceId, { "BT-1": "INV-1", "BT-112": 2518.8 });
+
+    const row = await visitRow(instanceId);
+    expect(row?.validation_passed).toBe(1);
+    expect(row?.validation_failures).toBe("");
+  });
+
+  it("records WHICH checks ran, so a pass cannot quietly mean 'nothing was checked'", async () => {
+    const instanceId = await setupWithRule(ALWAYS);
+    await visitCurrentStage(env.DB, instanceId, {
+      "BT-1": "INV-1",
+      "BT-106": 2099,
+      "BT-110": 419.8,
+      "BT-112": 2518.8,
+    });
+
+    const row = await visitRow(instanceId);
+    expect(row?.validation_checked).toContain("vat_arithmetic");
+    // The line-sum check could not run — no lines were supplied — and
+    // must not appear as though it had.
+    expect(row?.validation_checked).not.toContain("line_sum");
+  });
+
+  it("records every failure, not just the first", async () => {
+    const instanceId = await setupWithRule(ALWAYS);
+    await visitCurrentStage(env.DB, instanceId, {
+      "BT-1": "INV-1",
+      "BT-2": "2026-12-01",
+      "BT-9": "2026-01-01",
+    });
+
+    const row = await visitRow(instanceId);
+    expect(row?.validation_failures).toContain("total_missing");
+    expect(row?.validation_failures).toContain("date_order");
+  });
+
+  it("a re-visit produces its own row, so a correction does not erase the original verdict", async () => {
+    // Why this lives on the visit rather than the invoice: validation
+    // describes a moment, not a permanent property of a document.
+    const instanceId = await setupWithRule(ALWAYS);
+    await visitCurrentStage(env.DB, instanceId, { "BT-1": "INV-1" });
+
+    // Re-open the instance and visit again, this time with a total.
+    await env.DB.prepare(
+      "UPDATE process_instances SET status = 'in_progress', current_stage_id = 's-rec' WHERE id = ?"
+    )
+      .bind(instanceId)
+      .run();
+    await visitCurrentStage(env.DB, instanceId, { "BT-1": "INV-1", "BT-112": 100 });
+
+    const rows = await env.DB.prepare(
+      "SELECT validation_passed FROM stage_visits WHERE process_instance_id = ? ORDER BY created_at, rowid"
+    )
+      .bind(instanceId)
+      .all<{ validation_passed: number }>();
+    expect(rows.results.map((r: { validation_passed: number }) => r.validation_passed)).toEqual([0, 1]);
+  });
+
+  it("an automatic stage claims no validation result at all", async () => {
+    // It never consults validation, so recording a verdict there
+    // would assert something that did not happen.
+    await handleCreateProcess(env.DB, { id: "p-auto", name: "Auto" });
+    await handleCreateStage(env.DB, "p-auto", { id: "s-auto", name: "Received", sequence: 1 });
+    const created = await handleCreateProcessInstance(env.DB, "p-auto", {
+      subjectType: "invoice",
+      subjectId: "inv-auto",
+    });
+    const instanceId = (created.body as { id: string }).id;
+    await visitCurrentStage(env.DB, instanceId, { "BT-1": "INV-1" });
+
+    const row = await visitRow(instanceId);
+    expect(row?.validation_passed).toBeNull();
+    expect(row?.validation_checked).toBeNull();
+  });
+});

@@ -26,6 +26,7 @@ import r2JurisdictionSql from "../../../migrations/0017_r2_jurisdiction.sql?raw"
 import invoiceDocumentsSql from "../../../migrations/0018_invoice_documents.sql?raw";
 import customFieldsSql from "../../../migrations/0019_custom_fields.sql?raw";
 import hybridPdfFallbackSql from "../../../migrations/0020_hybrid_pdf_fallback.sql?raw";
+import stageVisitValidationSql from "../../../migrations/0021_stage_visit_validation.sql?raw";
 
 // Another known divergence from production, on top of the one below:
 // D1's exec() splits its input by newline and executes each non-empty
@@ -126,4 +127,5 @@ export async function applyTestSchema(): Promise<void> {
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(invoiceDocumentsSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(customFieldsSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(hybridPdfFallbackSql)));
+  await env.DB.exec(toOneStatementPerLine(stripSqlComments(stageVisitValidationSql)));
 }
