@@ -410,7 +410,19 @@ export async function handleCaptureImage(
       // A refusal, never a half-populated invoice: the compiler's own
       // discipline, applied to extraction.
       await recordCaptureEvent(db, channelId, "rejected", err.message, null);
-      return { status: 422, body: { error: err.message } };
+      return {
+        status: 422,
+        body: {
+          error: err.message,
+          // The raw model output, truncated. ExtractionRefusal has
+          // always carried this and the route discarded it — which
+          // meant a refusal said WHAT went wrong and never WHAT CAME
+          // BACK. Diagnosing a real multi-page failure took a
+          // code change purely to see the thing the error already
+          // held.
+          rawModelOutput: err.rawModelOutput?.slice(0, 2000),
+        },
+      };
     }
     throw err;
   }
@@ -480,7 +492,19 @@ export async function handleFinalisePendingDocument(
   } catch (err) {
     if (err instanceof ExtractionRefusal) {
       await recordCaptureEvent(db, channelId, "rejected", err.message, null);
-      return { status: 422, body: { error: err.message } };
+      return {
+        status: 422,
+        body: {
+          error: err.message,
+          // The raw model output, truncated. ExtractionRefusal has
+          // always carried this and the route discarded it — which
+          // meant a refusal said WHAT went wrong and never WHAT CAME
+          // BACK. Diagnosing a real multi-page failure took a
+          // code change purely to see the thing the error already
+          // held.
+          rawModelOutput: err.rawModelOutput?.slice(0, 2000),
+        },
+      };
     }
     throw err;
   }

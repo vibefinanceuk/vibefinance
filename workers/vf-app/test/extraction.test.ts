@@ -11,7 +11,8 @@ import {
   type ExtractionModel,
 } from "../src/extraction.js";
 import { resolveVocabulary } from "@vibefinance/shared";
-import { VISION_SHAPES, extractResponseText } from "../src/extraction-model.js";
+import { VISION_SHAPES, extractResponseText, createWorkersAiExtractionModel } from "../src/extraction-model.js";
+import type { AiRunnable } from "../src/compiler-model.js";
 
 /** A model that returns exactly what it's told to. The real model's
  *  accuracy cannot be tested here — env.AI has no local simulation —
@@ -301,7 +302,7 @@ describe("VISION_SHAPES — the confirmed shape", () => {
   it("carries the schema, token budget and zero temperature", () => {
     const built = VISION_SHAPES[0].build("x", [{ bytes: JPEG_BYTES, contentType: "image/jpeg" }], SCHEMA);
     expect(built.guided_json).toBe(SCHEMA);
-    expect(built.max_tokens).toBe(4096);
+    expect(built.max_tokens).toBe(16384);
     expect(built.temperature).toBe(0);
   });
 
@@ -623,5 +624,35 @@ describe("line extraction", () => {
       _confidence: 0.9,
     });
     expect(parseExtractionResponse(formatted).lines[0]["BT-131"]).toBe(1797.47);
+  });
+});
+
+describe("truncation is named, not left as malformed JSON", () => {
+  it("reports a length cut-off as its real cause", async () => {
+    // A JSON document cut off mid-string looks like malformed JSON,
+    // not like a length problem — so without checking finish_reason
+    // the refusal would blame the model's formatting for what is
+    // really a token-budget failure.
+    const truncating: AiRunnable = {
+      run: async () => ({
+        choices: [{ finish_reason: "length", message: { content: '{"invoiceNumber": "SKELS26' } }],
+        usage: { prompt_tokens: 2000, completion_tokens: 4096 },
+      }),
+    };
+    const model = createWorkersAiExtractionModel(truncating);
+    await expect(
+      model.extract("prompt", [{ bytes: new Uint8Array([0xff, 0xd8, 0xff]), contentType: "image/jpeg" }], {})
+    ).rejects.toThrow(/cut off at the token limit/);
+  });
+
+  it("does not cry truncation on a normal response", async () => {
+    const normal: AiRunnable = {
+      run: async () => ({
+        choices: [{ finish_reason: "stop", message: { content: '{"invoiceNumber":"X","_confidence":0.9}' } }],
+      }),
+    };
+    const model = createWorkersAiExtractionModel(normal);
+    const text = await model.extract("prompt", [{ bytes: new Uint8Array([0xff, 0xd8, 0xff]), contentType: "image/jpeg" }], {});
+    expect(JSON.parse(text).invoiceNumber).toBe("X");
   });
 });

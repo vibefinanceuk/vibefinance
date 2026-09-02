@@ -135,7 +135,14 @@ export const VISION_SHAPES: VisionRequestShape[] = [
         },
       ],
       guided_json: schema,
-      max_tokens: 4096,
+      // Raised from 4096 for multi-page documents. A single page of
+      // header fields fits comfortably; a document whose line table
+      // runs to dozens of rows, plus fourteen header fields and a
+      // confidence score, does not — and a response truncated
+      // mid-JSON becomes an unparseable refusal rather than an
+      // honest one. The same max_tokens trap decision 0002's
+      // addendum recorded for the compiler, in a new place.
+      max_tokens: 16384,
       temperature: 0,
     }),
   },
@@ -151,7 +158,20 @@ export function createWorkersAiExtractionModel(ai: AiRunnable, modelId?: string)
       // silent fallback is precisely what made this take three
       // attempts to diagnose.
       const raw = await ai.run(model, VISION_SHAPES[0].build(prompt, images, schema));
-      return extractResponseText(raw);
+      const text = extractResponseText(raw);
+      // Truncation is the likeliest way a multi-page response fails to
+      // parse, and it is INVISIBLE in the text itself — a JSON
+      // document cut off mid-string looks like malformed JSON, not
+      // like a length problem. finish_reason says which it is, so the
+      // refusal can name the real cause instead of guessing.
+      const obj = (raw ?? {}) as Record<string, unknown>;
+      const finishReason = (obj.choices as { finish_reason?: string }[] | undefined)?.[0]?.finish_reason;
+      if (finishReason === "length") {
+        throw new Error(
+          `the model's response was cut off at the token limit (finish_reason: length). The document may have more line items than one response can carry.`
+        );
+      }
+      return text;
     },
   };
 }
