@@ -40,13 +40,32 @@ export async function handleExtractionDiagnostic(
   const prompt =
     "Look at this image. What is the invoice number, and what is the total including VAT? If you cannot see an image at all, say exactly: NO IMAGE RECEIVED.";
 
+  // A real schema, not a placeholder: the question this now has to
+  // answer is whether guided_json itself suppresses the image, which
+  // an empty schema would not exercise.
+  const realSchema = {
+    type: "object",
+    properties: {
+      invoiceNumber: { type: ["string", "null"], description: "the invoice number" },
+      totalWithVat: { type: ["number", "null"], description: "the total including VAT" },
+    },
+    required: [],
+  };
+
+  const variants: { label: string; withSchema: boolean }[] = [
+    { label: "no-guided-json", withSchema: false },
+    { label: "with-guided-json", withSchema: true },
+  ];
+
   const attempts: Record<string, unknown>[] = [];
   for (const shape of VISION_SHAPES) {
-    const built = shape.build(prompt, bytes, contentType, { type: "object" });
-    // The schema is dropped here on purpose — guided_json would force
-    // a shape onto the answer and hide whether the model saw the
-    // image, which is the one thing this endpoint exists to reveal.
-    delete built.guided_json;
+    for (const variant of variants) {
+    const built = shape.build(prompt, bytes, contentType, realSchema);
+    // The variable under test. The diagnostic previously dropped
+    // guided_json to keep the answer readable — which, it turns out,
+    // was the only difference between it working and the real
+    // extraction path failing.
+    if (!variant.withSchema) delete built.guided_json;
     try {
       const raw = await ai.run(model, built);
       const obj = (raw ?? {}) as Record<string, unknown>;
@@ -56,7 +75,7 @@ export async function handleExtractionDiagnostic(
           ? obj.response
           : JSON.stringify(raw).slice(0, 400);
       attempts.push({
-        shape: shape.label,
+        shape: `${shape.label} / ${variant.label}`,
         threw: false,
         // The signal that actually matters. A dropped image leaves
         // this at roughly the prompt's own length; an image that
@@ -68,7 +87,8 @@ export async function handleExtractionDiagnostic(
         answer,
       });
     } catch (err) {
-      attempts.push({ shape: shape.label, threw: true, error: String(err).slice(0, 500) });
+      attempts.push({ shape: `${shape.label} / ${variant.label}`, threw: true, error: String(err).slice(0, 500) });
+    }
     }
   }
 
