@@ -159,6 +159,106 @@ export interface ExpirySweepResult {
 }
 
 /**
+ * How many days before expiry a licence gets warned, and at which
+ * stages. Escalating rather than a single notice — the Blueprint's
+ * own "notice in the product, then notice with a date, then
+ * restriction", staged.
+ *
+ * Exported and injectable rather than hardcoded inside the sweep so
+ * the thresholds are a real, visible, testable value rather than a
+ * magic number, and so a different cadence needs no code change.
+ * The sweep sorts these itself and always applies the most urgent
+ * threshold a licence has genuinely crossed, so a run that missed
+ * several stages (an hourly sweep that didn't fire for a week, say)
+ * still produces the correct, most urgent notice rather than a stale
+ * softer one.
+ */
+export const DEFAULT_WARNING_THRESHOLD_DAYS = [14, 7, 1];
+
+export interface WarningSweepResult {
+  warned: { environmentId: string; thresholdDays: number }[];
+}
+
+const MS_PER_DAY = 86_400_000;
+
+/**
+ * Warns licences approaching expiry — decision 0040.
+ *
+ * Sets status to 'warned' and records which threshold fired, so the
+ * same stage never fires twice. status_reason carries the real,
+ * human-readable notice ("expires in 7 days") and
+ * status_effective_at carries the actual expiry date — both already
+ * flow through the signed token into vf-app, so the product surface
+ * needs no new plumbing to display this.
+ *
+ * Deliberately never touches a licence that is already 'blocked': a
+ * blocked licence has either expired or been blocked for another
+ * reason entirely, and neither is something to warn about. Nor does
+ * it touch an open-ended licence — there is nothing to warn about
+ * when there is no expiry.
+ *
+ * Runs before the expiry sweep in the scheduled handler, so a licence
+ * that crosses its expiry in the same run gets blocked rather than
+ * warned about an expiry that has already happened.
+ */
+export async function warnExpiringLicences(
+  db: D1Database,
+  now: Date = new Date(),
+  thresholdDays: number[] = DEFAULT_WARNING_THRESHOLD_DAYS
+): Promise<WarningSweepResult> {
+  // Ascending: the tightest threshold first, so `find` returns the
+  // MOST urgent one this licence has genuinely crossed. Found by a
+  // failing test — searching descending returns the first (widest)
+  // match instead, so a licence with hours left would be reported as
+  // "expires in 14 days".
+  const sorted = [...thresholdDays].sort((a, b) => a - b);
+  const warned: { environmentId: string; thresholdDays: number }[] = [];
+
+  const candidates = await db
+    .prepare(
+      `SELECT environment_id, valid_to, warned_at_days FROM licences
+       WHERE valid_to IS NOT NULL AND valid_to > ? AND status != 'blocked'`
+    )
+    .bind(now.toISOString())
+    .all<{ environment_id: string; valid_to: string; warned_at_days: number | null }>();
+
+  for (const row of candidates.results) {
+    const daysRemaining = (new Date(row.valid_to).getTime() - now.getTime()) / MS_PER_DAY;
+
+    // The most urgent threshold this licence has genuinely crossed.
+    const due = sorted.find((threshold) => daysRemaining <= threshold);
+    if (due === undefined) continue;
+
+    // Already warned at this stage or a more urgent one — a smaller
+    // warned_at_days means a later, more urgent warning has already
+    // fired, and the sweep must never walk a warning backwards.
+    if (row.warned_at_days !== null && row.warned_at_days <= due) continue;
+
+    await db
+      .prepare(
+        `UPDATE licences
+         SET status = 'warned',
+             status_reason = ?,
+             status_effective_at = ?,
+             warned_at_days = ?,
+             updated_at = datetime('now')
+         WHERE environment_id = ?`
+      )
+      .bind(
+        `expires in ${due} ${due === 1 ? "day" : "days"}`,
+        row.valid_to,
+        due,
+        row.environment_id
+      )
+      .run();
+
+    warned.push({ environmentId: row.environment_id, thresholdDays: due });
+  }
+
+  return { warned };
+}
+
+/**
  * Blocks every licence whose valid_to has passed and which isn't
  * already blocked — decision 0039.
  *

@@ -543,6 +543,46 @@ export default {
       return json(result.body, result.status);
     }
 
+    // The product surface's own read of licence state — decision
+    // 0040. Everything needed to render an in-product notice ("your
+    // trial expires in 7 days"), and nothing else.
+    //
+    // Deliberately NOT licence-gated, for the same reason
+    // /licence/refresh isn't: an endpoint whose entire purpose is to
+    // tell a customer their licence is restricted must stay reachable
+    // when it is. Gating it would hide the notice exactly when it
+    // matters most.
+    //
+    // Reads only the local cache — no network call, matching the
+    // Blueprint's "no network call in the hot path". A UI polling
+    // this on every page load must never depend on vf-licence being
+    // reachable.
+    if (pathname === "/licence/status" && request.method === "GET") {
+      const { db } = resolveTenant(request, env);
+      const state = await readLicenceState(db);
+      if (!state.known) {
+        // Never successfully cached — an honest "we don't know",
+        // never a fabricated "active". A brand-new instance that has
+        // never reached vf-licence is genuinely in this state (the
+        // bootstrap exception, decision 0003).
+        return json({ known: false }, 200);
+      }
+      return json(
+        {
+          known: true,
+          status: state.claims.status,
+          plan: state.claims.plan,
+          // Present only when there's a real notice to show. Both
+          // come straight from the signed token — vf-app never
+          // invents or derives them.
+          statusReason: state.claims.statusReason ?? null,
+          statusEffectiveAt: state.claims.statusEffectiveAt ?? null,
+          volumeEntitlement: state.claims.volumeEntitlement,
+        },
+        200
+      );
+    }
+
     // On-demand usage push (Blueprint's usage_periods, made idempotent
     // and "as fresh as asked for" rather than a once-per-period batch —
     // see docs/decisions/0004-usage-telemetry.md). Deliberately not

@@ -8,6 +8,7 @@ import { handleUpsertLicence } from "../src/licences-route.js";
 import {
   handleProvisionTrial,
   expireOverdueLicences,
+  warnExpiringLicences,
   TRIAL_PLAN,
   TRIAL_DURATION_DAYS,
 } from "../src/provision-route.js";
@@ -266,5 +267,151 @@ describe("expireOverdueLicences — what actually ends a trial", () => {
       .bind("northwind-sandbox")
       .first();
     expect(environment).toEqual({ id: "northwind-sandbox" });
+  });
+});
+
+describe("warnExpiringLicences — the notice stages before restriction", () => {
+  async function seedTrial(customerId: string, validTo: string | null) {
+    await handleCreateCustomer(env.CONTROL_DB, { id: customerId, name: customerId });
+    await handleCreateEnvironment(env.CONTROL_DB, {
+      customerId,
+      kind: "sandbox",
+      region: "eu",
+      instanceUrl: `https://${customerId}.example`,
+    });
+    await handleUpsertLicence(env.CONTROL_DB, {
+      environmentId: `${customerId}-sandbox`,
+      plan: "trial",
+      volumeEntitlement: 500,
+      validFrom: "2026-09-01T00:00:00.000Z",
+      validTo,
+    });
+    return `${customerId}-sandbox`;
+  }
+
+  async function licenceRow(environmentId: string) {
+    return env.CONTROL_DB.prepare(
+      "SELECT status, status_reason, status_effective_at, warned_at_days FROM licences WHERE environment_id = ?"
+    )
+      .bind(environmentId)
+      .first<{ status: string; status_reason: string | null; status_effective_at: string | null; warned_at_days: number | null }>();
+  }
+
+  it("does nothing to a licence still far from expiry", async () => {
+    const id = await seedTrial("faraway", "2026-12-01T00:00:00.000Z");
+    const result = await warnExpiringLicences(env.CONTROL_DB, new Date("2026-09-02T00:00:00.000Z"));
+    expect(result.warned).toEqual([]);
+    expect((await licenceRow(id))?.status).toBe("active");
+  });
+
+  it("warns at the 14-day threshold, recording a real, human-readable reason and the actual expiry date", async () => {
+    const id = await seedTrial("northwind", "2026-10-01T00:00:00.000Z");
+    // 13 days out — inside 14, outside 7.
+    const result = await warnExpiringLicences(env.CONTROL_DB, new Date("2026-09-18T00:00:00.000Z"));
+    expect(result.warned).toEqual([{ environmentId: id, thresholdDays: 14 }]);
+
+    const row = await licenceRow(id);
+    expect(row?.status).toBe("warned");
+    expect(row?.status_reason).toBe("expires in 14 days");
+    expect(row?.status_effective_at).toBe("2026-10-01T00:00:00.000Z");
+    expect(row?.warned_at_days).toBe(14);
+  });
+
+  it("escalates through 14 -> 7 -> 1 as expiry approaches", async () => {
+    const id = await seedTrial("northwind", "2026-10-01T00:00:00.000Z");
+
+    await warnExpiringLicences(env.CONTROL_DB, new Date("2026-09-18T00:00:00.000Z"));
+    expect((await licenceRow(id))?.warned_at_days).toBe(14);
+
+    await warnExpiringLicences(env.CONTROL_DB, new Date("2026-09-26T00:00:00.000Z"));
+    expect((await licenceRow(id))?.warned_at_days).toBe(7);
+
+    await warnExpiringLicences(env.CONTROL_DB, new Date("2026-09-30T12:00:00.000Z"));
+    const final = await licenceRow(id);
+    expect(final?.warned_at_days).toBe(1);
+    expect(final?.status_reason).toBe("expires in 1 day"); // singular, not "1 days"
+  });
+
+  it("never fires the same threshold twice — the property a future email sender depends on", async () => {
+    const id = await seedTrial("northwind", "2026-10-01T00:00:00.000Z");
+    const now = new Date("2026-09-18T00:00:00.000Z");
+
+    const first = await warnExpiringLicences(env.CONTROL_DB, now);
+    expect(first.warned).toHaveLength(1);
+
+    // The hourly sweep runs again, and again, and again.
+    const second = await warnExpiringLicences(env.CONTROL_DB, now);
+    const third = await warnExpiringLicences(env.CONTROL_DB, new Date("2026-09-19T00:00:00.000Z"));
+    expect(second.warned).toEqual([]);
+    expect(third.warned).toEqual([]);
+    expect((await licenceRow(id))?.warned_at_days).toBe(14);
+  });
+
+  it("never walks a warning backwards — a 1-day warning is not undone by a later 14-day check", async () => {
+    const id = await seedTrial("northwind", "2026-10-01T00:00:00.000Z");
+    await warnExpiringLicences(env.CONTROL_DB, new Date("2026-09-30T12:00:00.000Z"));
+    expect((await licenceRow(id))?.warned_at_days).toBe(1);
+
+    // A sweep with a wider threshold set must not regress it.
+    await warnExpiringLicences(env.CONTROL_DB, new Date("2026-09-30T13:00:00.000Z"), [14, 7, 1]);
+    expect((await licenceRow(id))?.warned_at_days).toBe(1);
+  });
+
+  it("jumps straight to the most urgent threshold when several are crossed at once — a missed sweep never softens the notice", async () => {
+    const id = await seedTrial("northwind", "2026-10-01T00:00:00.000Z");
+    // Nothing ran for weeks; now only hours remain.
+    const result = await warnExpiringLicences(env.CONTROL_DB, new Date("2026-09-30T18:00:00.000Z"));
+    expect(result.warned).toEqual([{ environmentId: id, thresholdDays: 1 }]);
+    expect((await licenceRow(id))?.status_reason).toBe("expires in 1 day");
+  });
+
+  it("never warns an open-ended licence — there is nothing to warn about", async () => {
+    const id = await seedTrial("perpetual", null);
+    const result = await warnExpiringLicences(env.CONTROL_DB, new Date("2030-01-01T00:00:00.000Z"));
+    expect(result.warned).toEqual([]);
+    expect((await licenceRow(id))?.status).toBe("active");
+  });
+
+  it("never warns an already-blocked licence", async () => {
+    const id = await seedTrial("blocked", "2026-10-01T00:00:00.000Z");
+    await expireOverdueLicences(env.CONTROL_DB, new Date("2026-10-02T00:00:00.000Z"));
+    expect((await licenceRow(id))?.status).toBe("blocked");
+
+    const result = await warnExpiringLicences(env.CONTROL_DB, new Date("2026-10-02T00:00:00.000Z"));
+    expect(result.warned).toEqual([]);
+    expect((await licenceRow(id))?.status).toBe("blocked");
+  });
+
+  it("never warns about an expiry that has already passed", async () => {
+    const id = await seedTrial("overdue", "2026-09-15T00:00:00.000Z");
+    const result = await warnExpiringLicences(env.CONTROL_DB, new Date("2026-10-01T00:00:00.000Z"));
+    expect(result.warned).toEqual([]);
+    expect((await licenceRow(id))?.status).toBe("active"); // untouched; the expiry sweep's job, not this one's
+  });
+
+  it("respects a custom threshold set rather than hardcoding 14/7/1", async () => {
+    const id = await seedTrial("custom", "2026-10-01T00:00:00.000Z");
+    const result = await warnExpiringLicences(env.CONTROL_DB, new Date("2026-09-04T00:00:00.000Z"), [30]);
+    expect(result.warned).toEqual([{ environmentId: id, thresholdDays: 30 }]);
+  });
+
+  it("the real sequence: warned before expiry, blocked at it — the Blueprint's own staging", async () => {
+    const id = await seedTrial("northwind", "2026-10-01T00:00:00.000Z");
+
+    // Notice.
+    await warnExpiringLicences(env.CONTROL_DB, new Date("2026-09-18T00:00:00.000Z"));
+    expect((await licenceRow(id))?.status).toBe("warned");
+
+    // Notice with a date, more urgently.
+    await warnExpiringLicences(env.CONTROL_DB, new Date("2026-09-30T12:00:00.000Z"));
+    const warned = await licenceRow(id);
+    expect(warned?.status_reason).toBe("expires in 1 day");
+    expect(warned?.status_effective_at).toBe("2026-10-01T00:00:00.000Z");
+
+    // Restriction.
+    await expireOverdueLicences(env.CONTROL_DB, new Date("2026-10-01T00:00:00.000Z"));
+    const blocked = await licenceRow(id);
+    expect(blocked?.status).toBe("blocked");
+    expect(blocked?.status_reason).toBe("expired");
   });
 });

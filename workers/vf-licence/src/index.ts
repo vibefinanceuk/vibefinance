@@ -28,7 +28,7 @@ import {
   handleRejectSignupRequest,
   handleRecordProvisioning,
 } from "./signup-route.js";
-import { handleProvisionTrial, expireOverdueLicences } from "./provision-route.js";
+import { handleProvisionTrial, expireOverdueLicences, warnExpiringLicences } from "./provision-route.js";
 import { extractBearerToken, isValidAdminKey, isValidEnvironmentKey } from "./auth.js";
 
 export interface Env {
@@ -309,6 +309,12 @@ export default {
   async scheduled(_event: ScheduledController, env: Env): Promise<void> {
     if (!env.CONTROL_DB) return;
     try {
+      // Warn first, then expire — deliberately in that order. A
+      // licence crossing its expiry in the same run should be
+      // blocked, not warned about an expiry that has already
+      // happened; warnExpiringLicences ignores anything already past
+      // valid_to, and expireOverdueLicences then blocks it.
+      await warnExpiringLicences(env.CONTROL_DB);
       await expireOverdueLicences(env.CONTROL_DB);
     } catch {
       // Deliberately silent, matching vf-app's own scheduled handler:

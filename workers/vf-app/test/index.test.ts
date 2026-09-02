@@ -1791,3 +1791,86 @@ describe("document upload/retrieval routes are wired in, through the real router
     expect(res.status).toBe(500);
   });
 });
+
+describe("GET /licence/status — what the product surface reads (decision 0040)", () => {
+  async function cacheClaims(claims: Record<string, unknown>) {
+    await env.DB.prepare("DELETE FROM licence_cache WHERE id = 1").run();
+    await env.DB.prepare("INSERT INTO licence_cache (id, claims_json, fetched_at) VALUES (1, ?, ?)")
+      .bind(JSON.stringify(claims), new Date().toISOString())
+      .run();
+  }
+
+  const BASE = {
+    customerId: "northwind-sandbox",
+    plan: "trial",
+    features: [],
+    volumeEntitlement: 500,
+    issuedAt: new Date().toISOString(),
+    expiresAt: new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString(),
+  };
+
+  it("reports an honest 'unknown' when nothing has ever been cached, never a fabricated 'active'", async () => {
+    await env.DB.prepare("DELETE FROM licence_cache WHERE id = 1").run();
+    const res = await SELF.fetch("https://example.com/licence/status");
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ known: false });
+  });
+
+  it("surfaces a real expiry warning, with the reason and date the sweep recorded", async () => {
+    await cacheClaims({
+      ...BASE,
+      status: "warned",
+      statusReason: "expires in 7 days",
+      statusEffectiveAt: "2026-10-01T00:00:00.000Z",
+    });
+    const res = await SELF.fetch("https://example.com/licence/status");
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body).toEqual({
+      known: true,
+      status: "warned",
+      plan: "trial",
+      statusReason: "expires in 7 days",
+      statusEffectiveAt: "2026-10-01T00:00:00.000Z",
+      volumeEntitlement: 500,
+    });
+  });
+
+  it("reports nulls rather than omitting the fields when there's no notice to show", async () => {
+    await cacheClaims({ ...BASE, status: "active" });
+    const res = await SELF.fetch("https://example.com/licence/status");
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body.status).toBe("active");
+    expect(body.statusReason).toBeNull();
+    expect(body.statusEffectiveAt).toBeNull();
+  });
+
+  it("stays reachable when the licence is blocked — the whole point of not gating it", async () => {
+    await cacheClaims({
+      ...BASE,
+      status: "blocked",
+      statusReason: "expired",
+      statusEffectiveAt: "2026-10-01T00:00:00.000Z",
+    });
+    const res = await SELF.fetch("https://example.com/licence/status");
+    // Specifically NOT 402 — an endpoint whose job is to explain the
+    // restriction must work while restricted.
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body.status).toBe("blocked");
+    expect(body.statusReason).toBe("expired");
+  });
+
+  it("never leaks anything beyond what a notice needs — no token, no claims dump", async () => {
+    await cacheClaims({ ...BASE, status: "active" });
+    const res = await SELF.fetch("https://example.com/licence/status");
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(Object.keys(body).sort()).toEqual([
+      "known",
+      "plan",
+      "status",
+      "statusEffectiveAt",
+      "statusReason",
+      "volumeEntitlement",
+    ]);
+  });
+});

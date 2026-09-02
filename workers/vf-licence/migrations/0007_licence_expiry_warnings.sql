@@ -1,0 +1,41 @@
+-- 0007_licence_expiry_warnings.sql
+-- Decision 0040 — staged expiry warnings.
+--
+-- The Blueprint's own staging for the licence lifecycle is "notice in
+-- the product, then notice with a date, then restriction". Decision
+-- 0039 built the restriction (the expiry sweep, blocking an overdue
+-- licence). Neither notice stage existed: a trial went from fully
+-- working to 402 with no warning at all, and decision 0039's own
+-- open-items list named this directly.
+--
+-- The 'warned' status has existed since 0001 and is fully plumbed
+-- through the signed token and vf-app's own claims-shape check, but
+-- nothing has ever set it. This migration is what makes it real.
+--
+-- Why a column rather than relying on status alone: the warning is
+-- staged across several thresholds (14, 7 and 1 day by default). If
+-- the sweep only set status = 'warned', it could not tell a licence
+-- warned at 14 days from one warned at 7, and would have no way to
+-- avoid re-firing the same warning on every hourly run. That is
+-- tolerable for an in-product banner, which simply reads the current
+-- state, but it would be a genuine problem for the email
+-- notification this deliberately leaves for later: three identical
+-- emails, or one every hour, is worse than none.
+--
+-- Storing the threshold itself (an integer number of days) rather
+-- than a boolean or a timestamp is what makes "have we already
+-- warned at this stage" answerable directly, and makes a future
+-- email sender's "which stage is this" trivial.
+ALTER TABLE licences ADD COLUMN warned_at_days INTEGER;
+
+-- Standing invariant: a recorded warning threshold is always a real,
+-- positive number of days. 0 or negative would mean the sweep
+-- computed a threshold from an already-expired licence and recorded
+-- it as a warning, which is a bug -- an expired licence is blocked,
+-- not warned.
+-- ASSERT ALWAYS: SELECT count(*) FROM licences WHERE warned_at_days IS NOT NULL AND warned_at_days <= 0 == 0
+
+-- Standing invariant: only a licence with a real expiry date can
+-- carry an expiry warning. Warning an open-ended licence would be
+-- meaningless -- there is nothing for it to be warned about.
+-- ASSERT ALWAYS: SELECT count(*) FROM licences WHERE warned_at_days IS NOT NULL AND valid_to IS NULL == 0

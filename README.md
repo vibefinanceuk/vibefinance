@@ -586,6 +586,24 @@ was removed, because SQL's three-valued logic already covered the
 case; the test's comment now says exactly what it does and doesn't
 prove. See `docs/decisions/0039-control-plane-provisioning.md`.
 
+## Staged expiry warnings, and making 'warned' real
+
+Closes the gap decision 0039 named: the expiry sweep blocked a trial
+and told nobody, so a customer met their expiry as a 402 mid-task. The
+mechanism already existed — `'warned'` has been in the schema since
+0001, carried through the signed token, accepted by vf-app's own
+claims check, and never once set by anything. This makes it real, with
+no token-format change at all. Warnings stage at 14, 7 and 1 days
+(configurable), and `warned_at_days` records which stage fired so the
+same notice never repeats — costing one column now rather than a
+schema change when email arrives. `GET /licence/status` on vf-app
+gives the product surface something to read: deliberately not
+licence-gated (an endpoint explaining a restriction must work while
+restricted — watched to fail) and no network call. A real bug was
+caught here: searching thresholds largest-first meant a licence six
+hours from expiry would have been shown "expires in 14 days". See
+`docs/decisions/0040-expiry-warnings.md`.
+
 ## The one rule enforced by tooling, not convention
 
 No application code reads a tenant-scoped binding (`env.DB` and similar)
