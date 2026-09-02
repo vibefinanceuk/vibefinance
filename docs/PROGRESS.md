@@ -131,6 +131,14 @@ production environment, and migrating configuration between them.
 Things that are built but not proven, kept separate from things that
 are simply absent.
 
+**A prompt instruction is not a safety property.** The extraction
+prompt forbids calculation outright, and on a real document the model
+calculated anyway — reporting a total printed nowhere on the page,
+contradicting its own extracted lines. The same instruction held on a
+different scan of the same page. Compliance is inconsistent, not
+absent, which is harder to design around. Validation caught it;
+nothing that matters should rest on an instruction alone.
+
 **The extraction confidence score may mean nothing.** It reported
 `0.9` while the model was receiving no image at all, and `1.0` on a
 genuinely correct extraction. The design routes low-confidence

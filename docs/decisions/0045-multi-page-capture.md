@@ -1,7 +1,10 @@
 # 0045 — Multi-page invoice capture
 
-Status: settled, 2 September 2026. Closes the gap decision 0044's
-addendum named as needing its own design.
+Status: **built, and not working against real documents.** The
+mechanism is sound and tested; two real 1.5MB and 2.8MB scans exceed
+the model's time budget when sent together. See the addendum — it
+records what was learned, including a finding about prompt
+instructions that matters well beyond this decision.
 
 ## The failure
 
@@ -100,3 +103,99 @@ Page one's lines plus page two's total now validate together:
   cap exists; a page cap does not.
 - **PDFs still cannot be split into pages** inside a Worker, so a
   multi-page PDF must be exported to images first.
+
+---
+
+## Addendum — what the real documents showed
+
+Two genuine scans of the freight invoice, page 1 at 1.5MB and page 2
+at 2.8MB, both PNG.
+
+### Multi-page times out, and the cause is size
+
+Sent together, the finalise call fails with `AiError 3046: Request
+timeout`. Sent alone, **page 1 extracts perfectly** — better than the
+82KB JPEG of the same page had, in fact: nine of twelve fields where
+that managed five, all eight line items, and the supplier VAT
+correctly distinguished from the client's for the first time.
+
+So the constraint is not page count and not resolution. A single
+1.5MB image is comfortable; 4.3MB together is not. The threshold sits
+somewhere between, and has not been measured.
+
+Two viable routes, neither built:
+
+- **Downscale before sending.** Two 400KB JPEGs would sit well inside
+  the working range. Simple, but pushes the constraint onto whoever
+  uploads.
+- **One call per page, merged in code.** Each call stays the size
+  already known to work, and handles a five-page invoice as easily as
+  a two-page one. Merging looked like inventing an answer when this
+  was first designed; the real documents show otherwise — page 1
+  carries the lines and header, page 2 the totals. They are
+  complementary, not competing, so "first non-null value in page
+  order" is an honest rule rather than a fudge.
+
+### Three crashes, one class of bug
+
+Diagnosing the above took three rounds, and two of the failures were
+mine:
+
+1. A truncation check thrown as a plain `Error` rather than an
+   `ExtractionRefusal`, escaping a catch that handles only refusals.
+2. `AiError` doing exactly the same thing from a different origin.
+
+The second is the instructive one. The fix for the first handled
+precisely the one throw being thought about, which was treating the
+symptom. **Anything the model call can raise has to be caught**,
+because the caller's contract is that extraction either returns text
+or refuses. `loadPendingPages` had the identical gap and was fixed by
+looking rather than by being hit.
+
+`wrangler tail` named the real cause in seconds after three rounds of
+reasoning from symptoms had not. Worth reaching for far earlier.
+
+## The finding that matters beyond this decision
+
+**A prompt instruction is not a safety property.**
+
+The extraction prompt forbids calculation outright. Every monetary
+field's description says "as PRINTED" and "never sum the lines
+yourself". Decision 0044 was built on that instruction holding.
+
+On the 1.5MB scan of page 1, the model **calculated anyway** —
+reporting `BT-106`, `BT-112` and `BT-115` as 2,272.47, a figure
+printed nowhere on the page. Its own extracted lines sum to 3,137.47.
+It contradicted itself, confidently, at 0.9.
+
+The same instruction held on the 82KB JPEG of the same page, where
+those fields correctly came back null. So compliance is
+**inconsistent** — not absent, which would be easy to design around,
+but unreliable in a way that cannot be tested for by trying it once.
+
+### What caught it
+
+Validation. All five checks ran for the first time, and `line_sum`
+failed: the stated total did not match the lines the same response
+had produced. Every other check passed, so the failure is specific
+and legible — not "something is wrong" but "the total does not match
+its lines". A rule fired, and a human has a task waiting.
+
+No fabricated figure reached anyone.
+
+This is the layered design earning itself in a way that could not
+have been demonstrated deliberately. The extractor misbehaved; a
+deterministic check the platform does exactly caught it in
+milliseconds.
+
+### What follows from it
+
+Anything that actually matters needs a deterministic check behind it.
+Instructions shape behaviour and are worth writing carefully, but
+they cannot be relied on for correctness — and a design that assumes
+otherwise is one bad response away from a silent error.
+
+That principle already ran through the compiler's refusal boundary,
+the worked-example gate, and the closed vocabulary. This is the first
+time it has been demonstrated against a live model contradicting an
+explicit instruction, on a real document, in production.
