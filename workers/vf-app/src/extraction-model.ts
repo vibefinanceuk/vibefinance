@@ -161,7 +161,28 @@ export function createWorkersAiExtractionModel(ai: AiRunnable, modelId?: string)
       // failure would only paper over a real regression — and a
       // silent fallback is precisely what made this take three
       // attempts to diagnose.
-      const raw = await ai.run(model, VISION_SHAPES[0].build(prompt, images, schema));
+      // Any failure from the binding becomes a refusal, never an
+      // escaping exception. Found the hard way: a real two-page
+      // document produced AiError 3046 (request timeout), which is
+      // not an ExtractionRefusal, so it sailed past the capture
+      // route's catch and crashed the Worker with a 1101.
+      //
+      // The earlier fix here handled exactly one throw — the
+      // truncation check — which was treating the symptom. Anything
+      // ai.run can raise has to be caught, because the caller's
+      // contract is that extraction either returns text or refuses.
+      let raw: unknown;
+      try {
+        raw = await ai.run(model, VISION_SHAPES[0].build(prompt, images, schema));
+      } catch (err) {
+        const message = String(err);
+        if (message.includes("3046") || message.toLowerCase().includes("timeout")) {
+          throw new ExtractionRefusal(
+            `the model did not respond in time. A document with many pages or a long line table can exceed the time available — try submitting fewer pages at once.`
+          );
+        }
+        throw new ExtractionRefusal(`the extraction model failed: ${message.slice(0, 300)}`);
+      }
       const text = extractResponseText(raw);
       // Truncation is the likeliest way a multi-page response fails to
       // parse, and it is INVISIBLE in the text itself — a JSON

@@ -692,3 +692,59 @@ describe("a truncated response is a refusal, not a crash", () => {
     }
   });
 });
+
+describe("every model failure becomes a refusal, never a Worker crash", () => {
+  const oneImage = [{ bytes: new Uint8Array([0xff, 0xd8, 0xff]), contentType: "image/jpeg" }];
+
+  it("turns a Workers AI timeout into a refusal naming the real cause", async () => {
+    // The actual failure, from wrangler tail: AiError 3046 escaped
+    // the capture route's catch — which only handles refusals — and
+    // crashed the Worker with a 1101. Two full-page scans plus a
+    // fourteen-field schema exceeded the time available.
+    const timingOut: AiRunnable = {
+      run: async () => {
+        throw new Error("AiError: 3046: Request timeout");
+      },
+    };
+    await expect(
+      createWorkersAiExtractionModel(timingOut).extract("prompt", oneImage, {})
+    ).rejects.toThrow(/did not respond in time/);
+  });
+
+  it("suggests fewer pages, which is the actionable part", async () => {
+    const timingOut: AiRunnable = {
+      run: async () => {
+        throw new Error("AiError: 3046: Request timeout");
+      },
+    };
+    await expect(
+      createWorkersAiExtractionModel(timingOut).extract("prompt", oneImage, {})
+    ).rejects.toThrow(/fewer pages/);
+  });
+
+  it("turns ANY other binding failure into a refusal too", async () => {
+    // The earlier fix handled exactly one throw, which was treating
+    // the symptom. Anything ai.run can raise has to be caught,
+    // because the caller's contract is that extraction either returns
+    // text or refuses.
+    const broken: AiRunnable = {
+      run: async () => {
+        throw new Error("something entirely unexpected");
+      },
+    };
+    await expect(
+      createWorkersAiExtractionModel(broken).extract("prompt", oneImage, {})
+    ).rejects.toThrow(ExtractionRefusal);
+  });
+
+  it("preserves the underlying message, so the cause is not hidden", async () => {
+    const broken: AiRunnable = {
+      run: async () => {
+        throw new Error("model capacity exceeded");
+      },
+    };
+    await expect(
+      createWorkersAiExtractionModel(broken).extract("prompt", oneImage, {})
+    ).rejects.toThrow(/model capacity exceeded/);
+  });
+});

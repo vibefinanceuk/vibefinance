@@ -479,7 +479,20 @@ export async function handleFinalisePendingDocument(
   model: ExtractionModel,
   idOverride?: string
 ): Promise<RouteResult> {
-  const loaded = await loadPendingPages(db, storage, documentId);
+  // R2 reads can fail, and this runs before the extraction try/block —
+  // so without its own guard a storage error escapes as a Worker
+  // exception rather than a response. Same class of gap as the model
+  // call: anything that can throw between the request and the
+  // response has to be turned into one.
+  let loaded;
+  try {
+    loaded = await loadPendingPages(db, storage, documentId);
+  } catch (err) {
+    return {
+      status: 502,
+      body: { error: `the document's stored pages could not be read: ${String(err).slice(0, 300)}` },
+    };
+  }
   if (!loaded.ok) return loaded.response;
   const { pages, channelId } = loaded.result;
 

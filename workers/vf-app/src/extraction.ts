@@ -69,21 +69,22 @@ export interface ExtractionModel {
  * decision 0002's addendum already recorded once, and one that
  * returns a partial JSON document rather than an honest refusal.
  *
- * 30, lowered from 50 after a real two-page document truncated its
- * response even at a 16,384-token ceiling. Still a judgement rather
- * than a measurement: it covers every invoice seen so far (the
- * freight example has eight) with room to spare, while keeping the
- * worst-case response small enough to complete.
+ * 25, arrived at by lowering twice against real failures rather than
+ * chosen up front. A two-page document first truncated its response,
+ * then timed out entirely (AiError 3046) — and both are the same
+ * underlying problem: the response is proportional to what the schema
+ * asks for, so the cap on what is ASKED FOR is what actually bounds
+ * it. Raising the token ceiling only moves the wall.
  *
- * Raising the ceiling alone was not the answer. A response that grows
- * with the document will always find a ceiling eventually, and a
- * truncated one is unusable — so the cap on what is ASKED FOR matters
- * more than the cap on what may be returned.
+ * Still a judgement, not a measurement. It covers every invoice seen
+ * so far (the freight example has eight) with real room to spare. A
+ * document genuinely exceeding it gets an honest refusal naming the
+ * cause, never a silent truncation.
  *
  * Exceeding it is reported, never silently truncated — see
  * `linesTruncated` on the result.
  */
-export const MAX_EXTRACTED_LINES = 30;
+export const MAX_EXTRACTED_LINES = 25;
 
 export const SUPPORTED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"] as const;
 
