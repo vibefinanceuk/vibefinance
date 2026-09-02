@@ -4,6 +4,9 @@ import type { RouteResult } from "./org-route.js";
 import { handleUpsertInvoice, mergeStructuredInvoiceFacts } from "./invoice-facts-route.js";
 import { handleCreateProcessInstance, visitCurrentStage } from "./workflow-engine.js";
 import { extractEmbeddedInvoiceXml, looksLikePdf, PdfExtractionError } from "./pdf-attachment.js";
+import { extractInvoiceFromImage, sniffImageType, ExtractionRefusal, type ExtractionModel } from "./extraction.js";
+import { loadCustomFields } from "./custom-field-route.js";
+import { resolveVocabulary } from "@vibefinance/shared";
 
 /**
  * Document/receipt intake — see docs/decisions/0029-intake-capture.md.
@@ -319,13 +322,17 @@ export async function handleCapturePdf(
 
   if (attachment === null) {
     // An ordinary PDF with no embedded invoice at all — a scan or a
-    // photo. Genuinely needs a vision model, which is the next piece
-    // of work, not something to fake here.
-    await recordCaptureEvent(db, channelId, "rejected", "no embedded invoice; image extraction not yet built", null);
+    // photo. It genuinely needs a vision model, but a PDF cannot be
+    // rasterised to an image inside a Worker (no native renderer, and
+    // PDF.js needs a canvas workerd does not provide), so the image
+    // path cannot be reached from here. Reported honestly rather than
+    // pretending: capture-image accepts JPEG/PNG/WebP directly today.
+    await recordCaptureEvent(db, channelId, "rejected", "image-only PDF; rasterisation not available in a Worker", null);
     return {
       status: 501,
       body: {
-        error: "this PDF carries no embedded invoice, so it needs image extraction, which is not built yet",
+        error:
+          "this PDF carries no embedded invoice, so it would need image extraction — but a PDF cannot be converted to an image inside a Worker. Submit the page as a JPEG or PNG to /capture-image instead.",
       },
     };
   }
@@ -336,6 +343,95 @@ export async function handleCapturePdf(
   const result = await handleCaptureUblXml(db, channelId, attachment.xml, idOverride);
   if (result.status === 201) {
     result.body = { ...result.body, documentPath: "hybrid-embedded-xml", attachmentFilename: attachment.filename };
+  }
+  return result;
+}
+
+/**
+ * Captures a photographed or scanned invoice — decision 0043.
+ *
+ * The last of the three intake paths, and the only one that infers
+ * rather than parses. Deliberately a separate endpoint from
+ * capture-pdf rather than a fallback inside it: a caller submitting an
+ * image knows they are submitting an image, and the difference
+ * between exact and best-effort data should be explicit at the point
+ * of submission, not discovered afterwards.
+ */
+export async function handleCaptureImage(
+  db: D1Database,
+  channelId: string,
+  bytes: Uint8Array,
+  model: ExtractionModel,
+  idOverride?: string
+): Promise<RouteResult> {
+  const channel = await db.prepare("SELECT id FROM intake_channels WHERE id = ?").bind(channelId).first();
+  if (!channel) {
+    return { status: 404, body: { error: `intake channel ${channelId} does not exist` } };
+  }
+
+  if (looksLikePdf(bytes)) {
+    // A real mistake worth catching explicitly: a PDF sent here would
+    // skip the embedded-XML check entirely and go straight to a
+    // model, which for a hybrid invoice would silently substitute
+    // inferred data for mandate-grade data (decision 0042).
+    await recordCaptureEvent(db, channelId, "rejected", "PDF submitted to the image endpoint", null);
+    return {
+      status: 422,
+      body: {
+        error:
+          "this is a PDF, not an image — submit it to /capture-pdf, which checks for an embedded invoice first rather than reading the document as a picture",
+      },
+    };
+  }
+
+  if (!sniffImageType(bytes)) {
+    await recordCaptureEvent(db, channelId, "rejected", "unsupported image format", null);
+    return { status: 422, body: { error: "unsupported image format — expected JPEG, PNG or WebP" } };
+  }
+
+  // The customer's own declared fields are asked for alongside the
+  // standard ones (decision 0041) — resolved here, at the edge, the
+  // same as the compile path.
+  const customFields = await loadCustomFields(db);
+  const vocabulary = resolveVocabulary("invoice", customFields);
+
+  let extraction;
+  try {
+    extraction = await extractInvoiceFromImage(model, bytes, vocabulary);
+  } catch (err) {
+    if (err instanceof ExtractionRefusal) {
+      // A refusal, never a half-populated invoice: the compiler's own
+      // discipline, applied to extraction.
+      await recordCaptureEvent(db, channelId, "rejected", err.message, null);
+      return { status: 422, body: { error: err.message } };
+    }
+    throw err;
+  }
+
+  const { facts, confidence, missingFields } = extraction;
+  const id = idOverride ?? crypto.randomUUID();
+
+  const result = await handleCaptureIntake(db, channelId, {
+    id,
+    invoiceNumber: facts["BT-1"] as string | undefined,
+    issueDate: facts["BT-2"] as string | undefined,
+    currency: facts["BT-5"] as string | undefined,
+    supplierVatId: facts["BT-31"] as string | undefined,
+    totalWithVat: facts["BT-112"] as number | undefined,
+    facts,
+    lines: [],
+  });
+
+  if (result.status === 201) {
+    // Surfaced explicitly rather than buried in facts: a caller must
+    // be able to tell at a glance that this data was inferred, how
+    // confident the model was, and what it could not read.
+    result.body = {
+      ...result.body,
+      documentPath: "image-extraction",
+      confidence,
+      missingFields,
+    };
   }
   return result;
 }

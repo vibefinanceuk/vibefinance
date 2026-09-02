@@ -1,7 +1,7 @@
 import { env } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
 import { applyTestSchema } from "./setup.js";
-import { handleCapturePdf } from "../src/intake-capture-route.js";
+import { handleCapturePdf, handleCaptureImage } from "../src/intake-capture-route.js";
 import { handleCreateProcess, handleCreateStage } from "../src/process-route.js";
 import {
   decodePdf,
@@ -163,5 +163,125 @@ describe("handleCapturePdf — refusals and the configurable fallback", () => {
     await handleCapturePdf(env.DB, "ch-nostore", attachmentNotXml);
     const count = await env.DB.prepare("SELECT count(*) AS n FROM invoice_headers").first<{ n: number }>();
     expect(count?.n).toBe(0);
+  });
+});
+
+describe("handleCaptureImage — the inferred path (decision 0043)", () => {
+  const JPEG_HEADER = [0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10];
+  const jpeg = new Uint8Array(JPEG_HEADER);
+
+  const GOOD = JSON.stringify({
+    "BT-1": "PHOTO-2026-001",
+    "BT-2": "2026-09-02",
+    "BT-5": "EUR",
+    "BT-31": "DE900800700",
+    "BT-112": 1190.0,
+    _confidence: 0.91,
+  });
+
+  const fakeModel = (response: string) => ({ extract: async () => response });
+
+  it("captures a photographed invoice, storing the extracted facts", async () => {
+    await seedChannel("ch-img");
+    const result = await handleCaptureImage(env.DB, "ch-img", jpeg, fakeModel(GOOD));
+    expect(result.status).toBe(201);
+    expect(result.body.documentPath).toBe("image-extraction");
+    expect(result.body.confidence).toBe(0.91);
+
+    const row = await env.DB.prepare(
+      "SELECT invoice_number, supplier_vat_id, total_with_vat FROM invoice_headers WHERE id = ?"
+    )
+      .bind(result.body.id as string)
+      .first();
+    expect(row).toEqual({
+      invoice_number: "PHOTO-2026-001",
+      supplier_vat_id: "DE900800700",
+      total_with_vat: 1190,
+    });
+  });
+
+  it("marks the document path as inferred — a caller must be able to tell this was not parsed", async () => {
+    await seedChannel("ch-marked");
+    const result = await handleCaptureImage(env.DB, "ch-marked", jpeg, fakeModel(GOOD));
+    // The hybrid path reports "hybrid-embedded-xml"; this reports
+    // something visibly different, because the data has genuinely
+    // different provenance.
+    expect(result.body.documentPath).not.toBe("hybrid-embedded-xml");
+    expect(result.body.missingFields).toBeInstanceOf(Array);
+  });
+
+  it("refuses a PDF sent to the image endpoint — it must go through the embedded-XML check first", async () => {
+    await seedChannel("ch-pdf-here");
+    const pdf = new TextEncoder().encode("%PDF-1.7 ...");
+    const result = await handleCaptureImage(env.DB, "ch-pdf-here", pdf, fakeModel(GOOD));
+    expect(result.status).toBe(422);
+    // The real risk this guards: a hybrid PDF read as a picture would
+    // silently substitute inferred data for mandate-grade data.
+    expect(String(result.body.error)).toContain("capture-pdf");
+  });
+
+  it("422s an unsupported format rather than sending it to a model", async () => {
+    await seedChannel("ch-badfmt");
+    const result = await handleCaptureImage(env.DB, "ch-badfmt", new TextEncoder().encode("<Invoice/>"), fakeModel(GOOD));
+    expect(result.status).toBe(422);
+  });
+
+  it("404s an unknown channel", async () => {
+    const result = await handleCaptureImage(env.DB, "no-such-channel", jpeg, fakeModel(GOOD));
+    expect(result.status).toBe(404);
+  });
+
+  it("refuses when the model reads nothing, rather than storing an empty invoice", async () => {
+    await seedChannel("ch-empty");
+    const result = await handleCaptureImage(env.DB, "ch-empty", jpeg, fakeModel(JSON.stringify({ _confidence: 0.1 })));
+    expect(result.status).toBe(422);
+    const count = await env.DB.prepare("SELECT count(*) AS n FROM invoice_headers").first<{ n: number }>();
+    expect(count?.n).toBe(0);
+  });
+
+  it("records a refusal as a real capture event", async () => {
+    await seedChannel("ch-imgevents");
+    await handleCaptureImage(env.DB, "ch-imgevents", jpeg, fakeModel("not json at all"));
+    const events = await env.DB.prepare(
+      "SELECT count(*) AS n FROM intake_capture_events WHERE channel_id = ? AND outcome = 'rejected'"
+    )
+      .bind("ch-imgevents")
+      .first<{ n: number }>();
+    expect(events?.n).toBe(1);
+  });
+
+  it("stores extraction confidence as a real fact, so rules can reference it", async () => {
+    await seedChannel("ch-conf");
+    const result = await handleCaptureImage(env.DB, "ch-conf", jpeg, fakeModel(GOOD));
+    const row = await env.DB.prepare("SELECT facts_json FROM invoice_headers WHERE id = ?")
+      .bind(result.body.id as string)
+      .first<{ facts_json: string }>();
+    const facts = JSON.parse(row!.facts_json);
+    expect(facts["extraction.confidence"]).toBe(0.91);
+  });
+
+  it("asks for the customer's own declared fields alongside the standard ones", async () => {
+    await seedChannel("ch-custom");
+    await env.DB.prepare(
+      "INSERT INTO custom_fields (key, label, type, description) VALUES (?, ?, ?, ?)"
+    )
+      .bind("custom.transport_reference", "Transport Reference", "text", "the carrier consignment reference")
+      .run();
+
+    let seenSchema: Record<string, unknown> | undefined;
+    const spy = {
+      extract: async (_p: string, _i: string, schema: Record<string, unknown>) => {
+        seenSchema = schema;
+        return JSON.stringify({ "BT-1": "X", "custom.transport_reference": "TR-88431", _confidence: 0.9 });
+      },
+    };
+    const result = await handleCaptureImage(env.DB, "ch-custom", jpeg, spy);
+    expect(result.status).toBe(201);
+    expect((seenSchema as { properties: Record<string, unknown> }).properties["custom.transport_reference"]).toBeTruthy();
+
+    const row = await env.DB.prepare("SELECT facts_json FROM invoice_headers WHERE id = ?")
+      .bind(result.body.id as string)
+      .first<{ facts_json: string }>();
+    expect(JSON.parse(row!.facts_json)["custom.transport_reference"]).toBe("TR-88431");
   });
 });

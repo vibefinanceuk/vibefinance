@@ -29,7 +29,8 @@ import { handleUpsertInvoice, mergeStructuredInvoiceFacts } from "./invoice-fact
 import { handleUpsertExpenseReport } from "./expense-facts-route.js";
 import { handleCreateProcess, handleCreateStage } from "./process-route.js";
 import { handleCreateIntakeChannel } from "./intake-channel-route.js";
-import { handleCaptureIntake, handleCaptureUblXml, handleCapturePdf, handleIntakeStats } from "./intake-capture-route.js";
+import { handleCaptureIntake, handleCaptureUblXml, handleCapturePdf, handleCaptureImage, handleIntakeStats } from "./intake-capture-route.js";
+import { createWorkersAiExtractionModel } from "./extraction-model.js";
 import { getSupplierHistory } from "./invoice-history.js";
 import { handleCreateCustomField, handleListCustomFields } from "./custom-field-route.js";
 import { handleUploadDocument, handleRetrieveDocument } from "./document-route.js";
@@ -47,6 +48,14 @@ export interface Env {
    * why this isn't required the way DB is.
    */
   DOCUMENTS?: R2Bucket;
+  /**
+   * Overrides the vision model used for image extraction (decision
+   * 0043). Config rather than code deliberately: choosing the right
+   * model needs real evaluation against real invoices, and swapping
+   * one in should cost a redeploy, not an edit to
+   * extraction-model.ts. Unset means the documented default.
+   */
+  EXTRACTION_MODEL_ID?: string;
   /**
    * A JWK-format ECDSA P-256 public key, as a genuine nested JSON
    * object in wrangler.jsonc's `vars` — not a JSON-string-inside-a-
@@ -973,6 +982,42 @@ export default {
       }
       const idOverride = url.searchParams.get("id") ?? undefined;
       const result = await handleCapturePdf(db, capturePdfMatch[1], bytes, idOverride);
+      return json(result.body, result.status);
+    }
+
+    // Image intake — decision 0043. The only path that infers rather
+    // than parses, and deliberately its own endpoint: a caller
+    // submitting a photograph knows they are submitting one, and the
+    // difference between exact and best-effort data should be
+    // explicit at submission, not discovered afterwards. Same gating
+    // and raw-body shape as the other two capture routes.
+    const captureImageMatch = pathname.match(/^\/intake-channels\/([^/]+)\/capture-image$/);
+    if (captureImageMatch && request.method === "POST") {
+      const { db } = resolveTenant(request, env);
+      const locale = resolveLocale(env.LOCALE);
+      const licenceState = await readLicenceState(db);
+      if (isBlocked(licenceState)) {
+        return blockedResponse(licenceState, locale);
+      }
+      const auth = await requirePermission(db, request, "AP.Validate");
+      if (!auth.authorized) {
+        return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", locale) }, auth.status);
+      }
+      if (!env.AI) {
+        return json({ error: "the AI binding is not configured, so image extraction is unavailable" }, 500);
+      }
+      const bytes = new Uint8Array(await request.arrayBuffer());
+      if (bytes.length === 0) {
+        return json({ error: "a raw image request body is required" }, 400);
+      }
+      const idOverride = url.searchParams.get("id") ?? undefined;
+      const result = await handleCaptureImage(
+        db,
+        captureImageMatch[1],
+        bytes,
+        createWorkersAiExtractionModel(env.AI, env.EXTRACTION_MODEL_ID),
+        idOverride
+      );
       return json(result.body, result.status);
     }
 
