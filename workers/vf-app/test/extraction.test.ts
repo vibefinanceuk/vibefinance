@@ -10,7 +10,7 @@ import {
   type ExtractionModel,
 } from "../src/extraction.js";
 import { resolveVocabulary } from "@vibefinance/shared";
-import { VISION_SHAPES } from "../src/extraction-model.js";
+import { VISION_SHAPES, extractResponseText } from "../src/extraction-model.js";
 
 /** A model that returns exactly what it's told to. The real model's
  *  accuracy cannot be tested here — env.AI has no local simulation —
@@ -341,5 +341,57 @@ describe("coercion and prompt fixes from the live test", () => {
     const schema = buildExtractionSchema() as { properties: Record<string, { description: string }> };
     expect(schema.properties["BT-31"].description).toMatch(/SUPPLIER/);
     expect(schema.properties["BT-48"].description).toMatch(/BUYER/);
+  });
+});
+
+describe("extractResponseText — the real Workers AI response shape", () => {
+  // Captured verbatim from the live diagnostic, not invented. The
+  // structure matters: Workers AI returns BOTH a top-level `response`
+  // AND choices[0].message.content, and reading the wrong one turned
+  // a correct extraction into "no fields could be read".
+  const REAL_GUIDED_RESPONSE = {
+    choices: [
+      {
+        finish_reason: "stop",
+        index: 0,
+        message: {
+          content: '{ \n"invoiceNumber": "MCD2001321-003", \n"totalWithVat": 2518.80 \n}',
+          role: "assistant",
+        },
+      },
+    ],
+    response: "Some unrelated plain-text summary",
+    usage: { prompt_tokens: 1063, completion_tokens: 30 },
+  };
+
+  it("reads the schema-conformant JSON from message.content, not the top-level response string", () => {
+    const text = extractResponseText(REAL_GUIDED_RESPONSE);
+    expect(JSON.parse(text)).toEqual({ invoiceNumber: "MCD2001321-003", totalWithVat: 2518.8 });
+  });
+
+  it("does NOT return the top-level response when it is prose and real JSON exists elsewhere", () => {
+    // The exact bug: "NO IMAGE RECEIVED" (or any prose) was returned
+    // in preference to genuine JSON, and then failed to parse.
+    expect(extractResponseText(REAL_GUIDED_RESPONSE)).not.toContain("unrelated plain-text");
+  });
+
+  it("still handles the classic Workers AI shape, where response IS the JSON", () => {
+    const classic = { response: '{"BT-1":"INV-1"}' };
+    expect(JSON.parse(extractResponseText(classic))).toEqual({ "BT-1": "INV-1" });
+  });
+
+  it("re-serialises an already-parsed object, so the parser has one thing to handle", () => {
+    const parsed = { response: { "BT-1": "INV-1" } };
+    expect(JSON.parse(extractResponseText(parsed))).toEqual({ "BT-1": "INV-1" });
+  });
+
+  it("falls back to prose when there genuinely is no JSON anywhere — so the refusal names what came back", () => {
+    const prose = { response: "NO IMAGE RECEIVED", choices: [{ message: { content: "NO IMAGE RECEIVED" } }] };
+    expect(extractResponseText(prose)).toBe("NO IMAGE RECEIVED");
+  });
+
+  it("never throws on an unrecognised shape", () => {
+    expect(() => extractResponseText({ something: "unexpected" })).not.toThrow();
+    expect(() => extractResponseText(null)).not.toThrow();
   });
 });

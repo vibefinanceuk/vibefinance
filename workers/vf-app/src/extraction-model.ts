@@ -148,29 +148,52 @@ export function createWorkersAiExtractionModel(ai: AiRunnable, modelId?: string)
  * and the cost of them diverging later is higher than the cost of
  * this duplication now.
  */
-function extractResponseText(raw: unknown): string {
+export function extractResponseText(raw: unknown): string {
   if (typeof raw === "string") return raw;
-  if (raw && typeof raw === "object") {
-    const obj = raw as Record<string, unknown>;
-    if (typeof obj.response === "string") return obj.response;
-    // guided_json may surface an already-parsed object rather than a
-    // JSON string, depending on the response shape — re-serialised
-    // here so parseExtractionResponse has one thing to handle.
-    if (obj.response && typeof obj.response === "object") return JSON.stringify(obj.response);
-    const choices = obj.choices;
-    if (Array.isArray(choices) && choices.length > 0) {
-      const message = (choices[0] as Record<string, unknown> | undefined)?.message as
-        | Record<string, unknown>
-        | undefined;
-      if (message && typeof message.content === "string") return message.content;
-    }
-    const result = obj.result;
-    if (result && typeof result === "object") {
-      const nested = (result as Record<string, unknown>).response;
-      if (typeof nested === "string") return nested;
-      if (nested && typeof nested === "object") return JSON.stringify(nested);
-    }
+  if (!raw || typeof raw !== "object") return JSON.stringify(raw);
+  const obj = raw as Record<string, unknown>;
+
+  // Order matters, and getting it wrong is what made a working
+  // extraction look like a total failure.
+  //
+  // Workers AI returns BOTH a top-level `response` string and the
+  // real content at choices[0].message.content. Checking `response`
+  // first looked harmless and was not: with guided_json the schema-
+  // conformant JSON lands in message.content, while `response` can
+  // carry an unrelated plain-text summary. parseExtractionResponse
+  // then failed to parse that prose, refused the whole extraction,
+  // and reported "no fields could be read" — from a model that had
+  // in fact read the invoice correctly.
+  //
+  // So candidates are gathered in order of specificity and the first
+  // one that actually looks like JSON wins, with a plain-string
+  // fallback only if none do.
+  const candidates: unknown[] = [];
+
+  const choices = obj.choices;
+  if (Array.isArray(choices) && choices.length > 0) {
+    const message = (choices[0] as Record<string, unknown> | undefined)?.message as
+      | Record<string, unknown>
+      | undefined;
+    if (message) candidates.push(message.content);
   }
+  candidates.push(obj.response);
+  const result = obj.result;
+  if (result && typeof result === "object") {
+    candidates.push((result as Record<string, unknown>).response);
+  }
+
+  // guided_json sometimes surfaces an already-parsed object rather
+  // than a JSON string; re-serialised so parseExtractionResponse has
+  // exactly one thing to handle.
+  for (const candidate of candidates) {
+    if (candidate && typeof candidate === "object") return JSON.stringify(candidate);
+    if (typeof candidate === "string" && candidate.trimStart().startsWith("{")) return candidate;
+  }
+  for (const candidate of candidates) {
+    if (typeof candidate === "string" && candidate.length > 0) return candidate;
+  }
+
   // Last resort: hand parseExtractionResponse something real to fail
   // on, so the raw shape is visible in the refusal reason rather than
   // this function throwing on an unrecognised response.

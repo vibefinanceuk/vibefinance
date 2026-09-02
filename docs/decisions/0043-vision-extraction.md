@@ -290,3 +290,65 @@ them wrong. A tool that reported what actually happened produced the
 right one immediately. When a component fails silently and the thing
 you are debugging can generate confident output regardless of its
 input, build the instrument first.
+
+---
+
+## Second resolution — the real bug was mine, in the response reader
+
+The shape fix was necessary but not sufficient. Extraction still
+failed while the diagnostic succeeded, with identical model, shape
+and image.
+
+The remaining suspect was `guided_json`: the diagnostic dropped it,
+the real path sent it. A plausible theory — constrained decoding
+suppressing the multimodal path — and **wrong**. The diagnostic,
+extended to run both variants, showed `guided_json` works perfectly:
+
+```
+image_url-data-url / no-guided-json     1063 tokens, correct prose
+image_url-data-url / with-guided-json   1063 tokens,
+    {"invoiceNumber": "MCD2001321-003", "totalWithVat": 2518.80}
+```
+
+Both received the image. The constrained variant returned exactly the
+right structured data.
+
+So the model, the shape, and the schema were all correct. The bug was
+in `extractResponseText`, downstream of everything.
+
+**Workers AI returns the content twice.** There is a top-level
+`response` string *and* the real content at
+`choices[0].message.content`. The reader checked `response` first —
+which looked harmless, and was not. With `guided_json`, the
+schema-conformant JSON lands in `message.content`, while `response`
+can carry unrelated plain text. The reader returned the prose,
+`parseExtractionResponse` could not parse it, and the whole
+extraction was refused with *"no fields could be read from this image
+at all"* — from a model that had read the invoice perfectly.
+
+Candidates are now gathered in order of specificity, and the first
+that actually looks like JSON wins, with a plain-string fallback only
+if none do. Tested against the verbatim response captured from the
+live diagnostic, not an invented shape. Watched to fail: restoring
+the original ordering breaks three tests.
+
+`compiler-model.ts` has the same ordering and is deliberately left
+alone. It has worked correctly in production all day against
+gpt-oss-120b, which evidently puts what it needs in `response`.
+Changing working code on a theory is exactly the mistake that cost
+three attempts here.
+
+### What this whole sequence cost, and why
+
+Four failed attempts. Three from reasoning about documentation
+instead of measuring, one from a plausible theory pursued in place of
+a test. Each produced a confident-looking result that was wrong.
+
+Two signals broke it open, and both were facts rather than claims:
+`usage.prompt_tokens` (46 versus 1063 — what the model *received*),
+and the raw response body (what it *actually returned*, rather than
+what one field of it said).
+
+The general shape: when a component can produce plausible output
+regardless of whether its input arrived, no amount of reading its
+output will tell you what went in. Instrument the boundary.
