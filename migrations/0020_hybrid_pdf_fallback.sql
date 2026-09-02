@@ -1,0 +1,51 @@
+-- 0020_hybrid_pdf_fallback.sql
+-- Decision 0042 — what to do when a PDF declares an embedded invoice
+-- but that invoice cannot be read.
+--
+-- A hybrid PDF (Factur-X in France, ZUGFeRD in Germany) carries a
+-- complete EN 16931 XML invoice as an embedded file. That XML is the
+-- authoritative data: it is what the mandate requires, and it is
+-- structured, not inferred. When it extracts cleanly there is no
+-- decision to make -- it is used, and no model is ever invoked.
+--
+-- The real question is what happens when a PDF looks like a hybrid
+-- and its embedded invoice is malformed, truncated, or unreadable.
+-- There is no single right answer, which is why this is configuration
+-- rather than a hardcoded behaviour:
+--
+--   'refuse'   -- a customer under a real e-invoicing mandate has a
+--                genuine compliance argument for rejecting the
+--                document outright. Silently falling back to reading
+--                a picture of an invoice would substitute inferred
+--                data for mandate-grade data, without anyone being
+--                told. For them, a refusal is the correct and safer
+--                outcome.
+--
+--   'fallback' -- a customer using PDFs informally would rather get
+--                something than nothing, and can accept best-effort
+--                extraction as long as it is visibly marked as such.
+--
+-- 'refuse' is the default deliberately: the safer behaviour is the
+-- one you get without having thought about it, and a customer who
+-- genuinely wants degradation has to say so.
+--
+-- Per channel rather than global, because that is the granularity
+-- where it actually differs: one channel may be a mandate-compliant
+-- supplier integration while another is a shared mailbox anyone can
+-- send a scan to.
+ALTER TABLE intake_channels
+  ADD COLUMN hybrid_pdf_fallback TEXT NOT NULL DEFAULT 'refuse'
+  CHECK (hybrid_pdf_fallback IN ('refuse', 'fallback'));
+
+-- Standing invariant: the policy is always one of the two the capture
+-- route actually understands. Enforced by CHECK at write time too;
+-- restated here as a fact the runner re-checks on every replay,
+-- independent of whether a future change ever drops the constraint.
+-- ASSERT ALWAYS: SELECT count(*) FROM intake_channels WHERE hybrid_pdf_fallback NOT IN ('refuse', 'fallback') == 0
+
+-- Standing invariant: never NULL. A channel with no policy would
+-- leave the capture route with no defined behaviour for exactly the
+-- case this column exists to decide -- and defaulting silently at
+-- read time is how a compliance-relevant setting quietly becomes
+-- whatever the code happened to assume.
+-- ASSERT ALWAYS: SELECT count(*) FROM intake_channels WHERE hybrid_pdf_fallback IS NULL == 0

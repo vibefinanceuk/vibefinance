@@ -3,6 +3,7 @@ import { parseUblInvoice, UblParseError } from "@vibefinance/shared";
 import type { RouteResult } from "./org-route.js";
 import { handleUpsertInvoice, mergeStructuredInvoiceFacts } from "./invoice-facts-route.js";
 import { handleCreateProcessInstance, visitCurrentStage } from "./workflow-engine.js";
+import { extractEmbeddedInvoiceXml, looksLikePdf, PdfExtractionError } from "./pdf-attachment.js";
 
 /**
  * Document/receipt intake — see docs/decisions/0029-intake-capture.md.
@@ -227,6 +228,116 @@ export async function handleCaptureUblXml(
     facts,
     lines,
   });
+}
+
+export type HybridPdfFallback = "refuse" | "fallback";
+
+export interface CapturePdfOutcome {
+  /** How the document was actually handled — never inferred by the
+   *  caller. A hybrid PDF's data is mandate-grade and structured; an
+   *  image-only PDF's would be best-effort and inferred. Conflating
+   *  the two in the response would hide exactly the distinction that
+   *  matters. */
+  documentPath: "hybrid-embedded-xml" | "image-only";
+}
+
+/**
+ * Captures a PDF invoice — decision 0042.
+ *
+ * A hybrid PDF (Factur-X / ZUGFeRD) carries a complete EN 16931 XML
+ * invoice as an embedded file, and that XML is the authoritative
+ * data. So every PDF is checked for one FIRST, and when one is found
+ * it is parsed exactly the way a directly-submitted UBL document
+ * already is — the same parser, the same guarantees, no model, no
+ * confidence score, no loss.
+ *
+ * Sending a hybrid PDF to a vision model would be a genuine
+ * regression: substituting inferred data for structured data that was
+ * already there and already correct. This function exists largely to
+ * make sure that never happens by accident.
+ *
+ * What remains is the case where a PDF genuinely has no embedded
+ * invoice — a scan, or a photograph. That path needs a vision model
+ * and is deliberately not built yet (see docs/design/extraction.md);
+ * it reports 501 rather than pretending to have handled the document.
+ */
+export async function handleCapturePdf(
+  db: D1Database,
+  channelId: string,
+  bytes: Uint8Array,
+  idOverride?: string
+): Promise<RouteResult> {
+  if (!looksLikePdf(bytes)) {
+    const channelExists = await db.prepare("SELECT id FROM intake_channels WHERE id = ?").bind(channelId).first();
+    if (channelExists) {
+      await recordCaptureEvent(db, channelId, "rejected", "not a PDF file", null);
+    }
+    return { status: 422, body: { error: "not a PDF file (missing %PDF- header)" } };
+  }
+
+  const channel = await db
+    .prepare("SELECT id, hybrid_pdf_fallback FROM intake_channels WHERE id = ?")
+    .bind(channelId)
+    .first<{ id: string; hybrid_pdf_fallback: HybridPdfFallback }>();
+  if (!channel) {
+    return { status: 404, body: { error: `intake channel ${channelId} does not exist` } };
+  }
+
+  let attachment: { filename: string; xml: string } | null;
+  try {
+    attachment = await extractEmbeddedInvoiceXml(bytes);
+  } catch (err) {
+    if (err instanceof PdfExtractionError) {
+      // The document declares an embedded invoice and it could not be
+      // read. Whether that is fatal is a real policy question with no
+      // single right answer, so the channel decides (decision 0042).
+      if (channel.hybrid_pdf_fallback === "refuse") {
+        await recordCaptureEvent(db, channelId, "rejected", err.message, null);
+        return {
+          status: 422,
+          body: {
+            error: err.message,
+            detail:
+              "this channel is configured to refuse a hybrid PDF whose embedded invoice cannot be read, rather than fall back to reading the document as an image",
+          },
+        };
+      }
+      // 'fallback' — degrade to the image path, which does not exist
+      // yet. Reported honestly as unimplemented rather than silently
+      // succeeding with nothing extracted.
+      await recordCaptureEvent(db, channelId, "rejected", `${err.message} (fallback to image extraction not yet built)`, null);
+      return {
+        status: 501,
+        body: {
+          error: err.message,
+          detail: "this channel would fall back to image extraction, which is not built yet",
+        },
+      };
+    }
+    throw err;
+  }
+
+  if (attachment === null) {
+    // An ordinary PDF with no embedded invoice at all — a scan or a
+    // photo. Genuinely needs a vision model, which is the next piece
+    // of work, not something to fake here.
+    await recordCaptureEvent(db, channelId, "rejected", "no embedded invoice; image extraction not yet built", null);
+    return {
+      status: 501,
+      body: {
+        error: "this PDF carries no embedded invoice, so it needs image extraction, which is not built yet",
+      },
+    };
+  }
+
+  // From here the document is indistinguishable from a directly
+  // submitted UBL invoice, and is handled by exactly the same path —
+  // never a second, parallel implementation of the same parsing.
+  const result = await handleCaptureUblXml(db, channelId, attachment.xml, idOverride);
+  if (result.status === 201) {
+    result.body = { ...result.body, documentPath: "hybrid-embedded-xml", attachmentFilename: attachment.filename };
+  }
+  return result;
 }
 
 /**

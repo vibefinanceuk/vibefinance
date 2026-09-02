@@ -29,7 +29,7 @@ import { handleUpsertInvoice, mergeStructuredInvoiceFacts } from "./invoice-fact
 import { handleUpsertExpenseReport } from "./expense-facts-route.js";
 import { handleCreateProcess, handleCreateStage } from "./process-route.js";
 import { handleCreateIntakeChannel } from "./intake-channel-route.js";
-import { handleCaptureIntake, handleCaptureUblXml, handleIntakeStats } from "./intake-capture-route.js";
+import { handleCaptureIntake, handleCaptureUblXml, handleCapturePdf, handleIntakeStats } from "./intake-capture-route.js";
 import { getSupplierHistory } from "./invoice-history.js";
 import { handleCreateCustomField, handleListCustomFields } from "./custom-field-route.js";
 import { handleUploadDocument, handleRetrieveDocument } from "./document-route.js";
@@ -945,6 +945,34 @@ export default {
       }
       const idOverride = url.searchParams.get("id") ?? undefined;
       const result = await handleCaptureUblXml(db, captureXmlMatch[1], xml, idOverride);
+      return json(result.body, result.status);
+    }
+
+    // PDF intake — decision 0042. A hybrid PDF (Factur-X / ZUGFeRD)
+    // carries a complete EN 16931 invoice as an embedded XML file,
+    // and that XML is the authoritative data. Every PDF is checked
+    // for one first and, when found, parsed by exactly the same path
+    // a directly-submitted UBL document takes — no model, no
+    // confidence score, no loss. Same gating and same raw-body shape
+    // as capture-xml above.
+    const capturePdfMatch = pathname.match(/^\/intake-channels\/([^/]+)\/capture-pdf$/);
+    if (capturePdfMatch && request.method === "POST") {
+      const { db } = resolveTenant(request, env);
+      const locale = resolveLocale(env.LOCALE);
+      const licenceState = await readLicenceState(db);
+      if (isBlocked(licenceState)) {
+        return blockedResponse(licenceState, locale);
+      }
+      const auth = await requirePermission(db, request, "AP.Validate");
+      if (!auth.authorized) {
+        return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", locale) }, auth.status);
+      }
+      const bytes = new Uint8Array(await request.arrayBuffer());
+      if (bytes.length === 0) {
+        return json({ error: "a raw PDF request body is required" }, 400);
+      }
+      const idOverride = url.searchParams.get("id") ?? undefined;
+      const result = await handleCapturePdf(db, capturePdfMatch[1], bytes, idOverride);
       return json(result.body, result.status);
     }
 
