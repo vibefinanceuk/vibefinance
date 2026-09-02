@@ -302,7 +302,7 @@ describe("VISION_SHAPES — the confirmed shape", () => {
   it("carries the schema, token budget and zero temperature", () => {
     const built = VISION_SHAPES[0].build("x", [{ bytes: JPEG_BYTES, contentType: "image/jpeg" }], SCHEMA);
     expect(built.guided_json).toBe(SCHEMA);
-    expect(built.max_tokens).toBe(16384);
+    expect(built.max_tokens).toBe(8192);
     expect(built.temperature).toBe(0);
   });
 
@@ -654,5 +654,41 @@ describe("truncation is named, not left as malformed JSON", () => {
     const model = createWorkersAiExtractionModel(normal);
     const text = await model.extract("prompt", [{ bytes: new Uint8Array([0xff, 0xd8, 0xff]), contentType: "image/jpeg" }], {});
     expect(JSON.parse(text).invoiceNumber).toBe("X");
+  });
+});
+
+describe("a truncated response is a refusal, not a crash", () => {
+  it("throws ExtractionRefusal so the capture route can catch it", async () => {
+    // Thrown as a plain Error, this escaped the route's catch — which
+    // only handles refusals — and crashed the Worker with a 1101
+    // instead of returning a clean 422. Caught by the very failure it
+    // was written to explain.
+    const truncating: AiRunnable = {
+      run: async () => ({
+        choices: [{ finish_reason: "length", message: { content: '{"invoiceNumber": "SKELS26' } }],
+      }),
+    };
+    const model = createWorkersAiExtractionModel(truncating);
+    await expect(
+      model.extract("prompt", [{ bytes: new Uint8Array([0xff, 0xd8, 0xff]), contentType: "image/jpeg" }], {})
+    ).rejects.toThrow(ExtractionRefusal);
+  });
+
+  it("carries the partial output, so the refusal shows what was received", async () => {
+    const truncating: AiRunnable = {
+      run: async () => ({
+        choices: [{ finish_reason: "length", message: { content: '{"invoiceNumber": "SKELS26' } }],
+      }),
+    };
+    try {
+      await createWorkersAiExtractionModel(truncating).extract(
+        "prompt",
+        [{ bytes: new Uint8Array([0xff, 0xd8, 0xff]), contentType: "image/jpeg" }],
+        {}
+      );
+      expect.unreachable();
+    } catch (err) {
+      expect((err as ExtractionRefusal).rawModelOutput).toContain("SKELS26");
+    }
   });
 });

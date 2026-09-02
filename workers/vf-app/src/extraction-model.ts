@@ -1,4 +1,5 @@
 import type { AiRunnable } from "./compiler-model.js";
+import { ExtractionRefusal } from "./extraction.js";
 import type { ExtractionModel } from "./extraction.js";
 
 /**
@@ -135,14 +136,17 @@ export const VISION_SHAPES: VisionRequestShape[] = [
         },
       ],
       guided_json: schema,
-      // Raised from 4096 for multi-page documents. A single page of
-      // header fields fits comfortably; a document whose line table
-      // runs to dozens of rows, plus fourteen header fields and a
-      // confidence score, does not — and a response truncated
-      // mid-JSON becomes an unparseable refusal rather than an
-      // honest one. The same max_tokens trap decision 0002's
-      // addendum recorded for the compiler, in a new place.
-      max_tokens: 16384,
+      // Raised from 4096 for multi-page documents, then settled at
+      // 8192 rather than higher. A real two-page invoice truncated
+      // even at 16,384, which showed that raising the ceiling is not
+      // the fix: a response that grows with the document will always
+      // find a ceiling. The line cap (MAX_EXTRACTED_LINES) is what
+      // actually bounds it. This is headroom, not a solution.
+      //
+      // The same max_tokens trap decision 0002's addendum recorded
+      // for the compiler, in a new place and with a different
+      // resolution.
+      max_tokens: 8192,
       temperature: 0,
     }),
   },
@@ -167,8 +171,15 @@ export function createWorkersAiExtractionModel(ai: AiRunnable, modelId?: string)
       const obj = (raw ?? {}) as Record<string, unknown>;
       const finishReason = (obj.choices as { finish_reason?: string }[] | undefined)?.[0]?.finish_reason;
       if (finishReason === "length") {
-        throw new Error(
-          `the model's response was cut off at the token limit (finish_reason: length). The document may have more line items than one response can carry.`
+        // An ExtractionRefusal, NOT a plain Error. Thrown as a plain
+        // Error this escaped the capture route's catch — which only
+        // handles refusals — and crashed the Worker with a 1101
+        // instead of returning a clean 422. Introduced while fixing
+        // the diagnosis and caught by the very failure it was meant
+        // to explain.
+        throw new ExtractionRefusal(
+          "the model's response was cut off at the token limit, so the document could not be read in full. It may have more line items than one response can carry.",
+          text
         );
       }
       return text;

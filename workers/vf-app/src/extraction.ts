@@ -69,16 +69,21 @@ export interface ExtractionModel {
  * decision 0002's addendum already recorded once, and one that
  * returns a partial JSON document rather than an honest refusal.
  *
- * 50 is a deliberate guess, not a measured number, and is recorded as
- * such: it comfortably covers the invoices seen so far (the freight
- * example has eight) while staying well inside the token budget. It
- * should be revisited against a genuinely long invoice rather than
- * trusted because it is written down.
+ * 30, lowered from 50 after a real two-page document truncated its
+ * response even at a 16,384-token ceiling. Still a judgement rather
+ * than a measurement: it covers every invoice seen so far (the
+ * freight example has eight) with room to spare, while keeping the
+ * worst-case response small enough to complete.
+ *
+ * Raising the ceiling alone was not the answer. A response that grows
+ * with the document will always find a ceiling eventually, and a
+ * truncated one is unusable — so the cap on what is ASKED FOR matters
+ * more than the cap on what may be returned.
  *
  * Exceeding it is reported, never silently truncated — see
  * `linesTruncated` on the result.
  */
-export const MAX_EXTRACTED_LINES = 50;
+export const MAX_EXTRACTED_LINES = 30;
 
 export const SUPPORTED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"] as const;
 
