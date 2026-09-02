@@ -672,6 +672,15 @@ non-digits, turning `"approximately 500"` into a confident `500` —
 fabricating a number out of model hedging. See
 `docs/decisions/0043-vision-extraction.md`.
 
+## Where things stand
+
+`docs/PROGRESS.md` is the map: what is built, what is not, and — kept
+deliberately separate — what is built but *not proven*. A capability
+nobody has tested is not the same as one nobody has written, and
+conflating them is how a system acquires confidence it has not
+earned. The extraction confidence score is the current example: it
+reported 0.9 while the model was receiving no image at all.
+
 ## The one rule enforced by tooling, not convention
 
 No application code reads a tenant-scoped binding (`env.DB` and similar)

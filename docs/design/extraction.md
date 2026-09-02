@@ -1,11 +1,12 @@
 # Design: AI-Assisted Extraction and Customer-Defined Fields
 
-Status: **design only — nothing here is built.** Written 2 September
-2026 for review before any code exists; revised twice the same day
-following review — first settling the extraction-rule activation gate
-(section 8a), then working through every remaining open question
-(section 11). One item, the extraction-pass question, is deliberately
-left pending measurement rather than decided.
+Status: **steps 1 and 2 are built and verified live.** Steps 3-5
+remain designed only. Written 2 September 2026 before any code
+existed, revised twice the same day in review, and now carrying a
+build record (section 12) written after the fact.
+
+Read section 12 first if you want to know what is real. It also
+records where this design was wrong, which is the more useful part.
 
 This is the largest single piece of work the project has attempted. It
 touches the closed vocabulary, which everything else depends on, so it
@@ -529,3 +530,149 @@ identical, extract then — if it still looks worth it.
 Delayed discard is a half-measure: it carries most of the retention
 risk while adding a background job and a window nobody will tune. If a
 customer needs to re-test, they re-upload — it is their document.
+
+---
+
+## 12. Build record — what happened when this met reality
+
+Written after building steps 1 and 2. Kept in the same document as
+the design deliberately: a design that quietly absorbs its own
+corrections teaches nothing, and two of the corrections below were
+significant.
+
+### What is built and live
+
+| Step | Decision | Status |
+|---|---|---|
+| 1. Field registry, types, vocabulary resolution | 0041 | **Live**, verified |
+| 2a. Hybrid PDF (Factur-X / ZUGFeRD) | 0042 | **Live**, tested against real PDF structure |
+| 2b. Vision extraction from images | 0043 | **Live**, verified against a real invoice |
+| 3. Custom field extraction | — | Live as part of 0043 |
+| 4. Extraction rules + activation gate | — | Designed, not built |
+| 5. Supplier groups | — | Designed, not built |
+
+### Correction 1: "PDF" is two different things, and the design missed it
+
+The design treated a PDF invoice as something a vision model reads.
+That is true for only one of the two kinds that actually arrive.
+
+A **hybrid PDF** — Factur-X in France, ZUGFeRD in Germany, both real
+mandates — carries a complete, valid EN 16931 XML invoice as an
+embedded attachment. That XML *is* the authoritative data. Sending it
+to a vision model would take mandate-grade structured data and ask a
+model to re-read it from a picture: a regression, on precisely the
+documents where accuracy is legally required.
+
+So the first job is not extraction but **detection**, and every PDF
+is now checked for an embedded invoice before any model is
+considered. When one is found it takes the same path a
+directly-submitted UBL document does — no model, no confidence score,
+no loss.
+
+This was caught in review, not in code, which is the cheapest place
+to catch it. Decision 0013 had in fact anticipated it years of
+sessions earlier; the design above simply failed to carry it forward.
+
+### Correction 2: image-only PDFs still cannot be processed
+
+A PDF page cannot be rasterised to an image inside a Worker: no
+native renderer, and PDF.js needs a canvas workerd does not provide.
+The design assumed this away.
+
+`capture-pdf` now says so plainly and points at `capture-image`,
+which accepts JPEG, PNG and WebP directly. Client-side rasterisation
+or Cloudflare Browser Rendering are the realistic routes, and neither
+is built.
+
+### Correction 3: the model cannot read Business Term ids
+
+The design assumed the schema would use the closed vocabulary's own
+field names. It does not, and cannot.
+
+Asked for `BT-1`, Llama 4 Scout returned the buyer's company name.
+Asked for `BT-2`, a date field, it returned a postal address. Six of
+fourteen schema properties came back absent entirely. Given the same
+schema and a simpler question, it poured one sentence into `BT-1`,
+`BT-2`, `BT-31` and `BT-5` alike — reading the invoice perfectly and
+then filling opaque slots at random.
+
+`BT-31` carries no information to a vision model. `supplierVatNumber`
+carries all of it. Improving the field *descriptions* does not help,
+because the model anchors on the *key*.
+
+Each field now has a `promptKey` alongside its vocabulary `key`. The
+model is asked in human terms; the answer is mapped back to Business
+Terms in code, where the mapping is explicit and reviewable. Custom
+fields get the same treatment — `custom.transport_reference` is as
+opaque as `BT-31`.
+
+Two smaller findings from the same investigation: every schema
+property must be `required` (with only `_confidence` required, six
+were silently omitted), and `guided_json` genuinely does constrain
+the response, which the design had only hoped.
+
+### What the design got right
+
+- **Extraction as a fact-producing agent** (section 3). Decision 0015
+  had already designed the shape; extraction slotted into it without
+  a new architectural category, and `facts_json` needed no schema
+  change at all.
+- **Types are not optional** (section 5). This earned itself twice:
+  once catching that `greater_than` against a textual `BT-1` silently
+  never fires, and again at extraction, where declared types drive
+  coercion and refuse `"approximately 500"` rather than reading `500`
+  out of it.
+- **Resolving the vocabulary at the edge** (section 6). The
+  interpreter stayed synchronous and pure; the support argument
+  survives, honestly amended from two inputs to three.
+- **Refusals, not guesses** (section 8). A field that cannot be read
+  is absent and listed, never invented.
+
+### What the build cost, and the lesson
+
+Step 2b took six attempts. Two wrong request shapes, one wrong theory
+about `guided_json`, one real-but-insufficient response-reader bug,
+and one prompt-wording fix that could never have worked.
+
+Every one was reasoned from evidence that looked sufficient. A
+diagnostic endpoint existed from the third attempt onward — but it
+sent a *simplified* request, a short question and a two-field schema,
+while production sent a long prompt and fourteen fields. The bug
+lived in that gap, and reasoning across it produced five consecutive
+plausible-but-wrong conclusions.
+
+Rebuilding the diagnostic to send byte-for-byte what production sends
+answered it in minutes.
+
+**Instrument the boundary with the real payload.** A diagnostic that
+tests a simplified version of a failing request will confirm every
+component works while the actual request keeps failing.
+
+### Verified live, end to end
+
+A photograph of a real invoice, submitted to `capture-image`:
+
+```
+BT-1   MCD2001321-003     BT-106  2099
+BT-2   2026-08-05         BT-110  419.8
+BT-31  GB907856452        BT-112  2518.8
+BT-40  GB                 BT-115  2518.8
+```
+
+Every value correct. The date `05/08/2026` — the ambiguous format the
+prompt instructs the model to refuse — was resolved correctly from UK
+context. A rule then matched on the extracted facts and spawned a
+real approval task.
+
+### Still open
+
+- **The confidence score is unproven.** It read `0.9` while the model
+  was seeing no image at all, and `1.0` on a genuinely correct
+  extraction. Section 8 proposes routing on it; nothing yet shows the
+  number means anything. Test with a deliberately poor photograph
+  before relying on it.
+- Line-level extraction (`BT-129`, `BT-131`) — only document-level
+  fields are requested today.
+- Image-only PDF rasterisation.
+- Steps 4 and 5: extraction rules with their activation gate, and
+  supplier groups.
