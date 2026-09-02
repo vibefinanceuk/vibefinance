@@ -31,6 +31,7 @@ import { handleCreateProcess, handleCreateStage } from "./process-route.js";
 import { handleCreateIntakeChannel } from "./intake-channel-route.js";
 import { handleCaptureIntake, handleCaptureUblXml, handleIntakeStats } from "./intake-capture-route.js";
 import { getSupplierHistory } from "./invoice-history.js";
+import { handleUploadDocument, handleRetrieveDocument } from "./document-route.js";
 import { handleCreateProcessInstance, onTaskCompleted, visitCurrentStage } from "./workflow-engine.js";
 import { handleClaimTask, handleCompleteTask, handleCreateTask } from "./task-route.js";
 import type { Permission } from "./permissions.js";
@@ -39,6 +40,12 @@ import { handleRotateUserKey } from "./user-rotate-key-route.js";
 export interface Env {
   DB?: D1Database;
   AI?: AiRunnable;
+  /**
+   * R2 document retention (decision 0013, 0035) — genuinely optional,
+   * unlike DB. See shared/tenant.ts's own TenantEnv doc comment for
+   * why this isn't required the way DB is.
+   */
+  DOCUMENTS?: R2Bucket;
   /**
    * A JWK-format ECDSA P-256 public key, as a genuine nested JSON
    * object in wrangler.jsonc's `vars` — not a JSON-string-inside-a-
@@ -882,6 +889,37 @@ export default {
       const limit = parsedLimit !== undefined && !Number.isNaN(parsedLimit) ? parsedLimit : undefined;
       const history = await getSupplierHistory(db, supplierHistoryMatch[1], limit);
       return json({ supplierVatId: supplierHistoryMatch[1], history }, 200);
+    }
+
+    // R2 document retention (decision 0013, 0035). documentType comes
+    // from a query param, defaulting to 'original'. Deliberately no
+    // licence-status gate here, matching how genuinely administrative/
+    // archival actions in this system aren't blocked the way real
+    // product usage (evaluate, compile) is — retaining a document a
+    // customer already has isn't the kind of usage a block is meant
+    // to restrict.
+    const uploadDocumentMatch = pathname.match(/^\/invoices\/([^/]+)\/document$/);
+    if (uploadDocumentMatch && request.method === "POST") {
+      const { db, documents } = resolveTenant(request, env);
+      const bytes = await request.arrayBuffer();
+      const result = await handleUploadDocument(
+        db,
+        documents,
+        env.CUSTOMER_ID,
+        uploadDocumentMatch[1],
+        url.searchParams.get("documentType"),
+        request.headers.get("content-type"),
+        bytes
+      );
+      return json(result.body, result.status);
+    }
+    if (uploadDocumentMatch && request.method === "GET") {
+      const { db, documents } = resolveTenant(request, env);
+      const result = await handleRetrieveDocument(db, documents, uploadDocumentMatch[1], url.searchParams.get("documentType"));
+      if (result.status !== 200) {
+        return json(result.errorBody, result.status);
+      }
+      return new Response(result.bytes, { status: 200, headers: { "content-type": result.contentType ?? "application/octet-stream" } });
     }
 
     // Tasks — decision 0018. Creation is unauthenticated for now, the

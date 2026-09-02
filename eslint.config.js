@@ -7,7 +7,7 @@ import js from "@eslint/js";
 import tseslint from "typescript-eslint";
 import globals from "globals";
 
-const bannedBindings = ["DB", "TENANT_DB", "TENANT_KV"];
+const bannedBindings = ["DB", "TENANT_DB", "TENANT_KV", "DOCUMENTS"];
 
 export default [
   js.configs.recommended,

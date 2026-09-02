@@ -479,6 +479,28 @@ invoice fields leaked into an Expense rule's own worked examples.
 Fixed by mirroring `compileRule`'s own existing, correct pattern
 exactly. See `docs/decisions/0034-worked-examples-vocabulary-fix.md`.
 
+## R2 document storage: real, tested upload and retrieval
+
+The first piece of decision 0013's own R2 design to move from
+design-only to real, tested code. Confirmed directly against
+Cloudflare's own current docs before building: Miniflare simulates R2
+locally, the same as it has always done for D1 — no live Cloudflare
+credentials needed, unlike the `ai` binding's own documented
+exception. A real design refinement over decision 0013's original
+sketch, confirmed explicitly rather than carried forward unquestioned:
+a new `invoice_documents` table, not a column on `invoice_runs`,
+since a single invoice can genuinely have more than one real stored
+document (a pure UBL/XML invoice retains both the raw XML and a
+separately generated PDF rendering). `env.DOCUMENTS` was recognized as
+genuinely tenant-scoped data — the same category `env.DB` already is
+— and given the same structural protection through `resolveTenant()`
+and the `no-restricted-properties` lint rule before any route reached
+for it directly. Upload-before-D1-write ordering proven directly with
+a deliberately failing bucket, not just asserted in a comment. A real
+testing-infrastructure finding recorded honestly: Miniflare's local R2
+simulation isn't reset between test cases within a file the way D1 is.
+See `docs/decisions/0035-r2-document-storage.md`.
+
 ## The one rule enforced by tooling, not convention
 
 No application code reads a tenant-scoped binding (`env.DB` and similar)

@@ -103,5 +103,23 @@
   // missed.
   "triggers": {
     "crons": ["0 */6 * * *"]
-  }
+  },
+
+  // R2 document retention (decision 0013, 0035). One bucket per
+  // customer, mirroring the per-customer D1 database above — genuine
+  // data-sovereignty isolation, the same reasoning as decision 0011.
+  // The bucket itself must be created first — this session has no
+  // Cloudflare credentials to do that:
+  //   npx wrangler r2 bucket create <a-real-name-for-this-customer> \
+  //     [--jurisdiction=eu|fedramp|us]   # see decision 0033 — optional,
+  //                                       # only if this customer's own
+  //                                       # org_profiles.r2_jurisdiction
+  //                                       # is set to one of these
+  // Then replace the placeholder below with the real bucket name.
+  "r2_buckets": [
+    {
+      "binding": "DOCUMENTS",
+      "bucket_name": "replace-with-real-bucket-name"
+    }
+  ]
 }

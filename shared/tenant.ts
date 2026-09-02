@@ -26,11 +26,23 @@ export interface TenantEnv {
   // The static binding, present only in the single-tenant-per-deploy
   // shape. Nothing outside this file should reference it by name.
   DB?: D1Database;
+  // R2 document retention (decision 0013, 0035) — genuinely optional,
+  // unlike DB. A customer's R2 bucket is new, additive infrastructure;
+  // an existing customer's Worker may not have it configured yet,
+  // which is a real, ordinary state, not a misconfiguration the way a
+  // missing DB binding is.
+  DOCUMENTS?: R2Bucket;
 }
 
 export interface TenantContext {
   db: D1Database;
   tenantId: string;
+  // undefined when this customer's Worker has no DOCUMENTS binding
+  // configured yet — callers that need document storage must check
+  // for this themselves, the same way any genuinely optional
+  // capability is checked, rather than this function inventing a
+  // fallback or throwing for something that isn't actually required.
+  documents?: R2Bucket;
 }
 
 export class TenantResolutionError extends Error {
@@ -68,5 +80,6 @@ export function resolveTenant(request: Request, env: TenantEnv): TenantContext {
     // request. Wired up properly once a customer identity concept exists;
     // placeholder kept honest rather than invented.
     tenantId: "unresolved",
+    documents: env.DOCUMENTS,
   };
 }

@@ -26,5 +26,17 @@
       "database_name": "vf-app-poc",
       "database_id": "REPLACE_WITH_REAL_D1_DATABASE_ID"
     }
+  ],
+
+  // R2 document retention (decision 0013, 0035) — unlike the `ai`
+  // binding above, R2 has a genuine local-simulation equivalent to
+  // D1's (Miniflare simulates it by default; no CLOUDFLARE_API_TOKEN
+  // needed just to declare this), so no test/production split is
+  // required here the way it is for `ai`.
+  "r2_buckets": [
+    {
+      "binding": "DOCUMENTS",
+      "bucket_name": "vf-app-documents-test"
+    }
   ]
 }
