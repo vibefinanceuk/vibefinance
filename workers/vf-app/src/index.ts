@@ -31,6 +31,7 @@ import { handleCreateProcess, handleCreateStage } from "./process-route.js";
 import { handleCreateIntakeChannel } from "./intake-channel-route.js";
 import { handleCaptureIntake, handleCaptureUblXml, handleCapturePdf, handleCaptureImage, handleIntakeStats } from "./intake-capture-route.js";
 import { createWorkersAiExtractionModel } from "./extraction-model.js";
+import { handleExtractionDiagnostic } from "./extraction-diagnostic.js";
 import { getSupplierHistory } from "./invoice-history.js";
 import { handleCreateCustomField, handleListCustomFields } from "./custom-field-route.js";
 import { handleUploadDocument, handleRetrieveDocument } from "./document-route.js";
@@ -1018,6 +1019,24 @@ export default {
         createWorkersAiExtractionModel(env.AI, env.EXTRACTION_MODEL_ID),
         idOverride
       );
+      return json(result.body, result.status);
+    }
+
+    // Diagnostic only (decision 0043 addendum) — runs every vision
+    // request shape against a real image and reports what each one
+    // actually returned. Exists because two live tests were spent
+    // guessing at why extraction produced nothing, with the real
+    // model response never visible from outside. Remove once the
+    // working shape is confirmed.
+    if (pathname === "/diagnostics/extraction" && request.method === "POST") {
+      if (!env.AI) {
+        return json({ error: "the AI binding is not configured" }, 500);
+      }
+      const bytes = new Uint8Array(await request.arrayBuffer());
+      if (bytes.length === 0) {
+        return json({ error: "a raw image request body is required" }, 400);
+      }
+      const result = await handleExtractionDiagnostic(env.AI, bytes, env.EXTRACTION_MODEL_ID);
       return json(result.body, result.status);
     }
 
