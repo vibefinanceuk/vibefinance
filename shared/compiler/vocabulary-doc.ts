@@ -1,11 +1,11 @@
 import {
+  asResolved,
   ACTIONS,
   ACTION_DESCRIPTIONS,
   DERIVED_FIELD_PREFIXES,
   OPERATORS,
-  VOCABULARIES,
 } from "../interpreter/vocabulary.js";
-import type { VocabularyName } from "../interpreter/vocabulary.js";
+import type { VocabularyInput } from "../interpreter/vocabulary.js";
 import { MAX_COMBINATOR_DEPTH } from "../interpreter/evaluate.js";
 
 /**
@@ -21,10 +21,33 @@ import { MAX_COMBINATOR_DEPTH } from "../interpreter/evaluate.js";
  * decision 0022's multi-vocabulary support existed renders exactly
  * the same prompt text it always did, unchanged.
  */
-export function buildVocabularyDoc(vocabulary: VocabularyName = "invoice"): string {
-  const v = VOCABULARIES[vocabulary];
-  const fieldLines = v.fields.map((f) => `  ${f} — ${v.fieldDescriptions[f]}`).join("\n");
-  const derivedLines = v.derivedFields.map((f) => `  ${f} — ${v.derivedFieldDescriptions[f]}`).join("\n");
+export function buildVocabularyDoc(vocabulary: VocabularyInput = "invoice"): string {
+  const v = asResolved(vocabulary);
+  // Standard fields only here — a customer's own declared fields get
+  // their own clearly-labelled section below (decision 0041), so the
+  // model can tell what came from the standard and what this
+  // particular customer defined. Rendering them in one undifferentiated
+  // list would blur exactly the distinction the closed vocabulary
+  // exists to keep sharp.
+  const customKeys = new Set(v.customFields.map((f) => f.key));
+  const standardFields = v.fields.filter((f) => !customKeys.has(f));
+  // Types are rendered alongside each field (decision 0041): the
+  // model choosing an operator needs to know that BT-1 is a textual
+  // reference and BT-112 is an amount, or it will produce rules that
+  // validateRule then refuses.
+  const withType = (f: string) => {
+    const t = v.fieldTypes[f];
+    return t ? `  ${f} (${t}) — ${v.fieldDescriptions[f]}` : `  ${f} — ${v.fieldDescriptions[f]}`;
+  };
+  const fieldLines = standardFields.map(withType).join("\n");
+  const derivedLines = v.derivedFields
+    .map((f) => {
+      const t = v.fieldTypes[f];
+      return t
+        ? `  ${f} (${t}) — ${v.derivedFieldDescriptions[f]}`
+        : `  ${f} — ${v.derivedFieldDescriptions[f]}`;
+    })
+    .join("\n");
   // term.absent(BT-n) is inherently an invoice/EN-16931 concept — a
   // Business Term either appears on an invoice or it doesn't. Nothing
   // analogous exists for expense fields, so this section is only
@@ -32,7 +55,7 @@ export function buildVocabularyDoc(vocabulary: VocabularyName = "invoice"): stri
   // model with a concept that has no meaning for what it's actually
   // compiling.
   const parameterisedLines =
-    vocabulary === "invoice"
+    v.name === "invoice"
       ? DERIVED_FIELD_PREFIXES.map(
           (p) => `  ${p}BT-n) — true if that Business Term is absent from the invoice`
         ).join("\n")
@@ -42,18 +65,33 @@ export function buildVocabularyDoc(vocabulary: VocabularyName = "invoice"): stri
     (a) => `  ${a} — ${ACTION_DESCRIPTIONS[a]}`
   ).join("\n");
 
-  const fieldsHeading = vocabulary === "invoice" ? "INVOICE FIELDS (from the standard):" : "EXPENSE FIELDS:";
+  const fieldsHeading = v.name === "invoice" ? "INVOICE FIELDS (from the standard):" : "EXPENSE FIELDS:";
   const derivedHeading =
-    vocabulary === "invoice"
+    v.name === "invoice"
       ? "PLATFORM-DERIVED FIELDS (never invoice data, always platform-computed):"
       : "PLATFORM-DERIVED FIELDS (never submitted by the employee, always platform-computed):";
+
+  // A customer's own declared fields, kept in a clearly separate,
+  // clearly labelled section (decision 0041). The model is told
+  // plainly that these are this customer's own definitions and that
+  // the descriptions are theirs, not the standard's — so it does not
+  // treat a customer's field as if it carried EN 16931's authority,
+  // and does not offer them to a customer who never declared any.
+  const customSection =
+    v.customFields.length === 0
+      ? ""
+      : `
+
+FIELDS THIS CUSTOMER HAS DEFINED THEMSELVES (not part of any standard —
+these descriptions are the customer's own, and apply only to them):
+${v.customFields.map((f) => `  ${f.key} (${f.type}) — ${f.description}`).join("\n")}`;
 
   return `${fieldsHeading}
 ${fieldLines}
 
 ${derivedHeading}
 ${derivedLines}
-${parameterisedLines}
+${parameterisedLines}${customSection}
 
 OPERATORS:
   ${OPERATORS.join(", ")}

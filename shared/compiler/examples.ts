@@ -1,6 +1,6 @@
 import { evaluateConditions } from "../interpreter/evaluate.js";
 import type { InvoiceFacts, RuleAction, RuleNode } from "../interpreter/types.js";
-import type { VocabularyName } from "../interpreter/vocabulary.js";
+import type { VocabularyInput } from "../interpreter/vocabulary.js";
 import { buildVocabularyDoc } from "./vocabulary-doc.js";
 import { extractJson, truncate } from "./parse.js";
 import type { CompilerModel } from "./types.js";
@@ -53,7 +53,7 @@ function referencedFields(node: RuleNode): string[] {
  * the same two places compileRule already gets this right: the
  * vocabulary doc itself, and the prompt's own framing language.
  */
-function buildExamplesPrompt(conditions: RuleNode, actions: RuleAction[], vocabulary: VocabularyName = "invoice"): string {
+function buildExamplesPrompt(conditions: RuleNode, actions: RuleAction[], vocabulary: VocabularyInput = "invoice"): string {
   const fields = [...new Set(referencedFields(conditions))];
   return `You previously compiled a business rule into the following closed-vocabulary structure. Your job now is to produce worked examples of records, so the person who wrote this rule can confirm it does what they meant — before it's ever allowed to run for real.
 
@@ -165,7 +165,7 @@ export async function generateExamples(
   model: CompilerModel,
   conditions: RuleNode,
   actions: RuleAction[],
-  vocabulary: VocabularyName = "invoice"
+  vocabulary: VocabularyInput = "invoice"
 ): Promise<ExamplesOutcome> {
   const prompt = buildExamplesPrompt(conditions, actions, vocabulary);
   const raw = await model.compile(prompt);

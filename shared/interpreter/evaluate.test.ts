@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { resolveVocabulary } from "./vocabulary.js";
 import {
   MAX_COMBINATOR_DEPTH,
   RuleValidationError,
@@ -306,5 +307,97 @@ describe("evaluateConditions — single-rule evaluation independent of a rule se
     expect(evaluateConditions(conditions, { "BT-3": "381" })).toBe(true);
     expect(evaluateConditions(conditions, { "BT-112": 15000 })).toBe(true);
     expect(evaluateConditions(conditions, { "BT-112": 500 })).toBe(false);
+  });
+});
+
+describe("validateRule — type-awareness (decision 0041)", () => {
+  const rule = (field: string, operator: string, value?: unknown) =>
+    ({
+      id: "r1",
+      conditions: { all: [{ field, operator, ...(value !== undefined ? { value } : {}) }] },
+      actions: [{ type: "flag", params: {} }],
+    }) as never;
+
+  it("refuses greater_than against BT-1 — an invoice NUMBER that is textual, the clearest real instance of this bug", () => {
+    // BT-1 reads like a number and is not one: "INV-2026-0042" is a
+    // reference. evaluateCondition's greater_than requires BOTH sides
+    // to be typeof number, so this rule would silently never fire.
+    expect(() => validateRule(rule("BT-1", "greater_than", 10000))).toThrow(RuleValidationError);
+  });
+
+  it("names the field, its type, and the operators that would work", () => {
+    expect(() => validateRule(rule("BT-1", "greater_than", 10000))).toThrow(/BT-1.*text.*never match/s);
+  });
+
+  it("still allows greater_than against BT-112, which really is an amount", () => {
+    expect(() => validateRule(rule("BT-112", "greater_than", 10000))).not.toThrow();
+  });
+
+  it("refuses a date operator against a numeric field", () => {
+    expect(() => validateRule(rule("BT-112", "older_than_days", 30))).toThrow(RuleValidationError);
+  });
+
+  it("allows date operators against a real date field", () => {
+    expect(() => validateRule(rule("BT-9", "older_than_days", 30))).not.toThrow();
+  });
+
+  it("allows is_present and is_empty against every type — they test presence, never the value", () => {
+    expect(() => validateRule(rule("BT-1", "is_present"))).not.toThrow();
+    expect(() => validateRule(rule("BT-112", "is_empty"))).not.toThrow();
+    expect(() => validateRule(rule("BT-9", "is_present"))).not.toThrow();
+    expect(() => validateRule(rule("po.matched", "is_present"))).not.toThrow();
+  });
+
+  it("permits any operator on a field with no declared type — an honest 'cannot say', not a guess", () => {
+    // BG-20 is a document-level group, deliberately untyped: calling
+    // it text/number/date/boolean would be a claim this design cannot
+    // honestly make.
+    expect(() => validateRule(rule("BG-20", "greater_than", 5))).not.toThrow();
+  });
+
+  it("applies to expense fields too, not just invoice ones", () => {
+    expect(() => validateRule(rule("category", "greater_than", 5), "expense")).toThrow(RuleValidationError);
+    expect(() => validateRule(rule("amount", "greater_than", 5), "expense")).not.toThrow();
+  });
+});
+
+describe("validateRule — customer-defined fields (decision 0041)", () => {
+  const rule = (field: string, operator: string, value?: unknown) =>
+    ({
+      id: "r1",
+      conditions: { all: [{ field, operator, ...(value !== undefined ? { value } : {}) }] },
+      actions: [{ type: "flag", params: {} }],
+    }) as never;
+
+  const withCustom = (type: "text" | "number" | "date" | "boolean") =>
+    resolveVocabulary("invoice", [
+      { key: "custom.transport_reference", label: "Transport Reference", type, description: "The carrier reference" },
+    ]);
+
+  it("refuses a custom field that was never declared — the vocabulary is still closed", () => {
+    expect(() => validateRule(rule("custom.never_declared", "is", "x"))).toThrow(RuleValidationError);
+  });
+
+  it("accepts a declared custom field", () => {
+    expect(() => validateRule(rule("custom.transport_reference", "is", "TR-1"), withCustom("text"))).not.toThrow();
+  });
+
+  it("enforces the declared type on custom fields, exactly as on standard ones", () => {
+    expect(() => validateRule(rule("custom.transport_reference", "greater_than", 5), withCustom("text")))
+      .toThrow(/never match/);
+    expect(() => validateRule(rule("custom.transport_reference", "greater_than", 5), withCustom("number")))
+      .not.toThrow();
+  });
+
+  it("one customer's declared field is not visible to another — closed PER customer", () => {
+    // The same rule, valid against a vocabulary that declares the
+    // field, is refused against one that doesn't.
+    expect(() => validateRule(rule("custom.transport_reference", "is", "TR-1"), withCustom("text"))).not.toThrow();
+    expect(() => validateRule(rule("custom.transport_reference", "is", "TR-1"), resolveVocabulary("invoice")))
+      .toThrow(RuleValidationError);
+  });
+
+  it("standard fields still resolve when custom ones are present", () => {
+    expect(() => validateRule(rule("BT-112", "greater_than", 100), withCustom("text"))).not.toThrow();
   });
 });

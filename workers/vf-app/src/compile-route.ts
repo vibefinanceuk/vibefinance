@@ -1,5 +1,7 @@
 import { compileRule, generateExamples } from "@vibefinance/shared";
 import type { VocabularyName } from "@vibefinance/shared";
+import { resolveVocabulary } from "@vibefinance/shared";
+import { loadCustomFields } from "./custom-field-route.js";
 import type { CompilerModel } from "@vibefinance/shared";
 import { t } from "./i18n.js";
 import type { Locale } from "./i18n.js";
@@ -90,7 +92,17 @@ export async function handleCompileRequest(
   // compiling for an expense rule set sees the expense field
   // vocabulary in its prompt, and anything referencing an invoice
   // field is refused, not silently accepted.
-  const outcome = await compileRule(model, sourceText, ruleSetExists.vocabulary);
+  //
+  // Resolved here, at the edge, with the customer's own declared
+  // fields merged in (decision 0041). This is the single database
+  // read in the custom-field path: everything downstream —
+  // compileRule, validateRule, the interpreter — receives a complete
+  // vocabulary and never performs a lookup, which is what keeps them
+  // synchronous and pure.
+  const customFields = await loadCustomFields(db);
+  const vocabulary = resolveVocabulary(ruleSetExists.vocabulary, customFields);
+
+  const outcome = await compileRule(model, sourceText, vocabulary);
 
   // Refusal as a first-class output (Blueprint, "Subsystem one"): a
   // sentence the model can't express in the closed vocabulary is
@@ -148,7 +160,7 @@ export async function handleCompileRequest(
   // examples failed to generate is stuck as a permanent draft until
   // this is retried (no retry endpoint yet — matches the same
   // raw-DB-access-for-now precedent as rule_sets provisioning).
-  const examplesOutcome = await generateExamples(model, outcome.conditions, outcome.actions, ruleSetExists.vocabulary);
+  const examplesOutcome = await generateExamples(model, outcome.conditions, outcome.actions, vocabulary);
   let examplesSummary: Record<string, unknown>;
   if (examplesOutcome.kind === "generated") {
     const inserts = examplesOutcome.examples.map((example) =>

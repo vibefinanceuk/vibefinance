@@ -1,9 +1,12 @@
 import {
+  asResolved,
   isKnownAction,
   isKnownField,
   isKnownOperator,
+  isOperatorValidForField,
+  OPERATORS_BY_TYPE,
 } from "./vocabulary.js";
-import type { VocabularyName } from "./vocabulary.js";
+import type { VocabularyInput } from "./vocabulary.js";
 import type {
   Condition,
   CompiledRule,
@@ -41,7 +44,7 @@ export class RuleValidationError extends Error {
  * exactly what it always checked, unchanged, unless it explicitly asks
  * for a different one.
  */
-export function validateRule(rule: CompiledRule, vocabulary: VocabularyName = "invoice"): void {
+export function validateRule(rule: CompiledRule, vocabulary: VocabularyInput = "invoice"): void {
   validateNode(rule.conditions, 0, vocabulary);
   if (rule.actions.length === 0) {
     throw new RuleValidationError(`rule ${rule.id}: at least one action is required`);
@@ -55,7 +58,7 @@ export function validateRule(rule: CompiledRule, vocabulary: VocabularyName = "i
   }
 }
 
-function validateNode(node: RuleNode, depth: number, vocabulary: VocabularyName): void {
+function validateNode(node: RuleNode, depth: number, vocabulary: VocabularyInput): void {
   if (depth > MAX_COMBINATOR_DEPTH) {
     throw new RuleValidationError(
       `combinator nesting exceeds MAX_COMBINATOR_DEPTH (${MAX_COMBINATOR_DEPTH})`
@@ -78,7 +81,7 @@ function validateNode(node: RuleNode, depth: number, vocabulary: VocabularyName)
   validateCondition(node, vocabulary);
 }
 
-function validateCondition(condition: Condition, vocabulary: VocabularyName): void {
+function validateCondition(condition: Condition, vocabulary: VocabularyInput): void {
   if (!isKnownField(condition.field, vocabulary)) {
     throw new RuleValidationError(
       `unknown field "${condition.field}" — not in the closed vocabulary`
@@ -93,6 +96,20 @@ function validateCondition(condition: Condition, vocabulary: VocabularyName): vo
   if (needsValue && condition.value === undefined) {
     throw new RuleValidationError(
       `condition on "${condition.field}" with operator "${condition.operator}" requires a value`
+    );
+  }
+  // Type-awareness (decision 0041). Without this, an operator that
+  // cannot possibly match a field's declared type is accepted here
+  // and then silently returns false forever at evaluation time —
+  // `greater_than` compares with `typeof actual === "number"`, so a
+  // textual field never satisfies it. No error, no refusal, just a
+  // rule that quietly does nothing. Refusing at compile time turns
+  // the worst failure mode this engine has into a real message.
+  if (!isOperatorValidForField(condition.field, condition.operator, vocabulary)) {
+    const type = asResolved(vocabulary).fieldTypes[condition.field];
+    throw new RuleValidationError(
+      `operator "${condition.operator}" cannot be used with "${condition.field}", which is declared as ${type} — ` +
+        `it would never match. Valid operators for ${type}: ${OPERATORS_BY_TYPE[type].join(", ")}`
     );
   }
 }

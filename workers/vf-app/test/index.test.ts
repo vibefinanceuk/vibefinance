@@ -1874,3 +1874,60 @@ describe("GET /licence/status — what the product surface reads (decision 0040)
     ]);
   });
 });
+
+describe("custom fields through the real router (decision 0041)", () => {
+  it("declares a field and lists it back", async () => {
+    const created = await SELF.fetch("https://example.com/org/custom-fields", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        label: "Transport Reference",
+        type: "text",
+        description: "The carrier consignment reference",
+      }),
+    });
+    expect(created.status).toBe(201);
+    expect(((await created.json()) as { key: string }).key).toBe("custom.transport_reference");
+
+    const listed = await SELF.fetch("https://example.com/org/custom-fields");
+    const body = (await listed.json()) as { fields: { key: string; type: string }[] };
+    expect(body.fields).toHaveLength(1);
+    expect(body.fields[0]).toMatchObject({ key: "custom.transport_reference", type: "text" });
+  });
+
+  it("400s an invalid type through the real route", async () => {
+    const res = await SELF.fetch("https://example.com/org/custom-fields", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ label: "X", type: "currency", description: "x" }),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it("is not licence-gated — a blocked customer can still manage their own configuration", async () => {
+    await env.DB.prepare("DELETE FROM licence_cache WHERE id = 1").run();
+    await env.DB.prepare("INSERT INTO licence_cache (id, claims_json, fetched_at) VALUES (1, ?, ?)")
+      .bind(
+        JSON.stringify({
+          customerId: "test-customer",
+          plan: "trial",
+          features: [],
+          volumeEntitlement: 500,
+          status: "blocked",
+          statusReason: "expired",
+          issuedAt: new Date().toISOString(),
+          expiresAt: new Date(Date.now() + 3600_000).toISOString(),
+        }),
+        new Date().toISOString()
+      )
+      .run();
+
+    const res = await SELF.fetch("https://example.com/org/custom-fields", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ label: "Still Works", type: "text", description: "x" }),
+    });
+    expect(res.status).not.toBe(402);
+    expect(res.status).toBe(201);
+  });
+});

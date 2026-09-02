@@ -1,7 +1,7 @@
 import { buildCompilerPrompt } from "./prompt.js";
 import { parseModelOutput } from "./parse.js";
 import type { CompileOutcome, CompilerModel } from "./types.js";
-import type { VocabularyName } from "../interpreter/vocabulary.js";
+import type { VocabularyInput } from "../interpreter/vocabulary.js";
 
 /**
  * Compile one customer sentence into a rule, or a refusal. Pure
@@ -18,7 +18,7 @@ import type { VocabularyName } from "../interpreter/vocabulary.js";
 export async function compileRule(
   model: CompilerModel,
   sourceText: string,
-  vocabulary: VocabularyName = "invoice"
+  vocabulary: VocabularyInput = "invoice"
 ): Promise<CompileOutcome> {
   const prompt = buildCompilerPrompt(sourceText, vocabulary);
   const raw = await model.compile(prompt);

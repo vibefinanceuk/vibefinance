@@ -24,6 +24,7 @@ import intakeCaptureEventsSql from "../../../migrations/0015_intake_capture_even
 import costCentresSql from "../../../migrations/0016_cost_centres.sql?raw";
 import r2JurisdictionSql from "../../../migrations/0017_r2_jurisdiction.sql?raw";
 import invoiceDocumentsSql from "../../../migrations/0018_invoice_documents.sql?raw";
+import customFieldsSql from "../../../migrations/0019_custom_fields.sql?raw";
 
 // Another known divergence from production, on top of the one below:
 // D1's exec() splits its input by newline and executes each non-empty
@@ -69,6 +70,7 @@ function toOneStatementPerLine(sql: string): string {
 // gets a genuinely clean schema regardless of what the pool does or
 // does not reset.
 const TABLES_IN_DROP_ORDER = [
+  "custom_fields",
   "invoice_documents",
   "cost_centres",
   "intake_capture_events",
@@ -121,4 +123,5 @@ export async function applyTestSchema(): Promise<void> {
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(costCentresSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(r2JurisdictionSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(invoiceDocumentsSql)));
+  await env.DB.exec(toOneStatementPerLine(stripSqlComments(customFieldsSql)));
 }

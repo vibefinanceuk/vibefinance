@@ -604,6 +604,28 @@ caught here: searching thresholds largest-first meant a licence six
 hours from expiry would have been shown "expires in 14 days". See
 `docs/decisions/0040-expiry-warnings.md`.
 
+## Typed vocabulary, and customer-defined fields
+
+Step one of the extraction design (`docs/design/extraction.md`), and
+deliberately the step with no AI in it. Two things: customers can
+declare their own fields, which join their vocabulary — the closed
+vocabulary becomes closed *per customer* rather than closed
+*globally*, with every safety property intact — and every field,
+standard as well as custom, now declares a type.
+
+The types matter more than they look. The interpreter has always been
+strictly type-aware at runtime, so a rule comparing a textual field
+with `greater_than` does not error or refuse; it returns false
+forever, silently. `BT-1` is an invoice *number* and it is text, so
+"flag invoices where the invoice number is greater than 10000"
+compiles, stores, activates, and never fires. That is now refused at
+compile time. All 439 existing tests passed unchanged, which is the
+meaningful result: the assigned types match what real rules already
+do. Resolution happens once at the edge, so `validateRule()` and the
+interpreter stay synchronous and pure — the support argument survives,
+honestly amended to three inputs rather than two. See
+`docs/decisions/0041-typed-vocabulary-custom-fields.md`.
+
 ## The one rule enforced by tooling, not convention
 
 No application code reads a tenant-scoped binding (`env.DB` and similar)

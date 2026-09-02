@@ -51,6 +51,63 @@ export const DERIVED_FIELDS = [
 
 export const DERIVED_FIELD_PREFIXES = ["term.absent("] as const;
 
+/**
+ * Declared types for the standard invoice fields — decision 0041.
+ *
+ * Grounded in what EN 16931 says each Business Term actually is, not
+ * in how a name reads. BT-1 is the supplier's invoice *number*, but
+ * it is a reference string ("INV-2026-0042"), not a quantity — so it
+ * is `text`, and `greater_than` against it is refused. That specific
+ * case is the clearest example of the silent-never-fires bug this
+ * table exists to prevent, and it is live in the codebase today.
+ *
+ * BG-20 and BG-21 (allowances, charges) are deliberately absent: they
+ * are document-level groups, not scalar values, and typing them as
+ * any of text/number/date/boolean would be a claim this design cannot
+ * honestly make. An absent type means "cannot say", and every
+ * operator stays permitted — the honest answer, not a guess.
+ */
+export const INVOICE_FIELD_TYPES: Record<string, FieldType> = {
+  "BT-1": "text", // invoice number — a reference, never a quantity
+  "BT-3": "text", // type code, e.g. "380"
+  "BT-5": "text", // currency code
+  "BT-2": "date",
+  "BT-9": "date",
+  "BT-10": "text",
+  "BT-13": "text",
+  "BT-31": "text",
+  "BT-40": "text", // country code
+  "BT-48": "text",
+  "BT-106": "number",
+  "BT-110": "number",
+  "BT-112": "number",
+  "BT-115": "number",
+  "BT-129": "number",
+  "BT-131": "number",
+  "BT-133": "text", // cost centre reference — a code, not a quantity
+  "BT-151": "text", // VAT category code
+  "BT-152": "number", // VAT rate, a percentage
+  direction: "text",
+  "party.first_document": "boolean",
+  "po.matched": "boolean",
+  "po.variance_pct": "number",
+  "mandate.channel": "text",
+  "validation.passed": "boolean",
+  "invoice.duplicate_confidence": "number",
+};
+
+export const EXPENSE_FIELD_TYPES: Record<string, FieldType> = {
+  category: "text",
+  amount: "number",
+  currency: "text",
+  submitted_date: "date",
+  employee_id: "text",
+  cost_centre: "text",
+  receipt_attached: "boolean",
+  trip_end_date: "date",
+  description: "text",
+};
+
 // Expense management's own field vocabulary — authored, not
 // translated, per decision 0015's own framing: unlike invoice fields,
 // there is no external standard (no EN 16931 equivalent) to ground
@@ -247,17 +304,197 @@ export function isKnownVocabulary(name: string): name is VocabularyName {
   return name in VOCABULARIES;
 }
 
+// ---------------------------------------------------------------
+// Customer-defined fields, and resolved vocabularies
+// ---------------------------------------------------------------
+
+/**
+ * The declared type of a field. Not decoration: the interpreter is
+ * already strictly type-aware at runtime — `greater_than` returns
+ * false unless BOTH sides are genuinely numbers, `older_than_days`
+ * unless the value parses as a date. A field extracted as the string
+ * "12345" and compared with `greater_than` therefore produces a rule
+ * that silently never fires: no error, no refusal, nothing to
+ * investigate.
+ *
+ * Declaring the type is what lets validateRule() refuse that
+ * combination at COMPILE time, as a real message, instead of letting
+ * it fail invisibly at evaluation time.
+ */
+export const FIELD_TYPES = ["text", "number", "date", "boolean"] as const;
+export type FieldType = (typeof FIELD_TYPES)[number];
+
+export function isKnownFieldType(value: string): value is FieldType {
+  return (FIELD_TYPES as readonly string[]).includes(value);
+}
+
+/**
+ * Which operators are meaningful against which declared type —
+ * derived directly from what evaluateCondition() actually does, not
+ * from intuition about what "ought" to work. Anything absent here is
+ * refused at compile time rather than silently returning false
+ * forever.
+ *
+ * `is_present` and `is_empty` are deliberately valid for every type:
+ * they test presence, never the value itself, so they cannot suffer
+ * the type-mismatch problem the rest of this table exists to prevent.
+ */
+export const OPERATORS_BY_TYPE: Record<FieldType, readonly string[]> = {
+  text: ["is", "is_not", "in", "not_in", "starts_with", "contains", "is_present", "is_empty"],
+  number: ["is", "is_not", "in", "not_in", "greater_than", "less_than", "between", "is_present", "is_empty"],
+  date: ["is", "is_not", "older_than_days", "within_days", "is_present", "is_empty"],
+  boolean: ["is", "is_not", "is_present", "is_empty"],
+};
+
+/**
+ * A field a customer declared for themselves — decision 0041.
+ *
+ * The vocabulary stays closed; it becomes closed PER CUSTOMER rather
+ * than closed globally. Every property that makes the rule engine
+ * safe survives: a rule can still only reference declared fields,
+ * validateRule() still refuses anything outside the set, and the
+ * compiler's prompt still receives a finite, authoritative list.
+ */
+export interface CustomFieldDefinition {
+  /** Stable identifier rules reference, e.g. "custom.transport_reference".
+   *  System-generated from the label, never customer-typed: avoids
+   *  collisions, invalid characters, and two customers' rules being
+   *  subtly incompatible in ways nobody notices. */
+  key: string;
+  /** What a human calls it. Editable; the key is not. */
+  label: string;
+  type: FieldType;
+  /** What the extraction model is told to look for. This is the
+   *  field's real payload — a vague description produces vague
+   *  extraction. Also rendered into the compiler's prompt, so a rule
+   *  author sees the same description the extractor works from. */
+  description: string;
+}
+
+/** The namespace every customer-defined field key carries. Chosen so
+ *  a custom field can never collide with a BT- or BG- Business Term
+ *  (now or as EN 16931 evolves) or with an expense field, and so it
+ *  is visibly customer-defined wherever it appears. */
+export const CUSTOM_FIELD_PREFIX = "custom.";
+
+/**
+ * A vocabulary with any customer-defined fields already merged in.
+ *
+ * The critical property, and the reason this type exists at all:
+ * resolution happens ONCE, at the edge, and the resolved value is
+ * passed inward. isKnownField(), validateRule() and the interpreter
+ * never perform a lookup — they receive a complete answer.
+ *
+ * That is what keeps them synchronous and pure, which is what keeps
+ * decision 0003's support argument true. It becomes, honestly,
+ * "reproduces from three inputs: their rules, the invoice, and their
+ * field definitions" — but it stays reproducible, which is the
+ * property that actually matters.
+ */
+export interface ResolvedVocabulary {
+  name: VocabularyName;
+  fields: readonly string[];
+  fieldDescriptions: Record<string, string>;
+  derivedFields: readonly string[];
+  derivedFieldDescriptions: Record<string, string>;
+  /** Declared types for every field that has one. Standard fields are
+   *  included too (decision 0041): `greater_than` against BT-1 — an
+   *  invoice *number*, textual — is exactly the silent-never-fires
+   *  bug this catches, and it exists today. */
+  fieldTypes: Record<string, FieldType>;
+  customFields: readonly CustomFieldDefinition[];
+}
+
+/**
+ * Every caller that currently passes a VocabularyName keeps working:
+ * a bare name resolves to that vocabulary with no custom fields,
+ * which is exactly what it means today. Same defaulting discipline
+ * decision 0022 used when vocabularies were first introduced.
+ */
+export type VocabularyInput = VocabularyName | ResolvedVocabulary;
+
+export function resolveVocabulary(
+  vocabulary: VocabularyName = "invoice",
+  customFields: readonly CustomFieldDefinition[] = []
+): ResolvedVocabulary {
+  const base = VOCABULARIES[vocabulary];
+  const customKeys = customFields.map((f) => f.key);
+  const customDescriptions: Record<string, string> = {};
+  const fieldTypes: Record<string, FieldType> = {
+    ...(vocabulary === "invoice" ? INVOICE_FIELD_TYPES : EXPENSE_FIELD_TYPES),
+  };
+  for (const field of customFields) {
+    customDescriptions[field.key] = field.description;
+    fieldTypes[field.key] = field.type;
+  }
+
+  return {
+    name: vocabulary,
+    fields: [...base.fields, ...customKeys],
+    fieldDescriptions: { ...base.fieldDescriptions, ...customDescriptions },
+    derivedFields: base.derivedFields,
+    derivedFieldDescriptions: base.derivedFieldDescriptions,
+    fieldTypes,
+    customFields,
+  };
+}
+
+/** Normalises either form to a resolved vocabulary. The one place
+ *  that knows both shapes exist, so nothing downstream has to. */
+export function asResolved(vocabulary: VocabularyInput = "invoice"): ResolvedVocabulary {
+  return typeof vocabulary === "string" ? resolveVocabulary(vocabulary) : vocabulary;
+}
+
+/**
+ * Derives a stable key from a human label — decision 0041.
+ * "Transport Reference" -> "custom.transport_reference".
+ *
+ * Deliberately lossy and deliberately strict: lowercased, non-
+ * alphanumerics collapsed to underscores, edges trimmed. Two labels
+ * that differ only in punctuation or case produce the same key, which
+ * is correct — they are the same field, and the registry should
+ * refuse the duplicate rather than create two fields nobody can tell
+ * apart.
+ */
+export function deriveCustomFieldKey(label: string): string {
+  const slug = label
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+  return `${CUSTOM_FIELD_PREFIX}${slug}`;
+}
+
 // Defaults to 'invoice' — every existing caller written before
 // vocabularies existed at all continues checking exactly what it
 // always checked, unchanged. Only a caller that explicitly asks for
-// 'expense' sees the new field list.
-export function isKnownField(field: string, vocabulary: VocabularyName = "invoice"): boolean {
-  const v = VOCABULARIES[vocabulary];
+// 'expense', or passes a resolved vocabulary, sees anything different.
+export function isKnownField(field: string, vocabulary: VocabularyInput = "invoice"): boolean {
+  const v = asResolved(vocabulary);
   if (v.fields.includes(field)) return true;
   if (v.derivedFields.includes(field)) return true;
   return DERIVED_FIELD_PREFIXES.some(
     (prefix) => field.startsWith(prefix) && field.endsWith(")")
   );
+}
+
+/**
+ * Whether an operator is meaningful against a field's declared type.
+ *
+ * Returns true when the field has no declared type — an honest
+ * "cannot say", not a guess. Not every field has a type today, and
+ * refusing a rule because a type is merely unknown would break every
+ * existing rule set.
+ */
+export function isOperatorValidForField(
+  field: string,
+  operator: string,
+  vocabulary: VocabularyInput = "invoice"
+): boolean {
+  const v = asResolved(vocabulary);
+  const type = v.fieldTypes[field];
+  if (type === undefined) return true;
+  return OPERATORS_BY_TYPE[type].includes(operator);
 }
 
 export function isKnownOperator(op: string): op is Operator {

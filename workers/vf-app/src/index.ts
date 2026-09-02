@@ -31,6 +31,7 @@ import { handleCreateProcess, handleCreateStage } from "./process-route.js";
 import { handleCreateIntakeChannel } from "./intake-channel-route.js";
 import { handleCaptureIntake, handleCaptureUblXml, handleIntakeStats } from "./intake-capture-route.js";
 import { getSupplierHistory } from "./invoice-history.js";
+import { handleCreateCustomField, handleListCustomFields } from "./custom-field-route.js";
 import { handleUploadDocument, handleRetrieveDocument } from "./document-route.js";
 import { handleCreateProcessInstance, onTaskCompleted, visitCurrentStage } from "./workflow-engine.js";
 import { handleClaimTask, handleCompleteTask, handleCreateTask } from "./task-route.js";
@@ -708,6 +709,30 @@ export default {
         return json({ error: t("invalidJsonBody", resolveLocale(env.LOCALE)) }, 400);
       }
       const result = await handleCreateCostCentre(db, (body ?? {}) as Record<string, unknown>);
+      return json(result.body, result.status);
+    }
+
+    // Customer-defined fields — decision 0041. Declarations only:
+    // this makes a field referenceable by rules and describable to
+    // the extraction model; it does not by itself cause anything to
+    // be extracted. Same "not licence-gated" reasoning as the org
+    // routes above — a blocked customer can still manage their own
+    // configuration.
+    if (pathname === "/org/custom-fields" && request.method === "POST") {
+      const { db } = resolveTenant(request, env);
+      let body: unknown;
+      try {
+        body = await request.json();
+      } catch {
+        return json({ error: t("invalidJsonBody", resolveLocale(env.LOCALE)) }, 400);
+      }
+      const result = await handleCreateCustomField(db, (body ?? {}) as Record<string, unknown>);
+      return json(result.body, result.status);
+    }
+
+    if (pathname === "/org/custom-fields" && request.method === "GET") {
+      const { db } = resolveTenant(request, env);
+      const result = await handleListCustomFields(db);
       return json(result.body, result.status);
     }
 
