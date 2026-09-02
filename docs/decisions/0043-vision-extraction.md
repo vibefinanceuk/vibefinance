@@ -352,3 +352,86 @@ what one field of it said).
 The general shape: when a component can produce plausible output
 regardless of whether its input arrived, no amount of reading its
 output will tell you what went in. Instrument the boundary.
+
+---
+
+## Third resolution — the model could not read Business Term ids
+
+Five fixes failed because all five were looking in the wrong place.
+The diagnostic, finally rebuilt to send the *exact* production
+request rather than a simplified stand-in, showed what was actually
+happening:
+
+```json
+{"BT-1": "Mcdonalds UK",
+ "BT-2": "11-59 High Road, East Finchley, London, N2 8AW",
+ "BT-31": null, "BT-40": null, "BT-5": null, "BT-9": null,
+ "_confidence": 0.9}
+```
+
+`BT-1` got the **buyer's name**. `BT-2`, a date field, got a **postal
+address**. And six of the fourteen schema properties were **absent
+entirely** — not null, absent — with `finish_reason: "stop"`, so
+nothing was truncated.
+
+The controlled variant made the cause unmistakable. Given the same
+schema and a short question, the model returned:
+
+```json
+{"BT-1": "The invoice number is MCD2001321-003.",
+ "BT-2": "The total including VAT is £2,518.80.",
+ "BT-31": "Invoice Number: MCD2001321-003",
+ "BT-5":  "Invoice Number: MCD2001321-003. Total including VAT: ..."}
+```
+
+It read the invoice perfectly, then poured the same sentence into
+every field it could reach. It was not mapping values to meanings. It
+was filling opaque slots.
+
+**`BT-1` carries no information to a vision model.**
+`supplierVatNumber` carries all of it. The schema had been asking in
+a vocabulary the model does not speak — and no amount of improving
+the *descriptions* helps when the *keys* are meaningless, because the
+model anchors on the key.
+
+That also explains why the two-field diagnostic worked all along:
+`invoiceNumber` and `totalWithVat` are self-describing.
+
+### What changed
+
+Each field now has a `promptKey` alongside its vocabulary `key`. The
+model is asked in human terms — `invoiceNumber`, `issueDate`,
+`supplierVatNumber` — and the answer is mapped back to Business Terms
+in code, where the mapping is explicit, reviewable, and cannot drift.
+Customer-defined fields get the same treatment:
+`custom.transport_reference` is as opaque as `BT-31`, so the model
+sees `transport_reference`.
+
+Every schema property is now `required`, too. With only `_confidence`
+required, six fields were silently omitted; nullable-but-required
+forces the model to answer null rather than skip. Safe precisely
+because every property is nullable — "required" means "give me a
+key", never "invent a value".
+
+### Why this took six attempts
+
+The first five were: two wrong request shapes, one wrong theory about
+`guided_json`, one real-but-insufficient response-reader bug, and one
+prompt-wording fix that could never have worked.
+
+Every one was reasoned from evidence that looked sufficient and was
+not. The diagnostic existed from attempt three onward, but tested a
+*simplified* request — a short question and a two-field schema —
+while the real path sent a long prompt and fourteen fields. That gap
+was where the bug lived, and reasoning across it produced five
+consecutive plausible-but-wrong conclusions.
+
+The fix that worked came from making the diagnostic send *byte-for-
+byte what production sends* and print the raw response. That took
+minutes once done, and it should have been the first thing built
+rather than the sixth.
+
+The lesson is sharper than "instrument the boundary": **instrument
+the boundary with the real payload.** A diagnostic that tests a
+simplified version of the failing request can confirm every component
+works while the actual request keeps failing.

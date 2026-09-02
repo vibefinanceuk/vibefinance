@@ -1,6 +1,7 @@
 import type { InvoiceFacts } from "@vibefinance/shared";
 import {
   asResolved,
+  CUSTOM_FIELD_PREFIX,
   isKnownFieldType,
   type FieldType,
   type ResolvedVocabulary,
@@ -111,20 +112,50 @@ export function toDataUrl(bytes: Uint8Array, contentType: string): string {
  * "BT-31" means nothing on a printed page while "supplier VAT
  * number" is what is literally written there.
  */
-const STANDARD_EXTRACTION_FIELDS: { key: string; type: FieldType; description: string }[] = [
-  { key: "BT-1", type: "text", description: "the invoice number, usually labelled 'Invoice Number', 'Invoice No' or 'Reference'. This is a document reference code, NEVER a company name or a person's name." },
-  { key: "BT-2", type: "date", description: "the invoice issue date, as YYYY-MM-DD" },
-  { key: "BT-9", type: "date", description: "the payment due date, as YYYY-MM-DD" },
-  { key: "BT-5", type: "text", description: "the currency, as a 3-letter ISO code such as EUR or GBP" },
-  { key: "BT-13", type: "text", description: "the purchase order reference, if the invoice quotes one" },
-  { key: "BT-31", type: "text", description: "the VAT registration number of the SUPPLIER — the company issuing this invoice and being paid, shown in the header or letterhead. Not the customer's." },
-  { key: "BT-40", type: "text", description: "the SUPPLIER's country as a 2-letter ISO code (GB for the United Kingdom, DE for Germany, FR for France). The supplier is the company issuing the invoice, not the one being billed." },
-  { key: "BT-48", type: "text", description: "the VAT registration number of the BUYER — the company being billed, usually under a heading like 'Bill To' or 'Invoice To'. Not the supplier's." },
-  { key: "BT-106", type: "number", description: "the total of all line amounts before VAT" },
-  { key: "BT-110", type: "number", description: "the total VAT amount" },
-  { key: "BT-112", type: "number", description: "the grand total including VAT, usually the largest amount and the last line of the totals block — often labelled 'Total with VAT', 'Total Due' or just 'Total'." },
-  { key: "BT-115", type: "number", description: "the amount actually due for payment" },
+/**
+ * The fields worth asking a model for.
+ *
+ * `promptKey` is what the model sees; `key` is where the value lands.
+ *
+ * That separation exists because of a real, measured failure. The
+ * schema originally used Business Term ids (BT-1, BT-2, BT-31)
+ * directly as its property names, and the model — which reads the
+ * invoice perfectly well — could not map them to anything. It
+ * returned the buyer's name for BT-1 and a postal address for BT-2,
+ * and silently omitted six of the fourteen properties entirely.
+ *
+ * The diagnostic that proved it: given the same schema and a short
+ * question, the model poured the same sentence into BT-1, BT-2,
+ * BT-31, BT-5 and BT-9 alike. It was not mapping values to meanings;
+ * it was filling opaque slots. "BT-31" carries no information to a
+ * vision model, while "supplierVatNumber" carries all of it.
+ *
+ * So the model is asked in its own terms, and the answer is mapped
+ * back to the closed vocabulary here — where the mapping is explicit,
+ * reviewable, and cannot drift.
+ */
+const STANDARD_EXTRACTION_FIELDS: { key: string; promptKey: string; type: FieldType; description: string }[] = [
+  { key: "BT-1", promptKey: "invoiceNumber", type: "text", description: "The invoice number, usually labelled 'Invoice Number', 'Invoice No' or 'Reference'. A document reference code such as 'INV-2026-0042' — never a company name." },
+  { key: "BT-2", promptKey: "issueDate", type: "date", description: "The date the invoice was issued, as YYYY-MM-DD." },
+  { key: "BT-9", promptKey: "paymentDueDate", type: "date", description: "The date payment is due, as YYYY-MM-DD. Null if the invoice does not state one." },
+  { key: "BT-5", promptKey: "currencyCode", type: "text", description: "The currency as a 3-letter ISO code: GBP for pounds, EUR for euros, USD for dollars. Infer it from the currency symbol if no code is printed." },
+  { key: "BT-13", promptKey: "purchaseOrderNumber", type: "text", description: "The purchase order or P.O. number, if the invoice quotes one. Null otherwise." },
+  { key: "BT-31", promptKey: "supplierVatNumber", type: "text", description: "The VAT registration number of the SUPPLIER — the company issuing this invoice and receiving payment, shown in the letterhead at the top. Not the customer's." },
+  { key: "BT-40", promptKey: "supplierCountryCode", type: "text", description: "The SUPPLIER's country as a 2-letter ISO code: GB for the United Kingdom, DE for Germany, FR for France." },
+  { key: "BT-48", promptKey: "buyerVatNumber", type: "text", description: "The VAT registration number of the BUYER — the company being billed, usually under 'Bill To' or 'Invoice To'. Not the supplier's." },
+  { key: "BT-106", promptKey: "netTotalBeforeVat", type: "number", description: "The subtotal before VAT, often labelled 'Subtotal' or 'Net'." },
+  { key: "BT-110", promptKey: "vatAmount", type: "number", description: "The VAT or tax amount, often labelled 'VAT' or 'Tax'." },
+  { key: "BT-112", promptKey: "totalWithVat", type: "number", description: "The grand total including VAT — usually the largest figure and the last line of the totals block, labelled 'Total with VAT', 'Total Due' or 'Total'." },
+  { key: "BT-115", promptKey: "amountDue", type: "number", description: "The amount actually payable, if stated separately from the total. Null otherwise." },
 ];
+
+/** A customer's own field keys are already human-readable labels
+ *  turned into keys (decision 0041), so the prompt key is simply the
+ *  label — 'custom.transport_reference' is as opaque to a model as
+ *  'BT-31' is. */
+function customPromptKey(key: string): string {
+  return key.startsWith(CUSTOM_FIELD_PREFIX) ? key.slice(CUSTOM_FIELD_PREFIX.length) : key;
+}
 
 /**
  * Builds the JSON schema the model's response is constrained to.
@@ -146,13 +177,13 @@ export function buildExtractionSchema(vocabulary: VocabularyInput = "invoice"): 
   const jsonType = (t: FieldType) => (t === "number" ? ["number", "null"] : ["string", "null"]);
 
   for (const field of STANDARD_EXTRACTION_FIELDS) {
-    properties[field.key] = { type: jsonType(field.type), description: field.description };
+    properties[field.promptKey] = { type: jsonType(field.type), description: field.description };
   }
   // A customer's own declared fields (decision 0041) are asked for
   // using their own descriptions — which is exactly what that
   // description exists for.
   for (const field of v.customFields) {
-    properties[field.key] = { type: jsonType(field.type), description: field.description };
+    properties[customPromptKey(field.key)] = { type: jsonType(field.type), description: field.description };
   }
 
   properties._confidence = {
@@ -161,10 +192,19 @@ export function buildExtractionSchema(vocabulary: VocabularyInput = "invoice"): 
       "your own confidence that the values above are correct, from 0.0 to 1.0. Be honest: a blurry or partial image should score low.",
   };
 
+  // Every property is required, not just _confidence — and this is a
+  // measured fix, not a stylistic one. With only _confidence
+  // required, the model silently omitted six of fourteen properties
+  // from its response, including the invoice total. Requiring all of
+  // them forces it to consider each field and answer null rather than
+  // quietly skipping it.
+  //
+  // Safe precisely because every property is nullable: "required"
+  // here means "give me a key", never "invent a value".
   return {
     type: "object",
     properties,
-    required: ["_confidence"],
+    required: Object.keys(properties),
   };
 }
 
@@ -176,7 +216,7 @@ export function buildExtractionPrompt(vocabulary: VocabularyInput = "invoice"): 
       : `
 
 This customer has also defined fields of their own. These are not part of any standard — the descriptions below are the customer's own:
-${v.customFields.map((f) => `  ${f.key} (${f.type}) — ${f.description}`).join("\n")}`;
+${v.customFields.map((f) => `  ${customPromptKey(f.key)} (${f.type}) — ${f.description}`).join("\n")}`;
 
   return `You are reading a photograph or scan of a supplier invoice and extracting specific fields from it.
 
@@ -188,6 +228,8 @@ Rules that matter more than completeness:
 - Amounts must be plain numbers with no currency symbol, no thousands separator, and a dot for the decimal point.
 - A total that is printed on the document is always preferable to one you calculate yourself.
 - Set _confidence honestly. A clear, sharp, complete invoice justifies a high score; a blurry photo, a cropped image, or a document you are partly guessing at does not.${customSection}
+
+- Include every field named in the schema, even when the answer is null. Do not omit a key because you could not find its value.
 
 Return only the JSON object described by the schema.`;
 }
@@ -277,15 +319,17 @@ export function parseExtractionResponse(
   }
   const obj = parsed as Record<string, unknown>;
 
-  const expected = new Map<string, FieldType>();
-  for (const f of STANDARD_EXTRACTION_FIELDS) expected.set(f.key, f.type);
-  for (const f of v.customFields) expected.set(f.key, f.type);
+  // promptKey -> [vocabulary key, type]. The model answers in its own
+  // terms; the answer is mapped back to the closed vocabulary here.
+  const expected = new Map<string, { key: string; type: FieldType }>();
+  for (const f of STANDARD_EXTRACTION_FIELDS) expected.set(f.promptKey, { key: f.key, type: f.type });
+  for (const f of v.customFields) expected.set(customPromptKey(f.key), { key: f.key, type: f.type });
 
   const facts: InvoiceFacts = {};
   const missingFields: string[] = [];
 
-  for (const [key, type] of expected) {
-    const result = coerce(obj[key], type);
+  for (const [promptKey, { key, type }] of expected) {
+    const result = coerce(obj[promptKey], type);
     if (result.ok) {
       facts[key] = result.value;
     } else {

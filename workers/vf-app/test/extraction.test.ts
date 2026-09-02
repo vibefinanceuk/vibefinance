@@ -24,11 +24,11 @@ const JPEG = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]);
 const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
 const GOOD = JSON.stringify({
-  "BT-1": "INV-2026-0042",
-  "BT-2": "2026-09-02",
-  "BT-5": "EUR",
-  "BT-31": "DE900800700",
-  "BT-112": 1190.0,
+  "invoiceNumber": "INV-2026-0042",
+  "issueDate": "2026-09-02",
+  "currencyCode": "EUR",
+  "supplierVatNumber": "DE900800700",
+  "totalWithVat": 1190.0,
   _confidence: 0.94,
 });
 
@@ -56,13 +56,31 @@ describe("toDataUrl", () => {
 describe("buildExtractionSchema", () => {
   it("makes every extractable field nullable — a field that cannot be read must come back null, never invented", () => {
     const schema = buildExtractionSchema() as { properties: Record<string, { type: string[] }> };
-    expect(schema.properties["BT-1"].type).toEqual(["string", "null"]);
-    expect(schema.properties["BT-112"].type).toEqual(["number", "null"]);
+    expect(schema.properties["invoiceNumber"].type).toEqual(["string", "null"]);
+    expect(schema.properties["totalWithVat"].type).toEqual(["number", "null"]);
   });
 
-  it("requires only the confidence score", () => {
-    const schema = buildExtractionSchema() as { required: string[] };
-    expect(schema.required).toEqual(["_confidence"]);
+  it("requires EVERY property, not just the confidence score", () => {
+    // Measured, not stylistic: with only _confidence required, the
+    // model silently omitted six of fourteen properties from a real
+    // response, including the invoice total.
+    const schema = buildExtractionSchema() as { required: string[]; properties: Record<string, unknown> };
+    expect(schema.required.sort()).toEqual(Object.keys(schema.properties).sort());
+    expect(schema.required).toContain("totalWithVat");
+    expect(schema.required).toContain("_confidence");
+  });
+
+  it("asks the model in human terms, never in Business Term ids", () => {
+    // The measured failure this prevents: with BT-* keys the model
+    // returned the buyer's name for BT-1 and a postal address for
+    // BT-2. "BT-31" carries no information to a vision model;
+    // "supplierVatNumber" carries all of it.
+    const schema = buildExtractionSchema() as { properties: Record<string, unknown> };
+    for (const key of Object.keys(schema.properties)) {
+      expect(key).not.toMatch(/^B[TG]-\d+$/);
+    }
+    expect(schema.properties.invoiceNumber).toBeTruthy();
+    expect(schema.properties.supplierVatNumber).toBeTruthy();
   });
 
   it("includes a customer's own declared fields, using their own descriptions", () => {
@@ -70,7 +88,7 @@ describe("buildExtractionSchema", () => {
       { key: "custom.transport_reference", label: "Transport Reference", type: "text", description: "The carrier consignment reference" },
     ]);
     const schema = buildExtractionSchema(v) as { properties: Record<string, { description: string }> };
-    expect(schema.properties["custom.transport_reference"].description).toBe("The carrier consignment reference");
+    expect(schema.properties["transport_reference"].description).toBe("The carrier consignment reference");
   });
 
   it("types a custom number field as a number, so coercion can be enforced", () => {
@@ -78,7 +96,7 @@ describe("buildExtractionSchema", () => {
       { key: "custom.pallet_count", label: "Pallets", type: "number", description: "how many pallets" },
     ]);
     const schema = buildExtractionSchema(v) as { properties: Record<string, { type: string[] }> };
-    expect(schema.properties["custom.pallet_count"].type).toEqual(["number", "null"]);
+    expect(schema.properties["pallet_count"].type).toEqual(["number", "null"]);
   });
 });
 
@@ -125,7 +143,7 @@ describe("parseExtractionResponse — the refusal boundary", () => {
   });
 
   it("refuses a response with no confidence score — an unmeasured extraction is not a usable one", () => {
-    expect(() => parseExtractionResponse(JSON.stringify({ "BT-1": "INV-1" }))).toThrow(/confidence/);
+    expect(() => parseExtractionResponse(JSON.stringify({ "invoiceNumber": "INV-1" }))).toThrow(/confidence/);
   });
 
   it("refuses when nothing at all could be read, rather than storing an empty invoice", () => {
@@ -135,21 +153,21 @@ describe("parseExtractionResponse — the refusal boundary", () => {
   });
 
   it("clamps a confidence score outside 0..1 rather than trusting it", () => {
-    const high = parseExtractionResponse(JSON.stringify({ "BT-1": "X", _confidence: 5 }));
+    const high = parseExtractionResponse(JSON.stringify({ "invoiceNumber": "X", _confidence: 5 }));
     expect(high.confidence).toBe(1);
-    const low = parseExtractionResponse(JSON.stringify({ "BT-1": "X", _confidence: -3 }));
+    const low = parseExtractionResponse(JSON.stringify({ "invoiceNumber": "X", _confidence: -3 }));
     expect(low.confidence).toBe(0);
   });
 });
 
 describe("parseExtractionResponse — type coercion (decision 0041's types doing real work)", () => {
   it("accepts a numeric amount returned as a clean string", () => {
-    const r = parseExtractionResponse(JSON.stringify({ "BT-112": "1190.00", _confidence: 0.9 }));
+    const r = parseExtractionResponse(JSON.stringify({ "totalWithVat": "1190.00", _confidence: 0.9 }));
     expect(r.facts["BT-112"]).toBe(1190);
   });
 
   it("tolerates a stray currency symbol", () => {
-    const r = parseExtractionResponse(JSON.stringify({ "BT-112": "€1190.00", _confidence: 0.9 }));
+    const r = parseExtractionResponse(JSON.stringify({ "totalWithVat": "€1190.00", _confidence: 0.9 }));
     expect(r.facts["BT-112"]).toBe(1190);
   });
 
@@ -157,7 +175,7 @@ describe("parseExtractionResponse — type coercion (decision 0041's types doing
     // "approximately 500" must not become 500. This is the exact
     // failure decision 0041 designed the type system to prevent.
     const r = parseExtractionResponse(
-      JSON.stringify({ "BT-1": "INV-1", "BT-112": "approximately 500", _confidence: 0.5 })
+      JSON.stringify({ "invoiceNumber": "INV-1", "totalWithVat": "approximately 500", _confidence: 0.5 })
     );
     expect(r.facts["BT-112"]).toBeUndefined();
     expect(r.missingFields).toContain("BT-112");
@@ -165,7 +183,7 @@ describe("parseExtractionResponse — type coercion (decision 0041's types doing
 
   it("refuses a date that is not YYYY-MM-DD, rather than guessing day-versus-month", () => {
     const r = parseExtractionResponse(
-      JSON.stringify({ "BT-1": "INV-1", "BT-2": "03/04/2026", _confidence: 0.5 })
+      JSON.stringify({ "invoiceNumber": "INV-1", "issueDate": "03/04/2026", _confidence: 0.5 })
     );
     expect(r.facts["BT-2"]).toBeUndefined();
     expect(r.missingFields).toContain("BT-2");
@@ -173,13 +191,13 @@ describe("parseExtractionResponse — type coercion (decision 0041's types doing
 
   it("refuses a date that is well-formed but impossible", () => {
     const r = parseExtractionResponse(
-      JSON.stringify({ "BT-1": "INV-1", "BT-2": "2026-13-45", _confidence: 0.5 })
+      JSON.stringify({ "invoiceNumber": "INV-1", "issueDate": "2026-13-45", _confidence: 0.5 })
     );
     expect(r.missingFields).toContain("BT-2");
   });
 
   it("treats an empty string as unreadable, not as a real value", () => {
-    const r = parseExtractionResponse(JSON.stringify({ "BT-1": "INV-1", "BT-5": "   ", _confidence: 0.5 }));
+    const r = parseExtractionResponse(JSON.stringify({ "invoiceNumber": "INV-1", "currencyCode": "   ", _confidence: 0.5 }));
     expect(r.facts["BT-5"]).toBeUndefined();
     expect(r.missingFields).toContain("BT-5");
   });
@@ -189,13 +207,13 @@ describe("parseExtractionResponse — type coercion (decision 0041's types doing
       { key: "custom.pallet_count", label: "Pallets", type: "number", description: "x" },
     ]);
     const good = parseExtractionResponse(
-      JSON.stringify({ "BT-1": "INV-1", "custom.pallet_count": 12, _confidence: 0.9 }),
+      JSON.stringify({ "invoiceNumber": "INV-1", "pallet_count": 12, _confidence: 0.9 }),
       v
     );
     expect(good.facts["custom.pallet_count"]).toBe(12);
 
     const bad = parseExtractionResponse(
-      JSON.stringify({ "BT-1": "INV-1", "custom.pallet_count": "a dozen", _confidence: 0.9 }),
+      JSON.stringify({ "invoiceNumber": "INV-1", "pallet_count": "a dozen", _confidence: 0.9 }),
       v
     );
     expect(bad.missingFields).toContain("custom.pallet_count");
@@ -221,11 +239,11 @@ describe("extractInvoiceFromImage", () => {
     const spy: ExtractionModel = {
       extract: async (_p, _i, schema) => {
         seenSchema = schema;
-        return JSON.stringify({ "BT-1": "X", "custom.transport_reference": "TR-88431", _confidence: 0.9 });
+        return JSON.stringify({ "invoiceNumber": "X", "transport_reference": "TR-88431", _confidence: 0.9 });
       },
     };
     const result = await extractInvoiceFromImage(spy, JPEG, v);
-    expect((seenSchema as { properties: Record<string, unknown> }).properties["custom.transport_reference"]).toBeTruthy();
+    expect((seenSchema as { properties: Record<string, unknown> }).properties["transport_reference"]).toBeTruthy();
     expect(result.facts["custom.transport_reference"]).toBe("TR-88431");
   });
 
@@ -297,25 +315,25 @@ describe("coercion and prompt fixes from the live test", () => {
   it("accepts a thousands separator — every real invoice total has one", () => {
     // £2,518.80 on the real test invoice would have failed the
     // original parser even if the model had read it correctly.
-    const r = parseExtractionResponse(JSON.stringify({ "BT-112": "£2,518.80", _confidence: 0.9 }));
+    const r = parseExtractionResponse(JSON.stringify({ "totalWithVat": "£2,518.80", _confidence: 0.9 }));
     expect(r.facts["BT-112"]).toBe(2518.8);
   });
 
   it("handles larger groupings", () => {
-    const r = parseExtractionResponse(JSON.stringify({ "BT-112": "1,234,567.89", _confidence: 0.9 }));
+    const r = parseExtractionResponse(JSON.stringify({ "totalWithVat": "1,234,567.89", _confidence: 0.9 }));
     expect(r.facts["BT-112"]).toBe(1234567.89);
   });
 
   it("still refuses commas in nonsense positions rather than stripping them blindly", () => {
     const r = parseExtractionResponse(
-      JSON.stringify({ "BT-1": "INV-1", "BT-112": "1,2,3", _confidence: 0.9 })
+      JSON.stringify({ "invoiceNumber": "INV-1", "totalWithVat": "1,2,3", _confidence: 0.9 })
     );
     expect(r.facts["BT-112"]).toBeUndefined();
   });
 
   it("still refuses prose, which the thousands fix must not have loosened", () => {
     const r = parseExtractionResponse(
-      JSON.stringify({ "BT-1": "INV-1", "BT-112": "approximately 2,518.80", _confidence: 0.9 })
+      JSON.stringify({ "invoiceNumber": "INV-1", "totalWithVat": "approximately 2,518.80", _confidence: 0.9 })
     );
     expect(r.facts["BT-112"]).toBeUndefined();
   });
@@ -334,13 +352,13 @@ describe("coercion and prompt fixes from the live test", () => {
 
   it("describes BT-1 as a reference code, not just 'the invoice number'", () => {
     const schema = buildExtractionSchema() as { properties: Record<string, { description: string }> };
-    expect(schema.properties["BT-1"].description).toMatch(/NEVER a company name/);
+    expect(schema.properties["invoiceNumber"].description).toMatch(/never a company name/i);
   });
 
   it("distinguishes supplier and buyer VAT numbers in their own descriptions", () => {
     const schema = buildExtractionSchema() as { properties: Record<string, { description: string }> };
-    expect(schema.properties["BT-31"].description).toMatch(/SUPPLIER/);
-    expect(schema.properties["BT-48"].description).toMatch(/BUYER/);
+    expect(schema.properties["supplierVatNumber"].description).toMatch(/SUPPLIER/);
+    expect(schema.properties["buyerVatNumber"].description).toMatch(/BUYER/);
   });
 });
 
@@ -393,5 +411,58 @@ describe("extractResponseText — the real Workers AI response shape", () => {
   it("never throws on an unrecognised shape", () => {
     expect(() => extractResponseText({ something: "unexpected" })).not.toThrow();
     expect(() => extractResponseText(null)).not.toThrow();
+  });
+});
+
+describe("the real failure this fix addresses", () => {
+  it("the model's actual BT-keyed response was nonsense — captured verbatim from the live diagnostic", () => {
+    // What Llama 4 Scout returned when the schema used Business Term
+    // ids as property names, against a clear invoice it could read
+    // perfectly well. BT-1 got the BUYER's name; BT-2, a date field,
+    // got a postal address. Six of fourteen properties were omitted
+    // entirely, including the total.
+    const actualBadResponse = JSON.stringify({
+      "BT-1": "Mcdonalds UK",
+      "BT-2": "11-59 High Road, East Finchley, London, N2 8AW, United Kingdom",
+      "BT-31": null,
+      "BT-40": null,
+      "BT-5": null,
+      "BT-9": null,
+      _confidence: 0.9,
+    });
+    // Under the corrected schema those keys mean nothing, so NOTHING
+    // is readable — and the code refuses outright rather than
+    // storing a postal address as an issue date. A refusal is the
+    // right outcome here: this response contained no usable data.
+    expect(() => parseExtractionResponse(actualBadResponse)).toThrow(ExtractionRefusal);
+  });
+
+  it("the same invoice, answered in human terms, extracts correctly", () => {
+    // The model reads this invoice perfectly — it just could not map
+    // opaque codes to meanings.
+    const goodResponse = JSON.stringify({
+      invoiceNumber: "MCD2001321-003",
+      totalWithVat: "£2,518.80",
+      supplierVatNumber: "GB907856452",
+      currencyCode: "GBP",
+      _confidence: 0.95,
+    });
+    const result = parseExtractionResponse(goodResponse);
+    expect(result.facts["BT-1"]).toBe("MCD2001321-003");
+    expect(result.facts["BT-112"]).toBe(2518.8);
+    expect(result.facts["BT-31"]).toBe("GB907856452");
+    expect(result.facts["BT-5"]).toBe("GBP");
+  });
+
+  it("maps every prompt key back to its Business Term, with no key left unmapped", () => {
+    const schema = buildExtractionSchema() as { properties: Record<string, unknown> };
+    const promptKeys = Object.keys(schema.properties).filter((k) => k !== "_confidence");
+    const response: Record<string, unknown> = { _confidence: 0.9 };
+    for (const key of promptKeys) response[key] = "X";
+    const result = parseExtractionResponse(JSON.stringify(response));
+    // Text fields land as facts; numeric and date ones correctly
+    // refuse "X". What matters is that nothing is silently dropped.
+    const accounted = Object.keys(result.facts).filter((k) => k !== "extraction.confidence").length + result.missingFields.length;
+    expect(accounted).toBe(promptKeys.length);
   });
 });

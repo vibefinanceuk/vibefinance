@@ -170,12 +170,14 @@ describe("handleCaptureImage — the inferred path (decision 0043)", () => {
   const JPEG_HEADER = [0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10];
   const jpeg = new Uint8Array(JPEG_HEADER);
 
+  // Keyed the way the MODEL answers — human terms, not Business Term
+  // ids, which it cannot interpret (decision 0043's second addendum).
   const GOOD = JSON.stringify({
-    "BT-1": "PHOTO-2026-001",
-    "BT-2": "2026-09-02",
-    "BT-5": "EUR",
-    "BT-31": "DE900800700",
-    "BT-112": 1190.0,
+    invoiceNumber: "PHOTO-2026-001",
+    issueDate: "2026-09-02",
+    currencyCode: "EUR",
+    supplierVatNumber: "DE900800700",
+    totalWithVat: 1190.0,
     _confidence: 0.91,
   });
 
@@ -272,12 +274,12 @@ describe("handleCaptureImage — the inferred path (decision 0043)", () => {
     const spy = {
       extract: async (_p: string, _i: { bytes: Uint8Array; contentType: string }, schema: Record<string, unknown>) => {
         seenSchema = schema;
-        return JSON.stringify({ "BT-1": "X", "custom.transport_reference": "TR-88431", _confidence: 0.9 });
+        return JSON.stringify({ invoiceNumber: "X", transport_reference: "TR-88431", _confidence: 0.9 });
       },
     };
     const result = await handleCaptureImage(env.DB, "ch-custom", jpeg, spy);
     expect(result.status).toBe(201);
-    expect((seenSchema as { properties: Record<string, unknown> }).properties["custom.transport_reference"]).toBeTruthy();
+    expect((seenSchema as { properties: Record<string, unknown> }).properties["transport_reference"]).toBeTruthy();
 
     const row = await env.DB.prepare("SELECT facts_json FROM invoice_headers WHERE id = ?")
       .bind(result.body.id as string)
