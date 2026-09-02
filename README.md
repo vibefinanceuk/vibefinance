@@ -561,6 +561,31 @@ rejected requester can genuinely come back later.
 endpoint on vf-licence, since a prospective customer has no credential
 by definition. See `docs/decisions/0038-signup-requests.md`.
 
+## Control-plane provisioning, and what actually ends a trial
+
+Turns an approved request into a real trial sandbox — as far as the
+control plane can go alone. Deliberately half of provisioning: the
+customer, sandbox environment, API key and 30-day trial licence are
+all created and tested here; the Cloudflare API calls that create the
+real D1 database, R2 bucket and Worker are not, because that half
+needs an account-level write token deserving its own design
+conversation. The route is honest about the split rather than leaving
+it inferred — `infrastructureProvisioned: false`, fleet metadata
+genuinely NULL, and a visibly fake `not-yet-deployed.invalid`
+placeholder URL.
+
+The part worth knowing: setting `valid_to` does not end a trial. The
+licence cache fails open at last known state (decision 0003), so a
+licence that merely stops being renewable never stops anything — an
+expired trial would run forever. `expireOverdueLicences`, on
+vf-licence's first cron trigger, flips overdue licences to `blocked`,
+which is read-only rather than lights-out: the sandbox and all its
+config survive, and the customer is prompted to pay. Also records an
+honest finding — one test here was watched to *pass* when its target
+was removed, because SQL's three-valued logic already covered the
+case; the test's comment now says exactly what it does and doesn't
+prove. See `docs/decisions/0039-control-plane-provisioning.md`.
+
 ## The one rule enforced by tooling, not convention
 
 No application code reads a tenant-scoped binding (`env.DB` and similar)

@@ -28,6 +28,7 @@ import {
   handleRejectSignupRequest,
   handleRecordProvisioning,
 } from "./signup-route.js";
+import { handleProvisionTrial, expireOverdueLicences } from "./provision-route.js";
 import { extractBearerToken, isValidAdminKey, isValidEnvironmentKey } from "./auth.js";
 
 export interface Env {
@@ -119,6 +120,7 @@ export default {
     const approveMatch = url.pathname.match(/^\/signup-requests\/([^/]+)\/approve$/);
     const rejectMatch = url.pathname.match(/^\/signup-requests\/([^/]+)\/reject$/);
     const provisionedMatch = url.pathname.match(/^\/signup-requests\/([^/]+)\/provisioned$/);
+    const provisionMatch = url.pathname.match(/^\/signup-requests\/([^/]+)\/provision$/);
     const isAdminRoute =
       (url.pathname === "/customers" && request.method === "POST") ||
       (url.pathname === "/environments" && (request.method === "POST" || request.method === "GET")) ||
@@ -127,6 +129,7 @@ export default {
       (approveMatch !== null && request.method === "POST") ||
       (rejectMatch !== null && request.method === "POST") ||
       (provisionedMatch !== null && request.method === "POST") ||
+      (provisionMatch !== null && request.method === "POST") ||
       (rotateMatch !== null && request.method === "POST") ||
       (fleetMetadataMatch !== null && request.method === "PATCH");
     if (isAdminRoute) {
@@ -163,6 +166,22 @@ export default {
         return json({ error: "invalid JSON body" }, 400);
       }
       const result = await handleRejectSignupRequest(env.CONTROL_DB, rejectMatch[1], (body ?? {}) as Record<string, unknown>);
+      return json(result.body, result.status);
+    }
+
+    // Control-plane provisioning (decision 0039) — creates the
+    // customer, sandbox environment and 30-day trial licence for an
+    // approved request. Deliberately does NOT create the real
+    // Cloudflare D1 database, R2 bucket or Worker; see
+    // provision-route.ts's own comment.
+    if (provisionMatch && request.method === "POST") {
+      let body: unknown;
+      try {
+        body = await request.json();
+      } catch {
+        return json({ error: "invalid JSON body" }, 400);
+      }
+      const result = await handleProvisionTrial(env.CONTROL_DB, provisionMatch[1], (body ?? {}) as Record<string, unknown>);
       return json(result.body, result.status);
     }
 
@@ -273,5 +292,29 @@ export default {
     }
 
     return json({ error: "not found" }, 404);
+  },
+
+  /**
+   * vf-licence's first scheduled handler (decision 0039). Blocks
+   * every licence whose valid_to has passed — without it, an expired
+   * trial keeps working indefinitely, since vf-app's licence cache
+   * fails open at its last known good state (decision 0003) and a
+   * licence that merely stops being renewable never actually stops
+   * anything.
+   *
+   * Deliberately thin: all the real logic is expireOverdueLicences,
+   * a plain function over the database, so it is testable without
+   * simulating a scheduled event.
+   */
+  async scheduled(_event: ScheduledController, env: Env): Promise<void> {
+    if (!env.CONTROL_DB) return;
+    try {
+      await expireOverdueLicences(env.CONTROL_DB);
+    } catch {
+      // Deliberately silent, matching vf-app's own scheduled handler:
+      // retried next cron cycle. An expiry sweep that fails once has
+      // not let anything through permanently — the same overdue rows
+      // are still overdue an hour later.
+    }
   },
 };

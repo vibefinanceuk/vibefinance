@@ -16,7 +16,23 @@
       "database_name": "vf-licence-poc",
       "database_id": "3590272c-fa73-4052-bab7-4491352c2410"
     }
-  ]
+  ],
+
+  // The licence expiry sweep (decision 0039) — this Worker's first
+  // scheduled trigger. Blocks every licence whose valid_to has
+  // passed, which is what actually ends a 30-day trial: vf-app's
+  // licence cache fails open at its last known good state (decision
+  // 0003), so a licence that merely stops being renewable never
+  // stops anything on its own.
+  //
+  // Hourly rather than daily: the cost is a single indexed query
+  // against a small table, and it bounds how long an expired trial
+  // can keep working to an hour rather than most of a day. The exact
+  // interval is easy to change and nothing depends on its precise
+  // value.
+  "triggers": {
+    "crons": ["0 * * * *"]
+  }
 
   // ADMIN_API_KEY (protects POST /customers, POST /licences, key
   // rotation) is deliberately not declared here — it's a secret, set

@@ -171,6 +171,14 @@ describe("the signup request flow's auth boundary, through the real router (deci
     expect(res.status).toBe(401);
   });
 
+  it("401s the control-plane provisioning route with no Authorization header", async () => {
+    const res = await SELF.fetch("https://example.com/signup-requests/some-id/provision", {
+      method: "POST",
+      body: JSON.stringify({ customerId: "northwind" }),
+    });
+    expect(res.status).toBe(401);
+  });
+
   it("401s recording provisioning with no Authorization header", async () => {
     const res = await SELF.fetch("https://example.com/signup-requests/some-id/provisioned", {
       method: "POST",
