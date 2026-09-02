@@ -46,7 +46,7 @@ describe("scheduled() — the licence refresh trigger", () => {
     const publicKeyJwk = await crypto.subtle.exportKey("jwk", keyPair.publicKey);
 
     const claims = {
-      customerId: "acme",
+      customerId: "acme-production",
       plan: "standard",
       features: [],
       volumeEntitlement: 1000,
@@ -62,14 +62,14 @@ describe("scheduled() — the licence refresh trigger", () => {
       ...testEnv,
       LICENCE_SIGNING_PUBLIC_KEY: publicKeyJwk,
       LICENCE_SERVICE: service,
-      CUSTOMER_ID: "acme",
+      ENVIRONMENT_ID: "acme-production",
       VF_LICENCE_API_KEY: FAKE_API_KEY,
     };
 
     await worker.scheduled?.({} as ScheduledEvent, env, {} as ExecutionContext);
 
     expect(service.fetch).toHaveBeenCalledWith(
-      "https://vf-licence.internal/licences/acme/token",
+      "https://vf-licence.internal/licences/acme-production/token",
       expect.objectContaining({ headers: { Authorization: `Bearer ${FAKE_API_KEY}` } })
     );
     const state = await readLicenceState(testEnv.DB);
@@ -99,7 +99,7 @@ describe("scheduled() — the licence refresh trigger", () => {
       ...testEnv,
       LICENCE_SIGNING_PUBLIC_KEY: publicKeyJwk,
       LICENCE_SERVICE: service,
-      CUSTOMER_ID: "acme",
+      ENVIRONMENT_ID: "acme-production",
       // Deliberately no VF_LICENCE_API_KEY.
     };
 
@@ -123,7 +123,7 @@ describe("scheduled() — the licence refresh trigger", () => {
       ...testEnv,
       LICENCE_SIGNING_PUBLIC_KEY: { REPLACE_WITH_REAL_PUBLIC_KEY_JWK: true },
       LICENCE_SERVICE: service,
-      CUSTOMER_ID: "acme",
+      ENVIRONMENT_ID: "acme-production",
       VF_LICENCE_API_KEY: FAKE_API_KEY,
     };
     await expect(
@@ -153,7 +153,7 @@ describe("scheduled() — the licence refresh trigger", () => {
       ...testEnv,
       LICENCE_SIGNING_PUBLIC_KEY: publicKeyJwk,
       LICENCE_SERVICE: service,
-      CUSTOMER_ID: "acme",
+      ENVIRONMENT_ID: "acme-production",
       VF_LICENCE_API_KEY: FAKE_API_KEY,
     };
 
@@ -169,7 +169,7 @@ describe("scheduled() — the usage push, same cron", () => {
     const env: Env = {
       ...testEnv,
       LICENCE_SERVICE: service,
-      CUSTOMER_ID: "acme",
+      ENVIRONMENT_ID: "acme-production",
       VF_LICENCE_API_KEY: FAKE_API_KEY,
     };
 
@@ -182,7 +182,7 @@ describe("scheduled() — the usage push, same cron", () => {
     const headers = init.headers as Record<string, string>;
     expect(headers.Authorization).toBe(`Bearer ${FAKE_API_KEY}`);
     const body = JSON.parse(init.body as string);
-    expect(body).toMatchObject({ customerId: "acme", invoicesProcessed: 0 });
+    expect(body).toMatchObject({ environmentId: "acme-production", invoicesProcessed: 0 });
   });
 
   it("does not run when VF_LICENCE_API_KEY is missing, even with everything else configured", async () => {
@@ -190,7 +190,7 @@ describe("scheduled() — the usage push, same cron", () => {
     const env: Env = {
       ...testEnv,
       LICENCE_SERVICE: service,
-      CUSTOMER_ID: "acme",
+      ENVIRONMENT_ID: "acme-production",
       // Deliberately no VF_LICENCE_API_KEY.
     };
 
@@ -207,7 +207,7 @@ describe("scheduled() — the usage push, same cron", () => {
       ...testEnv,
       // Deliberately no LICENCE_SIGNING_PUBLIC_KEY at all.
       LICENCE_SERVICE: service,
-      CUSTOMER_ID: "acme",
+      ENVIRONMENT_ID: "acme-production",
       VF_LICENCE_API_KEY: FAKE_API_KEY,
     };
 
@@ -223,7 +223,7 @@ describe("scheduled() — the usage push, same cron", () => {
     const privateKeyJwk = await crypto.subtle.exportKey("jwk", keyPair.privateKey);
     const publicKeyJwk = await crypto.subtle.exportKey("jwk", keyPair.publicKey);
     const claims = {
-      customerId: "acme",
+      customerId: "acme-production",
       plan: "standard",
       features: [],
       volumeEntitlement: 1000,
@@ -244,7 +244,7 @@ describe("scheduled() — the usage push, same cron", () => {
       ...testEnv,
       LICENCE_SIGNING_PUBLIC_KEY: publicKeyJwk,
       LICENCE_SERVICE: service,
-      CUSTOMER_ID: "acme",
+      ENVIRONMENT_ID: "acme-production",
       VF_LICENCE_API_KEY: FAKE_API_KEY,
     };
 

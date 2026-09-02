@@ -47,13 +47,30 @@
   //
   // Not sensitive either way — the corresponding private key never
   // leaves vf-licence — so this is a plain var, not a secret.
-  // CUSTOMER_ID must match the id this customer was provisioned with
-  // in vf-licence (`customers.id`), and LICENCE_SERVER_URL is wherever
-  // that instance actually lives. LOCALE governs the genuinely
-  // customer-facing subset of API messages — see
-  // docs/decisions/0008-locale-aware-messages.md and src/i18n.ts for
-  // the full supported set (en, de, fr, es, it, nl); any unset or
-  // unrecognised value falls back to English, never an error.
+  //
+  // CUSTOMER_ID and ENVIRONMENT_ID are deliberately two separate vars
+  // (decision 0037), because they answer two genuinely different
+  // questions:
+  //   - CUSTOMER_ID must match `customers.id` in vf-licence. It is
+  //     the *storage* identity — the R2 object key prefix,
+  //     {customer}/{year}/{invoice_id}.{ext} (decision 0013). Keeping
+  //     it customer-scoped means a document's own key stays stable
+  //     and meaningful, and an R2 bucket is already per-deployment so
+  //     the key has no need to re-encode which environment wrote it.
+  //   - ENVIRONMENT_ID must match `environments.id` in vf-licence
+  //     (e.g. "Acme-production", "Acme-sandbox" — decision 0036). It
+  //     is the *entitlement and reporting* identity: which specific
+  //     deployment is fetching its licence token and pushing its
+  //     usage. A customer's sandbox and production deployments have
+  //     separate licences and separate usage figures, so neither call
+  //     can be made with a bare customer id any more.
+  //
+  // LICENCE_SERVER_URL is wherever that vf-licence instance actually
+  // lives. LOCALE governs the genuinely customer-facing subset of API
+  // messages — see docs/decisions/0008-locale-aware-messages.md and
+  // src/i18n.ts for the full supported set (en, de, fr, es, it, nl);
+  // any unset or unrecognised value falls back to English, never an
+  // error.
   "vars": {
     "LICENCE_SIGNING_PUBLIC_KEY": {
       "key_ops": [
@@ -67,6 +84,7 @@
     },
     "LICENCE_SERVER_URL": "https://vf-licence.vibefinance.workers.dev",
     "CUSTOMER_ID": "Acme",
+    "ENVIRONMENT_ID": "Acme-production",
     "LOCALE": "en"
   },
 

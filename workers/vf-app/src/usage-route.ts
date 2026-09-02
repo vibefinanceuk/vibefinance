@@ -18,12 +18,12 @@ export interface UsagePushResult {
  */
 export async function handleUsagePush(
   db: D1Database,
-  customerId: string,
+  environmentId: string,
   pusher: UsagePusher,
   now: Date = new Date()
 ): Promise<UsagePushResult> {
   try {
-    const report = await pushUsage(db, now, customerId, pusher);
+    const report = await pushUsage(db, now, environmentId, pusher);
     return { status: 200, body: { status: "pushed", report } };
   } catch (err) {
     return { status: 502, body: { error: "usage push failed", detail: String(err) } };

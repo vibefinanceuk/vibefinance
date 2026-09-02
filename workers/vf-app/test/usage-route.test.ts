@@ -10,19 +10,19 @@ beforeEach(async () => {
 describe("handleUsagePush", () => {
   it("computes and pushes a report, returning it in the response body", async () => {
     const pusher = vi.fn().mockResolvedValue(undefined);
-    const result = await handleUsagePush(env.DB, "acme", pusher, new Date("2026-08-15T00:00:00Z"));
+    const result = await handleUsagePush(env.DB, "acme-production", pusher, new Date("2026-08-15T00:00:00Z"));
 
     expect(result.status).toBe(200);
     expect(result.body).toMatchObject({
       status: "pushed",
-      report: { customerId: "acme", periodKey: "2026-08", invoicesProcessed: 0 },
+      report: { environmentId: "acme-production", periodKey: "2026-08", invoicesProcessed: 0 },
     });
     expect(pusher).toHaveBeenCalledTimes(1);
   });
 
   it("returns 502 with a diagnosable detail when the pusher fails, rather than throwing", async () => {
     const pusher = vi.fn().mockRejectedValue(new Error("connection refused"));
-    const result = await handleUsagePush(env.DB, "acme", pusher);
+    const result = await handleUsagePush(env.DB, "acme-production", pusher);
 
     expect(result.status).toBe(502);
     expect(result.body).toMatchObject({ error: "usage push failed" });

@@ -27,9 +27,9 @@ async function seedInvoiceRun(id: string, outcome: string, createdAt: string, st
 
 describe("computeCurrentPeriodUsage", () => {
   it("counts zero for a period with no invoice runs", async () => {
-    const usage = await computeCurrentPeriodUsage(env.DB, new Date("2026-08-15T00:00:00Z"), "acme");
+    const usage = await computeCurrentPeriodUsage(env.DB, new Date("2026-08-15T00:00:00Z"), "acme-production");
     expect(usage).toEqual({
-      customerId: "acme",
+      environmentId: "acme-production",
       periodKey: "2026-08",
       invoicesProcessed: 0,
       rulesEvaluated: 0,
@@ -45,7 +45,7 @@ describe("computeCurrentPeriodUsage", () => {
     await seedInvoiceRun("r3", "matched", "2026-07-31T23:59:59Z", 5);
     await seedInvoiceRun("r4", "matched", "2026-09-01T00:00:00Z", 5);
 
-    const usage = await computeCurrentPeriodUsage(env.DB, new Date("2026-08-15T00:00:00Z"), "acme");
+    const usage = await computeCurrentPeriodUsage(env.DB, new Date("2026-08-15T00:00:00Z"), "acme-production");
     expect(usage.invoicesProcessed).toBe(2);
     expect(usage.rulesEvaluated).toBe(5); // 3 + 2, not the excluded runs' 5 + 5
   });
@@ -55,12 +55,12 @@ describe("computeCurrentPeriodUsage", () => {
     await seedInvoiceRun("r2", "matched", "2026-08-02T00:00:00Z", 0);
     await seedInvoiceRun("r3", "no_match", "2026-08-03T00:00:00Z", 0);
 
-    const usage = await computeCurrentPeriodUsage(env.DB, new Date("2026-08-15T00:00:00Z"), "acme");
+    const usage = await computeCurrentPeriodUsage(env.DB, new Date("2026-08-15T00:00:00Z"), "acme-production");
     expect(usage.outcomeCounts).toEqual({ matched: 2, no_match: 1 });
   });
 
   it("always reports activeUsers as null — not yet computable, never fabricated", async () => {
-    const usage = await computeCurrentPeriodUsage(env.DB, new Date(), "acme");
+    const usage = await computeCurrentPeriodUsage(env.DB, new Date(), "acme-production");
     expect(usage.activeUsers).toBeNull();
   });
 });
@@ -70,7 +70,7 @@ describe("pushUsage", () => {
     await seedInvoiceRun("r1", "matched", "2026-08-05T00:00:00Z", 1);
     const pusher = vi.fn().mockResolvedValue(undefined);
 
-    const report = await pushUsage(env.DB, new Date("2026-08-15T00:00:00Z"), "acme", pusher);
+    const report = await pushUsage(env.DB, new Date("2026-08-15T00:00:00Z"), "acme-production", pusher);
 
     expect(pusher).toHaveBeenCalledTimes(1);
     expect(pusher).toHaveBeenCalledWith(report);
@@ -79,6 +79,6 @@ describe("pushUsage", () => {
 
   it("does not swallow an error from the pusher", async () => {
     const pusher = vi.fn().mockRejectedValue(new Error("network error"));
-    await expect(pushUsage(env.DB, new Date(), "acme", pusher)).rejects.toThrow("network error");
+    await expect(pushUsage(env.DB, new Date(), "acme-production", pusher)).rejects.toThrow("network error");
   });
 });

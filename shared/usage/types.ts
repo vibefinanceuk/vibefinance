@@ -1,5 +1,5 @@
 /**
- * A usage report for one customer, one period. Blueprint,
+ * A usage report for one environment, one period. Blueprint,
  * "Subsystem three", usage_periods: "invoices_processed... the billing
  * number. rules_evaluated... Load, and a proxy for how much of the
  * product they actually use. active_users... A count, never a list."
@@ -13,9 +13,18 @@
  * description, it doesn't belong in this type.
  */
 export interface UsageReport {
-  customerId: string;
-  /** Calendar month, "YYYY-MM". Composite key with customerId on the
-   * receiving side makes every push idempotent — see
+  /**
+   * The environment this usage belongs to (e.g. "Acme-production") —
+   * decision 0036. Re-keyed from customerId: a customer's sandbox and
+   * production deployments report their usage separately, so sandbox
+   * testing volume can never inflate the figures a consumption-based
+   * bill is computed from. This field is serialised directly onto the
+   * wire, so its name must match what vf-licence's POST /usage
+   * actually expects.
+   */
+  environmentId: string;
+  /** Calendar month, "YYYY-MM". Composite key with environmentId on
+   * the receiving side makes every push idempotent — see
    * docs/decisions/0004-usage-telemetry.md. */
   periodKey: string;
   invoicesProcessed: number;

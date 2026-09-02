@@ -524,6 +524,24 @@ ones from earlier migrations — was handled by explicitly retiring each
 one with a comment, not a silent workaround. See
 `docs/decisions/0036-customer-environments.md`.
 
+## CUSTOMER_ID and ENVIRONMENT_ID are two different things
+
+The `vf-app` half of decision 0036, and a good example of why checking
+every use of something before changing it is worth the time. The
+apparent fix was a one-line config change — point `CUSTOMER_ID` at
+`"Acme-production"`. Checking its real call sites first showed it was
+quietly doing two different jobs: the entitlement identity (which
+deployment fetches its licence and pushes its usage — now genuinely an
+environment id) and the storage identity (the R2 object key prefix,
+decision 0013). The one-line change would have silently started
+writing new documents under a different R2 prefix from every existing
+one. Split into two vars instead, with the key prefix deliberately
+staying customer-scoped since an R2 bucket is already per-deployment.
+`UsageReport.customerId` was renamed to `environmentId` because it is
+a real wire contract; `LicenceClaims.customerId` was deliberately not,
+because it is only ever read, never sent. See
+`docs/decisions/0037-customer-id-vs-environment-id.md`.
+
 ## The one rule enforced by tooling, not convention
 
 No application code reads a tenant-scoped binding (`env.DB` and similar)

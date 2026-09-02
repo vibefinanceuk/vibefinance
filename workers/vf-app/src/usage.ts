@@ -14,7 +14,7 @@ interface OutcomeCountRow {
 export async function computeCurrentPeriodUsage(
   db: D1Database,
   now: Date,
-  customerId: string
+  environmentId: string
 ): Promise<UsageReport> {
   const periodKey = now.toISOString().slice(0, 7); // "YYYY-MM"
 
@@ -46,7 +46,7 @@ export async function computeCurrentPeriodUsage(
   }
 
   return {
-    customerId,
+    environmentId,
     periodKey,
     invoicesProcessed: invoicesRow?.n ?? 0,
     rulesEvaluated: rulesRow?.n ?? 0,
@@ -67,7 +67,7 @@ export type UsagePusher = (report: UsageReport) => Promise<void>;
  * the *current, still-open* period's running totals, not a final
  * count sent once at period end — so "push more often" and "push
  * on-demand" are the same capability, both just an up-to-date
- * snapshot, and the composite (customerId, periodKey) key on the
+ * snapshot, and the composite (environmentId, periodKey) key on the
  * receiving side means repeated pushes for the same period overwrite
  * rather than accumulate. See docs/decisions/0004-usage-telemetry.md.
  *
@@ -79,10 +79,10 @@ export type UsagePusher = (report: UsageReport) => Promise<void>;
 export async function pushUsage(
   db: D1Database,
   now: Date,
-  customerId: string,
+  environmentId: string,
   pusher: UsagePusher
 ): Promise<UsageReport> {
-  const report = await computeCurrentPeriodUsage(db, now, customerId);
+  const report = await computeCurrentPeriodUsage(db, now, environmentId);
   await pusher(report);
   return report;
 }

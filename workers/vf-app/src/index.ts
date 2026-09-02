@@ -73,8 +73,29 @@ export interface Env {
    * no functional benefit.
    */
   LICENCE_SERVER_URL?: string;
-  /** This customer's id, matching the `customers.id` row in vf-licence. */
+  /**
+   * This customer's id, matching the `customers.id` row in vf-licence.
+   *
+   * Deliberately kept distinct from ENVIRONMENT_ID below (decision
+   * 0036/0037): this is the *storage* identity — the R2 object key
+   * prefix, `{customer}/{year}/{invoice_id}.{ext}` (decision 0013).
+   * A document's own key stays stable and meaningful regardless of
+   * which environment wrote it, and an R2 bucket is already
+   * per-deployment, so the key has no need to re-encode that.
+   */
   CUSTOMER_ID?: string;
+  /**
+   * This deployment's environment id, matching the `environments.id`
+   * row in vf-licence — e.g. "Acme-production", "Acme-sandbox"
+   * (decision 0036).
+   *
+   * The *entitlement and reporting* identity: which specific
+   * environment is fetching its licence token and pushing its usage.
+   * A customer's sandbox and production deployments each have their
+   * own licence, their own usage figures, and their own API key, so
+   * neither call can be made with a bare customer id any more.
+   */
+  ENVIRONMENT_ID?: string;
   /**
    * A Service Binding to vf-licence — the correct, Cloudflare-documented
    * way for one Worker to call another within the same account.
@@ -508,16 +529,16 @@ export default {
     // permanently unrecoverable.
     if (pathname === "/licence/refresh" && request.method === "POST") {
       const { db } = resolveTenant(request, env);
-      if (!isPublicKeyJwk(env.LICENCE_SIGNING_PUBLIC_KEY) || !env.LICENCE_SERVICE || !env.CUSTOMER_ID || !env.VF_LICENCE_API_KEY) {
+      if (!isPublicKeyJwk(env.LICENCE_SIGNING_PUBLIC_KEY) || !env.LICENCE_SERVICE || !env.ENVIRONMENT_ID || !env.VF_LICENCE_API_KEY) {
         return json(
-          { error: "LICENCE_SIGNING_PUBLIC_KEY, LICENCE_SERVICE, CUSTOMER_ID and VF_LICENCE_API_KEY must all be configured" },
+          { error: "LICENCE_SIGNING_PUBLIC_KEY, LICENCE_SERVICE, ENVIRONMENT_ID and VF_LICENCE_API_KEY must all be configured" },
           500
         );
       }
       const result = await handleLicenceRefresh(
         db,
         env.LICENCE_SIGNING_PUBLIC_KEY,
-        createLicenceFetcher(env.LICENCE_SERVICE, env.CUSTOMER_ID, env.VF_LICENCE_API_KEY)
+        createLicenceFetcher(env.LICENCE_SERVICE, env.ENVIRONMENT_ID, env.VF_LICENCE_API_KEY)
       );
       return json(result.body, result.status);
     }
@@ -531,12 +552,12 @@ export default {
     // so a future "sync now" UI can show it immediately.
     if (pathname === "/usage/push" && request.method === "POST") {
       const { db } = resolveTenant(request, env);
-      if (!env.LICENCE_SERVICE || !env.CUSTOMER_ID || !env.VF_LICENCE_API_KEY) {
-        return json({ error: "LICENCE_SERVICE, CUSTOMER_ID and VF_LICENCE_API_KEY must be configured" }, 500);
+      if (!env.LICENCE_SERVICE || !env.ENVIRONMENT_ID || !env.VF_LICENCE_API_KEY) {
+        return json({ error: "LICENCE_SERVICE, ENVIRONMENT_ID and VF_LICENCE_API_KEY must be configured" }, 500);
       }
       const result = await handleUsagePush(
         db,
-        env.CUSTOMER_ID,
+        env.ENVIRONMENT_ID,
         createUsagePusher(env.LICENCE_SERVICE, env.VF_LICENCE_API_KEY)
       );
       return json(result.body, result.status);
@@ -1069,7 +1090,7 @@ export default {
     if (
       isPublicKeyJwk(env.LICENCE_SIGNING_PUBLIC_KEY) &&
       env.LICENCE_SERVICE &&
-      env.CUSTOMER_ID &&
+      env.ENVIRONMENT_ID &&
       env.VF_LICENCE_API_KEY
     ) {
       // A scheduled trigger has no incoming Request — resolveTenant's
@@ -1085,9 +1106,9 @@ export default {
         const { db } = resolveTenant(new Request("https://scheduled-trigger.internal/"), env);
         const publicKeyJwk = env.LICENCE_SIGNING_PUBLIC_KEY;
         const service = env.LICENCE_SERVICE;
-        const customerId = env.CUSTOMER_ID;
+        const environmentId = env.ENVIRONMENT_ID;
         const apiKey = env.VF_LICENCE_API_KEY;
-        await refreshLicenceCache(db, publicKeyJwk, createLicenceFetcher(service, customerId, apiKey));
+        await refreshLicenceCache(db, publicKeyJwk, createLicenceFetcher(service, environmentId, apiKey));
       } catch {
         // Deliberately silent — see the block comment above.
       }
@@ -1095,15 +1116,15 @@ export default {
 
     // Usage push (Blueprint's usage_periods — see
     // docs/decisions/0004-usage-telemetry.md). Needs only the service
-    // binding, CUSTOMER_ID and this customer's own API key — not the
-    // signing key at all, since pushing doesn't verify anything.
-    if (env.LICENCE_SERVICE && env.CUSTOMER_ID && env.VF_LICENCE_API_KEY) {
+    // binding, ENVIRONMENT_ID and this environment's own API key — not
+    // the signing key at all, since pushing doesn't verify anything.
+    if (env.LICENCE_SERVICE && env.ENVIRONMENT_ID && env.VF_LICENCE_API_KEY) {
       try {
         const { db } = resolveTenant(new Request("https://scheduled-trigger.internal/"), env);
         await pushUsage(
           db,
           new Date(),
-          env.CUSTOMER_ID,
+          env.ENVIRONMENT_ID,
           createUsagePusher(env.LICENCE_SERVICE, env.VF_LICENCE_API_KEY)
         );
       } catch {
