@@ -1,29 +1,27 @@
 import type { AiRunnable } from "./compiler-model.js";
 import type { RouteResult } from "./org-route.js";
-import { sniffImageType } from "./extraction.js";
-import { VISION_SHAPES, DEFAULT_EXTRACTION_MODEL_ID } from "./extraction-model.js";
+import { sniffImageType, buildExtractionPrompt, buildExtractionSchema, parseExtractionResponse } from "./extraction.js";
+import { VISION_SHAPES, DEFAULT_EXTRACTION_MODEL_ID, extractResponseText } from "./extraction-model.js";
+import { resolveVocabulary } from "@vibefinance/shared";
+import { loadCustomFields } from "./custom-field-route.js";
 
 /**
- * A diagnostic endpoint, not a product feature — decision 0043's
- * addendum.
+ * A diagnostic endpoint, not a product feature — decision 0043.
  *
- * Two live tests were spent guessing at why extraction returned
- * nothing, because the real model response was never visible from
- * outside: the adapter tries several request shapes, returns on the
- * first that does not throw, and discards everything else. That is
- * fine in production and useless for diagnosis.
+ * Rebuilt after five failed fixes. Every earlier version tested a
+ * SIMPLIFIED request — a short question, a two-field schema — while
+ * the real extraction path sends a long prompt and a fifteen-field
+ * schema. Those are not the same request, and reasoning across that
+ * gap is what made five consecutive theories look plausible and turn
+ * out wrong.
  *
- * This runs EVERY shape against a real image and reports exactly what
- * came back from each — the shape name, whether it threw, and the raw
- * response. It answers, in one call, questions that otherwise cost a
- * deploy each: does this model accept an image at all, which encoding
- * does it want, and what is it actually saying?
- *
- * Deliberately kept out of the capture path. It exists to be deleted
- * once the shape is settled, and says so.
+ * This now sends exactly what the real path sends, and returns the
+ * raw model response alongside what the parser made of it. Nothing is
+ * simplified, nothing is inferred.
  */
 export async function handleExtractionDiagnostic(
   ai: AiRunnable,
+  db: D1Database,
   bytes: Uint8Array,
   modelId?: string
 ): Promise<RouteResult> {
@@ -33,63 +31,83 @@ export async function handleExtractionDiagnostic(
   }
 
   const model = modelId || DEFAULT_EXTRACTION_MODEL_ID;
-  // Deliberately a plain question, not the extraction prompt: if the
-  // model cannot answer "what is the invoice number" from a clear
-  // invoice, the problem is upstream of anything the extraction
-  // prompt or schema could fix.
-  const prompt =
-    "Look at this image. What is the invoice number, and what is the total including VAT? If you cannot see an image at all, say exactly: NO IMAGE RECEIVED.";
+  const customFields = await loadCustomFields(db);
+  const vocabulary = resolveVocabulary("invoice", customFields);
 
-  // A real schema, not a placeholder: the question this now has to
-  // answer is whether guided_json itself suppresses the image, which
-  // an empty schema would not exercise.
-  const realSchema = {
-    type: "object",
-    properties: {
-      invoiceNumber: { type: ["string", "null"], description: "the invoice number" },
-      totalWithVat: { type: ["number", "null"], description: "the total including VAT" },
-    },
-    required: [],
-  };
-
-  const variants: { label: string; withSchema: boolean }[] = [
-    { label: "no-guided-json", withSchema: false },
-    { label: "with-guided-json", withSchema: true },
-  ];
+  // The REAL prompt and the REAL schema, exactly as extraction sends
+  // them. This is the whole point of this rebuild.
+  const realPrompt = buildExtractionPrompt(vocabulary);
+  const realSchema = buildExtractionSchema(vocabulary);
+  const built = VISION_SHAPES[0].build(realPrompt, bytes, contentType, realSchema);
 
   const attempts: Record<string, unknown>[] = [];
-  for (const shape of VISION_SHAPES) {
-    for (const variant of variants) {
-    const built = shape.build(prompt, bytes, contentType, realSchema);
-    // The variable under test. The diagnostic previously dropped
-    // guided_json to keep the answer readable — which, it turns out,
-    // was the only difference between it working and the real
-    // extraction path failing.
-    if (!variant.withSchema) delete built.guided_json;
+
+  // 1. Exactly the production request.
+  try {
+    const raw = await ai.run(model, built);
+    const obj = (raw ?? {}) as Record<string, unknown>;
+    const usage = obj.usage as Record<string, unknown> | undefined;
+    const text = extractResponseText(raw);
+    let parsed: unknown = null;
+    let parseError: string | null = null;
     try {
-      const raw = await ai.run(model, built);
-      const obj = (raw ?? {}) as Record<string, unknown>;
-      const usage = obj.usage as Record<string, unknown> | undefined;
-      const answer =
-        typeof obj.response === "string"
-          ? obj.response
-          : JSON.stringify(raw).slice(0, 400);
-      attempts.push({
-        shape: `${shape.label} / ${variant.label}`,
-        threw: false,
-        // The signal that actually matters. A dropped image leaves
-        // this at roughly the prompt's own length; an image that
-        // genuinely arrived pushes it into the thousands. The
-        // model's ANSWER cannot be trusted to reveal this — one that
-        // received no image still answers confidently.
-        promptTokens: usage?.prompt_tokens ?? null,
-        imageReceived: typeof usage?.prompt_tokens === "number" && (usage.prompt_tokens as number) > 500,
-        answer,
-      });
+      parsed = parseExtractionResponse(text, vocabulary).facts;
     } catch (err) {
-      attempts.push({ shape: `${shape.label} / ${variant.label}`, threw: true, error: String(err).slice(0, 500) });
+      parseError = String(err).slice(0, 300);
     }
-    }
+    attempts.push({
+      variant: "production-request",
+      promptTokens: usage?.prompt_tokens ?? null,
+      completionTokens: usage?.completion_tokens ?? null,
+      finishReason: (obj.choices as { finish_reason?: string }[] | undefined)?.[0]?.finish_reason ?? null,
+      // What extractResponseText picked out, and the whole raw body
+      // it picked from — the two things every earlier diagnostic hid.
+      extractedText: text.slice(0, 1500),
+      rawBody: JSON.stringify(raw).slice(0, 2500),
+      parsedFacts: parsed,
+      parseError,
+    });
+  } catch (err) {
+    attempts.push({ variant: "production-request", threw: String(err).slice(0, 500) });
+  }
+
+  // 2. The same image and schema, but the short question that is
+  //    already known to work — isolating the PROMPT as the variable.
+  try {
+    const shortBuilt = VISION_SHAPES[0].build(
+      "What is the invoice number, and the total including VAT?",
+      bytes,
+      contentType,
+      realSchema
+    );
+    const raw = await ai.run(model, shortBuilt);
+    const obj = (raw ?? {}) as Record<string, unknown>;
+    const usage = obj.usage as Record<string, unknown> | undefined;
+    attempts.push({
+      variant: "short-prompt-real-schema",
+      promptTokens: usage?.prompt_tokens ?? null,
+      extractedText: extractResponseText(raw).slice(0, 800),
+    });
+  } catch (err) {
+    attempts.push({ variant: "short-prompt-real-schema", threw: String(err).slice(0, 500) });
+  }
+
+  // 3. The real prompt with a tiny schema — isolating the SCHEMA.
+  try {
+    const smallSchemaBuilt = VISION_SHAPES[0].build(realPrompt, bytes, contentType, {
+      type: "object",
+      properties: { "BT-1": { type: ["string", "null"] }, "BT-112": { type: ["number", "null"] } },
+    });
+    const raw = await ai.run(model, smallSchemaBuilt);
+    const obj = (raw ?? {}) as Record<string, unknown>;
+    const usage = obj.usage as Record<string, unknown> | undefined;
+    attempts.push({
+      variant: "real-prompt-small-schema",
+      promptTokens: usage?.prompt_tokens ?? null,
+      extractedText: extractResponseText(raw).slice(0, 800),
+    });
+  } catch (err) {
+    attempts.push({ variant: "real-prompt-small-schema", threw: String(err).slice(0, 500) });
   }
 
   return {
@@ -98,8 +116,10 @@ export async function handleExtractionDiagnostic(
       model,
       contentType,
       imageBytes: bytes.length,
+      promptChars: realPrompt.length,
+      schemaFieldCount: Object.keys((realSchema as { properties: Record<string, unknown> }).properties).length,
       attempts,
-      note: "diagnostic only — remove once the working request shape is confirmed",
+      note: "diagnostic only — remove once extraction is confirmed working",
     },
   };
 }

@@ -1036,7 +1036,8 @@ export default {
       if (bytes.length === 0) {
         return json({ error: "a raw image request body is required" }, 400);
       }
-      const result = await handleExtractionDiagnostic(env.AI, bytes, env.EXTRACTION_MODEL_ID);
+      const { db } = resolveTenant(request, env);
+      const result = await handleExtractionDiagnostic(env.AI, db, bytes, env.EXTRACTION_MODEL_ID);
       return json(result.body, result.status);
     }
 
