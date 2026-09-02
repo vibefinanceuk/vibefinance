@@ -21,6 +21,13 @@ import { handleIssueToken } from "./token-route.js";
 import { handleReportUsage } from "./usage-route.js";
 import { handleRotateKey } from "./rotate-key-route.js";
 import { handleListEnvironments, handleSetFleetMetadata } from "./fleet-route.js";
+import {
+  handleSubmitSignupRequest,
+  handleListSignupRequests,
+  handleApproveSignupRequest,
+  handleRejectSignupRequest,
+  handleRecordProvisioning,
+} from "./signup-route.js";
 import { extractBearerToken, isValidAdminKey, isValidEnvironmentKey } from "./auth.js";
 
 export interface Env {
@@ -82,6 +89,23 @@ export default {
       return json({ error: "CONTROL_DB binding not configured" }, 500);
     }
 
+    // The one deliberately unauthenticated write endpoint on this
+    // Worker — decision 0038. A prospective customer filling in the
+    // website's trial-request form has no credential yet, by
+    // definition. Placed before the admin gate below for exactly that
+    // reason. Nothing is provisioned and nothing is promised: a real
+    // person reviews every request.
+    if (url.pathname === "/signup-requests" && request.method === "POST") {
+      let body: unknown;
+      try {
+        body = await request.json();
+      } catch {
+        return json({ error: "invalid JSON body" }, 400);
+      }
+      const result = await handleSubmitSignupRequest(env.CONTROL_DB, (body ?? {}) as Record<string, unknown>);
+      return json(result.body, result.status);
+    }
+
     // Admin-only routes: provisioning, key management, and the fleet
     // manifest (Blueprint build order step 5 — see
     // docs/decisions/0011-fleet-tooling.md). A single shared secret,
@@ -92,10 +116,17 @@ export default {
     // environment's own credential should be able to read or change.
     const rotateMatch = url.pathname.match(/^\/environments\/([^/]+)\/rotate-key$/);
     const fleetMetadataMatch = url.pathname.match(/^\/environments\/([^/]+)\/fleet-metadata$/);
+    const approveMatch = url.pathname.match(/^\/signup-requests\/([^/]+)\/approve$/);
+    const rejectMatch = url.pathname.match(/^\/signup-requests\/([^/]+)\/reject$/);
+    const provisionedMatch = url.pathname.match(/^\/signup-requests\/([^/]+)\/provisioned$/);
     const isAdminRoute =
       (url.pathname === "/customers" && request.method === "POST") ||
       (url.pathname === "/environments" && (request.method === "POST" || request.method === "GET")) ||
       (url.pathname === "/licences" && request.method === "POST") ||
+      (url.pathname === "/signup-requests" && request.method === "GET") ||
+      (approveMatch !== null && request.method === "POST") ||
+      (rejectMatch !== null && request.method === "POST") ||
+      (provisionedMatch !== null && request.method === "POST") ||
       (rotateMatch !== null && request.method === "POST") ||
       (fleetMetadataMatch !== null && request.method === "PATCH");
     if (isAdminRoute) {
@@ -103,6 +134,47 @@ export default {
       if (!isValidAdminKey(providedKey, env.ADMIN_API_KEY)) {
         return json({ error: "unauthorized" }, 401);
       }
+    }
+
+    // The operator's own review queue, and the decisions taken from
+    // it. Approval deliberately does not provision — see
+    // signup-route.ts's own comment and decision 0038.
+    if (url.pathname === "/signup-requests" && request.method === "GET") {
+      const result = await handleListSignupRequests(env.CONTROL_DB, url.searchParams.get("status"));
+      return json(result.body, result.status);
+    }
+
+    if (approveMatch && request.method === "POST") {
+      let body: unknown;
+      try {
+        body = await request.json();
+      } catch {
+        return json({ error: "invalid JSON body" }, 400);
+      }
+      const result = await handleApproveSignupRequest(env.CONTROL_DB, approveMatch[1], (body ?? {}) as Record<string, unknown>);
+      return json(result.body, result.status);
+    }
+
+    if (rejectMatch && request.method === "POST") {
+      let body: unknown;
+      try {
+        body = await request.json();
+      } catch {
+        return json({ error: "invalid JSON body" }, 400);
+      }
+      const result = await handleRejectSignupRequest(env.CONTROL_DB, rejectMatch[1], (body ?? {}) as Record<string, unknown>);
+      return json(result.body, result.status);
+    }
+
+    if (provisionedMatch && request.method === "POST") {
+      let body: unknown;
+      try {
+        body = await request.json();
+      } catch {
+        return json({ error: "invalid JSON body" }, 400);
+      }
+      const result = await handleRecordProvisioning(env.CONTROL_DB, provisionedMatch[1], (body ?? {}) as Record<string, unknown>);
+      return json(result.body, result.status);
     }
 
     if (url.pathname === "/environments" && request.method === "GET") {

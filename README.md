@@ -542,6 +542,25 @@ a real wire contract; `LicenceClaims.customerId` was deliberately not,
 because it is only ever read, never sent. See
 `docs/decisions/0037-customer-id-vs-environment-id.md`.
 
+## Signup requests, and the human approval checkpoint
+
+The front door of the trial flow, and the first piece built on
+decision 0036's foundation. The website says "Request a 30-day free
+trial" and "a member of our provisioning team will be in contact" —
+that second sentence is the design. A request lands in a queue, and a
+real person reviews it, usually emailing the requester to discuss
+their project and provide enablement before approving anything. That
+conversation is deliberately not modelled: it lives in email, not the
+control plane. The most important shape here is that approval
+*triggers* provisioning rather than *being* provisioning — decoupled
+so the two can fail, retry, and evolve independently, with
+approved-but-not-yet-provisioned as a real, legible state. Rejection
+is silent and never final: no uniqueness constraint on email, so a
+rejected requester can genuinely come back later.
+`POST /signup-requests` is the one deliberately unauthenticated write
+endpoint on vf-licence, since a prospective customer has no credential
+by definition. See `docs/decisions/0038-signup-requests.md`.
+
 ## The one rule enforced by tooling, not convention
 
 No application code reads a tenant-scoped binding (`env.DB` and similar)

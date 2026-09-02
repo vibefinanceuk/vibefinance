@@ -1,5 +1,6 @@
 import { SELF } from "cloudflare:test";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
+import { applyTestSchema } from "./setup.js";
 
 describe("GET /health", () => {
   it("confirms the CONTROL_DB binding is live, not just declared", async () => {
@@ -113,6 +114,67 @@ describe("the fleet manifest, through the real router", () => {
     const res = await SELF.fetch("https://example.com/environments/acme-production/fleet-metadata", {
       method: "PATCH",
       body: JSON.stringify({ workerName: "vf-app-acme" }),
+    });
+    expect(res.status).toBe(401);
+  });
+});
+
+describe("the signup request flow's auth boundary, through the real router (decision 0038)", () => {
+  // The only block in this file that genuinely writes to D1 — every
+  // other test here asserts a 401 that never reaches the database.
+  beforeEach(async () => {
+    await applyTestSchema();
+  });
+
+  it("POST /signup-requests is genuinely reachable with NO Authorization header — the one deliberately public write endpoint", async () => {
+    const res = await SELF.fetch("https://example.com/signup-requests", {
+      method: "POST",
+      body: JSON.stringify({
+        companyName: "Northwind Trading",
+        contactName: "Dana Reyes",
+        contactEmail: "dana@northwind.example",
+      }),
+    });
+    // Specifically NOT 401 — a prospective customer has no credential
+    // by definition. 201 is the real, expected outcome here.
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as { status: string };
+    expect(body.status).toBe("pending");
+  });
+
+  it("still validates the public submission rather than accepting anything", async () => {
+    const res = await SELF.fetch("https://example.com/signup-requests", {
+      method: "POST",
+      body: JSON.stringify({ companyName: "Northwind" }),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it("401s GET /signup-requests — the operator's review queue is admin-only", async () => {
+    const res = await SELF.fetch("https://example.com/signup-requests");
+    expect(res.status).toBe(401);
+  });
+
+  it("401s approving a request with no Authorization header", async () => {
+    const res = await SELF.fetch("https://example.com/signup-requests/some-id/approve", {
+      method: "POST",
+      body: JSON.stringify({ decidedBy: "whoever" }),
+    });
+    expect(res.status).toBe(401);
+  });
+
+  it("401s rejecting a request with no Authorization header", async () => {
+    const res = await SELF.fetch("https://example.com/signup-requests/some-id/reject", {
+      method: "POST",
+      body: JSON.stringify({ decidedBy: "whoever" }),
+    });
+    expect(res.status).toBe(401);
+  });
+
+  it("401s recording provisioning with no Authorization header", async () => {
+    const res = await SELF.fetch("https://example.com/signup-requests/some-id/provisioned", {
+      method: "POST",
+      body: JSON.stringify({ customerId: "x", environmentId: "x-sandbox" }),
     });
     expect(res.status).toBe(401);
   });
