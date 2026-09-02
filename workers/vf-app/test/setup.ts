@@ -27,6 +27,7 @@ import invoiceDocumentsSql from "../../../migrations/0018_invoice_documents.sql?
 import customFieldsSql from "../../../migrations/0019_custom_fields.sql?raw";
 import hybridPdfFallbackSql from "../../../migrations/0020_hybrid_pdf_fallback.sql?raw";
 import stageVisitValidationSql from "../../../migrations/0021_stage_visit_validation.sql?raw";
+import pendingDocumentsSql from "../../../migrations/0022_pending_documents.sql?raw";
 
 // Another known divergence from production, on top of the one below:
 // D1's exec() splits its input by newline and executes each non-empty
@@ -72,6 +73,8 @@ function toOneStatementPerLine(sql: string): string {
 // gets a genuinely clean schema regardless of what the pool does or
 // does not reset.
 const TABLES_IN_DROP_ORDER = [
+  "pending_document_pages",
+  "pending_documents",
   "custom_fields",
   "invoice_documents",
   "cost_centres",
@@ -128,4 +131,5 @@ export async function applyTestSchema(): Promise<void> {
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(customFieldsSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(hybridPdfFallbackSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(stageVisitValidationSql)));
+  await env.DB.exec(toOneStatementPerLine(stripSqlComments(pendingDocumentsSql)));
 }

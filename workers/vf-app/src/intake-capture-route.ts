@@ -4,7 +4,8 @@ import type { RouteResult } from "./org-route.js";
 import { handleUpsertInvoice, mergeStructuredInvoiceFacts } from "./invoice-facts-route.js";
 import { handleCreateProcessInstance, visitCurrentStage } from "./workflow-engine.js";
 import { extractEmbeddedInvoiceXml, looksLikePdf, PdfExtractionError } from "./pdf-attachment.js";
-import { extractInvoiceFromImage, sniffImageType, ExtractionRefusal, type ExtractionModel } from "./extraction.js";
+import { extractInvoiceFromImage, extractInvoiceFromImages, sniffImageType, ExtractionRefusal, type ExtractionModel } from "./extraction.js";
+import { loadPendingPages, markFinalised, type PendingDocumentStorage } from "./pending-document-route.js";
 import { loadCustomFields } from "./custom-field-route.js";
 import { resolveVocabulary } from "@vibefinance/shared";
 
@@ -444,6 +445,72 @@ export async function handleCaptureImage(
       // Surfaced rather than swallowed: a truncated line list would
       // make validation's line-sum check report a mismatch that says
       // nothing about the document.
+      linesTruncated,
+    };
+  }
+  return result;
+}
+
+/**
+ * Finalises a multi-page document: reads every page in order,
+ * extracts once across all of them, and produces a real invoice.
+ *
+ * Deliberately a separate step from uploading. Pages arrive when they
+ * arrive; extraction happens when the operator says the document is
+ * complete — because a model asked to read half an invoice reports
+ * exactly what it can see and nothing about what it cannot.
+ */
+export async function handleFinalisePendingDocument(
+  db: D1Database,
+  storage: PendingDocumentStorage,
+  documentId: string,
+  model: ExtractionModel,
+  idOverride?: string
+): Promise<RouteResult> {
+  const loaded = await loadPendingPages(db, storage, documentId);
+  if (!loaded.ok) return loaded.response;
+  const { pages, channelId } = loaded.result;
+
+  const customFields = await loadCustomFields(db);
+  const vocabulary = resolveVocabulary("invoice", customFields);
+
+  let extraction;
+  try {
+    extraction = await extractInvoiceFromImages(model, pages, vocabulary);
+  } catch (err) {
+    if (err instanceof ExtractionRefusal) {
+      await recordCaptureEvent(db, channelId, "rejected", err.message, null);
+      return { status: 422, body: { error: err.message } };
+    }
+    throw err;
+  }
+
+  const { facts, lines: extractedLines, linesTruncated, confidence, missingFields } = extraction;
+  const id = idOverride ?? crypto.randomUUID();
+
+  const result = await handleCaptureIntake(db, channelId, {
+    id,
+    invoiceNumber: facts["BT-1"] as string | undefined,
+    issueDate: facts["BT-2"] as string | undefined,
+    currency: facts["BT-5"] as string | undefined,
+    supplierVatId: facts["BT-31"] as string | undefined,
+    totalWithVat: facts["BT-112"] as number | undefined,
+    facts,
+    lines: extractedLines,
+  });
+
+  if (result.status === 201) {
+    // Only marked finalised once an invoice genuinely exists. A
+    // failed capture leaves the document open and re-finalisable,
+    // rather than stranding its pages against nothing.
+    await markFinalised(db, documentId, id);
+    result.body = {
+      ...result.body,
+      documentPath: "image-extraction",
+      pageCount: pages.length,
+      confidence,
+      missingFields,
+      lineCount: extractedLines.length,
       linesTruncated,
     };
   }

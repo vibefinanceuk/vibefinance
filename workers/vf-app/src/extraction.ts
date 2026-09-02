@@ -56,7 +56,7 @@ export interface ExtractionModel {
    */
   extract(
     prompt: string,
-    image: { bytes: Uint8Array; contentType: string },
+    images: readonly { bytes: Uint8Array; contentType: string }[],
     schema: Record<string, unknown>
   ): Promise<string>;
 }
@@ -249,7 +249,7 @@ export function buildExtractionSchema(vocabulary: VocabularyInput = "invoice"): 
   };
 }
 
-export function buildExtractionPrompt(vocabulary: VocabularyInput = "invoice"): string {
+export function buildExtractionPrompt(vocabulary: VocabularyInput = "invoice", pageCount = 1): string {
   const v = asResolved(vocabulary);
   const customSection =
     v.customFields.length === 0
@@ -259,7 +259,12 @@ export function buildExtractionPrompt(vocabulary: VocabularyInput = "invoice"): 
 This customer has also defined fields of their own. These are not part of any standard — the descriptions below are the customer's own:
 ${v.customFields.map((f) => `  ${customPromptKey(f.key)} (${f.type}) — ${f.description}`).join("\n")}`;
 
-  return `You are reading a photograph or scan of a supplier invoice and extracting specific fields from it.
+  const pageNote =
+    pageCount > 1
+      ? `You are looking at ${pageCount} images. They are consecutive pages of ONE invoice, in order. Read them together: the line-item table may continue across a page break, and totals are commonly printed only on the last page. Report one set of values for the whole document, never one per page.\n\n`
+      : "";
+
+  return `${pageNote}You are reading a photograph or scan of a supplier invoice and extracting specific fields from it.
 
 Rules that matter more than completeness:
 - Report only what you can actually read on the document. If a field is not present, or you cannot read it confidently, return null for it. Never guess, never infer a plausible value, and never carry a value over from a different field.
@@ -449,24 +454,49 @@ export function parseExtractionResponse(
   return { facts, lines: usableLines, linesTruncated, confidence, missingFields, rawModelOutput: raw };
 }
 
+/**
+ * Extracts one invoice from one or more page images.
+ *
+ * Pages are passed in document order and reach the model in a single
+ * call. A multi-page invoice is one document, not several — the
+ * charge lines may run across a page break, and the totals are
+ * commonly on the last page. Extracting each page separately and
+ * merging the results in code would mean inventing an answer for what
+ * to do when two pages disagree about the same field.
+ */
+export async function extractInvoiceFromImages(
+  model: ExtractionModel,
+  pages: readonly Uint8Array[],
+  vocabulary: VocabularyInput = "invoice"
+): Promise<ExtractionResult> {
+  if (pages.length === 0) {
+    throw new ExtractionRefusal("no pages were supplied");
+  }
+  const images = pages.map((bytes) => {
+    const sniffed = sniffImageType(bytes);
+    if (!sniffed) {
+      throw new ExtractionRefusal(
+        `unsupported image format — expected one of ${SUPPORTED_IMAGE_TYPES.join(", ")}`
+      );
+    }
+    return { bytes, contentType: sniffed };
+  });
+
+  const raw = await model.extract(
+    buildExtractionPrompt(vocabulary, pages.length),
+    images,
+    buildExtractionSchema(vocabulary)
+  );
+  return parseExtractionResponse(raw, vocabulary);
+}
+
+/** Single-page convenience, which is still the common case. */
 export async function extractInvoiceFromImage(
   model: ExtractionModel,
   bytes: Uint8Array,
   vocabulary: VocabularyInput = "invoice"
 ): Promise<ExtractionResult> {
-  const sniffed = sniffImageType(bytes);
-  if (!sniffed) {
-    throw new ExtractionRefusal(
-      `unsupported image format — expected one of ${SUPPORTED_IMAGE_TYPES.join(", ")}`
-    );
-  }
-
-  const raw = await model.extract(
-    buildExtractionPrompt(vocabulary),
-    { bytes, contentType: sniffed },
-    buildExtractionSchema(vocabulary)
-  );
-  return parseExtractionResponse(raw, vocabulary);
+  return extractInvoiceFromImages(model, [bytes], vocabulary);
 }
 
 export type { ResolvedVocabulary };

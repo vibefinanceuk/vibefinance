@@ -54,6 +54,8 @@ a rule, and left an approval task in a queue.
   stage visit for audit (0044)
 - Line-level extraction from images, which is what lets the line-sum
   check run at all
+- Multi-page capture: pages accumulate separately, then extract
+  together in one model call (0045)
 
 ### Intake
 - UBL/XML capture (0030)
@@ -98,9 +100,9 @@ radius deserves its own design conversation.
 native renderer, and PDF.js needs a canvas workerd does not provide.
 Submit the page as an image instead.
 
-**Multi-page documents.** Nothing acknowledges that an invoice might
-run to a second page. Validation will correctly report a mismatch it
-cannot explain — better than a fabricated total, but not a solution.
+**Abandoned pending documents.** A page-one upload that never returns
+holds a customer's invoice image indefinitely. Needs an expiry sweep,
+or at minimum a way to list stale ones.
 
 **Extraction rules.** The conditional layer — *"if the supplier is
 Data Electronics, capture the cost centre"* — with its own compiler

@@ -29,9 +29,14 @@ import { handleUpsertInvoice, mergeStructuredInvoiceFacts } from "./invoice-fact
 import { handleUpsertExpenseReport } from "./expense-facts-route.js";
 import { handleCreateProcess, handleCreateStage } from "./process-route.js";
 import { handleCreateIntakeChannel } from "./intake-channel-route.js";
-import { handleCaptureIntake, handleCaptureUblXml, handleCapturePdf, handleCaptureImage, handleIntakeStats } from "./intake-capture-route.js";
+import { handleCaptureIntake, handleCaptureUblXml, handleCapturePdf, handleCaptureImage, handleFinalisePendingDocument, handleIntakeStats } from "./intake-capture-route.js";
+import {
+  handleCreatePendingDocument,
+  handleUploadPage,
+  handleListPendingDocument,
+  type PendingDocumentStorage,
+} from "./pending-document-route.js";
 import { createWorkersAiExtractionModel } from "./extraction-model.js";
-import { handleExtractionDiagnostic } from "./extraction-diagnostic.js";
 import { getSupplierHistory } from "./invoice-history.js";
 import { handleCreateCustomField, handleListCustomFields } from "./custom-field-route.js";
 import { handleUploadDocument, handleRetrieveDocument } from "./document-route.js";
@@ -402,6 +407,21 @@ async function handleEvaluate(request: Request, env: Env): Promise<Response> {
   }
 
   return json({ runId, outcome: result.outcome, actions: result.actions, trace: result.trace });
+}
+
+/** Adapts an R2 bucket to the small interface the pending-document
+ *  routes need, so that module stays testable without an R2 double. */
+function r2Storage(bucket: R2Bucket): PendingDocumentStorage {
+  return {
+    async put(key, bytes, contentType) {
+      await bucket.put(key, bytes as unknown as ArrayBuffer, { httpMetadata: { contentType } });
+    },
+    async get(key) {
+      const object = await bucket.get(key);
+      if (!object) return null;
+      return new Uint8Array(await object.arrayBuffer());
+    },
+  };
 }
 
 export default {
@@ -1022,22 +1042,78 @@ export default {
       return json(result.body, result.status);
     }
 
-    // Diagnostic only (decision 0043 addendum) — runs every vision
-    // request shape against a real image and reports what each one
-    // actually returned. Exists because two live tests were spent
-    // guessing at why extraction produced nothing, with the real
-    // model response never visible from outside. Remove once the
-    // working shape is confirmed.
-    if (pathname === "/diagnostics/extraction" && request.method === "POST") {
-      if (!env.AI) {
-        return json({ error: "the AI binding is not configured" }, 500);
+    // Multi-page capture. Pages arrive separately and are extracted
+    // together on finalise, in one model call — a scanner or mail
+    // integration cannot hand over a complete document in one
+    // request, and a model asked to read half an invoice reports
+    // exactly what it can see and nothing about what it cannot.
+    const createPendingMatch = pathname.match(/^\/intake-channels\/([^/]+)\/documents$/);
+    if (createPendingMatch && request.method === "POST") {
+      const { db } = resolveTenant(request, env);
+      const auth = await requirePermission(db, request, "AP.Validate");
+      if (!auth.authorized) {
+        return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
+      }
+      const result = await handleCreatePendingDocument(db, createPendingMatch[1]);
+      return json(result.body, result.status);
+    }
+
+    const uploadPageMatch = pathname.match(/^\/pending-documents\/([^/]+)\/pages\/(\d+)$/);
+    if (uploadPageMatch && request.method === "PUT") {
+      const { db, documents } = resolveTenant(request, env);
+      const auth = await requirePermission(db, request, "AP.Validate");
+      if (!auth.authorized) {
+        return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
+      }
+      if (!documents) {
+        return json({ error: "document storage is not configured" }, 500);
       }
       const bytes = new Uint8Array(await request.arrayBuffer());
       if (bytes.length === 0) {
         return json({ error: "a raw image request body is required" }, 400);
       }
+      const result = await handleUploadPage(
+        db,
+        r2Storage(documents),
+        uploadPageMatch[1],
+        Number(uploadPageMatch[2]),
+        bytes
+      );
+      return json(result.body, result.status);
+    }
+
+    const pendingDocMatch = pathname.match(/^\/pending-documents\/([^/]+)$/);
+    if (pendingDocMatch && request.method === "GET") {
       const { db } = resolveTenant(request, env);
-      const result = await handleExtractionDiagnostic(env.AI, db, bytes, env.EXTRACTION_MODEL_ID);
+      const result = await handleListPendingDocument(db, pendingDocMatch[1]);
+      return json(result.body, result.status);
+    }
+
+    const finaliseMatch = pathname.match(/^\/pending-documents\/([^/]+)\/finalise$/);
+    if (finaliseMatch && request.method === "POST") {
+      const { db, documents } = resolveTenant(request, env);
+      const locale = resolveLocale(env.LOCALE);
+      const licenceState = await readLicenceState(db);
+      if (isBlocked(licenceState)) {
+        return blockedResponse(licenceState, locale);
+      }
+      const auth = await requirePermission(db, request, "AP.Validate");
+      if (!auth.authorized) {
+        return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", locale) }, auth.status);
+      }
+      if (!env.AI) {
+        return json({ error: "the AI binding is not configured, so image extraction is unavailable" }, 500);
+      }
+      if (!documents) {
+        return json({ error: "document storage is not configured" }, 500);
+      }
+      const result = await handleFinalisePendingDocument(
+        db,
+        r2Storage(documents),
+        finaliseMatch[1],
+        createWorkersAiExtractionModel(env.AI, env.EXTRACTION_MODEL_ID),
+        url.searchParams.get("id") ?? undefined
+      );
       return json(result.body, result.status);
     }
 

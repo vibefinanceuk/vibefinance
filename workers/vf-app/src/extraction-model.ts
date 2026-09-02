@@ -53,9 +53,18 @@ export const DEFAULT_EXTRACTION_MODEL_ID = "@cf/meta/llama-4-scout-17b-16e-instr
  * Which one a given model wants is exactly the kind of thing that
  * cannot be settled from here.
  */
+export interface VisionImage {
+  bytes: Uint8Array;
+  contentType: string;
+}
+
 export interface VisionRequestShape {
   label: string;
-  build(prompt: string, bytes: Uint8Array, contentType: string, schema: Record<string, unknown>): Record<string, unknown>;
+  /** Takes an ORDERED list of images. A multi-page invoice is a
+   *  single document, and its pages must reach the model in document
+   *  order — page two's totals mean nothing to a model that reads
+   *  them first. One image is the common case, not a special one. */
+  build(prompt: string, images: readonly VisionImage[], schema: Record<string, unknown>): Record<string, unknown>;
 }
 
 function toBase64(bytes: Uint8Array): string {
@@ -101,17 +110,27 @@ function toBase64(bytes: Uint8Array): string {
 export const VISION_SHAPES: VisionRequestShape[] = [
   {
     label: "image_url-data-url",
-    build: (prompt, bytes, contentType, schema) => ({
+    build: (prompt, images, schema) => ({
       messages: [
         {
           role: "user",
           content: [
             { type: "text", text: prompt },
+            // Every page, in order, in ONE call. The model sees the
+            // whole document the way a person would — which is what
+            // lets a table continuing across a page break, or totals
+            // printed on the last page, be read correctly. Merging
+            // per-page results in code would mean inventing an answer
+            // for what to do when two pages disagree.
+            //
             // A full data: URL, not bare base64 — the binding rejects
             // the latter outright with "The URL must be either a
             // HTTP, data or file URL", which is at least an honest
             // failure rather than a silent one.
-            { type: "image_url", image_url: { url: `data:${contentType};base64,${toBase64(bytes)}` } },
+            ...images.map((image) => ({
+              type: "image_url",
+              image_url: { url: `data:${image.contentType};base64,${toBase64(image.bytes)}` },
+            })),
           ],
         },
       ],
@@ -125,13 +144,13 @@ export const VISION_SHAPES: VisionRequestShape[] = [
 export function createWorkersAiExtractionModel(ai: AiRunnable, modelId?: string): ExtractionModel {
   const model = modelId || DEFAULT_EXTRACTION_MODEL_ID;
   return {
-    async extract(prompt, image, schema): Promise<string> {
+    async extract(prompt, images, schema): Promise<string> {
       // No fallback loop any more. It existed while the working shape
       // was unknown; now that it is confirmed, trying alternatives on
       // failure would only paper over a real regression — and a
       // silent fallback is precisely what made this take three
       // attempts to diagnose.
-      const raw = await ai.run(model, VISION_SHAPES[0].build(prompt, image.bytes, image.contentType, schema));
+      const raw = await ai.run(model, VISION_SHAPES[0].build(prompt, images, schema));
       return extractResponseText(raw);
     },
   };

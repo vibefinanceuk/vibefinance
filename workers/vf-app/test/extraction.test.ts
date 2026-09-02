@@ -249,14 +249,15 @@ describe("extractInvoiceFromImage", () => {
   });
 
   it("hands the adapter raw bytes and a sniffed content type, not a pre-built data URL", async () => {
-    let seenImage: { bytes: Uint8Array; contentType: string } | undefined;
+    let seenImages: readonly { bytes: Uint8Array; contentType: string }[] | undefined;
     const spy: ExtractionModel = {
-      extract: async (_p, image) => {
-        seenImage = image;
+      extract: async (_p, images) => {
+        seenImages = images;
         return GOOD;
       },
     };
     await extractInvoiceFromImage(spy, PNG);
+    const seenImage = seenImages?.[0];
     // Raw bytes and a detected content type, NOT a pre-built data
     // URL — corrected after the live test showed the binding wants
     // the image as its own top-level parameter, and each adapter
@@ -278,14 +279,14 @@ describe("VISION_SHAPES — the confirmed shape", () => {
   });
 
   it("sends an image_url content part inside messages", () => {
-    const built = VISION_SHAPES[0].build("read this", JPEG_BYTES, "image/jpeg", SCHEMA);
+    const built = VISION_SHAPES[0].build("read this", [{ bytes: JPEG_BYTES, contentType: "image/jpeg" }], SCHEMA);
     expect(JSON.stringify(built.messages)).toContain("image_url");
   });
 
   it("sends a full data: URL — bare base64 is rejected by the binding", () => {
     // The binding's own error: "The URL must be either a HTTP, data
     // or file URL."
-    const built = VISION_SHAPES[0].build("read this", JPEG_BYTES, "image/jpeg", SCHEMA);
+    const built = VISION_SHAPES[0].build("read this", [{ bytes: JPEG_BYTES, contentType: "image/jpeg" }], SCHEMA);
     expect(JSON.stringify(built.messages)).toContain("data:image/jpeg;base64,");
   });
 
@@ -293,12 +294,12 @@ describe("VISION_SHAPES — the confirmed shape", () => {
     // The failure that cost two deploy cycles: it belongs to
     // llama-3.2-11b-vision-instruct, and Llama 4 Scout drops it with
     // no error at all.
-    const built = VISION_SHAPES[0].build("read this", JPEG_BYTES, "image/jpeg", SCHEMA);
+    const built = VISION_SHAPES[0].build("read this", [{ bytes: JPEG_BYTES, contentType: "image/jpeg" }], SCHEMA);
     expect(built.image).toBeUndefined();
   });
 
   it("carries the schema, token budget and zero temperature", () => {
-    const built = VISION_SHAPES[0].build("x", JPEG_BYTES, "image/jpeg", SCHEMA);
+    const built = VISION_SHAPES[0].build("x", [{ bytes: JPEG_BYTES, contentType: "image/jpeg" }], SCHEMA);
     expect(built.guided_json).toBe(SCHEMA);
     expect(built.max_tokens).toBe(4096);
     expect(built.temperature).toBe(0);
@@ -307,7 +308,7 @@ describe("VISION_SHAPES — the confirmed shape", () => {
   it("carries the actual image bytes", () => {
     const distinctive = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x12, 0x34, 0x56]);
     const expected = btoa(String.fromCharCode(...distinctive));
-    const serialised = JSON.stringify(VISION_SHAPES[0].build("x", distinctive, "image/jpeg", SCHEMA));
+    const serialised = JSON.stringify(VISION_SHAPES[0].build("x", [{ bytes: distinctive, contentType: "image/jpeg" }], SCHEMA));
     expect(serialised).toContain(expected);
   });
 });
