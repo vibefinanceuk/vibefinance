@@ -49,6 +49,8 @@ a rule, and left an approval task in a queue.
 - Multi-vocabulary: invoice, expense, and per-customer extensions
 - Type-aware validation refuses operator/type mismatches at compile
   time, catching rules that would otherwise silently never fire
+- Deterministic invoice validation, setting `validation.passed` and
+  `validation.failures` as real facts rules can test (0044)
 
 ### Intake
 - UBL/XML capture (0030)
@@ -93,12 +95,14 @@ radius deserves its own design conversation.
 native renderer, and PDF.js needs a canvas workerd does not provide.
 Submit the page as an image instead.
 
-**Line extraction and the validation stage.** Designed in
-`docs/design/validation.md`, prompted by a real failure: the model
-fabricated an invoice total that was off by 340.00, on a document
-where no total was printed. Step 1 (the extractor no longer
-calculating) is built; line extraction and the validation stage are
-not.
+**Line extraction from images.** The validation stage's line-sum
+check is built and tested but cannot run on an image-extracted
+invoice, because the lines are never captured. The UBL path supplies
+them today.
+
+**Multi-page documents.** Nothing acknowledges that an invoice might
+run to a second page. Validation will correctly report a mismatch it
+cannot explain — better than a fabricated total, but not a solution.
 
 **Extraction rules.** The conditional layer — *"if the supplier is
 Data Electronics, capture the cost centre"* — with its own compiler

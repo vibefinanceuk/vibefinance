@@ -360,3 +360,72 @@ describe("visitCurrentStage — per-line evaluation (decision 0027)", () => {
     ]);
   });
 });
+
+describe("validation facts reach rule evaluation (decision 0044)", () => {
+  async function setupWithRule(compiled: Record<string, unknown>) {
+    await handleCreateProcess(env.DB, { id: "p-val", name: "Validation" });
+    await seedRuleSet("rs-val", compiled);
+    await handleCreateStage(env.DB, "p-val", { id: "s-val", name: "Check", sequence: 1, ruleSetId: "rs-val" });
+    const created = await handleCreateProcessInstance(env.DB, "p-val", { subjectType: "invoice", subjectId: "inv-val" });
+    return (created.body as { id: string }).id;
+  }
+
+  it("fires a rule when validation fails", async () => {
+    const instanceId = await setupWithRule({
+      id: "r1",
+      conditions: { all: [{ field: "validation.passed", operator: "is", value: false }] },
+      actions: [{ type: "flag", params: {} }],
+    });
+    // No total anywhere — validation must fail, and the rule must see it.
+    const result = await visitCurrentStage(env.DB, instanceId, { "BT-1": "SKELS26003894" });
+    expect(result.status).toBe(200);
+    expect((result.body as { visits: { outcome: string }[] }).visits[0].outcome).toBe("matched");
+  });
+
+  it("does NOT fire that rule when the invoice is sound", async () => {
+    const instanceId = await setupWithRule({
+      id: "r1",
+      conditions: { all: [{ field: "validation.passed", operator: "is", value: false }] },
+      actions: [{ type: "flag", params: {} }],
+    });
+    const result = await visitCurrentStage(env.DB, instanceId, {
+      "BT-106": 2099,
+      "BT-110": 419.8,
+      "BT-112": 2518.8,
+    });
+    expect((result.body as { visits: { outcome: string }[] }).visits[0].outcome).toBe("no_match");
+  });
+
+  it("a rule can test for a SPECIFIC failure using the existing contains operator", async () => {
+    // Why validation.failures is a string, not an array: this needs
+    // no new operator and no new concept.
+    const instanceId = await setupWithRule({
+      id: "r1",
+      conditions: { all: [{ field: "validation.failures", operator: "contains", value: "total_missing" }] },
+      actions: [{ type: "flag", params: {} }],
+    });
+    const result = await visitCurrentStage(env.DB, instanceId, { "BT-1": "X" });
+    expect((result.body as { visits: { outcome: string }[] }).visits[0].outcome).toBe("matched");
+  });
+
+  it("does not fire on a failure that did not occur", async () => {
+    const instanceId = await setupWithRule({
+      id: "r1",
+      conditions: { all: [{ field: "validation.failures", operator: "contains", value: "date_order" }] },
+      actions: [{ type: "flag", params: {} }],
+    });
+    // Total is missing, but the dates are fine.
+    const result = await visitCurrentStage(env.DB, instanceId, { "BT-2": "2026-01-01", "BT-9": "2026-02-01" });
+    expect((result.body as { visits: { outcome: string }[] }).visits[0].outcome).toBe("no_match");
+  });
+
+  it("validation never overwrites a real invoice fact", async () => {
+    const instanceId = await setupWithRule({
+      id: "r1",
+      conditions: { all: [{ field: "BT-112", operator: "greater_than", value: 1000 }] },
+      actions: [{ type: "flag", params: {} }],
+    });
+    const result = await visitCurrentStage(env.DB, instanceId, { "BT-112": 2518.8 });
+    expect((result.body as { visits: { outcome: string }[] }).visits[0].outcome).toBe("matched");
+  });
+});

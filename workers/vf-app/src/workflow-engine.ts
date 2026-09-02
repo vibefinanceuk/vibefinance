@@ -1,5 +1,6 @@
 import { evaluateRuleSet } from "@vibefinance/shared";
 import type { InvoiceFacts } from "@vibefinance/shared";
+import { validateInvoiceFacts, mergeValidationFacts } from "./validation.js";
 import { loadActiveRuleSet } from "./rule-set-loader.js";
 import { handleCreateTask } from "./task-route.js";
 import type { RouteResult } from "./org-route.js";
@@ -110,9 +111,23 @@ async function nextStageInSequence(db: D1Database, processId: string, currentSeq
 export async function visitCurrentStage(
   db: D1Database,
   instanceId: string,
-  facts: InvoiceFacts,
+  rawFacts: InvoiceFacts,
   lines?: LineInput[]
 ): Promise<RouteResult> {
+  // Validation runs once, up front, and its results become real
+  // derived facts every stage then sees — decision 0044.
+  //
+  // A fact-producing agent in decision 0015's own sense: it runs
+  // BEFORE any rule evaluates, contributes facts, and finishes. Rule
+  // evaluation itself stays pure, and non-determinism never enters it
+  // — though there is none to enter here, since every validation
+  // check is arithmetic or presence.
+  //
+  // Deliberately computed here rather than at intake: a stage visit
+  // is where facts meet rules, and computing it once for the whole
+  // visit means every stage evaluates against the same validation
+  // state rather than a shifting one.
+  const facts = mergeValidationFacts(rawFacts, validateInvoiceFacts(rawFacts, lines));
   const instance = await db
     .prepare("SELECT id, process_id, current_stage_id, status FROM process_instances WHERE id = ?")
     .bind(instanceId)

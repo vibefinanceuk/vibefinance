@@ -1,0 +1,112 @@
+# 0044 — Validation, and making `validation.passed` real
+
+Status: settled, 2 September 2026. The design is in
+`docs/design/validation.md`; this records what was built and why the
+shape is as it is.
+
+## The failure that prompted it
+
+A freight forwarding invoice, two pages, eight charge lines. Page one
+prints no total — the totals are on page two, which the extraction
+model never saw. It reported `BT-112: 2797.47` anyway. The lines
+actually sum to 3,137.47. It calculated, got it wrong by exactly
+340.00, and reported 0.9 confidence.
+
+The extractor no longer calculates. But that fix, on its own, made
+things arguably worse: an invoice with **no total at all** then ran
+clean through `approval` to `payment-eligible`, unchallenged. A
+fabricated total was at least being *evaluated*; a missing one was
+being ignored.
+
+This closes that.
+
+## The boundary
+
+The operator's own framing, and better than the first instinct:
+**extraction transcribes, validation decides.**
+
+| Step | Job | Nature |
+|---|---|---|
+| Extraction | Report what is printed | Inferred, best-effort |
+| Validation | Decide whether the numbers hang together | Deterministic, exact |
+
+Every check here is arithmetic or presence. No model, no inference,
+no confidence score — there is nothing to be uncertain about, which
+is the entire reason for doing it here rather than asking a model to
+be careful.
+
+That split is also what makes the extractor's "never calculate" rule
+coherent rather than arbitrary: a fabricated value and a transcribed
+one are indistinguishable downstream, so the transcription step has
+to stay pure for the checking step to mean anything.
+
+## A fact-producing agent, not a new concept
+
+Decision 0015 already established the pattern: *"agents run first,
+producing derived facts; the stage's rules then evaluate against
+native plus derived facts."*
+
+`validateInvoiceFacts` runs once at the start of a stage visit, and
+its results become real facts every stage then sees. Computed once
+per visit rather than per stage, so every stage evaluates against the
+same validation state rather than a shifting one.
+
+## `validation.passed` was declared and never set
+
+It has been in the closed vocabulary since the first migration —
+typed as a boolean, described as *"true if the document passed
+standard validation"* — and nothing ever set it. Exactly the
+situation `'warned'` was in before decision 0040. Two capabilities
+now, fully plumbed and dormant, that turned out to need only a
+producer.
+
+## Three decisions worth recording
+
+**`validation.failures` is a string, not an array.** A customer needs
+to test for a *specific* failure — a date-order problem and a total
+mismatch warrant different handling. Comma-joining the check names
+means the interpreter's existing `contains` operator works directly:
+*"if validation.failures contains total_missing, assign a task to the
+AP team"*. An array would have needed a new operator and a new
+concept for no real gain.
+
+**`checked` is tracked separately from `failures`.** A check that
+could not run is neither a pass nor a failure. The line-sum check
+needs lines, and line-level extraction from an image is not built —
+so today it usually cannot run at all. Conflating "we checked and it
+was fine" with "we could not check" would make `validation.passed`
+mean less than it appears to. Watched to fail: treating un-runnable
+checks as runnable breaks seven tests.
+
+**Tolerance is a validation concern and lives nowhere else.**
+Floating-point sums of currency do not compare exactly — the eight
+lines on the invoice that prompted this sum to `3137.4700000000003`,
+and a naive equality check against a printed `3137.47` would fail a
+perfectly correct document. `CURRENCY_TOLERANCE` is a penny, named
+and exported rather than buried in a comparison. It is deliberately a
+fixed platform constant: configuration can be added when a real
+customer needs a different value, and inventing the knob first would
+be guessing at a requirement nobody has stated.
+
+## What a failure does
+
+Nothing, by itself. This module records the result; a rule decides
+what happens. That preserves the existing separation — the platform
+computes facts, customers decide policy — and stops this becoming a
+second, hidden rule engine with its own opinions about what should
+block an invoice.
+
+## What's still open
+
+- **Line extraction from images.** The line-sum check exists and is
+  tested, but cannot run on an image-extracted invoice because the
+  lines are never captured. The UBL path supplies them today.
+- **Multi-page documents.** The invoice that prompted this is page 1
+  of 2. Validation will correctly report a mismatch it cannot
+  explain, which is better than a fabricated total but is not a
+  solution. Accepting multi-page input needs its own design.
+- **Mandatory-field checks.** Named in the design, not built —
+  "mandatory" is per-customer configuration that does not exist yet.
+- **Whether validation should also run at intake**, rather than only
+  during a stage visit. Explicit is consistent with how every other
+  stage works; automatic would be convenient. Unresolved.
