@@ -466,3 +466,57 @@ describe("the real failure this fix addresses", () => {
     expect(accounted).toBe(promptKeys.length);
   });
 });
+
+describe("the extractor transcribes, it does not calculate", () => {
+  it("forbids calculation outright, rather than merely preferring a printed total", () => {
+    // The rule this replaced said a printed total was "preferable" to
+    // a calculated one, which is too weak — the model calculated
+    // anyway, and got it wrong by 340.00 on a real invoice while
+    // reporting 0.9 confidence.
+    const prompt = buildExtractionPrompt();
+    expect(prompt).toMatch(/Never calculate anything/);
+    expect(prompt).not.toMatch(/preferable to one you calculate/);
+  });
+
+  it("tells the model that checking the arithmetic is somebody else's job", () => {
+    // The boundary, stated to the model as well as in the code: the
+    // extractor reports what is written; validation decides whether
+    // it hangs together.
+    expect(buildExtractionPrompt()).toMatch(/separate step that happens after you/);
+  });
+
+  it("repeats the rule in every amount field's own description", () => {
+    // The model anchors on the key and its description (0043), so the
+    // instruction has to live where it is looking, not only in the
+    // prompt preamble.
+    const schema = buildExtractionSchema() as { properties: Record<string, { description: string }> };
+    expect(schema.properties.netTotalBeforeVat.description).toMatch(/never add up the lines/i);
+    expect(schema.properties.totalWithVat.description).toMatch(/never sum the lines/i);
+    expect(schema.properties.vatAmount.description).toMatch(/never derive it/i);
+    expect(schema.properties.amountDue.description).toMatch(/never calculate it/i);
+  });
+
+  it("says PRINTED explicitly for every monetary field", () => {
+    const schema = buildExtractionSchema() as { properties: Record<string, { description: string }> };
+    for (const key of ["netTotalBeforeVat", "vatAmount", "totalWithVat", "amountDue"]) {
+      expect(schema.properties[key].description).toMatch(/PRINTED/);
+    }
+  });
+
+  it("a null total is stored as a real absence, not silently filled in", () => {
+    // The property that makes validation possible later: "no total
+    // stated" has to be distinguishable from "total we made up".
+    const response = JSON.stringify({
+      invoiceNumber: "SKELS26003894",
+      issueDate: "2026-07-22",
+      totalWithVat: null,
+      netTotalBeforeVat: null,
+      _confidence: 0.9,
+    });
+    const result = parseExtractionResponse(response);
+    expect(result.facts["BT-112"]).toBeUndefined();
+    expect(result.facts["BT-106"]).toBeUndefined();
+    expect(result.missingFields).toContain("BT-112");
+    expect(result.facts["BT-1"]).toBe("SKELS26003894");
+  });
+});

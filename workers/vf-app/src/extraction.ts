@@ -143,10 +143,10 @@ const STANDARD_EXTRACTION_FIELDS: { key: string; promptKey: string; type: FieldT
   { key: "BT-31", promptKey: "supplierVatNumber", type: "text", description: "The VAT registration number of the SUPPLIER — the company issuing this invoice and receiving payment, shown in the letterhead at the top. Not the customer's." },
   { key: "BT-40", promptKey: "supplierCountryCode", type: "text", description: "The SUPPLIER's country as a 2-letter ISO code: GB for the United Kingdom, DE for Germany, FR for France." },
   { key: "BT-48", promptKey: "buyerVatNumber", type: "text", description: "The VAT registration number of the BUYER — the company being billed, usually under 'Bill To' or 'Invoice To'. Not the supplier's." },
-  { key: "BT-106", promptKey: "netTotalBeforeVat", type: "number", description: "The subtotal before VAT, often labelled 'Subtotal' or 'Net'." },
-  { key: "BT-110", promptKey: "vatAmount", type: "number", description: "The VAT or tax amount, often labelled 'VAT' or 'Tax'." },
-  { key: "BT-112", promptKey: "totalWithVat", type: "number", description: "The grand total including VAT — usually the largest figure and the last line of the totals block, labelled 'Total with VAT', 'Total Due' or 'Total'." },
-  { key: "BT-115", promptKey: "amountDue", type: "number", description: "The amount actually payable, if stated separately from the total. Null otherwise." },
+  { key: "BT-106", promptKey: "netTotalBeforeVat", type: "number", description: "The subtotal before VAT as PRINTED on the document, often labelled 'Subtotal' or 'Net'. Null if no such figure is printed — never add up the lines yourself." },
+  { key: "BT-110", promptKey: "vatAmount", type: "number", description: "The VAT or tax amount as PRINTED, often labelled 'VAT' or 'Tax'. Null if not printed — never derive it." },
+  { key: "BT-112", promptKey: "totalWithVat", type: "number", description: "The grand total including VAT as PRINTED — usually the largest figure and the last line of the totals block, labelled 'Total with VAT', 'Total Due' or 'Total'. Null if no total is printed on this page — never sum the lines or add VAT to a subtotal yourself." },
+  { key: "BT-115", promptKey: "amountDue", type: "number", description: "The amount payable as PRINTED, if stated separately from the total. Null otherwise — never copy the total here, and never calculate it." },
 ];
 
 /** A customer's own field keys are already human-readable labels
@@ -226,7 +226,7 @@ Rules that matter more than completeness:
 - An invoice number is a reference code such as "INV-2026-0042" or "MCD2001321-003". It is never a company name.
 - Dates must be YYYY-MM-DD. If the document's date format is ambiguous (for example 03/04/2026), and you cannot tell from context which is the day and which is the month, return null rather than choosing.
 - Amounts must be plain numbers with no currency symbol, no thousands separator, and a dot for the decimal point.
-- A total that is printed on the document is always preferable to one you calculate yourself.
+- Never calculate anything. Do not add up line amounts, do not derive a total from a subtotal and a VAT figure, and do not compute a missing value from other values on the page. If a total is not printed on the document, return null for it. Checking whether the numbers add up is a separate step that happens after you; your only job is to report what is written.
 - Set _confidence honestly. A clear, sharp, complete invoice justifies a high score; a blurry photo, a cropped image, or a document you are partly guessing at does not.${customSection}
 
 - Include every field named in the schema, even when the answer is null. Do not omit a key because you could not find its value.

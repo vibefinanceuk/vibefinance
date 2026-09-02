@@ -93,6 +93,13 @@ radius deserves its own design conversation.
 native renderer, and PDF.js needs a canvas workerd does not provide.
 Submit the page as an image instead.
 
+**Line extraction and the validation stage.** Designed in
+`docs/design/validation.md`, prompted by a real failure: the model
+fabricated an invoice total that was off by 340.00, on a document
+where no total was printed. Step 1 (the extractor no longer
+calculating) is built; line extraction and the validation stage are
+not.
+
 **Extraction rules.** The conditional layer — *"if the supplier is
 Data Electronics, capture the cost centre"* — with its own compiler
 and activation gate. Designed in `docs/design/extraction.md`.
