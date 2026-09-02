@@ -49,12 +49,23 @@ export async function handleExtractionDiagnostic(
     delete built.guided_json;
     try {
       const raw = await ai.run(model, built);
+      const obj = (raw ?? {}) as Record<string, unknown>;
+      const usage = obj.usage as Record<string, unknown> | undefined;
+      const answer =
+        typeof obj.response === "string"
+          ? obj.response
+          : JSON.stringify(raw).slice(0, 400);
       attempts.push({
         shape: shape.label,
         threw: false,
-        // Truncated: a model that echoes its input could otherwise
-        // return the whole base64 payload.
-        raw: JSON.stringify(raw).slice(0, 2000),
+        // The signal that actually matters. A dropped image leaves
+        // this at roughly the prompt's own length; an image that
+        // genuinely arrived pushes it into the thousands. The
+        // model's ANSWER cannot be trusted to reveal this — one that
+        // received no image still answers confidently.
+        promptTokens: usage?.prompt_tokens ?? null,
+        imageReceived: typeof usage?.prompt_tokens === "number" && (usage.prompt_tokens as number) > 500,
+        answer,
       });
     } catch (err) {
       attempts.push({ shape: shape.label, threw: true, error: String(err).slice(0, 500) });

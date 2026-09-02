@@ -67,10 +67,66 @@ function toBase64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
-/** The shape Cloudflare's own Llama Vision tutorial documents. */
+/**
+ * Candidate request shapes, in preference order.
+ *
+ * The first, `image_url` content parts inside `messages`, is the
+ * OpenAI-compatible multimodal shape and is confirmed by three
+ * independent sources: Cloudflare's own workers-ai-provider
+ * changelog, a documented Workers AI example calling env.AI.run with
+ * exactly this structure, and Llama 4 Scout's shape at other
+ * providers. It is almost certainly correct.
+ *
+ * The others are kept because "almost certainly correct" has already
+ * been wrong twice here, and because the diagnostic endpoint reports
+ * every shape's result at once — so the cost of carrying an extra
+ * candidate is nothing, while the cost of guessing wrong is a deploy
+ * cycle.
+ *
+ * How to tell which one works, and the thing that made this
+ * diagnosable at all: `usage.prompt_tokens` in the response. A
+ * dropped image leaves it at roughly the prompt's own length (46 for
+ * a short question); an image that genuinely arrived pushes it into
+ * the thousands. That number, not the model's answer, is the honest
+ * signal — a model given no image still answers confidently.
+ */
 export const VISION_SHAPES: VisionRequestShape[] = [
   {
-    label: "image-base64",
+    label: "image_url-data-url",
+    build: (prompt, bytes, contentType, schema) => ({
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: prompt },
+            { type: "image_url", image_url: { url: `data:${contentType};base64,${toBase64(bytes)}` } },
+          ],
+        },
+      ],
+      guided_json: schema,
+      max_tokens: 4096,
+      temperature: 0,
+    }),
+  },
+  {
+    label: "image_url-bare-base64",
+    build: (prompt, bytes, _ct, schema) => ({
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: prompt },
+            { type: "image_url", image_url: { url: toBase64(bytes) } },
+          ],
+        },
+      ],
+      guided_json: schema,
+      max_tokens: 4096,
+      temperature: 0,
+    }),
+  },
+  {
+    label: "top-level-image-base64",
     build: (prompt, bytes, _ct, schema) => ({
       messages: [{ role: "user", content: prompt }],
       image: toBase64(bytes),
@@ -80,7 +136,7 @@ export const VISION_SHAPES: VisionRequestShape[] = [
     }),
   },
   {
-    label: "image-bytes",
+    label: "top-level-image-bytes",
     build: (prompt, bytes, _ct, schema) => ({
       messages: [{ role: "user", content: prompt }],
       image: [...bytes],
