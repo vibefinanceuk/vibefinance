@@ -1,7 +1,7 @@
 import type { RouteResult } from "./customers-route.js";
 
 export interface UpsertLicenceBody {
-  customerId?: unknown;
+  environmentId?: unknown;
   plan?: unknown;
   features?: unknown;
   volumeEntitlement?: unknown;
@@ -14,14 +14,21 @@ export interface UpsertLicenceBody {
 
 const VALID_STATUSES = ["active", "warned", "blocked"] as const;
 
+/**
+ * A licence now belongs to one specific environment, not a customer as
+ * a whole (decision 0036) — a sandbox's 30-day trial licence and a
+ * production environment's real subscription are genuinely separate
+ * entitlements, each with their own status, expiry, and volume
+ * entitlement.
+ */
 export async function handleUpsertLicence(
   db: D1Database,
   body: UpsertLicenceBody
 ): Promise<RouteResult> {
-  const { customerId, plan, volumeEntitlement, validFrom } = body;
+  const { environmentId, plan, volumeEntitlement, validFrom } = body;
   if (
-    typeof customerId !== "string" ||
-    !customerId ||
+    typeof environmentId !== "string" ||
+    !environmentId ||
     typeof plan !== "string" ||
     !plan ||
     typeof volumeEntitlement !== "number" ||
@@ -32,7 +39,7 @@ export async function handleUpsertLicence(
       status: 400,
       body: {
         error:
-          "customerId, plan (strings), volumeEntitlement (number) and validFrom (string) are required",
+          "environmentId, plan (strings), volumeEntitlement (number) and validFrom (string) are required",
       },
     };
   }
@@ -49,25 +56,26 @@ export async function handleUpsertLicence(
   const statusEffectiveAt =
     typeof body.statusEffectiveAt === "string" ? body.statusEffectiveAt : null;
 
-  const customerExists = await db
-    .prepare("SELECT id FROM customers WHERE id = ?")
-    .bind(customerId)
+  const environmentExists = await db
+    .prepare("SELECT id FROM environments WHERE id = ?")
+    .bind(environmentId)
     .first();
-  if (!customerExists) {
-    return { status: 404, body: { error: `customer ${customerId} does not exist` } };
+  if (!environmentExists) {
+    return { status: 404, body: { error: `environment ${environmentId} does not exist` } };
   }
 
-  // licences.customer_id is the primary key — one row per customer, so
-  // this is a genuine upsert (create the first licence, or replace the
-  // current one on a plan change), not an append. See
-  // workers/vf-licence/migrations/0001_control_plane_schema.sql's own
-  // comment on why this table isn't versioned.
+  // licences.environment_id is the primary key — one row per
+  // environment, so this is a genuine upsert (create the first
+  // licence, or replace the current one on a plan change), not an
+  // append. See workers/vf-licence/migrations/
+  // 0001_control_plane_schema.sql's own comment on why this table
+  // isn't versioned.
   await db
     .prepare(
       `INSERT INTO licences
-         (customer_id, plan, features_json, volume_entitlement, valid_from, valid_to, status, status_reason, status_effective_at, updated_at)
+         (environment_id, plan, features_json, volume_entitlement, valid_from, valid_to, status, status_reason, status_effective_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
-       ON CONFLICT(customer_id) DO UPDATE SET
+       ON CONFLICT(environment_id) DO UPDATE SET
          plan = excluded.plan,
          features_json = excluded.features_json,
          volume_entitlement = excluded.volume_entitlement,
@@ -79,7 +87,7 @@ export async function handleUpsertLicence(
          updated_at = datetime('now')`
     )
     .bind(
-      customerId,
+      environmentId,
       plan,
       JSON.stringify(features),
       volumeEntitlement,
@@ -93,6 +101,6 @@ export async function handleUpsertLicence(
 
   return {
     status: 200,
-    body: { customerId, plan, features, volumeEntitlement, validFrom, validTo, status },
+    body: { environmentId, plan, features, volumeEntitlement, validFrom, validTo, status },
   };
 }

@@ -1,7 +1,7 @@
 import type { RouteResult } from "./customers-route.js";
 
 export interface ReportUsageBody {
-  customerId?: unknown;
+  environmentId?: unknown;
   periodKey?: unknown;
   invoicesProcessed?: unknown;
   rulesEvaluated?: unknown;
@@ -10,12 +10,18 @@ export interface ReportUsageBody {
 }
 
 /**
- * Idempotent by construction: (customer_id, period_key) is the primary
- * key on usage_periods (see the migration's own comment), so a retried
- * push, a duplicate cron fire, or an intentional "push again with
- * fresher numbers" all just overwrite the same row — Blueprint:
+ * Idempotent by construction: (environment_id, period_key) is the
+ * primary key on usage_periods (see the migration's own comment), so
+ * a retried push, a duplicate cron fire, or an intentional "push again
+ * with fresher numbers" all just overwrite the same row — Blueprint:
  * "Composite primary key makes the push idempotent. Retries and
  * duplicate cron fires cannot double-count."
+ *
+ * Re-keyed to environmentId (decision 0036) — usage is now tracked
+ * per environment, not blended across a customer's sandbox and
+ * production activity. This matters directly for a future
+ * consumption-based bill: sandbox testing must never count toward a
+ * real invoice-volume tier.
  *
  * No authentication on this endpoint today — the same gap as
  * POST /customers and POST /licences, not a new one, but worth
@@ -25,10 +31,10 @@ export interface ReportUsageBody {
  * docs/decisions/0004-usage-telemetry.md.
  */
 export async function handleReportUsage(db: D1Database, body: ReportUsageBody): Promise<RouteResult> {
-  const { customerId, periodKey, invoicesProcessed, rulesEvaluated } = body;
+  const { environmentId, periodKey, invoicesProcessed, rulesEvaluated } = body;
   if (
-    typeof customerId !== "string" ||
-    !customerId ||
+    typeof environmentId !== "string" ||
+    !environmentId ||
     typeof periodKey !== "string" ||
     !periodKey ||
     typeof invoicesProcessed !== "number" ||
@@ -38,7 +44,7 @@ export async function handleReportUsage(db: D1Database, body: ReportUsageBody): 
       status: 400,
       body: {
         error:
-          "customerId, periodKey (strings) and invoicesProcessed, rulesEvaluated (numbers) are required",
+          "environmentId, periodKey (strings) and invoicesProcessed, rulesEvaluated (numbers) are required",
       },
     };
   }
@@ -52,20 +58,20 @@ export async function handleReportUsage(db: D1Database, body: ReportUsageBody): 
       ? (body.outcomeCounts as Record<string, unknown>)
       : {};
 
-  const customerExists = await db
-    .prepare("SELECT id FROM customers WHERE id = ?")
-    .bind(customerId)
+  const environmentExists = await db
+    .prepare("SELECT id FROM environments WHERE id = ?")
+    .bind(environmentId)
     .first();
-  if (!customerExists) {
-    return { status: 404, body: { error: `customer ${customerId} does not exist` } };
+  if (!environmentExists) {
+    return { status: 404, body: { error: `environment ${environmentId} does not exist` } };
   }
 
   await db
     .prepare(
       `INSERT INTO usage_periods
-         (customer_id, period_key, invoices_processed, rules_evaluated, active_users, outcome_counts_json, received_at)
+         (environment_id, period_key, invoices_processed, rules_evaluated, active_users, outcome_counts_json, received_at)
        VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
-       ON CONFLICT(customer_id, period_key) DO UPDATE SET
+       ON CONFLICT(environment_id, period_key) DO UPDATE SET
          invoices_processed = excluded.invoices_processed,
          rules_evaluated = excluded.rules_evaluated,
          active_users = excluded.active_users,
@@ -73,7 +79,7 @@ export async function handleReportUsage(db: D1Database, body: ReportUsageBody): 
          received_at = excluded.received_at`
     )
     .bind(
-      customerId,
+      environmentId,
       periodKey,
       invoicesProcessed,
       rulesEvaluated,
@@ -84,6 +90,6 @@ export async function handleReportUsage(db: D1Database, body: ReportUsageBody): 
 
   return {
     status: 200,
-    body: { status: "recorded", customerId, periodKey, invoicesProcessed, rulesEvaluated },
+    body: { status: "recorded", environmentId, periodKey, invoicesProcessed, rulesEvaluated },
   };
 }

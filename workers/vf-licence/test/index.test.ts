@@ -35,7 +35,7 @@ describe("endpoint authentication, through the real router", () => {
   it("401s POST /customers with no Authorization header at all", async () => {
     const res = await SELF.fetch("https://example.com/customers", {
       method: "POST",
-      body: JSON.stringify({ id: "x", name: "x", region: "eu", instanceUrl: "https://x" }),
+      body: JSON.stringify({ id: "x", name: "x" }),
     });
     expect(res.status).toBe(401);
   });
@@ -44,7 +44,7 @@ describe("endpoint authentication, through the real router", () => {
     const res = await SELF.fetch("https://example.com/customers", {
       method: "POST",
       headers: { Authorization: "Bearer definitely-not-the-real-key" },
-      body: JSON.stringify({ id: "x", name: "x", region: "eu", instanceUrl: "https://x" }),
+      body: JSON.stringify({ id: "x", name: "x" }),
     });
     expect(res.status).toBe(401);
   });
@@ -52,18 +52,26 @@ describe("endpoint authentication, through the real router", () => {
   it("401s POST /licences with no Authorization header", async () => {
     const res = await SELF.fetch("https://example.com/licences", {
       method: "POST",
-      body: JSON.stringify({ customerId: "x", plan: "standard", volumeEntitlement: 100, validFrom: "2026-01-01" }),
+      body: JSON.stringify({ environmentId: "x", plan: "standard", volumeEntitlement: 100, validFrom: "2026-01-01" }),
+    });
+    expect(res.status).toBe(401);
+  });
+
+  it("401s POST /environments with no Authorization header — the new route this decision introduced", async () => {
+    const res = await SELF.fetch("https://example.com/environments", {
+      method: "POST",
+      body: JSON.stringify({ customerId: "x", kind: "production", region: "eu", instanceUrl: "https://x" }),
     });
     expect(res.status).toBe(401);
   });
 
   it("401s the key rotation route with no Authorization header", async () => {
-    const res = await SELF.fetch("https://example.com/customers/acme/rotate-key", { method: "POST" });
+    const res = await SELF.fetch("https://example.com/environments/acme-production/rotate-key", { method: "POST" });
     expect(res.status).toBe(401);
   });
 
   it("401s GET /licences/:id/token with no Authorization header", async () => {
-    const res = await SELF.fetch("https://example.com/licences/acme/token");
+    const res = await SELF.fetch("https://example.com/licences/acme-production/token");
     expect(res.status).toBe(401);
   });
 
@@ -73,12 +81,12 @@ describe("endpoint authentication, through the real router", () => {
     // turned away at the door.
     const res = await SELF.fetch("https://example.com/usage", {
       method: "POST",
-      body: JSON.stringify({ customerId: "acme", periodKey: "2026-08", invoicesProcessed: 5, rulesEvaluated: 10 }),
+      body: JSON.stringify({ environmentId: "acme-production", periodKey: "2026-08", invoicesProcessed: 5, rulesEvaluated: 10 }),
     });
     expect(res.status).toBe(401);
   });
 
-  it("401s POST /usage when the body has no customerId at all, rather than crashing", async () => {
+  it("401s POST /usage when the body has no environmentId at all, rather than crashing", async () => {
     const res = await SELF.fetch("https://example.com/usage", {
       method: "POST",
       headers: { Authorization: "Bearer something" },
@@ -89,20 +97,20 @@ describe("endpoint authentication, through the real router", () => {
 });
 
 describe("the fleet manifest, through the real router", () => {
-  it("401s GET /customers with no Authorization header", async () => {
-    const res = await SELF.fetch("https://example.com/customers");
+  it("401s GET /environments with no Authorization header", async () => {
+    const res = await SELF.fetch("https://example.com/environments");
     expect(res.status).toBe(401);
   });
 
-  it("401s GET /customers with a wrong admin key", async () => {
-    const res = await SELF.fetch("https://example.com/customers", {
+  it("401s GET /environments with a wrong admin key", async () => {
+    const res = await SELF.fetch("https://example.com/environments", {
       headers: { Authorization: "Bearer definitely-not-the-real-key" },
     });
     expect(res.status).toBe(401);
   });
 
   it("401s PATCH .../fleet-metadata with no Authorization header", async () => {
-    const res = await SELF.fetch("https://example.com/customers/acme/fleet-metadata", {
+    const res = await SELF.fetch("https://example.com/environments/acme-production/fleet-metadata", {
       method: "PATCH",
       body: JSON.stringify({ workerName: "vf-app-acme" }),
     });

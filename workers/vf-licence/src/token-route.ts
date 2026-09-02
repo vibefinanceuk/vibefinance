@@ -24,22 +24,34 @@ interface LicenceRow {
   status_effective_at: string | null;
 }
 
+/**
+ * Looks up by environmentId now (decision 0036) — a licence belongs
+ * to one specific environment, never a customer as a whole.
+ *
+ * LicenceClaims.customerId (shared/licensing/types.ts) is deliberately
+ * NOT renamed here — it's a real, external contract vf-app's own
+ * licence-cache.ts already consumes, and renaming it is out of scope
+ * for this schema change specifically. Its value is now genuinely an
+ * environment id (e.g. "acme-production"), not a bare customer id —
+ * stated here plainly rather than left as a silent, undocumented
+ * mismatch between the field's name and what it actually holds.
+ */
 export async function handleIssueToken(
   db: D1Database,
   privateKeyJwk: JsonWebKey,
-  customerId: string,
+  environmentId: string,
   now: Date = new Date()
 ): Promise<RouteResult> {
   const row = await db
     .prepare(
       `SELECT plan, features_json, volume_entitlement, valid_to, status, status_reason, status_effective_at
-       FROM licences WHERE customer_id = ?`
+       FROM licences WHERE environment_id = ?`
     )
-    .bind(customerId)
+    .bind(environmentId)
     .first<LicenceRow>();
 
   if (!row) {
-    return { status: 404, body: { error: `no licence exists for customer ${customerId}` } };
+    return { status: 404, body: { error: `no licence exists for environment ${environmentId}` } };
   }
 
   const defaultExpiry = new Date(now.getTime() + DEFAULT_TOKEN_LIFETIME_MS);
@@ -54,14 +66,14 @@ export async function handleIssueToken(
   } catch {
     // A malformed features_json is a data problem, not a reason to
     // refuse issuing a token altogether — fail toward the empty set
-    // rather than blocking every request for this customer over a
-    // stored-data issue that has nothing to do with whether they're
+    // rather than blocking every request for this environment over a
+    // stored-data issue that has nothing to do with whether it's
     // entitled to use the product.
     features = [];
   }
 
   const claims: LicenceClaims = {
-    customerId,
+    customerId: environmentId,
     plan: row.plan,
     features,
     volumeEntitlement: row.volume_entitlement,

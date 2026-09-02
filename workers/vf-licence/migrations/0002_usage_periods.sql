@@ -31,7 +31,15 @@ CREATE TABLE usage_periods (
 
 -- Standing invariant: every usage report belongs to a customer that
 -- exists — same pattern as licences.customer_id in 0001.
--- ASSERT ALWAYS: SELECT count(*) FROM usage_periods WHERE customer_id NOT IN (SELECT id FROM customers) == 0
+--
+-- Retired by migration 0005_customer_environments.sql: usage_periods
+-- is no longer keyed by customer_id at all — re-keyed to
+-- environment_id, since sandbox and production usage must never
+-- blend into one figure. The equivalent standing invariant now lives
+-- in 0005 itself, re-keyed. An applied migration is not edited
+-- without saying so (docs/change-and-promotion-model.md §6) — this
+-- comment is that explicit statement, not a silent removal.
+-- WAS: -- ASSERT ALWAYS: SELECT count(*) FROM usage_periods WHERE customer_id NOT IN (SELECT id FROM customers) == 0
 
 -- Standing invariant: no negative counts. A negative count here would
 -- mean a computation bug on the vf-app side (see

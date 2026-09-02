@@ -6,6 +6,7 @@ import schemaSql from "../migrations/0001_control_plane_schema.sql?raw";
 import usagePeriodsSql from "../migrations/0002_usage_periods.sql?raw";
 import apiKeysSql from "../migrations/0003_customer_api_keys.sql?raw";
 import fleetMetadataSql from "../migrations/0004_fleet_metadata.sql?raw";
+import customerEnvironmentsSql from "../migrations/0005_customer_environments.sql?raw";
 
 function stripSqlComments(sql: string): string {
   return sql
@@ -29,7 +30,7 @@ function toOneStatementPerLine(sql: string): string {
 // functions above), and storage does not appear to reset between it()
 // blocks in this pool-workers version, so every table is dropped and
 // recreated before each test rather than relying on framework isolation.
-const TABLES_IN_DROP_ORDER = ["usage_periods", "licences", "customers"];
+const TABLES_IN_DROP_ORDER = ["usage_periods", "licences", "environments", "customers"];
 
 export async function applyTestSchema(): Promise<void> {
   for (const table of TABLES_IN_DROP_ORDER) {
@@ -39,4 +40,5 @@ export async function applyTestSchema(): Promise<void> {
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(usagePeriodsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(apiKeysSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(fleetMetadataSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(customerEnvironmentsSql)));
 }

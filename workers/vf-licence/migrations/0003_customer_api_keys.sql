@@ -24,4 +24,12 @@ ALTER TABLE customers ADD COLUMN api_key_hash TEXT;
 -- the generation/hashing path stored a blank value instead of either a
 -- real hash or NULL. NULL (no key yet) is a valid, expected state;
 -- an empty string is not.
--- ASSERT ALWAYS: SELECT count(*) FROM customers WHERE api_key_hash = '' == 0
+--
+-- Retired by migration 0005_customer_environments.sql: api_key_hash
+-- moved from customers to environments — a real, deliberate schema
+-- change (each environment authenticates back to vf-licence with its
+-- own key), not a bug. The equivalent invariant now lives in 0005
+-- itself. An applied migration is not edited without saying so (docs/
+-- change-and-promotion-model.md §6) — this comment is that explicit
+-- statement, not a silent removal.
+-- WAS: -- ASSERT ALWAYS: SELECT count(*) FROM customers WHERE api_key_hash = '' == 0

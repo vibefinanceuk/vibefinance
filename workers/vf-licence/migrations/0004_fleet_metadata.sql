@@ -34,18 +34,34 @@ ALTER TABLE customers ADD COLUMN locale TEXT;
 -- same "NULL means not yet configured, empty string means a real bug
 -- in the write path" distinction already established for
 -- api_key_hash.
--- ASSERT ALWAYS: SELECT count(*) FROM customers WHERE worker_name = '' == 0
--- ASSERT ALWAYS: SELECT count(*) FROM customers WHERE d1_database_name = '' == 0
--- ASSERT ALWAYS: SELECT count(*) FROM customers WHERE d1_database_id = '' == 0
--- ASSERT ALWAYS: SELECT count(*) FROM customers WHERE locale = '' == 0
+--
+-- Retired by migration 0005_customer_environments.sql: all four
+-- columns moved from customers to environments — real, deliberate
+-- deployment-specific facts that now belong to one specific
+-- environment, not a customer as a whole. The equivalent invariants
+-- now live in 0005 itself, restated for environments. An applied
+-- migration is not edited without saying so (docs/change-and-
+-- promotion-model.md §6) — this comment is that explicit statement,
+-- not a silent removal.
+-- WAS: -- ASSERT ALWAYS: SELECT count(*) FROM customers WHERE worker_name = '' == 0
+-- WAS: -- ASSERT ALWAYS: SELECT count(*) FROM customers WHERE d1_database_name = '' == 0
+-- WAS: -- ASSERT ALWAYS: SELECT count(*) FROM customers WHERE d1_database_id = '' == 0
+-- WAS: -- ASSERT ALWAYS: SELECT count(*) FROM customers WHERE locale = '' == 0
 
 -- Standing invariant: worker_name is unique among customers that have
 -- one set at all — two customers cannot share a Worker name, since
 -- Cloudflare itself would refuse the second deploy, but this should
 -- be caught here, in data, before ever reaching a live `wrangler
 -- deploy` failure.
--- ASSERT ALWAYS: SELECT count(*) FROM (SELECT worker_name FROM customers WHERE worker_name IS NOT NULL GROUP BY worker_name HAVING count(*) > 1) == 0
+--
+-- Retired by migration 0005_customer_environments.sql, same reason as
+-- above — worker_name is now an environments column. The equivalent
+-- uniqueness invariant now lives in 0005 itself.
+-- WAS: -- ASSERT ALWAYS: SELECT count(*) FROM (SELECT worker_name FROM customers WHERE worker_name IS NOT NULL GROUP BY worker_name HAVING count(*) > 1) == 0
 
 -- Standing invariant: same uniqueness requirement for d1_database_name
 -- — two customers cannot share a database.
--- ASSERT ALWAYS: SELECT count(*) FROM (SELECT d1_database_name FROM customers WHERE d1_database_name IS NOT NULL GROUP BY d1_database_name HAVING count(*) > 1) == 0
+--
+-- Retired by migration 0005_customer_environments.sql, same reason as
+-- above.
+-- WAS: -- ASSERT ALWAYS: SELECT count(*) FROM (SELECT d1_database_name FROM customers WHERE d1_database_name IS NOT NULL GROUP BY d1_database_name HAVING count(*) > 1) == 0

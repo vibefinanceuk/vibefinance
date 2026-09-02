@@ -69,7 +69,16 @@ CREATE TABLE licences (
 -- Enforced by the FK at insert time too; stated here as a fact the
 -- runner re-checks on every replay, independent of whether a future
 -- change ever drops the constraint.
--- ASSERT ALWAYS: SELECT count(*) FROM licences WHERE customer_id NOT IN (SELECT id FROM customers) == 0
+--
+-- Retired by migration 0005_customer_environments.sql: licences is no
+-- longer keyed by customer_id at all — re-keyed to environment_id, a
+-- real, deliberate schema change (one customer can now have more than
+-- one environment, each with its own real licence), not a bug. The
+-- equivalent standing invariant now lives in 0005 itself, re-keyed.
+-- An applied migration is not edited without saying so (docs/
+-- change-and-promotion-model.md §6) — this comment is that explicit
+-- statement, not a silent removal.
+-- WAS: -- ASSERT ALWAYS: SELECT count(*) FROM licences WHERE customer_id NOT IN (SELECT id FROM customers) == 0
 
 -- Standing invariant: licences.status is always one the token-issuing
 -- code and shared/licensing/token.ts's claims-shape check both

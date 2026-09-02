@@ -1,8 +1,9 @@
 import type { RouteResult } from "./customers-route.js";
 
-interface CustomerRow {
+interface EnvironmentRow {
   id: string;
-  name: string;
+  customer_id: string;
+  kind: string;
   region: string;
   instance_url: string;
   worker_name: string | null;
@@ -12,10 +13,11 @@ interface CustomerRow {
   created_at: string;
 }
 
-function toFleetView(row: CustomerRow): Record<string, unknown> {
+function toFleetView(row: EnvironmentRow): Record<string, unknown> {
   return {
     id: row.id,
-    name: row.name,
+    customerId: row.customer_id,
+    kind: row.kind,
     region: row.region,
     instanceUrl: row.instance_url,
     workerName: row.worker_name,
@@ -24,30 +26,34 @@ function toFleetView(row: CustomerRow): Record<string, unknown> {
     locale: row.locale,
     createdAt: row.created_at,
     // Deliberately never api_key_hash — this route is the fleet
-    // manifest a tool like migrate-all reads, not a customer-detail
-    // endpoint, and there is no reason a hash (even a hash, never the
-    // plaintext) needs to leave this database at all.
+    // manifest a tool like migrate-all reads, not an environment-
+    // detail endpoint, and there is no reason a hash (even a hash,
+    // never the plaintext) needs to leave this database at all.
   };
 }
 
 /**
- * GET /customers — the fleet manifest every fleet tool (migrate-all,
- * deploy-all, "who's on what version") ultimately reads from. See
- * docs/decisions/0011-fleet-tooling.md. A customer with no fleet
- * metadata set (worker_name, d1_database_name, d1_database_id all
- * NULL) is included, not filtered out — a fleet tool deciding what to
- * skip is its own responsibility, not something this route should
- * silently do for it.
+ * GET /environments — the fleet manifest every fleet tool
+ * (migrate-all, deploy-all, "who's on what version") ultimately reads
+ * from. Re-keyed to list environments, not customers (decision 0036)
+ * — a customer's deployment-specific details (region, instance_url,
+ * worker_name, and so on) now live per environment, since a single
+ * customer can have more than one real deployment (a sandbox and a
+ * production environment). See docs/decisions/0011-fleet-tooling.md.
+ * An environment with no fleet metadata set (worker_name,
+ * d1_database_name, d1_database_id all NULL) is included, not
+ * filtered out — a fleet tool deciding what to skip is its own
+ * responsibility, not something this route should silently do for it.
  */
-export async function handleListCustomers(db: D1Database): Promise<RouteResult> {
+export async function handleListEnvironments(db: D1Database): Promise<RouteResult> {
   const rows = await db
     .prepare(
-      `SELECT id, name, region, instance_url, worker_name, d1_database_name, d1_database_id, locale, created_at
-       FROM customers ORDER BY id`
+      `SELECT id, customer_id, kind, region, instance_url, worker_name, d1_database_name, d1_database_id, locale, created_at
+       FROM environments ORDER BY id`
     )
-    .all<CustomerRow>();
+    .all<EnvironmentRow>();
 
-  return { status: 200, body: { customers: rows.results.map(toFleetView) } };
+  return { status: 200, body: { environments: rows.results.map(toFleetView) } };
 }
 
 interface SetFleetMetadataBody {
@@ -66,24 +72,24 @@ function validateOptionalString(value: unknown, fieldName: string): string | { e
 }
 
 /**
- * PATCH /customers/:id/fleet-metadata — sets or updates a customer's
- * deployment specifics. A true partial update: only fields present in
- * the body are changed, everything else keeps its current value —
- * this is how Acme, the one real customer that predates this
- * migration, gets backfilled (and how any future redeploy — a
- * customer's database gets recreated, say — gets recorded) without
- * needing to resend fields that haven't changed.
+ * PATCH /environments/:id/fleet-metadata — sets or updates one
+ * environment's deployment specifics. A true partial update: only
+ * fields present in the body are changed, everything else keeps its
+ * current value — this is how Acme's own production environment (the
+ * one that predates decision 0036's migration) gets backfilled, and
+ * how any future redeploy — a database gets recreated, say — gets
+ * recorded, without needing to resend fields that haven't changed.
  */
 export async function handleSetFleetMetadata(
   db: D1Database,
-  customerId: string,
+  environmentId: string,
   body: SetFleetMetadataBody
 ): Promise<RouteResult> {
   const existing = await db
     .prepare(
-      "SELECT id, worker_name, d1_database_name, d1_database_id, locale FROM customers WHERE id = ?"
+      "SELECT id, worker_name, d1_database_name, d1_database_id, locale FROM environments WHERE id = ?"
     )
-    .bind(customerId)
+    .bind(environmentId)
     .first<{
       id: string;
       worker_name: string | null;
@@ -92,7 +98,7 @@ export async function handleSetFleetMetadata(
       locale: string | null;
     }>();
   if (!existing) {
-    return { status: 404, body: { error: `customer ${customerId} does not exist` } };
+    return { status: 404, body: { error: `environment ${environmentId} does not exist` } };
   }
 
   const workerName = validateOptionalString(body.workerName, "workerName");
@@ -114,15 +120,15 @@ export async function handleSetFleetMetadata(
 
   await db
     .prepare(
-      "UPDATE customers SET worker_name = ?, d1_database_name = ?, d1_database_id = ?, locale = ? WHERE id = ?"
+      "UPDATE environments SET worker_name = ?, d1_database_name = ?, d1_database_id = ?, locale = ? WHERE id = ?"
     )
-    .bind(merged.worker_name, merged.d1_database_name, merged.d1_database_id, merged.locale, customerId)
+    .bind(merged.worker_name, merged.d1_database_name, merged.d1_database_id, merged.locale, environmentId)
     .run();
 
   return {
     status: 200,
     body: {
-      id: customerId,
+      id: environmentId,
       workerName: merged.worker_name,
       d1DatabaseName: merged.d1_database_name,
       d1DatabaseId: merged.d1_database_id,

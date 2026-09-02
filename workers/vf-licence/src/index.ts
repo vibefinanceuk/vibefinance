@@ -15,12 +15,13 @@
  */
 
 import { handleCreateCustomer } from "./customers-route.js";
+import { handleCreateEnvironment } from "./environment-route.js";
 import { handleUpsertLicence } from "./licences-route.js";
 import { handleIssueToken } from "./token-route.js";
 import { handleReportUsage } from "./usage-route.js";
 import { handleRotateKey } from "./rotate-key-route.js";
-import { handleListCustomers, handleSetFleetMetadata } from "./fleet-route.js";
-import { extractBearerToken, isValidAdminKey, isValidCustomerKey } from "./auth.js";
+import { handleListEnvironments, handleSetFleetMetadata } from "./fleet-route.js";
+import { extractBearerToken, isValidAdminKey, isValidEnvironmentKey } from "./auth.js";
 
 export interface Env {
   CONTROL_DB?: D1Database;
@@ -84,15 +85,16 @@ export default {
     // Admin-only routes: provisioning, key management, and the fleet
     // manifest (Blueprint build order step 5 — see
     // docs/decisions/0011-fleet-tooling.md). A single shared secret,
-    // not per-customer — see Env.ADMIN_API_KEY's own comment and
+    // not per-environment — see Env.ADMIN_API_KEY's own comment and
     // docs/decisions/0006-endpoint-authentication.md. The fleet
     // manifest is admin-only for the same reason provisioning is: it
     // is cross-customer administrative data, not something any single
-    // customer's own credential should be able to read or change.
-    const rotateMatch = url.pathname.match(/^\/customers\/([^/]+)\/rotate-key$/);
-    const fleetMetadataMatch = url.pathname.match(/^\/customers\/([^/]+)\/fleet-metadata$/);
+    // environment's own credential should be able to read or change.
+    const rotateMatch = url.pathname.match(/^\/environments\/([^/]+)\/rotate-key$/);
+    const fleetMetadataMatch = url.pathname.match(/^\/environments\/([^/]+)\/fleet-metadata$/);
     const isAdminRoute =
-      (url.pathname === "/customers" && (request.method === "POST" || request.method === "GET")) ||
+      (url.pathname === "/customers" && request.method === "POST") ||
+      (url.pathname === "/environments" && (request.method === "POST" || request.method === "GET")) ||
       (url.pathname === "/licences" && request.method === "POST") ||
       (rotateMatch !== null && request.method === "POST") ||
       (fleetMetadataMatch !== null && request.method === "PATCH");
@@ -103,8 +105,8 @@ export default {
       }
     }
 
-    if (url.pathname === "/customers" && request.method === "GET") {
-      const result = await handleListCustomers(env.CONTROL_DB);
+    if (url.pathname === "/environments" && request.method === "GET") {
+      const result = await handleListEnvironments(env.CONTROL_DB);
       return json(result.body, result.status);
     }
 
@@ -116,6 +118,17 @@ export default {
         return json({ error: "invalid JSON body" }, 400);
       }
       const result = await handleCreateCustomer(env.CONTROL_DB, (body ?? {}) as Record<string, unknown>);
+      return json(result.body, result.status);
+    }
+
+    if (url.pathname === "/environments" && request.method === "POST") {
+      let body: unknown;
+      try {
+        body = await request.json();
+      } catch {
+        return json({ error: "invalid JSON body" }, 400);
+      }
+      const result = await handleCreateEnvironment(env.CONTROL_DB, (body ?? {}) as Record<string, unknown>);
       return json(result.body, result.status);
     }
 
@@ -150,21 +163,23 @@ export default {
       return json(result.body, result.status);
     }
 
-    // Per-customer routes: the machine-to-machine calls each
-    // customer's own vf-app instance makes. Authenticated against that
-    // specific customer's key, not the admin secret — a customer's
-    // instance must never be able to act as, or be authenticated by,
-    // credentials belonging to a different customer or to the admin.
+    // Per-environment routes: the machine-to-machine calls each
+    // environment's own vf-app instance makes. Authenticated against
+    // that specific environment's key, not the admin secret — an
+    // environment's instance must never be able to act as, or be
+    // authenticated by, credentials belonging to a different
+    // environment (including a different environment of the same
+    // customer) or to the admin.
     const tokenMatch = url.pathname.match(/^\/licences\/([^/]+)\/token$/);
     if (tokenMatch && request.method === "GET") {
-      const customerId = tokenMatch[1];
+      const environmentId = tokenMatch[1];
       const providedKey = extractBearerToken(request);
-      if (!(await isValidCustomerKey(env.CONTROL_DB, customerId, providedKey))) {
+      if (!(await isValidEnvironmentKey(env.CONTROL_DB, environmentId, providedKey))) {
         return json({ error: "unauthorized" }, 401);
       }
       const keyResult = parsePrivateKey(env);
       if (!keyResult.ok) return keyResult.response;
-      const result = await handleIssueToken(env.CONTROL_DB, keyResult.key, customerId);
+      const result = await handleIssueToken(env.CONTROL_DB, keyResult.key, environmentId);
       return json(result.body, result.status);
     }
 
@@ -176,9 +191,9 @@ export default {
         return json({ error: "invalid JSON body" }, 400);
       }
       const parsedBody = (body ?? {}) as Record<string, unknown>;
-      const customerId = typeof parsedBody.customerId === "string" ? parsedBody.customerId : null;
+      const environmentId = typeof parsedBody.environmentId === "string" ? parsedBody.environmentId : null;
       const providedKey = extractBearerToken(request);
-      if (!customerId || !(await isValidCustomerKey(env.CONTROL_DB, customerId, providedKey))) {
+      if (!environmentId || !(await isValidEnvironmentKey(env.CONTROL_DB, environmentId, providedKey))) {
         return json({ error: "unauthorized" }, 401);
       }
       const result = await handleReportUsage(env.CONTROL_DB, parsedBody);

@@ -501,6 +501,29 @@ testing-infrastructure finding recorded honestly: Miniflare's local R2
 simulation isn't reset between test cases within a file the way D1 is.
 See `docs/decisions/0035-r2-document-storage.md`.
 
+## One customer, multiple environments
+
+The foundational schema change for a real, described signup -> trial
+-> sandbox -> production flow: `customers` had exactly one
+`instance_url` column, and `licences.customer_id` was a genuine
+one-to-one primary key — neither could structurally represent a
+customer with more than one real deployment. Every moved field
+(`region`, `instance_url`, `worker_name`, and more) was already,
+individually, documented as a per-deployment fact by the migrations
+that originally added it — this decision took that implication
+seriously rather than inventing something new. `licences` and
+`usage_periods` were both re-keyed to `environment_id`, proven
+directly (not just asserted) to keep a customer's sandbox and
+production usage from ever blending — the real property a future
+consumption-based bill depends on. The migration's own tricky
+ordering (recreate `customers` first, or `environments`' own foreign
+key reference fails) was found and fixed by direct testing before
+being trusted, and a real tooling limitation — the migration runner
+checks every standing invariant forever, including six now-invalidated
+ones from earlier migrations — was handled by explicitly retiring each
+one with a comment, not a silent workaround. See
+`docs/decisions/0036-customer-environments.md`.
+
 ## The one rule enforced by tooling, not convention
 
 No application code reads a tenant-scoped binding (`env.DB` and similar)
