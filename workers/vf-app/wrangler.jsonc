@@ -137,7 +137,7 @@
   "r2_buckets": [
     {
       "binding": "DOCUMENTS",
-      "bucket_name": "replace-with-real-bucket-name"
+      "bucket_name": "acme-documents"
     }
   ]
 }
