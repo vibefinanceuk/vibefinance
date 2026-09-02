@@ -147,3 +147,29 @@ describe("generateExamples — malformed responses", () => {
     expect(outcome.kind).toBe("generated");
   });
 });
+
+describe("generateExamples — vocabulary parameterization (real gap found live)", () => {
+  it("defaults to the invoice vocabulary doc when no vocabulary is given — full backward compatibility", async () => {
+    const model = fakeModel(JSON.stringify({ examples: [] }));
+    await generateExamples(model, CONDITIONS, ACTIONS);
+    const promptSent = (model.compile as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+    expect(promptSent).toContain("BT-1");
+    expect(promptSent).not.toContain("receipt_attached");
+  });
+
+  it("passes the real expense vocabulary doc through when the rule set is expense-vocabulary, not the invoice default", async () => {
+    const model = fakeModel(JSON.stringify({ examples: [] }));
+    await generateExamples(model, CONDITIONS, ACTIONS, "expense");
+    const promptSent = (model.compile as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+    expect(promptSent).toContain("receipt_attached");
+    expect(promptSent).not.toContain("BT-1");
+  });
+
+  it("never hardcodes 'invoice-processing' or 'invoices' in the prompt's own framing language, regardless of vocabulary", async () => {
+    const model = fakeModel(JSON.stringify({ examples: [] }));
+    await generateExamples(model, CONDITIONS, ACTIONS, "expense");
+    const promptSent = (model.compile as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+    expect(promptSent).not.toContain("invoice-processing rule");
+    expect(promptSent).not.toMatch(/example invoice\(s\)/);
+  });
+});

@@ -464,6 +464,21 @@ narrow — the rest of decision 0013's own R2 design remains unbuilt,
 this is the one piece genuinely testable ahead of it. See
 `docs/decisions/0033-r2-jurisdiction.md`.
 
+## Testing the real AI compiler against AR and Expense sentences
+
+Every prior AR/Expense proof used rules seeded directly into D1, never
+a genuine natural-language sentence compiled by the real model for
+those domains. Two real sentences, compiled live: an AR collections
+rule (`direction: receivable`, `BT-9 older_than_days 30`) and an
+Expense review rule (`category`, `amount`, `receipt_attached`) — both
+correct, both self-verified against the real interpreter. Surfaced a
+real, if non-correctness-affecting, gap: `generateExamples` never
+threaded the rule set's real vocabulary through to
+`buildVocabularyDoc`, unlike `compileRule`, which already did —
+invoice fields leaked into an Expense rule's own worked examples.
+Fixed by mirroring `compileRule`'s own existing, correct pattern
+exactly. See `docs/decisions/0034-worked-examples-vocabulary-fix.md`.
+
 ## The one rule enforced by tooling, not convention
 
 No application code reads a tenant-scoped binding (`env.DB` and similar)

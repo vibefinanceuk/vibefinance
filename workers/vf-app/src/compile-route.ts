@@ -148,7 +148,7 @@ export async function handleCompileRequest(
   // examples failed to generate is stuck as a permanent draft until
   // this is retried (no retry endpoint yet — matches the same
   // raw-DB-access-for-now precedent as rule_sets provisioning).
-  const examplesOutcome = await generateExamples(model, outcome.conditions, outcome.actions);
+  const examplesOutcome = await generateExamples(model, outcome.conditions, outcome.actions, ruleSetExists.vocabulary);
   let examplesSummary: Record<string, unknown>;
   if (examplesOutcome.kind === "generated") {
     const inserts = examplesOutcome.examples.map((example) =>

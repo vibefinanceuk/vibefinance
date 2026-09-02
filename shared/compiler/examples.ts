@@ -1,5 +1,6 @@
 import { evaluateConditions } from "../interpreter/evaluate.js";
 import type { InvoiceFacts, RuleAction, RuleNode } from "../interpreter/types.js";
+import type { VocabularyName } from "../interpreter/vocabulary.js";
 import { buildVocabularyDoc } from "./vocabulary-doc.js";
 import { extractJson, truncate } from "./parse.js";
 import type { CompilerModel } from "./types.js";
@@ -34,11 +35,29 @@ function referencedFields(node: RuleNode): string[] {
   return [node.field];
 }
 
-function buildExamplesPrompt(conditions: RuleNode, actions: RuleAction[]): string {
+/**
+ * vocabulary defaults to "invoice" — matches compileRule's own
+ * default (decision 0022), so every caller written before
+ * multi-vocabulary support existed keeps generating invoice-shaped
+ * examples exactly as before.
+ *
+ * The prompt's own wording was previously hardcoded to "invoice-
+ * processing rule" and "invoices" regardless of which vocabulary the
+ * rule actually used — found live: an Expense-vocabulary rule's own
+ * worked examples came back containing real invoice fields (BT-1,
+ * direction) that don't belong to the Expense vocabulary at all,
+ * mixed in alongside the genuinely Expense-shaped ones. Doesn't
+ * change correctness (the interpreter only reads what a rule's
+ * conditions reference), but it's exactly the kind of vocabulary-
+ * discipline gap this project doesn't otherwise tolerate. Fixed at
+ * the same two places compileRule already gets this right: the
+ * vocabulary doc itself, and the prompt's own framing language.
+ */
+function buildExamplesPrompt(conditions: RuleNode, actions: RuleAction[], vocabulary: VocabularyName = "invoice"): string {
   const fields = [...new Set(referencedFields(conditions))];
-  return `You previously compiled an invoice-processing rule into the following closed-vocabulary structure. Your job now is to produce worked examples of invoices, so the person who wrote this rule can confirm it does what they meant — before it's ever allowed to run for real.
+  return `You previously compiled a business rule into the following closed-vocabulary structure. Your job now is to produce worked examples of records, so the person who wrote this rule can confirm it does what they meant — before it's ever allowed to run for real.
 
-${buildVocabularyDoc()}
+${buildVocabularyDoc(vocabulary)}
 
 THE COMPILED RULE:
 Conditions: ${JSON.stringify(conditions)}
@@ -47,9 +66,9 @@ Actions: ${JSON.stringify(actions)}
 Fields this rule's conditions actually reference (every example must set a concrete value for each of these — leaving one unset does not meaningfully exercise the rule): ${fields.join(", ")}
 
 TASK:
-Produce at least ${MIN_MATCHING_EXAMPLES} example invoice(s) where these conditions evaluate to true (the rule fires), and at least ${MIN_NON_MATCHING_EXAMPLES} example invoice(s) where they evaluate to false (the rule does not fire). Both directions matter — an author needs to confirm the rule stays silent when it should, not just that it fires when it should.
+Produce at least ${MIN_MATCHING_EXAMPLES} example record(s) where these conditions evaluate to true (the rule fires), and at least ${MIN_NON_MATCHING_EXAMPLES} example record(s) where they evaluate to false (the rule does not fire). Both directions matter — an author needs to confirm the rule stays silent when it should, not just that it fires when it should.
 
-Each example's "invoice" object may include realistic values for fields beyond the ones listed above too, for context — but every referenced field above must be set.
+Each example's "invoice" object may include realistic values for other fields from the vocabulary above too, for context — but never a field from a different vocabulary, and every referenced field above must be set.
 
 Respond with a single JSON object and nothing else — no markdown fences, no explanation:
 {
@@ -145,9 +164,10 @@ function parseExamplesResponse(
 export async function generateExamples(
   model: CompilerModel,
   conditions: RuleNode,
-  actions: RuleAction[]
+  actions: RuleAction[],
+  vocabulary: VocabularyName = "invoice"
 ): Promise<ExamplesOutcome> {
-  const prompt = buildExamplesPrompt(conditions, actions);
+  const prompt = buildExamplesPrompt(conditions, actions, vocabulary);
   const raw = await model.compile(prompt);
   return parseExamplesResponse(raw, conditions);
 }
