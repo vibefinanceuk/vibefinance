@@ -1,9 +1,10 @@
 # 0043 — Vision extraction, and what cannot be verified from here
 
-Status: built, live-tested once, **corrected** — and still not fully
-verified. Step two's remaining half, completing the three intake
-paths. See the addendum at the end: the first live test found the
-exact bug this document flagged as its own biggest risk.
+Status: **built and confirmed live.** Step two's remaining half,
+completing the three intake paths. The request shape took three
+attempts and a purpose-built diagnostic to get right; both addenda
+below record how, because the failure mode — a silently dropped image
+and a confidently wrong answer — is worth not repeating.
 
 This decision doc is unusual in one respect and it is worth saying so
 at the top: the most important claim it makes — that a vision model
@@ -219,3 +220,73 @@ Whether the corrected shape actually works, and whether Llama 4 Scout
 reads invoices well once it can genuinely see them. The next live
 test answers both — and this time there is a known-good document to
 check against, which is the thing that was missing before.
+
+---
+
+## Resolution — the shape is confirmed, and the model is good
+
+A diagnostic endpoint ran four candidate shapes against the same real
+invoice in a single call. The result was unambiguous:
+
+| Shape | `prompt_tokens` | Result |
+|---|---|---|
+| `image_url` with a `data:` URL | **1063** | correct invoice number and total |
+| `image_url` with bare base64 | — | threw: *"The URL must be either a HTTP, data or file URL"* |
+| top-level `image` (base64) | 46 | `NO IMAGE RECEIVED` |
+| top-level `image` (byte array) | 46 | `NO IMAGE RECEIVED` |
+
+The winning shape returned, from the real document:
+
+> The invoice number is MCD2001321-003.
+> The total including VAT is £2,518.80.
+
+Both correct — including a total carrying a currency symbol and a
+thousands separator.
+
+**Llama 4 Scout reads invoices well.** That was the open question
+behind this whole decision, and the answer is yes.
+
+### What took three attempts, and why
+
+**The original shape was right.** It was replaced with a worse one
+after the first failed live test, on the strength of Cloudflare's
+Llama 3.2 Vision tutorial — a *different model* with a *different
+input schema*. Reading one model's documentation and assuming it
+applied to another cost two deploy cycles.
+
+**The wrong shape fails silently.** A top-level `image` parameter
+sent to Llama 4 Scout produces no error, no warning, and no
+indication of any kind. It is simply dropped, and the model answers
+from the prompt alone — confidently, and wrongly.
+
+**The model's answer is not evidence about the model's input.** Every
+failed attempt produced a fluent, plausible, confident response. The
+first returned the buyer's name as an invoice number at 0.9
+confidence. Nothing in any of those responses revealed that no image
+had arrived.
+
+`usage.prompt_tokens` was the signal that broke the deadlock: 46 for
+a prompt alone, 1063 for a prompt plus an 82KB image. It is a fact
+about what the model received, not a claim the model makes about
+itself — which is exactly why it could be trusted when nothing else
+could.
+
+### What changed as a result
+
+`VISION_SHAPES` is now a single confirmed entry, and the
+try-each-shape fallback loop is gone. It existed while the shape was
+unknown; keeping it now would only paper over a real regression — and
+a silent fallback is precisely what made this hard to diagnose in the
+first place.
+
+The diagnostic endpoint stays for now, and reports `promptTokens` and
+an explicit `imageReceived` flag per attempt. It earned its place: it
+answered in one call what three deploy cycles of reasoning had not.
+
+### The generalisable lesson
+
+Reasoning from documentation produced three plausible answers, two of
+them wrong. A tool that reported what actually happened produced the
+right one immediately. When a component fails silently and the thing
+you are debugging can generate confident output regardless of its
+input, build the instrument first.

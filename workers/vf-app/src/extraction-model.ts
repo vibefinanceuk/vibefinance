@@ -68,27 +68,35 @@ function toBase64(bytes: Uint8Array): string {
 }
 
 /**
- * Candidate request shapes, in preference order.
+ * The image request shape — CONFIRMED against the real binding.
  *
- * The first, `image_url` content parts inside `messages`, is the
- * OpenAI-compatible multimodal shape and is confirmed by three
- * independent sources: Cloudflare's own workers-ai-provider
- * changelog, a documented Workers AI example calling env.AI.run with
- * exactly this structure, and Llama 4 Scout's shape at other
- * providers. It is almost certainly correct.
+ * An `image_url` content part inside `messages`, carrying a proper
+ * `data:` URL. Verified live against a real invoice: the model
+ * returned the correct invoice number and the correct total,
+ * including a currency symbol and a thousands separator.
  *
- * The others are kept because "almost certainly correct" has already
- * been wrong twice here, and because the diagnostic endpoint reports
- * every shape's result at once — so the cost of carrying an extra
- * candidate is nothing, while the cost of guessing wrong is a deploy
- * cycle.
+ * The evidence, from a diagnostic that ran four candidate shapes at
+ * once against the same image:
  *
- * How to tell which one works, and the thing that made this
- * diagnosable at all: `usage.prompt_tokens` in the response. A
- * dropped image leaves it at roughly the prompt's own length (46 for
- * a short question); an image that genuinely arrived pushes it into
- * the thousands. That number, not the model's answer, is the honest
- * signal — a model given no image still answers confidently.
+ *   image_url-data-url        prompt_tokens 1063   correct answers
+ *   image_url-bare-base64     threw: "The URL must be either a
+ *                             HTTP, data or file URL"
+ *   top-level-image-base64    prompt_tokens 46     "NO IMAGE RECEIVED"
+ *   top-level-image-bytes     prompt_tokens 46     "NO IMAGE RECEIVED"
+ *
+ * Two things worth carrying forward from how long this took.
+ *
+ * First, the top-level `image` parameter fails SILENTLY. It is the
+ * documented shape for @cf/meta/llama-3.2-11b-vision-instruct — a
+ * different model with a different input schema — and sending it to
+ * Llama 4 Scout produces no error and no warning, just a confident
+ * answer from a model that received nothing at all. Reading Llama
+ * 3.2's tutorial and assuming it applied here cost two deploy cycles.
+ *
+ * Second, `usage.prompt_tokens` is the only honest signal about
+ * whether an image arrived. The model's ANSWER cannot tell you: given
+ * no image, it still answers, and still sounds sure. 46 tokens is a
+ * short prompt alone; 1063 is a prompt plus a real 82KB image.
  */
 export const VISION_SHAPES: VisionRequestShape[] = [
   {
@@ -99,47 +107,14 @@ export const VISION_SHAPES: VisionRequestShape[] = [
           role: "user",
           content: [
             { type: "text", text: prompt },
+            // A full data: URL, not bare base64 — the binding rejects
+            // the latter outright with "The URL must be either a
+            // HTTP, data or file URL", which is at least an honest
+            // failure rather than a silent one.
             { type: "image_url", image_url: { url: `data:${contentType};base64,${toBase64(bytes)}` } },
           ],
         },
       ],
-      guided_json: schema,
-      max_tokens: 4096,
-      temperature: 0,
-    }),
-  },
-  {
-    label: "image_url-bare-base64",
-    build: (prompt, bytes, _ct, schema) => ({
-      messages: [
-        {
-          role: "user",
-          content: [
-            { type: "text", text: prompt },
-            { type: "image_url", image_url: { url: toBase64(bytes) } },
-          ],
-        },
-      ],
-      guided_json: schema,
-      max_tokens: 4096,
-      temperature: 0,
-    }),
-  },
-  {
-    label: "top-level-image-base64",
-    build: (prompt, bytes, _ct, schema) => ({
-      messages: [{ role: "user", content: prompt }],
-      image: toBase64(bytes),
-      guided_json: schema,
-      max_tokens: 4096,
-      temperature: 0,
-    }),
-  },
-  {
-    label: "top-level-image-bytes",
-    build: (prompt, bytes, _ct, schema) => ({
-      messages: [{ role: "user", content: prompt }],
-      image: [...bytes],
       guided_json: schema,
       max_tokens: 4096,
       temperature: 0,
@@ -151,23 +126,13 @@ export function createWorkersAiExtractionModel(ai: AiRunnable, modelId?: string)
   const model = modelId || DEFAULT_EXTRACTION_MODEL_ID;
   return {
     async extract(prompt, image, schema): Promise<string> {
-      let lastError: unknown;
-      for (const shape of VISION_SHAPES) {
-        try {
-          const raw = await ai.run(model, shape.build(prompt, image.bytes, image.contentType, schema));
-          return extractResponseText(raw);
-        } catch (err) {
-          // A shape the model rejects outright throws here; try the
-          // next documented encoding rather than failing on the first.
-          // Deliberately does NOT catch a successful-but-wrong
-          // response — nothing here can tell that apart, which is
-          // precisely why the live test mattered.
-          lastError = err;
-        }
-      }
-      throw lastError instanceof Error
-        ? lastError
-        : new Error(`no supported image request shape was accepted by ${model}`);
+      // No fallback loop any more. It existed while the working shape
+      // was unknown; now that it is confirmed, trying alternatives on
+      // failure would only paper over a real regression — and a
+      // silent fallback is precisely what made this take three
+      // attempts to diagnose.
+      const raw = await ai.run(model, VISION_SHAPES[0].build(prompt, image.bytes, image.contentType, schema));
+      return extractResponseText(raw);
     },
   };
 }

@@ -247,47 +247,49 @@ describe("extractInvoiceFromImage", () => {
   });
 });
 
-describe("VISION_SHAPES — candidates, and how to tell which one lands", () => {
+describe("VISION_SHAPES — the confirmed shape", () => {
   const JPEG_BYTES = new Uint8Array([0xff, 0xd8, 0xff, 0xe0]);
   const SCHEMA = { type: "object" };
 
-  it("leads with the OpenAI-compatible image_url content part, confirmed by three sources", () => {
-    const first = VISION_SHAPES[0];
-    expect(first.label).toBe("image_url-data-url");
-    const built = first.build("read this", JPEG_BYTES, "image/jpeg", SCHEMA);
+  it("is a single confirmed shape, not a list of guesses", () => {
+    // Verified live: prompt_tokens 1063 and correct answers, against
+    // 46 and "NO IMAGE RECEIVED" for every alternative.
+    expect(VISION_SHAPES).toHaveLength(1);
+    expect(VISION_SHAPES[0].label).toBe("image_url-data-url");
+  });
+
+  it("sends an image_url content part inside messages", () => {
+    const built = VISION_SHAPES[0].build("read this", JPEG_BYTES, "image/jpeg", SCHEMA);
     expect(JSON.stringify(built.messages)).toContain("image_url");
+  });
+
+  it("sends a full data: URL — bare base64 is rejected by the binding", () => {
+    // The binding's own error: "The URL must be either a HTTP, data
+    // or file URL."
+    const built = VISION_SHAPES[0].build("read this", JPEG_BYTES, "image/jpeg", SCHEMA);
     expect(JSON.stringify(built.messages)).toContain("data:image/jpeg;base64,");
   });
 
-  it("keeps every candidate distinct — a duplicate would waste a diagnostic slot", () => {
-    const labels = VISION_SHAPES.map((s) => s.label);
-    expect(new Set(labels).size).toBe(labels.length);
+  it("never uses a top-level image parameter — that shape is silently ignored by this model", () => {
+    // The failure that cost two deploy cycles: it belongs to
+    // llama-3.2-11b-vision-instruct, and Llama 4 Scout drops it with
+    // no error at all.
+    const built = VISION_SHAPES[0].build("read this", JPEG_BYTES, "image/jpeg", SCHEMA);
+    expect(built.image).toBeUndefined();
   });
 
-  it("carries the schema, token budget and zero temperature in every candidate", () => {
-    for (const shape of VISION_SHAPES) {
-      const built = shape.build("x", JPEG_BYTES, "image/jpeg", SCHEMA);
-      expect(built.guided_json).toBe(SCHEMA);
-      expect(built.max_tokens).toBe(4096);
-      expect(built.temperature).toBe(0);
-    }
+  it("carries the schema, token budget and zero temperature", () => {
+    const built = VISION_SHAPES[0].build("x", JPEG_BYTES, "image/jpeg", SCHEMA);
+    expect(built.guided_json).toBe(SCHEMA);
+    expect(built.max_tokens).toBe(4096);
+    expect(built.temperature).toBe(0);
   });
 
-  it("every candidate actually carries the image bytes somewhere", () => {
-    // The failure this guards: a shape that looks plausible but
-    // silently omits the image entirely, which is exactly what the
-    // live diagnostic caught (prompt_tokens stuck at 46 for an 82KB
-    // image). Tested by using distinctive bytes and asserting their
-    // encoding appears in the payload, rather than by payload size —
-    // four test bytes are legitimately tiny.
+  it("carries the actual image bytes", () => {
     const distinctive = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x12, 0x34, 0x56]);
-    const expectedBase64 = btoa(String.fromCharCode(...distinctive));
-    for (const shape of VISION_SHAPES) {
-      const serialised = JSON.stringify(shape.build("x", distinctive, "image/jpeg", SCHEMA));
-      const carriesBase64 = serialised.includes(expectedBase64);
-      const carriesByteArray = serialised.includes(distinctive.join(","));
-      expect(carriesBase64 || carriesByteArray).toBe(true);
-    }
+    const expected = btoa(String.fromCharCode(...distinctive));
+    const serialised = JSON.stringify(VISION_SHAPES[0].build("x", distinctive, "image/jpeg", SCHEMA));
+    expect(serialised).toContain(expected);
   });
 });
 
