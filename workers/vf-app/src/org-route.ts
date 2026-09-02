@@ -1,4 +1,4 @@
-import { isKnownCiusProfile } from "./profiles.js";
+import { isKnownCiusProfile, isKnownR2Jurisdiction, R2_JURISDICTIONS } from "./profiles.js";
 import { isKnownPermissionList } from "./permissions.js";
 import { generateApiKey, hashApiKey } from "./user-auth.js";
 
@@ -216,12 +216,31 @@ interface SetProfileBody {
   id?: unknown;
   ciusProfile?: unknown;
   unitId?: unknown;
+  r2Jurisdiction?: unknown;
 }
 
+/**
+ * r2Jurisdiction (decision 0033) — optional, closed to R2_JURISDICTIONS
+ * ('eu' | 'fedramp' | 'us') or omitted entirely for unspecified/
+ * automatic. Deliberately not enforced as immutable here: nothing
+ * yet actually creates a real R2 bucket against this value (decision
+ * 0013's own R2 retention design remains unbuilt), so there is no
+ * real bucket-creation event to key an immutability check against
+ * yet. Cloudflare's own R2 jurisdiction, once a bucket actually
+ * exists, cannot be changed — a future bucket-creation implementation
+ * will need its own precondition check once that piece is built,
+ * this column alone does not yet enforce it.
+ */
 export async function handleSetProfile(db: D1Database, body: SetProfileBody): Promise<RouteResult> {
-  const { id, ciusProfile, unitId } = body;
+  const { id, ciusProfile, unitId, r2Jurisdiction } = body;
   if (typeof id !== "string" || !id) {
     return { status: 400, body: { error: "id (string) is required" } };
+  }
+  if (r2Jurisdiction !== undefined && !isKnownR2Jurisdiction(r2Jurisdiction)) {
+    return {
+      status: 422,
+      body: { error: `${String(r2Jurisdiction)} is not a supported R2 jurisdiction (supported: ${R2_JURISDICTIONS.join(", ")})` },
+    };
   }
   if (!isKnownCiusProfile(ciusProfile)) {
     return { status: 422, body: { error: `${String(ciusProfile)} is not a known CIUS profile` } };
@@ -243,9 +262,9 @@ export async function handleSetProfile(db: D1Database, body: SetProfileBody): Pr
   }
 
   await db
-    .prepare("INSERT INTO org_profiles (id, cius_profile, unit_id) VALUES (?, ?, ?)")
-    .bind(id, ciusProfile, unitId ?? null)
+    .prepare("INSERT INTO org_profiles (id, cius_profile, unit_id, r2_jurisdiction) VALUES (?, ?, ?, ?)")
+    .bind(id, ciusProfile, unitId ?? null, (r2Jurisdiction as string) ?? null)
     .run();
 
-  return { status: 201, body: { id, ciusProfile, unitId: unitId ?? null } };
+  return { status: 201, body: { id, ciusProfile, unitId: unitId ?? null, r2Jurisdiction: r2Jurisdiction ?? null } };
 }

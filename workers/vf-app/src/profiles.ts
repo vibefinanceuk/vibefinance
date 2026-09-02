@@ -36,3 +36,30 @@ export const PROFILE_DESCRIPTIONS: Record<CiusProfile, string> = {
 export function isKnownCiusProfile(value: unknown): value is CiusProfile {
   return typeof value === "string" && (CIUS_PROFILES as readonly string[]).includes(value);
 }
+
+/**
+ * R2 jurisdictional restrictions — see docs/decisions/
+ * 0033-r2-jurisdiction.md, extending decision 0013's own "one R2
+ * bucket per customer" design (nothing built there yet; this column
+ * is deliberately buildable and testable on its own, ahead of the
+ * rest of R2 retention). Confirmed directly against Cloudflare's own
+ * current R2 documentation, not assumed: as of this writing, only
+ * three jurisdictions offer a genuine, hard storage guarantee — 'eu',
+ * 'fedramp', 'us'. `null` means unspecified/automatic — R2's own
+ * default when no jurisdiction is requested, not a fourth jurisdiction
+ * choice of its own.
+ *
+ * A real, known, explicitly unsolved gap: this list does not include
+ * Saudi Arabia, or any other country R2 doesn't currently offer a
+ * jurisdiction for. A customer needing a genuine in-Kingdom storage
+ * guarantee cannot be satisfied by R2 alone today — stated here
+ * plainly rather than silently omitted, the same discipline this
+ * project applies to every other known limitation.
+ */
+export const R2_JURISDICTIONS = ["eu", "fedramp", "us"] as const;
+
+export type R2Jurisdiction = (typeof R2_JURISDICTIONS)[number];
+
+export function isKnownR2Jurisdiction(value: unknown): value is R2Jurisdiction {
+  return typeof value === "string" && (R2_JURISDICTIONS as readonly string[]).includes(value);
+}

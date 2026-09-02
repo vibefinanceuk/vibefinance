@@ -444,6 +444,26 @@ example). A real `SUM()`-over-`NULL` edge case, the same class already
 found once in `intake-stats`, was caught and fixed the same way. See
 `docs/decisions/0032-historical-invoice-facts-framework.md`.
 
+## R2 document retention: jurisdiction / data residency
+
+Prompted by a real, practical question about in-country storage
+requirements (Saudi Arabia was the example). Confirmed directly
+against Cloudflare's own current R2 documentation rather than assumed:
+R2's genuine, hard jurisdiction guarantee currently covers exactly
+three jurisdictions — `eu`, `fedramp`, `us` — not Saudi Arabia or most
+other countries with residency requirements, a real gap stated
+explicitly rather than glossed over. A separate Cloudflare product,
+Regional Services, does cover Saudi Arabia, but for network traffic
+inspection, not object storage at rest — a real, easy-to-conflate
+distinction caught before it could become a design mistake.
+`org_profiles` gains `r2_jurisdiction`, closed to the three real
+options; enforced at two layers, with the app-level check's absence
+proven to produce an unhandled crash rather than just a missing
+validation, confirming why both layers earn their place. Deliberately
+narrow — the rest of decision 0013's own R2 design remains unbuilt,
+this is the one piece genuinely testable ahead of it. See
+`docs/decisions/0033-r2-jurisdiction.md`.
+
 ## The one rule enforced by tooling, not convention
 
 No application code reads a tenant-scoped binding (`env.DB` and similar)

@@ -284,3 +284,38 @@ describe("handleSetProfile — the closed CIUS profile vocabulary", () => {
     expect(result.status).toBe(409);
   });
 });
+
+describe("handleSetProfile — r2Jurisdiction (decision 0033)", () => {
+  it("sets a real, supported jurisdiction", async () => {
+    const result = await handleSetProfile(env.DB, { id: "rj1", ciusProfile: "en16931_base", r2Jurisdiction: "eu" });
+    expect(result.status).toBe(201);
+    const row = await env.DB.prepare("SELECT r2_jurisdiction FROM org_profiles WHERE id = ?").bind("rj1").first();
+    expect(row).toEqual({ r2_jurisdiction: "eu" });
+  });
+
+  it("accepts every one of the three real, currently-supported jurisdictions", async () => {
+    for (const jurisdiction of ["eu", "fedramp", "us"] as const) {
+      const result = await handleSetProfile(env.DB, { id: `rj-${jurisdiction}`, ciusProfile: "en16931_base", r2Jurisdiction: jurisdiction });
+      expect(result.status).toBe(201);
+    }
+  });
+
+  it("omitting r2Jurisdiction entirely is fine — unspecified/automatic, not an error", async () => {
+    const result = await handleSetProfile(env.DB, { id: "rj2", ciusProfile: "en16931_base" });
+    expect(result.status).toBe(201);
+    const row = await env.DB.prepare("SELECT r2_jurisdiction FROM org_profiles WHERE id = ?").bind("rj2").first();
+    expect(row).toEqual({ r2_jurisdiction: null });
+  });
+
+  it("422s a genuinely unsupported jurisdiction — the real Saudi Arabia gap, refused rather than silently stored", async () => {
+    const result = await handleSetProfile(env.DB, { id: "rj3", ciusProfile: "en16931_base", r2Jurisdiction: "ksa" });
+    expect(result.status).toBe(422);
+    const row = await env.DB.prepare("SELECT id FROM org_profiles WHERE id = ?").bind("rj3").first();
+    expect(row).toBeNull(); // refused outright, nothing partially stored
+  });
+
+  it("422s a plausible-sounding but genuinely unsupported jurisdiction the same way", async () => {
+    const result = await handleSetProfile(env.DB, { id: "rj4", ciusProfile: "en16931_base", r2Jurisdiction: "uk" });
+    expect(result.status).toBe(422);
+  });
+});
