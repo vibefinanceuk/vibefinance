@@ -32,55 +32,86 @@ export const DEFAULT_EXTRACTION_MODEL_ID = "@cf/meta/llama-4-scout-17b-16e-instr
 /**
  * How an image is attached to the request.
  *
- * Stated plainly because it matters: this shape is NOT documented on
- * the model's own Workers AI parameter page, which lists only
- * `prompt` and shows text-only examples. It comes from Cloudflare's
- * own workers-ai-provider changelog, which describes the fix as
- * "Send images as OpenAI-compatible image_url content parts inline in
- * messages, enabling vision for models like Llama 4 Scout" — the same
- * shape the OpenAI-compatible endpoint uses.
+ * CORRECTED after a live test against the real binding. The first
+ * implementation sent an OpenAI-style `image_url` content part inside
+ * `messages`, inferred from Cloudflare's workers-ai-provider
+ * changelog. That was wrong, and the failure was instructive: the
+ * model received the base64 data URL as ordinary TEXT, saw no image
+ * at all, and answered from the prompt alone — returning the buyer's
+ * name where the invoice number belonged, deterministically, at 0.9
+ * confidence. A confidently wrong answer, from a model that could not
+ * see anything.
  *
- * So this is a well-supported inference, not a documented certainty,
- * and it is the first thing a live test against the real binding will
- * confirm or correct. It is isolated in this one function precisely
- * so that correction is a small, local edit rather than a change
- * rippling through extraction.ts.
+ * The changelog described what that LIBRARY does internally, not what
+ * the raw binding accepts. Cloudflare's own Llama Vision tutorial
+ * shows the real shape: `image` is a separate top-level parameter
+ * alongside `messages`, not a content part inside them.
+ *
+ * Both documented encodings are still in play across models — the
+ * vision tutorial passes a base64 string, while uform-gen2 and
+ * resnet-50 take a byte array — so both are attempted, base64 first.
+ * Which one a given model wants is exactly the kind of thing that
+ * cannot be settled from here.
  */
-function buildVisionMessages(prompt: string, imageDataUrl: string): unknown[] {
-  return [
-    {
-      role: "user",
-      content: [
-        { type: "text", text: prompt },
-        { type: "image_url", image_url: { url: imageDataUrl } },
-      ],
-    },
-  ];
+export interface VisionRequestShape {
+  label: string;
+  build(prompt: string, bytes: Uint8Array, contentType: string, schema: Record<string, unknown>): Record<string, unknown>;
 }
+
+function toBase64(bytes: Uint8Array): string {
+  let binary = "";
+  const CHUNK = 0x8000;
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
+  }
+  return btoa(binary);
+}
+
+/** The shape Cloudflare's own Llama Vision tutorial documents. */
+export const VISION_SHAPES: VisionRequestShape[] = [
+  {
+    label: "image-base64",
+    build: (prompt, bytes, _ct, schema) => ({
+      messages: [{ role: "user", content: prompt }],
+      image: toBase64(bytes),
+      guided_json: schema,
+      max_tokens: 4096,
+      temperature: 0,
+    }),
+  },
+  {
+    label: "image-bytes",
+    build: (prompt, bytes, _ct, schema) => ({
+      messages: [{ role: "user", content: prompt }],
+      image: [...bytes],
+      guided_json: schema,
+      max_tokens: 4096,
+      temperature: 0,
+    }),
+  },
+];
 
 export function createWorkersAiExtractionModel(ai: AiRunnable, modelId?: string): ExtractionModel {
   const model = modelId || DEFAULT_EXTRACTION_MODEL_ID;
   return {
-    async extract(prompt: string, imageDataUrl: string, schema: Record<string, unknown>): Promise<string> {
-      const raw = await ai.run(model, {
-        messages: buildVisionMessages(prompt, imageDataUrl),
-        // Constrains the response to the schema rather than asking for
-        // it in prose. The compiler needed its own extractJson()
-        // recovery precisely because this option did not exist there;
-        // here it does, so the response should not need rescuing.
-        guided_json: schema,
-        // The same trap decision 0002's addendum already recorded:
-        // max_tokens defaults to 256, which a dozen extracted fields
-        // plus a confidence score would exceed. Set explicitly rather
-        // than rediscovered as a truncated response.
-        max_tokens: 4096,
-        // Extraction should be as close to deterministic as the model
-        // allows: the same invoice photographed twice should not
-        // produce different totals. Lower than the model's own 0.15
-        // default, deliberately.
-        temperature: 0,
-      });
-      return extractResponseText(raw);
+    async extract(prompt, image, schema): Promise<string> {
+      let lastError: unknown;
+      for (const shape of VISION_SHAPES) {
+        try {
+          const raw = await ai.run(model, shape.build(prompt, image.bytes, image.contentType, schema));
+          return extractResponseText(raw);
+        } catch (err) {
+          // A shape the model rejects outright throws here; try the
+          // next documented encoding rather than failing on the first.
+          // Deliberately does NOT catch a successful-but-wrong
+          // response — nothing here can tell that apart, which is
+          // precisely why the live test mattered.
+          lastError = err;
+        }
+      }
+      throw lastError instanceof Error
+        ? lastError
+        : new Error(`no supported image request shape was accepted by ${model}`);
     },
   };
 }

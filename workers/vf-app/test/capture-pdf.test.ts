@@ -270,7 +270,7 @@ describe("handleCaptureImage — the inferred path (decision 0043)", () => {
 
     let seenSchema: Record<string, unknown> | undefined;
     const spy = {
-      extract: async (_p: string, _i: string, schema: Record<string, unknown>) => {
+      extract: async (_p: string, _i: { bytes: Uint8Array; contentType: string }, schema: Record<string, unknown>) => {
         seenSchema = schema;
         return JSON.stringify({ "BT-1": "X", "custom.transport_reference": "TR-88431", _confidence: 0.9 });
       },

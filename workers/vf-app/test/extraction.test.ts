@@ -10,6 +10,7 @@ import {
   type ExtractionModel,
 } from "../src/extraction.js";
 import { resolveVocabulary } from "@vibefinance/shared";
+import { VISION_SHAPES } from "../src/extraction-model.js";
 
 /** A model that returns exactly what it's told to. The real model's
  *  accuracy cannot be tested here — env.AI has no local simulation —
@@ -228,8 +229,8 @@ describe("extractInvoiceFromImage", () => {
     expect(result.facts["custom.transport_reference"]).toBe("TR-88431");
   });
 
-  it("sends the image as a data URL, not raw bytes", async () => {
-    let seenImage = "";
+  it("hands the adapter raw bytes and a sniffed content type, not a pre-built data URL", async () => {
+    let seenImage: { bytes: Uint8Array; contentType: string } | undefined;
     const spy: ExtractionModel = {
       extract: async (_p, image) => {
         seenImage = image;
@@ -237,6 +238,103 @@ describe("extractInvoiceFromImage", () => {
       },
     };
     await extractInvoiceFromImage(spy, PNG);
-    expect(seenImage).toMatch(/^data:image\/png;base64,/);
+    // Raw bytes and a detected content type, NOT a pre-built data
+    // URL — corrected after the live test showed the binding wants
+    // the image as its own top-level parameter, and each adapter
+    // must be free to encode it accordingly.
+    expect(seenImage?.contentType).toBe("image/png");
+    expect(seenImage?.bytes).toEqual(PNG);
+  });
+});
+
+describe("VISION_SHAPES — the request shape, corrected after a live test", () => {
+  const JPEG_BYTES = new Uint8Array([0xff, 0xd8, 0xff, 0xe0]);
+  const SCHEMA = { type: "object" };
+
+  it("puts the image in a top-level `image` parameter, NOT inside messages", () => {
+    // The bug this pins: an OpenAI-style image_url content part meant
+    // the model received base64 as ordinary TEXT, saw no image, and
+    // answered from the prompt alone — confidently and wrongly.
+    for (const shape of VISION_SHAPES) {
+      const built = shape.build("read this", JPEG_BYTES, "image/jpeg", SCHEMA);
+      expect(built.image).toBeDefined();
+      expect(JSON.stringify(built.messages)).not.toContain("image_url");
+      expect(JSON.stringify(built.messages)).not.toContain("base64");
+    }
+  });
+
+  it("never sends a data URL — the binding wants the encoded image, not a URL string", () => {
+    for (const shape of VISION_SHAPES) {
+      const built = shape.build("read this", JPEG_BYTES, "image/jpeg", SCHEMA);
+      expect(JSON.stringify(built.image)).not.toContain("data:image");
+    }
+  });
+
+  it("offers both documented encodings, since models differ", () => {
+    expect(VISION_SHAPES.map((s) => s.label)).toEqual(["image-base64", "image-bytes"]);
+    const base64Shape = VISION_SHAPES[0].build("x", JPEG_BYTES, "image/jpeg", SCHEMA);
+    expect(typeof base64Shape.image).toBe("string");
+    const bytesShape = VISION_SHAPES[1].build("x", JPEG_BYTES, "image/jpeg", SCHEMA);
+    expect(Array.isArray(bytesShape.image)).toBe(true);
+  });
+
+  it("carries the schema, token budget and zero temperature in every shape", () => {
+    for (const shape of VISION_SHAPES) {
+      const built = shape.build("x", JPEG_BYTES, "image/jpeg", SCHEMA);
+      expect(built.guided_json).toBe(SCHEMA);
+      expect(built.max_tokens).toBe(4096);
+      expect(built.temperature).toBe(0);
+    }
+  });
+});
+
+describe("coercion and prompt fixes from the live test", () => {
+  it("accepts a thousands separator — every real invoice total has one", () => {
+    // £2,518.80 on the real test invoice would have failed the
+    // original parser even if the model had read it correctly.
+    const r = parseExtractionResponse(JSON.stringify({ "BT-112": "£2,518.80", _confidence: 0.9 }));
+    expect(r.facts["BT-112"]).toBe(2518.8);
+  });
+
+  it("handles larger groupings", () => {
+    const r = parseExtractionResponse(JSON.stringify({ "BT-112": "1,234,567.89", _confidence: 0.9 }));
+    expect(r.facts["BT-112"]).toBe(1234567.89);
+  });
+
+  it("still refuses commas in nonsense positions rather than stripping them blindly", () => {
+    const r = parseExtractionResponse(
+      JSON.stringify({ "BT-1": "INV-1", "BT-112": "1,2,3", _confidence: 0.9 })
+    );
+    expect(r.facts["BT-112"]).toBeUndefined();
+  });
+
+  it("still refuses prose, which the thousands fix must not have loosened", () => {
+    const r = parseExtractionResponse(
+      JSON.stringify({ "BT-1": "INV-1", "BT-112": "approximately 2,518.80", _confidence: 0.9 })
+    );
+    expect(r.facts["BT-112"]).toBeUndefined();
+  });
+
+  it("tells the model an invoice number is never a company name — the exact confusion seen live", () => {
+    // The model returned "Mcdonalds UK" (the buyer) as BT-1.
+    expect(buildExtractionPrompt()).toMatch(/never a company name/i);
+  });
+
+  it("names the supplier-versus-buyer distinction explicitly in the prompt", () => {
+    const prompt = buildExtractionPrompt();
+    expect(prompt).toMatch(/SUPPLIER/);
+    expect(prompt).toMatch(/BUYER/);
+    expect(prompt).toMatch(/Bill To/);
+  });
+
+  it("describes BT-1 as a reference code, not just 'the invoice number'", () => {
+    const schema = buildExtractionSchema() as { properties: Record<string, { description: string }> };
+    expect(schema.properties["BT-1"].description).toMatch(/NEVER a company name/);
+  });
+
+  it("distinguishes supplier and buyer VAT numbers in their own descriptions", () => {
+    const schema = buildExtractionSchema() as { properties: Record<string, { description: string }> };
+    expect(schema.properties["BT-31"].description).toMatch(/SUPPLIER/);
+    expect(schema.properties["BT-48"].description).toMatch(/BUYER/);
   });
 });

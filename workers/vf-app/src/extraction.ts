@@ -43,7 +43,21 @@ export class ExtractionRefusal extends Error {
  *  CompilerModel — testable without a live binding, and swappable
  *  without touching any of the logic here. */
 export interface ExtractionModel {
-  extract(prompt: string, imageDataUrl: string, schema: Record<string, unknown>): Promise<string>;
+  /**
+   * Takes the raw image bytes and its detected content type, NOT a
+   * pre-built data URL.
+   *
+   * Corrected after a live test (decision 0043 addendum): the shape
+   * an image takes varies by model and by binding, so building a data
+   * URL here would bake one guess into the interface. Handing over
+   * bytes lets each adapter shape them however its own model
+   * actually wants them.
+   */
+  extract(
+    prompt: string,
+    image: { bytes: Uint8Array; contentType: string },
+    schema: Record<string, unknown>
+  ): Promise<string>;
 }
 
 export const SUPPORTED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"] as const;
@@ -98,17 +112,17 @@ export function toDataUrl(bytes: Uint8Array, contentType: string): string {
  * number" is what is literally written there.
  */
 const STANDARD_EXTRACTION_FIELDS: { key: string; type: FieldType; description: string }[] = [
-  { key: "BT-1", type: "text", description: "the supplier's own invoice number or reference" },
+  { key: "BT-1", type: "text", description: "the invoice number, usually labelled 'Invoice Number', 'Invoice No' or 'Reference'. This is a document reference code, NEVER a company name or a person's name." },
   { key: "BT-2", type: "date", description: "the invoice issue date, as YYYY-MM-DD" },
   { key: "BT-9", type: "date", description: "the payment due date, as YYYY-MM-DD" },
   { key: "BT-5", type: "text", description: "the currency, as a 3-letter ISO code such as EUR or GBP" },
   { key: "BT-13", type: "text", description: "the purchase order reference, if the invoice quotes one" },
-  { key: "BT-31", type: "text", description: "the supplier's VAT registration number" },
-  { key: "BT-40", type: "text", description: "the supplier's country, as a 2-letter ISO code" },
-  { key: "BT-48", type: "text", description: "the buyer's VAT registration number" },
+  { key: "BT-31", type: "text", description: "the VAT registration number of the SUPPLIER — the company issuing this invoice and being paid, shown in the header or letterhead. Not the customer's." },
+  { key: "BT-40", type: "text", description: "the SUPPLIER's country as a 2-letter ISO code (GB for the United Kingdom, DE for Germany, FR for France). The supplier is the company issuing the invoice, not the one being billed." },
+  { key: "BT-48", type: "text", description: "the VAT registration number of the BUYER — the company being billed, usually under a heading like 'Bill To' or 'Invoice To'. Not the supplier's." },
   { key: "BT-106", type: "number", description: "the total of all line amounts before VAT" },
   { key: "BT-110", type: "number", description: "the total VAT amount" },
-  { key: "BT-112", type: "number", description: "the total payable including VAT" },
+  { key: "BT-112", type: "number", description: "the grand total including VAT, usually the largest amount and the last line of the totals block — often labelled 'Total with VAT', 'Total Due' or just 'Total'." },
   { key: "BT-115", type: "number", description: "the amount actually due for payment" },
 ];
 
@@ -168,6 +182,8 @@ ${v.customFields.map((f) => `  ${f.key} (${f.type}) — ${f.description}`).join(
 
 Rules that matter more than completeness:
 - Report only what you can actually read on the document. If a field is not present, or you cannot read it confidently, return null for it. Never guess, never infer a plausible value, and never carry a value over from a different field.
+- An invoice has two parties, and confusing them is the most common mistake. The SUPPLIER issues the invoice and is being paid — usually the letterhead at the top. The BUYER is being billed — usually under "Bill To" or "Invoice To". Read the field descriptions carefully and take each value from the correct party.
+- An invoice number is a reference code such as "INV-2026-0042" or "MCD2001321-003". It is never a company name.
 - Dates must be YYYY-MM-DD. If the document's date format is ambiguous (for example 03/04/2026), and you cannot tell from context which is the day and which is the month, return null rather than choosing.
 - Amounts must be plain numbers with no currency symbol, no thousands separator, and a dot for the decimal point.
 - A total that is printed on the document is always preferable to one you calculate yourself.
@@ -209,7 +225,14 @@ function coerce(value: unknown, type: FieldType): { ok: true; value: string | nu
       const cleaned = value
         .trim()
         .replace(/^[\u00a3\u20ac$\u00a5]\s*/, "")
-        .replace(/[\s\u00a0]/g, "");
+        .replace(/[\s\u00a0]/g, "")
+        // Thousands separators, which every real invoice uses:
+        // "2,518.80" must parse. Only stripped when they sit in
+        // genuine grouping positions, so "1,2,3" still fails rather
+        // than silently becoming 123.
+        .replace(/^(-?\d{1,3}(?:,\d{3})+)(\.\d+)?$/, (_m, intPart: string, frac = "") =>
+          intPart.replace(/,/g, "") + frac
+        );
       if (!/^-?\d+(\.\d+)?$/.test(cleaned)) return { ok: false };
       const n = Number(cleaned);
       return Number.isFinite(n) ? { ok: true, value: n } : { ok: false };
@@ -310,7 +333,7 @@ export async function extractInvoiceFromImage(
 
   const raw = await model.extract(
     buildExtractionPrompt(vocabulary),
-    toDataUrl(bytes, sniffed),
+    { bytes, contentType: sniffed },
     buildExtractionSchema(vocabulary)
   );
   return parseExtractionResponse(raw, vocabulary);

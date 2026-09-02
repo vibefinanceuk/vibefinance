@@ -1,7 +1,9 @@
 # 0043 — Vision extraction, and what cannot be verified from here
 
-Status: built, **not verified against a real model.** Step two's
-remaining half, completing the three intake paths.
+Status: built, live-tested once, **corrected** — and still not fully
+verified. Step two's remaining half, completing the three intake
+paths. See the addendum at the end: the first live test found the
+exact bug this document flagged as its own biggest risk.
 
 This decision doc is unusual in one respect and it is worth saying so
 at the top: the most important claim it makes — that a vision model
@@ -132,3 +134,88 @@ choosing one for them.
   sensibly answer would degrade the ones it can.
 - Steps four and five of the design: extraction rules with their
   activation gate, and supplier groups.
+
+---
+
+## Addendum, same day — the live test, and what it found
+
+The live test happened, against a real invoice. It found a real bug,
+and the bug was the one flagged above as unverified.
+
+### The image never reached the model
+
+The first implementation sent an OpenAI-style `image_url` content
+part inside `messages`, inferred from Cloudflare's
+`workers-ai-provider` changelog. That was wrong. The changelog
+describes what that *library* does internally; the raw binding wants
+something else.
+
+Cloudflare's own Llama Vision tutorial shows the real shape: `image`
+is a **separate top-level parameter alongside `messages`**, not a
+content part inside them. Other vision models on the platform
+(`uform-gen2`, `resnet-50`) use the same top-level `image` key.
+
+So the model received a base64 data URL as ordinary text, saw no
+image at all, and answered from the prompt alone.
+
+### The failure mode is worth recording precisely
+
+Given a clear, legible invoice, the model returned:
+
+```json
+{"BT-1": "Mcdonalds UK", "extraction.confidence": 0.9}
+```
+
+`"Mcdonalds UK"` is the **buyer's name**, not the invoice number
+(`MCD2001321-003`). Every other field — including a plainly printed
+`£2,518.80` total — came back null. And it reported **0.9
+confidence**.
+
+Two runs produced byte-identical output, which was itself the useful
+diagnostic: `temperature: 0` was working, so this was not random
+guessing. It was a model confidently answering a question it could
+not see the evidence for.
+
+**The confidence score is not self-validating.** A model that cannot
+see the document still reports a number, and that number can be high.
+Any design that routes on confidence — including this one — needs to
+treat the score as a signal from a component that might be broken,
+not as ground truth about the extraction.
+
+### What changed
+
+`VISION_SHAPES` now sends `image` as a top-level parameter, with both
+documented encodings attempted (base64 string first, then byte array)
+because models differ on which they accept. Tests pin the shape
+directly: no `image_url` in `messages`, no `data:` URL in the payload.
+
+`ExtractionModel.extract` now takes raw bytes and a sniffed content
+type rather than a pre-built data URL — building the URL in the
+shared layer baked one guess into the interface, and each adapter
+should be free to encode however its own model wants.
+
+### Two further bugs, found by reading the invoice rather than the code
+
+**Thousands separators.** `£2,518.80` would have failed coercion even
+if the model had read it correctly — the parser stripped a currency
+symbol but not commas. Now handled, but only in genuine grouping
+positions, so `"1,2,3"` still fails rather than silently becoming
+`123`.
+
+**Field descriptions were too thin to disambiguate.** `BT-1` said
+only *"the supplier's own invoice number or reference"*, which did
+not rule out a company name. Supplier and buyer VAT numbers were
+distinguished by a single word. Both now spell out which party is
+meant and what shape the value takes, and the prompt names the
+supplier-versus-buyer confusion explicitly as the most common
+mistake.
+
+Those two would have caused real failures on real invoices regardless
+of the image bug, and neither was findable without a real document.
+
+### Still unverified
+
+Whether the corrected shape actually works, and whether Llama 4 Scout
+reads invoices well once it can genuinely see them. The next live
+test answers both — and this time there is a known-good document to
+check against, which is the thing that was missing before.
