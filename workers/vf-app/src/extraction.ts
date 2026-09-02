@@ -61,6 +61,25 @@ export interface ExtractionModel {
   ): Promise<string>;
 }
 
+/**
+ * How many line items to ask for.
+ *
+ * A cap exists because an invoice with a hundred lines would produce
+ * a response long enough to risk truncation — the max_tokens failure
+ * decision 0002's addendum already recorded once, and one that
+ * returns a partial JSON document rather than an honest refusal.
+ *
+ * 50 is a deliberate guess, not a measured number, and is recorded as
+ * such: it comfortably covers the invoices seen so far (the freight
+ * example has eight) while staying well inside the token budget. It
+ * should be revisited against a genuinely long invoice rather than
+ * trusted because it is written down.
+ *
+ * Exceeding it is reported, never silently truncated — see
+ * `linesTruncated` on the result.
+ */
+export const MAX_EXTRACTED_LINES = 50;
+
 export const SUPPORTED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"] as const;
 
 export function isSupportedImageType(contentType: string | null): boolean {
@@ -186,6 +205,28 @@ export function buildExtractionSchema(vocabulary: VocabularyInput = "invoice"): 
     properties[customPromptKey(field.key)] = { type: jsonType(field.type), description: field.description };
   }
 
+  // Line items, asked for in the same call rather than a second one:
+  // the model is already looking at the table, and a separate
+  // inference would cost another round trip and risk the two
+  // disagreeing about the same document.
+  //
+  // Deliberately minimal — description and amount only. Quantity and
+  // unit price are common on product invoices and absent from freight
+  // ones; these two are what the line-sum validation check needs, and
+  // more can be added when something needs them.
+  properties.lines = {
+    type: ["array", "null"],
+    description:
+      `The invoice's line items, in the order they appear, up to ${MAX_EXTRACTED_LINES}. Each is one charge or product row from the main table — not a subtotal, VAT line, or grand total. Null if the document has no itemised table at all.`,
+    items: {
+      type: "object",
+      properties: {
+        description: { type: ["string", "null"], description: "what this line is for, as printed" },
+        amount: { type: ["number", "null"], description: "the line's own total amount as PRINTED, excluding VAT where the document separates them. Never calculated." },
+      },
+    },
+  };
+
   properties._confidence = {
     type: "number",
     description:
@@ -234,8 +275,21 @@ Rules that matter more than completeness:
 Return only the JSON object described by the schema.`;
 }
 
+/** A line in the canonical shape the rest of the system already uses:
+ *  invoice facts plus a line number, with the amount under BT-131.
+ *  Deliberately NOT a bespoke {description, amount} shape — the
+ *  codebase already warns that passing raw, differently-shaped lines
+ *  around caused a real bug once. */
+export type ExtractedLine = InvoiceFacts & { lineNumber: number };
+
 export interface ExtractionResult {
   facts: InvoiceFacts;
+  lines: ExtractedLine[];
+  /** True when the model reported more lines than the cap allows. The
+   *  line-sum check must not run against a truncated list — it would
+   *  report a mismatch that says nothing about the document, only
+   *  about what was captured from it. */
+  linesTruncated: boolean;
   confidence: number;
   /** Which fields the model reported it could not read. Genuinely
    *  useful downstream: "the supplier VAT was unreadable" is a far
@@ -354,13 +408,45 @@ export function parseExtractionResponse(
     throw new ExtractionRefusal("no fields could be read from this image at all", raw);
   }
 
+  // Line items. Every line must carry a usable amount, or the whole
+  // list is discarded: validation's line-sum check compares against a
+  // total, and a partial sum would produce a confident-looking
+  // mismatch that reflects only what was captured. Better to have no
+  // lines than misleading ones.
+  const rawLines = Array.isArray(obj.lines) ? obj.lines : [];
+  const linesTruncated = rawLines.length > MAX_EXTRACTED_LINES;
+  const lines: ExtractedLine[] = [];
+  let lineNumber = 0;
+  for (const raw of rawLines.slice(0, MAX_EXTRACTED_LINES)) {
+    if (!raw || typeof raw !== "object") continue;
+    const row = raw as Record<string, unknown>;
+    const amount = coerce(row.amount, "number");
+    if (!amount.ok) continue;
+    lineNumber += 1;
+    const line: ExtractedLine = { lineNumber, "BT-131": amount.value };
+    // The description is deliberately NOT given a BT code. BT-153
+    // exists in EN 16931, but adding it to the closed vocabulary
+    // purely to carry text no rule tests would widen the vocabulary
+    // for nothing — and invoice_lines already has its own
+    // description column for exactly this. Kept under a plain key,
+    // which flows through facts_json to storage without pretending
+    // to be a Business Term.
+    const description = coerce(row.description, "text");
+    if (description.ok) line.description = description.value;
+    lines.push(line);
+  }
+  // A line the model reported but whose amount could not be coerced
+  // means the list is incomplete, and an incomplete list is worse
+  // than none for the one thing lines are for.
+  const usableLines = lines.length === rawLines.length ? lines : [];
+
   // Exposed as a real derived fact so customers can write rules
   // against it — "if extraction confidence is below 0.8, assign a
   // task to the AP team" — rather than this module deciding a
   // threshold on their behalf.
   facts["extraction.confidence"] = confidence;
 
-  return { facts, confidence, missingFields, rawModelOutput: raw };
+  return { facts, lines: usableLines, linesTruncated, confidence, missingFields, rawModelOutput: raw };
 }
 
 export async function extractInvoiceFromImage(

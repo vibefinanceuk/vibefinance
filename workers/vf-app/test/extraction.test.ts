@@ -6,6 +6,7 @@ import {
   extractInvoiceFromImage,
   sniffImageType,
   toDataUrl,
+  MAX_EXTRACTED_LINES,
   ExtractionRefusal,
   type ExtractionModel,
 } from "../src/extraction.js";
@@ -456,7 +457,9 @@ describe("the real failure this fix addresses", () => {
 
   it("maps every prompt key back to its Business Term, with no key left unmapped", () => {
     const schema = buildExtractionSchema() as { properties: Record<string, unknown> };
-    const promptKeys = Object.keys(schema.properties).filter((k) => k !== "_confidence");
+    // `lines` is an array of its own objects, not a scalar field
+    // mapped to a Business Term, so it is legitimately excluded.
+    const promptKeys = Object.keys(schema.properties).filter((k) => k !== "_confidence" && k !== "lines");
     const response: Record<string, unknown> = { _confidence: 0.9 };
     for (const key of promptKeys) response[key] = "X";
     const result = parseExtractionResponse(JSON.stringify(response));
@@ -518,5 +521,106 @@ describe("the extractor transcribes, it does not calculate", () => {
     expect(result.facts["BT-106"]).toBeUndefined();
     expect(result.missingFields).toContain("BT-112");
     expect(result.facts["BT-1"]).toBe("SKELS26003894");
+  });
+});
+
+describe("line extraction", () => {
+  // The real freight invoice's eight charge lines.
+  const MORRISON = JSON.stringify({
+    invoiceNumber: "SKELS26003894",
+    lines: [
+      { description: "International Freight", amount: 1797.47 },
+      { description: "Destination Terminal Handling Charges", amount: 275.0 },
+      { description: "ISPS / Port Security Charge", amount: 35.0 },
+      { description: "Destination Documentation Fee", amount: 75.0 },
+      { description: "Equipment Fee", amount: 25.0 },
+      { description: "Delivery Cartage", amount: 585.0 },
+      { description: "Destination Customs Clearance Fee", amount: 85.0 },
+      { description: "Drop off", amount: 260.0 },
+    ],
+    _confidence: 0.9,
+  });
+
+  it("asks for lines in the schema", () => {
+    const schema = buildExtractionSchema() as { properties: Record<string, { type: string[] }> };
+    expect(schema.properties.lines.type).toEqual(["array", "null"]);
+  });
+
+  it("tells the model a line is not a subtotal or a grand total", () => {
+    const schema = buildExtractionSchema() as { properties: Record<string, { description: string }> };
+    expect(schema.properties.lines.description).toMatch(/not a subtotal, VAT line, or grand total/);
+  });
+
+  it("carries the never-calculate rule into the line amount too", () => {
+    const schema = buildExtractionSchema() as {
+      properties: { lines: { items: { properties: Record<string, { description: string }> } } };
+    };
+    expect(schema.properties.lines.items.properties.amount.description).toMatch(/Never calculated/);
+  });
+
+  it("extracts lines in the canonical shape the rest of the system uses", () => {
+    const result = parseExtractionResponse(MORRISON);
+    expect(result.lines).toHaveLength(8);
+    // BT-131 and a line number — not a bespoke {description, amount}
+    // shape, which the codebase already records as a real past bug.
+    expect(result.lines[0]).toMatchObject({ lineNumber: 1, "BT-131": 1797.47 });
+    expect(result.lines[7]).toMatchObject({ lineNumber: 8, "BT-131": 260 });
+  });
+
+  it("keeps the description without inventing a Business Term for it", () => {
+    const result = parseExtractionResponse(MORRISON);
+    expect(result.lines[0].description).toBe("International Freight");
+    // BT-153 exists in EN 16931 but is deliberately not added to the
+    // closed vocabulary for text no rule tests.
+    expect(result.lines[0]["BT-153"]).toBeUndefined();
+  });
+
+  it("produces lines that sum to the invoice's real total", () => {
+    const result = parseExtractionResponse(MORRISON);
+    const sum = result.lines.reduce((acc, l) => acc + (l["BT-131"] as number), 0);
+    expect(sum).toBeCloseTo(3137.47, 2);
+  });
+
+  it("returns no lines at all rather than a partial list", () => {
+    // Validation's line-sum check compares against a total. A partial
+    // sum would produce a confident-looking mismatch that reflects
+    // only what was captured, not the document.
+    const partial = JSON.stringify({
+      invoiceNumber: "X",
+      lines: [{ description: "Freight", amount: 100 }, { description: "Handling", amount: "unreadable" }],
+      _confidence: 0.9,
+    });
+    expect(parseExtractionResponse(partial).lines).toEqual([]);
+  });
+
+  it("handles an invoice with no itemised table at all", () => {
+    const noLines = JSON.stringify({ invoiceNumber: "X", lines: null, _confidence: 0.9 });
+    const result = parseExtractionResponse(noLines);
+    expect(result.lines).toEqual([]);
+    expect(result.linesTruncated).toBe(false);
+  });
+
+  it("reports truncation rather than silently capping", () => {
+    const many = JSON.stringify({
+      invoiceNumber: "X",
+      lines: Array.from({ length: MAX_EXTRACTED_LINES + 5 }, (_, i) => ({ description: `L${i}`, amount: 1 })),
+      _confidence: 0.9,
+    });
+    const result = parseExtractionResponse(many);
+    expect(result.linesTruncated).toBe(true);
+  });
+
+  it("numbers lines sequentially from one, in document order", () => {
+    const result = parseExtractionResponse(MORRISON);
+    expect(result.lines.map((l) => l.lineNumber)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+  });
+
+  it("coerces a line amount with a thousands separator, as on a real invoice", () => {
+    const formatted = JSON.stringify({
+      invoiceNumber: "X",
+      lines: [{ description: "Freight", amount: "1,797.47" }],
+      _confidence: 0.9,
+    });
+    expect(parseExtractionResponse(formatted).lines[0]["BT-131"]).toBe(1797.47);
   });
 });

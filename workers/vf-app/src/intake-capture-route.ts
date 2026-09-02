@@ -71,6 +71,12 @@ function toStorageLine(line: InvoiceFacts & { lineNumber: number }): Record<stri
   return {
     lineNumber,
     amount: rest["BT-131"],
+    // invoice_lines has its own description column, and leaving it
+    // null while the text sat in facts_json made a stored line less
+    // readable than it needed to be. Lifted out for the column;
+    // deliberately left in `facts` too, so the fact set a rule sees
+    // is unchanged.
+    description: rest.description,
     facts: rest,
   };
 }
@@ -408,7 +414,7 @@ export async function handleCaptureImage(
     throw err;
   }
 
-  const { facts, confidence, missingFields } = extraction;
+  const { facts, lines: extractedLines, linesTruncated, confidence, missingFields } = extraction;
   const id = idOverride ?? crypto.randomUUID();
 
   const result = await handleCaptureIntake(db, channelId, {
@@ -419,7 +425,10 @@ export async function handleCaptureImage(
     supplierVatId: facts["BT-31"] as string | undefined,
     totalWithVat: facts["BT-112"] as number | undefined,
     facts,
-    lines: [],
+    // Real extracted lines, in the same canonical shape the UBL path
+    // produces — which is what lets validation's line-sum check run
+    // against an image-captured invoice at all.
+    lines: extractedLines,
   });
 
   if (result.status === 201) {
@@ -431,6 +440,11 @@ export async function handleCaptureImage(
       documentPath: "image-extraction",
       confidence,
       missingFields,
+      lineCount: extractedLines.length,
+      // Surfaced rather than swallowed: a truncated line list would
+      // make validation's line-sum check report a mismatch that says
+      // nothing about the document.
+      linesTruncated,
     };
   }
   return result;

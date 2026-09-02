@@ -50,7 +50,10 @@ a rule, and left an approval task in a queue.
 - Type-aware validation refuses operator/type mismatches at compile
   time, catching rules that would otherwise silently never fire
 - Deterministic invoice validation, setting `validation.passed` and
-  `validation.failures` as real facts rules can test (0044)
+  `validation.failures` as real facts rules can test, recorded on the
+  stage visit for audit (0044)
+- Line-level extraction from images, which is what lets the line-sum
+  check run at all
 
 ### Intake
 - UBL/XML capture (0030)
@@ -94,11 +97,6 @@ radius deserves its own design conversation.
 **Image-only PDFs.** A PDF cannot be rasterised inside a Worker — no
 native renderer, and PDF.js needs a canvas workerd does not provide.
 Submit the page as an image instead.
-
-**Line extraction from images.** The validation stage's line-sum
-check is built and tested but cannot run on an image-extracted
-invoice, because the lines are never captured. The UBL path supplies
-them today.
 
 **Multi-page documents.** Nothing acknowledges that an invoice might
 run to a second page. Validation will correctly report a mismatch it

@@ -153,3 +153,53 @@ without a verdict, and a passing verdict never carries failures. The
 last would catch a genuine bug — verdict and list come from the same
 result object, so any disagreement means they were written from
 different sources.
+
+---
+
+## Addendum 2 — line extraction, and the check that could finally run
+
+The `line_sum` check existed and was tested from the start, but could
+not run on an image-captured invoice: only document-level fields were
+extracted, so there were no lines to sum. It was live code that had
+never executed against real input.
+
+Lines are now asked for in the same model call as everything else —
+not a second one. The model is already looking at the table, and a
+separate inference would cost another round trip and risk the two
+disagreeing about the same document.
+
+**In the canonical shape, deliberately.** A line is
+`InvoiceFacts & { lineNumber }` with the amount under `BT-131` —
+exactly what the UBL path produces. The codebase already carries a
+comment recording that passing raw, differently-shaped lines around
+caused a real bug once, so inventing a bespoke `{description,
+amount}` shape here would have been repeating it.
+
+**No Business Term for the description.** `BT-153` exists in EN
+16931, but adding it to the closed vocabulary purely to carry text no
+rule tests would widen the vocabulary for nothing — and
+`invoice_lines` already has its own `description` column. Kept under
+a plain key, which flows to storage without pretending to be a
+Business Term.
+
+That surfaced a small pre-existing gap: `toStorageLine` never mapped
+the description to its column, so it sat in `facts_json` while the
+column stayed null. Fixed, and left in the fact set too, so what a
+rule sees is unchanged.
+
+**A partial line list is discarded entirely.** If any line's amount
+cannot be coerced, no lines are stored. The line-sum check compares
+against a stated total, and a partial sum would produce a
+confident-looking mismatch that reflects only what was captured, not
+the document. Better no lines than misleading ones.
+
+**Truncation is reported, never silent.** `MAX_EXTRACTED_LINES` is 50
+— a deliberate guess, recorded as such rather than presented as
+measured. It comfortably covers the invoices seen so far while
+staying inside the token budget, and should be revisited against a
+genuinely long invoice rather than trusted because it is written
+down. Exceeding it sets `linesTruncated` on the response.
+
+The original failure now has a test that reconstructs it directly: a
+fabricated `2797.47` against eight lines summing to `3137.47`, caught
+as a `line_sum` failure and recorded on the stage visit.

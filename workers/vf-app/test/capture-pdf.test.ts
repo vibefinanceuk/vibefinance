@@ -287,3 +287,109 @@ describe("handleCaptureImage — the inferred path (decision 0043)", () => {
     expect(JSON.parse(row!.facts_json)["custom.transport_reference"]).toBe("TR-88431");
   });
 });
+
+describe("extracted lines make the line-sum check runnable (0044)", () => {
+  const jpeg = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]);
+
+  /** A channel whose process has a RULE-EVALUATING stage. Validation
+   *  is recorded only on those — an automatic stage never consults
+   *  it — so a process with only automatic stages would record
+   *  nothing to assert against. */
+  async function seedRuleChannel(id: string) {
+    const existing = await env.DB.prepare("SELECT id FROM processes WHERE id = 'p-ls'").first();
+    if (!existing) {
+      await handleCreateProcess(env.DB, { id: "p-ls", name: "Line Sum" });
+      await env.DB.prepare("INSERT INTO rule_sets (id, name, mode, status) VALUES ('rs-ls', 'ls', 'first_match', 'active')").run();
+      await handleCreateStage(env.DB, "p-ls", { id: "s-ls", name: "Check", sequence: 1, ruleSetId: "rs-ls" });
+    }
+    await env.DB.prepare(
+      "INSERT INTO intake_channels (id, process_id, name, hybrid_pdf_fallback) VALUES (?, 'p-ls', ?, 'refuse')"
+    )
+      .bind(id, id)
+      .run();
+  }
+
+  // The real freight invoice: eight lines summing to 3137.47, with a
+  // total that matches.
+  const WITH_LINES = JSON.stringify({
+    invoiceNumber: "SKELS26003894",
+    netTotalBeforeVat: 3137.47,
+    totalWithVat: 3137.47,
+    lines: [
+      { description: "International Freight", amount: 1797.47 },
+      { description: "Destination Terminal Handling", amount: 275.0 },
+      { description: "ISPS / Port Security", amount: 35.0 },
+      { description: "Destination Documentation Fee", amount: 75.0 },
+      { description: "Equipment Fee", amount: 25.0 },
+      { description: "Delivery Cartage", amount: 585.0 },
+      { description: "Destination Customs Clearance", amount: 85.0 },
+      { description: "Drop off", amount: 260.0 },
+    ],
+    _confidence: 0.9,
+  });
+
+  const fakeModel = (response: string) => ({ extract: async () => response });
+
+  it("stores real invoice lines from an image", async () => {
+    await seedChannel("ch-lines-img");
+    const result = await handleCaptureImage(env.DB, "ch-lines-img", jpeg, fakeModel(WITH_LINES));
+    expect(result.status).toBe(201);
+    expect(result.body.lineCount).toBe(8);
+
+    const rows = await env.DB.prepare(
+      "SELECT line_number, description, amount FROM invoice_lines WHERE invoice_id = ? ORDER BY line_number"
+    )
+      .bind(result.body.id as string)
+      .all<{ line_number: number; description: string; amount: number }>();
+    expect(rows.results).toHaveLength(8);
+    expect(rows.results[0]).toEqual({
+      line_number: 1,
+      description: "International Freight",
+      amount: 1797.47,
+    });
+  });
+
+  it("the line-sum check now runs, where before it could not", async () => {
+    await seedRuleChannel("ch-linesum");
+    const result = await handleCaptureImage(env.DB, "ch-linesum", jpeg, fakeModel(WITH_LINES));
+
+    const visit = await env.DB.prepare(
+      "SELECT validation_checked, validation_passed FROM stage_visits WHERE process_instance_id = ? AND validation_checked IS NOT NULL"
+    )
+      .bind(result.body.instanceId as string)
+      .first<{ validation_checked: string; validation_passed: number }>();
+    // The whole point of extracting lines: this check was previously
+    // untestable on an image-captured invoice.
+    expect(visit?.validation_checked).toContain("line_sum");
+    expect(visit?.validation_passed).toBe(1);
+  });
+
+  it("catches a total that does not match its own lines", async () => {
+    await seedRuleChannel("ch-mismatch");
+    // The original failure, reconstructed: the fabricated 2797.47
+    // against lines summing to 3137.47.
+    const fabricated = WITH_LINES.replace(/3137\.47/g, "2797.47");
+    const result = await handleCaptureImage(env.DB, "ch-mismatch", jpeg, fakeModel(fabricated));
+
+    const visit = await env.DB.prepare(
+      "SELECT validation_failures FROM stage_visits WHERE process_instance_id = ? AND validation_checked IS NOT NULL"
+    )
+      .bind(result.body.instanceId as string)
+      .first<{ validation_failures: string }>();
+    expect(visit?.validation_failures).toContain("line_sum");
+  });
+
+  it("an invoice with no itemised table stores no lines and skips the check", async () => {
+    await seedRuleChannel("ch-nolines");
+    const noLines = JSON.stringify({ invoiceNumber: "X", totalWithVat: 100, lines: null, _confidence: 0.9 });
+    const result = await handleCaptureImage(env.DB, "ch-nolines", jpeg, fakeModel(noLines));
+    expect(result.body.lineCount).toBe(0);
+
+    const visit = await env.DB.prepare(
+      "SELECT validation_checked FROM stage_visits WHERE process_instance_id = ? AND validation_checked IS NOT NULL"
+    )
+      .bind(result.body.instanceId as string)
+      .first<{ validation_checked: string }>();
+    expect(visit?.validation_checked).not.toContain("line_sum");
+  });
+});
