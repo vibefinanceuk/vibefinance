@@ -48,6 +48,20 @@ export default [
     },
   },
   {
+    // .cjs specifically: package.json sets "type": "module", so a build
+    // script needing require() — the docx library is CommonJS — has to
+    // carry that extension. require and module are legitimate globals
+    // there, and the ES-import rule does not apply.
+    files: ["scripts/**/*.cjs"],
+    languageOptions: {
+      sourceType: "commonjs",
+      globals: { ...globals.node },
+    },
+    rules: {
+      "@typescript-eslint/no-require-imports": "off",
+    },
+  },
+  {
     // src only — test setup code legitimately seeds env.DB directly to
     // prepare fixtures, which is not the thing this check guards against.
     files: ["workers/**/src/**/*.{js,ts}"],

@@ -13,3 +13,8 @@ __pycache__/
 # deliberately not a subdirectory — see deploy_all.py's own comment on
 # why a subdirectory silently broke `main` path resolution live.
 workers/*/.deploy-generated.*.wrangler.json
+
+# Word renderings of the numbered design documents. The markdown in
+# docs/documents/ is the source of truth — a binary that cannot be
+# diffed would break the traceability the rest of docs/ depends on.
+*.docx
