@@ -436,6 +436,11 @@ export function parseExtractionResponse(
   // mismatch that reflects only what was captured. Better to have no
   // lines than misleading ones.
   const rawLines = Array.isArray(obj.lines) ? obj.lines : [];
+  // Rows rejected as not being line items at all, counted separately
+  // from rows that failed to parse. The distinction matters for the
+  // completeness check below: a row that is not a line item is not
+  // evidence that the real lines are unreliable.
+  let rejectedRows = 0;
   const linesTruncated = rawLines.length > MAX_EXTRACTED_LINES;
   const lines: ExtractedLine[] = [];
   let lineNumber = 0;
@@ -444,6 +449,35 @@ export function parseExtractionResponse(
     const row = raw as Record<string, unknown>;
     const amount = coerce(row.amount, "number");
     if (!amount.ok) continue;
+
+    // A line item has a description — decision 0052.
+    //
+    // Found live: a page with NO line table returned a single row
+    // with a null description and an amount equal to the document
+    // total. The prompt already says a line is "not a subtotal, VAT
+    // line, or grand total"; it was ignored, which is the same
+    // finding as everywhere else this week — a prompt instruction is
+    // not a safety property.
+    //
+    // Deliberately the NARROWEST check that catches it. Rejecting a
+    // line whose amount equals a stated total would be more targeted
+    // and would also drop a legitimate single-line invoice, where
+    // that shape is correct. This encodes something true of real
+    // invoices rather than a guess about one document.
+    //
+    // REVISITABLE, and flagged as such: every extraction decision so
+    // far comes from a single German freight invoice with an unusual
+    // two-page structure. A customer whose invoices carry genuinely
+    // unlabelled rows would need this relaxed, and "must a line have
+    // a description" is the shape of thing that belongs in customer
+    // configuration rather than platform code. See
+    // docs/decisions/0052-line-must-have-description.md.
+    const descriptionCheck = coerce(row.description, "text");
+    if (!descriptionCheck.ok) {
+      rejectedRows += 1;
+      continue;
+    }
+
     lineNumber += 1;
     const line: ExtractedLine = { lineNumber, "BT-131": amount.value };
     // The description is deliberately NOT given a BT code. BT-153
@@ -453,14 +487,20 @@ export function parseExtractionResponse(
     // description column for exactly this. Kept under a plain key,
     // which flows through facts_json to storage without pretending
     // to be a Business Term.
-    const description = coerce(row.description, "text");
-    if (description.ok) line.description = description.value;
+    line.description = descriptionCheck.value;
     lines.push(line);
   }
-  // A line the model reported but whose amount could not be coerced
-  // means the list is incomplete, and an incomplete list is worse
-  // than none for the one thing lines are for.
-  const usableLines = lines.length === rawLines.length ? lines : [];
+  // A line whose AMOUNT could not be coerced means the list is
+  // incomplete, and an incomplete list is worse than none for the one
+  // thing lines are for — a partial sum produces a confident-looking
+  // mismatch reflecting only what was captured.
+  //
+  // A row rejected for having no description is different: it was
+  // never a line item, so its absence does not make the real lines
+  // incomplete. Counting it here would throw away eight good charge
+  // rows because a ninth was a totals row — which is what a naive
+  // length comparison does.
+  const usableLines = lines.length + rejectedRows === rawLines.length ? lines : [];
 
   // Exposed as a real derived fact so customers can write rules
   // against it — "if extraction confidence is below 0.8, assign a

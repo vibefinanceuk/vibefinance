@@ -131,6 +131,15 @@ production environment, and migrating configuration between them.
 Things that are built but not proven, kept separate from things that
 are simply absent.
 
+**Every extraction decision comes from a sample of one.** A single
+German freight invoice, with an unusual two-page structure, drove the
+line cap, the conflict-resolution rules, the tolerance, the
+description requirement, and the one-call-per-page architecture. None
+is wrong today; all are inferences from one document, and several
+belong in per-customer configuration rather than platform code.
+Decision 0052 lists them explicitly and should be revisited against a
+real control set.
+
 **A prompt cannot be verified by unit tests.** Tests can assert that
 a prompt contains a phrase; only a live run shows how a model behaves
 given it. A page-note change that read as restrictive suppressed a

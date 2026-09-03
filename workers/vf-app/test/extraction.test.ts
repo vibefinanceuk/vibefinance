@@ -1047,3 +1047,75 @@ describe("the other page's value is exposed so a rule can resolve to it (0050)",
     expect(isKnownField("whatever.i.like(BT-112)")).toBe(false);
   });
 });
+
+describe("a line item must have a description (decision 0052)", () => {
+  it("rejects the phantom row a totals page produced", () => {
+    // Found live: page 2 of a real invoice has NO line table, and
+    // returned one row with a null description and an amount equal to
+    // the document total.
+    const phantom = JSON.stringify({
+      invoiceNumber: "SKELS26003894",
+      totalWithVat: 3137.47,
+      lines: [{ description: null, amount: 3137.47 }],
+      _confidence: 0.9,
+    });
+    expect(parseExtractionResponse(phantom).lines).toEqual([]);
+  });
+
+  it("keeps the real lines when a phantom appears alongside them", () => {
+    // The interaction that matters: a naive completeness check would
+    // throw away eight good charge rows because a ninth was a totals
+    // row. A row that was never a line item is not evidence that the
+    // real lines are unreliable.
+    const mixed = JSON.stringify({
+      invoiceNumber: "X",
+      lines: [
+        { description: "International Freight", amount: 1797.47 },
+        { description: "Delivery Cartage", amount: 585.0 },
+        { description: null, amount: 2382.47 },
+      ],
+      _confidence: 0.9,
+    });
+    const result = parseExtractionResponse(mixed);
+    expect(result.lines).toHaveLength(2);
+    expect(result.lines.map((l) => l["BT-131"])).toEqual([1797.47, 585.0]);
+  });
+
+  it("still discards everything when an AMOUNT cannot be read", () => {
+    // Different case, unchanged behaviour: a partial sum produces a
+    // confident-looking mismatch reflecting only what was captured.
+    const partial = JSON.stringify({
+      invoiceNumber: "X",
+      lines: [
+        { description: "Freight", amount: 100 },
+        { description: "Handling", amount: "unreadable" },
+      ],
+      _confidence: 0.9,
+    });
+    expect(parseExtractionResponse(partial).lines).toEqual([]);
+  });
+
+  it("rejects a whitespace-only description, not just null", () => {
+    const blank = JSON.stringify({
+      invoiceNumber: "X",
+      lines: [{ description: "   ", amount: 100 }],
+      _confidence: 0.9,
+    });
+    expect(parseExtractionResponse(blank).lines).toEqual([]);
+  });
+
+  it("renumbers around a rejected row, leaving no gap", () => {
+    const withGap = JSON.stringify({
+      invoiceNumber: "X",
+      lines: [
+        { description: "First", amount: 1 },
+        { description: null, amount: 999 },
+        { description: "Third", amount: 3 },
+      ],
+      _confidence: 0.9,
+    });
+    const result = parseExtractionResponse(withGap);
+    expect(result.lines.map((l) => l.lineNumber)).toEqual([1, 2]);
+    expect(result.lines.map((l) => l.description)).toEqual(["First", "Third"]);
+  });
+});
