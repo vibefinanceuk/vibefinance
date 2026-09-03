@@ -689,6 +689,12 @@ The image path is unchanged and still needed. What changes is the
 7. **`mandate.channel` remains outside the closed vocabulary** — a free
    string, so a rule testing a misspelled value compiles and never fires.
    This design increases its load rather than reducing it.
+8. **Which EN 16931 reference fields should the vocabulary carry?** The
+   closed vocabulary has `BT-10` and `BT-13`; the standard also defines
+   `BT-12`, `BT-16`, `BT-18`, `BT-19` and `BT-128`. A customer needing a
+   transport reference is served today by a `custom.*` field, which does
+   not round-trip into a Peppol document — where `BT-18` with a scheme
+   identifier is the standard's own mechanism for it. Decision 0058.
 
 ---
 
@@ -715,6 +721,7 @@ the repository at `docs/decisions/`:
 | 0055 | Source, intake and validation | Sections 2, 3.3, 5 and 6 in full |
 | 0056 | Settings reach extraction | Section 8 — configuration that reached nothing |
 | 0057 | The settings audit | Section 8 — the PDF/XML audit, and the tolerance gap |
+| 0058 | Mapping rules | Section 11 — the naming, and the vocabulary subset |
 
 Design notes, longer than a decision record and narrower than this
 document, are kept at `docs/design/`: `extraction.md`, `validation.md`
