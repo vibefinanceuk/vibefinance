@@ -46,6 +46,13 @@ import type { InvoiceFacts } from "@vibefinance/shared";
  */
 export const CURRENCY_TOLERANCE = 0.01;
 
+/** Tolerance is configurable per channel (decision 0053), so the
+ *  checks take it rather than reading a constant. Defaults to
+ *  CURRENCY_TOLERANCE, so every existing caller is unchanged. */
+export interface ValidationSettings {
+  currencyTolerance: number;
+}
+
 /** The closed set of checks. Named, because "validation failed" is
  *  far less useful to a rule author than knowing WHICH check failed —
  *  a date-order problem and a total mismatch warrant different
@@ -78,8 +85,8 @@ function num(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
-function close(a: number, b: number): boolean {
-  return Math.abs(a - b) <= CURRENCY_TOLERANCE;
+function close(a: number, b: number, tolerance: number): boolean {
+  return Math.abs(a - b) <= tolerance;
 }
 
 /**
@@ -93,8 +100,15 @@ function close(a: number, b: number): boolean {
  */
 export function validateInvoiceFacts(
   facts: InvoiceFacts,
-  lines?: readonly LineForValidation[]
+  lines?: readonly LineForValidation[],
+  settings: ValidationSettings = { currencyTolerance: CURRENCY_TOLERANCE },
+  // True when more lines existed than were captured. The line-sum
+  // check must not run against a deliberately capped list: the
+  // shortfall is expected, and comparing it to a stated total would
+  // report a mismatch that says nothing about the document.
+  linesTruncated = false
 ): ValidationResult {
+  const tol = settings.currencyTolerance;
   const failures: ValidationCheck[] = [];
   const checked: ValidationCheck[] = [];
 
@@ -117,7 +131,7 @@ export function validateInvoiceFacts(
   // present, since two of three proves nothing.
   if (net !== null && vat !== null && total !== null) {
     checked.push("vat_arithmetic");
-    if (!close(net + vat, total)) failures.push("vat_arithmetic");
+    if (!close(net + vat, total, tol)) failures.push("vat_arithmetic");
   }
 
   // The amount due normally equals the total. A legitimate part
@@ -127,7 +141,7 @@ export function validateInvoiceFacts(
   // decides.
   if (due !== null && total !== null) {
     checked.push("amount_due_mismatch");
-    if (!close(due, total)) failures.push("amount_due_mismatch");
+    if (!close(due, total, tol)) failures.push("amount_due_mismatch");
   }
 
   // An issue date after its own due date is always wrong.
@@ -142,14 +156,14 @@ export function validateInvoiceFacts(
   // genuinely supplied AND every one of them carries an amount — a
   // partial set would produce a mismatch that says nothing about the
   // document, only about what was captured from it.
-  if (lines && lines.length > 0) {
+  if (lines && lines.length > 0 && !linesTruncated) {
     const amounts = lines.map((line) => num(line["BT-131"]));
     if (amounts.every((a) => a !== null)) {
       const sum = (amounts as number[]).reduce((acc, a) => acc + a, 0);
       const against = net ?? total;
       if (against !== null) {
         checked.push("line_sum");
-        if (!close(sum, against)) failures.push("line_sum");
+        if (!close(sum, against, tol)) failures.push("line_sum");
       }
     }
   }

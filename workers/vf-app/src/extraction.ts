@@ -1,4 +1,5 @@
 import type { InvoiceFacts } from "@vibefinance/shared";
+import { DEFAULT_EXTRACTION_SETTINGS, type ExtractionSettings } from "./extraction-settings.js";
 import {
   asResolved,
   CUSTOM_FIELD_PREFIX,
@@ -195,7 +196,10 @@ function customPromptKey(key: string): string {
  * find must come back null, never invented — and a schema that made
  * fields required would pressure it to fabricate one.
  */
-export function buildExtractionSchema(vocabulary: VocabularyInput = "invoice"): Record<string, unknown> {
+export function buildExtractionSchema(
+  vocabulary: VocabularyInput = "invoice",
+  settings?: ExtractionSettings
+): Record<string, unknown> {
   const v = asResolved(vocabulary);
   const properties: Record<string, unknown> = {};
 
@@ -223,7 +227,7 @@ export function buildExtractionSchema(vocabulary: VocabularyInput = "invoice"): 
   properties.lines = {
     type: ["array", "null"],
     description:
-      `The invoice's line items, in the order they appear, up to ${MAX_EXTRACTED_LINES}. Each is one charge or product row from the main table — not a subtotal, VAT line, or grand total. Null if the document has no itemised table at all.`,
+      `The invoice's line items, in the order they appear, up to ${settings?.maxExtractedLines ?? MAX_EXTRACTED_LINES}. Each is one charge or product row from the main table — not a subtotal, VAT line, or grand total. Null if the document has no itemised table at all.`,
     items: {
       type: "object",
       properties: {
@@ -377,7 +381,10 @@ function coerce(value: unknown, type: FieldType): { ok: true; value: string | nu
 
 export function parseExtractionResponse(
   raw: string,
-  vocabulary: VocabularyInput = "invoice"
+  vocabulary: VocabularyInput = "invoice",
+  // Per-channel settings (decision 0053). Defaults are exactly the
+  // shipped behaviour, so every existing caller is unchanged.
+  settings: ExtractionSettings = DEFAULT_EXTRACTION_SETTINGS
 ): ExtractionResult {
   const v = asResolved(vocabulary);
 
@@ -441,10 +448,10 @@ export function parseExtractionResponse(
   // completeness check below: a row that is not a line item is not
   // evidence that the real lines are unreliable.
   let rejectedRows = 0;
-  const linesTruncated = rawLines.length > MAX_EXTRACTED_LINES;
+  const linesTruncated = rawLines.length > settings.maxExtractedLines;
   const lines: ExtractedLine[] = [];
   let lineNumber = 0;
-  for (const raw of rawLines.slice(0, MAX_EXTRACTED_LINES)) {
+  for (const raw of rawLines.slice(0, settings.maxExtractedLines)) {
     if (!raw || typeof raw !== "object") continue;
     const row = raw as Record<string, unknown>;
     const amount = coerce(row.amount, "number");
@@ -473,7 +480,7 @@ export function parseExtractionResponse(
     // configuration rather than platform code. See
     // docs/decisions/0052-line-must-have-description.md.
     const descriptionCheck = coerce(row.description, "text");
-    if (!descriptionCheck.ok) {
+    if (settings.requireLineDescription && !descriptionCheck.ok) {
       rejectedRows += 1;
       continue;
     }
@@ -487,7 +494,7 @@ export function parseExtractionResponse(
     // description column for exactly this. Kept under a plain key,
     // which flows through facts_json to storage without pretending
     // to be a Business Term.
-    line.description = descriptionCheck.value;
+    if (descriptionCheck.ok) line.description = descriptionCheck.value;
     lines.push(line);
   }
   // A line whose AMOUNT could not be coerced means the list is
@@ -500,7 +507,14 @@ export function parseExtractionResponse(
   // incomplete. Counting it here would throw away eight good charge
   // rows because a ninth was a totals row — which is what a naive
   // length comparison does.
-  const usableLines = lines.length + rejectedRows === rawLines.length ? lines : [];
+  // Deliberate truncation is not a parse failure. When more rows were
+  // reported than the cap allows, the shortfall is expected — so the
+  // lines are kept and `linesTruncated` is what stops the line-sum
+  // check running against an incomplete list. Comparing against the
+  // capped count rather than the raw one keeps those two cases
+  // distinct: "we could not read a row" still discards everything.
+  const consideredRows = Math.min(rawLines.length, settings.maxExtractedLines);
+  const usableLines = lines.length + rejectedRows === consideredRows ? lines : [];
 
   // Exposed as a real derived fact so customers can write rules
   // against it — "if extraction confidence is below 0.8, assign a
@@ -648,14 +662,21 @@ export async function extractInvoiceFromImages(
 export function mergePageResults(
   perPage: readonly { page: number; result: ExtractionResult }[],
   pageCount: number,
-  failedPages: { page: number; reason: string }[] = []
+  failedPages: { page: number; reason: string }[] = [],
+  settings: ExtractionSettings = DEFAULT_EXTRACTION_SETTINGS
 ): MultiPageExtractionResult {
+  // Which page wins a disagreement is configurable (decision 0053).
+  // 'first' suits documents whose header repeats on every page;
+  // 'last' suits documents where a later page supersedes. Reversing
+  // the order here rather than branching at every comparison keeps
+  // the merge itself unchanged.
+  const ordered = settings.conflictWinner === "last" ? [...perPage].reverse() : perPage;
   const facts: InvoiceFacts = {};
   const sources = new Map<string, number>();
   const conflicts: PageConflict[] = [];
   const conflictValues = new Map<string, { page: number; value: string | number | boolean }[]>();
 
-  for (const { page, result } of perPage) {
+  for (const { page, result } of ordered) {
     for (const [field, value] of Object.entries(result.facts)) {
       // Derived facts are recomputed after the merge, never carried
       // from a page: extraction.confidence in particular must reflect
@@ -753,7 +774,8 @@ export function mergePageResults(
 export async function extractInvoiceFromImage(
   model: ExtractionModel,
   bytes: Uint8Array,
-  vocabulary: VocabularyInput = "invoice"
+  vocabulary: VocabularyInput = "invoice",
+  settings: ExtractionSettings = DEFAULT_EXTRACTION_SETTINGS
 ): Promise<ExtractionResult> {
   return extractInvoiceFromImages(model, [bytes], vocabulary);
 }

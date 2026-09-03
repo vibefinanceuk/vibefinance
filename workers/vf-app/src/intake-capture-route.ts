@@ -7,6 +7,7 @@ import { extractEmbeddedInvoiceXml, looksLikePdf, PdfExtractionError } from "./p
 import { extractInvoiceFromImage, extractInvoiceFromImages, mergePageResults, sniffImageType, ExtractionRefusal, type ExtractionModel } from "./extraction.js";
 import { loadPendingPages, loadPageExtractions, markFinalised, type PendingDocumentStorage } from "./pending-document-route.js";
 import { loadCustomFields } from "./custom-field-route.js";
+import { loadExtractionSettings } from "./extraction-settings.js";
 import { resolveVocabulary } from "@vibefinance/shared";
 
 /**
@@ -39,6 +40,9 @@ interface CaptureIntakeBody {
   mandateChannel?: unknown;
   facts?: unknown;
   lines?: unknown;
+  /** Set when extraction capped the line list, so line_sum knows not
+   *  to run against an incomplete one. */
+  linesTruncated?: unknown;
   [key: string]: unknown;
 }
 
@@ -159,7 +163,7 @@ export async function handleCaptureIntake(db: D1Database, channelId: string, bod
     duplicate_confidence: (upsertResult.body as { duplicateConfidence?: number }).duplicateConfidence ?? null,
   });
   const lines = canonicalLines;
-  const visitResult = await visitCurrentStage(db, instanceId, mergedFacts, lines);
+  const visitResult = await visitCurrentStage(db, instanceId, mergedFacts, lines, body.linesTruncated === true);
 
   // Persist any correction a rule made — decision 0049 addendum.
   //
@@ -434,10 +438,12 @@ export async function handleCaptureImage(
   // same as the compile path.
   const customFields = await loadCustomFields(db);
   const vocabulary = resolveVocabulary("invoice", customFields);
+  // Per-channel extraction settings (decision 0053).
+  const settings = await loadExtractionSettings(db, channelId);
 
   let extraction;
   try {
-    extraction = await extractInvoiceFromImage(model, bytes, vocabulary);
+    extraction = await extractInvoiceFromImage(model, bytes, vocabulary, settings);
   } catch (err) {
     if (err instanceof ExtractionRefusal) {
       // A refusal, never a half-populated invoice: the compiler's own
@@ -475,6 +481,7 @@ export async function handleCaptureImage(
     // produces — which is what lets validation's line-sum check run
     // against an image-captured invoice at all.
     lines: extractedLines,
+    linesTruncated,
   });
 
   if (result.status === 201) {

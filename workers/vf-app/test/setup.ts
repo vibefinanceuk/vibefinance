@@ -31,6 +31,7 @@ import pendingDocumentsSql from "../../../migrations/0022_pending_documents.sql?
 import pageExtractionSql from "../../../migrations/0023_page_extraction_results.sql?raw";
 import fieldOverridesSql from "../../../migrations/0024_field_overrides.sql?raw";
 import revalidationSql from "../../../migrations/0025_revalidation.sql?raw";
+import extractionSettingsSql from "../../../migrations/0026_extraction_settings.sql?raw";
 
 // Another known divergence from production, on top of the one below:
 // D1's exec() splits its input by newline and executes each non-empty
@@ -139,4 +140,5 @@ export async function applyTestSchema(): Promise<void> {
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(pageExtractionSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(fieldOverridesSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(revalidationSql)));
+  await env.DB.exec(toOneStatementPerLine(stripSqlComments(extractionSettingsSql)));
 }

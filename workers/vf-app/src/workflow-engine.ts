@@ -113,7 +113,10 @@ export async function visitCurrentStage(
   db: D1Database,
   instanceId: string,
   rawFacts: InvoiceFacts,
-  lines?: LineInput[]
+  lines?: LineInput[],
+  // Supplied by the caller when extraction capped the line list, so
+  // the line-sum check knows not to run against an incomplete one.
+  linesTruncated = false
 ): Promise<RouteResult> {
   // Validation runs once, up front, and its results become real
   // derived facts every stage then sees — decision 0044.
@@ -128,7 +131,7 @@ export async function visitCurrentStage(
   // is where facts meet rules, and computing it once for the whole
   // visit means every stage evaluates against the same validation
   // state rather than a shifting one.
-  const validation = validateInvoiceFacts(rawFacts, lines);
+  const validation = validateInvoiceFacts(rawFacts, lines, undefined, linesTruncated);
   const facts = mergeValidationFacts(rawFacts, validation);
   const instance = await db
     .prepare("SELECT id, process_id, current_stage_id, status FROM process_instances WHERE id = ?")
@@ -256,7 +259,7 @@ export async function visitCurrentStage(
           // second evaluation would let rules change facts that
           // change validation that triggers rules — an ordering
           // problem with no obvious end.
-          const after = validateInvoiceFacts(setFieldOutcome.facts, lines);
+          const after = validateInvoiceFacts(setFieldOutcome.facts, lines, undefined, linesTruncated);
           afterValidation = { passed: after.passed, failures: after.failures };
           correctedFacts = mergeRevalidationFacts(setFieldOutcome.facts, after);
         }

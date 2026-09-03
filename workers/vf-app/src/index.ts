@@ -37,6 +37,7 @@ import {
   type PendingDocumentStorage,
 } from "./pending-document-route.js";
 import { createWorkersAiExtractionModel } from "./extraction-model.js";
+import { handleGetExtractionSettings, handleUpdateExtractionSettings } from "./extraction-settings-route.js";
 import { resolveVocabulary } from "@vibefinance/shared";
 import { getSupplierHistory } from "./invoice-history.js";
 import { handleCreateCustomField, handleListCustomFields, loadCustomFields } from "./custom-field-route.js";
@@ -1048,6 +1049,32 @@ export default {
     // integration cannot hand over a complete document in one
     // request, and a model asked to read half an invoice reports
     // exactly what it can see and nothing about what it cannot.
+    // Extraction settings (decision 0053) — an administrator can see
+    // the assumptions the platform makes about their documents, and
+    // change the ones that are wrong for them. A setting nobody can
+    // inspect is indistinguishable from hardcoded behaviour.
+    const extractionSettingsMatch = pathname.match(/^\/intake-channels\/([^/]+)\/extraction-settings$/);
+    if (extractionSettingsMatch && request.method === "GET") {
+      const { db } = resolveTenant(request, env);
+      const result = await handleGetExtractionSettings(db, extractionSettingsMatch[1]);
+      return json(result.body, result.status);
+    }
+    if (extractionSettingsMatch && request.method === "PATCH") {
+      const { db } = resolveTenant(request, env);
+      let body: unknown;
+      try {
+        body = await request.json();
+      } catch {
+        return json({ error: t("invalidJsonBody", resolveLocale(env.LOCALE)) }, 400);
+      }
+      const result = await handleUpdateExtractionSettings(
+        db,
+        extractionSettingsMatch[1],
+        (body ?? {}) as Record<string, unknown>
+      );
+      return json(result.body, result.status);
+    }
+
     const createPendingMatch = pathname.match(/^\/intake-channels\/([^/]+)\/documents$/);
     if (createPendingMatch && request.method === "POST") {
       const { db } = resolveTenant(request, env);
