@@ -203,6 +203,14 @@ from the process definition's stage sequence.
 > as a guaranteed path would be quietly wrong on exactly the invoices
 > where routing did something interesting.
 
+> **The rail found three engine gaps —** Drawing tasks per stage visit
+> raised the question of what happens when the last one completes, and
+> the answer is narrower than expected: advancement is sequence-only, so
+> `route_to` cannot fire and send-back does not exist in any form;
+> `require_second_approval` is declared and implemented nowhere; and an
+> instance advanced onto a rule-bearing stage sits there until something
+> calls `visitCurrentStage` with facts. Recorded as decision 0064.
+
 Two smaller points:
 
 - **Source is not a stage** (decision 0055 section 3), so its row in the
