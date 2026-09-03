@@ -905,6 +905,8 @@ the repository at `docs/decisions/`:
 | 0069 | Content type from detection | Section 10.1 — typing a retained document by everything detection knew |
 | 0070 | Reporting what was stored | Section 10.1 — why the capture response names the type and key |
 | 0071 | Keying | Section 6 — the third provenance class, and its identity discipline |
+| 0072 | After keying | Section 6 — the re-visit guard, and the advisory verdict |
+| 0073 | Signed document URLs | Section 10 — how a pop-out window fetches the retained original |
 
 Design notes, longer than a decision record and narrower than this
 document, are kept at `docs/design/`: `extraction.md`, `validation.md`,

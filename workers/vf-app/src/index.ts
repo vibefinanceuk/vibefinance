@@ -42,6 +42,8 @@ import { handleToMarkdownDiagnostic } from "./tomarkdown-diagnostic.js";
 import { handleCreateSource, handleListSources } from "./source-route.js";
 import { handleCaptureFromSource } from "./source-capture-route.js";
 import { handleKeyInvoiceFields } from "./key-fields-route.js";
+import { mintDocumentToken, verifyDocumentToken } from "./document-token.js";
+import { retrieveInvoiceDocument } from "./document-storage.js";
 import { resolveVocabulary } from "@vibefinance/shared";
 import { getSupplierHistory } from "./invoice-history.js";
 import { handleCreateCustomField, handleListCustomFields, loadCustomFields } from "./custom-field-route.js";
@@ -60,6 +62,17 @@ export interface Env {
    * why this isn't required the way DB is.
    */
   DOCUMENTS?: R2Bucket;
+  /**
+   * Signs short-lived document URLs (decision 0073). A secret, set with
+   * `wrangler secret put`, never a var — decision 0012's incident is
+   * exactly what happens when signing material goes in a committed
+   * config file.
+   *
+   * Optional, and its absence refuses rather than degrades: minting an
+   * unsigned URL, or falling back to a fixed default, would hand out an
+   * unauthenticated link to a customer's invoice.
+   */
+  DOCUMENT_URL_SECRET?: string;
   /**
    * Overrides the vision model used for image extraction (decision
    * 0043). Config rather than code deliberately: choosing the right
@@ -909,6 +922,66 @@ export default {
     // 0071). AP.Validate rather than a new permission: the document
     // sits at Validation, and a person keying it is validating what
     // they can read.
+    // A short-lived signed URL for the retained original (decision
+    // 0073). Minting is authenticated the ordinary way; the URL it
+    // returns is not, because a pop-out window cannot send a header.
+    const docUrlMatch = pathname.match(/^\/invoices\/([^/]+)\/document-url$/);
+    if (docUrlMatch && request.method === "POST") {
+      const { db } = resolveTenant(request, env);
+      const auth = await requirePermission(db, request, "AP.Validate");
+      if (!auth.authorized) {
+        return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
+      }
+      if (!env.DOCUMENT_URL_SECRET) {
+        return json({ error: "DOCUMENT_URL_SECRET is not configured" }, 500);
+      }
+      const stored = await db
+        .prepare("SELECT content_type FROM invoice_documents WHERE invoice_id = ? AND document_type = 'original'")
+        .bind(docUrlMatch[1])
+        .first<{ content_type: string }>();
+      if (!stored) {
+        return json({ error: `no original document is retained for invoice ${docUrlMatch[1]}` }, 404);
+      }
+      const minted = await mintDocumentToken(env.DOCUMENT_URL_SECRET, docUrlMatch[1]);
+      return json({
+        url: `${url.origin}/documents/${minted.token}`,
+        expiresAt: new Date(minted.expiresAt * 1000).toISOString(),
+        contentType: stored.content_type,
+      }, 200);
+    }
+
+    // Fetching by token. Deliberately unauthenticated: the token IS the
+    // credential, which is the whole point — it is short-lived, scoped
+    // to one document, and unforgeable.
+    const docFetchMatch = pathname.match(/^\/documents\/([^/]+)$/);
+    if (docFetchMatch && request.method === "GET") {
+      const { db } = resolveTenant(request, env);
+      if (!env.DOCUMENT_URL_SECRET || !env.DOCUMENTS) {
+        return json({ error: "document access is not configured" }, 500);
+      }
+      const verified = await verifyDocumentToken(env.DOCUMENT_URL_SECRET, docFetchMatch[1]);
+      if (!verified.valid) {
+        return json({ error: `document link ${verified.reason}` }, 403);
+      }
+      const doc = await retrieveInvoiceDocument(env.DOCUMENTS, db, verified.invoiceId, "original");
+      if (!doc) {
+        return json({ error: "the document is no longer retained" }, 404);
+      }
+      return new Response(doc.bytes, {
+        status: 200,
+        headers: {
+          "Content-Type": doc.contentType,
+          // inline so a browser displays it rather than downloading —
+          // the pop-out exists to be read alongside the keying form.
+          "Content-Disposition": "inline",
+          // A signed URL is a credential. Caching it in a shared proxy
+          // would outlive the expiry it depends on.
+          "Cache-Control": "private, no-store",
+        },
+      });
+    }
+
+
     const keyMatch = pathname.match(/^\/invoices\/([^/]+)\/key$/);
     if (keyMatch && request.method === "POST") {
       const { db } = resolveTenant(request, env);
