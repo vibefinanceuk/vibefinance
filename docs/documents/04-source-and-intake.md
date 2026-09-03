@@ -732,7 +732,13 @@ The image path is unchanged and still needed. What changes is the
 7. **`mandate.channel` remains outside the closed vocabulary** — a free
    string, so a rule testing a misspelled value compiles and never fires.
    This design increases its load rather than reducing it.
-8. **Which EN 16931 reference fields should the vocabulary carry?** The
+8. **Captured documents are not stored at all.** `intake-capture-route.ts`
+   has no R2 access — a document arriving at `/sources/:id/capture` is
+   read and discarded. Key-from-image cannot be built until it is,
+   because there is no document to show. Carries the open retention
+   question from Document 1 section 6.4. See
+   `docs/design/operator-interface.md`.
+9. **Which EN 16931 reference fields should the vocabulary carry?** The
    closed vocabulary has `BT-10` and `BT-13`; the standard also defines
    `BT-12`, `BT-16`, `BT-18`, `BT-19` and `BT-128`. A customer needing a
    transport reference is served today by a `custom.*` field, which does
