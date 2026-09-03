@@ -1,4 +1,4 @@
-import { isKnownCiusProfile, isKnownR2Jurisdiction, R2_JURISDICTIONS } from "./profiles.js";
+import { isKnownInvoiceProfile, isKnownR2Jurisdiction, R2_JURISDICTIONS } from "./profiles.js";
 import { isKnownPermissionList } from "./permissions.js";
 import { generateApiKey, hashApiKey } from "./user-auth.js";
 
@@ -242,7 +242,7 @@ export async function handleSetProfile(db: D1Database, body: SetProfileBody): Pr
       body: { error: `${String(r2Jurisdiction)} is not a supported R2 jurisdiction (supported: ${R2_JURISDICTIONS.join(", ")})` },
     };
   }
-  if (!isKnownCiusProfile(ciusProfile)) {
+  if (!isKnownInvoiceProfile(ciusProfile)) {
     return { status: 422, body: { error: `${String(ciusProfile)} is not a known CIUS profile` } };
   }
   if (unitId !== undefined && typeof unitId !== "string") {

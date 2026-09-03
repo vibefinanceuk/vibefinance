@@ -174,11 +174,11 @@ declared, so the rules meant to use it could not be written (0054);
 decision 0053 shipped settings that reached nothing (0056, 0057); the
 UBL parser populated 11 of 21 declared fields, so validation's
 arithmetic checks could never run on the most trustworthy path (0059);
-and `CIUS_PROFILES` claims FatturaPA is a CIUS when the codebase's own
-description says otherwise. **None was found by reading either layer
-alone.** Decision 0059 proposes a check that would have caught three of
-them: for every declared field, assert some intake path can populate it
-or that its absence is recorded as deliberate.
+and `CIUS_PROFILES` claimed FatturaPA is a CIUS when the codebase's own
+description said otherwise (0065). **None was found by reading either
+layer alone.** Decision 0067 now makes one of these a standing test: for
+every declared field, either the UBL parser populates it or the check
+file records why not — so a gap has to be *stated* to be allowed.
 
 **Declared and implemented nowhere is the second pattern.** `'warned'`,
 `validation.passed`, `extraction.confidence`, `set_field` and
@@ -238,12 +238,12 @@ elsewhere.
 
 | Package | Tests |
 |---|---|
-| `vf-app` | 774 |
+| `vf-app` | 777 |
 | `vf-licence` | 153 |
-| `shared` | 145 passing, 2 known pre-existing failures |
+| `shared` | 149 passing, 2 known pre-existing failures |
 
 Both migration chains replay clean with every standing invariant
-holding — 28 migrations for `vf-app`, 7 for `vf-licence`.
+holding — 29 migrations for `vf-app`, 7 for `vf-licence`.
 
 ---
 
@@ -260,7 +260,7 @@ holding — 28 migrations for `vf-app`, 7 for `vf-licence`.
 | `docs/design/mockups/` | Four screens as static HTML | Current |
 | `docs/design/multi-authority-intake.md` | Non-EN-16931 authorities | Design only |
 | `docs/design/text-layer-extraction.md` | Reading a PDF's own text | Design only |
-| `docs/decisions/` | 64 decision records | Current |
+| `docs/decisions/` | 67 decision records | Current |
 
 Document 4's markdown source is at `docs/documents/`, with
 `scripts/build-document-04.cjs` rendering the Word edition. The `.docx`

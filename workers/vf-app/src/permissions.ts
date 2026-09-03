@@ -15,7 +15,7 @@
  * allowed is the reverse: a route checking a permission string that
  * isn't listed here at all — that direction is what keeps this a
  * closed, reviewable vocabulary rather than free text a role could
- * grant itself. Same discipline as CIUS_PROFILES in profiles.ts and
+ * grant itself. Same discipline as INVOICE_PROFILES in profiles.ts and
  * the rule interpreter's own closed vocabulary.
  */
 

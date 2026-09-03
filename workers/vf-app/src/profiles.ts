@@ -1,5 +1,21 @@
 /**
- * CIUS (Core Invoice Usage Specification) profiles — see
+ * Invoice profiles — the specification a document declares itself to
+ * follow.
+ *
+ * Named INVOICE_PROFILES, not CIUS_PROFILES, and the correction matters
+ * (decision 0065). A CIUS is a Core Invoice Usage Specification: a
+ * CONSTRAINT on EN 16931 rather than a replacement for it, which is why
+ * Peppol BIS, XRechnung and Factur-X all yield the same Business Term
+ * codes and need no vocabulary of their own. FatturaPA is not one — this
+ * file's own description has always said it predates and is distinct
+ * from Peppol BIS 3.0 — so the old name asserted something one of its
+ * own entries contradicted.
+ *
+ * The distinction is load-bearing rather than pedantic: a genuine CIUS
+ * needs no new fields, and a national format outside EN 16931 may need
+ * an entire vocabulary. See docs/design/multi-authority-intake.md.
+ *
+ * See
  * migrations/0003_org_authority_profiles.sql's own comment on why
  * this list is deliberately small and explicitly non-exhaustive, and
  * docs/decisions/0009-org-authority-profiles.md for the full
@@ -14,7 +30,7 @@
  * is no single source of truth spanning SQL and TypeScript, so a
  * future addition needs both updated together.
  */
-export const CIUS_PROFILES = [
+export const INVOICE_PROFILES = [
   "peppol_bis_billing_3",
   "xrechnung",
   "factur_x",
@@ -22,19 +38,24 @@ export const CIUS_PROFILES = [
   "en16931_base",
 ] as const;
 
-export type CiusProfile = (typeof CIUS_PROFILES)[number];
+export type InvoiceProfile = (typeof INVOICE_PROFILES)[number];
 
-export const PROFILE_DESCRIPTIONS: Record<CiusProfile, string> = {
+export const PROFILE_DESCRIPTIONS: Record<InvoiceProfile, string> = {
   peppol_bis_billing_3:
     "Peppol BIS Billing 3.0 — the pan-European CIUS of EN 16931 used across the Peppol network, expressed in UBL 2.1.",
   xrechnung: "XRechnung — Germany's national CIUS of EN 16931, primarily used for B2G invoicing.",
   factur_x: "Factur-X — France's hybrid PDF/XML CIUS of EN 16931.",
-  fatturapa: "FatturaPA — Italy's national e-invoicing format, predating and distinct from Peppol BIS 3.0.",
+  // Not a CIUS. Kept in this list because it is a profile a document can
+  // declare, which is what the list is for — but it constrains nothing
+  // of EN 16931, and a document following it may carry fields the closed
+  // vocabulary has no term for.
+  fatturapa:
+    "FatturaPA — Italy's national e-invoicing format, predating and distinct from Peppol BIS 3.0. Not a CIUS of EN 16931.",
   en16931_base: "The EN 16931 core semantic model directly, with no network- or country-specific CIUS layered on top.",
 };
 
-export function isKnownCiusProfile(value: unknown): value is CiusProfile {
-  return typeof value === "string" && (CIUS_PROFILES as readonly string[]).includes(value);
+export function isKnownInvoiceProfile(value: unknown): value is InvoiceProfile {
+  return typeof value === "string" && (INVOICE_PROFILES as readonly string[]).includes(value);
 }
 
 /**
