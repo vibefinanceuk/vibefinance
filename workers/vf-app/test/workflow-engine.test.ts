@@ -608,3 +608,113 @@ describe("a conflict raises a task for a human (decision 0048)", () => {
     expect((result.body as { visits: { outcome: string }[] }).visits[0].outcome).toBe("matched");
   });
 });
+
+describe("set_field is recorded, not silent (decision 0049)", () => {
+  async function setupWithRule(compiled: Record<string, unknown>) {
+    await handleCreateProcess(env.DB, { id: "p-set", name: "Set" });
+    await seedRuleSet("rs-set", compiled);
+    await handleCreateStage(env.DB, "p-set", { id: "s-set", name: "Validation", sequence: 1, ruleSetId: "rs-set" });
+    const created = await handleCreateProcessInstance(env.DB, "p-set", {
+      subjectType: "invoice",
+      subjectId: "inv-set",
+    });
+    return (created.body as { id: string }).id;
+  }
+
+  it("records an overwrite with the value it replaced", async () => {
+    // The Morrison case: page 1 fabricated 2272.47, and a rule
+    // resolves it to the printed total.
+    const instanceId = await setupWithRule({
+      id: "r1",
+      conditions: { all: [{ field: "extraction.conflicts", operator: "contains", value: "BT-112" }] },
+      actions: [{ type: "set_field", params: { field: "BT-112", value: 3137.47 } }],
+    });
+    await visitCurrentStage(env.DB, instanceId, {
+      "BT-112": 2272.47,
+      "extraction.conflicts": "BT-112",
+    });
+
+    const row = await env.DB.prepare(
+      `SELECT fo.field, fo.previous_value, fo.new_value
+       FROM field_overrides fo
+       JOIN stage_visits sv ON sv.id = fo.stage_visit_id
+       WHERE sv.process_instance_id = ?`
+    )
+      .bind(instanceId)
+      .first<{ field: string; previous_value: string; new_value: string }>();
+    expect(row?.field).toBe("BT-112");
+    expect(JSON.parse(row!.previous_value)).toBe(2272.47);
+    expect(JSON.parse(row!.new_value)).toBe(3137.47);
+  });
+
+  it("attributes the change to the rule that made it", async () => {
+    const instanceId = await setupWithRule({
+      id: "r1",
+      conditions: { all: [{ field: "BT-1", operator: "is_present" }] },
+      actions: [{ type: "set_field", params: { field: "BT-133", value: "CC-100" } }],
+    });
+    await visitCurrentStage(env.DB, instanceId, { "BT-1": "INV-1" });
+
+    const row = await env.DB.prepare(
+      `SELECT fo.rule_id FROM field_overrides fo
+       JOIN stage_visits sv ON sv.id = fo.stage_visit_id
+       WHERE sv.process_instance_id = ?`
+    )
+      .bind(instanceId)
+      .first<{ rule_id: string }>();
+    // An unattributable change to financial data is what the record
+    // exists to prevent.
+    expect(row?.rule_id).toBeTruthy();
+    expect(row?.rule_id).not.toBe("unknown");
+  });
+
+  it("records nothing when no rule matched", async () => {
+    const instanceId = await setupWithRule({
+      id: "r1",
+      conditions: { all: [{ field: "BT-1", operator: "is", value: "SOMETHING-ELSE" }] },
+      actions: [{ type: "set_field", params: { field: "BT-133", value: "CC-100" } }],
+    });
+    await visitCurrentStage(env.DB, instanceId, { "BT-1": "INV-1" });
+
+    const count = await env.DB.prepare("SELECT count(*) AS n FROM field_overrides").first<{ n: number }>();
+    expect(count?.n).toBe(0);
+  });
+
+  it("copies one field to another, recorded the same way", async () => {
+    const instanceId = await setupWithRule({
+      id: "r1",
+      conditions: { all: [{ field: "BT-1", operator: "is_present" }] },
+      actions: [{ type: "set_field", params: { field: "BT-112", fromField: "BT-106" } }],
+    });
+    await visitCurrentStage(env.DB, instanceId, { "BT-1": "INV-1", "BT-106": 3137.47 });
+
+    const row = await env.DB.prepare(
+      `SELECT fo.field, fo.new_value FROM field_overrides fo
+       JOIN stage_visits sv ON sv.id = fo.stage_visit_id
+       WHERE sv.process_instance_id = ?`
+    )
+      .bind(instanceId)
+      .first<{ field: string; new_value: string }>();
+    expect(row?.field).toBe("BT-112");
+    expect(JSON.parse(row!.new_value)).toBe(3137.47);
+  });
+
+  it("records a set with no previous value as genuinely null, not as an empty string", async () => {
+    const instanceId = await setupWithRule({
+      id: "r1",
+      conditions: { all: [{ field: "BT-1", operator: "is_present" }] },
+      actions: [{ type: "set_field", params: { field: "BT-133", value: "CC-100" } }],
+    });
+    await visitCurrentStage(env.DB, instanceId, { "BT-1": "INV-1" });
+
+    const row = await env.DB.prepare(
+      `SELECT fo.previous_value FROM field_overrides fo
+       JOIN stage_visits sv ON sv.id = fo.stage_visit_id
+       WHERE sv.process_instance_id = ?`
+    )
+      .bind(instanceId)
+      .first<{ previous_value: string | null }>();
+    // A rule SETTING a field differs from one OVERWRITING it.
+    expect(row?.previous_value).toBeNull();
+  });
+});

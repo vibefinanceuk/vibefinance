@@ -55,6 +55,36 @@ export function validateRule(rule: CompiledRule, vocabulary: VocabularyInput = "
         `rule ${rule.id}: unknown action "${action.type}" — not in the closed vocabulary`
       );
     }
+    // set_field is the one action that writes back into the fact set,
+    // so its params are checked against the closed vocabulary here —
+    // decision 0049. Without this a rule could name any field at all,
+    // and the vocabulary would stop being closed at exactly the point
+    // where it matters most: the place a rule can change data.
+    if (action.type === "set_field") {
+      const params = (action.params ?? {}) as Record<string, unknown>;
+      const target = params.field;
+      if (typeof target !== "string" || !isKnownField(target, vocabulary)) {
+        throw new RuleValidationError(
+          `rule ${rule.id}: set_field names "${String(target)}", which is not in the closed vocabulary`
+        );
+      }
+      const hasLiteral = "value" in params;
+      const hasFrom = typeof params.fromField === "string";
+      // Exactly one source. Both would leave which one wins to
+      // whichever the implementation happened to check first;
+      // neither would set nothing at all while looking like it does
+      // something.
+      if (hasLiteral === hasFrom) {
+        throw new RuleValidationError(
+          `rule ${rule.id}: set_field needs exactly one of "value" or "fromField", not ${hasLiteral ? "both" : "neither"}`
+        );
+      }
+      if (hasFrom && !isKnownField(params.fromField as string, vocabulary)) {
+        throw new RuleValidationError(
+          `rule ${rule.id}: set_field copies from "${String(params.fromField)}", which is not in the closed vocabulary`
+        );
+      }
+    }
   }
 }
 

@@ -1,6 +1,7 @@
 import { evaluateRuleSet } from "@vibefinance/shared";
 import type { InvoiceFacts } from "@vibefinance/shared";
 import { validateInvoiceFacts, mergeValidationFacts } from "./validation.js";
+import { applySetFieldActions, type FieldOverride } from "./set-field.js";
 import { loadActiveRuleSet } from "./rule-set-loader.js";
 import { handleCreateTask } from "./task-route.js";
 import type { RouteResult } from "./org-route.js";
@@ -203,6 +204,9 @@ export async function visitCurrentStage(
     const routeTargets = new Set<string>();
     const stepStatements: D1PreparedStatement[] = [];
     const pendingTaskActions: Array<{ params: Record<string, unknown>; lineNumber: number | null }> = [];
+    // Every field a rule changed, recorded so an auditor can ask what
+    // this invoice said before a rule touched it (decision 0049).
+    const allOverrides: FieldOverride[] = [];
     let stepSeq = 0;
 
     for (const evaluation of evaluations) {
@@ -218,6 +222,16 @@ export async function visitCurrentStage(
             .bind(visitId, stepSeq++, step.ruleId, step.ruleVersion, step.matched ? 1 : 0, evaluation.lineNumber)
         );
       }
+
+      // set_field applies here, after evaluation and before the
+      // actions that depend on the result. Deliberately does NOT feed
+      // back into this same evaluation: a rule changing a field that
+      // a later rule in the same pass then tests would make the
+      // outcome depend on rule order in a way nobody could reason
+      // about, and would open a path to rules that never settle.
+      const matchedRuleId = result.trace.find((t) => t.matched)?.ruleId ?? "unknown";
+      const setFieldOutcome = applySetFieldActions(evaluation.facts, result.actions, matchedRuleId);
+      allOverrides.push(...setFieldOutcome.overrides);
 
       for (const action of result.actions.filter((a) => a.type === "route_to")) {
         routeTargets.add((action.params?.stage as string) ?? "");
@@ -253,6 +267,23 @@ export async function visitCurrentStage(
           validation.checked.join(",")
         ),
       ...stepStatements,
+      // Written in the same batch as the visit itself, so an override
+      // can never exist without the visit that produced it, nor a
+      // visit silently lose the record of what it changed.
+      ...allOverrides.map((o) =>
+        db
+          .prepare(
+            "INSERT INTO field_overrides (id, stage_visit_id, rule_id, field, previous_value, new_value) VALUES (?, ?, ?, ?, ?, ?)"
+          )
+          .bind(
+            crypto.randomUUID(),
+            visitId,
+            o.ruleId,
+            o.field,
+            o.previousValue === undefined ? null : JSON.stringify(o.previousValue),
+            JSON.stringify(o.newValue)
+          )
+      ),
     ]);
 
     // route_to (redefined, decision 0018, to mean "advance to this

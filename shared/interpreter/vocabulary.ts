@@ -279,7 +279,8 @@ export const ACTION_DESCRIPTIONS: Record<ActionType, string> = {
   flag: "marks the invoice for attention — no params",
   reject: "rejects the invoice outright — no params",
   tag: 'attaches an arbitrary label — params: { "value": "<tag>" }',
-  set_field: 'sets a field\'s value — params: { "field": "<field>", "value": <value> }',
+  set_field:
+    'sets a field\'s value — params: { "field": "<field>" } plus EXACTLY ONE of { "value": <a literal> } or { "fromField": "<another field>" } to copy that field\'s current value. Both the target field and any fromField must be in this vocabulary. Every change is recorded with the value it replaced.',
   notify: 'sends a notification — params: { "target": "<who or what to notify>" }',
   escalate_after: 'escalates if untouched past a duration — params: { "after": "<duration, e.g. \\"2d\\">" }',
   assign_task:

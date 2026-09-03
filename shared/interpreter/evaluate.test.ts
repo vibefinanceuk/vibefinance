@@ -401,3 +401,49 @@ describe("validateRule — customer-defined fields (decision 0041)", () => {
     expect(() => validateRule(rule("BT-112", "greater_than", 100), withCustom("text"))).not.toThrow();
   });
 });
+
+describe("validateRule — set_field params (decision 0049)", () => {
+  const rule = (params: Record<string, unknown>) =>
+    ({
+      id: "r1",
+      conditions: { all: [{ field: "BT-1", operator: "is_present" }] },
+      actions: [{ type: "set_field", params }],
+    }) as never;
+
+  it("accepts a literal set on a known field", () => {
+    expect(() => validateRule(rule({ field: "BT-112", value: 3137.47 }))).not.toThrow();
+  });
+
+  it("accepts a copy from a known field", () => {
+    expect(() => validateRule(rule({ field: "BT-112", fromField: "BT-106" }))).not.toThrow();
+  });
+
+  it("refuses a target outside the closed vocabulary", () => {
+    // Without this the vocabulary stops being closed at exactly the
+    // point it matters most: the place a rule can change data.
+    expect(() => validateRule(rule({ field: "whatever_i_like", value: 1 }))).toThrow(/not in the closed vocabulary/);
+  });
+
+  it("refuses copying from a field outside the vocabulary", () => {
+    expect(() => validateRule(rule({ field: "BT-112", fromField: "made_up" }))).toThrow(/copies from/);
+  });
+
+  it("refuses both a literal and a copy — which one wins would be an implementation detail", () => {
+    expect(() => validateRule(rule({ field: "BT-112", value: 1, fromField: "BT-106" }))).toThrow(/not both/);
+  });
+
+  it("refuses neither — an action that sets nothing while looking like it does something", () => {
+    expect(() => validateRule(rule({ field: "BT-112" }))).toThrow(/neither/);
+  });
+
+  it("refuses a missing field name", () => {
+    expect(() => validateRule(rule({ value: 1 }))).toThrow(/not in the closed vocabulary/);
+  });
+
+  it("accepts a customer-defined field as a target", () => {
+    const v = resolveVocabulary("invoice", [
+      { key: "custom.reference", label: "Reference", type: "text", description: "x" },
+    ]);
+    expect(() => validateRule(rule({ field: "custom.reference", fromField: "BT-1" }), v)).not.toThrow();
+  });
+});
