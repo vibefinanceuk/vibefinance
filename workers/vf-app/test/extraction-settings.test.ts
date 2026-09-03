@@ -251,3 +251,76 @@ describe("a channel's STORED settings reach extraction (decision 0056)", () => {
     expect(result.body.linesTruncated).toBe(true);
   });
 });
+
+describe("a channel's currency tolerance reaches VALIDATION (decision 0057)", () => {
+  // The gap decision 0056 did not look for. 0056 fixed the wiring from
+  // channel to EXTRACTION; validation was called with `undefined`
+  // settings from the workflow engine, so currencyTolerance fell back
+  // to the platform constant on every path — images included.
+  //
+  // The section 8 tests below prove validateInvoiceFacts honours a
+  // tolerance handed to it directly. They could not prove a channel's
+  // tolerance arrives, for exactly the reason 0056 recorded: a test
+  // that supplies a dependency proves the unit, never the wiring.
+  const jpeg = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]);
+  const fakeModel = (response: string) => ({ extract: async () => response });
+
+  // 100.00 + 20.00 should be 120.00; the document says 120.04. Four
+  // pence out — beyond the default penny, inside a five-pence setting.
+  const FOUR_PENCE_OUT = JSON.stringify({
+    invoiceNumber: "INV-TOL",
+    netTotalBeforeVat: 100,
+    vatAmount: 20,
+    totalWithVat: 120.04,
+    lines: null,
+    _confidence: 0.9,
+  });
+
+  async function channelWithStage(id: string) {
+    const existing = await env.DB.prepare("SELECT id FROM processes WHERE id = 'p-tol'").first();
+    if (!existing) {
+      await handleCreateProcess(env.DB, { id: "p-tol", name: "Tolerance" });
+      await env.DB.prepare(
+        "INSERT INTO rule_sets (id, name, mode, status) VALUES ('rs-tol', 'tol', 'first_match', 'active')"
+      ).run();
+      await handleCreateStage(env.DB, "p-tol", {
+        id: "s-tol",
+        name: "Validation",
+        sequence: 1,
+        ruleSetId: "rs-tol",
+      });
+    }
+    await env.DB.prepare(
+      "INSERT INTO intake_channels (id, process_id, name, hybrid_pdf_fallback) VALUES (?, 'p-tol', ?, 'refuse')"
+    )
+      .bind(id, id)
+      .run();
+  }
+
+  async function verdictFor(instanceId: string) {
+    return env.DB.prepare(
+      "SELECT validation_passed, validation_failures FROM stage_visits WHERE process_instance_id = ? AND validation_checked IS NOT NULL"
+    )
+      .bind(instanceId)
+      .first<{ validation_passed: number; validation_failures: string }>();
+  }
+
+  it("fails the VAT check at the default penny tolerance", async () => {
+    await channelWithStage("ch-tol-default");
+    const result = await handleCaptureImage(env.DB, "ch-tol-default", jpeg, fakeModel(FOUR_PENCE_OUT));
+    const row = await verdictFor(result.body.instanceId as string);
+    expect(row?.validation_passed).toBe(0);
+    expect(row?.validation_failures).toContain("vat_arithmetic");
+  });
+
+  it("passes once the channel is configured to tolerate five pence", async () => {
+    await channelWithStage("ch-tol-relaxed");
+    await env.DB.prepare("UPDATE intake_channels SET currency_tolerance_minor = 5 WHERE id = 'ch-tol-relaxed'").run();
+
+    const result = await handleCaptureImage(env.DB, "ch-tol-relaxed", jpeg, fakeModel(FOUR_PENCE_OUT));
+    const row = await verdictFor(result.body.instanceId as string);
+    // Same document, same model output, different channel setting.
+    expect(row?.validation_failures).not.toContain("vat_arithmetic");
+    expect(row?.validation_passed).toBe(1);
+  });
+});

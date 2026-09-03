@@ -1,6 +1,11 @@
 import { evaluateRuleSet } from "@vibefinance/shared";
 import type { InvoiceFacts } from "@vibefinance/shared";
-import { validateInvoiceFacts, mergeValidationFacts, mergeRevalidationFacts } from "./validation.js";
+import {
+  validateInvoiceFacts,
+  mergeValidationFacts,
+  mergeRevalidationFacts,
+  type ValidationSettings,
+} from "./validation.js";
 import { applySetFieldActions, type FieldOverride } from "./set-field.js";
 import { loadActiveRuleSet } from "./rule-set-loader.js";
 import { handleCreateTask } from "./task-route.js";
@@ -116,7 +121,13 @@ export async function visitCurrentStage(
   lines?: LineInput[],
   // Supplied by the caller when extraction capped the line list, so
   // the line-sum check knows not to run against an incomplete one.
-  linesTruncated = false
+  linesTruncated = false,
+  // The channel's currency tolerance (decision 0053). Supplied by the
+  // caller rather than loaded here, for the same reason as
+  // linesTruncated: this module never assumes how to load
+  // configuration for a given subject_type. Defaults to the platform
+  // tolerance so every existing caller is unchanged.
+  validationSettings?: ValidationSettings
 ): Promise<RouteResult> {
   // Validation runs once, up front, and its results become real
   // derived facts every stage then sees — decision 0044.
@@ -131,7 +142,7 @@ export async function visitCurrentStage(
   // is where facts meet rules, and computing it once for the whole
   // visit means every stage evaluates against the same validation
   // state rather than a shifting one.
-  const validation = validateInvoiceFacts(rawFacts, lines, undefined, linesTruncated);
+  const validation = validateInvoiceFacts(rawFacts, lines, validationSettings, linesTruncated);
   const facts = mergeValidationFacts(rawFacts, validation);
   const instance = await db
     .prepare("SELECT id, process_id, current_stage_id, status FROM process_instances WHERE id = ?")
@@ -259,7 +270,7 @@ export async function visitCurrentStage(
           // second evaluation would let rules change facts that
           // change validation that triggers rules — an ordering
           // problem with no obvious end.
-          const after = validateInvoiceFacts(setFieldOutcome.facts, lines, undefined, linesTruncated);
+          const after = validateInvoiceFacts(setFieldOutcome.facts, lines, validationSettings, linesTruncated);
           afterValidation = { passed: after.passed, failures: after.failures };
           correctedFacts = mergeRevalidationFacts(setFieldOutcome.facts, after);
         }

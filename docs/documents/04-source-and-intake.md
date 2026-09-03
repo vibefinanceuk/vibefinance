@@ -566,9 +566,15 @@ rather than passed by the caller. Caller-supplied settings could disagree
 with the channel a document actually arrived through, and the document
 would then be read under rules its own channel never configured.
 
-> **Not yet audited —** The PDF and XML paths were not checked for the
-> same gap. Worth doing before the cascade lands, since it adds paths that
-> each need the same wiring and the same end-to-end test.
+> **Audited, and it found more —** The PDF and XML paths are clean: three
+> of the four settings govern model output, and neither path invokes a
+> model, so they are meaningless there rather than merely unwired. But
+> `currencyTolerance` governs **validation**, which every path reaches,
+> and it was arriving nowhere — the workflow engine passed `undefined`,
+> so every comparison used the platform penny regardless of what a
+> channel had configured. Images included. Decision 0056 fixed extraction
+> wiring and validation was never wired at all, so the bug survived the
+> decision meant to catch this class of thing. Fixed in decision 0057.
 
 ---
 
@@ -708,6 +714,7 @@ the repository at `docs/decisions/`:
 | 0054 | `extraction.confidence` declared | Section 6.1 — the undeclared fact |
 | 0055 | Source, intake and validation | Sections 2, 3.3, 5 and 6 in full |
 | 0056 | Settings reach extraction | Section 8 — configuration that reached nothing |
+| 0057 | The settings audit | Section 8 — the PDF/XML audit, and the tolerance gap |
 
 Design notes, longer than a decision record and narrower than this
 document, are kept at `docs/design/`: `extraction.md`, `validation.md`

@@ -7,7 +7,7 @@ import { extractEmbeddedInvoiceXml, looksLikePdf, PdfExtractionError } from "./p
 import { extractInvoiceFromImage, extractInvoiceFromImages, mergePageResults, sniffImageType, ExtractionRefusal, type ExtractionModel } from "./extraction.js";
 import { loadPendingPages, loadPageExtractions, markFinalised, type PendingDocumentStorage } from "./pending-document-route.js";
 import { loadCustomFields } from "./custom-field-route.js";
-import { loadExtractionSettings } from "./extraction-settings.js";
+import { loadExtractionSettings, toValidationSettings } from "./extraction-settings.js";
 import { resolveVocabulary } from "@vibefinance/shared";
 
 /**
@@ -163,7 +163,19 @@ export async function handleCaptureIntake(db: D1Database, channelId: string, bod
     duplicate_confidence: (upsertResult.body as { duplicateConfidence?: number }).duplicateConfidence ?? null,
   });
   const lines = canonicalLines;
-  const visitResult = await visitCurrentStage(db, instanceId, mergedFacts, lines, body.linesTruncated === true);
+  // The channel's own currency tolerance reaches validation here —
+  // decision 0057. Every capture path (XML, hybrid PDF, image,
+  // multi-page finalise) converges on this function, so loading it
+  // once covers all of them.
+  const captureSettings = await loadExtractionSettings(db, channelId);
+  const visitResult = await visitCurrentStage(
+    db,
+    instanceId,
+    mergedFacts,
+    lines,
+    body.linesTruncated === true,
+    toValidationSettings(captureSettings)
+  );
 
   // Persist any correction a rule made — decision 0049 addendum.
   //
