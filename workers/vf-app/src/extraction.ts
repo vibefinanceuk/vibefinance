@@ -589,7 +589,11 @@ export interface MultiPageExtractionResult extends ExtractionResult {
 export async function extractInvoiceFromImages(
   model: ExtractionModel,
   pages: readonly Uint8Array[],
-  vocabulary: VocabularyInput = "invoice"
+  vocabulary: VocabularyInput = "invoice",
+  // Per-channel settings (decision 0053). Previously absent entirely,
+  // which meant every setting an administrator configured was
+  // honoured nowhere in the image path — see decision 0056.
+  settings: ExtractionSettings = DEFAULT_EXTRACTION_SETTINGS
 ): Promise<MultiPageExtractionResult> {
   if (pages.length === 0) {
     throw new ExtractionRefusal("no pages were supplied");
@@ -617,9 +621,9 @@ export async function extractInvoiceFromImages(
         // report the absent line table as a failure to read one.
         buildExtractionPrompt(vocabulary, pages.length, pageNumber),
         [{ bytes, contentType: sniffed }],
-        buildExtractionSchema(vocabulary)
+        buildExtractionSchema(vocabulary, settings)
       );
-      perPage.push({ page: pageNumber, result: parseExtractionResponse(raw, vocabulary) });
+      perPage.push({ page: pageNumber, result: parseExtractionResponse(raw, vocabulary, settings) });
     } catch (err) {
       // One unreadable page does not sink the document. The others
       // may carry everything needed, and the failure is recorded so
@@ -636,7 +640,7 @@ export async function extractInvoiceFromImages(
     );
   }
 
-  return mergePageResults(perPage, pages.length, failedPages);
+  return mergePageResults(perPage, pages.length, failedPages, settings);
 }
 
 /**
@@ -708,8 +712,9 @@ export function mergePageResults(
   const lines: ExtractedLine[] = [];
   for (const { result } of perPage) {
     for (const line of result.lines) {
-      const { lineNumber: _ignored, ...rest } = line;
-      lines.push({ ...rest, lineNumber: lines.length + 1 });
+      // The explicit lineNumber overwrites the copied one, so there is
+      // nothing to strip first.
+      lines.push({ ...line, lineNumber: lines.length + 1 });
     }
   }
 
@@ -777,7 +782,7 @@ export async function extractInvoiceFromImage(
   vocabulary: VocabularyInput = "invoice",
   settings: ExtractionSettings = DEFAULT_EXTRACTION_SETTINGS
 ): Promise<ExtractionResult> {
-  return extractInvoiceFromImages(model, [bytes], vocabulary);
+  return extractInvoiceFromImages(model, [bytes], vocabulary, settings);
 }
 
 export type { ResolvedVocabulary };

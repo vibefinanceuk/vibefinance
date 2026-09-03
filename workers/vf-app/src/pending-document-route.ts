@@ -8,6 +8,7 @@ import {
   type ExtractionResult,
 } from "./extraction.js";
 import type { VocabularyInput } from "@vibefinance/shared";
+import { loadExtractionSettings } from "./extraction-settings.js";
 import { looksLikePdf } from "./pdf-attachment.js";
 
 /**
@@ -144,7 +145,13 @@ export async function handleUploadPage(
   let extractionStatus: Record<string, unknown> = {};
   if (model) {
     try {
-      const result = await extractInvoiceFromImage(model, bytes, vocabulary ?? "invoice");
+      // Settings come from the document's OWN channel rather than
+      // from the caller (decision 0056). handleUploadPage already
+      // loaded the row to check status, so the channel is in hand —
+      // asking the caller to supply them would mean every caller
+      // querying for a channel this function already knows.
+      const settings = await loadExtractionSettings(db, doc.channel_id);
+      const result = await extractInvoiceFromImage(model, bytes, vocabulary ?? "invoice", settings);
       await db
         .prepare(
           "UPDATE pending_document_pages SET extraction_json = ?, extraction_error = NULL, extracted_at = datetime('now') WHERE pending_document_id = ? AND page_number = ?"

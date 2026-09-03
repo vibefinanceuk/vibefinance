@@ -11,7 +11,8 @@ import {
 } from "../src/extraction-settings-route.js";
 import { parseExtractionResponse, mergePageResults } from "../src/extraction.js";
 import { validateInvoiceFacts } from "../src/validation.js";
-import { handleCreateProcess } from "../src/process-route.js";
+import { handleCreateProcess, handleCreateStage } from "../src/process-route.js";
+import { handleCaptureImage } from "../src/intake-capture-route.js";
 
 beforeEach(async () => {
   await applyTestSchema();
@@ -184,5 +185,69 @@ describe("a capped line list does not fail line_sum", () => {
     const truncated = validateInvoiceFacts(facts, lines, undefined, true);
     expect(truncated.checked).not.toContain("line_sum");
     expect(truncated.failures).not.toContain("line_sum");
+  });
+});
+
+describe("a channel's STORED settings reach extraction (decision 0056)", () => {
+  // The gap decision 0053's own tests missed. They passed settings
+  // directly to parseExtractionResponse and mergePageResults, proving
+  // those functions honour them — and nothing checked that a
+  // channel's configured values ever arrive. They did not:
+  // extractInvoiceFromImages took no settings parameter at all, and
+  // extractInvoiceFromImage accepted them and dropped them. Every
+  // setting an administrator changed was honoured nowhere.
+  const jpeg = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]);
+  const fakeModel = (response: string) => ({ extract: async () => response });
+
+  const WITH_UNLABELLED_ROW = JSON.stringify({
+    invoiceNumber: "INV-1",
+    totalWithVat: 300,
+    lines: [
+      { description: "Freight", amount: 100 },
+      { description: null, amount: 200 },
+    ],
+    _confidence: 0.9,
+  });
+
+  async function channelWithProcess(id: string) {
+    const existing = await env.DB.prepare("SELECT id FROM processes WHERE id = 'p-e2e'").first();
+    if (!existing) {
+      await handleCreateProcess(env.DB, { id: "p-e2e", name: "E2E" });
+      await handleCreateStage(env.DB, "p-e2e", { id: "s-e2e", name: "Received", sequence: 1 });
+    }
+    await env.DB.prepare(
+      "INSERT INTO intake_channels (id, process_id, name, hybrid_pdf_fallback) VALUES (?, 'p-e2e', ?, 'refuse')"
+    )
+      .bind(id, id)
+      .run();
+  }
+
+  it("drops the unlabelled row at the default setting", async () => {
+    await channelWithProcess("ch-strict");
+    const result = await handleCaptureImage(env.DB, "ch-strict", jpeg, fakeModel(WITH_UNLABELLED_ROW));
+    expect(result.body.lineCount).toBe(1);
+  });
+
+  it("keeps it once the channel is configured to allow it", async () => {
+    await channelWithProcess("ch-relaxed");
+    await handleUpdateExtractionSettings(env.DB, "ch-relaxed", { requireLineDescription: false });
+
+    const result = await handleCaptureImage(env.DB, "ch-relaxed", jpeg, fakeModel(WITH_UNLABELLED_ROW));
+    // Two rows only if the STORED setting reached parseExtractionResponse.
+    expect(result.body.lineCount).toBe(2);
+  });
+
+  it("honours a stored line cap, and reports the truncation", async () => {
+    await channelWithProcess("ch-capped");
+    await handleUpdateExtractionSettings(env.DB, "ch-capped", { maxExtractedLines: 2 });
+
+    const many = JSON.stringify({
+      invoiceNumber: "INV-2",
+      lines: Array.from({ length: 6 }, (_, i) => ({ description: `L${i}`, amount: 1 })),
+      _confidence: 0.9,
+    });
+    const result = await handleCaptureImage(env.DB, "ch-capped", jpeg, fakeModel(many));
+    expect(result.body.lineCount).toBe(2);
+    expect(result.body.linesTruncated).toBe(true);
   });
 });

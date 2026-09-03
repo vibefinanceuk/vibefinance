@@ -538,6 +538,9 @@ export async function handleFinalisePendingDocument(
 
   const customFields = await loadCustomFields(db);
   const vocabulary = resolveVocabulary("invoice", customFields);
+  // The channel's own settings, not the platform defaults — the merge
+  // in particular needs conflictWinner (decision 0053).
+  const settings = await loadExtractionSettings(db, channelId);
 
   // Prefer results already extracted at upload time (decision 0047).
   // Finalise then makes no model call at all: a database read and a
@@ -552,9 +555,9 @@ export async function handleFinalisePendingDocument(
   try {
     const stored = await loadPageExtractions(db, documentId);
     if (stored.perPage.length > 0 && stored.unextracted.length === 0) {
-      extraction = mergePageResults(stored.perPage, pages.length, stored.failedPages);
+      extraction = mergePageResults(stored.perPage, pages.length, stored.failedPages, settings);
     } else {
-      extraction = await extractInvoiceFromImages(model, pages, vocabulary);
+      extraction = await extractInvoiceFromImages(model, pages, vocabulary, settings);
     }
   } catch (err) {
     if (err instanceof ExtractionRefusal) {
