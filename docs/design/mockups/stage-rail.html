@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Stage rail — VibeFinance mockup</title>
+<link rel="stylesheet" href="tokens.css" />
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.2.0/dist/tabler-icons.min.css" />
+</head>
+<body>
+<div class="page">
+
+<h1>Stage rail</h1>
+<p class="note">
+  Completed stages with their tasks, the current stage highlighted, and
+  the remainder greyed. Design reasoning in
+  <code>docs/design/operator-interface.md</code> section 6. Drawing this
+  found three engine gaps, recorded as decision 0064 — advancement after
+  task completion is sequence-only, <code>require_second_approval</code>
+  does nothing, and an instance can park on a rule-bearing stage.
+</p>
+
+<div style="background: var(--surface-1); border-radius: 12px; border: 0.5px solid var(--border); max-width:310px; padding:12px 0;">
+
+  <div style="display:flex; align-items:center; gap:6px; padding:0 12px 10px;">
+    <span style="font-size:12px; font-weight:500;">Progress</span>
+    <button aria-label="Collapse progress" style="margin-left:auto; padding:0 6px;"><i class="ti ti-chevron-left" style="font-size:14px" aria-hidden="true"></i></button>
+  </div>
+
+  <!-- Source is not a stage (decision 0055 section 3). It appears here
+       as provenance presented stage-like for the reader, which means the
+       rail assembles from two places rather than one query. -->
+  <div style="padding:8px 12px; border-left:2px solid var(--border-success);">
+    <div style="display:flex; align-items:center; gap:6px;">
+      <i class="ti ti-check" style="font-size:14px; color:var(--text-success)" aria-hidden="true"></i>
+      <span style="font-size:12px; font-weight:500;">Source</span>
+      <span style="margin-left:auto; font-size:11px; color:var(--text-muted);">20:31</span>
+    </div>
+    <p style="margin:3px 0 0 20px; font-size:11px; color:var(--text-secondary);">Email · AP mailbox</p>
+  </div>
+
+  <div style="padding:8px 12px; border-left:2px solid var(--border-success);">
+    <div style="display:flex; align-items:center; gap:6px;">
+      <i class="ti ti-check" style="font-size:14px; color:var(--text-success)" aria-hidden="true"></i>
+      <span style="font-size:12px; font-weight:500;">Intake</span>
+      <span style="margin-left:auto; font-size:11px; color:var(--text-muted);">20:31</span>
+    </div>
+    <p style="margin:3px 0 0 20px; font-size:11px; color:var(--text-secondary);">Structured PDF/A extracted</p>
+  </div>
+
+  <div style="padding:8px 12px; border-left:2px solid var(--border-success);">
+    <div style="display:flex; align-items:center; gap:6px;">
+      <i class="ti ti-check" style="font-size:14px; color:var(--text-success)" aria-hidden="true"></i>
+      <span style="font-size:12px; font-weight:500;">Validation</span>
+      <span style="margin-left:auto; font-size:11px; color:var(--text-muted);">20:52</span>
+    </div>
+    <div style="margin:5px 0 0 20px; display:flex; align-items:flex-start; gap:6px;">
+      <i class="ti ti-circle-check" style="font-size:13px; color:var(--text-success); margin-top:1px" aria-hidden="true"></i>
+      <p style="margin:0; font-size:11px; color:var(--text-secondary); line-height:1.5;">Review unreadable document<br><span style="color:var(--text-muted);">Dan Y. · 20:52</span></p>
+    </div>
+  </div>
+
+  <!--
+    Tasks are keyed to stage_visit_id, not to the instance, which is what
+    makes the count correct on a revisit. "1 of 2" answers the question
+    people actually have: not where is this invoice, but why has it not
+    moved.
+  -->
+  <div style="padding:8px 12px; border-left:2px solid var(--border-accent); background:var(--bg-accent);">
+    <div style="display:flex; align-items:center; gap:6px;">
+      <i class="ti ti-player-play" style="font-size:14px; color:var(--text-accent)" aria-hidden="true"></i>
+      <span style="font-size:12px; font-weight:500; color:var(--text-accent);">Approval</span>
+      <span style="margin-left:auto; font-size:11px; color:var(--text-accent);">1 of 2</span>
+    </div>
+    <div style="margin:6px 0 0 20px; display:flex; align-items:flex-start; gap:6px;">
+      <i class="ti ti-circle-check" style="font-size:13px; color:var(--text-success); margin-top:1px" aria-hidden="true"></i>
+      <p style="margin:0; font-size:11px; color:var(--text-accent); line-height:1.5;">Code to cost centre<br><span style="opacity:0.75;">Priya N. · 21:04</span></p>
+    </div>
+    <div style="margin:6px 0 0 20px; display:flex; align-items:flex-start; gap:6px;">
+      <i class="ti ti-circle-dashed" style="font-size:13px; color:var(--text-accent); margin-top:1px" aria-hidden="true"></i>
+      <p style="margin:0; font-size:11px; color:var(--text-accent); line-height:1.5;">Approve over 1,000<br><span style="opacity:0.75;">AP team · AP.Approve · unclaimed</span></p>
+    </div>
+    <p style="margin:8px 0 0 20px; font-size:11px; color:var(--text-accent); opacity:0.8;">Held here until both are done</p>
+  </div>
+
+  <!--
+    A prediction, and it must look like one. route_to lets a rule advance
+    an instance to a NAMED stage, so a document can legitimately skip
+    Matching. No ticks and no times is enough to say so.
+  -->
+  <p style="margin:12px 12px 6px; font-size:11px; color:var(--text-muted);">Not yet reached</p>
+
+  <div style="padding:7px 12px 7px 14px;"><span style="font-size:12px; color:var(--text-muted);">Matching</span></div>
+  <div style="padding:7px 12px 7px 14px;"><span style="font-size:12px; color:var(--text-muted);">Review</span></div>
+  <div style="padding:7px 12px 7px 14px;"><span style="font-size:12px; color:var(--text-muted);">ERP integration</span></div>
+</div>
+
+</div>
+</body>
+</html>

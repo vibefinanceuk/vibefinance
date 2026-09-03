@@ -1,0 +1,135 @@
+/*
+ * Design tokens for the mockups in this folder.
+ *
+ * These began as the host design system's variables in a conversation
+ * and are reproduced here so the files open standalone. That accident
+ * turns out to demonstrate the point docs/design/operator-interface.md
+ * section 7 makes about white-labelling: every colour a mockup uses is
+ * a token, so a customer or partner livery is a substitution here and
+ * nowhere else.
+ *
+ * The brand block at the bottom is the part that would vary per
+ * deployment. Everything above it is structural and would not.
+ */
+
+:root {
+  color-scheme: light dark;
+
+  --surface-0: #faf9f7;
+  --surface-1: #f4f2ee;
+  --surface-2: #ffffff;
+
+  --text-primary: #1a1a18;
+  --text-secondary: #5f5e5a;
+  --text-muted: #8a8983;
+
+  --border: rgba(0, 0, 0, 0.10);
+  --border-strong: rgba(0, 0, 0, 0.18);
+
+  --bg-accent: #e6f1fb;
+  --text-accent: #185fa5;
+  --border-accent: #378add;
+
+  --bg-warning: #faeeda;
+  --text-warning: #854f0b;
+  --border-warning: #ef9f27;
+
+  --bg-success: #eaf3de;
+  --text-success: #3b6d11;
+  --border-success: #639922;
+
+  --radius: 8px;
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+
+  /* Brand — the only block a white-label deployment replaces. */
+  --brand-bar: #0f6e56;
+  --brand-fill: #0f6e56;
+  --brand-chip: #9fe1cb;
+  --brand-chip-text: #04342c;
+  --brand-name: "VibeFinance";
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --surface-0: #1a1a18;
+    --surface-1: #232320;
+    --surface-2: #2b2b28;
+
+    --text-primary: #f0efeb;
+    --text-secondary: #b4b2a9;
+    --text-muted: #888780;
+
+    --border: rgba(255, 255, 255, 0.12);
+    --border-strong: rgba(255, 255, 255, 0.20);
+
+    --bg-accent: #0c447c;
+    --text-accent: #b5d4f4;
+
+    --bg-warning: #633806;
+    --text-warning: #fac775;
+
+    --bg-success: #27500a;
+    --text-success: #c0dd97;
+  }
+}
+
+body {
+  font-family: var(--font-sans);
+  font-size: 16px;
+  line-height: 1.7;
+  color: var(--text-primary);
+  background: var(--surface-0);
+  margin: 0;
+  padding: 2rem 1rem;
+}
+
+.page {
+  max-width: 760px;
+  margin: 0 auto;
+}
+
+.note {
+  font-size: 13px;
+  color: var(--text-secondary);
+  border-left: 2px solid var(--border-strong);
+  padding-left: 12px;
+  margin: 0 0 1.5rem;
+}
+
+h1 {
+  font-size: 22px;
+  font-weight: 500;
+  margin: 0 0 4px;
+}
+
+input,
+textarea,
+button,
+select {
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--text-primary);
+  background: var(--surface-2);
+  border: 0.5px solid var(--border-strong);
+  border-radius: var(--radius);
+  padding: 6px 10px;
+}
+
+input,
+textarea {
+  min-height: 32px;
+  box-sizing: border-box;
+}
+
+button {
+  cursor: pointer;
+  background: transparent;
+}
+
+button:hover {
+  background: var(--surface-1);
+}
+
+table {
+  border-collapse: collapse;
+}

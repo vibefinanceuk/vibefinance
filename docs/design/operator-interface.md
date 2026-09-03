@@ -10,6 +10,11 @@ that looked ready to start.
 
 ---
 
+> **The mockups are saved.** `docs/design/mockups/` holds them as static
+> HTML, openable directly in a browser. They were produced in
+> conversation and would otherwise have been lost; the reasoning is here,
+> the layouts are there.
+
 ## 1. What the mockups were for
 
 Key-from-image is the third provenance class (decision 0055 section 8)

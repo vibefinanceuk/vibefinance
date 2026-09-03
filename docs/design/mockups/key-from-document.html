@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Key from document — VibeFinance mockup</title>
+<link rel="stylesheet" href="tokens.css" />
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.2.0/dist/tabler-icons.min.css" />
+</head>
+<body>
+<div class="page">
+
+<h1>Key from document</h1>
+<p class="note">
+  The Validation-stage screen for a document intake could not read. Design
+  reasoning in <code>docs/design/operator-interface.md</code> section 3.
+  Not built — and blocked until captured documents are stored in R2 at all
+  (section 2), since there is currently no document to show.
+</p>
+
+<div style="background: var(--surface-2); border-radius: 12px; border: 0.5px solid var(--border); overflow:hidden;">
+
+  <div style="padding: 1rem 1.25rem;">
+
+    <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:12px; margin-bottom:12px;">
+      <div>
+        <p style="margin:0; font-size:15px; font-weight:500;">Key from document</p>
+        <p style="margin:2px 0 0; font-size:13px; color:var(--text-secondary);">AP mailbox · tried: PDF header found, no embedded invoice</p>
+      </div>
+      <span style="background:var(--bg-warning); color:var(--text-warning); font-size:12px; padding:4px 12px; border-radius:var(--radius); white-space:nowrap;">No structure detected</span>
+    </div>
+
+    <div style="display:grid; grid-template-columns: 170px minmax(0,1fr); gap:14px; margin-bottom:16px;">
+      <div>
+        <div style="background:var(--surface-1); border:0.5px solid var(--border); border-radius:var(--radius); height:148px; display:flex; align-items:center; justify-content:center;">
+          <i class="ti ti-file-text" style="font-size:36px; color:var(--text-muted)" aria-hidden="true"></i>
+        </div>
+        <!-- A pop-out cannot send an Authorization header; see section 4. -->
+        <button style="width:100%; margin-top:8px;">
+          <i class="ti ti-external-link" style="font-size:15px; vertical-align:-2px; margin-right:5px" aria-hidden="true"></i>Open in new window
+        </button>
+      </div>
+
+      <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:10px; align-content:start;">
+        <div>
+          <label style="display:block; font-size:12px; color:var(--text-secondary); margin-bottom:3px;">Invoice number</label>
+          <input type="text" placeholder="SKELS26003894" style="width:100%;" />
+        </div>
+        <div>
+          <label style="display:block; font-size:12px; color:var(--text-secondary); margin-bottom:3px;">Issue date</label>
+          <input type="date" style="width:100%;" />
+        </div>
+        <div>
+          <label style="display:block; font-size:12px; color:var(--text-secondary); margin-bottom:3px;">Supplier VAT</label>
+          <input type="text" placeholder="DE813799533" style="width:100%;" />
+        </div>
+        <div>
+          <label style="display:block; font-size:12px; color:var(--text-secondary); margin-bottom:3px;">Currency</label>
+          <input type="text" placeholder="EUR" style="width:100%;" />
+        </div>
+      </div>
+    </div>
+
+    <p style="margin:0 0 8px; font-size:13px; font-weight:500;">Line items</p>
+    <table style="width:100%; table-layout:fixed; font-size:13px;">
+      <thead>
+        <tr style="color:var(--text-secondary); font-size:12px;">
+          <th style="width:28px; text-align:left; padding:0 0 6px; font-weight:400;">#</th>
+          <th style="text-align:left; padding:0 0 6px; font-weight:400;">Description</th>
+          <th style="width:120px; text-align:left; padding:0 0 6px; font-weight:400;">Amount</th>
+          <th style="width:34px;"></th>
+        </tr>
+      </thead>
+      <tbody id="lines"></tbody>
+    </table>
+
+    <button id="addline" style="margin-top:10px;">Add line</button>
+
+    <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:10px; margin-top:16px; padding-top:14px; border-top:0.5px solid var(--border);">
+      <div>
+        <label style="display:block; font-size:12px; color:var(--text-secondary); margin-bottom:3px;">Net before VAT</label>
+        <input type="number" id="net" placeholder="3137.47" style="width:100%;" />
+      </div>
+      <div>
+        <label style="display:block; font-size:12px; color:var(--text-secondary); margin-bottom:3px;">VAT amount</label>
+        <input type="number" placeholder="0.00" style="width:100%;" />
+      </div>
+      <div>
+        <label style="display:block; font-size:12px; color:var(--text-secondary); margin-bottom:3px;">Total with VAT</label>
+        <input type="number" placeholder="3137.47" style="width:100%;" />
+      </div>
+      <div>
+        <label style="display:block; font-size:12px; color:var(--text-secondary); margin-bottom:3px;">Amount due</label>
+        <input type="number" placeholder="3137.47" style="width:100%;" />
+      </div>
+    </div>
+  </div>
+
+  <!--
+    The footer band. The running comparison is advisory and must never
+    block saving: an invoice whose lines do not sum to its printed total
+    is a fact to record faithfully, not an input to prevent.
+  -->
+  <div style="background:var(--surface-1); border-top:0.5px solid var(--border); padding: 12px 1.25rem;">
+    <div style="display:flex; align-items:center; gap:16px; flex-wrap:wrap;">
+      <div>
+        <span style="font-size:12px; color:var(--text-secondary);">Lines total</span>
+        <span id="linetotal" style="font-size:16px; font-weight:500; margin-left:8px;">0.00</span>
+      </div>
+      <p id="check" style="margin:0; font-size:12px; color:var(--text-muted); flex:1; min-width:200px;">
+        Enter a net amount to compare it against the lines
+      </p>
+      <div style="display:flex; gap:8px; align-items:center;">
+        <button>Save keyed values</button>
+        <button>Reject</button>
+        <button>Discard</button>
+      </div>
+    </div>
+    <p style="margin:8px 0 0; font-size:12px; color:var(--text-muted);">
+      <i class="ti ti-pencil" style="font-size:14px; vertical-align:-2px; margin-right:4px" aria-hidden="true"></i>
+      Recorded as keyed by alice@acme.com · AP.Exceptions
+    </p>
+  </div>
+</div>
+
+</div>
+
+<script>
+(function () {
+  // The tolerance must come from the channel's own setting (decision
+  // 0053/0057), not this constant. Hardcoded here only because a static
+  // mockup has no channel to read it from — if the screen and the
+  // validator disagreed, an operator would see "matches" where
+  // validation fails.
+  var TOLERANCE = 0.01;
+
+  var body = document.getElementById('lines');
+  var out = document.getElementById('linetotal');
+  var net = document.getElementById('net');
+  var check = document.getElementById('check');
+
+  function row(n) {
+    var tr = document.createElement('tr');
+    tr.innerHTML =
+      '<td style="color:var(--text-muted); padding:3px 0;">' + n + '</td>' +
+      '<td style="padding:3px 6px 3px 0;"><input type="text" style="width:100%;" /></td>' +
+      '<td style="padding:3px 6px 3px 0;"><input type="number" class="a" style="width:100%;" /></td>' +
+      '<td style="padding:3px 0;"><button class="rm" aria-label="Remove line" style="padding:0 8px;"><i class="ti ti-x" style="font-size:14px" aria-hidden="true"></i></button></td>';
+    body.appendChild(tr);
+    tr.querySelector('.a').addEventListener('input', recalc);
+    tr.querySelector('.rm').addEventListener('click', function () { tr.remove(); renumber(); recalc(); });
+  }
+
+  function renumber() {
+    Array.prototype.forEach.call(body.children, function (tr, i) { tr.children[0].textContent = i + 1; });
+  }
+
+  function recalc() {
+    var sum = 0;
+    Array.prototype.forEach.call(body.querySelectorAll('.a'), function (i) {
+      var v = parseFloat(i.value);
+      if (!isNaN(v)) sum += v;
+    });
+    out.textContent = sum.toFixed(2);
+
+    var n = parseFloat(net.value);
+    if (isNaN(n)) {
+      check.style.color = 'var(--text-muted)';
+      check.textContent = 'Enter a net amount to compare it against the lines';
+      return;
+    }
+    var diff = Math.abs(sum - n);
+    if (diff <= TOLERANCE) {
+      check.style.color = 'var(--text-success)';
+      check.textContent = 'Lines match the net amount';
+    } else {
+      check.style.color = 'var(--text-warning)';
+      check.textContent = 'Lines are ' + diff.toFixed(2) + ' from the net amount — validation will flag this';
+    }
+  }
+
+  document.getElementById('addline').addEventListener('click', function () { row(body.children.length + 1); });
+  net.addEventListener('input', recalc);
+  for (var i = 1; i <= 3; i++) row(i);
+})();
+</script>
+</body>
+</html>

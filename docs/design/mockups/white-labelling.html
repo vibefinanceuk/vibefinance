@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>White-labelling — VibeFinance mockup</title>
+<link rel="stylesheet" href="tokens.css" />
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.2.0/dist/tabler-icons.min.css" />
+</head>
+<body>
+<div class="page">
+
+<h1>White-labelling</h1>
+<p class="note">
+  The same screen under three liveries. Design reasoning in
+  <code>docs/design/operator-interface.md</code> section 7. Note what does
+  not change: layout, field labels, the warning treatment. If branding can
+  only reach tokens, a customer cannot break a screen — and a new screen
+  is themed for everyone without extra work.
+</p>
+
+<div style="display:flex; gap:8px; align-items:center; margin-bottom:14px; flex-wrap:wrap;">
+  <span style="font-size:12px; color:var(--text-secondary);">Brand</span>
+  <button class="bt" data-i="0">VibeFinance</button>
+  <button class="bt" data-i="1">Northwind (customer)</button>
+  <button class="bt" data-i="2">Beaumont (partner)</button>
+</div>
+
+<div style="background: var(--surface-2); border-radius: 12px; border: 0.5px solid var(--border); overflow:hidden;">
+  <div id="bar" style="padding:10px 1.25rem; display:flex; align-items:center; gap:10px;">
+    <div id="mark" style="width:26px; height:26px; border-radius:6px; display:flex; align-items:center; justify-content:center; font-size:13px; font-weight:500;">V</div>
+    <span id="wordmark" style="font-size:14px; font-weight:500; color:#fff;">VibeFinance</span>
+    <span style="margin-left:auto; font-size:11px; color:#fff; opacity:0.85;">Accounts payable</span>
+  </div>
+
+  <div style="padding: 1rem 1.25rem;">
+    <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:12px; margin-bottom:14px;">
+      <div>
+        <p style="margin:0; font-size:15px; font-weight:500;">Key from document</p>
+        <p style="margin:2px 0 0; font-size:12px; color:var(--text-secondary);">AP mailbox · no embedded invoice</p>
+      </div>
+      <!-- Semantic treatments stay fixed. A customer cannot theme a
+           warning into looking like a success. -->
+      <span style="background:var(--bg-warning); color:var(--text-warning); font-size:11px; padding:3px 9px; border-radius:var(--radius); white-space:nowrap;">No structure</span>
+    </div>
+
+    <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:10px; margin-bottom:14px;">
+      <div>
+        <label style="display:block; font-size:11px; color:var(--text-secondary); margin-bottom:3px;">Invoice number</label>
+        <input type="text" placeholder="SKELS26003894" style="width:100%;" />
+      </div>
+      <div>
+        <label style="display:block; font-size:11px; color:var(--text-secondary); margin-bottom:3px;">Total with VAT</label>
+        <input type="number" placeholder="3137.47" style="width:100%;" />
+      </div>
+    </div>
+
+    <div style="display:flex; align-items:center; gap:8px;">
+      <button id="primary" style="color:#fff; border:none;">Save keyed values</button>
+      <button>Reject</button>
+      <span id="footer" style="margin-left:auto; font-size:11px; color:var(--text-muted);">Powered by VibeFinance</span>
+    </div>
+  </div>
+</div>
+
+</div>
+
+<script>
+(function () {
+  // Everything a livery replaces. Nothing structural appears here, which
+  // is the point — a partner reselling to a customer raises whose brand
+  // appears, and that relationship would live in vf-licence where
+  // customers and their commercial arrangements already do.
+  var brands = [
+    { name: 'VibeFinance', mark: 'V', bar: '#0F6E56', fill: '#0F6E56', chip: '#9FE1CB', chipText: '#04342C', footer: 'Powered by VibeFinance' },
+    { name: 'Northwind Traders', mark: 'N', bar: '#185FA5', fill: '#185FA5', chip: '#B5D4F4', chipText: '#042C53', footer: 'Invoice processing' },
+    { name: 'Beaumont Partners', mark: 'B', bar: '#993C1D', fill: '#993C1D', chip: '#F5C4B3', chipText: '#4A1B0C', footer: 'A Beaumont service' }
+  ];
+
+  var bar = document.getElementById('bar');
+  var mark = document.getElementById('mark');
+  var wordmark = document.getElementById('wordmark');
+  var primary = document.getElementById('primary');
+  var footer = document.getElementById('footer');
+  var buttons = document.querySelectorAll('.bt');
+
+  function apply(i) {
+    var b = brands[i];
+    bar.style.background = b.bar;
+    mark.style.background = b.chip;
+    mark.style.color = b.chipText;
+    mark.textContent = b.mark;
+    wordmark.textContent = b.name;
+    primary.style.background = b.fill;
+    footer.textContent = b.footer;
+    Array.prototype.forEach.call(buttons, function (el, j) {
+      el.style.borderColor = j === i ? 'var(--border-accent)' : '';
+    });
+  }
+
+  Array.prototype.forEach.call(buttons, function (el) {
+    el.addEventListener('click', function () { apply(parseInt(el.dataset.i, 10)); });
+  });
+  apply(0);
+})();
+</script>
+</body>
+</html>
