@@ -257,6 +257,15 @@ the embedded XML's own declaration.
 Same reasoning as `direction`: the document carries the distinction, so
 ask the document.
 
+> **A dimension beyond structure —** Peppol BIS, XRechnung and Factur-X
+> are all CIUS of EN 16931 and yield the same Business Term codes. A
+> national format never derived from EN 16931 — Colombia's DIAN, or
+> Italy's FatturaPA — is UBL syntactically and its own semantic model
+> underneath, so the fields inside mean different things. That is a
+> third dimension alongside transport and structure, and it is not
+> designed. See `docs/design/multi-authority-intake.md`, which
+> deliberately builds nothing and records what to keep open.
+
 ---
 
 ## 4. The Image Path, and What It Cost

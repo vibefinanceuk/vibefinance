@@ -6,6 +6,14 @@ closing whether or not the rules follow.
 
 ---
 
+> **Scope, narrowed after this was written —** This decision covers
+> **customer** mapping only: a customer deciding which extracted value
+> lands in which field. Translating a foreign semantic model — a tax
+> authority outside EN 16931, such as Colombia's DIAN — into this
+> system's facts is a different problem with a different blast radius,
+> and should not be built on this feature. See
+> `docs/design/multi-authority-intake.md`.
+
 ## 1. The name
 
 Call them **mapping rules**, not extraction rules.
