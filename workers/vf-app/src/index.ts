@@ -40,6 +40,7 @@ import { createWorkersAiExtractionModel } from "./extraction-model.js";
 import { handleGetExtractionSettings, handleUpdateExtractionSettings } from "./extraction-settings-route.js";
 import { handleToMarkdownDiagnostic } from "./tomarkdown-diagnostic.js";
 import { handleCreateSource, handleListSources } from "./source-route.js";
+import { handleCaptureFromSource } from "./source-capture-route.js";
 import { resolveVocabulary } from "@vibefinance/shared";
 import { getSupplierHistory } from "./invoice-history.js";
 import { handleCreateCustomField, handleListCustomFields, loadCustomFields } from "./custom-field-route.js";
@@ -900,6 +901,32 @@ export default {
     // which documents reach this process. Administrative: source
     // configuration means credentials, which is platform plumbing
     // rather than accounts payable work (decision 0055 section 5).
+    // Capture addressed to a source (decision 0063) — the caller knows
+    // where a document arrived, not what it is. Detection decides the
+    // structure and the structural channel handles it.
+    const sourceCaptureMatch = pathname.match(/^\/sources\/([^/]+)\/capture$/);
+    if (sourceCaptureMatch && request.method === "POST") {
+      // Ungated, matching every other capture route. Adding a
+      // permission here while capture-image and capture-xml stay open
+      // would be theatre: a caller wanting to bypass it would use the
+      // older endpoint. Capture being ungated across the board is a
+      // real gap and deserves fixing as one thing rather than half.
+      const { db } = resolveTenant(request, env);
+      if (!env.AI) {
+        return json({ error: "the AI binding is not configured" }, 500);
+      }
+      const bytes = new Uint8Array(await request.arrayBuffer());
+      const result = await handleCaptureFromSource(
+        db,
+        sourceCaptureMatch[1],
+        bytes,
+        createWorkersAiExtractionModel(env.AI, env.EXTRACTION_MODEL_ID),
+        url.searchParams.get("id") ?? undefined
+      );
+      return json(result.body, result.status);
+    }
+
+
     const sourcesMatch = pathname.match(/^\/processes\/([^/]+)\/sources$/);
     if (sourcesMatch && request.method === "GET") {
       const { db } = resolveTenant(request, env);

@@ -235,14 +235,22 @@ where the sender knows what it is sending. It does not survive a mailbox:
 an email arrives with an attachment, and nothing has yet decided what
 kind of document it is.
 
+> **Superseded, and kept —** `POST /sources/:id/capture` (decision 0063)
+> takes bytes and detects. These endpoints still work because a live
+> integration points at them, and are removed once it has moved.
+
 Sources (section 2) make this unavoidable rather than merely untidy. A
 mailbox cannot choose an endpoint.
 
 ### 3.3 The ordered cascade
 
-> **Status —** Partly built. The **detector** is real (decision 0062)
-> and tested against genuine Factur-X fixtures; nothing calls it yet.
-> The **channels** are real (decision 0061):
+> **Status —** Built (decisions 0061, 0062, 0063).
+> `POST /sources/:id/capture` takes raw bytes, detection decides the
+> structure, and the structural channel handles it. An undetectable
+> document is captured with provenance and no facts, reaching Validation
+> for a person. The channel-addressed endpoints below still work and are
+> transitional — they bypass detection, which is the thing detection
+> exists to prevent. The **channels** (decision 0061):
 > `intake_channels` carries a `structure` of `structured_xml`,
 > `structured_pdfa` or `image`, with a partial unique index giving
 > detection exactly one candidate per structure per process. What is
@@ -761,6 +769,7 @@ the repository at `docs/decisions/`:
 | 0060 | Sources | Section 2 — the sources table, and the collision resolved |
 | 0061 | Intake channel structure | Section 3.3 — channels as per-process structural handlers |
 | 0062 | Structure detection | Section 3.3 — the cascade, and why its order is the substance |
+| 0063 | Source capture | Sections 3.2 and 5 — one endpoint, and the undetectable document |
 
 Design notes, longer than a decision record and narrower than this
 document, are kept at `docs/design/`: `extraction.md`, `validation.md`

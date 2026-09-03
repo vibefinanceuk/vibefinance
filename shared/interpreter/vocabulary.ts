@@ -51,6 +51,8 @@ export const DERIVED_FIELDS = [
   "validation.failuresAfterRules",
   "extraction.conflicts",
   "extraction.pagesFailed",
+  "intake.structure",
+  "intake.attempted",
   "extraction.confidence",
   "invoice.duplicate_confidence",
 ] as const;
@@ -104,6 +106,8 @@ export const INVOICE_FIELD_TYPES: Record<string, FieldType> = {
   "validation.failuresAfterRules": "text",
   "extraction.conflicts": "text",
   "extraction.pagesFailed": "number",
+  "intake.structure": "text",
+  "intake.attempted": "text",
   "extraction.confidence": "number",
   "invoice.duplicate_confidence": "number",
 };
@@ -236,6 +240,10 @@ export const DERIVED_FIELD_DESCRIPTIONS: Record<DerivedField, string> = {
     "the checks still failing after rules corrected the invoice, empty when none are. Present only when a rule changed something.",
   "extraction.conflicts":
     "a comma-separated list of the fields whose pages disagreed during multi-page extraction, empty when none did. One page reading a value another page contradicts is a real signal worth a human's attention: 'extraction.conflicts contains BT-112'. A string so the existing contains operator works.",
+  "intake.structure":
+    "the document structure intake detected — 'structured_xml', 'structured_pdfa', 'image', or empty when nothing was recognised. An empty value means the document arrived with no facts and needs a person: a rule testing for it is how an undetectable document reaches somebody.",
+  "intake.attempted":
+    "a comma-separated list of the detection tests intake tried, in order. Distinguishes a supplier who has not adopted e-invoicing from one whose implementation is broken — 'a PDF with no embedded invoice' and 'a PDF declaring one that could not be read' are opposite conversations. A string so the existing contains operator works.",
   "extraction.pagesFailed":
     "how many pages of a multi-page document could not be extracted at all, 0 when every page was read. A missing page is often exactly why a total does not match its lines.",
   "extraction.confidence":
