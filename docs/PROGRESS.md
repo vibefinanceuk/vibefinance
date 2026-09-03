@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 2 September 2026. A living document: what is built, what
+Last updated 3 September 2026. A living document: what is built, what
 is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -57,11 +57,16 @@ a rule, and left an approval task in a queue.
 - Multi-page capture: pages accumulate separately, then extract
   together in one model call (0045)
 
-### Intake
+### Sources and intake
+- Sources as their own thing: transport instances bound to a process (0060)
+- Intake channels as per-process structural handlers (0061)
+- Structure detection, most-specific-first (0062)
+- Capture addressed to a source, detection choosing the channel (0063)
 - UBL/XML capture (0030)
 - Hybrid PDF with embedded-XML extraction (0042)
-- Image extraction via vision model (0043)
-- Per-channel policy for unreadable hybrids: refuse or degrade
+- Image extraction via vision model (0043), multi-page, one call per page (0046, 0047)
+- An undetectable document captured with provenance and no facts, reaching a person (0063)
+- Per-channel extraction settings, reaching extraction and validation (0053, 0056, 0057)
 - Intake events recording every rejection with a reason
 
 ### The workflow engine
@@ -104,16 +109,47 @@ Submit the page as an image instead.
 holds a customer's invoice image indefinitely. Needs an expiry sweep,
 or at minimum a way to list stale ones.
 
-**Extraction rules.** The conditional layer — *"if the supplier is
-Data Electronics, capture the cost centre"* — with its own compiler
-and activation gate. Designed in `docs/design/extraction.md`.
+**Capture rules.** Rules changing what the model is *asked for*, before
+extraction. Distinct from mapping rules (0058), which run on facts and
+need no new machinery — this half remains designed only, and has an
+ordering problem: a condition testing the supplier needs extraction to
+have happened first.
 
 **Supplier groups.** Needed for conditions like *"if the invoice is
 from a transport provider"*, which should be a lookup against
-configuration, never a model inference.
+configuration, never a model inference. Now also the missing condition
+for mapping rules (0058).
 
-**Line-level extraction.** Only document-level fields are extracted
-from images today.
+**Storing the document that was captured.** `intake-capture-route.ts`
+has no R2 access: a document arriving at `/sources/:id/capture` is read
+and discarded. Only the multi-page flow writes to R2, and it deletes on
+finalise. **This blocks the entire operator interface** — key-from-image
+has no document to show. Document 1 section 6 records retention as
+proposed with no code, and the retention period as an open compliance
+question.
+
+**Key-from-image.** The third provenance class (0055 section 8): a
+person producing facts extraction could not. Every task today reviews or
+approves facts that already exist. Designed and mocked
+(`docs/design/operator-interface.md`), blocked on the above.
+
+**Send-back.** A task cannot complete negatively, and
+`onTaskCompleted` advances by sequence without evaluating rules — so
+`route_to` cannot fire at the one moment a task completes (0064).
+
+**`require_second_approval`.** Declared in the vocabulary, implemented
+nowhere. Not merely unwired: two tasks on one team can both be claimed
+by the same person, so a real second approval needs tasks to relate to
+each other and the completion check to refuse the same `completed_by`
+(0064). Either build it or remove it from the vocabulary.
+
+**Mapping rules.** Customer-authored rules deciding which extracted
+value lands in which field — *"use the transport reference as the
+invoice number"* (0058). The machinery exists; what is missing is the
+vocabulary's EN 16931 reference fields and supplier groups.
+
+**Line-level extraction.** Extracted from images since 0044's addendum;
+still absent from the UBL parser's allowance and charge groups.
 
 **Email.** Nothing is sent on approval, expiry warning, or expiry.
 The operator emails people personally.
@@ -130,6 +166,27 @@ production environment, and migrating configuration between them.
 
 Things that are built but not proven, kept separate from things that
 are simply absent.
+
+**One layer disagreeing with another is the recurring bug.** Five
+instances so far: `invoice_lines.cost_centre` was a column with no
+vocabulary entry; `extraction.confidence` was set as a fact and never
+declared, so the rules meant to use it could not be written (0054);
+decision 0053 shipped settings that reached nothing (0056, 0057); the
+UBL parser populated 11 of 21 declared fields, so validation's
+arithmetic checks could never run on the most trustworthy path (0059);
+and `CIUS_PROFILES` claims FatturaPA is a CIUS when the codebase's own
+description says otherwise. **None was found by reading either layer
+alone.** Decision 0059 proposes a check that would have caught three of
+them: for every declared field, assert some intake path can populate it
+or that its absence is recorded as deliberate.
+
+**Declared and implemented nowhere is the second pattern.** `'warned'`,
+`validation.passed`, `extraction.confidence`, `set_field` and
+`require_second_approval` were all in the vocabulary before they did
+anything. The first four have since been built. The last is the worst,
+because a customer writing *"invoices over 10,000 require a second
+approval"* gets a rule that compiles, activates, fires, and has no
+effect — while looking correct in every listing.
 
 **Every extraction decision comes from a sample of one.** A single
 German freight invoice, with an unusual two-page structure, drove the
@@ -181,12 +238,12 @@ elsewhere.
 
 | Package | Tests |
 |---|---|
-| `vf-app` | 540 |
+| `vf-app` | 774 |
 | `vf-licence` | 153 |
-| `shared` | 120 passing, 2 known pre-existing failures |
+| `shared` | 145 passing, 2 known pre-existing failures |
 
 Both migration chains replay clean with every standing invariant
-holding — 20 migrations for `vf-app`, 7 for `vf-licence`.
+holding — 28 migrations for `vf-app`, 7 for `vf-licence`.
 
 ---
 
@@ -197,10 +254,20 @@ holding — 20 migrations for `vf-app`, 7 for `vf-licence`.
 | Design Document 1 | Scaffolding | Not reviewed recently |
 | Design Document 2 | Compiler & rule engine | Updated for 0041 |
 | Design Document 3 | Licensing & control plane | Updated through 0040 |
+| Design Document 4 | Source and intake | Current |
 | `docs/design/extraction.md` | Extraction, with build record | Current |
-| `docs/decisions/` | 43 decision records | Current |
+| `docs/design/operator-interface.md` | The screens, and what blocks them | Current |
+| `docs/design/mockups/` | Four screens as static HTML | Current |
+| `docs/design/multi-authority-intake.md` | Non-EN-16931 authorities | Design only |
+| `docs/design/text-layer-extraction.md` | Reading a PDF's own text | Design only |
+| `docs/decisions/` | 64 decision records | Current |
 
-**Not written**: a customer-facing API guide, and a Document 4 on the
+Document 4's markdown source is at `docs/documents/`, with
+`scripts/build-document-04.cjs` rendering the Word edition. The `.docx`
+is deliberately not committed: a binary that cannot be diffed would
+break the traceability the rest of `docs/` depends on.
+
+**Not written**: a customer-facing API guide, and a document on the
 workflow engine.
 
 ---
@@ -226,3 +293,17 @@ way over six attempts at one bug. A diagnostic that tests a
 *simplified* version of a failing request will confirm every
 component works while the real request keeps failing. Send exactly
 what production sends, and print exactly what comes back.
+
+**Check one layer against another.** The five divergences above were
+all found this way and none any other way. Storage proves nothing about
+addressability; an admin route proves nothing about effect; a field
+declared in a vocabulary proves nothing about a parser populating it.
+The test has to cross the boundary — a unit test that hands a
+dependency to the unit proves the unit, never the wiring.
+
+**Draw the interface earlier than feels necessary.** Mocking up screens
+that nobody had asked to be built found a hard blocker — captured
+documents are not stored at all — and three workflow-engine gaps that
+reading the code had not surfaced. A rail showing *"1 of 2 tasks, held
+here until both are done"* invited an obvious question, and the answer
+was narrower than anyone had assumed.
