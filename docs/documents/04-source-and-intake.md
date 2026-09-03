@@ -899,6 +899,7 @@ the repository at `docs/decisions/`:
 | 0063 | Source capture | Sections 3.2 and 5 — one endpoint, and the undetectable document |
 | 0064 | After task completion | Section 10.4 — the three engine gaps the stage rail found |
 | 0068 | Retaining the captured document | Section 10.1 — the blocker, and why a failure does not refuse |
+| 0069 | Content type from detection | Section 10.1 — typing a retained document by everything detection knew |
 
 Design notes, longer than a decision record and narrower than this
 document, are kept at `docs/design/`: `extraction.md`, `validation.md`,

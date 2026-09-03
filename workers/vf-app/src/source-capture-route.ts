@@ -6,7 +6,7 @@ import { parseUblInvoice, UblParseError } from "@vibefinance/shared";
 import {
   storeInvoiceDocument,
   computeDocumentKey,
-  contentTypeForStructure,
+  contentTypeForDetection,
   extForContentType,
 } from "./document-storage.js";
 
@@ -66,13 +66,15 @@ async function retainOriginal(
   customerId: string | undefined,
   invoiceId: string,
   bytes: Uint8Array,
-  structure: DetectedStructure | null,
+  // The whole detection result, not just the structure — a PDF carrying
+  // no embedded invoice has no structure and is still a PDF (0069).
+  detection: { structure: DetectedStructure | null; attempted: readonly { test: string; outcome: string }[] },
   issueDate?: string
 ): Promise<{ retained: boolean; reason?: string }> {
   if (!bucket) return { retained: false, reason: "no R2 bucket is bound" };
   if (!customerId) return { retained: false, reason: "CUSTOMER_ID is not configured" };
 
-  const contentType = contentTypeForStructure(structure);
+  const contentType = contentTypeForDetection(detection);
   const key = computeDocumentKey(customerId, invoiceId, extForContentType(contentType), issueDate);
   try {
     // Copied into a fresh buffer: the caller's view may be a subarray of
@@ -160,7 +162,7 @@ export async function handleCaptureFromSource(
   // a retention gap later without also bypassing the response shape.
   const invoiceId = (result.body as { id?: string }).id;
   const retention = invoiceId
-    ? await retainOriginal(bucket, db, customerId, invoiceId, bytes, detection.structure)
+    ? await retainOriginal(bucket, db, customerId, invoiceId, bytes, detection)
     : { retained: false, reason: "the handler returned no invoice id" };
 
   return withIntakeFacts(result, detection.structure, attempted, retention);
@@ -282,7 +284,7 @@ async function captureWithoutFacts(
   // facts standing in for it.
   const invoiceId = (result.body as { id?: string }).id;
   const retention = invoiceId
-    ? await retainOriginal(bucket, db, customerId, invoiceId, bytes, null)
+    ? await retainOriginal(bucket, db, customerId, invoiceId, bytes, { structure: null, attempted: detail })
     : { retained: false, reason: "the handler returned no invoice id" };
 
   return {

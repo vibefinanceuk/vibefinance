@@ -195,6 +195,36 @@ describe("retaining the original document (decision 0068)", () => {
     expect(puts[0].size).toBe(GIBBERISH.length);
   });
 
+  it("types a PDF carrying no embedded invoice as a PDF, not as octet-stream", async () => {
+    // The bug this decision fixes (0069). The document has no structure
+    // this system can extract from, and detection knows perfectly well
+    // it is a PDF — pdf_header came back found. Deriving the type from
+    // the structure alone stored it as .bin, retained correctly and
+    // typed wrongly, so nothing downstream could know to render it.
+    const { puts, bucket } = recordingBucket();
+    const result = await handleCaptureFromSource(
+      env.DB,
+      "src-mail",
+      fromBase64(PLAIN_NO_ATTACHMENT_B64),
+      fakeModel("{}"),
+      undefined,
+      bucket,
+      "acme"
+    );
+
+    expect((result.body as { intake: { structure: null } }).intake.structure).toBeNull();
+    expect(puts[0].contentType).toBe("application/pdf");
+    expect(puts[0].key).toMatch(/\.pdf$/);
+  });
+
+  it("still uses octet-stream for bytes detection genuinely could not place", async () => {
+    // The fallback must stay honest rather than guessing PDF for
+    // everything unrecognised.
+    const { puts, bucket } = recordingBucket();
+    await handleCaptureFromSource(env.DB, "src-mail", GIBBERISH, fakeModel("{}"), undefined, bucket, "acme");
+    expect(puts[0].key).toMatch(/\.bin$/);
+  });
+
   it("records a D1 reference alongside the R2 object", async () => {
     const { bucket } = recordingBucket();
     const result = await handleCaptureFromSource(env.DB, "src-mail", UBL, fakeModel("{}"), undefined, bucket, "acme");

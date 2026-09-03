@@ -24,22 +24,46 @@ export type DocumentType = "original" | "generated_rendering";
  * function happened to run.
  */
 /**
- * The content type and extension a captured document should be stored
- * under, given what detection concluded it was (decision 0068).
+ * The content type a captured document should be stored under, given
+ * everything detection concluded — decision 0069.
  *
- * Derived from the detected structure rather than from a caller's
- * declared content type or a filename, both of which can be wrong — and
- * under decision 0060 a mailbox attachment carries whatever content type
- * the sender's mail client decided to put on it.
+ * Takes the **whole detection result**, not just the structure. The
+ * structure answers "which handler reads this", and a document can fail
+ * that question while detection still knows perfectly well what the file
+ * is: a PDF carrying no embedded invoice has no structure this system
+ * can extract from, and is unambiguously still a PDF.
  *
- * An undetected document is stored as octet-stream. That is honest: the
- * bytes are retained exactly as they arrived, and nothing claims to know
- * what they are.
+ * Deriving the type from the structure alone stored exactly that
+ * document as `application/octet-stream` under a `.bin` key — bytes
+ * retained correctly and typed wrongly, so nothing downstream could know
+ * to render it. Found by checking the stored row rather than trusting
+ * the `retained: true` the capture reported.
+ *
+ * Never from a caller's declared content type or a filename, both of
+ * which can be wrong — and under decision 0060 a mailbox attachment
+ * carries whatever content type the sender's mail client decided to put
+ * on it.
  */
-export function contentTypeForStructure(structure: string | null, sniffedImageType?: string | null): string {
-  if (structure === "structured_pdfa") return "application/pdf";
-  if (structure === "structured_xml") return "application/xml";
-  if (structure === "image") return sniffedImageType ?? "image/jpeg";
+export function contentTypeForDetection(detection: {
+  structure: string | null;
+  attempted: readonly { test: string; outcome: string }[];
+}): string {
+  if (detection.structure === "structured_pdfa") return "application/pdf";
+  if (detection.structure === "structured_xml") return "application/xml";
+
+  const outcomeOf = (test: string) => detection.attempted.find((a) => a.test === test)?.outcome;
+
+  if (detection.structure === "image") {
+    // The sniffed type, which is more specific than "an image".
+    const sniffed = outcomeOf("image_magic_bytes");
+    return sniffed && sniffed.startsWith("image/") ? sniffed : "image/jpeg";
+  }
+
+  // No structure. Detection may still know what the file is.
+  if (outcomeOf("pdf_header") === "found") return "application/pdf";
+
+  // Genuinely unrecognised. Honest rather than lazy: the bytes are kept
+  // exactly as they arrived and nothing claims to know what they are.
   return "application/octet-stream";
 }
 
