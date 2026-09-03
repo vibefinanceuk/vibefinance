@@ -669,6 +669,17 @@ export function mergePageResults(
   );
 
   facts["extraction.confidence"] = confidence;
+  // Conflicts and failed pages become real facts, so a rule can raise
+  // a task for a human — decision 0048.
+  //
+  // Deliberately NOT resolved automatically. Preferring whichever
+  // value happens to match the line sum would be defensible
+  // arithmetic, and would also hide the signal entirely: nobody would
+  // ever see that two pages disagreed, so nobody would ever configure
+  // a rule for a supplier whose documents do it every time. The
+  // manual task IS the trigger to go and fix it properly.
+  facts["extraction.conflicts"] = conflicts.map((c) => c.field).join(",");
+  facts["extraction.pagesFailed"] = failedPages.length;
 
   return {
     facts,

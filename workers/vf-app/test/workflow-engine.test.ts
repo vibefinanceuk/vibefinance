@@ -545,3 +545,66 @@ describe("validation results are recorded on the stage visit (0044 addendum)", (
     expect(row?.validation_checked).toBeNull();
   });
 });
+
+describe("a conflict raises a task for a human (decision 0048)", () => {
+  async function setupWithRule(compiled: Record<string, unknown>) {
+    await handleCreateProcess(env.DB, { id: "p-conf", name: "Conflict" });
+    await seedRuleSet("rs-conf", compiled);
+    await handleCreateStage(env.DB, "p-conf", { id: "s-conf", name: "Validation", sequence: 1, ruleSetId: "rs-conf" });
+    const created = await handleCreateProcessInstance(env.DB, "p-conf", {
+      subjectType: "invoice",
+      subjectId: "inv-conf",
+    });
+    return (created.body as { id: string }).id;
+  }
+
+  it("fires when any field's pages disagreed", async () => {
+    const instanceId = await setupWithRule({
+      id: "r1",
+      conditions: { all: [{ field: "extraction.conflicts", operator: "is_not", value: "" }] },
+      actions: [{ type: "flag", params: {} }],
+    });
+    const result = await visitCurrentStage(env.DB, instanceId, {
+      "BT-112": 2272.47,
+      "extraction.conflicts": "BT-112",
+    });
+    expect((result.body as { visits: { outcome: string }[] }).visits[0].outcome).toBe("matched");
+  });
+
+  it("does not fire when the pages agreed", async () => {
+    const instanceId = await setupWithRule({
+      id: "r1",
+      conditions: { all: [{ field: "extraction.conflicts", operator: "is_not", value: "" }] },
+      actions: [{ type: "flag", params: {} }],
+    });
+    const result = await visitCurrentStage(env.DB, instanceId, {
+      "BT-112": 3137.47,
+      "extraction.conflicts": "",
+    });
+    expect((result.body as { visits: { outcome: string }[] }).visits[0].outcome).toBe("no_match");
+  });
+
+  it("can target a SPECIFIC disagreeing field, using the existing contains operator", async () => {
+    // A disagreement about the total warrants different handling from
+    // one about a reference code.
+    const instanceId = await setupWithRule({
+      id: "r1",
+      conditions: { all: [{ field: "extraction.conflicts", operator: "contains", value: "BT-112" }] },
+      actions: [{ type: "flag", params: {} }],
+    });
+    const result = await visitCurrentStage(env.DB, instanceId, {
+      "extraction.conflicts": "BT-106,BT-112",
+    });
+    expect((result.body as { visits: { outcome: string }[] }).visits[0].outcome).toBe("matched");
+  });
+
+  it("fires on a failed page, which is often why a total does not match", async () => {
+    const instanceId = await setupWithRule({
+      id: "r1",
+      conditions: { all: [{ field: "extraction.pagesFailed", operator: "greater_than", value: 0 }] },
+      actions: [{ type: "flag", params: {} }],
+    });
+    const result = await visitCurrentStage(env.DB, instanceId, { "extraction.pagesFailed": 1 });
+    expect((result.body as { visits: { outcome: string }[] }).visits[0].outcome).toBe("matched");
+  });
+});

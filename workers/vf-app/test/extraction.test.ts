@@ -913,3 +913,73 @@ describe("a failed page destroys confidence, it does not inherit it", () => {
     expect(merged.confidence).toBe(0.7);
   });
 });
+
+describe("conflicts become facts a rule can act on (decision 0048)", () => {
+  const page = (n: number, over: Partial<ExtractionResult>) => ({
+    page: n,
+    result: {
+      facts: {},
+      lines: [],
+      linesTruncated: false,
+      confidence: 0.9,
+      missingFields: [],
+      rawModelOutput: "{}",
+      ...over,
+    } as ExtractionResult,
+  });
+
+  it("names the disagreeing fields, so a rule can test for a specific one", () => {
+    // The real case: page 1 fabricated a total of 2272.47, page 2 read
+    // the printed 3137.47.
+    const merged = mergePageResults(
+      [page(1, { facts: { "BT-112": 2272.47 } }), page(2, { facts: { "BT-112": 3137.47 } })],
+      2
+    );
+    expect(merged.facts["extraction.conflicts"]).toBe("BT-112");
+  });
+
+  it("is empty when the pages agreed — not null, so contains still works", () => {
+    const merged = mergePageResults(
+      [page(1, { facts: { "BT-1": "X" } }), page(2, { facts: { "BT-1": "X" } })],
+      2
+    );
+    expect(merged.facts["extraction.conflicts"]).toBe("");
+  });
+
+  it("counts failed pages as a real fact", () => {
+    const merged = mergePageResults([page(2, { facts: { "BT-1": "X" } })], 2, [
+      { page: 1, reason: "timeout" },
+    ]);
+    expect(merged.facts["extraction.pagesFailed"]).toBe(1);
+    expect(merged.facts["extraction.conflicts"]).toBe("");
+  });
+
+  it("does NOT resolve the conflict — the manual task is the point", () => {
+    // Preferring whichever value matches the line sum would be
+    // defensible arithmetic and would hide the signal entirely.
+    // Nobody would see that two pages disagreed, so nobody would ever
+    // configure a rule for a supplier whose documents do it every
+    // time. The task IS the trigger to fix it properly.
+    const merged = mergePageResults(
+      [
+        page(1, { facts: { "BT-112": 2272.47 }, lines: [{ lineNumber: 1, "BT-131": 3137.47 }] }),
+        page(2, { facts: { "BT-112": 3137.47 } }),
+      ],
+      2
+    );
+    // 2272.47 does not match the line sum; it is kept anyway.
+    expect(merged.facts["BT-112"]).toBe(2272.47);
+    expect(merged.facts["extraction.conflicts"]).toBe("BT-112");
+  });
+
+  it("lists several conflicting fields together", () => {
+    const merged = mergePageResults(
+      [
+        page(1, { facts: { "BT-106": 1, "BT-112": 2 } }),
+        page(2, { facts: { "BT-106": 10, "BT-112": 20 } }),
+      ],
+      2
+    );
+    expect(String(merged.facts["extraction.conflicts"]).split(",").sort()).toEqual(["BT-106", "BT-112"]);
+  });
+});

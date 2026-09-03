@@ -47,6 +47,8 @@ export const DERIVED_FIELDS = [
   "mandate.channel",
   "validation.passed",
   "validation.failures",
+  "extraction.conflicts",
+  "extraction.pagesFailed",
   "invoice.duplicate_confidence",
 ] as const;
 
@@ -95,6 +97,8 @@ export const INVOICE_FIELD_TYPES: Record<string, FieldType> = {
   "mandate.channel": "text",
   "validation.passed": "boolean",
   "validation.failures": "text",
+  "extraction.conflicts": "text",
+  "extraction.pagesFailed": "number",
   "invoice.duplicate_confidence": "number",
 };
 
@@ -220,6 +224,10 @@ export const DERIVED_FIELD_DESCRIPTIONS: Record<DerivedField, string> = {
   "validation.passed": "true if the document passed standard validation",
   "validation.failures":
     "a comma-separated list of the validation checks that failed, empty when none did. A string rather than a list so the existing contains operator works: 'validation.failures contains total_missing'.",
+  "extraction.conflicts":
+    "a comma-separated list of the fields whose pages disagreed during multi-page extraction, empty when none did. One page reading a value another page contradicts is a real signal worth a human's attention: 'extraction.conflicts contains BT-112'. A string so the existing contains operator works.",
+  "extraction.pagesFailed":
+    "how many pages of a multi-page document could not be extracted at all, 0 when every page was read. A missing page is often exactly why a total does not match its lines.",
   "invoice.duplicate_confidence":
     "a weighted score from 0.0 to 1.0 estimating how likely this invoice is to duplicate another already on file from the same supplier — computed from an exact match on invoice number (60%), total amount (25%), and issue date (15%); zero if the supplier doesn't match at all. Not a boolean — compare it against whatever threshold a rule chooses with greater_than.",
 };
