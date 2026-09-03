@@ -393,3 +393,71 @@ describe("extracted lines make the line-sum check runnable (0044)", () => {
     expect(visit?.validation_checked).not.toContain("line_sum");
   });
 });
+
+describe("a rule's correction reaches the stored invoice (0049 addendum)", () => {
+  const jpeg = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]);
+  const fakeModel = (response: string) => ({ extract: async () => response });
+
+  it("writes the corrected value back, not just an audit row", async () => {
+    // The gap this closes: facts are stored BEFORE the stage visit,
+    // so a set_field correction changed a copy that never went back.
+    // The override was recorded and the invoice on file kept the
+    // wrong number — an audit trail describing a change that had not
+    // happened.
+    await handleCreateProcess(env.DB, { id: "p-wb", name: "Writeback" });
+    await env.DB.prepare(
+      "INSERT INTO rule_sets (id, name, mode, status) VALUES ('rs-wb', 'wb', 'first_match', 'active')"
+    ).run();
+    const ruleId = crypto.randomUUID();
+    await env.DB.prepare("INSERT INTO rules (id, rule_set_id, sort_order, enabled) VALUES (?, 'rs-wb', 0, 1)")
+      .bind(ruleId)
+      .run();
+    await env.DB.prepare(
+      `INSERT INTO rule_versions (rule_id, version, source_text, compiled_json, compiled_by, approved_by, approved_at, effective_from)
+       VALUES (?, 1, 'correct the total', ?, 'test', 'alice', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z')`
+    )
+      .bind(
+        ruleId,
+        JSON.stringify({
+          id: "r1",
+          conditions: { all: [{ field: "BT-1", operator: "is_present" }] },
+          actions: [{ type: "set_field", params: { field: "BT-112", value: 3137.47 } }],
+        })
+      )
+      .run();
+    await handleCreateStage(env.DB, "p-wb", { id: "s-wb", name: "Validation", sequence: 1, ruleSetId: "rs-wb" });
+    await env.DB.prepare(
+      "INSERT INTO intake_channels (id, process_id, name, hybrid_pdf_fallback) VALUES ('ch-wb', 'p-wb', 'wb', 'refuse')"
+    ).run();
+
+    const extracted = JSON.stringify({
+      invoiceNumber: "SKELS26003894",
+      totalWithVat: 2272.47,
+      lines: null,
+      _confidence: 0.9,
+    });
+    const result = await handleCaptureImage(env.DB, "ch-wb", jpeg, fakeModel(extracted));
+    expect(result.status).toBe(201);
+
+    const row = await env.DB.prepare("SELECT total_with_vat FROM invoice_headers WHERE id = ?")
+      .bind(result.body.id as string)
+      .first<{ total_with_vat: number }>();
+    // The corrected value, not the extracted one.
+    expect(row?.total_with_vat).toBe(3137.47);
+  });
+
+  it("leaves the invoice alone when no rule changed anything", async () => {
+    await seedChannel("ch-nochange");
+    const extracted = JSON.stringify({
+      invoiceNumber: "INV-1",
+      totalWithVat: 2518.8,
+      lines: null,
+      _confidence: 0.9,
+    });
+    const result = await handleCaptureImage(env.DB, "ch-nochange", jpeg, fakeModel(extracted));
+    const row = await env.DB.prepare("SELECT total_with_vat FROM invoice_headers WHERE id = ?")
+      .bind(result.body.id as string)
+      .first<{ total_with_vat: number }>();
+    expect(row?.total_with_vat).toBe(2518.8);
+  });
+});

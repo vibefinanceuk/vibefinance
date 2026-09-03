@@ -100,15 +100,21 @@ function coerceForField(
 
 export function applySetFieldActions(
   facts: InvoiceFacts,
-  actions: readonly RuleAction[],
-  ruleId: string,
+  // Each action paired with the rule that fired it. Previously this
+  // took a flat action list plus a single ruleId guessed from the
+  // trace, which attributed EVERY override to whichever rule matched
+  // first — wrong whenever more than one rule matched, and wrong in
+  // exactly the table whose purpose is answering "which rule changed
+  // this?". Found live: a correct resolution was credited to the
+  // task-raising rule that happened to sort ahead of it.
+  attributed: readonly { ruleId: string; action: RuleAction }[],
   vocabulary: VocabularyInput = "invoice"
 ): SetFieldOutcome {
   const next: InvoiceFacts = { ...facts };
   const overrides: FieldOverride[] = [];
   const fieldTypes = asResolved(vocabulary).fieldTypes;
 
-  for (const action of actions) {
+  for (const { ruleId, action } of attributed) {
     if (action.type !== "set_field") continue;
     const params = (action.params ?? {}) as Record<string, unknown>;
     const field = params.field;

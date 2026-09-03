@@ -2,19 +2,21 @@ import { describe, expect, it } from "vitest";
 import { applySetFieldActions } from "../src/set-field.js";
 import type { RuleAction } from "@vibefinance/shared";
 
-const setField = (params: Record<string, unknown>): RuleAction =>
-  ({ type: "set_field", params }) as RuleAction;
+const setField = (params: Record<string, unknown>, ruleId = "r1") => ({
+  ruleId,
+  action: { type: "set_field", params } as RuleAction,
+});
 
 describe("applySetFieldActions — literals", () => {
   it("sets a field that had no value", () => {
-    const out = applySetFieldActions({}, [setField({ field: "BT-133", value: "CC-100" })], "r1");
+    const out = applySetFieldActions({}, [setField({ field: "BT-133", value: "CC-100" })]);
     expect(out.facts["BT-133"]).toBe("CC-100");
   });
 
   it("records a set with no previous value, distinguishably from an overwrite", () => {
     // Setting a field and overwriting one are different acts, and the
     // second is the more consequential — the record keeps them apart.
-    const out = applySetFieldActions({}, [setField({ field: "BT-133", value: "CC-100" })], "r1");
+    const out = applySetFieldActions({}, [setField({ field: "BT-133", value: "CC-100" })]);
     expect(out.overrides).toEqual([{ ruleId: "r1", field: "BT-133", newValue: "CC-100" }]);
     expect(out.overrides[0]).not.toHaveProperty("previousValue");
   });
@@ -24,9 +26,7 @@ describe("applySetFieldActions — literals", () => {
     // touched it?
     const out = applySetFieldActions(
       { "BT-112": 2272.47 },
-      [setField({ field: "BT-112", value: 3137.47 })],
-      "r1"
-    );
+      [setField({ field: "BT-112", value: 3137.47 })]);
     expect(out.overrides).toEqual([
       { ruleId: "r1", field: "BT-112", previousValue: 2272.47, newValue: 3137.47 },
     ]);
@@ -34,7 +34,7 @@ describe("applySetFieldActions — literals", () => {
 
   it("never mutates the facts it was given", () => {
     const original = { "BT-112": 2272.47 };
-    applySetFieldActions(original, [setField({ field: "BT-112", value: 3137.47 })], "r1");
+    applySetFieldActions(original, [setField({ field: "BT-112", value: 3137.47 })]);
     expect(original["BT-112"]).toBe(2272.47);
   });
 
@@ -43,9 +43,7 @@ describe("applySetFieldActions — literals", () => {
     // ones harder to find.
     const out = applySetFieldActions(
       { "BT-112": 3137.47 },
-      [setField({ field: "BT-112", value: 3137.47 })],
-      "r1"
-    );
+      [setField({ field: "BT-112", value: 3137.47 })]);
     expect(out.overrides).toEqual([]);
   });
 
@@ -56,9 +54,7 @@ describe("applySetFieldActions — literals", () => {
         setField({ field: "BT-112", value: 100 }),
         setField({ field: "BT-1", value: "INV-1" }),
         setField({ field: "po.matched", value: true }),
-      ],
-      "r1"
-    );
+      ]);
     expect(out.facts["BT-112"]).toBe(100);
     expect(out.facts["BT-1"]).toBe("INV-1");
     expect(out.facts["po.matched"]).toBe(true);
@@ -69,9 +65,7 @@ describe("applySetFieldActions — copying another field", () => {
   it("copies a value across", () => {
     const out = applySetFieldActions(
       { "BT-106": 3137.47 },
-      [setField({ field: "BT-112", fromField: "BT-106" })],
-      "r1"
-    );
+      [setField({ field: "BT-112", fromField: "BT-106" })]);
     expect(out.facts["BT-112"]).toBe(3137.47);
   });
 
@@ -81,9 +75,7 @@ describe("applySetFieldActions — copying another field", () => {
     // document.
     const out = applySetFieldActions(
       { "BT-112": 2272.47 },
-      [setField({ field: "BT-112", fromField: "BT-106" })],
-      "r1"
-    );
+      [setField({ field: "BT-112", fromField: "BT-106" })]);
     expect(out.facts["BT-112"]).toBe(2272.47);
     expect(out.overrides).toEqual([]);
   });
@@ -94,9 +86,7 @@ describe("applySetFieldActions — copying another field", () => {
       [
         setField({ field: "BT-106", value: 200 }),
         setField({ field: "BT-112", fromField: "BT-106" }),
-      ],
-      "r1"
-    );
+      ]);
     // The second action sees the first's result — actions within one
     // rule apply in order.
     expect(out.facts["BT-112"]).toBe(200);
@@ -107,9 +97,7 @@ describe("applySetFieldActions — ordering and attribution", () => {
   it("applies several actions in written order, recording each", () => {
     const out = applySetFieldActions(
       { "BT-112": 1 },
-      [setField({ field: "BT-112", value: 2 }), setField({ field: "BT-112", value: 3 })],
-      "r1"
-    );
+      [setField({ field: "BT-112", value: 2 }), setField({ field: "BT-112", value: 3 })]);
     expect(out.facts["BT-112"]).toBe(3);
     // Both recorded: the record shows the sequence rather than hiding
     // the first behind the second.
@@ -117,16 +105,30 @@ describe("applySetFieldActions — ordering and attribution", () => {
   });
 
   it("attributes every override to the rule that fired it", () => {
-    const out = applySetFieldActions({}, [setField({ field: "BT-133", value: "X" })], "rule-abc");
+    const out = applySetFieldActions({}, [setField({ field: "BT-133", value: "X" }, "rule-abc")]);
     expect(out.overrides[0].ruleId).toBe("rule-abc");
+  });
+
+  it("attributes each override to ITS OWN rule when several matched", () => {
+    // The bug this replaced: every override was credited to whichever
+    // rule matched first, which is wrong in all_matches mode and wrong
+    // in exactly the table whose purpose is answering "which rule
+    // changed this?". Found live — a correct resolution was credited
+    // to the task-raising rule that sorted ahead of it.
+    const out = applySetFieldActions({}, [
+      setField({ field: "BT-133", value: "CC-1" }, "rule-one"),
+      setField({ field: "BT-10", value: "REF-2" }, "rule-two"),
+    ]);
+    expect(out.overrides.map((o) => [o.field, o.ruleId])).toEqual([
+      ["BT-133", "rule-one"],
+      ["BT-10", "rule-two"],
+    ]);
   });
 
   it("ignores actions that are not set_field", () => {
     const out = applySetFieldActions(
       {},
-      [{ type: "flag", params: {} } as RuleAction, setField({ field: "BT-133", value: "X" })],
-      "r1"
-    );
+      [{ ruleId: "r1", action: { type: "flag", params: {} } as RuleAction }, setField({ field: "BT-133", value: "X" })]);
     expect(out.overrides).toHaveLength(1);
   });
 
@@ -135,9 +137,7 @@ describe("applySetFieldActions — ordering and attribution", () => {
     // belt-and-braces case of one reaching evaluation anyway.
     const out = applySetFieldActions(
       { "BT-112": 1 },
-      [setField({ value: "no field named" }), setField({ field: "BT-112" })],
-      "r1"
-    );
+      [setField({ value: "no field named" }), setField({ field: "BT-112" })]);
     expect(out.overrides).toEqual([]);
     expect(out.facts["BT-112"]).toBe(1);
   });
@@ -150,13 +150,13 @@ describe("applySetFieldActions — the target field's declared type is enforced"
     // number. Unambiguously the number a document printed, so
     // refusing it would reject a correct value on a formatting
     // technicality.
-    const out = applySetFieldActions({}, [setField({ field: "BT-112", value: "1185.00" })], "r1");
+    const out = applySetFieldActions({}, [setField({ field: "BT-112", value: "1185.00" })]);
     expect(out.facts["BT-112"]).toBe(1185);
     expect(typeof out.facts["BT-112"]).toBe("number");
   });
 
   it("records the coerced value, not the string it arrived as", () => {
-    const out = applySetFieldActions({}, [setField({ field: "BT-112", value: "1185.00" })], "r1");
+    const out = applySetFieldActions({}, [setField({ field: "BT-112", value: "1185.00" })]);
     expect(out.overrides[0].newValue).toBe(1185);
   });
 
@@ -167,35 +167,31 @@ describe("applySetFieldActions — the target field's declared type is enforced"
     // anywhere.
     const out = applySetFieldActions(
       { "BT-112": 100 },
-      [setField({ field: "BT-112", value: "approximately 500" })],
-      "r1"
-    );
+      [setField({ field: "BT-112", value: "approximately 500" })]);
     expect(out.facts["BT-112"]).toBe(100);
     expect(out.overrides).toEqual([]);
   });
 
   it("refuses a non-ISO date", () => {
-    const out = applySetFieldActions({}, [setField({ field: "BT-2", value: "03/04/2026" })], "r1");
+    const out = applySetFieldActions({}, [setField({ field: "BT-2", value: "03/04/2026" })]);
     expect(out.facts["BT-2"]).toBeUndefined();
     expect(out.overrides).toEqual([]);
   });
 
   it("accepts an ISO date", () => {
-    const out = applySetFieldActions({}, [setField({ field: "BT-2", value: "2026-07-22" })], "r1");
+    const out = applySetFieldActions({}, [setField({ field: "BT-2", value: "2026-07-22" })]);
     expect(out.facts["BT-2"]).toBe("2026-07-22");
   });
 
   it("refuses a non-boolean in a boolean field", () => {
-    const out = applySetFieldActions({}, [setField({ field: "po.matched", value: "yes" })], "r1");
+    const out = applySetFieldActions({}, [setField({ field: "po.matched", value: "yes" })]);
     expect(out.overrides).toEqual([]);
   });
 
   it("enforces the type when copying too, not only on literals", () => {
     const out = applySetFieldActions(
       { "BT-1": "INV-2026-0042" },
-      [setField({ field: "BT-112", fromField: "BT-1" })],
-      "r1"
-    );
+      [setField({ field: "BT-112", fromField: "BT-1" })]);
     // An invoice number is text; it cannot become a total.
     expect(out.facts["BT-112"]).toBeUndefined();
     expect(out.overrides).toEqual([]);
@@ -204,7 +200,7 @@ describe("applySetFieldActions — the target field's declared type is enforced"
   it("permits any value for a field with no declared type", () => {
     // An honest "cannot say" rather than a guess. BG-20 is a
     // document-level group, deliberately untyped.
-    const out = applySetFieldActions({}, [setField({ field: "BG-20", value: "anything" })], "r1");
+    const out = applySetFieldActions({}, [setField({ field: "BG-20", value: "anything" })]);
     expect(out.facts["BG-20"]).toBe("anything");
   });
 });

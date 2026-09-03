@@ -131,3 +131,63 @@ through the workflow engine would close it, and is a wider change than
 this warranted.
 
 Watched to fail: removing the check breaks six tests.
+
+---
+
+## Addendum 2 — two bugs the live test found
+
+Both mine, and the second is the more serious.
+
+### Every override was attributed to the wrong rule
+
+`applySetFieldActions` took a flat action list plus a single rule id,
+guessed from the trace as *"the first rule that matched"*. In
+`all_matches` mode with several rules matching, every override was
+credited to whichever sorted first.
+
+Found immediately: a correct resolution was recorded against the
+**task-raising** rule that happened to sort ahead of it. For a table
+whose entire purpose is answering *"which rule changed this financial
+value?"*, that is a serious flaw — an auditor following the record
+would investigate the wrong rule.
+
+`RuleSetOutcome` now carries `attributedActions`, pairing each action
+with the rule that produced it. Kept as a parallel array so `actions`
+is untouched for every existing caller.
+
+### The correction never reached the stored invoice
+
+Worse. Facts are stored *before* the stage visit, so a `set_field`
+correction changed a copy that was never written back. The override
+was recorded, and `invoice_headers` kept the fabricated 2,272.47.
+
+An audit trail describing a change that did not happen is arguably
+worse than no audit trail: it asserts something false about the
+document.
+
+Building 0049 without this was a testing failure, not just a coding
+one. The end-to-end test asserted a `field_overrides` row existed and
+stopped — confirming the machinery while missing the point entirely.
+There was no test that the corrected value *took effect*.
+
+`visitCurrentStage` now returns `correctedFacts` and the capture
+route persists them. Written there rather than in the workflow
+engine because that is where "the subject is an invoice" is known;
+the engine deliberately never assumes how to store facts for a
+subject type.
+
+### And a third, caught before shipping
+
+The first write-back attempt spread the original request body, whose
+`totalWithVat` still held the pre-correction value. `handleUpsertInvoice`
+takes the header columns as their own parameters rather than reading
+them from `facts` — so it would have written corrected `facts_json`
+alongside a stale `total_with_vat`.
+
+That is worse than not correcting at all: the two would disagree,
+with nothing recording why. Header columns are now derived from the
+corrected facts.
+
+Per-line evaluations are excluded from the write-back: a line's facts
+are not the invoice's, and merging them into the header would
+attribute one line's value to the whole document.

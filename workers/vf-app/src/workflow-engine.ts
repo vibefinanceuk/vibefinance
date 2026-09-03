@@ -142,6 +142,14 @@ export async function visitCurrentStage(
   }
 
   const visitsThisCall: Array<Record<string, unknown>> = [];
+  // Facts as they stand after any set_field a rule fired — returned
+  // so the CALLER can persist them. Deliberately not written from
+  // here: this module never assumes how to load or store facts for a
+  // given subject_type, and writing invoice rows would break that.
+  // Found live: a rule corrected a total, recorded the change, and
+  // the invoice on file kept the wrong value — set_field changed
+  // nothing that outlived the stage visit.
+  let correctedFacts: InvoiceFacts | undefined;
   const currentInstanceId = instance.id;
   let currentStageId = instance.current_stage_id;
 
@@ -170,7 +178,7 @@ export async function visitCurrentStage(
           .prepare("UPDATE process_instances SET status = 'completed', updated_at = ? WHERE id = ?")
           .bind(new Date().toISOString(), currentInstanceId)
           .run();
-        return { status: 200, body: { instanceId: currentInstanceId, status: "completed", visits: visitsThisCall } };
+        return { status: 200, body: { instanceId: currentInstanceId, status: "completed", visits: visitsThisCall, correctedFacts } };
       }
       currentStageId = next.id;
       await db
@@ -229,9 +237,16 @@ export async function visitCurrentStage(
       // a later rule in the same pass then tests would make the
       // outcome depend on rule order in a way nobody could reason
       // about, and would open a path to rules that never settle.
-      const matchedRuleId = result.trace.find((t) => t.matched)?.ruleId ?? "unknown";
-      const setFieldOutcome = applySetFieldActions(evaluation.facts, result.actions, matchedRuleId);
+      const setFieldOutcome = applySetFieldActions(evaluation.facts, result.attributedActions);
       allOverrides.push(...setFieldOutcome.overrides);
+      if (setFieldOutcome.overrides.length > 0) {
+        // Header-scope only. A per-line evaluation's facts are one
+        // line's, not the invoice's, and merging them into the header
+        // would attribute a line's value to the whole document.
+        if (evaluation.lineNumber === null) {
+          correctedFacts = setFieldOutcome.facts;
+        }
+      }
 
       for (const action of result.actions.filter((a) => a.type === "route_to")) {
         routeTargets.add((action.params?.stage as string) ?? "");
@@ -344,7 +359,7 @@ export async function visitCurrentStage(
       // Blocked — real, open tasks now exist for this visit. The
       // instance stays here until they're all completed (see
       // onTaskCompleted below), never advances on its own.
-      return { status: 200, body: { instanceId: currentInstanceId, status: "in_progress", currentStageId: stage.id, visits: visitsThisCall } };
+      return { status: 200, body: { instanceId: currentInstanceId, status: "in_progress", currentStageId: stage.id, visits: visitsThisCall, correctedFacts } };
     }
 
     // No tasks spawned — advance now, per route_to if given, else sequence.
@@ -362,7 +377,7 @@ export async function visitCurrentStage(
         .prepare("UPDATE process_instances SET status = 'completed', updated_at = ? WHERE id = ?")
         .bind(new Date().toISOString(), currentInstanceId)
         .run();
-      return { status: 200, body: { instanceId: currentInstanceId, status: "completed", visits: visitsThisCall } };
+      return { status: 200, body: { instanceId: currentInstanceId, status: "completed", visits: visitsThisCall, correctedFacts } };
     }
     currentStageId = next.id;
     await db

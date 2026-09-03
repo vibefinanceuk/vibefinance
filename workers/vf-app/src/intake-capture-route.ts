@@ -161,6 +161,39 @@ export async function handleCaptureIntake(db: D1Database, channelId: string, bod
   const lines = canonicalLines;
   const visitResult = await visitCurrentStage(db, instanceId, mergedFacts, lines);
 
+  // Persist any correction a rule made — decision 0049 addendum.
+  //
+  // Facts are stored before the visit, so a set_field that corrects a
+  // value was changing a copy that never went back. The override was
+  // recorded and the invoice on file kept the wrong number, which
+  // made the audit trail describe a change that had not happened.
+  //
+  // Written here rather than in the workflow engine because this is
+  // where "the subject is an invoice" is known; the engine
+  // deliberately never assumes how to store facts for a subject type.
+  const corrected = (visitResult.body as { correctedFacts?: InvoiceFacts })?.correctedFacts;
+  if (corrected) {
+    // The header columns are derived from the CORRECTED facts, not
+    // carried over from the original body. handleUpsertInvoice takes
+    // totalWithVat and friends as their own parameters rather than
+    // reading them out of facts — so spreading the original body
+    // would write corrected facts_json alongside a stale
+    // total_with_vat, which is a worse state than not correcting at
+    // all: the two would disagree with nothing saying why.
+    await handleUpsertInvoice(db, {
+      ...body,
+      id,
+      mandateChannel: (mandateChannel as string) ?? channel.name,
+      lines: canonicalLines?.map(toStorageLine),
+      facts: corrected,
+      invoiceNumber: corrected["BT-1"],
+      issueDate: corrected["BT-2"],
+      currency: corrected["BT-5"],
+      supplierVatId: corrected["BT-31"],
+      totalWithVat: corrected["BT-112"],
+    } as Parameters<typeof handleUpsertInvoice>[1]);
+  }
+
   // id is always echoed back — for the JSON path the caller already
   // supplied it themselves, but for handleCaptureUblXml's own
   // auto-generated id (decision 0030), this was the ONLY way to learn

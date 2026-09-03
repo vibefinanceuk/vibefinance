@@ -60,5 +60,19 @@ export interface StepTrace {
 export interface RuleSetOutcome {
   outcome: "matched" | "no_match";
   actions: RuleAction[];
+  /**
+   * The same actions, each paired with the rule that produced it.
+   *
+   * `actions` flattens every matching rule's actions into one list,
+   * which is all most callers need. But an action that CHANGES data
+   * has to be attributable to the rule that fired it — "which rule
+   * changed this total?" is the question the audit record exists to
+   * answer, and reconstructing it afterwards from the trace gets it
+   * wrong whenever more than one rule matched.
+   *
+   * Kept as a parallel array rather than changing `actions`, so every
+   * existing caller is untouched.
+   */
+  attributedActions: { ruleId: string; action: RuleAction }[];
   trace: StepTrace[];
 }

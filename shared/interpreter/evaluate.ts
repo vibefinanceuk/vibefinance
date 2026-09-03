@@ -233,14 +233,18 @@ export function evaluateRuleSet(
 ): RuleSetOutcome {
   const trace: StepTrace[] = [];
   const matchedActions: RuleSetOutcome["actions"] = [];
+  const attributedActions: RuleSetOutcome["attributedActions"] = [];
 
   for (const [index, rule] of ruleSet.rules.entries()) {
     const matched = evaluateNode(rule.conditions, facts);
     trace.push({ seq: index, ruleId: rule.id, ruleVersion: rule.version, matched });
     if (matched) {
       matchedActions.push(...rule.actions);
+      for (const action of rule.actions) {
+        attributedActions.push({ ruleId: rule.id, action });
+      }
       if (ruleSet.mode === "first_match") {
-        return { outcome: "matched", actions: matchedActions, trace };
+        return { outcome: "matched", actions: matchedActions, attributedActions, trace };
       }
     }
   }
@@ -248,6 +252,7 @@ export function evaluateRuleSet(
   return {
     outcome: matchedActions.length > 0 ? "matched" : "no_match",
     actions: matchedActions,
+    attributedActions,
     trace,
   };
 }
