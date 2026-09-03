@@ -1,5 +1,13 @@
 import type { RouteResult } from "./org-route.js";
-import { extractInvoiceFromImages, sniffImageType, ExtractionRefusal, type ExtractionModel } from "./extraction.js";
+import {
+  extractInvoiceFromImage,
+  extractInvoiceFromImages,
+  sniffImageType,
+  ExtractionRefusal,
+  type ExtractionModel,
+  type ExtractionResult,
+} from "./extraction.js";
+import type { VocabularyInput } from "@vibefinance/shared";
 import { looksLikePdf } from "./pdf-attachment.js";
 
 /**
@@ -66,7 +74,12 @@ export async function handleUploadPage(
   storage: PendingDocumentStorage,
   documentId: string,
   pageNumber: number,
-  bytes: Uint8Array
+  bytes: Uint8Array,
+  // Optional so every existing caller and test keeps working. When
+  // supplied, the page is extracted HERE, in its own request —
+  // decision 0047.
+  model?: ExtractionModel,
+  vocabulary?: VocabularyInput
 ): Promise<RouteResult> {
   if (!Number.isInteger(pageNumber) || pageNumber < 1) {
     return { status: 400, body: { error: "page number must be a whole number of 1 or more" } };
@@ -117,12 +130,49 @@ export async function handleUploadPage(
     .bind(crypto.randomUUID(), documentId, pageNumber, key, contentType)
     .run();
 
+  // Extraction happens here, in this page's own request — decision
+  // 0047. Established by a controlled test: page 1 alone through this
+  // path extracts perfectly, while page 1 followed by page 2 times
+  // out on page 1, which runs first. A single Worker request cannot
+  // reliably make two large inference calls, so it no longer tries.
+  //
+  // A failed extraction does NOT fail the upload. The page is stored
+  // either way, the reason is recorded, and the document can still be
+  // finalised from whatever else was read — a page that could not be
+  // extracted is a gap to explain, not a reason to reject bytes that
+  // arrived intact.
+  let extractionStatus: Record<string, unknown> = {};
+  if (model) {
+    try {
+      const result = await extractInvoiceFromImage(model, bytes, vocabulary ?? "invoice");
+      await db
+        .prepare(
+          "UPDATE pending_document_pages SET extraction_json = ?, extraction_error = NULL, extracted_at = datetime('now') WHERE pending_document_id = ? AND page_number = ?"
+        )
+        .bind(JSON.stringify(result), documentId, pageNumber)
+        .run();
+      extractionStatus = { extracted: true, lineCount: result.lines.length, confidence: result.confidence };
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      await db
+        .prepare(
+          "UPDATE pending_document_pages SET extraction_json = NULL, extraction_error = ?, extracted_at = datetime('now') WHERE pending_document_id = ? AND page_number = ?"
+        )
+        .bind(reason, documentId, pageNumber)
+        .run();
+      // Reported on the upload that caused it, where it is
+      // attributable, rather than surfacing later at finalise
+      // detached from the page that produced it.
+      extractionStatus = { extracted: false, extractionError: reason };
+    }
+  }
+
   const count = await db
     .prepare("SELECT count(*) AS n FROM pending_document_pages WHERE pending_document_id = ?")
     .bind(documentId)
     .first<{ n: number }>();
 
-  return { status: 200, body: { documentId, pageNumber, pageCount: count?.n ?? 0 } };
+  return { status: 200, body: { documentId, pageNumber, pageCount: count?.n ?? 0, ...extractionStatus } };
 }
 
 export async function handleListPendingDocument(db: D1Database, documentId: string): Promise<RouteResult> {
@@ -240,3 +290,53 @@ export async function markFinalised(db: D1Database, documentId: string, invoiceI
 
 export { extractInvoiceFromImages, ExtractionRefusal };
 export type { ExtractionModel };
+
+
+/**
+ * Loads the extraction results already stored against each page —
+ * decision 0047.
+ *
+ * Finalise makes no model call at all now. Every page was extracted
+ * in its own request at upload time, so this is a database read and a
+ * merge: fast, deterministic, and repeatable without re-running
+ * inference over a document that has not changed.
+ */
+export async function loadPageExtractions(
+  db: D1Database,
+  documentId: string
+): Promise<{
+  perPage: { page: number; result: ExtractionResult }[];
+  failedPages: { page: number; reason: string }[];
+  unextracted: number[];
+}> {
+  const rows = await db
+    .prepare(
+      `SELECT page_number, extraction_json, extraction_error
+       FROM pending_document_pages
+       WHERE pending_document_id = ?
+       ORDER BY page_number`
+    )
+    .bind(documentId)
+    .all<{ page_number: number; extraction_json: string | null; extraction_error: string | null }>();
+
+  const perPage: { page: number; result: ExtractionResult }[] = [];
+  const failedPages: { page: number; reason: string }[] = [];
+  // Pages uploaded before this behaviour existed, or uploaded with no
+  // model available. Tracked separately from failures: "never
+  // attempted" and "attempted and failed" are different states, and
+  // reporting the first as the second would misattribute a
+  // configuration gap to the model.
+  const unextracted: number[] = [];
+
+  for (const row of rows.results) {
+    if (row.extraction_error !== null) {
+      failedPages.push({ page: row.page_number, reason: row.extraction_error });
+    } else if (row.extraction_json !== null) {
+      perPage.push({ page: row.page_number, result: JSON.parse(row.extraction_json) as ExtractionResult });
+    } else {
+      unextracted.push(row.page_number);
+    }
+  }
+
+  return { perPage, failedPages, unextracted };
+}

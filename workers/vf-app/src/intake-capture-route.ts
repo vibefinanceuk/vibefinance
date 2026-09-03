@@ -4,8 +4,8 @@ import type { RouteResult } from "./org-route.js";
 import { handleUpsertInvoice, mergeStructuredInvoiceFacts } from "./invoice-facts-route.js";
 import { handleCreateProcessInstance, visitCurrentStage } from "./workflow-engine.js";
 import { extractEmbeddedInvoiceXml, looksLikePdf, PdfExtractionError } from "./pdf-attachment.js";
-import { extractInvoiceFromImage, extractInvoiceFromImages, sniffImageType, ExtractionRefusal, type ExtractionModel } from "./extraction.js";
-import { loadPendingPages, markFinalised, type PendingDocumentStorage } from "./pending-document-route.js";
+import { extractInvoiceFromImage, extractInvoiceFromImages, mergePageResults, sniffImageType, ExtractionRefusal, type ExtractionModel } from "./extraction.js";
+import { loadPendingPages, loadPageExtractions, markFinalised, type PendingDocumentStorage } from "./pending-document-route.js";
 import { loadCustomFields } from "./custom-field-route.js";
 import { resolveVocabulary } from "@vibefinance/shared";
 
@@ -499,9 +499,23 @@ export async function handleFinalisePendingDocument(
   const customFields = await loadCustomFields(db);
   const vocabulary = resolveVocabulary("invoice", customFields);
 
+  // Prefer results already extracted at upload time (decision 0047).
+  // Finalise then makes no model call at all: a database read and a
+  // merge, fast and repeatable.
+  //
+  // Falls back to extracting here only for pages that were never
+  // attempted — a document uploaded before this behaviour existed, or
+  // through a path with no model available. That fallback is exactly
+  // the multi-call-per-request pattern 0047 exists to avoid, so it
+  // runs only when there is no stored alternative.
   let extraction;
   try {
-    extraction = await extractInvoiceFromImages(model, pages, vocabulary);
+    const stored = await loadPageExtractions(db, documentId);
+    if (stored.perPage.length > 0 && stored.unextracted.length === 0) {
+      extraction = mergePageResults(stored.perPage, pages.length, stored.failedPages);
+    } else {
+      extraction = await extractInvoiceFromImages(model, pages, vocabulary);
+    }
   } catch (err) {
     if (err instanceof ExtractionRefusal) {
       await recordCaptureEvent(db, channelId, "rejected", err.message, null);

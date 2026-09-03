@@ -1,6 +1,7 @@
 import { env } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
 import { applyTestSchema } from "./setup.js";
+import { ExtractionRefusal } from "../src/extraction.js";
 import {
   handleCreatePendingDocument,
   handleUploadPage,
@@ -339,5 +340,138 @@ describe("finalising", () => {
     const broken: PendingDocumentStorage = { put: storage.put, get: async () => null };
     const result = await handleFinalisePendingDocument(env.DB, broken, id, fakeModel(MORRISON));
     expect(result.status).toBe(500);
+  });
+});
+
+describe("pages are extracted at upload time (decision 0047)", () => {
+  const fakeModel = (response: string) => ({ extract: async () => response });
+
+  const PAGE_ONE_RESULT = JSON.stringify({
+    invoiceNumber: "SKELS26003894",
+    currencyCode: "EUR",
+    lines: [
+      { description: "International Freight", amount: 1797.47 },
+      { description: "Delivery Cartage", amount: 585.0 },
+    ],
+    _confidence: 0.9,
+  });
+  const PAGE_TWO_RESULT = JSON.stringify({
+    invoiceNumber: "SKELS26003894",
+    netTotalBeforeVat: 2382.47,
+    vatAmount: 0,
+    totalWithVat: 2382.47,
+    lines: null,
+    _confidence: 0.9,
+  });
+
+  it("extracts on upload, and reports it on that upload's own response", async () => {
+    const storage = memoryStorage();
+    const id = await newDocument();
+    const result = await handleUploadPage(
+      env.DB,
+      storage,
+      id,
+      1,
+      PAGE_ONE,
+      fakeModel(PAGE_ONE_RESULT)
+    );
+    expect(result.body).toMatchObject({ extracted: true, lineCount: 2 });
+
+    const row = await env.DB.prepare(
+      "SELECT extraction_json, extraction_error FROM pending_document_pages WHERE pending_document_id = ? AND page_number = 1"
+    )
+      .bind(id)
+      .first<{ extraction_json: string; extraction_error: string | null }>();
+    expect(row?.extraction_error).toBeNull();
+    expect(JSON.parse(row!.extraction_json).facts["BT-1"]).toBe("SKELS26003894");
+  });
+
+  it("finalise makes NO model call when every page is already extracted", async () => {
+    // The whole point of decision 0047: a single Worker request
+    // cannot reliably make two large inference calls, so finalise
+    // makes none at all.
+    const storage = memoryStorage();
+    const id = await newDocument();
+    await handleUploadPage(env.DB, storage, id, 1, PAGE_ONE, fakeModel(PAGE_ONE_RESULT));
+    await handleUploadPage(env.DB, storage, id, 2, PAGE_TWO, fakeModel(PAGE_TWO_RESULT));
+
+    let called = 0;
+    const shouldNotBeCalled = {
+      extract: async () => {
+        called += 1;
+        return PAGE_ONE_RESULT;
+      },
+    };
+    const result = await handleFinalisePendingDocument(env.DB, storage, id, shouldNotBeCalled);
+    expect(result.status).toBe(201);
+    expect(called).toBe(0);
+  });
+
+  it("merges what each page contributed — lines from one, totals from the other", async () => {
+    const storage = memoryStorage();
+    const id = await newDocument();
+    await handleUploadPage(env.DB, storage, id, 1, PAGE_ONE, fakeModel(PAGE_ONE_RESULT));
+    await handleUploadPage(env.DB, storage, id, 2, PAGE_TWO, fakeModel(PAGE_TWO_RESULT));
+
+    const result = await handleFinalisePendingDocument(env.DB, storage, id, fakeModel("{}"));
+    expect((result.body as { lineCount: number }).lineCount).toBe(2);
+
+    const row = await env.DB.prepare("SELECT total_with_vat FROM invoice_headers WHERE id = ?")
+      .bind((result.body as { id: string }).id)
+      .first<{ total_with_vat: number }>();
+    expect(row?.total_with_vat).toBe(2382.47);
+  });
+
+  it("a failed page does not fail its upload — the bytes arrived intact", async () => {
+    const storage = memoryStorage();
+    const id = await newDocument();
+    const failing = {
+      extract: async () => {
+        throw new ExtractionRefusal("the model did not respond in time");
+      },
+    };
+    const result = await handleUploadPage(env.DB, storage, id, 1, PAGE_ONE, failing);
+    // 200, not an error: a page that could not be extracted is a gap
+    // to explain, not a reason to reject bytes that stored fine.
+    expect(result.status).toBe(200);
+    expect(result.body).toMatchObject({ extracted: false });
+    expect(String((result.body as { extractionError: string }).extractionError)).toContain("did not respond");
+  });
+
+  it("carries a page's failure through to finalise, where it explains a gap", async () => {
+    const storage = memoryStorage();
+    const id = await newDocument();
+    const failing = {
+      extract: async () => {
+        throw new ExtractionRefusal("the model did not respond in time");
+      },
+    };
+    await handleUploadPage(env.DB, storage, id, 1, PAGE_ONE, failing);
+    await handleUploadPage(env.DB, storage, id, 2, PAGE_TWO, fakeModel(PAGE_TWO_RESULT));
+
+    const result = await handleFinalisePendingDocument(env.DB, storage, id, fakeModel("{}"));
+    const body = result.body as { failedPages?: { page: number }[]; confidence: number };
+    expect(body.failedPages).toEqual([{ page: 1, reason: "the model did not respond in time" }]);
+    // A document half of which was never read claims no confidence.
+    expect(body.confidence).toBe(0);
+  });
+
+  it("falls back to extracting at finalise for pages uploaded without a model", async () => {
+    // Documents uploaded before this behaviour existed must still
+    // finalise rather than becoming permanently stuck.
+    const storage = memoryStorage();
+    const id = await newDocument();
+    await handleUploadPage(env.DB, storage, id, 1, PAGE_ONE);
+
+    let called = 0;
+    const model = {
+      extract: async () => {
+        called += 1;
+        return PAGE_ONE_RESULT;
+      },
+    };
+    const result = await handleFinalisePendingDocument(env.DB, storage, id, model);
+    expect(result.status).toBe(201);
+    expect(called).toBe(1);
   });
 });

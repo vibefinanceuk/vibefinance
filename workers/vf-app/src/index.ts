@@ -37,8 +37,9 @@ import {
   type PendingDocumentStorage,
 } from "./pending-document-route.js";
 import { createWorkersAiExtractionModel } from "./extraction-model.js";
+import { resolveVocabulary } from "@vibefinance/shared";
 import { getSupplierHistory } from "./invoice-history.js";
-import { handleCreateCustomField, handleListCustomFields } from "./custom-field-route.js";
+import { handleCreateCustomField, handleListCustomFields, loadCustomFields } from "./custom-field-route.js";
 import { handleUploadDocument, handleRetrieveDocument } from "./document-route.js";
 import { handleCreateProcessInstance, onTaskCompleted, visitCurrentStage } from "./workflow-engine.js";
 import { handleClaimTask, handleCompleteTask, handleCreateTask } from "./task-route.js";
@@ -1072,12 +1073,19 @@ export default {
       if (bytes.length === 0) {
         return json({ error: "a raw image request body is required" }, 400);
       }
+      // The model is passed in so the page is extracted HERE, in its
+      // own request (decision 0047). A single Worker request cannot
+      // reliably make two large inference calls, so finalise no
+      // longer makes any.
+      const uploadCustomFields = await loadCustomFields(db);
       const result = await handleUploadPage(
         db,
         r2Storage(documents),
         uploadPageMatch[1],
         Number(uploadPageMatch[2]),
-        bytes
+        bytes,
+        env.AI ? createWorkersAiExtractionModel(env.AI, env.EXTRACTION_MODEL_ID) : undefined,
+        resolveVocabulary("invoice", uploadCustomFields)
       );
       return json(result.body, result.status);
     }
