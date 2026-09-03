@@ -69,7 +69,12 @@ describe("parseUblInvoice — a genuine, well-formed sample", () => {
       "BT-31": "DE123456789",
       "BT-40": "DE",
       "BT-48": "FR987654321",
+      // The document totals, added once it emerged that validation's
+      // vat_arithmetic and amount_due_mismatch checks had no inputs on
+      // this path at all.
+      "BT-106": 1500,
       "BT-112": 1785,
+      "BT-115": 1785,
     });
   });
 
@@ -177,5 +182,150 @@ describe("parseUblInvoice — a party with more than one PartyTaxScheme (the rea
   it("a single PartyTaxScheme (the common case) still works exactly as before — not broken by the fix", () => {
     const { facts } = parseUblInvoice(SAMPLE_UBL_INVOICE);
     expect(facts["BT-31"]).toBe("DE123456789");
+  });
+});
+
+/**
+ * A document using a VAT accounting currency — the case that makes
+ * cac:TaxTotal repeat. Per Peppol BIS Billing 3.0 the element is 1..2:
+ * "when tax currency code is provided, two instances of the tax total
+ * must be present, but only one with tax subtotal". The second carries
+ * BT-111, the same VAT expressed in the seller's accounting currency.
+ */
+const SAMPLE_WITH_ACCOUNTING_CURRENCY = `<?xml version="1.0" encoding="UTF-8"?>
+<Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"
+         xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
+         xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">
+  <cbc:ID>INV-CUR-1</cbc:ID>
+  <cbc:DocumentCurrencyCode>EUR</cbc:DocumentCurrencyCode>
+  <cbc:TaxCurrencyCode>SEK</cbc:TaxCurrencyCode>
+  <cac:TaxTotal>
+    <cbc:TaxAmount currencyID="SEK">3300.00</cbc:TaxAmount>
+  </cac:TaxTotal>
+  <cac:TaxTotal>
+    <cbc:TaxAmount currencyID="EUR">285.00</cbc:TaxAmount>
+    <cac:TaxSubtotal>
+      <cbc:TaxableAmount currencyID="EUR">1500.00</cbc:TaxableAmount>
+      <cbc:TaxAmount currencyID="EUR">285.00</cbc:TaxAmount>
+    </cac:TaxSubtotal>
+  </cac:TaxTotal>
+  <cac:LegalMonetaryTotal>
+    <cbc:TaxInclusiveAmount currencyID="EUR">1785.00</cbc:TaxInclusiveAmount>
+  </cac:LegalMonetaryTotal>
+</Invoice>`;
+
+describe("parseUblInvoice — the document totals validation depends on", () => {
+  // Until these were mapped, vat_arithmetic and amount_due_mismatch
+  // could not run on the UBL path at all: their inputs were never
+  // populated. The most trustworthy path got the least validation.
+  it("extracts BT-106, the sum of line net amounts", () => {
+    expect(parseUblInvoice(SAMPLE_UBL_INVOICE).facts["BT-106"]).toBe(1500);
+  });
+
+  it("extracts BT-115, the amount due for payment", () => {
+    expect(parseUblInvoice(SAMPLE_UBL_INVOICE).facts["BT-115"]).toBe(1785);
+  });
+
+  it("leaves them absent on a document that omits them", () => {
+    // A missing OPTIONAL field is normal, not an error — the parser's
+    // standing position.
+    const thin = SAMPLE_UBL_INVOICE.replace(
+      /<cbc:LineExtensionAmount currencyID="EUR">1500.00<\/cbc:LineExtensionAmount>/,
+      ""
+    );
+    expect(parseUblInvoice(thin).facts["BT-106"]).toBeUndefined();
+  });
+});
+
+describe("parseUblInvoice — BT-110 and the repeating TaxTotal", () => {
+  it("takes the amount in the document currency, not the accounting currency", () => {
+    // The trap: taking the first TaxTotal blindly returns BT-111 —
+    // a wrong number, silently, on exactly the documents where a
+    // second currency means the two differ.
+    const facts = parseUblInvoice(SAMPLE_WITH_ACCOUNTING_CURRENCY).facts;
+    expect(facts["BT-110"]).toBe(285);
+    expect(facts["BT-110"]).not.toBe(3300);
+  });
+
+  it("handles the ordinary single TaxTotal", () => {
+    const single = SAMPLE_UBL_INVOICE.replace(
+      "<cac:LegalMonetaryTotal>",
+      `<cac:TaxTotal><cbc:TaxAmount currencyID="EUR">285.00</cbc:TaxAmount></cac:TaxTotal>
+  <cac:LegalMonetaryTotal>`
+    );
+    expect(parseUblInvoice(single).facts["BT-110"]).toBe(285);
+  });
+
+  it("falls back to the instance carrying a TaxSubtotal when no currency attribute matches", () => {
+    const noCurrencyAttrs = `<?xml version="1.0" encoding="UTF-8"?>
+<Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"
+         xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
+         xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">
+  <cbc:ID>INV-NOATTR</cbc:ID>
+  <cac:TaxTotal><cbc:TaxAmount>3300.00</cbc:TaxAmount></cac:TaxTotal>
+  <cac:TaxTotal>
+    <cbc:TaxAmount>285.00</cbc:TaxAmount>
+    <cac:TaxSubtotal><cbc:TaxAmount>285.00</cbc:TaxAmount></cac:TaxSubtotal>
+  </cac:TaxTotal>
+</Invoice>`;
+    expect(parseUblInvoice(noCurrencyAttrs).facts["BT-110"]).toBe(285);
+  });
+
+  it("is absent when the document carries no TaxTotal at all", () => {
+    expect(parseUblInvoice(SAMPLE_UBL_INVOICE).facts["BT-110"]).toBeUndefined();
+  });
+});
+
+describe("parseUblInvoice — the reference fields", () => {
+  const withReferences = SAMPLE_UBL_INVOICE.replace(
+    "<cbc:IssueDate>2026-08-01</cbc:IssueDate>",
+    `<cbc:IssueDate>2026-08-01</cbc:IssueDate>
+  <cbc:InvoiceTypeCode>380</cbc:InvoiceTypeCode>
+  <cbc:BuyerReference>abs1234</cbc:BuyerReference>
+  <cac:OrderReference><cbc:ID>98776</cbc:ID></cac:OrderReference>`
+  );
+
+  it("extracts BT-3, the invoice type code", () => {
+    expect(parseUblInvoice(withReferences).facts["BT-3"]).toBe("380");
+  });
+
+  it("extracts BT-10, the buyer reference", () => {
+    expect(parseUblInvoice(withReferences).facts["BT-10"]).toBe("abs1234");
+  });
+
+  it("extracts BT-13 from inside cac:OrderReference, not the document root", () => {
+    expect(parseUblInvoice(withReferences).facts["BT-13"]).toBe("98776");
+  });
+});
+
+describe("parseUblInvoice — BT-151 and BT-152 are line-level, not header", () => {
+  const withLineVat = SAMPLE_UBL_INVOICE.replace(
+    '<cbc:LineExtensionAmount currencyID="EUR">1000.00</cbc:LineExtensionAmount>',
+    `<cbc:LineExtensionAmount currencyID="EUR">1000.00</cbc:LineExtensionAmount>
+    <cac:Item>
+      <cac:ClassifiedTaxCategory>
+        <cbc:ID>S</cbc:ID>
+        <cbc:Percent>19</cbc:Percent>
+      </cac:ClassifiedTaxCategory>
+    </cac:Item>`
+  );
+
+  it("reads the VAT category and rate from the line's own Item", () => {
+    // They read like header fields and are not: in UBL they live at
+    // cac:InvoiceLine/cac:Item/cac:ClassifiedTaxCategory.
+    const parsed = parseUblInvoice(withLineVat);
+    expect(parsed.lines[0]["BT-151"]).toBe("S");
+    expect(parsed.lines[0]["BT-152"]).toBe(19);
+  });
+
+  it("does not put them on the document facts", () => {
+    const parsed = parseUblInvoice(withLineVat);
+    expect(parsed.facts["BT-151"]).toBeUndefined();
+    expect(parsed.facts["BT-152"]).toBeUndefined();
+  });
+
+  it("leaves a line without tax category information alone", () => {
+    const parsed = parseUblInvoice(withLineVat);
+    expect(parsed.lines[1]["BT-151"]).toBeUndefined();
   });
 });

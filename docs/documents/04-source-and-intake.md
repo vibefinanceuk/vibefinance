@@ -189,6 +189,15 @@ is best-effort and says so in its own response: a document path of
 `image-extraction`, a confidence score, and a list of fields that could
 not be read.
 
+> **The exact paths were, until recently, the least validated —** The UBL
+> parser populated 11 of the 21 fields the vocabulary declares, and the
+> three it omitted at document level (`BT-106`, `BT-110`, `BT-115`) are
+> exactly what validation's arithmetic checks compare. Neither
+> `vat_arithmetic` nor `amount_due_mismatch` could run on a parsed
+> document at all, so inference was being checked more thoroughly than
+> fact. Decision 0044's `checked` array had been reporting this
+> correctly and unread the whole time. Fixed in decision 0059.
+
 > **A hybrid PDF is never sent to a model —** Factur-X and ZUGFeRD carry a
 > complete EN 16931 XML invoice as an embedded attachment, and that XML is
 > the authoritative data. Reading it from a picture instead would
@@ -722,6 +731,7 @@ the repository at `docs/decisions/`:
 | 0056 | Settings reach extraction | Section 8 — configuration that reached nothing |
 | 0057 | The settings audit | Section 8 — the PDF/XML audit, and the tolerance gap |
 | 0058 | Mapping rules | Section 11 — the naming, and the vocabulary subset |
+| 0059 | The UBL parser field gap | Section 3.1 — why the exact paths were least validated |
 
 Design notes, longer than a decision record and narrower than this
 document, are kept at `docs/design/`: `extraction.md`, `validation.md`

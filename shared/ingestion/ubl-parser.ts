@@ -13,8 +13,9 @@ import type { InvoiceFacts } from "../interpreter/types.js";
  *
  * Deliberately narrow and correct rather than broad and shaky: maps
  * the fields this codebase's own closed vocabulary already declares
- * (BT-1, BT-2, BT-5, BT-9, BT-31, BT-40, BT-48, BT-112, and each
- * line's BT-129/BT-131) against their real, verified UBL paths.
+ * against their real, verified UBL paths — BT-1, BT-2, BT-3, BT-5,
+ * BT-9, BT-10, BT-13, BT-31, BT-40, BT-48, BT-106, BT-110, BT-112,
+ * BT-115, and each line's BT-129/BT-131/BT-133/BT-151/BT-152.
  * BG-20/BG-21 (allowances and charges) are genuinely more complex,
  * repeated, structurally nested groups — not a simple path-to-scalar
  * mapping — and are deliberately left out of this pass rather than
@@ -91,6 +92,50 @@ function findVatSchemeCompanyId(partyTaxScheme: unknown): string | undefined {
   return getText((vatScheme as Record<string, unknown> | undefined)?.CompanyID);
 }
 
+/**
+ * BT-110, the invoice total VAT amount — and the one mapping here with
+ * a real trap in it.
+ *
+ * cac:TaxTotal has cardinality 1..2 in Peppol BIS Billing 3.0, not 1..1:
+ * "when tax currency code is provided, two instances of the tax total
+ * must be present, but only one with tax subtotal". The second carries
+ * BT-111, the same VAT total expressed in the seller's accounting
+ * currency. Taking the first TaxTotal blindly would therefore return
+ * BT-111 rather than BT-110 on any invoice using a VAT accounting
+ * currency — a wrong number, silently, on exactly the documents where
+ * a second currency means the amounts differ.
+ *
+ * Resolved by the spec's own two discriminators, in order: the
+ * TaxAmount's mandatory @currencyID must be BT-5 for BT-110, and only
+ * the BT-110 instance carries a TaxSubtotal.
+ *
+ * The same shape of bug the PartyTaxScheme handling above already
+ * records: a element the spec allows to repeat, assumed singular.
+ */
+function findDocumentCurrencyTaxAmount(taxTotal: unknown, documentCurrency: string | undefined): number | undefined {
+  if (taxTotal === undefined || taxTotal === null) return undefined;
+  const totals = Array.isArray(taxTotal) ? taxTotal : [taxTotal];
+  if (totals.length === 0) return undefined;
+
+  const candidates = totals.filter((t): t is Record<string, unknown> => typeof t === "object" && t !== null);
+
+  if (documentCurrency !== undefined) {
+    const matching = candidates.find((t) => {
+      const amount = t.TaxAmount as Record<string, unknown> | undefined;
+      const currencyId = amount?.["@_currencyID"];
+      return typeof currencyId === "string" && currencyId === documentCurrency;
+    });
+    if (matching !== undefined) return getNumber(matching.TaxAmount);
+  }
+
+  // No usable currency attribute — fall back to the instance carrying a
+  // TaxSubtotal, which the spec says is the BT-110 one.
+  const withSubtotal = candidates.find((t) => t.TaxSubtotal !== undefined);
+  if (withSubtotal !== undefined) return getNumber(withSubtotal.TaxAmount);
+
+  return getNumber(candidates[0]?.TaxAmount);
+}
+
 function getNumber(value: unknown): number | undefined {
   const text = getText(value);
   if (text === undefined) return undefined;
@@ -165,8 +210,33 @@ export function parseUblInvoice(xml: string): ParsedUblInvoice {
   const buyerVatId = findVatSchemeCompanyId(buyerParty?.PartyTaxScheme);
   if (buyerVatId !== undefined) facts["BT-48"] = buyerVatId;
 
-  const totalWithVat = getNumber((invoice.LegalMonetaryTotal as Record<string, unknown> | undefined)?.TaxInclusiveAmount);
+  const typeCode = getText(invoice.InvoiceTypeCode);
+  if (typeCode !== undefined) facts["BT-3"] = typeCode;
+
+  const buyerReference = getText(invoice.BuyerReference);
+  if (buyerReference !== undefined) facts["BT-10"] = buyerReference;
+
+  const orderReference = getText((invoice.OrderReference as Record<string, unknown> | undefined)?.ID);
+  if (orderReference !== undefined) facts["BT-13"] = orderReference;
+
+  const monetaryTotal = invoice.LegalMonetaryTotal as Record<string, unknown> | undefined;
+
+  const totalWithVat = getNumber(monetaryTotal?.TaxInclusiveAmount);
   if (totalWithVat !== undefined) facts["BT-112"] = totalWithVat;
+
+  // BT-106, BT-110 and BT-115 are what validation's vat_arithmetic and
+  // amount_due_mismatch checks compare (decision 0044). Until they were
+  // mapped, neither check could run on the UBL path at all — the most
+  // trustworthy path got the least validation, and `checked` reported
+  // that honestly rather than anyone noticing.
+  const netTotal = getNumber(monetaryTotal?.LineExtensionAmount);
+  if (netTotal !== undefined) facts["BT-106"] = netTotal;
+
+  const payableAmount = getNumber(monetaryTotal?.PayableAmount);
+  if (payableAmount !== undefined) facts["BT-115"] = payableAmount;
+
+  const vatTotal = findDocumentCurrencyTaxAmount(invoice.TaxTotal, currency);
+  if (vatTotal !== undefined) facts["BT-110"] = vatTotal;
 
   // InvoiceLine may be a single object (one line) or an array (many) —
   // UBL/fast-xml-parser only produces an array once there's more than
@@ -187,6 +257,15 @@ export function parseUblInvoice(xml: string): ParsedUblInvoice {
     if (lineNet !== undefined) lineFacts["BT-131"] = lineNet;
     const accountingCost = getText(line?.AccountingCost);
     if (accountingCost !== undefined) lineFacts["BT-133"] = accountingCost;
+    // BT-151/BT-152 are line-level in UBL — cac:Item/cac:ClassifiedTaxCategory
+    // — not document-level, despite reading like header fields.
+    const taxCategory = (line?.Item as Record<string, unknown> | undefined)?.ClassifiedTaxCategory as
+      | Record<string, unknown>
+      | undefined;
+    const vatCategory = getText(taxCategory?.ID);
+    if (vatCategory !== undefined) lineFacts["BT-151"] = vatCategory;
+    const vatRate = getNumber(taxCategory?.Percent);
+    if (vatRate !== undefined) lineFacts["BT-152"] = vatRate;
     return lineFacts;
   });
 

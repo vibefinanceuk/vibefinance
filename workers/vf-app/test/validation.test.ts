@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { parseUblInvoice } from "@vibefinance/shared";
 import {
   validateInvoiceFacts,
   mergeValidationFacts,
@@ -190,5 +191,47 @@ describe("mergeValidationFacts", () => {
     const facts = mergeValidationFacts({ "BT-112": 100, "BT-1": "INV-1" }, validateInvoiceFacts({ "BT-112": 100 }));
     expect(facts["BT-112"]).toBe(100);
     expect(facts["BT-1"]).toBe("INV-1");
+  });
+});
+
+describe("the UBL path can now be validated (decision 0059)", () => {
+  // Lives here rather than beside the parser: this crosses from shared
+  // into vf-app, and shared must not depend on a worker.
+  //
+  // The reason the parser mappings matter. validateInvoiceFacts reports
+  // which checks it could RUN separately from which failed, precisely
+  // so "passed" cannot quietly mean "nothing was checked" — and on the
+  // UBL path that distinction was hiding a gap rather than surfacing
+  // one. BT-106, BT-110 and BT-115 were never populated, so neither
+  // arithmetic check could execute.
+  const UBL = `<?xml version="1.0" encoding="UTF-8"?>
+<Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"
+         xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
+         xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">
+  <cbc:ID>INV-VAL-1</cbc:ID>
+  <cbc:DocumentCurrencyCode>EUR</cbc:DocumentCurrencyCode>
+  <cac:TaxTotal><cbc:TaxAmount currencyID="EUR">285.00</cbc:TaxAmount></cac:TaxTotal>
+  <cac:LegalMonetaryTotal>
+    <cbc:LineExtensionAmount currencyID="EUR">1500.00</cbc:LineExtensionAmount>
+    <cbc:TaxInclusiveAmount currencyID="EUR">1785.00</cbc:TaxInclusiveAmount>
+    <cbc:PayableAmount currencyID="EUR">1785.00</cbc:PayableAmount>
+  </cac:LegalMonetaryTotal>
+</Invoice>`;
+
+  it("runs the arithmetic checks that previously had no inputs", () => {
+    const { facts } = parseUblInvoice(UBL);
+    const result = validateInvoiceFacts(facts);
+    expect(result.checked).toContain("vat_arithmetic");
+    expect(result.checked).toContain("amount_due_mismatch");
+  });
+
+  it("passes a document whose own totals agree", () => {
+    // 1500.00 net + 285.00 VAT = 1785.00 total, and 1785.00 due.
+    expect(validateInvoiceFacts(parseUblInvoice(UBL).facts).failures).toEqual([]);
+  });
+
+  it("catches a document whose totals do not agree", () => {
+    const wrong = UBL.replace('currencyID="EUR">285.00', 'currencyID="EUR">100.00');
+    expect(validateInvoiceFacts(parseUblInvoice(wrong).facts).failures).toContain("vat_arithmetic");
   });
 });
