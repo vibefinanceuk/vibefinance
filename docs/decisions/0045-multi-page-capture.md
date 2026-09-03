@@ -199,3 +199,13 @@ That principle already ran through the compiler's refusal boundary,
 the worked-example gate, and the closed vocabulary. This is the first
 time it has been demonstrated against a live model contradicting an
 explicit instruction, on a real document, in production.
+
+---
+
+## Superseded in part by 0046
+
+The one-call-per-document design recorded above is replaced by
+one call per page, merged in code. See
+`docs/decisions/0046-per-page-extraction.md`. The upload and
+finalise mechanism is unchanged; only how the pages reach the model
+differs.

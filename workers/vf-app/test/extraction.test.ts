@@ -7,8 +7,10 @@ import {
   sniffImageType,
   toDataUrl,
   MAX_EXTRACTED_LINES,
+  mergePageResults,
   ExtractionRefusal,
   type ExtractionModel,
+  type ExtractionResult,
 } from "../src/extraction.js";
 import { resolveVocabulary } from "@vibefinance/shared";
 import { VISION_SHAPES, extractResponseText, createWorkersAiExtractionModel } from "../src/extraction-model.js";
@@ -746,5 +748,122 @@ describe("every model failure becomes a refusal, never a Worker crash", () => {
     await expect(
       createWorkersAiExtractionModel(broken).extract("prompt", oneImage, {})
     ).rejects.toThrow(/model capacity exceeded/);
+  });
+});
+
+describe("mergePageResults — the rules, and why each one", () => {
+  const page = (n: number, over: Partial<ExtractionResult>) => ({
+    page: n,
+    result: {
+      facts: {},
+      lines: [],
+      linesTruncated: false,
+      confidence: 0.9,
+      missingFields: [],
+      rawModelOutput: "{}",
+      ...over,
+    } as ExtractionResult,
+  });
+
+  it("takes a field from the first page that could read it", () => {
+    // Pages are complementary in practice: page 1 of the freight
+    // invoice has the header and lines, page 2 has the totals.
+    const merged = mergePageResults(
+      [page(1, { facts: { "BT-1": "SKELS26003894" } }), page(2, { facts: { "BT-112": 3137.47 } })],
+      2
+    );
+    expect(merged.facts["BT-1"]).toBe("SKELS26003894");
+    expect(merged.facts["BT-112"]).toBe(3137.47);
+  });
+
+  it("reports a genuine disagreement rather than silently choosing", () => {
+    // The one situation where a human needs to look. Preferring one
+    // page quietly would hide it.
+    const merged = mergePageResults(
+      [page(1, { facts: { "BT-112": 3137.47 } }), page(2, { facts: { "BT-112": 2272.47 } })],
+      2
+    );
+    expect(merged.conflicts).toHaveLength(1);
+    expect(merged.conflicts[0]).toMatchObject({
+      field: "BT-112",
+      chosen: 3137.47,
+      chosenPage: 1,
+      others: [{ page: 2, value: 2272.47 }],
+    });
+  });
+
+  it("does not call agreement a conflict — a repeated header is normal", () => {
+    const merged = mergePageResults(
+      [page(1, { facts: { "BT-1": "X" } }), page(2, { facts: { "BT-1": "X" } })],
+      2
+    );
+    expect(merged.conflicts).toEqual([]);
+  });
+
+  it("concatenates lines in page order, renumbered as one table", () => {
+    // A table continuing across a break must read as one table, not
+    // two that both start at line 1.
+    const merged = mergePageResults(
+      [
+        page(1, { lines: [{ lineNumber: 1, "BT-131": 100 }, { lineNumber: 2, "BT-131": 200 }] }),
+        page(2, { lines: [{ lineNumber: 1, "BT-131": 300 }] }),
+      ],
+      2
+    );
+    expect(merged.lines.map((l) => l.lineNumber)).toEqual([1, 2, 3]);
+    expect(merged.lines.map((l) => l["BT-131"])).toEqual([100, 200, 300]);
+  });
+
+  it("takes the LOWEST confidence, never an average", () => {
+    // A document is only as trustworthy as its least trustworthy
+    // page. Averaging would let a crisp header page mask a barely
+    // legible one.
+    const merged = mergePageResults(
+      [page(1, { confidence: 0.95 }), page(2, { confidence: 0.4 })],
+      2
+    );
+    expect(merged.confidence).toBe(0.4);
+    expect(merged.facts["extraction.confidence"]).toBe(0.4);
+  });
+
+  it("counts a field missing only when EVERY page failed to read it", () => {
+    const merged = mergePageResults(
+      [
+        page(1, { facts: {}, missingFields: ["BT-112", "BT-13"] }),
+        page(2, { facts: { "BT-112": 3137.47 } }),
+      ],
+      2
+    );
+    // BT-112 was on page 2, so it is not missing.
+    expect(merged.missingFields).not.toContain("BT-112");
+    expect(merged.missingFields).toContain("BT-13");
+  });
+
+  it("carries a truncation flag from any page", () => {
+    const merged = mergePageResults(
+      [page(1, { linesTruncated: false }), page(2, { linesTruncated: true })],
+      2
+    );
+    expect(merged.linesTruncated).toBe(true);
+  });
+
+  it("keeps every page's raw output, labelled, for diagnosis", () => {
+    const merged = mergePageResults(
+      [page(1, { rawModelOutput: '{"a":1}' }), page(2, { rawModelOutput: '{"b":2}' })],
+      2
+    );
+    expect(merged.rawModelOutput).toContain("page 1");
+    expect(merged.rawModelOutput).toContain("page 2");
+  });
+
+  it("records a failed page without sinking the document", () => {
+    // The others may carry everything needed — but the failure must
+    // be visible, because a missing page is exactly why a total might
+    // not match its lines.
+    const merged = mergePageResults([page(1, { facts: { "BT-1": "X" } })], 2, [
+      { page: 2, reason: "the model did not respond in time" },
+    ]);
+    expect(merged.facts["BT-1"]).toBe("X");
+    expect(merged.failedPages).toEqual([{ page: 2, reason: "the model did not respond in time" }]);
   });
 });

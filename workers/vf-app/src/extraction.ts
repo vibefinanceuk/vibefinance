@@ -255,7 +255,11 @@ export function buildExtractionSchema(vocabulary: VocabularyInput = "invoice"): 
   };
 }
 
-export function buildExtractionPrompt(vocabulary: VocabularyInput = "invoice", pageCount = 1): string {
+export function buildExtractionPrompt(
+  vocabulary: VocabularyInput = "invoice",
+  pageCount = 1,
+  pageNumber?: number
+): string {
   const v = asResolved(vocabulary);
   const customSection =
     v.customFields.length === 0
@@ -265,10 +269,17 @@ export function buildExtractionPrompt(vocabulary: VocabularyInput = "invoice", p
 This customer has also defined fields of their own. These are not part of any standard — the descriptions below are the customer's own:
 ${v.customFields.map((f) => `  ${customPromptKey(f.key)} (${f.type}) — ${f.description}`).join("\n")}`;
 
+  // Each page is now its own call (decision 0046), so the note tells
+  // the model WHICH page it is looking at rather than asking it to
+  // reconcile several. That matters: a model shown only the totals
+  // page would otherwise treat the absent line table as a failure to
+  // read one, and report low confidence for a page it read perfectly.
   const pageNote =
-    pageCount > 1
-      ? `You are looking at ${pageCount} images. They are consecutive pages of ONE invoice, in order. Read them together: the line-item table may continue across a page break, and totals are commonly printed only on the last page. Report one set of values for the whole document, never one per page.\n\n`
-      : "";
+    pageCount > 1 && pageNumber
+      ? `This image is page ${pageNumber} of a ${pageCount}-page invoice. Report only what is visible on THIS page. Fields printed on other pages are not missing — return null for them, and do not infer them from this page. A line-item table may start or continue here; report the rows you can see. Totals are commonly printed only on the last page.\n\n`
+      : pageCount > 1
+        ? `You are looking at ${pageCount} images. They are consecutive pages of ONE invoice, in order. Read them together: the line-item table may continue across a page break, and totals are commonly printed only on the last page. Report one set of values for the whole document, never one per page.\n\n`
+        : ""
 
   return `${pageNote}You are reading a photograph or scan of a supplier invoice and extracting specific fields from it.
 
@@ -470,33 +481,200 @@ export function parseExtractionResponse(
  * merging the results in code would mean inventing an answer for what
  * to do when two pages disagree about the same field.
  */
+/**
+ * Which page a field came from, and what the other pages said.
+ *
+ * Only populated where pages genuinely disagreed. A conflict is not
+ * an error — a header repeated on every page will agree, and a value
+ * one page could not read is simply absent — but where two pages
+ * both report a field and report it DIFFERENTLY, that is worth
+ * surfacing rather than resolving silently.
+ */
+export interface PageConflict {
+  field: string;
+  /** The value kept, and the page it came from. */
+  chosen: string | number | boolean;
+  chosenPage: number;
+  /** What the other pages said, by page number. */
+  others: { page: number; value: string | number | boolean }[];
+}
+
+export interface MultiPageExtractionResult extends ExtractionResult {
+  pageCount: number;
+  conflicts: PageConflict[];
+  /** Pages that failed outright. A page that could not be read does
+   *  not sink the document — the others may still carry everything
+   *  needed — but it must be visible, because a missing page is
+   *  exactly why a total might not match its lines. */
+  failedPages: { page: number; reason: string }[];
+}
+
+/**
+ * Extracts a multi-page document with ONE MODEL CALL PER PAGE,
+ * merged afterwards — decision 0046.
+ *
+ * The single-call approach this replaces was the right first design
+ * and failed against real documents: two scans of 1.5MB and 2.8MB
+ * together exceeded the model's time budget (AiError 3046), while
+ * either alone extracted comfortably. The constraint is total request
+ * size, so the fix is to keep each request the size already known to
+ * work.
+ *
+ * Merging looked like inventing an answer when this was first
+ * designed. The real documents showed otherwise: page 1 of the
+ * freight invoice carries the header and the line table, page 2
+ * carries the totals. They are COMPLEMENTARY, not competing — so
+ * "first page that could read it wins" is an honest rule rather than
+ * a fudge, and the rare genuine disagreement is reported rather than
+ * resolved.
+ *
+ * Pages run sequentially, not in parallel. Parallel would be faster,
+ * but a burst of large concurrent inference requests is precisely
+ * what produced the timeout being fixed here.
+ */
 export async function extractInvoiceFromImages(
   model: ExtractionModel,
   pages: readonly Uint8Array[],
   vocabulary: VocabularyInput = "invoice"
-): Promise<ExtractionResult> {
+): Promise<MultiPageExtractionResult> {
   if (pages.length === 0) {
     throw new ExtractionRefusal("no pages were supplied");
   }
-  const images = pages.map((bytes) => {
+
+  const perPage: { page: number; result: ExtractionResult }[] = [];
+  const failedPages: { page: number; reason: string }[] = [];
+
+  for (let i = 0; i < pages.length; i++) {
+    const pageNumber = i + 1;
+    const bytes = pages[i];
     const sniffed = sniffImageType(bytes);
     if (!sniffed) {
-      throw new ExtractionRefusal(
-        `unsupported image format — expected one of ${SUPPORTED_IMAGE_TYPES.join(", ")}`
-      );
+      failedPages.push({
+        page: pageNumber,
+        reason: `unsupported image format — expected one of ${SUPPORTED_IMAGE_TYPES.join(", ")}`,
+      });
+      continue;
     }
-    return { bytes, contentType: sniffed };
-  });
 
-  const raw = await model.extract(
-    buildExtractionPrompt(vocabulary, pages.length),
-    images,
-    buildExtractionSchema(vocabulary)
-  );
-  return parseExtractionResponse(raw, vocabulary);
+    try {
+      const raw = await model.extract(
+        // Each call is told which page it is looking at and how many
+        // there are, so a model seeing only the totals page does not
+        // report the absent line table as a failure to read one.
+        buildExtractionPrompt(vocabulary, pages.length, pageNumber),
+        [{ bytes, contentType: sniffed }],
+        buildExtractionSchema(vocabulary)
+      );
+      perPage.push({ page: pageNumber, result: parseExtractionResponse(raw, vocabulary) });
+    } catch (err) {
+      // One unreadable page does not sink the document. The others
+      // may carry everything needed, and the failure is recorded so
+      // that a later validation mismatch has a visible explanation.
+      failedPages.push({ page: pageNumber, reason: err instanceof Error ? err.message : String(err) });
+    }
+  }
+
+  if (perPage.length === 0) {
+    throw new ExtractionRefusal(
+      failedPages.length === 1
+        ? failedPages[0].reason
+        : `none of the ${pages.length} pages could be read: ${failedPages.map((f) => `page ${f.page}: ${f.reason}`).join("; ")}`
+    );
+  }
+
+  return mergePageResults(perPage, pages.length, failedPages);
 }
 
-/** Single-page convenience, which is still the common case. */
+/**
+ * Merges per-page results into one.
+ *
+ * The rules, each chosen because the alternative would assert
+ * something untrue:
+ *
+ * - **A field goes to the first page that read it.** Pages are
+ *   complementary in practice; the first non-null answer is the only
+ *   answer in the overwhelming majority of cases.
+ * - **Disagreements are reported, not resolved.** Silently preferring
+ *   one page would hide the one situation where a human genuinely
+ *   needs to look.
+ * - **Lines concatenate in page order**, renumbered sequentially, so
+ *   a table continuing across a break reads as one table.
+ * - **Confidence is the LOWEST any page reported**, never an average.
+ *   A document is only as trustworthy as its least trustworthy page,
+ *   and averaging would let a confident header page mask a barely
+ *   legible one.
+ * - **A field is missing only if EVERY page failed to read it.**
+ */
+export function mergePageResults(
+  perPage: readonly { page: number; result: ExtractionResult }[],
+  pageCount: number,
+  failedPages: { page: number; reason: string }[] = []
+): MultiPageExtractionResult {
+  const facts: InvoiceFacts = {};
+  const sources = new Map<string, number>();
+  const conflicts: PageConflict[] = [];
+  const conflictValues = new Map<string, { page: number; value: string | number | boolean }[]>();
+
+  for (const { page, result } of perPage) {
+    for (const [field, value] of Object.entries(result.facts)) {
+      // Derived facts are recomputed after the merge, never carried
+      // from a page: extraction.confidence in particular must reflect
+      // the whole document, not whichever page happened to be first.
+      if (field.startsWith("extraction.")) continue;
+      if (!(field in facts)) {
+        facts[field] = value;
+        sources.set(field, page);
+      } else if (facts[field] !== value) {
+        const existing = conflictValues.get(field) ?? [];
+        existing.push({ page, value: value as string | number | boolean });
+        conflictValues.set(field, existing);
+      }
+    }
+  }
+
+  for (const [field, others] of conflictValues) {
+    conflicts.push({
+      field,
+      chosen: facts[field] as string | number | boolean,
+      chosenPage: sources.get(field) ?? 0,
+      others,
+    });
+  }
+
+  // Lines concatenate in page order and are renumbered, so a table
+  // split across a page break reads as one continuous table rather
+  // than two that both start at line 1.
+  const lines: ExtractedLine[] = [];
+  for (const { result } of perPage) {
+    for (const line of result.lines) {
+      const { lineNumber: _ignored, ...rest } = line;
+      lines.push({ ...rest, lineNumber: lines.length + 1 });
+    }
+  }
+
+  const confidence = Math.min(...perPage.map((p) => p.result.confidence));
+
+  // Missing only where EVERY page failed to read it: a field on page
+  // 2 alone is not missing because page 1 could not see it.
+  const missingFields = perPage[0].result.missingFields.filter(
+    (field) => !(field in facts)
+  );
+
+  facts["extraction.confidence"] = confidence;
+
+  return {
+    facts,
+    lines,
+    linesTruncated: perPage.some((p) => p.result.linesTruncated),
+    confidence,
+    missingFields,
+    rawModelOutput: perPage.map((p) => `--- page ${p.page} ---\n${p.result.rawModelOutput}`).join("\n"),
+    pageCount,
+    conflicts,
+    failedPages,
+  };
+}
+
 export async function extractInvoiceFromImage(
   model: ExtractionModel,
   bytes: Uint8Array,

@@ -165,47 +165,51 @@ describe("finalising", () => {
     expect(String((result.body as { error: string }).error)).toContain("no gaps");
   });
 
-  it("sends every page to the model, in document order, in ONE call", async () => {
+  it("sends ONE call per page, in document order", async () => {
+    // Changed from a single multi-image call (decision 0046): two
+    // real 1.5MB and 2.8MB scans together exceeded the model's time
+    // budget, while either alone extracted comfortably.
     const storage = memoryStorage();
     const id = await newDocument();
     await handleUploadPage(env.DB, storage, id, 2, PAGE_TWO);
     await handleUploadPage(env.DB, storage, id, 1, PAGE_ONE);
 
-    let calls = 0;
-    let seenPages: readonly { bytes: Uint8Array }[] = [];
+    const callPages: number[] = [];
     const spy = {
       extract: async (_p: string, images: readonly { bytes: Uint8Array; contentType: string }[]) => {
-        calls += 1;
-        seenPages = images;
+        // Each call carries exactly one image — that is the whole
+        // point of the change.
+        expect(images).toHaveLength(1);
+        callPages.push(images[0].bytes[4]);
         return MORRISON;
       },
     };
     await handleFinalisePendingDocument(env.DB, storage, id, spy);
 
-    expect(calls).toBe(1);
-    expect(seenPages).toHaveLength(2);
     // Page 1 first, despite page 2 being uploaded first.
-    expect(seenPages[0].bytes[4]).toBe(0x01);
-    expect(seenPages[1].bytes[4]).toBe(0x02);
+    expect(callPages).toEqual([0x01, 0x02]);
   });
 
-  it("tells the model it is looking at one invoice across several pages", async () => {
+  it("tells each call which page it is looking at, and not to infer the others", async () => {
     const storage = memoryStorage();
     const id = await newDocument();
     await handleUploadPage(env.DB, storage, id, 1, PAGE_ONE);
     await handleUploadPage(env.DB, storage, id, 2, PAGE_TWO);
 
-    let prompt = "";
+    const prompts: string[] = [];
     const spy = {
       extract: async (p: string) => {
-        prompt = p;
+        prompts.push(p);
         return MORRISON;
       },
     };
     await handleFinalisePendingDocument(env.DB, storage, id, spy);
-    expect(prompt).toMatch(/2 images/);
-    expect(prompt).toMatch(/pages of ONE invoice/);
-    expect(prompt).toMatch(/never one per page/);
+
+    expect(prompts[0]).toMatch(/page 1 of a 2-page invoice/);
+    expect(prompts[1]).toMatch(/page 2 of a 2-page invoice/);
+    // Without this, a model shown only the totals page treats the
+    // absent line table as a failure to read one.
+    expect(prompts[0]).toMatch(/not missing/);
   });
 
   it("produces a real invoice with the totals that only page two carries", async () => {
@@ -223,21 +227,53 @@ describe("finalising", () => {
     expect(row).toEqual({ invoice_number: "SKELS26003894", total_with_vat: 3137.47 });
   });
 
-  it("the line-sum check finally passes, with both the lines and the total present", async () => {
-    // The original failure, closed: page one has the lines, page two
-    // has the total, and only together do they validate.
+  it("the line-sum check finally passes, with the lines and the total from DIFFERENT pages", async () => {
+    // The original failure, closed. Page one carries the eight charge
+    // lines and no total; page two carries the total and no lines.
+    // Only merged do they validate — which is the whole argument for
+    // per-page calls being complementary rather than competing.
     const storage = memoryStorage();
     const id = await newDocument();
     await handleUploadPage(env.DB, storage, id, 1, PAGE_ONE);
     await handleUploadPage(env.DB, storage, id, 2, PAGE_TWO);
-    const result = await handleFinalisePendingDocument(env.DB, storage, id, fakeModel(MORRISON));
+
+    const pageOne = JSON.stringify({
+      invoiceNumber: "SKELS26003894",
+      currencyCode: "EUR",
+      lines: [
+        { description: "International Freight", amount: 1797.47 },
+        { description: "Destination Terminal Handling", amount: 275.0 },
+        { description: "ISPS / Port Security", amount: 35.0 },
+        { description: "Destination Documentation Fee", amount: 75.0 },
+        { description: "Equipment Fee", amount: 25.0 },
+        { description: "Delivery Cartage", amount: 585.0 },
+        { description: "Destination Customs Clearance", amount: 85.0 },
+        { description: "Drop off", amount: 260.0 },
+      ],
+      _confidence: 0.9,
+    });
+    const pageTwo = JSON.stringify({
+      invoiceNumber: "SKELS26003894",
+      netTotalBeforeVat: 3137.47,
+      vatAmount: 0,
+      totalWithVat: 3137.47,
+      lines: null,
+      _confidence: 0.9,
+    });
+
+    let call = 0;
+    const perPageModel = {
+      extract: async () => (call++ === 0 ? pageOne : pageTwo),
+    };
+    const result = await handleFinalisePendingDocument(env.DB, storage, id, perPageModel);
 
     const visit = await env.DB.prepare(
-      "SELECT validation_passed, validation_checked FROM stage_visits WHERE process_instance_id = ? AND validation_checked IS NOT NULL"
+      "SELECT validation_passed, validation_checked, validation_failures FROM stage_visits WHERE process_instance_id = ? AND validation_checked IS NOT NULL"
     )
       .bind((result.body as { instanceId: string }).instanceId)
-      .first<{ validation_passed: number; validation_checked: string }>();
+      .first<{ validation_passed: number; validation_checked: string; validation_failures: string }>();
     expect(visit?.validation_checked).toContain("line_sum");
+    expect(visit?.validation_failures).toBe("");
     expect(visit?.validation_passed).toBe(1);
   });
 

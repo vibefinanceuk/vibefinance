@@ -549,6 +549,12 @@ export async function handleFinalisePendingDocument(
       missingFields,
       lineCount: extractedLines.length,
       linesTruncated,
+      // Surfaced, not swallowed. A page that failed is exactly why a
+      // total might not match its lines, and a genuine disagreement
+      // between pages is the one case a human needs to look at — both
+      // are useless if the response does not carry them.
+      ...(extraction.conflicts.length > 0 ? { conflicts: extraction.conflicts } : {}),
+      ...(extraction.failedPages.length > 0 ? { failedPages: extraction.failedPages } : {}),
     };
   }
   return result;
