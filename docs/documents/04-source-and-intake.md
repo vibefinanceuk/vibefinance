@@ -240,7 +240,9 @@ mailbox cannot choose an endpoint.
 
 ### 3.3 The ordered cascade
 
-> **Status —** Partly built. The **channels** are real (decision 0061):
+> **Status —** Partly built. The **detector** is real (decision 0062)
+> and tested against genuine Factur-X fixtures; nothing calls it yet.
+> The **channels** are real (decision 0061):
 > `intake_channels` carries a `structure` of `structured_xml`,
 > `structured_pdfa` or `image`, with a partial unique index giving
 > detection exactly one candidate per structure per process. What is
@@ -758,6 +760,7 @@ the repository at `docs/decisions/`:
 | 0059 | The UBL parser field gap | Section 3.1 — why the exact paths were least validated |
 | 0060 | Sources | Section 2 — the sources table, and the collision resolved |
 | 0061 | Intake channel structure | Section 3.3 — channels as per-process structural handlers |
+| 0062 | Structure detection | Section 3.3 — the cascade, and why its order is the substance |
 
 Design notes, longer than a decision record and narrower than this
 document, are kept at `docs/design/`: `extraction.md`, `validation.md`
