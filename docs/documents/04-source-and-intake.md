@@ -900,6 +900,7 @@ the repository at `docs/decisions/`:
 | 0064 | After task completion | Section 10.4 — the three engine gaps the stage rail found |
 | 0068 | Retaining the captured document | Section 10.1 — the blocker, and why a failure does not refuse |
 | 0069 | Content type from detection | Section 10.1 — typing a retained document by everything detection knew |
+| 0070 | Reporting what was stored | Section 10.1 — why the capture response names the type and key |
 
 Design notes, longer than a decision record and narrower than this
 document, are kept at `docs/design/`: `extraction.md`, `validation.md`,

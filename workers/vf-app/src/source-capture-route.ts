@@ -46,6 +46,16 @@ async function channelFor(
     .first<ChannelRow>();
 }
 
+export interface RetentionOutcome {
+  retained: boolean;
+  /** Present when retained: what the document was stored as. */
+  contentType?: string;
+  /** Present when retained: where, so a caller can fetch it. */
+  key?: string;
+  /** Present when not: which of the failure modes this was. */
+  reason?: string;
+}
+
 /**
  * Retains the document exactly as it arrived — decision 0068.
  *
@@ -70,7 +80,7 @@ async function retainOriginal(
   // no embedded invoice has no structure and is still a PDF (0069).
   detection: { structure: DetectedStructure | null; attempted: readonly { test: string; outcome: string }[] },
   issueDate?: string
-): Promise<{ retained: boolean; reason?: string }> {
+): Promise<RetentionOutcome> {
   if (!bucket) return { retained: false, reason: "no R2 bucket is bound" };
   if (!customerId) return { retained: false, reason: "CUSTOMER_ID is not configured" };
 
@@ -87,7 +97,12 @@ async function retainOriginal(
       key,
       bytes: body,
     });
-    return { retained: true };
+    // What was stored, not just that something was. Decision 0069 was a
+    // mis-typed document that reported `retained: true` and could only
+    // be caught by querying the stored row — the response said nothing
+    // that would have given it away. Reporting the type makes the next
+    // one visible where the caller is already looking.
+    return { retained: true, contentType, key };
   } catch (err) {
     // UNIQUE(invoice_id, document_type) makes a second attempt for the
     // same invoice a real refusal rather than a silent overwrite
@@ -177,7 +192,7 @@ function withIntakeFacts(
   result: RouteResult,
   structure: string,
   attempted: string,
-  retention?: { retained: boolean; reason?: string }
+  retention?: RetentionOutcome
 ): RouteResult {
   if (result.status >= 400) return result;
   return {

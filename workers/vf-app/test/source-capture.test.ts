@@ -269,3 +269,50 @@ describe("retaining the original document (decision 0068)", () => {
     expect(puts).toHaveLength(0);
   });
 });
+
+describe("the response says what was stored, not just that it was (decision 0070)", () => {
+  function recordingBucketB() {
+    return { put: async () => {} } as unknown as R2Bucket;
+  }
+
+  it("reports the content type, so a mis-typed document is visible without a database query", async () => {
+    // Decision 0069 was exactly that bug: retained: true was accurate,
+    // the stored type was wrong, and nothing in the response would have
+    // given it away.
+    const result = await handleCaptureFromSource(
+      env.DB,
+      "src-mail",
+      fromBase64(PLAIN_NO_ATTACHMENT_B64),
+      fakeModel("{}"),
+      undefined,
+      recordingBucketB(),
+      "acme"
+    );
+    const doc = (result.body as { document: { retained: boolean; contentType: string } }).document;
+    expect(doc.retained).toBe(true);
+    expect(doc.contentType).toBe("application/pdf");
+  });
+
+  it("reports the key, so the stored object can be fetched without looking it up", async () => {
+    const result = await handleCaptureFromSource(
+      env.DB,
+      "src-mail",
+      UBL,
+      fakeModel("{}"),
+      undefined,
+      recordingBucketB(),
+      "acme"
+    );
+    const doc = (result.body as { document: { key: string } }).document;
+    expect(doc.key).toMatch(/^acme\/\d{4}\/[0-9a-f-]+\.xml$/);
+  });
+
+  it("carries no content type or key when nothing was stored", async () => {
+    // A key for an object that does not exist would be worse than none.
+    const result = await handleCaptureFromSource(env.DB, "src-mail", UBL, fakeModel("{}"));
+    const doc = (result.body as { document: Record<string, unknown> }).document;
+    expect(doc.retained).toBe(false);
+    expect(doc.contentType).toBeUndefined();
+    expect(doc.key).toBeUndefined();
+  });
+});

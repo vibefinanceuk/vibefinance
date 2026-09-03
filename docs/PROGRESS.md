@@ -235,7 +235,7 @@ elsewhere.
 
 | Package | Tests |
 |---|---|
-| `vf-app` | 786 |
+| `vf-app` | 789 |
 | `vf-licence` | 153 |
 | `shared` | 149 passing, 2 known pre-existing failures |
 
@@ -257,7 +257,7 @@ holding — 29 migrations for `vf-app`, 7 for `vf-licence`.
 | `docs/design/mockups/` | Four screens as static HTML | Current |
 | `docs/design/multi-authority-intake.md` | Non-EN-16931 authorities | Design only |
 | `docs/design/text-layer-extraction.md` | Reading a PDF's own text | Design only |
-| `docs/decisions/` | 69 decision records | Current |
+| `docs/decisions/` | 70 decision records | Current |
 
 Document 4's markdown source is at `docs/documents/`, with
 `scripts/build-document-04.cjs` rendering the Word edition. The `.docx`
@@ -284,6 +284,13 @@ overstating itself.
 interpreter, extraction, and the type system. A field that cannot be
 read is absent, never invented. A rule that cannot be expressed is
 refused, never approximated.
+
+**Report what happened, not just that it happened.** A caller told only
+that an operation succeeded cannot see *how* it succeeded. Decision
+0068's `retained: true` was accurate while the document was being stored
+under the wrong content type, and only a database query revealed it
+(0069, 0070). The response now names the type and key, so the next
+mistake of that kind is visible where somebody is already looking.
 
 **Instrument the boundary with the real payload.** Learned the hard
 way over six attempts at one bug. A diagnostic that tests a
