@@ -39,6 +39,7 @@ import {
 import { createWorkersAiExtractionModel } from "./extraction-model.js";
 import { handleGetExtractionSettings, handleUpdateExtractionSettings } from "./extraction-settings-route.js";
 import { handleToMarkdownDiagnostic } from "./tomarkdown-diagnostic.js";
+import { handleCreateSource, handleListSources } from "./source-route.js";
 import { resolveVocabulary } from "@vibefinance/shared";
 import { getSupplierHistory } from "./invoice-history.js";
 import { handleCreateCustomField, handleListCustomFields, loadCustomFields } from "./custom-field-route.js";
@@ -892,6 +893,36 @@ export default {
         return json({ error: t("invalidJsonBody", resolveLocale(env.LOCALE)) }, 400);
       }
       const result = await handleCreateProcess(db, (body ?? {}) as Record<string, unknown>);
+      return json(result.body, result.status);
+    }
+
+    // Sources (decision 0060) — the configured connections through
+    // which documents reach this process. Administrative: source
+    // configuration means credentials, which is platform plumbing
+    // rather than accounts payable work (decision 0055 section 5).
+    const sourcesMatch = pathname.match(/^\/processes\/([^/]+)\/sources$/);
+    if (sourcesMatch && request.method === "GET") {
+      const { db } = resolveTenant(request, env);
+      const auth = await requirePermission(db, request, "Admin.Configure");
+      if (!auth.authorized) {
+        return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
+      }
+      const result = await handleListSources(db, sourcesMatch[1]);
+      return json(result.body, result.status);
+    }
+    if (sourcesMatch && request.method === "POST") {
+      const { db } = resolveTenant(request, env);
+      const auth = await requirePermission(db, request, "Admin.Configure");
+      if (!auth.authorized) {
+        return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
+      }
+      let body: unknown;
+      try {
+        body = await request.json();
+      } catch {
+        return json({ error: t("invalidJsonBody", resolveLocale(env.LOCALE)) }, 400);
+      }
+      const result = await handleCreateSource(db, sourcesMatch[1], (body ?? {}) as Record<string, unknown>);
       return json(result.body, result.status);
     }
 

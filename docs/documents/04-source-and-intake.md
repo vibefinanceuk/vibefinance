@@ -32,9 +32,13 @@ then does with it is Document 2's subject.
 
 ## 2. Sources
 
-> **Status —** Proposed. No `sources` table exists. Today's equivalent is
-> `intake_channels`, which is process-bound and does the job described
-> here under a name that now means something else. See section 2.5.
+> **Status —** The `sources` table is **built** (decision 0060), with
+> every existing `intake_channels` row backfilled into it under the same
+> id. No route consumes a source yet: capture still happens against
+> `intake_channels`, so nothing observable has changed. The binding
+> rules and administrative ownership below are as built; the detection
+> that would route a source's documents to a structural channel is not.
+> See section 2.5.
 
 ### 2.1 What a source is
 
@@ -163,9 +167,16 @@ The second is likely better, because the structure handlers may never need
 to be a table at all. Spending a migration and an API break to free a word
 for something that is not a database concept is a poor trade.
 
-**What must not happen is leaving it undecided.** "Intake channel"
-currently means the process-bound arrival point in the schema and the
-structure handler in conversation — opposite ends of the pipeline.
+> **Resolved, the other way round —** The recommendation above was
+> wrong, because a question had not been settled when it was written:
+> intake channels are **per-process**, since mapping rules are tailored
+> to a process and an AR invoice wants different mappings from an
+> expense receipt. Once they are genuinely per-process structural
+> handlers, `intake_channels` is the right name for them, and what
+> needs a new home is the source. That turns a rename into an addition.
+> Built as decision 0060: a `sources` table, additive, with every
+> existing channel backfilled under the same id so stored
+> `mandate.channel` values keep resolving.
 
 ---
 
@@ -741,6 +752,7 @@ the repository at `docs/decisions/`:
 | 0057 | The settings audit | Section 8 — the PDF/XML audit, and the tolerance gap |
 | 0058 | Mapping rules | Section 11 — the naming, and the vocabulary subset |
 | 0059 | The UBL parser field gap | Section 3.1 — why the exact paths were least validated |
+| 0060 | Sources | Section 2 — the sources table, and the collision resolved |
 
 Design notes, longer than a decision record and narrower than this
 document, are kept at `docs/design/`: `extraction.md`, `validation.md`

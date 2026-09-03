@@ -32,6 +32,7 @@ import pageExtractionSql from "../../../migrations/0023_page_extraction_results.
 import fieldOverridesSql from "../../../migrations/0024_field_overrides.sql?raw";
 import revalidationSql from "../../../migrations/0025_revalidation.sql?raw";
 import extractionSettingsSql from "../../../migrations/0026_extraction_settings.sql?raw";
+import sourcesSql from "../../../migrations/0027_sources.sql?raw";
 
 // Another known divergence from production, on top of the one below:
 // D1's exec() splits its input by newline and executes each non-empty
@@ -77,6 +78,7 @@ function toOneStatementPerLine(sql: string): string {
 // gets a genuinely clean schema regardless of what the pool does or
 // does not reset.
 const TABLES_IN_DROP_ORDER = [
+  "sources",
   "field_overrides",
   "pending_document_pages",
   "pending_documents",
@@ -141,4 +143,5 @@ export async function applyTestSchema(): Promise<void> {
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(fieldOverridesSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(revalidationSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(extractionSettingsSql)));
+  await env.DB.exec(toOneStatementPerLine(stripSqlComments(sourcesSql)));
 }
