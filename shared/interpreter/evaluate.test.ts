@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { resolveVocabulary } from "./vocabulary.js";
+import { resolveVocabulary, isKnownField } from "./vocabulary.js";
 import {
   MAX_COMBINATOR_DEPTH,
   RuleValidationError,
@@ -445,5 +445,38 @@ describe("validateRule — set_field params (decision 0049)", () => {
       { key: "custom.reference", label: "Reference", type: "text", description: "x" },
     ]);
     expect(() => validateRule(rule({ field: "custom.reference", fromField: "BT-1" }), v)).not.toThrow();
+  });
+});
+
+describe("extraction.confidence is rule-addressable (decision 0054)", () => {
+  const rule = (field: string, operator: string, value?: unknown) =>
+    ({
+      id: "r1",
+      conditions: { all: [{ field, operator, ...(value !== undefined ? { value } : {}) }] },
+      actions: [{ type: "assign_task", params: { team: "AP team", permission: "AP.Review" } }],
+    }) as never;
+
+  it("accepts the low-confidence review rule the extractor's own comment promises", () => {
+    // extraction.ts sets facts["extraction.confidence"] with a comment
+    // saying customers can write rules against it. Until this field
+    // was declared they could not — validateRule refused every such
+    // rule, the same stored-but-undeclared divergence cost_centre had.
+    expect(() => validateRule(rule("extraction.confidence", "less_than", 0.8))).not.toThrow();
+  });
+
+  it("accepts a middle band flagged rather than held", () => {
+    expect(() => validateRule(rule("extraction.confidence", "between", [0.6, 0.9]))).not.toThrow();
+  });
+
+  it("refuses a text operator against it, because it is a score not a label", () => {
+    // Declared as number, so the type system catches an operator that
+    // would silently never fire.
+    expect(() => validateRule(rule("extraction.confidence", "contains", "high"))).toThrow(
+      RuleValidationError
+    );
+  });
+
+  it("is a known field", () => {
+    expect(isKnownField("extraction.confidence")).toBe(true);
   });
 });

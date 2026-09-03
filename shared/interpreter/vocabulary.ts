@@ -51,6 +51,7 @@ export const DERIVED_FIELDS = [
   "validation.failuresAfterRules",
   "extraction.conflicts",
   "extraction.pagesFailed",
+  "extraction.confidence",
   "invoice.duplicate_confidence",
 ] as const;
 
@@ -103,6 +104,7 @@ export const INVOICE_FIELD_TYPES: Record<string, FieldType> = {
   "validation.failuresAfterRules": "text",
   "extraction.conflicts": "text",
   "extraction.pagesFailed": "number",
+  "extraction.confidence": "number",
   "invoice.duplicate_confidence": "number",
 };
 
@@ -236,6 +238,8 @@ export const DERIVED_FIELD_DESCRIPTIONS: Record<DerivedField, string> = {
     "a comma-separated list of the fields whose pages disagreed during multi-page extraction, empty when none did. One page reading a value another page contradicts is a real signal worth a human's attention: 'extraction.conflicts contains BT-112'. A string so the existing contains operator works.",
   "extraction.pagesFailed":
     "how many pages of a multi-page document could not be extracted at all, 0 when every page was read. A missing page is often exactly why a total does not match its lines.",
+  "extraction.confidence":
+    "a score from 0.0 to 1.0 for how confident extraction was in the facts it read off a document — 1.0 for anything parsed from structured XML, lower for a rendered page the model had to interpret, and 0 when any page of a multi-page document failed outright. Not a boolean, for the same reason invoice.duplicate_confidence is not: the threshold is the customer's to choose, not the platform's to assume. Compare it with less_than, or use between for a middle band that is flagged rather than held.",
   "invoice.duplicate_confidence":
     "a weighted score from 0.0 to 1.0 estimating how likely this invoice is to duplicate another already on file from the same supplier — computed from an exact match on invoice number (60%), total amount (25%), and issue date (15%); zero if the supplier doesn't match at all. Not a boolean — compare it against whatever threshold a rule chooses with greater_than.",
 };
