@@ -6,6 +6,10 @@ is not, and what is known to be uncertain.
 The decision records in `docs/decisions/` are the authority on *why*
 anything is the way it is. This is the map.
 
+**Picking this up cold?** `docs/HANDOVER.md` is the starting point —
+where things stand, what needs a decision rather than work, and what to
+do next.
+
 ---
 
 ## What the system does today
