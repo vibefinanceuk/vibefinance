@@ -136,3 +136,106 @@ describe("a recognised structure with no channel configured", () => {
     expect(String((result.body as { error: string }).error)).toContain("no structured_xml intake channel");
   });
 });
+
+describe("retaining the original document (decision 0068)", () => {
+  // A fake bucket rather than the test environment's real one, so the
+  // stored key and bytes can be asserted directly.
+  function recordingBucket() {
+    const puts: { key: string; contentType: string; size: number }[] = [];
+    return {
+      puts,
+      bucket: {
+        put: async (key: string, body: ArrayBuffer, opts: { httpMetadata?: { contentType?: string } }) => {
+          puts.push({
+            key,
+            contentType: opts?.httpMetadata?.contentType ?? "",
+            size: body.byteLength,
+          });
+        },
+      } as unknown as R2Bucket,
+    };
+  }
+
+  it("stores a UBL document as application/xml under the customer's key", async () => {
+    const { puts, bucket } = recordingBucket();
+    const result = await handleCaptureFromSource(env.DB, "src-mail", UBL, fakeModel("{}"), undefined, bucket, "acme");
+
+    expect((result.body as { document: { retained: boolean } }).document.retained).toBe(true);
+    expect(puts).toHaveLength(1);
+    expect(puts[0].contentType).toBe("application/xml");
+    // {customer}/{year}/{invoice}.{ext} — the year from the invoice's own
+    // issue date, not from when this happened to run.
+    expect(puts[0].key).toMatch(/^acme\/\d{4}\/[0-9a-f-]+\.xml$/);
+  });
+
+  it("stores a hybrid PDF as application/pdf, not as its embedded XML", async () => {
+    // What is retained is what arrived. The embedded invoice is derived.
+    const { puts, bucket } = recordingBucket();
+    await handleCaptureFromSource(
+      env.DB,
+      "src-mail",
+      fromBase64(FACTURX_PLAIN_B64),
+      fakeModel("{}"),
+      undefined,
+      bucket,
+      "acme"
+    );
+    expect(puts[0].contentType).toBe("application/pdf");
+    expect(puts[0].key).toMatch(/\.pdf$/);
+  });
+
+  it("retains a document nothing could read — where it matters most", async () => {
+    // There are no facts standing in for it, so the original is the only
+    // record of what arrived.
+    const { puts, bucket } = recordingBucket();
+    const result = await handleCaptureFromSource(env.DB, "src-mail", GIBBERISH, fakeModel("{}"), undefined, bucket, "acme");
+
+    expect((result.body as { document: { retained: boolean } }).document.retained).toBe(true);
+    expect(puts[0].contentType).toBe("application/octet-stream");
+    expect(puts[0].size).toBe(GIBBERISH.length);
+  });
+
+  it("records a D1 reference alongside the R2 object", async () => {
+    const { bucket } = recordingBucket();
+    const result = await handleCaptureFromSource(env.DB, "src-mail", UBL, fakeModel("{}"), undefined, bucket, "acme");
+    const row = await env.DB.prepare(
+      "SELECT document_type, content_type FROM invoice_documents WHERE invoice_id = ?"
+    )
+      .bind((result.body as { id: string }).id)
+      .first<{ document_type: string; content_type: string }>();
+    expect(row?.document_type).toBe("original");
+    expect(row?.content_type).toBe("application/xml");
+  });
+
+  it("captures successfully when no bucket is bound, and says the original was not retained", async () => {
+    // Refusing would discard facts that were successfully extracted, in
+    // exchange for bytes that are already lost — the request body cannot
+    // be replayed.
+    const result = await handleCaptureFromSource(env.DB, "src-mail", UBL, fakeModel("{}"));
+    expect(result.status).toBe(201);
+    const doc = (result.body as { document: { retained: boolean; reason: string } }).document;
+    expect(doc.retained).toBe(false);
+    expect(doc.reason).toContain("no R2 bucket");
+  });
+
+  it("captures successfully when the R2 write fails, and reports why", async () => {
+    const failing = {
+      put: async () => {
+        throw new Error("simulated R2 outage");
+      },
+    } as unknown as R2Bucket;
+
+    const result = await handleCaptureFromSource(env.DB, "src-mail", UBL, fakeModel("{}"), undefined, failing, "acme");
+    expect(result.status).toBe(201);
+    const doc = (result.body as { document: { retained: boolean; reason: string } }).document;
+    expect(doc.retained).toBe(false);
+    expect(doc.reason).toContain("simulated R2 outage");
+  });
+
+  it("says so when CUSTOMER_ID is not configured, rather than inventing a key", async () => {
+    const { puts, bucket } = recordingBucket();
+    const result = await handleCaptureFromSource(env.DB, "src-mail", UBL, fakeModel("{}"), undefined, bucket);
+    expect((result.body as { document: { reason: string } }).document.reason).toContain("CUSTOMER_ID");
+    expect(puts).toHaveLength(0);
+  });
+});

@@ -921,7 +921,12 @@ export default {
         sourceCaptureMatch[1],
         bytes,
         createWorkersAiExtractionModel(env.AI, env.EXTRACTION_MODEL_ID),
-        url.searchParams.get("id") ?? undefined
+        url.searchParams.get("id") ?? undefined,
+        // Both optional. A deployment without an R2 bucket still
+        // captures; it reports that the original was not retained
+        // rather than refusing the document (decision 0068).
+        env.DOCUMENTS,
+        env.CUSTOMER_ID
       );
       return json(result.body, result.status);
     }

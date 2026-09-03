@@ -120,18 +120,15 @@ from a transport provider"*, which should be a lookup against
 configuration, never a model inference. Now also the missing condition
 for mapping rules (0058).
 
-**Storing the document that was captured.** `intake-capture-route.ts`
-has no R2 access: a document arriving at `/sources/:id/capture` is read
-and discarded. Only the multi-page flow writes to R2, and it deletes on
-finalise. **This blocks the entire operator interface** — key-from-image
-has no document to show. Document 1 section 6 records retention as
-proposed with no code, and the retention period as an open compliance
-question.
-
 **Key-from-image.** The third provenance class (0055 section 8): a
 person producing facts extraction could not. Every task today reviews or
 approves facts that already exist. Designed and mocked
-(`docs/design/operator-interface.md`), blocked on the above.
+(`docs/design/operator-interface.md`); no longer blocked, since 0068
+retains the document there is now something to show.
+
+**A retention period.** Nothing expires anything, so today's answer is
+"forever". Document 1 section 6.4 records this as a genuine compliance
+question.
 
 **Send-back.** A task cannot complete negatively, and
 `onTaskCompleted` advances by sequence without evaluating rules — so
@@ -238,7 +235,7 @@ elsewhere.
 
 | Package | Tests |
 |---|---|
-| `vf-app` | 777 |
+| `vf-app` | 784 |
 | `vf-licence` | 153 |
 | `shared` | 149 passing, 2 known pre-existing failures |
 
@@ -260,7 +257,7 @@ holding — 29 migrations for `vf-app`, 7 for `vf-licence`.
 | `docs/design/mockups/` | Four screens as static HTML | Current |
 | `docs/design/multi-authority-intake.md` | Non-EN-16931 authorities | Design only |
 | `docs/design/text-layer-extraction.md` | Reading a PDF's own text | Design only |
-| `docs/decisions/` | 67 decision records | Current |
+| `docs/decisions/` | 68 decision records | Current |
 
 Document 4's markdown source is at `docs/documents/`, with
 `scripts/build-document-04.cjs` rendering the Word edition. The `.docx`

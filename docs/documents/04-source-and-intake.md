@@ -699,21 +699,26 @@ Everything above ends with a fact reaching the interpreter. For a
 document intake could not read, the next step is a person — and until
 now the entire system has been driven by `curl`.
 
-### 10.1 The blocker: the document is not kept
+### 10.1 The blocker, now removed
 
-`intake-capture-route.ts` has **no R2 access at all**. A document
-arriving at `/sources/:id/capture` is read, extracted from or not, and
-discarded. Only the multi-page pending-document flow writes to R2, and it
-deletes on finalise.
+A document arriving at `/sources/:id/capture` used to be read, extracted
+from or not, and **discarded** — while a full storage layer sat unused
+since decisions 0013 and 0035. Key-from-image could not be built, because
+there was nothing to show.
 
-Document 1 section 6 records long-term retention as *"proposed design
-only, no code exists for this yet"*, and that remains accurate for the
-capture path.
+Decision 0068 wires it. The original is retained on every source capture,
+typed by what detection concluded it was, and **most importantly on the
+undetectable path** — where there are no facts standing in for it, so the
+original is the only record of what arrived.
 
-**Key-from-image cannot be built until this is.** The screen's premise is
-that an operator reads the document; there is nothing to read. The
-retention *period* is a live compliance question Document 1 already
-flags, not an implementation detail.
+A retention failure does not fail the capture: refusing would discard
+facts that were successfully extracted, in exchange for bytes already
+lost, since a request body cannot be replayed. The failure is reported
+instead.
+
+> **Still open: the retention period.** Document 1 section 6.4 records it
+> as a genuine compliance question. Nothing expires anything today, so
+> the answer is "forever" — a decision by default rather than by choice.
 
 ### 10.2 What drawing the screens decided
 
@@ -819,7 +824,7 @@ closed vocabulary: **labels can be themed, field semantics cannot**.
 | Capture addressed to a source | **Built, live** |
 | An undetectable document captured, not rejected | **Built, live** |
 | EN 16931 document totals in the UBL parser | **Built, live** |
-| **Storing the document that was captured** | **Not built — blocks the rest** |
+| Retaining the captured original | **Built, live** |
 | Key-from-image | **Proposed, not built** |
 | Provenance classes (parsed / inferred / keyed) | **Proposed, not built** |
 | Terminal instance states, discard | **Proposed, not built** |
@@ -831,9 +836,9 @@ closed vocabulary: **labels can be themed, field semantics cannot**.
 
 ## 12. Open Questions
 
-1. **Storing the captured document** (section 10.1). Blocks the whole
-   operator interface, and carries the open retention-period question
-   from Document 1 section 6.4. The most consequential item here.
+1. **The retention period** (section 10.1). Nothing expires anything, so
+   today's answer is "forever". A genuine compliance question rather than
+   an implementation detail — Document 1 section 6.4.
 2. **One confidence field or two.** A single `intake.confidence` where
    structured intake scores 1.0 is fewer fields, but conflates "certain
    because parsed" with "certain because the model was confident" — two
@@ -893,6 +898,7 @@ the repository at `docs/decisions/`:
 | 0062 | Structure detection | Section 3.3 — the cascade, and why its order is the substance |
 | 0063 | Source capture | Sections 3.2 and 5 — one endpoint, and the undetectable document |
 | 0064 | After task completion | Section 10.4 — the three engine gaps the stage rail found |
+| 0068 | Retaining the captured document | Section 10.1 — the blocker, and why a failure does not refuse |
 
 Design notes, longer than a decision record and narrower than this
 document, are kept at `docs/design/`: `extraction.md`, `validation.md`,

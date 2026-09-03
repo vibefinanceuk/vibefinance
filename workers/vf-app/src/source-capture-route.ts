@@ -3,6 +3,12 @@ import { detectStructure, summariseAttempts, type DetectedStructure } from "./de
 import { handleCaptureIntake, handleCaptureImage, handleCaptureUblXml } from "./intake-capture-route.js";
 import type { ExtractionModel } from "./extraction.js";
 import { parseUblInvoice, UblParseError } from "@vibefinance/shared";
+import {
+  storeInvoiceDocument,
+  computeDocumentKey,
+  contentTypeForStructure,
+  extForContentType,
+} from "./document-storage.js";
 
 /**
  * Capture addressed to a SOURCE — decision 0063.
@@ -40,12 +46,62 @@ async function channelFor(
     .first<ChannelRow>();
 }
 
+/**
+ * Retains the document exactly as it arrived — decision 0068.
+ *
+ * Runs after capture rather than before, because
+ * invoice_documents.invoice_id is a real foreign key and the invoice
+ * does not exist until extraction has produced something to store it
+ * against.
+ *
+ * A failure here does NOT fail the capture. Refusing would discard facts
+ * that were successfully extracted, in exchange for bytes that are
+ * already lost — the request body cannot be replayed. So the capture
+ * stands and the failure becomes visible instead, as a fact a rule can
+ * test.
+ */
+async function retainOriginal(
+  bucket: R2Bucket | undefined,
+  db: D1Database,
+  customerId: string | undefined,
+  invoiceId: string,
+  bytes: Uint8Array,
+  structure: DetectedStructure | null,
+  issueDate?: string
+): Promise<{ retained: boolean; reason?: string }> {
+  if (!bucket) return { retained: false, reason: "no R2 bucket is bound" };
+  if (!customerId) return { retained: false, reason: "CUSTOMER_ID is not configured" };
+
+  const contentType = contentTypeForStructure(structure);
+  const key = computeDocumentKey(customerId, invoiceId, extForContentType(contentType), issueDate);
+  try {
+    // Copied into a fresh buffer: the caller's view may be a subarray of
+    // a larger allocation, and R2 would otherwise store the whole thing.
+    const body = bytes.slice().buffer as ArrayBuffer;
+    await storeInvoiceDocument(bucket, db, {
+      invoiceId,
+      documentType: "original",
+      contentType,
+      key,
+      bytes: body,
+    });
+    return { retained: true };
+  } catch (err) {
+    // UNIQUE(invoice_id, document_type) makes a second attempt for the
+    // same invoice a real refusal rather than a silent overwrite
+    // (decision 0035). Reported rather than swallowed.
+    return { retained: false, reason: (err as Error).message };
+  }
+}
+
 export async function handleCaptureFromSource(
   db: D1Database,
   sourceId: string,
   bytes: Uint8Array,
   model: ExtractionModel,
-  idOverride?: string
+  idOverride?: string,
+  bucket?: R2Bucket,
+  customerId?: string
 ): Promise<RouteResult> {
   const source = await db
     .prepare("SELECT id, process_id, name FROM sources WHERE id = ?")
@@ -65,7 +121,7 @@ export async function handleCaptureFromSource(
     // Not an error. An undetectable document is an invoice with no
     // facts, which reaches Validation and waits for a person to key it
     // or reject it (decision 0055 section 7).
-    return captureWithoutFacts(db, source, attempted, detection.attempted, idOverride);
+    return captureWithoutFacts(db, source, attempted, detection.attempted, bytes, idOverride, bucket, customerId);
   }
 
   const channel = await channelFor(db, source.process_id, detection.structure);
@@ -87,17 +143,27 @@ export async function handleCaptureFromSource(
   // Dispatch. Each branch delegates to the handler that already exists
   // and is already proven — this route decides WHICH, and adds no
   // extraction logic of its own.
+  let result: RouteResult;
   if (detection.structure === "structured_pdfa") {
     // The embedded XML is already in hand from detection, so it is
     // parsed here rather than extracted a second time.
-    return capturePreExtractedXml(db, channel.id, detection.embeddedXml as string, attempted, idOverride);
+    result = await capturePreExtractedXml(db, channel.id, detection.embeddedXml as string, attempted, idOverride);
+  } else if (detection.structure === "structured_xml") {
+    result = await handleCaptureUblXml(db, channel.id, new TextDecoder().decode(bytes), idOverride);
+  } else {
+    result = await handleCaptureImage(db, channel.id, bytes, model, idOverride);
   }
-  if (detection.structure === "structured_xml") {
-    const result = await handleCaptureUblXml(db, channel.id, new TextDecoder().decode(bytes), idOverride);
-    return withIntakeFacts(result, detection.structure, attempted);
-  }
-  const result = await handleCaptureImage(db, channel.id, bytes, model, idOverride);
-  return withIntakeFacts(result, detection.structure, attempted);
+
+  if (result.status >= 400) return result;
+
+  // Every successful branch converges here, so no structure can acquire
+  // a retention gap later without also bypassing the response shape.
+  const invoiceId = (result.body as { id?: string }).id;
+  const retention = invoiceId
+    ? await retainOriginal(bucket, db, customerId, invoiceId, bytes, detection.structure)
+    : { retained: false, reason: "the handler returned no invoice id" };
+
+  return withIntakeFacts(result, detection.structure, attempted, retention);
 }
 
 /**
@@ -105,11 +171,20 @@ export async function handleCaptureFromSource(
  * returned, so a caller can see which path a document took without
  * inferring it from the shape of the response.
  */
-function withIntakeFacts(result: RouteResult, structure: string, attempted: string): RouteResult {
+function withIntakeFacts(
+  result: RouteResult,
+  structure: string,
+  attempted: string,
+  retention?: { retained: boolean; reason?: string }
+): RouteResult {
   if (result.status >= 400) return result;
   return {
     status: result.status,
-    body: { ...(result.body as Record<string, unknown>), intake: { structure, attempted } },
+    body: {
+      ...(result.body as Record<string, unknown>),
+      intake: { structure, attempted },
+      ...(retention === undefined ? {} : { document: retention }),
+    },
   };
 }
 
@@ -165,7 +240,10 @@ async function captureWithoutFacts(
   source: SourceRow,
   attempted: string,
   detail: readonly { test: string; outcome: string }[],
-  idOverride?: string
+  bytes: Uint8Array,
+  idOverride?: string,
+  bucket?: R2Bucket,
+  customerId?: string
 ): Promise<RouteResult> {
   // Any structural channel of this process will do as the row's home:
   // the document has no structure, and the alternative is inventing a
@@ -198,10 +276,20 @@ async function captureWithoutFacts(
   } as Parameters<typeof handleCaptureIntake>[2]);
 
   if (result.status >= 400) return result;
+
+  // Retention matters MOST here. A document nothing could read is one
+  // where the original is the only record of what arrived — there are no
+  // facts standing in for it.
+  const invoiceId = (result.body as { id?: string }).id;
+  const retention = invoiceId
+    ? await retainOriginal(bucket, db, customerId, invoiceId, bytes, null)
+    : { retained: false, reason: "the handler returned no invoice id" };
+
   return {
     status: result.status,
     body: {
       ...(result.body as Record<string, unknown>),
+      document: retention,
       intake: {
         structure: null,
         attempted,

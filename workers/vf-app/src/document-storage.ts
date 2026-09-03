@@ -23,6 +23,35 @@ export type DocumentType = "original" | "generated_rendering";
  * retention year should reflect when it was issued, not when this
  * function happened to run.
  */
+/**
+ * The content type and extension a captured document should be stored
+ * under, given what detection concluded it was (decision 0068).
+ *
+ * Derived from the detected structure rather than from a caller's
+ * declared content type or a filename, both of which can be wrong — and
+ * under decision 0060 a mailbox attachment carries whatever content type
+ * the sender's mail client decided to put on it.
+ *
+ * An undetected document is stored as octet-stream. That is honest: the
+ * bytes are retained exactly as they arrived, and nothing claims to know
+ * what they are.
+ */
+export function contentTypeForStructure(structure: string | null, sniffedImageType?: string | null): string {
+  if (structure === "structured_pdfa") return "application/pdf";
+  if (structure === "structured_xml") return "application/xml";
+  if (structure === "image") return sniffedImageType ?? "image/jpeg";
+  return "application/octet-stream";
+}
+
+export function extForContentType(contentType: string): string {
+  if (contentType.includes("pdf")) return "pdf";
+  if (contentType.includes("xml")) return "xml";
+  if (contentType.includes("jpeg") || contentType.includes("jpg")) return "jpg";
+  if (contentType.includes("png")) return "png";
+  if (contentType.includes("webp")) return "webp";
+  return "bin";
+}
+
 export function computeDocumentKey(customerId: string, invoiceId: string, ext: string, issueDate?: string): string {
   const year = issueDate && /^\d{4}-\d{2}-\d{2}/.test(issueDate) ? issueDate.slice(0, 4) : new Date().getUTCFullYear().toString();
   return `${customerId}/${year}/${invoiceId}.${ext}`;
