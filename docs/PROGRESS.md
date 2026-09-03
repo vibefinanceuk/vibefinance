@@ -120,15 +120,18 @@ from a transport provider"*, which should be a lookup against
 configuration, never a model inference. Now also the missing condition
 for mapping rules (0058).
 
-**Key-from-image.** The third provenance class (0055 section 8): a
-person producing facts extraction could not. Every task today reviews or
-approves facts that already exist. Designed and mocked
-(`docs/design/operator-interface.md`); no longer blocked, since 0068
-retains the document there is now something to show.
-
 **A retention period.** Nothing expires anything, so today's answer is
 "forever". Document 1 section 6.4 records this as a genuine compliance
 question.
+
+**Re-evaluation after keying.** The facts change; no rule runs until
+something calls `visitCurrentStage`. The manual route exists, so an
+operator is not stuck, but the natural flow — key, then see validation
+pass — needs a further step. Related to 0064's parked-instance finding.
+
+**Keyed lines.** Lines live in `invoice_lines` rather than `facts_json`,
+so `provenance.keyed` covers header fields only and a keyed line is
+indistinguishable from a parsed one.
 
 **Send-back.** A task cannot complete negatively, and
 `onTaskCompleted` advances by sequence without evaluating rules — so
@@ -235,12 +238,12 @@ elsewhere.
 
 | Package | Tests |
 |---|---|
-| `vf-app` | 789 |
+| `vf-app` | 802 |
 | `vf-licence` | 153 |
 | `shared` | 149 passing, 2 known pre-existing failures |
 
 Both migration chains replay clean with every standing invariant
-holding — 29 migrations for `vf-app`, 7 for `vf-licence`.
+holding — 30 migrations for `vf-app`, 7 for `vf-licence`.
 
 ---
 
@@ -257,7 +260,7 @@ holding — 29 migrations for `vf-app`, 7 for `vf-licence`.
 | `docs/design/mockups/` | Four screens as static HTML | Current |
 | `docs/design/multi-authority-intake.md` | Non-EN-16931 authorities | Design only |
 | `docs/design/text-layer-extraction.md` | Reading a PDF's own text | Design only |
-| `docs/decisions/` | 70 decision records | Current |
+| `docs/decisions/` | 71 decision records | Current |
 
 Document 4's markdown source is at `docs/documents/`, with
 `scripts/build-document-04.cjs` rendering the Word edition. The `.docx`

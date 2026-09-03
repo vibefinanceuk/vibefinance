@@ -41,6 +41,7 @@ import { handleGetExtractionSettings, handleUpdateExtractionSettings } from "./e
 import { handleToMarkdownDiagnostic } from "./tomarkdown-diagnostic.js";
 import { handleCreateSource, handleListSources } from "./source-route.js";
 import { handleCaptureFromSource } from "./source-capture-route.js";
+import { handleKeyInvoiceFields } from "./key-fields-route.js";
 import { resolveVocabulary } from "@vibefinance/shared";
 import { getSupplierHistory } from "./invoice-history.js";
 import { handleCreateCustomField, handleListCustomFields, loadCustomFields } from "./custom-field-route.js";
@@ -904,6 +905,35 @@ export default {
     // Capture addressed to a source (decision 0063) — the caller knows
     // where a document arrived, not what it is. Detection decides the
     // structure and the structural channel handles it.
+    // Keying — a person producing facts extraction could not (decision
+    // 0071). AP.Validate rather than a new permission: the document
+    // sits at Validation, and a person keying it is validating what
+    // they can read.
+    const keyMatch = pathname.match(/^\/invoices\/([^/]+)\/key$/);
+    if (keyMatch && request.method === "POST") {
+      const { db } = resolveTenant(request, env);
+      const auth = await requirePermission(db, request, "AP.Validate");
+      if (!auth.authorized) {
+        return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
+      }
+      let body: unknown;
+      try {
+        body = await request.json();
+      } catch {
+        return json({ error: t("invalidJsonBody", resolveLocale(env.LOCALE)) }, 400);
+      }
+      const result = await handleKeyInvoiceFields(
+        db,
+        keyMatch[1],
+        (body ?? {}) as Record<string, unknown>,
+        // Derived, never read from the body. A keyedBy in the request
+        // is ignored entirely — see the spoofed-identity test.
+        auth.user.id
+      );
+      return json(result.body, result.status);
+    }
+
+
     const sourceCaptureMatch = pathname.match(/^\/sources\/([^/]+)\/capture$/);
     if (sourceCaptureMatch && request.method === "POST") {
       // Ungated, matching every other capture route. Adding a

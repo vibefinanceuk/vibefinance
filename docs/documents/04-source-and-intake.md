@@ -476,8 +476,11 @@ close to this may already exist.
 
 ## 6. Provenance
 
-> **Status —** Proposed. `extraction.confidence` is declared and populated
-> (decision 0054); the three-class distinction is not built.
+> **Status —** Built (decision 0071). A person can key facts a document
+> would not give up: `POST /invoices/:id/key`, with the keyer derived
+> from the authenticated caller and `provenance.keyed` declared in the
+> vocabulary so a rule can test whether a value was typed rather than
+> extracted. Keyed **lines** remain indistinguishable from parsed ones.
 
 | Class | Origin | Reproducible from the artefact |
 | --- | --- | --- |
@@ -825,8 +828,8 @@ closed vocabulary: **labels can be themed, field semantics cannot**.
 | An undetectable document captured, not rejected | **Built, live** |
 | EN 16931 document totals in the UBL parser | **Built, live** |
 | Retaining the captured original | **Built, live** |
-| Key-from-image | **Proposed, not built** |
-| Provenance classes (parsed / inferred / keyed) | **Proposed, not built** |
+| Key-from-image | **Built, live** |
+| Provenance classes (parsed / inferred / keyed) | **Built, live** |
 | Terminal instance states, discard | **Proposed, not built** |
 | Text-layer extraction via `toMarkdown` | **Proposed, not built** |
 | Mapping rules | **Proposed, not built** |
@@ -901,6 +904,7 @@ the repository at `docs/decisions/`:
 | 0068 | Retaining the captured document | Section 10.1 — the blocker, and why a failure does not refuse |
 | 0069 | Content type from detection | Section 10.1 — typing a retained document by everything detection knew |
 | 0070 | Reporting what was stored | Section 10.1 — why the capture response names the type and key |
+| 0071 | Keying | Section 6 — the third provenance class, and its identity discipline |
 
 Design notes, longer than a decision record and narrower than this
 document, are kept at `docs/design/`: `extraction.md`, `validation.md`,

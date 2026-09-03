@@ -53,6 +53,7 @@ export const DERIVED_FIELDS = [
   "extraction.pagesFailed",
   "intake.structure",
   "intake.attempted",
+  "provenance.keyed",
   "extraction.confidence",
   "invoice.duplicate_confidence",
 ] as const;
@@ -108,6 +109,7 @@ export const INVOICE_FIELD_TYPES: Record<string, FieldType> = {
   "extraction.pagesFailed": "number",
   "intake.structure": "text",
   "intake.attempted": "text",
+  "provenance.keyed": "text",
   "extraction.confidence": "number",
   "invoice.duplicate_confidence": "number",
 };
@@ -240,6 +242,8 @@ export const DERIVED_FIELD_DESCRIPTIONS: Record<DerivedField, string> = {
     "the checks still failing after rules corrected the invoice, empty when none are. Present only when a rule changed something.",
   "extraction.conflicts":
     "a comma-separated list of the fields whose pages disagreed during multi-page extraction, empty when none did. One page reading a value another page contradicts is a real signal worth a human's attention: 'extraction.conflicts contains BT-112'. A string so the existing contains operator works.",
+  "provenance.keyed":
+    "a comma-separated list of the fields a person typed by reading the document, rather than the platform extracting them. Keyed facts are high-trust — somebody read the document — but not reproducible the way a parsed field is, so a rule may reasonably treat them differently. Cumulative: a second person keying a different field does not erase the first.",
   "intake.structure":
     "the document structure intake detected — 'structured_xml', 'structured_pdfa', 'image', or empty when nothing was recognised. An empty value means the document arrived with no facts and needs a person: a rule testing for it is how an undetectable document reaches somebody.",
   "intake.attempted":
