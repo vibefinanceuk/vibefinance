@@ -38,6 +38,7 @@ import {
 } from "./pending-document-route.js";
 import { createWorkersAiExtractionModel } from "./extraction-model.js";
 import { handleGetExtractionSettings, handleUpdateExtractionSettings } from "./extraction-settings-route.js";
+import { handleToMarkdownDiagnostic } from "./tomarkdown-diagnostic.js";
 import { resolveVocabulary } from "@vibefinance/shared";
 import { getSupplierHistory } from "./invoice-history.js";
 import { handleCreateCustomField, handleListCustomFields, loadCustomFields } from "./custom-field-route.js";
@@ -1049,6 +1050,23 @@ export default {
     // integration cannot hand over a complete document in one
     // request, and a model asked to read half an invoice reports
     // exactly what it can see and nothing about what it cannot.
+    // Diagnostic only — does toMarkdown preserve an invoice's
+    // structure well enough for a model to interpret it? One
+    // question, no interpretation: adding a model call would
+    // confound "was the text extracted" with "can a model read it",
+    // and the first has to be answered first. Remove once settled.
+    if (pathname === "/diagnostics/tomarkdown" && request.method === "POST") {
+      if (!env.AI) {
+        return json({ error: "the AI binding is not configured" }, 500);
+      }
+      const bytes = new Uint8Array(await request.arrayBuffer());
+      if (bytes.length === 0) {
+        return json({ error: "a raw PDF request body is required" }, 400);
+      }
+      const result = await handleToMarkdownDiagnostic(env.AI, bytes);
+      return json(result.body, result.status);
+    }
+
     // Extraction settings (decision 0053) — an administrator can see
     // the assumptions the platform makes about their documents, and
     // change the ones that are wrong for them. A setting nobody can
