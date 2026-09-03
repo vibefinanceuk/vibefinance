@@ -179,3 +179,29 @@ export function mergeValidationFacts(facts: InvoiceFacts, result: ValidationResu
     "validation.failures": result.failures.join(","),
   };
 }
+
+
+/**
+ * Merges a SECOND validation result — the state after rules have
+ * corrected the facts — decision 0051.
+ *
+ * Kept alongside the original rather than replacing it. Both
+ * questions are worth answering and they are different questions:
+ * "did this document arrive sound?" is what an auditor asks about
+ * the supplier, and "is what we stored sound?" is what the finance
+ * team acts on. Replacing the first with the second would lose the
+ * fact that a document arrived broken, which for a regulatory system
+ * is the more consequential of the two.
+ *
+ * Only present when a rule actually changed something. An invoice no
+ * rule touched has one validation state, not two saying the same
+ * thing — and a field that exists only sometimes is more honest than
+ * one that duplicates its neighbour whenever nothing happened.
+ */
+export function mergeRevalidationFacts(facts: InvoiceFacts, result: ValidationResult): InvoiceFacts {
+  return {
+    ...facts,
+    "validation.passedAfterRules": result.passed,
+    "validation.failuresAfterRules": result.failures.join(","),
+  };
+}

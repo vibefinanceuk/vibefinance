@@ -47,6 +47,8 @@ export const DERIVED_FIELDS = [
   "mandate.channel",
   "validation.passed",
   "validation.failures",
+  "validation.passedAfterRules",
+  "validation.failuresAfterRules",
   "extraction.conflicts",
   "extraction.pagesFailed",
   "invoice.duplicate_confidence",
@@ -97,6 +99,8 @@ export const INVOICE_FIELD_TYPES: Record<string, FieldType> = {
   "mandate.channel": "text",
   "validation.passed": "boolean",
   "validation.failures": "text",
+  "validation.passedAfterRules": "boolean",
+  "validation.failuresAfterRules": "text",
   "extraction.conflicts": "text",
   "extraction.pagesFailed": "number",
   "invoice.duplicate_confidence": "number",
@@ -224,6 +228,10 @@ export const DERIVED_FIELD_DESCRIPTIONS: Record<DerivedField, string> = {
   "validation.passed": "true if the document passed standard validation",
   "validation.failures":
     "a comma-separated list of the validation checks that failed, empty when none did. A string rather than a list so the existing contains operator works: 'validation.failures contains total_missing'.",
+  "validation.passedAfterRules":
+    "whether the invoice passes validation AFTER any rule corrected it, present only when a rule actually changed something. validation.passed describes the document as it ARRIVED and never changes; this describes what was stored. Both are kept because they answer different questions — an auditor asks the first about the supplier, the finance team acts on the second.",
+  "validation.failuresAfterRules":
+    "the checks still failing after rules corrected the invoice, empty when none are. Present only when a rule changed something.",
   "extraction.conflicts":
     "a comma-separated list of the fields whose pages disagreed during multi-page extraction, empty when none did. One page reading a value another page contradicts is a real signal worth a human's attention: 'extraction.conflicts contains BT-112'. A string so the existing contains operator works.",
   "extraction.pagesFailed":

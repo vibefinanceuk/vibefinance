@@ -781,3 +781,108 @@ describe("a rule resolves a conflict to the other page's value (0050)", () => {
     expect(count?.n).toBe(0);
   });
 });
+
+describe("validation before and after rules (decision 0051)", () => {
+  async function setupWithRule(compiled: Record<string, unknown>) {
+    await handleCreateProcess(env.DB, { id: "p-rev", name: "Revalidate" });
+    await seedRuleSet("rs-rev", compiled);
+    await handleCreateStage(env.DB, "p-rev", { id: "s-rev", name: "Validation", sequence: 1, ruleSetId: "rs-rev" });
+    const created = await handleCreateProcessInstance(env.DB, "p-rev", {
+      subjectType: "invoice",
+      subjectId: "inv-rev",
+    });
+    return (created.body as { id: string }).id;
+  }
+
+  const CORRECT_TOTAL = {
+    id: "r1",
+    conditions: { all: [{ field: "extraction.conflicts", operator: "contains", value: "BT-112" }] },
+    actions: [{ type: "set_field", params: { field: "BT-112", value: 3137.47 } }],
+  };
+
+  it("keeps the arrival verdict unchanged, and records a second one", async () => {
+    // Both questions matter and they are different: an auditor asks
+    // whether the document arrived sound; the finance team acts on
+    // whether what was stored is sound.
+    const instanceId = await setupWithRule(CORRECT_TOTAL);
+    await visitCurrentStage(env.DB, instanceId, {
+      "extraction.conflicts": "BT-112",
+      "BT-106": 3137.47,
+      "BT-110": 0,
+      "BT-112": 2272.47,
+    });
+
+    const row = await env.DB.prepare(
+      `SELECT validation_passed, validation_failures, validation_passed_after, validation_failures_after
+       FROM stage_visits WHERE process_instance_id = ? AND validation_checked IS NOT NULL`
+    )
+      .bind(instanceId)
+      .first<{
+        validation_passed: number;
+        validation_failures: string;
+        validation_passed_after: number;
+        validation_failures_after: string;
+      }>();
+
+    // Arrived failing: 3137.47 + 0 does not equal 2272.47.
+    expect(row?.validation_passed).toBe(0);
+    expect(row?.validation_failures).toContain("vat_arithmetic");
+    // Left passing, once the rule corrected the total.
+    expect(row?.validation_passed_after).toBe(1);
+    expect(row?.validation_failures_after).toBe("");
+  });
+
+  it("records nothing after when no rule changed anything", async () => {
+    // An invoice nothing touched has one validation state, not two
+    // saying the same thing.
+    const instanceId = await setupWithRule(CORRECT_TOTAL);
+    await visitCurrentStage(env.DB, instanceId, {
+      "extraction.conflicts": "",
+      "BT-112": 3137.47,
+    });
+
+    const row = await env.DB.prepare(
+      `SELECT validation_passed, validation_passed_after FROM stage_visits
+       WHERE process_instance_id = ? AND validation_checked IS NOT NULL`
+    )
+      .bind(instanceId)
+      .first<{ validation_passed: number; validation_passed_after: number | null }>();
+    expect(row?.validation_passed).toBe(1);
+    expect(row?.validation_passed_after).toBeNull();
+  });
+
+  it("reports a correction that did NOT fix everything", async () => {
+    // The real Morrison case: correcting the total left the net and
+    // the lines still inconsistent.
+    const instanceId = await setupWithRule(CORRECT_TOTAL);
+    await visitCurrentStage(env.DB, instanceId, {
+      "extraction.conflicts": "BT-112",
+      "BT-106": 2272.47,
+      "BT-110": 0,
+      "BT-112": 2272.47,
+    });
+
+    const row = await env.DB.prepare(
+      `SELECT validation_passed_after, validation_failures_after FROM stage_visits
+       WHERE process_instance_id = ? AND validation_checked IS NOT NULL`
+    )
+      .bind(instanceId)
+      .first<{ validation_passed_after: number; validation_failures_after: string }>();
+    // Still failing: the net was never corrected.
+    expect(row?.validation_passed_after).toBe(0);
+    expect(row?.validation_failures_after).toContain("vat_arithmetic");
+  });
+
+  it("exposes both states as facts a rule could test", async () => {
+    const instanceId = await setupWithRule(CORRECT_TOTAL);
+    const result = await visitCurrentStage(env.DB, instanceId, {
+      "extraction.conflicts": "BT-112",
+      "BT-106": 3137.47,
+      "BT-110": 0,
+      "BT-112": 2272.47,
+    });
+    const corrected = (result.body as { correctedFacts?: Record<string, unknown> }).correctedFacts;
+    expect(corrected?.["validation.passed"]).toBe(false);
+    expect(corrected?.["validation.passedAfterRules"]).toBe(true);
+  });
+});

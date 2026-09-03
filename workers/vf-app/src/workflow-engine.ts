@@ -1,6 +1,6 @@
 import { evaluateRuleSet } from "@vibefinance/shared";
 import type { InvoiceFacts } from "@vibefinance/shared";
-import { validateInvoiceFacts, mergeValidationFacts } from "./validation.js";
+import { validateInvoiceFacts, mergeValidationFacts, mergeRevalidationFacts } from "./validation.js";
 import { applySetFieldActions, type FieldOverride } from "./set-field.js";
 import { loadActiveRuleSet } from "./rule-set-loader.js";
 import { handleCreateTask } from "./task-route.js";
@@ -150,6 +150,7 @@ export async function visitCurrentStage(
   // the invoice on file kept the wrong value — set_field changed
   // nothing that outlived the stage visit.
   let correctedFacts: InvoiceFacts | undefined;
+  let afterValidation: { passed: boolean; failures: string[] } | undefined;
   const currentInstanceId = instance.id;
   let currentStageId = instance.current_stage_id;
 
@@ -244,7 +245,20 @@ export async function visitCurrentStage(
         // line's, not the invoice's, and merging them into the header
         // would attribute a line's value to the whole document.
         if (evaluation.lineNumber === null) {
-          correctedFacts = setFieldOutcome.facts;
+          // Re-validate against the corrected facts — decision 0051.
+          // validation.passed describes the document as it ARRIVED
+          // and never changes; this describes what was actually
+          // stored. Both are kept because they answer different
+          // questions: an auditor asks the first about the supplier,
+          // the finance team acts on the second.
+          //
+          // Recorded as facts, never re-evaluated against rules. A
+          // second evaluation would let rules change facts that
+          // change validation that triggers rules — an ordering
+          // problem with no obvious end.
+          const after = validateInvoiceFacts(setFieldOutcome.facts, lines);
+          afterValidation = { passed: after.passed, failures: after.failures };
+          correctedFacts = mergeRevalidationFacts(setFieldOutcome.facts, after);
         }
       }
 
@@ -270,7 +284,7 @@ export async function visitCurrentStage(
           // Recorded only for rule-evaluating stages. An automatic
           // stage never consults validation, so claiming a result
           // there would assert something that did not happen.
-          "INSERT INTO stage_visits (id, process_instance_id, stage_id, outcome, validation_passed, validation_failures, validation_checked) VALUES (?, ?, ?, ?, ?, ?, ?)"
+          "INSERT INTO stage_visits (id, process_instance_id, stage_id, outcome, validation_passed, validation_failures, validation_checked, validation_passed_after, validation_failures_after) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
         )
         .bind(
           visitId,
@@ -279,7 +293,12 @@ export async function visitCurrentStage(
           anyMatched ? "matched" : "no_match",
           validation.passed ? 1 : 0,
           validation.failures.join(","),
-          validation.checked.join(",")
+          validation.checked.join(","),
+          // NULL when no rule changed anything: an invoice nothing
+          // touched has one validation state, not two saying the
+          // same thing.
+          afterValidation === undefined ? null : afterValidation.passed ? 1 : 0,
+          afterValidation === undefined ? null : afterValidation.failures.join(",")
         ),
       ...stepStatements,
       // Written in the same batch as the visit itself, so an override
