@@ -652,7 +652,15 @@ export function mergePageResults(
     }
   }
 
-  const confidence = Math.min(...perPage.map((p) => p.result.confidence));
+  // The lowest any page reported — and 0 if any page failed outright.
+  //
+  // Reporting confidence 1 for a document whose first page could not
+  // be read at all is worse than reporting nothing: it is a confident
+  // claim about a document half of which was never seen. Found live,
+  // where a two-page invoice with a failed page one returned
+  // confidence 1 from page two alone.
+  const confidence =
+    failedPages.length > 0 ? 0 : Math.min(...perPage.map((p) => p.result.confidence));
 
   // Missing only where EVERY page failed to read it: a field on page
   // 2 alone is not missing because page 1 could not see it.

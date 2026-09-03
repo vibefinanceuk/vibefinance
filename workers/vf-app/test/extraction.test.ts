@@ -713,7 +713,13 @@ describe("every model failure becomes a refusal, never a Worker crash", () => {
     ).rejects.toThrow(/did not respond in time/);
   });
 
-  it("suggests fewer pages, which is the actionable part", async () => {
+  it("preserves the underlying error even in the timeout branch", async () => {
+    // The first version replaced the real message with a friendly
+    // explanation — so a page failing for an entirely different
+    // reason still reported "did not respond in time", and the actual
+    // cause was unrecoverable from outside. A helpful message that
+    // discards its own evidence is worse than a blunt one that keeps
+    // it.
     const timingOut: AiRunnable = {
       run: async () => {
         throw new Error("AiError: 3046: Request timeout");
@@ -721,7 +727,7 @@ describe("every model failure becomes a refusal, never a Worker crash", () => {
     };
     await expect(
       createWorkersAiExtractionModel(timingOut).extract("prompt", oneImage, {})
-    ).rejects.toThrow(/fewer pages/);
+    ).rejects.toThrow(/3046/);
   });
 
   it("turns ANY other binding failure into a refusal too", async () => {
@@ -865,5 +871,45 @@ describe("mergePageResults — the rules, and why each one", () => {
     ]);
     expect(merged.facts["BT-1"]).toBe("X");
     expect(merged.failedPages).toEqual([{ page: 2, reason: "the model did not respond in time" }]);
+  });
+});
+
+describe("a failed page destroys confidence, it does not inherit it", () => {
+  const page = (n: number, over: Partial<ExtractionResult>) => ({
+    page: n,
+    result: {
+      facts: {},
+      lines: [],
+      linesTruncated: false,
+      confidence: 1,
+      missingFields: [],
+      rawModelOutput: "{}",
+      ...over,
+    } as ExtractionResult,
+  });
+
+  it("reports zero confidence when any page could not be read", () => {
+    // Found live: a two-page invoice whose page one failed returned
+    // confidence 1, taken from page two alone. That is a confident
+    // claim about a document half of which was never seen — worse
+    // than reporting nothing.
+    const merged = mergePageResults([page(2, { confidence: 1 })], 2, [
+      { page: 1, reason: "the model did not respond in time" },
+    ]);
+    expect(merged.confidence).toBe(0);
+    expect(merged.facts["extraction.confidence"]).toBe(0);
+  });
+
+  it("still reports the successful page's facts — a failure does not discard what was read", () => {
+    const merged = mergePageResults([page(2, { facts: { "BT-112": 3137.47 } })], 2, [
+      { page: 1, reason: "timeout" },
+    ]);
+    expect(merged.facts["BT-112"]).toBe(3137.47);
+    expect(merged.failedPages).toHaveLength(1);
+  });
+
+  it("keeps normal minimum behaviour when every page succeeded", () => {
+    const merged = mergePageResults([page(1, { confidence: 0.9 }), page(2, { confidence: 0.7 })], 2);
+    expect(merged.confidence).toBe(0.7);
   });
 });

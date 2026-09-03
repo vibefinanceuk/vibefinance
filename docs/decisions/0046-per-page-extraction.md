@@ -138,3 +138,61 @@ first was assuming Business Term ids would work as schema keys.
 **A prompt change needs a live check before it ships.** The tests are
 worth keeping — they pin intent and catch accidental deletion — but
 they are documentation, not verification.
+
+---
+
+## Addendum 2 — two flaws found by the same live run
+
+Per-page extraction completes reliably where the single call timed
+out, and reads the real total from page 2. But page 1 fails
+consistently in the multi-page path while the identical file extracts
+fine through `capture-image` minutes earlier.
+
+Two genuine flaws surfaced, both mine, before the cause of that is
+even known.
+
+### The error message discarded its own evidence
+
+The timeout branch of the model-failure classifier replaced the
+underlying error with a friendly explanation:
+
+> *"the model did not respond in time. A document with many pages or a
+> long line table can exceed the time available."*
+
+The non-timeout branch preserved the real message; the timeout branch
+threw it away. And it is the branch that fires — so whatever page 1
+genuinely failed with, the only thing visible from outside was a
+guess at what it meant.
+
+The classifier matches on the string "timeout" appearing anywhere,
+which is crude enough that a quite different failure could land in
+that branch and be reported as a timeout it never was.
+
+Now the underlying message is always appended. **A helpful message
+that discards its own evidence is worse than a blunt one that keeps
+it** — the same lesson as building a diagnostic that tested a
+simplified request, in a smaller place.
+
+### Confidence 1 for a document half of which was never read
+
+The merge takes the lowest confidence across *successful* pages. With
+page 1 failed and page 2 succeeding at 1.0, the document reported
+confidence **1** — a confident claim about a document whose first page
+was never seen.
+
+A failed page now forces confidence to 0. The facts that were read
+are still returned, and `failedPages` still names what went wrong;
+what changes is that the document no longer claims certainty it has
+not earned.
+
+Worth noting this is the confidence score becoming *actively
+misleading* rather than merely uninformative, which is a different
+and worse problem.
+
+### Still unknown
+
+Why page 1 fails in this path and not through `capture-image`. Two
+differences exist — pages are read back from R2 storage rather than
+taken from the request, and the per-page prompt differs from the
+single-page one — and which matters has not been established. The
+preserved error message should say.

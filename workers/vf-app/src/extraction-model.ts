@@ -176,12 +176,20 @@ export function createWorkersAiExtractionModel(ai: AiRunnable, modelId?: string)
         raw = await ai.run(model, VISION_SHAPES[0].build(prompt, images, schema));
       } catch (err) {
         const message = String(err);
+        // The underlying message is ALWAYS preserved, including in
+        // the timeout branch. The first version of this replaced it
+        // with a friendly explanation — which meant a page failing
+        // for some entirely different reason still reported "did not
+        // respond in time", and the real cause was unrecoverable
+        // from outside. A helpful message that discards its own
+        // evidence is worse than a blunt one that keeps it.
+        const detail = message.slice(0, 300);
         if (message.includes("3046") || message.toLowerCase().includes("timeout")) {
           throw new ExtractionRefusal(
-            `the model did not respond in time. A document with many pages or a long line table can exceed the time available — try submitting fewer pages at once.`
+            `the model did not respond in time — a large image or a long line table can exceed the time available (${detail})`
           );
         }
-        throw new ExtractionRefusal(`the extraction model failed: ${message.slice(0, 300)}`);
+        throw new ExtractionRefusal(`the extraction model failed: ${detail}`);
       }
       const text = extractResponseText(raw);
       // Truncation is the likeliest way a multi-page response fails to
