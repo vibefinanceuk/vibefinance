@@ -207,9 +207,17 @@ describe("finalising", () => {
 
     expect(prompts[0]).toMatch(/page 1 of a 2-page invoice/);
     expect(prompts[1]).toMatch(/page 2 of a 2-page invoice/);
-    // Without this, a model shown only the totals page treats the
-    // absent line table as a failure to read one.
-    expect(prompts[0]).toMatch(/not missing/);
+    // Leads with what to EXTRACT, not what to omit. The first
+    // version of this note gave three instructions about not
+    // reporting things and one brief aside about line tables — and
+    // live, the model returned zero lines from a page that has eight,
+    // where the single-page prompt read all eight from the same
+    // image minutes later.
+    expect(prompts[0]).toMatch(/Extract everything this page shows/);
+    expect(prompts[0]).toMatch(/every row of any line-item table/);
+    // The restriction survives, but as one clause at the end rather
+    // than the bulk of the message.
+    expect(prompts[0]).toMatch(/returned as null rather than guessed at/);
   });
 
   it("produces a real invoice with the totals that only page two carries", async () => {

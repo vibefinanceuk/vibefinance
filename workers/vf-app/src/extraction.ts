@@ -276,7 +276,7 @@ ${v.customFields.map((f) => `  ${customPromptKey(f.key)} (${f.type}) — ${f.des
   // read one, and report low confidence for a page it read perfectly.
   const pageNote =
     pageCount > 1 && pageNumber
-      ? `This image is page ${pageNumber} of a ${pageCount}-page invoice. Report only what is visible on THIS page. Fields printed on other pages are not missing — return null for them, and do not infer them from this page. A line-item table may start or continue here; report the rows you can see. Totals are commonly printed only on the last page.\n\n`
+      ? `This image is page ${pageNumber} of a ${pageCount}-page invoice. Extract everything this page shows, exactly as you would from a single-page invoice — including every row of any line-item table visible here. The only difference is that a field printed on a different page should be returned as null rather than guessed at.\n\n`
       : pageCount > 1
         ? `You are looking at ${pageCount} images. They are consecutive pages of ONE invoice, in order. Read them together: the line-item table may continue across a page break, and totals are commonly printed only on the last page. Report one set of values for the whole document, never one per page.\n\n`
         : ""

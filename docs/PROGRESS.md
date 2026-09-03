@@ -131,6 +131,12 @@ production environment, and migrating configuration between them.
 Things that are built but not proven, kept separate from things that
 are simply absent.
 
+**A prompt cannot be verified by unit tests.** Tests can assert that
+a prompt contains a phrase; only a live run shows how a model behaves
+given it. A page-note change that read as restrictive suppressed a
+line table entirely while every test passed. Prompt changes need a
+live check before shipping.
+
 **A prompt instruction is not a safety property.** The extraction
 prompt forbids calculation outright, and on a real document the model
 calculated anyway — reporting a total printed nowhere on the page,

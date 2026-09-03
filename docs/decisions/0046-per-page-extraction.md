@@ -84,3 +84,57 @@ never there to read.
 - The confidence score still carries no demonstrated information — the
   merge now takes the minimum of several numbers that may each mean
   nothing.
+
+---
+
+## Addendum — the page note suppressed the line table
+
+The first live run of per-page extraction succeeded where the
+single-call design had timed out: both pages processed, and the real
+total of 3,137.47 read from page 2 where it is actually printed. The
+first time the system has had a true total rather than a fabricated
+one.
+
+But `lineCount` came back **0**, where page 1 alone had given 8.
+
+Isolating it took one call: the same image through the single-page
+endpoint, minutes later, returned all 8 lines. Same model, same file,
+same day. The only difference was the prompt.
+
+### What was wrong with it
+
+> *"Report only what is visible on THIS page. Fields printed on other
+> pages are not missing — return null for them, and do not infer them
+> from this page. A line-item table may start or continue here; report
+> the rows you can see."*
+
+Three instructions about **not** reporting things, and one brief aside
+about the table. The weight of the message was restrictive, and the
+model applied that restriction to the very content the page did
+contain.
+
+Rewritten to lead with the instruction that matters:
+
+> *"Extract everything this page shows, exactly as you would from a
+> single-page invoice — including every row of any line-item table
+> visible here. The only difference is that a field printed on a
+> different page should be returned as null rather than guessed at."*
+
+The restriction survives as one clause at the end rather than the
+bulk of the message.
+
+### The lesson, which is a repeat
+
+A prompt change was shipped without a live check, on the strength of
+tests that assert the prompt *contains* certain phrases. Those tests
+passed throughout. They cannot fail, because what they measure is not
+what matters — a prompt is only correct in terms of how a model
+behaves given it, and no unit test observes that.
+
+This is the second time in two days that reasoning about a prompt
+proved unreliable where running it would have been immediate. The
+first was assuming Business Term ids would work as schema keys.
+
+**A prompt change needs a live check before it ships.** The tests are
+worth keeping — they pin intent and catch accidental deletion — but
+they are documentation, not verification.
