@@ -33,6 +33,7 @@ import fieldOverridesSql from "../../../migrations/0024_field_overrides.sql?raw"
 import revalidationSql from "../../../migrations/0025_revalidation.sql?raw";
 import extractionSettingsSql from "../../../migrations/0026_extraction_settings.sql?raw";
 import sourcesSql from "../../../migrations/0027_sources.sql?raw";
+import channelStructureSql from "../../../migrations/0028_intake_channel_structure.sql?raw";
 
 // Another known divergence from production, on top of the one below:
 // D1's exec() splits its input by newline and executes each non-empty
@@ -144,4 +145,5 @@ export async function applyTestSchema(): Promise<void> {
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(revalidationSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(extractionSettingsSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(sourcesSql)));
+  await env.DB.exec(toOneStatementPerLine(stripSqlComments(channelStructureSql)));
 }

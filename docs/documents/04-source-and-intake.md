@@ -240,9 +240,13 @@ mailbox cannot choose an endpoint.
 
 ### 3.3 The ordered cascade
 
-> **Status —** Proposed. Detection exists in fragments — `looksLikePdf`,
-> embedded-XML extraction, image type sniffing — but no single ordered
-> path selects between them.
+> **Status —** Partly built. The **channels** are real (decision 0061):
+> `intake_channels` carries a `structure` of `structured_xml`,
+> `structured_pdfa` or `image`, with a partial unique index giving
+> detection exactly one candidate per structure per process. What is
+> **not** built is the detection itself — capture is still addressed to
+> a caller-chosen endpoint, and nothing yet routes to the structural
+> channels.
 
 Detection runs most-specific-first, because the categories overlap:
 
@@ -753,6 +757,7 @@ the repository at `docs/decisions/`:
 | 0058 | Mapping rules | Section 11 — the naming, and the vocabulary subset |
 | 0059 | The UBL parser field gap | Section 3.1 — why the exact paths were least validated |
 | 0060 | Sources | Section 2 — the sources table, and the collision resolved |
+| 0061 | Intake channel structure | Section 3.3 — channels as per-process structural handlers |
 
 Design notes, longer than a decision record and narrower than this
 document, are kept at `docs/design/`: `extraction.md`, `validation.md`
