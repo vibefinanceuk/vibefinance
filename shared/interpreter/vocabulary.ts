@@ -52,7 +52,7 @@ export const DERIVED_FIELDS = [
   "invoice.duplicate_confidence",
 ] as const;
 
-export const DERIVED_FIELD_PREFIXES = ["term.absent("] as const;
+export const DERIVED_FIELD_PREFIXES = ["term.absent(", "extraction.alternative("] as const;
 
 /**
  * Declared types for the standard invoice fields — decision 0041.

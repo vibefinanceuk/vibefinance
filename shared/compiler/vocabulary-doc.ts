@@ -54,11 +54,19 @@ export function buildVocabularyDoc(vocabulary: VocabularyInput = "invoice"): str
   // rendered for the invoice vocabulary rather than confusing the
   // model with a concept that has no meaning for what it's actually
   // compiling.
+  // Each prefix gets its own description. Mapping them all to one
+  // line was correct while term.absent was the only parameterised
+  // field, and became wrong the moment a second one existed —
+  // extraction.alternative is not a presence test and describing it
+  // as one would guarantee the model misuses it.
+  const PARAMETERISED_DESCRIPTIONS: Record<string, string> = {
+    "term.absent(": "term.absent(BT-n) — true if that Business Term is absent from the invoice",
+    "extraction.alternative(":
+      "extraction.alternative(BT-n) — for a multi-page document where the pages disagreed about a field, what a LATER page said for it. The merged value came from an earlier page; this is the other reading. Present only for fields listed in extraction.conflicts, and absent otherwise — so a rule copying from it when the pages agreed changes nothing.",
+  };
   const parameterisedLines =
     v.name === "invoice"
-      ? DERIVED_FIELD_PREFIXES.map(
-          (p) => `  ${p}BT-n) — true if that Business Term is absent from the invoice`
-        ).join("\n")
+      ? DERIVED_FIELD_PREFIXES.map((p) => `  ${PARAMETERISED_DESCRIPTIONS[p] ?? `${p}...)`}`).join("\n")
       : "";
 
   const actionLines = ACTIONS.map(

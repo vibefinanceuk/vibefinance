@@ -12,7 +12,7 @@ import {
   type ExtractionModel,
   type ExtractionResult,
 } from "../src/extraction.js";
-import { resolveVocabulary } from "@vibefinance/shared";
+import { resolveVocabulary, isKnownField } from "@vibefinance/shared";
 import { VISION_SHAPES, extractResponseText, createWorkersAiExtractionModel } from "../src/extraction-model.js";
 import type { AiRunnable } from "../src/compiler-model.js";
 
@@ -981,5 +981,69 @@ describe("conflicts become facts a rule can act on (decision 0048)", () => {
       2
     );
     expect(String(merged.facts["extraction.conflicts"]).split(",").sort()).toEqual(["BT-106", "BT-112"]);
+  });
+});
+
+describe("the other page's value is exposed so a rule can resolve to it (0050)", () => {
+  const page = (n: number, over: Partial<ExtractionResult>) => ({
+    page: n,
+    result: {
+      facts: {},
+      lines: [],
+      linesTruncated: false,
+      confidence: 0.9,
+      missingFields: [],
+      rawModelOutput: "{}",
+      ...over,
+    } as ExtractionResult,
+  });
+
+  it("exposes what the later page said", () => {
+    // The real case: page 1 fabricated 2272.47, page 2 read the
+    // printed 3137.47. The merge keeps page 1's; this is how a rule
+    // reaches page 2's.
+    const merged = mergePageResults(
+      [page(1, { facts: { "BT-112": 2272.47 } }), page(2, { facts: { "BT-112": 3137.47 } })],
+      2
+    );
+    expect(merged.facts["BT-112"]).toBe(2272.47);
+    expect(merged.facts["extraction.alternative(BT-112)"]).toBe(3137.47);
+  });
+
+  it("exposes an alternative for every conflicting field", () => {
+    // Naming which fields disagreed was not enough to act on: a rule
+    // copying from BT-106 to fix BT-112 would copy the same wrong
+    // value, because BT-106 was in conflict too.
+    const merged = mergePageResults(
+      [
+        page(1, { facts: { "BT-106": 2272.47, "BT-112": 2272.47 } }),
+        page(2, { facts: { "BT-106": 3137.47, "BT-112": 3137.47 } }),
+      ],
+      2
+    );
+    expect(merged.facts["extraction.alternative(BT-106)"]).toBe(3137.47);
+    expect(merged.facts["extraction.alternative(BT-112)"]).toBe(3137.47);
+  });
+
+  it("exposes nothing when the pages agreed", () => {
+    // So a rule copying from it changes nothing rather than clearing
+    // a field that was never in doubt.
+    const merged = mergePageResults(
+      [page(1, { facts: { "BT-112": 3137.47 } }), page(2, { facts: { "BT-112": 3137.47 } })],
+      2
+    );
+    expect(merged.facts["extraction.alternative(BT-112)"]).toBeUndefined();
+  });
+
+  it("is a known field, so a rule may reference it", () => {
+    // Reuses the existing parameterised-field mechanism rather than
+    // widening the vocabulary with one entry per possible conflict.
+    expect(isKnownField("extraction.alternative(BT-112)")).toBe(true);
+    expect(isKnownField("extraction.alternative(custom.transport_reference)")).toBe(true);
+  });
+
+  it("still refuses a field that merely looks parameterised", () => {
+    expect(isKnownField("extraction.alternative(BT-112")).toBe(false);
+    expect(isKnownField("whatever.i.like(BT-112)")).toBe(false);
   });
 });

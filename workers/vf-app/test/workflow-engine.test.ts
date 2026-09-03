@@ -718,3 +718,66 @@ describe("set_field is recorded, not silent (decision 0049)", () => {
     expect(row?.previous_value).toBeNull();
   });
 });
+
+describe("a rule resolves a conflict to the other page's value (0050)", () => {
+  it("copies the alternative over the merged value, and records it", async () => {
+    // The whole arc, end to end: page 1 fabricates a total, page 2
+    // reads the printed one, the merge keeps the first and reports
+    // the disagreement, and a rule the customer wrote resolves it.
+    await handleCreateProcess(env.DB, { id: "p-res", name: "Resolve" });
+    await seedRuleSet("rs-res", {
+      id: "r1",
+      conditions: { all: [{ field: "extraction.conflicts", operator: "contains", value: "BT-112" }] },
+      actions: [
+        { type: "set_field", params: { field: "BT-112", fromField: "extraction.alternative(BT-112)" } },
+      ],
+    });
+    await handleCreateStage(env.DB, "p-res", { id: "s-res", name: "Validation", sequence: 1, ruleSetId: "rs-res" });
+    const created = await handleCreateProcessInstance(env.DB, "p-res", {
+      subjectType: "invoice",
+      subjectId: "inv-res",
+    });
+    const instanceId = (created.body as { id: string }).id;
+
+    await visitCurrentStage(env.DB, instanceId, {
+      "BT-112": 2272.47,
+      "extraction.conflicts": "BT-112",
+      "extraction.alternative(BT-112)": 3137.47,
+    });
+
+    const row = await env.DB.prepare(
+      `SELECT fo.field, fo.previous_value, fo.new_value FROM field_overrides fo
+       JOIN stage_visits sv ON sv.id = fo.stage_visit_id
+       WHERE sv.process_instance_id = ?`
+    )
+      .bind(instanceId)
+      .first<{ field: string; previous_value: string; new_value: string }>();
+    expect(row?.field).toBe("BT-112");
+    expect(JSON.parse(row!.previous_value)).toBe(2272.47);
+    expect(JSON.parse(row!.new_value)).toBe(3137.47);
+  });
+
+  it("changes nothing when the pages agreed, so the rule is safe to leave active", async () => {
+    // The alternative fact is absent when there was no conflict, so
+    // the copy is a no-op rather than clearing a good value.
+    await handleCreateProcess(env.DB, { id: "p-res2", name: "Resolve" });
+    await seedRuleSet("rs-res2", {
+      id: "r1",
+      conditions: { all: [{ field: "BT-1", operator: "is_present" }] },
+      actions: [
+        { type: "set_field", params: { field: "BT-112", fromField: "extraction.alternative(BT-112)" } },
+      ],
+    });
+    await handleCreateStage(env.DB, "p-res2", { id: "s-res2", name: "Validation", sequence: 1, ruleSetId: "rs-res2" });
+    const created = await handleCreateProcessInstance(env.DB, "p-res2", {
+      subjectType: "invoice",
+      subjectId: "inv-res2",
+    });
+    const instanceId = (created.body as { id: string }).id;
+
+    await visitCurrentStage(env.DB, instanceId, { "BT-1": "INV-1", "BT-112": 3137.47 });
+
+    const count = await env.DB.prepare("SELECT count(*) AS n FROM field_overrides").first<{ n: number }>();
+    expect(count?.n).toBe(0);
+  });
+});

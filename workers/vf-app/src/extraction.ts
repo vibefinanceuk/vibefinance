@@ -680,6 +680,22 @@ export function mergePageResults(
   // manual task IS the trigger to go and fix it properly.
   facts["extraction.conflicts"] = conflicts.map((c) => c.field).join(",");
   facts["extraction.pagesFailed"] = failedPages.length;
+  // The other page's reading, as a parameterised fact — decision
+  // 0050. Naming WHICH fields disagreed was not enough to act on:
+  // a rule resolving a conflict needs the value it is resolving TO,
+  // and nothing exposed it. Found by writing a resolution rule that
+  // copied from BT-106, only to discover BT-106 was in conflict too
+  // and held the same wrong value.
+  //
+  // Only the FIRST alternative is exposed. Every real case so far is
+  // two pages disagreeing; a rule needing to choose among three
+  // readings would need to see them all, and that is a harder
+  // question than this design should answer speculatively.
+  for (const conflict of conflicts) {
+    if (conflict.others.length > 0) {
+      facts[`extraction.alternative(${conflict.field})`] = conflict.others[0].value;
+    }
+  }
 
   return {
     facts,
