@@ -387,9 +387,12 @@ section 8 makes them configurable rather than constant.
 
 ## 5. Refusal
 
-> **Status —** Proposed as a terminal path. Refusal as an outcome exists
-> today (`intake_capture_events` records `rejected` with a reason);
-> keying, discard and terminal states do not.
+> **Status —** Partly built. An undetectable document **is** captured
+> with provenance and no facts, creates a real process instance, and
+> reaches Validation where a rule can raise a task — proven live against
+> the Morrison PDF (decision 0063). What is **not** built is what a
+> person can then do: keying, discard and the terminal states all remain
+> designed only, so reject is the only real outcome today.
 
 ### 5.1 Refusal produces facts
 
@@ -685,7 +688,116 @@ The image path is unchanged and still needed. What changes is the
 
 ---
 
-## 10. Status: Built vs. Designed
+## 10. What a Person Sees
+
+> **Status —** Designed and mocked, none of it built — and **blocked**
+> until section 10.1 is resolved. The screens are static HTML in
+> `docs/design/mockups/`; the reasoning is in
+> `docs/design/operator-interface.md`.
+
+Everything above ends with a fact reaching the interpreter. For a
+document intake could not read, the next step is a person — and until
+now the entire system has been driven by `curl`.
+
+### 10.1 The blocker: the document is not kept
+
+`intake-capture-route.ts` has **no R2 access at all**. A document
+arriving at `/sources/:id/capture` is read, extracted from or not, and
+discarded. Only the multi-page pending-document flow writes to R2, and it
+deletes on finalise.
+
+Document 1 section 6 records long-term retention as *"proposed design
+only, no code exists for this yet"*, and that remains accurate for the
+capture path.
+
+**Key-from-image cannot be built until this is.** The screen's premise is
+that an operator reads the document; there is nothing to read. The
+retention *period* is a live compliance question Document 1 already
+flags, not an implementation detail.
+
+### 10.2 What drawing the screens decided
+
+Four things prose had not forced:
+
+- **The field list is a decision.** 21 declared fields makes an unusable
+  screen, and the right subset differs by process — possibly another
+  thing an intake channel carries, alongside mapping rules.
+- **Partial keying should be allowed.** Requiring every field strands
+  someone on a document that genuinely does not show a value; validation
+  then reports honestly on what is missing.
+- **Line items are not optional.** `line_sum` cannot run without them, so
+  a keying screen without a line table produces documents that can never
+  fully validate.
+- **The running total must be advisory.** The screen compares keyed lines
+  against the keyed net as the operator types, because validation
+  reporting the same mismatch afterwards is too late — the document is no
+  longer in front of them. It must use the **channel's own tolerance**
+  (sections 8), or an operator would see "matches" where validation
+  fails. And it must never block: an invoice whose lines do not sum is a
+  fact to record faithfully.
+
+### 10.3 The activity panel is an audit participant
+
+System events and human messages in **one chronology**, scoped to the
+document. Read top to bottom for the Morrison document: received, no
+structure detected, validation failed on `total_missing`, a rule raised a
+task, two people established the total, someone keyed it, validation
+passed.
+
+The justification for a decision sits beside the decision. *"Confirmed
+3,137.47 with their AR desk"* is the only explanation for a keyed value
+validation cannot derive — the number came from a phone call, not the
+page.
+
+Which makes messages **immutable** for the same reason `field_overrides`
+are (Document 2's discipline, decision 0049): if a keyed value traces to
+a conversation, editing the conversation breaks the trace.
+
+The system half needs no new recording. `intake_capture_events`,
+`stage_visit_steps`, `field_overrides`, the validation verdicts and the
+tasks are all already stored; the panel is a read that merges them.
+
+### 10.4 The stage rail found three engine gaps
+
+Drawing tasks per stage visit raised the question of what happens when
+the last one completes. The answer was narrower than anyone assumed
+(decision 0064):
+
+- **Advancement after task completion is sequence-only.**
+  `onTaskCompleted` does not evaluate rules, so `route_to` cannot fire
+  at that moment and **send-back does not exist in any form**.
+- **`require_second_approval` is declared and implemented nowhere** — and
+  is not merely unwired, since two tasks on one team can both be claimed
+  by the same person.
+- **An instance can park.** Advanced onto a rule-bearing stage,
+  `onTaskCompleted` stops because it has no facts — honestly, rather than
+  guessing — and nothing advances it or says it is waiting.
+
+> **The upcoming stages are a prediction and must look like one.**
+> `route_to` lets a rule advance an instance to a *named* stage, so a
+> document can legitimately skip Matching. Showing them without ticks and
+> without times says so; showing them as a guaranteed path would be
+> quietly wrong on exactly the invoices where routing did something
+> interesting.
+
+### 10.5 White-labelling constrains the whole interface
+
+Per customer and per partner. Document 1's one-database-one-Worker model
+makes the configuration nearly free; what matters is the discipline.
+
+**If branding can only reach tokens, a customer cannot break a screen**,
+and a new screen is themed for everyone without extra work. That requires
+a token layer from the start and never a hardcoded colour — cheap to
+keep, expensive to retrofit.
+
+Two things go beyond colour. A partner reselling to a customer means two
+brands in play, and that relationship belongs in `vf-licence` where
+commercial arrangements already live. And terminology collides with the
+closed vocabulary: **labels can be themed, field semantics cannot**.
+
+---
+
+## 11. Status: Built vs. Designed
 
 | Capability | Status |
 | --- | --- |
@@ -700,21 +812,28 @@ The image path is unchanged and still needed. What changes is the
 | Validation before and after rules | **Built, live** |
 | Extraction settings, per channel | **Built, live** |
 | `extraction.confidence` declared in the vocabulary | **Built, live** |
-| Sources as first-class configuration | **Proposed, not built** |
-| Source-to-process binding | **Proposed, not built** |
-| Ordered detection cascade | **Proposed, not built** |
-| Refusal as a terminal path, with keying and discard | **Proposed, not built** |
+| Sources as first-class configuration | **Built, live** |
+| Source-to-process binding | **Built, live** |
+| Intake channels as per-process structural handlers | **Built, live** |
+| Ordered detection cascade | **Built, live** |
+| Capture addressed to a source | **Built, live** |
+| An undetectable document captured, not rejected | **Built, live** |
+| EN 16931 document totals in the UBL parser | **Built, live** |
+| **Storing the document that was captured** | **Not built — blocks the rest** |
+| Key-from-image | **Proposed, not built** |
 | Provenance classes (parsed / inferred / keyed) | **Proposed, not built** |
-| Terminal instance states | **Proposed, not built** |
+| Terminal instance states, discard | **Proposed, not built** |
 | Text-layer extraction via `toMarkdown` | **Proposed, not built** |
+| Mapping rules | **Proposed, not built** |
 | Image-only PDFs (rasterisation inside a Worker) | **Not possible today** |
 
 ---
 
-## 11. Open Questions
+## 12. Open Questions
 
-1. **The naming collision** of section 2.5 — rename the table, or rename
-   the concept. Must be decided either way.
+1. **Storing the captured document** (section 10.1). Blocks the whole
+   operator interface, and carries the open retention-period question
+   from Document 1 section 6.4. The most consequential item here.
 2. **One confidence field or two.** A single `intake.confidence` where
    structured intake scores 1.0 is fewer fields, but conflates "certain
    because parsed" with "certain because the model was confident" — two
@@ -732,12 +851,9 @@ The image path is unchanged and still needed. What changes is the
 7. **`mandate.channel` remains outside the closed vocabulary** — a free
    string, so a rule testing a misspelled value compiles and never fires.
    This design increases its load rather than reducing it.
-8. **Captured documents are not stored at all.** `intake-capture-route.ts`
-   has no R2 access — a document arriving at `/sources/:id/capture` is
-   read and discarded. Key-from-image cannot be built until it is,
-   because there is no document to show. Carries the open retention
-   question from Document 1 section 6.4. See
-   `docs/design/operator-interface.md`.
+8. **Whether to build or remove `require_second_approval`** (section
+   10.4). Left declaring an intention it does not fulfil is the worst of
+   the three options.
 9. **Which EN 16931 reference fields should the vocabulary carry?** The
    closed vocabulary has `BT-10` and `BT-13`; the standard also defines
    `BT-12`, `BT-16`, `BT-18`, `BT-19` and `BT-128`. A customer needing a
@@ -776,7 +892,11 @@ the repository at `docs/decisions/`:
 | 0061 | Intake channel structure | Section 3.3 — channels as per-process structural handlers |
 | 0062 | Structure detection | Section 3.3 — the cascade, and why its order is the substance |
 | 0063 | Source capture | Sections 3.2 and 5 — one endpoint, and the undetectable document |
+| 0064 | After task completion | Section 10.4 — the three engine gaps the stage rail found |
 
 Design notes, longer than a decision record and narrower than this
-document, are kept at `docs/design/`: `extraction.md`, `validation.md`
-and `text-layer-extraction.md`.
+document, are kept at `docs/design/`: `extraction.md`, `validation.md`,
+`text-layer-extraction.md`, `multi-authority-intake.md` and
+`operator-interface.md`. The screens described in section 10 are static
+HTML in `docs/design/mockups/`, openable in a browser without a build
+step.
