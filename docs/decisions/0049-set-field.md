@@ -93,3 +93,41 @@ tests; removing the param validation breaks five.
   originally meant: rules that change what the model is *asked for*,
   before extraction. Still designed-not-built, and now clearly a
   separate concern rather than a variant of this one.
+
+---
+
+## Addendum — the target field's declared type is enforced
+
+Found by *reading generated worked examples*, not by testing. A
+resolution rule's examples gave the alternative total as the string
+`"1185.00"` for `BT-112`, a field declared `number`.
+
+The real data path carries types through intact, so it would not have
+happened live. But nothing stopped it — and a string in a numeric
+field is exactly the silent-never-fires bug decision 0041's type
+system exists to prevent. A downstream `greater_than` would simply
+stop matching, with no error anywhere.
+
+Building 0049 without this check was an oversight: the whole argument
+for typing fields was that an untyped write produces a rule that
+quietly does nothing, and `set_field` is the one action that writes.
+
+**Numeric strings are coerced rather than refused.** `"1185.00"` is
+unambiguously the number a document printed, and refusing it would
+reject a correct value on a formatting technicality. Prose is not
+coerced — the same boundary extraction already draws between
+`"1185.00"` and `"approximately 500"`.
+
+**A value the type cannot hold is skipped, not an error.** The rule
+fired correctly and the value was unusable, so the field keeps what
+it had rather than acquiring something no operator will match.
+
+**A stated limit:** this resolves against the invoice vocabulary,
+which covers every standard field. The workflow engine does not
+currently resolve a customer's vocabulary at all, so custom fields go
+unchecked — an unknown type permits any value, which is an honest
+"cannot say" rather than a guess. Threading the resolved vocabulary
+through the workflow engine would close it, and is a wider change than
+this warranted.
+
+Watched to fail: removing the check breaks six tests.

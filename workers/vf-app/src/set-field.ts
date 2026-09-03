@@ -1,4 +1,5 @@
-import type { InvoiceFacts, RuleAction } from "@vibefinance/shared";
+import { asResolved, type VocabularyInput } from "@vibefinance/shared";
+import type { FieldType, InvoiceFacts, RuleAction } from "@vibefinance/shared";
 
 /**
  * set_field — decision 0049.
@@ -52,13 +53,60 @@ export interface SetFieldOutcome {
  * holds changed nothing, and filling the audit trail with
  * non-changes would make the real ones harder to find.
  */
+/**
+ * Whether a value may be written into a field of this declared type.
+ *
+ * Found by reading generated worked examples, not by testing: the
+ * model produced an alternative total as the STRING "1185.00" for a
+ * field declared `number`. The real data path carries types through
+ * intact, so it would not have happened live — but nothing stopped
+ * it, and a string in a numeric field is exactly the
+ * silent-never-fires bug decision 0041's type system exists to
+ * prevent. A downstream `greater_than` would simply stop matching,
+ * with no error anywhere.
+ *
+ * Numeric strings are coerced rather than refused: "1185.00" is
+ * unambiguously the number a document printed, and refusing it would
+ * reject a correct value on a formatting technicality. Prose is not
+ * coerced — the same boundary extraction already draws.
+ *
+ * Defaults to the invoice vocabulary, which covers every STANDARD
+ * field. A customer-defined field has no declared type here unless
+ * the caller passes its resolved vocabulary, and an unknown type
+ * permits any value — an honest "cannot say" rather than a guess.
+ * The workflow engine does not currently resolve a vocabulary at
+ * all, so custom fields go unchecked today; that is a real and
+ * stated limit, not an oversight.
+ */
+function coerceForField(
+  value: string | number | boolean,
+  type: FieldType | undefined
+): string | number | boolean | undefined {
+  if (type === undefined) return value; // No declared type: nothing to check against.
+  if (type === "number") {
+    if (typeof value === "number") return value;
+    if (typeof value === "string" && /^-?\d+(\.\d+)?$/.test(value.trim())) {
+      return Number(value.trim());
+    }
+    return undefined;
+  }
+  if (type === "boolean") return typeof value === "boolean" ? value : undefined;
+  if (type === "date") {
+    if (typeof value !== "string") return undefined;
+    return /^\d{4}-\d{2}-\d{2}$/.test(value.trim()) ? value.trim() : undefined;
+  }
+  return typeof value === "string" ? value : String(value);
+}
+
 export function applySetFieldActions(
   facts: InvoiceFacts,
   actions: readonly RuleAction[],
-  ruleId: string
+  ruleId: string,
+  vocabulary: VocabularyInput = "invoice"
 ): SetFieldOutcome {
   const next: InvoiceFacts = { ...facts };
   const overrides: FieldOverride[] = [];
+  const fieldTypes = asResolved(vocabulary).fieldTypes;
 
   for (const action of actions) {
     if (action.type !== "set_field") continue;
@@ -82,17 +130,24 @@ export function applySetFieldActions(
       continue;
     }
 
-    const previousValue = next[field];
-    if (previousValue === newValue) continue;
+    // Refuse rather than write a value the field's declared type
+    // cannot hold. Skipping is the right failure here: the rule fired
+    // correctly and the value was unusable, so the field keeps what
+    // it had rather than acquiring something no operator will match.
+    const coerced = coerceForField(newValue, fieldTypes[field]);
+    if (coerced === undefined) continue;
 
-    next[field] = newValue;
+    const previousValue = next[field];
+    if (previousValue === coerced) continue;
+
+    next[field] = coerced;
     overrides.push({
       ruleId,
       field,
       ...(previousValue === undefined
         ? {}
         : { previousValue: previousValue as string | number | boolean }),
-      newValue,
+      newValue: coerced,
     });
   }
 

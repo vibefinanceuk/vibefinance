@@ -142,3 +142,69 @@ describe("applySetFieldActions — ordering and attribution", () => {
     expect(out.facts["BT-112"]).toBe(1);
   });
 });
+
+describe("applySetFieldActions — the target field's declared type is enforced", () => {
+  it("coerces a numeric string into a number field", () => {
+    // Found by reading generated worked examples: the model gave an
+    // alternative total as the string "1185.00" for a field declared
+    // number. Unambiguously the number a document printed, so
+    // refusing it would reject a correct value on a formatting
+    // technicality.
+    const out = applySetFieldActions({}, [setField({ field: "BT-112", value: "1185.00" })], "r1");
+    expect(out.facts["BT-112"]).toBe(1185);
+    expect(typeof out.facts["BT-112"]).toBe("number");
+  });
+
+  it("records the coerced value, not the string it arrived as", () => {
+    const out = applySetFieldActions({}, [setField({ field: "BT-112", value: "1185.00" })], "r1");
+    expect(out.overrides[0].newValue).toBe(1185);
+  });
+
+  it("refuses prose in a number field rather than writing it", () => {
+    // A string in a numeric field is the silent-never-fires bug
+    // decision 0041's type system exists to prevent: a downstream
+    // greater_than would simply stop matching, with no error
+    // anywhere.
+    const out = applySetFieldActions(
+      { "BT-112": 100 },
+      [setField({ field: "BT-112", value: "approximately 500" })],
+      "r1"
+    );
+    expect(out.facts["BT-112"]).toBe(100);
+    expect(out.overrides).toEqual([]);
+  });
+
+  it("refuses a non-ISO date", () => {
+    const out = applySetFieldActions({}, [setField({ field: "BT-2", value: "03/04/2026" })], "r1");
+    expect(out.facts["BT-2"]).toBeUndefined();
+    expect(out.overrides).toEqual([]);
+  });
+
+  it("accepts an ISO date", () => {
+    const out = applySetFieldActions({}, [setField({ field: "BT-2", value: "2026-07-22" })], "r1");
+    expect(out.facts["BT-2"]).toBe("2026-07-22");
+  });
+
+  it("refuses a non-boolean in a boolean field", () => {
+    const out = applySetFieldActions({}, [setField({ field: "po.matched", value: "yes" })], "r1");
+    expect(out.overrides).toEqual([]);
+  });
+
+  it("enforces the type when copying too, not only on literals", () => {
+    const out = applySetFieldActions(
+      { "BT-1": "INV-2026-0042" },
+      [setField({ field: "BT-112", fromField: "BT-1" })],
+      "r1"
+    );
+    // An invoice number is text; it cannot become a total.
+    expect(out.facts["BT-112"]).toBeUndefined();
+    expect(out.overrides).toEqual([]);
+  });
+
+  it("permits any value for a field with no declared type", () => {
+    // An honest "cannot say" rather than a guess. BG-20 is a
+    // document-level group, deliberately untyped.
+    const out = applySetFieldActions({}, [setField({ field: "BG-20", value: "anything" })], "r1");
+    expect(out.facts["BG-20"]).toBe("anything");
+  });
+});
