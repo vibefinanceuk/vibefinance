@@ -155,6 +155,37 @@ export async function visitCurrentStage(
     return { status: 409, body: { error: `process instance ${instanceId} is already ${instance.status}` } };
   }
 
+  // Refuse to re-visit a stage that is waiting on people — decision
+  // 0072.
+  //
+  // Blocking on tasks is this engine's own stated intent: "the instance
+  // stays here until they're all completed, never advances on its own".
+  // But the only guard was on instance STATUS, and a blocked instance is
+  // still `in_progress` — so a second visit would re-evaluate the same
+  // rules against the same stage and spawn a second set of tasks
+  // identical to the ones already waiting.
+  //
+  // Found by asking whether keying should re-evaluate (decision 0071's
+  // closing gap). It should not, and this is why: the answer was a
+  // hazard rather than a missing feature.
+  const openTasks = await db
+    .prepare(
+      `SELECT count(*) AS n FROM tasks t
+       JOIN stage_visits v ON v.id = t.stage_visit_id
+       WHERE v.process_instance_id = ? AND v.stage_id = ? AND t.completed_by IS NULL`
+    )
+    .bind(instanceId, instance.current_stage_id)
+    .first<{ n: number }>();
+  if ((openTasks?.n ?? 0) > 0) {
+    return {
+      status: 409,
+      body: {
+        error: `process instance ${instanceId} is waiting on ${openTasks?.n} open task(s) at stage ${instance.current_stage_id}`,
+        detail: "completing them advances it; re-visiting would raise the same tasks again",
+      },
+    };
+  }
+
   const visitsThisCall: Array<Record<string, unknown>> = [];
   // Facts as they stand after any set_field a rule fired — returned
   // so the CALLER can persist them. Deliberately not written from

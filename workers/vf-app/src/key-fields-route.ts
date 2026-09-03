@@ -1,6 +1,7 @@
 import type { RouteResult } from "./org-route.js";
 import { isKnownField, type InvoiceFacts } from "@vibefinance/shared";
 import { handleUpsertInvoice } from "./invoice-facts-route.js";
+import { validateInvoiceFacts } from "./validation.js";
 
 /**
  * Keying — a person producing facts extraction could not.
@@ -138,6 +139,30 @@ export async function handleKeyInvoiceFields(
   } as Parameters<typeof handleUpsertInvoice>[1]);
   if (upsert.status >= 400) return upsert;
 
+  // Validation is re-run and REPORTED, never stored — decision 0072.
+  //
+  // The operator's actual question is "is it valid now", and after
+  // keying nothing else answers it: rules do not re-evaluate, because
+  // re-visiting a stage that is waiting on people would raise the same
+  // tasks a second time.
+  //
+  // Safe to run here precisely because it is a pure function (decision
+  // 0044): arithmetic and presence over the facts in hand, no writes and
+  // no side effects. Rule evaluation is neither.
+  const lines = await db
+    .prepare("SELECT * FROM invoice_lines WHERE invoice_id = ? ORDER BY line_number")
+    .bind(invoiceId)
+    .all<Record<string, unknown>>();
+  const verdict = validateInvoiceFacts(
+    merged as InvoiceFacts,
+    lines.results as never,
+    // The platform tolerance, not the channel's. Keying knows the
+    // invoice and not the channel it arrived through, and this verdict
+    // is advisory — the authoritative one is recorded at the next stage
+    // visit, under the channel's own settings (decision 0057).
+    undefined
+  );
+
   return {
     status: 200,
     body: {
@@ -153,6 +178,15 @@ export async function handleKeyInvoiceFields(
         corrected: c.previous !== null && c.previous !== undefined,
       })),
       provenance: { keyed: merged["provenance.keyed"] },
+      validation: {
+        passed: verdict.passed,
+        checked: verdict.checked,
+        failures: verdict.failures,
+        // Said plainly rather than left to be assumed: this is a report
+        // on the facts as they now stand, not a verdict recorded against
+        // the process instance.
+        advisory: true,
+      },
     },
   };
 }

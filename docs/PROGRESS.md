@@ -124,10 +124,13 @@ for mapping rules (0058).
 "forever". Document 1 section 6.4 records this as a genuine compliance
 question.
 
-**Re-evaluation after keying.** The facts change; no rule runs until
-something calls `visitCurrentStage`. The manual route exists, so an
-operator is not stuck, but the natural flow — key, then see validation
-pass — needs a further step. Related to 0064's parked-instance finding.
+**Advancing after keying.** Keying reports whether the document would
+now validate (0072), but the instance sits where it was until its task
+is completed — so "key" and "finish the task" are two actions where a
+person might expect one. Whether task completion should carry keyed
+facts into a re-evaluation is 0064's territory: `onTaskCompleted`
+advances by sequence without evaluating rules, so it has nowhere to put
+them.
 
 **Keyed lines.** Lines live in `invoice_lines` rather than `facts_json`,
 so `provenance.keyed` covers header fields only and a keyed line is
@@ -238,7 +241,7 @@ elsewhere.
 
 | Package | Tests |
 |---|---|
-| `vf-app` | 802 |
+| `vf-app` | 808 |
 | `vf-licence` | 153 |
 | `shared` | 149 passing, 2 known pre-existing failures |
 
@@ -260,7 +263,7 @@ holding — 30 migrations for `vf-app`, 7 for `vf-licence`.
 | `docs/design/mockups/` | Four screens as static HTML | Current |
 | `docs/design/multi-authority-intake.md` | Non-EN-16931 authorities | Design only |
 | `docs/design/text-layer-extraction.md` | Reading a PDF's own text | Design only |
-| `docs/decisions/` | 71 decision records | Current |
+| `docs/decisions/` | 72 decision records | Current |
 
 Document 4's markdown source is at `docs/documents/`, with
 `scripts/build-document-04.cjs` rendering the Word edition. The `.docx`

@@ -886,3 +886,58 @@ describe("validation before and after rules (decision 0051)", () => {
     expect(corrected?.["validation.passedAfterRules"]).toBe(true);
   });
 });
+
+describe("visitCurrentStage refuses to re-visit a stage waiting on people (decision 0072)", () => {
+  async function blockedInstance(): Promise<string> {
+    await handleCreateProcess(env.DB, { id: "p1", name: "AP" });
+    await handleCreateTeam(env.DB, { id: "team1", name: "AP Team" });
+    await handleCreateUser(env.DB, { id: "usr1", email: "a@b.com", name: "Alice" });
+    await handleAddTeamMember(env.DB, "team1", "usr1");
+    await seedRuleSet("rs1", {
+      conditions: { field: "BT-112", operator: "greater_than", value: 1000 },
+      actions: [{ type: "assign_task", params: { team: "team1", permission: "AP.Approve" } }],
+    });
+    await handleCreateStage(env.DB, "p1", { id: "s1", name: "Approval", sequence: 1, ruleSetId: "rs1" });
+    await handleCreateStage(env.DB, "p1", { id: "s2", name: "Paid", sequence: 2 });
+    const created = await handleCreateProcessInstance(env.DB, "p1", { subjectType: "invoice", subjectId: "inv-1" });
+    const instanceId = (created.body as { id: string }).id;
+    await visitCurrentStage(env.DB, instanceId, { "BT-112": 3000 });
+    return instanceId;
+  }
+
+  it("409s rather than raising the same task a second time", async () => {
+    // Blocking on tasks is the engine's own stated intent. The only
+    // guard was on instance STATUS, and a blocked instance is still
+    // in_progress — so a second visit re-evaluated the same rules
+    // against the same stage.
+    const instanceId = await blockedInstance();
+    const again = await visitCurrentStage(env.DB, instanceId, { "BT-112": 3000 });
+
+    expect(again.status).toBe(409);
+    expect(String((again.body as { error: string }).error)).toContain("waiting on 1 open task");
+  });
+
+  it("leaves exactly one task, not two", async () => {
+    // The consequence the guard exists to prevent, asserted directly.
+    const instanceId = await blockedInstance();
+    await visitCurrentStage(env.DB, instanceId, { "BT-112": 3000 });
+
+    const count = await env.DB.prepare(
+      "SELECT count(*) AS n FROM tasks t JOIN stage_visits v ON v.id = t.stage_visit_id WHERE v.process_instance_id = ?"
+    )
+      .bind(instanceId)
+      .first<{ n: number }>();
+    expect(count?.n).toBe(1);
+  });
+
+  it("allows a visit again once the task is completed", async () => {
+    // The guard must not strand an instance — completing the task is
+    // what releases it, exactly as before.
+    const instanceId = await blockedInstance();
+    const task = await env.DB.prepare("SELECT id FROM tasks WHERE stage_id = 's1'").first<{ id: string }>();
+    await env.DB.prepare("UPDATE tasks SET completed_by = 'usr1' WHERE id = ?").bind(task!.id).run();
+
+    const after = await visitCurrentStage(env.DB, instanceId, { "BT-112": 3000 });
+    expect(after.status).not.toBe(409);
+  });
+});

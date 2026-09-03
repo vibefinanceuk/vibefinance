@@ -185,3 +185,42 @@ describe("provenance.keyed, as a fact a rule can test", () => {
     expect(count?.n).toBe(2);
   });
 });
+
+describe("validation is reported after keying (decision 0072)", () => {
+  it("says the document now passes once the totals agree", async () => {
+    // The operator's actual question. Nothing else answers it: rules do
+    // not re-evaluate after keying.
+    await seedInvoice("inv-1", { "intake.structure": "" });
+    const result = await handleKeyInvoiceFields(
+      env.DB,
+      "inv-1",
+      { facts: { "BT-106": 1500, "BT-110": 285, "BT-112": 1785, "BT-115": 1785 } },
+      "u-dan"
+    );
+
+    const v = (result.body as { validation: { passed: boolean; checked: string[] } }).validation;
+    expect(v.passed).toBe(true);
+    expect(v.checked).toContain("vat_arithmetic");
+  });
+
+  it("names the failure when the keyed totals do not agree", async () => {
+    await seedInvoice("inv-1");
+    const result = await handleKeyInvoiceFields(
+      env.DB,
+      "inv-1",
+      { facts: { "BT-106": 1500, "BT-110": 100, "BT-112": 1785 } },
+      "u-dan"
+    );
+    const v = (result.body as { validation: { passed: boolean; failures: string[] } }).validation;
+    expect(v.passed).toBe(false);
+    expect(v.failures).toContain("vat_arithmetic");
+  });
+
+  it("marks the verdict advisory, because it is not recorded anywhere", async () => {
+    // The authoritative verdict is written at the next stage visit,
+    // under the channel's own tolerance.
+    await seedInvoice("inv-1");
+    const result = await handleKeyInvoiceFields(env.DB, "inv-1", { facts: { "BT-112": 100 } }, "u-dan");
+    expect((result.body as { validation: { advisory: boolean } }).validation.advisory).toBe(true);
+  });
+});
