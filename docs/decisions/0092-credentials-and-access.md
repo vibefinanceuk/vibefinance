@@ -52,11 +52,26 @@ session token for data that is not theirs, and every other control —
 the audience claim, the per-instance database, the whole two-Worker
 split — would work perfectly while it happened.
 
-Enforced twice on purpose: a standing invariant, so it cannot be written
-by any route or by hand, and an explicit check in `grantAccess` so the
-caller gets a reason rather than a constraint error.
+Guarded twice, and the two do different things — a distinction worth
+being precise about:
 
-Watched to fail.
+- **`grantAccess` refuses.** This is the *prevention*. Watched to fail.
+- **The standing invariant detects.** It is checked by the migration
+  runner at replay time, so it catches a row that arrived some other
+  way — a hand-written `INSERT`, a future route that forgets.
+
+**It does not prevent one.** SQLite cannot express this as a `CHECK`,
+because the rule spans three tables. A bad row written directly would
+succeed and be caught on the next replay, not at the moment it was
+written.
+
+That distinction matters and this record originally got it wrong,
+claiming the invariant meant such a row "cannot be written by any route
+or by hand". It can. What the invariant buys is that it will not go
+**unnoticed** — the difference between a bug that is found and one that
+is not, which is real but is not the same as prevention.
+
+If prevention at the database is wanted, the shape would be a trigger.
 
 ---
 
