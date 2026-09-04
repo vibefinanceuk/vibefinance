@@ -60,10 +60,22 @@ a process instance. **Nothing matches an invoice against one yet.**
 
 ## Waiting on you
 
-### 1. Four questions before any UI exists
+### 1. The UI architecture — proposed, awaiting review
 
-**The next thing to work on**, and the reason is that everything else is
-now waiting on data or on a longer build.
+**Decision 0083 answers the four questions** and is written for review
+before any code. The short version: customers' own SSO terminates at
+`vf-licence`, which mints a session token instances verify locally;
+authentication is central and authorisation stays per-instance; there is
+**one shared UI** rather than one per instance; and it lives in its own
+`vf-ui` Worker rather than bound to `vf-licence`, on deployment-frequency
+grounds.
+
+Two things need your decision inside it: **SAML or OIDC** (SAML in a
+Worker is genuinely awkward, and most enterprise IdPs speak both), and
+widening `UNIQUE (customer_id, kind)` in the control plane, which
+currently **blocks a customer having both an EU and a US production**.
+
+The original four questions, for context:
 
 There is **no frontend in this repo at all** — Workers, D1 and R2, API
 only. No framework, no build pipeline, no static asset serving, no
