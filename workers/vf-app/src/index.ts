@@ -42,6 +42,8 @@ import { handleToMarkdownDiagnostic } from "./tomarkdown-diagnostic.js";
 import { handleCreateSource, handleListSources } from "./source-route.js";
 import { handleCaptureFromSource } from "./source-capture-route.js";
 import { handleKeyInvoiceFields } from "./key-fields-route.js";
+import { handleReturnToStage, handleReturnToSupplier } from "./return-route.js";
+import { authenticateUser } from "./user-auth.js";
 import { mintDocumentToken, verifyDocumentToken } from "./document-token.js";
 import { retrieveInvoiceDocument } from "./document-storage.js";
 import { resolveVocabulary } from "@vibefinance/shared";
@@ -979,6 +981,44 @@ export default {
           "Cache-Control": "private, no-store",
         },
       });
+    }
+
+
+    // Returning a document — decision 0075. Two endpoints because they
+    // are two capabilities: backwards to a stage already visited, or
+    // out of the process entirely.
+    const returnStageMatch = pathname.match(/^\/tasks\/([^/]+)\/return$/);
+    if (returnStageMatch && request.method === "POST") {
+      const { db } = resolveTenant(request, env);
+      const auth = await authenticateUser(db, request);
+      if (!auth) {
+        return json({ error: t("unauthorized", resolveLocale(env.LOCALE)) }, 401);
+      }
+      let body: unknown;
+      try {
+        body = await request.json();
+      } catch {
+        return json({ error: t("invalidJsonBody", resolveLocale(env.LOCALE)) }, 400);
+      }
+      const result = await handleReturnToStage(db, returnStageMatch[1], (body ?? {}) as Record<string, unknown>, auth);
+      return json(result.body, result.status);
+    }
+
+    const returnSupplierMatch = pathname.match(/^\/tasks\/([^/]+)\/return-to-supplier$/);
+    if (returnSupplierMatch && request.method === "POST") {
+      const { db } = resolveTenant(request, env);
+      const auth = await authenticateUser(db, request);
+      if (!auth) {
+        return json({ error: t("unauthorized", resolveLocale(env.LOCALE)) }, 401);
+      }
+      let body: unknown;
+      try {
+        body = await request.json();
+      } catch {
+        return json({ error: t("invalidJsonBody", resolveLocale(env.LOCALE)) }, 400);
+      }
+      const result = await handleReturnToSupplier(db, returnSupplierMatch[1], (body ?? {}) as Record<string, unknown>, auth);
+      return json(result.body, result.status);
     }
 
 

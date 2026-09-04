@@ -81,7 +81,14 @@ CREATE INDEX idx_tasks_stage_visit ON tasks(stage_visit_id);
 -- bundle actually implements — closed vocabulary discipline applied
 -- to instance status the same way it's applied to rule fields,
 -- operators, and actions.
--- ASSERT ALWAYS: SELECT count(*) FROM process_instances WHERE status NOT IN ('in_progress', 'completed') == 0
+-- Widened by migration 0031 (decision 0075): a document returned to its
+-- supplier reaches a terminal state that is neither in progress nor
+-- completed. Edited here rather than restated there, because a standing
+-- invariant is a statement about what must be true NOW, not a record of
+-- what was true when this file was written -- and two invariants over
+-- the same column, one of them stale, is how they come to disagree.
+-- Requires --refresh-checksums (§6).
+-- ASSERT ALWAYS: SELECT count(*) FROM process_instances WHERE status NOT IN ('in_progress', 'completed', 'returned_manually', 'archived') == 0
 
 -- Standing invariant: a stage visit's stage always belongs to the
 -- same process as the instance being visited — same class of bug as

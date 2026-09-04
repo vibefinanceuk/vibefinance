@@ -1,8 +1,8 @@
 # 0075 — Returning a document
 
-**Status: proposed.** Nothing here is built. Written for review before
-code, because it touches the task state model that everything else
-depends on.
+**Status: built.** `migrations/0031_task_states_and_returns.sql`,
+`workers/vf-app/src/return-route.ts`. The design below was reviewed
+before code; section 9 records what building it changed.
 
 Decision 0064 recorded that *"a task cannot complete negatively"* and
 that send-back therefore does not exist. This is the answer to that.
@@ -234,7 +234,37 @@ nothing behind it.
 
 ---
 
-## 9. Open questions
+## 9. What building it found
+
+**`process_instances.status` was a closed set, and nothing said so.**
+Migration 0009 carries a standing invariant restricting it to
+`in_progress` and `completed`, so `returned_manually` violated it
+immediately. That answers Document 4's open question 4 — the status set
+is closed, and adding one is a schema change.
+
+The invariant was **widened in place** rather than restated in 0031,
+because a standing invariant is a statement about what must be true
+*now*, not a record of what was true when its file was written — and two
+invariants over one column, one of them stale, is how they come to
+disagree. That needs `--refresh-checksums`, which is this project's own
+way of saying an applied migration was changed deliberately.
+
+`archived` was admitted at the same time though nothing sets it yet.
+Adding one state at a time would mean editing 0009 twice for one design.
+
+**A test was creating a state the new invariant forbids.** Decision
+0072's re-visit test completed a task by writing `completed_by` directly
+in SQL, leaving `status` at `'open'` — exactly the inconsistency the
+model now refuses. Fixed to write both, as the completion route does.
+
+**The completion write became atomic against a return for free.** Its
+`WHERE` clause now tests `status = 'open'` rather than
+`completed_by IS NULL`, so a task somebody has sent back cannot then be
+completed by its previous holder: the update simply matches no rows.
+
+---
+
+## 10. Open questions
 
 1. **Should a returned instance be visible as such?** `status` stays
    `in_progress` — it is genuinely still in progress, just backwards. A

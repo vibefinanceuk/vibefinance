@@ -34,6 +34,21 @@ const AP_PERMISSIONS = [
   "AP.Approve",
   "AP.Review",
   "AP.Analysis",
+  // Returning — decision 0075. Two shapes, deliberately.
+  //
+  // Return and ReturnToSupplier are capability MODIFIERS: they activate
+  // returning wherever the holder already has standing, checked against
+  // the task's own required_permission, and nowhere else. Someone with
+  // AP.Return and AP.Review can return from Review and not from
+  // Approval, because they have no business at Approval regardless.
+  //
+  // ReturnAny is the opposite — it grants standing the holder does not
+  // otherwise have, on a task somebody else holds. A manager override.
+  // It overrides OWNERSHIP, not destination: sending a document to its
+  // supplier still requires AP.ReturnToSupplier, manager or not.
+  "AP.Return",
+  "AP.ReturnToSupplier",
+  "AP.ReturnAny",
 ] as const;
 
 /**

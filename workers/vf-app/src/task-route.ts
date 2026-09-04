@@ -163,7 +163,10 @@ export async function handleCompleteTask(
 
   const now = new Date().toISOString();
   const result = await db
-    .prepare("UPDATE tasks SET completed_by = ?, completed_at = ? WHERE id = ? AND completed_by IS NULL")
+    // The `status = 'open'` clause is what makes this atomic against a
+    // return: a task somebody sent back cannot then be completed by its
+    // previous holder, and the update simply matches no rows.
+    .prepare("UPDATE tasks SET completed_by = ?, completed_at = ?, status = 'completed' WHERE id = ? AND status = 'open'")
     .bind(completingUserId, now, taskId)
     .run();
   if (result.meta.changes === 0) {

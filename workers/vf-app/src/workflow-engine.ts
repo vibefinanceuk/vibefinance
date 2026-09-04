@@ -172,7 +172,7 @@ export async function visitCurrentStage(
     .prepare(
       `SELECT count(*) AS n FROM tasks t
        JOIN stage_visits v ON v.id = t.stage_visit_id
-       WHERE v.process_instance_id = ? AND v.stage_id = ? AND t.completed_by IS NULL`
+       WHERE v.process_instance_id = ? AND v.stage_id = ? AND t.status = 'open'`
     )
     .bind(instanceId, instance.current_stage_id)
     .first<{ n: number }>();
@@ -470,7 +470,10 @@ export async function onTaskCompleted(db: D1Database, taskId: string): Promise<v
   if (!task?.stage_visit_id) return;
 
   const openCount = await db
-    .prepare("SELECT count(*) AS n FROM tasks WHERE stage_visit_id = ? AND completed_by IS NULL")
+    // 'open', not `completed_by IS NULL` — decision 0075. A returned or
+    // cancelled task is not waiting on anybody, and counting it as open
+    // would block its instance forever with nothing left to complete.
+    .prepare("SELECT count(*) AS n FROM tasks WHERE stage_visit_id = ? AND status = 'open'")
     .bind(task.stage_visit_id)
     .first<{ n: number }>();
   if ((openCount?.n ?? 0) > 0) return;

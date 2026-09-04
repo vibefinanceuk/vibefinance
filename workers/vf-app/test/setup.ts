@@ -36,6 +36,7 @@ import sourcesSql from "../../../migrations/0027_sources.sql?raw";
 import channelStructureSql from "../../../migrations/0028_intake_channel_structure.sql?raw";
 import propagateSettingsSql from "../../../migrations/0029_propagate_extraction_settings.sql?raw";
 import keyedFieldsSql from "../../../migrations/0030_keyed_fields.sql?raw";
+import taskStatesSql from "../../../migrations/0031_task_states_and_returns.sql?raw";
 
 // Another known divergence from production, on top of the one below:
 // D1's exec() splits its input by newline and executes each non-empty
@@ -151,4 +152,5 @@ export async function applyTestSchema(): Promise<void> {
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(channelStructureSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(propagateSettingsSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(keyedFieldsSql)));
+  await env.DB.exec(toOneStatementPerLine(stripSqlComments(taskStatesSql)));
 }

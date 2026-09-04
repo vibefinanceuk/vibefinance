@@ -140,10 +140,6 @@ them.
 so `provenance.keyed` covers header fields only and a keyed line is
 indistinguishable from a parsed one.
 
-**Send-back.** A task cannot complete negatively, and
-`onTaskCompleted` advances by sequence without evaluating rules — so
-`route_to` cannot fire at the one moment a task completes (0064).
-
 **Mapping rules.** Customer-authored rules deciding which extracted
 value lands in which field — *"use the transport reference as the
 invoice number"* (0058). The machinery exists; what is missing is the
@@ -244,12 +240,12 @@ elsewhere.
 
 | Package | Tests |
 |---|---|
-| `vf-app` | 817 |
+| `vf-app` | 832 |
 | `vf-licence` | 153 |
 | `shared` | 149 passing, 2 known pre-existing failures |
 
 Both migration chains replay clean with every standing invariant
-holding — 30 migrations for `vf-app`, 7 for `vf-licence`.
+holding — 31 migrations for `vf-app`, 7 for `vf-licence`.
 
 ---
 
@@ -266,7 +262,7 @@ holding — 30 migrations for `vf-app`, 7 for `vf-licence`.
 | `docs/design/mockups/` | Four screens as static HTML | Current |
 | `docs/design/multi-authority-intake.md` | Non-EN-16931 authorities | Design only |
 | `docs/design/text-layer-extraction.md` | Reading a PDF's own text | Design only |
-| `docs/decisions/` | 73 decision records | Current |
+| `docs/decisions/` | 75 decision records | Current |
 
 Document 4's markdown source is at `docs/documents/`, with
 `scripts/build-document-04.cjs` rendering the Word edition. The `.docx`

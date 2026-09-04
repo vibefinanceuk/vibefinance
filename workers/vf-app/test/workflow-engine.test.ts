@@ -935,7 +935,12 @@ describe("visitCurrentStage refuses to re-visit a stage waiting on people (decis
     // what releases it, exactly as before.
     const instanceId = await blockedInstance();
     const task = await env.DB.prepare("SELECT id FROM tasks WHERE stage_id = 's1'").first<{ id: string }>();
-    await env.DB.prepare("UPDATE tasks SET completed_by = 'usr1' WHERE id = ?").bind(task!.id).run();
+    // Both columns, as the completion route now writes them. Setting
+    // completed_by alone would leave the task 'open' — the exact
+    // inconsistency migration 0031's standing invariant forbids.
+    await env.DB.prepare("UPDATE tasks SET completed_by = 'usr1', status = 'completed' WHERE id = ?")
+      .bind(task!.id)
+      .run();
 
     const after = await visitCurrentStage(env.DB, instanceId, { "BT-112": 3000 });
     expect(after.status).not.toBe(409);
