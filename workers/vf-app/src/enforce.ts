@@ -55,3 +55,35 @@ export async function requirePermission(
   }
   return { authorized: true, user };
 }
+
+/**
+ * Every permission this person holds, across all their roles — decision
+ * 0095.
+ *
+ * `hasPermission` answers "may they do X". A screen needs the whole set
+ * at once: which buttons to render at all, rather than discovering by
+ * being refused.
+ */
+export async function permissionsFor(db: D1Database, userId: string): Promise<string[]> {
+  const rows = await db
+    .prepare(
+      `SELECT r.permissions_json AS permissions_json
+       FROM org_user_roles ur
+       JOIN org_roles r ON r.id = ur.role_id
+       WHERE ur.user_id = ?`
+    )
+    .bind(userId)
+    .all<{ permissions_json: string }>();
+
+  const all = new Set<string>();
+  for (const row of rows.results) {
+    try {
+      for (const p of JSON.parse(row.permissions_json) as string[]) all.add(p);
+    } catch {
+      // A role with unparseable permissions grants nothing rather than
+      // failing the whole request — one bad row must not lock somebody
+      // out of every screen.
+    }
+  }
+  return [...all].sort();
+}

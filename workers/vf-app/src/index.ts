@@ -23,7 +23,7 @@ import {
   handleSetProfile,
 } from "./org-route.js";
 import { handleCreateCostCentre } from "./cost-centre-route.js";
-import { requirePermission } from "./enforce.js";
+import { requirePermission, permissionsFor } from "./enforce.js";
 import { handleAddTeamMember, handleCreateTeam } from "./team-route.js";
 import { handleUpsertInvoice, mergeStructuredInvoiceFacts } from "./invoice-facts-route.js";
 import { handleUpsertExpenseReport } from "./expense-facts-route.js";
@@ -45,7 +45,7 @@ import { handleGetRetention, handleSetRetention, handleListBeyondRetention } fro
 import { handleCaptureFromSource } from "./source-capture-route.js";
 import { handleKeyInvoiceFields } from "./key-fields-route.js";
 import { handleReturnToStage, handleReturnToSupplier, handleDiscard } from "./return-route.js";
-import { authenticateUser } from "./user-auth.js";
+import { authenticateUser, authenticateUserOrSession } from "./user-auth.js";
 import { mintDocumentToken, verifyDocumentToken } from "./document-token.js";
 import { retrieveInvoiceDocument } from "./document-storage.js";
 import { resolveVocabulary } from "@vibefinance/shared";
@@ -1039,6 +1039,37 @@ export default {
       }
       const result = await handleReturnToSupplier(db, returnSupplierMatch[1], (body ?? {}) as Record<string, unknown>, auth);
       return json(result.body, result.status);
+    }
+
+
+    // Who am I — decision 0095. The first thing a screen asks, and the
+    // only route today that accepts a session token.
+    if (pathname === "/whoami" && request.method === "GET") {
+      const { db } = resolveTenant(request, env);
+      const auth = await authenticateUserOrSession(
+        db,
+        request,
+        isPublicKeyJwk(env.LICENCE_SIGNING_PUBLIC_KEY) ? env.LICENCE_SIGNING_PUBLIC_KEY : undefined,
+        env.ENVIRONMENT_ID
+      );
+      if (!auth.user) {
+        return json({ error: auth.reason }, 401);
+      }
+      return json(
+        {
+          id: auth.user.id,
+          email: auth.user.email,
+          name: auth.user.name,
+          // Every permission at once, so a screen knows which buttons
+          // to render rather than discovering by being refused.
+          permissions: await permissionsFor(db, auth.user.id),
+          // Which credential got them here. Useful when a session works
+          // and a key does not, or the reverse.
+          authenticatedVia: auth.via,
+          environmentId: env.ENVIRONMENT_ID ?? null,
+        },
+        200
+      );
     }
 
 

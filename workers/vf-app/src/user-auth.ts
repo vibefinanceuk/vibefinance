@@ -194,3 +194,40 @@ export async function authenticateSession(
   // provider supplied it.
   return { ok: true, user: { id: user.id, email: user.email, name: user.name } };
 }
+
+
+/**
+ * Authenticate by session token OR API key — decision 0095.
+ *
+ * The two coexist rather than one replacing the other. A session is a
+ * person at a screen; an API key is a service credential, and every
+ * live test in this project uses one. Replacing keys with sessions
+ * would break automation to solve a problem automation does not have.
+ *
+ * Session first, because a browser will present one and a script will
+ * not — so the common case for a UI is tried before the fallback.
+ */
+export async function authenticateUserOrSession(
+  db: D1Database,
+  request: Request,
+  publicKeyJwk: JsonWebKey | undefined,
+  environmentId: string | undefined,
+  now: Date = new Date()
+): Promise<{ user: AuthenticatedUser; via: "session" | "api_key" } | { user: null; reason: string }> {
+  if (publicKeyJwk && environmentId) {
+    const session = await authenticateSession(db, request, publicKeyJwk, environmentId, now);
+    if (session.ok) return { user: session.user, via: "session" };
+    // `unknown_user` is worth surfacing rather than falling through to
+    // the key path: the token was valid and the person is not set up
+    // here, which is a different problem from a bad credential
+    // (decision 0088) and needs a different answer from whoever is
+    // helping them.
+    if (session.reason === "unknown_user") {
+      return { user: null, reason: `no account here for ${session.email}` };
+    }
+  }
+
+  const byKey = await authenticateUser(db, request);
+  if (byKey) return { user: byKey, via: "api_key" };
+  return { user: null, reason: "not authenticated" };
+}
