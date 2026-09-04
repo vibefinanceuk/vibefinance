@@ -73,7 +73,7 @@ describe("handleCompileRequest — a successful compile", () => {
       JSON.stringify({
         status: "compiled",
         conditions: { field: "BT-112", operator: "greater_than", value: 1000 },
-        actions: [{ type: "require_second_approval" }],
+        actions: [{ type: "flag", params: { reason: "needs a look" } }],
       })
     );
 
@@ -144,7 +144,7 @@ describe("handleCompileRequest — worked examples (Blueprint build order step 3
       JSON.stringify({
         status: "compiled",
         conditions: { field: "BT-112", operator: "greater_than", value: 1000 },
-        actions: [{ type: "require_second_approval" }],
+        actions: [{ type: "flag", params: { reason: "needs a look" } }],
       }),
       JSON.stringify({
         examples: [

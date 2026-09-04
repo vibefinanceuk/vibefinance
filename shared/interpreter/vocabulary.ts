@@ -172,7 +172,6 @@ export const OPERATORS = [
 
 export const ACTIONS = [
   "route_to",
-  "require_second_approval",
   "assign_cost_centre",
   "hold_until",
   "flag",
@@ -297,7 +296,6 @@ export const EXPENSE_DERIVED_FIELD_DESCRIPTIONS: Record<ExpenseDerivedField, str
 // enforced by a test, not left to be caught live again.
 export const ACTION_DESCRIPTIONS: Record<ActionType, string> = {
   route_to: 'advance the process to a named stage — params: { "stage": "<stage id>" }',
-  require_second_approval: "flags that this invoice needs a second approver — no params",
   assign_cost_centre: 'sets a cost centre on the invoice — params: { "value": "<cost centre>" }',
   hold_until: 'holds the invoice until a date — params: { "date": "<ISO date>" }',
   flag: "marks the invoice for attention — no params",

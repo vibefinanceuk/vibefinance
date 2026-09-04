@@ -48,8 +48,17 @@ describe("closed vocabulary", () => {
   });
 
   it("accepts every documented action and rejects an invented one", () => {
-    expect(isKnownAction("require_second_approval")).toBe(true);
+    expect(isKnownAction("escalate_after")).toBe(true);
     expect(isKnownAction("execute_script")).toBe(false);
+  });
+
+  it("no longer accepts require_second_approval — decision 0074", () => {
+    // Removed rather than built. Parallel tasks on one stage visit
+    // already give multiple approvers; a rule at Review already decides
+    // when further review is needed; and separation of duties is an
+    // RBAC concern. Nothing was left for it to mean, and an action that
+    // compiles and does nothing is worse than one action fewer.
+    expect(isKnownAction("require_second_approval")).toBe(false);
   });
 
   it("accepts assign_task — added for decision 0018's task ownership model", () => {

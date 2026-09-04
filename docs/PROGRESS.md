@@ -144,12 +144,6 @@ indistinguishable from a parsed one.
 `onTaskCompleted` advances by sequence without evaluating rules — so
 `route_to` cannot fire at the one moment a task completes (0064).
 
-**`require_second_approval`.** Declared in the vocabulary, implemented
-nowhere. Not merely unwired: two tasks on one team can both be claimed
-by the same person, so a real second approval needs tasks to relate to
-each other and the completion check to refuse the same `completed_by`
-(0064). Either build it or remove it from the vocabulary.
-
 **Mapping rules.** Customer-authored rules deciding which extracted
 value lands in which field — *"use the transport reference as the
 invoice number"* (0058). The machinery exists; what is missing is the
@@ -190,10 +184,15 @@ file records why not — so a gap has to be *stated* to be allowed.
 **Declared and implemented nowhere is the second pattern.** `'warned'`,
 `validation.passed`, `extraction.confidence`, `set_field` and
 `require_second_approval` were all in the vocabulary before they did
-anything. The first four have since been built. The last is the worst,
-because a customer writing *"invoices over 10,000 require a second
-approval"* gets a rule that compiles, activates, fires, and has no
-effect — while looking correct in every listing.
+anything. The first four were later built; the fifth was **removed**
+(0074), because parallel tasks, a rule at Review and RBAC between them
+already covered everything it might have meant.
+
+An action in the closed vocabulary is a promise to the compiler. A
+customer writing *"invoices over 10,000 require a second approval"* got
+a rule that compiled, activated, fired, and did nothing — while looking
+correct in every listing. A refusal at compile time would have told them
+to express it differently; silence told them it worked.
 
 **Every extraction decision comes from a sample of one.** A single
 German freight invoice, with an unusual two-page structure, drove the
