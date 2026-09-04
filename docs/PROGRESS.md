@@ -119,10 +119,15 @@ need no new machinery — this half remains designed only, and has an
 ordering problem: a condition testing the supplier needs extraction to
 have happened first.
 
-**Purchase orders.** No table, no ingestion, no matching. `po.matched`
-and `po.variance_pct` are declared in the vocabulary and computed by
-nothing (0079), so a matching rule compiles and never fires. The first
-genuinely new domain since intake.
+**PO matching.** Purchase orders are stored, parsed and ingested
+(0081), so the data now exists — but `po.matched` and `po.variance_pct`
+are still computed by nothing, so a matching rule compiles and never
+fires. Four design questions first: header or line level, what counts
+as matched, computed when, and which order an invoice belongs to when
+`BT-13` is optional.
+
+**Bulk order loading.** One document per request today. Enough to prove
+the shape, not enough for a real customer with an ERP.
 
 **`party.first_document`.** Declared and uncomputed (0079). Closer than
 the `po.*` pair — the data exists — but needs three questions settled
@@ -257,12 +262,12 @@ elsewhere.
 
 | Package | Tests |
 |---|---|
-| `vf-app` | 850 |
+| `vf-app` | 859 |
 | `vf-licence` | 153 |
 | `shared` | 149 passing, 2 known pre-existing failures |
 
 Both migration chains replay clean with every standing invariant
-holding — 33 migrations for `vf-app`, 7 for `vf-licence`.
+holding — 34 migrations for `vf-app`, 7 for `vf-licence`.
 
 ---
 

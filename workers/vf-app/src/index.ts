@@ -40,6 +40,7 @@ import { createWorkersAiExtractionModel } from "./extraction-model.js";
 import { handleGetExtractionSettings, handleUpdateExtractionSettings } from "./extraction-settings-route.js";
 import { handleToMarkdownDiagnostic } from "./tomarkdown-diagnostic.js";
 import { handleCreateSource, handleListSources } from "./source-route.js";
+import { handleIngestPurchaseOrder, handleGetPurchaseOrder } from "./purchase-order-route.js";
 import { handleGetRetention, handleSetRetention, handleListBeyondRetention } from "./retention-route.js";
 import { handleCaptureFromSource } from "./source-capture-route.js";
 import { handleKeyInvoiceFields } from "./key-fields-route.js";
@@ -1126,6 +1127,33 @@ export default {
         return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
       }
       const result = await handleListBeyondRetention(db);
+      return json(result.body, result.status);
+    }
+
+
+    // Purchase orders (decision 0081) — reference data, not documents
+    // for processing. Admin.Configure rather than an AP permission:
+    // loading orders is setting up what invoices are matched against,
+    // not accounts payable work.
+    if (pathname === "/purchase-orders" && request.method === "POST") {
+      const { db } = resolveTenant(request, env);
+      const auth = await requirePermission(db, request, "Admin.Configure");
+      if (!auth.authorized) {
+        return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
+      }
+      const xml = await request.text();
+      const result = await handleIngestPurchaseOrder(db, xml);
+      return json(result.body, result.status);
+    }
+
+    const poMatch = pathname.match(/^\/purchase-orders\/([^/]+)$/);
+    if (poMatch && request.method === "GET") {
+      const { db } = resolveTenant(request, env);
+      const auth = await requirePermission(db, request, "AP.Validate");
+      if (!auth.authorized) {
+        return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
+      }
+      const result = await handleGetPurchaseOrder(db, decodeURIComponent(poMatch[1]));
       return json(result.body, result.status);
     }
 

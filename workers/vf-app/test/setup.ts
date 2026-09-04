@@ -39,6 +39,7 @@ import keyedFieldsSql from "../../../migrations/0030_keyed_fields.sql?raw";
 import taskStatesSql from "../../../migrations/0031_task_states_and_returns.sql?raw";
 import orgSettingsSql from "../../../migrations/0032_org_settings_retention.sql?raw";
 import discardedStateSql from "../../../migrations/0033_discarded_task_state.sql?raw";
+import purchaseOrdersSql from "../../../migrations/0034_purchase_orders.sql?raw";
 
 // Another known divergence from production, on top of the one below:
 // D1's exec() splits its input by newline and executes each non-empty
@@ -84,6 +85,8 @@ function toOneStatementPerLine(sql: string): string {
 // gets a genuinely clean schema regardless of what the pool does or
 // does not reset.
 const TABLES_IN_DROP_ORDER = [
+  "purchase_order_lines",
+  "purchase_orders",
   "org_settings",
   "keyed_fields",
   "sources",
@@ -158,4 +161,5 @@ export async function applyTestSchema(): Promise<void> {
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(taskStatesSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(orgSettingsSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(discardedStateSql)));
+  await env.DB.exec(toOneStatementPerLine(stripSqlComments(purchaseOrdersSql)));
 }
