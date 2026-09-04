@@ -171,8 +171,12 @@ declared, so the rules meant to use it could not be written (0054);
 decision 0053 shipped settings that reached nothing (0056, 0057); the
 UBL parser populated 11 of 21 declared fields, so validation's
 arithmetic checks could never run on the most trustworthy path (0059);
-and `CIUS_PROFILES` claimed FatturaPA is a CIUS when the codebase's own
-description said otherwise (0065). **None was found by reading either
+`CIUS_PROFILES` claimed FatturaPA is a CIUS when the codebase's own
+description said otherwise (0065); a whole document-storage layer
+existed that nothing on the capture path called (0068); a content type
+was derived from half a detection result (0069); and a migration
+checksum was written on every apply and compared to nothing, under a
+comment asserting it was verified (0076). **None was found by reading either
 layer alone.** Decision 0067 now makes one of these a standing test: for
 every declared field, either the UBL parser populates it or the check
 file records why not — so a gap has to be *stated* to be allowed.
@@ -262,7 +266,7 @@ holding — 31 migrations for `vf-app`, 7 for `vf-licence`.
 | `docs/design/mockups/` | Four screens as static HTML | Current |
 | `docs/design/multi-authority-intake.md` | Non-EN-16931 authorities | Design only |
 | `docs/design/text-layer-extraction.md` | Reading a PDF's own text | Design only |
-| `docs/decisions/` | 75 decision records | Current |
+| `docs/decisions/` | 76 decision records | Current |
 
 Document 4's markdown source is at `docs/documents/`, with
 `scripts/build-document-04.cjs` rendering the Word edition. The `.docx`

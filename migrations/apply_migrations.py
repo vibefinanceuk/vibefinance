@@ -376,10 +376,21 @@ def parse_wrangler_json(stdout: str, stderr: str, *, context: str) -> object:
 
 
 def remote_applied_filenames(database_name: str) -> set[str]:
-    """Query the remote D1 database's bookkeeping table via wrangler."""
+    """Filenames only — see remote_applied_checksums for drift work."""
+    return set(remote_applied_checksums(database_name))
+
+
+def remote_applied_checksums(database_name: str) -> dict[str, str]:
+    """Query the remote D1 database's bookkeeping table via wrangler.
+
+    Returns filename -> checksum. The checksum half went unread for a
+    long time: it was written on every apply and compared to nothing,
+    while a comment in the apply loop described the result as
+    "checksum-verified". Decision 0076.
+    """
     ensure_remote_bookkeeping(database_name)
     result = _run_wrangler_command(
-        database_name, f"SELECT filename FROM {BOOKKEEPING_TABLE}", json_output=True
+        database_name, f"SELECT filename, checksum FROM {BOOKKEEPING_TABLE}", json_output=True
     )
     if result.returncode != 0:
         raise RuntimeError(
@@ -430,7 +441,7 @@ def remote_applied_filenames(database_name: str) -> set[str]:
             "because no migration has successfully completed against "
             "this database yet — there is nothing legitimate to lose."
         )
-    return {row["filename"] for row in rows}
+    return {row["filename"]: row.get("checksum", "") for row in rows}
 
 
 def apply_remote(
@@ -440,8 +451,40 @@ def apply_remote(
     migrations_dir: Path = DEFAULT_MIGRATIONS_DIR,
 ) -> None:
     migrations = load_migrations(migrations_dir)
-    applied = remote_applied_filenames(database_name)
+    stored = remote_applied_checksums(database_name)
+    applied = set(stored)
     pending = [m for m in migrations if m.filename not in applied]
+
+    # Drift first, and BEFORE the nothing-to-apply return — decision
+    # 0076. An applied migration edited with no new migration to apply
+    # is exactly the case --refresh-checksums exists for, and the old
+    # early return made it unreachable.
+    drift = [
+        m
+        for m in migrations
+        if m.filename in stored and stored[m.filename] and stored[m.filename] != m.checksum
+    ]
+    if drift:
+        if refresh_checksums:
+            for m in drift:
+                print(f"refresh-checksums: {m.filename} changed since it was applied")
+                result = _run_wrangler_command(
+                    database_name,
+                    f"UPDATE {BOOKKEEPING_TABLE} SET checksum = '{m.checksum}' "
+                    f"WHERE filename = '{m.filename}'",
+                )
+                if result.returncode != 0:
+                    raise RuntimeError(f"could not refresh the checksum for {m.filename}:\n{result.stderr}")
+                print(f"  recorded {m.checksum[:12]}...")
+        else:
+            names = ", ".join(m.filename for m in drift)
+            raise RuntimeError(
+                f"applied migration(s) edited since being applied: {names}. "
+                f"The deployed schema no longer matches the file that claims "
+                f"to describe it. If the edit was deliberate — widening a "
+                f"standing invariant, correcting a comment — re-run with "
+                f"--refresh-checksums, which is the act of saying so."
+            )
 
     if not pending:
         print("nothing to apply — remote is up to date.")
@@ -471,12 +514,13 @@ VALUES ('{migration.filename}', '{migration.checksum}');
         # capable of arbitrary SELECTs beyond the bookkeeping check above.
         # --replay-only is where assertions are actually exercised; a
         # remote apply is trusted to match the replay because it is the
-        # same SQL body, checksum-verified.
+        # same SQL body — now genuinely checksum-verified, which this
+        # comment claimed before anything checked (decision 0076).
         print(f"  applied. checksum {migration.checksum[:12]}...")
 
-    if refresh_checksums:
-        print("refresh-checksums: no drift detected in this run (all pending "
-              "migrations were new, not edited).")
+    if refresh_checksums and not drift:
+        print("refresh-checksums: no drift found — every applied migration "
+              "still matches its file.")
 
 
 def main() -> None:

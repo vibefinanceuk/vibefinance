@@ -390,3 +390,71 @@ class MigrationsDirParameterTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestChecksumDriftDetection(unittest.TestCase):
+    """An applied migration edited afterwards — decision 0076.
+
+    The checksum was written on every apply and compared to nothing,
+    while the apply loop's own comment described the result as
+    "checksum-verified". These tests exist so that claim is true.
+    """
+
+    def _dir_with(self, tmp: Path, body: str) -> Path:
+        (tmp / "0001_thing.sql").write_text(body)
+        return tmp
+
+    def _bookkeeping(self, filename: str, checksum: str) -> str:
+        return json.dumps([{"results": [{"filename": filename, "checksum": checksum}]}])
+
+    def test_refuses_when_an_applied_migration_was_edited(self):
+        with tempfile.TemporaryDirectory() as raw:
+            tmp = self._dir_with(Path(raw), "CREATE TABLE t (id TEXT);\n")
+            with patch.object(am, "_run_wrangler_command") as cmd, patch.object(am, "ensure_remote_bookkeeping"):
+                cmd.return_value = fake_completed(
+                    stdout=self._bookkeeping("0001_thing.sql", "a-stale-checksum")
+                )
+                with self.assertRaises(RuntimeError) as caught:
+                    am.apply_remote("db", dry_run=False, refresh_checksums=False, migrations_dir=tmp)
+        self.assertIn("edited since being applied", str(caught.exception))
+        # The message must say what to do, not merely that something is wrong.
+        self.assertIn("--refresh-checksums", str(caught.exception))
+
+    def test_detects_drift_even_when_nothing_is_pending(self):
+        """The case the flag exists for, and the one it could not reach.
+
+        The old early return fired before any drift check, so a
+        migration edited with no new migration to apply went unnoticed
+        — precisely the situation --refresh-checksums was written for.
+        """
+        with tempfile.TemporaryDirectory() as raw:
+            tmp = self._dir_with(Path(raw), "CREATE TABLE t (id TEXT);\n")
+            with patch.object(am, "_run_wrangler_command") as cmd, patch.object(am, "ensure_remote_bookkeeping"):
+                cmd.return_value = fake_completed(
+                    stdout=self._bookkeeping("0001_thing.sql", "a-stale-checksum")
+                )
+                with self.assertRaises(RuntimeError):
+                    am.apply_remote("db", dry_run=False, refresh_checksums=False, migrations_dir=tmp)
+
+    def test_refresh_checksums_records_the_new_value(self):
+        with tempfile.TemporaryDirectory() as raw:
+            tmp = self._dir_with(Path(raw), "CREATE TABLE t (id TEXT);\n")
+            real = am.load_migrations(tmp)[0].checksum
+            with patch.object(am, "_run_wrangler_command") as cmd, patch.object(am, "ensure_remote_bookkeeping"):
+                cmd.side_effect = [
+                    fake_completed(stdout=self._bookkeeping("0001_thing.sql", "a-stale-checksum")),
+                    fake_completed(),
+                ]
+                am.apply_remote("db", dry_run=False, refresh_checksums=True, migrations_dir=tmp)
+            update = cmd.call_args_list[-1].args[1]
+        self.assertIn("UPDATE", update)
+        self.assertIn(real, update)
+
+    def test_accepts_an_unedited_migration(self):
+        """The fallback must not fire on every ordinary run."""
+        with tempfile.TemporaryDirectory() as raw:
+            tmp = self._dir_with(Path(raw), "CREATE TABLE t (id TEXT);\n")
+            real = am.load_migrations(tmp)[0].checksum
+            with patch.object(am, "_run_wrangler_command") as cmd, patch.object(am, "ensure_remote_bookkeeping"):
+                cmd.return_value = fake_completed(stdout=self._bookkeeping("0001_thing.sql", real))
+                am.apply_remote("db", dry_run=False, refresh_checksums=False, migrations_dir=tmp)  # must not raise
