@@ -73,6 +73,13 @@ authentication is central and authorisation stays per-instance; there is
 `vf-ui` Worker rather than bound to `vf-licence`, on deployment-frequency
 grounds.
 
+**Corrected since:** SSO is one path, not the path. Some customers will
+not integrate an identity provider and some have none, so local accounts
+are a permanent second authentication path — password hashing, login,
+reset, lockout, and the policy questions SSO would have deferred. Both
+paths mint the same session token, so the seam holds; there are two
+endpoints behind it rather than one (0083 section 7).
+
 **Nothing in it now blocks work.** SAML versus OIDC is **parked**
 (0083 section 7): almost nothing depends on the choice, because
 everything downstream consumes a verified identity via the session

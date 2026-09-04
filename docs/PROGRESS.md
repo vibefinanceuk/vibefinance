@@ -177,6 +177,14 @@ vocabulary's EN 16931 reference fields and supplier groups.
 **Line-level extraction.** Extracted from images since 0044's addendum;
 still absent from the UBL parser's allowance and charge groups.
 
+**Local accounts.** Some customers will not integrate an identity
+provider and some do not have one, so local login is a permanent second
+authentication path rather than a bootstrap concern (0083 section 7).
+Needs password hashing, a login endpoint, reset, lockout — none of which
+exists — plus the policy questions SSO would have deferred to the
+customer's own IdP. Both paths mint the same session token, so the seam
+holds.
+
 **Email.** Nothing is sent on approval, expiry warning, or expiry.
 The operator emails people personally.
 

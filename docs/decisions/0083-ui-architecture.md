@@ -17,11 +17,18 @@ authentication.**
 
 ---
 
-## 1. Customers have their own SSO, and that changes everything
+## 1. Some customers have their own SSO, and that changes everything
 
-Most customers have a SAML or OIDC identity provider. Accepting that has
+Many customers have a SAML or OIDC identity provider. Accepting that has
 three consequences that resolve problems this design was otherwise going
 to have.
+
+> **Corrected after this was first written.** The original said *most*
+> customers, and treated SSO as **the** path. Some customers will not
+> want to integrate their identity provider, and some will not have one.
+> See section 7: local accounts are not a bootstrap concern but a
+> permanent second path, and that is a materially larger commitment than
+> this section originally assumed.
 
 **A leaver is deprovisioned once, at source.** `org_users` stops being a
 user directory and becomes a *projection*: a row that exists because
@@ -243,7 +250,66 @@ widened one still does within a region.
 
 ---
 
-## 7. The identity provider is parked, behind a deliberate seam
+## 7. SSO is one path, not the path
+
+**The correction that matters most in this record**, and it arrived
+after the rest was written.
+
+Some customers will not integrate an identity provider, and some will
+not have one. So **local accounts are not a bootstrap concern — they are
+a permanent second authentication path**, and that is a much larger
+commitment than "add a password for the first user".
+
+### What it actually costs
+
+Password infrastructure this project has none of: hashing, a login
+endpoint, reset, lockout, and whatever a customer's own security policy
+demands. `authenticateUser` today compares a hashed bearer token; there
+is no password path at all.
+
+And it makes questions customer-facing that SSO would have deferred to
+the customer's own IdP — length and complexity rules, rotation, failed
+attempt lockout, MFA. *"We support SSO"* was the answer that avoided all
+of them.
+
+### What survives unchanged
+
+**The seam.** Both paths mint the same session token: `vf-licence`
+verifies either an assertion or a password and issues the same thing.
+Everything downstream still consumes a verified identity and does not
+care how it was obtained (section 8). There are simply two endpoints
+behind the seam rather than one.
+
+That the seam survives a change this size is the strongest evidence it
+was drawn in the right place.
+
+### The bootstrap problem, in a better form
+
+A first account has to exist before anybody can create one — the
+structural deadlock decision 0055 section 8.2 already records, and why
+the org endpoints are ungated today.
+
+**Rejected: a shipped default credential.** An `Administrator` account
+with a known password would be identical across every deployment, in
+git, and in any conversation where it was discussed. That is worse than
+the ungated endpoint it would replace: an unprotected endpoint at least
+requires reaching it, where a default credential can be used from
+anywhere. History is unkind to shipped defaults.
+
+**The shape that works** is the operator's own, with the shared secret
+removed: a **per-environment** administrator created at provisioning,
+with a password set then and handed over — never a constant. It reuses
+the show-once, store-only-the-hash pattern this project already applies
+to admin keys and environment keys (Document 3 section 7).
+
+And the constraint the operator described is the right one: **that first
+account should do exactly one thing** — create a named administrator —
+after which every action is attributable to a person rather than to a
+shared login.
+
+---
+
+## 8. The identity provider is parked, behind a deliberate seam
 
 **Settled: build without choosing.** SAML in a Worker means XML
 signature verification and canonicalisation in a runtime with no Node
@@ -319,7 +385,10 @@ Section 6 widens it. Not built.
 
 ## What is not decided
 
-- **SAML or OIDC — parked.** See section 7.
+- **SAML or OIDC — parked.** See section 8.
+- **Local accounts** (section 7) — the password infrastructure, its
+  policy questions, and whether the per-environment bootstrap
+  administrator is created at provisioning or on first use. Not started.
 - **What happens to the per-user API keys** that `authenticateUser`
   checks today. They are how every live test in this project
   authenticates, and a session token does not obviously replace a
