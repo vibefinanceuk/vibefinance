@@ -129,12 +129,34 @@ half of the system the document belongs to.
 **Decides:** where document shapes come from, and that Business Terms
 apply to invoices only.
 
+**Decides, on the operator's confirmation:** **three-way matching is the
+target**, not a possibility. See below.
+
 **Does not decide:**
 
 - Whether to read `CustomizationID`, and where — cheap on its own,
   consequential in what it implies about routing.
-- Whether Despatch Advice comes before or after matching. Building
-  matching for two documents first risks a design that does not extend;
-  building T16 first delays anything working.
 - Any of the other nine transactions. Most are not AP concerns at all,
   and adopting a standard does not mean implementing all of it.
+
+---
+
+## Three-way matching is the goal, which changes the order of work
+
+Confirmed by the operator. It is worth recording as a target rather than
+a possibility, because it decides what to build next.
+
+**Two-way matching now would risk a design that does not extend.**
+Comparing invoice lines to order lines is one correspondence problem.
+Adding a despatch advice makes it three-cornered — a line can match what
+was *ordered* and not what was *delivered*, and those are different
+findings needing different actions. That is a change of shape, not an
+increment.
+
+So: **Despatch Advice (T16) before matching**, not after. Get all three
+documents in place, then design the matcher once against the real
+problem.
+
+The cost is that Matching stays a stage with nothing to do for longer.
+The alternative is building a matcher twice, and discarding the first
+one — which is the more expensive way to arrive at the same place.
