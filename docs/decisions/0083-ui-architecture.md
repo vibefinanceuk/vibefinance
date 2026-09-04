@@ -89,15 +89,40 @@ token — the CORS topology, now for a reason rather than a preference.
 
 ### Which changes white-labelling
 
-Branding can no longer be a per-Worker configuration file, because the
-UI is shared. It has to be **fetched**: the UI asks which customer this
-is and receives tokens back.
+Two halves, and they live in different places.
 
-`vf-licence` already knows which customer a user belongs to, so it is
-the natural source — and it is where a partner-versus-customer livery
-would live if the product is ever resold. That is consistent with
-`docs/design/operator-interface.md` section 7, which put the commercial
-layer in the control plane.
+**The token layer lives in `vf-ui`** — the stylesheet, the CSS custom
+properties, the components that consume them. That is
+`docs/design/mockups/tokens.css` made real.
+
+**The values do not**, because the UI is shared. Compiling Northwind's
+teal into the bundle would mean a UI deployment to add a customer, and
+every customer's branding in one artefact.
+
+So the values are **fetched from `vf-licence`**. It already knows which
+customer a user belongs to, it is what the UI talks to before any
+instance is chosen, and — decisively — **the login screen needs branding
+before an instance has been selected**, so an instance cannot be the
+source for that moment.
+
+### Branding is set by the operator, in `vf-licence`
+
+Settled. A customer does not edit their own.
+
+The alternative would need a scoped customer write path into the control
+plane, where the admin key is currently operator-only and provisioning
+is done by hand anyway (Document 3, section 7). Branding becomes a
+provisioning-time activity alongside creating the customer and their
+environments, which is where it naturally sits.
+
+**The cost, stated:** a customer wanting their logo changed raises it
+with the operator. With one live customer that is not a cost, and it is
+reversible — a customer-facing branding editor could be added later
+without moving where the values live.
+
+This also keeps Document 3's constraint nearly intact. Branding is not
+customer *content* in the sense that record meant, though it is the
+first thing stored there that is not purely commercial.
 
 ---
 
