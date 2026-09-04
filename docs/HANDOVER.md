@@ -60,6 +60,9 @@ a process instance. **Nothing matches an invoice against one yet.**
 
 ## Waiting on you
 
+**Nothing blocks the next piece of work.** The items below are product
+judgements worth making deliberately, not obstacles.
+
 ### 1. The UI architecture — proposed, awaiting review
 
 **Decision 0083 answers the four questions** and is written for review
@@ -70,11 +73,12 @@ authentication is central and authorisation stays per-instance; there is
 `vf-ui` Worker rather than bound to `vf-licence`, on deployment-frequency
 grounds.
 
-**One thing needs your decision inside it: SAML or OIDC.** SAML in a
-Worker means XML signature verification and canonicalisation in a
-runtime with no Node crypto; OIDC is roughly a day's work. Most
-enterprise IdPs speak both, so this is best answered by asking a real
-customer rather than choosing.
+**Nothing in it now blocks work.** SAML versus OIDC is **parked**
+(0083 section 7): almost nothing depends on the choice, because
+everything downstream consumes a verified identity via the session
+token and does not care how it was minted. The first implementation
+uses a conspicuously dev-only stub that mints a token for a known user
+and must refuse to run against production.
 
 Settled since: **one instance at a time, never merged.** A power user
 selects `Morrison-EU` or `Morrison-US` from a drop-down and sees that

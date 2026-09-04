@@ -214,6 +214,49 @@ widened one still does within a region.
 
 ---
 
+## 7. The identity provider is parked, behind a deliberate seam
+
+**Settled: build without choosing.** SAML in a Worker means XML
+signature verification and canonicalisation in a runtime with no Node
+crypto; OIDC is roughly a day's work. Most enterprise IdPs speak both,
+so the answer belongs to a real customer rather than to this document.
+
+Parking it is safe **because almost nothing depends on it**:
+
+| Does not care | Cares |
+| --- | --- |
+| The session token's format and TTL | One endpoint in `vf-licence` |
+| Minting and local verification | |
+| Branding storage and fetch | |
+| The instance selector | |
+| Every screen | |
+
+OIDC means a redirect, a code exchange and JWKS verification. SAML means
+receiving a POSTed XML assertion and verifying its signature. **Same
+output, very different inside** — and everything downstream consumes *a
+verified identity* without caring how it was obtained.
+
+### The seam, stated so it is drawn deliberately
+
+Everything downstream depends on **the session token**. Nothing depends
+on how it was minted. That line is the whole reason this can be parked,
+and it is easy to blur by accident — a screen reading an IdP claim
+directly would tie the UI to a decision nobody has made.
+
+### The stub, and why it is called a stub
+
+Without an IdP there is still no way to sign in and test anything. So
+the first implementation is a **dev-only endpoint that mints a session
+token for a known user**, standing exactly where the SSO endpoint will.
+
+That is genuinely useful and needs to be conspicuously temporary.
+**"Temporary authentication bypass in the control plane" is precisely
+the kind of thing that outlives its intent**, so it should refuse to run
+against a production environment rather than relying on anybody
+remembering to remove it.
+
+---
+
 ## What already exists
 
 More than expected:
@@ -247,12 +290,7 @@ Section 6 widens it. Not built.
 
 ## What is not decided
 
-- **SAML or OIDC.** SAML in a Worker is genuinely awkward — XML
-  signature verification and canonicalisation, in a runtime with no Node
-  crypto and a limited XML story. OIDC is dramatically simpler and most
-  enterprise IdPs speak both. **Worth establishing what customers can
-  offer before committing**, because this affects difficulty more than
-  anything else here.
+- **SAML or OIDC — parked.** See section 7.
 - **What happens to the per-user API keys** that `authenticateUser`
   checks today. They are how every live test in this project
   authenticates, and a session token does not obviously replace a
