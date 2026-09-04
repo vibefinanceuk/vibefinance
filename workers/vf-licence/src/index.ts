@@ -139,58 +139,12 @@ export default {
       return handleBrandingStylesheet(env.CONTROL_DB, null);
     }
 
-    const brandingSetMatch = url.pathname.match(/^\/branding\/([^/]+)$/);
-    if (brandingSetMatch && request.method === "PUT") {
-      let body: unknown;
-      try {
-        body = await request.json();
-      } catch {
-        return json({ error: "invalid JSON body" }, 400);
-      }
-      const result = await setBranding(
-        env.CONTROL_DB,
-        decodeURIComponent(brandingSetMatch[1]),
-        (body ?? {}) as Record<string, unknown>,
-        "operator"
-      );
-      return json(result.body, result.status);
-    }
-
-    // The provisioning surface — admin only, for the same reason
-    // creating an environment is: it decides who may reach a customer's
-    // data at all.
-    if (url.pathname === "/credentials" && request.method === "POST") {
-      let body: unknown;
-      try {
-        body = await request.json();
-      } catch {
-        return json({ error: "invalid JSON body" }, 400);
-      }
-      const { email, customerId, password } = (body ?? {}) as Record<string, unknown>;
-      if (typeof email !== "string" || typeof customerId !== "string" || typeof password !== "string") {
-        return json({ error: "email, customerId and password are required" }, 400);
-      }
-      const result = await setCredential(env.CONTROL_DB, email, customerId, password);
-      return json(result.body, result.status);
-    }
-
-    if (url.pathname === "/access" && (request.method === "POST" || request.method === "DELETE")) {
-      let body: unknown;
-      try {
-        body = await request.json();
-      } catch {
-        return json({ error: "invalid JSON body" }, 400);
-      }
-      const { email, environmentId, grantedBy } = (body ?? {}) as Record<string, unknown>;
-      if (typeof email !== "string" || typeof environmentId !== "string") {
-        return json({ error: "email and environmentId are required" }, 400);
-      }
-      const result =
-        request.method === "POST"
-          ? await grantAccess(env.CONTROL_DB, email, environmentId, typeof grantedBy === "string" ? grantedBy : null)
-          : await revokeAccess(env.CONTROL_DB, email, environmentId);
-      return json(result.body, result.status);
-    }
+    // **Setting** branding is admin-only and lives BELOW the admin gate
+    // — see the provisioning surface further down. It was first written
+    // here beside its GET, which returned before `isAdminRoute` was
+    // even computed, so the admin entry was dead code and anybody could
+    // rebrand any customer. Reading is public; writing is not, and the
+    // two therefore cannot sit together.
 
     // Signing in, and asking which instances you may reach. Neither is
     // an admin route: they are what a person does BEFORE holding any
@@ -329,6 +283,61 @@ export default {
 
     if (url.pathname === "/environments" && request.method === "GET") {
       const result = await handleListEnvironments(env.CONTROL_DB);
+      return json(result.body, result.status);
+    }
+
+    // Setting a customer's livery — admin only (decision 0083 section
+    // 3: the operator sets branding, never the customer).
+    const brandingSetMatch = url.pathname.match(/^\/branding\/([^/]+)$/);
+    if (brandingSetMatch && request.method === "PUT") {
+      let brandingBody: unknown;
+      try {
+        brandingBody = await request.json();
+      } catch {
+        return json({ error: "invalid JSON body" }, 400);
+      }
+      const result = await setBranding(
+        env.CONTROL_DB,
+        decodeURIComponent(brandingSetMatch[1]),
+        (brandingBody ?? {}) as Record<string, unknown>,
+        "operator"
+      );
+      return json(result.body, result.status);
+    }
+
+    // The provisioning surface — admin only, for the same reason
+    // creating an environment is: it decides who may reach a customer's
+    // data at all.
+    if (url.pathname === "/credentials" && request.method === "POST") {
+      let body: unknown;
+      try {
+        body = await request.json();
+      } catch {
+        return json({ error: "invalid JSON body" }, 400);
+      }
+      const { email, customerId, password } = (body ?? {}) as Record<string, unknown>;
+      if (typeof email !== "string" || typeof customerId !== "string" || typeof password !== "string") {
+        return json({ error: "email, customerId and password are required" }, 400);
+      }
+      const result = await setCredential(env.CONTROL_DB, email, customerId, password);
+      return json(result.body, result.status);
+    }
+
+    if (url.pathname === "/access" && (request.method === "POST" || request.method === "DELETE")) {
+      let body: unknown;
+      try {
+        body = await request.json();
+      } catch {
+        return json({ error: "invalid JSON body" }, 400);
+      }
+      const { email, environmentId, grantedBy } = (body ?? {}) as Record<string, unknown>;
+      if (typeof email !== "string" || typeof environmentId !== "string") {
+        return json({ error: "email and environmentId are required" }, 400);
+      }
+      const result =
+        request.method === "POST"
+          ? await grantAccess(env.CONTROL_DB, email, environmentId, typeof grantedBy === "string" ? grantedBy : null)
+          : await revokeAccess(env.CONTROL_DB, email, environmentId);
       return json(result.body, result.status);
     }
 

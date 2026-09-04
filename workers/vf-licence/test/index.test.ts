@@ -187,3 +187,61 @@ describe("the signup request flow's auth boundary, through the real router (deci
     expect(res.status).toBe(401);
   });
 });
+
+describe("every write route sits behind the admin gate (decision 0097)", () => {
+  /**
+   * Written after three routes were found sitting ABOVE it.
+   *
+   * `/credentials`, `/access` and `PUT /branding/:id` were each added
+   * next to a related handler, and each returned before `isAdminRoute`
+   * was computed further down the function. Their entries in that
+   * expression were dead code, and anybody could create a credential
+   * for any email, grant themselves access, and sign in.
+   *
+   * No existing test caught it: each route's own tests called its
+   * handler directly, which is the correct level for testing what a
+   * handler does and says nothing about whether the router protects it.
+   *
+   * So these go through `SELF.fetch` — the real router, with no
+   * credential — and assert only that the request is refused. That
+   * holds whatever `ADMIN_API_KEY` is set to, which is nothing here.
+   */
+  const writeRoutes: [string, string, unknown][] = [
+    ["POST", "/customers", { id: "x", name: "X" }],
+    ["POST", "/environments", { customerId: "x", kind: "sandbox", region: "eu", instanceUrl: "https://x" }],
+    ["POST", "/licences", { environmentId: "x", plan: "trial" }],
+    ["POST", "/credentials", { email: "a@b.com", customerId: "x", password: "a-long-passphrase" }],
+    ["POST", "/access", { email: "a@b.com", environmentId: "x" }],
+    ["DELETE", "/access", { email: "a@b.com", environmentId: "x" }],
+    ["PUT", "/branding/x", { brandName: "Should Not Work" }],
+  ];
+
+  for (const [method, path, body] of writeRoutes) {
+    it(`refuses ${method} ${path} without a credential`, async () => {
+      const res = await SELF.fetch(`https://example.com${path}`, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      expect(res.status, `${method} ${path} was not refused`).toBe(401);
+    });
+
+    it(`refuses ${method} ${path} with a wrong credential`, async () => {
+      const res = await SELF.fetch(`https://example.com${path}`, {
+        method,
+        headers: { "Content-Type": "application/json", Authorization: "Bearer definitely-not-the-admin-key" },
+        body: JSON.stringify(body),
+      });
+      expect(res.status, `${method} ${path} accepted a wrong key`).toBe(401);
+    });
+  }
+
+  it("still serves the branding stylesheet without one", async () => {
+    // Reading a livery is deliberately public: the login screen needs
+    // it before anybody has signed in (decision 0096). Writing is not,
+    // which is why the two cannot sit together.
+    const res = await SELF.fetch("https://example.com/branding/acme/tokens.css");
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Content-Type")).toContain("text/css");
+  });
+});

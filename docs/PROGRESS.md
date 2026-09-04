@@ -325,6 +325,13 @@ workflow engine.
 Two habits have repeatedly earned their place, and one lesson was
 learned expensively.
 
+**A guard is only a guard where it runs.** Three write routes in
+`vf-licence` were listed in `isAdminRoute` and returned before it was
+evaluated — a complete authentication bypass, found by an operator
+testing a placeholder key (0097). Every one had tests, all calling the
+handler directly, which says nothing about whether the router protects
+it. **Exercise the real path, not the piece you believe is on it.**
+
 **A standing invariant detects; it does not prevent.** Decision 0092
 claimed one meant a cross-customer grant could not be written. A
 hand-written INSERT then wrote one against the live control plane
