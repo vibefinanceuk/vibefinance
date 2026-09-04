@@ -70,10 +70,24 @@ authentication is central and authorisation stays per-instance; there is
 `vf-ui` Worker rather than bound to `vf-licence`, on deployment-frequency
 grounds.
 
-Two things need your decision inside it: **SAML or OIDC** (SAML in a
-Worker is genuinely awkward, and most enterprise IdPs speak both), and
-widening `UNIQUE (customer_id, kind)` in the control plane, which
-currently **blocks a customer having both an EU and a US production**.
+**One thing needs your decision inside it: SAML or OIDC.** SAML in a
+Worker means XML signature verification and canonicalisation in a
+runtime with no Node crypto; OIDC is roughly a day's work. Most
+enterprise IdPs speak both, so this is best answered by asking a real
+customer rather than choosing.
+
+Settled since: **one instance at a time, never merged.** A power user
+selects `Morrison-EU` or `Morrison-US` from a drop-down and sees that
+instance's data. That removes the hardest part of the multi-region
+design — no fanout, no cross-region aggregation, and `vf-licence` never
+reads customer content. And branding is set by the operator in
+`vf-licence`, with the token layer living in `vf-ui`.
+
+**Suggested build order** (decision 0083): widen the environments
+constraint, then authentication end to end, then branding storage, then
+the Validation queue as the first screen, then keying. Steps two and
+three both change `vf-licence` from a component that can be unreachable
+to one that cannot — worth doing deliberately.
 
 The original four questions, for context:
 

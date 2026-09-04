@@ -154,6 +154,66 @@ value is being boring.
 
 ---
 
+## 5. One instance at a time, never merged
+
+**Settled**, and it removes the hardest part of the multi-region design.
+
+A power user with `Morrison-EU` and `Morrison-US` selects one from a
+drop-down and sees that instance's organisations and data. They get
+everything through one UI. **They never see two instances merged in one
+visual.**
+
+### Why that matters more than it sounds
+
+Merging would have required one of two things, and both are bad:
+
+- **Browser-side fanout** — the UI calls every region and concatenates.
+  Workable for a list, and it falls apart for anything aggregate:
+  "total value awaiting approval" needs every response before it means
+  anything, and paginating two independently-ordered sources is
+  genuinely awkward.
+- **Server-side fanout** — something reads customer content from every
+  region. That would be `vf-licence`, and it is exactly what Document 3
+  says it must not do: *customers, licences and aggregate counts, never
+  customer content*. Making the control plane a reporting proxy is a far
+  larger change than making it an authentication service.
+
+Choosing "never merged" means **neither is needed**. The UI holds a
+session per instance and talks to one at a time; switching instance
+switches which API it calls. Document 3's constraint stays exactly as
+written.
+
+> **The selector is a boundary, not a filter.** The temptation later
+> will be to add "all instances" as an option, and that single option
+> would reintroduce everything this decision avoids. Worth stating so
+> nobody adds it as a convenience.
+
+### Two consequences
+
+**Aggregate numbers still cannot span regions.** No "total awaiting
+approval across the group". If that is ever wanted, the honest route is
+`usage_periods` — already pushed from each instance to `vf-licence` as
+counts, with a payload deliberately incapable of identifying anything
+(Document 3, section 5). Counts flow up; content does not.
+
+**The selector belongs in the shell, not inside a screen.** It changes
+which API the entire UI is talking to, so a stale selection is worse
+than a stale filter: a queue that looks like `Morrison-EU` while showing
+`Morrison-US` would be a dangerous confusion rather than an untidy one.
+
+---
+
+## 6. Widening the environments constraint
+
+`UNIQUE (customer_id, kind)` becomes `(customer_id, kind, region)` —
+one production per region, rather than one production.
+
+Small, and worth doing deliberately: the existing constraint is what
+currently stops a customer accidentally having two productions, and the
+widened one still does within a region.
+
+---
+
 ## What already exists
 
 More than expected:
@@ -169,23 +229,19 @@ More than expected:
 
 ---
 
-## What blocks it
+## What blocked it, and no longer does
 
 ```sql
-UNIQUE (customer_id, kind)   -- migration 0005
+UNIQUE (customer_id, kind)   -- control-plane migration 0005
 ```
 
-**A customer may have one sandbox and one production.** An EU production
-*and* a US production violates it.
+A customer could have **one sandbox and one production**. An EU
+production *and* a US production violated it — the multi-region shape
+this decision assumes was blocked by a constraint that predated the
+idea, written when `kind` was the only thing distinguishing
+environments, and correct then.
 
-The multi-region shape this decision assumes is blocked by a constraint
-that predates the idea — written when `kind` was the only thing
-distinguishing environments, and correct then.
-
-Widening it to `(customer_id, kind, region)` permits one production per
-region, which matches the described model. Worth deciding deliberately
-rather than as a side effect: it is the constraint that currently stops
-a customer accidentally having two productions.
+Section 6 widens it. Not built.
 
 ---
 
@@ -197,14 +253,9 @@ a customer accidentally having two productions.
   enterprise IdPs speak both. **Worth establishing what customers can
   offer before committing**, because this affects difficulty more than
   anything else here.
-- **Framework or hand-written HTML.** Deliberately left open: it no
-  longer blocks the architecture, and the mockups work either way.
-- **Session TTL**, and whether refresh exists.
 - **What happens to the per-user API keys** that `authenticateUser`
   checks today. They are how every live test in this project
   authenticates, and a session token does not obviously replace a
   service credential.
-- **Whether the UI aggregates across instances.** The operator's
-  position is that residency governs storage rather than access, so
-  aggregation is permitted — but a queue view spanning regions is a
-  different piece of work from a queue view of one.
+- **Session TTL**, and whether refresh exists.
+- **Framework or hand-written HTML** — no longer blocking.
