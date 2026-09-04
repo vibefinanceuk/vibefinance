@@ -46,6 +46,7 @@ import { handleCaptureFromSource } from "./source-capture-route.js";
 import { handleKeyInvoiceFields } from "./key-fields-route.js";
 import { handleReturnToStage, handleReturnToSupplier, handleDiscard } from "./return-route.js";
 import { authenticateUser, authenticateUserOrSession } from "./user-auth.js";
+import { handlePreflight, withCors } from "@vibefinance/shared";
 import { mintDocumentToken, verifyDocumentToken } from "./document-token.js";
 import { retrieveInvoiceDocument } from "./document-storage.js";
 import { resolveVocabulary } from "@vibefinance/shared";
@@ -58,6 +59,14 @@ import type { Permission } from "./permissions.js";
 import { handleRotateUserKey } from "./user-rotate-key-route.js";
 
 export interface Env {
+  /**
+   * Which web origins may read this Worker's responses (decision
+   * 0098). Names the shared UI, the same value for every customer —
+   * which makes explicit something already true architecturally: each
+   * customer's instance trusts a UI the operator runs.
+   */
+  ALLOWED_ORIGINS?: string;
+
   DB?: D1Database;
   AI?: AiRunnable;
   /**
@@ -449,6 +458,19 @@ function r2Storage(bucket: R2Bucket): PendingDocumentStorage {
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
+    // Answered before anything else: a preflight carries no credentials
+    // and asks only whether the real request would be permitted.
+    const preflight = handlePreflight(request, env.ALLOWED_ORIGINS);
+    if (preflight) return preflight;
+
+    // Applied at the edge to whatever the router produced, so no
+    // individual route has to remember. A route that forgot would work
+    // from curl and fail from a browser — the kind of divergence this
+    // project keeps finding.
+    return withCors(await this._routed(request, env), request, env.ALLOWED_ORIGINS);
+  },
+
+  async _routed(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
     // Decoded exactly once, used everywhere below — URL.pathname
     // preserves percent-encoding rather than decoding it (a genuine,

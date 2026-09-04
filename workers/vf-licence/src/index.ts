@@ -34,8 +34,17 @@ import {
 } from "./signup-route.js";
 import { handleProvisionTrial, expireOverdueLicences, warnExpiringLicences } from "./provision-route.js";
 import { extractBearerToken, isValidAdminKey, isValidEnvironmentKey } from "./auth.js";
+import { handlePreflight, withCors } from "@vibefinance/shared";
 
 export interface Env {
+  /**
+   * Which web origins may read this Worker's responses (decision
+   * 0098). Unset means none, which is how it behaved before this
+   * existed — CORS is a browser mechanism, so no page can read a
+   * response and every curl is unaffected.
+   */
+  ALLOWED_ORIGINS?: string;
+
   CONTROL_DB?: D1Database;
   /**
    * A JWK-format ECDSA P-256 private key, as JSON. Set via
@@ -86,6 +95,19 @@ function parsePrivateKey(env: Env): { ok: true; key: JsonWebKey } | { ok: false;
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
+    // Answered before anything else: a preflight carries no credentials
+    // and asks only whether the real request would be permitted.
+    const preflight = handlePreflight(request, env.ALLOWED_ORIGINS);
+    if (preflight) return preflight;
+
+    // Applied at the edge to whatever the router produced, so no
+    // individual route has to remember. A route that forgot would work
+    // from curl and fail from a browser — the kind of divergence this
+    // project keeps finding.
+    return withCors(await this._routed(request, env), request, env.ALLOWED_ORIGINS);
+  },
+
+  async _routed(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
 
     if (url.pathname === "/health") {

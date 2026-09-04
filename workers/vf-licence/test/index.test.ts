@@ -245,3 +245,50 @@ describe("every write route sits behind the admin gate (decision 0097)", () => {
     expect(res.headers.get("Content-Type")).toContain("text/css");
   });
 });
+
+describe("CORS through the real router (decision 0098)", () => {
+  /**
+   * `ALLOWED_ORIGINS` is unset in the test environment, the same as a
+   * deployment with no UI configured. So these assert the **unset**
+   * behaviour end to end: no headers, nothing changed, every existing
+   * test and curl unaffected.
+   *
+   * The allow-list logic itself is tested directly in
+   * `shared/http/cors.test.ts`, where an origin list can be supplied.
+   */
+  it("adds no CORS headers when no origins are configured", async () => {
+    const res = await SELF.fetch("https://example.com/health", {
+      headers: { Origin: "https://app.vibefinance.com" },
+    });
+    expect(res.headers.get("Access-Control-Allow-Origin")).toBeNull();
+  });
+
+  it("still answers ordinary requests normally", async () => {
+    const res = await SELF.fetch("https://example.com/health");
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ status: "ok" });
+  });
+
+  it("answers a preflight without permitting it", async () => {
+    // A browser reads the absent header as the refusal.
+    const res = await SELF.fetch("https://example.com/login", {
+      method: "OPTIONS",
+      headers: {
+        Origin: "https://app.vibefinance.com",
+        "Access-Control-Request-Method": "POST",
+      },
+    });
+    expect(res.status).toBe(204);
+    expect(res.headers.get("Access-Control-Allow-Origin")).toBeNull();
+  });
+
+  it("never sends Allow-Credentials", async () => {
+    // These APIs use a bearer token, which is not "credentials" in the
+    // CORS sense. Omitting the header means a browser will not attach
+    // cookies even if the origin check were wrong.
+    const res = await SELF.fetch("https://example.com/health", {
+      headers: { Origin: "https://app.vibefinance.com" },
+    });
+    expect(res.headers.get("Access-Control-Allow-Credentials")).toBeNull();
+  });
+});
