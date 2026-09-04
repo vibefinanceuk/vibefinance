@@ -40,6 +40,7 @@ import { createWorkersAiExtractionModel } from "./extraction-model.js";
 import { handleGetExtractionSettings, handleUpdateExtractionSettings } from "./extraction-settings-route.js";
 import { handleToMarkdownDiagnostic } from "./tomarkdown-diagnostic.js";
 import { handleCreateSource, handleListSources } from "./source-route.js";
+import { handleGetRetention, handleSetRetention, handleListBeyondRetention } from "./retention-route.js";
 import { handleCaptureFromSource } from "./source-capture-route.js";
 import { handleKeyInvoiceFields } from "./key-fields-route.js";
 import { handleReturnToStage, handleReturnToSupplier } from "./return-route.js";
@@ -1071,6 +1072,42 @@ export default {
         env.DOCUMENTS,
         env.CUSTOMER_ID
       );
+      return json(result.body, result.status);
+    }
+
+
+    // Retention (decision 0077) — a benchmark for review, not a purge
+    // schedule. Administrative: how long a customer keeps documents is
+    // a compliance setting, not accounts payable work.
+    if (pathname === "/settings/retention" && (request.method === "GET" || request.method === "PUT")) {
+      const { db } = resolveTenant(request, env);
+      const auth = await requirePermission(db, request, "Admin.Configure");
+      if (!auth.authorized) {
+        return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
+      }
+      if (request.method === "GET") {
+        const result = await handleGetRetention(db);
+        return json(result.body, result.status);
+      }
+      let body: unknown;
+      try {
+        body = await request.json();
+      } catch {
+        return json({ error: t("invalidJsonBody", resolveLocale(env.LOCALE)) }, 400);
+      }
+      const result = await handleSetRetention(db, (body ?? {}) as Record<string, unknown>);
+      return json(result.body, result.status);
+    }
+
+    // What has passed the benchmark. The half that makes the number
+    // mean something rather than sit unread.
+    if (pathname === "/settings/retention/beyond" && request.method === "GET") {
+      const { db } = resolveTenant(request, env);
+      const auth = await requirePermission(db, request, "Admin.Configure");
+      if (!auth.authorized) {
+        return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
+      }
+      const result = await handleListBeyondRetention(db);
       return json(result.body, result.status);
     }
 
