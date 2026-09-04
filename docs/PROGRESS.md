@@ -177,13 +177,12 @@ vocabulary's EN 16931 reference fields and supplier groups.
 **Line-level extraction.** Extracted from images since 0044's addendum;
 still absent from the UBL parser's allowance and charge groups.
 
-**Local accounts.** Some customers will not integrate an identity
-provider and some do not have one, so local login is a permanent second
-authentication path rather than a bootstrap concern (0083 section 7).
-Needs password hashing, a login endpoint, reset, lockout — none of which
-exists — plus the policy questions SSO would have deferred to the
-customer's own IdP. Both paths mint the same session token, so the seam
-holds.
+**Local accounts.** Designed, not built (0089). The constraint that
+shapes it: **Workers cap PBKDF2 at 100,000 iterations** where OWASP's
+minimum for PBKDF2-SHA256 is 600,000, so native Web Crypto cannot meet
+guidance. Argon2id via `@noble/hashes` runs at OWASP baseline
+parameters in 321 ms, measured. Beyond hashing it needs rate limiting,
+lockout and reset — and reset needs email, which does not exist.
 
 **Email.** Nothing is sent on approval, expiry warning, or expiry.
 The operator emails people personally.
