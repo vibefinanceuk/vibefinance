@@ -188,6 +188,35 @@ written.
 > would reintroduce everything this decision avoids. Worth stating so
 > nobody adds it as a convenience.
 
+### Switching instance means a new token, not a carried one
+
+Made concrete by decision 0086: a session token **names the environment
+it is for**, and each instance refuses one addressed elsewhere. So
+selecting `Morrison-US` mints a token for `Morrison-US`; the
+`Morrison-EU` token is not carried across and would be refused if it
+were.
+
+The same property that stops a sandbox token reaching production stops
+one region's token reaching another. Regions are separate instances
+holding separate data, and a single signing key serves the whole fleet
+— without the audience claim, every one of these would be
+interchangeable.
+
+### The selector lists what you can reach, not what the customer owns
+
+A consequence worth stating, because it changes where the list comes
+from.
+
+If a user cannot obtain a token for an environment, it should not appear
+in the drop-down. **An option that errors on click is worse than an
+absent one** — and a user should not necessarily see every environment
+their employer owns.
+
+So the list answers *"which environments can I get a token for"*, which
+is an **authorisation** question, rather than *"which environments does
+this customer have"*, which is a manifest question. They coincide today
+only because nothing restricts anybody yet.
+
 ### Two consequences
 
 **Aggregate numbers still cannot span regions.** No "total awaiting
