@@ -1,6 +1,6 @@
 # Handover
 
-**Written 4 September 2026.** One page: where things stand, what needs a
+**Written 4 September 2026, updated the same afternoon.** One page: where things stand, what needs a
 decision rather than work, and what to do next.
 
 `docs/PROGRESS.md` is the map — what exists and what does not.
@@ -14,12 +14,12 @@ either, so check the dates.
 
 | | |
 | --- | --- |
-| `origin/main` | `90ced95` |
-| vf-app deployed | `793f439` |
+| `origin/main` | `85843a7` |
+| vf-app deployed | `79bbb74` |
 | vf-licence deployed | `f203ac0` (2 September; untouched since) |
-| `vf-app-poc` migrations | through `0033` |
-| Tests | vf-app 850 · vf-licence 153 · shared 150 (+2 known pre-existing failures) |
-| Decision records | 80 |
+| `vf-app-poc` migrations | through `0034` |
+| Tests | vf-app 859 · vf-licence 153 · shared 165 (+2 known pre-existing failures) |
+| Decision records | 82 |
 
 The two `shared` failures are time-expired JWT keys in the licensing
 token tests, failing on `main` since before any of this work. Not new,
@@ -51,36 +51,44 @@ Proven live, following one real document the whole way:
 Everything above is live. What does not exist is any interface — steps
 6, 8 and 9 are `curl`.
 
+Separately, **purchase orders** can be ingested from Peppol BIS Order
+Only documents and read back. They are reference data rather than work:
+nothing extracts from them, no rule evaluates them, and they never enter
+a process instance. **Nothing matches an invoice against one yet.**
+
 ---
 
 ## Waiting on you
 
 ### 1. Four questions before any UI exists
 
+**The next thing to work on**, and the reason is that everything else is
+now waiting on data or on a longer build.
+
 There is **no frontend in this repo at all** — Workers, D1 and R2, API
 only. No framework, no build pipeline, no static asset serving, no
-browser session handling. Before a line of UI is written:
+browser session handling. Four screens are mocked as static HTML in
+`docs/design/mockups/`, and nothing renders from real data.
 
-- Served from the Worker, or deployed separately?
-- A framework, or hand-written HTML?
-- How does a browser authenticate, when the API expects a bearer token?
-- What is the token layer for white-labelling?
+- **Served from the Worker, or deployed separately?** From the Worker
+  means one deployment, one origin, and no CORS. Separately means a
+  proper build pipeline and CDN, and a second thing to configure per
+  customer.
+- **A framework, or hand-written HTML?** The mockups are hand-written
+  and readable. A framework buys component reuse and brings a build step
+  into a repo that has none.
+- **How does a browser authenticate?** The API expects a bearer token
+  and a browser has nowhere good to keep one — the same problem the
+  pop-out window had, solved there with a short-lived signed URL
+  (decision 0073). A session cookie is the usual answer and would be a
+  second auth mechanism alongside the bearer token.
+- **What is the token layer for white-labelling?** The expensive one to
+  retrofit. `docs/design/mockups/tokens.css` shows the shape: every
+  colour a token, so a customer livery is a substitution in one place.
 
-The fourth is expensive to retrofit.
-`docs/design/mockups/tokens.css` shows the shape: every colour a token,
-so a customer livery is a substitution in one place. Four screens are
-mocked as static HTML in that folder.
-
-### 2. Is purchase-order matching the next domain?
-
-Matching and Coding are now real stages with **nothing to do**.
-`po.matched` and `po.variance_pct` are declared in the closed vocabulary
-and computed by nothing — and there are **no purchase orders in the
-system at all**: no table, no ingestion, no line detail (decision 0079).
-
-It would be the first genuinely new domain since intake. The
-alternative is `party.first_document`, which is a day's work and proves
-the compute-at-capture pattern the `po.*` fields will need.
+**The API is ready for it.** Capture, keying, returning, discarding,
+signed document URLs and the stage/task model are all live and
+exercised. What a screen would need already exists behind `curl`.
 
 ---
 
@@ -100,32 +108,58 @@ Recorded so nobody re-opens them:
 - **Discard vs return-to-supplier** — genuinely distinct.
   `returned_manually` means somebody is dealing with it; `archived`
   means nothing further is needed.
+- **Is PO matching the next domain?** Purchase orders are built (0081).
+  **Three-way matching is the target**, which is why Despatch Advice
+  comes before the matcher rather than after — see below.
 
 ---
 
 ## Suggested next pieces
 
-**1. `party.first_document`.** Declared and uncomputed. Three questions
-decide it: identify a party by what (`BT-31` is absent on exactly the
-documents where "first from this supplier" matters most), first ever or
-first since when, and — the substantial one — it must be computed **at
-capture and stored**, because computing it at evaluation would change
-the answer as more invoices arrive and break the reproducibility the
-interpreter rests on.
+**1. The UI**, once the four questions above are answered. It is the
+only thing standing between a working system and a usable one, and
+nothing else is blocked on it.
 
-**2. Keyed lines.** Lines live in `invoice_lines` rather than
+**2. Despatch Advice (T16).** The goods receipt, and the missing third
+leg of three-way matching. `permissions.ts` has always described
+`AP.Match` as *"3-way match against PO/goods receipt"*, and two thirds
+of that data did not exist until purchase orders landed.
+
+**Before the matcher, not after** (decision 0082). Comparing invoice
+lines to order lines is one correspondence problem; adding a despatch
+advice makes it three-cornered, where a line can match what was
+*ordered* and not what was *delivered*. That is a change of shape, not
+an increment, and building the matcher twice is the expensive way to
+arrive at the same place.
+
+**3. Reading `cbc:CustomizationID`.** Detection answers *what structure
+is this*, not *what document is this*, so the XML branch assumes an
+invoice — and a valid Peppol Order sent to `/sources/:id/capture` is
+refused. Peppol supplies the discriminator itself and nothing reads it.
+Non-trivial, because it selects which half of the system a document
+belongs to: an order is reference data, an invoice is work.
+
+**4. `party.first_document`.** Declared and uncomputed (0079). Three
+questions decide it: identify a party by what (`BT-31` is absent on
+exactly the documents where "first from this supplier" matters most),
+first ever or first since when, and — the substantial one — it must be
+computed **at capture and stored**, because computing it at evaluation
+would change the answer as more invoices arrive and break the
+reproducibility the interpreter rests on.
+
+**5. Keyed lines.** Lines live in `invoice_lines` rather than
 `facts_json`, so `provenance.keyed` covers header fields only and a
 keyed line is indistinguishable from a parsed one. `line_sum` cannot run
 without lines.
 
-**3. Retiring the legacy intake channels.** `ic-new` still exists with a
+**6. Retiring the legacy intake channels.** `ic-new` still exists with a
 NULL structure, and the channel-addressed capture endpoints still bypass
 detection. Retiring them lets decision 0061's partial unique index
 become total, and is the moment to split extraction settings by
 structure (0066). **Gated on the customer's integration moving off
 `/intake-channels/:id/capture-*` first.**
 
-**4. Queue visibility.** ~35 tasks sit open and unclaimed at Approval
+**7. Queue visibility.** ~35 tasks sit open and unclaimed at Approval
 from testing, each blocking its instance. Nothing surfaces an ageing
 queue, and nothing surfaces abandoned pending documents either. For AP,
 where late payment has real cost, that is a gap worth naming.
@@ -177,3 +211,10 @@ read cold — each states what was decided, what was rejected, and why.
 **One-off configuration** lives in `docs/operations/` — SQL run once
 against a named database, reviewed like code but not part of the
 migration chain.
+
+**Document shapes come from Peppol BIS 3.x** (decision 0082), not from
+what an ERP exports and not from a shape invented here. One caveat that
+is easy to get wrong: **only the invoice has Business Terms.** BIS
+Billing is a CIUS of EN 16931; the other eleven transactions use UBL
+element names, so "use Peppol throughout" must not be read as "use BT
+codes throughout".
