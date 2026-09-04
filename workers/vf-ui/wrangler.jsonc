@@ -1,0 +1,29 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "vf-ui",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-01",
+
+  // Static files, served by Cloudflare before the Worker runs. Only one
+  // asset collection is possible per Worker, and by default a matching
+  // file wins over the Worker script — which is what we want: HTML, CSS
+  // and JavaScript are files, and the Worker exists only to inject
+  // configuration and to answer what no file matches.
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    // Everything under /config is generated per deployment rather than
+    // shipped, so the Worker must see those paths first.
+    "run_worker_first": ["/config.js"]
+  },
+
+  "vars": {
+    // Where the APIs live — deployment configuration, deliberately NOT
+    // baked into the JavaScript (decision 0099). Moving to a custom
+    // domain later is then a config change rather than a UI rebuild,
+    // and both origins can run at once during a transition.
+    "LICENCE_API": "https://vf-licence.vibefinance.workers.dev"
+  },
+
+  "observability": { "enabled": true }
+}

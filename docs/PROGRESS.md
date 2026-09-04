@@ -325,6 +325,11 @@ workflow engine.
 Two habits have repeatedly earned their place, and one lesson was
 learned expensively.
 
+**Running a check and reading it are different acts.** `npm run lint |
+tail -1` printed a blank line whether lint passed or failed, so three
+real violations were reported as clean for several decisions (0100).
+**Check the exit code.**
+
 **A guard is only a guard where it runs.** Three write routes in
 `vf-licence` were listed in `isAdminRoute` and returned before it was
 evaluated — a complete authentication bypass, found by an operator

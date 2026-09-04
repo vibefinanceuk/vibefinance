@@ -981,15 +981,19 @@ export default {
     // to one document, and unforgeable.
     const docFetchMatch = pathname.match(/^\/documents\/([^/]+)$/);
     if (docFetchMatch && request.method === "GET") {
-      const { db } = resolveTenant(request, env);
-      if (!env.DOCUMENT_URL_SECRET || !env.DOCUMENTS) {
+      // Through resolveTenant, which already returns the bucket. These
+      // three sites read env.DOCUMENTS directly when first written
+      // (decision 0073) — the lint rule from decision 0001 caught it
+      // and nobody was reading the output (decision 0100).
+      const { db, documents } = resolveTenant(request, env);
+      if (!env.DOCUMENT_URL_SECRET || !documents) {
         return json({ error: "document access is not configured" }, 500);
       }
       const verified = await verifyDocumentToken(env.DOCUMENT_URL_SECRET, docFetchMatch[1]);
       if (!verified.valid) {
         return json({ error: `document link ${verified.reason}` }, 403);
       }
-      const doc = await retrieveInvoiceDocument(env.DOCUMENTS, db, verified.invoiceId, "original");
+      const doc = await retrieveInvoiceDocument(documents, db, verified.invoiceId, "original");
       if (!doc) {
         return json({ error: "the document is no longer retained" }, 404);
       }
@@ -1127,7 +1131,7 @@ export default {
       // would be theatre: a caller wanting to bypass it would use the
       // older endpoint. Capture being ungated across the board is a
       // real gap and deserves fixing as one thing rather than half.
-      const { db } = resolveTenant(request, env);
+      const { db, documents } = resolveTenant(request, env);
       if (!env.AI) {
         return json({ error: "the AI binding is not configured" }, 500);
       }
@@ -1141,7 +1145,7 @@ export default {
         // Both optional. A deployment without an R2 bucket still
         // captures; it reports that the original was not retained
         // rather than refusing the document (decision 0068).
-        env.DOCUMENTS,
+        documents,
         env.CUSTOMER_ID
       );
       return json(result.body, result.status);

@@ -62,6 +62,17 @@ export default [
     },
   },
   {
+    // vf-ui's public/ is browser code, not Worker code: window,
+    // document and fetch are real globals there. Kept as its own block
+    // rather than widening the Worker config, so a Worker file cannot
+    // quietly start using a browser global and pass.
+    files: ["workers/vf-ui/public/**/*.js"],
+    languageOptions: {
+      globals: { ...globals.browser },
+      sourceType: "module",
+    },
+  },
+  {
     // src only — test setup code legitimately seeds env.DB directly to
     // prepare fixtures, which is not the thing this check guards against.
     files: ["workers/**/src/**/*.{js,ts}"],
