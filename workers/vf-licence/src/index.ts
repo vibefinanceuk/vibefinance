@@ -19,6 +19,7 @@ import { handleCreateEnvironment, handleDeleteEnvironment } from "./environment-
 import { handleDevLogin } from "./dev-login-route.js";
 import { handleLogin, handleListMyEnvironments, setCredential } from "./login-route.js";
 import { grantAccess, revokeAccess } from "./credentials.js";
+import { setBranding, handleBrandingStylesheet } from "./branding.js";
 import { handleUpsertLicence } from "./licences-route.js";
 import { handleIssueToken } from "./token-route.js";
 import { handleReportUsage } from "./usage-route.js";
@@ -125,6 +126,36 @@ export default {
     // manifest is admin-only for the same reason provisioning is: it
     // is cross-customer administrative data, not something any single
     // environment's own credential should be able to read or change.
+    // The stylesheet the shared UI fetches. **Unauthenticated**,
+    // because the login screen needs a livery before anybody has signed
+    // in — and it discloses four colours and a name, which a customer
+    // puts on their letterhead anyway.
+    const brandingCssMatch = url.pathname.match(/^\/branding\/([^/]+)\/tokens\.css$/);
+    if (brandingCssMatch && request.method === "GET") {
+      return handleBrandingStylesheet(env.CONTROL_DB, decodeURIComponent(brandingCssMatch[1]));
+    }
+    if (url.pathname === "/branding/tokens.css" && request.method === "GET") {
+      // No customer named yet — the very first paint of a login screen.
+      return handleBrandingStylesheet(env.CONTROL_DB, null);
+    }
+
+    const brandingSetMatch = url.pathname.match(/^\/branding\/([^/]+)$/);
+    if (brandingSetMatch && request.method === "PUT") {
+      let body: unknown;
+      try {
+        body = await request.json();
+      } catch {
+        return json({ error: "invalid JSON body" }, 400);
+      }
+      const result = await setBranding(
+        env.CONTROL_DB,
+        decodeURIComponent(brandingSetMatch[1]),
+        (body ?? {}) as Record<string, unknown>,
+        "operator"
+      );
+      return json(result.body, result.status);
+    }
+
     // The provisioning surface — admin only, for the same reason
     // creating an environment is: it decides who may reach a customer's
     // data at all.
@@ -222,6 +253,7 @@ export default {
       (url.pathname === "/environments" && (request.method === "POST" || request.method === "GET")) ||
       (url.pathname === "/licences" && request.method === "POST") ||
       (url.pathname === "/credentials" && request.method === "POST") ||
+      (url.pathname.startsWith("/branding/") && request.method === "PUT") ||
       (url.pathname === "/access" && (request.method === "POST" || request.method === "DELETE")) ||
       (url.pathname === "/signup-requests" && request.method === "GET") ||
       (approveMatch !== null && request.method === "POST") ||
