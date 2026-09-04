@@ -16,6 +16,7 @@
 
 import { handleCreateCustomer } from "./customers-route.js";
 import { handleCreateEnvironment, handleDeleteEnvironment } from "./environment-route.js";
+import { handleDevLogin } from "./dev-login-route.js";
 import { handleUpsertLicence } from "./licences-route.js";
 import { handleIssueToken } from "./token-route.js";
 import { handleReportUsage } from "./usage-route.js";
@@ -41,6 +42,13 @@ export interface Env {
    * into `wrangler secret put`, which reads from stdin).
    */
   LICENCE_SIGNING_PRIVATE_KEY?: string;
+  /**
+   * Enables the development login stub (decision 0087). Absent means
+   * the route does not exist. Never set in production — and the stub
+   * refuses to mint a production token even if it is, because a flag
+   * somebody forgot is exactly the failure this guards against.
+   */
+  ALLOW_DEV_LOGIN?: string;
   /**
    * A single shared secret protecting provisioning (POST /customers,
    * POST /licences, key rotation). Set via
@@ -115,6 +123,28 @@ export default {
     // manifest is admin-only for the same reason provisioning is: it
     // is cross-customer administrative data, not something any single
     // environment's own credential should be able to read or change.
+    // Signing in is the one thing a person does BEFORE holding any
+    // credential, so this is deliberately not an admin route. Its
+    // protection is the two guards inside it, not a key.
+    if (url.pathname === "/dev-login" && request.method === "POST") {
+      if (!env.LICENCE_SIGNING_PRIVATE_KEY) {
+        return json({ error: "LICENCE_SIGNING_PRIVATE_KEY not configured" }, 500);
+      }
+      let body: unknown;
+      try {
+        body = await request.json();
+      } catch {
+        return json({ error: "invalid JSON body" }, 400);
+      }
+      const result = await handleDevLogin(
+        env.CONTROL_DB,
+        (body ?? {}) as Record<string, unknown>,
+        JSON.parse(env.LICENCE_SIGNING_PRIVATE_KEY) as JsonWebKey,
+        { allowDevLogin: env.ALLOW_DEV_LOGIN === "true" }
+      );
+      return json(result.body, result.status);
+    }
+
     const rotateMatch = url.pathname.match(/^\/environments\/([^/]+)\/rotate-key$/);
     // Deleting an environment created in error — decision 0085. Admin
     // only, for the same reason creating one is: it is cross-customer
