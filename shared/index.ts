@@ -5,6 +5,7 @@ export * from "./interpreter/evaluate.js";
 export * from "./compiler/index.js";
 export * from "./licensing/index.js";
 export * from "./session/index.js";
+export * from "./auth/index.js";
 export * from "./usage/index.js";
 export * from "./ingestion/ubl-parser.js";
 export * from "./ingestion/ubl-order-parser.js";

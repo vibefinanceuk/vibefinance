@@ -1,8 +1,9 @@
 # 0089 — Local accounts, and how a password is stored
 
-**Status: proposed.** Nothing built. Written before code because the
-first choice is security-critical and has a hard platform constraint
-behind it.
+**Status: hashing built** (`shared/auth/password.ts`). The login
+endpoint, rate limiting, lockout and the bootstrap administrator are
+not. Written before code because the first choice is security-critical
+and has a hard platform constraint behind it.
 
 ---
 
@@ -119,17 +120,60 @@ shared login.
 
 ---
 
-## What needs deciding before building
+## Decided
 
-1. **Argon2id via `@noble/hashes`, or PBKDF2 at 100,000 with the
-   shortfall documented?** The first adds a dependency and meets
-   guidance; the second uses only what is already here and does not.
-   For a financial product this looks like a one-sided trade, but it is
-   a dependency in a codebase that has deliberately avoided them.
-2. **Where the credential lives.** `org_users` has `api_key_hash`
-   already; a `password_hash` beside it is the obvious place, and means
-   a person may hold both a service key and a password.
-3. **Whether the bootstrap administrator is created at provisioning or
-   on first use**, and what "exactly one thing" is enforced as — a
-   permission, a flag, or an account that disables itself once a named
-   administrator exists.
+**Argon2id via `@noble/hashes`.** The operator's reasoning was the
+practical form of the argument: *PBKDF2 seems like a security risk, most
+IT teams would question it.* A customer's security team asks which
+algorithm and which parameters, and *"PBKDF2 at 100,000, because our
+platform will not do more"* invites the obvious follow-up. *"Argon2id at
+OWASP's recommended parameters"* ends the conversation.
+
+The package brings **zero transitive dependencies**, which is most of
+why it is the least-bad shape for this exception.
+
+**`password_hash` beside `api_key_hash`** on `org_users`. One notion of
+a person, and the existing service credentials keep working unchanged —
+which matters, because every live test in this project authenticates
+with one.
+
+**The bootstrap administrator self-disables** once a named administrator
+exists. Stronger than a permission, which somebody could grant onward:
+the account stops being a way in rather than relying on nobody misusing
+it. The care needed is that it cannot disable itself mid-setup and
+strand the person doing it.
+
+---
+
+## Two properties that would fail silently
+
+Both watched to fail, because neither shows up in ordinary use.
+
+**A unique salt per password.** With a fixed salt everything still
+round-trips — passwords hash, verification succeeds, tests pass. What
+breaks is invisible: identical passwords produce identical hashes, a
+precomputed table becomes useful, and a breach reveals who shares a
+password with whom.
+
+**Verification uses the parameters the hash was made with**, not
+today's constants. Verifying under current parameters also works
+perfectly — until the cost is raised, at which point **every existing
+password stops verifying at once.** The failure arrives with the
+upgrade, long after the code was written.
+
+`needsRehash` is the other half: after a successful sign-in, a hash
+below current strength can be re-derived from the password the person
+has just proved they know. Without it, raising the cost only ever
+protects new accounts.
+
+---
+
+## Still not built
+
+- **The login endpoint**, in `vf-licence` beside the dev stub, minting
+  the same session token (decision 0086).
+- **Rate limiting.** No hash is strong enough against unlimited
+  attempts, and this matters more than the algorithm choice.
+- **Lockout**, and its denial-of-service trade-off.
+- **Reset**, which needs email — and nothing here sends any.
+- **The bootstrap administrator**, whose shape is settled above.
