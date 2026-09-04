@@ -2,6 +2,13 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "vf-licence",
   "main": "src/index.ts",
+
+  "vars": {
+    // The shared UI, which signs people in here (decision 0098).
+    // CORS is a browser mechanism: this decides which web pages may
+    // read a response, and curl is unaffected either way.
+    "ALLOWED_ORIGINS": "https://vf-ui.vibefinance.workers.dev"
+  },
   "compatibility_date": "2026-08-01",
   "compatibility_flags": ["nodejs_compat"],
 

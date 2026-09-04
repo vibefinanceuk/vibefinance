@@ -85,7 +85,17 @@
     "LICENCE_SERVER_URL": "https://vf-licence.vibefinance.workers.dev",
     "CUSTOMER_ID": "Acme",
     "ENVIRONMENT_ID": "Acme-production",
-    "LOCALE": "en"
+    "LOCALE": "en",
+
+    // Which web origins may READ this Worker's responses (decision
+    // 0098). Names the shared UI — the same value for every customer,
+    // which writes down something already true: each customer's
+    // instance trusts a UI the operator runs.
+    //
+    // Not a security boundary against a determined caller: CORS is a
+    // browser mechanism, and curl ignores it entirely. It decides which
+    // web PAGES may read a signed-in person's data.
+    "ALLOWED_ORIGINS": "https://vf-ui.vibefinance.workers.dev"
   },
 
   // Worker-to-Worker calls to vf-licence go through this Service
