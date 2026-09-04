@@ -119,6 +119,17 @@ need no new machinery — this half remains designed only, and has an
 ordering problem: a condition testing the supplier needs extraction to
 have happened first.
 
+**Purchase orders.** No table, no ingestion, no matching. `po.matched`
+and `po.variance_pct` are declared in the vocabulary and computed by
+nothing (0079), so a matching rule compiles and never fires. The first
+genuinely new domain since intake.
+
+**`party.first_document`.** Declared and uncomputed (0079). Closer than
+the `po.*` pair — the data exists — but needs three questions settled
+first, including that it must be computed at capture and stored, or
+re-running a rule set could yield a different answer and break the
+reproducibility property the interpreter rests on.
+
 **Supplier groups.** Needed for conditions like *"if the invoice is
 from a transport provider"*, which should be a lookup against
 configuration, never a model inference. Now also the missing condition
@@ -268,7 +279,7 @@ holding — 33 migrations for `vf-app`, 7 for `vf-licence`.
 | `docs/design/mockups/` | Four screens as static HTML | Current |
 | `docs/design/multi-authority-intake.md` | Non-EN-16931 authorities | Design only |
 | `docs/design/text-layer-extraction.md` | Reading a PDF's own text | Design only |
-| `docs/decisions/` | 78 decision records | Current |
+| `docs/decisions/` | 79 decision records | Current |
 
 Document 4's markdown source is at `docs/documents/`, with
 `scripts/build-document-04.cjs` rendering the Word edition. The `.docx`
