@@ -30,20 +30,20 @@ beforeEach(async () => {
 
 describe("handleIssueToken — re-keyed to environmentId (decision 0036)", () => {
   it("404s when no licence exists for the environment", async () => {
-    const result = await handleIssueToken(env.CONTROL_DB, privateKeyJwk, "acme-production");
+    const result = await handleIssueToken(env.CONTROL_DB, privateKeyJwk, "acme-production-eu");
     expect(result.status).toBe(404);
   });
 
   it("issues a token that verifies with the matching public key", async () => {
     await handleUpsertLicence(env.CONTROL_DB, {
-      environmentId: "acme-production",
+      environmentId: "acme-production-eu",
       plan: "standard",
       volumeEntitlement: 1000,
       validFrom: "2026-01-01",
       features: ["rules_ai_compiler"],
     });
 
-    const result = await handleIssueToken(env.CONTROL_DB, privateKeyJwk, "acme-production");
+    const result = await handleIssueToken(env.CONTROL_DB, privateKeyJwk, "acme-production-eu");
     expect(result.status).toBe(200);
     const { token } = result.body as { token: string };
 
@@ -54,7 +54,7 @@ describe("handleIssueToken — re-keyed to environmentId (decision 0036)", () =>
     // genuinely an environment id, not a bare customer id. See
     // handleIssueToken's own comment on why this field wasn't renamed.
     expect(verified.claims).toMatchObject({
-      customerId: "acme-production",
+      customerId: "acme-production-eu",
       plan: "standard",
       volumeEntitlement: 1000,
       status: "active",
@@ -64,7 +64,7 @@ describe("handleIssueToken — re-keyed to environmentId (decision 0036)", () =>
 
   it("carries the licence's actual status through to the signed claims, including 'blocked'", async () => {
     await handleUpsertLicence(env.CONTROL_DB, {
-      environmentId: "acme-production",
+      environmentId: "acme-production-eu",
       plan: "standard",
       volumeEntitlement: 1000,
       validFrom: "2026-01-01",
@@ -72,7 +72,7 @@ describe("handleIssueToken — re-keyed to environmentId (decision 0036)", () =>
       statusReason: "non-payment",
     });
 
-    const result = await handleIssueToken(env.CONTROL_DB, privateKeyJwk, "acme-production");
+    const result = await handleIssueToken(env.CONTROL_DB, privateKeyJwk, "acme-production-eu");
     const { token } = result.body as { token: string };
     const verified = await verifyLicenceToken(token, publicKeyJwk);
 
@@ -86,14 +86,14 @@ describe("handleIssueToken — re-keyed to environmentId (decision 0036)", () =>
     const nearFutureValidTo = "2026-01-02T00:00:00Z"; // well inside the default 48h window
 
     await handleUpsertLicence(env.CONTROL_DB, {
-      environmentId: "acme-production",
+      environmentId: "acme-production-eu",
       plan: "standard",
       volumeEntitlement: 1000,
       validFrom: "2026-01-01",
       validTo: nearFutureValidTo,
     });
 
-    const result = await handleIssueToken(env.CONTROL_DB, privateKeyJwk, "acme-production", now);
+    const result = await handleIssueToken(env.CONTROL_DB, privateKeyJwk, "acme-production-eu", now);
     const { expiresAt } = result.body as { expiresAt: string };
     // Compare parsed timestamps, not exact strings — Date#toISOString()
     // always includes milliseconds ('.000Z'), which the plain input
@@ -105,14 +105,14 @@ describe("handleIssueToken — re-keyed to environmentId (decision 0036)", () =>
   it("defaults to a 48h token lifetime when the licence's valid_to is further away or absent", async () => {
     const now = new Date("2026-01-01T00:00:00Z");
     await handleUpsertLicence(env.CONTROL_DB, {
-      environmentId: "acme-production",
+      environmentId: "acme-production-eu",
       plan: "standard",
       volumeEntitlement: 1000,
       validFrom: "2026-01-01",
       // no validTo — a year-long licence with no expiry set here
     });
 
-    const result = await handleIssueToken(env.CONTROL_DB, privateKeyJwk, "acme-production", now);
+    const result = await handleIssueToken(env.CONTROL_DB, privateKeyJwk, "acme-production-eu", now);
     const { expiresAt } = result.body as { expiresAt: string };
     expect(new Date(expiresAt).getTime() - now.getTime()).toBe(48 * 60 * 60 * 1000);
   });
@@ -125,20 +125,20 @@ describe("handleIssueToken — re-keyed to environmentId (decision 0036)", () =>
       instanceUrl: "https://sandbox.acme.workers.dev",
     });
     await handleUpsertLicence(env.CONTROL_DB, {
-      environmentId: "acme-production",
+      environmentId: "acme-production-eu",
       plan: "premium",
       volumeEntitlement: 10000,
       validFrom: "2026-01-01",
     });
     await handleUpsertLicence(env.CONTROL_DB, {
-      environmentId: "acme-sandbox",
+      environmentId: "acme-sandbox-eu",
       plan: "trial",
       volumeEntitlement: 100,
       validFrom: "2026-01-01",
     });
 
-    const prodResult = await handleIssueToken(env.CONTROL_DB, privateKeyJwk, "acme-production");
-    const sandboxResult = await handleIssueToken(env.CONTROL_DB, privateKeyJwk, "acme-sandbox");
+    const prodResult = await handleIssueToken(env.CONTROL_DB, privateKeyJwk, "acme-production-eu");
+    const sandboxResult = await handleIssueToken(env.CONTROL_DB, privateKeyJwk, "acme-sandbox-eu");
 
     const prodVerified = await verifyLicenceToken((prodResult.body as { token: string }).token, publicKeyJwk);
     const sandboxVerified = await verifyLicenceToken((sandboxResult.body as { token: string }).token, publicKeyJwk);

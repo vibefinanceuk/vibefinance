@@ -32,7 +32,7 @@ describe("handleListEnvironments — re-keyed from customers (decision 0036)", (
     const body = result.body as { environments: Record<string, unknown>[] };
     expect(body.environments).toHaveLength(1);
     expect(body.environments[0]).toMatchObject({
-      id: "acme-production",
+      id: "acme-production-eu",
       customerId: "acme",
       kind: "production",
       workerName: null,
@@ -87,7 +87,7 @@ describe("handleListEnvironments — re-keyed from customers (decision 0036)", (
     await handleCreateEnvironment(env.CONTROL_DB, { customerId: "alpha", kind: "production", region: "eu", instanceUrl: "https://a" });
     const result = await handleListEnvironments(env.CONTROL_DB);
     const body = result.body as { environments: { id: string }[] };
-    expect(body.environments.map((e) => e.id)).toEqual(["alpha-production", "zeta-production"]);
+    expect(body.environments.map((e) => e.id)).toEqual(["alpha-production-eu", "zeta-production-eu"]);
   });
 
   it("a customer's sandbox and production environments both appear as separate, real rows", async () => {
@@ -111,7 +111,7 @@ describe("handleSetFleetMetadata — re-keyed to environmentId", () => {
   it("sets fleet metadata for an environment that had none — the Acme backfill scenario", async () => {
     await seedCustomer();
     await handleCreateEnvironment(env.CONTROL_DB, { customerId: "acme", kind: "production", region: "eu", instanceUrl: "https://x" });
-    const result = await handleSetFleetMetadata(env.CONTROL_DB, "acme-production", {
+    const result = await handleSetFleetMetadata(env.CONTROL_DB, "acme-production-eu", {
       workerName: "vf-app-acme",
       d1DatabaseName: "vf-app-poc",
       d1DatabaseId: "7cac2188-4fce-46e1-a555-2b2ac852f494",
@@ -121,7 +121,7 @@ describe("handleSetFleetMetadata — re-keyed to environmentId", () => {
     const row = await env.CONTROL_DB.prepare(
       "SELECT worker_name, d1_database_name, d1_database_id, locale FROM environments WHERE id = ?"
     )
-      .bind("acme-production")
+      .bind("acme-production-eu")
       .first();
     expect(row).toEqual({
       worker_name: "vf-app-acme",
@@ -144,12 +144,12 @@ describe("handleSetFleetMetadata — re-keyed to environmentId", () => {
       locale: "en",
     });
     // Only updating d1DatabaseId, as if the database were recreated.
-    const result = await handleSetFleetMetadata(env.CONTROL_DB, "acme-production", { d1DatabaseId: "new-id" });
+    const result = await handleSetFleetMetadata(env.CONTROL_DB, "acme-production-eu", { d1DatabaseId: "new-id" });
     expect(result.status).toBe(200);
     const row = await env.CONTROL_DB.prepare(
       "SELECT worker_name, d1_database_name, d1_database_id, locale FROM environments WHERE id = ?"
     )
-      .bind("acme-production")
+      .bind("acme-production-eu")
       .first();
     expect(row).toEqual({
       worker_name: "vf-app-acme", // unchanged
@@ -162,7 +162,7 @@ describe("handleSetFleetMetadata — re-keyed to environmentId", () => {
   it("400s on an empty-string field rather than silently storing it", async () => {
     await seedCustomer();
     await handleCreateEnvironment(env.CONTROL_DB, { customerId: "acme", kind: "production", region: "eu", instanceUrl: "https://x" });
-    const result = await handleSetFleetMetadata(env.CONTROL_DB, "acme-production", { workerName: "" });
+    const result = await handleSetFleetMetadata(env.CONTROL_DB, "acme-production-eu", { workerName: "" });
     expect(result.status).toBe(400);
   });
 });

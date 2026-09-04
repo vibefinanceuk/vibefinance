@@ -18,7 +18,7 @@ beforeEach(async () => {
 
 describe("handleUpsertLicence — re-keyed to environmentId (decision 0036)", () => {
   it("400s when a required field is missing", async () => {
-    const result = await handleUpsertLicence(env.CONTROL_DB, { environmentId: "acme-production" });
+    const result = await handleUpsertLicence(env.CONTROL_DB, { environmentId: "acme-production-eu" });
     expect(result.status).toBe(400);
   });
 
@@ -34,7 +34,7 @@ describe("handleUpsertLicence — re-keyed to environmentId (decision 0036)", ()
 
   it("creates a licence with sensible defaults for optional fields", async () => {
     const result = await handleUpsertLicence(env.CONTROL_DB, {
-      environmentId: "acme-production",
+      environmentId: "acme-production-eu",
       plan: "standard",
       volumeEntitlement: 1000,
       validFrom: "2026-01-01",
@@ -44,7 +44,7 @@ describe("handleUpsertLicence — re-keyed to environmentId (decision 0036)", ()
     const row = await env.CONTROL_DB.prepare(
       "SELECT plan, features_json, status, valid_to FROM licences WHERE environment_id = ?"
     )
-      .bind("acme-production")
+      .bind("acme-production-eu")
       .first();
     expect(row).toEqual({
       plan: "standard",
@@ -56,13 +56,13 @@ describe("handleUpsertLicence — re-keyed to environmentId (decision 0036)", ()
 
   it("upserts — a second call for the same environment replaces the licence rather than duplicating it", async () => {
     await handleUpsertLicence(env.CONTROL_DB, {
-      environmentId: "acme-production",
+      environmentId: "acme-production-eu",
       plan: "standard",
       volumeEntitlement: 1000,
       validFrom: "2026-01-01",
     });
     await handleUpsertLicence(env.CONTROL_DB, {
-      environmentId: "acme-production",
+      environmentId: "acme-production-eu",
       plan: "premium",
       volumeEntitlement: 5000,
       validFrom: "2026-02-01",
@@ -72,14 +72,14 @@ describe("handleUpsertLicence — re-keyed to environmentId (decision 0036)", ()
     const count = await env.CONTROL_DB.prepare(
       "SELECT count(*) AS n FROM licences WHERE environment_id = ?"
     )
-      .bind("acme-production")
+      .bind("acme-production-eu")
       .first();
     expect(count).toEqual({ n: 1 });
 
     const row = await env.CONTROL_DB.prepare(
       "SELECT plan, volume_entitlement, features_json FROM licences WHERE environment_id = ?"
     )
-      .bind("acme-production")
+      .bind("acme-production-eu")
       .first();
     expect(row).toEqual({
       plan: "premium",
@@ -90,7 +90,7 @@ describe("handleUpsertLicence — re-keyed to environmentId (decision 0036)", ()
 
   it("rejects an invalid status value rather than storing it, falling back to 'active'", async () => {
     const result = await handleUpsertLicence(env.CONTROL_DB, {
-      environmentId: "acme-production",
+      environmentId: "acme-production-eu",
       plan: "standard",
       volumeEntitlement: 1000,
       validFrom: "2026-01-01",
@@ -98,7 +98,7 @@ describe("handleUpsertLicence — re-keyed to environmentId (decision 0036)", ()
     });
     expect(result.status).toBe(200);
     const row = await env.CONTROL_DB.prepare("SELECT status FROM licences WHERE environment_id = ?")
-      .bind("acme-production")
+      .bind("acme-production-eu")
       .first();
     expect(row).toEqual({ status: "active" });
   });
@@ -111,13 +111,13 @@ describe("handleUpsertLicence — re-keyed to environmentId (decision 0036)", ()
       instanceUrl: "https://sandbox.acme.workers.dev",
     });
     await handleUpsertLicence(env.CONTROL_DB, {
-      environmentId: "acme-production",
+      environmentId: "acme-production-eu",
       plan: "premium",
       volumeEntitlement: 10000,
       validFrom: "2026-01-01",
     });
     await handleUpsertLicence(env.CONTROL_DB, {
-      environmentId: "acme-sandbox",
+      environmentId: "acme-sandbox-eu",
       plan: "trial",
       volumeEntitlement: 100,
       validFrom: "2026-01-01",
@@ -125,12 +125,12 @@ describe("handleUpsertLicence — re-keyed to environmentId (decision 0036)", ()
     });
 
     const prodRow = await env.CONTROL_DB.prepare("SELECT plan, volume_entitlement FROM licences WHERE environment_id = ?")
-      .bind("acme-production")
+      .bind("acme-production-eu")
       .first();
     expect(prodRow).toEqual({ plan: "premium", volume_entitlement: 10000 });
 
     const sandboxRow = await env.CONTROL_DB.prepare("SELECT plan, volume_entitlement, valid_to FROM licences WHERE environment_id = ?")
-      .bind("acme-sandbox")
+      .bind("acme-sandbox-eu")
       .first();
     expect(sandboxRow).toEqual({ plan: "trial", volume_entitlement: 100, valid_to: "2026-01-31" });
   });

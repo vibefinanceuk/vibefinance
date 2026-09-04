@@ -24,7 +24,7 @@ describe("handleRotateKey — re-keyed to environmentId (decision 0036)", () => 
     const created = await seedEnvironment();
     const { apiKey: firstKey } = created.body as { apiKey: string };
 
-    const result = await handleRotateKey(env.CONTROL_DB, "acme-production");
+    const result = await handleRotateKey(env.CONTROL_DB, "acme-production-eu");
     expect(result.status).toBe(200);
     const { apiKey: secondKey } = result.body as { apiKey: string };
     expect(secondKey).not.toBe(firstKey);
@@ -40,27 +40,27 @@ describe("handleRotateKey — re-keyed to environmentId (decision 0036)", () => 
     await env.CONTROL_DB.prepare(
       "INSERT INTO environments (id, customer_id, kind, region, instance_url) VALUES (?, ?, ?, ?, ?)"
     )
-      .bind("legacy-production", "legacy", "production", "eu", "https://x")
+      .bind("legacy-production-eu", "legacy", "production", "eu", "https://x")
       .run();
 
     const before = await env.CONTROL_DB.prepare("SELECT api_key_hash FROM environments WHERE id = ?")
-      .bind("legacy-production")
+      .bind("legacy-production-eu")
       .first();
     expect(before).toEqual({ api_key_hash: null });
 
-    const result = await handleRotateKey(env.CONTROL_DB, "legacy-production");
+    const result = await handleRotateKey(env.CONTROL_DB, "legacy-production-eu");
     expect(result.status).toBe(200);
 
     const after = await env.CONTROL_DB.prepare("SELECT api_key_hash FROM environments WHERE id = ?")
-      .bind("legacy-production")
+      .bind("legacy-production-eu")
       .first<{ api_key_hash: string }>();
     expect(after?.api_key_hash).toBeTruthy();
   });
 
   it("never returns the same key twice across repeated rotations", async () => {
     await seedEnvironment();
-    const first = await handleRotateKey(env.CONTROL_DB, "acme-production");
-    const second = await handleRotateKey(env.CONTROL_DB, "acme-production");
+    const first = await handleRotateKey(env.CONTROL_DB, "acme-production-eu");
+    const second = await handleRotateKey(env.CONTROL_DB, "acme-production-eu");
     const keyA = (first.body as { apiKey: string }).apiKey;
     const keyB = (second.body as { apiKey: string }).apiKey;
     expect(keyA).not.toBe(keyB);
@@ -76,10 +76,10 @@ describe("handleRotateKey — re-keyed to environmentId (decision 0036)", () => 
     });
     const { apiKey: sandboxKeyBefore } = sandboxCreated.body as { apiKey: string };
 
-    await handleRotateKey(env.CONTROL_DB, "acme-production");
+    await handleRotateKey(env.CONTROL_DB, "acme-production-eu");
 
     const sandboxRow = await env.CONTROL_DB.prepare("SELECT api_key_hash FROM environments WHERE id = ?")
-      .bind("acme-sandbox")
+      .bind("acme-sandbox-eu")
       .first<{ api_key_hash: string }>();
     // The sandbox's own hash is unchanged by rotating production's key.
     expect(sandboxRow?.api_key_hash).toBeTruthy();

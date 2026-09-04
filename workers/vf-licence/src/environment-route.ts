@@ -72,12 +72,18 @@ export async function handleCreateEnvironment(
     return { status: 404, body: { error: `customer ${customerId} does not exist` } };
   }
 
+  // Region is part of the key now (decision 0083 section 6). A customer
+  // may hold a production in the EU and another in the US; what stays
+  // refused is two productions in ONE region.
   const existingEnvironment = await db
-    .prepare("SELECT id FROM environments WHERE customer_id = ? AND kind = ?")
-    .bind(customerId, kind)
+    .prepare("SELECT id FROM environments WHERE customer_id = ? AND kind = ? AND region = ?")
+    .bind(customerId, kind, region)
     .first();
   if (existingEnvironment) {
-    return { status: 409, body: { error: `customer ${customerId} already has a ${kind} environment` } };
+    return {
+      status: 409,
+      body: { error: `customer ${customerId} already has a ${kind} environment in ${region}` },
+    };
   }
 
   const workerName = optionalStringField(body.workerName, "workerName");
@@ -89,7 +95,16 @@ export async function handleCreateEnvironment(
   const locale = optionalStringField(body.locale, "locale");
   if (!locale.ok) return { status: 400, body: { error: locale.error } };
 
-  const id = `${customerId}-${kind}`;
+  // Region included, because the id was the OTHER place "one production
+  // per customer" was encoded: `Morrison-production` would collide
+  // between an EU and a US production even with the constraint widened.
+  //
+  // Ids already issued keep their shape — `Acme-production` is
+  // referenced by licences and usage_periods, and the id is opaque
+  // everywhere it travels (nothing splits or parses it, checked
+  // directly). So a mixed format is untidy and harmless, where
+  // rewriting live ids to tidy it would not be.
+  const id = `${customerId}-${kind}-${region}`;
 
   // The plaintext key exists only in this response — only its hash is
   // ever stored, from this point on (see docs/decisions/

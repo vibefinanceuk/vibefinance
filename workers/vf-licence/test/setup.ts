@@ -9,6 +9,7 @@ import fleetMetadataSql from "../migrations/0004_fleet_metadata.sql?raw";
 import customerEnvironmentsSql from "../migrations/0005_customer_environments.sql?raw";
 import signupRequestsSql from "../migrations/0006_signup_requests.sql?raw";
 import expiryWarningsSql from "../migrations/0007_licence_expiry_warnings.sql?raw";
+import environmentsPerRegionSql from "../migrations/0008_environments_per_region.sql?raw";
 
 function stripSqlComments(sql: string): string {
   return sql
@@ -45,4 +46,5 @@ export async function applyTestSchema(): Promise<void> {
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(customerEnvironmentsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(signupRequestsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(expiryWarningsSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(environmentsPerRegionSql)));
 }

@@ -70,12 +70,12 @@ describe("handleProvisionTrial — the control-plane half", () => {
     expect(customer).toEqual({ id: "northwind", name: "Northwind Trading" });
 
     const environment = await env.CONTROL_DB.prepare("SELECT id, customer_id, kind FROM environments WHERE id = ?")
-      .bind("northwind-sandbox")
+      .bind("northwind-sandbox-eu")
       .first();
-    expect(environment).toEqual({ id: "northwind-sandbox", customer_id: "northwind", kind: "sandbox" });
+    expect(environment).toEqual({ id: "northwind-sandbox-eu", customer_id: "northwind", kind: "sandbox" });
 
     const licence = await env.CONTROL_DB.prepare("SELECT plan, status FROM licences WHERE environment_id = ?")
-      .bind("northwind-sandbox")
+      .bind("northwind-sandbox-eu")
       .first();
     expect(licence).toEqual({ plan: TRIAL_PLAN, status: "active" });
   });
@@ -86,7 +86,7 @@ describe("handleProvisionTrial — the control-plane half", () => {
     await handleProvisionTrial(env.CONTROL_DB, id, { customerId: "northwind" }, now);
 
     const licence = await env.CONTROL_DB.prepare("SELECT valid_from, valid_to FROM licences WHERE environment_id = ?")
-      .bind("northwind-sandbox")
+      .bind("northwind-sandbox-eu")
       .first<{ valid_from: string; valid_to: string }>();
     expect(licence?.valid_from).toBe("2026-09-02T00:00:00.000Z");
     expect(licence?.valid_to).toBe("2026-10-02T00:00:00.000Z");
@@ -103,7 +103,7 @@ describe("handleProvisionTrial — the control-plane half", () => {
 
     // Only the hash is stored — never the plaintext.
     const row = await env.CONTROL_DB.prepare("SELECT api_key_hash FROM environments WHERE id = ?")
-      .bind("northwind-sandbox")
+      .bind("northwind-sandbox-eu")
       .first<{ api_key_hash: string }>();
     expect(row?.api_key_hash).toBeTruthy();
     expect(row?.api_key_hash).not.toBe(apiKey);
@@ -118,7 +118,7 @@ describe("handleProvisionTrial — the control-plane half", () => {
     )
       .bind(id)
       .first();
-    expect(row).toEqual({ customer_id: "northwind", environment_id: "northwind-sandbox" });
+    expect(row).toEqual({ customer_id: "northwind", environment_id: "northwind-sandbox-eu" });
   });
 
   it("is honest that the real infrastructure does not exist yet", async () => {
@@ -132,7 +132,7 @@ describe("handleProvisionTrial — the control-plane half", () => {
     const row = await env.CONTROL_DB.prepare(
       "SELECT worker_name, d1_database_name, d1_database_id FROM environments WHERE id = ?"
     )
-      .bind("northwind-sandbox")
+      .bind("northwind-sandbox-eu")
       .first();
     expect(row).toEqual({ worker_name: null, d1_database_name: null, d1_database_id: null });
   });
@@ -170,14 +170,14 @@ describe("expireOverdueLicences — what actually ends a trial", () => {
       instanceUrl: `https://${customerId}.example`,
     });
     await handleUpsertLicence(env.CONTROL_DB, {
-      environmentId: `${customerId}-sandbox`,
+      environmentId: `${customerId}-sandbox-eu`,
       plan: "trial",
       volumeEntitlement: 500,
       validFrom: "2026-09-01T00:00:00.000Z",
       validTo,
       status,
     });
-    return `${customerId}-sandbox`;
+    return `${customerId}-sandbox-eu`;
   }
 
   it("does nothing when there's nothing overdue", async () => {
@@ -236,7 +236,7 @@ describe("expireOverdueLicences — what actually ends a trial", () => {
     expect(result.blocked).toEqual([expiredId]);
 
     const current = await env.CONTROL_DB.prepare("SELECT status FROM licences WHERE environment_id = ?")
-      .bind("current-sandbox")
+      .bind("current-sandbox-eu")
       .first();
     expect(current).toEqual({ status: "active" });
   });
@@ -258,15 +258,15 @@ describe("expireOverdueLicences — what actually ends a trial", () => {
 
     // Day 31: the trial is over.
     const dayThirtyOne = await expireOverdueLicences(env.CONTROL_DB, new Date("2026-10-03T00:00:00.000Z"));
-    expect(dayThirtyOne.blocked).toEqual(["northwind-sandbox"]);
+    expect(dayThirtyOne.blocked).toEqual(["northwind-sandbox-eu"]);
 
     // And the sandbox itself survives — blocking is read-only, not
     // lights-out (decision 0003). The environment and its config are
     // still there; only the licence status changed.
     const environment = await env.CONTROL_DB.prepare("SELECT id FROM environments WHERE id = ?")
-      .bind("northwind-sandbox")
+      .bind("northwind-sandbox-eu")
       .first();
-    expect(environment).toEqual({ id: "northwind-sandbox" });
+    expect(environment).toEqual({ id: "northwind-sandbox-eu" });
   });
 });
 
@@ -280,13 +280,13 @@ describe("warnExpiringLicences — the notice stages before restriction", () => 
       instanceUrl: `https://${customerId}.example`,
     });
     await handleUpsertLicence(env.CONTROL_DB, {
-      environmentId: `${customerId}-sandbox`,
+      environmentId: `${customerId}-sandbox-eu`,
       plan: "trial",
       volumeEntitlement: 500,
       validFrom: "2026-09-01T00:00:00.000Z",
       validTo,
     });
-    return `${customerId}-sandbox`;
+    return `${customerId}-sandbox-eu`;
   }
 
   async function licenceRow(environmentId: string) {

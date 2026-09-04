@@ -82,7 +82,7 @@ describe("endpoint authentication, through the real router", () => {
     // turned away at the door.
     const res = await SELF.fetch("https://example.com/usage", {
       method: "POST",
-      body: JSON.stringify({ environmentId: "acme-production", periodKey: "2026-08", invoicesProcessed: 5, rulesEvaluated: 10 }),
+      body: JSON.stringify({ environmentId: "acme-production-eu", periodKey: "2026-08", invoicesProcessed: 5, rulesEvaluated: 10 }),
     });
     expect(res.status).toBe(401);
   });
@@ -182,7 +182,7 @@ describe("the signup request flow's auth boundary, through the real router (deci
   it("401s recording provisioning with no Authorization header", async () => {
     const res = await SELF.fetch("https://example.com/signup-requests/some-id/provisioned", {
       method: "POST",
-      body: JSON.stringify({ customerId: "x", environmentId: "x-sandbox" }),
+      body: JSON.stringify({ customerId: "x", environmentId: "x-sandbox-eu" }),
     });
     expect(res.status).toBe(401);
   });

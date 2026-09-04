@@ -20,17 +20,17 @@ describe("isValidEnvironmentKey — re-keyed from isValidCustomerKey (decision 0
     const result = await seedEnvironment("acme");
     const { apiKey } = result.body as { apiKey: string };
 
-    expect(await isValidEnvironmentKey(env.CONTROL_DB, "acme-production", apiKey)).toBe(true);
+    expect(await isValidEnvironmentKey(env.CONTROL_DB, "acme-production-eu", apiKey)).toBe(true);
   });
 
   it("rejects a wrong key for a real environment", async () => {
     await seedEnvironment("acme");
-    expect(await isValidEnvironmentKey(env.CONTROL_DB, "acme-production", "totally-wrong-key")).toBe(false);
+    expect(await isValidEnvironmentKey(env.CONTROL_DB, "acme-production-eu", "totally-wrong-key")).toBe(false);
   });
 
   it("rejects when no key is provided", async () => {
     await seedEnvironment("acme");
-    expect(await isValidEnvironmentKey(env.CONTROL_DB, "acme-production", null)).toBe(false);
+    expect(await isValidEnvironmentKey(env.CONTROL_DB, "acme-production-eu", null)).toBe(false);
   });
 
   it("rejects for an environment that doesn't exist at all", async () => {
@@ -44,9 +44,9 @@ describe("isValidEnvironmentKey — re-keyed from isValidCustomerKey (decision 0
     await env.CONTROL_DB.prepare(
       "INSERT INTO environments (id, customer_id, kind, region, instance_url) VALUES (?, ?, ?, ?, ?)"
     )
-      .bind("legacy-production", "legacy", "production", "eu", "https://x")
+      .bind("legacy-production-eu", "legacy", "production", "eu", "https://x")
       .run();
-    expect(await isValidEnvironmentKey(env.CONTROL_DB, "legacy-production", "any-key-at-all")).toBe(false);
+    expect(await isValidEnvironmentKey(env.CONTROL_DB, "legacy-production-eu", "any-key-at-all")).toBe(false);
   });
 
   it("the critical property: environment A's key must never authenticate as environment B", async () => {
@@ -55,10 +55,10 @@ describe("isValidEnvironmentKey — re-keyed from isValidCustomerKey (decision 0
     const { apiKey: keyA } = resultA.body as { apiKey: string };
 
     // A's key correctly authenticates as A...
-    expect(await isValidEnvironmentKey(env.CONTROL_DB, "customer-a-production", keyA)).toBe(true);
+    expect(await isValidEnvironmentKey(env.CONTROL_DB, "customer-a-production-eu", keyA)).toBe(true);
     // ...but must NOT authenticate as B, even though it's a completely
     // valid, real key — just for the wrong environment.
-    expect(await isValidEnvironmentKey(env.CONTROL_DB, "customer-b-production", keyA)).toBe(false);
+    expect(await isValidEnvironmentKey(env.CONTROL_DB, "customer-b-production-eu", keyA)).toBe(false);
   });
 
   it("the same critical property within one customer: a sandbox's key must never authenticate as that same customer's production", async () => {
@@ -66,19 +66,19 @@ describe("isValidEnvironmentKey — re-keyed from isValidCustomerKey (decision 0
     await seedEnvironment("acme", "production");
     const { apiKey: sandboxKey } = sandboxResult.body as { apiKey: string };
 
-    expect(await isValidEnvironmentKey(env.CONTROL_DB, "acme-sandbox", sandboxKey)).toBe(true);
-    expect(await isValidEnvironmentKey(env.CONTROL_DB, "acme-production", sandboxKey)).toBe(false);
+    expect(await isValidEnvironmentKey(env.CONTROL_DB, "acme-sandbox-eu", sandboxKey)).toBe(true);
+    expect(await isValidEnvironmentKey(env.CONTROL_DB, "acme-production-eu", sandboxKey)).toBe(false);
   });
 
   it("a rotated key replaces the old one — the old key stops working", async () => {
     const created = await seedEnvironment("acme");
     const { apiKey: oldKey } = created.body as { apiKey: string };
-    expect(await isValidEnvironmentKey(env.CONTROL_DB, "acme-production", oldKey)).toBe(true);
+    expect(await isValidEnvironmentKey(env.CONTROL_DB, "acme-production-eu", oldKey)).toBe(true);
 
-    const rotated = await handleRotateKey(env.CONTROL_DB, "acme-production");
+    const rotated = await handleRotateKey(env.CONTROL_DB, "acme-production-eu");
     const { apiKey: newKey } = rotated.body as { apiKey: string };
 
-    expect(await isValidEnvironmentKey(env.CONTROL_DB, "acme-production", newKey)).toBe(true);
-    expect(await isValidEnvironmentKey(env.CONTROL_DB, "acme-production", oldKey)).toBe(false);
+    expect(await isValidEnvironmentKey(env.CONTROL_DB, "acme-production-eu", newKey)).toBe(true);
+    expect(await isValidEnvironmentKey(env.CONTROL_DB, "acme-production-eu", oldKey)).toBe(false);
   });
 });

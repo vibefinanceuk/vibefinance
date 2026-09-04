@@ -32,7 +32,7 @@ interface LicenceRow {
  * NOT renamed here — it's a real, external contract vf-app's own
  * licence-cache.ts already consumes, and renaming it is out of scope
  * for this schema change specifically. Its value is now genuinely an
- * environment id (e.g. "acme-production"), not a bare customer id —
+ * environment id (e.g. "acme-production-eu"), not a bare customer id —
  * stated here plainly rather than left as a silent, undocumented
  * mismatch between the field's name and what it actually holds.
  */

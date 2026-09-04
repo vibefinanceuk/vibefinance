@@ -50,15 +50,15 @@ describe("handleCreateEnvironment (decision 0036)", () => {
       instanceUrl: "https://vf-app.acme.workers.dev",
     });
     expect(result.status).toBe(201);
-    expect(result.body.id).toBe("acme-production");
+    expect(result.body.id).toBe("acme-production-eu");
 
     // Measure the rendered result, not the instruction issued (§7):
     // query D1 directly.
     const row = await env.CONTROL_DB.prepare("SELECT id, customer_id, kind, region, instance_url FROM environments WHERE id = ?")
-      .bind("acme-production")
+      .bind("acme-production-eu")
       .first();
     expect(row).toEqual({
-      id: "acme-production",
+      id: "acme-production-eu",
       customer_id: "acme",
       kind: "production",
       region: "eu",
@@ -78,7 +78,7 @@ describe("handleCreateEnvironment (decision 0036)", () => {
     expect(apiKey).toBeTruthy();
 
     const row = await env.CONTROL_DB.prepare("SELECT api_key_hash FROM environments WHERE id = ?")
-      .bind("acme-production")
+      .bind("acme-production-eu")
       .first<{ api_key_hash: string }>();
     expect(row?.api_key_hash).toBeTruthy();
     expect(row?.api_key_hash).not.toBe(apiKey);
@@ -94,7 +94,7 @@ describe("handleCreateEnvironment (decision 0036)", () => {
       instanceUrl: "https://x",
     });
     const { apiKey } = result.body as { apiKey: string };
-    expect(await isValidEnvironmentKey(env.CONTROL_DB, "acme-production", apiKey)).toBe(true);
+    expect(await isValidEnvironmentKey(env.CONTROL_DB, "acme-production-eu", apiKey)).toBe(true);
   });
 
   it("a customer can have both a sandbox and a production environment", async () => {
@@ -153,7 +153,7 @@ describe("handleCreateEnvironment (decision 0036)", () => {
     });
     const { apiKey: sandboxKey } = sandbox.body as { apiKey: string };
 
-    expect(await isValidEnvironmentKey(env.CONTROL_DB, "acme-sandbox", sandboxKey)).toBe(true);
-    expect(await isValidEnvironmentKey(env.CONTROL_DB, "acme-production", sandboxKey)).toBe(false);
+    expect(await isValidEnvironmentKey(env.CONTROL_DB, "acme-sandbox-eu", sandboxKey)).toBe(true);
+    expect(await isValidEnvironmentKey(env.CONTROL_DB, "acme-production-eu", sandboxKey)).toBe(false);
   });
 });

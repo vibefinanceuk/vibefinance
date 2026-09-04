@@ -244,7 +244,7 @@ describe("handleRecordProvisioning — closing the loop", () => {
 
     const result = await handleRecordProvisioning(env.CONTROL_DB, id, {
       customerId: "northwind",
-      environmentId: "northwind-sandbox",
+      environmentId: "northwind-sandbox-eu",
     });
     expect(result.status).toBe(200);
     expect((result.body as { provisioned: boolean }).provisioned).toBe(true);
@@ -254,7 +254,7 @@ describe("handleRecordProvisioning — closing the loop", () => {
     )
       .bind(id)
       .first();
-    expect(row).toEqual({ customer_id: "northwind", environment_id: "northwind-sandbox" });
+    expect(row).toEqual({ customer_id: "northwind", environment_id: "northwind-sandbox-eu" });
   });
 
   it("409s recording provisioning against a request that was never approved", async () => {
@@ -262,7 +262,7 @@ describe("handleRecordProvisioning — closing the loop", () => {
     await seedInfrastructure();
     const result = await handleRecordProvisioning(env.CONTROL_DB, id, {
       customerId: "northwind",
-      environmentId: "northwind-sandbox",
+      environmentId: "northwind-sandbox-eu",
     });
     expect(result.status).toBe(409);
   });
@@ -273,7 +273,7 @@ describe("handleRecordProvisioning — closing the loop", () => {
     await seedInfrastructure();
     const result = await handleRecordProvisioning(env.CONTROL_DB, id, {
       customerId: "northwind",
-      environmentId: "northwind-sandbox",
+      environmentId: "northwind-sandbox-eu",
     });
     expect(result.status).toBe(409);
   });
@@ -284,11 +284,11 @@ describe("handleRecordProvisioning — closing the loop", () => {
     await seedInfrastructure();
     await handleRecordProvisioning(env.CONTROL_DB, id, {
       customerId: "northwind",
-      environmentId: "northwind-sandbox",
+      environmentId: "northwind-sandbox-eu",
     });
     const second = await handleRecordProvisioning(env.CONTROL_DB, id, {
       customerId: "northwind",
-      environmentId: "northwind-sandbox",
+      environmentId: "northwind-sandbox-eu",
     });
     expect(second.status).toBe(409);
   });
@@ -313,7 +313,7 @@ describe("handleRecordProvisioning — closing the loop", () => {
     // Both ids are real and exist — only their relationship is wrong.
     const result = await handleRecordProvisioning(env.CONTROL_DB, id, {
       customerId: "contoso",
-      environmentId: "northwind-sandbox",
+      environmentId: "northwind-sandbox-eu",
     });
     expect(result.status).toBe(400);
   });
@@ -346,7 +346,7 @@ describe("the whole flow, end to end", () => {
     // 5. Its result is recorded back against the request.
     await handleRecordProvisioning(env.CONTROL_DB, id, {
       customerId: "northwind",
-      environmentId: "northwind-sandbox",
+      environmentId: "northwind-sandbox-eu",
     });
 
     const final = await handleListSignupRequests(env.CONTROL_DB, "approved");
@@ -355,7 +355,7 @@ describe("the whole flow, end to end", () => {
       status: "approved",
       decidedBy: "dan",
       customerId: "northwind",
-      environmentId: "northwind-sandbox",
+      environmentId: "northwind-sandbox-eu",
     });
   });
 });

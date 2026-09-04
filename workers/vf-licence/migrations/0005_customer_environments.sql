@@ -128,7 +128,15 @@ ALTER TABLE customers_new RENAME TO customers;
 -- same discipline applied to every other real CHECK/UNIQUE constraint
 -- in this project, even though the schema's own UNIQUE already
 -- enforces it unconditionally.
--- ASSERT ALWAYS: SELECT count(*) FROM (SELECT customer_id, kind FROM environments GROUP BY customer_id, kind HAVING count(*) > 1) == 0
+-- Superseded by migration 0008 (decision 0083 section 6): a customer
+-- may now hold one production per REGION, so this rule widened to
+-- (customer_id, kind, region). Edited in place rather than left
+-- alongside the new one, because a standing invariant states what must
+-- be true NOW -- and two rules over the same columns, one of them
+-- stale, is how they come to disagree. Requires --refresh-checksums.
+-- The narrower guarantee survives within a region; only the axis
+-- widened.
+-- ASSERT ALWAYS: SELECT count(*) FROM (SELECT customer_id, kind, region FROM environments GROUP BY customer_id, kind, region HAVING count(*) > 1) == 0
 
 -- Standing invariant: every licence belongs to a real environment —
 -- the same shape as the original licences.customer_id invariant in
