@@ -17,93 +17,155 @@
 <script src="/config.js"></script>
 
 <style>
+  /*
+    Restraint in service of legibility, not impression — decision 0101.
+    This is a tool somebody uses all day, so the quiet has to make the
+    work easier to read rather than make the page look expensive.
+
+    Three things carry it, and no new assets:
+
+      1. Vertical rhythm that GROUPS. A label sits close to its field
+         and far from the next one, so the eye reads three pairs rather
+         than one list of six things.
+      2. One element leading. The heading is larger and the rest steps
+         down from it, where before everything had equal weight.
+      3. No card. A frame makes the form an object floating on a
+         surface; letting it sit in space is more confident, and only
+         works once the composition holds it together.
+  */
+
+  :root {
+    /* An explicit scale, because tokens.css has none. Each step is a
+       ratio rather than an arbitrary number, so the relationships hold
+       if any one changes. */
+    --step-0: 14px;
+    --step-1: 15px;
+    --step-2: 26px;
+
+    /* Rhythm. The tight value binds a label to its field; the loose
+       one separates one pair from the next. Their RATIO is what does
+       the grouping — roughly one to four. */
+    --gap-tight: 7px;
+    --gap-loose: 26px;
+  }
+
   body {
     margin: 0;
     min-height: 100vh;
     display: grid;
     place-items: center;
-    background: var(--surface-0);
-    font: 14px/1.5 var(--font-sans, system-ui, -apple-system, sans-serif);
+    /* A single wash of the brand behind the page. Not a background
+       image: an external image would make a customer's login page
+       depend on a third party, which is an availability question on
+       the authentication path and a data-protection one in a finance
+       product. This is one gradient and no requests. */
+    background:
+      radial-gradient(120% 90% at 50% -10%, color-mix(in oklab, var(--brand-fill) 11%, transparent), transparent 65%),
+      var(--surface-0);
+    font: var(--step-0)/1.5 var(--font-sans);
     color: var(--text-primary);
+    -webkit-font-smoothing: antialiased;
   }
 
   main {
-    width: min(400px, calc(100vw - 32px));
-    background: var(--surface-2);
-    border: 0.5px solid var(--border);
-    border-radius: var(--radius, 8px);
-    padding: 28px;
+    width: min(360px, calc(100vw - 40px));
+    /* No card, no border, no panel. */
+    padding: 0 0 40px;
   }
 
+  /*
+    The brand mark: a short rule rather than a full-width bar. A bar
+    spanning the form reads as a container's edge; a mark reads as
+    identity, and stays out of the way of the work.
+  */
   .mark {
-    height: 4px;
-    background: var(--brand-bar);
+    width: 34px;
+    height: 3px;
+    background: var(--brand-fill);
     border-radius: 2px;
-    margin-bottom: 20px;
+    margin-bottom: 22px;
   }
 
   h1 {
-    font-size: 18px;
+    font-size: var(--step-2);
     font-weight: 600;
-    margin: 0 0 4px;
+    letter-spacing: -0.021em; /* Large text sets loose; pulled back in. */
+    margin: 0 0 6px;
   }
 
   .sub {
     color: var(--text-secondary);
-    margin: 0 0 20px;
+    margin: 0 0 34px;
   }
+
+  /* The grouping, stated once rather than per field. */
+  .field + .field { margin-top: var(--gap-loose); }
 
   label {
     display: block;
     font-size: 12px;
+    font-weight: 500;
     color: var(--text-secondary);
-    margin: 14px 0 4px;
+    margin-bottom: var(--gap-tight);
   }
 
   input, select {
     width: 100%;
+    font-size: var(--step-1);
+    min-height: 38px;
+    background: var(--surface-1);
+    border: 0.5px solid var(--border);
+    border-radius: var(--radius);
+    padding: 8px 11px;
+    color: var(--text-primary);
+    /* Only the border moves on focus. A shifting shadow or size makes
+       a form feel unsteady under the hands. */
+    transition: border-color 120ms ease;
   }
+
+  input:focus, select:focus {
+    outline: none;
+    border-color: var(--brand-fill);
+  }
+
+  select:disabled { color: var(--text-muted); }
 
   button[type="submit"] {
     width: 100%;
-    margin-top: 20px;
-    min-height: 36px;
+    margin-top: 34px;
+    min-height: 40px;
+    font-size: var(--step-1);
+    font-weight: 500;
     background: var(--brand-fill);
     color: #fff;
     border: none;
-    font-weight: 500;
+    border-radius: var(--radius);
+    transition: opacity 120ms ease;
   }
 
-  button[type="submit"]:disabled {
-    opacity: 0.55;
-    cursor: default;
+  button[type="submit"]:hover:not(:disabled) { opacity: 0.9; }
+  button[type="submit"]:disabled { opacity: 0.4; cursor: default; }
+
+  /*
+    Messages sit below the form and are quiet by default. A red panel
+    for a mistyped password treats an ordinary event as an emergency;
+    the text carries it.
+  */
+  .problem, .since {
+    margin-top: 22px;
+    font-size: 13px;
+    line-height: 1.55;
   }
 
   .problem {
-    margin-top: 16px;
-    padding: 10px 12px;
-    background: var(--bg-warning);
     color: var(--text-warning);
-    border: 0.5px solid var(--border-warning);
-    border-radius: var(--radius, 8px);
-    font-size: 13px;
   }
 
-  .problem:empty { display: none; }
+  .problem:empty, .since:empty { display: none; }
 
-  /*
-    What ISO 27001:2022 Annex A 8.5 asks be shown after signing in: the
-    last sign-in, and every attempt since. The point is that somebody
-    who does not recognise an attempt learns something an audit log read
-    by nobody never tells them (decision 0090).
-  */
-  .since {
-    margin-top: 16px;
-    font-size: 13px;
-    color: var(--text-secondary);
-  }
-
-  .since ul { margin: 6px 0 0; padding-left: 18px; }
+  .since { color: var(--text-secondary); }
+  .since p { margin: 0 0 6px; }
+  .since ul { margin: 0; padding-left: 16px; }
   .since li { color: var(--text-warning); }
 </style>
 </head>
@@ -115,16 +177,22 @@
   <p class="sub">Sign in to continue</p>
 
   <form id="signin" autocomplete="on">
-    <label for="email">Email</label>
-    <input id="email" name="email" type="email" required autocomplete="username">
+    <div class="field">
+      <label for="email">Email</label>
+      <input id="email" name="email" type="email" required autocomplete="username">
+    </div>
 
-    <label for="password">Password</label>
-    <input id="password" name="password" type="password" required autocomplete="current-password">
+    <div class="field">
+      <label for="password">Password</label>
+      <input id="password" name="password" type="password" required autocomplete="current-password">
+    </div>
 
-    <label for="environment">Environment</label>
-    <select id="environment" name="environment" required>
-      <option value="">Choose after signing in…</option>
-    </select>
+    <div class="field">
+      <label for="environment">Environment</label>
+      <select id="environment" name="environment" required disabled>
+        <option value="">Sign in to choose</option>
+      </select>
+    </div>
 
     <button type="submit" id="submit">Continue</button>
   </form>

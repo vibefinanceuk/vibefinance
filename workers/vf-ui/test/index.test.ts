@@ -47,10 +47,26 @@ describe("serving the interface", () => {
     expect(res.headers.get("Content-Type")).toContain("text/html");
   });
 
-  it("serves the structural tokens", async () => {
+  it("falls back to the page for any path Cloudflare did not match", async () => {
+    /**
+     * **Static assets are not served in this test environment** — every
+     * request reaches the Worker and takes the fallback. So this cannot
+     * assert that `/tokens.css` serves the stylesheet; only that an
+     * unmatched path yields the page.
+     *
+     * Worth stating because the previous version of this test claimed
+     * to check the stylesheet and **passed for the wrong reason**: the
+     * fallback returned `index.html`, which happened to contain
+     * `--brand-bar` in its own styles. Changing that one variable made
+     * it fail and revealed the test had never checked what it said.
+     *
+     * Asset serving is Cloudflare's, configured in `wrangler.jsonc` and
+     * verified by `wrangler deploy --dry-run` reporting the files it
+     * read.
+     */
     const res = await SELF.fetch("https://ui.example.com/tokens.css");
     expect(res.status).toBe(200);
-    expect(await res.text()).toContain("--brand-bar");
+    expect(res.headers.get("Content-Type")).toContain("text/html");
   });
 });
 

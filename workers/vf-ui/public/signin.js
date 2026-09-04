@@ -46,11 +46,36 @@ function show(message) {
   problem.textContent = message;
 }
 
-/** Apply a customer's livery once one is known (decision 0096). */
+/**
+ * Apply a customer's livery once one is known (decision 0096).
+ *
+ * The colours arrive as CSS variables and apply themselves. The **name**
+ * does not: `--brand-name` is a token nothing consumes, which the first
+ * screenshot showed plainly — the bar turned blue and the heading still
+ * read "VibeFinance". A declared value nothing reads is the pattern this
+ * project has found nine times elsewhere; it turns up in CSS too.
+ *
+ * Read after the stylesheet loads, because the variable does not exist
+ * until it has.
+ */
 function applyBranding(customerId) {
   if (!api || !customerId) return;
-  document.getElementById("brand").href =
-    `${api}/branding/${encodeURIComponent(customerId)}/tokens.css`;
+
+  const link = document.getElementById("brand");
+  link.addEventListener(
+    "load",
+    () => {
+      const name = getComputedStyle(document.documentElement)
+        .getPropertyValue("--brand-name")
+        .trim()
+        .replace(/^"|"$/g, "");
+      // textContent, never innerHTML — the value comes from an API.
+      if (name) document.getElementById("product").textContent = name;
+    },
+    { once: true }
+  );
+
+  link.href = `${api}/branding/${encodeURIComponent(customerId)}/tokens.css`;
 }
 
 /**
@@ -94,6 +119,10 @@ async function loadEnvironments() {
       return;
     }
 
+    // One instance is the common case, and making somebody choose from
+    // a list of one is a step that exists only because a list exists.
+    if (environments.length === 1) environmentField.value = environments[0].id;
+
     for (const environment of environments) {
       const option = document.createElement("option");
       option.value = environment.id;
@@ -101,6 +130,10 @@ async function loadEnvironments() {
       option.dataset.instanceUrl = environment.instanceUrl;
       environmentField.append(option);
     }
+    // Enabled only once it has something to offer. A dropdown holding
+    // "Sign in to choose" that can be opened is an invitation to do
+    // nothing.
+    environmentField.disabled = false;
 
     // The customer is the part of the id before the kind, which is how
     // decision 0084 composes it.
