@@ -177,3 +177,39 @@ protects new accounts.
 - **Lockout**, and its denial-of-service trade-off.
 - **Reset**, which needs email — and nothing here sends any.
 - **The bootstrap administrator**, whose shape is settled above.
+
+---
+
+## The dependency belongs to `shared`, not the root
+
+Found by a **failed deploy**, not by a test.
+
+`npm install @noble/hashes` at the repository root put it in the root
+`package.json`. This is an npm workspace, and `vf-licence` depends on
+`@vibefinance/shared` — so wrangler's bundler could not resolve the
+import and the deploy failed outright:
+
+```
+Could not resolve "@noble/hashes/argon2.js"
+```
+
+Moved to `shared/package.json`, beside `fast-xml-parser` — the only
+other runtime dependency in this project — because `shared` is the
+package that imports it.
+
+### Two things worth noticing
+
+**`vf-licence` does not use password hashing at all**, and still failed
+to build. `shared/index.ts` re-exports everything, so importing anything
+from `@vibefinance/shared` requires every dependency of the barrel to
+resolve, whether the Worker uses it or not.
+
+**The bundle did not grow.** Both Workers build to exactly the size they
+did before — esbuild tree-shakes the unused code away. So the barrel
+costs nothing at runtime and everything at build time: the dependency
+must be **resolvable** even where none of it ships.
+
+That asymmetry is easy to get wrong in the other direction too. A
+dependency that resolves in tests and in `tsc` can still fail a deploy,
+because those three read the module graph differently — **and only one
+of them is the one that matters.**
