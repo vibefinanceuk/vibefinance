@@ -1,7 +1,13 @@
 # 0080 — The live AP process had three stages
 
-**Status: proposed.** `docs/operations/ap-live-process-definition.sql`,
-written and dry-run, not yet applied.
+**Status: applied.** `docs/operations/ap-live-process-definition.sql`,
+dry-run against a replica and then run once against `vf-app-poc`.
+
+Confirmed afterwards: seven stages in order, six rules on
+`ap-live-validation`, and a fresh capture of the Morrison PDF stopping
+at **Validation** rather than Approval — an unreadable document now
+waits for whoever validates rather than landing on an approver's queue
+for a problem they cannot solve.
 
 ---
 
@@ -112,6 +118,30 @@ Approval, the parked instance untouched, no duplicate sequences.
 Rules are moved **by id, named individually**, not by a pattern. A rule
 set is what a customer's rules are evaluated against, and moving one by
 accident changes when it fires.
+
+---
+
+## A near miss worth recording
+
+The rule survey used `WHERE v.approved_by IS NOT NULL` and returned
+seven rules. The rule-set count in the same output said **eight**, and
+that discrepancy was read past.
+
+The eighth turned out to be an unapproved **duplicate** of the
+over-1000 rule — the same sentence compiled twice during earlier
+testing, with only one taken through the activation gate. It belongs on
+`ap-live-approval` anyway and fires nowhere, since evaluation loads only
+rules that are enabled, approved and within their effective window.
+
+So no harm. But the reasoning that led there was wrong: **had the eighth
+been a different rule, one that should have moved, it would have been
+left firing at the wrong stage.**
+
+The correct question for "what rules does this set contain" does not
+filter by approval — an unapproved rule is still in the set, it just
+does not run. Filtering by what is *active* answers a different
+question, and answering it while believing it was the first is how
+survey errors happen.
 
 ---
 
