@@ -54,30 +54,72 @@ rather than after all of them.
 
 ---
 
-## The rebuild
+## Two failed attempts, and why the third is so blunt
 
-SQLite cannot alter a `UNIQUE` in place, so `environments` was rebuilt —
-the second such rebuild in this project after decision 0078's.
+`environments` is referenced by `licences`, `usage_periods` and
+`signup_requests`. SQLite cannot alter a `UNIQUE` in place, so it has to
+be rebuilt — and the two obvious ways to rebuild it both fail.
 
-Verified against a populated replica rather than trusted: every column
-carried across, the foreign key to `customers` intact, **two productions
-in different regions permitted and two in the same region still
-refused.** Both directions, because a widening that widened too far
-would pass a test that only checked the new case.
+### Attempt one: drop and recreate
 
-The standing invariants from 0005 are restated in 0008, because the
-rebuild replaced the table they were written against. An invariant that
-quietly stops applying reads as protection while protecting nothing.
+**Failed on the first remote apply**, having passed locally.
 
-### The superseded invariant is edited, not duplicated
+`DROP TABLE` performs an implicit DELETE, which orphans every
+referencing row, and D1 enforces foreign keys on every migration.
+`PRAGMA defer_foreign_keys` does not save it — tested directly: the drop
+records a deferred violation that recreating the parent afterwards never
+clears, so COMMIT fails. `PRAGMA foreign_keys = OFF` is SQLite's own
+answer and D1 forbids it, because every migration runs inside an
+implicit transaction a query may not change.
 
-0005's `(customer_id, kind)` rule is rewritten in place to the widened
-form, requiring `--refresh-checksums`. The alternative — leaving the old
-rule and adding a new one — means two invariants over the same columns
-with one of them stale, which is how they come to disagree.
+**The local check had seeded `environments` and the `customers` it
+points AT — but nothing that points at IT.** Decision 0078 rebuilt
+`tasks`, which nothing references, and that pattern was carried across
+without checking the direction of the dependencies.
 
-Same reasoning as decision 0075's edit to migration 0009, and the
-mechanism decision 0076 made actually work.
+### Attempt two: rename aside
+
+**Failed worse, because it failed later.**
+
+SQLite rewrites dependent foreign keys to follow a renamed table — with
+or without `legacy_alter_table`, checked directly. So `licences` came to
+reference `environments_pre_0008` silently. Existing rows still
+resolved, and **every new licence failed.**
+
+The verification for that attempt asserted that existing rows survived.
+It never inserted a new one. **A survival test cannot catch a broken
+foreign key**, because the rows it checks were copied before the
+reference moved.
+
+### Attempt three: rebuild all four
+
+Children copied to holding tables, everything dropped in dependency
+order, everything recreated with its foreign keys **stated explicitly**
+rather than inherited from whatever SQLite decided to rewrite, then
+copied back parent-first.
+
+Blunt, and the only version whose references are written down rather
+than derived. The holding tables reference nothing and are referenced by
+nothing, so dropping them is safe — which is precisely what dropping a
+referenced table is not.
+
+---
+
+## The test that was missing
+
+`test_0008_populated.py`, ten cases, seeding **every table that
+references environments** and running the migration as D1 does: one
+transaction, commit at the end. The failure appears at COMMIT, so
+running statements individually would not reproduce it.
+
+The case that matters most inserts a **new** licence after the
+migration. Watched to fail: reinstating attempt two breaks it, along
+with the assertion that each child's schema still names
+`REFERENCES environments(id)`.
+
+A companion case checks a licence for an unknown environment is still
+**refused** — because pointing children at a table that permits anything
+would also pass the first test.
 
 ---
 

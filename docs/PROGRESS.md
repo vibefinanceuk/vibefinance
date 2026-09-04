@@ -312,6 +312,13 @@ workflow engine.
 Two habits have repeatedly earned their place, and one lesson was
 learned expensively.
 
+**A survival test cannot catch a broken reference.** Rebuilding a
+referenced table (0084) passed a check that existing rows survived, and
+shipped a schema where every NEW child row failed — because SQLite had
+rewritten the foreign key to follow the renamed parent, and the rows
+being checked were copied before it moved. **Insert after a migration,
+not just count.**
+
 **Watch every new check fail.** A test nobody has seen fail is a
 comment that takes time to run. Several real bugs this session were
 caught only because the check was deliberately broken first — and one
