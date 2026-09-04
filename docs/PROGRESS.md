@@ -126,6 +126,17 @@ fires. Four design questions first: header or line level, what counts
 as matched, computed when, and which order an invoice belongs to when
 `BT-13` is optional.
 
+**Despatch Advice (T16).** The goods receipt, and the missing third leg
+of three-way matching — `permissions.ts` has always described `AP.Match`
+as a three-way match against PO and goods receipt, and two thirds of
+that data does not exist (0082).
+
+**Document-type detection.** The cascade answers "what structure is
+this", not "what document is this", so the XML branch assumes an
+invoice and a valid Peppol Order sent to capture is refused. Peppol
+supplies the discriminator in `cbc:CustomizationID`, which nothing
+reads (0082).
+
 **Bulk order loading.** One document per request today. Enough to prove
 the shape, not enough for a real customer with an ERP.
 
