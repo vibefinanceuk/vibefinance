@@ -71,14 +71,11 @@ exactly the SSO case.
 
 ---
 
-## Still open
+## Settled by decision 0092
 
-**Is a credential keyed by email and customer, or email and
-environment?**
-
-One password across a customer's EU and US instances is better for the
-person, with access still decided per-environment by `org_users`. Two
-passwords is more isolated and more to administer.
+**A credential is keyed by email and customer; access is a separate row
+per environment.** One password across a customer's instances, and a
+grant saying which of them that person may reach.
 
 Worth noting the existing `login_attempts` table (decision 0090) is
 keyed by **email and environment**, on the reasoning that failures
