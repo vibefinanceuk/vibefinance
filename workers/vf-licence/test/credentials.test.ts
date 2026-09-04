@@ -120,6 +120,38 @@ describe("access grants decide which instances you may reach", () => {
     expect((await checkCredential(env.CONTROL_DB, "dan@acme.com", "acme", PASSWORD)).ok).toBe(true);
   });
 
+  it("the schema itself refuses the row that reached production", async () => {
+    // Written verbatim from the INSERT that succeeded against the live
+    // control plane and sat there until it was deleted. `grantAccess`
+    // refuses it, but this bypasses `grantAccess` entirely -- which is
+    // exactly how that row arrived.
+    await setCredential(env.CONTROL_DB, "dan@acme.com", "acme", PASSWORD);
+
+    await expect(
+      env.CONTROL_DB.prepare(
+        "INSERT INTO user_environment_access (email, environment_id, customer_id) VALUES (?, ?, ?)"
+      )
+        .bind("nobody@example.com", "acme-production-eu", "acme")
+        .run()
+    ).rejects.toThrow();
+  });
+
+  it("the schema refuses a grant naming another customer's environment", async () => {
+    // And refuses it whichever customer the row claims: the composite
+    // keys require the environment and the credential to agree.
+    await setCredential(env.CONTROL_DB, "dan@acme.com", "acme", PASSWORD);
+
+    for (const claimed of ["acme", "nw"]) {
+      await expect(
+        env.CONTROL_DB.prepare(
+          "INSERT INTO user_environment_access (email, environment_id, customer_id) VALUES (?, ?, ?)"
+        )
+          .bind("dan@acme.com", "nw-production-eu", claimed)
+          .run()
+      ).rejects.toThrow();
+    }
+  });
+
   it("refuses a grant for another customer's environment", async () => {
     // The one mistake that would matter: one row, and the isolation the
     // whole design rests on is gone.

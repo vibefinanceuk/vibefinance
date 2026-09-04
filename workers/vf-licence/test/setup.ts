@@ -12,6 +12,7 @@ import expiryWarningsSql from "../migrations/0007_licence_expiry_warnings.sql?ra
 import environmentsPerRegionSql from "../migrations/0008_environments_per_region.sql?raw";
 import loginAttemptsSql from "../migrations/0009_login_attempts.sql?raw";
 import credentialsSql from "../migrations/0010_credentials_and_access.sql?raw";
+import grantsCarryCustomerSql from "../migrations/0011_grants_carry_their_customer.sql?raw";
 
 function stripSqlComments(sql: string): string {
   return sql
@@ -51,4 +52,5 @@ export async function applyTestSchema(): Promise<void> {
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(environmentsPerRegionSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(loginAttemptsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(credentialsSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(grantsCarryCustomerSql)));
 }

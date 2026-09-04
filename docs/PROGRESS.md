@@ -287,7 +287,7 @@ elsewhere.
 | `shared` | 149 passing, 2 known pre-existing failures |
 
 Both migration chains replay clean with every standing invariant
-holding — 34 migrations for `vf-app`, 10 for `vf-licence`.
+holding — 34 migrations for `vf-app`, 11 for `vf-licence`.
 
 ---
 
@@ -320,6 +320,13 @@ workflow engine.
 
 Two habits have repeatedly earned their place, and one lesson was
 learned expensively.
+
+**A standing invariant detects; it does not prevent.** Decision 0092
+claimed one meant a cross-customer grant could not be written. A
+hand-written INSERT then wrote one against the live control plane
+(0093). Where a rule spans tables and matters, carry the discriminator
+and use composite foreign keys — prevention that is visible in the
+schema and survives a rebuild.
 
 **A survival test cannot catch a broken reference.** Rebuilding a
 referenced table (0084) passed a check that existing rows survived, and

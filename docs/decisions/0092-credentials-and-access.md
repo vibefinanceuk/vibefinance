@@ -71,7 +71,10 @@ or by hand". It can. What the invariant buys is that it will not go
 **unnoticed** — the difference between a bug that is found and one that
 is not, which is real but is not the same as prevention.
 
-If prevention at the database is wanted, the shape would be a trigger.
+**Decision 0093 makes it prevention**, by carrying `customer_id` on the
+grant so the rule becomes two ordinary foreign keys. Written after a
+hand-written `INSERT` demonstrated the gap against the live control
+plane.
 
 ---
 

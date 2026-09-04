@@ -148,10 +148,12 @@ export async function grantAccess(
     return { status: 404, body: { error: `environment ${environmentId} does not exist` } };
   }
 
-  // Checked here as well as by the standing invariant, so the caller
-  // gets a reason rather than a constraint error. **A grant to another
-  // customer's environment is the one mistake that would matter**: one
-  // row, and the isolation the whole design rests on is gone.
+  // Checked here as well as by the composite foreign keys, so the
+  // caller gets a reason rather than a constraint error. **A grant to
+  // another customer's environment is the one mistake that would
+  // matter**: one row, and the isolation the whole design rests on is
+  // gone — which is why the schema refuses it too, and does not rely on
+  // this check being reached.
   const credential = await db
     .prepare("SELECT customer_id FROM user_credentials WHERE email = ? AND customer_id = ?")
     .bind(email.toLowerCase(), environment.customer_id)
@@ -168,11 +170,14 @@ export async function grantAccess(
 
   await db
     .prepare(
-      `INSERT INTO user_environment_access (email, environment_id, granted_by)
-       VALUES (?, ?, ?)
+      `INSERT INTO user_environment_access (email, environment_id, customer_id, granted_by)
+       VALUES (?, ?, ?, ?)
        ON CONFLICT (email, environment_id) DO NOTHING`
     )
-    .bind(email.toLowerCase(), environmentId, grantedBy)
+    // The customer is carried on the row so the composite foreign keys
+    // can close the boundary. It comes from the ENVIRONMENT rather than
+    // the caller, so a caller cannot name one and mean another.
+    .bind(email.toLowerCase(), environmentId, environment.customer_id, grantedBy)
     .run();
 
   return { status: 200, body: { email: email.toLowerCase(), environmentId } };
