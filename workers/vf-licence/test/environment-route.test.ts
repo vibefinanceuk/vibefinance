@@ -2,7 +2,7 @@ import { env } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
 import { applyTestSchema } from "./setup.js";
 import { handleCreateCustomer } from "../src/customers-route.js";
-import { handleCreateEnvironment } from "../src/environment-route.js";
+import { handleCreateEnvironment, handleDeleteEnvironment } from "../src/environment-route.js";
 import { isValidEnvironmentKey } from "../src/auth.js";
 
 beforeEach(async () => {
@@ -155,5 +155,91 @@ describe("handleCreateEnvironment (decision 0036)", () => {
 
     expect(await isValidEnvironmentKey(env.CONTROL_DB, "acme-sandbox-eu", sandboxKey)).toBe(true);
     expect(await isValidEnvironmentKey(env.CONTROL_DB, "acme-production-eu", sandboxKey)).toBe(false);
+  });
+});
+
+describe("deleting an environment created in error (decision 0085)", () => {
+  async function seed(customerId = "acme", kind = "production", region = "eu") {
+    await handleCreateCustomer(env.CONTROL_DB, { id: customerId, name: `${customerId} Corp` });
+    return handleCreateEnvironment(env.CONTROL_DB, {
+      customerId,
+      kind,
+      region,
+      instanceUrl: "https://x",
+    });
+  }
+
+  it("removes one that nothing references", async () => {
+    await seed();
+    const result = await handleDeleteEnvironment(env.CONTROL_DB, "acme-production-eu");
+    expect(result.status).toBe(200);
+
+    const row = await env.CONTROL_DB.prepare("SELECT id FROM environments WHERE id = 'acme-production-eu'").first();
+    expect(row).toBeNull();
+  });
+
+  it("404s one that never existed", async () => {
+    expect((await handleDeleteEnvironment(env.CONTROL_DB, "no-such-environment")).status).toBe(404);
+  });
+
+  it("refuses one with a licence, naming what blocked it", async () => {
+    // History is not tidied away. And the message says WHICH reference
+    // blocked it, which a raw foreign key error would not.
+    await seed();
+    await env.CONTROL_DB.prepare(
+      "INSERT INTO licences (environment_id, plan, status, volume_entitlement, valid_from) VALUES ('acme-production-eu','trial','active',1000,'2026-01-01')"
+    ).run();
+
+    const result = await handleDeleteEnvironment(env.CONTROL_DB, "acme-production-eu");
+    expect(result.status).toBe(409);
+    expect(String((result.body as { error: string }).error)).toContain("1 licence(s)");
+  });
+
+  it("refuses one with usage periods — billing evidence", async () => {
+    await seed();
+    await env.CONTROL_DB.prepare(
+      "INSERT INTO usage_periods (environment_id, period_key) VALUES ('acme-production-eu','2026-09')"
+    ).run();
+
+    const result = await handleDeleteEnvironment(env.CONTROL_DB, "acme-production-eu");
+    expect(result.status).toBe(409);
+    expect(String((result.body as { error: string }).error)).toContain("usage period(s)");
+  });
+
+  it("names every blocking reference, not just the first", async () => {
+    // An operator deciding whether a deletion is safe needs the whole
+    // picture, not one reason at a time.
+    await seed();
+    await env.CONTROL_DB.prepare(
+      "INSERT INTO licences (environment_id, plan, status, volume_entitlement, valid_from) VALUES ('acme-production-eu','trial','active',1000,'2026-01-01')"
+    ).run();
+    await env.CONTROL_DB.prepare(
+      "INSERT INTO usage_periods (environment_id, period_key) VALUES ('acme-production-eu','2026-09')"
+    ).run();
+
+    const body = (await handleDeleteEnvironment(env.CONTROL_DB, "acme-production-eu")).body as { error: string };
+    expect(body.error).toContain("licence(s)");
+    expect(body.error).toContain("usage period(s)");
+  });
+
+  it("leaves the customer alone", async () => {
+    // Deleting an environment is not deleting a customer.
+    await seed();
+    await handleDeleteEnvironment(env.CONTROL_DB, "acme-production-eu");
+    const customer = await env.CONTROL_DB.prepare("SELECT id FROM customers WHERE id = 'acme'").first();
+    expect(customer).not.toBeNull();
+  });
+
+  it("frees the region so it can be created again", async () => {
+    // The point of removing a mistake: the slot must become available.
+    await seed();
+    await handleDeleteEnvironment(env.CONTROL_DB, "acme-production-eu");
+    const again = await handleCreateEnvironment(env.CONTROL_DB, {
+      customerId: "acme",
+      kind: "production",
+      region: "eu",
+      instanceUrl: "https://y",
+    });
+    expect(again.status).toBe(201);
   });
 });

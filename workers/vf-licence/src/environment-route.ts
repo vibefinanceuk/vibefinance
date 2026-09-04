@@ -33,7 +33,8 @@ function optionalStringField(
  * described flow exactly: at most one sandbox and one production per
  * customer, ever.
  *
- * id is deterministic ({customerId}-{kind}), the same convention
+ * id is deterministic ({customerId}-{kind}-{region}, widened by
+ * decision 0084), the same convention
  * decision 0036's own migration used to backfill Acme's existing
  * deployment as 'acme-production' — not random, so a customer's own
  * environment ids are predictable and human-readable, not opaque
@@ -148,4 +149,63 @@ export async function handleCreateEnvironment(
       locale: locale.value,
     },
   };
+}
+
+/**
+ * Removing an environment created in error — decision 0085.
+ *
+ * Deliberately narrow: **an environment that anything references cannot
+ * be deleted.** A licence, a usage period or a signup request pointing
+ * at it means the environment has a history, and history is not tidied
+ * away — `usage_periods` in particular is billing evidence.
+ *
+ * So this removes exactly one thing: a row created by mistake, before
+ * it was used for anything. That is the case it exists for, and it is
+ * the only case where deletion is unambiguously safe.
+ *
+ * The alternative was raw SQL against the live control plane, which is
+ * what this project avoids everywhere else — and which offers no
+ * protection at all against deleting an environment that does have
+ * history.
+ */
+export async function handleDeleteEnvironment(
+  db: D1Database,
+  environmentId: string
+): Promise<RouteResult> {
+  const environment = await db
+    .prepare("SELECT id FROM environments WHERE id = ?")
+    .bind(environmentId)
+    .first<{ id: string }>();
+  if (!environment) {
+    return { status: 404, body: { error: `environment ${environmentId} does not exist` } };
+  }
+
+  // Checked explicitly rather than left to the foreign keys. The FK
+  // would refuse too, but with a constraint error that says nothing
+  // about WHICH reference blocked it — and an operator deciding whether
+  // a deletion is safe needs to know that.
+  const [licences, usage, signups] = await Promise.all([
+    db.prepare("SELECT count(*) AS n FROM licences WHERE environment_id = ?").bind(environmentId).first<{ n: number }>(),
+    db.prepare("SELECT count(*) AS n FROM usage_periods WHERE environment_id = ?").bind(environmentId).first<{ n: number }>(),
+    db.prepare("SELECT count(*) AS n FROM signup_requests WHERE environment_id = ?").bind(environmentId).first<{ n: number }>(),
+  ]);
+
+  const blocking = [
+    licences?.n ? `${licences.n} licence(s)` : null,
+    usage?.n ? `${usage.n} usage period(s)` : null,
+    signups?.n ? `${signups.n} signup request(s)` : null,
+  ].filter(Boolean);
+
+  if (blocking.length > 0) {
+    return {
+      status: 409,
+      body: {
+        error: `environment ${environmentId} has history and cannot be deleted: ${blocking.join(", ")}`,
+        detail: "only an environment created in error, before it was used, can be removed",
+      },
+    };
+  }
+
+  await db.prepare("DELETE FROM environments WHERE id = ?").bind(environmentId).run();
+  return { status: 200, body: { deleted: environmentId } };
 }

@@ -15,7 +15,7 @@
  */
 
 import { handleCreateCustomer } from "./customers-route.js";
-import { handleCreateEnvironment } from "./environment-route.js";
+import { handleCreateEnvironment, handleDeleteEnvironment } from "./environment-route.js";
 import { handleUpsertLicence } from "./licences-route.js";
 import { handleIssueToken } from "./token-route.js";
 import { handleReportUsage } from "./usage-route.js";
@@ -116,6 +116,11 @@ export default {
     // is cross-customer administrative data, not something any single
     // environment's own credential should be able to read or change.
     const rotateMatch = url.pathname.match(/^\/environments\/([^/]+)\/rotate-key$/);
+    // Deleting an environment created in error — decision 0085. Admin
+    // only, for the same reason creating one is: it is cross-customer
+    // administrative data, not something an environment's own
+    // credential should be able to remove.
+    const deleteEnvMatch = url.pathname.match(/^\/environments\/([^/]+)$/);
     const fleetMetadataMatch = url.pathname.match(/^\/environments\/([^/]+)\/fleet-metadata$/);
     const approveMatch = url.pathname.match(/^\/signup-requests\/([^/]+)\/approve$/);
     const rejectMatch = url.pathname.match(/^\/signup-requests\/([^/]+)\/reject$/);
@@ -131,6 +136,7 @@ export default {
       (provisionedMatch !== null && request.method === "POST") ||
       (provisionMatch !== null && request.method === "POST") ||
       (rotateMatch !== null && request.method === "POST") ||
+      (deleteEnvMatch !== null && request.method === "DELETE") ||
       (fleetMetadataMatch !== null && request.method === "PATCH");
     if (isAdminRoute) {
       const providedKey = extractBearerToken(request);
@@ -246,6 +252,11 @@ export default {
         return json({ error: "invalid JSON body" }, 400);
       }
       const result = await handleUpsertLicence(env.CONTROL_DB, (body ?? {}) as Record<string, unknown>);
+      return json(result.body, result.status);
+    }
+
+    if (deleteEnvMatch && request.method === "DELETE") {
+      const result = await handleDeleteEnvironment(env.CONTROL_DB, decodeURIComponent(deleteEnvMatch[1]));
       return json(result.body, result.status);
     }
 
