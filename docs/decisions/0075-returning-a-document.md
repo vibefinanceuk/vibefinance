@@ -92,9 +92,13 @@ Three, and they are different shapes.
 
 | Permission | Grants | Also requires |
 | --- | --- | --- |
-| `AP.Return` | The ability to return | The current stage's own permission, **and** holding the task |
-| `AP.ReturnAny` | Returning a task you do not hold | Nothing further |
-| `AP.ReturnToSupplier` | The terminal case | — |
+| `AP.Return` | Returning to an earlier stage | The current stage's own permission, **and** holding the task |
+| `AP.ReturnToSupplier` | The terminal return | The same two conditions |
+| `AP.ReturnAny` | Acting on a task you do not hold | Nothing — and **not** the stage permission |
+
+Two of these are the same shape and one is different, which is the
+distinction worth keeping straight: **the first two say what you may do;
+the third says whose work you may do it to.**
 
 **`AP.Return` is a capability modifier.** It activates returning
 *wherever you already have standing*, and nowhere else. Someone holding
@@ -121,7 +125,27 @@ grants and should be assignable separately.
 
 **`AP.ReturnToSupplier` is separate** because it is terminal. Someone
 trusted to send an invoice back to Coding is not automatically someone
-who should tell a supplier their invoice is being rejected.
+who should tell a supplier their invoice is being rejected. But it is
+the same *shape* as `AP.Return` — stage permission, and hold the task —
+so it appears in exactly the places the person already has standing,
+and nowhere else.
+
+### `AP.ReturnAny` overrides ownership, not destination
+
+A manager holding it can return a task they do not own to an earlier
+stage. To return that same task **to the supplier**, they must also hold
+`AP.ReturnToSupplier` themselves.
+
+Each permission then answers one question, and the terminal act always
+requires somebody to explicitly hold the terminal permission — manager
+or not. The alternative, where `AP.ReturnAny` implies everything, is
+fewer grants to administer and makes a manager role quietly capable of
+the most consequential action in the process.
+
+**It does not require the stage permission.** Overriding ownership
+across stages is the point of it; demanding `AP.Approve` as well would
+leave a manager unable to unstick an Approval queue, which is the
+situation the permission exists for.
 
 ---
 
@@ -199,18 +223,23 @@ Flagged so they can be overruled cheaply:
 
 ---
 
-## 8. Open questions
+## 8. Settled in discussion
 
-1. **Can a document be returned from the first stage?** There is nowhere
-   behind Validation but the source. Return to supplier is presumably
-   the only option, and the interface should offer nothing else.
-2. **Does returning to supplier need the stage permission too**, the way
-   `AP.Return` does? It is terminal, so arguably it needs *more* rather
-   than less.
-3. **Should a returned instance be visible as such?** `status` stays
+**Returning from the first stage is fine.** Validation is a stage a
+person holds a task at, so somebody with the right pair can return to
+supplier from there. It simply has one destination rather than several,
+because there is no earlier stage to go back to — the interface offers
+what the instance's own `stage_visits` allow, and at Validation that is
+nothing behind it.
+
+---
+
+## 9. Open questions
+
+1. **Should a returned instance be visible as such?** `status` stays
    `in_progress` — it is genuinely still in progress, just backwards. A
    queue of "returned and not yet corrected" may want a real query.
-4. **`AR` and `Expense` equivalents.** These permissions are `AP.*`. The
+2. **`AR` and `Expense` equivalents.** These permissions are `AP.*`. The
    same capability presumably belongs to the other processes, and the
    permission scheme is namespaced by category precisely so that is a
    one-line addition per category rather than a redesign.
