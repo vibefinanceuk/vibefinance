@@ -1,6 +1,6 @@
 # Handover
 
-**Written 4 September 2026, updated late that evening.** One page: where things stand, what needs a
+**Written 4 September 2026, updated at the end of that day.** One page: where things stand, what needs a
 decision rather than work, and what to do next.
 
 `docs/PROGRESS.md` is the map — what exists and what does not.
@@ -14,13 +14,19 @@ either, so check the dates.
 
 | | |
 | --- | --- |
-| `origin/main` | `dce5da1` |
+| `origin/main` | `258a4be` |
 | vf-app deployed | `11670e4` |
-| vf-licence deployed | `fc2320a` |
+| vf-licence deployed | `112ed13` |
+| **vf-ui deployed** | `112ed13` — `https://vf-ui.vibefinance.workers.dev` |
 | `vf-app-poc` migrations | through `0034` |
-| `vf-licence-poc` migrations | through `0011` |
-| Tests | vf-app 882 · vf-licence 228 · shared 194 (+2 known pre-existing failures) |
-| Decision records | 95 |
+| `vf-licence-poc` migrations | through `0012` |
+| Tests | vf-app 882 · vf-licence 262 · vf-ui 9 · shared 214 (+2 known pre-existing failures) |
+| Decision records | 101 |
+
+**There are three Workers now.** `vf-app` per customer, `vf-licence`
+shared, and `vf-ui` shared — the interface, its own deployment because
+binding it to `vf-licence` would mean every UI change redeploying the
+component that mints licence tokens for the whole fleet (0099).
 
 The two `shared` failures are time-expired JWT keys in the licensing
 token tests, failing on `main` since before any of this work. Not new,
@@ -75,6 +81,17 @@ And **a person can now sign in**, proven end to end against production:
    and returns the person's real record and every permission at once
    (0095).
 
+**And a person can now do all of that in a browser.**
+`https://vf-ui.vibefinance.workers.dev` serves a sign-in screen that
+fetches the customer's livery from `vf-licence` (0096), populates the
+environment list from what that person may actually reach, and shows
+their last sign-in with every failed attempt since. Proven working, not
+just built.
+
+`ALLOWED_ORIGINS` is set on both API Workers to the UI's origin, which
+is what lets a browser read either response (0098). CORS is a browser
+mechanism — every `curl` in this file works regardless.
+
 **Every authentication failure returns the same message**, so an email
 address cannot be used to enumerate accounts or environments.
 
@@ -86,29 +103,39 @@ uses one.
 
 ## Waiting on you
 
-**Nothing blocks the next piece of work.** Two things worth deciding
-before they become expensive, neither urgent.
+**Nothing blocks the next piece of work.** Three things worth deciding
+before they become expensive.
 
-### 1. Who creates the `org_users` row
+### 1. Does a session survive a refresh?
+
+**Today it does not.** The token is held in memory, so reloading the
+page signs you out. Fine for a login screen; immediately annoying once
+there is a queue to work in.
+
+- `sessionStorage` survives and is readable by any injected script.
+- A cookie survives and introduces a second authentication mechanism
+  alongside the bearer token, which decision 0083 was pleased to avoid.
+
+In memory defers the choice without pretending it has been made (0099).
+Worth settling before the next screen rather than after.
+
+### 2. A custom domain
+
+`vf-ui.vibefinance.workers.dev` works and looks like infrastructure. A
+domain is a routing change plus two config values — the API addresses
+are already configuration rather than compiled in, deliberately (0099).
+
+It also unlocks something else: a customer-specific backdrop can only
+appear **after** the password is verified, because that is when the
+customer becomes known. Landing on `acme.vibefinance.com` would fix
+that.
+
+### 3. Who creates the `org_users` row
 
 A person can hold a credential and an access grant and **still be
-refused** by the instance, because decision 0088 refuses anybody with no
-`org_users` row — deliberately: no roles, no unit, nothing known about
-them.
-
-Today that row is created by hand. The gap is real but not dangerous:
-the refusal is correct, it just does not yet say *what* is missing
-rather than implying the credential was wrong.
-
-### 2. Alerting on failed sign-ins
-
-*"A lockout policy that generates no alert is half a control."* Attempts
-are recorded, queryable and shown to the person on their next sign-in
-(ISO 27001 A.8.5) — but nobody is **told**.
-
-This needs email, and **nothing in this system sends any**. That same
-gap blocks password reset, expiry warnings and every notification.
-Possibly the single most-referenced missing capability in these records.
+refused** by the instance (0088) — deliberately: no roles, no unit,
+nothing known about them. Today the row is created by hand, and the
+refusal does not yet say *what* is missing.
 
 ---
 
@@ -161,28 +188,29 @@ Recorded so nobody re-opens them:
 - **The bootstrap administrator was not needed** (0094). The operator
   holds the admin key and creates the first credential at provisioning,
   so the self-disabling account 0083 designed was never built.
+- **Branding is five tokens, set by the operator, held in the control
+  plane** (0096). The login screen needs a livery *before* an instance
+  is chosen, so an instance cannot be the source.
+- **CORS is an explicit allow-list, never a wildcard** (0098), and
+  needs no `Allow-Credentials` because a bearer token is not
+  "credentials" in the CORS sense.
+- **`vf-ui` is its own Worker** (0099), on deployment frequency.
 
 ---
 
 ## Suggested next pieces
 
-**1. The UI.** Decision 0083 settled the architecture and local login
-now works, so this is unblocked. What it needs first:
+**1. The Validation queue** — the first screen after signing in, and
+what somebody opens each morning. It exercises listing, permissions and
+the stage model.
 
-- **`vf-ui` as its own Worker** — separate from `vf-licence` on
-  deployment-frequency grounds: binding them means every UI change
-  redeploys the component that mints licence tokens for the whole fleet.
-- **Branding storage**, set by the operator in `vf-licence`, with the
-  token layer in `vf-ui`. The login screen needs branding *before* an
-  instance is chosen, which is why the values cannot live in an
-  instance.
-- **Data routes accepting sessions.** Only `/whoami` does today, and
-  which routes take which credential is a per-route decision.
+It needs `vf-app` routes that accept a session token: **only `/whoami`
+does today** (0095), and which routes take which credential is a
+per-route decision. Sessions and API keys coexist deliberately — a
+session is a person at a screen, an API key is a service credential, and
+every live test here uses one.
 
-The **Validation queue** is the screen to build first — it exercises
-listing, permissions and the stage model, and it is what somebody opens
-each morning. Four screens are mocked as static HTML in
-`docs/design/mockups/`.
+Four screens are mocked as static HTML in `docs/design/mockups/`.
 
 **2. Email.** Blocks alerting on failed sign-ins, password reset,
 licence expiry warnings and every notification. The most-referenced
@@ -192,27 +220,23 @@ missing capability in these records.
 leg of three-way matching — **before the matcher, not after** (0082).
 Comparing invoice lines to order lines is one correspondence problem;
 adding a despatch advice makes it three-cornered, where a line can match
-what was *ordered* and not what was *delivered*. A change of shape, not
-an increment.
+what was *ordered* and not what was *delivered*.
 
 **4. Reading `cbc:CustomizationID`.** Detection answers *what structure
 is this*, not *what document is this*, so a valid Peppol Order sent to
-`/sources/:id/capture` is refused. It selects which half of the system a
-document belongs to — an order is reference data, an invoice is work.
+`/sources/:id/capture` is refused.
 
 **5. `party.first_document`.** Declared and uncomputed (0079). Must be
 computed **at capture and stored**, or re-running a rule set would give a
 different answer as more invoices arrive.
 
-**6. Keyed lines**, **retiring the legacy intake channels** (gated on
-the customer's integration moving off `/intake-channels/:id/capture-*`),
-and **queue visibility** — tasks sit open and unclaimed at Approval from
-testing, each blocking its instance, and nothing surfaces an ageing
-queue.
+**6. Keyed lines**, **retiring the legacy intake channels**, and **queue
+visibility** — tasks sit open and unclaimed at Approval, each blocking
+its instance, and nothing surfaces an ageing queue.
 
 ---
 
-## Three habits worth keeping
+## Habits worth keeping
 
 `docs/PROGRESS.md` has the longer list.
 
