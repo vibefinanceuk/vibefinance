@@ -177,9 +177,13 @@ vocabulary's EN 16931 reference fields and supplier groups.
 **Line-level extraction.** Extracted from images since 0044's addendum;
 still absent from the UBL parser's allowance and charge groups.
 
-**Local accounts.** Password hashing built with Argon2id at OWASP
-parameters; the login endpoint, rate limiting, lockout, reset and the
-bootstrap administrator are not (0089). The constraint that
+**Password reset.** Needs email, and nothing here sends any. An
+administrator setting a password directly is the only reset available
+(0089).
+
+**Alerting on failed sign-ins.** Attempts are recorded and queryable;
+nobody is told. "A lockout policy that generates no alert is half a
+control" (0090, 0094). The constraint that
 shapes it: **Workers cap PBKDF2 at 100,000 iterations** where OWASP's
 minimum for PBKDF2-SHA256 is 600,000, so native Web Crypto cannot meet
 guidance. Argon2id via `@noble/hashes` runs at OWASP baseline

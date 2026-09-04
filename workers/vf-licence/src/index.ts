@@ -17,6 +17,8 @@
 import { handleCreateCustomer } from "./customers-route.js";
 import { handleCreateEnvironment, handleDeleteEnvironment } from "./environment-route.js";
 import { handleDevLogin } from "./dev-login-route.js";
+import { handleLogin, handleListMyEnvironments, setCredential } from "./login-route.js";
+import { grantAccess, revokeAccess } from "./credentials.js";
 import { handleUpsertLicence } from "./licences-route.js";
 import { handleIssueToken } from "./token-route.js";
 import { handleReportUsage } from "./usage-route.js";
@@ -123,9 +125,68 @@ export default {
     // manifest is admin-only for the same reason provisioning is: it
     // is cross-customer administrative data, not something any single
     // environment's own credential should be able to read or change.
-    // Signing in is the one thing a person does BEFORE holding any
+    // The provisioning surface — admin only, for the same reason
+    // creating an environment is: it decides who may reach a customer's
+    // data at all.
+    if (url.pathname === "/credentials" && request.method === "POST") {
+      let body: unknown;
+      try {
+        body = await request.json();
+      } catch {
+        return json({ error: "invalid JSON body" }, 400);
+      }
+      const { email, customerId, password } = (body ?? {}) as Record<string, unknown>;
+      if (typeof email !== "string" || typeof customerId !== "string" || typeof password !== "string") {
+        return json({ error: "email, customerId and password are required" }, 400);
+      }
+      const result = await setCredential(env.CONTROL_DB, email, customerId, password);
+      return json(result.body, result.status);
+    }
+
+    if (url.pathname === "/access" && (request.method === "POST" || request.method === "DELETE")) {
+      let body: unknown;
+      try {
+        body = await request.json();
+      } catch {
+        return json({ error: "invalid JSON body" }, 400);
+      }
+      const { email, environmentId, grantedBy } = (body ?? {}) as Record<string, unknown>;
+      if (typeof email !== "string" || typeof environmentId !== "string") {
+        return json({ error: "email and environmentId are required" }, 400);
+      }
+      const result =
+        request.method === "POST"
+          ? await grantAccess(env.CONTROL_DB, email, environmentId, typeof grantedBy === "string" ? grantedBy : null)
+          : await revokeAccess(env.CONTROL_DB, email, environmentId);
+      return json(result.body, result.status);
+    }
+
+    // Signing in, and asking which instances you may reach. Neither is
+    // an admin route: they are what a person does BEFORE holding any
     // credential, so this is deliberately not an admin route. Its
     // protection is the two guards inside it, not a key.
+    if ((url.pathname === "/login" || url.pathname === "/my-environments") && request.method === "POST") {
+      if (!env.LICENCE_SIGNING_PRIVATE_KEY) {
+        return json({ error: "LICENCE_SIGNING_PRIVATE_KEY not configured" }, 500);
+      }
+      let body: unknown;
+      try {
+        body = await request.json();
+      } catch {
+        return json({ error: "invalid JSON body" }, 400);
+      }
+      const result =
+        url.pathname === "/login"
+          ? await handleLogin(
+              env.CONTROL_DB,
+              (body ?? {}) as Record<string, unknown>,
+              JSON.parse(env.LICENCE_SIGNING_PRIVATE_KEY) as JsonWebKey,
+              request.headers.get("CF-Connecting-IP")
+            )
+          : await handleListMyEnvironments(env.CONTROL_DB, (body ?? {}) as Record<string, unknown>);
+      return json(result.body, result.status);
+    }
+
     if (url.pathname === "/dev-login" && request.method === "POST") {
       if (!env.LICENCE_SIGNING_PRIVATE_KEY) {
         return json({ error: "LICENCE_SIGNING_PRIVATE_KEY not configured" }, 500);
@@ -160,6 +221,8 @@ export default {
       (url.pathname === "/customers" && request.method === "POST") ||
       (url.pathname === "/environments" && (request.method === "POST" || request.method === "GET")) ||
       (url.pathname === "/licences" && request.method === "POST") ||
+      (url.pathname === "/credentials" && request.method === "POST") ||
+      (url.pathname === "/access" && (request.method === "POST" || request.method === "DELETE")) ||
       (url.pathname === "/signup-requests" && request.method === "GET") ||
       (approveMatch !== null && request.method === "POST") ||
       (rejectMatch !== null && request.method === "POST") ||
