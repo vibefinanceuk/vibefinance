@@ -1,6 +1,6 @@
 # Handover
 
-**Written 4 September 2026, updated the same afternoon.** One page: where things stand, what needs a
+**Written 4 September 2026, updated again that evening.** One page: where things stand, what needs a
 decision rather than work, and what to do next.
 
 `docs/PROGRESS.md` is the map — what exists and what does not.
@@ -14,12 +14,13 @@ either, so check the dates.
 
 | | |
 | --- | --- |
-| `origin/main` | `85843a7` |
+| `origin/main` | `9a672ae` |
 | vf-app deployed | `79bbb74` |
-| vf-licence deployed | `f203ac0` (2 September; untouched since) |
+| vf-licence deployed | `98dac9b` |
 | `vf-app-poc` migrations | through `0034` |
-| Tests | vf-app 859 · vf-licence 153 · shared 165 (+2 known pre-existing failures) |
-| Decision records | 82 |
+| `vf-licence-poc` migrations | through `0008` |
+| Tests | vf-app 871 · vf-licence 171 · shared 194 (+2 known pre-existing failures) |
+| Decision records | 89 |
 
 The two `shared` failures are time-expired JWT keys in the licensing
 token tests, failing on `main` since before any of this work. Not new,
@@ -56,76 +57,39 @@ Only documents and read back. They are reference data rather than work:
 nothing extracts from them, no rule evaluates them, and they never enter
 a process instance. **Nothing matches an invoice against one yet.**
 
+And **the authentication spine exists but nobody can use it.**
+`vf-licence` mints a session token naming the environment it is for
+(0086); `vf-app` verifies it and refuses anybody with no `org_users` row
+(0088); passwords hash with Argon2id (0089). What is missing is a login
+endpoint a person can reach — the development stub (0087) is the only
+way to obtain a token, and it is deliberately disabled in production and
+cannot mint for a production environment even when enabled.
+
 ---
 
 ## Waiting on you
 
-**Nothing blocks the next piece of work.** The items below are product
-judgements worth making deliberately, not obstacles.
+**Nothing blocks the next piece of work.** One question is worth
+settling before the login endpoint, and it matters more than the
+algorithm choice did.
 
-### 1. The UI architecture — proposed, awaiting review
+### Rate limiting, before local login goes in
 
-**Decision 0083 answers the four questions** and is written for review
-before any code. The short version: customers' own SSO terminates at
-`vf-licence`, which mints a session token instances verify locally;
-authentication is central and authorisation stays per-instance; there is
-**one shared UI** rather than one per instance; and it lives in its own
-`vf-ui` Worker rather than bound to `vf-licence`, on deployment-frequency
-grounds.
+**No hash is strong enough against unlimited attempts.** Argon2id at
+OWASP parameters is built (0089); a login endpoint without rate limiting
+would undo most of its value.
 
-**Corrected since:** SSO is one path, not the path. Some customers will
-not integrate an identity provider and some have none, so local accounts
-are a permanent second authentication path — password hashing, login,
-reset, lockout, and the policy questions SSO would have deferred. Both
-paths mint the same session token, so the seam holds; there are two
-endpoints behind it rather than one (0083 section 7).
+Two open parts:
 
-**Nothing in it now blocks work.** SAML versus OIDC is **parked**
-(0083 section 7): almost nothing depends on the choice, because
-everything downstream consumes a verified identity via the session
-token and does not care how it was minted. The first implementation
-uses a conspicuously dev-only stub that mints a token for a known user
-and must refuse to run against production.
-
-Settled since: **one instance at a time, never merged.** A power user
-selects `Morrison-EU` or `Morrison-US` from a drop-down and sees that
-instance's data. That removes the hardest part of the multi-region
-design — no fanout, no cross-region aggregation, and `vf-licence` never
-reads customer content. And branding is set by the operator in
-`vf-licence`, with the token layer living in `vf-ui`.
-
-**Suggested build order** (decision 0083): widen the environments
-constraint, then authentication end to end, then branding storage, then
-the Validation queue as the first screen, then keying. Steps two and
-three both change `vf-licence` from a component that can be unreachable
-to one that cannot — worth doing deliberately.
-
-The original four questions, for context:
-
-There is **no frontend in this repo at all** — Workers, D1 and R2, API
-only. No framework, no build pipeline, no static asset serving, no
-browser session handling. Four screens are mocked as static HTML in
-`docs/design/mockups/`, and nothing renders from real data.
-
-- **Served from the Worker, or deployed separately?** From the Worker
-  means one deployment, one origin, and no CORS. Separately means a
-  proper build pipeline and CDN, and a second thing to configure per
-  customer.
-- **A framework, or hand-written HTML?** The mockups are hand-written
-  and readable. A framework buys component reuse and brings a build step
-  into a repo that has none.
-- **How does a browser authenticate?** The API expects a bearer token
-  and a browser has nowhere good to keep one — the same problem the
-  pop-out window had, solved there with a short-lived signed URL
-  (decision 0073). A session cookie is the usual answer and would be a
-  second auth mechanism alongside the bearer token.
-- **What is the token layer for white-labelling?** The expensive one to
-  retrofit. `docs/design/mockups/tokens.css` shows the shape: every
-  colour a token, so a customer livery is a substitution in one place.
-
-**The API is ready for it.** Capture, keying, returning, discarding,
-signed document URLs and the stage/task model are all live and
-exercised. What a screen would need already exists behind `curl`.
+- **Where the state lives.** `vf-licence` is a single shared Worker, so
+  limiting there protects every customer at once — but per-email
+  attempt counts need somewhere to live, and D1 means a write on every
+  failed attempt. Cloudflare offers a rate-limiting binding that would
+  avoid the storage question; **what it can key on has not been
+  checked.**
+- **Lockout has a real trade-off.** Too aggressive and anybody can lock
+  out a colleague by guessing wrong five times — a denial of service
+  wearing a security feature's clothes.
 
 ---
 
@@ -148,58 +112,70 @@ Recorded so nobody re-opens them:
 - **Is PO matching the next domain?** Purchase orders are built (0081).
   **Three-way matching is the target**, which is why Despatch Advice
   comes before the matcher rather than after — see below.
+- **The four UI questions** (0083). Served from a separate `vf-ui`
+  Worker; one shared UI rather than one per instance; authentication in
+  the control plane and authorisation in the instance; branding set by
+  the operator in `vf-licence` with the token layer in `vf-ui`. One
+  instance at a time, **never merged**.
+- **SAML or OIDC — parked** (0083 section 8), behind a deliberate seam:
+  everything downstream consumes the session token and does not care how
+  it was minted.
+- **SSO is one path, not the path** (0083 section 7). Some customers
+  will not integrate an identity provider, so local accounts are
+  permanent rather than a bootstrap concern.
+- **A person with no `org_users` row is refused, not created** (0088).
+  No roles, no unit, nothing known about them — and it makes the
+  bootstrap administrator load-bearing.
+- **Argon2id, not PBKDF2** (0089). Workers cap PBKDF2 at 100,000
+  iterations where OWASP's minimum is 600,000, so native Web Crypto
+  cannot meet guidance.
 
 ---
 
 ## Suggested next pieces
 
-**1. The UI**, once the four questions above are answered. It is the
-only thing standing between a working system and a usable one, and
-nothing else is blocked on it.
+**1. Local login.** The authentication spine is built at both ends and
+unreachable. This needs: rate limiting (see above), the login endpoint
+in `vf-licence` beside the dev stub minting the same session token,
+`password_hash` on `org_users`, and the **bootstrap administrator** —
+per-environment, password set at provisioning and handed over, able to
+do exactly one thing (create a named administrator) and self-disabling
+once one exists.
 
-**2. Despatch Advice (T16).** The goods receipt, and the missing third
+**Reset needs email, and nothing in this system sends any.** An
+administrator setting a password directly is the only reset available.
+
+**2. The UI**, once local login works. Decision 0083 settled the
+architecture; `docs/design/mockups/` has four screens as static HTML.
+The Validation queue is the screen to build first — it exercises
+listing, permissions and the stage model, and it is what somebody opens
+each morning.
+
+**3. Despatch Advice (T16).** The goods receipt, and the missing third
 leg of three-way matching. `permissions.ts` has always described
-`AP.Match` as *"3-way match against PO/goods receipt"*, and two thirds
-of that data did not exist until purchase orders landed.
+`AP.Match` as *"3-way match against PO/goods receipt"*.
 
-**Before the matcher, not after** (decision 0082). Comparing invoice
-lines to order lines is one correspondence problem; adding a despatch
-advice makes it three-cornered, where a line can match what was
-*ordered* and not what was *delivered*. That is a change of shape, not
-an increment, and building the matcher twice is the expensive way to
-arrive at the same place.
+**Before the matcher, not after** (0082). Comparing invoice lines to
+order lines is one correspondence problem; adding a despatch advice
+makes it three-cornered, where a line can match what was *ordered* and
+not what was *delivered*. A change of shape, not an increment.
 
-**3. Reading `cbc:CustomizationID`.** Detection answers *what structure
-is this*, not *what document is this*, so the XML branch assumes an
-invoice — and a valid Peppol Order sent to `/sources/:id/capture` is
-refused. Peppol supplies the discriminator itself and nothing reads it.
-Non-trivial, because it selects which half of the system a document
-belongs to: an order is reference data, an invoice is work.
+**4. Reading `cbc:CustomizationID`.** Detection answers *what structure
+is this*, not *what document is this*, so a valid Peppol Order sent to
+`/sources/:id/capture` is refused. Non-trivial: it selects which half of
+the system a document belongs to, since an order is reference data and
+an invoice is work.
 
-**4. `party.first_document`.** Declared and uncomputed (0079). Three
-questions decide it: identify a party by what (`BT-31` is absent on
-exactly the documents where "first from this supplier" matters most),
-first ever or first since when, and — the substantial one — it must be
-computed **at capture and stored**, because computing it at evaluation
-would change the answer as more invoices arrive and break the
+**5. `party.first_document`.** Declared and uncomputed (0079). Must be
+computed **at capture and stored**, or re-running a rule set would give
+a different answer as more invoices arrive — breaking the
 reproducibility the interpreter rests on.
 
-**5. Keyed lines.** Lines live in `invoice_lines` rather than
-`facts_json`, so `provenance.keyed` covers header fields only and a
-keyed line is indistinguishable from a parsed one. `line_sum` cannot run
-without lines.
-
-**6. Retiring the legacy intake channels.** `ic-new` still exists with a
-NULL structure, and the channel-addressed capture endpoints still bypass
-detection. Retiring them lets decision 0061's partial unique index
-become total, and is the moment to split extraction settings by
-structure (0066). **Gated on the customer's integration moving off
-`/intake-channels/:id/capture-*` first.**
-
-**7. Queue visibility.** ~35 tasks sit open and unclaimed at Approval
-from testing, each blocking its instance. Nothing surfaces an ageing
-queue, and nothing surfaces abandoned pending documents either. For AP,
-where late payment has real cost, that is a gap worth naming.
+**6. Keyed lines**, **retiring the legacy intake channels** (gated on
+the customer's integration moving off `/intake-channels/:id/capture-*`),
+and **queue visibility** — ~35 tasks sit open and unclaimed at Approval
+from testing, each blocking its instance, and nothing surfaces an ageing
+queue.
 
 ---
 
@@ -226,6 +202,19 @@ broke nothing meaningful and *proved the wrong thing*; only re-doing it
 correctly showed the guarantee was real. And in decision 0078 a test was
 written that asserted the **wrong** behaviour — which would have
 defended the mistake against anyone who later tried to fix it.
+
+**A survival test cannot catch a broken reference.** Rebuilding a
+referenced table (0084) took three attempts. The second passed a check
+that existing rows survived — and would have shipped a schema where
+every NEW child row failed, because SQLite rewrites foreign keys to
+follow a renamed parent and the rows being checked were copied before it
+moved. **Insert after a migration, not just count.**
+
+**Tests, `tsc` and the bundler read the module graph differently.**
+A dependency installed at the repository root passed both test suites
+and the typechecker, and failed the deploy outright (0089). Only one of
+the three is the one that matters. `wrangler deploy --dry-run` is the
+check.
 
 **Ask what a query actually answers.** Decision 0080's rule survey
 filtered on `approved_by IS NOT NULL`, returned seven rules, and read
