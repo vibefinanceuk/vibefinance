@@ -132,10 +132,11 @@ OWASP's recommended parameters"* ends the conversation.
 The package brings **zero transitive dependencies**, which is most of
 why it is the least-bad shape for this exception.
 
-**`password_hash` beside `api_key_hash`** on `org_users`. One notion of
-a person, and the existing service credentials keep working unchanged —
-which matters, because every live test in this project authenticates
-with one.
+**Superseded by decision 0091.** `password_hash` beside `api_key_hash`
+on `org_users` was the intention, and it is not possible: `vf-licence`
+has only `CONTROL_DB` and cannot read a customer's user table at all.
+The credential lives in the control plane and `org_users` stays where it
+is — one thing split by purpose, not two copies.
 
 **The bootstrap administrator self-disables** once a named administrator
 exists. Stronger than a permission, which somebody could grant onward:
