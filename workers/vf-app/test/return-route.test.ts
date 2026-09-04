@@ -1,7 +1,7 @@
 import { env } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
 import { applyTestSchema } from "./setup.js";
-import { handleReturnToStage, handleReturnToSupplier } from "../src/return-route.js";
+import { handleReturnToStage, handleReturnToSupplier, handleDiscard } from "../src/return-route.js";
 import type { AuthenticatedUser } from "../src/user-auth.js";
 
 const DAN: AuthenticatedUser = { id: "u-dan", email: "dan@acme.com", name: "Dan Y." };
@@ -301,5 +301,86 @@ describe("a task can only be ended once", () => {
     const body = { stageId: "s-coding", reason: "x", assignToUser: "u-sarah" };
     expect((await handleReturnToStage(env.DB, taskId, body, DAN)).status).toBe(200);
     expect((await handleReturnToStage(env.DB, taskId, body, DAN)).status).toBe(409);
+  });
+});
+
+describe("discarding — the third outcome (decision 0078)", () => {
+  it("archives the instance, which is not the same terminal state as returned", async () => {
+    // "Nothing further is needed" and "somebody is dealing with this"
+    // are different answers to the open-items question a queue exists
+    // to ask (decision 0055 section 5.4).
+    const { instanceId, taskId } = await atApproval();
+    await grant("u-dan", ["AP.Approve", "AP.Discard"]);
+
+    const result = await handleDiscard(env.DB, taskId, { reason: "not an invoice — a statement" }, DAN);
+    expect(result.status).toBe(200);
+
+    const instance = await env.DB.prepare(
+      "SELECT status, ended_by, end_reason FROM process_instances WHERE id = ?"
+    )
+      .bind(instanceId)
+      .first<Record<string, string>>();
+    expect(instance?.status).toBe("archived");
+    expect(instance?.ended_by).toBe("u-dan");
+    expect(instance?.end_reason).toBe("not an invoice — a statement");
+  });
+
+  it("deletes nothing", async () => {
+    // A regulated system that lets a person delete a document has lost
+    // the argument before it starts.
+    const { taskId } = await atApproval();
+    await grant("u-dan", ["AP.Approve", "AP.Discard"]);
+    await handleDiscard(env.DB, taskId, { reason: "duplicate" }, DAN);
+
+    const instances = await env.DB.prepare("SELECT count(*) AS n FROM process_instances").first<{ n: number }>();
+    const tasks = await env.DB.prepare("SELECT count(*) AS n FROM tasks").first<{ n: number }>();
+    const visits = await env.DB.prepare("SELECT count(*) AS n FROM stage_visits").first<{ n: number }>();
+    expect(instances?.n).toBe(1);
+    expect(tasks?.n).toBe(1);
+    expect(visits?.n).toBe(3);
+  });
+
+  it("requires AP.Discard specifically, not the ability to return", async () => {
+    // Keying introduces facts; discarding closes the matter. Somebody
+    // trusted to send an invoice back is not automatically somebody who
+    // decides it never needs looking at again.
+    const { taskId } = await atApproval();
+    await grant("u-dan", ["AP.Approve", "AP.Return", "AP.ReturnToSupplier"]);
+    const result = await handleDiscard(env.DB, taskId, { reason: "duplicate" }, DAN);
+    expect(result.status).toBe(403);
+    expect(String((result.body as { error: string }).error)).toContain("AP.Discard");
+  });
+
+  it("requires a reason, because nobody will look again", async () => {
+    const { taskId } = await atApproval();
+    await grant("u-dan", ["AP.Approve", "AP.Discard"]);
+    expect((await handleDiscard(env.DB, taskId, { reason: "  " }, DAN)).status).toBe(400);
+  });
+
+  it("refuses a manager holding AP.ReturnAny but not AP.Discard", async () => {
+    // ReturnAny overrides ownership, not destination — the same
+    // boundary as returning to a supplier.
+    const { taskId } = await atApproval();
+    await grant("u-mgr", ["AP.Return", "AP.ReturnAny"]);
+    const result = await handleDiscard(env.DB, taskId, { reason: "duplicate" }, MGR);
+    expect(result.status).toBe(403);
+  });
+
+  it("marks the task 'discarded', not 'returned' — nothing went back", async () => {
+    // The first version of this reused 'returned', and the test written
+    // alongside it documented the wrong behaviour — worse than no test.
+    // A task marked 'returned' when its document was archived tells
+    // whoever reads it later that somebody sent the invoice somewhere,
+    // and nobody did.
+    const { taskId } = await atApproval();
+    await grant("u-dan", ["AP.Approve", "AP.Discard"]);
+    await handleDiscard(env.DB, taskId, { reason: "duplicate" }, DAN);
+
+    const row = await env.DB.prepare("SELECT status, completed_by, ended_by FROM tasks WHERE id = ?")
+      .bind(taskId)
+      .first<Record<string, string | null>>();
+    expect(row?.status).toBe("discarded");
+    expect(row?.completed_by).toBeNull();
+    expect(row?.ended_by).toBe("u-dan");
   });
 });

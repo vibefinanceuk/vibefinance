@@ -49,6 +49,12 @@ const AP_PERMISSIONS = [
   "AP.Return",
   "AP.ReturnToSupplier",
   "AP.ReturnAny",
+  // Discarding — decision 0078. The third outcome for a document a
+  // person cannot process, and deliberately not the same permission as
+  // keying: keying introduces facts, discarding closes the matter.
+  // Somebody trusted to transcribe an amount is not automatically
+  // somebody who should decide an invoice never needs looking at again.
+  "AP.Discard",
 ] as const;
 
 /**

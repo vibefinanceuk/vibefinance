@@ -102,15 +102,20 @@ async function endTaskAndSiblings(
   task: TaskRow,
   userId: string,
   reason: string,
-  returnedToStageId: string | null
+  returnedToStageId: string | null,
+  // 'returned' or 'discarded'. Nothing goes back when a document is
+  // discarded, and a task marked 'returned' would tell whoever reads it
+  // later that somebody sent the invoice somewhere. Nobody did
+  // (decision 0078).
+  endStatus: "returned" | "discarded" = "returned"
 ): Promise<void> {
   const now = new Date().toISOString();
   await db
     .prepare(
-      `UPDATE tasks SET status = 'returned', ended_by = ?, ended_at = ?, end_reason = ?, returned_to_stage_id = ?
+      `UPDATE tasks SET status = ?, ended_by = ?, ended_at = ?, end_reason = ?, returned_to_stage_id = ?
        WHERE id = ?`
     )
-    .bind(userId, now, reason, returnedToStageId, task.id)
+    .bind(endStatus, userId, now, reason, returnedToStageId, task.id)
     .run();
 
   if (task.stage_visit_id) {
@@ -320,6 +325,89 @@ export async function handleReturnToSupplier(
       instanceStatus: "returned_manually",
       reason: reason.trim(),
       note: "the system has sent nothing — contact with the supplier happens outside it",
+    },
+  };
+}
+
+export interface DiscardBody {
+  reason?: unknown;
+}
+
+/**
+ * Discarding — decision 0078. The instance reaches `archived`.
+ *
+ * Deliberately a different terminal state from `returned_manually`
+ * (decision 0055 section 5.4), and the difference is what a queue is
+ * for: **"somebody is dealing with this"** and **"nothing further is
+ * needed"** are different answers to the open-items question.
+ *
+ * A duplicate, a statement that is not an invoice, a scan of somebody's
+ * lunch receipt — these are closed, not pending contact with anybody.
+ *
+ * Never a deletion. The invoice row, its facts, its retained original
+ * and every task that touched it all remain; only the instance stops
+ * being somebody's problem. A regulated system that lets a person
+ * delete a document has lost the argument before it starts.
+ */
+export async function handleDiscard(
+  db: D1Database,
+  taskId: string,
+  body: DiscardBody,
+  user: AuthenticatedUser
+): Promise<RouteResult> {
+  const task = await loadOpenTask(db, taskId);
+  if (!task) return { status: 404, body: { error: `task ${taskId} does not exist` } };
+  if (task.status !== "open") {
+    return { status: 409, body: { error: `task ${taskId} is already ${task.status}` } };
+  }
+
+  // Same shape as returning to a supplier: the capability, the stage's
+  // own permission, and holding the task — with AP.ReturnAny overriding
+  // ownership only.
+  const standing = await checkStanding(db, user, task, "AP.Discard");
+  if (!standing.ok) return { status: standing.status, body: { error: standing.error } };
+
+  const { reason } = body;
+  if (typeof reason !== "string" || reason.trim() === "") {
+    // "Nobody needs to look at this again" is a claim that should carry
+    // an explanation, precisely because nobody will look again.
+    return { status: 400, body: { error: "reason is required" } };
+  }
+
+  const instance = await db
+    .prepare(
+      `SELECT pi.id, pi.status FROM process_instances pi
+       JOIN stage_visits v ON v.process_instance_id = pi.id WHERE v.id = ?`
+    )
+    .bind(task.stage_visit_id)
+    .first<{ id: string; status: string }>();
+  if (!instance) return { status: 409, body: { error: "this task is not attached to a process instance" } };
+  if (instance.status !== "in_progress") {
+    return { status: 409, body: { error: `process instance ${instance.id} is already ${instance.status}` } };
+  }
+
+  await endTaskAndSiblings(db, task, user.id, reason.trim(), null, "discarded");
+
+  const now = new Date().toISOString();
+  await db
+    .prepare(
+      `UPDATE process_instances
+       SET status = 'archived', ended_by = ?, ended_at = ?, end_reason = ?, updated_at = ?
+       WHERE id = ?`
+    )
+    .bind(user.id, now, reason.trim(), now, instance.id)
+    .run();
+
+  return {
+    status: 200,
+    body: {
+      discardedTask: task.id,
+      discardedBy: user.id,
+      viaOverride: standing.viaOverride,
+      instanceId: instance.id,
+      instanceStatus: "archived",
+      reason: reason.trim(),
+      note: "nothing was deleted — the invoice, its document and its history all remain",
     },
   };
 }
