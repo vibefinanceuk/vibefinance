@@ -18,6 +18,8 @@
  * concern alone.
  */
 
+import { verifySessionToken } from "@vibefinance/shared";
+
 const KEY_BYTE_LENGTH = 32;
 
 function base64UrlEncode(bytes: Uint8Array): string {
@@ -104,4 +106,91 @@ export async function authenticateUser(db: D1Database, request: Request): Promis
     }
   }
   return null;
+}
+
+/**
+ * Why a session token can be refused, distinguished from a bad one —
+ * decision 0088.
+ *
+ * `unknown_user` is the case worth separating. A valid, correctly-signed
+ * token for a person with no `org_users` row is not a credential
+ * problem: the token is fine and the person is not set up. Telling them
+ * their sign-in failed would send them to reset a password that was
+ * never wrong, when what they need is an administrator.
+ */
+export type SessionAuthFailure =
+  | { reason: "no_token" }
+  | { reason: "invalid_token"; detail: string }
+  | { reason: "unknown_user"; email: string }
+  | { reason: "not_configured"; detail: string };
+
+export type SessionAuthResult =
+  | { ok: true; user: AuthenticatedUser }
+  | ({ ok: false } & SessionAuthFailure);
+
+/**
+ * Authenticate by session token — decision 0088.
+ *
+ * Four things must hold, and the order is deliberate:
+ *
+ *   1. the signature verifies,
+ *   2. the token names **this** environment,
+ *   3. it has not expired,
+ *   4. an active `org_users` row exists for its email.
+ *
+ * The first three are `verifySessionToken`'s job (decision 0086), and
+ * the second is the one that matters most: a single signing key serves
+ * the whole fleet, so without it a session for one customer would be
+ * accepted by every instance.
+ *
+ * **The fourth is this function's own contribution, and it refuses
+ * rather than creates.** A person with no row is not set up: no roles,
+ * no unit, no authority limit, and nothing known about them beyond an
+ * identity provider vouching for them. Creating a row on first login
+ * would produce the *shape* of an account without any of the decisions
+ * that make one meaningful — and it would appear in listings and be
+ * selectable as a task assignee while satisfying none of what
+ * `assign_task`, `org_authority_limits` or the role model assume.
+ *
+ * It also keeps the instance in control of who exists. A customer whose
+ * directory holds ten thousand people does not want ten thousand
+ * potential rows in their accounts payable system.
+ */
+export async function authenticateSession(
+  db: D1Database,
+  request: Request,
+  publicKeyJwk: JsonWebKey | undefined,
+  environmentId: string | undefined,
+  now: Date = new Date()
+): Promise<SessionAuthResult> {
+  const token = extractBearerToken(request);
+  if (!token) return { ok: false, reason: "no_token" };
+
+  if (!publicKeyJwk || !environmentId) {
+    // Refused rather than degraded. Verifying without knowing which
+    // environment this is would accept a token minted for any other.
+    return {
+      ok: false,
+      reason: "not_configured",
+      detail: "LICENCE_SIGNING_PUBLIC_KEY and ENVIRONMENT_ID must both be configured",
+    };
+  }
+
+  const verified = await verifySessionToken(token, publicKeyJwk, environmentId, now);
+  if (!verified.ok) return { ok: false, reason: "invalid_token", detail: verified.reason };
+
+  const user = await db
+    .prepare("SELECT id, email, name FROM org_users WHERE email = ? AND status = 'active'")
+    .bind(verified.claims.email)
+    .first<{ id: string; email: string; name: string }>();
+
+  if (!user) {
+    return { ok: false, reason: "unknown_user", email: verified.claims.email };
+  }
+
+  // The instance's own row wins over the token's claims. The token says
+  // who authenticated; this database says who they are here — including
+  // a name an administrator may have corrected after the identity
+  // provider supplied it.
+  return { ok: true, user: { id: user.id, email: user.email, name: user.name } };
 }
