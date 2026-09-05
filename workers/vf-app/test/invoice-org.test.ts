@@ -168,7 +168,7 @@ describe("an invoice belongs to one part of the enterprise", () => {
 
     const result = await visitCurrentStage(env.DB, instanceId, facts as never);
     expect(result.status).toBe(409);
-    expect(String((result.body as { error: string }).error)).toContain("legal_entity");
+    expect(String((result.body as { error: string }).error)).toContain("is a legal entity");
   });
 });
 

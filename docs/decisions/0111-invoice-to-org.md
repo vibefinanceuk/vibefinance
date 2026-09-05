@@ -228,6 +228,24 @@ places it, the invoice moves.
 
 ---
 
+## Two things the first live run showed
+
+**A pre-existing unit was silently reclassified.** `GET /org/units`
+against the real instance listed `finance`, created long before `kind`
+existed and now an `operating_unit` with no parent — the migration's
+`DEFAULT` doing exactly what it was written to do.
+
+That is the right outcome and it was an assumption made **about**
+existing data rather than checked **with** it. Worth saying: a
+customer's existing units all become operating units, which is what
+they were implicitly being used as, and nobody was asked.
+
+**And the refusal read `is a operating_unit`** — the enum's own spelling
+in a message a person reads, with the wrong article. Fixed: a message
+says *"an operating unit"*, and the internal value stays internal.
+
+---
+
 ## Two things this cost, worth recording
 
 **A trailing comment silently disabled a migration.** The test harness

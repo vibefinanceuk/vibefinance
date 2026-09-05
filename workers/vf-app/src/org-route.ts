@@ -79,7 +79,9 @@ export async function handleCreateUnit(db: D1Database, body: CreateUnitBody): Pr
     if (parent && parent.kind !== "legal_entity") {
       return {
         status: 422,
-        body: { error: `an operating unit sits under a legal entity, and ${parentUnitId} is a ${parent.kind}` },
+        body: {
+          error: `an operating unit sits under a legal entity, and ${parentUnitId} is ${kindInWords(parent.kind)}`,
+        },
       };
     }
   }
@@ -386,6 +388,16 @@ export async function handleSetProfile(db: D1Database, body: SetProfileBody): Pr
 }
 
 /**
+ * What a unit is, in words rather than in the enum's own spelling.
+ *
+ * A message a customer reads should not expose `operating_unit`, and
+ * "a operating_unit" was a real message this returned.
+ */
+function kindInWords(kind: string): string {
+  return kind === "legal_entity" ? "a legal entity" : "an operating unit";
+}
+
+/**
  * Placing an invoice by hand — decision 0111.
  *
  * The third way an invoice acquires an org, after a rule and a source
@@ -426,7 +438,9 @@ export async function handlePlaceInvoice(
     // in the operating unit. A standing invariant refuses this too.
     return {
       status: 422,
-      body: { error: `${orgUnitId} is a ${unit.kind}, and an invoice is assigned to an operating unit` },
+      body: {
+        error: `${orgUnitId} is ${kindInWords(unit.kind)}, and an invoice is assigned to an operating unit`,
+      },
     };
   }
 

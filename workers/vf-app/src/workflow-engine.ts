@@ -470,7 +470,11 @@ export async function visitCurrentStage(
         // this too — checked here so the rule's author gets a reason.
         return {
           status: 409,
-          body: { error: `${orgTarget} is a ${org.kind}, and an invoice is assigned to an operating unit` },
+          body: {
+            error:
+              `${orgTarget} is ${org.kind === "legal_entity" ? "a legal entity" : "an operating unit"}, ` +
+              "and an invoice is assigned to an operating unit",
+          },
         };
       }
 

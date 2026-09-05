@@ -47,7 +47,9 @@ describe("handleCreateUnit", () => {
     await handleCreateUnit(env.DB, { id: "ou1", name: "Acme UK" });
     const result = await handleCreateUnit(env.DB, { id: "ou2", name: "Acme UK South", parentUnitId: "ou1" });
     expect(result.status).toBe(422);
-    expect(String((result.body as { error: string }).error)).toContain("legal entity");
+    // The message a customer reads, not the enum spelling: "a
+    // operating_unit" was a real response.
+    expect(String((result.body as { error: string }).error)).toContain("is an operating unit");
   });
 
   it("records what a unit is, defaulting to an operating unit", async () => {
