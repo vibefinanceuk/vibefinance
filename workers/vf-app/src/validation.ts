@@ -1,3 +1,4 @@
+import { FIELD_CODE_LISTS, isClosedList, isValidCode } from "@vibefinance/shared";
 import type { InvoiceFacts } from "@vibefinance/shared";
 
 /**
@@ -63,12 +64,25 @@ export const VALIDATION_CHECKS = [
   "amount_due_mismatch",
   "date_order",
   "line_sum",
+  // Decision 0116 — a value the standard closes. Named separately from
+  // the arithmetic checks because it says something different: not
+  // "these numbers disagree" but "this is not a code the specification
+  // recognises".
+  "code_list",
 ] as const;
 export type ValidationCheck = (typeof VALIDATION_CHECKS)[number];
 
 export interface ValidationResult {
   passed: boolean;
   failures: ValidationCheck[];
+  /**
+   * Which codes were wrong, and where — decision 0116.
+   *
+   * `code_list` in `failures` says a code is invalid; this says
+   * **which one**, because "BT-5=EURO" is actionable and "code_list"
+   * is not.
+   */
+  invalidCodes?: string[];
   /** Every check that was genuinely evaluated. A check skipped for
    *  want of data is neither a pass nor a failure, and conflating
    *  "we checked and it was fine" with "we could not check" would
@@ -80,6 +94,42 @@ export interface ValidationResult {
  *  plus a line number, so the line amount is BT-131 — the closed
  *  vocabulary's own term — not a bare `amount` property. */
 export type LineForValidation = InvoiceFacts;
+
+/**
+ * Every coded field carrying a value the standard does not know —
+ * decision 0116.
+ *
+ * **Only closed lists.** `isClosedList` distinguishes the standard in
+ * full from a working subset (decision 0113): UN/ECE Recommendation 20
+ * runs to hundreds of units and the vocabulary carries the common ones,
+ * so a document using an unusual one is **unfamiliar, not
+ * non-conformant**. Refusing it would reject valid invoices for using a
+ * unit nobody anticipated.
+ *
+ * A field the document did not supply is not checked at all — absence
+ * is a different failure, and `total_missing` already has it.
+ */
+function badCodes(facts: InvoiceFacts, lines?: readonly LineForValidation[]): string[] {
+  const bad: string[] = [];
+
+  const check = (source: Record<string, unknown>, where: string) => {
+    for (const field of Object.keys(FIELD_CODE_LISTS)) {
+      if (!isClosedList(field)) continue;
+      const value = source[field];
+      if (value === undefined || value === null || value === "") continue;
+      if (!isValidCode(field, value)) bad.push(`${where}${field}=${String(value)}`);
+    }
+  };
+
+  check(facts as Record<string, unknown>, "");
+  for (const [index, line] of (lines ?? []).entries()) {
+    // Named by line, because "one of your lines has a bad VAT category"
+    // is not something a person can act on.
+    check(line as Record<string, unknown>, `line ${index + 1}: `);
+  }
+
+  return bad;
+}
 
 function num(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
@@ -168,7 +218,26 @@ export function validateInvoiceFacts(
     }
   }
 
-  return { passed: failures.length === 0, failures, checked };
+  /**
+   * The coded fields — decision 0116.
+   *
+   * **Always checked**, unlike the arithmetic: those need data the
+   * document may not carry, and this one runs whether or not a coded
+   * field is present. A document with no coded fields at all passes it
+   * honestly, having genuinely been checked.
+   */
+  checked.push("code_list");
+  const invalidCodes = badCodes(facts, lines);
+  if (invalidCodes.length > 0) failures.push("code_list");
+
+  return {
+    passed: failures.length === 0,
+    failures,
+    checked,
+    // Omitted when empty, so a caller sees the field only when there is
+    // something to read in it.
+    ...(invalidCodes.length > 0 ? { invalidCodes } : {}),
+  };
 }
 
 /**

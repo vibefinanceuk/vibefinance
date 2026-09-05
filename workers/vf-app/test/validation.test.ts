@@ -148,7 +148,10 @@ describe("validateInvoiceFacts — checked versus passed", () => {
     // it appears to.
     const result = validateInvoiceFacts({ "BT-112": 100 });
     expect(result.passed).toBe(true);
-    expect(result.checked).toEqual(["total_missing"]);
+    // code_list ALWAYS runs (decision 0116): unlike the arithmetic
+    // checks it needs no particular field, so a document carrying no
+    // coded value passes it honestly, having genuinely been checked.
+    expect(result.checked).toEqual(["total_missing", "code_list"]);
   });
 
   it("reports every failure, not just the first", () => {
@@ -233,5 +236,82 @@ describe("the UBL path can now be validated (decision 0059)", () => {
   it("catches a document whose totals do not agree", () => {
     const wrong = UBL.replace('currencyID="EUR">285.00', 'currencyID="EUR">100.00');
     expect(validateInvoiceFacts(parseUblInvoice(wrong).facts).failures).toContain("vat_arithmetic");
+  });
+});
+
+describe("codes the standard does not know (decision 0116)", () => {
+  /**
+   * Decision 0113 built the standard's code lists and nothing checked a
+   * document against them. **A dropdown stops a person entering a bad
+   * code; this stops a document carrying one.**
+   */
+  it("refuses a currency that is not ISO 4217", () => {
+    // Exactly what a supplier's UBL might carry, and what somebody
+    // types when no dropdown exists.
+    const result = validateInvoiceFacts({ "BT-112": 100, "BT-5": "EURO" });
+    expect(result.failures).toContain("code_list");
+    expect(result.invalidCodes).toContain("BT-5=EURO");
+  });
+
+  it("accepts a real one", () => {
+    const result = validateInvoiceFacts({ "BT-112": 100, "BT-5": "EUR" });
+    expect(result.failures).not.toContain("code_list");
+    expect(result.invalidCodes).toBeUndefined();
+  });
+
+  it("is case-sensitive, because the standard is", () => {
+    // `eur` is not a code. Accepting it would mean storing something no
+    // conforming system will recognise.
+    expect(validateInvoiceFacts({ "BT-5": "eur" }).failures).toContain("code_list");
+  });
+
+  it("says which code, and where", () => {
+    // "code_list" is not actionable; "BT-5=EURO" is.
+    const result = validateInvoiceFacts({ "BT-5": "EURO", "BT-151": "X" });
+    expect(result.invalidCodes).toEqual(expect.arrayContaining(["BT-5=EURO", "BT-151=X"]));
+  });
+
+  it("names the line a bad code sits on", () => {
+    // "One of your lines has a bad VAT category" is not something a
+    // person can act on.
+    const result = validateInvoiceFacts({ "BT-112": 100 }, [
+      { "BT-131": 50, "BT-151": "S" },
+      { "BT-131": 50, "BT-151": "NONSENSE" },
+    ]);
+    expect(result.invalidCodes).toContain("line 2: BT-151=NONSENSE");
+    expect(result.invalidCodes).toHaveLength(1);
+  });
+
+  it("does NOT refuse an unusual unit of measure", () => {
+    // The distinction decision 0113 built `isClosedList` for.
+    // Recommendation 20 runs to hundreds of codes and the vocabulary
+    // carries the common ones, so an unfamiliar unit is not
+    // non-conformant — refusing it would reject valid invoices.
+    const result = validateInvoiceFacts({ "BT-112": 100 }, [
+      { "BT-131": 100, "BT-130": "BQL" }, // becquerel: real, and not in the subset
+    ]);
+    expect(result.failures).not.toContain("code_list");
+  });
+
+  it("does not check a field the document did not supply", () => {
+    // Absence is a different failure, and total_missing already has it.
+    const result = validateInvoiceFacts({ "BT-112": 100 });
+    expect(result.failures).not.toContain("code_list");
+  });
+
+  it("treats an empty string as absent rather than invalid", () => {
+    // An empty value is what intake writes when it could read nothing
+    // (decision 0063), and calling that a bad code would flood every
+    // unreadable document with failures it cannot act on.
+    expect(validateInvoiceFacts({ "BT-5": "" }).failures).not.toContain("code_list");
+  });
+
+  it("reaches the facts a rule can test", () => {
+    // So a customer can write "if validation failures contains
+    // code_list, assign a task to the AP team".
+    const result = validateInvoiceFacts({ "BT-5": "EURO" });
+    const merged = mergeValidationFacts({ "BT-5": "EURO" }, result);
+    expect(String(merged["validation.failures"])).toContain("code_list");
+    expect(merged["validation.passed"]).toBe(false);
   });
 });

@@ -376,7 +376,14 @@ async function save(close) {
     note(
       validation.passed
         ? `Saved. Validation would now pass (${validation.checked.join(", ")}).`
-        : `Saved. Still failing: ${validation.failures.join(", ")}.`
+        : // **Which code, not just that one is wrong** (decision 0116).
+          // "code_list" is not something a person can act on;
+          // "BT-5=EURO" is.
+          `Saved. Still failing: ${validation.failures.join(", ")}${
+            validation.invalidCodes?.length
+              ? ` (${validation.invalidCodes.join("; ")})`
+              : ""
+          }.`
     );
   } else {
     note(t("viewer.saved"));
