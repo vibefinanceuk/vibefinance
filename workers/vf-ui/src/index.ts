@@ -95,6 +95,8 @@ const PROXIED_TO_INSTANCE: RegExp[] = [
   // The standard's own code lists, so a person picks a currency rather
   // than types one (decision 0113).
   /^\/code-lists$/,
+  // What this stage shows, and what may be edited (decision 0114).
+  /^\/field-visibility$/,
 ];
 
 /**

@@ -37,31 +37,6 @@ async function loadCodeLists() {
   }
 }
 
-/**
- * What a line column means in the closed vocabulary — decision 0109.
- *
- * **The columns are convenience; the facts are the truth.** A line
- * stores `description`, `amount` and `cost_centre` as columns and
- * everything else in `facts_json`, and **per-line rule evaluation reads
- * the facts** (decision 0027): a stage scoped to lines merges header
- * facts with each line's own.
- *
- * So a line whose `facts` are empty is invisible to any rule testing a
- * line field, however well its columns are filled. The first version of
- * this screen sent columns only, which would have keyed a line a rule
- * could not then see.
- *
- * `description` has no entry here on purpose: the vocabulary has no
- * field for it (BT-153 and BT-154 are not in the closed set), so it
- * remains a column a person reads rather than a fact a rule tests.
- */
-const LINE_FIELDS = [
-  { code: "BT-153", type: "text", wide: true }, // item name — mandatory
-  { code: "BT-129", type: "number" }, // quantity — mandatory
-  { code: "BT-130", type: "text", short: true }, // unit of measure — mandatory
-  { code: "BT-146", type: "number" }, // item net price — mandatory
-  { code: "BT-131", type: "number" }, // line net amount — mandatory
-];
 
 /**
  * The convenience columns `invoice_lines` also stores.
@@ -79,6 +54,32 @@ function columnsFor(line) {
   };
 }
 
+/**
+ * What this stage shows, and what may be edited — decision 0114.
+ *
+ * **Fetched, not hardcoded.** Both lists here were constants until the
+ * configuration existed, which made a customer's arrangement of their
+ * own screen unreachable. The resolver's `line` flag says which belong
+ * to a line, so the interface keeps no second list of its own — one
+ * that would drift the first time a line field was added.
+ */
+let headerFields = [];
+let lineFields = [];
+
+async function loadFields(stageId) {
+  try {
+    const query = stageId ? `?stage=${encodeURIComponent(stageId)}` : "";
+    const response = await fetch(`/api/field-visibility${query}`);
+    if (!response.ok) return;
+    const { fields } = await response.json();
+    headerFields = fields.filter((f) => !f.line);
+    lineFields = fields.filter((f) => f.line);
+  } catch {
+    // Rendering nothing is honest; guessing a field list is not.
+  }
+}
+
+
 function el(tag, props = {}, children = []) {
   const node = document.createElement(tag);
   for (const [key, value] of Object.entries(props)) {
@@ -93,24 +94,6 @@ function el(tag, props = {}, children = []) {
   return node;
 }
 
-/**
- * The fields a person can key.
- *
- * **A subset, deliberately.** Decision 0055 records that which fields
- * to offer is a per-process decision, and every field the vocabulary
- * declares would be a wall of inputs. These are the ones a validation
- * failure usually turns on.
- */
-const FIELDS = [
-  { code: "BT-1", type: "text" },
-  { code: "BT-2", type: "date" },
-  { code: "BT-31", type: "text" },
-  { code: "BT-5", type: "text" },
-  { code: "BT-106", type: "number" },
-  { code: "BT-110", type: "number" },
-  { code: "BT-112", type: "number" },
-  { code: "BT-115", type: "number" },
-];
 
 /**
  * An input, or a picker where the standard closes the value.
@@ -145,20 +128,44 @@ function codeInput(code, id, value) {
 }
 
 function field(spec, existing) {
-  const input =
-    codeInput(spec.code, `f-${spec.code}`, existing?.[spec.code]) ??
-    el("input", {
-      type: spec.type,
-      id: `f-${spec.code}`,
-      step: spec.type === "number" ? "0.01" : undefined,
-      // What is already known is shown, so somebody correcting one
-      // value does not have to retype the rest.
-      value: existing?.[spec.code] ?? "",
-    });
+  const value = existing?.[spec.field] ?? "";
+
+  /**
+   * A read-only field is **text, not a disabled input** — decision
+   * 0114.
+   *
+   * A greyed-out box invites clicking and reads as broken. Plain text
+   * says the value is information rather than something to change,
+   * which is what `read` means: *"approvers should approve data, not
+   * edit data."*
+   */
+  const control =
+    spec.visibility === "read"
+      ? el("div", {
+          class: "readonly",
+          id: `f-${spec.field}`,
+          text: value === "" ? "—" : String(value),
+        })
+      : codeInput(spec.field, `f-${spec.field}`, value) ??
+        el("input", {
+          type: spec.type === "number" ? "number" : spec.type === "date" ? "date" : "text",
+          id: `f-${spec.field}`,
+          step: spec.type === "number" ? "0.01" : undefined,
+          // What is already known is shown, so somebody correcting one
+          // value does not have to retype the rest.
+          value,
+        });
+
   return el("div", { class: "kf" }, [
     // Labels by key, so a customer's language reaches the fields too.
-    el("label", { for: `f-${spec.code}`, text: t(`field.${spec.code.toLowerCase()}`) }),
-    input,
+    el("label", {
+      for: `f-${spec.field}`,
+      // The vocabulary's own description as a tooltip, so an
+      // unfamiliar code is explicable without leaving the screen.
+      title: spec.description,
+      text: t(`field.${spec.field.toLowerCase()}`),
+    }),
+    control,
   ]);
 }
 
@@ -217,27 +224,32 @@ function updateTotals() {
 
 function lineRow(line, index) {
   const cell = (spec) => {
+    if (spec.visibility === "read") {
+      return el("td", {}, [el("div", { class: "readonly", text: line[spec.field] ?? "—" })]);
+    }
+
     // BT-130 is a UN/ECE code, so the line table picks one too.
-    const picker = codeInput(spec.code, undefined, line[spec.code]);
+    const picker = codeInput(spec.field, undefined, line[spec.field]);
     const input =
       picker ??
       el("input", {
-        type: spec.type,
+        type: spec.type === "number" ? "number" : "text",
         step: spec.type === "number" ? "0.01" : undefined,
-        value: line[spec.code] ?? "",
+        value: line[spec.field] ?? "",
       });
 
     input.addEventListener(picker ? "change" : "input", (event) => {
-      line[spec.code] = event.target.value;
+      line[spec.field] = event.target.value;
       updateTotals();
     });
 
-    return el("td", { class: spec.short ? "short" : undefined }, [input]);
+    // BT-130 is three characters, so its column is narrow.
+    return el("td", { class: spec.field === "BT-130" ? "short" : undefined }, [input]);
   };
 
   return el("tr", {}, [
     el("td", { class: "num muted", text: String(index + 1) }),
-    ...LINE_FIELDS.map(cell),
+    ...lineFields.map(cell),
     el("td", {}, [
       el("button", {
         class: "rm",
@@ -266,8 +278,12 @@ function linePanel() {
       el("thead", {}, [
         el("tr", {}, [
           el("th", { class: "num", text: "#" }),
-          ...LINE_FIELDS.map((spec) =>
-            el("th", { class: spec.type === "number" ? "num" : undefined, text: t(`field.${spec.code.toLowerCase()}`) })
+          ...lineFields.map((spec) =>
+            el("th", {
+              class: spec.type === "number" ? "num" : undefined,
+              title: spec.description,
+              text: t(`field.${spec.field.toLowerCase()}`),
+            })
           ),
           el("th", { text: "" }),
         ]),
@@ -289,10 +305,14 @@ function linePanel() {
 
 async function save(close) {
   const facts = {};
-  for (const spec of FIELDS) {
-    const raw = document.getElementById(`f-${spec.code}`).value.trim();
+  // Only what this person could edit. A read-only value is information
+  // they were shown, not a fact they supplied.
+  for (const spec of headerFields.filter((f) => f.visibility === "edit")) {
+    const control = document.getElementById(`f-${spec.field}`);
+    if (!control) continue;
+    const raw = String(control.value ?? "").trim();
     if (raw === "") continue; // Partial keying is allowed (decision 0071).
-    facts[spec.code] = spec.type === "number" ? Number(raw) : raw;
+    facts[spec.field] = spec.type === "number" ? Number(raw) : raw;
   }
 
   // **Every line, not just the changed ones.** The writer replaces the
@@ -301,21 +321,24 @@ async function save(close) {
   // provenance trail (decision 0109).
   const payload = { facts };
   const usable = lines
-    .filter((line) => LINE_FIELDS.some((spec) => String(line[spec.code] ?? "").trim() !== ""))
+    .filter((row) => lineFields.some((spec) => String(row[spec.field] ?? "").trim() !== ""))
     .map((line, index) => {
       const facts = {};
-      for (const spec of LINE_FIELDS) {
-        const raw = line[spec.code];
+      // **Only editable fields are sent.** A read-only value the screen
+      // displayed is not something this person changed, and submitting
+      // it would record them as having keyed it (decision 0109).
+      for (const spec of lineFields.filter((f) => f.visibility === "edit")) {
+        const raw = line[spec.field];
         if (raw === undefined || raw === null || String(raw).trim() === "") continue;
         if (spec.type === "number") {
-          facts[spec.code] = Number(raw);
-        } else if (spec.code === "BT-130") {
+          facts[spec.field] = Number(raw);
+        } else if (spec.field === "BT-130") {
           // A UN/ECE code, so it is upper-cased rather than stored in
           // whatever case somebody typed. `hur` and `HUR` are the same
           // unit and should not be two values.
-          facts[spec.code] = String(raw).trim().toUpperCase();
+          facts[spec.field] = String(raw).trim().toUpperCase();
         } else {
-          facts[spec.code] = String(raw).trim();
+          facts[spec.field] = String(raw).trim();
         }
       }
 
@@ -373,6 +396,9 @@ export async function openViewer(task, onClose) {
   // Before rendering, so a field never appears as a text box and then
   // becomes a picker under somebody's hands.
   await loadCodeLists();
+  // The STAGE decides what may be edited, so this cannot be fetched
+  // once and reused across tasks sitting at different stages.
+  await loadFields(task.stageId);
   current = task;
   // A document nobody could read usually has no lines at all, so the
   // table starts empty and the person adds what they see.
@@ -382,6 +408,7 @@ export async function openViewer(task, onClose) {
   const known = task.subject ?? {};
   const existing = {
     "BT-31": known.supplierVatId ?? "",
+    "BT-27": known.supplierName ?? "",
     "BT-5": known.currency ?? "",
     "BT-2": known.issueDate ?? "",
     "BT-112": known.totalWithVat ?? "",
@@ -428,7 +455,7 @@ export async function openViewer(task, onClose) {
           el("div", {}, [
             el("div", { class: "panel" }, [
               el("h3", { text: t("viewer.fields") }),
-              el("div", { class: "vfields" }, FIELDS.map((spec) => field(spec, existing))),
+              el("div", { class: "vfields" }, headerFields.map((spec) => field(spec, existing))),
             ]),
             linePanel(),
             el("div", { class: "problem", id: "viewer-note", role: "status" }),

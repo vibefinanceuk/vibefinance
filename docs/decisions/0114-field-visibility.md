@@ -1,8 +1,7 @@
 # 0114 — Which fields a person sees
 
-**Status: built** — the configuration, the resolution, and the routes.
-**Not built:** the viewer using it; the screen still has a hardcoded
-list.
+**Status: built**, and the viewer uses it. Both hardcoded field lists
+are gone.
 
 ---
 
@@ -90,12 +89,30 @@ keying it through the API — `AP.Validate` does that.
 
 ---
 
-## What is not built
+## The screen
 
-- **The viewer does not use it.** Its eight header fields and five line
-  fields are still a hardcoded list, so this is configuration nothing
-  reads — the pattern this project finds most often, recorded here
-  before somebody else finds it.
+**Both lists were constants**, which made a customer's arrangement of
+their own screen unreachable. They are fetched now, per stage — and it
+must be per stage, since the same task list opens tasks at Validation
+and at Approval and they do not show the same thing.
+
+**A read-only field is text, not a disabled input.** A greyed-out box
+invites clicking and reads as broken; plain text says the value is
+information rather than something to change. Which is what `read` means.
+
+**Only editable fields are submitted.** A read-only value the screen
+displayed is not something that person changed, and sending it back
+would record them as having keyed it (decision 0109) — the audit would
+show an approver typing an amount they were only shown.
+
+**And the grouping comes from the standard**, not from the interface.
+`INVOICE_LINE_FIELDS` records BG-25 membership in the vocabulary, so the
+screen asks which fields belong to a line rather than keeping a list
+that would drift the first time one was added.
+
+---
+
+## What is not built
 - **No org dimension.** The conversation that began this asked for
   variation by org too, and decision 0111 has since made an invoice
   carry one. Deliberately left out: customer and stage cover the cases

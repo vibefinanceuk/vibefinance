@@ -329,7 +329,7 @@ elsewhere.
 |---|---|
 | `vf-app` | 985 |
 | `vf-licence` | 287 |
-| `vf-ui` | 41 |
+| `vf-ui` | 42 |
 | `shared` | 241 passing, 2 known pre-existing failures |
 
 Both migration chains replay clean with every standing invariant

@@ -1,5 +1,10 @@
 import type { RouteResult } from "./org-route.js";
-import { INVOICE_FIELDS, FIELD_DESCRIPTIONS } from "@vibefinance/shared";
+import {
+  INVOICE_FIELDS,
+  FIELD_DESCRIPTIONS,
+  INVOICE_FIELD_TYPES,
+  INVOICE_LINE_FIELDS,
+} from "@vibefinance/shared";
 
 /**
  * Which fields a person sees, and what they may do with them —
@@ -67,6 +72,18 @@ export interface ResolvedField {
   visibility: Visibility;
   /** What the field is, from the vocabulary's own description. */
   description: string;
+  /**
+   * `text`, `number`, `date` or `boolean` — so a screen renders the
+   * right control without a second table of its own (decision 0041).
+   */
+  type: string;
+  /**
+   * Whether it belongs to a line rather than the header — BG-25.
+   *
+   * A property of the standard, so the interface groups by it instead
+   * of keeping a list that would drift.
+   */
+  line: boolean;
   sortOrder: number;
   /**
    * Why it is what it is — `default`, `customer` or `stage`.
@@ -127,6 +144,8 @@ export async function resolveFieldVisibility(
       field,
       visibility,
       description: FIELD_DESCRIPTIONS[field] ?? field,
+      type: INVOICE_FIELD_TYPES[field] ?? "text",
+      line: INVOICE_LINE_FIELDS.includes(field),
       sortOrder: configured?.sort_order ?? 0,
       decidedBy,
     });

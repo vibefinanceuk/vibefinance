@@ -99,6 +99,30 @@ export const DERIVED_FIELD_PREFIXES = ["term.absent(", "extraction.alternative("
  * honestly make. An absent type means "cannot say", and every
  * operator stays permitted — the honest answer, not a guess.
  */
+/**
+ * The fields that belong to an invoice **line** rather than the header
+ * — BG-25 in EN 16931 — decision 0114.
+ *
+ * A property of the standard, not of any screen: `cac:InvoiceLine`
+ * carries these and the document carries the rest. Recorded here so an
+ * interface can group them without a second list of its own, which
+ * would drift the first time a line field was added.
+ */
+export const INVOICE_LINE_FIELDS: readonly string[] = [
+  "BT-126",
+  "BT-127",
+  "BT-129",
+  "BT-130",
+  "BT-131",
+  "BT-132",
+  "BT-133",
+  "BT-146",
+  "BT-151",
+  "BT-152",
+  "BT-153",
+  "BT-154",
+];
+
 export const INVOICE_FIELD_TYPES: Record<string, FieldType> = {
   "BT-1": "text", // invoice number — a reference, never a quantity
   "BT-3": "text", // type code, e.g. "380"

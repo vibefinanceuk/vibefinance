@@ -295,3 +295,11 @@ describe("the standard's code lists reach the screen (decision 0113)", () => {
     expect(res.status).toBe(401);
   });
 });
+
+describe("field visibility reaches the screen (decision 0114)", () => {
+  it("proxies it", async () => {
+    // Refused for want of a session, not for want of a route.
+    const res = await SELF.fetch("https://ui.example.com/api/field-visibility?stage=validation");
+    expect(res.status).toBe(401);
+  });
+});

@@ -356,6 +356,21 @@
   .linetable th { padding: 0 6px 6px; }
   .linetable td { padding: 3px 6px; border: none; }
   .linetable input { min-height: 30px; font-size: 13px; }
+
+  /*
+    A read-only field is text, not a disabled input (decision 0114). A
+    greyed-out box invites clicking and reads as broken; plain text says
+    the value is information rather than something to change.
+  */
+  .readonly {
+    min-height: 32px;
+    padding: 8px 0;
+    font-size: 13px;
+    color: var(--text-secondary);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .linetable .readonly { padding: 3px 6px; min-height: 30px; }
   .linetable th:first-child, .linetable td:first-child { width: 30px; }
   .linetable th:last-child, .linetable td:last-child { width: 34px; }
   /* BT-130 is a three-character UN/ECE code, so its column is narrow. */
