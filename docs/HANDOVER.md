@@ -14,18 +14,16 @@ either, so check the dates.
 
 | | |
 | --- | --- |
-| `origin/main` | `7919d87` |
-| vf-app deployed | `ec0c60a` — **behind**, see below |
-| vf-licence deployed | `112ed13` — **behind** |
-| vf-ui deployed | `ec0c60a` — **behind** · `https://vf-ui.vibefinance.workers.dev` |
-| `vf-app-poc` migrations | through `0035` |
-| `vf-licence-poc` migrations | through `0018` |
-| Tests | vf-app 943 · vf-licence 284 · vf-ui 40 · shared 221 (+2 known pre-existing failures) |
-| Decision records | 110 |
+| `origin/main` | `d2f044d` |
+| vf-app deployed | `d2f044d` |
+| vf-licence deployed | `d2f044d` |
+| vf-ui deployed | `d2f044d` · `https://vf-ui.vibefinance.workers.dev` |
+| `vf-app-poc` migrations | through `0038` |
+| `vf-licence-poc` migrations | through `0021` |
+| Tests | vf-app 988 · vf-licence 289 · vf-ui 42 · shared 241 (+2 known pre-existing failures) |
+| Decision records | 115 |
 
-**Decisions 0109 and 0110 are committed and not yet deployed** — line
-keying, and the BG-25 vocabulary completion. Three migrations pending:
-`0035` on `vf-app`, `0017` and `0018` on `vf-licence`.
+**Everything committed is deployed.**
 
 **There are three Workers now.** `vf-app` per customer, `vf-licence`
 shared, and `vf-ui` shared — the interface, its own deployment because
@@ -105,6 +103,17 @@ comes from D1 in the control plane (0107) and every colour from a token
 (0096), so a wording fix or a new language is rows rather than a
 deployment.
 
+**Showing the fields that customer chose.** Which fields appear, and
+whether they may be edited, is configuration — per customer, restricted
+further per stage, and *"approvers should approve data, not edit
+data"* (0114). Currency, unit and VAT category are pickers drawn from
+the standard's own code lists (0113).
+
+**And placed in the right part of the enterprise.** An invoice acquires
+an operating unit at intake, from a rule the customer wrote or from the
+source it arrived through, and a stage can refuse to let it past without
+one (0111).
+
 **And a person can now do all of that in a browser.**
 `https://vf-ui.vibefinance.workers.dev` serves a sign-in screen that
 fetches the customer's livery from `vf-licence` (0096), populates the
@@ -154,6 +163,14 @@ are recorded and shown to the person on their next sign-in (ISO 27001
 A.8.5), but nobody is **told**. This needs email, and **nothing in this
 system sends any** — the same gap blocks password reset and expiry
 warnings.
+
+---
+
+### 4. Do the party panels show enough?
+
+Decision 0115 gave the seller and buyer their own panels, and most of
+their fields default to `read`. If they look thin, that is configuration
+(0114) rather than code — adjustable per customer without a deployment.
 
 ---
 
@@ -238,49 +255,54 @@ Recorded so nobody re-opens them:
 
 ## Suggested next pieces
 
-**1. Field visibility, and the `org_units` question behind it.** Putting
-every declared field on screen would be unusable, so which fields are
-visible — and whether they are editable — wants configuring. Settled in
-conversation: **`edit` / `read` / `hidden`, per customer, overridable
-per stage, and a stage may only ever restrict.** *"Approvers should
-approve data, not edit data."*
+**1. Validate extracted codes.** Decision 0113 built the standard's code
+lists and **nothing checks a document against them**. A supplier's UBL
+carrying `currencyID="EURO"` is non-conformant and is stored happily.
 
-**Blocked on decision 0111**, which designs what `org_units` needs to
-become: an invoice acquires an org at intake, from a rule the customer
-wrote or from the source it arrived through, and Validation can refuse
-to advance without one. Field visibility then has something real to vary
-by.
+The subtlety is already recorded: refuse against a **closed** list,
+accept against a **working subset**. `isClosedList` exists for exactly
+this — UN/ECE Rec 20 carries the common units, so a document using an
+unusual one must not be rejected.
 
-**2. Audit the header fields against the standard.** Decision 0110 found
-four of six mandatory `cac:InvoiceLine` elements missing. **The header
-has not been checked the same way** and is likely to have similar gaps.
-The tree is at `docs.peppol.eu/poacc/billing/3.0/syntax/ubl-invoice/tree/`.
+**A dropdown stops a person entering a bad code; this stops a document
+carrying one.**
+
+**2. Closed-value enforcement in the compiler.** The other half. A rule
+saying *"currency is EURO"* compiles, activates, fires against nothing
+and looks correct in every listing. `validateRule` has the list now and
+does not consult it. Listed as proposed since Document 2.
 
 **3. Email.** Blocks alerting on failed sign-ins, password reset,
 licence expiry warnings and every notification. Still the
 most-referenced missing capability in these records.
 
 **4. An Approval screen.** The Task Manager lists approval tasks and
-cannot open them. No mockup exists. Decision 0103's intent stands: one
-viewer, actions varying by stage — and field visibility above is what
-makes an approval view differ from a keying one.
+cannot open them. Field visibility (0114) is what makes an approval view
+differ from a keying one — the mechanism exists, the screen does not.
 
-**5. Despatch Advice (T16).** The goods receipt, and the missing third
+**5. BG-4 and BG-7 in the vocabulary.** The seller and buyer field lists
+live in the viewer (0115). Recording business-group membership in
+`shared`, as `INVOICE_LINE_FIELDS` does for BG-25, is the consistent
+thing and a known shortcut until it is done.
+
+**6. BG-23, the VAT breakdown.** Mandatory and **repeating** — one entry
+per VAT category and rate, whose tax amounts must sum to BT-110. The
+flat facts model cannot hold a repeating group (0112). A design
+question, not an omission, and *"one of the most common causes of
+validation errors"*.
+
+**7. Despatch Advice (T16).** The goods receipt, and the missing third
 leg of three-way matching — **before the matcher, not after** (0082).
-BT-132, the referenced order line, now exists in the vocabulary (0110),
-which is what lets matching compare a line to an order line rather than
-a document to a document.
+BT-132 now exists, which is what lets matching compare a line to an
+order line.
 
-**6. Reading `cbc:CustomizationID`.** Detection answers *what structure
-is this*, not *what document is this*, so a valid Peppol Order sent to
-`/sources/:id/capture` is refused.
+**8. Reading `cbc:CustomizationID`.** BT-24 is now read into the facts
+(0112), so the discriminator is available; detection still does not use
+it, and a valid Peppol Order sent to `/sources/:id/capture` is refused.
 
-**7. `party.first_document`.** Declared and uncomputed (0079). Must be
-computed **at capture and stored**, or re-running a rule set would give
-a different answer as more invoices arrive.
-
-**8. The all-users task view**, and **four more languages** —
-`GET /ui-strings/keys` shows the gaps, and it is rows rather than work.
+**9. `party.first_document`**, the **all-users task view**, a **screen
+for placing an invoice** by hand, and **four more languages** —
+`GET /ui-strings/keys` shows the gaps.
 
 ---
 
