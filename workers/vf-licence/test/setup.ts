@@ -21,6 +21,7 @@ import frameStringsSql from "../migrations/0016_interface_frame_strings.sql?raw"
 import lineStringsSql from "../migrations/0017_line_keying_strings.sql?raw";
 import lineFieldStringsSql from "../migrations/0018_line_field_strings.sql?raw";
 import missingLabelsSql from "../migrations/0019_missing_line_labels.sql?raw";
+import remainingLabelsSql from "../migrations/0020_remaining_field_labels.sql?raw";
 
 function stripSqlComments(sql: string): string {
   return sql
@@ -69,4 +70,5 @@ export async function applyTestSchema(): Promise<void> {
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(lineStringsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(lineFieldStringsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(missingLabelsSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(remainingLabelsSql)));
 }

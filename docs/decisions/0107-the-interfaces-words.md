@@ -173,6 +173,26 @@ scraper would have to parse `t(\`field.${code}\`)` and every other
 computed key, and would quietly stop finding them the first time
 somebody built a key a slightly different way. A list fails loudly.
 
+> **The hand was the weakness, and it showed.** Reported from a live
+> screen a second time: `field.bt-34`, `field.bt-27`, `field.bt-49` and
+> others reading as dotted keys. **Nineteen** labels were missing, not
+> the eight visible — the rest are hidden by default and would have
+> appeared the moment somebody configured them.
+>
+> Decisions 0110, 0112 and 0114 each added fields, and nobody added
+> them to the list. A check maintained by hand is a check that decays
+> at exactly the rate the thing it guards grows.
+>
+> **The field labels are now derived from the vocabulary**, which is
+> the one place that knows every field. A field cannot be declared
+> without a label being demanded for it, and decision 0114 makes that
+> matter more: any declared field can reach a screen the moment a
+> customer configures it, so "the fields the viewer shows today" was
+> always the wrong set to check.
+>
+> The rest of the keys stay listed by hand, because nothing enumerates
+> them. That part of the trade still holds.
+
 ### And the words themselves
 
 The specification's own business term names, in the form somebody keying
