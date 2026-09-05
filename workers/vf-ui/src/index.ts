@@ -24,6 +24,18 @@ import { readSessionCookie, setSessionCookie, clearSessionCookie } from "./sessi
 export interface Env {
   ASSETS: Fetcher;
   /**
+   * `vf-licence`, reached through a **Service Binding** rather than a
+   * plain `fetch()` to its public URL.
+   *
+   * Decision 0005 records why, found live and then found again here: a
+   * Worker cannot plain-`fetch()` another Worker's `workers.dev` URL on
+   * the same account. Cloudflare's anti-loop protection answers with a
+   * 404 the target never sees — `error code: 1042`, from Cloudflare
+   * rather than from either Worker, which is why it looks like a
+   * routing bug rather than a binding one.
+   */
+  LICENCE_SERVICE?: Fetcher;
+  /**
    * Where `vf-licence` lives. Configuration rather than a constant: if
    * it were compiled into the JavaScript, moving to a custom domain
    * would mean rebuilding the UI (decision 0099).
@@ -103,10 +115,12 @@ function mayProxyToLicence(path: string): boolean {
  * to go.
  */
 async function proxyToLicence(request: Request, path: string, env: Env): Promise<Response> {
-  if (!env.LICENCE_API) return json({ error: "LICENCE_API is not configured" }, 500);
+  if (!env.LICENCE_SERVICE || !env.LICENCE_API) {
+    return json({ error: "LICENCE_SERVICE and LICENCE_API must both be configured" }, 500);
+  }
 
   const target = new URL(path + new URL(request.url).search, env.LICENCE_API);
-  return fetch(target, {
+  return env.LICENCE_SERVICE.fetch(target, {
     method: request.method,
     headers: request.headers.get("Content-Type")
       ? { "Content-Type": request.headers.get("Content-Type") as string }
@@ -138,12 +152,16 @@ export function visibleToPage(result: Record<string, unknown>): Record<string, u
 }
 
 async function handleSignIn(request: Request, env: Env): Promise<Response> {
-  if (!env.LICENCE_API) return json({ error: "LICENCE_API is not configured" }, 500);
+  if (!env.LICENCE_SERVICE || !env.LICENCE_API) {
+    return json({ error: "LICENCE_SERVICE and LICENCE_API must both be configured" }, 500);
+  }
 
   const body = await request.json().catch(() => null);
   if (!body) return json({ error: "invalid JSON body" }, 400);
 
-  const upstream = await fetch(`${env.LICENCE_API}/login`, {
+  // Through the binding. The URL supplies the path; the binding decides
+  // where it goes, and the hostname is ignored.
+  const upstream = await env.LICENCE_SERVICE.fetch(`${env.LICENCE_API}/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),

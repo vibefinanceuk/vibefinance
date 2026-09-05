@@ -325,6 +325,14 @@ workflow engine.
 Two habits have repeatedly earned their place, and one lesson was
 learned expensively.
 
+**A Worker cannot plain-`fetch()` another Worker's `workers.dev` URL.**
+Found live in August (0005) and again in September (0102): Cloudflare's
+anti-loop protection answers with a 404 the target never sees, reported
+as `error code: 1042`. Use a Service Binding for a fixed target, or the
+`global_fetch_strictly_public` flag where the target varies per
+customer. **The decision record existed and was not consulted before
+writing the same bug.**
+
 **Running a check and reading it are different acts.** `npm run lint |
 tail -1` printed a blank line whether lint passed or failed, so three
 real violations were reported as clean for several decisions (0100).

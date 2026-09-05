@@ -155,6 +155,44 @@ accident, which is the small improvement.
 
 ---
 
+## The same trap this project already found, found again
+
+Sign-in failed after deploying, with `error code: 1042` — from
+Cloudflare, not from either Worker.
+
+**Decision 0005 records this exact thing**, found live in August: *a
+Worker cannot plain-`fetch()` another Worker's `workers.dev` URL on the
+same account.* Cloudflare's anti-loop protection answers with a 404 the
+target never sees, which is why it looks like a routing bug rather than
+a binding one. `vf-app` reaches `vf-licence` through a Service Binding
+for precisely this reason, and `vf-ui` was written with a plain
+`fetch()`.
+
+Two changes, and they are different because the targets are:
+
+**`vf-licence` gets a Service Binding**, exactly as `vf-app` has. One
+fixed target, bound by name.
+
+**The instances get the `global_fetch_strictly_public` flag.** A binding
+cannot work for them: `vf-ui` is one shared deployment and `vf-app` is
+deployed per customer, so a binding per instance would mean
+**redeploying the UI to onboard a customer**. The flag routes global
+`fetch()` as if from the public Internet, which is Cloudflare's own
+documented alternative for exactly this.
+
+### And a test environment that matched the deployment
+
+Adding the binding broke every test — Miniflare could not start, because
+`vf-licence` does not exist there.
+
+**Stubbed rather than removed from the config.** A test configuration
+that quietly drops a binding is a test environment differing from
+production in exactly the way that hides binding problems — which is the
+problem being fixed. The stub returns a refusal rather than a plausible
+success, so nothing can pass by depending on it.
+
+---
+
 ## What needs deciding
 
 1. **Is the added latency acceptable?** Worth measuring on the first

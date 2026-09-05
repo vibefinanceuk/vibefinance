@@ -4,6 +4,21 @@
   "main": "src/index.ts",
   "compatibility_date": "2026-08-01",
 
+  // Lets this Worker fetch a customer's vf-app instance.
+  //
+  // Decision 0005 established Service Bindings for Worker-to-Worker
+  // calls, and that works for vf-licence — one fixed target, bound by
+  // name above. **It cannot work for the instances.** vf-ui is one
+  // shared deployment and vf-app is deployed per customer, so a binding
+  // per instance would mean redeploying the UI to onboard a customer.
+  //
+  // This flag routes global fetch() as if from the public Internet,
+  // which is what the proxy needs: the request leaves Cloudflare's
+  // front door and comes back to the right Worker. Cloudflare's own
+  // documentation names it as the alternative to a Service Binding for
+  // exactly this.
+  "compatibility_flags": ["global_fetch_strictly_public"],
+
   // Static files, served by Cloudflare before the Worker runs. Only one
   // asset collection is possible per Worker, and by default a matching
   // file wins over the Worker script — which is what we want: HTML, CSS
@@ -27,11 +42,26 @@
     "run_worker_first": ["/config.js", "/api/*"]
   },
 
+  // A Service Binding, not a plain fetch to vf-licence's public URL.
+  //
+  // **This project has been here before.** Decision 0005 records the
+  // same trap found live: a Worker cannot plain-`fetch()` another
+  // Worker's workers.dev URL on the same account, and Cloudflare's
+  // anti-loop protection answers with a 404 the target never sees. The
+  // first vf-ui build did exactly that and produced exactly that —
+  // `error code: 1042`, from Cloudflare rather than from either Worker.
+  "services": [
+    {
+      "binding": "LICENCE_SERVICE",
+      "service": "vf-licence"
+    }
+  ],
+
   "vars": {
-    // Where the APIs live — deployment configuration, deliberately NOT
-    // baked into the JavaScript (decision 0099). Moving to a custom
-    // domain later is then a config change rather than a UI rebuild,
-    // and both origins can run at once during a transition.
+    // Retained for the URL shape only — the Service Binding above
+    // carries the request, and this supplies the origin a URL is built
+    // against. A binding ignores the hostname, but fetch() still needs
+    // a well-formed URL.
     "LICENCE_API": "https://vf-licence.vibefinance.workers.dev"
   },
 
