@@ -333,3 +333,87 @@ describe("what a person may do with a task (decision 0103)", () => {
     expect((await list("alice"))[0].actions).toContain("key");
   });
 });
+
+describe("filtering, because a real queue is not thirty rows", () => {
+  async function seedAcross() {
+    await grant("alice", ["AP.Validate", "AP.Approve"]);
+    await seedInstance("inv-1", "validation", "v-1");
+    await seedInstance("inv-2", "approval", "v-2");
+    await seedInstance("inv-3", "approval", "v-3");
+    await seedTask("t-val", "validation", "v-1", { user: "alice" });
+    await seedTask("t-app", "approval", "v-2", { team: "ap" });
+    await seedTask("t-locked", "approval", "v-3", { team: "ap" }, "sarah");
+  }
+
+  it("returns every stage by default", async () => {
+    await seedAcross();
+    expect(await list("alice")).toHaveLength(3);
+  });
+
+  it("narrows to one stage", async () => {
+    await seedAcross();
+    const result = await handleListMyTasks(env.DB, "alice", { stageId: "approval" });
+    const tasks = (result.body as { tasks: TaskRow[] }).tasks;
+    expect(tasks).toHaveLength(2);
+    expect(tasks.every((t) => t.stageId === "approval")).toBe(true);
+  });
+
+  it("narrows to one ownership kind", async () => {
+    await seedAcross();
+    const result = await handleListMyTasks(env.DB, "alice", { ownership: "mine" });
+    const tasks = (result.body as { tasks: TaskRow[] }).tasks;
+    expect(tasks).toHaveLength(1);
+    expect(tasks[0].id).toBe("t-val");
+  });
+
+  it("combines both", async () => {
+    await seedAcross();
+    const result = await handleListMyTasks(env.DB, "alice", {
+      stageId: "approval",
+      ownership: "locked",
+    });
+    expect((result.body as { tasks: TaskRow[] }).tasks).toHaveLength(1);
+  });
+
+  it("keeps the counts about the person's work, not the page", async () => {
+    // A count that changed as somebody paged would be telling them
+    // about the page rather than about their queue.
+    //
+    // **Paged past the "mine" task deliberately.** An earlier version
+    // of this test filtered by ownership instead, and passed even when
+    // the counts were computed over the page — because the page
+    // happened to contain the one task being counted. The fail-watch
+    // showing nothing is what exposed it.
+    await seedAcross();
+    const result = await handleListMyTasks(env.DB, "alice", { limit: 1, offset: 2 });
+    const body = result.body as { tasks: TaskRow[]; counts: Record<string, number> };
+
+    expect(body.tasks).toHaveLength(1);
+    expect(body.tasks[0].ownership).not.toBe("mine");
+    expect(body.counts).toEqual({ mine: 1, available: 1, locked: 1 });
+  });
+
+  it("pages, and reports the total behind the page", async () => {
+    await seedAcross();
+    const result = await handleListMyTasks(env.DB, "alice", { limit: 2 });
+    const body = result.body as { tasks: TaskRow[]; total: number; limit: number };
+    expect(body.tasks).toHaveLength(2);
+    expect(body.total).toBe(3);
+    expect(body.limit).toBe(2);
+  });
+
+  it("caps the limit, because an unbounded list works for one customer and not the next", async () => {
+    await seedAcross();
+    const result = await handleListMyTasks(env.DB, "alice", { limit: 100000 });
+    expect((result.body as { limit: number }).limit).toBe(200);
+  });
+
+  it("offsets into the list", async () => {
+    await seedAcross();
+    const first = await handleListMyTasks(env.DB, "alice", { limit: 1 });
+    const second = await handleListMyTasks(env.DB, "alice", { limit: 1, offset: 1 });
+    const firstId = (first.body as { tasks: TaskRow[] }).tasks[0].id;
+    const secondId = (second.body as { tasks: TaskRow[] }).tasks[0].id;
+    expect(firstId).not.toBe(secondId);
+  });
+});

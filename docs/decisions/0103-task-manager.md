@@ -284,6 +284,36 @@ unparseable permissions grants nothing rather than emptying the queue.
 
 ---
 
+## Filtering, because a real queue is not thirty rows
+
+The first live run returned **39 tasks across three stages**, several of
+them the same invoice — `all_matches` firing multiple rules on one stage
+visit, which is the multiple-approvers case working. A list that long is
+already awkward; a customer with thousands would find it useless.
+
+So `GET /tasks` takes `stage`, `ownership`, `limit` and `offset`.
+
+**Stage is filtered in SQL; ownership afterwards.** A stage is stored on
+the row. Ownership is *derived* — a task is "mine" or "locked" depending
+on who is asking — and expressing that comparison in SQL as well as in
+TypeScript would mean two versions of one rule, which drift.
+
+**The limit is capped at 200.** An unbounded list works for one customer
+and not the next.
+
+**And the counts describe the queue, not the page.** A count that
+changed as somebody paged would be telling them about the page rather
+than about their work.
+
+> **That last one had a test which proved nothing.** It filtered by
+> ownership rather than paging, and passed even when the counts were
+> computed over the page — because the page happened to contain the one
+> task being counted. **The fail-watch showing nothing is what exposed
+> it**, which is the second time in this project that a check not
+> failing was the useful signal.
+
+---
+
 ## Deliberately not in this
 
 - **Out-of-office reassignment.** Needs a notion of absence that does

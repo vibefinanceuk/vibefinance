@@ -1088,8 +1088,19 @@ export default {
       // may see is decided by the query, not by a gate**: it returns
       // their own tasks and their teams', and there is nothing to
       // withhold from somebody who is already entitled to all of it.
+      const ownership = url.searchParams.get("ownership");
       const result = await handleListMyTasks(db, auth.user.id, {
         includeCompleted: url.searchParams.get("completed") === "true",
+        stageId: url.searchParams.get("stage") ?? undefined,
+        // Only the three real values. An unrecognised one is ignored
+        // rather than returning nothing, because a filter nobody asked
+        // for should not empty a queue.
+        ownership:
+          ownership === "mine" || ownership === "available" || ownership === "locked"
+            ? ownership
+            : undefined,
+        limit: Number(url.searchParams.get("limit")) || undefined,
+        offset: Number(url.searchParams.get("offset")) || undefined,
       });
       return json(result.body, result.status);
     }

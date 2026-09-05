@@ -154,10 +154,35 @@ function actionsFor(
   return actions;
 }
 
+export interface TaskListOptions {
+  includeCompleted?: boolean;
+  /** One stage, by id. Absent means every stage. */
+  stageId?: string;
+  /**
+   * One ownership kind.
+   *
+   * Applied **after** the rows are read, unlike `stageId`, because
+   * ownership is derived from a comparison rather than stored — a task
+   * is "mine" or "locked" depending on who is asking. Filtering it in
+   * SQL would mean expressing that comparison twice, in two languages,
+   * and the two would drift.
+   */
+  ownership?: Ownership;
+  /**
+   * How many rows to return. Bounded, because an unbounded list is a
+   * screen that works for one customer and not the next.
+   */
+  limit?: number;
+  offset?: number;
+}
+
+const DEFAULT_LIMIT = 50;
+const MAX_LIMIT = 200;
+
 export async function handleListMyTasks(
   db: D1Database,
   userId: string,
-  options: { includeCompleted?: boolean } = {}
+  options: TaskListOptions = {}
 ): Promise<RouteResult> {
   // Read once for the whole list rather than per row. Forty tasks would
   // otherwise mean forty identical permission queries.
@@ -204,15 +229,25 @@ export async function handleListMyTasks(
            t.owner_user_id = ?
            OR t.owner_team_id IN (SELECT team_id FROM org_team_members WHERE user_id = ?)
          )
+         -- One stage, or every stage. Filtered in SQL because a stage
+         -- is stored on the row; ownership is not, and is applied
+         -- afterwards.
+         AND (? IS NULL OR t.stage_id = ?)
        ORDER BY t.created_at ASC`
     )
     // Open only, by default. A completed task is history rather than
     // work, and a queue that showed both would need the person to
     // filter before it was useful.
-    .bind(options.includeCompleted ? "completed" : "open", userId, userId)
+    .bind(
+      options.includeCompleted ? "completed" : "open",
+      userId,
+      userId,
+      options.stageId ?? null,
+      options.stageId ?? null
+    )
     .all<Raw>();
 
-  const tasks: TaskRow[] = rows.results.map((row) => {
+  const all: TaskRow[] = rows.results.map((row) => {
     const ownership = ownershipOf(row, userId);
 
     const task: TaskRow = {
@@ -252,15 +287,29 @@ export async function handleListMyTasks(
     return task;
   });
 
+  const filtered = options.ownership
+    ? all.filter((t) => t.ownership === options.ownership)
+    : all;
+
+  const limit = Math.min(Math.max(1, options.limit ?? DEFAULT_LIMIT), MAX_LIMIT);
+  const offset = Math.max(0, options.offset ?? 0);
+
   return {
     status: 200,
     body: {
-      tasks,
+      tasks: filtered.slice(offset, offset + limit),
+      // **Counted over everything the person can see at this stage**,
+      // not over the page returned. A count that changed as somebody
+      // paged would be telling them about the page rather than about
+      // their work.
       counts: {
-        mine: tasks.filter((t) => t.ownership === "mine").length,
-        available: tasks.filter((t) => t.ownership === "available").length,
-        locked: tasks.filter((t) => t.ownership === "locked").length,
+        mine: all.filter((t) => t.ownership === "mine").length,
+        available: all.filter((t) => t.ownership === "available").length,
+        locked: all.filter((t) => t.ownership === "locked").length,
       },
+      total: filtered.length,
+      limit,
+      offset,
     },
   };
 }
