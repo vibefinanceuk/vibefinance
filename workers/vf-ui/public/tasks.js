@@ -203,43 +203,78 @@ function filterBar() {
   return el("div", { class: "filters" }, [stages, ownership]);
 }
 
-function render() {
-  shell.replaceChildren(
-    el("header", {}, [
+/**
+ * The persistent frame — decision 0108.
+ *
+ * Navigation and identity stay put while the middle changes, so opening
+ * a document feels like looking at something rather than going
+ * somewhere and having to find the way back.
+ *
+ * **One entry today**, because there is nowhere else to go. It exists
+ * now so that everything added later sits inside it rather than being
+ * retrofitted into one.
+ */
+export function frame(main) {
+  return el("div", { class: "frame" }, [
+    el("nav", { class: "nav" }, [
       el("div", { class: "mark" }),
-      el("div", {}, [
-        el("h1", { id: "product", text: "VibeFinance" }),
-        el("p", { class: "sub", text: `${me.name} · ${me.environmentId ?? ""}` }),
+      el("a", { class: "on", text: t("nav.tasks") }),
+      el("div", { class: "who" }, [
+        el("div", { text: me?.name ?? "" }),
+        el("div", { class: "muted", text: me?.environmentId ?? "" }),
       ]),
-      el("button", {
-        class: "signout",
-        text: t("tasks.signout"),
-        onclick: async () => {
-          await fetch("/api/sign-out", { method: "POST" });
-          location.reload();
-        },
-      }),
     ]),
-    filterBar(),
-    el("p", { class: "counts", id: "counts" }),
-    el("table", {}, [
-      el(
-        "thead",
-        {},
-        [
-          el("tr", {}, [
-            el("th", { text: t("tasks.stage") }),
-            el("th", { text: t("tasks.supplier") }),
-            el("th", { class: "num", text: t("tasks.amount") }),
-            el("th", { text: t("tasks.waiting") }),
-            el("th", { text: t("tasks.owner") }),
-            el("th", { text: "" }),
+    el("div", { class: "main", id: "main" }, [main]),
+  ]);
+}
+
+/** The document's identity, and where to go from here. */
+export function topbar(title, subtitle, right = []) {
+  return el("div", { class: "topbar" }, [
+    el("div", {}, [
+      el("h2", { text: title }),
+      el("p", { class: "sub", text: subtitle }),
+    ]),
+    el("div", { class: "right" }, right),
+  ]);
+}
+
+function render() {
+  document.body.classList.add("working");
+  shell.replaceChildren(
+    frame(
+      el("div", {}, [
+        topbar(t("nav.tasks"), `${me.name} · ${me.environmentId ?? ""}`, [
+          el("button", {
+            text: t("tasks.signout"),
+            onclick: async () => {
+              await fetch("/api/sign-out", { method: "POST" });
+              location.reload();
+            },
+          }),
+        ]),
+        filterBar(),
+        el("p", { class: "counts", id: "counts" }),
+        // The list in a panel of its own, like everything else
+        // (decision 0108).
+        el("div", { class: "panel" }, [
+          el("table", {}, [
+            el("thead", {}, [
+              el("tr", {}, [
+                el("th", { text: t("tasks.stage") }),
+                el("th", { text: t("tasks.supplier") }),
+                el("th", { class: "num", text: t("tasks.amount") }),
+                el("th", { text: t("tasks.waiting") }),
+                el("th", { text: t("tasks.owner") }),
+                el("th", { text: "" }),
+              ]),
+            ]),
+            el("tbody", { id: "rows" }),
           ]),
-        ]
-      ),
-      el("tbody", { id: "rows" }),
-    ]),
-    el("div", { class: "problem", id: "problem", role: "alert" })
+        ]),
+        el("div", { class: "problem", id: "problem", role: "alert" }),
+      ])
+    )
   );
 }
 

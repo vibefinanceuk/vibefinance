@@ -17,6 +17,7 @@ import brandingSql from "../migrations/0012_branding.sql?raw";
 import uiStringsSql from "../migrations/0013_ui_strings.sql?raw";
 import seedStringsSql from "../migrations/0014_seed_ui_strings.sql?raw";
 import productNameSql from "../migrations/0015_product_name_string.sql?raw";
+import frameStringsSql from "../migrations/0016_interface_frame_strings.sql?raw";
 
 function stripSqlComments(sql: string): string {
   return sql
@@ -61,4 +62,5 @@ export async function applyTestSchema(): Promise<void> {
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(uiStringsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(seedStringsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(productNameSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(frameStringsSql)));
 }

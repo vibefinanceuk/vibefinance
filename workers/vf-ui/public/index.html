@@ -166,14 +166,125 @@
   .since { color: var(--text-secondary); }
 
   /*
-    The Task Manager. A denser layout than the sign-in card on purpose:
-    this is a screen somebody reads all day, so the restraint has to
-    serve legibility rather than air (decision 0101).
+    The Task Manager, inside a persistent frame — decision 0108.
+
+    A denser layout than the sign-in card on purpose: this is a screen
+    somebody reads all day, so restraint has to serve legibility rather
+    than air (0101).
   */
-  #shell {
-    width: min(1040px, calc(100vw - 40px));
-    padding: 32px 0 64px;
+  body.working {
+    display: block;
+    place-items: initial;
+    background: var(--surface-0);
   }
+
+  .frame {
+    display: grid;
+    /* Navigation, then everything else. The nav is narrow and fixed:
+       it is a place to return from, not a thing to read. */
+    grid-template-columns: 200px minmax(0, 1fr);
+    min-height: 100vh;
+  }
+
+  .nav {
+    border-right: 0.5px solid var(--border);
+    padding: 20px 12px;
+    background: var(--surface-1);
+  }
+
+  .nav .mark { width: 30px; height: 3px; margin: 4px 10px 22px; }
+
+  .nav a {
+    display: block;
+    padding: 8px 10px;
+    border-radius: var(--radius);
+    color: var(--text-secondary);
+    text-decoration: none;
+    font-size: 13px;
+    cursor: pointer;
+  }
+
+  .nav a:hover { background: var(--surface-2); }
+  .nav a.on { background: var(--surface-2); color: var(--text-primary); }
+
+  .nav .who {
+    margin-top: auto;
+    padding: 12px 10px 0;
+    border-top: 0.5px solid var(--border);
+    font-size: 12px;
+    color: var(--text-secondary);
+  }
+
+  .main { padding: 22px 26px 60px; min-width: 0; }
+
+  /* The document's identity, always visible. Decision 0108: opening a
+     document should feel like looking at something, not like going
+     somewhere and having to find the way back. */
+  .topbar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding-bottom: 16px;
+    margin-bottom: 18px;
+    border-bottom: 0.5px solid var(--border);
+  }
+
+  .topbar h2 { margin: 0; font-size: 17px; font-weight: 600; }
+  .topbar .sub { margin: 2px 0 0; font-size: 13px; }
+  .topbar .right { margin-left: auto; display: flex; gap: 8px; }
+
+  /* Panels. Each a thing somebody can look at on its own. */
+  .panel {
+    background: var(--surface-2);
+    border: 0.5px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px 18px;
+  }
+
+  .panel > h3 {
+    margin: 0 0 12px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-secondary);
+  }
+
+  /* Status first, and separately (decision 0108) -- the row somebody
+     reads on most documents without reading anything else. */
+  .statusrow {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+    gap: 12px;
+    margin-bottom: 18px;
+  }
+
+  .stat .label { font-size: 12px; color: var(--text-secondary); }
+  .stat .value { font-size: 19px; font-weight: 600; margin-top: 3px; }
+  .stat .note { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+  .stat.good .value { color: var(--text-success); }
+  .stat.warn .value { color: var(--text-warning); }
+
+  /*
+    Three columns on a wide monitor, fewer as it narrows.
+
+    A mockup rendered at 1536px never shows what three columns do at
+    1280 -- an ordinary laptop -- so the panels reflow rather than
+    shrink (decision 0108).
+  */
+  .columns {
+    display: grid;
+    grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+    gap: 16px;
+    align-items: start;
+  }
+
+  @media (max-width: 1100px) {
+    .columns { grid-template-columns: minmax(0, 1fr); }
+    .frame { grid-template-columns: 1fr; }
+    .nav { display: flex; gap: 6px; border-right: none; border-bottom: 0.5px solid var(--border); padding: 10px; }
+    .nav .mark, .nav .who { display: none; }
+  }
+
+  #shell { width: auto; padding: 0; }
 
   #shell header {
     display: flex;
@@ -238,7 +349,12 @@
   button.act:disabled { opacity: 0.4; cursor: default; }
 
   /* The Validation viewer — decision 0106. */
-  #viewer { width: min(1040px, calc(100vw - 40px)); padding: 32px 0 64px; }
+  #viewer { width: auto; padding: 0; }
+
+  /* One action per line, in one place — decision 0108. */
+  .actions button { display: block; }
+  button.wide { width: 100%; margin: 0 0 8px; min-height: 32px; }
+  .actions button.primary { margin-bottom: 12px; }
 
   .vhead {
     display: flex;

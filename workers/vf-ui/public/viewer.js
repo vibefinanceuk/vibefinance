@@ -11,6 +11,7 @@
  */
 
 import { t } from "/strings.js";
+import { frame, topbar } from "/tasks.js";
 
 let current = null;
 
@@ -150,34 +151,87 @@ export function openViewer(task, onClose) {
     "BT-112": known.totalWithVat ?? "",
   };
 
+  /**
+   * Status first, and separately — decision 0108. The row somebody
+   * reads on most documents without reading anything else.
+   */
+  const keyed = ["supplierVatId", "currency", "issueDate", "totalWithVat"].filter(
+    (f) => known[f] !== null && known[f] !== undefined
+  ).length;
+
+  const status = el("div", { class: "statusrow" }, [
+    el("div", { class: "panel stat warn" }, [
+      el("div", { class: "label", text: t("viewer.status") }),
+      el("div", { class: "value", text: t("tasks.notkeyed") }),
+      el("div", { class: "note", text: `${keyed}/4 ${t("viewer.known")}` }),
+    ]),
+    el("div", { class: "panel stat" }, [
+      el("div", { class: "label", text: t("tasks.stage") }),
+      el("div", { class: "value", text: task.stageName ?? task.stageId }),
+    ]),
+    el("div", { class: "panel stat" }, [
+      el("div", { class: "label", text: t("tasks.waiting") }),
+      el("div", { class: "value", text: waited(task.createdAt) }),
+    ]),
+    el("div", { class: "panel stat" }, [
+      el("div", { class: "label", text: t("tasks.owner") }),
+      el("div", { class: "value", text: t(`tasks.${task.ownership}`) }),
+    ]),
+  ]);
+
   shell.replaceChildren(
-    el("div", { class: "vhead" }, [
+    frame(
       el("div", {}, [
-        el("p", { class: "vtitle", text: t("viewer.title") }),
-        el("p", {
-          class: "sub",
-          // Why this task exists, from what detection actually found.
-          text: `${task.stageName ?? task.stageId} · ${task.subject?.type ?? "document"}`,
-        }),
-      ]),
-      el("button", { class: "close", text: t("viewer.back"), onclick: onClose }),
-    ]),
-
-    el("div", { class: "vbody" }, [
-      el("div", { class: "vdoc" }, [
-        el("div", { class: "vthumb", text: t("viewer.document") }),
-        el("button", {
-          class: "act",
-          text: t("viewer.open"),
-          onclick: () => openDocument(task.subject.id),
-        }),
-      ]),
-      el("div", { class: "vfields" }, FIELDS.map((spec) => field(spec, existing))),
-    ]),
-
-    el("div", { class: "vfoot" }, [
-      el("div", { class: "problem", id: "viewer-note", role: "status" }),
-      el("button", { class: "primary", text: t("viewer.save"), onclick: () => save(null) }),
-    ])
+        topbar(t("viewer.title"), task.subject?.id ?? "", [
+          el("button", { text: t("viewer.back"), onclick: onClose }),
+        ]),
+        status,
+        // Fields beside actions, rather than fields above a footer.
+        // Actions collected in one place (decision 0108).
+        el("div", { class: "columns" }, [
+          el("div", { class: "panel" }, [
+            el("h3", { text: t("viewer.fields") }),
+            el("div", { class: "vfields" }, FIELDS.map((spec) => field(spec, existing))),
+            el("div", { class: "problem", id: "viewer-note", role: "status" }),
+          ]),
+          el("div", {}, [
+            el("div", { class: "panel" }, [
+              el("h3", { text: t("viewer.document") }),
+              // **The document is visible, not behind a button.** The
+              // panel is a placeholder until something can render a PDF
+              // (decision 0042); the original still opens in its own
+              // window through a signed URL.
+              el("div", { class: "vthumb", text: known.type ?? "document" }),
+              el("button", {
+                class: "act wide",
+                text: t("viewer.open"),
+                onclick: () => openDocument(task.subject.id),
+              }),
+            ]),
+            el("div", { class: "panel actions" }, [
+              el("h3", { text: t("viewer.actions") }),
+              el("button", {
+                class: "primary wide",
+                text: t("viewer.save"),
+                onclick: () => save(null),
+              }),
+              // What else this task offers is the SERVER's decision
+              // (decision 0103) -- collecting them visually does not
+              // move where they are decided.
+              ...task.actions
+                .filter((a) => a !== "key")
+                .map((a) => el("button", { class: "wide", text: t(`action.${a}`), disabled: "disabled" })),
+            ]),
+          ]),
+        ]),
+      ])
+    )
   );
+}
+
+/** How long this has waited, which is the thing that costs money. */
+function waited(iso) {
+  const then = new Date(iso.replace(" ", "T") + "Z").getTime();
+  const days = Math.floor((Date.now() - then) / 86400000);
+  return days >= 1 ? `${days}d` : `${Math.max(1, Math.floor((Date.now() - then) / 3600000))}h`;
 }
