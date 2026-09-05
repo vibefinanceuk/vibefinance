@@ -288,3 +288,76 @@ describe("the source's default org", () => {
     expect(row?.org_unit_id).toBeNull();
   });
 });
+
+describe("placing an invoice by hand (decision 0111)", () => {
+  /**
+   * The third way an invoice acquires an org, after a rule and a source
+   * default. **`'manual'` has been in `org_assigned_by`'s CHECK since
+   * the migration and nothing could produce it** — a value declared and
+   * unreachable, which is this project's most frequent finding.
+   *
+   * This is how the task decision 0111 raises gets discharged.
+   */
+  it("places an invoice nothing else could", async () => {
+    await seedProcess();
+    await seedInvoice("inv-manual", {});
+
+    const { handlePlaceInvoice } = await import("../src/org-route.js");
+    const result = await handlePlaceInvoice(env.DB, "inv-manual", "acme-uk");
+    expect(result.status).toBe(200);
+
+    const row = await env.DB.prepare(
+      "SELECT org_unit_id, org_assigned_by FROM invoice_headers WHERE id = 'inv-manual'"
+    ).first<{ org_unit_id: string; org_assigned_by: string }>();
+    expect(row?.org_unit_id).toBe("acme-uk");
+    expect(row?.org_assigned_by).toBe("manual");
+  });
+
+  it("reports what it replaced, so a correction is not mistaken for a placement", async () => {
+    await seedProcess();
+    await seedInvoice("inv-correct", {});
+    await env.DB.prepare(
+      "UPDATE invoice_headers SET org_unit_id = 'acme-fr', org_assigned_by = 'source' WHERE id = 'inv-correct'"
+    ).run();
+
+    const { handlePlaceInvoice } = await import("../src/org-route.js");
+    const body = (await handlePlaceInvoice(env.DB, "inv-correct", "acme-uk")).body as Record<string, unknown>;
+
+    expect(body.previousOrgUnitId).toBe("acme-fr");
+    expect(body.previousAssignedBy).toBe("source");
+  });
+
+  it("refuses a legal entity here too", async () => {
+    // The same rule the rule engine and the schema both enforce.
+    await seedProcess();
+    await seedInvoice("inv-le", {});
+
+    const { handlePlaceInvoice } = await import("../src/org-route.js");
+    expect((await handlePlaceInvoice(env.DB, "inv-le", "acme-group")).status).toBe(422);
+  });
+
+  it("404s an org that does not exist, and an invoice that does not", async () => {
+    await seedProcess();
+    await seedInvoice("inv-404", {});
+
+    const { handlePlaceInvoice } = await import("../src/org-route.js");
+    expect((await handlePlaceInvoice(env.DB, "inv-404", "nope")).status).toBe(404);
+    expect((await handlePlaceInvoice(env.DB, "nope", "acme-uk")).status).toBe(404);
+  });
+
+  it("lets a placed invoice past a stage that requires one", async () => {
+    // The whole point: the task is raised, a person places it, the
+    // invoice moves.
+    await seedProcess(true);
+    const instanceId = await seedInvoice("inv-unblocked", {});
+
+    const blocked = await visitCurrentStage(env.DB, instanceId, {} as never);
+    expect(blocked.status).toBe(409);
+
+    const { handlePlaceInvoice } = await import("../src/org-route.js");
+    await handlePlaceInvoice(env.DB, "inv-unblocked", "acme-uk");
+
+    const unblocked = await visitCurrentStage(env.DB, instanceId, {} as never);
+    expect(unblocked.status).toBeLessThan(400);
+  });
+});

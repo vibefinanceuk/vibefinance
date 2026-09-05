@@ -30,12 +30,52 @@ describe("handleCreateUnit", () => {
     expect(row).toEqual({ id: "u1", name: "Finance", parent_unit_id: null });
   });
 
-  it("creates a child unit under a real parent", async () => {
-    await handleCreateUnit(env.DB, { id: "u1", name: "EU Division" });
+  it("creates an operating unit under a legal entity", async () => {
+    // **Narrowed by decision 0111.** This test previously nested two
+    // units of no particular kind. An operating unit now sits under a
+    // legal entity: a legal entity is a tax and reporting boundary, an
+    // operating unit is where payables happen, and a hierarchy that
+    // nests arbitrarily is one nobody can reason about.
+    await handleCreateUnit(env.DB, { id: "u1", name: "EU Division", kind: "legal_entity" });
     const result = await handleCreateUnit(env.DB, { id: "u2", name: "Germany", parentUnitId: "u1" });
     expect(result.status).toBe(201);
     const row = await env.DB.prepare("SELECT parent_unit_id FROM org_units WHERE id = ?").bind("u2").first();
     expect(row).toEqual({ parent_unit_id: "u1" });
+  });
+
+  it("refuses an operating unit under another operating unit", async () => {
+    await handleCreateUnit(env.DB, { id: "ou1", name: "Acme UK" });
+    const result = await handleCreateUnit(env.DB, { id: "ou2", name: "Acme UK South", parentUnitId: "ou1" });
+    expect(result.status).toBe(422);
+    expect(String((result.body as { error: string }).error)).toContain("legal entity");
+  });
+
+  it("records what a unit is, defaulting to an operating unit", async () => {
+    // What every unit created before decision 0111 was implicitly
+    // being used as.
+    await handleCreateUnit(env.DB, { id: "ou3", name: "Acme FR" });
+    const row = await env.DB.prepare("SELECT kind FROM org_units WHERE id = 'ou3'").first<{ kind: string }>();
+    expect(row?.kind).toBe("operating_unit");
+  });
+
+  it("refuses a kind that is neither", async () => {
+    const result = await handleCreateUnit(env.DB, { id: "ou4", name: "X", kind: "division" });
+    expect(result.status).toBe(422);
+  });
+
+  it("stores what an arriving invoice can be matched against", async () => {
+    // BT-49 is what Peppol itself routes on (decision 0112).
+    await handleCreateUnit(env.DB, {
+      id: "ou5",
+      name: "Acme FR",
+      buyerEndpoint: "111222333",
+      vatId: "FR12345678901",
+    });
+    const row = await env.DB.prepare(
+      "SELECT buyer_endpoint, vat_id FROM org_units WHERE id = 'ou5'"
+    ).first<{ buyer_endpoint: string; vat_id: string }>();
+    expect(row?.buyer_endpoint).toBe("111222333");
+    expect(row?.vat_id).toBe("FR12345678901");
   });
 
   it("404s when parentUnitId does not exist", async () => {

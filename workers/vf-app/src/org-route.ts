@@ -21,10 +21,18 @@ interface CreateUnitBody {
   id?: unknown;
   name?: unknown;
   parentUnitId?: unknown;
+  /** What this unit is — decision 0111. Defaults to an operating unit. */
+  kind?: unknown;
+  /** BT-49, the buyer electronic address Peppol routes on. */
+  buyerEndpoint?: unknown;
+  /** BT-48, the buyer VAT identifier. */
+  vatId?: unknown;
+  /** BT-10, the buyer own routing reference. */
+  buyerReference?: unknown;
 }
 
 export async function handleCreateUnit(db: D1Database, body: CreateUnitBody): Promise<RouteResult> {
-  const { id, name, parentUnitId } = body;
+  const { id, name, parentUnitId, kind, buyerEndpoint, vatId, buyerReference } = body;
   if (typeof id !== "string" || !id || typeof name !== "string" || !name) {
     return { status: 400, body: { error: "id and name (both strings) are required" } };
   }
@@ -44,12 +52,120 @@ export async function handleCreateUnit(db: D1Database, body: CreateUnitBody): Pr
     }
   }
 
+  /**
+   * What this unit **is** — decision 0111.
+   *
+   * A legal entity is a tax and reporting boundary; an operating unit
+   * is where payables happen and where an invoice is assigned. Defaults
+   * to `operating_unit`, because that is what every unit created before
+   * this existed was implicitly being used as.
+   */
+  const unitKind = kind === undefined ? "operating_unit" : kind;
+  if (unitKind !== "legal_entity" && unitKind !== "operating_unit") {
+    return {
+      status: 422,
+      body: { error: "kind must be 'legal_entity' or 'operating_unit'" },
+    };
+  }
+
+  if (parentUnitId && unitKind === "operating_unit") {
+    // A hierarchy that nests arbitrarily is one nobody can reason
+    // about. Checked here so the caller gets a reason; a standing
+    // invariant refuses it either way.
+    const parent = await db
+      .prepare("SELECT kind FROM org_units WHERE id = ?")
+      .bind(parentUnitId)
+      .first<{ kind: string }>();
+    if (parent && parent.kind !== "legal_entity") {
+      return {
+        status: 422,
+        body: { error: `an operating unit sits under a legal entity, and ${parentUnitId} is a ${parent.kind}` },
+      };
+    }
+  }
+
+  /**
+   * The identifiers an arriving invoice can be matched against, each
+   * named as the standard names it. **BT-49 is what Peppol itself
+   * routes on** — the buyer's electronic address.
+   */
+  for (const [label, value] of [
+    ["buyerEndpoint", buyerEndpoint],
+    ["vatId", vatId],
+    ["buyerReference", buyerReference],
+  ] as const) {
+    if (value !== undefined && (typeof value !== "string" || value.trim() === "")) {
+      return { status: 422, body: { error: `${label}, if provided, must be a non-empty string` } };
+    }
+  }
+
   await db
-    .prepare("INSERT INTO org_units (id, name, parent_unit_id) VALUES (?, ?, ?)")
-    .bind(id, name, parentUnitId ?? null)
+    .prepare(
+      "INSERT INTO org_units (id, name, parent_unit_id, kind, buyer_endpoint, vat_id, buyer_reference) VALUES (?, ?, ?, ?, ?, ?, ?)"
+    )
+    .bind(
+      id,
+      name,
+      parentUnitId ?? null,
+      unitKind,
+      (buyerEndpoint as string) ?? null,
+      (vatId as string) ?? null,
+      (buyerReference as string) ?? null
+    )
     .run();
 
-  return { status: 201, body: { id, name, parentUnitId: parentUnitId ?? null } };
+  return {
+    status: 201,
+    body: {
+      id,
+      name,
+      parentUnitId: parentUnitId ?? null,
+      kind: unitKind,
+      buyerEndpoint: buyerEndpoint ?? null,
+      vatId: vatId ?? null,
+      buyerReference: buyerReference ?? null,
+    },
+  };
+}
+
+/**
+ * Every org unit, with what an invoice can be matched against —
+ * decision 0111.
+ *
+ * **Nothing could read them before.** Units could be created and never
+ * listed, which made a customer writing an `assign_org` rule guess at
+ * the id they were naming.
+ */
+export async function handleListUnits(db: D1Database): Promise<RouteResult> {
+  const rows = await db
+    .prepare(
+      `SELECT id, name, kind, parent_unit_id, buyer_endpoint, vat_id, buyer_reference
+       FROM org_units ORDER BY kind DESC, name ASC`
+    )
+    .all<{
+      id: string;
+      name: string;
+      kind: string;
+      parent_unit_id: string | null;
+      buyer_endpoint: string | null;
+      vat_id: string | null;
+      buyer_reference: string | null;
+    }>();
+
+  return {
+    status: 200,
+    body: {
+      units: rows.results.map((r) => ({
+        id: r.id,
+        name: r.name,
+        kind: r.kind,
+        parentUnitId: r.parent_unit_id,
+        buyerEndpoint: r.buyer_endpoint,
+        vatId: r.vat_id,
+        buyerReference: r.buyer_reference,
+      })),
+    },
+  };
 }
 
 interface CreateUserBody {
@@ -267,4 +383,68 @@ export async function handleSetProfile(db: D1Database, body: SetProfileBody): Pr
     .run();
 
   return { status: 201, body: { id, ciusProfile, unitId: unitId ?? null, r2Jurisdiction: r2Jurisdiction ?? null } };
+}
+
+/**
+ * Placing an invoice by hand — decision 0111.
+ *
+ * The third way an invoice acquires an org, after a rule and a source
+ * default. `org_assigned_by` has always had `'manual'` in its `CHECK`
+ * and **nothing could produce it** — a value declared and unreachable,
+ * which is this project's most frequent finding.
+ *
+ * This is what a person does when a document arrives that no rule
+ * placed and no source defaulted: decision 0111 makes that a task
+ * rather than a silent default, and this is how the task is discharged.
+ */
+export async function handlePlaceInvoice(
+  db: D1Database,
+  invoiceId: string,
+  orgUnitId: unknown
+): Promise<RouteResult> {
+  if (typeof orgUnitId !== "string" || orgUnitId.trim() === "") {
+    return { status: 400, body: { error: "orgUnitId (a string) is required" } };
+  }
+
+  const invoice = await db
+    .prepare("SELECT id, org_unit_id, org_assigned_by FROM invoice_headers WHERE id = ?")
+    .bind(invoiceId)
+    .first<{ id: string; org_unit_id: string | null; org_assigned_by: string | null }>();
+  if (!invoice) {
+    return { status: 404, body: { error: `invoice ${invoiceId} does not exist` } };
+  }
+
+  const unit = await db
+    .prepare("SELECT id, kind FROM org_units WHERE id = ?")
+    .bind(orgUnitId)
+    .first<{ id: string; kind: string }>();
+  if (!unit) {
+    return { status: 404, body: { error: `org unit ${orgUnitId} does not exist` } };
+  }
+  if (unit.kind !== "operating_unit") {
+    // A legal entity is a tax and reporting boundary; payables happen
+    // in the operating unit. A standing invariant refuses this too.
+    return {
+      status: 422,
+      body: { error: `${orgUnitId} is a ${unit.kind}, and an invoice is assigned to an operating unit` },
+    };
+  }
+
+  await db
+    .prepare("UPDATE invoice_headers SET org_unit_id = ?, org_assigned_by = 'manual' WHERE id = ?")
+    .bind(orgUnitId, invoiceId)
+    .run();
+
+  return {
+    status: 200,
+    body: {
+      invoiceId,
+      orgUnitId,
+      assignedBy: "manual",
+      // What it was before, so a person overriding a rule can see they
+      // did — and so an audit can tell a correction from a placement.
+      previousOrgUnitId: invoice.org_unit_id,
+      previousAssignedBy: invoice.org_assigned_by,
+    },
+  };
 }

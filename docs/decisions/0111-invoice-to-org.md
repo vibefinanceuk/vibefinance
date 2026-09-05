@@ -1,8 +1,9 @@
 # 0111 — Which part of the enterprise an invoice belongs to
 
-**Status: built.** `org_units` is load-bearing for the first time since
-decision 0003 created it. **Not built:** the supplier master, and any
-interface for placing an invoice by hand.
+**Status: built**, including the routes to configure and use it.
+`org_units` is load-bearing for the first time since decision 0003
+created it. **Not built:** the supplier master, and any *screen* —
+placing an invoice is an API call.
 
 ---
 
@@ -193,6 +194,37 @@ So `orgGuard` is called on both paths out of a stage. The question is
 
 Watched to fail: removing the automatic-path guard, and letting an
 invoice be posted to a legal entity.
+
+---
+
+## Managing it
+
+**`POST /org/units` knew nothing about any of this.** A unit could be
+created without saying what it was, silently defaulting to an operating
+unit. It now takes `kind` and the identifiers an invoice is matched
+against, and refuses an operating unit under another operating unit
+with a reason rather than a constraint error.
+
+**That narrows an existing endpoint**, and an existing test caught it:
+one that nested *"Germany"* under *"EU Division"*, both of no particular
+kind. Worth stating plainly rather than filing as a test fix — a
+customer nesting operating units would now be refused.
+
+**`GET /org/units` did not exist.** Units could be created and never
+listed, so a customer writing an `assign_org` rule had to guess the id
+they were naming.
+
+**And `PUT /invoices/:id/org` places one by hand.** `'manual'` has been
+in `org_assigned_by`'s `CHECK` since the migration and **nothing could
+produce it** — a value declared and unreachable, which is this project's
+most frequent finding, appearing inside the very decision that added it.
+
+It reports what it replaced, so a **correction** is distinguishable from
+a **placement**: overriding a rule's decision and filling an empty one
+are different acts and an audit should be able to tell them apart.
+
+A test walks the whole loop — a stage refuses the invoice, a person
+places it, the invoice moves.
 
 ---
 

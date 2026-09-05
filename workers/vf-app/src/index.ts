@@ -21,6 +21,8 @@ import {
   handleCreateUser,
   handleSetAuthorityLimit,
   handleSetProfile,
+  handleListUnits,
+  handlePlaceInvoice,
 } from "./org-route.js";
 import { handleCreateCostCentre } from "./cost-centre-route.js";
 import { requirePermission, permissionsFor, hasPermission } from "./enforce.js";
@@ -760,6 +762,43 @@ export default {
     // usage /rules/compile and /rules/evaluate are gated for — a
     // blocked customer should still be able to manage their own
     // people and roles.
+    // Every org unit, with what an invoice can be matched against —
+    // decision 0111. Nothing could read them before, so a customer
+    // writing an assign_org rule had to guess the id.
+    if (pathname === "/org/units" && request.method === "GET") {
+      const { db } = resolveTenant(request, env);
+      const auth = await requirePermission(db, request, "Admin.Configure");
+      if (!auth.authorized) {
+        return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
+      }
+      const result = await handleListUnits(db);
+      return json(result.body, result.status);
+    }
+
+    // Placing an invoice by hand — the third way it acquires an org,
+    // and how the task decision 0111 raises is discharged.
+    const placeMatch = pathname.match(/^\/invoices\/([^/]+)\/org$/);
+    if (placeMatch && request.method === "PUT") {
+      const { db } = resolveTenant(request, env);
+      const auth = await requirePermission(db, request, "AP.Validate");
+      if (!auth.authorized) {
+        return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
+      }
+      let placeBody: unknown;
+      try {
+        placeBody = await request.json();
+      } catch {
+        return json({ error: t("invalidJsonBody", resolveLocale(env.LOCALE)) }, 400);
+      }
+      const result = await handlePlaceInvoice(
+        db,
+        placeMatch[1],
+        (placeBody as Record<string, unknown> | null)?.orgUnitId
+      );
+      return json(result.body, result.status);
+    }
+
+
     if (pathname === "/org/units" && request.method === "POST") {
       const { db } = resolveTenant(request, env);
       let body: unknown;

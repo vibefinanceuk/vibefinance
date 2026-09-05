@@ -327,7 +327,7 @@ elsewhere.
 
 | Package | Tests |
 |---|---|
-| `vf-app` | 957 |
+| `vf-app` | 966 |
 | `vf-licence` | 287 |
 | `vf-ui` | 40 |
 | `shared` | 227 passing, 2 known pre-existing failures |
