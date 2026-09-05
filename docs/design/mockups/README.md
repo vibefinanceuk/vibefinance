@@ -23,16 +23,23 @@ static file diffs, opens without a build step, and can be edited by
 anyone looking at the design — which is the same reasoning that keeps the
 numbered design documents as markdown rather than Word.
 
-## What blocks building any of it
+## What blocked building any of it — and no longer does
 
-`key-from-document.html` is the screen an operator would use on a
-document intake could not read (decision 0063). It cannot be built until
-captured documents are **stored** — `intake-capture-route.ts` has no R2
-access, so a document arriving at `/sources/:id/capture` is read and
-discarded. Document 1 section 6 records long-term retention as proposed
-with no code, and the retention period as an open compliance question.
+**This section described a blocker that has since gone.** It said
+`key-from-document.html` could not be built because captured documents
+were read and discarded, with no R2 access on the capture path.
 
-There is currently no document to show.
+Since then: documents are **retained** (decision 0068), **correctly
+typed** (0069), reachable through a **short-lived signed URL** a pop-out
+window can open (0073), and the **retention period** is a configured
+benchmark rather than an open question (0077). Keying itself is built
+(0071).
+
+There is now a document to show.
+
+**What blocks it now is different and smaller:** nothing lists a
+person's tasks, so there is no way to reach the screen. Decision 0103
+covers that.
 
 ## The token file is the white-labelling argument
 
