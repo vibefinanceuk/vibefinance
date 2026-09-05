@@ -393,6 +393,19 @@ describe("filtering, because a real queue is not thirty rows", () => {
     expect(body.counts).toEqual({ mine: 1, available: 1, locked: 1 });
   });
 
+  it("counts within the filter, because the question has changed", async () => {
+    // The other half of the rule above. A Validation view reporting 39
+    // available would be answering about a queue the person is not
+    // looking at.
+    await seedAcross();
+    const result = await handleListMyTasks(env.DB, "alice", { stageId: "validation" });
+    expect((result.body as { counts: Record<string, number> }).counts).toEqual({
+      mine: 1,
+      available: 0,
+      locked: 0,
+    });
+  });
+
   it("pages, and reports the total behind the page", async () => {
     await seedAcross();
     const result = await handleListMyTasks(env.DB, "alice", { limit: 2 });

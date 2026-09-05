@@ -301,9 +301,18 @@ TypeScript would mean two versions of one rule, which drift.
 **The limit is capped at 200.** An unbounded list works for one customer
 and not the next.
 
-**And the counts describe the queue, not the page.** A count that
-changed as somebody paged would be telling them about the page rather
-than about their work.
+**The counts survive paging, but not filtering** — and the difference is
+deliberate rather than incidental.
+
+Paging past a task must not change the count: that would be telling
+somebody about the page rather than about their work. **Filtering to a
+stage should**, because the question has changed — a Validation view
+reporting 39 available would be answering about a queue the person is
+not looking at.
+
+So the counts are computed after the filters and before the page. Worth
+stating precisely, because "counts describe the queue" is the sort of
+claim that reads as true and is only half of it.
 
 > **That last one had a test which proved nothing.** It filtered by
 > ownership rather than paging, and passed even when the counts were
