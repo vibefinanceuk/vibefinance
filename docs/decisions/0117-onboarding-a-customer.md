@@ -116,15 +116,68 @@ wizard that walks somebody through what already exists.
 
 ---
 
-## Sample invoices, and a question about them
+## The wizard, as four options
 
-**Whose documents?** Realistic fakes shipped with the product show it
-working in minutes. A customer's own first documents are real, with all
-the mess that implies — and mess is what this product is for.
+The operator's flow, and it answers the *"whose documents"* question by
+offering both:
 
-Not settled here. Worth noting that a sample set which never fails
-teaches somebody the product always works, and the Validation queue
-exists precisely because it does not.
+**1. Upload invoices and create suppliers from a sample data set.**
+See the product work in minutes, with suppliers appearing as a
+consequence rather than as a chore.
+
+**2. Upload a supplier master spreadsheet.** For a customer who already
+has one — which most do, in an ERP export.
+
+**3. Set up sample users.**
+
+**4. Assign permissions.**
+
+Steps 1 and 2 are alternatives more than a sequence: a customer with a
+real master takes the second, one exploring takes the first, and some
+will do both.
+
+### The sample set must never reach production
+
+Steps 1 and 3 create **fabricated data**. Provisioning creates a
+`sandbox` environment (`provision-route.ts`), and `environments.kind`
+already distinguishes the two — so **the guard exists and must be
+used**: sample invoices and sample users are refused outright in a
+production environment.
+
+Not a warning, a refusal. Fabricated suppliers in a customer's real
+accounts payable is not something to undo.
+
+### The spreadsheet is the largest piece here
+
+It reads as one line and is not. Column mapping (nobody's export has
+our headings), file formats — CSV is simple, XLSX needs a parser this
+project has no dependency for — encodings, and what happens when two
+rows carry the same VAT identifier.
+
+**Worth building the sample path first**, and treating the spreadsheet
+as its own decision rather than a step in a wizard.
+
+### Sample users are trickier than they look
+
+A sample user who **cannot sign in** is a row: enough to test that a
+rule assigns a task to a team, not enough to see approval routing work.
+
+A sample user who **can** sign in needs a credential — a real password
+for a fictional person, in a sandbox. Defensible there and nowhere
+else, which is the same `kind` guard again.
+
+Worth deciding which is meant, because the second is a genuine account
+and the first is scenery.
+
+### And what happens to it afterwards
+
+A sandbox is a sandbox. When a customer moves to production, none of
+this carries over — which is correct, and worth stating so nobody
+expects their sample suppliers to follow them.
+
+**A sample set that never fails teaches somebody the product always
+works.** The Validation queue exists precisely because it does not, so
+the sample invoices should include one nothing can read.
 
 ---
 
@@ -173,3 +226,7 @@ always been waiting for.
   before somebody uses it.
 - **Whether Get Started can be dismissed** and returned to, or is a
   one-time sequence.
+- **Whether sample users can sign in**, or are rows that exist to be
+  assigned work.
+- **The spreadsheet format and its column mapping** — a decision of its
+  own, not a step in a wizard.

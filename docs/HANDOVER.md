@@ -281,8 +281,16 @@ link, so without email **nobody can sign in to a new customer at all**.
 
 Then the **supplier master** with records spawning from captured
 documents, then **provisioning creating the first administrator**, then
-**Get Started**. That order is 0117's, and each step needs the one
-before it.
+**Get Started** — four options: sample invoices that spawn suppliers, a
+supplier master spreadsheet, sample users, and permissions.
+
+That order is 0117's, and each step needs the one before it. Two
+cautions recorded there: **sample data must be refused outright in a
+production environment** (`environments.kind` is the guard, and
+fabricated suppliers in real accounts payable is not something to
+undo), and **the spreadsheet upload is its own decision** rather than a
+step in a wizard — column mapping, formats, and no XLSX parser in this
+project.
 
 **4. An Approval screen.** The Task Manager lists approval tasks and
 cannot open them. Field visibility (0114) is what makes an approval view
