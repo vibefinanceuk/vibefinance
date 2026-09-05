@@ -243,7 +243,16 @@
 </head>
 
 <body>
-<main id="signin-view">
+<!--
+  Hidden until the page knows which screen it wants — decision 0103.
+
+  Visible-by-default meant the sign-in form painted on every refresh and
+  then vanished when /api/whoami answered, which looks like a session
+  failing and recovering. Starting with neither shown means nothing
+  flashes: the page genuinely does not know yet, and says so by showing
+  nothing rather than by showing the wrong thing.
+-->
+<main id="signin-view" hidden>
   <div class="mark"></div>
   <h1 id="product">VibeFinance</h1>
   <p class="sub">Sign in to continue</p>

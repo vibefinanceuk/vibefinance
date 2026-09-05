@@ -325,7 +325,17 @@ claim that reads as true and is only half of it.
 
 ## The screen
 
-**The page asks who it is before rendering anything.**
+**The page asks who it is before rendering anything — and shows neither
+view until it knows.**
+
+The first version left the sign-in form visible by default, so on every
+refresh it painted and then vanished when `/api/whoami` answered. **That
+looks like a session failing and recovering**, which is unsettling in a
+tool about money.
+
+Both start hidden. Nothing appears for the moment the request takes,
+which is honest: the page genuinely does not know yet, and says so by
+showing nothing rather than by showing the wrong thing.
 
 That is what makes a surviving session *visible*. The cookie persists
 across a refresh (decision 0102), and until now nothing asked — so a

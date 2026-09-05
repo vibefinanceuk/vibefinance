@@ -203,12 +203,16 @@ describe("the task list is reachable, and only what it needs", () => {
 });
 
 describe("the page decides which screen to show (decision 0103)", () => {
-  it("ships both views, and hides the task list until signed in", async () => {
+  it("ships both views, and shows NEITHER until it knows", async () => {
     // The session survives a refresh (decision 0102), and until now
     // nothing asked -- so a reload rendered an empty sign-in form while
     // the session was perfectly alive.
+    //
+    // **Both start hidden.** Showing the sign-in form by default meant
+    // it painted on every refresh and vanished when /api/whoami
+    // answered, which looks like a session failing and recovering.
     const html = await (await SELF.fetch("https://ui.example.com/")).text();
-    expect(html).toContain('id="signin-view"');
+    expect(html).toContain('id="signin-view" hidden');
     expect(html).toContain('id="shell" hidden');
   });
 

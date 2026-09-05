@@ -15,6 +15,10 @@ const signIn = document.getElementById("signin-view");
 const shell = document.getElementById("shell");
 
 async function boot() {
+  // Both start hidden. Whichever is right becomes visible once
+  // /api/whoami answers, so nothing flashes in between — a sign-in form
+  // appearing and vanishing on every refresh looks like a session
+  // failing and recovering.
   const signedIn = await start();
 
   signIn.hidden = signedIn;
