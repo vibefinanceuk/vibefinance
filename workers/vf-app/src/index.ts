@@ -46,6 +46,7 @@ import { handleCaptureFromSource } from "./source-capture-route.js";
 import { handleKeyInvoiceFields } from "./key-fields-route.js";
 import { handleReturnToStage, handleReturnToSupplier, handleDiscard } from "./return-route.js";
 import { authenticateUser, authenticateUserOrSession } from "./user-auth.js";
+import { handleListMyTasks } from "./task-list-route.js";
 import { handlePreflight, withCors } from "@vibefinance/shared";
 import { mintDocumentToken, verifyDocumentToken } from "./document-token.js";
 import { retrieveInvoiceDocument } from "./document-storage.js";
@@ -1070,6 +1071,30 @@ export default {
 
     // Who am I — decision 0095. The first thing a screen asks, and the
     // only route today that accepts a session token.
+    // A person's own tasks, at every stage — decision 0103. Accepts a
+    // session, because this is the first thing a screen asks after
+    // knowing who it is talking to.
+    if (pathname === "/tasks" && request.method === "GET") {
+      const { db } = resolveTenant(request, env);
+      const auth = await authenticateUserOrSession(
+        db,
+        request,
+        isPublicKeyJwk(env.LICENCE_SIGNING_PUBLIC_KEY) ? env.LICENCE_SIGNING_PUBLIC_KEY : undefined,
+        env.ENVIRONMENT_ID
+      );
+      if (!auth.user) return json({ error: auth.reason }, 401);
+
+      // No permission check beyond being a real user. **What a person
+      // may see is decided by the query, not by a gate**: it returns
+      // their own tasks and their teams', and there is nothing to
+      // withhold from somebody who is already entitled to all of it.
+      const result = await handleListMyTasks(db, auth.user.id, {
+        includeCompleted: url.searchParams.get("completed") === "true",
+      });
+      return json(result.body, result.status);
+    }
+
+
     if (pathname === "/whoami" && request.method === "GET") {
       const { db } = resolveTenant(request, env);
       const auth = await authenticateUserOrSession(

@@ -1,8 +1,8 @@
 # 0103 — The Task Manager
 
-**Status: proposed.** Nothing built. The first screen after signing in,
-and the first read-oriented endpoint in a system that has been entirely
-write-oriented.
+**Status: the listing endpoint is built** —
+`GET /tasks` on `vf-app`. **Not built:** unlocking, the manager view,
+and the screen itself.
 
 ---
 
@@ -215,6 +215,31 @@ manager unlocking another's** even though the effect is identical.
 
 Where that record lives is open: the task row could carry it, or it
 could join whatever eventually records task history.
+
+---
+
+## Built: `GET /tasks`
+
+Accepts a session or an API key, and orders **oldest first** — age costs
+money in accounts payable, so anything else would have to justify
+itself.
+
+**No permission gate beyond being a real user**, deliberately. What
+somebody may see is decided by the query, not by a check afterwards: it
+returns their own tasks and their teams', and there is nothing to
+withhold from somebody already entitled to all of it. A gate would
+suggest otherwise.
+
+Watched to fail in both directions that matter:
+
+- **Removing the ownership restriction** shows a person tasks belonging
+  to teams they are not in, and colleagues' directly assigned work.
+- **Treating a colleague's claim as available** invites two people to
+  work the same document — the thing claiming exists to prevent
+  (decision 0064).
+
+**Completed and returned tasks are omitted.** A queue is work, not
+history, and one showing both would need filtering before it was useful.
 
 ---
 
