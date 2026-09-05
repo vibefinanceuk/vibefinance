@@ -222,14 +222,52 @@ export function parseUblInvoice(xml: string): ParsedUblInvoice {
   );
   if (supplierCountry !== undefined) facts["BT-40"] = supplierCountry;
 
+  // The seller's NAME — decision 0112. Mandatory, and its absence is
+  // why every screen has been showing a VAT identifier where a person
+  // expects a company.
+  const supplierName = getText(
+    (supplierParty?.PartyLegalEntity as Record<string, unknown> | undefined)?.RegistrationName
+  );
+  if (supplierName !== undefined) facts["BT-27"] = supplierName;
+
+  const supplierEndpoint = getText(supplierParty?.EndpointID);
+  if (supplierEndpoint !== undefined) facts["BT-34"] = supplierEndpoint;
+
   const buyerParty = (invoice.AccountingCustomerParty as Record<string, unknown> | undefined)?.Party as
     | Record<string, unknown>
     | undefined;
   const buyerVatId = findVatSchemeCompanyId(buyerParty?.PartyTaxScheme);
   if (buyerVatId !== undefined) facts["BT-48"] = buyerVatId;
 
+  const buyerName = getText(
+    (buyerParty?.PartyLegalEntity as Record<string, unknown> | undefined)?.RegistrationName
+  );
+  if (buyerName !== undefined) facts["BT-44"] = buyerName;
+
+  // **What Peppol itself routes on** — decision 0111 needs this to let
+  // a customer write a rule placing an invoice in the right part of
+  // their enterprise.
+  const buyerEndpoint = getText(buyerParty?.EndpointID);
+  if (buyerEndpoint !== undefined) facts["BT-49"] = buyerEndpoint;
+
+  const buyerCountry = getText(
+    ((buyerParty?.PostalAddress as Record<string, unknown> | undefined)?.Country as Record<string, unknown> | undefined)
+      ?.IdentificationCode
+  );
+  if (buyerCountry !== undefined) facts["BT-55"] = buyerCountry;
+
   const typeCode = getText(invoice.InvoiceTypeCode);
   if (typeCode !== undefined) facts["BT-3"] = typeCode;
+
+  // **The document-type discriminator** `PROGRESS.md` has recorded as
+  // read by nothing since decision 0082. Reading it into the facts does
+  // not by itself make detection use it, but it is now referenceable by
+  // a rule and present on every parsed invoice.
+  const customizationId = getText(invoice.CustomizationID);
+  if (customizationId !== undefined) facts["BT-24"] = customizationId;
+
+  const profileId = getText(invoice.ProfileID);
+  if (profileId !== undefined) facts["BT-23"] = profileId;
 
   const buyerReference = getText(invoice.BuyerReference);
   if (buyerReference !== undefined) facts["BT-10"] = buyerReference;
@@ -249,6 +287,14 @@ export function parseUblInvoice(xml: string): ParsedUblInvoice {
   // that honestly rather than anyone noticing.
   const netTotal = getNumber(monetaryTotal?.LineExtensionAmount);
   if (netTotal !== undefined) facts["BT-106"] = netTotal;
+
+  // Mandatory, and the missing middle of the arithmetic — decision
+  // 0112. BT-109 + BT-110 should equal BT-112, and without BT-109 that
+  // check had nothing to stand on: BT-106 is the sum of LINES, which
+  // differs from the total without VAT whenever a document-level
+  // allowance or charge exists.
+  const netWithoutVat = getNumber(monetaryTotal?.TaxExclusiveAmount);
+  if (netWithoutVat !== undefined) facts["BT-109"] = netWithoutVat;
 
   const payableAmount = getNumber(monetaryTotal?.PayableAmount);
   if (payableAmount !== undefined) facts["BT-115"] = payableAmount;

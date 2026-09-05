@@ -60,6 +60,10 @@ function money(subject) {
  */
 function describe(subject) {
   if (!subject) return t("tasks.nodocument");
+  // The seller's NAME first, and its identifier only when the document
+  // gave no name (decision 0112). A person scanning a queue is looking
+  // for a company, not a tax number.
+  if (subject.supplierName) return subject.supplierName;
   if (subject.supplierVatId) return subject.supplierVatId;
   return subject.type === "invoice" ? t("tasks.notkeyed") : subject.type;
 }

@@ -84,6 +84,8 @@ export interface TaskRow {
     type: string;
     id: string;
     supplierVatId: string | null;
+    /** The seller's name, where the document gave one (decision 0112). */
+    supplierName: string | null;
     currency: string | null;
     issueDate: string | null;
     totalWithVat: number | null;
@@ -106,9 +108,28 @@ interface Raw {
   subject_type: string | null;
   subject_id: string | null;
   supplier_vat_id: string | null;
+  facts_json: string | null;
   currency: string | null;
   issue_date: string | null;
   total_with_vat: number | null;
+}
+
+/**
+ * The seller's name from a line's stored facts.
+ *
+ * There is no `supplier_name` column, and adding one would be a third
+ * place the same value lives — after the document and `facts_json`.
+ * Read rather than duplicated.
+ */
+function sellerNameOf(factsJson: string | null): string | null {
+  if (!factsJson) return null;
+  try {
+    const facts = JSON.parse(factsJson) as Record<string, unknown>;
+    const name = facts["BT-27"];
+    return typeof name === "string" && name.trim() !== "" ? name : null;
+  } catch {
+    return null;
+  }
 }
 
 function ownershipOf(row: Raw, userId: string): Ownership {
@@ -230,7 +251,7 @@ export async function handleListMyTasks(
          s.name AS stage_name, s.process_id,
          v.process_instance_id AS instance_id,
          pi.subject_type, pi.subject_id,
-         h.supplier_vat_id, h.currency, h.issue_date, h.total_with_vat
+         h.supplier_vat_id, h.currency, h.issue_date, h.total_with_vat, h.facts_json
        FROM tasks t
        LEFT JOIN org_users claimer ON claimer.id = t.claimed_by
        LEFT JOIN process_stages s ON s.id = t.stage_id
@@ -294,6 +315,10 @@ export async function handleListMyTasks(
         type: row.subject_type,
         id: row.subject_id,
         supplierVatId: row.supplier_vat_id,
+        // BT-27, read from the facts because there is no column for it.
+        // **A person expects a company, not a tax number** — and until
+        // decision 0112 the seller's name was not read at all.
+        supplierName: sellerNameOf(row.facts_json),
         currency: row.currency,
         issueDate: row.issue_date,
         totalWithVat: row.total_with_vat,

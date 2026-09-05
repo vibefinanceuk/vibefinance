@@ -23,6 +23,18 @@ export const INVOICE_FIELDS = [
   "BT-31", // seller VAT id
   "BT-40", // seller country
   "BT-48", // buyer VAT id
+  // The rest of the mandatory header, checked against the BIS Billing
+  // 3.0 tree and the EN 16931 validation artefacts — decision 0112.
+  // **Eight mandatory terms were missing**, including both party names
+  // and both electronic addresses.
+  "BT-23", // New — business process type (cbc:ProfileID)
+  "BT-24", // New — specification identifier (cbc:CustomizationID), BR-01
+  "BT-27", // New — seller name (PartyLegalEntity/RegistrationName)
+  "BT-34", // New — seller electronic address (EndpointID), BR-62
+  "BT-44", // New — buyer name (PartyLegalEntity/RegistrationName)
+  "BT-49", // New — buyer electronic address — what Peppol routes on
+  "BT-55", // New — buyer country code, BR-11
+  "BT-109", // New — invoice total amount without VAT
   "BT-106", // sum of line net
   "BT-110", // total VAT
   "BT-112", // total with VAT
@@ -97,7 +109,15 @@ export const INVOICE_FIELD_TYPES: Record<string, FieldType> = {
   "BT-13": "text",
   "BT-31": "text",
   "BT-40": "text", // country code
+  "BT-23": "text",
+  "BT-24": "text",
+  "BT-27": "text",
+  "BT-34": "text",
+  "BT-44": "text",
   "BT-48": "text",
+  "BT-49": "text",
+  "BT-55": "text",
+  "BT-109": "number",
   "BT-106": "number",
   "BT-110": "number",
   "BT-112": "number",
@@ -223,7 +243,15 @@ export const FIELD_DESCRIPTIONS: Record<InvoiceField, string> = {
   "BT-13": "purchase order reference",
   "BT-31": "seller VAT id",
   "BT-40": "seller country",
+  "BT-23": "business process type — the procurement process this invoice belongs to, as a URN",
+  "BT-24": "specification identifier — which specification this document claims to conform to",
+  "BT-27": "seller name — the full formal name the seller is registered under",
+  "BT-34": "seller electronic address — where an application-level response may be delivered",
+  "BT-44": "buyer name — the full name of the buyer",
   "BT-48": "buyer VAT id",
+  "BT-49": "buyer electronic address — the endpoint Peppol routes an invoice to",
+  "BT-55": "buyer country code",
+  "BT-109": "invoice total amount without VAT",
   "BT-106": "sum of line net amounts",
   "BT-110": "total VAT",
   "BT-112": "total with VAT",

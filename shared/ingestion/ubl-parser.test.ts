@@ -73,6 +73,10 @@ describe("parseUblInvoice — a genuine, well-formed sample", () => {
       // vat_arithmetic and amount_due_mismatch checks had no inputs on
       // this path at all.
       "BT-106": 1500,
+      // Always in this sample as <cbc:TaxExclusiveAmount>, discarded
+      // until decision 0112. The assertion grew because more of the
+      // document is read, not because the document changed.
+      "BT-109": 1500,
       "BT-112": 1785,
       "BT-115": 1785,
     });
@@ -407,5 +411,86 @@ describe("the rest of BG-25 (decision 0110)", () => {
   it("leaves absent optional terms absent rather than guessing", () => {
     const minimal = withFullLine.replace(/<cbc:Note>.*<\/cbc:Note>/, "");
     expect(parseUblInvoice(minimal).lines[0]["BT-127"]).toBeUndefined();
+  });
+});
+
+describe("the rest of the mandatory header (decision 0112)", () => {
+  /**
+   * Eight mandatory header terms were missing from the vocabulary, and
+   * none was being read. Checked against the BIS Billing 3.0 tree and
+   * the EN 16931 validation artefacts — `BR-01` for BT-24, `BR-62` for
+   * BT-34, `BR-11` for BT-55.
+   */
+  const FULL_HEADER = `<?xml version="1.0" encoding="UTF-8"?>
+<Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"
+         xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
+         xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">
+  <cbc:CustomizationID>urn:cen.eu:en16931:2017#compliant#urn:fdc:peppol.eu:2017:poacc:billing:3.0</cbc:CustomizationID>
+  <cbc:ProfileID>urn:fdc:peppol.eu:2017:poacc:billing:01:1.0</cbc:ProfileID>
+  <cbc:ID>INV-9</cbc:ID>
+  <cbc:IssueDate>2026-09-01</cbc:IssueDate>
+  <cbc:DocumentCurrencyCode>EUR</cbc:DocumentCurrencyCode>
+  <cac:AccountingSupplierParty><cac:Party>
+    <cbc:EndpointID schemeID="0088">7300010000001</cbc:EndpointID>
+    <cac:PostalAddress><cac:Country><cbc:IdentificationCode>DE</cbc:IdentificationCode></cac:Country></cac:PostalAddress>
+    <cac:PartyLegalEntity><cbc:RegistrationName>Skelettbau Munch GmbH</cbc:RegistrationName></cac:PartyLegalEntity>
+  </cac:Party></cac:AccountingSupplierParty>
+  <cac:AccountingCustomerParty><cac:Party>
+    <cbc:EndpointID schemeID="0192">987654321</cbc:EndpointID>
+    <cac:PostalAddress><cac:Country><cbc:IdentificationCode>GB</cbc:IdentificationCode></cac:Country></cac:PostalAddress>
+    <cac:PartyLegalEntity><cbc:RegistrationName>Acme UK Ltd</cbc:RegistrationName></cac:PartyLegalEntity>
+  </cac:Party></cac:AccountingCustomerParty>
+  <cac:LegalMonetaryTotal>
+    <cbc:LineExtensionAmount currencyID="EUR">3800.00</cbc:LineExtensionAmount>
+    <cbc:TaxExclusiveAmount currencyID="EUR">3600.00</cbc:TaxExclusiveAmount>
+    <cbc:TaxInclusiveAmount currencyID="EUR">4500.00</cbc:TaxInclusiveAmount>
+    <cbc:PayableAmount currencyID="EUR">3500.00</cbc:PayableAmount>
+  </cac:LegalMonetaryTotal>
+  <cac:InvoiceLine>
+    <cbc:ID>1</cbc:ID>
+    <cbc:InvoicedQuantity unitCode="C62">1</cbc:InvoicedQuantity>
+    <cbc:LineExtensionAmount currencyID="EUR">3800.00</cbc:LineExtensionAmount>
+    <cac:Item><cbc:Name>Steelwork</cbc:Name></cac:Item>
+  </cac:InvoiceLine>
+</Invoice>`;
+
+  it("reads both party names, not only their VAT identifiers", () => {
+    // The absence of BT-27 is why every screen has been showing a VAT
+    // identifier where a person expects a company.
+    const { facts } = parseUblInvoice(FULL_HEADER);
+    expect(facts["BT-27"]).toBe("Skelettbau Munch GmbH");
+    expect(facts["BT-44"]).toBe("Acme UK Ltd");
+  });
+
+  it("reads the buyer electronic address, which is what Peppol routes on", () => {
+    // Decision 0111 needs this: it is how a customer writes a rule
+    // placing an invoice in the right part of their enterprise.
+    expect(parseUblInvoice(FULL_HEADER).facts["BT-49"]).toBe("987654321");
+  });
+
+  it("reads the seller electronic address too", () => {
+    expect(parseUblInvoice(FULL_HEADER).facts["BT-34"]).toBe("7300010000001");
+  });
+
+  it("reads the specification identifier — the document-type discriminator", () => {
+    // Recorded as read by nothing since decision 0082.
+    expect(String(parseUblInvoice(FULL_HEADER).facts["BT-24"])).toContain("peppol.eu");
+    expect(String(parseUblInvoice(FULL_HEADER).facts["BT-23"])).toContain("billing:01");
+  });
+
+  it("reads the buyer country, which is not the seller country", () => {
+    const { facts } = parseUblInvoice(FULL_HEADER);
+    expect(facts["BT-40"]).toBe("DE");
+    expect(facts["BT-55"]).toBe("GB");
+  });
+
+  it("reads the total without VAT, which is not the sum of lines", () => {
+    // The missing middle of the arithmetic. BT-106 is the sum of LINES
+    // and differs from BT-109 whenever a document-level allowance or
+    // charge exists — 3800 against 3600 here.
+    const { facts } = parseUblInvoice(FULL_HEADER);
+    expect(facts["BT-106"]).toBe(3800);
+    expect(facts["BT-109"]).toBe(3600);
+    expect(Number(facts["BT-109"]) + Number(facts["BT-110"] ?? 900)).toBe(Number(facts["BT-112"]));
   });
 });

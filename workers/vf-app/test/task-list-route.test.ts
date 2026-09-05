@@ -191,6 +191,27 @@ describe("one list across every stage", () => {
 });
 
 describe("the subject", () => {
+  it("names the seller, not only its VAT identifier", async () => {
+    // A person scanning a queue is looking for a company, not a tax
+    // number -- and until decision 0112 the seller name was not read
+    // from the document at all.
+    await seedInstance("inv-1", "validation", "v-1");
+    await env.DB.prepare(
+      "UPDATE invoice_headers SET facts_json = ? WHERE id = ?"
+    ).bind(JSON.stringify({ "BT-27": "Skelettbau Munch GmbH" }), "inv-1").run();
+    await seedTask("t-1", "validation", "v-1", { user: "alice" });
+
+    expect((await list("alice"))[0].subject?.supplierName).toBe("Skelettbau Munch GmbH");
+  });
+
+  it("falls back to the identifier when the document gave no name", async () => {
+    await seedInstance("inv-1", "validation", "v-1");
+    await seedTask("t-1", "validation", "v-1", { user: "alice" });
+    const subject = (await list("alice"))[0].subject;
+    expect(subject?.supplierName).toBeNull();
+    expect(subject?.supplierVatId).toBe("DE813799533");
+  });
+
   it("carries the invoice, so a row means something to a person", async () => {
     // A task id is useless. A row needs the supplier and the amount.
     await seedInstance("inv-1", "validation", "v-1");
