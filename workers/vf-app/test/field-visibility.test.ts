@@ -185,3 +185,33 @@ describe("what a screen receives", () => {
     expect(find(fields, "BT-5")?.description).toBeTruthy();
   });
 });
+
+describe("the parties are visible by default (decision 0115)", () => {
+  /**
+   * A seller and buyer panel showing two fields each would be a panel
+   * not worth its heading.
+   */
+  it("shows both sides of the transaction", async () => {
+    const fields = await resolveFieldVisibility(env.DB, null);
+    for (const code of ["BT-27", "BT-31", "BT-34", "BT-40", "BT-44", "BT-48", "BT-49", "BT-55"]) {
+      expect(find(fields, code)?.visibility, code).not.toBe("hidden");
+    }
+  });
+
+  it("treats the seller's and buyer's identifiers alike", async () => {
+    // The seller's VAT identifier being editable while the buyer's was
+    // hidden was an inconsistency nobody chose.
+    const fields = await resolveFieldVisibility(env.DB, null);
+    expect(find(fields, "BT-48")?.visibility).not.toBe("hidden");
+    expect(find(fields, "BT-40")?.visibility).toBe(find(fields, "BT-55")?.visibility);
+  });
+
+  it("offers them for reading rather than typing", async () => {
+    // These come from the document, and somebody keying an unreadable
+    // one is far more likely to be correcting an amount than a
+    // counterparty's country.
+    const fields = await resolveFieldVisibility(env.DB, null);
+    expect(find(fields, "BT-44")?.visibility).toBe("read");
+    expect(find(fields, "BT-55")?.visibility).toBe("read");
+  });
+});

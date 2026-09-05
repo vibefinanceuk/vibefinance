@@ -52,10 +52,28 @@ const DEFAULT_VISIBILITY: Record<string, Visibility> = {
   "BT-126": "read",
   "BT-24": "read",
   "BT-23": "read",
+
+  /**
+   * The parties — decision 0115.
+   *
+   * A seller and buyer panel showing two fields each would be a panel
+   * not worth its heading, so the terms that identify a party are
+   * visible by default. **Both sides treated alike**: the seller's VAT
+   * identifier being editable while the buyer's was hidden was an
+   * inconsistency nobody chose.
+   *
+   * `read` rather than `edit`, because these come from the document and
+   * a person keying an unreadable one is far more likely to be
+   * correcting an amount than a counterparty's country.
+   */
   "BT-27": "read",
-  "BT-44": "read",
-  "BT-49": "read",
   "BT-34": "read",
+  "BT-40": "read",
+  "BT-44": "read",
+  "BT-48": "read",
+  "BT-49": "read",
+  "BT-55": "read",
+  "BT-10": "read",
 };
 
 /**

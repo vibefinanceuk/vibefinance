@@ -415,30 +415,56 @@ export async function openViewer(task, onClose) {
   };
 
   /**
-   * Status first, and separately — decision 0108. The row somebody
-   * reads on most documents without reading anything else.
+   * Which fields describe the seller, the buyer, and neither —
+   * decision 0115.
+   *
+   * **Derived from the standard, not listed here.** BG-4 collects the
+   * seller's terms and BG-7 the buyer's, so an interface that kept its
+   * own list would drift the first time a party field was added — which
+   * is exactly what happened to the line fields before decision 0114.
+   */
+  const SELLER_FIELDS = ["BT-27", "BT-31", "BT-34", "BT-40"];
+  const BUYER_FIELDS = ["BT-44", "BT-48", "BT-49", "BT-55", "BT-10"];
+
+  const partyPanel = (titleKey, codes) => {
+    const shown = headerFields.filter((f) => codes.includes(f.field));
+    // A panel with nothing in it is worse than no panel: it says
+    // "there should be something here" and there never will be.
+    if (shown.length === 0) return null;
+    return el("div", { class: "panel" }, [
+      el("h3", { text: t(titleKey) }),
+      el("div", { class: "vfields" }, shown.map((spec) => field(spec, existing))),
+    ]);
+  };
+
+  /**
+   * One status panel, not four — decision 0115.
+   *
+   * The operator's observation: four panels for four short values took
+   * a lot of room to say very little. **Status, stage, waiting and
+   * owner belong together** — they are one sentence about where this
+   * document is, and reading them as a row of separate cards makes
+   * that harder rather than easier.
+   *
+   * The space they were using now belongs to the seller and the buyer,
+   * which the screen had nowhere to show at all.
    */
   const keyed = ["supplierVatId", "currency", "issueDate", "totalWithVat"].filter(
     (f) => known[f] !== null && known[f] !== undefined
   ).length;
 
+  const statusItem = (labelKey, value, className) =>
+    el("div", { class: className ? `statitem ${className}` : "statitem" }, [
+      el("div", { class: "label", text: t(labelKey) }),
+      el("div", { class: "value", text: value }),
+    ]);
+
   const status = el("div", { class: "statusrow" }, [
-    el("div", { class: "panel stat warn" }, [
-      el("div", { class: "label", text: t("viewer.status") }),
-      el("div", { class: "value", text: t("tasks.notkeyed") }),
-      el("div", { class: "note", text: `${keyed}/4 ${t("viewer.known")}` }),
-    ]),
-    el("div", { class: "panel stat" }, [
-      el("div", { class: "label", text: t("tasks.stage") }),
-      el("div", { class: "value", text: task.stageName ?? task.stageId }),
-    ]),
-    el("div", { class: "panel stat" }, [
-      el("div", { class: "label", text: t("tasks.waiting") }),
-      el("div", { class: "value", text: waited(task.createdAt) }),
-    ]),
-    el("div", { class: "panel stat" }, [
-      el("div", { class: "label", text: t("tasks.owner") }),
-      el("div", { class: "value", text: t(`tasks.${task.ownership}`) }),
+    el("div", { class: "panel statusbar" }, [
+      statusItem("viewer.status", `${t("tasks.notkeyed")} · ${keyed}/4 ${t("viewer.known")}`, "warn"),
+      statusItem("tasks.stage", task.stageName ?? task.stageId),
+      statusItem("tasks.waiting", waited(task.createdAt)),
+      statusItem("tasks.owner", t(`tasks.${task.ownership}`)),
     ]),
   ]);
 
@@ -453,9 +479,20 @@ export async function openViewer(task, onClose) {
         // Actions collected in one place (decision 0108).
         el("div", { class: "columns" }, [
           el("div", {}, [
+            // Seller and buyer side by side, in the space the four
+            // status panels were using (decision 0115).
+            el("div", { class: "parties" }, [partyPanel("viewer.seller", SELLER_FIELDS), partyPanel("viewer.buyer", BUYER_FIELDS)].filter(Boolean)),
             el("div", { class: "panel" }, [
               el("h3", { text: t("viewer.fields") }),
-              el("div", { class: "vfields" }, headerFields.map((spec) => field(spec, existing))),
+              // **Party fields removed**, or they would appear twice —
+              // once in their own panel and once here.
+              el(
+                "div",
+                { class: "vfields" },
+                headerFields
+                  .filter((spec) => ![...SELLER_FIELDS, ...BUYER_FIELDS].includes(spec.field))
+                  .map((spec) => field(spec, existing))
+              ),
             ]),
             linePanel(),
             el("div", { class: "problem", id: "viewer-note", role: "status" }),

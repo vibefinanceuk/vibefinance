@@ -264,6 +264,31 @@
   .stat.warn .value { color: var(--text-warning); }
 
   /*
+    One status panel rather than four (decision 0115). Four panels for
+    four short values took a lot of room to say very little, and these
+    are one sentence about where a document is.
+  */
+  .statusbar {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 18px;
+    padding: 14px 18px;
+  }
+
+  .statitem .label { font-size: 12px; color: var(--text-secondary); }
+  .statitem .value { font-size: 15px; font-weight: 600; margin-top: 2px; }
+  .statitem.warn .value { color: var(--text-warning); }
+
+  /* Seller beside buyer, collapsing on a narrow screen like everything
+     else (decision 0108). */
+  .parties {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 16px;
+    margin-bottom: 16px;
+  }
+
+  /*
     Three columns on a wide monitor, fewer as it narrows.
 
     A mockup rendered at 1536px never shows what three columns do at

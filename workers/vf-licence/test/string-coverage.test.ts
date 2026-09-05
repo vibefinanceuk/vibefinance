@@ -90,6 +90,9 @@ const KEYS_THE_INTERFACE_USES = [
   "viewer.known",
   "viewer.fields",
   "viewer.actions",
+  // The party panels (decision 0115).
+  "viewer.seller",
+  "viewer.buyer",
   "viewer.lines",
   "viewer.description",
   "viewer.addline",
