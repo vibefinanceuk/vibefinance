@@ -149,12 +149,16 @@ It also unlocks a customer-specific backdrop, which can otherwise only
 appear **after** the password is verified, because that is when the
 customer becomes known.
 
-### 2. Who creates the `org_users` row
+### 2. Who creates the `org_users` row — **answered**
 
-A person can hold a credential and an access grant and **still be
-refused** by the instance (0088) — deliberately: no roles, no unit,
-nothing known about them. Today the row is created by hand, and the
-refusal does not yet say *what* is missing.
+**Provisioning does**, for the requester, who becomes the customer's
+administrator (0117). `signup_requests` already names them, so there is
+no bootstrap account to invent — and approval still gates provisioning,
+which the administrator is a consequence of rather than a substitute
+for.
+
+Not built. Decision 0117 puts it third in an order that starts with
+email.
 
 ### 3. Alerting on failed sign-ins
 
@@ -270,9 +274,15 @@ saying *"currency is EURO"* compiles, activates, fires against nothing
 and looks correct in every listing. `validateRule` has the list now and
 does not consult it. Listed as proposed since Document 2.
 
-**3. Email.** Blocks alerting on failed sign-ins, password reset,
-licence expiry warnings and every notification. Still the
-most-referenced missing capability in these records.
+**3. Email — and it has been promoted.** It blocked alerting, password
+reset and expiry warnings, all of which would be *nice*. Decision 0117
+makes it **load-bearing**: the administrator sets their password from a
+link, so without email **nobody can sign in to a new customer at all**.
+
+Then the **supplier master** with records spawning from captured
+documents, then **provisioning creating the first administrator**, then
+**Get Started**. That order is 0117's, and each step needs the one
+before it.
 
 **4. An Approval screen.** The Task Manager lists approval tasks and
 cannot open them. Field visibility (0114) is what makes an approval view

@@ -7,6 +7,16 @@ admin-key provisioning surface that makes a first account possible.
 
 ## The bootstrap account turned out to be unnecessary
 
+> **Superseded by decision 0117.** The conclusion below is true as far
+> as it goes and reaches the wrong destination: it leaves the customer
+> with **no administrator of their own**, which `HANDOVER.md` then
+> carried as an open question for days.
+>
+> There is no bootstrap account to invent because **the requester is
+> the administrator** — `signup_requests` already names them. Approval
+> still gates provisioning; the administrator is a consequence of it,
+> not a substitute for it.
+
 Decision 0083 section 7 designed a per-environment administrator that
 self-disables once a named administrator exists — to break the deadlock
 decision 0055 section 8.2 records, where creating the first user is

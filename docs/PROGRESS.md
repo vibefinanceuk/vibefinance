@@ -168,7 +168,10 @@ source it arrived through — and a stage can refuse to let it past
 without one. What remains unconnected is any **user** or **process**
 scoping, and there is still no interface for placing one by hand.
 
-**The supplier master.** `/suppliers/:vatId/history` queries invoices by
+**The supplier master.** Now has a reason and a shape: decision 0117
+spawns records from captured documents, so the master is populated by
+using the product rather than by typing five hundred suppliers before
+anything works. Today `/suppliers/:vatId/history` queries invoices by
 the VAT identifier printed on them, so a supplier is a string that
 appears on documents rather than a record. **Supplier sites assigned to
 operating units** — how a supplier's invoices reach the right part of
@@ -341,7 +344,7 @@ holding — 38 migrations for `vf-app`, 21 for `vf-licence`.
 | `docs/design/mockups/` | Four screens as static HTML | Current |
 | `docs/design/multi-authority-intake.md` | Non-EN-16931 authorities | Design only |
 | `docs/design/text-layer-extraction.md` | Reading a PDF's own text | Design only |
-| `docs/decisions/` | 116 decision records | Current |
+| `docs/decisions/` | 117 decision records | Current |
 
 Document 4's markdown source is at `docs/documents/`, with
 `scripts/build-document-04.cjs` rendering the Word edition. The `.docx`
