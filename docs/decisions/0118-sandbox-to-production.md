@@ -99,10 +99,34 @@ cross-reference hold: a stage's `rule_set_id`, a rule's
 **The cost is that this list must be maintained.** A table added and not
 classified is a table that silently fails to migrate, or silently does.
 
-That is the same class of gap this project keeps finding, so the check
-should be structural: **a test asserting every table in the schema
-appears in exactly one column of the list above**, failing when a new
-one appears in neither.
+So the check is structural rather than hoped for.
+`shared/migration/table-classes.ts` classifies every table, and a test
+reads the migration chain and asserts the two agree — in both
+directions, so a table renamed away leaves no stale entry either.
+
+Watched to fail: adding a table produces
+
+> In the schema and classified nowhere: `supplier_sites`. Add each to
+> `CONFIGURATION_TABLES` or `NON_MIGRATING_TABLES`...
+
+### Why not a naming convention
+
+Prefixing tables `con_` and `run_` was proposed, and rejected for three
+reasons.
+
+**Forty tables and 273 SQL references** would have to change — and
+decision 0084 is this project's own demonstration of how renaming a
+referenced table goes in SQLite: existing rows survive, new inserts
+fail, and the check that passed proved nothing.
+
+**The binary does not fit the line.** `org_user_roles` does not
+migrate and is not *runtime* data — it is a decision about a person. A
+name saying otherwise teaches everyone the wrong distinction.
+
+**And a convention cannot be checked.** It is followed or forgotten,
+which is exactly the weakness that let `field.bt-34` reach a live
+screen behind a hand-maintained list (decision 0107). A list with a
+test behind it is the same self-documentation, enforced.
 
 ---
 

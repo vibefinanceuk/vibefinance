@@ -324,7 +324,7 @@ elsewhere.
 | `vf-app` | 997 |
 | `vf-licence` | 289 |
 | `vf-ui` | 42 |
-| `shared` | 241 passing, 2 known pre-existing failures |
+| `shared` | 252 passing, 2 known pre-existing failures |
 
 Both migration chains replay clean with every standing invariant
 holding — 38 migrations for `vf-app`, 21 for `vf-licence`.
