@@ -286,12 +286,12 @@ elsewhere.
 
 | Package | Tests |
 |---|---|
-| `vf-app` | 935 |
+| `vf-app` | 940 |
 | `vf-licence` | 153 |
 | `shared` | 149 passing, 2 known pre-existing failures |
 
 Both migration chains replay clean with every standing invariant
-holding — 34 migrations for `vf-app`, 16 for `vf-licence`.
+holding — 35 migrations for `vf-app`, 17 for `vf-licence`.
 
 ---
 

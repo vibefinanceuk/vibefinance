@@ -224,3 +224,125 @@ describe("validation is reported after keying (decision 0072)", () => {
     expect((result.body as { validation: { advisory: boolean } }).validation.advisory).toBe(true);
   });
 });
+
+describe("keying lines (decision 0109)", () => {
+  /**
+   * The route has always accepted `body.lines` and passed them to the
+   * ordinary writer, so keyed lines were storable. **What was missing
+   * is any record that a person typed them** — which left a typed line
+   * amount indistinguishable from an extracted one.
+   */
+  async function withLines() {
+    await seedInvoice("inv-lines", { "BT-112": 100 });
+    for (const [n, description, amount] of [
+      [1, "Support", 60],
+      [2, "Training", 40],
+    ] as [number, string, number][]) {
+      await env.DB.prepare(
+        "INSERT INTO invoice_lines (id, invoice_id, line_number, description, amount, facts_json) VALUES (?, 'inv-lines', ?, ?, ?, '{}')"
+      )
+        .bind(`l-${n}`, n, description, amount)
+        .run();
+    }
+  }
+
+  it("records who typed a line amount", async () => {
+    await withLines();
+    await handleKeyInvoiceFields(
+      env.DB,
+      "inv-lines",
+      {
+        facts: {},
+        lines: [
+          { lineNumber: 1, description: "Support", amount: 65 },
+          { lineNumber: 2, description: "Training", amount: 40 },
+        ],
+      } as never,
+      "u-dan"
+    );
+
+    const row = await env.DB.prepare(
+      "SELECT field, line_number, keyed_by FROM keyed_fields WHERE line_number IS NOT NULL"
+    ).first<{ field: string; line_number: number; keyed_by: string }>();
+
+    expect(row?.field).toBe("line.1.amount");
+    expect(row?.line_number).toBe(1);
+    expect(row?.keyed_by).toBe("u-dan");
+  });
+
+  it("records only what changed", async () => {
+    // Somebody opening a line table and saving without editing should
+    // not appear to have typed every figure on the invoice.
+    await withLines();
+    await handleKeyInvoiceFields(
+      env.DB,
+      "inv-lines",
+      {
+        facts: {},
+        lines: [
+          { lineNumber: 1, description: "Support", amount: 60 },
+          { lineNumber: 2, description: "Training", amount: 40 },
+        ],
+      } as never,
+      "u-dan"
+    );
+
+    const count = await env.DB.prepare(
+      "SELECT count(*) AS n FROM keyed_fields WHERE line_number IS NOT NULL"
+    ).first<{ n: number }>();
+    expect(count?.n).toBe(0);
+  });
+
+  it("puts lines in the same provenance list as header fields", async () => {
+    // So a rule testing provenance.keyed with `contains` sees both.
+    await withLines();
+    await handleKeyInvoiceFields(
+      env.DB,
+      "inv-lines",
+      {
+        facts: { "BT-1": "INV-9" },
+        lines: [
+          { lineNumber: 1, description: "Support", amount: 65 },
+          { lineNumber: 2, description: "Training", amount: 40 },
+        ],
+      } as never,
+      "u-dan"
+    );
+
+
+    const row = await env.DB.prepare(
+      "SELECT facts_json FROM invoice_headers WHERE id = 'inv-lines'"
+    ).first<{ facts_json: string }>();
+    const keyed = String(JSON.parse(row!.facts_json)["provenance.keyed"]);
+
+    expect(keyed).toContain("BT-1");
+    expect(keyed).toContain("line.1.amount");
+  });
+
+  it("records a line typed where none existed", async () => {
+    // The case a document nobody could read actually presents: no lines
+    // at all, and a person types them.
+    await seedInvoice("inv-empty", {});
+    await handleKeyInvoiceFields(
+      env.DB,
+      "inv-empty",
+      { facts: {}, lines: [{ lineNumber: 1, description: "Consultancy", amount: 500 }] } as never,
+      "u-dan"
+    );
+
+    const rows = await env.DB.prepare(
+      "SELECT field FROM keyed_fields WHERE invoice_id = 'inv-empty' AND line_number = 1 ORDER BY field"
+    ).all<{ field: string }>();
+    expect(rows.results.map((r: { field: string }) => r.field)).toEqual(["line.1.amount", "line.1.description"]);
+  });
+
+  it("leaves header keying unchanged", async () => {
+    await withLines();
+    await handleKeyInvoiceFields(env.DB, "inv-lines", { facts: { "BT-1": "INV-9" } } as never, "u-dan");
+
+    const row = await env.DB.prepare(
+      "SELECT line_number FROM keyed_fields WHERE field = 'BT-1'"
+    ).first<{ line_number: number | null }>();
+    expect(row?.line_number).toBeNull();
+  });
+});

@@ -14,6 +14,8 @@ import { t } from "/strings.js";
 import { frame, topbar } from "/tasks.js";
 
 let current = null;
+/** The line table's working state — decision 0109. */
+let lines = [];
 
 function el(tag, props = {}, children = []) {
   const node = document.createElement(tag);
@@ -90,6 +92,99 @@ function note(message) {
   if (box) box.textContent = message;
 }
 
+/**
+ * The running comparison — decision 0109.
+ *
+ * **Advisory, never blocking.** An invoice whose lines do not sum to
+ * its printed total is a fact to record faithfully, not an input to
+ * prevent — the same principle decision 0072 established for
+ * validation, applied where a person can see it.
+ *
+ * It says what it found. It does not stop anybody saving.
+ */
+function updateTotals() {
+  const summed = lines.reduce((total, line) => total + (Number(line.amount) || 0), 0);
+  const printed = Number(document.getElementById("f-BT-112")?.value) || 0;
+
+  const box = document.getElementById("linetotal");
+  if (!box) return;
+
+  const difference = Math.round((summed - printed) * 100) / 100;
+  box.textContent =
+    printed === 0
+      ? `${t("viewer.linetotal")} ${summed.toFixed(2)}`
+      : `${t("viewer.linetotal")} ${summed.toFixed(2)} · ${
+          difference === 0 ? t("viewer.matches") : `${t("viewer.differs")} ${difference.toFixed(2)}`
+        }`;
+  box.className = difference === 0 || printed === 0 ? "linetotal" : "linetotal off";
+}
+
+function lineRow(line, index) {
+  const cell = (field, type) =>
+    el("td", {}, [
+      el("input", {
+        type,
+        step: type === "number" ? "0.01" : undefined,
+        value: line[field] ?? "",
+        oninput: (event) => {
+          line[field] = type === "number" ? event.target.value : event.target.value;
+          updateTotals();
+        },
+      }),
+    ]);
+
+  return el("tr", {}, [
+    el("td", { class: "num muted", text: String(index + 1) }),
+    cell("description", "text"),
+    cell("amount", "number"),
+    el("td", {}, [
+      el("button", {
+        class: "rm",
+        text: "×",
+        title: t("viewer.removeline"),
+        onclick: () => {
+          lines.splice(index, 1);
+          renderLines();
+        },
+      }),
+    ]),
+  ]);
+}
+
+function renderLines() {
+  const body = document.getElementById("lines");
+  if (!body) return;
+  body.replaceChildren(...lines.map((line, index) => lineRow(line, index)));
+  updateTotals();
+}
+
+function linePanel() {
+  return el("div", { class: "panel" }, [
+    el("h3", { text: t("viewer.lines") }),
+    el("table", { class: "linetable" }, [
+      el("thead", {}, [
+        el("tr", {}, [
+          el("th", { class: "num", text: "#" }),
+          el("th", { text: t("viewer.description") }),
+          el("th", { class: "num", text: t("tasks.amount") }),
+          el("th", { text: "" }),
+        ]),
+      ]),
+      el("tbody", { id: "lines" }),
+    ]),
+    el("div", { class: "linefoot" }, [
+      el("button", {
+        text: t("viewer.addline"),
+        onclick: () => {
+          lines.push({ description: "", amount: "" });
+          renderLines();
+        },
+      }),
+      el("div", { class: "linetotal", id: "linetotal" }),
+    ]),
+  ]);
+}
+
 async function save(close) {
   const facts = {};
   for (const spec of FIELDS) {
@@ -98,7 +193,21 @@ async function save(close) {
     facts[spec.code] = spec.type === "number" ? Number(raw) : raw;
   }
 
-  if (Object.keys(facts).length === 0) {
+  // **Every line, not just the changed ones.** The writer replaces the
+  // whole set (`DELETE` then reinsert), so sending a subset would
+  // delete the rest. The server works out what actually changed for the
+  // provenance trail (decision 0109).
+  const payload = { facts };
+  const usable = lines
+    .filter((line) => String(line.description ?? "").trim() !== "" || String(line.amount ?? "") !== "")
+    .map((line, index) => ({
+      lineNumber: index + 1,
+      description: String(line.description ?? "").trim(),
+      amount: line.amount === "" ? null : Number(line.amount),
+    }));
+  if (usable.length > 0) payload.lines = usable;
+
+  if (Object.keys(facts).length === 0 && usable.length === 0) {
     note(t("viewer.nothing"));
     return;
   }
@@ -106,7 +215,7 @@ async function save(close) {
   const response = await fetch(`/api/invoices/${encodeURIComponent(current.subject.id)}/key`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ facts }),
+    body: JSON.stringify(payload),
   });
 
   const body = await response.json().catch(() => ({}));
@@ -141,6 +250,9 @@ async function save(close) {
  */
 export function openViewer(task, onClose) {
   current = task;
+  // A document nobody could read usually has no lines at all, so the
+  // table starts empty and the person adds what they see.
+  lines = [];
   const shell = document.getElementById("viewer");
 
   const known = task.subject ?? {};
@@ -189,9 +301,12 @@ export function openViewer(task, onClose) {
         // Fields beside actions, rather than fields above a footer.
         // Actions collected in one place (decision 0108).
         el("div", { class: "columns" }, [
-          el("div", { class: "panel" }, [
-            el("h3", { text: t("viewer.fields") }),
-            el("div", { class: "vfields" }, FIELDS.map((spec) => field(spec, existing))),
+          el("div", {}, [
+            el("div", { class: "panel" }, [
+              el("h3", { text: t("viewer.fields") }),
+              el("div", { class: "vfields" }, FIELDS.map((spec) => field(spec, existing))),
+            ]),
+            linePanel(),
             el("div", { class: "problem", id: "viewer-note", role: "status" }),
           ]),
           el("div", {}, [
@@ -227,6 +342,11 @@ export function openViewer(task, onClose) {
       ])
     )
   );
+
+  renderLines();
+  // The comparison follows the printed total as it is typed, not only
+  // when a line changes.
+  document.getElementById("f-BT-112")?.addEventListener("input", updateTotals);
 }
 
 /** How long this has waited, which is the thing that costs money. */

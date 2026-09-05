@@ -351,6 +351,39 @@
   /* The Validation viewer — decision 0106. */
   #viewer { width: auto; padding: 0; }
 
+  /* The line table — decision 0109. */
+  .linetable { width: 100%; table-layout: fixed; margin-bottom: 10px; }
+  .linetable th { padding: 0 6px 6px; }
+  .linetable td { padding: 3px 6px; border: none; }
+  .linetable input { min-height: 30px; font-size: 13px; }
+  .linetable th:first-child, .linetable td:first-child { width: 30px; }
+  .linetable th:last-child, .linetable td:last-child { width: 34px; }
+
+  button.rm {
+    min-height: 28px;
+    width: 28px;
+    padding: 0;
+    color: var(--text-muted);
+    border-color: transparent;
+  }
+
+  .linefoot { display: flex; align-items: center; gap: 12px; }
+
+  /*
+    Advisory, never blocking (decision 0109). An invoice whose lines do
+    not sum to its printed total is a fact to record faithfully, not an
+    input to prevent — so this states what it found and nothing stops
+    saving.
+  */
+  .linetotal {
+    margin-left: auto;
+    font-size: 13px;
+    color: var(--text-secondary);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .linetotal.off { color: var(--text-warning); }
+
   /* One action per line, in one place — decision 0108. */
   .actions button { display: block; }
   button.wide { width: 100%; margin: 0 0 8px; min-height: 32px; }

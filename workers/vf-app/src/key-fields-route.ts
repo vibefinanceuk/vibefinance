@@ -49,10 +49,15 @@ export async function handleKeyInvoiceFields(
     return { status: 400, body: { error: "facts (an object) is required" } };
   }
   const entries = Object.entries(supplied as Record<string, unknown>);
-  if (entries.length === 0) {
+  if (entries.length === 0 && !Array.isArray(body.lines)) {
     // Partial keying is allowed — keying NOTHING is not. It would
     // record a person as having produced facts they did not produce.
-    return { status: 400, body: { error: "facts must contain at least one field" } };
+    //
+    // **Lines count as something** (decision 0109). Somebody typing a
+    // line table and no header field is exactly the case this screen
+    // exists for, and the original guard refused it: `facts` was the
+    // only thing keying could mean when it was written.
+    return { status: 400, body: { error: "facts or lines must contain at least one entry" } };
   }
 
   // Every field must be one a rule could later reference. A value
@@ -91,9 +96,16 @@ export async function handleKeyInvoiceFields(
   // losing that to record what a person typed would trade one kind of
   // provenance for another.
   const merged: Record<string, unknown> = { ...existingFacts };
-  const changes: { field: string; previous: unknown; next: unknown }[] = [];
+  // `line` is null for a header field. One trail rather than two, so
+  // "what did a person type on this invoice" is one query (0109).
+  const changes: { field: string; previous: unknown; next: unknown; line: number | null }[] = [];
   for (const [field, value] of entries) {
-    changes.push({ field, previous: existingFacts[field as keyof InvoiceFacts] ?? null, next: value });
+    changes.push({
+      field,
+      previous: existingFacts[field as keyof InvoiceFacts] ?? null,
+      next: value,
+      line: null,
+    });
     merged[field] = value;
   }
 
@@ -105,6 +117,47 @@ export async function handleKeyInvoiceFields(
   // Cumulative across keying sessions: a second person keying a
   // different field must not erase the record that the first keyed
   // theirs.
+  /**
+   * Lines a person typed — decision 0109.
+   *
+   * The route has always accepted `body.lines` and passed them to the
+   * ordinary writer, so keyed lines were storable. **What was missing
+   * is any record that a person typed them**, which left a typed line
+   * indistinguishable from an extracted one.
+   *
+   * Recorded as `line.<n>.<field>` in the same `provenance.keyed` list
+   * as header fields, so a rule testing it with `contains` sees both.
+   */
+  const existingLines = await db
+    .prepare("SELECT line_number, description, amount FROM invoice_lines WHERE invoice_id = ?")
+    .bind(invoiceId)
+    .all<{ line_number: number; description: string | null; amount: number | null }>();
+
+  const before = new Map(existingLines.results.map((l) => [l.line_number, l]));
+
+  if (Array.isArray(body.lines)) {
+    for (const line of body.lines as Record<string, unknown>[]) {
+      // **From the line itself, not from its position.** The writer
+      // requires an explicit `lineNumber` and refuses without one,
+      // which is the better design: a caller says which line it means
+      // rather than relying on array order surviving a round trip.
+      const lineNumber = Number(line.lineNumber);
+      if (!Number.isInteger(lineNumber) || lineNumber < 1) continue;
+      const previous = before.get(lineNumber);
+
+      for (const field of ["description", "amount"] as const) {
+        const next = line[field];
+        if (next === undefined) continue;
+        const was = previous?.[field] ?? null;
+        // Only what actually changed. A person opening a line table and
+        // saving without editing should not appear to have typed every
+        // figure on the invoice.
+        if (was === next || (was === null && next === null)) continue;
+        changes.push({ field: `line.${lineNumber}.${field}`, previous: was, next, line: lineNumber });
+      }
+    }
+  }
+
   const previouslyKeyed = String(merged["provenance.keyed"] ?? "")
     .split(",")
     .filter(Boolean);
@@ -112,11 +165,15 @@ export async function handleKeyInvoiceFields(
   merged["provenance.keyed"] = keyedSet.join(",");
 
   const now = new Date().toISOString();
-  await db.batch(
+  // An empty batch is a D1 error, and empty is now reachable: somebody
+  // may open a line table, save, and have changed nothing (0109). That
+  // is a legitimate no-op rather than a failure.
+  if (changes.length > 0) {
+    await db.batch(
     changes.map((c) =>
       db
         .prepare(
-          "INSERT INTO keyed_fields (id, invoice_id, field, previous_value, new_value, keyed_by, keyed_at) VALUES (?, ?, ?, ?, ?, ?, ?)"
+          "INSERT INTO keyed_fields (id, invoice_id, field, previous_value, new_value, keyed_by, keyed_at, line_number) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
         )
         .bind(
           crypto.randomUUID(),
@@ -125,10 +182,12 @@ export async function handleKeyInvoiceFields(
           c.previous === null || c.previous === undefined ? null : JSON.stringify(c.previous),
           JSON.stringify(c.next),
           keyedBy,
-          now
-        )
-    )
-  );
+          now,
+            c.line
+          )
+      )
+    );
+  }
 
   // Reuses the ordinary writer, so the structured columns stay in step
   // with facts_json exactly as they do on every other path.
