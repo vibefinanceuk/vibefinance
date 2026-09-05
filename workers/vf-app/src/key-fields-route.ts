@@ -129,9 +129,14 @@ export async function handleKeyInvoiceFields(
    * as header fields, so a rule testing it with `contains` sees both.
    */
   const existingLines = await db
-    .prepare("SELECT line_number, description, amount FROM invoice_lines WHERE invoice_id = ?")
+    .prepare("SELECT line_number, description, amount, facts_json FROM invoice_lines WHERE invoice_id = ?")
     .bind(invoiceId)
-    .all<{ line_number: number; description: string | null; amount: number | null }>();
+    .all<{
+      line_number: number;
+      description: string | null;
+      amount: number | null;
+      facts_json: string;
+    }>();
 
   const before = new Map(existingLines.results.map((l) => [l.line_number, l]));
 
@@ -154,6 +159,33 @@ export async function handleKeyInvoiceFields(
         // figure on the invoice.
         if (was === next || (was === null && next === null)) continue;
         changes.push({ field: `line.${lineNumber}.${field}`, previous: was, next, line: lineNumber });
+      }
+
+      /**
+       * The line's own **facts**, which are what a rule can test.
+       *
+       * Per-line evaluation merges header facts with each line's own
+       * (decision 0027), so a BT code keyed onto a line is the thing a
+       * line-scoped rule sees. Recording only the columns would leave
+       * `provenance.keyed` claiming less than a person actually typed.
+       */
+      const nextFacts = (line.facts ?? {}) as Record<string, unknown>;
+      let previousFacts: Record<string, unknown> = {};
+      try {
+        previousFacts = JSON.parse(previous?.facts_json ?? "{}") as Record<string, unknown>;
+      } catch {
+        // A line whose stored facts cannot be parsed is treated as
+        // having none, rather than failing the whole save.
+      }
+
+      for (const [code, value] of Object.entries(nextFacts)) {
+        if (previousFacts[code] === value) continue;
+        changes.push({
+          field: `line.${lineNumber}.${code}`,
+          previous: previousFacts[code] ?? null,
+          next: value,
+          line: lineNumber,
+        });
       }
     }
   }

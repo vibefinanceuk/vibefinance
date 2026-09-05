@@ -346,3 +346,71 @@ describe("keying lines (decision 0109)", () => {
     expect(row?.line_number).toBeNull();
   });
 });
+
+describe("a keyed line is visible to a rule (decision 0109)", () => {
+  /**
+   * The gap a question found. **Per-line evaluation merges header facts
+   * with each line's own** (decision 0027), so a line whose `facts` are
+   * empty is invisible to any rule testing a line field — however well
+   * its columns are filled.
+   *
+   * The first version of the keying screen sent columns only, which
+   * would have keyed a line a rule could not then see.
+   */
+  it("stores the line's BT-coded facts, not only its columns", async () => {
+    await seedInvoice("inv-facts", {});
+    await handleKeyInvoiceFields(
+      env.DB,
+      "inv-facts",
+      {
+        facts: {},
+        lines: [
+          { lineNumber: 1, description: "Support", amount: 500, facts: { "BT-131": 500, "BT-129": 2 } },
+        ],
+      } as never,
+      "u-dan"
+    );
+
+    const row = await env.DB.prepare(
+      "SELECT facts_json FROM invoice_lines WHERE invoice_id = 'inv-facts' AND line_number = 1"
+    ).first<{ facts_json: string }>();
+
+    const facts = JSON.parse(row!.facts_json);
+    expect(facts["BT-131"]).toBe(500);
+    expect(facts["BT-129"]).toBe(2);
+  });
+
+  it("records the facts in the keyed trail too", async () => {
+    // Recording only the columns would leave provenance.keyed claiming
+    // less than a person actually typed.
+    await seedInvoice("inv-facts2", {});
+    await handleKeyInvoiceFields(
+      env.DB,
+      "inv-facts2",
+      { facts: {}, lines: [{ lineNumber: 1, amount: 500, facts: { "BT-131": 500 } }] } as never,
+      "u-dan"
+    );
+
+    const rows = await env.DB.prepare(
+      "SELECT field FROM keyed_fields WHERE invoice_id = 'inv-facts2' ORDER BY field"
+    ).all<{ field: string }>();
+
+    expect(rows.results.map((r: { field: string }) => r.field)).toContain("line.1.BT-131");
+  });
+
+  it("does not re-record a fact that has not changed", async () => {
+    await seedInvoice("inv-facts3", {});
+    const body = {
+      facts: {},
+      lines: [{ lineNumber: 1, amount: 500, facts: { "BT-131": 500 } }],
+    } as never;
+
+    await handleKeyInvoiceFields(env.DB, "inv-facts3", body, "u-dan");
+    await handleKeyInvoiceFields(env.DB, "inv-facts3", body, "u-dan");
+
+    const count = await env.DB.prepare(
+      "SELECT count(*) AS n FROM keyed_fields WHERE invoice_id = 'inv-facts3' AND field = 'line.1.BT-131'"
+    ).first<{ n: number }>();
+    expect(count?.n).toBe(1);
+  });
+});

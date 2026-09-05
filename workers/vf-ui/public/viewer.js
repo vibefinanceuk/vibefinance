@@ -17,6 +17,30 @@ let current = null;
 /** The line table's working state — decision 0109. */
 let lines = [];
 
+/**
+ * What a line column means in the closed vocabulary — decision 0109.
+ *
+ * **The columns are convenience; the facts are the truth.** A line
+ * stores `description`, `amount` and `cost_centre` as columns and
+ * everything else in `facts_json`, and **per-line rule evaluation reads
+ * the facts** (decision 0027): a stage scoped to lines merges header
+ * facts with each line's own.
+ *
+ * So a line whose `facts` are empty is invisible to any rule testing a
+ * line field, however well its columns are filled. The first version of
+ * this screen sent columns only, which would have keyed a line a rule
+ * could not then see.
+ *
+ * `description` has no entry here on purpose: the vocabulary has no
+ * field for it (BT-153 and BT-154 are not in the closed set), so it
+ * remains a column a person reads rather than a fact a rule tests.
+ */
+const LINE_FACTS = {
+  amount: "BT-131", // line net amount
+  quantity: "BT-129",
+  costCentre: "BT-133",
+};
+
 function el(tag, props = {}, children = []) {
   const node = document.createElement(tag);
   for (const [key, value] of Object.entries(props)) {
@@ -136,6 +160,7 @@ function lineRow(line, index) {
   return el("tr", {}, [
     el("td", { class: "num muted", text: String(index + 1) }),
     cell("description", "text"),
+    cell("quantity", "number"),
     cell("amount", "number"),
     el("td", {}, [
       el("button", {
@@ -166,7 +191,8 @@ function linePanel() {
         el("tr", {}, [
           el("th", { class: "num", text: "#" }),
           el("th", { text: t("viewer.description") }),
-          el("th", { class: "num", text: t("tasks.amount") }),
+          el("th", { class: "num", text: t("field.bt-129") }),
+          el("th", { class: "num", text: t("field.bt-131") }),
           el("th", { text: "" }),
         ]),
       ]),
@@ -176,7 +202,7 @@ function linePanel() {
       el("button", {
         text: t("viewer.addline"),
         onclick: () => {
-          lines.push({ description: "", amount: "" });
+          lines.push({ description: "", quantity: "", amount: "" });
           renderLines();
         },
       }),
@@ -199,12 +225,29 @@ async function save(close) {
   // provenance trail (decision 0109).
   const payload = { facts };
   const usable = lines
-    .filter((line) => String(line.description ?? "").trim() !== "" || String(line.amount ?? "") !== "")
-    .map((line, index) => ({
-      lineNumber: index + 1,
-      description: String(line.description ?? "").trim(),
-      amount: line.amount === "" ? null : Number(line.amount),
-    }));
+    .filter(
+      (line) =>
+        String(line.description ?? "").trim() !== "" ||
+        String(line.amount ?? "") !== "" ||
+        String(line.quantity ?? "") !== ""
+    )
+    .map((line, index) => {
+      // Columns AND facts. The columns are what a person reads back;
+      // the facts are what a rule can test (decision 0027).
+      const facts = {};
+      for (const [column, code] of Object.entries(LINE_FACTS)) {
+        const raw = line[column];
+        if (raw === undefined || raw === "" || raw === null) continue;
+        facts[code] = column === "costCentre" ? String(raw).trim() : Number(raw);
+      }
+
+      return {
+        lineNumber: index + 1,
+        description: String(line.description ?? "").trim(),
+        amount: line.amount === "" ? null : Number(line.amount),
+        facts,
+      };
+    });
   if (usable.length > 0) payload.lines = usable;
 
   if (Object.keys(facts).length === 0 && usable.length === 0) {

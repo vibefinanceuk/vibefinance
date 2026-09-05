@@ -98,6 +98,44 @@ direction by one screen rather than settled generally.
 
 ---
 
+## The columns are convenience; the facts are the truth
+
+**Found by a question rather than a test:** *"is the invoice line table
+based on the Peppol BIS 3.0 definition?"*
+
+It is not, and it was never meant to be. `invoice_lines` stores
+`description`, `amount` and `cost_centre` as columns and everything else
+in `facts_json` — the same pattern as the header, where
+`supplier_vat_id` and `currency` are columns and the facts are the
+truth.
+
+**The first version of this screen sent columns only.** Which meant
+every line a person typed stored `facts_json: {}` — and **per-line rule
+evaluation reads the facts** (decision 0027): a line-scoped stage merges
+header facts with each line's own.
+
+So a keyed line would have been **invisible to any rule testing a line
+field**, however well its columns were filled. A rule on `BT-131` — line
+net amount — would see nothing on a line somebody had just typed the
+amount into.
+
+The screen now sends both, and the route records the facts in the keyed
+trail as well as the columns. Recording only the columns would leave
+`provenance.keyed` claiming less than a person actually typed.
+
+| Column | Fact | Why |
+| --- | --- | --- |
+| `amount` | `BT-131` | Line net amount |
+| `quantity` | `BT-129` | Invoiced quantity |
+| `costCentre` | `BT-133` | Line accounting reference |
+| `description` | **none** | The closed vocabulary has no field for it — BT-153 and BT-154 are not in the set — so it stays a column a person reads rather than a fact a rule tests |
+
+Watched to fail. And worth noting the shape: **the columns were filled,
+the save succeeded, and the screen reported success.** Nothing would
+have looked wrong until somebody asked why a line rule never fired.
+
+---
+
 ## What is not built
 
 - **Line-level fields beyond description and amount.** `invoice_lines`
