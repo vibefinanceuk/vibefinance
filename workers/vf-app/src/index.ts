@@ -49,6 +49,7 @@ import { handleKeyInvoiceFields } from "./key-fields-route.js";
 import { handleReturnToStage, handleReturnToSupplier, handleDiscard } from "./return-route.js";
 import { authenticateUser, authenticateUserOrSession } from "./user-auth.js";
 import { handleListMyTasks } from "./task-list-route.js";
+import { FIELD_CODE_LISTS, isClosedList } from "@vibefinance/shared";
 import { handlePreflight, withCors } from "@vibefinance/shared";
 import { mintDocumentToken, verifyDocumentToken } from "./document-token.js";
 import { retrieveInvoiceDocument } from "./document-storage.js";
@@ -276,10 +277,10 @@ interface EvaluateRequestBody {
   invoiceId: string;
 }
 
-function json(body: unknown, status = 200): Response {
+function json(body: unknown, status = 200, extraHeaders: Record<string, string> = {}): Response {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", ...extraHeaders },
   });
 }
 
@@ -1153,6 +1154,48 @@ export default {
         offset: Number(url.searchParams.get("offset")) || undefined,
       });
       return json(result.body, result.status);
+    }
+
+
+    // The standard's own code lists — decision 0113. Accepts a session,
+    // because the keying screen needs them to offer a dropdown.
+    //
+    // **Not customer configuration**, so there is nothing to resolve
+    // per tenant: the same list serves every instance, and the response
+    // names its agency and version so a client can see which it has.
+    if (pathname === "/code-lists" && request.method === "GET") {
+      const { db } = resolveTenant(request, env);
+      const auth = await authenticateUserOrSession(
+        db,
+        request,
+        isPublicKeyJwk(env.LICENCE_SIGNING_PUBLIC_KEY) ? env.LICENCE_SIGNING_PUBLIC_KEY : undefined,
+        env.ENVIRONMENT_ID
+      );
+      if (!auth.user) return json({ error: auth.reason }, 401);
+
+      return json(
+        {
+          // Keyed by field, because that is how a screen asks: "what
+          // may go in BT-5".
+          fields: Object.fromEntries(
+            Object.entries(FIELD_CODE_LISTS).map(([field, list]) => [
+              field,
+              {
+                id: list.id,
+                agency: list.agency,
+                version: list.version,
+                name: list.name,
+                closed: isClosedList(field),
+                codes: list.codes.map(([code, label]) => ({ code, label })),
+              },
+            ])
+          ),
+        },
+        200,
+        // Cacheable for a day: a standard changes when ISO says so, not
+        // when a customer does.
+        { "Cache-Control": "public, max-age=86400" }
+      );
     }
 
 

@@ -287,3 +287,11 @@ describe("the interface's words come from the control plane (decision 0107)", ()
     }
   });
 });
+
+describe("the standard's code lists reach the screen (decision 0113)", () => {
+  it("proxies them", async () => {
+    // Refused for want of a session, not for want of a route.
+    const res = await SELF.fetch("https://ui.example.com/api/code-lists");
+    expect(res.status).toBe(401);
+  });
+});

@@ -18,6 +18,26 @@ let current = null;
 let lines = [];
 
 /**
+ * The standard's own code lists — decision 0113.
+ *
+ * Fetched once and held, because they are the same for every invoice
+ * and every customer. **A dropdown rather than a text box**: `EUR` is
+ * valid, `EURO` and `eur` are not, and a person typing a currency
+ * should not have to know which.
+ */
+let codeLists = {};
+
+async function loadCodeLists() {
+  if (Object.keys(codeLists).length > 0) return;
+  try {
+    const response = await fetch("/api/code-lists");
+    if (response.ok) codeLists = (await response.json()).fields ?? {};
+  } catch {
+    // A text box is worse than a dropdown and better than no screen.
+  }
+}
+
+/**
  * What a line column means in the closed vocabulary — decision 0109.
  *
  * **The columns are convenience; the facts are the truth.** A line
@@ -92,15 +112,49 @@ const FIELDS = [
   { code: "BT-115", type: "number" },
 ];
 
+/**
+ * An input, or a picker where the standard closes the value.
+ *
+ * The **empty option matters**: a field a document did not supply must
+ * stay unset rather than silently acquire the first code in the list.
+ * Absent and "the first currency alphabetically" are very different
+ * claims about a document.
+ */
+function codeInput(code, id, value) {
+  const list = codeLists[code];
+  if (!list) return null;
+
+  const select = el("select", { id });
+  select.append(el("option", { value: "", text: "—" }));
+  for (const entry of list.codes) {
+    // The code and its name together: `C62` means nothing without
+    // "One (unit)" beside it.
+    select.append(el("option", { value: entry.code, text: `${entry.code} · ${entry.label}` }));
+  }
+  select.value = value ?? "";
+
+  // A value a document carried that the list does not know. Kept and
+  // shown rather than silently dropped — losing what a supplier sent
+  // would be worse than displaying something unfamiliar.
+  if (value && !list.codes.some((entry) => entry.code === value)) {
+    const unknown = el("option", { value, text: `${value} · not in ${list.id}` });
+    select.append(unknown);
+    select.value = value;
+  }
+  return select;
+}
+
 function field(spec, existing) {
-  const input = el("input", {
-    type: spec.type,
-    id: `f-${spec.code}`,
-    step: spec.type === "number" ? "0.01" : undefined,
-    // What is already known is shown, so somebody correcting one value
-    // does not have to retype the rest.
-    value: existing?.[spec.code] ?? "",
-  });
+  const input =
+    codeInput(spec.code, `f-${spec.code}`, existing?.[spec.code]) ??
+    el("input", {
+      type: spec.type,
+      id: `f-${spec.code}`,
+      step: spec.type === "number" ? "0.01" : undefined,
+      // What is already known is shown, so somebody correcting one
+      // value does not have to retype the rest.
+      value: existing?.[spec.code] ?? "",
+    });
   return el("div", { class: "kf" }, [
     // Labels by key, so a customer's language reaches the fields too.
     el("label", { for: `f-${spec.code}`, text: t(`field.${spec.code.toLowerCase()}`) }),
@@ -162,21 +216,24 @@ function updateTotals() {
 }
 
 function lineRow(line, index) {
-  const cell = (spec) =>
-    el("td", { class: spec.short ? "short" : undefined }, [
+  const cell = (spec) => {
+    // BT-130 is a UN/ECE code, so the line table picks one too.
+    const picker = codeInput(spec.code, undefined, line[spec.code]);
+    const input =
+      picker ??
       el("input", {
         type: spec.type,
         step: spec.type === "number" ? "0.01" : undefined,
-        // BT-130 is a UN/ECE code — `C62` for "one", `HUR` for hours —
-        // so it is short and upper-case by nature.
-        placeholder: spec.code === "BT-130" ? "C62" : undefined,
         value: line[spec.code] ?? "",
-        oninput: (event) => {
-          line[spec.code] = event.target.value;
-          updateTotals();
-        },
-      }),
-    ]);
+      });
+
+    input.addEventListener(picker ? "change" : "input", (event) => {
+      line[spec.code] = event.target.value;
+      updateTotals();
+    });
+
+    return el("td", { class: spec.short ? "short" : undefined }, [input]);
+  };
 
   return el("tr", {}, [
     el("td", { class: "num muted", text: String(index + 1) }),
@@ -312,7 +369,10 @@ async function save(close) {
  * those are separate acts, and somebody may key what they can read and
  * leave the rest for later.
  */
-export function openViewer(task, onClose) {
+export async function openViewer(task, onClose) {
+  // Before rendering, so a field never appears as a text box and then
+  // becomes a picker under somebody's hands.
+  await loadCodeLists();
   current = task;
   // A document nobody could read usually has no lines at all, so the
   // table starts empty and the person adds what they see.

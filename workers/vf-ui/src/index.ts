@@ -92,6 +92,9 @@ const PROXIED_TO_INSTANCE: RegExp[] = [
   // and a short-lived signed URL for the retained original.
   /^\/invoices\/[^/]+\/key$/,
   /^\/invoices\/[^/]+\/document-url$/,
+  // The standard's own code lists, so a person picks a currency rather
+  // than types one (decision 0113).
+  /^\/code-lists$/,
 ];
 
 /**

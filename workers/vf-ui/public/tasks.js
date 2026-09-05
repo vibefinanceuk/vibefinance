@@ -89,7 +89,7 @@ async function act(taskId, action) {
       const { openViewer } = await import("/viewer.js");
       document.getElementById("shell").hidden = true;
       document.getElementById("viewer").hidden = false;
-      openViewer(task, async () => {
+      await openViewer(task, async () => {
         document.getElementById("viewer").hidden = true;
         document.getElementById("shell").hidden = false;
         // Reloaded on the way back, because keying changes what the row

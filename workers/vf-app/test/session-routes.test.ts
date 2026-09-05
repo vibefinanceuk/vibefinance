@@ -121,3 +121,39 @@ describe("the routes a browser needs accept a session", () => {
     expect(res.status).toBe(401);
   });
 });
+
+describe("the code lists are readable by a signed-in person (decision 0113)", () => {
+  it("serves them with their agency and version", async () => {
+    // Not customer configuration, so there is nothing to resolve per
+    // tenant — but a client should be able to see which list it has.
+    const token = await sessionFor("alice@acme.com");
+    const res = await SELF.fetch("https://app.example.com/code-lists", {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(res.status).toBe(200);
+
+    const body = (await res.json()) as {
+      fields: Record<string, { agency: string; version: string; closed: boolean; codes: unknown[] }>;
+    };
+    expect(body.fields["BT-5"].agency).toBe("ISO");
+    expect(body.fields["BT-5"].version).toBe("2018-01-01");
+    expect(body.fields["BT-5"].codes.length).toBeGreaterThan(170);
+  });
+
+  it("says which lists are the standard in full", async () => {
+    // A value outside a closed list is non-conformant; one outside a
+    // working subset is merely unfamiliar.
+    const token = await sessionFor("alice@acme.com");
+    const res = await SELF.fetch("https://app.example.com/code-lists", {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const body = (await res.json()) as { fields: Record<string, { closed: boolean }> };
+
+    expect(body.fields["BT-5"].closed).toBe(true);
+    expect(body.fields["BT-130"].closed).toBe(false);
+  });
+
+  it("refuses somebody with no session", async () => {
+    expect((await SELF.fetch("https://app.example.com/code-lists")).status).toBe(401);
+  });
+});
