@@ -12,9 +12,19 @@
   "assets": {
     "directory": "./public",
     "binding": "ASSETS",
-    // Everything under /config is generated per deployment rather than
-    // shipped, so the Worker must see those paths first.
-    "run_worker_first": ["/config.js"]
+    // Paths the Worker must see BEFORE the asset layer.
+    //
+    // `/config.js` is generated per deployment rather than shipped.
+    // `/api/*` is the backend-for-frontend (decision 0102) — sign-in,
+    // sign-out, and the proxied calls that carry the session cookie.
+    //
+    // Without listing `/api/*` these reach the Worker only by falling
+    // through the asset layer when nothing matches. That may work, and
+    // relying on a fall-through is the wrong shape when Cloudflare
+    // documents this exact case: `run_worker_first: ["/api/*"]` is
+    // their own example for a Worker serving an API alongside a
+    // single-page application.
+    "run_worker_first": ["/config.js", "/api/*"]
   },
 
   "vars": {
