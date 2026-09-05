@@ -1,8 +1,8 @@
 # 0103 — The Task Manager
 
-**Status: the listing endpoint is built** —
-`GET /tasks` on `vf-app`. **Not built:** unlocking, the manager view,
-and the screen itself.
+**Status: built** — the endpoint, the actions, filtering, and the
+screen. Unlocking is decision 0104. **Not built:** the all-users manager
+view, and anything a task opens.
 
 ---
 
@@ -320,6 +320,48 @@ claim that reads as true and is only half of it.
 > task being counted. **The fail-watch showing nothing is what exposed
 > it**, which is the second time in this project that a check not
 > failing was the useful signal.
+
+---
+
+## The screen
+
+**The page asks who it is before rendering anything.**
+
+That is what makes a surviving session *visible*. The cookie persists
+across a refresh (decision 0102), and until now nothing asked — so a
+reload showed an empty sign-in form while the session was perfectly
+alive. `boot.js` calls `/api/whoami` first and shows the tasks or the
+form accordingly.
+
+**The buttons are not decided in the browser.** Each task arrives
+carrying its own `actions`, and the row renders them. Deriving them
+client-side would mean two versions of one rule, drifting.
+
+Actions the proxy does not yet carry are rendered **disabled rather than
+hidden** — so the list does not quietly disagree with what the task says
+it can do. A missing button looks like a permission problem; a disabled
+one looks like what it is.
+
+### What a row says about a document nobody could read
+
+Many tasks sit on invoices intake could not extract: no supplier, no
+amount, no date. **A row of dashes is honest and useless**, so it says
+*"Not yet keyed"* — which is the reason the task exists at all.
+
+### Denser than the sign-in screen, on purpose
+
+Decision 0101's restraint was in service of legibility rather than air,
+and this is the screen that tests it: something read all day rather than
+passed through once. Numbers align right with tabular figures so amounts
+compare by eye; a row somebody else holds recedes without disappearing;
+the person's own work carries a brand-coloured edge.
+
+### The proxy list grew deliberately
+
+`vf-ui` now carries `/tasks`, `/tasks/:id/claim` and
+`/tasks/:id/release`. **A list rather than a prefix**, so
+`/tasks/:id/anything` is not reachable merely because `/tasks` is — and
+a test asserts `/tasks/:id/complete` is refused.
 
 ---
 

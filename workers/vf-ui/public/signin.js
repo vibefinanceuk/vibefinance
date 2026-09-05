@@ -196,6 +196,18 @@ form.addEventListener("submit", async (event) => {
     };
 
     reportAttemptsSince(body);
+
+    // Then hand over to the Task Manager. The attempts report stays
+    // visible for a moment because it is the one thing a person should
+    // read before moving on (ISO 27001 A.8.5) -- but a sign-in screen
+    // that just sat there looked as though nothing had happened.
+    const { start } = await import("/tasks.js");
+    setTimeout(async () => {
+      if (await start()) {
+        document.getElementById("signin-view").hidden = true;
+        document.getElementById("shell").hidden = false;
+      }
+    }, 1200);
   } catch {
     show("Could not reach the sign-in service.");
   } finally {

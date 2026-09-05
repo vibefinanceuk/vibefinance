@@ -79,7 +79,16 @@ function configScript(): Response {
  *
  * Each entry is matched against the whole path.
  */
-const PROXIED_TO_INSTANCE: RegExp[] = [/^\/whoami$/];
+const PROXIED_TO_INSTANCE: RegExp[] = [
+  /^\/whoami$/,
+  // The task list and the actions the list offers (decisions 0103,
+  // 0104). Each added deliberately: the point of a list rather than a
+  // prefix is that `/tasks/:id/anything` is not automatically
+  // reachable because `/tasks` is.
+  /^\/tasks$/,
+  /^\/tasks\/[^/]+\/claim$/,
+  /^\/tasks\/[^/]+\/release$/,
+];
 
 /**
  * What may be proxied to `vf-licence`.

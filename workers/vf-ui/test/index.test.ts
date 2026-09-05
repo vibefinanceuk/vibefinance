@@ -76,11 +76,16 @@ describe("the page loads its livery as a stylesheet", () => {
     // Both stylesheets apply before the first paint. Fetching branding
     // as JSON and setting variables in script would mean a visible
     // flash of the wrong colours (decision 0096).
+    // Against whichever script the page loads first, rather than a
+    // named one — the entry point changed from signin.js to boot.js
+    // when the Task Manager landed (decision 0103), and a test naming
+    // the file fails on a rename while the property still holds.
     const html = await (await SELF.fetch("https://ui.example.com/")).text();
     const brandLink = html.indexOf('id="brand"');
-    const script = html.indexOf("signin.js");
+    const firstScript = html.indexOf("<script type=\"module\"");
     expect(brandLink).toBeGreaterThan(-1);
-    expect(brandLink).toBeLessThan(script);
+    expect(firstScript).toBeGreaterThan(-1);
+    expect(brandLink).toBeLessThan(firstScript);
   });
 
   it("carries no hardcoded API address in the markup", async () => {
@@ -171,5 +176,44 @@ describe("the token never reaches the page (decision 0102)", () => {
     expect(visible.environmentId).toBe("Acme-production");
     expect(visible.lastSignedInAt).toBe("2026-09-04T16:45:12.000Z");
     expect(visible.somethingAddedLater).toBe(42);
+  });
+});
+
+describe("the task list is reachable, and only what it needs", () => {
+  it("proxies the list itself", async () => {
+    // Refused for want of a session, not for want of a route — which
+    // is the distinction being asserted.
+    const res = await SELF.fetch("https://ui.example.com/api/tasks");
+    expect(res.status).toBe(401);
+  });
+
+  it("proxies claiming and releasing", async () => {
+    for (const path of ["/api/tasks/abc/claim", "/api/tasks/abc/release"]) {
+      const res = await SELF.fetch(`https://ui.example.com${path}`, { method: "POST" });
+      expect(res.status, path).toBe(401);
+    }
+  });
+
+  it("does not proxy a task path nobody listed", async () => {
+    // The point of a list rather than a prefix: /tasks/:id/anything is
+    // not automatically reachable because /tasks is.
+    const res = await SELF.fetch("https://ui.example.com/api/tasks/abc/complete", { method: "POST" });
+    expect(res.status).toBe(404);
+  });
+});
+
+describe("the page decides which screen to show (decision 0103)", () => {
+  it("ships both views, and hides the task list until signed in", async () => {
+    // The session survives a refresh (decision 0102), and until now
+    // nothing asked -- so a reload rendered an empty sign-in form while
+    // the session was perfectly alive.
+    const html = await (await SELF.fetch("https://ui.example.com/")).text();
+    expect(html).toContain('id="signin-view"');
+    expect(html).toContain('id="shell" hidden');
+  });
+
+  it("loads a boot script rather than the sign-in form directly", async () => {
+    const html = await (await SELF.fetch("https://ui.example.com/")).text();
+    expect(html).toContain("boot.js");
   });
 });

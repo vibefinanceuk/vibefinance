@@ -164,6 +164,78 @@
   .problem:empty, .since:empty { display: none; }
 
   .since { color: var(--text-secondary); }
+
+  /*
+    The Task Manager. A denser layout than the sign-in card on purpose:
+    this is a screen somebody reads all day, so the restraint has to
+    serve legibility rather than air (decision 0101).
+  */
+  #shell {
+    width: min(1040px, calc(100vw - 40px));
+    padding: 32px 0 64px;
+  }
+
+  #shell header {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 26px;
+  }
+
+  #shell header .mark {
+    width: 34px;
+    height: 3px;
+    margin: 0;
+    flex: none;
+  }
+
+  #shell h1 { font-size: 18px; margin: 0; }
+  #shell .sub { margin: 2px 0 0; font-size: 13px; }
+  #shell .signout { margin-left: auto; min-height: 30px; padding: 0 12px; }
+
+  .filters { display: flex; gap: 10px; margin-bottom: 14px; }
+  .filters select { width: auto; min-width: 150px; }
+
+  .counts {
+    margin: 0 0 12px;
+    font-size: 13px;
+    color: var(--text-secondary);
+  }
+
+  #shell table { width: 100%; font-size: 13px; }
+
+  #shell th {
+    text-align: left;
+    font-weight: 500;
+    font-size: 12px;
+    color: var(--text-secondary);
+    padding: 0 10px 8px;
+    border-bottom: 0.5px solid var(--border);
+  }
+
+  #shell td {
+    padding: 10px;
+    border-bottom: 0.5px solid var(--border);
+    vertical-align: middle;
+  }
+
+  /* Numbers align right and share a width, so amounts compare by eye. */
+  #shell .num { text-align: right; font-variant-numeric: tabular-nums; }
+
+  /* Mine leads. A row somebody else holds recedes without disappearing. */
+  #shell tr.mine td:first-child { box-shadow: inset 2px 0 0 var(--brand-fill); }
+  #shell tr.locked { color: var(--text-secondary); }
+
+  .muted { color: var(--text-muted); }
+
+  button.act {
+    min-height: 26px;
+    padding: 0 10px;
+    margin-right: 6px;
+    font-size: 12px;
+  }
+
+  button.act:disabled { opacity: 0.4; cursor: default; }
   .since p { margin: 0 0 6px; }
   .since ul { margin: 0; padding-left: 16px; }
   .since li { color: var(--text-warning); }
@@ -171,7 +243,7 @@
 </head>
 
 <body>
-<main>
+<main id="signin-view">
   <div class="mark"></div>
   <h1 id="product">VibeFinance</h1>
   <p class="sub">Sign in to continue</p>
@@ -201,6 +273,12 @@
   <div class="since" id="since"></div>
 </main>
 
-<script type="module" src="/signin.js"></script>
+<!--
+  Where the Task Manager renders. Empty until the page knows somebody is
+  signed in — decision 0103.
+-->
+<main id="shell" hidden></main>
+
+<script type="module" src="/boot.js"></script>
 </body>
 </html>
