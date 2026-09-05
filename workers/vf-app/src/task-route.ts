@@ -1,3 +1,5 @@
+import type { AuthenticatedUser } from "./user-auth.js";
+import { hasPermission } from "./enforce.js";
 import type { RouteResult } from "./org-route.js";
 import { isKnownPermission } from "./permissions.js";
 
@@ -174,4 +176,71 @@ export async function handleCompleteTask(
   }
 
   return { status: 200, body: { taskId, completedBy: completingUserId, completedAt: now } };
+}
+
+/**
+ * Releasing a claim — decision 0104.
+ *
+ * **Locks do not expire** (decision 0103). A browser closing is
+ * undetectable — `beforeunload` does not fire on a crash, a sleeping
+ * laptop or a killed tab — so any automatic release leaks locks, and a
+ * lease takes somebody's claim mid-thought on a timeout nobody can
+ * choose correctly.
+ *
+ * A lock that never expires is at least predictable. This is the
+ * explicit recovery that makes it workable: a person releases their
+ * own, and somebody with `AP.TaskManage` releases anybody's.
+ */
+export async function handleReleaseTask(
+  db: D1Database,
+  taskId: string,
+  user: AuthenticatedUser
+): Promise<RouteResult> {
+  const task = await db
+    .prepare("SELECT claimed_by, status, owner_team_id FROM tasks WHERE id = ?")
+    .bind(taskId)
+    .first<{ claimed_by: string | null; status: string; owner_team_id: string | null }>();
+
+  if (!task) return { status: 404, body: { error: `task ${taskId} does not exist` } };
+  if (task.status !== "open") {
+    return { status: 409, body: { error: `task ${taskId} is ${task.status}` } };
+  }
+  if (!task.claimed_by) {
+    // Not an error worth refusing over: the desired state already
+    // holds, and a caller retrying should not be told off for it.
+    return { status: 200, body: { taskId, released: false, note: "the task was not claimed" } };
+  }
+
+  const ownClaim = task.claimed_by === user.id;
+  const mayManage = await hasPermission(db, user.id, "AP.TaskManage");
+
+  if (!ownClaim && !mayManage) {
+    return {
+      status: 403,
+      body: {
+        error: "this task is claimed by somebody else",
+        detail: "AP.TaskManage is required to release another person's claim",
+      },
+    };
+  }
+
+  await db
+    .prepare("UPDATE tasks SET claimed_by = NULL, claimed_at = NULL WHERE id = ? AND claimed_by = ?")
+    .bind(taskId, task.claimed_by)
+    .run();
+
+  return {
+    status: 200,
+    body: {
+      taskId,
+      released: true,
+      // Who released it, and whose claim it was. **A person releasing
+      // their own is a different act from a manager releasing
+      // another's**, even though the effect is identical — and when
+      // Sarah asks why her task moved, the answer needs both names.
+      releasedBy: user.id,
+      previousHolder: task.claimed_by,
+      viaOverride: !ownClaim,
+    },
+  };
 }

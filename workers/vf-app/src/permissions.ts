@@ -55,6 +55,13 @@ const AP_PERMISSIONS = [
   // Somebody trusted to transcribe an amount is not automatically
   // somebody who should decide an invoice never needs looking at again.
   "AP.Discard",
+  // Releasing somebody else's claim, and seeing every user's tasks —
+  // decision 0104. Deliberately not AP.ReturnAny: that returns a
+  // DOCUMENT to a previous stage, and the document moves. Unlocking
+  // leaves the task exactly where it is and merely makes it available
+  // again. Bundling them would mean anybody who can unlock a task can
+  // also send documents backwards through the workflow.
+  "AP.TaskManage",
 ] as const;
 
 /**

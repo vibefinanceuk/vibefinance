@@ -47,7 +47,14 @@ export type Ownership =
  * > where it is, and this only stops somebody being offered an action
  * > that would then be refused.
  */
-export type TaskAction = "key" | "return" | "return_to_supplier" | "discard" | "claim" | "complete";
+export type TaskAction =
+  | "key"
+  | "return"
+  | "return_to_supplier"
+  | "discard"
+  | "claim"
+  | "complete"
+  | "release";
 
 export interface TaskRow {
   id: string;
@@ -134,7 +141,12 @@ function actionsFor(
 ): TaskAction[] {
   // Locked by somebody else, or belonging to a team but not yet taken:
   // nothing can be acted on until it is this person's.
-  if (ownership === "locked") return [];
+  if (ownership === "locked") {
+    // Nothing can be done to somebody else's work — except released,
+    // by a manager (decision 0104). That is the whole recovery path
+    // for a lock that never expires.
+    return permissions.has("AP.TaskManage") ? ["release"] : [];
+  }
   if (ownership === "available") {
     // The one thing a person can do with a task they have not taken.
     return permissions.has(row.required_permission) ? ["claim"] : [];
@@ -145,6 +157,10 @@ function actionsFor(
   if (!permissions.has(row.required_permission)) return [];
 
   const actions: TaskAction[] = ["complete"];
+  // Only a CLAIM can be released. A task assigned to a person directly
+  // has none — it is theirs by assignment, and putting it back would
+  // mean returning it to nobody.
+  if (row.claimed_by) actions.push("release");
   // Keying belongs to Validation, and is gated on AP.Validate
   // (decision 0071) rather than on the stage's name.
   if (permissions.has("AP.Validate")) actions.push("key");

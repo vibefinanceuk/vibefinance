@@ -55,7 +55,7 @@ import { getSupplierHistory } from "./invoice-history.js";
 import { handleCreateCustomField, handleListCustomFields, loadCustomFields } from "./custom-field-route.js";
 import { handleUploadDocument, handleRetrieveDocument } from "./document-route.js";
 import { handleCreateProcessInstance, onTaskCompleted, visitCurrentStage } from "./workflow-engine.js";
-import { handleClaimTask, handleCompleteTask, handleCreateTask } from "./task-route.js";
+import { handleClaimTask, handleCompleteTask, handleCreateTask, handleReleaseTask } from "./task-route.js";
 import type { Permission } from "./permissions.js";
 import { handleRotateUserKey } from "./user-rotate-key-route.js";
 
@@ -1633,6 +1633,24 @@ export default {
       const result = await handleCreateTask(db, (body ?? {}) as Record<string, unknown>);
       return json(result.body, result.status);
     }
+
+    // Releasing a claim — decision 0104. Accepts a session, because
+    // this is an action from the task list.
+    const releaseTaskMatch = pathname.match(/^\/tasks\/([^/]+)\/release$/);
+    if (releaseTaskMatch && request.method === "POST") {
+      const { db } = resolveTenant(request, env);
+      const auth = await authenticateUserOrSession(
+        db,
+        request,
+        isPublicKeyJwk(env.LICENCE_SIGNING_PUBLIC_KEY) ? env.LICENCE_SIGNING_PUBLIC_KEY : undefined,
+        env.ENVIRONMENT_ID
+      );
+      if (!auth.user) return json({ error: auth.reason }, 401);
+
+      const result = await handleReleaseTask(db, releaseTaskMatch[1], auth.user);
+      return json(result.body, result.status);
+    }
+
 
     const claimTaskMatch = pathname.match(/^\/tasks\/([^/]+)\/claim$/);
     const completeTaskMatch = pathname.match(/^\/tasks\/([^/]+)\/complete$/);

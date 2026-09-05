@@ -430,3 +430,41 @@ describe("filtering, because a real queue is not thirty rows", () => {
     expect(firstId).not.toBe(secondId);
   });
 });
+
+describe("releasing appears where it applies (decision 0104)", () => {
+  it("offers release on a task this person claimed", async () => {
+    await grant("alice", ["AP.Validate"]);
+    await seedInstance("inv-1", "validation", "v-1");
+    await seedTask("t-1", "validation", "v-1", { team: "ap" }, "alice");
+
+    expect((await list("alice"))[0].actions).toContain("release");
+  });
+
+  it("does not offer release on a task assigned to them directly", async () => {
+    // There is no claim to release. It is theirs by assignment, and
+    // putting it back would mean returning it to nobody.
+    await grant("alice", ["AP.Validate"]);
+    await seedInstance("inv-1", "validation", "v-1");
+    await seedTask("t-1", "validation", "v-1", { user: "alice" });
+
+    expect((await list("alice"))[0].actions).not.toContain("release");
+  });
+
+  it("offers a manager release on a colleague's locked task, and nothing else", async () => {
+    // The recovery path for a lock that never expires -- and the only
+    // thing anybody may do to somebody else's work.
+    await grant("sarah", ["AP.Validate", "AP.TaskManage"]);
+    await seedInstance("inv-1", "validation", "v-1");
+    await seedTask("t-1", "validation", "v-1", { team: "ap" }, "alice");
+
+    expect((await list("sarah"))[0].actions).toEqual(["release"]);
+  });
+
+  it("offers a colleague without AP.TaskManage nothing at all", async () => {
+    await grant("sarah", ["AP.Validate"]);
+    await seedInstance("inv-1", "validation", "v-1");
+    await seedTask("t-1", "validation", "v-1", { team: "ap" }, "alice");
+
+    expect((await list("sarah"))[0].actions).toEqual([]);
+  });
+});
