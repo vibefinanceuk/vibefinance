@@ -50,6 +50,11 @@ import { handleReturnToStage, handleReturnToSupplier, handleDiscard } from "./re
 import { authenticateUser, authenticateUserOrSession } from "./user-auth.js";
 import { handleListMyTasks } from "./task-list-route.js";
 import { FIELD_CODE_LISTS, isClosedList } from "@vibefinance/shared";
+import {
+  handleFieldVisibility,
+  handleSetFieldVisibility,
+  handleSetStageFieldVisibility,
+} from "./field-visibility-route.js";
 import { handlePreflight, withCors } from "@vibefinance/shared";
 import { mintDocumentToken, verifyDocumentToken } from "./document-token.js";
 import { retrieveInvoiceDocument } from "./document-storage.js";
@@ -1163,6 +1168,63 @@ export default {
     // **Not customer configuration**, so there is nothing to resolve
     // per tenant: the same list serves every instance, and the response
     // names its agency and version so a client can see which it has.
+    // Which fields a person sees at a stage, and what they may do with
+    // them — decision 0114. Accepts a session: this is what a screen
+    // asks before rendering anything.
+    if (pathname === "/field-visibility" && request.method === "GET") {
+      const { db } = resolveTenant(request, env);
+      const auth = await authenticateUserOrSession(
+        db,
+        request,
+        isPublicKeyJwk(env.LICENCE_SIGNING_PUBLIC_KEY) ? env.LICENCE_SIGNING_PUBLIC_KEY : undefined,
+        env.ENVIRONMENT_ID
+      );
+      if (!auth.user) return json({ error: auth.reason }, 401);
+
+      const result = await handleFieldVisibility(db, url.searchParams.get("stage"));
+      return json(result.body, result.status);
+    }
+
+    // Configuring it — the customer's own baseline, and a stage's
+    // restrictions. Admin, because it decides what everybody sees.
+    if (pathname === "/field-visibility" && request.method === "PUT") {
+      const { db } = resolveTenant(request, env);
+      const auth = await requirePermission(db, request, "Admin.Configure");
+      if (!auth.authorized) {
+        return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
+      }
+      let visBody: unknown;
+      try {
+        visBody = await request.json();
+      } catch {
+        return json({ error: t("invalidJsonBody", resolveLocale(env.LOCALE)) }, 400);
+      }
+      const result = await handleSetFieldVisibility(db, (visBody ?? {}) as Record<string, unknown>);
+      return json(result.body, result.status);
+    }
+
+    const stageVisMatch = pathname.match(/^\/processes\/stages\/([^/]+)\/field-visibility$/);
+    if (stageVisMatch && request.method === "PUT") {
+      const { db } = resolveTenant(request, env);
+      const auth = await requirePermission(db, request, "Admin.Configure");
+      if (!auth.authorized) {
+        return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
+      }
+      let stageVisBody: unknown;
+      try {
+        stageVisBody = await request.json();
+      } catch {
+        return json({ error: t("invalidJsonBody", resolveLocale(env.LOCALE)) }, 400);
+      }
+      const result = await handleSetStageFieldVisibility(
+        db,
+        stageVisMatch[1],
+        (stageVisBody ?? {}) as Record<string, unknown>
+      );
+      return json(result.body, result.status);
+    }
+
+
     if (pathname === "/code-lists" && request.method === "GET") {
       const { db } = resolveTenant(request, env);
       const auth = await authenticateUserOrSession(
