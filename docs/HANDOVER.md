@@ -284,11 +284,18 @@ documents, then **provisioning creating the first administrator**, then
 **Get Started** — four options: sample invoices that spawn suppliers, a
 supplier master spreadsheet, sample users, and permissions.
 
-That order is 0117's, and each step needs the one before it. Two
-cautions recorded there: **sample data must be refused outright in a
-production environment** (`environments.kind` is the guard, and
-fabricated suppliers in real accounts payable is not something to
-undo), and **the spreadsheet upload is its own decision** rather than a
+That order is 0117's, and each step needs the one before it.
+
+**And a trial has an ending** (0118). The sandbox does not become
+production: a second environment is provisioned and the
+**configuration** migrates into it — processes, rules, org units, field
+visibility, roles and teams as definitions, sources. **Users do not**,
+because a user is a person rather than a setting, and neither do their
+role assignments, their suppliers, or anything the sandbox processed.
+The sandbox stays, as the place a rule change is tested before it
+touches real invoices.
+
+One caution recorded there: **the spreadsheet upload is its own decision** rather than a
 step in a wizard — column mapping, formats, and no XLSX parser in this
 project.
 

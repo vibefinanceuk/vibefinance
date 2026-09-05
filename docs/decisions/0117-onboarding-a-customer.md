@@ -136,16 +136,25 @@ Steps 1 and 2 are alternatives more than a sequence: a customer with a
 real master takes the second, one exploring takes the first, and some
 will do both.
 
-### The sample set must never reach production
+### The sandbox is the point, and this was overstated
 
-Steps 1 and 3 create **fabricated data**. Provisioning creates a
-`sandbox` environment (`provision-route.ts`), and `environments.kind`
-already distinguishes the two — so **the guard exists and must be
-used**: sample invoices and sample users are refused outright in a
-production environment.
+An earlier version of this record called for refusing sample data in a
+production environment, and described fabricated suppliers in real
+accounts payable as *"not something to undo"*.
 
-Not a warning, a refusal. Fabricated suppliers in a customer's real
-accounts payable is not something to undo.
+**The operator's correction:** *"It's a sandbox, trial mode, first
+usage."* Provisioning creates a sandbox and a trial always will be one,
+so guarding against production was a caution about a situation that
+does not arise.
+
+The real question it was gesturing at is **what happens when a trial
+becomes a customer**, and that is decision 0118: a second environment
+is provisioned and the **configuration** migrates. Nothing fabricated
+can reach production because production starts empty.
+
+The guard is worth keeping as a cheap assertion, but it is not the
+interesting problem and this record should not have presented it as
+one.
 
 ### The spreadsheet is the largest piece here
 
@@ -157,17 +166,17 @@ rows carry the same VAT identifier.
 **Worth building the sample path first**, and treating the spreadsheet
 as its own decision rather than a step in a wizard.
 
-### Sample users are trickier than they look
+### Sample users can sign in
 
-A sample user who **cannot sign in** is a row: enough to test that a
-rule assigns a task to a team, not enough to see approval routing work.
+Settled: *"sample users are for demo trial only — speed of PoC."*
 
-A sample user who **can** sign in needs a credential — a real password
-for a fictional person, in a sandbox. Defensible there and nowhere
-else, which is the same `kind` guard again.
+They need real credentials, because **a proof of concept where nobody
+can watch an approval route between two people is not proving much**. A
+user who cannot sign in is scenery.
 
-Worth deciding which is meant, because the second is a genuine account
-and the first is scenery.
+Fictional people with real passwords, in a sandbox, and they do not
+migrate to production (decision 0118) — a user is a person, not a
+setting.
 
 ### And what happens to it afterwards
 
@@ -226,7 +235,6 @@ always been waiting for.
   before somebody uses it.
 - **Whether Get Started can be dismissed** and returned to, or is a
   one-time sequence.
-- **Whether sample users can sign in**, or are rows that exist to be
-  assigned work.
+
 - **The spreadsheet format and its column mapping** — a decision of its
   own, not a step in a wizard.
