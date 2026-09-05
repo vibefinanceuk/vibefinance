@@ -1,6 +1,6 @@
 # Handover
 
-**Written 4 September 2026, updated at the end of that day.** One page: where things stand, what needs a
+**Written 4 September 2026, updated 5 September.** One page: where things stand, what needs a
 decision rather than work, and what to do next.
 
 `docs/PROGRESS.md` is the map — what exists and what does not.
@@ -81,6 +81,13 @@ And **a person can now sign in**, proven end to end against production:
    and returns the person's real record and every permission at once
    (0095).
 
+**And then they see their work.** `https://vf-ui.vibefinance.workers.dev`
+serves a **Task Manager**: one list across every stage, ownership as a
+column, filters by stage and ownership, and buttons drawn from what each
+task says the server will honour. A person can claim a task and release
+it. **Refreshing holds steady** — the session lives in an `HttpOnly`
+cookie the JavaScript never sees (0102).
+
 **And a person can now do all of that in a browser.**
 `https://vf-ui.vibefinance.workers.dev` serves a sign-in screen that
 fetches the customer's livery from `vf-licence` (0096), populates the
@@ -103,45 +110,42 @@ uses one.
 
 ## Waiting on you
 
-**Nothing blocks the next piece of work.** Three things worth deciding
-before they become expensive.
+**Nothing blocks the next piece of work.** Three things worth settling,
+none urgent.
 
-### 1. Does a session survive a refresh?
-
-**Today it does not**, and decision 0102 proposes the answer: a
-**backend-for-frontend**. `vf-ui` holds the token in an `HttpOnly`
-cookie the JavaScript cannot read, and forwards data calls to `vf-app`.
-
-Current guidance (RFC 10017, 2026) is that **no browser API stores a
-token securely** — `localStorage` and `sessionStorage` are equally
-readable by an injected script, so choosing between them chooses how
-long a stolen token lasts, not whether it can be stolen.
-
-What it costs: `vf-ui` becomes a request path rather than a file server,
-CSRF becomes a surface (`SameSite=Strict`), and latency gains a hop.
-What it buys: the token never enters JavaScript, sessions survive a
-refresh, and **CORS becomes unnecessary** because the browser only ever
-talks to one origin.
-
-**Read 0102 before the next screen** — it changes what `vf-ui` is.
-
-### 2. A custom domain
+### 1. A custom domain
 
 `vf-ui.vibefinance.workers.dev` works and looks like infrastructure. A
 domain is a routing change plus two config values — the API addresses
 are already configuration rather than compiled in, deliberately (0099).
 
-It also unlocks something else: a customer-specific backdrop can only
+It also unlocks a customer-specific backdrop, which can otherwise only
 appear **after** the password is verified, because that is when the
-customer becomes known. Landing on `acme.vibefinance.com` would fix
-that.
+customer becomes known.
 
-### 3. Who creates the `org_users` row
+### 2. Who creates the `org_users` row
 
 A person can hold a credential and an access grant and **still be
 refused** by the instance (0088) — deliberately: no roles, no unit,
 nothing known about them. Today the row is created by hand, and the
 refusal does not yet say *what* is missing.
+
+### 3. Alerting on failed sign-ins
+
+*"A lockout policy that generates no alert is half a control."* Attempts
+are recorded and shown to the person on their next sign-in (ISO 27001
+A.8.5), but nobody is **told**. This needs email, and **nothing in this
+system sends any** — the same gap blocks password reset and expiry
+warnings.
+
+---
+
+### And one data change, not a code one
+
+The live Validation rule reads *"assign a task to the AP team requiring
+**AP.Review** permission"* where it should say `AP.Validate`. The rule
+engine is doing exactly what the sentence says; **the sentence needs
+recompiling** and taking through the activation gate. No deploy.
 
 ---
 
@@ -201,22 +205,31 @@ Recorded so nobody re-opens them:
   needs no `Allow-Credentials` because a bearer token is not
   "credentials" in the CORS sense.
 - **`vf-ui` is its own Worker** (0099), on deployment frequency.
+- **The session lives in an `HttpOnly` cookie**, not in JavaScript
+  (0102). RFC 10017 is blunt that no browser API stores a token
+  securely, so `localStorage` and `sessionStorage` were never the choice
+  they appeared to be. `vf-ui` is a **backend-for-frontend**: it holds
+  the token and forwards data calls, which also made CORS unnecessary.
+- **One task table, filtered by stage** (0103) — never a table per
+  stage. One UI per stage, chosen by what a task points at.
+- **Locks do not expire** (0103, 0104). A browser closing is
+  undetectable, so any automatic release leaks locks; a lease takes
+  somebody's claim mid-thought. Explicit release instead, by the person
+  or by `AP.TaskManage`.
 
 ---
 
 ## Suggested next pieces
 
-**1. The Validation queue** — the first screen after signing in, and
-what somebody opens each morning. It exercises listing, permissions and
-the stage model.
+**1. The viewer a task opens.** The Task Manager lists work and cannot
+open any of it. `docs/design/mockups/key-from-document.html` is the
+Validation screen and everything it needs now exists: the document is
+retained (0068), correctly typed (0069), reachable by a five-minute
+signed URL a pop-out can open (0073), and keying is built (0071).
 
-It needs `vf-app` routes that accept a session token: **only `/whoami`
-does today** (0095), and which routes take which credential is a
-per-route decision. Sessions and API keys coexist deliberately — a
-session is a person at a screen, an API key is a service credential, and
-every live test here uses one.
-
-Four screens are mocked as static HTML in `docs/design/mockups/`.
+Two things it needs: `vf-app` routes for keying and the document URL
+accepting **sessions** (0105 lists which do today), and `vf-ui`
+proxying them — a path at a time, deliberately.
 
 **2. Email.** Blocks alerting on failed sign-ins, password reset,
 licence expiry warnings and every notification. The most-referenced
@@ -224,21 +237,23 @@ missing capability in these records.
 
 **3. Despatch Advice (T16).** The goods receipt, and the missing third
 leg of three-way matching — **before the matcher, not after** (0082).
-Comparing invoice lines to order lines is one correspondence problem;
-adding a despatch advice makes it three-cornered, where a line can match
-what was *ordered* and not what was *delivered*.
+Adding a despatch advice makes line matching three-cornered, where a
+line can match what was *ordered* and not what was *delivered*. A change
+of shape, not an increment.
 
 **4. Reading `cbc:CustomizationID`.** Detection answers *what structure
 is this*, not *what document is this*, so a valid Peppol Order sent to
 `/sources/:id/capture` is refused.
 
 **5. `party.first_document`.** Declared and uncomputed (0079). Must be
-computed **at capture and stored**, or re-running a rule set would give a
-different answer as more invoices arrive.
+computed **at capture and stored**, or re-running a rule set would give
+a different answer as more invoices arrive.
 
-**6. Keyed lines**, **retiring the legacy intake channels**, and **queue
-visibility** — tasks sit open and unclaimed at Approval, each blocking
-its instance, and nothing surfaces an ageing queue.
+**6. The all-users task view.** `AP.TaskManage` is defined and enforced
+(0104); the screen listing every person's work does not exist.
+
+**7. Keyed lines**, **retiring the legacy intake channels**, and
+**queue visibility** for ageing work.
 
 ---
 
