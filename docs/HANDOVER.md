@@ -136,7 +136,7 @@ uses one.
 
 ## Waiting on you
 
-**Nothing blocks the next piece of work.** Three things worth settling,
+**Nothing blocks the next piece of work.** Four things worth settling,
 none urgent.
 
 ### 1. A custom domain
@@ -163,8 +163,6 @@ are recorded and shown to the person on their next sign-in (ISO 27001
 A.8.5), but nobody is **told**. This needs email, and **nothing in this
 system sends any** — the same gap blocks password reset and expiry
 warnings.
-
----
 
 ### 4. Do the party panels show enough?
 
