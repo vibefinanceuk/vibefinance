@@ -88,6 +88,17 @@ task says the server will honour. A person can claim a task and release
 it. **Refreshing holds steady** — the session lives in an `HttpOnly`
 cookie the JavaScript never sees (0102).
 
+**And they can key one.** A Validation task opens the viewer (0106): the
+retained original beside the fields it should have yielded, opened in
+its own window through a five-minute signed URL (0073). Saving reports
+whether validation *would* now pass — advisory, because nothing
+re-evaluates the rules (0072).
+
+**In their own language, in the customer's livery.** Every visible word
+comes from D1 in the control plane (0107) and every colour from a token
+(0096), so a wording fix or a new language is rows rather than a
+deployment.
+
 **And a person can now do all of that in a browser.**
 `https://vf-ui.vibefinance.workers.dev` serves a sign-in screen that
 fetches the customer's livery from `vf-licence` (0096), populates the
@@ -221,39 +232,38 @@ Recorded so nobody re-opens them:
 
 ## Suggested next pieces
 
-**1. The viewer a task opens.** The Task Manager lists work and cannot
-open any of it. `docs/design/mockups/key-from-document.html` is the
-Validation screen and everything it needs now exists: the document is
-retained (0068), correctly typed (0069), reachable by a five-minute
-signed URL a pop-out can open (0073), and keying is built (0071).
-
-Two things it needs: `vf-app` routes for keying and the document URL
-accepting **sessions** (0105 lists which do today), and `vf-ui`
-proxying them — a path at a time, deliberately.
+**1. Line items in the viewer.** The keying screen does headers only.
+The mockup has an editable line table and a running comparison the
+design calls *advisory, never blocking* — an invoice whose lines do not
+sum to its printed total is a fact to record faithfully, not an input to
+prevent. Needs `provenance.keyed` to cover lines, which it does not
+(0071).
 
 **2. Email.** Blocks alerting on failed sign-ins, password reset,
-licence expiry warnings and every notification. The most-referenced
-missing capability in these records.
+licence expiry warnings and every notification. Still the
+most-referenced missing capability in these records.
 
-**3. Despatch Advice (T16).** The goods receipt, and the missing third
+**3. An Approval screen.** The Task Manager lists approval tasks and
+cannot open them. No mockup exists. Decision 0103's intent stands: one
+viewer, actions varying by stage.
+
+**4. Despatch Advice (T16).** The goods receipt, and the missing third
 leg of three-way matching — **before the matcher, not after** (0082).
-Adding a despatch advice makes line matching three-cornered, where a
-line can match what was *ordered* and not what was *delivered*. A change
-of shape, not an increment.
 
-**4. Reading `cbc:CustomizationID`.** Detection answers *what structure
+**5. Reading `cbc:CustomizationID`.** Detection answers *what structure
 is this*, not *what document is this*, so a valid Peppol Order sent to
 `/sources/:id/capture` is refused.
 
-**5. `party.first_document`.** Declared and uncomputed (0079). Must be
+**6. `party.first_document`.** Declared and uncomputed (0079). Must be
 computed **at capture and stored**, or re-running a rule set would give
 a different answer as more invoices arrive.
 
-**6. The all-users task view.** `AP.TaskManage` is defined and enforced
+**7. The all-users task view.** `AP.TaskManage` is defined and enforced
 (0104); the screen listing every person's work does not exist.
 
-**7. Keyed lines**, **retiring the legacy intake channels**, and
-**queue visibility** for ageing work.
+**8. Four more languages.** English and German are complete;
+`GET /ui-strings/keys` shows the gaps. This is rows, not work — listed
+so it is not forgotten rather than because it is hard.
 
 ---
 

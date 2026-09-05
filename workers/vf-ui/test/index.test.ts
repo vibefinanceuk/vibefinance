@@ -260,10 +260,30 @@ describe("the interface's words come from the control plane (decision 0107)", ()
 
   it("ships no English labels in the markup", async () => {
     // Every visible word is fetched by key. A literal in the page is
-    // one a translation cannot reach.
+    // one a translation cannot reach -- and one that flashes the wrong
+    // language to the person least able to read it.
     const html = await (await SELF.fetch("https://ui.example.com/")).text();
-    for (const literal of ["Sign out", "All stages", "Not yet keyed", "Save keyed values"]) {
+    for (const literal of [
+      "Sign out",
+      "All stages",
+      "Not yet keyed",
+      "Save keyed values",
+      // The sign-in form's own labels, keyed last because it is markup
+      // rather than script.
+      ">Email<",
+      ">Password<",
+      ">Continue<",
+      ">Sign in to continue<",
+      ">VibeFinance<",
+    ]) {
       expect(html, literal).not.toContain(literal);
+    }
+  });
+
+  it("marks the sign-in form's words for filling", async () => {
+    const html = await (await SELF.fetch("https://ui.example.com/")).text();
+    for (const key of ["signin.title", "signin.email", "signin.continue"]) {
+      expect(html, key).toContain(`data-t="${key}"`);
     }
   });
 });

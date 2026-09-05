@@ -10,7 +10,7 @@
  * signed-out one sees the form.
  */
 import { start } from "/tasks.js";
-import { loadStrings } from "/strings.js";
+import { loadStrings, applyStrings, t } from "/strings.js";
 
 const signIn = document.getElementById("signin-view");
 const shell = document.getElementById("shell");
@@ -21,6 +21,11 @@ async function boot() {
   // the same reasoning that hides both views until we know which one
   // to show.
   await loadStrings();
+  applyStrings();
+  // The product name is the customer's livery (decision 0096) and is
+  // set again when one is known. This is the fallback for the moment
+  // before that.
+  document.getElementById("product").textContent = t("product.name");
 
   // Both start hidden. Whichever is right becomes visible once
   // /api/whoami answers, so nothing flashes in between — a sign-in form

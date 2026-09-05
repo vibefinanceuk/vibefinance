@@ -43,3 +43,18 @@ export function t(key) {
 export function currentLocale() {
   return locale;
 }
+
+/**
+ * Fill any element carrying a `data-t` key.
+ *
+ * The scripted screens build their own nodes and call `t()` directly.
+ * The sign-in form is markup, so its words are marked in the HTML and
+ * filled here — **left empty in the source** rather than defaulted to
+ * English, because a default flashes the wrong language to the person
+ * least able to read it.
+ */
+export function applyStrings(root = document) {
+  for (const node of root.querySelectorAll("[data-t]")) {
+    node.textContent = t(node.dataset.t);
+  }
+}

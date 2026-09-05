@@ -325,28 +325,33 @@
 -->
 <main id="signin-view" hidden>
   <div class="mark"></div>
-  <h1 id="product">VibeFinance</h1>
-  <p class="sub">Sign in to continue</p>
+  <!--
+    Empty, and filled from the strings and the customer's livery.
+    A default in the markup would flash the wrong name and the wrong
+    language before either arrives.
+  -->
+  <h1 id="product"></h1>
+  <p class="sub" data-t="signin.title"></p>
 
   <form id="signin" autocomplete="on">
     <div class="field">
-      <label for="email">Email</label>
+      <label for="email" data-t="signin.email"></label>
       <input id="email" name="email" type="email" required autocomplete="username">
     </div>
 
     <div class="field">
-      <label for="password">Password</label>
+      <label for="password" data-t="signin.password"></label>
       <input id="password" name="password" type="password" required autocomplete="current-password">
     </div>
 
     <div class="field">
-      <label for="environment">Environment</label>
+      <label for="environment" data-t="signin.environment"></label>
       <select id="environment" name="environment" required disabled>
-        <option value="">Sign in to choose</option>
+        <option value="" data-t="signin.choose"></option>
       </select>
     </div>
 
-    <button type="submit" id="submit">Continue</button>
+    <button type="submit" id="submit" data-t="signin.continue"></button>
   </form>
 
   <div class="problem" id="problem" role="alert"></div>
