@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 3 September 2026. A living document: what is built, what
+Last updated 5 September 2026. A living document: what is built, what
 is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -35,6 +35,10 @@ refused outright rather than silently degraded.
 From there: facts are stored, a workflow instance is created, its
 stages are visited, rules compiled from natural language are
 evaluated, and matching rules spawn real tasks for real people.
+
+**And a person can now do something about it.** They sign in at
+`vf-ui`, see their tasks across every stage, claim one, and key the
+document behind it — in their own language and the customer's colours.
 
 **Verified end to end on live infrastructure**: a photograph of a
 supplier invoice produced correct structured EN 16931 facts, matched
@@ -89,6 +93,18 @@ a rule, and left an approval task in a queue.
 - Control-plane provisioning: customer, environment, trial licence (0039)
 - Staged expiry warnings at 14/7/1 days, then blocking (0040)
 - Usage telemetry, per environment, aggregate-only
+
+### The interface
+- `vf-ui`, one shared deployment for every customer (0099)
+- Sign-in, with the session in an `HttpOnly` cookie the JavaScript
+  never sees (0102)
+- Task Manager: one list across every stage, ownership as a column,
+  actions the server decides (0103, 0104, 0105)
+- Validation viewer: the retained original beside the fields it should
+  have yielded, with an editable line table (0106, 0109)
+- A stated visual direction rather than accumulated choices (0108)
+- Branding and translations from D1, so a livery or a language needs no
+  deployment (0096, 0107)
 
 ### Customer configuration
 - Org units, teams, roles, users, cost centres
@@ -146,6 +162,12 @@ first, including that it must be computed at capture and stored, or
 re-running a rule set could yield a different answer and break the
 reproducibility property the interpreter rests on.
 
+**`org_units` is connected to nothing.** The table exists with a parent
+hierarchy and is listed as built, and **no invoice, process, source or
+user references it**. So anything scoped "per org" — field visibility,
+routing, authority — has nothing to resolve against. The second
+instance of a declared thing nothing uses, at table scale.
+
 **Supplier groups.** Needed for conditions like *"if the invoice is
 from a transport provider"*, which should be a lookup against
 configuration, never a model inference. Now also the missing condition
@@ -164,10 +186,6 @@ person might expect one. Whether task completion should carry keyed
 facts into a re-evaluation is 0064's territory: `onTaskCompleted`
 advances by sequence without evaluating rules, so it has nowhere to put
 them.
-
-**Keyed lines.** Lines live in `invoice_lines` rather than `facts_json`,
-so `provenance.keyed` covers header fields only and a keyed line is
-indistinguishable from a parsed one.
 
 **Mapping rules.** Customer-authored rules deciding which extracted
 value lands in which field — *"use the transport reference as the
@@ -216,10 +234,16 @@ arithmetic checks could never run on the most trustworthy path (0059);
 `CIUS_PROFILES` claimed FatturaPA is a CIUS when the codebase's own
 description said otherwise (0065); a whole document-storage layer
 existed that nothing on the capture path called (0068); a content type
-was derived from half a detection result (0069); and a migration
+was derived from half a detection result (0069); a migration
 checksum was written on every apply and compared to nothing, under a
-comment asserting it was verified (0076). **None was found by reading either
-layer alone.** Decision 0067 now makes one of these a standing test: for
+comment asserting it was verified (0076); a keying screen filled a
+line's convenience *columns* and left its *facts* empty, so a keyed
+line would have been invisible to every line-scoped rule (0109); and
+**four of the six mandatory elements of `cac:InvoiceLine` were missing
+from the closed vocabulary**, including the unit of measure that makes
+a quantity mean anything (0110). **None was found by reading either
+layer alone**, and the last two were found by a question rather than by
+any test. Decision 0067 now makes one of these a standing test: for
 every declared field, either the UBL parser populates it or the check
 file records why not — so a gap has to be *stated* to be allowed.
 
@@ -287,8 +311,9 @@ elsewhere.
 | Package | Tests |
 |---|---|
 | `vf-app` | 943 |
-| `vf-licence` | 153 |
-| `shared` | 149 passing, 2 known pre-existing failures |
+| `vf-licence` | 284 |
+| `vf-ui` | 40 |
+| `shared` | 221 passing, 2 known pre-existing failures |
 
 Both migration chains replay clean with every standing invariant
 holding — 35 migrations for `vf-app`, 18 for `vf-licence`.
@@ -308,15 +333,16 @@ holding — 35 migrations for `vf-app`, 18 for `vf-licence`.
 | `docs/design/mockups/` | Four screens as static HTML | Current |
 | `docs/design/multi-authority-intake.md` | Non-EN-16931 authorities | Design only |
 | `docs/design/text-layer-extraction.md` | Reading a PDF's own text | Design only |
-| `docs/decisions/` | 79 decision records | Current |
+| `docs/decisions/` | 110 decision records | Current |
 
 Document 4's markdown source is at `docs/documents/`, with
 `scripts/build-document-04.cjs` rendering the Word edition. The `.docx`
 is deliberately not committed: a binary that cannot be diffed would
 break the traceability the rest of `docs/` depends on.
 
-**Not written**: a customer-facing API guide, and a document on the
-workflow engine.
+**Not written**: a customer-facing API guide, a document on the
+workflow engine, and a document on the interface. Documents 1, 2 and 3
+predate `vf-ui` entirely.
 
 ---
 

@@ -14,14 +14,18 @@ either, so check the dates.
 
 | | |
 | --- | --- |
-| `origin/main` | `258a4be` |
-| vf-app deployed | `11670e4` |
-| vf-licence deployed | `112ed13` |
-| **vf-ui deployed** | `112ed13` — `https://vf-ui.vibefinance.workers.dev` |
-| `vf-app-poc` migrations | through `0034` |
-| `vf-licence-poc` migrations | through `0012` |
-| Tests | vf-app 882 · vf-licence 262 · vf-ui 9 · shared 214 (+2 known pre-existing failures) |
-| Decision records | 101 |
+| `origin/main` | `7919d87` |
+| vf-app deployed | `ec0c60a` — **behind**, see below |
+| vf-licence deployed | `112ed13` — **behind** |
+| vf-ui deployed | `ec0c60a` — **behind** · `https://vf-ui.vibefinance.workers.dev` |
+| `vf-app-poc` migrations | through `0035` |
+| `vf-licence-poc` migrations | through `0018` |
+| Tests | vf-app 943 · vf-licence 284 · vf-ui 40 · shared 221 (+2 known pre-existing failures) |
+| Decision records | 110 |
+
+**Decisions 0109 and 0110 are committed and not yet deployed** — line
+keying, and the BG-25 vocabulary completion. Three migrations pending:
+`0035` on `vf-app`, `0017` and `0018` on `vf-licence`.
 
 **There are three Workers now.** `vf-app` per customer, `vf-licence`
 shared, and `vf-ui` shared — the interface, its own deployment because
@@ -55,8 +59,10 @@ Proven live, following one real document the whole way:
 9. A person with the right permissions can **return** it to an earlier
    stage with a reason, **return it to the supplier**, or **discard** it.
 
-Everything above is live. What does not exist is any interface — steps
-6, 8 and 9 are `curl`.
+**Every step above now has a screen.** `vf-ui` serves sign-in, the Task
+Manager and the Validation viewer, so steps 6, 8 and 9 are things a
+person clicks rather than `curl` invocations. This paragraph said the
+opposite until 5 September.
 
 Separately, **purchase orders** can be ingested from Peppol BIS Order
 Only documents and read back. They are reference data rather than work:
@@ -232,38 +238,49 @@ Recorded so nobody re-opens them:
 
 ## Suggested next pieces
 
-**1. Line items in the viewer.** The keying screen does headers only.
-The mockup has an editable line table and a running comparison the
-design calls *advisory, never blocking* — an invoice whose lines do not
-sum to its printed total is a fact to record faithfully, not an input to
-prevent. Needs `provenance.keyed` to cover lines, which it does not
-(0071).
+**1. Field visibility, and the `org_units` question behind it.** Putting
+every declared field on screen would be unusable, so which fields are
+visible — and whether they are editable — wants configuring. Settled in
+conversation: **`edit` / `read` / `hidden`, per customer, overridable
+per stage, and a stage may only ever restrict.** *"Approvers should
+approve data, not edit data."*
 
-**2. Email.** Blocks alerting on failed sign-ins, password reset,
+**Blocked on one thing:** it should also vary by org unit, and
+**`org_units` is connected to nothing** — no invoice, process, source or
+user references it. Either the variation is by the *document* (its
+country, from BT-40, which exists and is populated) or `org_units` needs
+attaching to something first.
+
+**2. Audit the header fields against the standard.** Decision 0110 found
+four of six mandatory `cac:InvoiceLine` elements missing. **The header
+has not been checked the same way** and is likely to have similar gaps.
+The tree is at `docs.peppol.eu/poacc/billing/3.0/syntax/ubl-invoice/tree/`.
+
+**3. Email.** Blocks alerting on failed sign-ins, password reset,
 licence expiry warnings and every notification. Still the
 most-referenced missing capability in these records.
 
-**3. An Approval screen.** The Task Manager lists approval tasks and
+**4. An Approval screen.** The Task Manager lists approval tasks and
 cannot open them. No mockup exists. Decision 0103's intent stands: one
-viewer, actions varying by stage.
+viewer, actions varying by stage — and field visibility above is what
+makes an approval view differ from a keying one.
 
-**4. Despatch Advice (T16).** The goods receipt, and the missing third
+**5. Despatch Advice (T16).** The goods receipt, and the missing third
 leg of three-way matching — **before the matcher, not after** (0082).
+BT-132, the referenced order line, now exists in the vocabulary (0110),
+which is what lets matching compare a line to an order line rather than
+a document to a document.
 
-**5. Reading `cbc:CustomizationID`.** Detection answers *what structure
+**6. Reading `cbc:CustomizationID`.** Detection answers *what structure
 is this*, not *what document is this*, so a valid Peppol Order sent to
 `/sources/:id/capture` is refused.
 
-**6. `party.first_document`.** Declared and uncomputed (0079). Must be
+**7. `party.first_document`.** Declared and uncomputed (0079). Must be
 computed **at capture and stored**, or re-running a rule set would give
 a different answer as more invoices arrive.
 
-**7. The all-users task view.** `AP.TaskManage` is defined and enforced
-(0104); the screen listing every person's work does not exist.
-
-**8. Four more languages.** English and German are complete;
-`GET /ui-strings/keys` shows the gaps. This is rows, not work — listed
-so it is not forgotten rather than because it is hard.
+**8. The all-users task view**, and **four more languages** —
+`GET /ui-strings/keys` shows the gaps, and it is rows rather than work.
 
 ---
 
