@@ -35,11 +35,29 @@ let lines = [];
  * field for it (BT-153 and BT-154 are not in the closed set), so it
  * remains a column a person reads rather than a fact a rule tests.
  */
-const LINE_FACTS = {
-  amount: "BT-131", // line net amount
-  quantity: "BT-129",
-  costCentre: "BT-133",
-};
+const LINE_FIELDS = [
+  { code: "BT-153", type: "text", wide: true }, // item name — mandatory
+  { code: "BT-129", type: "number" }, // quantity — mandatory
+  { code: "BT-130", type: "text", short: true }, // unit of measure — mandatory
+  { code: "BT-146", type: "number" }, // item net price — mandatory
+  { code: "BT-131", type: "number" }, // line net amount — mandatory
+];
+
+/**
+ * The convenience columns `invoice_lines` also stores.
+ *
+ * They are **derived from the facts**, not typed separately: the item
+ * name is the description a person reads back, and the line net amount
+ * is the amount. Letting somebody type them independently is how a
+ * column and a fact come to disagree.
+ */
+function columnsFor(line) {
+  return {
+    description: String(line["BT-153"] ?? "").trim(),
+    amount: line["BT-131"] === "" || line["BT-131"] === undefined ? null : Number(line["BT-131"]),
+    costCentre: String(line["BT-133"] ?? "").trim() || undefined,
+  };
+}
 
 function el(tag, props = {}, children = []) {
   const node = document.createElement(tag);
@@ -127,7 +145,7 @@ function note(message) {
  * It says what it found. It does not stop anybody saving.
  */
 function updateTotals() {
-  const summed = lines.reduce((total, line) => total + (Number(line.amount) || 0), 0);
+  const summed = lines.reduce((total, line) => total + (Number(line["BT-131"]) || 0), 0);
   const printed = Number(document.getElementById("f-BT-112")?.value) || 0;
 
   const box = document.getElementById("linetotal");
@@ -144,14 +162,17 @@ function updateTotals() {
 }
 
 function lineRow(line, index) {
-  const cell = (field, type) =>
-    el("td", {}, [
+  const cell = (spec) =>
+    el("td", { class: spec.short ? "short" : undefined }, [
       el("input", {
-        type,
-        step: type === "number" ? "0.01" : undefined,
-        value: line[field] ?? "",
+        type: spec.type,
+        step: spec.type === "number" ? "0.01" : undefined,
+        // BT-130 is a UN/ECE code — `C62` for "one", `HUR` for hours —
+        // so it is short and upper-case by nature.
+        placeholder: spec.code === "BT-130" ? "C62" : undefined,
+        value: line[spec.code] ?? "",
         oninput: (event) => {
-          line[field] = type === "number" ? event.target.value : event.target.value;
+          line[spec.code] = event.target.value;
           updateTotals();
         },
       }),
@@ -159,9 +180,7 @@ function lineRow(line, index) {
 
   return el("tr", {}, [
     el("td", { class: "num muted", text: String(index + 1) }),
-    cell("description", "text"),
-    cell("quantity", "number"),
-    cell("amount", "number"),
+    ...LINE_FIELDS.map(cell),
     el("td", {}, [
       el("button", {
         class: "rm",
@@ -190,9 +209,9 @@ function linePanel() {
       el("thead", {}, [
         el("tr", {}, [
           el("th", { class: "num", text: "#" }),
-          el("th", { text: t("viewer.description") }),
-          el("th", { class: "num", text: t("field.bt-129") }),
-          el("th", { class: "num", text: t("field.bt-131") }),
+          ...LINE_FIELDS.map((spec) =>
+            el("th", { class: spec.type === "number" ? "num" : undefined, text: t(`field.${spec.code.toLowerCase()}`) })
+          ),
           el("th", { text: "" }),
         ]),
       ]),
@@ -202,7 +221,7 @@ function linePanel() {
       el("button", {
         text: t("viewer.addline"),
         onclick: () => {
-          lines.push({ description: "", quantity: "", amount: "" });
+          lines.push({});
           renderLines();
         },
       }),
@@ -225,28 +244,30 @@ async function save(close) {
   // provenance trail (decision 0109).
   const payload = { facts };
   const usable = lines
-    .filter(
-      (line) =>
-        String(line.description ?? "").trim() !== "" ||
-        String(line.amount ?? "") !== "" ||
-        String(line.quantity ?? "") !== ""
-    )
+    .filter((line) => LINE_FIELDS.some((spec) => String(line[spec.code] ?? "").trim() !== ""))
     .map((line, index) => {
-      // Columns AND facts. The columns are what a person reads back;
-      // the facts are what a rule can test (decision 0027).
       const facts = {};
-      for (const [column, code] of Object.entries(LINE_FACTS)) {
-        const raw = line[column];
-        if (raw === undefined || raw === "" || raw === null) continue;
-        facts[code] = column === "costCentre" ? String(raw).trim() : Number(raw);
+      for (const spec of LINE_FIELDS) {
+        const raw = line[spec.code];
+        if (raw === undefined || raw === null || String(raw).trim() === "") continue;
+        if (spec.type === "number") {
+          facts[spec.code] = Number(raw);
+        } else if (spec.code === "BT-130") {
+          // A UN/ECE code, so it is upper-cased rather than stored in
+          // whatever case somebody typed. `hur` and `HUR` are the same
+          // unit and should not be two values.
+          facts[spec.code] = String(raw).trim().toUpperCase();
+        } else {
+          facts[spec.code] = String(raw).trim();
+        }
       }
 
-      return {
-        lineNumber: index + 1,
-        description: String(line.description ?? "").trim(),
-        amount: line.amount === "" ? null : Number(line.amount),
-        facts,
-      };
+      // BT-126 is the line identifier and is mandatory. Where a person
+      // is typing a document nobody could read, its position IS its
+      // identifier — stated rather than left blank.
+      facts["BT-126"] = String(index + 1);
+
+      return { lineNumber: index + 1, ...columnsFor(line), facts };
     });
   if (usable.length > 0) payload.lines = usable;
 

@@ -27,11 +27,22 @@ export const INVOICE_FIELDS = [
   "BT-110", // total VAT
   "BT-112", // total with VAT
   "BT-115", // amount due
-  "BT-129", // quantity
-  "BT-131", // line net amount
-  "BT-133", // line accounting/cost centre reference
-  "BT-151", // VAT category
+  // BG-25 INVOICE LINE. Checked against the Peppol BIS Billing 3.0 UBL
+  // tree rather than recalled — decision 0110. **Four of the six
+  // mandatory line elements were missing**, including the unit of
+  // measure that makes a quantity mean anything.
+  "BT-126", // New — invoice line identifier (cbc:ID, mandatory)
+  "BT-127", // New — invoice line note (cbc:Note)
+  "BT-129", // quantity (cbc:InvoicedQuantity, mandatory)
+  "BT-130", // New — quantity unit of measure (@unitCode, mandatory)
+  "BT-131", // line net amount (cbc:LineExtensionAmount, mandatory)
+  "BT-132", // New — referenced purchase order line reference
+  "BT-133", // line accounting/cost centre reference (cbc:AccountingCost)
+  "BT-146", // New — item net price (cac:Price/cbc:PriceAmount, mandatory)
+  "BT-151", // VAT category (cac:Item/cac:ClassifiedTaxCategory/cbc:ID)
   "BT-152", // VAT rate
+  "BT-153", // New — item name (cac:Item/cbc:Name, mandatory)
+  "BT-154", // New — item description (cac:Item/cbc:Description)
   "BG-20", // allowances
   "BG-21", // charges
 ] as const;
@@ -92,7 +103,14 @@ export const INVOICE_FIELD_TYPES: Record<string, FieldType> = {
   "BT-112": "number",
   "BT-115": "number",
   "BT-129": "number",
+  "BT-126": "text",
+  "BT-127": "text",
+  "BT-130": "text",
   "BT-131": "number",
+  "BT-132": "text",
+  "BT-146": "number",
+  "BT-153": "text",
+  "BT-154": "text",
   "BT-133": "text", // cost centre reference — a code, not a quantity
   "BT-151": "text", // VAT category code
   "BT-152": "number", // VAT rate, a percentage
@@ -211,7 +229,14 @@ export const FIELD_DESCRIPTIONS: Record<InvoiceField, string> = {
   "BT-112": "total with VAT",
   "BT-115": "amount due",
   "BT-129": "quantity",
-  "BT-131": "line net amount",
+  "BT-126": "invoice line identifier — unique within the invoice",
+  "BT-127": "invoice line note — unstructured text relevant to this line",
+  "BT-130": "quantity unit of measure — a UN/ECE Recommendation 20 or 21 code, such as C62 for 'one'",
+  "BT-131": "line net amount — the total for the line, excluding VAT, after line allowances and charges",
+  "BT-132": "referenced purchase order line reference — which line of the buyer's order this answers",
+  "BT-146": "item net price — the price of one item, excluding VAT, after any item discount",
+  "BT-153": "item name",
+  "BT-154": "item description — fuller than the item name",
   "BT-133": "the accounting/cost centre reference for this line — where this cost gets booked in the buyer's own financial accounts. A genuinely separate concept from org_units (decision 0009): a financial/accounting construct, not an organizational/authority one — the two are not guaranteed to correspond 1:1.",
   "BT-151": "VAT category",
   "BT-152": "VAT rate",

@@ -57,6 +57,24 @@ export interface ParsedUblInvoice {
   lines: Array<InvoiceFacts & { lineNumber: number }>;
 }
 
+/**
+ * An XML **attribute**, which several BIS 3.0 business terms are —
+ * decision 0110.
+ *
+ * `cbc:InvoicedQuantity/@unitCode` is mandatory and carries BT-130, and
+ * `@currencyID` carries the currency of every amount. Reading only
+ * elements misses them entirely, which is how a quantity ended up in
+ * the vocabulary with no unit beside it.
+ *
+ * The parser runs with `ignoreAttributes: false` and the default `@_`
+ * prefix, so an attribute appears as a sibling key of `#text`.
+ */
+function getAttribute(value: unknown, name: string): string | undefined {
+  if (value === undefined || value === null || typeof value !== "object") return undefined;
+  const raw = (value as Record<string, unknown>)[`@_${name}`];
+  return raw === undefined || raw === null ? undefined : String(raw);
+}
+
 function getText(value: unknown): string | undefined {
   if (value === undefined || value === null) return undefined;
   if (typeof value === "string") return value;
@@ -266,6 +284,41 @@ export function parseUblInvoice(xml: string): ParsedUblInvoice {
     if (vatCategory !== undefined) lineFacts["BT-151"] = vatCategory;
     const vatRate = getNumber(taxCategory?.Percent);
     if (vatRate !== undefined) lineFacts["BT-152"] = vatRate;
+
+    // The rest of BG-25, checked against the BIS Billing 3.0 UBL tree
+    // rather than recalled — decision 0110. Four of these are
+    // **mandatory** in the spec and none was being read.
+    if (lineIdText !== undefined) lineFacts["BT-126"] = lineIdText;
+
+    const lineNote = getText(line?.Note);
+    if (lineNote !== undefined) lineFacts["BT-127"] = lineNote;
+
+    // The unit of measure is an ATTRIBUTE on the quantity, not an
+    // element — `cbc:InvoicedQuantity/@unitCode`, mandatory. Without it
+    // a quantity of 100 says nothing: 100 hours and 100 pallets are
+    // both `100`.
+    const unitCode = getAttribute(line?.InvoicedQuantity, "unitCode");
+    if (unitCode !== undefined) lineFacts["BT-130"] = unitCode;
+
+    // Which line of the buyer's own order this answers — what
+    // three-way matching will need to compare a line to an order line
+    // rather than a document to a document.
+    const orderLine = (line?.OrderLineReference as Record<string, unknown> | undefined)?.LineID;
+    const orderLineRef = getText(orderLine);
+    if (orderLineRef !== undefined) lineFacts["BT-132"] = orderLineRef;
+
+    const item = line?.Item as Record<string, unknown> | undefined;
+    const itemName = getText(item?.Name);
+    if (itemName !== undefined) lineFacts["BT-153"] = itemName;
+    const itemDescription = getText(item?.Description);
+    if (itemDescription !== undefined) lineFacts["BT-154"] = itemDescription;
+
+    // The unit price, from cac:Price/cbc:PriceAmount. Mandatory, and
+    // what makes a line checkable against its own arithmetic.
+    const price = (line?.Price as Record<string, unknown> | undefined)?.PriceAmount;
+    const netPrice = getNumber(price);
+    if (netPrice !== undefined) lineFacts["BT-146"] = netPrice;
+
     return lineFacts;
   });
 

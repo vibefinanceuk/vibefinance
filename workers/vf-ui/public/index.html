@@ -358,6 +358,9 @@
   .linetable input { min-height: 30px; font-size: 13px; }
   .linetable th:first-child, .linetable td:first-child { width: 30px; }
   .linetable th:last-child, .linetable td:last-child { width: 34px; }
+  /* BT-130 is a three-character UN/ECE code, so its column is narrow. */
+  .linetable td.short { width: 70px; }
+  .linetable th:nth-child(4) { width: 70px; }
 
   button.rm {
     min-height: 28px;

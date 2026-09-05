@@ -79,10 +79,14 @@ describe("parseUblInvoice — a genuine, well-formed sample", () => {
   });
 
   it("extracts both lines, each with its own real lineNumber, quantity, and net amount", () => {
+    // **BT-126 and BT-130 were always in this sample** — `<cbc:ID>` and
+    // `unitCode="C62"` — and the parser discarded them until decision
+    // 0110. This assertion grew because more of the document is now
+    // read, not because the document changed.
     const { lines } = parseUblInvoice(SAMPLE_UBL_INVOICE);
     expect(lines).toEqual([
-      { lineNumber: 1, "BT-129": 10, "BT-131": 1000 },
-      { lineNumber: 2, "BT-129": 5, "BT-131": 500 },
+      { lineNumber: 1, "BT-126": "1", "BT-129": 10, "BT-130": "C62", "BT-131": 1000 },
+      { lineNumber: 2, "BT-126": "2", "BT-129": 5, "BT-130": "C62", "BT-131": 500 },
     ]);
   });
 });
@@ -119,7 +123,8 @@ describe("parseUblInvoice — a single line, not an array", () => {
 
   it("a document with exactly one line still produces a real array of length one, not a bare object", () => {
     const { lines } = parseUblInvoice(SINGLE_LINE);
-    expect(lines).toEqual([{ lineNumber: 1, "BT-129": 3, "BT-131": 300 }]);
+    // BT-126 likewise: the sample always carried <cbc:ID> (0110).
+    expect(lines).toEqual([{ lineNumber: 1, "BT-126": "1", "BT-129": 3, "BT-131": 300 }]);
   });
 });
 
@@ -327,5 +332,80 @@ describe("parseUblInvoice — BT-151 and BT-152 are line-level, not header", () 
   it("leaves a line without tax category information alone", () => {
     const parsed = parseUblInvoice(withLineVat);
     expect(parsed.lines[1]["BT-151"]).toBeUndefined();
+  });
+});
+
+describe("the rest of BG-25 (decision 0110)", () => {
+  /**
+   * Checked against the Peppol BIS Billing 3.0 UBL tree rather than
+   * recalled. **Four of the six mandatory line elements were missing**
+   * from the vocabulary, and none of these was being read.
+   */
+  const withFullLine = `<?xml version="1.0" encoding="UTF-8"?>
+<Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"
+         xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
+         xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">
+  <cbc:ID>INV-1</cbc:ID>
+  <cbc:IssueDate>2026-09-01</cbc:IssueDate>
+  <cac:InvoiceLine>
+    <cbc:ID>12</cbc:ID>
+    <cbc:Note>New article number 12345</cbc:Note>
+    <cbc:InvoicedQuantity unitCode="HUR">100</cbc:InvoicedQuantity>
+    <cbc:LineExtensionAmount currencyID="EUR">2145.00</cbc:LineExtensionAmount>
+    <cbc:AccountingCost>1287:65464</cbc:AccountingCost>
+    <cac:OrderLineReference><cbc:LineID>3</cbc:LineID></cac:OrderLineReference>
+    <cac:Item>
+      <cbc:Description>Long description of the item</cbc:Description>
+      <cbc:Name>Consultancy</cbc:Name>
+    </cac:Item>
+    <cac:Price><cbc:PriceAmount currencyID="EUR">21.45</cbc:PriceAmount></cac:Price>
+  </cac:InvoiceLine>
+</Invoice>`;
+
+  it("reads the unit of measure, which is an attribute rather than an element", () => {
+    // `cbc:InvoicedQuantity/@unitCode`, mandatory in the spec. Without
+    // it a quantity of 100 says nothing: 100 hours and 100 pallets are
+    // both `100`.
+    const parsed = parseUblInvoice(withFullLine);
+    expect(parsed.lines[0]["BT-129"]).toBe(100);
+    expect(parsed.lines[0]["BT-130"]).toBe("HUR");
+  });
+
+  it("reads the item name, which is mandatory", () => {
+    // What the keying screen called "description" and treated as
+    // having no standard equivalent.
+    expect(parseUblInvoice(withFullLine).lines[0]["BT-153"]).toBe("Consultancy");
+  });
+
+  it("distinguishes the item name from the item description", () => {
+    // Two separate elements in the spec, and the screen had neither.
+    const line = parseUblInvoice(withFullLine).lines[0];
+    expect(line["BT-153"]).toBe("Consultancy");
+    expect(line["BT-154"]).toBe("Long description of the item");
+  });
+
+  it("reads the item net price, which makes a line checkable", () => {
+    // 100 hours at 21.45 is 2145.00 — arithmetic a rule can now test,
+    // and could not before.
+    const line = parseUblInvoice(withFullLine).lines[0];
+    expect(line["BT-146"]).toBe(21.45);
+    expect(Number(line["BT-129"]) * Number(line["BT-146"])).toBeCloseTo(Number(line["BT-131"]), 2);
+  });
+
+  it("reads the line identifier and the order line it answers", () => {
+    // BT-132 is what three-way matching will need, to compare a line
+    // to an order line rather than a document to a document.
+    const line = parseUblInvoice(withFullLine).lines[0];
+    expect(line["BT-126"]).toBe("12");
+    expect(line["BT-132"]).toBe("3");
+  });
+
+  it("reads the line note", () => {
+    expect(parseUblInvoice(withFullLine).lines[0]["BT-127"]).toBe("New article number 12345");
+  });
+
+  it("leaves absent optional terms absent rather than guessing", () => {
+    const minimal = withFullLine.replace(/<cbc:Note>.*<\/cbc:Note>/, "");
+    expect(parseUblInvoice(minimal).lines[0]["BT-127"]).toBeUndefined();
   });
 });
