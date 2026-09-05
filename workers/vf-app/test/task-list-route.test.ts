@@ -62,6 +62,16 @@ async function seedTask(
     .run();
 }
 
+async function grant(userId: string, permissions: string[]) {
+  const roleId = `role-${userId}`;
+  await env.DB.prepare("INSERT OR IGNORE INTO org_roles (id, name, permissions_json) VALUES (?, ?, ?)")
+    .bind(roleId, roleId, JSON.stringify(permissions))
+    .run();
+  await env.DB.prepare("INSERT OR IGNORE INTO org_user_roles (user_id, role_id) VALUES (?, ?)")
+    .bind(userId, roleId)
+    .run();
+}
+
 async function list(userId: string): Promise<TaskRow[]> {
   const result = await handleListMyTasks(env.DB, userId);
   return (result.body as { tasks: TaskRow[] }).tasks;
@@ -239,5 +249,87 @@ describe("ordering and what is left out", () => {
     ).run();
 
     expect(await list("alice")).toHaveLength(0);
+  });
+});
+
+
+describe("what a person may do with a task (decision 0103)", () => {
+  /**
+   * Reported by the server rather than inferred by the interface. A
+   * client that re-derived these would drift -- a permission changes
+   * and a button lingers, or vanishes while the action still works.
+   *
+   * This is presentation, not security: a client can still call
+   * anything, and enforcement stays in the routes.
+   */
+  it("offers nothing on a task a colleague holds", async () => {
+    await grant("sarah", ["AP.Validate", "AP.Return", "AP.Discard"]);
+    await seedInstance("inv-1", "validation", "v-1");
+    await seedTask("t-1", "validation", "v-1", { team: "ap" }, "alice");
+
+    expect((await list("sarah"))[0].actions).toEqual([]);
+  });
+
+  it("offers only claiming on an unclaimed team task", async () => {
+    // The one thing a person can do with a task they have not taken.
+    await grant("alice", ["AP.Validate", "AP.Return", "AP.Discard"]);
+    await seedInstance("inv-1", "validation", "v-1");
+    await seedTask("t-1", "validation", "v-1", { team: "ap" });
+
+    expect((await list("alice"))[0].actions).toEqual(["claim"]);
+  });
+
+  it("offers nothing to claim without the stage's own permission", async () => {
+    await grant("alice", ["AP.Approve"]);
+    await seedInstance("inv-1", "validation", "v-1");
+    await seedTask("t-1", "validation", "v-1", { team: "ap" });
+
+    expect((await list("alice"))[0].actions).toEqual([]);
+  });
+
+  it("offers keying, returning and discarding on their own task", async () => {
+    await grant("alice", ["AP.Validate", "AP.Return", "AP.Discard"]);
+    await seedInstance("inv-1", "validation", "v-1");
+    await seedTask("t-1", "validation", "v-1", { user: "alice" });
+
+    const actions = (await list("alice"))[0].actions;
+    expect(actions).toContain("key");
+    expect(actions).toContain("return");
+    expect(actions).toContain("discard");
+  });
+
+  it("omits an action whose permission the person lacks", async () => {
+    // The button that would have failed on click.
+    await grant("alice", ["AP.Validate"]);
+    await seedInstance("inv-1", "validation", "v-1");
+    await seedTask("t-1", "validation", "v-1", { user: "alice" });
+
+    const actions = (await list("alice"))[0].actions;
+    expect(actions).toContain("key");
+    expect(actions).not.toContain("return");
+    expect(actions).not.toContain("discard");
+  });
+
+  it("offers nothing on a task demanding a permission they lack", async () => {
+    // Assigned to them, and requiring something they do not hold —
+    // which the routes would refuse.
+    await grant("alice", ["AP.Approve"]);
+    await seedInstance("inv-1", "validation", "v-1");
+    await seedTask("t-1", "validation", "v-1", { user: "alice" });
+
+    expect((await list("alice"))[0].actions).toEqual([]);
+  });
+
+  it("survives a role with unparseable permissions", async () => {
+    // One bad row must not empty somebody's queue.
+    await grant("alice", ["AP.Validate"]);
+    await env.DB.prepare(
+      "INSERT INTO org_roles (id, name, permissions_json) VALUES ('broken', 'Broken', 'not json')"
+    ).run();
+    await env.DB.prepare("INSERT INTO org_user_roles (user_id, role_id) VALUES ('alice', 'broken')").run();
+    await seedInstance("inv-1", "validation", "v-1");
+    await seedTask("t-1", "validation", "v-1", { user: "alice" });
+
+    expect((await list("alice"))[0].actions).toContain("key");
   });
 });

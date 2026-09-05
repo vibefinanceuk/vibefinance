@@ -243,6 +243,47 @@ history, and one showing both would need filtering before it was useful.
 
 ---
 
+## One viewer, with actions that appear or do not
+
+**Not a screen per stage.** One document viewer, and the actions
+available change with the stage and the person's permissions — an
+approve button only at Approval, only for somebody permitted to approve.
+
+Less to build, and it degrades sensibly for a stage nobody wrote a
+screen for, which is the consequence flagged above.
+
+### The actions are reported, not inferred
+
+Every one is **already enforced**: `AP.Return` plus the stage's own
+permission plus holding the task (decision 0075), `AP.Discard` likewise,
+`AP.Validate` for keying (0071).
+
+If the interface re-derived those rules they would drift — a permission
+changes and a button lingers, or vanishes while the action still works.
+So each task **reports its own actions**, from the same conditions that
+refuse them:
+
+```json
+"ownership": "mine",
+"actions": ["complete", "key", "return", "discard"]
+```
+
+**A button that appears is one the server will honour.**
+
+> **Presentation, not security.** A client can still call anything, and
+> hiding a button withholds nothing. Enforcement stays in the routes;
+> this only stops somebody being offered an action that would then be
+> refused — the same distinction drawn above about read-only.
+
+Watched to fail: offering actions on a task a colleague holds, and
+ignoring the permission the task itself demands.
+
+Permissions are read **once for the list** rather than per row — forty
+tasks would otherwise mean forty identical queries — and a role with
+unparseable permissions grants nothing rather than emptying the queue.
+
+---
+
 ## Deliberately not in this
 
 - **Out-of-office reassignment.** Needs a notion of absence that does

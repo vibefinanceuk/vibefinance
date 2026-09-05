@@ -29,6 +29,26 @@ export type Ownership =
   /** My team's, claimed by a colleague. Visible, not actionable by me. */
   | "locked";
 
+/**
+ * What this person may do with this task, right now.
+ *
+ * **Computed by the server, not inferred by the interface.** Every one
+ * of these is already enforced somewhere — `AP.Return` plus the stage's
+ * own permission plus holding the task (decision 0075), `AP.Discard`
+ * likewise, `AP.Validate` for keying. A client that re-derived them
+ * would drift: a permission changes and a button lingers, or vanishes
+ * while the action still works.
+ *
+ * So the task reports its own actions, from the same rules that refuse
+ * them. **A button that appears is one the server will honour.**
+ *
+ * > **This is presentation, not security.** A client can still call
+ * > anything; hiding a button withholds nothing. Enforcement stays
+ * > where it is, and this only stops somebody being offered an action
+ * > that would then be refused.
+ */
+export type TaskAction = "key" | "return" | "return_to_supplier" | "discard" | "claim" | "complete";
+
 export interface TaskRow {
   id: string;
   stageId: string;
@@ -36,6 +56,8 @@ export interface TaskRow {
   processId: string | null;
   requiredPermission: string;
   ownership: Ownership;
+  /** What this person may do with it — see `TaskAction`. */
+  actions: TaskAction[];
   /** Set only when `locked` — who holds it, and since when. */
   lockedBy?: { id: string; name: string; since: string | null };
   createdAt: string;
@@ -98,11 +120,66 @@ function ownershipOf(row: Raw, userId: string): Ownership {
  * thing that has waited longest is the thing to look at, and any other
  * default would have to justify itself.
  */
+/**
+ * The actions available on one task, for one person.
+ *
+ * Mirrors what the routes themselves check, and the mirroring is the
+ * point: these are the same three conditions `checkStanding` applies —
+ * the capability, the stage's own permission, and holding the task.
+ */
+function actionsFor(
+  row: Raw,
+  ownership: Ownership,
+  permissions: Set<string>
+): TaskAction[] {
+  // Locked by somebody else, or belonging to a team but not yet taken:
+  // nothing can be acted on until it is this person's.
+  if (ownership === "locked") return [];
+  if (ownership === "available") {
+    // The one thing a person can do with a task they have not taken.
+    return permissions.has(row.required_permission) ? ["claim"] : [];
+  }
+
+  // Theirs. Every action below additionally requires the stage's own
+  // permission, which is what the task itself demands.
+  if (!permissions.has(row.required_permission)) return [];
+
+  const actions: TaskAction[] = ["complete"];
+  // Keying belongs to Validation, and is gated on AP.Validate
+  // (decision 0071) rather than on the stage's name.
+  if (permissions.has("AP.Validate")) actions.push("key");
+  if (permissions.has("AP.Return")) actions.push("return");
+  if (permissions.has("AP.ReturnToSupplier")) actions.push("return_to_supplier");
+  if (permissions.has("AP.Discard")) actions.push("discard");
+  return actions;
+}
+
 export async function handleListMyTasks(
   db: D1Database,
   userId: string,
   options: { includeCompleted?: boolean } = {}
 ): Promise<RouteResult> {
+  // Read once for the whole list rather than per row. Forty tasks would
+  // otherwise mean forty identical permission queries.
+  const permissionRows = await db
+    .prepare(
+      `SELECT r.permissions_json AS permissions_json
+       FROM org_user_roles ur JOIN org_roles r ON r.id = ur.role_id
+       WHERE ur.user_id = ?`
+    )
+    .bind(userId)
+    .all<{ permissions_json: string }>();
+
+  const permissions = new Set<string>();
+  for (const role of permissionRows.results) {
+    try {
+      for (const p of JSON.parse(role.permissions_json) as string[]) permissions.add(p);
+    } catch {
+      // A role with unparseable permissions grants nothing rather than
+      // failing the list — one bad row must not empty somebody's queue.
+    }
+  }
+
   const rows = await db
     .prepare(
       `SELECT
@@ -145,6 +222,7 @@ export async function handleListMyTasks(
       processId: row.process_id,
       requiredPermission: row.required_permission,
       ownership,
+      actions: actionsFor(row, ownership, permissions),
       createdAt: row.created_at,
       instanceId: row.instance_id,
     };
