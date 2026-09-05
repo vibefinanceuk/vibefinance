@@ -23,7 +23,7 @@ import {
   handleSetProfile,
 } from "./org-route.js";
 import { handleCreateCostCentre } from "./cost-centre-route.js";
-import { requirePermission, permissionsFor } from "./enforce.js";
+import { requirePermission, permissionsFor, hasPermission } from "./enforce.js";
 import { handleAddTeamMember, handleCreateTeam } from "./team-route.js";
 import { handleUpsertInvoice, mergeStructuredInvoiceFacts } from "./invoice-facts-route.js";
 import { handleUpsertExpenseReport } from "./expense-facts-route.js";
@@ -1667,9 +1667,25 @@ export default {
         return json({ error: `task ${taskId} does not exist` }, 404);
       }
 
-      const auth = await requirePermission(db, request, taskRow.required_permission as Permission);
-      if (!auth.authorized) {
-        return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", locale) }, auth.status);
+      // Session or API key. **This route predates sessions** and used
+      // `requirePermission`, which understands only keys — so a person
+      // clicking Claim in the Task Manager got a 401 while the same
+      // call worked from `curl`.
+      //
+      // The permission check that followed is kept, applied to
+      // whichever credential authenticated: a task demands its own
+      // `required_permission` regardless of how somebody arrived.
+      const auth = await authenticateUserOrSession(
+        db,
+        request,
+        isPublicKeyJwk(env.LICENCE_SIGNING_PUBLIC_KEY) ? env.LICENCE_SIGNING_PUBLIC_KEY : undefined,
+        env.ENVIRONMENT_ID
+      );
+      if (!auth.user) {
+        return json({ error: auth.reason }, 401);
+      }
+      if (!(await hasPermission(db, auth.user.id, taskRow.required_permission as Permission))) {
+        return json({ error: t("forbidden", locale) }, 403);
       }
 
       const result = claimTaskMatch

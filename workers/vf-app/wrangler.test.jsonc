@@ -2,6 +2,33 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "vf-app",
   "main": "src/index.ts",
+
+  // A test keypair, so the routing that accepts session tokens can be
+  // exercised — decision 0105.
+  //
+  // The real public key lives in wrangler.jsonc and its private half is
+  // a secret this session does not hold, so a test could verify
+  // `authenticateUserOrSession` directly and never reach the question
+  // that actually mattered: **which routes call it**. Claiming a task
+  // used `requirePermission`, which understands only API keys, and
+  // nothing noticed until somebody clicked the button.
+  //
+  // This key is public in the repository on purpose. It signs nothing
+  // real; production uses the key in wrangler.jsonc.
+  "vars": {
+    "LICENCE_SIGNING_PUBLIC_KEY": {
+          "key_ops": [
+                "verify"
+          ],
+          "ext": true,
+          "kty": "EC",
+          "x": "U-Zs04Hy_MlWHr9GlT1gZJgkbxmqFRJmP1VcTUx2Xmg",
+          "y": "okr43t1WZRRR27D1U_M2Ao18PjA6Fuk19NSuJ0MCijg",
+          "crv": "P-256"
+    },
+    "ENVIRONMENT_ID": "test-environment"
+  },
+
   "compatibility_date": "2026-08-01",
   "compatibility_flags": ["nodejs_compat"],
 

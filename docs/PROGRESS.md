@@ -286,7 +286,7 @@ elsewhere.
 
 | Package | Tests |
 |---|---|
-| `vf-app` | 927 |
+| `vf-app` | 933 |
 | `vf-licence` | 153 |
 | `shared` | 149 passing, 2 known pre-existing failures |
 
@@ -337,6 +337,12 @@ writing the same bug.**
 tail -1` printed a blank line whether lint passed or failed, so three
 real violations were reported as clean for several decisions (0100).
 **Check the exit code.**
+
+**Test the wiring, not just the part.** A session helper was tested and
+worked; nothing tested which routes called it, so claiming a task
+accepted only API keys and 927 tests passed while the button did
+nothing (0105). Seventh instance of a real mechanism pointing somewhere
+other than the question being asked.
 
 **A guard is only a guard where it runs.** Three write routes in
 `vf-licence` were listed in `isAdminRoute` and returned before it was
