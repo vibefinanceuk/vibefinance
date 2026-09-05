@@ -142,6 +142,47 @@ offering neither.
 
 ---
 
+## A key nothing defines renders as itself, and did
+
+**Reported from a live screen:** the line table's headers read
+`field.bt-129` and `field.bt-131`.
+
+Not a naming problem. `t()` falls back to the key when a string is
+missing — deliberately, because *"a screen reading a dotted key is
+obviously broken and somebody reports it, where a blank looks like a
+data problem and gets lived with."* **The fallback worked exactly as
+designed, and the operator was the person reporting it.**
+
+What was missing is a check that the words a screen asks for are words
+somebody wrote. Decisions 0109 and 0110 added line fields to the viewer
+and seeded labels for five of the seven.
+
+`string-coverage.test.ts` now refuses any key the interface uses and
+nothing defines, naming it:
+
+> Used by the interface and defined nowhere: `field.bt-129`. Seed it in
+> a migration, or stop asking for it.
+
+Modelled on `field-coverage.test.ts` in `shared`, which refuses a
+declared vocabulary field the parser cannot produce. **Same principle,
+a different pair of layers.** It also refuses a label that *is* its own
+key, which would pass the first check while reading as broken.
+
+The list of keys is **maintained by hand rather than scraped**. A
+scraper would have to parse `t(\`field.${code}\`)` and every other
+computed key, and would quietly stop finding them the first time
+somebody built a key a slightly different way. A list fails loudly.
+
+### And the words themselves
+
+The specification's own business term names, in the form somebody keying
+an invoice would use: EN 16931 calls BT-129 *"Invoiced quantity"* and
+BT-131 *"Invoice line net amount"*, shortened only where a table column
+has no room. **A code is what a rule references; a name is what a person
+reads.**
+
+---
+
 ## What is not built
 
 - **Four of the six languages.** English is complete and German is
