@@ -101,6 +101,47 @@ show (decision 0103).
 
 ---
 
+## Adding a language later, without a redesign
+
+The framework's actual promise, and worth checking rather than
+asserting. **A language is rows** — not a deployment, not a schema
+change, not a code change.
+
+**`GET /ui-strings/keys`** returns every key with its translations and,
+more usefully, its **gaps**:
+
+```json
+{ "key": "action.claim",
+  "values": { "en": "Claim", "de": "Übernehmen" },
+  "missing": ["fr", "es", "it", "nl"] }
+```
+
+Plus coverage per language. Without this the only way to see the full
+set is to read a seed migration, which makes the framework usable only
+by somebody with the source in front of them.
+
+**`POST /ui-strings`** takes a whole language at once. Translating a
+`PUT` at a time is tedious enough that nobody would, which would make
+the framework theoretical.
+
+**All or nothing.** A partial write leaves a language half applied with
+no way to tell which half, and a caller resubmitting would not know what
+to resend. Watched to fail: dropping the English-first check lets an
+invented key through and writes it.
+
+**A half-translated language works immediately** — French for what
+exists, English for the rest — which is what makes adding one
+incremental rather than a project.
+
+### The one thing that would need a change
+
+A **seventh** language beyond the six means editing the `CHECK`
+constraint and `SUPPORTED`. Deliberate rather than accidental: offering
+a language the API cannot answer in (decision 0008) would be worse than
+offering neither.
+
+---
+
 ## What is not built
 
 - **Four of the six languages.** English is complete and German is

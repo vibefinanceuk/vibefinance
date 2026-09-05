@@ -139,3 +139,109 @@ describe("changing a word", () => {
     ).toBe(422);
   });
 });
+
+describe("adding a language later, without a redesign (decision 0107)", () => {
+  /**
+   * The framework's actual promise. These tests exist to check it is
+   * true rather than asserted: a language should be **rows**, not a
+   * deployment, a schema change or a code change.
+   */
+  it("lists every key with its translations and its gaps", async () => {
+    // What a translator needs. Without this the only way to see the
+    // full set is to read a seed migration.
+    const { handleListUiStrings } = await import("../src/ui-strings.js");
+    const body = (await handleListUiStrings(env.CONTROL_DB)).body as {
+      keys: { key: string; values: Record<string, string>; missing: string[] }[];
+      coverage: Record<string, string>;
+    };
+
+    const claim = body.keys.find((k) => k.key === "action.claim");
+    expect(claim?.values.en).toBe("Claim");
+    expect(claim?.values.de).toBe("Übernehmen");
+    // The point of the endpoint: the gaps, not the inventory.
+    expect(claim?.missing).toContain("fr");
+  });
+
+  it("reports coverage per language", async () => {
+    const { handleListUiStrings } = await import("../src/ui-strings.js");
+    const body = (await handleListUiStrings(env.CONTROL_DB)).body as {
+      coverage: Record<string, string>;
+    };
+    expect(body.coverage.en).toMatch(/^(\d+)\/\1$/); // English is complete.
+    expect(body.coverage.fr).toMatch(/^0\//); // French is not started.
+  });
+
+  it("takes a whole language in one call", async () => {
+    const { handleBulkUiStrings } = await import("../src/ui-strings.js");
+    const result = await handleBulkUiStrings(env.CONTROL_DB, {
+      locale: "fr",
+      strings: { "action.claim": "Prendre", "action.release": "Libérer" },
+    });
+    expect(result.status).toBe(200);
+    expect((result.body as { written: number }).written).toBe(2);
+
+    const body = await strings("fr");
+    expect(body.strings["action.claim"]).toBe("Prendre");
+  });
+
+  it("serves a half-translated language, falling back per key", async () => {
+    // The property that makes adding a language incremental: French for
+    // what exists, English for the rest, immediately.
+    const { handleBulkUiStrings } = await import("../src/ui-strings.js");
+    await handleBulkUiStrings(env.CONTROL_DB, {
+      locale: "fr",
+      strings: { "action.claim": "Prendre" },
+    });
+
+    const body = await strings("fr");
+    expect(body.locale).toBe("fr");
+    expect(body.strings["action.claim"]).toBe("Prendre");
+    expect(body.strings["action.release"]).toBe("Release");
+  });
+
+  it("refuses a bulk load naming keys English does not have", async () => {
+    const { handleBulkUiStrings } = await import("../src/ui-strings.js");
+    const result = await handleBulkUiStrings(env.CONTROL_DB, {
+      locale: "fr",
+      strings: { "action.claim": "Prendre", "invented.key": "Inventé" },
+    });
+    expect(result.status).toBe(422);
+    expect(String((result.body as { error: string }).error)).toContain("invented.key");
+  });
+
+  it("writes nothing when it refuses", async () => {
+    // All or nothing: a partial write leaves a language half applied
+    // with no way to tell which half.
+    const { handleBulkUiStrings } = await import("../src/ui-strings.js");
+    await handleBulkUiStrings(env.CONTROL_DB, {
+      locale: "fr",
+      strings: { "action.claim": "Prendre", "invented.key": "Inventé" },
+    });
+
+    const body = await strings("fr");
+    expect(body.strings["action.claim"]).toBe("Claim");
+  });
+
+  it("refuses an empty value in a bulk load, naming which", async () => {
+    const { handleBulkUiStrings } = await import("../src/ui-strings.js");
+    const result = await handleBulkUiStrings(env.CONTROL_DB, {
+      locale: "fr",
+      strings: { "action.claim": "Prendre", "action.release": "  " },
+    });
+    expect(result.status).toBe(422);
+    expect(String((result.body as { error: string }).error)).toContain("action.release");
+  });
+
+  it("needs no schema change for a language the CHECK already allows", async () => {
+    // Four of the six are seeded nowhere and work the moment somebody
+    // writes rows -- which is the whole claim.
+    const { handleBulkUiStrings } = await import("../src/ui-strings.js");
+    for (const locale of ["fr", "es", "it", "nl"]) {
+      const result = await handleBulkUiStrings(env.CONTROL_DB, {
+        locale,
+        strings: { "action.claim": `Claim in ${locale}` },
+      });
+      expect(result.status, locale).toBe(200);
+    }
+  });
+});

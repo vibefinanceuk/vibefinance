@@ -20,7 +20,12 @@ import { handleDevLogin } from "./dev-login-route.js";
 import { handleLogin, handleListMyEnvironments, setCredential } from "./login-route.js";
 import { grantAccess, revokeAccess } from "./credentials.js";
 import { setBranding, handleBrandingStylesheet } from "./branding.js";
-import { handleUiStrings, handleSetUiString } from "./ui-strings.js";
+import {
+  handleUiStrings,
+  handleSetUiString,
+  handleListUiStrings,
+  handleBulkUiStrings,
+} from "./ui-strings.js";
 import { handleUpsertLicence } from "./licences-route.js";
 import { handleIssueToken } from "./token-route.js";
 import { handleReportUsage } from "./usage-route.js";
@@ -242,7 +247,8 @@ export default {
       (url.pathname === "/licences" && request.method === "POST") ||
       (url.pathname === "/credentials" && request.method === "POST") ||
       (url.pathname.startsWith("/branding/") && request.method === "PUT") ||
-      (url.pathname === "/ui-strings" && request.method === "PUT") ||
+      (url.pathname === "/ui-strings" && (request.method === "PUT" || request.method === "POST")) ||
+      (url.pathname === "/ui-strings/keys" && request.method === "GET") ||
       (url.pathname === "/access" && (request.method === "POST" || request.method === "DELETE")) ||
       (url.pathname === "/signup-requests" && request.method === "GET") ||
       (approveMatch !== null && request.method === "POST") ||
@@ -318,6 +324,27 @@ export default {
 
     if (url.pathname === "/environments" && request.method === "GET") {
       const result = await handleListEnvironments(env.CONTROL_DB);
+      return json(result.body, result.status);
+    }
+
+    // Every key with its translations and its gaps — what a translator
+    // needs, and admin only because it is the whole fleet's wording.
+    if (url.pathname === "/ui-strings/keys" && request.method === "GET") {
+      const result = await handleListUiStrings(env.CONTROL_DB);
+      return json(result.body, result.status);
+    }
+
+    // A whole language at once. Translating a PUT at a time is tedious
+    // enough that nobody would, which would make the framework
+    // theoretical.
+    if (url.pathname === "/ui-strings" && request.method === "POST") {
+      let bulkBody: unknown;
+      try {
+        bulkBody = await request.json();
+      } catch {
+        return json({ error: "invalid JSON body" }, 400);
+      }
+      const result = await handleBulkUiStrings(env.CONTROL_DB, (bulkBody ?? {}) as Record<string, unknown>);
       return json(result.body, result.status);
     }
 
