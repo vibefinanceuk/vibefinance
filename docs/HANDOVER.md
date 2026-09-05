@@ -108,16 +108,22 @@ before they become expensive.
 
 ### 1. Does a session survive a refresh?
 
-**Today it does not.** The token is held in memory, so reloading the
-page signs you out. Fine for a login screen; immediately annoying once
-there is a queue to work in.
+**Today it does not**, and decision 0102 proposes the answer: a
+**backend-for-frontend**. `vf-ui` holds the token in an `HttpOnly`
+cookie the JavaScript cannot read, and forwards data calls to `vf-app`.
 
-- `sessionStorage` survives and is readable by any injected script.
-- A cookie survives and introduces a second authentication mechanism
-  alongside the bearer token, which decision 0083 was pleased to avoid.
+Current guidance (RFC 10017, 2026) is that **no browser API stores a
+token securely** — `localStorage` and `sessionStorage` are equally
+readable by an injected script, so choosing between them chooses how
+long a stolen token lasts, not whether it can be stolen.
 
-In memory defers the choice without pretending it has been made (0099).
-Worth settling before the next screen rather than after.
+What it costs: `vf-ui` becomes a request path rather than a file server,
+CSRF becomes a surface (`SameSite=Strict`), and latency gains a hop.
+What it buys: the token never enters JavaScript, sessions survive a
+refresh, and **CORS becomes unnecessary** because the browser only ever
+talks to one origin.
+
+**Read 0102 before the next screen** — it changes what `vf-ui` is.
 
 ### 2. A custom domain
 
