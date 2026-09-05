@@ -18,7 +18,14 @@
  * trip.
  */
 
-const api = window.VF_CONFIG?.licenceApi ?? "";
+/**
+ * Every call goes to this origin — decision 0102.
+ *
+ * `vf-ui` is a backend-for-frontend: it holds the session token in an
+ * `HttpOnly` cookie and attaches it on the browser's behalf. So there
+ * is no API address to configure, no cross-origin request, and **no
+ * token anywhere JavaScript can read**.
+ */
 
 const form = document.getElementById("signin");
 const emailField = document.getElementById("email");
@@ -29,16 +36,12 @@ const problem = document.getElementById("problem");
 const since = document.getElementById("since");
 
 /**
- * The session, held in memory only.
+ * What the page knows about the session.
  *
- * **It does not survive a refresh**, and that is an open question rather
- * than a decision (decision 0099). `sessionStorage` survives and is
- * readable by any injected script; a cookie survives and introduces a
- * second authentication mechanism alongside the bearer token, which
- * decision 0083 was pleased to avoid.
- *
- * In memory is the option that defers the choice without pretending it
- * has been made.
+ * **Not the token.** That is in a cookie this script cannot read, which
+ * is the whole point of decision 0102 — an injected script cannot
+ * exfiltrate what it cannot see. This holds only what the interface
+ * needs to display.
  */
 let session = null;
 
@@ -59,7 +62,7 @@ function show(message) {
  * until it has.
  */
 function applyBranding(customerId) {
-  if (!api || !customerId) return;
+  if (!customerId) return;
 
   const link = document.getElementById("brand");
   link.addEventListener(
@@ -75,7 +78,7 @@ function applyBranding(customerId) {
     { once: true }
   );
 
-  link.href = `${api}/branding/${encodeURIComponent(customerId)}/tokens.css`;
+  link.href = `/api/branding/${encodeURIComponent(customerId)}/tokens.css`;
 }
 
 /**
@@ -94,7 +97,7 @@ async function loadEnvironments() {
   submit.disabled = true;
 
   try {
-    const response = await fetch(`${api}/my-environments`, {
+    const response = await fetch("/api/my-environments", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email, password }),
@@ -161,7 +164,7 @@ form.addEventListener("submit", async (event) => {
   submit.disabled = true;
 
   try {
-    const response = await fetch(`${api}/login`, {
+    const response = await fetch("/api/sign-in", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -185,11 +188,11 @@ form.addEventListener("submit", async (event) => {
       return;
     }
 
+    // No token here. It arrived as an HttpOnly cookie and this script
+    // never sees it — the response deliberately omits it.
     session = {
-      token: body.token,
       expiresAt: body.expiresAt,
       environmentId: body.environmentId,
-      instanceUrl: body.instanceUrl,
     };
 
     reportAttemptsSince(body);

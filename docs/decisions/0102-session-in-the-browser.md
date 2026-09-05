@@ -1,8 +1,7 @@
 # 0102 — Where a session lives in a browser
 
-**Status: proposed.** Nothing built. Written before code because it
-changes what `vf-ui` is, and the current arrangement is an open question
-rather than a decision (0099).
+**Status: built.** `vf-ui` is now a backend-for-frontend: the token
+lives in an `HttpOnly` cookie and never enters JavaScript.
 
 ---
 
@@ -108,6 +107,51 @@ exists in a place script can read. It could still *make requests* as the
 person — the RFC is clear that nothing prevents that — but the
 credential cannot be taken away and used elsewhere, which is the
 difference between an incident bounded by a session and one that is not.
+
+---
+
+## Built, and what it turned out to involve
+
+**The proxy is an explicit allow-list**, not a general forwarder — a
+decision made while building rather than in this design. A proxy that
+forwards whatever it is given forwards routes nobody has thought about,
+and this project found three write routes above an admin gate (0097) by
+exactly that inattention. Adding a path is a deliberate act, and a test
+asserts `/api/credentials` and `/api/access` are refused outright.
+
+**Two lists, not one.** `/my-environments` and `/branding/:id/tokens.css`
+go to `vf-licence` **with no session attached**, because both are
+reached before anybody is signed in — choosing an instance is what
+creates a session, and a login screen needs a livery before there is
+one. Attaching a token to a route that does not expect one is how a
+credential ends up somewhere nobody meant it to go.
+
+**A 401 from an instance clears the cookie.** Otherwise an expired token
+leaves a browser that believes it is signed in and an API that
+disagrees, which presents as an unexplained failure on every action
+rather than as being signed out.
+
+**And `config.js` no longer carries an API address.** The browser talks
+to one origin, so there is nothing to tell it. The mechanism stays,
+because a UI needs to know things and removing it to add it back would
+be churn.
+
+---
+
+## The property this exists for had no test
+
+Watched to fail, and **nothing caught it**: returning the token
+alongside the cookie passed all 27 tests. The single most important
+thing about this change was untested.
+
+The sign-in path cannot be exercised here — it needs `vf-licence` to
+answer — so the step that decides what the page sees was extracted into
+`visibleToPage()` and tested directly. **A function that can be tested
+is better than a property that cannot.**
+
+The sixth instance in two days of a check that did not point where it
+seemed to. This one was found by looking for it rather than by
+accident, which is the small improvement.
 
 ---
 

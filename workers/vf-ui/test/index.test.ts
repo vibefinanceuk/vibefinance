@@ -11,11 +11,12 @@ describe("configuration is injected, not compiled in", () => {
     expect(await res.text()).toContain("window.VF_CONFIG");
   });
 
-  it("carries the configured licence API", async () => {
-    // If this were baked into the JavaScript, moving to a custom domain
-    // would mean rebuilding the UI (decision 0099).
+  it("no longer carries an API address at all", async () => {
+    // Since decision 0102 the browser talks only to this origin, so
+    // there is nothing to tell it. The mechanism stays because a UI
+    // needs to know things; the value went away.
     const body = await (await SELF.fetch("https://ui.example.com/config.js")).text();
-    expect(body).toContain("vf-licence");
+    expect(body).not.toContain("workers.dev");
   });
 
   it("is not cached — a stale copy sends a browser to the wrong API", async () => {
@@ -85,5 +86,90 @@ describe("the page loads its livery as a stylesheet", () => {
   it("carries no hardcoded API address in the markup", async () => {
     const html = await (await SELF.fetch("https://ui.example.com/")).text();
     expect(html).not.toContain("workers.dev");
+  });
+});
+
+
+describe("the proxy is an allow-list, not a forwarder (decision 0102)", () => {
+  /**
+   * A proxy that forwards whatever it is given forwards routes nobody
+   * has thought about — and this project found three write routes above
+   * an admin gate (0097) by exactly that inattention. Adding a path is
+   * a deliberate act.
+   */
+  it("refuses a path nobody listed", async () => {
+    const res = await SELF.fetch("https://ui.example.com/api/customers", { method: "POST" });
+    expect(res.status).toBe(404);
+  });
+
+  it("refuses an admin path outright", async () => {
+    // vf-licence protects these itself, and a proxy that offered them a
+    // route would be relying on that rather than deciding.
+    for (const path of ["/api/credentials", "/api/access", "/api/branding/acme"]) {
+      const res = await SELF.fetch(`https://ui.example.com${path}`, { method: "POST" });
+      expect(res.status, path).toBe(404);
+    }
+  });
+
+  it("answers an unknown API path with JSON, not the page", async () => {
+    // Falling through to index.html would return HTML to something
+    // expecting JSON.
+    const res = await SELF.fetch("https://ui.example.com/api/nonsense");
+    expect(res.headers.get("Content-Type")).toContain("json");
+  });
+
+  it("refuses a proxied instance path with no session", async () => {
+    const res = await SELF.fetch("https://ui.example.com/api/whoami");
+    expect(res.status).toBe(401);
+  });
+});
+
+describe("signing out", () => {
+  it("clears the cookie", async () => {
+    const res = await SELF.fetch("https://ui.example.com/api/sign-out", { method: "POST" });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Set-Cookie")).toContain("Max-Age=0");
+  });
+});
+
+describe("the token never reaches the page (decision 0102)", () => {
+  /**
+   * The property this whole change exists for, and it had no test until
+   * a fail-watch showed nothing caught the token being returned
+   * alongside the cookie.
+   *
+   * The sign-in path itself cannot be exercised here — it needs
+   * `vf-licence` to answer — so this tests the step that decides what
+   * the page sees. A function that can be tested is better than a
+   * property that cannot.
+   */
+  it("removes the token from what the page receives", async () => {
+    const { visibleToPage } = await import("../src/index.js");
+    const upstream = {
+      token: "a.real.token",
+      expiresAt: "2026-09-05T00:00:00.000Z",
+      environmentId: "Acme-production",
+      instanceUrl: "https://vf-app.example.com",
+    };
+
+    const visible = visibleToPage(upstream);
+    expect(visible).not.toHaveProperty("token");
+    expect(JSON.stringify(visible)).not.toContain("a.real.token");
+  });
+
+  it("keeps everything else, including fields nobody anticipated", async () => {
+    // Removed by name rather than by an allow-list, so a new field
+    // vf-licence adds reaches the page without a change here.
+    const { visibleToPage } = await import("../src/index.js");
+    const visible = visibleToPage({
+      token: "secret",
+      environmentId: "Acme-production",
+      lastSignedInAt: "2026-09-04T16:45:12.000Z",
+      somethingAddedLater: 42,
+    });
+
+    expect(visible.environmentId).toBe("Acme-production");
+    expect(visible.lastSignedInAt).toBe("2026-09-04T16:45:12.000Z");
+    expect(visible.somethingAddedLater).toBe(42);
   });
 });
