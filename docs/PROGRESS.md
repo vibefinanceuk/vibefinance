@@ -286,7 +286,7 @@ elsewhere.
 
 | Package | Tests |
 |---|---|
-| `vf-app` | 933 |
+| `vf-app` | 935 |
 | `vf-licence` | 153 |
 | `shared` | 149 passing, 2 known pre-existing failures |
 

@@ -16,6 +16,8 @@ const shell = document.getElementById("shell");
 /** Set once the page knows who it is talking to. */
 let me = null;
 let filters = { stage: "", ownership: "" };
+/** The last rows loaded, so opening a task does not refetch it. */
+let lastTasks = [];
 
 function el(tag, props = {}, children = []) {
   const node = document.createElement(tag);
@@ -81,6 +83,24 @@ const ACTION_LABELS = {
 };
 
 async function act(taskId, action) {
+  // Keying opens a screen rather than calling anything (decision 0106).
+  if (action === "key") {
+    const task = lastTasks.find((t) => t.id === taskId);
+    if (task) {
+      const { openViewer } = await import("/viewer.js");
+      document.getElementById("shell").hidden = true;
+      document.getElementById("viewer").hidden = false;
+      openViewer(task, async () => {
+        document.getElementById("viewer").hidden = true;
+        document.getElementById("shell").hidden = false;
+        // Reloaded on the way back, because keying changes what the row
+        // says about the document.
+        await loadTasks();
+      });
+    }
+    return;
+  }
+
   // Only the two the proxy permits today. The rest are listed by the
   // server and not yet reachable — shown disabled rather than hidden,
   // so the list does not quietly disagree with what the task says.
@@ -107,7 +127,9 @@ function taskRow(task) {
       class: "act",
       text: ACTION_LABELS[action] ?? action,
       // Actions the proxy does not yet carry are shown and disabled.
-      ...(action === "claim" || action === "release" ? {} : { disabled: "disabled" }),
+      ...(action === "claim" || action === "release" || action === "key"
+        ? {}
+        : { disabled: "disabled" }),
       onclick: () => act(task.id, action),
     })
   );
@@ -135,6 +157,7 @@ async function loadTasks() {
   }
 
   const { tasks, counts, total } = await response.json();
+  lastTasks = tasks;
   const body = document.getElementById("rows");
   body.replaceChildren(
     ...(tasks.length

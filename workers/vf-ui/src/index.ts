@@ -88,6 +88,10 @@ const PROXIED_TO_INSTANCE: RegExp[] = [
   /^\/tasks$/,
   /^\/tasks\/[^/]+\/claim$/,
   /^\/tasks\/[^/]+\/release$/,
+  // What the Validation viewer needs (decision 0106): the keyed values,
+  // and a short-lived signed URL for the retained original.
+  /^\/invoices\/[^/]+\/key$/,
+  /^\/invoices\/[^/]+\/document-url$/,
 ];
 
 /**

@@ -56,6 +56,9 @@ async function seed() {
   await env.DB.prepare(
     "INSERT INTO tasks (id, stage_id, owner_team_id, required_permission) VALUES ('t','s','ap','AP.Validate')"
   ).run();
+  await env.DB.prepare(
+    "INSERT INTO invoice_headers (id, facts_json) VALUES ('inv-1', '{}')"
+  ).run();
 }
 
 beforeEach(async () => {
@@ -75,6 +78,9 @@ describe("the routes a browser needs accept a session", () => {
     ["GET", "/tasks"],
     ["POST", "/tasks/t/claim"],
     ["POST", "/tasks/t/release"],
+    // The keying screen's two (decision 0106).
+    ["GET", "/invoices/inv-1/document-url"],
+    ["POST", "/invoices/inv-1/key"],
   ];
 
   for (const [method, path] of browserRoutes) {

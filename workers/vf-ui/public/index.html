@@ -236,6 +236,77 @@
   }
 
   button.act:disabled { opacity: 0.4; cursor: default; }
+
+  /* The Validation viewer — decision 0106. */
+  #viewer { width: min(1040px, calc(100vw - 40px)); padding: 32px 0 64px; }
+
+  .vhead {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding-bottom: 16px;
+    border-bottom: 0.5px solid var(--border);
+  }
+
+  .vtitle { margin: 0; font-size: 17px; font-weight: 600; }
+  .vhead .sub { margin: 2px 0 0; }
+  .vhead .close { margin-left: auto; min-height: 30px; padding: 0 12px; }
+
+  /* Document beside fields, so a person reads and types without
+     switching windows — the whole point of the screen. */
+  .vbody {
+    display: grid;
+    grid-template-columns: 190px minmax(0, 1fr);
+    gap: 20px;
+    padding: 22px 0;
+  }
+
+  .vthumb {
+    height: 150px;
+    display: grid;
+    place-items: center;
+    background: var(--surface-1);
+    border: 0.5px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text-muted);
+    font-size: 13px;
+    margin-bottom: 8px;
+  }
+
+  .vdoc .act { width: 100%; }
+
+  .vfields {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 12px;
+    align-content: start;
+  }
+
+  .kf label {
+    display: block;
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin-bottom: 4px;
+  }
+
+  .vfoot {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding-top: 16px;
+    border-top: 0.5px solid var(--border);
+  }
+
+  .vfoot .problem { margin: 0; flex: 1; }
+
+  .vfoot .primary {
+    background: var(--brand-fill);
+    color: #fff;
+    border: none;
+    min-height: 34px;
+    padding: 0 16px;
+    font-weight: 500;
+  }
   .since p { margin: 0 0 6px; }
   .since ul { margin: 0; padding-left: 16px; }
   .since li { color: var(--text-warning); }
@@ -287,6 +358,9 @@
   signed in — decision 0103.
 -->
 <main id="shell" hidden></main>
+
+<!-- The Validation viewer, shown in place of the list — decision 0106. -->
+<main id="viewer" hidden></main>
 
 <script type="module" src="/boot.js"></script>
 </body>

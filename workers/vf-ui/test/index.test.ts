@@ -221,3 +221,30 @@ describe("the page decides which screen to show (decision 0103)", () => {
     expect(html).toContain("boot.js");
   });
 });
+
+describe("the Validation viewer's routes (decision 0106)", () => {
+  it("proxies keying and the document URL", async () => {
+    // Refused for want of a session, not for want of a route.
+    for (const [method, path] of [
+      ["POST", "/api/invoices/inv-1/key"],
+      ["POST", "/api/invoices/inv-1/document-url"],
+    ] as [string, string][]) {
+      const res = await SELF.fetch(`https://ui.example.com${path}`, { method });
+      expect(res.status, path).toBe(401);
+    }
+  });
+
+  it("does not proxy an invoice path nobody listed", async () => {
+    // Still a list rather than a prefix: /invoices/:id/anything is not
+    // reachable merely because two of its siblings are.
+    const res = await SELF.fetch("https://ui.example.com/api/invoices/inv-1/document", {
+      method: "POST",
+    });
+    expect(res.status).toBe(404);
+  });
+
+  it("ships the viewer hidden alongside the list", async () => {
+    const html = await (await SELF.fetch("https://ui.example.com/")).text();
+    expect(html).toContain('id="viewer" hidden');
+  });
+});

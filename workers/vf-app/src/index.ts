@@ -955,9 +955,20 @@ export default {
     const docUrlMatch = pathname.match(/^\/invoices\/([^/]+)\/document-url$/);
     if (docUrlMatch && request.method === "POST") {
       const { db } = resolveTenant(request, env);
-      const auth = await requirePermission(db, request, "AP.Validate");
-      if (!auth.authorized) {
-        return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
+      // Session or API key — decision 0105. Reachable from the keying
+      // screen, so a route taking only a key works from `curl` and
+      // fails from the browser.
+      const auth = await authenticateUserOrSession(
+        db,
+        request,
+        isPublicKeyJwk(env.LICENCE_SIGNING_PUBLIC_KEY) ? env.LICENCE_SIGNING_PUBLIC_KEY : undefined,
+        env.ENVIRONMENT_ID
+      );
+      if (!auth.user) {
+        return json({ error: auth.reason }, 401);
+      }
+      if (!(await hasPermission(db, auth.user.id, "AP.Validate"))) {
+        return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
       }
       if (!env.DOCUMENT_URL_SECRET) {
         return json({ error: "DOCUMENT_URL_SECRET is not configured" }, 500);
@@ -1138,9 +1149,20 @@ export default {
     const keyMatch = pathname.match(/^\/invoices\/([^/]+)\/key$/);
     if (keyMatch && request.method === "POST") {
       const { db } = resolveTenant(request, env);
-      const auth = await requirePermission(db, request, "AP.Validate");
-      if (!auth.authorized) {
-        return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
+      // Session or API key — decision 0105. Reachable from the keying
+      // screen, so a route taking only a key works from `curl` and
+      // fails from the browser.
+      const auth = await authenticateUserOrSession(
+        db,
+        request,
+        isPublicKeyJwk(env.LICENCE_SIGNING_PUBLIC_KEY) ? env.LICENCE_SIGNING_PUBLIC_KEY : undefined,
+        env.ENVIRONMENT_ID
+      );
+      if (!auth.user) {
+        return json({ error: auth.reason }, 401);
+      }
+      if (!(await hasPermission(db, auth.user.id, "AP.Validate"))) {
+        return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
       }
       let body: unknown;
       try {
