@@ -24,6 +24,51 @@ way to see itself.**
 
 ---
 
+## The broader intent: one table, filtered by stage
+
+**Stated because it decides more than this screen.**
+
+> One task table, filtered by stage. One UI per stage, chosen by what a
+> task points at. **Never a table per stage.**
+
+Each stage gets an interface suited to the work done there — keying at
+Validation, approving at Approval — and each feeds items to whoever
+holds the right permission. But they all draw from **one list**.
+
+### What that buys
+
+**The listing query never grows.** Adding a Coding stage adds no table,
+no column and no branch in the endpoint. A task at Coding appears
+because it is a task, and its `required_permission` decides who sees
+it — which is already how `assign_task` works (decision 0018).
+
+**The stage-specific part is entirely presentation.** A task carries
+`stage_id` and `required_permission`; the interface maps a stage to a
+screen. Nothing on the server needs to know that Validation means keying
+and Approval means approving.
+
+This is also what the schema already assumes: `tasks` is one table with
+a `stage_id`, and the workflow engine is deliberately generic about what
+a stage means.
+
+### What a table per stage would cost
+
+The queue joining across them; every new stage touching the endpoint;
+*"my tasks"* becoming a union that grows with the process. It is the
+shape that looks natural early and becomes the thing that cannot be
+changed later.
+
+### One consequence to be deliberate about
+
+If the interface maps a stage to a screen, **an unrecognised stage needs
+a sensible default rather than a blank page** — a generic view showing
+the document and the stage history.
+
+Customers define their own stages. One that nobody wrote a screen for
+should still be workable, not broken.
+
+---
+
 ## One list, across every stage
 
 Not a screen per stage. A person may hold work at Validation and at
