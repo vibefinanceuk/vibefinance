@@ -110,6 +110,9 @@ const PROXIED_TO_INSTANCE: RegExp[] = [
 const PROXIED_TO_LICENCE: RegExp[] = [
   /^\/my-environments$/,
   /^\/branding\/[^/]+\/tokens\.css$/,
+  // The interface's own words (decision 0107). Reached before anybody
+  // signs in, like branding — a login screen needs its labels.
+  /^\/ui-strings$/,
 ];
 
 function mayProxy(path: string): boolean {

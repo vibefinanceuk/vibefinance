@@ -248,3 +248,22 @@ describe("the Validation viewer's routes (decision 0106)", () => {
     expect(html).toContain('id="viewer" hidden');
   });
 });
+
+describe("the interface's words come from the control plane (decision 0107)", () => {
+  it("proxies the strings endpoint", async () => {
+    // Reached before anybody signs in, like branding -- a login screen
+    // needs its labels.
+    const res = await SELF.fetch("https://ui.example.com/api/ui-strings?locale=de");
+    // 503 from the stubbed binding, not 404: the route exists.
+    expect(res.status).not.toBe(404);
+  });
+
+  it("ships no English labels in the markup", async () => {
+    // Every visible word is fetched by key. A literal in the page is
+    // one a translation cannot reach.
+    const html = await (await SELF.fetch("https://ui.example.com/")).text();
+    for (const literal of ["Sign out", "All stages", "Not yet keyed", "Save keyed values"]) {
+      expect(html, literal).not.toContain(literal);
+    }
+  });
+});

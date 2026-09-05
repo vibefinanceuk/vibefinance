@@ -10,11 +10,18 @@
  * signed-out one sees the form.
  */
 import { start } from "/tasks.js";
+import { loadStrings } from "/strings.js";
 
 const signIn = document.getElementById("signin-view");
 const shell = document.getElementById("shell");
 
 async function boot() {
+  // Words first. Rendering in English and then swapping would be a
+  // visible flicker in whichever language the person does not read —
+  // the same reasoning that hides both views until we know which one
+  // to show.
+  await loadStrings();
+
   // Both start hidden. Whichever is right becomes visible once
   // /api/whoami answers, so nothing flashes in between — a sign-in form
   // appearing and vanishing on every refresh looks like a session

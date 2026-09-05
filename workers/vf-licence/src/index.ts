@@ -20,6 +20,7 @@ import { handleDevLogin } from "./dev-login-route.js";
 import { handleLogin, handleListMyEnvironments, setCredential } from "./login-route.js";
 import { grantAccess, revokeAccess } from "./credentials.js";
 import { setBranding, handleBrandingStylesheet } from "./branding.js";
+import { handleUiStrings, handleSetUiString } from "./ui-strings.js";
 import { handleUpsertLicence } from "./licences-route.js";
 import { handleIssueToken } from "./token-route.js";
 import { handleReportUsage } from "./usage-route.js";
@@ -156,6 +157,17 @@ export default {
     if (brandingCssMatch && request.method === "GET") {
       return handleBrandingStylesheet(env.CONTROL_DB, decodeURIComponent(brandingCssMatch[1]));
     }
+    // The interface's words — decision 0107. Unauthenticated for the
+    // same reason branding is: the login screen needs them before
+    // anybody has signed in, and they are the words on a public login
+    // page.
+    if (url.pathname === "/ui-strings" && request.method === "GET") {
+      return handleUiStrings(
+        env.CONTROL_DB,
+        url.searchParams.get("locale") ?? request.headers.get("Accept-Language")
+      );
+    }
+
     if (url.pathname === "/branding/tokens.css" && request.method === "GET") {
       // No customer named yet — the very first paint of a login screen.
       return handleBrandingStylesheet(env.CONTROL_DB, null);
@@ -230,6 +242,7 @@ export default {
       (url.pathname === "/licences" && request.method === "POST") ||
       (url.pathname === "/credentials" && request.method === "POST") ||
       (url.pathname.startsWith("/branding/") && request.method === "PUT") ||
+      (url.pathname === "/ui-strings" && request.method === "PUT") ||
       (url.pathname === "/access" && (request.method === "POST" || request.method === "DELETE")) ||
       (url.pathname === "/signup-requests" && request.method === "GET") ||
       (approveMatch !== null && request.method === "POST") ||
@@ -305,6 +318,19 @@ export default {
 
     if (url.pathname === "/environments" && request.method === "GET") {
       const result = await handleListEnvironments(env.CONTROL_DB);
+      return json(result.body, result.status);
+    }
+
+    // Setting a word — admin only. The words on every customer's
+    // screens are not one customer's to change.
+    if (url.pathname === "/ui-strings" && request.method === "PUT") {
+      let stringBody: unknown;
+      try {
+        stringBody = await request.json();
+      } catch {
+        return json({ error: "invalid JSON body" }, 400);
+      }
+      const result = await handleSetUiString(env.CONTROL_DB, (stringBody ?? {}) as Record<string, unknown>);
       return json(result.body, result.status);
     }
 

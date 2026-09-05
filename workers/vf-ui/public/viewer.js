@@ -10,6 +10,8 @@
  * `docs/design/mockups/key-from-document.html`.
  */
 
+import { t } from "/strings.js";
+
 let current = null;
 
 function el(tag, props = {}, children = []) {
@@ -35,14 +37,14 @@ function el(tag, props = {}, children = []) {
  * failure usually turns on.
  */
 const FIELDS = [
-  { code: "BT-1", label: "Invoice number", type: "text" },
-  { code: "BT-2", label: "Issue date", type: "date" },
-  { code: "BT-31", label: "Supplier VAT", type: "text" },
-  { code: "BT-5", label: "Currency", type: "text" },
-  { code: "BT-106", label: "Net before VAT", type: "number" },
-  { code: "BT-110", label: "VAT amount", type: "number" },
-  { code: "BT-112", label: "Total with VAT", type: "number" },
-  { code: "BT-115", label: "Amount due", type: "number" },
+  { code: "BT-1", type: "text" },
+  { code: "BT-2", type: "date" },
+  { code: "BT-31", type: "text" },
+  { code: "BT-5", type: "text" },
+  { code: "BT-106", type: "number" },
+  { code: "BT-110", type: "number" },
+  { code: "BT-112", type: "number" },
+  { code: "BT-115", type: "number" },
 ];
 
 function field(spec, existing) {
@@ -55,7 +57,8 @@ function field(spec, existing) {
     value: existing?.[spec.code] ?? "",
   });
   return el("div", { class: "kf" }, [
-    el("label", { for: `f-${spec.code}`, text: spec.label }),
+    // Labels by key, so a customer's language reaches the fields too.
+    el("label", { for: `f-${spec.code}`, text: t(`field.${spec.code.toLowerCase()}`) }),
     input,
   ]);
 }
@@ -74,7 +77,7 @@ async function openDocument(invoiceId) {
     method: "POST",
   });
   if (!response.ok) {
-    note("No document is retained for this invoice.");
+    note(t("viewer.nodocument"));
     return;
   }
   const { url } = await response.json();
@@ -95,7 +98,7 @@ async function save(close) {
   }
 
   if (Object.keys(facts).length === 0) {
-    note("Nothing to save — key at least one field.");
+    note(t("viewer.nothing"));
     return;
   }
 
@@ -107,7 +110,7 @@ async function save(close) {
 
   const body = await response.json().catch(() => ({}));
   if (!response.ok) {
-    note(body.error ?? "Could not save.");
+    note(body.error ?? t("viewer.savefailed"));
     return;
   }
 
@@ -122,7 +125,7 @@ async function save(close) {
         : `Saved. Still failing: ${validation.failures.join(", ")}.`
     );
   } else {
-    note("Saved.");
+    note(t("viewer.saved"));
   }
 
   if (close) close();
@@ -150,22 +153,22 @@ export function openViewer(task, onClose) {
   shell.replaceChildren(
     el("div", { class: "vhead" }, [
       el("div", {}, [
-        el("p", { class: "vtitle", text: "Key from document" }),
+        el("p", { class: "vtitle", text: t("viewer.title") }),
         el("p", {
           class: "sub",
           // Why this task exists, from what detection actually found.
           text: `${task.stageName ?? task.stageId} · ${task.subject?.type ?? "document"}`,
         }),
       ]),
-      el("button", { class: "close", text: "Back to tasks", onclick: onClose }),
+      el("button", { class: "close", text: t("viewer.back"), onclick: onClose }),
     ]),
 
     el("div", { class: "vbody" }, [
       el("div", { class: "vdoc" }, [
-        el("div", { class: "vthumb", text: "Document" }),
+        el("div", { class: "vthumb", text: t("viewer.document") }),
         el("button", {
           class: "act",
-          text: "Open in new window",
+          text: t("viewer.open"),
           onclick: () => openDocument(task.subject.id),
         }),
       ]),
@@ -174,7 +177,7 @@ export function openViewer(task, onClose) {
 
     el("div", { class: "vfoot" }, [
       el("div", { class: "problem", id: "viewer-note", role: "status" }),
-      el("button", { class: "primary", text: "Save keyed values", onclick: () => save(null) }),
+      el("button", { class: "primary", text: t("viewer.save"), onclick: () => save(null) }),
     ])
   );
 }

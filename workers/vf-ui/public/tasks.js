@@ -11,6 +11,8 @@
  * the browser would mean two versions of one rule, which drift.
  */
 
+import { t } from "/strings.js";
+
 const shell = document.getElementById("shell");
 
 /** Set once the page knows who it is talking to. */
@@ -57,14 +59,14 @@ function money(subject) {
  * what it is instead: the reason the task exists at all.
  */
 function describe(subject) {
-  if (!subject) return "No document";
+  if (!subject) return t("tasks.nodocument");
   if (subject.supplierVatId) return subject.supplierVatId;
-  return subject.type === "invoice" ? "Not yet keyed" : subject.type;
+  return subject.type === "invoice" ? t("tasks.notkeyed") : subject.type;
 }
 
 function ownershipLabel(task) {
-  if (task.ownership === "mine") return "Mine";
-  if (task.ownership === "available") return "Available";
+  if (task.ownership === "mine") return t("tasks.mine");
+  if (task.ownership === "available") return t("tasks.available");
   // Who holds it and since when. "Locked" alone cannot distinguish five
   // minutes ago from since Tuesday, and those mean different things to
   // somebody deciding whether to ask.
@@ -72,15 +74,8 @@ function ownershipLabel(task) {
   return `${task.lockedBy?.name ?? "Someone"}${since}`;
 }
 
-const ACTION_LABELS = {
-  claim: "Claim",
-  release: "Release",
-  key: "Key",
-  complete: "Complete",
-  return: "Return",
-  return_to_supplier: "To supplier",
-  discard: "Discard",
-};
+/** Labels come from the control plane, by key (decision 0107). */
+const actionLabel = (action) => t(`action.${action}`);
 
 async function act(taskId, action) {
   // Keying opens a screen rather than calling anything (decision 0106).
@@ -125,7 +120,7 @@ function taskRow(task) {
   const actions = task.actions.map((action) =>
     el("button", {
       class: "act",
-      text: ACTION_LABELS[action] ?? action,
+      text: actionLabel(action),
       // Actions the proxy does not yet carry are shown and disabled.
       ...(action === "claim" || action === "release" || action === "key"
         ? {}
@@ -152,7 +147,7 @@ async function loadTasks() {
 
   const response = await fetch(`/api/tasks?${query}`);
   if (!response.ok) {
-    problem("Could not load your tasks.");
+    problem(t("tasks.loadfailed"));
     return;
   }
 
@@ -162,7 +157,7 @@ async function loadTasks() {
   body.replaceChildren(
     ...(tasks.length
       ? tasks.map(taskRow)
-      : [el("tr", {}, [el("td", { colspan: "6", class: "muted", text: "Nothing here." })])])
+      : [el("tr", {}, [el("td", { colspan: "6", class: "muted", text: t("tasks.empty") })])])
   );
 
   // Counts survive paging but not filtering (decision 0103), so these
@@ -178,7 +173,7 @@ function filterBar() {
       loadTasks();
     },
   });
-  stages.append(el("option", { value: "", text: "All stages" }));
+  stages.append(el("option", { value: "", text: t("tasks.allstages") }));
   for (const [id, name] of [
     ["received", "Received"],
     ["validation", "Validation"],
@@ -196,13 +191,13 @@ function filterBar() {
       loadTasks();
     },
   });
-  for (const [value, label] of [
-    ["", "Everything"],
-    ["mine", "Mine"],
-    ["available", "Available"],
-    ["locked", "Held by others"],
+  for (const [value, key] of [
+    ["", "tasks.everything"],
+    ["mine", "tasks.mine"],
+    ["available", "tasks.available"],
+    ["locked", "tasks.locked"],
   ]) {
-    ownership.append(el("option", { value, text: label }));
+    ownership.append(el("option", { value, text: t(key) }));
   }
 
   return el("div", { class: "filters" }, [stages, ownership]);
@@ -218,7 +213,7 @@ function render() {
       ]),
       el("button", {
         class: "signout",
-        text: "Sign out",
+        text: t("tasks.signout"),
         onclick: async () => {
           await fetch("/api/sign-out", { method: "POST" });
           location.reload();
@@ -233,11 +228,11 @@ function render() {
         {},
         [
           el("tr", {}, [
-            el("th", { text: "Stage" }),
-            el("th", { text: "Supplier" }),
-            el("th", { class: "num", text: "Amount" }),
-            el("th", { text: "Waiting" }),
-            el("th", { text: "Owner" }),
+            el("th", { text: t("tasks.stage") }),
+            el("th", { text: t("tasks.supplier") }),
+            el("th", { class: "num", text: t("tasks.amount") }),
+            el("th", { text: t("tasks.waiting") }),
+            el("th", { text: t("tasks.owner") }),
             el("th", { text: "" }),
           ]),
         ]
