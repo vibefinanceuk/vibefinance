@@ -162,9 +162,13 @@ first, including that it must be computed at capture and stored, or
 re-running a rule set could yield a different answer and break the
 reproducibility property the interpreter rests on.
 
-**`org_units` is connected to nothing.** The table exists with a parent
-hierarchy and is listed as built, and **no invoice, process, source or
-user references it**. So anything scoped "per org" — field visibility,
+**`org_units` is now connected** (0111). An invoice acquires an
+operating unit at intake — from a rule the customer wrote, or from the
+source it arrived through — and a stage can refuse to let it past
+without one. What remains unconnected is any **user** or **process**
+scoping, and there is still no interface for placing one by hand.
+
+**The supplier master.** `/suppliers/:vatId/history` So anything scoped "per org" — field visibility,
 routing, authority — has nothing to resolve against. The second
 instance of a declared thing nothing uses, at table scale.
 
@@ -174,7 +178,7 @@ Validation can refuse to advance without one. It also records what the
 standard already supplies and the vocabulary does not — the **buyer
 electronic address**, which is what Peppol itself routes on.
 
-**No supplier master exists** either. `/suppliers/:vatId/history`
+
 queries invoices by the VAT identifier printed on them, so a supplier is
 a string that appears on documents rather than a record. Supplier sites
 assigned to operating units — how a supplier's invoices reach the right
@@ -323,13 +327,13 @@ elsewhere.
 
 | Package | Tests |
 |---|---|
-| `vf-app` | 945 |
+| `vf-app` | 957 |
 | `vf-licence` | 287 |
 | `vf-ui` | 40 |
 | `shared` | 227 passing, 2 known pre-existing failures |
 
 Both migration chains replay clean with every standing invariant
-holding — 35 migrations for `vf-app`, 19 for `vf-licence`.
+holding — 37 migrations for `vf-app`, 19 for `vf-licence`.
 
 ---
 

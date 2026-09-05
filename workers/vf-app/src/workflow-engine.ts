@@ -55,6 +55,8 @@ interface StageRow {
   sequence: number;
   rule_set_id: string | null;
   evaluation_scope: string;
+  /** Whether this stage refuses to finish without an org (0111). */
+  requires_org: number;
 }
 
 type LineInput = InvoiceFacts & { lineNumber: number };
@@ -62,6 +64,49 @@ type LineInput = InvoiceFacts & { lineNumber: number };
 interface CreateInstanceBody {
   subjectType?: unknown;
   subjectId?: unknown;
+}
+
+/**
+ * May this invoice leave a stage that requires an organisational unit?
+ * — decision 0111.
+ *
+ * **Not "may it enter".** The check has to run on every path out of a
+ * stage, and there are two: an automatic stage advances without
+ * evaluating anything, and a rule-bearing stage advances after its
+ * rules have run — where a rule at that very stage may be the thing
+ * that supplies the org.
+ *
+ * Checking only before evaluation would refuse an invoice a rule was
+ * about to place. Checking only after would wave through every
+ * automatic stage, which is exactly the one nobody configured rules
+ * for.
+ *
+ * Returns a refusal, or null to proceed. The invoice is never
+ * rejected — it stays where it is and somebody places it.
+ */
+async function orgGuard(
+  db: D1Database,
+  stage: { id: string; requires_org: number },
+  instance: { subject_type: string; subject_id: string }
+): Promise<RouteResult | null> {
+  if (!stage.requires_org || instance.subject_type !== "invoice") return null;
+
+  const placed = await db
+    .prepare("SELECT org_unit_id FROM invoice_headers WHERE id = ?")
+    .bind(instance.subject_id)
+    .first<{ org_unit_id: string | null }>();
+
+  if (placed?.org_unit_id) return null;
+
+  return {
+    status: 409,
+    body: {
+      error: `stage ${stage.id} requires an organisational unit and this invoice has none`,
+      detail:
+        "assign one with a rule using assign_org, set a default on the source it arrived through, " +
+        "or assign it by hand",
+    },
+  };
 }
 
 export async function handleCreateProcessInstance(
@@ -100,7 +145,7 @@ export async function handleCreateProcessInstance(
 async function nextStageInSequence(db: D1Database, processId: string, currentSequence: number): Promise<StageRow | null> {
   return db
     .prepare(
-      "SELECT id, process_id, sequence, rule_set_id, evaluation_scope FROM process_stages WHERE process_id = ? AND sequence > ? ORDER BY sequence ASC LIMIT 1"
+      "SELECT id, process_id, sequence, rule_set_id, evaluation_scope, requires_org FROM process_stages WHERE process_id = ? AND sequence > ? ORDER BY sequence ASC LIMIT 1"
     )
     .bind(processId, currentSequence)
     .first<StageRow>();
@@ -145,9 +190,14 @@ export async function visitCurrentStage(
   const validation = validateInvoiceFacts(rawFacts, lines, validationSettings, linesTruncated);
   const facts = mergeValidationFacts(rawFacts, validation);
   const instance = await db
-    .prepare("SELECT id, process_id, current_stage_id, status FROM process_instances WHERE id = ?")
+    // The subject too, since decision 0111: `assign_org` writes to the
+    // invoice this instance is about, and the engine is otherwise
+    // deliberately ignorant of what a subject is.
+    .prepare(
+      "SELECT id, process_id, current_stage_id, status, subject_type, subject_id FROM process_instances WHERE id = ?"
+    )
     .bind(instanceId)
-    .first<ProcessInstanceRow>();
+    .first<ProcessInstanceRow & { subject_type: string; subject_id: string }>();
   if (!instance) {
     return { status: 404, body: { error: `process instance ${instanceId} does not exist` } };
   }
@@ -201,7 +251,7 @@ export async function visitCurrentStage(
 
   for (let i = 0; i < MAX_STAGES_PER_VISIT; i++) {
     const stage = await db
-      .prepare("SELECT id, process_id, sequence, rule_set_id, evaluation_scope FROM process_stages WHERE id = ?")
+      .prepare("SELECT id, process_id, sequence, rule_set_id, evaluation_scope, requires_org FROM process_stages WHERE id = ?")
       .bind(currentStageId)
       .first<StageRow>();
     if (!stage) {
@@ -209,6 +259,12 @@ export async function visitCurrentStage(
     }
 
     if (!stage.rule_set_id) {
+      // An automatic stage advances without evaluating anything, so the
+      // org guard runs here or not at all on this path.
+      const refusal = await orgGuard(db, stage, instance);
+      if (refusal) return refusal;
+
+
       // Automatic stage — nothing to evaluate, nothing that could
       // spawn a task. Record the visit and always advance.
       const visitId = crypto.randomUUID();
@@ -256,6 +312,7 @@ export async function visitCurrentStage(
     const visitId = crypto.randomUUID();
     let anyMatched = false;
     const routeTargets = new Set<string>();
+    const orgTargets = new Set<string>();
     const stepStatements: D1PreparedStatement[] = [];
     const pendingTaskActions: Array<{ params: Record<string, unknown>; lineNumber: number | null }> = [];
     // Every field a rule changed, recorded so an auditor can ask what
@@ -309,6 +366,9 @@ export async function visitCurrentStage(
 
       for (const action of result.actions.filter((a) => a.type === "route_to")) {
         routeTargets.add((action.params?.stage as string) ?? "");
+      }
+      for (const action of result.actions.filter((a) => a.type === "assign_org")) {
+        orgTargets.add((action.params?.org as string) ?? "");
       }
       for (const action of result.actions.filter((a) => a.type === "assign_task")) {
         pendingTaskActions.push({ params: (action.params ?? {}) as Record<string, unknown>, lineNumber: evaluation.lineNumber });
@@ -377,6 +437,54 @@ export async function visitCurrentStage(
         body: { error: `stage ${stage.id} fired conflicting route_to targets: ${[...routeTargets].join(", ")}` },
       };
     }
+    // assign_org (decision 0111) — the same single-target discipline as
+    // route_to above. **An invoice belongs to one part of the
+    // enterprise**, and a rule set that cannot decide should say so
+    // rather than pick: posting to the wrong books is the thing this
+    // exists to prevent.
+    if (orgTargets.size > 1) {
+      return {
+        status: 409,
+        body: { error: `stage ${stage.id} fired conflicting assign_org targets: ${[...orgTargets].join(", ")}` },
+      };
+    }
+    const orgTarget = orgTargets.size === 1 ? [...orgTargets][0] : null;
+    // Invoices only. The engine is generic about subjects (decision
+    // 0018) and an expense has no org column — so this reaches past the
+    // abstraction for exactly one type, deliberately and visibly.
+    if (orgTarget && instance.subject_type === "invoice") {
+      const org = await db
+        .prepare("SELECT id, kind FROM org_units WHERE id = ?")
+        .bind(orgTarget)
+        .first<{ id: string; kind: string }>();
+
+      if (!org) {
+        return {
+          status: 409,
+          body: { error: `stage ${stage.id} assigned an org that does not exist: ${orgTarget}` },
+        };
+      }
+      if (org.kind !== "operating_unit") {
+        // A legal entity is a tax and reporting boundary; the operating
+        // unit is where payables happen. A standing invariant refuses
+        // this too — checked here so the rule's author gets a reason.
+        return {
+          status: 409,
+          body: { error: `${orgTarget} is a ${org.kind}, and an invoice is assigned to an operating unit` },
+        };
+      }
+
+      await db
+        .prepare("UPDATE invoice_headers SET org_unit_id = ?, org_assigned_by = 'rule' WHERE id = ?")
+        .bind(orgTarget, instance.subject_id)
+        .run();
+    }
+
+    // After the stage's own rules, so a rule here can be what places
+    // the invoice — and before advancing, so it cannot leave unplaced.
+    const orgRefusal = await orgGuard(db, stage, instance);
+    if (orgRefusal) return orgRefusal;
+
     const routeTarget = routeTargets.size === 1 ? [...routeTargets][0] : null;
     if (routeTarget) {
       const targetStage = await db
@@ -430,7 +538,7 @@ export async function visitCurrentStage(
     let next: StageRow | null = null;
     if (routeTarget) {
       next = await db
-        .prepare("SELECT id, process_id, sequence, rule_set_id, evaluation_scope FROM process_stages WHERE id = ?")
+        .prepare("SELECT id, process_id, sequence, rule_set_id, evaluation_scope, requires_org FROM process_stages WHERE id = ?")
         .bind(routeTarget)
         .first<StageRow>();
     } else {

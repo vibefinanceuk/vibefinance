@@ -29,6 +29,8 @@ interface SourceRow {
   id: string;
   process_id: string;
   name: string;
+  /** The part of the enterprise this transport belongs to (0111). */
+  default_org_unit_id: string | null;
 }
 
 interface ChannelRow {
@@ -121,7 +123,7 @@ export async function handleCaptureFromSource(
   customerId?: string
 ): Promise<RouteResult> {
   const source = await db
-    .prepare("SELECT id, process_id, name FROM sources WHERE id = ?")
+    .prepare("SELECT id, process_id, name, default_org_unit_id FROM sources WHERE id = ?")
     .bind(sourceId)
     .first<SourceRow>();
   if (!source) {
@@ -176,6 +178,28 @@ export async function handleCaptureFromSource(
   // Every successful branch converges here, so no structure can acquire
   // a retention gap later without also bypassing the response shape.
   const invoiceId = (result.body as { id?: string }).id;
+
+  /**
+   * The source's default org — decision 0111.
+   *
+   * The deterministic answer for a customer running one mailbox per
+   * part of the enterprise, and the fallback when a document says
+   * nothing readable. **A rule that fires later overwrites it**, being
+   * the customer's own more specific decision.
+   *
+   * Applied here rather than in the invoice writer because a source is
+   * a transport concern: the writer serves every path, and most have no
+   * source at all.
+   */
+  if (invoiceId && source.default_org_unit_id) {
+    await db
+      .prepare(
+        "UPDATE invoice_headers SET org_unit_id = ?, org_assigned_by = 'source' WHERE id = ? AND org_unit_id IS NULL"
+      )
+      .bind(source.default_org_unit_id, invoiceId)
+      .run();
+  }
+
   const retention = invoiceId
     ? await retainOriginal(bucket, db, customerId, invoiceId, bytes, detection)
     : { retained: false, reason: "the handler returned no invoice id" };
@@ -298,6 +322,28 @@ async function captureWithoutFacts(
   // where the original is the only record of what arrived — there are no
   // facts standing in for it.
   const invoiceId = (result.body as { id?: string }).id;
+
+  /**
+   * The source's default org — decision 0111.
+   *
+   * The deterministic answer for a customer running one mailbox per
+   * part of the enterprise, and the fallback when a document says
+   * nothing readable. **A rule that fires later overwrites it**, being
+   * the customer's own more specific decision.
+   *
+   * Applied here rather than in the invoice writer because a source is
+   * a transport concern: the writer serves every path, and most have no
+   * source at all.
+   */
+  if (invoiceId && source.default_org_unit_id) {
+    await db
+      .prepare(
+        "UPDATE invoice_headers SET org_unit_id = ?, org_assigned_by = 'source' WHERE id = ? AND org_unit_id IS NULL"
+      )
+      .bind(source.default_org_unit_id, invoiceId)
+      .run();
+  }
+
   const retention = invoiceId
     ? await retainOriginal(bucket, db, customerId, invoiceId, bytes, { structure: null, attempted: detail })
     : { retained: false, reason: "the handler returned no invoice id" };

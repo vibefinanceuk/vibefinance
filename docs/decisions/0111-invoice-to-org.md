@@ -1,8 +1,8 @@
 # 0111 — Which part of the enterprise an invoice belongs to
 
-**Status: proposed.** Nothing built. Written first because it makes
-`org_units` load-bearing for the first time and touches intake, the
-vocabulary, the rule engine and the workflow engine together.
+**Status: built.** `org_units` is load-bearing for the first time since
+decision 0003 created it. **Not built:** the supplier master, and any
+interface for placing an invoice by hand.
 
 ---
 
@@ -144,6 +144,76 @@ disagreement is a fact a validation rule can test — and should be.
 4. **`assign_org`**, with the one-target discipline.
 5. **A stage may require an org**, so Validation can enforce rather than
    hope.
+
+---
+
+## Built
+
+**Two levels, not Oracle's five.** `org_units` gains a `kind` —
+`legal_entity` or `operating_unit` — using the `parent_unit_id` it
+already had. Business Group, Ledger and Inventory Organization serve
+payroll, general ledger and stock, and **adding four concepts nothing
+consumes is precisely the mistake `org_units` itself has been**.
+
+**`assign_org`**, with the same single-target discipline as `route_to`:
+more than one distinct org fired in one evaluation is refused outright.
+An invoice belongs to one part of the enterprise, and a rule set that
+cannot decide should say so rather than pick.
+
+**The source's default**, applied at capture and guarded by
+`org_unit_id IS NULL` — so a rule, being the customer's more specific
+decision, wins.
+
+**And `org_assigned_by`**, recording *how* it was placed: `rule`,
+`source` or `manual`. Which is what lets a disagreement be investigated
+rather than argued about.
+
+### The guard runs where a stage is LEFT, not entered
+
+This was wrong twice before it was right.
+
+Placed **after** evaluation, it never ran on an automatic stage — one
+with no rule set advances without evaluating anything, and that is
+exactly the stage nobody configured rules for. Placed **before**, it
+refused an invoice a rule at that very stage was about to place.
+
+So `orgGuard` is called on both paths out of a stage. The question is
+*may this invoice leave*, and there are two ways to leave.
+
+### Three invariants the schema enforces
+
+- An invoice is assigned to an **operating unit**, never a legal
+  entity. A legal entity is a tax and reporting boundary; the operating
+  unit is where payables happen.
+- An org and its provenance **travel together**. One without the other
+  is worse than neither: an org nobody can explain, or a provenance
+  pointing at nothing.
+- An operating unit's parent, where it has one, is a **legal entity**.
+  A hierarchy that nests arbitrarily is one nobody can reason about.
+
+Watched to fail: removing the automatic-path guard, and letting an
+invoice be posted to a legal entity.
+
+---
+
+## Two things this cost, worth recording
+
+**A trailing comment silently disabled a migration.** The test harness
+strips only lines that *start* with `--`, then collapses whitespace to
+one line — so `ALTER TABLE ...;   -- BT-49` comments out **every
+statement after it**. The replay runner accepted it; 713 tests failed.
+Comments go on their own line, which is what every other migration
+already does.
+
+**And I wrote a test fixture against a schema I had not read.** Four
+wrong assumptions in a row: `rules` and `rule_versions` are separate
+tables; `rule_versions` has a composite key rather than an `id`; the
+function is `visitCurrentStage`; and the engine evaluates the facts it
+is **given** rather than the ones stored. Each fix revealed the next.
+
+The fifth would have been `effective_from`, which the loader requires —
+a rule version with a null one never loads, however approved it looks.
+**Read the schema before writing the fixture.**
 
 ---
 

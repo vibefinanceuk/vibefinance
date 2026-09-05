@@ -210,6 +210,10 @@ export const OPERATORS = [
 
 export const ACTIONS = [
   "route_to",
+  // Decision 0111 — which part of the enterprise this invoice belongs
+  // to. The customer's own decision, expressed as a rule, because who
+  // owns an invoice is a business question rather than a platform one.
+  "assign_org",
   "assign_cost_centre",
   "hold_until",
   "flag",
@@ -349,6 +353,15 @@ export const EXPENSE_DERIVED_FIELD_DESCRIPTIONS: Record<ExpenseDerivedField, str
 // enforced by a test, not left to be caught live again.
 export const ACTION_DESCRIPTIONS: Record<ActionType, string> = {
   route_to: 'advance the process to a named stage — params: { "stage": "<stage id>" }',
+  // **No field codes here.** An action description reaches every
+  // vocabulary's prompt, and the expense vocabulary has no EN 16931
+  // document beneath it — naming invoice fields would put BT codes in
+  // front of a model compiling an expense rule, implying a standard
+  // that does not apply (decision 0022). An existing test asserts
+  // exactly that and caught this.
+  assign_org:
+    'assigns the document to a part of the enterprise — params: { "org": "<org unit id>" }. ' +
+    "Decide it by testing whichever identifying fields this vocabulary declares.",
   assign_cost_centre: 'sets a cost centre on the invoice — params: { "value": "<cost centre>" }',
   hold_until: 'holds the invoice until a date — params: { "date": "<ISO date>" }',
   flag: "marks the invoice for attention — no params",
