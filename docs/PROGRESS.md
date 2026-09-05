@@ -168,6 +168,19 @@ user references it**. So anything scoped "per org" — field visibility,
 routing, authority — has nothing to resolve against. The second
 instance of a declared thing nothing uses, at table scale.
 
+Decision 0111 designs the fix: an invoice acquires an org at intake,
+from a rule the customer wrote or the source it arrived through, and
+Validation can refuse to advance without one. It also records what the
+standard already supplies and the vocabulary does not — the **buyer
+electronic address**, which is what Peppol itself routes on.
+
+**No supplier master exists** either. `/suppliers/:vatId/history`
+queries invoices by the VAT identifier printed on them, so a supplier is
+a string that appears on documents rather than a record. Supplier sites
+assigned to operating units — how a supplier's invoices reach the right
+part of the enterprise — are what "supplier groups" below has always
+been waiting for.
+
 **Supplier groups.** Needed for conditions like *"if the invoice is
 from a transport provider"*, which should be a lookup against
 configuration, never a model inference. Now also the missing condition

@@ -245,11 +245,11 @@ conversation: **`edit` / `read` / `hidden`, per customer, overridable
 per stage, and a stage may only ever restrict.** *"Approvers should
 approve data, not edit data."*
 
-**Blocked on one thing:** it should also vary by org unit, and
-**`org_units` is connected to nothing** — no invoice, process, source or
-user references it. Either the variation is by the *document* (its
-country, from BT-40, which exists and is populated) or `org_units` needs
-attaching to something first.
+**Blocked on decision 0111**, which designs what `org_units` needs to
+become: an invoice acquires an org at intake, from a rule the customer
+wrote or from the source it arrived through, and Validation can refuse
+to advance without one. Field visibility then has something real to vary
+by.
 
 **2. Audit the header fields against the standard.** Decision 0110 found
 four of six mandatory `cac:InvoiceLine` elements missing. **The header
