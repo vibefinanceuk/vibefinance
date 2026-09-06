@@ -137,11 +137,41 @@ where the gap was.
 
 ---
 
+## It says what is wrong on arrival
+
+Reported from the screen: the panel read *"Nothing to resolve"* on a
+document with two failures.
+
+Correct, and useless. **It filled only after saving** — so a person
+opened a document, was told there was nothing wrong, and had to change
+something before being told what was wrong. Reading an invoice
+(decision 0120) now reports how it validates as it stands.
+
+Computed rather than stored, and **advisory** like every other verdict
+this system reports (decision 0072): re-running validation is not
+re-evaluating rules, and nothing here moves the process.
+
+---
+
+## And one thing that reads as an exception and is not
+
+*"Lines total 150.00 · differs by 30.00"*, below the line table, was
+read as an exception on the screen. It is the **running comparison**
+from decision 0109 — live feedback as somebody types, updating on every
+keystroke.
+
+The panel reflects a verdict; the comparison reflects the form. They
+are genuinely different things and sit apart for that reason — but
+**the distinction was not obvious to the person looking at it**, which
+is worth knowing before deciding it is right.
+
+---
+
 ## What is not built
 
-- **It still only appears after saving.** The arithmetic could
-  recalculate as somebody types, which is the remaining half of the
-  original complaint. The panel now exists to receive it.
+- **The header arithmetic does not recalculate as somebody types.** The
+  lines do, and the header waits for a save. Half the original
+  complaint, and the panel now exists to receive the other half.
 - **`checked` versus `passed` is not shown.** The API distinguishes *"we
   checked and it was fine"* from *"we could not check"* (decision 0044),
   and the panel shows only failures. A person cannot see that the line

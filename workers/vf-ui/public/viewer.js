@@ -39,11 +39,16 @@ let stored = { facts: {}, lines: [] };
 
 async function loadInvoice(invoiceId) {
   stored = { facts: {}, lines: [] };
+  exceptions = [];
   try {
     const response = await fetch(`/api/invoices/${encodeURIComponent(invoiceId)}`);
     if (!response.ok) return;
     const body = await response.json();
     stored = { facts: body.facts ?? {}, lines: body.lines ?? [] };
+    // **What is wrong on arrival**, not only after saving. Somebody
+    // opening a document with three failures should be told, rather
+    // than having to change something first (decision 0119).
+    exceptions = body.validation?.involves ?? [];
   } catch {
     // An empty form is wrong, and a form showing another invoice's
     // values would be worse.
@@ -521,11 +526,8 @@ export async function openViewer(task, onClose) {
   // once and reused across tasks sitting at different stages.
   await loadFields(task.stageId);
   current = task;
-  // **Cleared on open**, so one document's exceptions never appear
-  // against another. The panel fills when the document is saved and
-  // validation reports on it.
-  exceptions = [];
-
+  // Cleared and then filled by `loadInvoice`, so one document's
+  // exceptions never appear against another.
   await loadInvoice(task.subject.id);
   // The lines as stored, so keyed ones come back. Held by field code,
   // which is what the table edits.

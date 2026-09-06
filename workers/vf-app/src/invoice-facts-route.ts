@@ -1,4 +1,5 @@
 import type { InvoiceFacts } from "@vibefinance/shared";
+import { validateInvoiceFacts } from "./validation.js";
 import type { RouteResult } from "./org-route.js";
 import { findSimilarInvoices } from "./invoice-history.js";
 
@@ -322,6 +323,23 @@ export async function handleGetInvoice(db: D1Database, invoiceId: string): Promi
     };
   });
 
+  /**
+   * How the invoice validates **as it stands** — decision 0119.
+   *
+   * Without this the exceptions panel is empty until somebody presses
+   * Save: they open a document with three failures, see *"Nothing to
+   * resolve"*, and have to change something before being told what is
+   * wrong. **The screen should say what it knows on arrival.**
+   *
+   * Computed rather than stored, and **advisory**, exactly as keying's
+   * verdict is (decision 0072): re-running validation is not
+   * re-evaluating rules, and nothing here moves the process.
+   */
+  const verdict = validateInvoiceFacts(
+    facts as InvoiceFacts,
+    lines.map((line) => line.facts as Record<string, unknown>)
+  );
+
   return {
     status: 200,
     body: {
@@ -330,6 +348,14 @@ export async function handleGetInvoice(db: D1Database, invoiceId: string): Promi
       lines,
       orgUnitId: invoice.org_unit_id,
       orgAssignedBy: invoice.org_assigned_by,
+      validation: {
+        passed: verdict.passed,
+        checked: verdict.checked,
+        failures: verdict.failures,
+        ...(verdict.involves ? { involves: verdict.involves } : {}),
+        ...(verdict.invalidCodes ? { invalidCodes: verdict.invalidCodes } : {}),
+        advisory: true,
+      },
     },
   };
 }

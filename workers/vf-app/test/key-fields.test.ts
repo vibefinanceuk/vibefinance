@@ -548,3 +548,56 @@ describe("what keying reports back about validation (decision 0119)", () => {
     expect(validation.passed).toBe(true);
   });
 });
+
+describe("an invoice reports how it validates on arrival (decision 0119)", () => {
+  /**
+   * Reported from the screen: the exceptions panel read *"Nothing to
+   * resolve"* on a document with two failures, because it filled only
+   * after saving.
+   *
+   * **A person opening a document should be told what is wrong**,
+   * rather than having to change something before being told.
+   */
+  it("says what fails, without anything being keyed first", async () => {
+    await seedInvoice("inv-verdict", { "BT-106": 100, "BT-110": 20, "BT-112": 999 });
+
+    const { handleGetInvoice } = await import("../src/invoice-facts-route.js");
+    const body = (await handleGetInvoice(env.DB, "inv-verdict")).body as {
+      validation: { passed: boolean; failures: string[]; involves?: { check: string }[] };
+    };
+
+    expect(body.validation.passed).toBe(false);
+    expect(body.validation.failures).toContain("vat_arithmetic");
+    expect(body.validation.involves?.some((f) => f.check === "vat_arithmetic")).toBe(true);
+  });
+
+  it("validates the lines as stored, not only the header", async () => {
+    await seedInvoice("inv-verdict-lines", { "BT-106": 100, "BT-112": 100 });
+    await env.DB.prepare(
+      "INSERT INTO invoice_lines (id, invoice_id, line_number, facts_json) VALUES ('l1','inv-verdict-lines',1,?)"
+    )
+      .bind(JSON.stringify({ "BT-131": 30, "BT-151": "NONSENSE" }))
+      .run();
+
+    const { handleGetInvoice } = await import("../src/invoice-facts-route.js");
+    const body = (await handleGetInvoice(env.DB, "inv-verdict-lines")).body as {
+      validation: { failures: string[] };
+    };
+
+    expect(body.validation.failures).toContain("code_list");
+    expect(body.validation.failures).toContain("line_sum");
+  });
+
+  it("is advisory, like every other verdict this system reports", async () => {
+    // Re-running validation is not re-evaluating rules, and nothing
+    // here moves the process (decision 0072).
+    await seedInvoice("inv-verdict-advisory", { "BT-112": 100 });
+    const { handleGetInvoice } = await import("../src/invoice-facts-route.js");
+    const body = (await handleGetInvoice(env.DB, "inv-verdict-advisory")).body as {
+      validation: { advisory: boolean; passed: boolean };
+    };
+
+    expect(body.validation.advisory).toBe(true);
+    expect(body.validation.passed).toBe(true);
+  });
+});
