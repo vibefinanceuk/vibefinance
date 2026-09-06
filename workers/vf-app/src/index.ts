@@ -41,7 +41,7 @@ import {
 import { createWorkersAiExtractionModel } from "./extraction-model.js";
 import { handleGetExtractionSettings, handleUpdateExtractionSettings } from "./extraction-settings-route.js";
 import { handleToMarkdownDiagnostic } from "./tomarkdown-diagnostic.js";
-import { handleCreateSource, handleListSources , handleSetSourceEmail , handleListAllSources } from "./source-route.js";
+import { handleCreateSource, handleListSources , handleSetSourceEmail , handleListAllSources , handleListProcesses } from "./source-route.js";
 import { handleIngestPurchaseOrder, handleGetPurchaseOrder } from "./purchase-order-route.js";
 import { handleGetRetention, handleSetRetention, handleListBeyondRetention } from "./retention-route.js";
 import { handleCaptureFromSource } from "./source-capture-route.js";
@@ -1226,6 +1226,19 @@ export default {
      * arguments through 28 call sites — decision 0105's territory, and
      * a decision of its own.
      */
+    // Every process, so a screen can offer them — decision 0128.
+    if (pathname === "/processes" && request.method === "GET") {
+      const { db } = resolveTenant(request, env);
+      const auth = await requirePermission(db, request, "Admin.Configure", sessionContext(env));
+      if (!auth.authorized) {
+        return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
+      }
+
+      const result = await handleListProcesses(db);
+      return json(result.body, result.status);
+    }
+
+
     if (pathname === "/sources" && request.method === "GET") {
       const { db } = resolveTenant(request, env);
       const auth = await authenticatePerson(db, request, env);

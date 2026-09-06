@@ -26,6 +26,7 @@ import partyStringsSql from "../migrations/0021_party_panel_strings.sql?raw";
 import checkLabelsSql from "../migrations/0022_validation_check_labels.sql?raw";
 import actionExpandSql from "../migrations/0023_action_expand.sql?raw";
 import sourcesScreenSql from "../migrations/0024_sources_screen_strings.sql?raw";
+import newSourceSql from "../migrations/0025_new_source_strings.sql?raw";
 
 function stripSqlComments(sql: string): string {
   return sql
@@ -79,4 +80,5 @@ export async function applyTestSchema(): Promise<void> {
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(checkLabelsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(actionExpandSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(sourcesScreenSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(newSourceSql)));
 }

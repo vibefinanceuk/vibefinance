@@ -10,12 +10,60 @@ import { el, frame, topbar, setCurrentScreen } from "/tasks.js";
  */
 
 let sources = [];
+let processes = [];
 
 async function load() {
-  const response = await fetch("/api/sources");
-  if (!response.ok) return false;
-  sources = (await response.json()).sources ?? [];
+  const [sourceResponse, processResponse] = await Promise.all([
+    fetch("/api/sources"),
+    fetch("/api/processes"),
+  ]);
+  if (!sourceResponse.ok) return false;
+
+  sources = (await sourceResponse.json()).sources ?? [];
+  // **A source must belong to a process**, so the form cannot be
+  // offered without them. A failure here is not fatal to the list.
+  processes = processResponse.ok ? (await processResponse.json()).processes ?? [] : [];
   return true;
+}
+
+/**
+ * Create a source — decision 0128.
+ *
+ * The id is derived from the name rather than asked for. **A person
+ * configuring where their invoices arrive should not be inventing
+ * identifiers**, and every id this screen creates is one nobody will
+ * ever type again.
+ */
+async function createSource() {
+  const name = document.getElementById("new-name").value.trim();
+  const mechanism = document.getElementById("new-mechanism").value;
+  const processId = document.getElementById("new-process").value;
+
+  if (name === "") {
+    note(t("sources.needname"));
+    return;
+  }
+
+  const id = name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+
+  const response = await fetch(`/api/processes/${encodeURIComponent(processId)}/sources`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id, name, mechanism }),
+  });
+  const body = await response.json();
+
+  if (!response.ok) {
+    note(body.error ?? t("sources.failed"));
+    return;
+  }
+
+  await load();
+  render();
+  note("");
 }
 
 /**
@@ -89,6 +137,60 @@ function sourceRow(source) {
   return el("tr", {}, cells);
 }
 
+/**
+ * The form, below the list.
+ *
+ * **Below rather than above**, because a person arrives to look at what
+ * exists far more often than to add to it — and a form at the top makes
+ * every visit start with a blank box.
+ */
+function newSourcePanel() {
+  if (processes.length === 0) {
+    // **No process, no source.** Said plainly rather than offering a
+    // form that cannot succeed.
+    return el("div", { class: "panel" }, [
+      el("h3", { text: t("sources.new") }),
+      el("p", { class: "muted", text: t("sources.noprocess") }),
+    ]);
+  }
+
+  const mechanisms = el("select", { id: "new-mechanism" });
+  for (const value of ["email", "https", "sftp", "file_import", "edi"]) {
+    mechanisms.append(el("option", { value, text: t(`mechanism.${value}`) }));
+  }
+
+  const processPicker = el("select", { id: "new-process" });
+  for (const process of processes) {
+    processPicker.append(
+      el("option", {
+        value: process.id,
+        // A process with no stages accepts documents and does nothing
+        // with them — worth seeing before pointing a source at it.
+        text: process.stageCount > 0 ? process.name : `${process.name} · ${t("sources.nostages")}`,
+      })
+    );
+  }
+
+  return el("div", { class: "panel" }, [
+    el("h3", { text: t("sources.new") }),
+    el("div", { class: "newsource" }, [
+      el("div", { class: "kf" }, [
+        el("label", { for: "new-name", text: t("sources.name") }),
+        el("input", { id: "new-name", type: "text", placeholder: t("sources.nameexample") }),
+      ]),
+      el("div", { class: "kf" }, [
+        el("label", { for: "new-mechanism", text: t("sources.mechanism") }),
+        mechanisms,
+      ]),
+      el("div", { class: "kf" }, [
+        el("label", { for: "new-process", text: t("sources.process") }),
+        processPicker,
+      ]),
+      el("button", { class: "primary", text: t("sources.create"), onclick: createSource }),
+    ]),
+  ]);
+}
+
 function render() {
   const shell = document.getElementById("shell");
   if (!shell) return;
@@ -116,6 +218,7 @@ function render() {
             ),
           ]),
         ]),
+        newSourcePanel(),
         el("div", { class: "problem", id: "sources-note", role: "status" }),
       ])
     )

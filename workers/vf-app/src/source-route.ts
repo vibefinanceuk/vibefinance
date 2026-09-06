@@ -276,3 +276,37 @@ export async function handleListAllSources(db: D1Database): Promise<RouteResult>
 
   return { status: 200, body: { sources: rows.results.map(toBody) } };
 }
+
+/**
+ * Every process in this instance — decision 0128.
+ *
+ * Processes could be **created and never listed**, which was fine while
+ * a person creating one already knew its id. A screen attaching a
+ * source to a process does not, and offering a free-text box for an id
+ * somebody has to remember is not a configuration screen.
+ */
+export async function handleListProcesses(db: D1Database): Promise<RouteResult> {
+  const rows = await db
+    .prepare(
+      `SELECT p.id, p.name, count(s.id) AS stage_count
+       FROM processes p
+       LEFT JOIN process_stages s ON s.process_id = p.id
+       GROUP BY p.id, p.name
+       ORDER BY p.name`
+    )
+    .all<{ id: string; name: string; stage_count: number }>();
+
+  return {
+    status: 200,
+    body: {
+      processes: rows.results.map((r) => ({
+        id: r.id,
+        name: r.name,
+        // **A process with no stages accepts documents and does nothing
+        // with them.** Worth showing where somebody is about to point a
+        // source at one.
+        stageCount: r.stage_count,
+      })),
+    },
+  };
+}

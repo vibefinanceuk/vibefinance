@@ -38,16 +38,33 @@ const STRINGS = {
     "sources.empty": "No sources configured.",
     "routing.not_configured": "Not receiving yet",
     "routing.active": "Receiving",
+    "sources.new": "Add a source",
+    "sources.create": "Create",
+    "sources.needname": "Give the source a name.",
+    "sources.nameexample": "AP Mailbox",
+    "sources.noprocess": "A source belongs to a process, and none exists yet.",
+    "sources.nostages": "no stages",
+    "mechanism.email": "Email",
+    "mechanism.https": "HTTPS",
+    "mechanism.sftp": "SFTP",
+    "mechanism.file_import": "File import",
+    "mechanism.edi": "EDI",
   },
 };
 
-const SOURCES = (sources: unknown[]) => ({
+const SOURCES = (sources: unknown[], processes: unknown[] = [{ id: "ap", name: "Accounts Payable", stageCount: 3 }]) => ({
   "/api/ui-strings": STRINGS,
   "/api/sources": { sources },
+  "/api/processes": { processes },
 });
 
-async function open(sources: unknown[], extra: Record<string, unknown> = {}, posted: string[] = []) {
-  stubFetch({ ...SOURCES(sources), ...extra }, posted);
+async function open(
+  sources: unknown[],
+  extra: Record<string, unknown> = {},
+  posted: string[] = [],
+  processes?: unknown[]
+) {
+  stubFetch({ ...SOURCES(sources, processes), ...extra }, posted);
   const { loadStrings } = await import("/strings.js");
   await loadStrings();
   const { openSources } = await import("/sources.js");
@@ -83,8 +100,16 @@ describe("the sources screen", () => {
       posted
     );
 
-    expect(document.querySelector("input")).toBeNull();
-    (document.querySelector("button") as HTMLButtonElement).click();
+    // **Narrowed by decision 0128.** This asserted the screen had no
+    // input at all, which was true until the create form existed. The
+    // claim is about the ADDRESS button: it takes no input, because a
+    // customer picking a local part would collide with somebody they
+    // have never heard of.
+    const claim = [...document.querySelectorAll("button")].find(
+      (b) => b.textContent === "Create address"
+    ) as HTMLButtonElement;
+    expect(claim.querySelector("input")).toBeNull();
+    claim.click();
     await new Promise((r) => setTimeout(r, 0));
     expect(posted).toContain("/api/sources/s-1/email");
   });
@@ -135,5 +160,71 @@ describe("the sources screen", () => {
     await open([]);
     const on = document.querySelector(".nav a.on");
     expect(on?.textContent).toBe("Sources");
+  });
+});
+
+describe("creating a source (decision 0128)", () => {
+  it("offers a name, a mechanism and a process", async () => {
+    await open([]);
+    expect(document.getElementById("new-name")).not.toBeNull();
+    expect(document.getElementById("new-mechanism")).not.toBeNull();
+    expect(document.getElementById("new-process")).not.toBeNull();
+  });
+
+  it("asks for no identifier", async () => {
+    // **A person configuring where their invoices arrive should not be
+    // inventing identifiers**, and every id this screen creates is one
+    // nobody will ever type again.
+    await open([]);
+    const labels = [...document.querySelectorAll("label")].map((l) => l.textContent);
+    expect(labels).not.toContain("id");
+    expect(labels).not.toContain("ID");
+  });
+
+  it("names the mechanisms in words, not in the column's spelling", async () => {
+    await open([]);
+    const options = [...document.querySelectorAll("#new-mechanism option")].map((o) => o.textContent);
+    expect(options).toContain("File import");
+    expect(options).not.toContain("file_import");
+  });
+
+  it("marks a process that would do nothing with a document", async () => {
+    // A process with no stages accepts documents and does nothing with
+    // them -- worth seeing before pointing a source at it.
+    await open([], {}, [], [{ id: "new", name: "Untouched", stageCount: 0 }]);
+    const options = [...document.querySelectorAll("#new-process option")].map((o) => o.textContent);
+    expect(options[0]).toContain("no stages");
+  });
+
+  it("offers no form at all when no process exists", async () => {
+    // Said plainly rather than offering a form that cannot succeed.
+    await open([], {}, [], []);
+    expect(document.getElementById("new-name")).toBeNull();
+    expect(document.body.textContent).toContain("none exists yet");
+  });
+
+  it("refuses to create one with no name", async () => {
+    const posted: string[] = [];
+    await open([], {}, posted);
+    (document.querySelector("button.primary") as HTMLButtonElement).click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(posted).toHaveLength(0);
+    expect(document.body.textContent).toContain("Give the source a name");
+  });
+
+  it("posts to the chosen process", async () => {
+    const posted: string[] = [];
+    await open(
+      [],
+      { "/api/processes/ap/sources": { id: "ap-mailbox", name: "AP Mailbox" } },
+      posted
+    );
+
+    (document.getElementById("new-name") as HTMLInputElement).value = "AP Mailbox";
+    (document.querySelector("button.primary") as HTMLButtonElement).click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(posted).toContain("/api/processes/ap/sources");
   });
 });

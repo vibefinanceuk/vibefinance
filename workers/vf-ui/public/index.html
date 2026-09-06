@@ -207,6 +207,17 @@
   .nav a:hover { background: var(--surface-2); }
   .nav a.on { background: var(--surface-2); color: var(--text-primary); }
 
+  /* The create form — decision 0128. Inline, because three fields and
+     a button is a row rather than a stack. */
+  .newsource {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 14px;
+  }
+
+  .newsource .kf { margin: 0; min-width: 160px; }
+
   /* An address a supplier will be given — decision 0126. */
   .addr { font-variant-numeric: tabular-nums; }
   .pending { color: var(--text-warning); font-size: var(--text-sm); }
