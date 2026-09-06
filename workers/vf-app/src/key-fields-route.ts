@@ -273,6 +273,16 @@ export async function handleKeyInvoiceFields(
         passed: verdict.passed,
         checked: verdict.checked,
         failures: verdict.failures,
+        // **Which fields, and which codes** — decision 0119. This block
+        // is assembled field by field rather than spread, which is why
+        // `involves` was missing when the panel was built: the
+        // validator gained it and this did not.
+        //
+        // Named explicitly all the same. A spread would carry whatever
+        // the validator happens to return, including things a caller
+        // has no business seeing.
+        ...(verdict.involves ? { involves: verdict.involves } : {}),
+        ...(verdict.invalidCodes ? { invalidCodes: verdict.invalidCodes } : {}),
         // Said plainly rather than left to be assumed: this is a report
         // on the facts as they now stand, not a verdict recorded against
         // the process instance.

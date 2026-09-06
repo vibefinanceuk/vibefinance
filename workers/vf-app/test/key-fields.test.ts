@@ -497,3 +497,54 @@ describe("reading an invoice back (decision 0120)", () => {
     expect(body.orgUnitId).toBeNull();
   });
 });
+
+describe("what keying reports back about validation (decision 0119)", () => {
+  /**
+   * **The route assembles this block field by field**, so a validator
+   * gaining something does not mean a caller receives it. `involves`
+   * was added to the validator and the panel built against it, and the
+   * screen showed nothing — because this block never carried it.
+   */
+  it("carries which fields each failure involves", async () => {
+    await seedInvoice("inv-involves", {});
+    const result = await handleKeyInvoiceFields(
+      env.DB,
+      "inv-involves",
+      { facts: { "BT-106": 100, "BT-110": 20, "BT-112": 999 } } as never,
+      "u-dan"
+    );
+
+    const validation = (result.body as { validation: { involves?: { check: string; fields: string[] }[] } })
+      .validation;
+
+    const failure = validation.involves?.find((f) => f.check === "vat_arithmetic");
+    expect(failure?.fields).toEqual(["BT-106", "BT-110", "BT-112"]);
+  });
+
+  it("carries the invalid codes too", async () => {
+    await seedInvoice("inv-codes", {});
+    const result = await handleKeyInvoiceFields(
+      env.DB,
+      "inv-codes",
+      { facts: { "BT-112": 100, "BT-5": "EURO" } } as never,
+      "u-dan"
+    );
+
+    const validation = (result.body as { validation: { invalidCodes?: string[] } }).validation;
+    expect(validation.invalidCodes).toContain("BT-5=EURO");
+  });
+
+  it("omits both when nothing failed", async () => {
+    await seedInvoice("inv-clean", {});
+    const result = await handleKeyInvoiceFields(
+      env.DB,
+      "inv-clean",
+      { facts: { "BT-112": 100 } } as never,
+      "u-dan"
+    );
+
+    const validation = (result.body as { validation: Record<string, unknown> }).validation;
+    expect(validation.involves).toBeUndefined();
+    expect(validation.passed).toBe(true);
+  });
+});

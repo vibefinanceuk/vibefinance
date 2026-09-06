@@ -106,6 +106,37 @@ somebody else's job at another stage.
 
 ---
 
+## The panel was empty, and the reason is instructive
+
+Reported after deploying: *"the error appears below the lines table — I
+thought we are posting exceptions in the Exception box."*
+
+The panel rendered, in the right place, showing nothing. **The keying
+route assembles its validation block field by field**, and never carried
+`involves`:
+
+```ts
+validation: {
+  passed: verdict.passed,
+  checked: verdict.checked,
+  failures: verdict.failures,
+  advisory: true,
+}
+```
+
+The validator gained a field and this did not. **A test on the
+validator passed, a test on the route did not exist, and the screen
+showed nothing** — the same shape as decision 0105, where
+`authenticateUserOrSession` worked and nothing tested which routes
+called it.
+
+Now carried, and named explicitly rather than spread: a spread would
+pass whatever the validator happens to return, including things a
+caller has no business seeing. **The tests are on the route**, which is
+where the gap was.
+
+---
+
 ## What is not built
 
 - **It still only appears after saving.** The arithmetic could
