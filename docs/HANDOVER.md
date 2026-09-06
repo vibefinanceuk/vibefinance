@@ -1,6 +1,6 @@
 # Handover
 
-**Written 4 September 2026, updated 5 September.** One page: where things stand, what needs a
+**Written 4 September 2026, updated 6 September.** One page: where things stand, what needs a
 decision rather than work, and what to do next.
 
 `docs/PROGRESS.md` is the map — what exists and what does not.
@@ -14,14 +14,14 @@ either, so check the dates.
 
 | | |
 | --- | --- |
-| `origin/main` | `d2f044d` |
-| vf-app deployed | `d2f044d` |
-| vf-licence deployed | `d2f044d` |
-| vf-ui deployed | `d2f044d` · `https://vf-ui.vibefinance.workers.dev` |
+| `origin/main` | `8bb8bcb` |
+| vf-app deployed | `8bb8bcb` |
+| vf-licence deployed | `8bb8bcb` |
+| vf-ui deployed | `8bb8bcb` · `https://vf-ui.vibefinance.workers.dev` |
 | `vf-app-poc` migrations | through `0038` |
 | `vf-licence-poc` migrations | through `0021` |
-| Tests | vf-app 988 · vf-licence 289 · vf-ui 42 · shared 241 (+2 known pre-existing failures) |
-| Decision records | 115 |
+| Tests | vf-app 997 · vf-licence 289 · vf-ui 42 · shared 252 (+2 known pre-existing failures) |
+| Decision records | 118 |
 
 **Everything committed is deployed.**
 
@@ -164,9 +164,10 @@ email.
 
 *"A lockout policy that generates no alert is half a control."* Attempts
 are recorded and shown to the person on their next sign-in (ISO 27001
-A.8.5), but nobody is **told**. This needs email, and **nothing in this
-system sends any** — the same gap blocks password reset and expiry
-warnings.
+A.8.5), but nobody is **told**.
+
+Waiting on email, which decision 0117 promoted from *"would be nice"* to
+the gate on onboarding itself.
 
 ### 4. Do the party panels show enough?
 
@@ -198,6 +199,16 @@ Recorded so nobody re-opens them:
 - **The retention period** — configurable per organisation, with a
   report listing what has passed it (0077). A benchmark, not a purge:
   nothing is deleted.
+- **Validating extracted codes** — built (0116). A document carrying
+  `currencyID="EURO"` now fails validation with `code_list`, naming the
+  code and the line it sits on. Closed lists are enforced; a working
+  subset is not, so an unusual unit of measure is not rejected.
+- **Who the first user is** — the requester (0117), which corrects 0094.
+  There is no bootstrap account to invent, and approval still gates
+  provisioning.
+- **What a trial's ending looks like** — a second environment,
+  configuration migrated, users not (0118). Every table is classified
+  and a test enforces it.
 - **Discard vs return-to-supplier** — genuinely distinct.
   `returned_manually` means somebody is dealing with it; `archived`
   means nothing further is needed.
@@ -257,29 +268,29 @@ Recorded so nobody re-opens them:
 
 ## Suggested next pieces
 
-**1. Validate extracted codes.** Decision 0113 built the standard's code
-lists and **nothing checks a document against them**. A supplier's UBL
-carrying `currencyID="EURO"` is non-conformant and is stored happily.
+**1. Email.** The onboarding chain starts here, and it is the one piece
+with **no design at all**.
 
-The subtlety is already recorded: refuse against a **closed** list,
-accept against a **working subset**. `isClosedList` exists for exactly
-this — UN/ECE Rec 20 carries the common units, so a document using an
-unusual one must not be rejected.
+Decision 0117 made it load-bearing rather than merely missing: the
+administrator sets their password from a link, so without email **nobody
+can sign in to a new customer**. It also still blocks alerting on failed
+sign-ins and licence expiry warnings.
 
-**A dropdown stops a person entering a bad code; this stops a document
-carrying one.**
+Four things to settle before any code: **which provider**; **where it
+lives**, since the control plane sends password links while an instance
+might email a supplier about a returned document; **how a template is
+written**, and whether its wording sits in D1 like `ui_strings` or in
+code; and **what happens when sending fails**, because a password link
+nobody receives is an onboarding that silently stops. That last one has
+the same shape as the fail-open licence cache.
 
-**2. Closed-value enforcement in the compiler.** The other half. A rule
-saying *"currency is EURO"* compiles, activates, fires against nothing
-and looks correct in every listing. `validateRule` has the list now and
-does not consult it. Listed as proposed since Document 2.
+**2. Closed-value enforcement in the compiler.** A rule saying
+*"currency is EURO"* compiles, activates, fires against nothing and
+looks correct in every listing. `validateRule` has the list (0113) and
+does not consult it. Listed as proposed since Document 2, and the pair
+to decision 0116 which now validates documents.
 
-**3. Email — and it has been promoted.** It blocked alerting, password
-reset and expiry warnings, all of which would be *nice*. Decision 0117
-makes it **load-bearing**: the administrator sets their password from a
-link, so without email **nobody can sign in to a new customer at all**.
-
-Then the **supplier master** with records spawning from captured
+**3. Then the rest of the onboarding chain.** The **supplier master** with records spawning from captured
 documents, then **provisioning creating the first administrator**, then
 **Get Started** — four options: sample invoices that spawn suppliers, a
 supplier master spreadsheet, sample users, and permissions.
