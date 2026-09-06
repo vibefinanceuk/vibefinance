@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 5 September 2026. A living document: what is built, what
+Last updated 6 September 2026. A living document: what is built, what
 is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*

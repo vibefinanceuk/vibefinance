@@ -1,6 +1,6 @@
 # Handover
 
-**Written 4 September 2026, updated 6 September.** One page: where things stand, what needs a
+**Written 4 September 2026, updated 6 September (twice).** One page: where things stand, what needs a
 decision rather than work, and what to do next.
 
 `docs/PROGRESS.md` is the map — what exists and what does not.
@@ -14,14 +14,14 @@ either, so check the dates.
 
 | | |
 | --- | --- |
-| `origin/main` | `8bb8bcb` |
-| vf-app deployed | `8bb8bcb` |
-| vf-licence deployed | `8bb8bcb` |
-| vf-ui deployed | `8bb8bcb` · `https://vf-ui.vibefinance.workers.dev` |
+| `origin/main` | `a686e3e` |
+| vf-app deployed | `a686e3e` |
+| vf-licence deployed | `a686e3e` |
+| vf-ui deployed | `a686e3e` · `https://vf-ui.vibefinance.workers.dev` |
 | `vf-app-poc` migrations | through `0038` |
-| `vf-licence-poc` migrations | through `0021` |
-| Tests | vf-app 997 · vf-licence 289 · vf-ui 42 · shared 252 (+2 known pre-existing failures) |
-| Decision records | 118 |
+| `vf-licence-poc` migrations | through `0023` |
+| Tests | vf-app 1016 · vf-licence 289 · vf-ui 43 Worker + 31 browser · shared 252 (+2 known pre-existing failures) |
+| Decision records | 124 |
 
 **Everything committed is deployed.**
 
@@ -109,6 +109,14 @@ further per stage, and *"approvers should approve data, not edit
 data"* (0114). Currency, unit and VAT category are pickers drawn from
 the standard's own code lists (0113).
 
+**With the document beside them.** A PDF renders in a frame and an image
+in an image — the browser's own viewer, which decision 0042 was read for
+too long as ruling out (0123).
+
+**And an exceptions panel that says what is wrong on arrival**, in
+readable terms rather than check names, with every field a failure
+involves highlighted and carrying its reason on hover (0119).
+
 **And placed in the right part of the enterprise.** An invoice acquires
 an operating unit at intake, from a rule the customer wrote or from the
 source it arrived through, and a stage can refuse to let it past without
@@ -136,7 +144,7 @@ uses one.
 
 ## Waiting on you
 
-**Nothing blocks the next piece of work.** Four things worth settling,
+**Nothing blocks the next piece of work.** Five things worth settling,
 none urgent.
 
 ### 1. A custom domain
@@ -175,6 +183,16 @@ Decision 0115 gave the seller and buyer their own panels, and most of
 their fields default to `read`. If they look thin, that is configuration
 (0114) rather than code — adjustable per customer without a deployment.
 
+### 5. Should the line comparison move into the panel?
+
+*"Lines total 150.00 · differs by 30.00"* sits under the line table and
+was **read as an exception** (0119). It is not: it is live feedback as
+somebody types, where the panel reflects a stored verdict.
+
+They are genuinely different, which is why they sit apart. **The
+distinction was not obvious to the person looking at it**, which is
+worth more than the argument for keeping them separate.
+
 ---
 
 ### And one data change, not a code one
@@ -209,6 +227,14 @@ Recorded so nobody re-opens them:
 - **What a trial's ending looks like** — a second environment,
   configuration migrated, users not (0118). Every table is classified
   and a test enforces it.
+- **How to test the browser code** — `jsdom`, in a second config
+  (0121). Playwright remains open for what `jsdom` cannot see, which is
+  anything visual.
+- **Where the document is shown** — inline, by the browser (0123). The
+  viewer frame with zoom and field highlighting is designed there and
+  not built.
+- **Which font** — Carlito shipped, metric-compatible with Calibri
+  (0124). Naming it in a stack was not enough.
 - **Discard vs return-to-supplier** — genuinely distinct.
   `returned_manually` means somebody is dealing with it; `archived`
   means nothing further is needed.
@@ -284,31 +310,20 @@ code; and **what happens when sending fails**, because a password link
 nobody receives is an onboarding that silently stops. That last one has
 the same shape as the fail-open licence cache.
 
-**2. Closed-value enforcement in the compiler.** A rule saying
+**2. Wire up the actions that now have icons.** `complete`, `release`,
+`return`, `return_to_supplier` and `discard` render in the action row
+and **do nothing** (0122). They were disabled as buttons too, but icons
+advertise more confidently than a greyed-out word — which is a worse
+state than before.
+
+**Nothing confirms an irreversible action** either: discard and return
+to supplier both end a task, and both are one click.
+
+**3. Closed-value enforcement in the compiler.** A rule saying
 *"currency is EURO"* compiles, activates, fires against nothing and
 looks correct in every listing. `validateRule` has the list (0113) and
-does not consult it. Listed as proposed since Document 2, and the pair
-to decision 0116 which now validates documents.
-
-**3. Then the rest of the onboarding chain.** The **supplier master** with records spawning from captured
-documents, then **provisioning creating the first administrator**, then
-**Get Started** — four options: sample invoices that spawn suppliers, a
-supplier master spreadsheet, sample users, and permissions.
-
-That order is 0117's, and each step needs the one before it.
-
-**And a trial has an ending** (0118). The sandbox does not become
-production: a second environment is provisioned and the
-**configuration** migrates into it — processes, rules, org units, field
-visibility, roles and teams as definitions, sources. **Users do not**,
-because a user is a person rather than a setting, and neither do their
-role assignments, their suppliers, or anything the sandbox processed.
-The sandbox stays, as the place a rule change is tested before it
-touches real invoices.
-
-One caution recorded there: **the spreadsheet upload is its own decision** rather than a
-step in a wizard — column mapping, formats, and no XLSX parser in this
-project.
+does not consult it. The pair to decision 0116, which now validates
+documents.
 
 **4. An Approval screen.** The Task Manager lists approval tasks and
 cannot open them. Field visibility (0114) is what makes an approval view
