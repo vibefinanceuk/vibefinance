@@ -335,23 +335,42 @@ describe("what happened, in the reader's language (decision 0132)", () => {
    * used to return English prose printed verbatim, so a German customer
    * read it in English.
    */
-  it("renders the outcome rather than the server's own words", async () => {
+  it("renders a refusal in the reader's language, not the server's words", async () => {
+    // **Narrowed by decision 0134.** This asserted a *success* message
+    // appeared, and successes now say nothing — the list is the answer.
+    // The claim that survives is about the words: when the screen does
+    // speak, they are ours and translated.
     const posted: string[] = [];
     await open(
-      [{ id: "s-1", name: "AP Mailbox", mechanism: "email", processId: "ap", status: "active" }],
-      { "/api/sources/s-1": { outcome: "deleted", reason: "never_used" } },
+      [
+        {
+          id: "s-1",
+          name: "AP Mailbox",
+          mechanism: "email",
+          processId: "ap",
+          emailAddress: "ap-mailbox.acme@vibefinance.com",
+          status: "active",
+        },
+      ],
+      { "/api/sources/s-1": { ok: false, outcome: "retired", reason: "address_issued" } },
       posted
     );
 
-    const retire = [...document.querySelectorAll(".rowactions button")].find(
-      (b) => b.textContent === "Retire"
+    const rename = [...document.querySelectorAll(".rowactions button")].find(
+      (b) => b.textContent === "Rename"
     ) as HTMLButtonElement;
-    retire.click();
+    vi.stubGlobal("prompt", () => "New name");
+    vi.stubGlobal("fetch", vi.fn(async () => ({
+      ok: false,
+      json: async () => ({ reason: "address_issued", error: "raw english" }),
+    } as Response)));
+
+    rename.click();
     await new Promise((r) => setTimeout(r, 0));
 
-    expect(document.body.textContent).toContain("Source deleted");
-    // And not the sentence the API used to send.
-    expect(document.body.textContent).not.toContain("simply gone");
+    expect(document.getElementById("sources-note")?.textContent).toContain("Source retired");
+    // And not the English the API carries for a developer.
+    expect(document.getElementById("sources-note")?.textContent).not.toContain("raw english");
   });
 
   it("says nothing for a code it has no words for", async () => {
@@ -435,5 +454,70 @@ describe("confirming an address release (decision 0133)", () => {
 
     // The source is still listed.
     expect(document.body.textContent).toContain("AP Mailbox");
+  });
+});
+
+describe("the screen says something only when it cannot show it (decision 0134)", () => {
+  /**
+   * **A message restating what the list shows is noise**, and it stays
+   * there while somebody does the next thing.
+   *
+   * A retired source shows *"Retired"* beside the address that kept it;
+   * a deleted one is gone from the table. Neither needs a sentence.
+   */
+  function clickRetire() {
+    const retire = [...document.querySelectorAll(".rowactions button")].find(
+      (b) => b.textContent === "Retire"
+    ) as HTMLButtonElement;
+    retire.click();
+  }
+
+  it("says nothing after a source is retired", async () => {
+    await open(
+      [{ id: "s-1", name: "AP Mailbox", mechanism: "email", processId: "ap", status: "active" }],
+      { "/api/sources/s-1": { outcome: "retired", reason: "documents_arrived" } }
+    );
+    clickRetire();
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(document.getElementById("sources-note")?.textContent).toBe("");
+  });
+
+  it("says nothing after one is deleted", async () => {
+    await open(
+      [{ id: "s-1", name: "AP Mailbox", mechanism: "email", processId: "ap", status: "active" }],
+      { "/api/sources/s-1": { outcome: "deleted", reason: "never_used" } }
+    );
+    clickRetire();
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(document.getElementById("sources-note")?.textContent).toBe("");
+  });
+
+  it("still speaks when something is refused", async () => {
+    // The case the screen cannot show: somebody pressed a thing and it
+    // looks exactly as it did.
+    await open([], {}, []);
+    (document.querySelector("button.primary") as HTMLButtonElement).click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(document.getElementById("sources-note")?.textContent).toContain("Give the source a name");
+  });
+
+  it("does not let a refusal outlive the action it was about", async () => {
+    // Cleared by rebuilding, so a complaint about one source cannot sit
+    // over an action on another.
+    await open(
+      [{ id: "s-1", name: "AP Mailbox", mechanism: "email", processId: "ap", status: "active" }],
+      { "/api/sources/s-1": { outcome: "deleted", reason: "never_used" } }
+    );
+
+    (document.querySelector("button.primary") as HTMLButtonElement).click();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(document.getElementById("sources-note")?.textContent).not.toBe("");
+
+    clickRetire();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(document.getElementById("sources-note")?.textContent).toBe("");
   });
 });

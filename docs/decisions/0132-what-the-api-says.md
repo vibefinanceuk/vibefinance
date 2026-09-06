@@ -67,6 +67,19 @@ sentence.
 
 ---
 
+## And then most of them stopped being shown
+
+Decision 0134: **a message restating what the list shows is noise.** A
+retired source shows *"Retired"* beside the address that kept it; a
+deleted one is gone from the table.
+
+So the screen speaks only about **refusals** — the case where somebody
+pressed something and the screen looks exactly as it did. The outcome
+codes still matter, because a refusal needs the same treatment and for
+the same reason.
+
+---
+
 ## What is not built
 
 - **Only the sources screen.** Every other route still returns English

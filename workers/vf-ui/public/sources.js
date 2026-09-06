@@ -93,9 +93,6 @@ async function retireSource(source, releaseAddress = false) {
 
   await load();
   render();
-  // **What actually happened, in the reader's language** — decision
-  // 0132. The server returns a code; the words are ours and translated.
-  note(outcome(body.reason));
 }
 
 /**
@@ -123,7 +120,6 @@ async function renameSource(source) {
 
   await load();
   render();
-  note("");
 }
 
 async function createSource() {
@@ -172,7 +168,6 @@ async function createSource() {
 
   await load();
   render();
-  note("");
 }
 
 /**
@@ -195,7 +190,6 @@ async function claimAddress(sourceId) {
 
   await load();
   render();
-  note(outcome(body.reason));
 }
 
 /**
@@ -216,6 +210,20 @@ function outcome(reason) {
   return words === `outcome.${reason}` ? "" : words;
 }
 
+/**
+ * Say something only when the screen cannot — decision 0134.
+ *
+ * **A message restating what the list shows is noise**, and it stays
+ * there while somebody does the next thing. A retired source shows
+ * *"Retired"* beside the address that kept it; a deleted one is gone
+ * from the table. Neither needs a sentence.
+ *
+ * So `note` carries **refusals and nothing else**: the cases where a
+ * person pressed something and the screen looks exactly as it did.
+ *
+ * Cleared on every render, so a refusal about one source cannot sit
+ * over an action on another.
+ */
 function note(message) {
   const box = document.getElementById("sources-note");
   if (box) box.textContent = message;
@@ -347,6 +355,8 @@ function render() {
   const shell = document.getElementById("shell");
   if (!shell) return;
 
+  // Cleared by rebuilding: a refusal about the last action must not
+  // outlive it.
   shell.replaceChildren(
     frame(
       el("div", {}, [
