@@ -243,3 +243,93 @@ export async function handleUpsertInvoice(db: D1Database, body: UpsertInvoiceBod
     body: { id, lineCount: lineInputs.length, duplicateConfidence },
   };
 }
+
+/**
+ * One invoice, with its facts and lines — decision 0120.
+ *
+ * **There was no way to read an invoice.** It could be keyed, placed,
+ * given a document and a signed URL — and not fetched. So the keying
+ * screen built its values from five fields on the task list's *summary*
+ * row, and everything else somebody typed had nowhere to come back
+ * from.
+ *
+ * Reported plainly: *"I click save, it says saved, I leave the screen
+ * and re-enter, and it's empty again."* The save worked. Nothing read
+ * it back.
+ */
+export async function handleGetInvoice(db: D1Database, invoiceId: string): Promise<RouteResult> {
+  const invoice = await db
+    .prepare(
+      `SELECT id, supplier_vat_id, currency, issue_date, total_with_vat, facts_json,
+              org_unit_id, org_assigned_by
+       FROM invoice_headers WHERE id = ?`
+    )
+    .bind(invoiceId)
+    .first<{
+      id: string;
+      supplier_vat_id: string | null;
+      currency: string | null;
+      issue_date: string | null;
+      total_with_vat: number | null;
+      facts_json: string;
+      org_unit_id: string | null;
+      org_assigned_by: string | null;
+    }>();
+
+  if (!invoice) {
+    return { status: 404, body: { error: `invoice ${invoiceId} does not exist` } };
+  }
+
+  let facts: Record<string, unknown> = {};
+  try {
+    facts = JSON.parse(invoice.facts_json || "{}") as Record<string, unknown>;
+  } catch {
+    // A row whose facts cannot be parsed still has an identity and
+    // lines. Returning nothing would hide a document somebody needs to
+    // look at — which is the opposite of what this system does with a
+    // document it cannot read (decision 0063).
+  }
+
+  const lineRows = await db
+    .prepare(
+      "SELECT line_number, description, amount, cost_centre, facts_json FROM invoice_lines WHERE invoice_id = ? ORDER BY line_number"
+    )
+    .bind(invoiceId)
+    .all<{
+      line_number: number;
+      description: string | null;
+      amount: number | null;
+      cost_centre: string | null;
+      facts_json: string;
+    }>();
+
+  const lines = lineRows.results.map((row) => {
+    let lineFacts: Record<string, unknown> = {};
+    try {
+      lineFacts = JSON.parse(row.facts_json || "{}") as Record<string, unknown>;
+    } catch {
+      // Same reasoning, per line.
+    }
+    return {
+      lineNumber: row.line_number,
+      description: row.description,
+      amount: row.amount,
+      costCentre: row.cost_centre,
+      // **The facts, because those are what a rule tests** and what the
+      // keying screen edits (decision 0109). The columns above are the
+      // convenience copy.
+      facts: lineFacts,
+    };
+  });
+
+  return {
+    status: 200,
+    body: {
+      id: invoice.id,
+      facts,
+      lines,
+      orgUnitId: invoice.org_unit_id,
+      orgAssignedBy: invoice.org_assigned_by,
+    },
+  };
+}

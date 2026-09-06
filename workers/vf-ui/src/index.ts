@@ -90,6 +90,9 @@ const PROXIED_TO_INSTANCE: RegExp[] = [
   /^\/tasks\/[^/]+\/release$/,
   // What the Validation viewer needs (decision 0106): the keyed values,
   // and a short-lived signed URL for the retained original.
+  // Reading one invoice back, so the keying screen shows what it saved
+  // (decision 0120).
+  /^\/invoices\/[^/]+$/,
   /^\/invoices\/[^/]+\/key$/,
   /^\/invoices\/[^/]+\/document-url$/,
   // The standard's own code lists, so a person picks a currency rather

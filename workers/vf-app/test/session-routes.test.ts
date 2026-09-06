@@ -157,3 +157,17 @@ describe("the code lists are readable by a signed-in person (decision 0113)", ()
     expect((await SELF.fetch("https://app.example.com/code-lists")).status).toBe(401);
   });
 });
+
+describe("reading an invoice needs a session too (decision 0120)", () => {
+  it("accepts one", async () => {
+    const token = await sessionFor("alice@acme.com");
+    const res = await SELF.fetch("https://app.example.com/invoices/inv-1", {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(res.status).not.toBe(401);
+  });
+
+  it("refuses no credential", async () => {
+    expect((await SELF.fetch("https://app.example.com/invoices/inv-1")).status).toBe(401);
+  });
+});

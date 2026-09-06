@@ -27,7 +27,7 @@ import {
 import { handleCreateCostCentre } from "./cost-centre-route.js";
 import { requirePermission, permissionsFor, hasPermission } from "./enforce.js";
 import { handleAddTeamMember, handleCreateTeam } from "./team-route.js";
-import { handleUpsertInvoice, mergeStructuredInvoiceFacts } from "./invoice-facts-route.js";
+import { handleUpsertInvoice, mergeStructuredInvoiceFacts , handleGetInvoice } from "./invoice-facts-route.js";
 import { handleUpsertExpenseReport } from "./expense-facts-route.js";
 import { handleCreateProcess, handleCreateStage } from "./process-route.js";
 import { handleCreateIntakeChannel } from "./intake-channel-route.js";
@@ -997,6 +997,27 @@ export default {
     // A short-lived signed URL for the retained original (decision
     // 0073). Minting is authenticated the ordinary way; the URL it
     // returns is not, because a pop-out window cannot send a header.
+    // One invoice, with its facts and lines — decision 0120. Accepts a
+    // session: the keying screen reads what it saved.
+    const getInvoiceMatch = pathname.match(/^\/invoices\/([^/]+)$/);
+    if (getInvoiceMatch && request.method === "GET") {
+      const { db } = resolveTenant(request, env);
+      const auth = await authenticateUserOrSession(
+        db,
+        request,
+        isPublicKeyJwk(env.LICENCE_SIGNING_PUBLIC_KEY) ? env.LICENCE_SIGNING_PUBLIC_KEY : undefined,
+        env.ENVIRONMENT_ID
+      );
+      if (!auth.user) return json({ error: auth.reason }, 401);
+      if (!(await hasPermission(db, auth.user.id, "AP.Validate"))) {
+        return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
+      }
+
+      const result = await handleGetInvoice(db, getInvoiceMatch[1]);
+      return json(result.body, result.status);
+    }
+
+
     const docUrlMatch = pathname.match(/^\/invoices\/([^/]+)\/document-url$/);
     if (docUrlMatch && request.method === "POST") {
       const { db } = resolveTenant(request, env);

@@ -414,3 +414,86 @@ describe("a keyed line is visible to a rule (decision 0109)", () => {
     expect(count?.n).toBe(1);
   });
 });
+
+describe("reading an invoice back (decision 0120)", () => {
+  /**
+   * **There was no way to read an invoice.** It could be keyed, placed,
+   * given a document and a signed URL — and not fetched. So the keying
+   * screen built its values from five fields on the task list's summary
+   * row, and everything else somebody typed had nowhere to come back
+   * from.
+   *
+   * Reported plainly: *"I click save, it says saved, I leave the screen
+   * and re-enter, and it's empty again."* The save worked. Nothing read
+   * it back.
+   */
+  it("returns every fact that was keyed, not a summary of five", async () => {
+    await seedInvoice("inv-read", {});
+    await handleKeyInvoiceFields(
+      env.DB,
+      "inv-read",
+      { facts: { "BT-1": "INV-9", "BT-106": 100, "BT-110": 20, "BT-112": 120 } } as never,
+      "u-dan"
+    );
+
+    const { handleGetInvoice } = await import("../src/invoice-facts-route.js");
+    const body = (await handleGetInvoice(env.DB, "inv-read")).body as {
+      facts: Record<string, unknown>;
+    };
+
+    expect(body.facts["BT-1"]).toBe("INV-9");
+    expect(body.facts["BT-106"]).toBe(100);
+    expect(body.facts["BT-110"]).toBe(20);
+  });
+
+  it("returns the lines, with the facts a rule tests", async () => {
+    // The columns are the convenience copy; the facts are what the
+    // keying screen edits (decision 0109).
+    await seedInvoice("inv-read-lines", {});
+    await handleKeyInvoiceFields(
+      env.DB,
+      "inv-read-lines",
+      {
+        facts: {},
+        lines: [{ lineNumber: 1, description: "Support", amount: 60, facts: { "BT-131": 60, "BT-129": 2 } }],
+      } as never,
+      "u-dan"
+    );
+
+    const { handleGetInvoice } = await import("../src/invoice-facts-route.js");
+    const body = (await handleGetInvoice(env.DB, "inv-read-lines")).body as {
+      lines: { lineNumber: number; facts: Record<string, unknown> }[];
+    };
+
+    expect(body.lines).toHaveLength(1);
+    expect(body.lines[0].facts["BT-131"]).toBe(60);
+    expect(body.lines[0].facts["BT-129"]).toBe(2);
+  });
+
+  it("survives an invoice whose facts cannot be parsed", async () => {
+    // A row that cannot be read still has an identity and lines.
+    // Returning nothing would hide a document somebody needs to look
+    // at — the opposite of what this system does with an unreadable
+    // one (decision 0063).
+    await env.DB.prepare("INSERT INTO invoice_headers (id, facts_json) VALUES ('inv-bad', 'not json')").run();
+
+    const { handleGetInvoice } = await import("../src/invoice-facts-route.js");
+    const result = await handleGetInvoice(env.DB, "inv-bad");
+    expect(result.status).toBe(200);
+    expect((result.body as { facts: Record<string, unknown> }).facts).toEqual({});
+  });
+
+  it("404s an invoice that does not exist", async () => {
+    const { handleGetInvoice } = await import("../src/invoice-facts-route.js");
+    expect((await handleGetInvoice(env.DB, "nope")).status).toBe(404);
+  });
+
+  it("carries where the invoice was placed", async () => {
+    // So a screen can show it, and eventually let somebody change it
+    // (decision 0111).
+    await seedInvoice("inv-org", {});
+    const { handleGetInvoice } = await import("../src/invoice-facts-route.js");
+    const body = (await handleGetInvoice(env.DB, "inv-org")).body as { orgUnitId: string | null };
+    expect(body.orgUnitId).toBeNull();
+  });
+});

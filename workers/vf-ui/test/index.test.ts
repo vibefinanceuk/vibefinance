@@ -303,3 +303,11 @@ describe("field visibility reaches the screen (decision 0114)", () => {
     expect(res.status).toBe(401);
   });
 });
+
+describe("the viewer can read an invoice back (decision 0120)", () => {
+  it("proxies it", async () => {
+    // Refused for want of a session, not for want of a route.
+    const res = await SELF.fetch("https://ui.example.com/api/invoices/inv-1");
+    expect(res.status).toBe(401);
+  });
+});

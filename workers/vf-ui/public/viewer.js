@@ -27,6 +27,30 @@ let lines = [];
 let exceptions = [];
 
 /**
+ * The invoice as stored — decision 0120.
+ *
+ * **Fetched, not inferred from the task list.** The task list carries a
+ * summary of five fields for a queue row; the keying screen needs
+ * everything somebody typed, and every line. Building `existing` from
+ * the summary meant a person keyed ten fields, saved, came back and saw
+ * five — and reasonably concluded nothing had saved.
+ */
+let stored = { facts: {}, lines: [] };
+
+async function loadInvoice(invoiceId) {
+  stored = { facts: {}, lines: [] };
+  try {
+    const response = await fetch(`/api/invoices/${encodeURIComponent(invoiceId)}`);
+    if (!response.ok) return;
+    const body = await response.json();
+    stored = { facts: body.facts ?? {}, lines: body.lines ?? [] };
+  } catch {
+    // An empty form is wrong, and a form showing another invoice's
+    // values would be worse.
+  }
+}
+
+/**
  * The standard's own code lists — decision 0113.
  *
  * Fetched once and held, because they are the same for every invoice
@@ -501,18 +525,29 @@ export async function openViewer(task, onClose) {
   // against another. The panel fills when the document is saved and
   // validation reports on it.
   exceptions = [];
-  // A document nobody could read usually has no lines at all, so the
-  // table starts empty and the person adds what they see.
-  lines = [];
+
+  await loadInvoice(task.subject.id);
+  // The lines as stored, so keyed ones come back. Held by field code,
+  // which is what the table edits.
+  lines = stored.lines.map((line) => ({ ...line.facts }));
+
   const shell = document.getElementById("viewer");
 
   const known = task.subject ?? {};
+  /**
+   * Everything the document carries, by field code — decision 0120.
+   *
+   * The facts are the truth (decision 0109), so the summary's five
+   * columns are only a fallback for a field the facts happen not to
+   * hold.
+   */
   const existing = {
     "BT-31": known.supplierVatId ?? "",
     "BT-27": known.supplierName ?? "",
     "BT-5": known.currency ?? "",
     "BT-2": known.issueDate ?? "",
     "BT-112": known.totalWithVat ?? "",
+    ...stored.facts,
   };
 
   /**
