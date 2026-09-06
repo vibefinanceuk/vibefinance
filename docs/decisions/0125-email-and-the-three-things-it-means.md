@@ -35,9 +35,13 @@ So the org part is built and the email part is a column and a transport.
 **Cloudflare Email Routing delivers to a Worker**, which is the plumbing.
 The design questions are the ones a customer will ask:
 
-- **Which domain?** A shared one (`acme@invoices.vibefinance.com`) needs
-  no customer DNS and reads as ours. A customer's own
-  (`invoices@acme.com`) reads as theirs and needs their DNS.
+- ~~**Which domain?**~~ **Settled: a VibeFinance domain.** No customer
+  DNS to arrange, nothing to go wrong in somebody else's zone, and an
+  address that works the moment a source is created. The cost is that
+  it reads as ours rather than theirs — acceptable, and reversible: a
+  customer's own domain can be added later as a second option without
+  changing how a source works, because the source owns the address
+  either way.
 - **How does a customer get an address**, and can they have several?
   They should: decision 0060's whole point is that "AP mailbox" and "AR
   mailbox" are different sources sharing a mechanism.
@@ -67,14 +71,17 @@ category (decision 0010). A free-text `role` column beside them would be
 **a second truth about the same person**, and the two would disagree
 within a month.
 
-Two readings, and they need different things:
+**Settled: a job title.** *"AP Clerk"* — descriptive, for a signature,
+a directory, or the line under somebody's name in a task list.
 
-- **A job title** — *"AP Clerk"*, descriptive, appears in a signature or
-  a directory. A column, harmless.
-- **What they may do** — already built, and should not be duplicated.
+Which means it must **never be read as authority**. A `job_title` column
+beside `org_user_roles` is only safe while nothing consults it to decide
+anything: the moment a rule or a route tests it, there are two answers
+to *"what may this person do"* and they will disagree.
 
-Worth settling before the migration, because the column is easy and
-removing it later is not.
+Named `job_title` rather than `role` for exactly that reason. **A column
+called `role` sitting next to a roles table is an invitation**, and the
+name is the cheapest guard available.
 
 ---
 
@@ -155,6 +162,9 @@ one email without which nothing else can be reached.
 
 - **The provider.** Cloudflare has no first-party sending; Resend,
   Postmark and SES are the usual candidates and none has been evaluated.
+- **The address format**, now that the domain is settled. Whether a
+  customer picks the local part, whether it must be unique across the
+  fleet, and what happens when two customers both want `invoices@`.
 - **Whether templates live in D1 like `ui_strings`** (decision 0107) or
   in code like the code lists (0113). The test is the same one that
   settled those: **is this wording ours to change, or the standard's?**

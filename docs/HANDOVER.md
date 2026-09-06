@@ -316,6 +316,12 @@ Sources first among the three because the org association already exists
 (0111), it is self-contained, and it is what a customer notices —
 invoices arriving by email rather than by `curl`.
 
+Two questions answered: a source's address lives on a **VibeFinance
+domain** — no customer DNS to arrange, and reversible later — and a
+user's role is a **job title**, so the column is named `job_title`
+rather than `role`, because a column called `role` beside a roles
+table is an invitation to two answers about what somebody may do.
+
 Still to settle: **which provider**; **where sending lives**, since
 decision 0091 says the control plane never holds customer content;
 **whether templates sit in D1** like `ui_strings` (0107) or in code like
