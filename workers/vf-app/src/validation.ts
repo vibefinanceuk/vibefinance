@@ -72,6 +72,22 @@ export const VALIDATION_CHECKS = [
 ] as const;
 export type ValidationCheck = (typeof VALIDATION_CHECKS)[number];
 
+/**
+ * A failure, with enough for a screen to act on — decision 0119.
+ *
+ * The screen highlights `fields`, and shows the check's own label when
+ * somebody hovers one of them.
+ */
+export interface ValidationFailure {
+  check: ValidationCheck;
+  /** The fields this check compared. What to highlight. */
+  fields: string[];
+  /** Set when the failure is on a line rather than the header. */
+  line?: number;
+  /** The offending value, where there is one: `"EURO"`. */
+  value?: string;
+}
+
 export interface ValidationResult {
   passed: boolean;
   failures: ValidationCheck[];
@@ -83,6 +99,19 @@ export interface ValidationResult {
    * is not.
    */
   invalidCodes?: string[];
+  /**
+   * Which **fields** each failure involves — decision 0119.
+   *
+   * `failures` is a list of check names, which is what a rule tests.
+   * This is what a screen needs: `vat_arithmetic` cannot be pointed at,
+   * but BT-106, BT-110 and BT-112 can be highlighted and explained.
+   *
+   * **Reported by each check rather than mapped afterwards.** A static
+   * table of check-to-fields would be a second place the same knowledge
+   * lived, and would drift the first time a check changed what it
+   * compared.
+   */
+  involves?: ValidationFailure[];
   /** Every check that was genuinely evaluated. A check skipped for
    *  want of data is neither a pass nor a failure, and conflating
    *  "we checked and it was fine" with "we could not check" would
@@ -131,6 +160,38 @@ function badCodes(facts: InvoiceFacts, lines?: readonly LineForValidation[]): st
   return bad;
 }
 
+/**
+ * The same bad codes as `badCodes`, structured for a screen —
+ * decision 0119.
+ *
+ * `badCodes` produces `"line 2: BT-151=NONSENSE"` for a person reading
+ * a sentence; this produces the field, the line and the value
+ * separately, so a screen can highlight the right box.
+ */
+function badCodeDetails(
+  facts: InvoiceFacts,
+  lines?: readonly LineForValidation[]
+): ValidationFailure[] {
+  const found: ValidationFailure[] = [];
+
+  const check = (source: Record<string, unknown>, line?: number) => {
+    for (const field of Object.keys(FIELD_CODE_LISTS)) {
+      if (!isClosedList(field)) continue;
+      const value = source[field];
+      if (value === undefined || value === null || value === "") continue;
+      if (!isValidCode(field, value)) {
+        found.push({ check: "code_list", fields: [field], value: String(value), ...(line ? { line } : {}) });
+      }
+    }
+  };
+
+  check(facts as Record<string, unknown>);
+  for (const [index, line] of (lines ?? []).entries()) {
+    check(line as Record<string, unknown>, index + 1);
+  }
+  return found;
+}
+
 function num(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
@@ -162,6 +223,18 @@ export function validateInvoiceFacts(
   const failures: ValidationCheck[] = [];
   const checked: ValidationCheck[] = [];
 
+  /**
+   * Each failure with the fields it compared — decision 0119.
+   *
+   * Recorded **beside** the check that produced it, so the two cannot
+   * disagree about what was looked at.
+   */
+  const involves: ValidationFailure[] = [];
+  const fail = (check: ValidationCheck, fields: string[], extra: Partial<ValidationFailure> = {}) => {
+    failures.push(check);
+    involves.push({ check, fields, ...extra });
+  };
+
   const net = num(facts["BT-106"]);
   const vat = num(facts["BT-110"]);
   const total = num(facts["BT-112"]);
@@ -174,14 +247,18 @@ export function validateInvoiceFacts(
   // rather than silently absent.
   checked.push("total_missing");
   if (total === null) {
-    failures.push("total_missing");
+    // The total is the field that is absent; the amount due is the one
+    // somebody might supply instead.
+    fail("total_missing", ["BT-112", "BT-115"]);
   }
 
   // net + VAT should equal the total. Skipped unless all three are
   // present, since two of three proves nothing.
   if (net !== null && vat !== null && total !== null) {
     checked.push("vat_arithmetic");
-    if (!close(net + vat, total, tol)) failures.push("vat_arithmetic");
+    // All three, because any one of them could be the wrong one and
+    // the check cannot know which.
+    if (!close(net + vat, total, tol)) fail("vat_arithmetic", ["BT-106", "BT-110", "BT-112"]);
   }
 
   // The amount due normally equals the total. A legitimate part
@@ -191,7 +268,7 @@ export function validateInvoiceFacts(
   // decides.
   if (due !== null && total !== null) {
     checked.push("amount_due_mismatch");
-    if (!close(due, total, tol)) failures.push("amount_due_mismatch");
+    if (!close(due, total, tol)) fail("amount_due_mismatch", ["BT-115", "BT-112"]);
   }
 
   // An issue date after its own due date is always wrong.
@@ -199,7 +276,7 @@ export function validateInvoiceFacts(
   const dueDate = typeof facts["BT-9"] === "string" ? Date.parse(facts["BT-9"]) : NaN;
   if (!Number.isNaN(issued) && !Number.isNaN(dueDate)) {
     checked.push("date_order");
-    if (issued > dueDate) failures.push("date_order");
+    if (issued > dueDate) fail("date_order", ["BT-2", "BT-9"]);
   }
 
   // The lines should sum to the stated net. Only runs when lines were
@@ -213,7 +290,10 @@ export function validateInvoiceFacts(
       const against = net ?? total;
       if (against !== null) {
         checked.push("line_sum");
-        if (!close(sum, against, tol)) failures.push("line_sum");
+        // The header total the lines disagree with, and the line
+        // amounts themselves — highlighted on every line, since any of
+        // them could be wrong.
+        if (!close(sum, against, tol)) fail("line_sum", [net !== null ? "BT-106" : "BT-112", "BT-131"]);
       }
     }
   }
@@ -228,7 +308,13 @@ export function validateInvoiceFacts(
    */
   checked.push("code_list");
   const invalidCodes = badCodes(facts, lines);
-  if (invalidCodes.length > 0) failures.push("code_list");
+  if (invalidCodes.length > 0) {
+    failures.push("code_list");
+    // One entry per bad code rather than one for the check, so a
+    // document with two of them highlights two fields and explains
+    // each — "code_list" once would point at neither.
+    for (const bad of badCodeDetails(facts, lines)) involves.push(bad);
+  }
 
   return {
     passed: failures.length === 0,
@@ -237,6 +323,7 @@ export function validateInvoiceFacts(
     // Omitted when empty, so a caller sees the field only when there is
     // something to read in it.
     ...(invalidCodes.length > 0 ? { invalidCodes } : {}),
+    ...(involves.length > 0 ? { involves } : {}),
   };
 }
 

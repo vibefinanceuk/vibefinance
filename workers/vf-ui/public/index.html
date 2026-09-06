@@ -427,6 +427,46 @@
 
   .linetotal.off { color: var(--text-warning); }
 
+  /*
+    The validation panel — decision 0119.
+
+    **Fixed height and scrolling.** A document with fourteen exceptions
+    must not push the fields it is complaining about off the screen: the
+    panel is a companion to the form, not a thing that displaces it.
+  */
+  .exceptions .exlist {
+    max-height: 190px;
+    overflow-y: auto;
+    margin: -4px -6px;
+    padding: 4px 6px;
+  }
+
+  .exrow {
+    padding: 8px 0;
+    border-bottom: 0.5px solid var(--border);
+    font-size: 13px;
+  }
+
+  .exrow:last-child { border-bottom: none; }
+  .extext { color: var(--text-warning); }
+  .exwhere { color: var(--text-muted); font-size: 12px; margin-top: 2px; }
+  .exrow.muted .extext { color: var(--text-muted); }
+
+  /*
+    A failing field carries its reason as a tooltip, so somebody does
+    not have to hunt through the panel to find which of fourteen
+    exceptions is theirs.
+  */
+  .kf.failing input,
+  .kf.failing select,
+  .kf.failing .readonly,
+  .linetable td.failing input {
+    border-color: var(--border-warning);
+    background: var(--bg-warning);
+  }
+
+  .kf.failing label { color: var(--text-warning); }
+
   /* One action per line, in one place — decision 0108. */
   .actions button { display: block; }
   button.wide { width: 100%; margin: 0 0 8px; min-height: 32px; }

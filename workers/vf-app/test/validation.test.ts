@@ -315,3 +315,71 @@ describe("codes the standard does not know (decision 0116)", () => {
     expect(merged["validation.passed"]).toBe(false);
   });
 });
+
+describe("which fields a failure involves (decision 0119)", () => {
+  /**
+   * `failures` is a list of check names, which is what a rule tests.
+   * **A screen needs something it can point at**: `vat_arithmetic`
+   * cannot be highlighted, and BT-106, BT-110 and BT-112 can.
+   */
+  it("names all three amounts when the VAT arithmetic disagrees", () => {
+    // All three, because any one could be the wrong one and the check
+    // cannot know which.
+    const result = validateInvoiceFacts({ "BT-106": 100, "BT-110": 20, "BT-112": 999 });
+    const failure = result.involves?.find((f) => f.check === "vat_arithmetic");
+    expect(failure?.fields).toEqual(["BT-106", "BT-110", "BT-112"]);
+  });
+
+  it("names the two dates when they are the wrong way round", () => {
+    const result = validateInvoiceFacts({ "BT-112": 100, "BT-2": "2026-09-01", "BT-9": "2026-08-01" });
+    expect(result.involves?.find((f) => f.check === "date_order")?.fields).toEqual(["BT-2", "BT-9"]);
+  });
+
+  it("names the offending code and its line", () => {
+    // One entry per bad code rather than one for the check, so a
+    // document with two highlights two fields.
+    const result = validateInvoiceFacts({ "BT-112": 100, "BT-5": "EURO" }, [
+      { "BT-131": 100, "BT-151": "NONSENSE" },
+    ]);
+
+    const codes = result.involves?.filter((f) => f.check === "code_list") ?? [];
+    expect(codes).toHaveLength(2);
+
+    const header = codes.find((f) => f.fields[0] === "BT-5");
+    expect(header?.value).toBe("EURO");
+    expect(header?.line).toBeUndefined();
+
+    const line = codes.find((f) => f.fields[0] === "BT-151");
+    expect(line?.value).toBe("NONSENSE");
+    expect(line?.line).toBe(1);
+  });
+
+  it("says nothing when nothing failed", () => {
+    // Omitted rather than empty, so a caller reads the field only when
+    // there is something in it.
+    expect(validateInvoiceFacts({ "BT-112": 100 }).involves).toBeUndefined();
+  });
+
+  it("reports one entry per failure, matching the check list", () => {
+    const result = validateInvoiceFacts({
+      "BT-106": 100,
+      "BT-110": 20,
+      "BT-112": 999,
+      "BT-115": 500,
+    });
+    // Every check that failed has somewhere to point.
+    for (const check of result.failures) {
+      expect(result.involves?.some((f) => f.check === check), check).toBe(true);
+    }
+  });
+
+  it("names a header total when the lines do not sum to it", () => {
+    const result = validateInvoiceFacts({ "BT-106": 100, "BT-112": 100 }, [
+      { "BT-131": 30 },
+      { "BT-131": 40 },
+    ]);
+    const failure = result.involves?.find((f) => f.check === "line_sum");
+    expect(failure?.fields).toContain("BT-106");
+    expect(failure?.fields).toContain("BT-131");
+  });
+});

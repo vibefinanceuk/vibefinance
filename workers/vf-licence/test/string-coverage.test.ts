@@ -93,6 +93,17 @@ const KEYS_THE_INTERFACE_USES = [
   // The party panels (decision 0115).
   "viewer.seller",
   "viewer.buyer",
+  // The validation panel (decision 0119).
+  "viewer.exceptions",
+  "viewer.noexceptions",
+  "viewer.online",
+  "viewer.notchecked",
+  "check.total_missing",
+  "check.vat_arithmetic",
+  "check.amount_due_mismatch",
+  "check.date_order",
+  "check.line_sum",
+  "check.code_list",
   "viewer.lines",
   "viewer.description",
   "viewer.addline",

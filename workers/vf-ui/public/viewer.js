@@ -18,6 +18,15 @@ let current = null;
 let lines = [];
 
 /**
+ * The current exceptions — decision 0119.
+ *
+ * Held so the panel and the field highlighting draw from **one
+ * source**: a field marked as failing and a row explaining why must
+ * never disagree, which they would the moment each kept its own copy.
+ */
+let exceptions = [];
+
+/**
  * The standard's own code lists — decision 0113.
  *
  * Fetched once and held, because they are the same for every invoice
@@ -258,6 +267,7 @@ function lineRow(line, index) {
         onclick: () => {
           lines.splice(index, 1);
           renderLines();
+  renderExceptions();
         },
       }),
     ]),
@@ -296,11 +306,98 @@ function linePanel() {
         onclick: () => {
           lines.push({});
           renderLines();
+  renderExceptions();
         },
       }),
       el("div", { class: "linetotal", id: "linetotal" }),
     ]),
   ]);
+}
+
+/**
+ * The validation panel — decision 0119.
+ *
+ * **Fixed height and scrolling**, so a document with fourteen
+ * exceptions does not push the fields it is complaining about off the
+ * screen. The panel is a companion to the form, not a thing that
+ * displaces it.
+ */
+function exceptionPanel() {
+  return el("div", { class: "panel exceptions" }, [
+    el("h3", { text: t("viewer.exceptions") }),
+    el("div", { class: "exlist", id: "exlist" }),
+  ]);
+}
+
+/** One row: what is wrong, and where. */
+function exceptionRow(failure) {
+  const where = failure.line ? ` · ${t("viewer.online")} ${failure.line}` : "";
+  const value = failure.value ? ` · ${failure.value}` : "";
+
+  return el("div", { class: "exrow" }, [
+    el("div", { class: "extext", text: t(`check.${failure.check}`) }),
+    el("div", {
+      class: "exwhere",
+      // The fields it involves, so a person can look at the panel and
+      // know where to go without hovering anything.
+      text: failure.fields.map((f) => t(`field.${f.toLowerCase()}`)).join(", ") + where + value,
+    }),
+  ]);
+}
+
+/**
+ * Mark the fields an exception involves, and say why on hover.
+ *
+ * **The reason travels with the highlight.** A red box that does not
+ * explain itself makes somebody hunt through a list to find out which
+ * of fourteen exceptions is theirs.
+ */
+function markFields() {
+  for (const node of document.querySelectorAll(".kf.failing, .linetable td.failing")) {
+    node.classList.remove("failing");
+    node.removeAttribute("title");
+  }
+
+  for (const failure of exceptions) {
+    const reason = t(`check.${failure.check}`);
+    for (const code of failure.fields) {
+      const control = document.getElementById(`f-${code}`);
+      // A field this stage does not show cannot be highlighted, and
+      // that is not an error: the exception still appears in the panel.
+      if (control?.closest(".kf")) {
+        const box = control.closest(".kf");
+        box.classList.add("failing");
+        box.title = reason;
+      }
+
+      // Line fields, on the row the failure names — or every row, when
+      // it names none, because `line_sum` is about all of them.
+      const rows = document.querySelectorAll("#lines tr");
+      const index = lineFields.findIndex((f) => f.field === code);
+      if (index >= 0) {
+        for (const [n, row] of rows.entries()) {
+          if (failure.line && failure.line !== n + 1) continue;
+          const cell = row.children[index + 1];
+          if (cell) {
+            cell.classList.add("failing");
+            cell.title = reason;
+          }
+        }
+      }
+    }
+  }
+}
+
+function renderExceptions() {
+  const list = document.getElementById("exlist");
+  if (!list) return;
+
+  list.replaceChildren(
+    ...(exceptions.length
+      ? exceptions.map(exceptionRow)
+      : [el("div", { class: "exrow muted", text: t("viewer.noexceptions") })])
+  );
+  markFields();
 }
 
 async function save(close) {
@@ -368,26 +465,19 @@ async function save(close) {
     return;
   }
 
-  // **The verdict is advisory** (decision 0072). Validation is re-run
-  // and reported, and nothing re-evaluates the rules — so this says
-  // whether the document would now pass, not that anything has moved.
-  const validation = body.validation;
-  if (validation) {
-    note(
-      validation.passed
-        ? `Saved. Validation would now pass (${validation.checked.join(", ")}).`
-        : // **Which code, not just that one is wrong** (decision 0116).
-          // "code_list" is not something a person can act on;
-          // "BT-5=EURO" is.
-          `Saved. Still failing: ${validation.failures.join(", ")}${
-            validation.invalidCodes?.length
-              ? ` (${validation.invalidCodes.join("; ")})`
-              : ""
-          }.`
-    );
-  } else {
-    note(t("viewer.saved"));
-  }
+  /**
+   * **The verdict is advisory** (decision 0072). Validation is re-run
+   * and reported, and nothing re-evaluates the rules — so this says
+   * whether the document would now pass, not that anything has moved.
+   *
+   * The panel carries the detail now, so the note says only that the
+   * save worked. **An English sentence was built here in JavaScript**
+   * until decision 0119 — a German customer read it in English, which
+   * is the thing decision 0107 exists to prevent.
+   */
+  exceptions = body.validation?.involves ?? [];
+  renderExceptions();
+  note(t("viewer.saved"));
 
   if (close) close();
 }
@@ -407,6 +497,10 @@ export async function openViewer(task, onClose) {
   // once and reused across tasks sitting at different stages.
   await loadFields(task.stageId);
   current = task;
+  // **Cleared on open**, so one document's exceptions never appear
+  // against another. The panel fills when the document is saved and
+  // validation reports on it.
+  exceptions = [];
   // A document nobody could read usually has no lines at all, so the
   // table starts empty and the person adds what they see.
   lines = [];
@@ -518,6 +612,7 @@ export async function openViewer(task, onClose) {
                 onclick: () => openDocument(task.subject.id),
               }),
             ]),
+            exceptionPanel(),
             el("div", { class: "panel actions" }, [
               el("h3", { text: t("viewer.actions") }),
               el("button", {
@@ -539,6 +634,7 @@ export async function openViewer(task, onClose) {
   );
 
   renderLines();
+  renderExceptions();
   // The comparison follows the printed total as it is typed, not only
   // when a line changes.
   document.getElementById("f-BT-112")?.addEventListener("input", updateTotals);
