@@ -5,11 +5,13 @@
   "type": "module",
   "scripts": {
     "dev": "wrangler dev",
-    "test": "vitest run"
+    "test": "vitest run && vitest run --config vitest.browser.config.ts",
+    "test:browser": "vitest run --config vitest.browser.config.ts"
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.22.0",
-    "wrangler": "^4.127.1",
-    "vitest": "4.1.0"
+    "jsdom": "^30.0.1",
+    "vitest": "4.1.0",
+    "wrangler": "^4.127.1"
   }
 }

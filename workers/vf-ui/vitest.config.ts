@@ -2,6 +2,17 @@ import { cloudflareTest } from "@cloudflare/vitest-pool-workers";
 import { defineConfig } from "vitest/config";
 
 export default defineConfig({
+  test: {
+    /**
+     * The Worker tests only — decision 0121.
+     *
+     * Without this, vitest's default glob picks up
+     * `test-browser/` too and tries to load DOM code in `workerd`.
+     * That fails as a *file*, not as a test, so the summary still reads
+     * '43 passed' with one file failing above it — easy to miss.
+     */
+    include: ["test/**/*.test.ts"],
+  },
   plugins: [
     cloudflareTest({
       wrangler: { configPath: "./wrangler.jsonc" },
