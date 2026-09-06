@@ -70,10 +70,10 @@ describe("giving a source an address", () => {
     const result = await handleSetSourceEmail(env.DB, "s-ap", "acme");
 
     expect(result.status).toBe(200);
-    const body = result.body as { emailAddress: string; routing: string; detail: string };
+    const body = result.body as { emailAddress: string; routing: string; reason: string };
     expect(body.emailAddress).toBe("ap-mailbox.acme@vibefinance.com");
     expect(body.routing).toBe("not_configured");
-    expect(body.detail).toContain("mail will not arrive");
+    expect(body.reason).toBe("not_routed_yet");
   });
 
   it("stores it, so the routing rule can name the same string", async () => {
@@ -96,7 +96,7 @@ describe("giving a source an address", () => {
 
     const again = await handleSetSourceEmail(env.DB, "s-ap", "acme");
     expect(again.status).toBe(409);
-    expect(String((again.body as { detail: string }).detail)).toContain("written it down");
+    expect((again.body as { reason: string }).reason).toBe("address_issued");
   });
 
   it("refuses a source that does not receive by email", async () => {
@@ -116,7 +116,7 @@ describe("giving a source an address", () => {
 
     const result = await handleSetSourceEmail(env.DB, "s-2", "acme");
     expect(result.status).toBe(409);
-    expect(String((result.body as { detail: string }).detail)).toContain("different name");
+    expect((result.body as { reason: string }).reason).toBe("address_taken");
   });
 
   it("404s a source that does not exist", async () => {
@@ -164,7 +164,7 @@ describe("what the platform will accept (decision 0129)", () => {
   it("says to rename it, rather than only that it failed", async () => {
     await seedSource("s-bang2", "###");
     const result = await handleSetSourceEmail(env.DB, "s-bang2", "acme");
-    expect(String((result.body as { detail: string }).detail)).toContain("rename");
+    expect((result.body as { reason: string }).reason).toBe("name_unusable");
   });
 
   it("folds accents rather than stripping them", async () => {
@@ -227,7 +227,7 @@ describe("retiring a source (decision 0130)", () => {
 
     const result = await handleRetireSource(env.DB, "s-live", "u-dan");
     expect((result.body as { outcome: string }).outcome).toBe("retired");
-    expect(String((result.body as { detail: string }).detail)).toContain("carry its name");
+    expect((result.body as { reason: string }).reason).toBe("documents_arrived");
 
     const row = await env.DB.prepare(
       "SELECT status, retired_by FROM sources WHERE id = 's-live'"
@@ -245,7 +245,7 @@ describe("retiring a source (decision 0130)", () => {
 
     const result = await handleRetireSource(env.DB, "s-addr", "u-dan");
     expect((result.body as { outcome: string }).outcome).toBe("retired");
-    expect(String((result.body as { detail: string }).detail)).toContain("address was issued");
+    expect((result.body as { reason: string }).reason).toBe("address_issued");
   });
 
   it("refuses to retire one twice", async () => {
@@ -278,7 +278,7 @@ describe("renaming a source (decision 0130)", () => {
 
     const result = await handleRenameSource(env.DB, "s-addr2", "Something else");
     expect(result.status).toBe(409);
-    expect(String((result.body as { detail: string }).detail)).toContain("never reissued");
+    expect((result.body as { reason: string }).reason).toBe("address_issued");
   });
 
   it("refuses once a document has arrived", async () => {
@@ -291,11 +291,44 @@ describe("renaming a source (decision 0130)", () => {
 
     const result = await handleRenameSource(env.DB, "s-used", "Renamed");
     expect(result.status).toBe(409);
-    expect(String((result.body as { detail: string }).detail)).toContain("no longer exists");
+    expect((result.body as { reason: string }).reason).toBe("documents_arrived");
   });
 
   it("refuses an empty name", async () => {
     await seedSource("s-blank", "AP Mailbox");
     expect((await handleRenameSource(env.DB, "s-blank", "  ")).status).toBe(400);
+  });
+});
+
+describe("the API returns codes, not sentences (decision 0132)", () => {
+  /**
+   * Reported from the screen: *"nothing ever arrived through it and it
+   * had no address, so it is simply gone"* — chatty, and **written in
+   * English inside the API**, so a German customer read it in English.
+   *
+   * Exactly what decision 0107 exists to prevent, in an interface
+   * translated since.
+   */
+  it("carries no English prose in any response", async () => {
+    await env.DB.prepare(
+      "INSERT OR IGNORE INTO org_users (id, email, name) VALUES ('u-dan', 'd@x.com', 'Dan')"
+    ).run();
+    await seedSource("s-prose", "AP Mailbox");
+
+    const bodies = [
+      (await handleSetSourceEmail(env.DB, "s-prose", "acme")).body,
+      (await handleSetSourceEmail(env.DB, "s-prose", "acme")).body,
+      (await handleRenameSource(env.DB, "s-prose", "Something")).body,
+      (await handleRetireSource(env.DB, "s-prose", "u-dan")).body,
+    ] as Record<string, unknown>[];
+
+    for (const body of bodies) {
+      // `detail` was the field carrying the prose. Nothing should have
+      // one, and a `reason` is a code a screen can translate.
+      expect(body.detail, JSON.stringify(body)).toBeUndefined();
+      expect(typeof body.reason).toBe("string");
+      // A code, not a sentence: no spaces.
+      expect(String(body.reason)).not.toContain(" ");
+    }
   });
 });

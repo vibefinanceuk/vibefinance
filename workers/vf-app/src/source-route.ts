@@ -273,7 +273,7 @@ export async function handleSetSourceEmail(
       status: 409,
       body: {
         error: `source ${sourceId} already receives at ${source.email_address}`,
-        detail: "an address is never reissued, because suppliers have written it down",
+        reason: "address_issued",
       },
     };
   }
@@ -284,7 +284,7 @@ export async function handleSetSourceEmail(
       status: 422,
       body: {
         error: `source ${sourceId} cannot have an address: ${addressable.reason}`,
-        detail: "rename the source, then create the address",
+        reason: "name_unusable",
       },
     };
   }
@@ -302,7 +302,7 @@ export async function handleSetSourceEmail(
       status: 409,
       body: {
         error: `${address} is already used by source ${taken.id}`,
-        detail: "an address is derived from the source's name, so give this one a different name",
+        reason: "address_taken",
       },
     };
   }
@@ -318,9 +318,7 @@ export async function handleSetSourceEmail(
       sourceId,
       emailAddress: address,
       routing: "not_configured",
-      detail:
-        "the address is reserved; mail will not arrive until the routing rule is created, " +
-        "which needs the Cloudflare API half of provisioning",
+      reason: "not_routed_yet",
     },
   };
 }
@@ -435,7 +433,15 @@ export async function handleRetireSource(
       body: {
         sourceId,
         outcome: "deleted",
-        detail: "nothing ever arrived through it and it had no address, so it is simply gone",
+        /**
+         * A code, not a sentence — decision 0132.
+         *
+         * These were English strings written in the API and shown
+         * verbatim, so a German customer read them in English: exactly
+         * what decision 0107 exists to prevent, in an interface that
+         * has been translated since.
+         */
+        reason: "never_used",
       },
     };
   }
@@ -451,10 +457,9 @@ export async function handleRetireSource(
       sourceId,
       outcome: "retired",
       // **Said, not implied.** A person expecting deletion should know
-      // why they got something else.
-      detail: used
-        ? "documents arrived through this source and carry its name, so the record stays"
-        : "an address was issued for this source, so the record stays",
+      // why they got something else — and reads it in their own
+      // language (decision 0132).
+      reason: used ? "documents_arrived" : "address_issued",
     },
   };
 }
@@ -495,9 +500,7 @@ export async function handleRenameSource(
       status: 409,
       body: {
         error: `source ${sourceId} receives at ${source.email_address}`,
-        detail:
-          "the address is derived from the name and is never reissued, so renaming would " +
-          "make the two disagree — create a new source instead",
+        reason: "address_issued",
       },
     };
   }
@@ -507,9 +510,7 @@ export async function handleRenameSource(
       status: 409,
       body: {
         error: `documents have arrived through ${sourceId}`,
-        detail:
-          "each one records this source's name, so renaming would leave them citing a " +
-          "channel that no longer exists — create a new source instead",
+        reason: "documents_arrived",
       },
     };
   }

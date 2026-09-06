@@ -54,6 +54,8 @@ const STRINGS = {
     "sources.retire": "Retire",
     "sources.rename": "Rename",
     "sources.retired": "Retired",
+    "outcome.never_used": "Source deleted. Nothing had been received through it.",
+    "outcome.address_issued": "Source retired. An email address was issued for it, so the record is kept.",
   },
 };
 
@@ -99,7 +101,7 @@ describe("the sources screen", () => {
         "/api/sources/s-1/email": {
           emailAddress: "ap-mailbox.acme@vibefinance.com",
           routing: "not_configured",
-          detail: "the address is reserved",
+          reason: "not_routed_yet",
         },
       },
       posted
@@ -322,5 +324,49 @@ describe("retiring and renaming (decision 0130)", () => {
     await open(LIVE);
     expect(document.querySelector(".columns")).not.toBeNull();
     expect(document.querySelector(".newsource.stacked")).not.toBeNull();
+  });
+});
+
+describe("what happened, in the reader's language (decision 0132)", () => {
+  /**
+   * The API returns a **code**; the words are ours and translated. It
+   * used to return English prose printed verbatim, so a German customer
+   * read it in English.
+   */
+  it("renders the outcome rather than the server's own words", async () => {
+    const posted: string[] = [];
+    await open(
+      [{ id: "s-1", name: "AP Mailbox", mechanism: "email", processId: "ap", status: "active" }],
+      { "/api/sources/s-1": { outcome: "deleted", reason: "never_used" } },
+      posted
+    );
+
+    const retire = [...document.querySelectorAll(".rowactions button")].find(
+      (b) => b.textContent === "Retire"
+    ) as HTMLButtonElement;
+    retire.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(document.body.textContent).toContain("Source deleted");
+    // And not the sentence the API used to send.
+    expect(document.body.textContent).not.toContain("simply gone");
+  });
+
+  it("says nothing for a code it has no words for", async () => {
+    // Better than printing `outcome.something` at somebody.
+    const posted: string[] = [];
+    await open(
+      [{ id: "s-1", name: "AP Mailbox", mechanism: "email", processId: "ap", status: "active" }],
+      { "/api/sources/s-1": { outcome: "deleted", reason: "invented_code" } },
+      posted
+    );
+
+    const retire = [...document.querySelectorAll(".rowactions button")].find(
+      (b) => b.textContent === "Retire"
+    ) as HTMLButtonElement;
+    retire.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(document.body.textContent).not.toContain("outcome.invented_code");
   });
 });

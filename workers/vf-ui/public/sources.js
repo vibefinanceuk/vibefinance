@@ -77,8 +77,9 @@ async function retireSource(source) {
 
   await load();
   render();
-  // What actually happened, which may not be what they pressed.
-  note(body.detail ?? "");
+  // **What actually happened, in the reader's language** — decision
+  // 0132. The server returns a code; the words are ours and translated.
+  note(outcome(body.reason));
 }
 
 /**
@@ -100,7 +101,7 @@ async function renameSource(source) {
   const body = await response.json();
 
   if (!response.ok) {
-    note(body.detail ?? body.error ?? t("sources.failed"));
+    note(outcome(body.reason) || body.error || t("sources.failed"));
     return;
   }
 
@@ -172,13 +173,31 @@ async function claimAddress(sourceId) {
   const body = await response.json();
 
   if (!response.ok) {
-    note(body.detail ?? body.error ?? t("sources.failed"));
+    note(outcome(body.reason) || body.error || t("sources.failed"));
     return;
   }
 
   await load();
   render();
-  note(body.detail ?? "");
+  note(outcome(body.reason));
+}
+
+/**
+ * What happened, in the reader's language — decision 0132.
+ *
+ * **The API returns a code**, not a sentence. It used to return English
+ * prose that was printed verbatim, so a German customer read
+ * *"nothing ever arrived through it and it had no address, so it is
+ * simply gone"* in English — and in a tone that explained our reasoning
+ * where they wanted the outcome.
+ *
+ * Empty for an unknown code, so a caller can fall through to whatever
+ * else it has rather than printing `outcome.something`.
+ */
+function outcome(reason) {
+  if (!reason) return "";
+  const words = t(`outcome.${reason}`);
+  return words === `outcome.${reason}` ? "" : words;
 }
 
 function note(message) {

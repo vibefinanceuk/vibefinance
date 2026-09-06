@@ -78,6 +78,13 @@ const KEYS_THE_INTERFACE_USES = [
   "sources.retire",
   "sources.rename",
   "sources.retired",
+  // What happened to a source, in the reader's language (0132).
+  "outcome.never_used",
+  "outcome.documents_arrived",
+  "outcome.address_issued",
+  "outcome.address_taken",
+  "outcome.name_unusable",
+  "outcome.not_routed_yet",
   "mechanism.email",
   "mechanism.https",
   "mechanism.sftp",
