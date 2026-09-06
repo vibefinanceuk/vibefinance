@@ -467,6 +467,48 @@
 
   .kf.failing label { color: var(--text-warning); }
 
+  /*
+    The actions, below the document — decision 0122.
+
+    A horizontal row rather than a stack of full-width buttons: they
+    belong to the document above them, and eight stacked buttons read as
+    a menu rather than as things to do with what is on screen.
+  */
+  .actionrow {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 12px;
+  }
+
+  .actionlink {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
+    min-width: 62px;
+    padding: 9px 6px;
+    min-height: 0;
+    border-color: transparent;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 11px;
+    line-height: 1.2;
+    text-align: center;
+  }
+
+  .actionlink svg { width: 20px; height: 20px; }
+  .actionlink:hover:not(:disabled) { background: var(--surface-2); color: var(--text-primary); }
+
+  /*
+    One dominant action, still (decision 0108). Giving every action the
+    same weight would lose which one a person is here to press.
+  */
+  .actionlink.primary { color: var(--text-primary); }
+  .actionlink.primary svg { stroke-width: 2; }
+
+  .actionlink:disabled { opacity: 0.4; }
+
   /* One action per line, in one place — decision 0108. */
   .actions button { display: block; }
   button.wide { width: 100%; margin: 0 0 8px; min-height: 32px; }

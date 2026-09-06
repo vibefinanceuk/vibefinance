@@ -323,11 +323,11 @@ elsewhere.
 |---|---|
 | `vf-app` | 1016 |
 | `vf-licence` | 289 |
-| `vf-ui` | 43 Worker · 10 browser |
+| `vf-ui` | 43 Worker · 19 browser |
 | `shared` | 252 passing, 2 known pre-existing failures |
 
 Both migration chains replay clean with every standing invariant
-holding — 38 migrations for `vf-app`, 22 for `vf-licence`.
+holding — 38 migrations for `vf-app`, 23 for `vf-licence`.
 
 ---
 
@@ -344,7 +344,7 @@ holding — 38 migrations for `vf-app`, 22 for `vf-licence`.
 | `docs/design/mockups/` | Four screens as static HTML | Current |
 | `docs/design/multi-authority-intake.md` | Non-EN-16931 authorities | Design only |
 | `docs/design/text-layer-extraction.md` | Reading a PDF's own text | Design only |
-| `docs/decisions/` | 121 decision records | Current |
+| `docs/decisions/` | 122 decision records | Current |
 
 Document 4's markdown source is at `docs/documents/`, with
 `scripts/build-document-04.cjs` rendering the Word edition. The `.docx`

@@ -351,6 +351,80 @@ function linePanel() {
  * screen. The panel is a companion to the form, not a thing that
  * displaces it.
  */
+/**
+ * The action icons — decision 0122.
+ *
+ * Drawn inline rather than pulled from a library: this interface has no
+ * build step, and a dependency for eight shapes would be a dependency
+ * to keep current for eight shapes.
+ *
+ * `stroke="currentColor"` so they follow the customer's livery and the
+ * light/dark surface without a second set (decisions 0096, 0108).
+ *
+ * **Each icon has to be true.** `discard` archives and deletes nothing
+ * (decision 0078), so a waste bin would say something the system does
+ * not do — the archive box is the honest shape. `release` is an open
+ * padlock because claiming a task *is* a lock and locks never expire
+ * (decision 0104), so letting go is unlocking.
+ */
+export const ICONS = {
+  // Arrows to the four corners — "make this bigger", not "leave here".
+  expand:
+    '<path d="M4 8V4h4M16 4h4v4M20 12v4h-4M8 20H4v-4"/>',
+  // A down arrow into a tray, as the reference has it.
+  save:
+    '<path d="M12 3v10m0 0 4-4m-4 4-4-4M4 17v3h16v-3"/>',
+  // A checkmark. Nothing else reads as "done" as immediately.
+  complete:
+    '<path d="M4 12.5 9.5 18 20 6"/>',
+  // An open padlock: a claim is a lock, so releasing is unlocking.
+  release:
+    '<path d="M6 11h12v9H6zM9 11V7a3 3 0 0 1 6 0"/>',
+  // An arrow curving back — to an earlier stage.
+  return:
+    '<path d="M9 5 4 10l5 5M4 10h11a5 5 0 0 1 0 10h-6"/>',
+  // Leaving the building entirely: an arrow out of a box.
+  return_to_supplier:
+    '<path d="M14 4h6v16h-6M10 8l4 4-4 4M14 12H3"/>',
+  // An archive box, NOT a waste bin: discarding archives and deletes
+  // nothing.
+  discard:
+    '<path d="M3 6h18v4H3zM5 10v10h14V10M10 14h4"/>',
+  // A closed padlock, the mirror of release.
+  claim:
+    '<path d="M6 11h12v9H6zM9 11V7a3 3 0 0 1 6 0v4"/>',
+};
+
+function icon(name) {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("fill", "none");
+  svg.setAttribute("stroke", "currentColor");
+  svg.setAttribute("stroke-width", "1.6");
+  svg.setAttribute("stroke-linecap", "round");
+  svg.setAttribute("stroke-linejoin", "round");
+  svg.innerHTML = ICONS[name] ?? "";
+  return svg;
+}
+
+/**
+ * One action: icon above its label, in a row — decision 0122.
+ *
+ * **Still the server's decision** which appear (decision 0103). Giving
+ * them icons changes how they look, not where they are decided.
+ */
+function actionLink(name, { onclick, primary } = {}) {
+  const node = el("button", {
+    class: primary ? "actionlink primary" : "actionlink",
+    // A label a person can read, because an icon alone is a guess. The
+    // reference this came from labels every one of its three.
+    title: t(`action.${name}`),
+    ...(onclick ? { onclick } : { disabled: "disabled" }),
+  });
+  node.append(icon(name), el("span", { text: t(`action.${name}`) }));
+  return node;
+}
+
 function exceptionPanel() {
   return el("div", { class: "panel exceptions" }, [
     el("h3", { text: t("viewer.exceptions") }),
@@ -643,27 +717,26 @@ export async function openViewer(task, onClose) {
               // (decision 0042); the original still opens in its own
               // window through a signed URL.
               el("div", { class: "vthumb", text: known.type ?? "document" }),
-              el("button", {
-                class: "act wide",
-                text: t("viewer.open"),
-                onclick: () => openDocument(task.subject.id),
-              }),
+              /**
+               * The actions, below the document — decision 0122.
+               *
+               * A horizontal row rather than a stack of full-width
+               * buttons: they belong to the document above them, and
+               * eight stacked buttons read as a menu rather than as
+               * things to do with what is on screen.
+               */
+              el("div", { class: "actionrow" }, [
+                actionLink("expand", { onclick: () => openDocument(task.subject.id) }),
+                actionLink("save", { onclick: () => save(null), primary: true }),
+                // What else this task offers is the SERVER's decision
+                // (decision 0103) — collecting them visually does not
+                // move where they are decided.
+                ...task.actions
+                  .filter((a) => a !== "key")
+                  .map((a) => actionLink(a)),
+              ]),
             ]),
             exceptionPanel(),
-            el("div", { class: "panel actions" }, [
-              el("h3", { text: t("viewer.actions") }),
-              el("button", {
-                class: "primary wide",
-                text: t("viewer.save"),
-                onclick: () => save(null),
-              }),
-              // What else this task offers is the SERVER's decision
-              // (decision 0103) -- collecting them visually does not
-              // move where they are decided.
-              ...task.actions
-                .filter((a) => a !== "key")
-                .map((a) => el("button", { class: "wide", text: t(`action.${a}`), disabled: "disabled" })),
-            ]),
           ]),
         ]),
       ])

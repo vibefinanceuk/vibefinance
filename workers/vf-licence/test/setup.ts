@@ -24,6 +24,7 @@ import missingLabelsSql from "../migrations/0019_missing_line_labels.sql?raw";
 import remainingLabelsSql from "../migrations/0020_remaining_field_labels.sql?raw";
 import partyStringsSql from "../migrations/0021_party_panel_strings.sql?raw";
 import checkLabelsSql from "../migrations/0022_validation_check_labels.sql?raw";
+import actionExpandSql from "../migrations/0023_action_expand.sql?raw";
 
 function stripSqlComments(sql: string): string {
   return sql
@@ -75,4 +76,5 @@ export async function applyTestSchema(): Promise<void> {
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(remainingLabelsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(partyStringsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(checkLabelsSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(actionExpandSql)));
 }

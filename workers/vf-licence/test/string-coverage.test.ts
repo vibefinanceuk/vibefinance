@@ -70,6 +70,9 @@ const KEYS_THE_INTERFACE_USES = [
   "tasks.loadfailed",
   // Every action a task can report (decisions 0103, 0104)
   "action.claim",
+  // The action row (decision 0122).
+  "action.expand",
+  "action.save",
   "action.release",
   "action.key",
   "action.complete",

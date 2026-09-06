@@ -73,6 +73,10 @@ const STRINGS = {
     "field.bt-112": "Total with VAT",
     "field.bt-27": "Seller name",
     "field.bt-131": "Line net amount",
+    "action.expand": "Expand",
+    "action.save": "Save",
+    "action.complete": "Complete",
+    "action.release": "Release",
   },
 };
 
@@ -279,5 +283,121 @@ describe("field visibility reaches the screen (decision 0114)", () => {
     await openViewer(TASK, () => {});
 
     expect(document.getElementById("f-BT-110")).toBeNull();
+  });
+});
+
+describe("the action row (decision 0122)", () => {
+  const OPEN = {
+    "/api/code-lists": { fields: {} },
+    "/api/ui-strings": STRINGS,
+    "/api/field-visibility": FIELDS,
+    "/api/invoices/inv-1": {
+      facts: {},
+      lines: [],
+      validation: { passed: true, checked: [], failures: [] },
+    },
+  };
+
+  async function openWith(actions: string[]) {
+    stubFetch(OPEN);
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    await openViewer({ ...TASK, actions }, () => {});
+  }
+
+  it("puts the actions below the document, not in a panel of their own", async () => {
+    await openWith(["key", "complete"]);
+    const row = document.querySelector(".actionrow");
+    expect(row).not.toBeNull();
+    // The old stacked panel is gone.
+    expect(document.querySelector(".panel.actions")).toBeNull();
+  });
+
+  it("gives every action an icon and a label", async () => {
+    // An icon alone is a guess. The reference this came from labels
+    // every one of its three.
+    await openWith(["key", "complete", "release"]);
+    for (const link of document.querySelectorAll(".actionlink")) {
+      expect(link.querySelector("svg"), link.textContent ?? "").not.toBeNull();
+      expect(link.querySelector("span")?.textContent?.trim()).toBeTruthy();
+    }
+  });
+
+  it("always offers expand and save, whatever the task says", async () => {
+    // Those two are the screen's own, not the task's: a person can
+    // always look at the document and always save what they typed.
+    await openWith([]);
+    const labels = [...document.querySelectorAll(".actionlink span")].map((n) => n.textContent);
+    expect(labels).toContain("Expand");
+    expect(labels).toContain("Save");
+  });
+
+  it("renders exactly the actions the task reports, and no others", async () => {
+    // Still the server's decision (decision 0103). Icons changed how
+    // they look, not where they are decided.
+    await openWith(["key", "complete"]);
+    const labels = [...document.querySelectorAll(".actionlink span")].map((n) => n.textContent);
+    expect(labels).toContain("Complete");
+    expect(labels).not.toContain("Release");
+  });
+
+  it("marks one action as the dominant one", async () => {
+    // Giving every action equal weight loses which one a person is
+    // here to press (decision 0108).
+    await openWith(["key"]);
+    const primary = document.querySelectorAll(".actionlink.primary");
+    expect(primary).toHaveLength(1);
+    expect(primary[0].querySelector("span")?.textContent).toBe("Save");
+  });
+
+  it("does not offer key as an action, since keying is the screen", async () => {
+    await openWith(["key"]);
+    const labels = [...document.querySelectorAll(".actionlink span")].map((n) => n.textContent);
+    expect(labels).not.toContain("Key");
+  });
+});
+
+describe("the icons say what the actions do (decision 0122)", () => {
+  /**
+   * **An icon that misdescribes an action is worse than a word.** These
+   * assert the two that were genuinely at risk of lying.
+   */
+  it("draws discard as an archive, never a waste bin", async () => {
+    // Discarding archives and deletes nothing (decision 0078). A bin
+    // would promise a customer something this system does not do.
+    const { ICONS } = await import("/viewer.js");
+    // A bin has a lid and a tapered body; the archive is a box with a
+    // drawer. Asserted on the path itself, since that is the claim.
+    expect(ICONS.discard).toContain("M3 6h18v4H3");
+    expect(ICONS.discard).not.toContain("6 7h12l-1 13H7L6 7");
+  });
+
+  it("draws release as an open padlock and claim as a closed one", async () => {
+    // A claim IS a lock, and locks never expire (decision 0104), so
+    // letting go is unlocking. The two must be mirrors or neither
+    // reads.
+    const { ICONS } = await import("/viewer.js");
+    expect(ICONS.release).toContain("a3 3 0 0 1 6 0");
+    expect(ICONS.claim).toContain("a3 3 0 0 1 6 0v4");
+    expect(ICONS.release).not.toBe(ICONS.claim);
+  });
+
+  it("has an icon for every action a task can report", async () => {
+    // An action with no icon renders as a blank square, which reads as
+    // broken rather than as unstyled.
+    const { ICONS } = await import("/viewer.js");
+    for (const action of [
+      "expand",
+      "save",
+      "complete",
+      "release",
+      "claim",
+      "return",
+      "return_to_supplier",
+      "discard",
+    ]) {
+      expect(ICONS[action], action).toBeTruthy();
+    }
   });
 });
