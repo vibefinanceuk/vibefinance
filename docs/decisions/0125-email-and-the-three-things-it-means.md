@@ -45,6 +45,47 @@ The design questions are the ones a customer will ask:
 - **How does a customer get an address**, and can they have several?
   They should: decision 0060's whole point is that "AP mailbox" and "AR
   mailbox" are different sources sharing a mechanism.
+
+### And it must not be routed through a shared component
+
+The operator's requirement, and it settles the shape:
+
+> Each customer also does not want their traffic routed with other
+> customers' traffic. It might need to be isolated for that reason.
+
+**This is the architecture's central invariant, not a preference.**
+`vf-licence` is a single shared Worker *precisely because* it holds only
+customers, licences and counts, and never an invoice (decision 0091). A
+shared email receiver would break exactly that: every customer's invoice
+passing through the same code on its way in.
+
+An earlier version of this record proposed a **registry in
+`vf-licence`** mapping address to environment. That is fine as *data*
+and wrong as a *receiver*, and the distinction was not obvious until the
+isolation requirement made it so.
+
+**Cloudflare Email Routing rules are the registry.** A rule matches an
+address and delivers to a Worker — so `invoices.acme@vibefinance.com`
+routes **straight to Acme's own `vf-app`**. Another customer's mail
+never touches Acme's code path, and Acme's never touches theirs.
+
+Better than the registry on every count:
+
+- **No shared component sees content**, which is decision 0091's line
+  held rather than bent.
+- **No registry to keep in step** with the instances — Cloudflare holds
+  the rule, and there is one place it lives.
+- **The address survives going live.** Decision 0118 provisions a second
+  environment for production; repointing one rule moves the address to
+  it, and **no supplier is ever told a new one**. That was the whole
+  reason for suggesting a registry, and this gets it for free.
+
+**The cost is real.** Provisioning must create an Email Routing rule
+through the Cloudflare API — the half of decision 0039 that is not
+built, which currently stops at control-plane rows and reports
+`infrastructureProvisioned: false` rather than pretending. **An
+address becomes another thing that only works once provisioning can
+call Cloudflare**, alongside the D1 database and the Worker itself.
 - **What happens to a message for an address nobody configured?**
   Silently dropped is wrong — a supplier who sent an invoice believes
   they sent it.
@@ -163,8 +204,23 @@ one email without which nothing else can be reached.
 - **The provider.** Cloudflare has no first-party sending; Resend,
   Postmark and SES are the usual candidates and none has been evaluated.
 - **The address format**, now that the domain is settled. Whether a
-  customer picks the local part, whether it must be unique across the
-  fleet, and what happens when two customers both want `invoices@`.
+  customer picks the local part, and what happens when two want the
+  same one — **uniqueness is now enforced by Cloudflare**, since two
+  rules cannot match one address, but a customer being told *"that
+  address is taken by somebody you have never heard of"* is a worse
+  answer than a scheme that cannot collide.
+- **The other mechanisms.** Only email arrives at a shared front door
+  with nothing saying who it is for, which is why only email needs
+  routing at all. **HTTPS already resolves**: one Worker per customer
+  (decision 0001) means a `POST` to `/sources/:id/capture` has arrived
+  at the right instance and the URL *is* the routing. File import is a
+  signed-in person. **SFTP and EDI are genuinely unknown** — Workers
+  does not do SFTP, so that mechanism needs something else listening,
+  and whether it needs routing depends on what.
+- **Fleet visibility.** *"Where can documents arrive for this
+  customer?"* is a real operator question and **not a routing one**. It
+  belongs with decision 0039's fleet metadata as a report, not as a
+  second table of sources that would drift from each instance's own.
 - **Whether templates live in D1 like `ui_strings`** (decision 0107) or
   in code like the code lists (0113). The test is the same one that
   settled those: **is this wording ours to change, or the standard's?**
