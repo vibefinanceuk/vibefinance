@@ -25,7 +25,7 @@ import {
   handlePlaceInvoice,
 } from "./org-route.js";
 import { handleCreateCostCentre } from "./cost-centre-route.js";
-import { requirePermission, permissionsFor, hasPermission } from "./enforce.js";
+import { requirePermission, permissionsFor, hasPermission , type SessionContext } from "./enforce.js";
 import { handleAddTeamMember, handleCreateTeam } from "./team-route.js";
 import { handleUpsertInvoice, mergeStructuredInvoiceFacts , handleGetInvoice } from "./invoice-facts-route.js";
 import { handleUpsertExpenseReport } from "./expense-facts-route.js";
@@ -305,11 +305,45 @@ function blockedResponse(licenceState: LicenceState, locale: Locale): Response {
   return json({ error: t("processingBlocked", locale), reason }, 402);
 }
 
+/**
+ * What a session needs, from the environment — decision 0127.
+ *
+ * **A function rather than a local**, because three of the 25 call
+ * sites are in helpers that take `env` and never see the fetch
+ * handler's scope. A local would have covered 22 of them and left three
+ * failing to compile — which is at least loud, and a helper covers all
+ * 25 without anyone choosing.
+ *
+ * Thirteen routes repeated this incantation inline and 25 more did not
+ * have it at all, which is why a signed-in administrator could not
+ * reach a configuration route.
+ */
+function sessionContext(env: Env): SessionContext {
+  return {
+    publicKeyJwk: isPublicKeyJwk(env.LICENCE_SIGNING_PUBLIC_KEY)
+      ? env.LICENCE_SIGNING_PUBLIC_KEY
+      : undefined,
+    environmentId: env.ENVIRONMENT_ID,
+  };
+}
+
+/**
+ * Authenticate a person, by session or by key — decision 0127.
+ *
+ * Eleven routes assembled the same four arguments inline. One place
+ * now, so a change to how a session is verified is a change in one
+ * place rather than eleven that have to be found.
+ */
+function authenticatePerson(db: D1Database, request: Request, env: Env) {
+  const { publicKeyJwk, environmentId } = sessionContext(env);
+  return authenticateUserOrSession(db, request, publicKeyJwk, environmentId);
+}
+
 async function handleEvaluate(request: Request, env: Env): Promise<Response> {
   const { db } = resolveTenant(request, env);
   const locale = resolveLocale(env.LOCALE);
 
-  const auth = await requirePermission(db, request, "AP.Validate");
+  const auth = await requirePermission(db, request, "AP.Validate", sessionContext(env));
   if (!auth.authorized) {
     return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", locale) }, auth.status);
   }
@@ -472,6 +506,8 @@ export default {
     const preflight = handlePreflight(request, env.ALLOWED_ORIGINS);
     if (preflight) return preflight;
 
+
+
     // Applied at the edge to whatever the router produced, so no
     // individual route has to remember. A route that forgot would work
     // from curl and fail from a browser — the kind of divergence this
@@ -539,7 +575,7 @@ export default {
     if (pathname === "/invoices" && request.method === "POST") {
       const { db } = resolveTenant(request, env);
       const locale = resolveLocale(env.LOCALE);
-      const auth = await requirePermission(db, request, "AP.Validate");
+      const auth = await requirePermission(db, request, "AP.Validate", sessionContext(env));
       if (!auth.authorized) {
         return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", locale) }, auth.status);
       }
@@ -562,7 +598,7 @@ export default {
     if (pathname === "/expenses" && request.method === "POST") {
       const { db } = resolveTenant(request, env);
       const locale = resolveLocale(env.LOCALE);
-      const auth = await requirePermission(db, request, "Expense.Submit");
+      const auth = await requirePermission(db, request, "Expense.Submit", sessionContext(env));
       if (!auth.authorized) {
         return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", locale) }, auth.status);
       }
@@ -579,7 +615,7 @@ export default {
     if (pathname === "/rules/compile" && request.method === "POST") {
       const { db } = resolveTenant(request, env);
       const locale = resolveLocale(env.LOCALE);
-      const auth = await requirePermission(db, request, "Admin.RuleManagement");
+      const auth = await requirePermission(db, request, "Admin.RuleManagement", sessionContext(env));
       if (!auth.authorized) {
         return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", locale) }, auth.status);
       }
@@ -703,7 +739,7 @@ export default {
     if (examplesListMatch && request.method === "GET") {
       const { db } = resolveTenant(request, env);
       const locale = resolveLocale(env.LOCALE);
-      const auth = await requirePermission(db, request, "AP.Review");
+      const auth = await requirePermission(db, request, "AP.Review", sessionContext(env));
       if (!auth.authorized) {
         return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", locale) }, auth.status);
       }
@@ -719,7 +755,7 @@ export default {
       if (isBlocked(licenceState)) {
         return blockedResponse(licenceState, locale);
       }
-      const auth = await requirePermission(db, request, "AP.Review");
+      const auth = await requirePermission(db, request, "AP.Review", sessionContext(env));
       if (!auth.authorized) {
         return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", locale) }, auth.status);
       }
@@ -741,7 +777,7 @@ export default {
       if (isBlocked(licenceState)) {
         return blockedResponse(licenceState, locale);
       }
-      const auth = await requirePermission(db, request, "AP.Approve");
+      const auth = await requirePermission(db, request, "AP.Approve", sessionContext(env));
       if (!auth.authorized) {
         return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", locale) }, auth.status);
       }
@@ -773,7 +809,7 @@ export default {
     // writing an assign_org rule had to guess the id.
     if (pathname === "/org/units" && request.method === "GET") {
       const { db } = resolveTenant(request, env);
-      const auth = await requirePermission(db, request, "Admin.Configure");
+      const auth = await requirePermission(db, request, "Admin.Configure", sessionContext(env));
       if (!auth.authorized) {
         return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
       }
@@ -786,7 +822,7 @@ export default {
     const placeMatch = pathname.match(/^\/invoices\/([^/]+)\/org$/);
     if (placeMatch && request.method === "PUT") {
       const { db } = resolveTenant(request, env);
-      const auth = await requirePermission(db, request, "AP.Validate");
+      const auth = await requirePermission(db, request, "AP.Validate", sessionContext(env));
       if (!auth.authorized) {
         return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
       }
@@ -1002,12 +1038,7 @@ export default {
     const getInvoiceMatch = pathname.match(/^\/invoices\/([^/]+)$/);
     if (getInvoiceMatch && request.method === "GET") {
       const { db } = resolveTenant(request, env);
-      const auth = await authenticateUserOrSession(
-        db,
-        request,
-        isPublicKeyJwk(env.LICENCE_SIGNING_PUBLIC_KEY) ? env.LICENCE_SIGNING_PUBLIC_KEY : undefined,
-        env.ENVIRONMENT_ID
-      );
+      const auth = await authenticatePerson(db, request, env);
       if (!auth.user) return json({ error: auth.reason }, 401);
       if (!(await hasPermission(db, auth.user.id, "AP.Validate"))) {
         return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
@@ -1024,12 +1055,7 @@ export default {
       // Session or API key — decision 0105. Reachable from the keying
       // screen, so a route taking only a key works from `curl` and
       // fails from the browser.
-      const auth = await authenticateUserOrSession(
-        db,
-        request,
-        isPublicKeyJwk(env.LICENCE_SIGNING_PUBLIC_KEY) ? env.LICENCE_SIGNING_PUBLIC_KEY : undefined,
-        env.ENVIRONMENT_ID
-      );
+      const auth = await authenticatePerson(db, request, env);
       if (!auth.user) {
         return json({ error: auth.reason }, 401);
       }
@@ -1153,12 +1179,7 @@ export default {
     // knowing who it is talking to.
     if (pathname === "/tasks" && request.method === "GET") {
       const { db } = resolveTenant(request, env);
-      const auth = await authenticateUserOrSession(
-        db,
-        request,
-        isPublicKeyJwk(env.LICENCE_SIGNING_PUBLIC_KEY) ? env.LICENCE_SIGNING_PUBLIC_KEY : undefined,
-        env.ENVIRONMENT_ID
-      );
+      const auth = await authenticatePerson(db, request, env);
       if (!auth.user) return json({ error: auth.reason }, 401);
 
       // No permission check beyond being a real user. **What a person
@@ -1207,12 +1228,7 @@ export default {
      */
     if (pathname === "/sources" && request.method === "GET") {
       const { db } = resolveTenant(request, env);
-      const auth = await authenticateUserOrSession(
-        db,
-        request,
-        isPublicKeyJwk(env.LICENCE_SIGNING_PUBLIC_KEY) ? env.LICENCE_SIGNING_PUBLIC_KEY : undefined,
-        env.ENVIRONMENT_ID
-      );
+      const auth = await authenticatePerson(db, request, env);
       if (!auth.user) return json({ error: auth.reason }, 401);
       if (!(await hasPermission(db, auth.user.id, "Admin.Configure"))) {
         return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
@@ -1227,12 +1243,7 @@ export default {
     const sourceEmailMatch = pathname.match(/^\/sources\/([^/]+)\/email$/);
     if (sourceEmailMatch && request.method === "POST") {
       const { db } = resolveTenant(request, env);
-      const auth = await authenticateUserOrSession(
-        db,
-        request,
-        isPublicKeyJwk(env.LICENCE_SIGNING_PUBLIC_KEY) ? env.LICENCE_SIGNING_PUBLIC_KEY : undefined,
-        env.ENVIRONMENT_ID
-      );
+      const auth = await authenticatePerson(db, request, env);
       if (!auth.user) return json({ error: auth.reason }, 401);
       if (!(await hasPermission(db, auth.user.id, "Admin.Configure"))) {
         return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
@@ -1245,12 +1256,7 @@ export default {
 
     if (pathname === "/field-visibility" && request.method === "GET") {
       const { db } = resolveTenant(request, env);
-      const auth = await authenticateUserOrSession(
-        db,
-        request,
-        isPublicKeyJwk(env.LICENCE_SIGNING_PUBLIC_KEY) ? env.LICENCE_SIGNING_PUBLIC_KEY : undefined,
-        env.ENVIRONMENT_ID
-      );
+      const auth = await authenticatePerson(db, request, env);
       if (!auth.user) return json({ error: auth.reason }, 401);
 
       const result = await handleFieldVisibility(db, url.searchParams.get("stage"));
@@ -1261,7 +1267,7 @@ export default {
     // restrictions. Admin, because it decides what everybody sees.
     if (pathname === "/field-visibility" && request.method === "PUT") {
       const { db } = resolveTenant(request, env);
-      const auth = await requirePermission(db, request, "Admin.Configure");
+      const auth = await requirePermission(db, request, "Admin.Configure", sessionContext(env));
       if (!auth.authorized) {
         return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
       }
@@ -1278,7 +1284,7 @@ export default {
     const stageVisMatch = pathname.match(/^\/processes\/stages\/([^/]+)\/field-visibility$/);
     if (stageVisMatch && request.method === "PUT") {
       const { db } = resolveTenant(request, env);
-      const auth = await requirePermission(db, request, "Admin.Configure");
+      const auth = await requirePermission(db, request, "Admin.Configure", sessionContext(env));
       if (!auth.authorized) {
         return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
       }
@@ -1299,12 +1305,7 @@ export default {
 
     if (pathname === "/code-lists" && request.method === "GET") {
       const { db } = resolveTenant(request, env);
-      const auth = await authenticateUserOrSession(
-        db,
-        request,
-        isPublicKeyJwk(env.LICENCE_SIGNING_PUBLIC_KEY) ? env.LICENCE_SIGNING_PUBLIC_KEY : undefined,
-        env.ENVIRONMENT_ID
-      );
+      const auth = await authenticatePerson(db, request, env);
       if (!auth.user) return json({ error: auth.reason }, 401);
 
       return json(
@@ -1335,12 +1336,7 @@ export default {
 
     if (pathname === "/whoami" && request.method === "GET") {
       const { db } = resolveTenant(request, env);
-      const auth = await authenticateUserOrSession(
-        db,
-        request,
-        isPublicKeyJwk(env.LICENCE_SIGNING_PUBLIC_KEY) ? env.LICENCE_SIGNING_PUBLIC_KEY : undefined,
-        env.ENVIRONMENT_ID
-      );
+      const auth = await authenticatePerson(db, request, env);
       if (!auth.user) {
         return json({ error: auth.reason }, 401);
       }
@@ -1368,12 +1364,7 @@ export default {
       // Session or API key — decision 0105. Reachable from the keying
       // screen, so a route taking only a key works from `curl` and
       // fails from the browser.
-      const auth = await authenticateUserOrSession(
-        db,
-        request,
-        isPublicKeyJwk(env.LICENCE_SIGNING_PUBLIC_KEY) ? env.LICENCE_SIGNING_PUBLIC_KEY : undefined,
-        env.ENVIRONMENT_ID
-      );
+      const auth = await authenticatePerson(db, request, env);
       if (!auth.user) {
         return json({ error: auth.reason }, 401);
       }
@@ -1431,7 +1422,7 @@ export default {
     // a compliance setting, not accounts payable work.
     if (pathname === "/settings/retention" && (request.method === "GET" || request.method === "PUT")) {
       const { db } = resolveTenant(request, env);
-      const auth = await requirePermission(db, request, "Admin.Configure");
+      const auth = await requirePermission(db, request, "Admin.Configure", sessionContext(env));
       if (!auth.authorized) {
         return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
       }
@@ -1453,7 +1444,7 @@ export default {
     // mean something rather than sit unread.
     if (pathname === "/settings/retention/beyond" && request.method === "GET") {
       const { db } = resolveTenant(request, env);
-      const auth = await requirePermission(db, request, "Admin.Configure");
+      const auth = await requirePermission(db, request, "Admin.Configure", sessionContext(env));
       if (!auth.authorized) {
         return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
       }
@@ -1468,7 +1459,7 @@ export default {
     // not accounts payable work.
     if (pathname === "/purchase-orders" && request.method === "POST") {
       const { db } = resolveTenant(request, env);
-      const auth = await requirePermission(db, request, "Admin.Configure");
+      const auth = await requirePermission(db, request, "Admin.Configure", sessionContext(env));
       if (!auth.authorized) {
         return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
       }
@@ -1480,7 +1471,7 @@ export default {
     const poMatch = pathname.match(/^\/purchase-orders\/([^/]+)$/);
     if (poMatch && request.method === "GET") {
       const { db } = resolveTenant(request, env);
-      const auth = await requirePermission(db, request, "AP.Validate");
+      const auth = await requirePermission(db, request, "AP.Validate", sessionContext(env));
       if (!auth.authorized) {
         return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
       }
@@ -1492,7 +1483,7 @@ export default {
     const sourcesMatch = pathname.match(/^\/processes\/([^/]+)\/sources$/);
     if (sourcesMatch && request.method === "GET") {
       const { db } = resolveTenant(request, env);
-      const auth = await requirePermission(db, request, "Admin.Configure");
+      const auth = await requirePermission(db, request, "Admin.Configure", sessionContext(env));
       if (!auth.authorized) {
         return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
       }
@@ -1501,7 +1492,7 @@ export default {
     }
     if (sourcesMatch && request.method === "POST") {
       const { db } = resolveTenant(request, env);
-      const auth = await requirePermission(db, request, "Admin.Configure");
+      const auth = await requirePermission(db, request, "Admin.Configure", sessionContext(env));
       if (!auth.authorized) {
         return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
       }
@@ -1558,7 +1549,7 @@ export default {
       if (isBlocked(licenceState)) {
         return blockedResponse(licenceState, locale);
       }
-      const auth = await requirePermission(db, request, "AP.Validate");
+      const auth = await requirePermission(db, request, "AP.Validate", sessionContext(env));
       if (!auth.authorized) {
         return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", locale) }, auth.status);
       }
@@ -1588,7 +1579,7 @@ export default {
       if (isBlocked(licenceState)) {
         return blockedResponse(licenceState, locale);
       }
-      const auth = await requirePermission(db, request, "AP.Validate");
+      const auth = await requirePermission(db, request, "AP.Validate", sessionContext(env));
       if (!auth.authorized) {
         return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", locale) }, auth.status);
       }
@@ -1616,7 +1607,7 @@ export default {
       if (isBlocked(licenceState)) {
         return blockedResponse(licenceState, locale);
       }
-      const auth = await requirePermission(db, request, "AP.Validate");
+      const auth = await requirePermission(db, request, "AP.Validate", sessionContext(env));
       if (!auth.authorized) {
         return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", locale) }, auth.status);
       }
@@ -1643,7 +1634,7 @@ export default {
       if (isBlocked(licenceState)) {
         return blockedResponse(licenceState, locale);
       }
-      const auth = await requirePermission(db, request, "AP.Validate");
+      const auth = await requirePermission(db, request, "AP.Validate", sessionContext(env));
       if (!auth.authorized) {
         return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", locale) }, auth.status);
       }
@@ -1716,7 +1707,7 @@ export default {
     const createPendingMatch = pathname.match(/^\/intake-channels\/([^/]+)\/documents$/);
     if (createPendingMatch && request.method === "POST") {
       const { db } = resolveTenant(request, env);
-      const auth = await requirePermission(db, request, "AP.Validate");
+      const auth = await requirePermission(db, request, "AP.Validate", sessionContext(env));
       if (!auth.authorized) {
         return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
       }
@@ -1727,7 +1718,7 @@ export default {
     const uploadPageMatch = pathname.match(/^\/pending-documents\/([^/]+)\/pages\/(\d+)$/);
     if (uploadPageMatch && request.method === "PUT") {
       const { db, documents } = resolveTenant(request, env);
-      const auth = await requirePermission(db, request, "AP.Validate");
+      const auth = await requirePermission(db, request, "AP.Validate", sessionContext(env));
       if (!auth.authorized) {
         return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
       }
@@ -1770,7 +1761,7 @@ export default {
       if (isBlocked(licenceState)) {
         return blockedResponse(licenceState, locale);
       }
-      const auth = await requirePermission(db, request, "AP.Validate");
+      const auth = await requirePermission(db, request, "AP.Validate", sessionContext(env));
       if (!auth.authorized) {
         return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", locale) }, auth.status);
       }
@@ -1877,12 +1868,7 @@ export default {
     const releaseTaskMatch = pathname.match(/^\/tasks\/([^/]+)\/release$/);
     if (releaseTaskMatch && request.method === "POST") {
       const { db } = resolveTenant(request, env);
-      const auth = await authenticateUserOrSession(
-        db,
-        request,
-        isPublicKeyJwk(env.LICENCE_SIGNING_PUBLIC_KEY) ? env.LICENCE_SIGNING_PUBLIC_KEY : undefined,
-        env.ENVIRONMENT_ID
-      );
+      const auth = await authenticatePerson(db, request, env);
       if (!auth.user) return json({ error: auth.reason }, 401);
 
       const result = await handleReleaseTask(db, releaseTaskMatch[1], auth.user);
@@ -1913,12 +1899,7 @@ export default {
       // The permission check that followed is kept, applied to
       // whichever credential authenticated: a task demands its own
       // `required_permission` regardless of how somebody arrived.
-      const auth = await authenticateUserOrSession(
-        db,
-        request,
-        isPublicKeyJwk(env.LICENCE_SIGNING_PUBLIC_KEY) ? env.LICENCE_SIGNING_PUBLIC_KEY : undefined,
-        env.ENVIRONMENT_ID
-      );
+      const auth = await authenticatePerson(db, request, env);
       if (!auth.user) {
         return json({ error: auth.reason }, 401);
       }
@@ -1965,7 +1946,7 @@ export default {
     if (visitMatch && request.method === "POST") {
       const { db } = resolveTenant(request, env);
       const locale = resolveLocale(env.LOCALE);
-      const auth = await requirePermission(db, request, "AP.Validate");
+      const auth = await requirePermission(db, request, "AP.Validate", sessionContext(env));
       if (!auth.authorized) {
         return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", locale) }, auth.status);
       }

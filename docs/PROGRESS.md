@@ -324,7 +324,7 @@ elsewhere.
 
 | Package | Tests |
 |---|---|
-| `vf-app` | 1027 |
+| `vf-app` | 1031 |
 | `vf-licence` | 289 |
 | `vf-ui` | 43 Worker · 38 browser |
 | `shared` | 252 passing, 2 known pre-existing failures |
@@ -347,7 +347,7 @@ holding — 39 migrations for `vf-app`, 24 for `vf-licence`.
 | `docs/design/mockups/` | Four screens as static HTML | Current |
 | `docs/design/multi-authority-intake.md` | Non-EN-16931 authorities | Design only |
 | `docs/design/text-layer-extraction.md` | Reading a PDF's own text | Design only |
-| `docs/decisions/` | 126 decision records | Current |
+| `docs/decisions/` | 127 decision records | Current |
 
 Document 4's markdown source is at `docs/documents/`, with
 `scripts/build-document-04.cjs` rendering the Word edition. The `.docx`

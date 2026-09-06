@@ -1,4 +1,4 @@
-import { authenticateUser } from "./user-auth.js";
+import { authenticateUser, authenticateUserOrSession } from "./user-auth.js";
 import type { AuthenticatedUser } from "./user-auth.js";
 import type { Permission } from "./permissions.js";
 
@@ -40,12 +40,44 @@ export type AuthorizationResult =
  * different facts, worth telling apart rather than collapsing into one
  * generic "no" for whoever's debugging a client integration.
  */
+/**
+ * What a session needs to be verified — decision 0127.
+ *
+ * Passed rather than reached for, because `enforce.ts` has no business
+ * knowing the shape of a Worker's environment. The caller assembles it
+ * once and every route gets the same one.
+ */
+export interface SessionContext {
+  publicKeyJwk?: JsonWebKey;
+  environmentId?: string;
+}
+
+/**
+ * May this caller do this?
+ *
+ * **Accepts a session as well as an API key** — decision 0127. It took
+ * an API key only, and 25 configuration routes use it, so a signed-in
+ * administrator could not reach almost anything they had been given an
+ * administrator role for.
+ *
+ * Decision 0105 found this same gap in the task routes and fixed those
+ * four; decision 0126 found it again in the configuration routes and
+ * fixed two. **Fixing it two at a time is how it kept coming back.**
+ *
+ * The context is optional so a caller with no session support behaves
+ * exactly as before — an API key still works everywhere it did, and
+ * decision 0095's point stands: sessions and keys coexist deliberately,
+ * because a person and a script are different callers.
+ */
 export async function requirePermission(
   db: D1Database,
   request: Request,
-  permission: Permission
+  permission: Permission,
+  session?: SessionContext
 ): Promise<AuthorizationResult> {
-  const user = await authenticateUser(db, request);
+  const user = session
+    ? (await authenticateUserOrSession(db, request, session.publicKeyJwk, session.environmentId)).user
+    : await authenticateUser(db, request);
   if (!user) {
     return { authorized: false, status: 401 };
   }
