@@ -77,6 +77,8 @@ const STRINGS = {
     "action.save": "Save",
     "action.complete": "Complete",
     "action.release": "Release",
+    "viewer.document": "Document",
+    "viewer.nodocument": "No document retained",
   },
 };
 
@@ -399,5 +401,79 @@ describe("the icons say what the actions do (decision 0122)", () => {
     ]) {
       expect(ICONS[action], action).toBeTruthy();
     }
+  });
+});
+
+describe("the document preview (decision 0123)", () => {
+  /**
+   * **The browser renders it, not us.** Decision 0042 records that a
+   * *Worker* cannot render a PDF, which was read for longer than it
+   * should have been as "this cannot be previewed".
+   */
+  function withDocument(contentType: string | null) {
+    return {
+      "/api/code-lists": { fields: {} },
+      "/api/ui-strings": STRINGS,
+      "/api/field-visibility": FIELDS,
+      "/api/invoices/inv-1": {
+        facts: {},
+        lines: [],
+        document: contentType ? { contentType, documentType: "original" } : null,
+        validation: { passed: true, checked: [], failures: [] },
+      },
+      "/api/invoices/inv-1/document-url": { url: "https://example.com/signed.pdf" },
+    };
+  }
+
+  async function open(contentType: string | null) {
+    stubFetch(withDocument(contentType));
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    await openViewer(TASK, () => {});
+    // The preview is deliberately not awaited, so the form is usable
+    // while it loads.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+
+  it("puts a PDF in a frame, where the browser's own viewer scrolls it", async () => {
+    await open("application/pdf");
+    const frame = document.querySelector("#vpreview iframe") as HTMLIFrameElement;
+    expect(frame).not.toBeNull();
+    expect(frame.src).toBe("https://example.com/signed.pdf");
+  });
+
+  it("puts an image in an image, not a frame", async () => {
+    // Getting this the wrong way round shows nothing.
+    await open("image/jpeg");
+    expect(document.querySelector("#vpreview img")).not.toBeNull();
+    expect(document.querySelector("#vpreview iframe")).toBeNull();
+  });
+
+  it("says so when nothing was retained", async () => {
+    // An invoice with no original is a real state, not a failure.
+    stubFetch({
+      ...withDocument(null),
+      "/api/invoices/inv-1/document-url": { url: null },
+    });
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    await openViewer(TASK, () => {});
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(document.getElementById("vpreview")?.textContent).toContain("No document retained");
+  });
+
+  it("does not hold up the form while the document loads", async () => {
+    // A slow R2 fetch should not block somebody who knows what to type.
+    stubFetch(withDocument("application/pdf"));
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    await openViewer(TASK, () => {});
+
+    // Fields are present before the preview has resolved.
+    expect(document.getElementById("f-BT-112")).not.toBeNull();
   });
 });

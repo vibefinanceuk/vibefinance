@@ -291,6 +291,24 @@ export async function handleGetInvoice(db: D1Database, invoiceId: string): Promi
     // document it cannot read (decision 0063).
   }
 
+  /**
+   * What kind of document is retained — decision 0123.
+   *
+   * The keying screen needs it to choose between an `<img>` and an
+   * `<iframe>`: a browser renders a PDF in a frame and an image in an
+   * image, and getting it the wrong way round shows nothing.
+   *
+   * The most recent, because a **generated rendering** (a real value in
+   * `document_type`, produced by nothing yet) would be added after the
+   * original and is the one to show.
+   */
+  const document = await db
+    .prepare(
+      "SELECT content_type, document_type FROM invoice_documents WHERE invoice_id = ? ORDER BY uploaded_at DESC LIMIT 1"
+    )
+    .bind(invoiceId)
+    .first<{ content_type: string; document_type: string }>();
+
   const lineRows = await db
     .prepare(
       "SELECT line_number, description, amount, cost_centre, facts_json FROM invoice_lines WHERE invoice_id = ? ORDER BY line_number"
@@ -348,6 +366,9 @@ export async function handleGetInvoice(db: D1Database, invoiceId: string): Promi
       lines,
       orgUnitId: invoice.org_unit_id,
       orgAssignedBy: invoice.org_assigned_by,
+      document: document
+        ? { contentType: document.content_type, documentType: document.document_type }
+        : null,
       validation: {
         passed: verdict.passed,
         checked: verdict.checked,

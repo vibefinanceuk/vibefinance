@@ -35,16 +35,16 @@ let exceptions = [];
  * the summary meant a person keyed ten fields, saved, came back and saw
  * five — and reasonably concluded nothing had saved.
  */
-let stored = { facts: {}, lines: [] };
+let stored = { facts: {}, lines: [], document: null };
 
 async function loadInvoice(invoiceId) {
-  stored = { facts: {}, lines: [] };
+  stored = { facts: {}, lines: [], document: null };
   exceptions = [];
   try {
     const response = await fetch(`/api/invoices/${encodeURIComponent(invoiceId)}`);
     if (!response.ok) return;
     const body = await response.json();
-    stored = { facts: body.facts ?? {}, lines: body.lines ?? [] };
+    stored = { facts: body.facts ?? {}, lines: body.lines ?? [], document: body.document ?? null };
     // **What is wrong on arrival**, not only after saving. Somebody
     // opening a document with three failures should be told, rather
     // than having to change something first (decision 0119).
@@ -216,16 +216,61 @@ function field(spec, existing) {
  * created when the page loads is mostly expired by the time anybody
  * uses it.
  */
-async function openDocument(invoiceId) {
+/**
+ * A signed URL for the retained original — decision 0073.
+ *
+ * Minted on demand rather than held, because it expires in five minutes
+ * and a URL fetched at render time would be stale before somebody
+ * pressed anything.
+ */
+async function documentUrl(invoiceId) {
   const response = await fetch(`/api/invoices/${encodeURIComponent(invoiceId)}/document-url`, {
     method: "POST",
   });
-  if (!response.ok) {
+  if (!response.ok) return null;
+  return (await response.json()).url ?? null;
+}
+
+async function openDocument(invoiceId) {
+  const url = await documentUrl(invoiceId);
+  if (!url) {
     note(t("viewer.nodocument"));
     return;
   }
-  const { url } = await response.json();
   window.open(url, "_blank", "noopener");
+}
+
+/**
+ * The document, in the panel — decision 0123.
+ *
+ * **The browser renders it, not us.** A PDF in an `<iframe>` gets the
+ * browser's own viewer, with scrolling and zoom already working; an
+ * image goes in an `<img>`. Decision 0042 records that a *Worker*
+ * cannot render a PDF, which was read for longer than it should have
+ * been as "this cannot be previewed".
+ *
+ * **The URL expires in five minutes** (decision 0073), so a frame left
+ * open through a long keying session goes blank. Refreshed when
+ * somebody returns to the tab, which is when they would notice.
+ */
+async function showPreview(invoiceId, type) {
+  const holder = document.getElementById("vpreview");
+  if (!holder) return;
+
+  const url = await documentUrl(invoiceId);
+  if (!url) {
+    // A document nothing retained is a real state, not a failure: an
+    // invoice can exist with no original at all.
+    holder.replaceChildren(el("div", { class: "vthumb", text: t("viewer.nodocument") }));
+    return;
+  }
+
+  const isImage = String(type ?? "").startsWith("image/");
+  holder.replaceChildren(
+    isImage
+      ? el("img", { src: url, alt: t("viewer.document"), class: "vimage" })
+      : el("iframe", { src: url, class: "vframe", title: t("viewer.document") })
+  );
 }
 
 function note(message) {
@@ -716,7 +761,11 @@ export async function openViewer(task, onClose) {
               // panel is a placeholder until something can render a PDF
               // (decision 0042); the original still opens in its own
               // window through a signed URL.
-              el("div", { class: "vthumb", text: known.type ?? "document" }),
+              // Filled once the signed URL is minted, so the panel has
+              // somewhere to put it and does not jump when it arrives.
+              el("div", { class: "vpreview", id: "vpreview" }, [
+                el("div", { class: "vthumb", text: t("viewer.document") }),
+              ]),
               /**
                * The actions, below the document — decision 0122.
                *
@@ -745,6 +794,9 @@ export async function openViewer(task, onClose) {
 
   renderLines();
   renderExceptions();
+  // Not awaited: the form is usable while the document loads, and a
+  // slow R2 fetch should not hold up somebody who knows what to type.
+  showPreview(task.subject.id, stored.document?.contentType);
   // The comparison follows the printed total as it is typed, not only
   // when a line changes.
   document.getElementById("f-BT-112")?.addEventListener("input", updateTotals);

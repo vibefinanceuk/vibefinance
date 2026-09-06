@@ -468,6 +468,23 @@
   .kf.failing label { color: var(--text-warning); }
 
   /*
+    The document itself, in the panel — decision 0123.
+
+    Fixed height so the panel does not grow with the document; the
+    browser's own viewer scrolls and zooms inside it.
+  */
+  .vpreview {
+    height: 320px;
+    border: 0.5px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    background: var(--surface-1);
+  }
+
+  .vframe, .vimage { width: 100%; height: 100%; border: none; display: block; }
+  .vimage { object-fit: contain; background: var(--surface-0); }
+
+  /*
     The actions, below the document — decision 0122.
 
     A horizontal row rather than a stack of full-width buttons: they
