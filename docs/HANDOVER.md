@@ -1,6 +1,6 @@
 # Handover
 
-**Written 4 September 2026, updated 6 September (twice).** One page: where things stand, what needs a
+**Written 4 September 2026, updated 6 September (three times).** One page: where things stand, what needs a
 decision rather than work, and what to do next.
 
 `docs/PROGRESS.md` is the map — what exists and what does not.
@@ -14,14 +14,14 @@ either, so check the dates.
 
 | | |
 | --- | --- |
-| `origin/main` | `a686e3e` |
-| vf-app deployed | `a686e3e` |
-| vf-licence deployed | `a686e3e` |
-| vf-ui deployed | `a686e3e` · `https://vf-ui.vibefinance.workers.dev` |
-| `vf-app-poc` migrations | through `0038` |
-| `vf-licence-poc` migrations | through `0023` |
-| Tests | vf-app 1016 · vf-licence 289 · vf-ui 43 Worker + 31 browser · shared 252 (+2 known pre-existing failures) |
-| Decision records | 124 |
+| `origin/main` | `5de9ff2` |
+| vf-app deployed | `5de9ff2` |
+| vf-licence deployed | `5de9ff2` |
+| vf-ui deployed | `5de9ff2` · `https://vf-ui.vibefinance.workers.dev` |
+| `vf-app-poc` migrations | through `0040` |
+| `vf-licence-poc` migrations | through `0029` |
+| Tests | vf-app 1051 · vf-licence 289 · vf-ui 44 Worker + 62 browser · shared 252 (+2 known pre-existing failures) |
+| Decision records | 134 |
 
 **Everything committed is deployed.**
 
@@ -122,6 +122,11 @@ an operating unit at intake, from a rule the customer wrote or from the
 source it arrived through, and a stage can refuse to let it past without
 one (0111).
 
+**There is a second screen now.** Sources — *where invoices arrive* —
+lists them, creates them, gives an email source its address, and retires
+or deletes one (0126, 0128, 0130). The navigation frame has carried a
+single entry since 0108 waiting for exactly this.
+
 **And a person can now do all of that in a browser.**
 `https://vf-ui.vibefinance.workers.dev` serves a sign-in screen that
 fetches the customer's livery from `vf-licence` (0096), populates the
@@ -144,7 +149,7 @@ uses one.
 
 ## Waiting on you
 
-**Nothing blocks the next piece of work.** Five things worth settling,
+**Nothing blocks the next piece of work.** Six things worth settling,
 none urgent.
 
 ### 1. A custom domain
@@ -183,7 +188,14 @@ Decision 0115 gave the seller and buyer their own panels, and most of
 their fields default to `read`. If they look thin, that is configuration
 (0114) rather than code — adjustable per customer without a deployment.
 
-### 5. Should the line comparison move into the panel?
+### 5. Does the sources screen read right?
+
+Decision 0134 removed every success message from it: a retired source
+shows *"Retired"*, a deleted one is gone, and the list is the answer.
+**If an action now feels like nothing happened**, that judgement was
+wrong and the message should come back.
+
+### 6. Should the line comparison move into the panel?
 
 *"Lines total 150.00 · differs by 30.00"* sits under the line table and
 was **read as an exception** (0119). It is not: it is live feedback as
@@ -235,6 +247,18 @@ Recorded so nobody re-opens them:
   not built.
 - **Which font** — Carlito shipped, metric-compatible with Calibri
   (0124). Naming it in a stack was not enough.
+- **Where invoices arrive** — a source carries an address derived from
+  the *customer*, not the environment, so it survives 0118's move to
+  production without telling every supplier a new one (0126).
+- **Whether every route accepts a session** — yes now, and a test reads
+  the router to keep it so (0127). The same gap had been found twice
+  before and fixed two routes at a time.
+- **Deleting a source** — retires it where a document carries its name,
+  deletes it where nothing ever used it, and *asks* where an address was
+  issued but never used, because only a person knows whether it was
+  shared (0130, 0133).
+- **When the screen should speak** — only when it cannot show something
+  (0134).
 - **Discard vs return-to-supplier** — genuinely distinct.
   `returned_manually` means somebody is dealing with it; `archived`
   means nothing further is needed.
@@ -294,40 +318,34 @@ Recorded so nobody re-opens them:
 
 ## Suggested next pieces
 
-**1. Email.** The onboarding chain starts here, and it is the one piece
-with **no design at all**.
+**1. The Cloudflare API half of provisioning (0039).** This is now the
+single largest blocker, and three separate things wait behind it.
 
-Decision 0117 made it load-bearing rather than merely missing: the
-administrator sets their password from a link, so without email **nobody
-can sign in to a new customer**. It also still blocks alerting on failed
-sign-ins and licence expiry warnings.
+Provisioning creates control-plane rows and **honestly reports
+`infrastructureProvisioned: false`** — it does not create the D1
+database, the Worker, or (since 0126) the **Email Routing rule**.
 
-**Decision 0125 evaluates it**, and the first finding is that "email"
-means **three different things** which differ on every axis that
-matters: supplier contacts go *out to strangers*, user notifications go
-*out to colleagues*, and a source is *inbound* — an intake transport
-that happens to use SMTP, not email sending at all.
+So: an email address can be reserved and **nothing delivers to it**; the
+sources screen says *"Not receiving yet"* and will keep saying it; and
+decision 0117's onboarding cannot provision anybody.
 
-Its order: **the sending mechanism** with the first thing that uses it
-(the administrator's password link, which blocks onboarding entirely),
-then **sources**, then **users**, then **suppliers**.
+**2. Email sending**, which decision 0125 evaluates. "Email" means three
+different things — supplier contacts *out to strangers*, user
+notifications *out to colleagues*, and a source which is *inbound* and
+not sending at all.
 
-Sources first among the three because the org association already exists
-(0111), it is self-contained, and it is what a customer notices —
-invoices arriving by email rather than by `curl`.
+Its order: **the sending mechanism** with the administrator's password
+link (which blocks onboarding entirely), then **users**, then
+**suppliers**. Sources are as far as they can go without item 1.
 
 Two questions answered: a source's address lives on a **VibeFinance
-domain** — no customer DNS to arrange, and reversible later — and a
-user's role is a **job title**, so the column is named `job_title`
-rather than `role`, because a column called `role` beside a roles
-table is an invitation to two answers about what somebody may do.
+domain**, and a user's role is a **job title**, so the column is named
+`job_title` — a column called `role` beside a roles table is an
+invitation to two answers about what somebody may do.
 
-Still to settle: **which provider**; **where sending lives**, since
-decision 0091 says the control plane never holds customer content;
-**whether templates sit in D1** like `ui_strings` (0107) or in code like
-the code lists (0113) — the test that settled those applies: *is this
-wording ours to change?*; and **what happens when sending fails**, which
-has the same shape as the fail-open licence cache.
+Still open: **which provider**, **where sending lives** (0091 says the
+control plane never holds customer content), **whether templates sit in
+D1** like `ui_strings`, and **what happens when sending fails**.
 
 **2. Wire up the actions that now have icons.** `complete`, `release`,
 `return`, `return_to_supplier` and `discard` render in the action row
