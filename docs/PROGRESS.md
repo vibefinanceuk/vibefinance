@@ -206,7 +206,10 @@ vocabulary's EN 16931 reference fields and supplier groups.
 **Line-level extraction.** Extracted from images since 0044's addendum;
 still absent from the UBL parser's allowance and charge groups.
 
-**Password reset.** Needs email, and nothing here sends any. An
+**Self-service password reset.** Needs email, and nothing here sends
+any. **An account is recoverable today** — an administrator sets a
+password directly — which is workable for one customer and a support
+queue for twenty. An
 administrator setting a password directly is the only reset available
 (0089).
 

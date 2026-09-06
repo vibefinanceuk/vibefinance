@@ -1,5 +1,10 @@
 # 0089 — Local accounts, and how a password is stored
 
+> **Two of this record's open items were closed by decision 0090** and
+> went on reading as open for days. Struck through below rather than
+> deleted, because *what was outstanding when this was written* is part
+> of why it says what it says.
+
 **Status: hashing built** (`shared/auth/password.ts`). The login
 endpoint, rate limiting, lockout and the bootstrap administrator are
 not. Written before code because the first choice is security-critical
@@ -84,14 +89,18 @@ is not:
   encoded form carries salt and parameters together, which is what
   allows the cost to be raised later without invalidating existing
   hashes.
-- **Rate limiting.** No hash is strong enough if an attacker gets
-  unlimited attempts. This is the measure that matters most and it is
-  not a hashing decision.
-- **Lockout**, and its own trade-off: too aggressive and it is a
-  denial-of-service against real users.
-- **Reset**, which needs email — and **nothing in this system sends
-  email at all** (`docs/PROGRESS.md`). An administrator setting a
-  password directly is the only reset available today.
+- ~~**Rate limiting.**~~ **Built** — decision 0090, and it is exactly
+  what this called for: *"the measure that matters most, and not a
+  hashing decision."* The progressive delay runs **before any password
+  work**, so somebody already throttled gets no free verification.
+- ~~**Lockout**, and its own trade-off.~~ **Settled** — decision 0090
+  chose progressive delay *instead of* lockout, for the reason named
+  here: too aggressive and it is a denial of service against real
+  users. Auditors accept the delay as equivalent under SOC 2 CC6.1.
+- **Reset**, in the self-service sense. **An account is recoverable
+  today** — an administrator sets a password directly — and that is
+  workable for one customer and a support queue for twenty. Self-service
+  needs email, and **nothing in this system sends any**.
 - **Policy questions that become customer-facing:** length, complexity,
   rotation, MFA. *"We support SSO"* was the answer that deferred all of
   these to somebody else's identity provider.
@@ -173,10 +182,11 @@ protects new accounts.
 
 - **The login endpoint**, in `vf-licence` beside the dev stub, minting
   the same session token (decision 0086).
-- **Rate limiting.** No hash is strong enough against unlimited
-  attempts, and this matters more than the algorithm choice.
-- **Lockout**, and its denial-of-service trade-off.
-- **Reset**, which needs email — and nothing here sends any.
+- ~~**Rate limiting.**~~ Built, decision 0090.
+- ~~**Lockout.**~~ Settled as a progressive delay instead, decision
+  0090.
+- **Self-service reset**, which needs email. An administrator setting a
+  password directly works today.
 - **The bootstrap administrator**, whose shape is settled above.
 
 ---
