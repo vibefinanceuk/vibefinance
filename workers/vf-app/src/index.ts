@@ -1262,7 +1262,16 @@ export default {
         return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
       }
 
-      const result = await handleRetireSource(db, retireMatch[1], auth.user.id);
+      // `?releaseAddress=true` — decision 0133. A query parameter
+      // rather than a body, because DELETE with a body is carried
+      // inconsistently by proxies and this must not be one of the
+      // things that silently does nothing.
+      const result = await handleRetireSource(
+        db,
+        retireMatch[1],
+        auth.user.id,
+        url.searchParams.get("releaseAddress") === "true"
+      );
       return json(result.body, result.status);
     }
 

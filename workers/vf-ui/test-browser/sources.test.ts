@@ -56,6 +56,8 @@ const STRINGS = {
     "sources.retired": "Retired",
     "outcome.never_used": "Source deleted. Nothing had been received through it.",
     "outcome.address_issued": "Source retired. An email address was issued for it, so the record is kept.",
+    "outcome.address_released": "Source deleted and its address released.",
+    "sources.confirmrelease": "Deleting it releases the address.",
   },
 };
 
@@ -368,5 +370,70 @@ describe("what happened, in the reader's language (decision 0132)", () => {
     await new Promise((r) => setTimeout(r, 0));
 
     expect(document.body.textContent).not.toContain("outcome.invented_code");
+  });
+});
+
+describe("confirming an address release (decision 0133)", () => {
+  const WITH_ADDRESS = [
+    {
+      id: "s-1",
+      name: "AP Mailbox",
+      mechanism: "email",
+      processId: "ap",
+      emailAddress: "ap-mailbox.acme@vibefinance.com",
+      emailRouting: "not_configured",
+      status: "active",
+    },
+  ];
+
+  function clickRetire() {
+    const retire = [...document.querySelectorAll(".rowactions button")].find(
+      (b) => b.textContent === "Retire"
+    ) as HTMLButtonElement;
+    retire.click();
+  }
+
+  it("asks, naming the address", async () => {
+    // "An address will be released" is not something a person can
+    // check. The address itself is.
+    let asked = "";
+    vi.stubGlobal("confirm", (message: string) => {
+      asked = message;
+      return false;
+    });
+
+    await open(WITH_ADDRESS, {
+      "/api/sources/s-1": {
+        outcome: "confirm_required",
+        reason: "address_would_be_released",
+        emailAddress: "ap-mailbox.acme@vibefinance.com",
+      },
+    });
+    clickRetire();
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(asked).toContain("ap-mailbox.acme@vibefinance.com");
+  });
+
+  it("does nothing when the answer is no", async () => {
+    const posted: string[] = [];
+    vi.stubGlobal("confirm", () => false);
+
+    await open(
+      WITH_ADDRESS,
+      {
+        "/api/sources/s-1": {
+          outcome: "confirm_required",
+          reason: "address_would_be_released",
+          emailAddress: "ap-mailbox.acme@vibefinance.com",
+        },
+      },
+      posted
+    );
+    clickRetire();
+    await new Promise((r) => setTimeout(r, 0));
+
+    // The source is still listed.
+    expect(document.body.textContent).toContain("AP Mailbox");
   });
 });

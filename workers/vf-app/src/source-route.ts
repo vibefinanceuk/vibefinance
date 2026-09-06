@@ -410,7 +410,18 @@ async function hasReceivedDocuments(db: D1Database, sourceName: string): Promise
 export async function handleRetireSource(
   db: D1Database,
   sourceId: string,
-  retiredBy: string
+  retiredBy: string,
+  /**
+   * Delete a source whose address was issued but never used —
+   * decision 0133.
+   *
+   * **Only a person can know this.** An address that was reserved and
+   * never given to anybody is a mistake to correct; one already in a
+   * supplier's ERP is not, and nothing records which. So the default
+   * protects the second case and this says *"I know it was never
+   * shared."*
+   */
+  releaseAddress = false
 ): Promise<RouteResult> {
   const source = await db
     .prepare("SELECT id, name, status, email_address FROM sources WHERE id = ?")
@@ -426,13 +437,37 @@ export async function handleRetireSource(
 
   const used = await hasReceivedDocuments(db, source.name);
 
-  if (!used && !source.email_address) {
+  /**
+   * An issued address is refused **unless somebody says otherwise** —
+   * decision 0133.
+   *
+   * Returned as a refusal a caller can act on rather than a flat no:
+   * the response names what deleting would release, so a person is
+   * deciding about a specific address rather than agreeing to
+   * something abstract.
+   */
+  if (!used && source.email_address && !releaseAddress) {
+    return {
+      status: 409,
+      body: {
+        sourceId,
+        outcome: "confirm_required",
+        reason: "address_would_be_released",
+        // The address itself, because "an address will be released" is
+        // not something a person can check and this is.
+        emailAddress: source.email_address,
+      },
+    };
+  }
+
+  if (!used && (!source.email_address || releaseAddress)) {
     await db.prepare("DELETE FROM sources WHERE id = ?").bind(sourceId).run();
     return {
       status: 200,
       body: {
         sourceId,
         outcome: "deleted",
+        ...(source.email_address ? { releasedAddress: source.email_address } : {}),
         /**
          * A code, not a sentence — decision 0132.
          *
@@ -441,7 +476,7 @@ export async function handleRetireSource(
          * what decision 0107 exists to prevent, in an interface that
          * has been translated since.
          */
-        reason: "never_used",
+        reason: source.email_address ? "address_released" : "never_used",
       },
     };
   }

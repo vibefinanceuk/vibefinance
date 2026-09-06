@@ -64,14 +64,30 @@ async function load() {
  * name, and rules reference that name. Promising deletion and archiving
  * instead is the mistake decision 0078 records.
  */
-async function retireSource(source) {
-  const response = await fetch(`/api/sources/${encodeURIComponent(source.id)}`, {
+async function retireSource(source, releaseAddress = false) {
+  const query = releaseAddress ? "?releaseAddress=true" : "";
+  const response = await fetch(`/api/sources/${encodeURIComponent(source.id)}${query}`, {
     method: "DELETE",
   });
   const body = await response.json();
 
+  /**
+   * An address was reserved and never used — decision 0133.
+   *
+   * **Only a person can know whether it was shared.** It may sit in a
+   * supplier's ERP, and nothing records that, so the server refuses and
+   * asks. The address is named in the question, because *"an address
+   * will be released"* is not something anybody can check and this is.
+   */
+  if (body.outcome === "confirm_required") {
+    if (window.confirm(`${t("sources.confirmrelease")}\n\n${body.emailAddress}`)) {
+      await retireSource(source, true);
+    }
+    return;
+  }
+
   if (!response.ok) {
-    note(body.error ?? t("sources.failed"));
+    note(outcome(body.reason) || body.error || t("sources.failed"));
     return;
   }
 

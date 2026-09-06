@@ -243,9 +243,11 @@ describe("retiring a source (decision 0130)", () => {
     await seedSource("s-addr", "AR Mailbox");
     await handleSetSourceEmail(env.DB, "s-addr", "acme");
 
+    // **Refused, not retired** -- decision 0133. Nothing arrived, so
+    // this may be a mistake to correct, and only a person knows whether
+    // the address was ever shared.
     const result = await handleRetireSource(env.DB, "s-addr", "u-dan");
-    expect((result.body as { outcome: string }).outcome).toBe("retired");
-    expect((result.body as { reason: string }).reason).toBe("address_issued");
+    expect((result.body as { outcome: string }).outcome).toBe("confirm_required");
   });
 
   it("refuses to retire one twice", async () => {
@@ -330,5 +332,88 @@ describe("the API returns codes, not sentences (decision 0132)", () => {
       // A code, not a sentence: no spaces.
       expect(String(body.reason)).not.toContain(" ");
     }
+  });
+});
+
+describe("releasing an issued address (decision 0133)", () => {
+  /**
+   * **Only a person can know whether an address was shared.** An
+   * address reserved and never given to anybody is a mistake to
+   * correct; one already in a supplier's ERP is not, and nothing
+   * records which.
+   *
+   * So the default protects the second case, and a person can say *"I
+   * know it was never shared."*
+   */
+  async function withAddress(id: string, name: string) {
+    await env.DB.prepare(
+      "INSERT OR IGNORE INTO org_users (id, email, name) VALUES ('u-dan', 'd@x.com', 'Dan')"
+    ).run();
+    await seedSource(id, name);
+    await handleSetSourceEmail(env.DB, id, "acme");
+  }
+
+  it("refuses, and names the address that would be released", async () => {
+    // "An address will be released" is not something a person can
+    // check. The address itself is.
+    await withAddress("s-r1", "AP Mailbox");
+    const result = await handleRetireSource(env.DB, "s-r1", "u-dan");
+
+    expect(result.status).toBe(409);
+    const body = result.body as { outcome: string; emailAddress: string };
+    expect(body.outcome).toBe("confirm_required");
+    expect(body.emailAddress).toBe("ap-mailbox.acme@vibefinance.com");
+  });
+
+  it("deletes when somebody confirms", async () => {
+    await withAddress("s-r2", "AR Mailbox");
+    const result = await handleRetireSource(env.DB, "s-r2", "u-dan", true);
+
+    expect((result.body as { outcome: string }).outcome).toBe("deleted");
+    expect((result.body as { reason: string }).reason).toBe("address_released");
+    expect((result.body as { releasedAddress: string }).releasedAddress).toBe(
+      "ar-mailbox.acme@vibefinance.com"
+    );
+
+    expect(await env.DB.prepare("SELECT id FROM sources WHERE id = 's-r2'").first()).toBeNull();
+  });
+
+  it("frees the address for reuse", async () => {
+    // The point of releasing it. A name refused as taken should work
+    // once the source holding it is gone.
+    await withAddress("s-r3", "AP Mailbox");
+    await handleRetireSource(env.DB, "s-r3", "u-dan", true);
+
+    await seedSource("s-r4", "AP Mailbox");
+    const result = await handleSetSourceEmail(env.DB, "s-r4", "acme");
+    expect(result.status).toBe(200);
+    expect((result.body as { emailAddress: string }).emailAddress).toBe(
+      "ap-mailbox.acme@vibefinance.com"
+    );
+  });
+
+  it("still retires one that documents arrived through, confirmed or not", async () => {
+    // **Confirmation does not override history.** The address is the
+    // only thing a person can vouch for; a document that already cites
+    // this source's name is not.
+    await withAddress("s-r5", "Live Mailbox");
+    await env.DB.prepare("INSERT INTO invoice_headers (id, facts_json) VALUES ('inv-r', ?)")
+      .bind(JSON.stringify({ "mandate.channel": "Live Mailbox" }))
+      .run();
+
+    const result = await handleRetireSource(env.DB, "s-r5", "u-dan", true);
+    expect((result.body as { outcome: string }).outcome).toBe("retired");
+  });
+
+  it("does not ask about a source with no address at all", async () => {
+    // Nothing to release, so nothing to confirm.
+    await env.DB.prepare(
+      "INSERT OR IGNORE INTO org_users (id, email, name) VALUES ('u-dan', 'd@x.com', 'Dan')"
+    ).run();
+    await seedSource("s-r6", "Never used");
+
+    const result = await handleRetireSource(env.DB, "s-r6", "u-dan");
+    expect((result.body as { outcome: string }).outcome).toBe("deleted");
+    expect((result.body as { reason: string }).reason).toBe("never_used");
   });
 });
