@@ -302,13 +302,26 @@ administrator sets their password from a link, so without email **nobody
 can sign in to a new customer**. It also still blocks alerting on failed
 sign-ins and licence expiry warnings.
 
-Four things to settle before any code: **which provider**; **where it
-lives**, since the control plane sends password links while an instance
-might email a supplier about a returned document; **how a template is
-written**, and whether its wording sits in D1 like `ui_strings` or in
-code; and **what happens when sending fails**, because a password link
-nobody receives is an onboarding that silently stops. That last one has
-the same shape as the fail-open licence cache.
+**Decision 0125 evaluates it**, and the first finding is that "email"
+means **three different things** which differ on every axis that
+matters: supplier contacts go *out to strangers*, user notifications go
+*out to colleagues*, and a source is *inbound* — an intake transport
+that happens to use SMTP, not email sending at all.
+
+Its order: **the sending mechanism** with the first thing that uses it
+(the administrator's password link, which blocks onboarding entirely),
+then **sources**, then **users**, then **suppliers**.
+
+Sources first among the three because the org association already exists
+(0111), it is self-contained, and it is what a customer notices —
+invoices arriving by email rather than by `curl`.
+
+Still to settle: **which provider**; **where sending lives**, since
+decision 0091 says the control plane never holds customer content;
+**whether templates sit in D1** like `ui_strings` (0107) or in code like
+the code lists (0113) — the test that settled those applies: *is this
+wording ours to change?*; and **what happens when sending fails**, which
+has the same shape as the fail-open licence cache.
 
 **2. Wire up the actions that now have icons.** `complete`, `release`,
 `return`, `return_to_supplier` and `discard` render in the action row
