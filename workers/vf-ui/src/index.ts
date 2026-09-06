@@ -106,6 +106,11 @@ const PROXIED_TO_INSTANCE: RegExp[] = [
   /^\/processes$/,
   /^\/processes\/[^/]+\/sources$/,
   /^\/sources\/[^/]+\/email$/,
+  // Renaming and retiring one (decision 0130). **The bare path**, which
+  // is easy to miss when the paths beneath it are already listed — and
+  // the symptom is a button that does nothing, refused by this proxy
+  // rather than by the route it was aimed at.
+  /^\/sources\/[^/]+$/,
 ];
 
 /**

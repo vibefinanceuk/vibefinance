@@ -313,3 +313,54 @@ describe("the viewer can read an invoice back (decision 0120)", () => {
 });
 
 
+
+describe("the proxy carries every path a screen calls (decision 0131)", () => {
+  /**
+   * **Reported from the screen: the rename button did nothing.**
+   *
+   * `/sources/:id/email` and `/sources` were listed and the bare
+   * `/sources/:id` was not — easy to miss when the paths beneath it are
+   * already there. The symptom is a button refused by this proxy rather
+   * than by the route it was aimed at, which looks identical to a bug
+   * in the route.
+   *
+   * A 401 here means the path is carried and the request reached
+   * `vf-app`, which refused it for want of a session. **A 404 means the
+   * proxy did not recognise it**, and that is the failure this catches.
+   *
+   * The first version of this looked for a 403 and passed while the
+   * reported bug was present — a test that checks the wrong code is a
+   * test that reports the wrong answer confidently.
+   */
+  const CALLED_BY_A_SCREEN: [string, string][] = [
+    ["GET", "/api/sources"],
+    ["GET", "/api/processes"],
+    ["GET", "/api/field-visibility"],
+    ["GET", "/api/code-lists"],
+    ["GET", "/api/tasks"],
+    ["GET", "/api/invoices/inv-1"],
+    ["POST", "/api/sources/s-1/email"],
+    ["POST", "/api/processes/ap/sources"],
+    ["POST", "/api/invoices/inv-1/key"],
+    ["POST", "/api/invoices/inv-1/document-url"],
+    // The two that were missing.
+    ["PATCH", "/api/sources/s-1"],
+    ["DELETE", "/api/sources/s-1"],
+  ];
+
+  it("carries all of them", async () => {
+    const refused: string[] = [];
+
+    for (const [method, path] of CALLED_BY_A_SCREEN) {
+      const res = await SELF.fetch(`https://ui.example.com${path}`, { method });
+      if (res.status === 404) refused.push(`${method} ${path}`);
+    }
+
+    expect(
+      refused,
+      `Called by a screen and refused by the proxy: ${refused.join(", ")}. ` +
+        "Add the path to PROXIED_INSTANCE_PATHS in workers/vf-ui/src/index.ts, " +
+        "or the button that calls it will silently do nothing."
+    ).toEqual([]);
+  });
+});
