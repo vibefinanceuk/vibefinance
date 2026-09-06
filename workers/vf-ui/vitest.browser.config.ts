@@ -1,6 +1,6 @@
 import { defineConfig } from "vitest/config";
 import { resolve } from "node:path";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync, existsSync } from "node:fs";
 
 /**
  * The browser code, in a DOM — decision 0121.
@@ -35,7 +35,15 @@ function stylesheetsAsText() {
       const contents = Object.fromEntries(
         files.map((f) => [f.split("/").pop(), readFileSync(resolve(__dirname, f), "utf8")])
       );
-      return `export default ${JSON.stringify(contents)};`;
+      // The fonts actually on disk, so a stylesheet naming one that is
+      // not shipped fails rather than falling back silently.
+      const fontDir = resolve(__dirname, "public/fonts");
+      const fonts = existsSync(fontDir) ? readdirSync(fontDir) : [];
+
+      return (
+        `export default ${JSON.stringify(contents)};\n` +
+        `export const shippedFonts = ${JSON.stringify(fonts)};`
+      );
     },
   };
 }

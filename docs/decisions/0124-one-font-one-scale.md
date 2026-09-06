@@ -41,9 +41,25 @@ identically rather than a fallback that reflows every panel.
 The system stack follows both, because a machine may have neither and
 something must be readable.
 
-**Not yet shipped as a webfont.** That is the only way to guarantee the
-same face on every machine, and it means a font file in the assets —
-worth doing, and worth deciding rather than assuming.
+### And naming it was not enough
+
+Deployed, and the operator reported: *"I don't see any changes."*
+
+Correct — **their Mac has neither Calibri nor Carlito**, so the stack
+fell through to San Francisco exactly as before. A font named in a stack
+is a font you hope is installed.
+
+**Carlito is now shipped**: three faces, 92KB, from
+`@fontsource/carlito`. Regular, bold, and regular italic — bold italic
+is deliberately absent, because nothing here uses it and a fourth file
+for a combination nobody asks for is 30KB nobody needs.
+
+`font-display: swap`, so a person keying an invoice never waits on a
+font. The fallback is metric-compatible, so the reflow when it arrives
+is slight.
+
+Calibri still leads the stack: a Windows customer sees the face they
+know, and it is metrically identical to what everyone else gets.
 
 ---
 
@@ -86,11 +102,25 @@ reads prose as code will keep finding things that are not there.*
 
 ---
 
-## What is not built
+## A third thing the tests taught
 
-- **The webfont.** Until then, "Calibri" means Calibri where it is
-  installed and Carlito where that is, and neither on a machine with
-  only the system stack.
+**`vitest-pool-workers` does not simulate the asset layer.** A test
+asserting the font is served came back `text/html` — and so did
+`/tokens.css` and `/viewer.js`, which have always worked in production.
+Every asset falls through to the Worker's catch-all page in that
+environment.
+
+So the check runs against **the filesystem**: every `url()` in the
+stylesheet must name a file in `public/fonts/`. A stylesheet can
+reference a font that is not there, and the only symptom is text in the
+fallback face — which is what this whole change was meant to stop, and
+what nobody would notice.
+
+Watched to fail: removing one face breaks it by name.
+
+---
+
+## What is not built
 - **Line height and weight are not on a scale.** Only size is.
 - **Nothing checks the sign-in screen's own markup**, which carries its
   styles inline.

@@ -16,7 +16,7 @@ import { describe, expect, it } from "vitest";
  * string — and a test reading an empty string passes everything, which
  * is worse than no test. The config reads them from disk instead.
  */
-import stylesheets from "virtual:stylesheets";
+import stylesheets, { shippedFonts } from "virtual:stylesheets";
 
 const CSS = { "tokens.css": stylesheets["tokens.css"] };
 const ALL = Object.entries(stylesheets);
@@ -48,6 +48,25 @@ describe("every size is on the scale", () => {
 });
 
 describe("one font, everywhere", () => {
+  it("ships the font rather than hoping for it", () => {
+    // Naming Calibri in a stack gives Calibri on Windows and something
+    // else everywhere else — which is what the operator saw after
+    // deploying, and correctly reported as "no changes".
+    const tokens = Object.values(CSS).join("\n");
+    expect(tokens).toContain("@font-face");
+    expect(tokens).toContain("carlito-latin-400-normal.woff2");
+  });
+
+  it("swaps rather than blocking on the font", () => {
+    // A person keying an invoice should not wait on a font, and the
+    // fallback is metric-compatible so the reflow is slight.
+    const faces = Object.values(CSS).join("\n").match(/@font-face\s*\{[^}]*\}/g) ?? [];
+    expect(faces.length).toBeGreaterThan(0);
+    for (const face of faces) {
+      expect(face).toContain("font-display: swap");
+    }
+  });
+
   it("asks for Calibri, with a metric-compatible fallback", () => {
     // Carlito matches Calibri's metrics, so a machine without Calibri
     // gets the same shapes at the same widths rather than a fallback
@@ -80,6 +99,36 @@ describe("one font, everywhere", () => {
       .join("\n")
       .replace(/\/\*[\s\S]*?\*\//g, "");
 
-    expect(withoutComments.match(/font-family:/g)).toHaveLength(1);
+    // **`@font-face` blocks are not opinions about the interface**;
+    // they name a file. Only declarations outside them count, which is
+    // the distinction the first version of this missed once fonts were
+    // shipped (decision 0124).
+    const withoutFaces = withoutComments.replace(/@font-face\s*\{[^}]*\}/g, "");
+
+    expect(withoutFaces.match(/font-family:/g)).toHaveLength(1);
+  });
+});
+
+describe("the stylesheet names files that exist (decision 0124)", () => {
+  /**
+   * **A stylesheet can reference a font that is not there**, and the
+   * only symptom is text in the fallback face — which is what this
+   * whole change was meant to stop, and what nobody would notice.
+   *
+   * Checked against the filesystem rather than by fetching, because
+   * `vitest-pool-workers` **does not simulate the asset layer at all**:
+   * `/tokens.css` and `/viewer.js` both come back as `text/html`
+   * through the Worker's catch-all. A test asserting a font is served
+   * would have been asserting something the environment cannot answer.
+   */
+  it("ships every face it declares", () => {
+    const declared = [...Object.values(CSS).join("\n").matchAll(/url\("([^"]+\.woff2)"\)/g)].map(
+      (m) => m[1]
+    );
+
+    expect(declared.length).toBeGreaterThan(0);
+    for (const path of declared) {
+      expect(shippedFonts, path).toContain(path.replace("/fonts/", ""));
+    }
   });
 });

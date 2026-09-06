@@ -323,7 +323,7 @@ elsewhere.
 |---|---|
 | `vf-app` | 1016 |
 | `vf-licence` | 289 |
-| `vf-ui` | 43 Worker · 28 browser |
+| `vf-ui` | 43 Worker · 31 browser |
 | `shared` | 252 passing, 2 known pre-existing failures |
 
 Both migration chains replay clean with every standing invariant

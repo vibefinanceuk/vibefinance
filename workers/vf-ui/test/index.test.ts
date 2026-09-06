@@ -311,3 +311,5 @@ describe("the viewer can read an invoice back (decision 0120)", () => {
     expect(res.status).toBe(401);
   });
 });
+
+

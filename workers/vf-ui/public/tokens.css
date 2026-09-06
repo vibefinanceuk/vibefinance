@@ -1,4 +1,49 @@
 /*
+  Carlito, shipped rather than hoped for — decision 0124.
+
+  **Calibri is not on macOS or Linux** unless Office installed it, so
+  naming it in a stack gave Calibri on Windows and San Francisco
+  everywhere else — which is what the operator saw after deploying and
+  correctly reported as "no changes".
+
+  Carlito is **metric-compatible with Calibri**: the same widths and
+  shapes, openly licensed (SIL OFL). Shipping it is the only way to get
+  the same face on every machine, including a customer's.
+
+  Three faces, 92KB total. Bold italic is deliberately absent — nothing
+  in this interface uses it, and a fourth file for a combination nobody
+  asks for is 30KB nobody needs. A browser will synthesise one if it is
+  ever needed, badly, and that will be the signal to ship it properly.
+
+  `font-display: swap` so text is readable immediately in the fallback
+  and reflows once: a person keying an invoice should not wait on a
+  font, and the fallback is metric-compatible so the reflow is slight.
+*/
+@font-face {
+  font-family: "Carlito";
+  src: url("/fonts/carlito-latin-400-normal.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Carlito";
+  src: url("/fonts/carlito-latin-700-normal.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Carlito";
+  src: url("/fonts/carlito-latin-400-italic.woff2") format("woff2");
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+}
+
+/*
  * Design tokens for vf-ui — decision 0099.
  *
  * Carried across from docs/design/mockups/tokens.css, where the split
@@ -51,8 +96,10 @@
     so a machine without Calibri gets the same shapes at the same widths
     rather than a fallback that reflows every panel.
 
-    The system stack follows both, because a customer's machine may have
-    neither and something must be readable.
+    Calibri first for a machine that has it — a Windows customer sees
+    the face they know, and it is metrically identical to the one
+    everyone else gets. The system stack follows both, for the moment
+    before the file arrives.
   */
   --font-sans: Calibri, Carlito, "Segoe UI", -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
 
