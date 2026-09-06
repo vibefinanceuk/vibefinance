@@ -100,6 +100,9 @@ const PROXIED_TO_INSTANCE: RegExp[] = [
   /^\/code-lists$/,
   // What this stage shows, and what may be edited (decision 0114).
   /^\/field-visibility$/,
+  // The sources configuration screen (decision 0126).
+  /^\/sources$/,
+  /^\/sources\/[^/]+\/email$/,
 ];
 
 /**

@@ -11,7 +11,7 @@
  */
 
 import { t } from "/strings.js";
-import { frame, topbar } from "/tasks.js";
+import { el, frame, topbar } from "/tasks.js";
 
 let current = null;
 /** The line table's working state — decision 0109. */
@@ -118,19 +118,6 @@ async function loadFields(stageId) {
 }
 
 
-function el(tag, props = {}, children = []) {
-  const node = document.createElement(tag);
-  for (const [key, value] of Object.entries(props)) {
-    if (key === "class") node.className = value;
-    else if (key.startsWith("on")) node.addEventListener(key.slice(2), value);
-    // textContent, never innerHTML — everything here is data from an
-    // API rendered into a page.
-    else if (key === "text") node.textContent = value;
-    else if (value !== undefined && value !== null) node.setAttribute(key, value);
-  }
-  for (const child of children) node.append(child);
-  return node;
-}
 
 
 /**

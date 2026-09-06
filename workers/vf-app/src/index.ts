@@ -41,7 +41,7 @@ import {
 import { createWorkersAiExtractionModel } from "./extraction-model.js";
 import { handleGetExtractionSettings, handleUpdateExtractionSettings } from "./extraction-settings-route.js";
 import { handleToMarkdownDiagnostic } from "./tomarkdown-diagnostic.js";
-import { handleCreateSource, handleListSources } from "./source-route.js";
+import { handleCreateSource, handleListSources , handleSetSourceEmail , handleListAllSources } from "./source-route.js";
 import { handleIngestPurchaseOrder, handleGetPurchaseOrder } from "./purchase-order-route.js";
 import { handleGetRetention, handleSetRetention, handleListBeyondRetention } from "./retention-route.js";
 import { handleCaptureFromSource } from "./source-capture-route.js";
@@ -1192,6 +1192,57 @@ export default {
     // Which fields a person sees at a stage, and what they may do with
     // them — decision 0114. Accepts a session: this is what a screen
     // asks before rendering anything.
+    /**
+     * Every source in this instance — decision 0126.
+     *
+     * The existing list is per process (`/processes/:id/sources`) and
+     * takes an **API key only**, like 26 other configuration routes. A
+     * configuration screen needs a session, so these two accept one.
+     *
+     * The wider gap is recorded rather than fixed here:
+     * `requirePermission` does not receive the public key or the
+     * environment id, so making it session-aware means threading two
+     * arguments through 28 call sites — decision 0105's territory, and
+     * a decision of its own.
+     */
+    if (pathname === "/sources" && request.method === "GET") {
+      const { db } = resolveTenant(request, env);
+      const auth = await authenticateUserOrSession(
+        db,
+        request,
+        isPublicKeyJwk(env.LICENCE_SIGNING_PUBLIC_KEY) ? env.LICENCE_SIGNING_PUBLIC_KEY : undefined,
+        env.ENVIRONMENT_ID
+      );
+      if (!auth.user) return json({ error: auth.reason }, 401);
+      if (!(await hasPermission(db, auth.user.id, "Admin.Configure"))) {
+        return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
+      }
+
+      const result = await handleListAllSources(db);
+      return json(result.body, result.status);
+    }
+
+    // Give an email source its address — decision 0126. Admin, because
+    // it decides where a customer's invoices arrive.
+    const sourceEmailMatch = pathname.match(/^\/sources\/([^/]+)\/email$/);
+    if (sourceEmailMatch && request.method === "POST") {
+      const { db } = resolveTenant(request, env);
+      const auth = await authenticateUserOrSession(
+        db,
+        request,
+        isPublicKeyJwk(env.LICENCE_SIGNING_PUBLIC_KEY) ? env.LICENCE_SIGNING_PUBLIC_KEY : undefined,
+        env.ENVIRONMENT_ID
+      );
+      if (!auth.user) return json({ error: auth.reason }, 401);
+      if (!(await hasPermission(db, auth.user.id, "Admin.Configure"))) {
+        return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
+      }
+
+      const result = await handleSetSourceEmail(db, sourceEmailMatch[1], env.CUSTOMER_ID);
+      return json(result.body, result.status);
+    }
+
+
     if (pathname === "/field-visibility" && request.method === "GET") {
       const { db } = resolveTenant(request, env);
       const auth = await authenticateUserOrSession(

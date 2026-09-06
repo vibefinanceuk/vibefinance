@@ -29,6 +29,8 @@ export function isKnownSourceMechanism(value: unknown): value is SourceMechanism
 }
 
 interface SourceRow {
+  email_address?: string | null;
+  email_routing?: string | null;
   id: string;
   process_id: string;
   name: string;
@@ -48,6 +50,12 @@ function toBody(row: SourceRow) {
     // points predate the split, and so historical mandate.channel
     // values remain traceable.
     ...(row.legacy_channel_id === null ? {} : { legacyChannelId: row.legacy_channel_id }),
+    // Where invoices arrive, and **whether they actually do** —
+    // decision 0126. An address without its routing state would let a
+    // configuration screen imply mail was coming when nothing yet
+    // delivers to it.
+    emailAddress: row.email_address ?? null,
+    emailRouting: row.email_routing ?? "not_configured",
     createdAt: row.created_at,
   };
 }
@@ -125,4 +133,146 @@ export async function handleListSources(db: D1Database, processId: string): Prom
         : {}),
     },
   };
+}
+
+/**
+ * The domain every ingestion address lives on — decision 0125.
+ *
+ * A VibeFinance domain rather than a customer's own: no customer DNS to
+ * arrange, and an address that works the moment a source is created.
+ * Reversible later, because the source owns the address either way.
+ */
+const INGESTION_DOMAIN = "vibefinance.com";
+
+/**
+ * The local part of an ingestion address.
+ *
+ * **`<name>.<customer>`**, and the *customer* rather than the
+ * environment is the whole point: decision 0118 provisions a second
+ * environment when a trial becomes production, and an address naming
+ * the sandbox would have to be reissued to every supplier on the day a
+ * customer goes live. A customer id is stable across both, and unique
+ * across the fleet — so the address is too, without a registry.
+ *
+ * The name is squeezed to what a mail system will carry unchanged: a
+ * person naming a source *"AP Mailbox (UK)"* should get a working
+ * address rather than a rejection.
+ */
+export function ingestionAddress(sourceName: string, customerId: string): string {
+  const slug = (value: string) =>
+    value
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "");
+
+  const name = slug(sourceName);
+  const customer = slug(customerId);
+  return `${name}.${customer}@${INGESTION_DOMAIN}`;
+}
+
+/**
+ * Give an email source an address — decision 0126.
+ *
+ * **Generated, not chosen.** A customer picking a local part would
+ * collide with another customer they have never heard of, and *"that
+ * address is taken"* is an answer nobody can act on. Deriving it from
+ * their own id cannot collide.
+ *
+ * **Reported as `not_configured`.** Creating the Cloudflare Email
+ * Routing rule needs the API half of decision 0039, which is not built
+ * — so the address is reserved and nothing yet delivers to it. Saying
+ * so is the same discipline as `infrastructureProvisioned: false`: a
+ * screen implying mail was arriving would be worse than one admitting
+ * it is not.
+ */
+export async function handleSetSourceEmail(
+  db: D1Database,
+  sourceId: string,
+  customerId: string | undefined
+): Promise<RouteResult> {
+  if (!customerId) {
+    // The instance does not know who it is, which is a provisioning
+    // fault rather than a caller's mistake.
+    return {
+      status: 500,
+      body: { error: "this instance has no CUSTOMER_ID, so an address cannot be generated" },
+    };
+  }
+
+  const source = await db
+    .prepare("SELECT id, name, mechanism, email_address FROM sources WHERE id = ?")
+    .bind(sourceId)
+    .first<{ id: string; name: string; mechanism: string; email_address: string | null }>();
+
+  if (!source) {
+    return { status: 404, body: { error: `source ${sourceId} does not exist` } };
+  }
+  if (source.mechanism !== "email") {
+    return {
+      status: 422,
+      body: { error: `source ${sourceId} receives by ${source.mechanism}, so an address means nothing to it` },
+    };
+  }
+  if (source.email_address) {
+    // **Never reissued.** Suppliers write an address down, and changing
+    // it silently would break every one of them.
+    return {
+      status: 409,
+      body: {
+        error: `source ${sourceId} already receives at ${source.email_address}`,
+        detail: "an address is never reissued, because suppliers have written it down",
+      },
+    };
+  }
+
+  const address = ingestionAddress(source.name, customerId);
+
+  const taken = await db
+    .prepare("SELECT id FROM sources WHERE email_address = ?")
+    .bind(address)
+    .first<{ id: string }>();
+  if (taken) {
+    // Two sources named the same thing within one customer. Caught here
+    // so the person gets a reason rather than a constraint error.
+    return {
+      status: 409,
+      body: {
+        error: `${address} is already used by source ${taken.id}`,
+        detail: "an address is derived from the source's name, so give this one a different name",
+      },
+    };
+  }
+
+  await db
+    .prepare("UPDATE sources SET email_address = ? WHERE id = ?")
+    .bind(address, sourceId)
+    .run();
+
+  return {
+    status: 200,
+    body: {
+      sourceId,
+      emailAddress: address,
+      routing: "not_configured",
+      detail:
+        "the address is reserved; mail will not arrive until the routing rule is created, " +
+        "which needs the Cloudflare API half of provisioning",
+    },
+  };
+}
+
+/**
+ * Every source in this instance — decision 0126.
+ *
+ * The existing list is **per process**, which suits a caller that knows
+ * which process it means. A configuration screen does not: it is
+ * answering *"where can invoices arrive for us"*, and that question
+ * spans processes.
+ */
+export async function handleListAllSources(db: D1Database): Promise<RouteResult> {
+  const rows = await db
+    .prepare("SELECT * FROM sources ORDER BY process_id, name")
+    .all<SourceRow>();
+
+  return { status: 200, body: { sources: rows.results.map(toBody) } };
 }

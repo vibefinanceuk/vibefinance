@@ -21,7 +21,13 @@ let filters = { stage: "", ownership: "" };
 /** The last rows loaded, so opening a task does not refetch it. */
 let lastTasks = [];
 
-function el(tag, props = {}, children = []) {
+/**
+ * **Exported since decision 0126**, because a third screen would have
+ * been a third copy. It was private and duplicated in `viewer.js`,
+ * which is two definitions of what an element is and one of them
+ * eventually drifting.
+ */
+export function el(tag, props = {}, children = []) {
   const node = document.createElement(tag);
   for (const [key, value] of Object.entries(props)) {
     if (key === "class") node.className = value;
@@ -218,11 +224,55 @@ function filterBar() {
  * now so that everything added later sits inside it rather than being
  * retrofitted into one.
  */
+/** Which screen the frame is showing, so the nav can mark it. */
+let current = "tasks";
+
+/**
+ * Tell the frame which screen is rendering — decision 0126.
+ *
+ * **Set by the screen, not inferred by the nav.** `go()` knows because
+ * it was called; a screen opened any other way does not, and a nav
+ * marking the wrong entry is worse than one marking none.
+ */
+export function setCurrentScreen(screen) {
+  current = screen;
+}
+
+/**
+ * Move between screens — decision 0126.
+ *
+ * **No router, and no history.** One screen has existed until now, so
+ * a URL scheme would be a guess at what the second and third want. A
+ * function call is honest about that, and the day the back button
+ * matters is the day to design it properly.
+ */
+async function go(screen) {
+  current = screen;
+  if (screen === "sources") {
+    const { openSources } = await import("/sources.js");
+    await openSources();
+  } else {
+    await loadTasks();
+  }
+}
+
 export function frame(main) {
   return el("div", { class: "frame" }, [
     el("nav", { class: "nav" }, [
       el("div", { class: "mark" }),
-      el("a", { class: "on", text: t("nav.tasks") }),
+      // **A second entry, at last.** The frame has carried one since
+      // decision 0108, which existed so later screens would sit inside
+      // it rather than be retrofitted. This is the first of them.
+      el("a", {
+        class: current === "sources" ? "" : "on",
+        text: t("nav.tasks"),
+        onclick: () => go("tasks"),
+      }),
+      el("a", {
+        class: current === "sources" ? "on" : "",
+        text: t("nav.sources"),
+        onclick: () => go("sources"),
+      }),
       el("div", { class: "who" }, [
         el("div", { text: me?.name ?? "" }),
         el("div", { class: "muted", text: me?.environmentId ?? "" }),

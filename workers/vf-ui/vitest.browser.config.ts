@@ -77,6 +77,7 @@ export default defineConfig({
       "/tasks.js": resolve(__dirname, "public/tasks.js"),
       "/viewer.js": resolve(__dirname, "public/viewer.js"),
       "/signin.js": resolve(__dirname, "public/signin.js"),
+      "/sources.js": resolve(__dirname, "public/sources.js"),
     },
   },
 });
