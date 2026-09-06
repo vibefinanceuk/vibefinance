@@ -44,7 +44,36 @@
   --border-success: #639922;
 
   --radius: 8px;
-  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  /*
+    Calibri, asked for by name — decision 0124.
+
+    **Carlito is metric-compatible with Calibri** and openly licensed,
+    so a machine without Calibri gets the same shapes at the same widths
+    rather than a fallback that reflows every panel.
+
+    The system stack follows both, because a customer's machine may have
+    neither and something must be readable.
+  */
+  --font-sans: Calibri, Carlito, "Segoe UI", -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
+
+  /*
+    One type scale — decision 0124.
+
+    The interface had **seven hardcoded sizes** with 11, 12 and 13px all
+    in use, which is accumulation rather than a scale: nothing said what
+    the difference between 12 and 13 meant, so each new panel picked
+    whichever looked right beside its neighbour.
+
+    Four steps, each with a job. **A size not on this list is a
+    decision somebody should have to justify.**
+
+    Calibri sits a little smaller than the system faces at the same
+    pixel size, so these are a point above what the interface used.
+  */
+  --text-sm: 12px;   /* Labels, captions, secondary detail. */
+  --text-base: 14px; /* Body, fields, table cells — most of the screen. */
+  --text-lg: 16px;   /* Panel headings, a document's identity. */
+  --text-xl: 20px;   /* The one thing a screen is about. */
 
   /* Brand — the only block a white-label deployment replaces. */
   --brand-bar: #0f6e56;
@@ -80,7 +109,7 @@
 
 body {
   font-family: var(--font-sans);
-  font-size: 16px;
+  font-size: var(--text-base);
   line-height: 1.7;
   color: var(--text-primary);
   background: var(--surface-0);
@@ -94,7 +123,7 @@ body {
 }
 
 .note {
-  font-size: 13px;
+  font-size: var(--text-base);
   color: var(--text-secondary);
   border-left: 2px solid var(--border-strong);
   padding-left: 12px;
@@ -102,17 +131,29 @@ body {
 }
 
 h1 {
-  font-size: 22px;
+  font-size: var(--text-xl);
   font-weight: 500;
   margin: 0 0 4px;
 }
 
+/*
+  Form controls take the page's font entirely — decision 0124.
+
+  **`font: inherit` rather than `font-family: inherit`.** A browser
+  gives a control its own family, size, weight and line-height, and
+  inheriting only the family leaves the other three at the browser's
+  defaults — which is why the entry cells have always looked slightly
+  larger than everything around them.
+
+  `select` is the worst offender: several platforms ignore a family set
+  any other way.
+*/
 input,
 textarea,
 button,
 select {
-  font-family: inherit;
-  font-size: 13px;
+  font: inherit;
+  font-size: var(--text-base);
   color: var(--text-primary);
   background: var(--surface-2);
   border: 0.5px solid var(--border-strong);

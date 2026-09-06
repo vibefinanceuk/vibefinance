@@ -1,0 +1,85 @@
+import { describe, expect, it } from "vitest";
+
+/**
+ * One font, one scale — decision 0124.
+ *
+ * **This is the kind of thing that erodes.** The interface reached
+ * seven hardcoded sizes with 11, 12 and 13px all in use, because each
+ * new panel picked whichever looked right beside its neighbour and
+ * nothing said what the difference meant.
+ */
+
+/**
+ * The stylesheets as text, through a virtual module.
+ *
+ * **Vite processes CSS before `?raw` sees it** and hands back an empty
+ * string — and a test reading an empty string passes everything, which
+ * is worse than no test. The config reads them from disk instead.
+ */
+import stylesheets from "virtual:stylesheets";
+
+const CSS = { "tokens.css": stylesheets["tokens.css"] };
+const ALL = Object.entries(stylesheets);
+
+describe("every size is on the scale", () => {
+  it("hardcodes none of them", () => {
+    // A size not on the scale is a decision somebody should have to
+    // justify — and a `px` value in a stylesheet justifies nothing.
+    const offenders: string[] = [];
+    for (const [file, source] of ALL) {
+      for (const match of source.matchAll(/font-size:\s*(\d+)px/g)) {
+        offenders.push(`${file.split("/").pop()}: ${match[0]}`);
+      }
+    }
+
+    expect(
+      offenders,
+      `Hardcoded font sizes: ${offenders.join(", ")}. Use --text-sm, ` +
+        "--text-base, --text-lg or --text-xl, or add a step and say what it is for."
+    ).toEqual([]);
+  });
+
+  it("defines exactly the four steps", () => {
+    const tokens = Object.values(CSS).join("\n");
+    for (const step of ["--text-sm", "--text-base", "--text-lg", "--text-xl"]) {
+      expect(tokens, step).toContain(`${step}:`);
+    }
+  });
+});
+
+describe("one font, everywhere", () => {
+  it("asks for Calibri, with a metric-compatible fallback", () => {
+    // Carlito matches Calibri's metrics, so a machine without Calibri
+    // gets the same shapes at the same widths rather than a fallback
+    // that reflows every panel.
+    const tokens = Object.values(CSS).join("\n");
+    expect(tokens).toContain("Calibri");
+    expect(tokens).toContain("Carlito");
+  });
+
+  it("makes form controls take the page's font entirely", () => {
+    // `font: inherit`, not `font-family: inherit`. A browser gives a
+    // control its own family, SIZE, weight and line-height, and
+    // inheriting only the family leaves three of those at the browser's
+    // defaults — which is why the entry cells always looked larger than
+    // everything around them.
+    const tokens = Object.values(CSS).join("\n");
+    const controlRule = tokens.slice(tokens.indexOf("input,\ntextarea,\nbutton,\nselect {"));
+    expect(controlRule).toContain("font: inherit");
+  });
+
+  it("sets the family in one place", () => {
+    // A second font-family declaration is a second opinion about what
+    // this interface looks like.
+    //
+    // **Comments are stripped first.** The first version of this
+    // counted the word wherever it appeared and failed on its own
+    // explanatory comment — a test that reads prose as code will keep
+    // finding things that are not there.
+    const withoutComments = Object.values(CSS)
+      .join("\n")
+      .replace(/\/\*[\s\S]*?\*\//g, "");
+
+    expect(withoutComments.match(/font-family:/g)).toHaveLength(1);
+  });
+});

@@ -1,5 +1,6 @@
 import { defineConfig } from "vitest/config";
 import { resolve } from "node:path";
+import { readFileSync } from "node:fs";
 
 /**
  * The browser code, in a DOM — decision 0121.
@@ -14,7 +15,33 @@ import { resolve } from "node:path";
  * because the pool decides where a test runs and cannot be overridden
  * per file.
  */
+/**
+ * The stylesheets, as text — decision 0124.
+ *
+ * **Vite processes CSS before `?raw` sees it**, and returns an empty
+ * string. A typography test reading an empty string passes everything,
+ * which is worse than no test.
+ *
+ * Supplied as a virtual module instead, read from disk at config time.
+ */
+function stylesheetsAsText() {
+  const VIRTUAL = "virtual:stylesheets";
+  return {
+    name: "stylesheets-as-text",
+    resolveId: (id: string) => (id === VIRTUAL ? `\0${VIRTUAL}` : null),
+    load(id: string) {
+      if (id !== `\0${VIRTUAL}`) return null;
+      const files = ["public/tokens.css", "public/index.html"];
+      const contents = Object.fromEntries(
+        files.map((f) => [f.split("/").pop(), readFileSync(resolve(__dirname, f), "utf8")])
+      );
+      return `export default ${JSON.stringify(contents)};`;
+    },
+  };
+}
+
 export default defineConfig({
+  plugins: [stylesheetsAsText()],
   /**
    * Vite copies `public/` verbatim and refuses to import from it —
    * which is right for a build and wrong here, since `public/` is
