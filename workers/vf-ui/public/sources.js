@@ -56,6 +56,59 @@ async function load() {
  * identifiers**, and every id this screen creates is one nobody will
  * ever type again.
  */
+/**
+ * Retire a source, or delete one nothing ever used — decision 0130.
+ *
+ * **The word is "Retire", not "Delete"**, because that is what usually
+ * happens: a document that arrived through this source carries its
+ * name, and rules reference that name. Promising deletion and archiving
+ * instead is the mistake decision 0078 records.
+ */
+async function retireSource(source) {
+  const response = await fetch(`/api/sources/${encodeURIComponent(source.id)}`, {
+    method: "DELETE",
+  });
+  const body = await response.json();
+
+  if (!response.ok) {
+    note(body.error ?? t("sources.failed"));
+    return;
+  }
+
+  await load();
+  render();
+  // What actually happened, which may not be what they pressed.
+  note(body.detail ?? "");
+}
+
+/**
+ * Rename one.
+ *
+ * Refused by the server once a name is on a document or an address —
+ * and the reason is shown, because *"you cannot rename this"* without
+ * one is an instruction to guess.
+ */
+async function renameSource(source) {
+  const name = window.prompt(t("sources.rename"), source.name);
+  if (name === null || name.trim() === "") return;
+
+  const response = await fetch(`/api/sources/${encodeURIComponent(source.id)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name: name.trim() }),
+  });
+  const body = await response.json();
+
+  if (!response.ok) {
+    note(body.detail ?? body.error ?? t("sources.failed"));
+    return;
+  }
+
+  await load();
+  render();
+  note("");
+}
+
 async function createSource() {
   const name = document.getElementById("new-name").value.trim();
   const mechanism = document.getElementById("new-mechanism").value;
@@ -173,7 +226,20 @@ function sourceRow(source) {
     );
   }
 
-  return el("tr", {}, cells);
+  // Retired sources are listed, not hidden: somebody looking at where
+  // invoices arrive should see what stopped as well as what runs.
+  if (source.status === "retired") {
+    cells.push(el("td", { class: "muted", text: t("sources.retired") }));
+  } else {
+    cells.push(
+      el("td", { class: "rowactions" }, [
+        el("button", { text: t("sources.rename"), onclick: () => renameSource(source) }),
+        el("button", { text: t("sources.retire"), onclick: () => retireSource(source) }),
+      ])
+    );
+  }
+
+  return el("tr", { class: source.status === "retired" ? "retired" : undefined }, cells);
 }
 
 /**
@@ -212,7 +278,7 @@ function newSourcePanel() {
 
   return el("div", { class: "panel" }, [
     el("h3", { text: t("sources.new") }),
-    el("div", { class: "newsource" }, [
+    el("div", { class: "newsource stacked" }, [
       el("div", { class: "kf" }, [
         el("label", { for: "new-name", text: t("sources.name") }),
         el("input", {
@@ -250,6 +316,7 @@ function render() {
     frame(
       el("div", {}, [
         topbar(t("nav.sources"), t("sources.subtitle")),
+        el("div", { class: "columns" }, [
         el("div", { class: "panel" }, [
           el("table", {}, [
             el("thead", {}, [
@@ -258,6 +325,7 @@ function render() {
                 el("th", { text: t("sources.mechanism") }),
                 el("th", { text: t("sources.process") }),
                 el("th", { text: t("sources.address") }),
+                el("th", { text: "" }),
               ]),
             ]),
             el(
@@ -265,11 +333,15 @@ function render() {
               {},
               sources.length
                 ? sources.map(sourceRow)
-                : [el("tr", {}, [el("td", { class: "muted", colspan: "4", text: t("sources.empty") })])]
+                : [el("tr", {}, [el("td", { class: "muted", colspan: "5", text: t("sources.empty") })])]
             ),
           ]),
         ]),
+        // **Beside the list, not below it** — decision 0130. The form
+        // is three short fields and the list is the reason somebody
+        // came; giving each a full width wasted both.
         newSourcePanel(),
+        ]),
         el("div", { class: "problem", id: "sources-note", role: "status" }),
       ])
     )

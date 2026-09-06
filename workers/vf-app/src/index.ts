@@ -41,7 +41,7 @@ import {
 import { createWorkersAiExtractionModel } from "./extraction-model.js";
 import { handleGetExtractionSettings, handleUpdateExtractionSettings } from "./extraction-settings-route.js";
 import { handleToMarkdownDiagnostic } from "./tomarkdown-diagnostic.js";
-import { handleCreateSource, handleListSources , handleSetSourceEmail , handleListAllSources , handleListProcesses } from "./source-route.js";
+import { handleCreateSource, handleListSources , handleSetSourceEmail , handleListAllSources , handleListProcesses , handleRetireSource, handleRenameSource } from "./source-route.js";
 import { handleIngestPurchaseOrder, handleGetPurchaseOrder } from "./purchase-order-route.js";
 import { handleGetRetention, handleSetRetention, handleListBeyondRetention } from "./retention-route.js";
 import { handleCaptureFromSource } from "./source-capture-route.js";
@@ -1253,6 +1253,42 @@ export default {
 
     // Give an email source its address — decision 0126. Admin, because
     // it decides where a customer's invoices arrive.
+    // Retire a source, or delete one nothing ever used — decision 0130.
+    const retireMatch = pathname.match(/^\/sources\/([^/]+)$/);
+    if (retireMatch && request.method === "DELETE") {
+      const { db } = resolveTenant(request, env);
+      const auth = await requirePermission(db, request, "Admin.Configure", sessionContext(env));
+      if (!auth.authorized) {
+        return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
+      }
+
+      const result = await handleRetireSource(db, retireMatch[1], auth.user.id);
+      return json(result.body, result.status);
+    }
+
+    // Rename one — refused once its name is on a document.
+    if (retireMatch && request.method === "PATCH") {
+      const { db } = resolveTenant(request, env);
+      const auth = await requirePermission(db, request, "Admin.Configure", sessionContext(env));
+      if (!auth.authorized) {
+        return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
+      }
+      let renameBody: unknown;
+      try {
+        renameBody = await request.json();
+      } catch {
+        return json({ error: t("invalidJsonBody", resolveLocale(env.LOCALE)) }, 400);
+      }
+
+      const result = await handleRenameSource(
+        db,
+        retireMatch[1],
+        (renameBody as Record<string, unknown> | null)?.name
+      );
+      return json(result.body, result.status);
+    }
+
+
     const sourceEmailMatch = pathname.match(/^\/sources\/([^/]+)\/email$/);
     if (sourceEmailMatch && request.method === "POST") {
       const { db } = resolveTenant(request, env);

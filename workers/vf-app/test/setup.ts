@@ -41,6 +41,7 @@ import invoiceOrgSql from "../../../migrations/0036_invoice_org.sql?raw";
 import stageRequiresOrgSql from "../../../migrations/0037_stage_requires_org.sql?raw";
 import fieldVisibilitySql from "../../../migrations/0038_field_visibility.sql?raw";
 import sourceEmailSql from "../../../migrations/0039_source_email_address.sql?raw";
+import sourceStatusSql from "../../../migrations/0040_source_status.sql?raw";
 import taskStatesSql from "../../../migrations/0031_task_states_and_returns.sql?raw";
 import orgSettingsSql from "../../../migrations/0032_org_settings_retention.sql?raw";
 import discardedStateSql from "../../../migrations/0033_discarded_task_state.sql?raw";
@@ -168,6 +169,7 @@ export async function applyTestSchema(): Promise<void> {
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(stageRequiresOrgSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(fieldVisibilitySql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(sourceEmailSql)));
+  await env.DB.exec(toOneStatementPerLine(stripSqlComments(sourceStatusSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(taskStatesSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(orgSettingsSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(discardedStateSql)));

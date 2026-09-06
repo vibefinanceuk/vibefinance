@@ -1,7 +1,12 @@
 import { env } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
 import { applyTestSchema } from "./setup.js";
-import { handleSetSourceEmail, ingestionAddress } from "../src/source-route.js";
+import {
+  handleSetSourceEmail,
+  ingestionAddress,
+  handleRetireSource,
+  handleRenameSource,
+} from "../src/source-route.js";
 
 /**
  * An address a supplier can send an invoice to — decision 0126.
@@ -179,5 +184,118 @@ describe("what the platform will accept (decision 0129)", () => {
     // The limit must not refuse something reasonable.
     await seedSource("s-ok", "Accounts Payable Mailbox UK");
     expect((await handleSetSourceEmail(env.DB, "s-ok", "acme")).status).toBe(200);
+  });
+});
+
+describe("retiring a source (decision 0130)", () => {
+  /**
+   * **A document records the source's NAME, not its id.**
+   * `mandate.channel` is set from `source.name` at capture, it is in
+   * the closed vocabulary, and customers write rules against it — so a
+   * source is not a row that can simply be removed.
+   */
+  async function seedUser() {
+    await env.DB.prepare(
+      "INSERT OR IGNORE INTO org_users (id, email, name) VALUES ('u-dan', 'd@x.com', 'Dan')"
+    ).run();
+  }
+
+  async function seedArrival(channel: string) {
+    await env.DB.prepare("INSERT INTO invoice_headers (id, facts_json) VALUES ('inv-a', ?)")
+      .bind(JSON.stringify({ "mandate.channel": channel }))
+      .run();
+  }
+
+  it("deletes one nothing ever used", async () => {
+    // Somebody correcting a mistake, not changing history.
+    await seedUser();
+    await seedSource("s-oops", "Created by mistake");
+
+    const result = await handleRetireSource(env.DB, "s-oops", "u-dan");
+    expect((result.body as { outcome: string }).outcome).toBe("deleted");
+
+    const row = await env.DB.prepare("SELECT id FROM sources WHERE id = 's-oops'").first();
+    expect(row).toBeNull();
+  });
+
+  it("retires one that documents arrived through", async () => {
+    // Removing the row would leave invoices citing a channel nothing
+    // explains.
+    await seedUser();
+    await seedSource("s-live", "AP Mailbox");
+    await seedArrival("AP Mailbox");
+
+    const result = await handleRetireSource(env.DB, "s-live", "u-dan");
+    expect((result.body as { outcome: string }).outcome).toBe("retired");
+    expect(String((result.body as { detail: string }).detail)).toContain("carry its name");
+
+    const row = await env.DB.prepare(
+      "SELECT status, retired_by FROM sources WHERE id = 's-live'"
+    ).first<{ status: string; retired_by: string }>();
+    expect(row?.status).toBe("retired");
+    expect(row?.retired_by).toBe("u-dan");
+  });
+
+  it("retires one that was given an address, even if unused", async () => {
+    // A supplier may have written the address into their ERP. Deleting
+    // the source does not stop them sending.
+    await seedUser();
+    await seedSource("s-addr", "AR Mailbox");
+    await handleSetSourceEmail(env.DB, "s-addr", "acme");
+
+    const result = await handleRetireSource(env.DB, "s-addr", "u-dan");
+    expect((result.body as { outcome: string }).outcome).toBe("retired");
+    expect(String((result.body as { detail: string }).detail)).toContain("address was issued");
+  });
+
+  it("refuses to retire one twice", async () => {
+    await seedUser();
+    await seedSource("s-twice", "AP Mailbox");
+    await seedArrival("AP Mailbox");
+    await handleRetireSource(env.DB, "s-twice", "u-dan");
+
+    expect((await handleRetireSource(env.DB, "s-twice", "u-dan")).status).toBe(409);
+  });
+});
+
+describe("renaming a source (decision 0130)", () => {
+  it("renames one nothing has touched", async () => {
+    await seedSource("s-new", "Draft name");
+    const result = await handleRenameSource(env.DB, "s-new", "AP Mailbox");
+    expect(result.status).toBe(200);
+
+    const row = await env.DB.prepare("SELECT name FROM sources WHERE id = 's-new'").first<{
+      name: string;
+    }>();
+    expect(row?.name).toBe("AP Mailbox");
+  });
+
+  it("refuses once an address exists", async () => {
+    // The address is derived from the name and never reissued, so a
+    // rename would make the two disagree permanently.
+    await seedSource("s-addr2", "AP Mailbox");
+    await handleSetSourceEmail(env.DB, "s-addr2", "acme");
+
+    const result = await handleRenameSource(env.DB, "s-addr2", "Something else");
+    expect(result.status).toBe(409);
+    expect(String((result.body as { detail: string }).detail)).toContain("never reissued");
+  });
+
+  it("refuses once a document has arrived", async () => {
+    // Each one records this source's name, so renaming would leave them
+    // citing a channel that no longer exists.
+    await seedSource("s-used", "AP Mailbox");
+    await env.DB.prepare("INSERT INTO invoice_headers (id, facts_json) VALUES ('inv-b', ?)")
+      .bind(JSON.stringify({ "mandate.channel": "AP Mailbox" }))
+      .run();
+
+    const result = await handleRenameSource(env.DB, "s-used", "Renamed");
+    expect(result.status).toBe(409);
+    expect(String((result.body as { detail: string }).detail)).toContain("no longer exists");
+  });
+
+  it("refuses an empty name", async () => {
+    await seedSource("s-blank", "AP Mailbox");
+    expect((await handleRenameSource(env.DB, "s-blank", "  ")).status).toBe(400);
   });
 });

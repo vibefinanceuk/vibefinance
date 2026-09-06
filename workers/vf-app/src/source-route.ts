@@ -29,6 +29,8 @@ export function isKnownSourceMechanism(value: unknown): value is SourceMechanism
 }
 
 interface SourceRow {
+  status?: string | null;
+  retired_at?: string | null;
   email_address?: string | null;
   email_routing?: string | null;
   id: string;
@@ -55,6 +57,11 @@ function toBody(row: SourceRow) {
     // configuration screen imply mail was coming when nothing yet
     // delivers to it.
     emailAddress: row.email_address ?? null,
+    // Retired sources are listed, not hidden: a customer looking at
+    // where invoices arrive should see what stopped as well as what
+    // runs (decision 0130).
+    status: row.status ?? "active",
+    retiredAt: row.retired_at ?? null,
     emailRouting: row.email_routing ?? "not_configured",
     createdAt: row.created_at,
   };
@@ -366,4 +373,147 @@ export async function handleListProcesses(db: D1Database): Promise<RouteResult> 
       })),
     },
   };
+}
+
+/**
+ * Whether anything has ever arrived through a source — decision 0130.
+ *
+ * **Nothing references a source by id**, so this asks the question the
+ * data can actually answer: does any invoice carry this source's name
+ * as its `mandate.channel`? That is what capture writes (decision
+ * 0060), and it is the thing that makes a name permanent.
+ */
+async function hasReceivedDocuments(db: D1Database, sourceName: string): Promise<boolean> {
+  const row = await db
+    .prepare(
+      "SELECT id FROM invoice_headers WHERE json_extract(facts_json, '$.\"mandate.channel\"') = ? LIMIT 1"
+    )
+    .bind(sourceName)
+    .first<{ id: string }>();
+
+  return row !== null;
+}
+
+/**
+ * Stop a source receiving — decision 0130.
+ *
+ * **Retires rather than deletes**, except where deleting is genuinely
+ * harmless: a source through which nothing has ever arrived and which
+ * was never given an address. That case is somebody correcting a
+ * mistake, not changing history.
+ *
+ * Everywhere else, a document that arrived through this source carries
+ * its **name** in `mandate.channel`, and rules reference that name.
+ * Removing the row would leave invoices citing a channel nothing
+ * explains, and rules matching a name no source has — silently never
+ * firing, which decision 0113 records as the worst kind of rule failure
+ * because it looks correct in every listing.
+ */
+export async function handleRetireSource(
+  db: D1Database,
+  sourceId: string,
+  retiredBy: string
+): Promise<RouteResult> {
+  const source = await db
+    .prepare("SELECT id, name, status, email_address FROM sources WHERE id = ?")
+    .bind(sourceId)
+    .first<{ id: string; name: string; status: string; email_address: string | null }>();
+
+  if (!source) {
+    return { status: 404, body: { error: `source ${sourceId} does not exist` } };
+  }
+  if (source.status === "retired") {
+    return { status: 409, body: { error: `source ${sourceId} is already retired` } };
+  }
+
+  const used = await hasReceivedDocuments(db, source.name);
+
+  if (!used && !source.email_address) {
+    await db.prepare("DELETE FROM sources WHERE id = ?").bind(sourceId).run();
+    return {
+      status: 200,
+      body: {
+        sourceId,
+        outcome: "deleted",
+        detail: "nothing ever arrived through it and it had no address, so it is simply gone",
+      },
+    };
+  }
+
+  await db
+    .prepare("UPDATE sources SET status = 'retired', retired_at = ?, retired_by = ? WHERE id = ?")
+    .bind(new Date().toISOString(), retiredBy, sourceId)
+    .run();
+
+  return {
+    status: 200,
+    body: {
+      sourceId,
+      outcome: "retired",
+      // **Said, not implied.** A person expecting deletion should know
+      // why they got something else.
+      detail: used
+        ? "documents arrived through this source and carry its name, so the record stays"
+        : "an address was issued for this source, so the record stays",
+    },
+  };
+}
+
+/**
+ * Rename a source — decision 0130.
+ *
+ * **Refused once a document has arrived.** `mandate.channel` is a copy
+ * of the name taken at capture, so renaming would leave every past
+ * invoice citing the old name while the source claims the new one —
+ * and a rule written against either would be right about half the
+ * documents.
+ *
+ * Refused once an address exists, too: the address is derived from the
+ * name and **never reissued** (decision 0126), so a rename would make
+ * the two disagree permanently.
+ */
+export async function handleRenameSource(
+  db: D1Database,
+  sourceId: string,
+  newName: unknown
+): Promise<RouteResult> {
+  if (typeof newName !== "string" || newName.trim() === "") {
+    return { status: 400, body: { error: "name (a non-empty string) is required" } };
+  }
+
+  const source = await db
+    .prepare("SELECT id, name, email_address FROM sources WHERE id = ?")
+    .bind(sourceId)
+    .first<{ id: string; name: string; email_address: string | null }>();
+
+  if (!source) {
+    return { status: 404, body: { error: `source ${sourceId} does not exist` } };
+  }
+
+  if (source.email_address) {
+    return {
+      status: 409,
+      body: {
+        error: `source ${sourceId} receives at ${source.email_address}`,
+        detail:
+          "the address is derived from the name and is never reissued, so renaming would " +
+          "make the two disagree — create a new source instead",
+      },
+    };
+  }
+
+  if (await hasReceivedDocuments(db, source.name)) {
+    return {
+      status: 409,
+      body: {
+        error: `documents have arrived through ${sourceId}`,
+        detail:
+          "each one records this source's name, so renaming would leave them citing a " +
+          "channel that no longer exists — create a new source instead",
+      },
+    };
+  }
+
+  await db.prepare("UPDATE sources SET name = ? WHERE id = ?").bind(newName.trim(), sourceId).run();
+  return { status: 200, body: { sourceId, name: newName.trim() } };
 }

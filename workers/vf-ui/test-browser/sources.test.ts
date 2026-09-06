@@ -51,6 +51,9 @@ const STRINGS = {
     "mechanism.edi": "EDI",
     "sources.needletters": "The name needs at least one letter or number.",
     "sources.toolong": "That name is too long for an email address.",
+    "sources.retire": "Retire",
+    "sources.rename": "Rename",
+    "sources.retired": "Retired",
   },
 };
 
@@ -276,5 +279,48 @@ describe("the screen says what the platform will accept (decision 0129)", () => 
 
     expect(posted).toHaveLength(0);
     expect(document.body.textContent).toContain("too long");
+  });
+});
+
+describe("retiring and renaming (decision 0130)", () => {
+  const LIVE = [
+    { id: "s-1", name: "AP Mailbox", mechanism: "email", processId: "ap", emailAddress: null, status: "active" },
+  ];
+
+  it("says Retire, not Delete", async () => {
+    // **That is what usually happens**: a document that arrived through
+    // a source carries its name, and rules reference that name.
+    // Promising deletion and archiving instead is the mistake decision
+    // 0078 records.
+    await open(LIVE);
+    const labels = [...document.querySelectorAll(".rowactions button")].map((b) => b.textContent);
+    expect(labels).toContain("Retire");
+    expect(labels).not.toContain("Delete");
+  });
+
+  it("offers renaming too", async () => {
+    await open(LIVE);
+    const labels = [...document.querySelectorAll(".rowactions button")].map((b) => b.textContent);
+    expect(labels).toContain("Rename");
+  });
+
+  it("offers neither on one already retired", async () => {
+    await open([{ ...LIVE[0], status: "retired" }]);
+    expect(document.querySelectorAll(".rowactions button")).toHaveLength(0);
+    expect(document.body.textContent).toContain("Retired");
+  });
+
+  it("lists a retired source rather than hiding it", async () => {
+    // Somebody looking at where invoices arrive should see what stopped
+    // as well as what runs.
+    await open([{ ...LIVE[0], status: "retired" }]);
+    expect(document.body.textContent).toContain("AP Mailbox");
+    expect(document.querySelector("tr.retired")).not.toBeNull();
+  });
+
+  it("puts the form beside the list, not below it", async () => {
+    await open(LIVE);
+    expect(document.querySelector(".columns")).not.toBeNull();
+    expect(document.querySelector(".newsource.stacked")).not.toBeNull();
   });
 });

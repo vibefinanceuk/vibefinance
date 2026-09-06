@@ -216,6 +216,21 @@
     gap: 14px;
   }
 
+  /*
+    Beside the list rather than below it — decision 0130. Three short
+    fields in a narrow column stack; the same fields across a full width
+    would leave most of it empty.
+  */
+  .newsource.stacked { flex-direction: column; align-items: stretch; }
+  .newsource.stacked .kf { min-width: 0; }
+
+  .rowactions { display: flex; gap: 4px; white-space: nowrap; }
+  .rowactions button { padding: 4px 8px; min-height: 26px; font-size: var(--text-sm); }
+
+  /* A retired source is shown, not hidden: somebody looking at where
+     invoices arrive should see what stopped as well as what runs. */
+  tr.retired td { opacity: 0.55; }
+
   .newsource .kf { margin: 0; min-width: 160px; }
 
   /* The identifier a name becomes, shown as somebody types
