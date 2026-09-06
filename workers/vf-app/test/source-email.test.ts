@@ -127,3 +127,57 @@ describe("giving a source an address", () => {
     expect(String((result.body as { error: string }).error)).toContain("CUSTOMER_ID");
   });
 });
+
+describe("what the platform will accept (decision 0129)", () => {
+  /**
+   * **Found by a question**: *"do we not have to limit the user to a
+   * naming convention that relates to the Cloudflare platform?"*
+   *
+   * Three real problems, and the characters were never one of them —
+   * the slug already produced `[a-z0-9-]`.
+   */
+  it("refuses a name with no letters or numbers in it", async () => {
+    // `!!!` slugs to nothing, and `.acme@vibefinance.com` has a leading
+    // dot and is not an address at all.
+    await seedSource("s-bang", "!!!");
+    const result = await handleSetSourceEmail(env.DB, "s-bang", "acme");
+
+    expect(result.status).toBe(422);
+    expect(String((result.body as { error: string }).error)).toContain("no letters or numbers");
+  });
+
+  it("refuses a name that would exceed RFC 5321's local part", async () => {
+    // 64 characters, which Cloudflare enforces. An 80-character name
+    // produced an 85-character local part.
+    await seedSource("s-long", "A".repeat(80));
+    const result = await handleSetSourceEmail(env.DB, "s-long", "acme");
+
+    expect(result.status).toBe(422);
+    expect(String((result.body as { error: string }).error)).toContain("64");
+  });
+
+  it("says to rename it, rather than only that it failed", async () => {
+    await seedSource("s-bang2", "###");
+    const result = await handleSetSourceEmail(env.DB, "s-bang2", "acme");
+    expect(String((result.body as { detail: string }).detail)).toContain("rename");
+  });
+
+  it("folds accents rather than stripping them", async () => {
+    // **The interface is translated precisely so these customers
+    // exist.** A German source named "Rechnungen für Köln" produced
+    // `rechnungen-f-r-k-ln` before this — unreadable.
+    expect(ingestionAddress("Rechnungen für Köln", "acme")).toBe(
+      "rechnungen-fur-koln.acme@vibefinance.com"
+    );
+  });
+
+  it("handles the sharp s the way German does", () => {
+    expect(ingestionAddress("Großkunden", "acme")).toBe("grosskunden.acme@vibefinance.com");
+  });
+
+  it("still accepts an ordinary name at the boundary", async () => {
+    // The limit must not refuse something reasonable.
+    await seedSource("s-ok", "Accounts Payable Mailbox UK");
+    expect((await handleSetSourceEmail(env.DB, "s-ok", "acme")).status).toBe(200);
+  });
+});

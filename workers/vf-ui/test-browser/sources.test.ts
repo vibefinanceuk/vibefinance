@@ -49,6 +49,8 @@ const STRINGS = {
     "mechanism.sftp": "SFTP",
     "mechanism.file_import": "File import",
     "mechanism.edi": "EDI",
+    "sources.needletters": "The name needs at least one letter or number.",
+    "sources.toolong": "That name is too long for an email address.",
   },
 };
 
@@ -226,5 +228,53 @@ describe("creating a source (decision 0128)", () => {
     await new Promise((r) => setTimeout(r, 0));
 
     expect(posted).toContain("/api/processes/ap/sources");
+  });
+});
+
+describe("the screen says what the platform will accept (decision 0129)", () => {
+  /**
+   * **Said while somebody is still typing**, rather than after a source
+   * exists that can never receive an invoice.
+   */
+  it("shows the identifier a name will become", async () => {
+    // A name becomes a URL and an address, and somebody should see that
+    // before it is permanent.
+    await open([]);
+    const input = document.getElementById("new-name") as HTMLInputElement;
+    input.value = "AP Mailbox (UK)";
+    input.dispatchEvent(new Event("input"));
+
+    expect(document.getElementById("new-slug")?.textContent).toBe("ap-mailbox-uk");
+  });
+
+  it("folds accents in the preview too", async () => {
+    await open([]);
+    const input = document.getElementById("new-name") as HTMLInputElement;
+    input.value = "Rechnungen für Köln";
+    input.dispatchEvent(new Event("input"));
+
+    expect(document.getElementById("new-slug")?.textContent).toBe("rechnungen-fur-koln");
+  });
+
+  it("refuses a name with no letters, before posting anything", async () => {
+    const posted: string[] = [];
+    await open([], {}, posted);
+    (document.getElementById("new-name") as HTMLInputElement).value = "!!!";
+    (document.querySelector("button.primary") as HTMLButtonElement).click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(posted).toHaveLength(0);
+    expect(document.body.textContent).toContain("at least one letter");
+  });
+
+  it("refuses a name too long for an address", async () => {
+    const posted: string[] = [];
+    await open([], {}, posted);
+    (document.getElementById("new-name") as HTMLInputElement).value = "A".repeat(80);
+    (document.querySelector("button.primary") as HTMLButtonElement).click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(posted).toHaveLength(0);
+    expect(document.body.textContent).toContain("too long");
   });
 });

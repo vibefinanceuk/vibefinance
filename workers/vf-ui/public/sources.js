@@ -12,6 +12,28 @@ import { el, frame, topbar, setCurrentScreen } from "/tasks.js";
 let sources = [];
 let processes = [];
 
+/**
+ * A name reduced to an identifier — decision 0129.
+ *
+ * **Accents are folded rather than stripped**, so a German customer
+ * naming a source *"Rechnungen für Köln"* gets `rechnungen-fur-koln`
+ * and not `rechnungen-f-r-k-ln`. The interface is translated precisely
+ * so those customers exist.
+ *
+ * Mirrors the server's own function. Two copies of one rule is a risk,
+ * and the alternative — a round trip to preview an identifier as
+ * somebody types — is worse.
+ */
+function slug(value) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/ß/g, "ss")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
 async function load() {
   const [sourceResponse, processResponse] = await Promise.all([
     fetch("/api/sources"),
@@ -44,10 +66,27 @@ async function createSource() {
     return;
   }
 
-  const id = name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
+  const id = slug(name);
+
+  /**
+   * What the platform will actually accept — decision 0129.
+   *
+   * **Said while somebody is still typing**, rather than after a source
+   * exists that can never receive an invoice. A name of `!!!` produces
+   * no identifier at all, and a long one produces an address longer
+   * than RFC 5321 permits.
+   *
+   * The server checks the same things: this is the courtesy, not the
+   * guard.
+   */
+  if (id === "") {
+    note(t("sources.needletters"));
+    return;
+  }
+  if (id.length > 40) {
+    note(t("sources.toolong"));
+    return;
+  }
 
   const response = await fetch(`/api/processes/${encodeURIComponent(processId)}/sources`, {
     method: "POST",
@@ -176,7 +215,19 @@ function newSourcePanel() {
     el("div", { class: "newsource" }, [
       el("div", { class: "kf" }, [
         el("label", { for: "new-name", text: t("sources.name") }),
-        el("input", { id: "new-name", type: "text", placeholder: t("sources.nameexample") }),
+        el("input", {
+          id: "new-name",
+          type: "text",
+          placeholder: t("sources.nameexample"),
+          // **The identifier, as they type.** A name becomes a URL and
+          // an address, and somebody should see that before it is
+          // permanent rather than discover it afterwards.
+          oninput: (event) => {
+            const preview = document.getElementById("new-slug");
+            if (preview) preview.textContent = slug(event.target.value);
+          },
+        }),
+        el("div", { class: "muted slugpreview", id: "new-slug" }),
       ]),
       el("div", { class: "kf" }, [
         el("label", { for: "new-mechanism", text: t("sources.mechanism") }),

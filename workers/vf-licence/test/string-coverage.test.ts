@@ -73,6 +73,8 @@ const KEYS_THE_INTERFACE_USES = [
   "sources.nameexample",
   "sources.noprocess",
   "sources.nostages",
+  "sources.needletters",
+  "sources.toolong",
   "mechanism.email",
   "mechanism.https",
   "mechanism.sftp",

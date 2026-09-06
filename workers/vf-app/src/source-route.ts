@@ -145,6 +145,61 @@ export async function handleListSources(db: D1Database, processId: string): Prom
 const INGESTION_DOMAIN = "vibefinance.com";
 
 /**
+ * RFC 5321's limit on a local part, which Cloudflare enforces —
+ * decision 0129.
+ */
+const MAX_LOCAL_PART = 64;
+
+/**
+ * A name reduced to what a mail system and a URL will both carry.
+ *
+ * **Accented letters are folded rather than stripped.** A German
+ * customer naming a source *"Rechnungen für Köln"* got
+ * `rechnungen-f-r-k-ln` before decision 0129 — unreadable, and the
+ * interface is translated precisely so those customers exist.
+ */
+function slug(value: string): string {
+  return value
+    .normalize("NFD")
+    // Strip the combining marks NFD just separated, so "ü" becomes "u"
+    // rather than disappearing.
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/ß/g, "ss")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+/**
+ * Whether a name can become an address at all — decision 0129.
+ *
+ * **Checked before anything is created**, so a person is told while
+ * they are still typing rather than after a source exists that can
+ * never receive.
+ */
+export function addressableName(
+  sourceName: string,
+  customerId: string
+): { ok: true } | { ok: false; reason: string } {
+  const name = slug(sourceName);
+  if (name === "") {
+    // `!!!` slugs to nothing, and `.acme@vibefinance.com` has a leading
+    // dot and is not an address.
+    return { ok: false, reason: "the name has no letters or numbers in it" };
+  }
+
+  const localPart = `${name}.${slug(customerId)}`;
+  if (localPart.length > MAX_LOCAL_PART) {
+    return {
+      ok: false,
+      reason: `the name is too long: it would make an address of ${localPart.length} characters and the limit is ${MAX_LOCAL_PART}`,
+    };
+  }
+
+  return { ok: true };
+}
+
+/**
  * The local part of an ingestion address.
  *
  * **`<name>.<customer>`**, and the *customer* rather than the
@@ -154,20 +209,11 @@ const INGESTION_DOMAIN = "vibefinance.com";
  * customer goes live. A customer id is stable across both, and unique
  * across the fleet — so the address is too, without a registry.
  *
- * The name is squeezed to what a mail system will carry unchanged: a
- * person naming a source *"AP Mailbox (UK)"* should get a working
- * address rather than a rejection.
+ * Call `addressableName` first: this assumes a name that can become
+ * one.
  */
 export function ingestionAddress(sourceName: string, customerId: string): string {
-  const slug = (value: string) =>
-    value
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "");
-
-  const name = slug(sourceName);
-  const customer = slug(customerId);
-  return `${name}.${customer}@${INGESTION_DOMAIN}`;
+  return `${slug(sourceName)}.${slug(customerId)}@${INGESTION_DOMAIN}`;
 }
 
 /**
@@ -221,6 +267,17 @@ export async function handleSetSourceEmail(
       body: {
         error: `source ${sourceId} already receives at ${source.email_address}`,
         detail: "an address is never reissued, because suppliers have written it down",
+      },
+    };
+  }
+
+  const addressable = addressableName(source.name, customerId);
+  if (!addressable.ok) {
+    return {
+      status: 422,
+      body: {
+        error: `source ${sourceId} cannot have an address: ${addressable.reason}`,
+        detail: "rename the source, then create the address",
       },
     };
   }
