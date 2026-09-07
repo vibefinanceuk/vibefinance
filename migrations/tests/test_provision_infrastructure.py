@@ -117,3 +117,41 @@ class TestArguments:
         # easy by defaulting.
         assert run(["--dry-run"]).returncode != 0
         assert run(["--customer", "acme", "--dry-run"]).returncode != 0
+
+
+class TestManifestVerification:
+    """Built after demonstrating the need for it — decision 0136.
+
+    Setting Acme's `r2_bucket_name` by hand, the value was **guessed
+    wrong**: `vf-documents-poc` where the Worker is bound to
+    `acme-documents`. Nothing objected.
+
+    A deploy reading that manifest would have produced a Worker bound to
+    a bucket that does not exist. Decision 0136 says the manifest *"stops
+    being a record and starts being an instruction"* — and an
+    instruction nobody checks is one that is eventually wrong.
+    """
+
+    def test_verifies_before_deploying_not_after(self):
+        # A Worker bound to something that is not there is not a thing
+        # to discover afterwards.
+        result = run(["--customer", "acme", "--environment", "acme-sandbox-eu", "--dry-run"])
+        verify_at = result.stdout.index("verify the manifest")
+        deploy_at = result.stdout.index("vf-app Worker")
+        assert verify_at < deploy_at
+
+    def test_says_it_is_skipping_rather_than_reporting_success(self):
+        # **Honest about doing nothing.** Reading the real manifest
+        # needs an admin key alongside the Cloudflare token, and
+        # reporting a clean verification of an empty config would be
+        # worse than saying so.
+        result = run(["--customer", "acme", "--environment", "acme-sandbox-eu"])
+        assert result.returncode == 2  # no credentials, which is a different stop
+
+    def test_the_stop_message_names_what_remains(self):
+        # It said the config question was undecided, which 0136
+        # answered. A message that goes stale sends somebody to reopen a
+        # settled decision.
+        result = run(["--customer", "acme", "--environment", "acme-sandbox-eu", "--dry-run"])
+        assert "0136" in result.stderr
+        assert "undecided" not in result.stderr

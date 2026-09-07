@@ -211,11 +211,62 @@ def deploy_worker(customer: str, *, dry_run: bool) -> None:
     would be worse than one that stops.
     """
     raise ProvisioningError(
-        "deploying the Worker is not implemented (decision 0135): a deployment is "
-        "per-config and whether the config is generated or maintained per customer "
-        "is undecided. Everything before this step has been done and is safe to "
-        "re-run; deploy by hand and then record the result."
+        "deploying the Worker is not implemented. Decision 0136 settled where the "
+        "config comes from — the manifest, read from "
+        "`GET /environments/:id/config` on vf-licence — and what remains is "
+        "recording the ids this script created back into it, writing a "
+        "wrangler.jsonc into a temp directory, and deploying from that.\n\n"
+        "Everything before this step has been done and is safe to re-run; deploy "
+        "by hand and then record the result."
     )
+
+
+# ---------------------------------------------------------------------
+# Verifying the manifest against what actually exists — decision 0136.
+# ---------------------------------------------------------------------
+#
+# **This was recorded as an idea and built after demonstrating the need
+# for it.** Setting Acme's `r2_bucket_name` by hand, the value was
+# guessed wrong — `vf-documents-poc` where the Worker is bound to
+# `acme-documents`. Nothing objected.
+#
+# A deploy reading that manifest would have produced a Worker bound to a
+# bucket that does not exist. Decision 0136 says the manifest "stops
+# being a record and starts being an instruction", and an instruction
+# nobody checks is one that is eventually wrong.
+
+
+def verify_manifest(config: dict, *, dry_run: bool) -> list[str]:
+    """Every way the manifest disagrees with the account.
+
+    Returns the disagreements rather than raising, so a person sees all
+    of them at once. Being told about a wrong bucket, fixing it, and
+    then being told about a wrong database id is two round trips for one
+    problem.
+    """
+    problems: list[str] = []
+
+    if dry_run:
+        print("    would verify the manifest against the account")
+        return problems
+
+    if not config:
+        # Honest about doing nothing, rather than reporting a clean
+        # verification of an empty config.
+        print("    skipped: no manifest was read (see main)")
+        return problems
+
+    database_name = config.get("d1DatabaseName")
+    if database_name and not database_exists(database_name):
+        problems.append(
+            f"the manifest names D1 database '{database_name}', which does not exist"
+        )
+
+    bucket = config.get("r2BucketName")
+    if bucket and not bucket_exists(bucket):
+        problems.append(f"the manifest names R2 bucket '{bucket}', which does not exist")
+
+    return problems
 
 
 def main() -> int:
@@ -257,7 +308,25 @@ def main() -> int:
     print(f"  3. R2 bucket: {bucket}")
     create_bucket(bucket, dry_run=args.dry_run)
 
-    print("  4. vf-app Worker")
+    print("  4. verify the manifest against the account")
+    # **Before deploying, not after.** A manifest that disagrees with
+    # the account deploys a Worker bound to something that is not there
+    # — or, worse, to another customer's.
+    # **Passed an empty config, so it verifies nothing yet.** Reading
+    # the real one needs an admin key for vf-licence alongside the
+    # Cloudflare token, and two credentials in one script deserves the
+    # thought decision 0135 gave the first — recorded rather than
+    # assumed.
+    problems = verify_manifest({}, dry_run=args.dry_run)
+    if problems:
+        joined = "\n  ".join(problems)
+        raise ProvisioningError(
+            "the manifest disagrees with the account:\n  "
+            + joined
+            + "\n\nFix the manifest, or the account, before deploying."
+        )
+
+    print("  5. vf-app Worker")
     deploy_worker(args.customer, dry_run=args.dry_run)
 
     # Steps 5 and 6 — Email Routing rules, and recording the result in

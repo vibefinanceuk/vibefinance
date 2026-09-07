@@ -90,8 +90,24 @@ token too, which is the operator's and never in a Worker (decision
 instruction, and that deserves saying out loud.
 
 **A deploy should verify what it is about to do**: an environment whose
-`d1_database_id` does not match a database named
-`{environment_id}` is a mismatch worth refusing rather than deploying.
+`d1_database_id` does not match a database named `{environment_id}` is a
+mismatch worth refusing rather than deploying.
+
+> **Built after demonstrating the need for it.** Setting Acme's
+> `r2_bucket_name` by hand, the value was **guessed wrong** —
+> `vf-documents-poc` where the Worker is bound to `acme-documents`.
+> Nothing objected, and a deploy reading that manifest would have
+> produced a Worker bound to a bucket that does not exist.
+>
+> The step now runs **before** the deploy rather than after, and reports
+> **every** disagreement at once: being told about a wrong bucket,
+> fixing it, and then being told about a wrong database id is two round
+> trips for one problem.
+>
+> It reads no manifest yet, and **says so rather than reporting a clean
+> verification of an empty config**. Doing so needs an admin key for
+> `vf-licence` alongside the Cloudflare token, and two credentials in
+> one script deserves the thought decision 0135 gave the first.
 
 ### And the generated config is recorded
 
