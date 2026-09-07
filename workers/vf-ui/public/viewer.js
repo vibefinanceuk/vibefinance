@@ -440,6 +440,54 @@ function icon(name) {
 }
 
 /**
+ * What a task action needs, beyond a task id — decision 0138.
+ *
+ * **Returning and returning to a supplier need a reason.** Decision
+ * 0075 made that a requirement rather than a courtesy: a document that
+ * came back with no explanation is one the next person cannot act on.
+ *
+ * Discarding needs one too (0078) — *"nothing goes back"*, so the
+ * record of why is all there is.
+ */
+const ACTIONS_NEEDING_A_REASON = ["return", "return_to_supplier", "discard"];
+
+/**
+ * Do something to this task.
+ *
+ * **The server decides what may be done** (decision 0103); this only
+ * asks. A refusal is shown rather than swallowed, because a button that
+ * appears to work and does not is worse than one that is absent.
+ */
+async function runAction(name, task, onClose) {
+  let body = {};
+
+  if (ACTIONS_NEEDING_A_REASON.includes(name)) {
+    const reason = window.prompt(t(`action.${name}`) + "\n\n" + t("action.whyreason"));
+    // **Cancelled means cancelled**, and an empty reason is not a
+    // reason — decision 0075 refuses one server-side too.
+    if (reason === null || reason.trim() === "") return;
+    body = { reason: reason.trim() };
+  }
+
+  const path = name.replace(/_/g, "-");
+  const response = await fetch(`/api/tasks/${encodeURIComponent(task.id)}/${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    const failure = await response.json().catch(() => ({}));
+    note(failure.error ?? t("viewer.actionfailed"));
+    return;
+  }
+
+  // The task is finished or moved, so the viewer has nothing left to
+  // show. Closing returns to the list, which is where the answer is.
+  onClose();
+}
+
+/**
  * One action: icon above its label, in a row — decision 0122.
  *
  * **Still the server's decision** which appear (decision 0103). Giving
@@ -769,7 +817,7 @@ export async function openViewer(task, onClose) {
                 // move where they are decided.
                 ...task.actions
                   .filter((a) => a !== "key")
-                  .map((a) => actionLink(a)),
+                  .map((a) => actionLink(a, { onclick: () => runAction(a, task, onClose) })),
               ]),
             ]),
             exceptionPanel(),

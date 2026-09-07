@@ -47,7 +47,7 @@ import { handleGetRetention, handleSetRetention, handleListBeyondRetention } fro
 import { handleCaptureFromSource } from "./source-capture-route.js";
 import { handleKeyInvoiceFields } from "./key-fields-route.js";
 import { handleReturnToStage, handleReturnToSupplier, handleDiscard } from "./return-route.js";
-import { authenticateUser, authenticateUserOrSession } from "./user-auth.js";
+import { authenticateUserOrSession } from "./user-auth.js";
 import { handleListMyTasks } from "./task-list-route.js";
 import { FIELD_CODE_LISTS, isClosedList } from "@vibefinance/shared";
 import {
@@ -1122,10 +1122,15 @@ export default {
     const returnStageMatch = pathname.match(/^\/tasks\/([^/]+)\/return$/);
     if (returnStageMatch && request.method === "POST") {
       const { db } = resolveTenant(request, env);
-      const auth = await authenticateUser(db, request);
-      if (!auth) {
+      // **A session, not only an API key** — decision 0138. Decision
+      // 0127 fixed this for every route using `requirePermission`;
+      // these three call `authenticateUser` directly and were missed,
+      // which is why their icons rendered and did nothing.
+      const person = await authenticatePerson(db, request, env);
+      if (!person.user) {
         return json({ error: t("unauthorized", resolveLocale(env.LOCALE)) }, 401);
       }
+      const auth = person.user;
       let body: unknown;
       try {
         body = await request.json();
@@ -1139,10 +1144,15 @@ export default {
     const discardMatch = pathname.match(/^\/tasks\/([^/]+)\/discard$/);
     if (discardMatch && request.method === "POST") {
       const { db } = resolveTenant(request, env);
-      const auth = await authenticateUser(db, request);
-      if (!auth) {
+      // **A session, not only an API key** — decision 0138. Decision
+      // 0127 fixed this for every route using `requirePermission`;
+      // these three call `authenticateUser` directly and were missed,
+      // which is why their icons rendered and did nothing.
+      const person = await authenticatePerson(db, request, env);
+      if (!person.user) {
         return json({ error: t("unauthorized", resolveLocale(env.LOCALE)) }, 401);
       }
+      const auth = person.user;
       let body: unknown;
       try {
         body = await request.json();
@@ -1157,10 +1167,15 @@ export default {
     const returnSupplierMatch = pathname.match(/^\/tasks\/([^/]+)\/return-to-supplier$/);
     if (returnSupplierMatch && request.method === "POST") {
       const { db } = resolveTenant(request, env);
-      const auth = await authenticateUser(db, request);
-      if (!auth) {
+      // **A session, not only an API key** — decision 0138. Decision
+      // 0127 fixed this for every route using `requirePermission`;
+      // these three call `authenticateUser` directly and were missed,
+      // which is why their icons rendered and did nothing.
+      const person = await authenticatePerson(db, request, env);
+      if (!person.user) {
         return json({ error: t("unauthorized", resolveLocale(env.LOCALE)) }, 401);
       }
+      const auth = person.user;
       let body: unknown;
       try {
         body = await request.json();

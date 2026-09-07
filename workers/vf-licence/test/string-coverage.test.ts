@@ -113,6 +113,8 @@ const KEYS_THE_INTERFACE_USES = [
   // The action row (decision 0122).
   "action.expand",
   "action.save",
+  "action.whyreason",
+  "viewer.actionfailed",
   "action.release",
   "action.key",
   "action.complete",

@@ -26,11 +26,15 @@ function mountShell() {
  * forgets an endpoint fails loudly instead of receiving an empty object
  * and quietly proving nothing.
  */
-function stubFetch(routes: Record<string, unknown>) {
+function stubFetch(routes: Record<string, unknown>, posted: string[] = []) {
   vi.stubGlobal(
     "fetch",
-    vi.fn(async (url: string) => {
+    vi.fn(async (url: string, init?: RequestInit) => {
       const path = String(url).split("?")[0];
+      // **Records what was POSTed**, which the one-argument version did
+      // not — so a test passing an array got it back empty and read
+      // that as "nothing was called". The code was right throughout.
+      if (init?.method === "POST") posted.push(path);
       if (!(path in routes)) {
         throw new Error(`no stub for ${path} — add one, or the test proves nothing`);
       }
@@ -77,6 +81,11 @@ const STRINGS = {
     "action.save": "Save",
     "action.complete": "Complete",
     "action.release": "Release",
+    "action.discard": "Discard",
+    "action.return_to_supplier": "To supplier",
+    "action.return": "Return",
+    "action.whyreason": "Give a reason.",
+    "viewer.actionfailed": "That could not be done.",
     "viewer.document": "Document",
     "viewer.nodocument": "No document retained",
   },
@@ -475,5 +484,147 @@ describe("the document preview (decision 0123)", () => {
 
     // Fields are present before the preview has resolved.
     expect(document.getElementById("f-BT-112")).not.toBeNull();
+  });
+});
+
+describe("the actions do something (decision 0138)", () => {
+  /**
+   * They rendered and did nothing, which decision 0122 recorded as
+   * **worse than before**: an icon advertises more confidently than a
+   * greyed-out word.
+   *
+   * Two reasons, both found by tracing what a click reached: the proxy
+   * carried two of six task paths, and three routes authenticated by
+   * API key only — the gap decision 0127 fixed everywhere it used
+   * `requirePermission`, in the three routes that did not.
+   */
+  const OPEN = {
+    "/api/code-lists": { fields: {} },
+    "/api/ui-strings": STRINGS,
+    "/api/field-visibility": FIELDS,
+    "/api/invoices/inv-1": {
+      facts: {},
+      lines: [],
+      validation: { passed: true, checked: [], failures: [] },
+    },
+    // The preview asks for one on open (decision 0123).
+    "/api/invoices/inv-1/document-url": { url: null },
+  };
+
+  /**
+   * Named apart from decision 0122's own `openWith` above.
+   *
+   * **Two helpers of one name in one file** is a reader's trap as much
+   * as a test's: mine was shadowed by the earlier one, which takes a
+   * single argument and stubs no routes — so every click posted
+   * nothing and the code was correct throughout.
+   */
+  async function openTaskWith(actions: string[], extra = {}, posted: string[] = []) {
+    stubFetch({ ...OPEN, ...extra }, posted);
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    await openViewer({ ...TASK, actions }, () => {});
+    await new Promise((r) => setTimeout(r, 0));
+  }
+
+  function click(label: string) {
+    const link = [...document.querySelectorAll(".actionlink")].find(
+      (b) => b.querySelector("span")?.textContent === label
+    ) as HTMLButtonElement;
+    link.click();
+  }
+
+  /**
+   * Long enough for a click to finish.
+   *
+   * **`setTimeout(0)` is not**: `runAction` awaits a fetch and then a
+   * JSON parse, and the assertion ran between them — reporting an
+   * empty list as though nothing had been called. The first version of
+   * these tests failed for that reason and the code was correct
+   * throughout.
+   */
+  const settle = () => new Promise((r) => setTimeout(r, 20));
+
+  it("calls the route an action names", async () => {
+    const posted: string[] = [];
+    await openTaskWith(["key", "complete"], { "/api/tasks/t-1/complete": {} }, posted);
+
+    click("Complete");
+    await settle();
+    expect(posted).toContain("/api/tasks/t-1/complete");
+  });
+
+  it("turns an underscore into a path a router matches", async () => {
+    // `return_to_supplier` is the action; `return-to-supplier` is the
+    // route. Getting this wrong is a 404 that looks like a permission
+    // problem.
+    const posted: string[] = [];
+    await openTaskWith(
+      ["key", "return_to_supplier"],
+      { "/api/tasks/t-1/return-to-supplier": {} },
+      posted
+    );
+
+    vi.stubGlobal("prompt", () => "Wrong supplier");
+    click("To supplier");
+    await settle();
+    expect(posted).toContain("/api/tasks/t-1/return-to-supplier");
+  });
+
+  it("asks for a reason before returning or discarding", async () => {
+    // **Decision 0075 made that a requirement.** A document that comes
+    // back with no explanation is one the next person cannot act on.
+    let asked = false;
+    vi.stubGlobal("prompt", () => {
+      asked = true;
+      return "Duplicate";
+    });
+
+    const posted: string[] = [];
+    await openTaskWith(["key", "discard"], { "/api/tasks/t-1/discard": {} }, posted);
+    click("Discard");
+    await settle();
+
+    expect(asked).toBe(true);
+    expect(posted).toContain("/api/tasks/t-1/discard");
+  });
+
+  it("does nothing when the reason is cancelled", async () => {
+    vi.stubGlobal("prompt", () => null);
+    const posted: string[] = [];
+    await openTaskWith(["key", "discard"], {}, posted);
+
+    click("Discard");
+    await settle();
+    // **Task posts only.** Opening the viewer POSTs for a document URL
+    // (decision 0123), so an empty list was never the right claim.
+    expect(posted.filter((p) => p.includes("/tasks/"))).toHaveLength(0);
+  });
+
+  it("treats an empty reason as no reason", async () => {
+    // The server refuses one too, so sending it would be a round trip
+    // to be told what the screen already knows.
+    vi.stubGlobal("prompt", () => "   ");
+    const posted: string[] = [];
+    await openTaskWith(["key", "return"], {}, posted);
+
+    click("Return");
+    await settle();
+    expect(posted.filter((p) => p.includes("/tasks/"))).toHaveLength(0);
+  });
+
+  it("asks for nothing before completing", async () => {
+    // Completing is not a refusal, so there is nothing to explain.
+    let asked = false;
+    vi.stubGlobal("prompt", () => {
+      asked = true;
+      return "x";
+    });
+
+    await openTaskWith(["key", "complete"], { "/api/tasks/t-1/complete": {} });
+    click("Complete");
+    await settle();
+    expect(asked).toBe(false);
   });
 });

@@ -197,7 +197,12 @@ describe("the task list is reachable, and only what it needs", () => {
   it("does not proxy a task path nobody listed", async () => {
     // The point of a list rather than a prefix: /tasks/:id/anything is
     // not automatically reachable because /tasks is.
-    const res = await SELF.fetch("https://ui.example.com/api/tasks/abc/complete", { method: "POST" });
+    //
+    // **The example changed.** It used `complete`, which decision 0138
+    // then listed — a test whose example becomes real is a test that
+    // fails for being right about the old world. The claim survives;
+    // only the path had to be one nobody has listed.
+    const res = await SELF.fetch("https://ui.example.com/api/tasks/abc/reassign", { method: "POST" });
     expect(res.status).toBe(404);
   });
 });
@@ -228,6 +233,11 @@ describe("the Validation viewer's routes (decision 0106)", () => {
     for (const [method, path] of [
       ["POST", "/api/invoices/inv-1/key"],
       ["POST", "/api/invoices/inv-1/document-url"],
+    // The rest of what a task can offer (decision 0138).
+    ["POST", "/api/tasks/t-1/complete"],
+    ["POST", "/api/tasks/t-1/return"],
+    ["POST", "/api/tasks/t-1/return-to-supplier"],
+    ["POST", "/api/tasks/t-1/discard"],
     ] as [string, string][]) {
       const res = await SELF.fetch(`https://ui.example.com${path}`, { method });
       expect(res.status, path).toBe(401);
@@ -343,6 +353,11 @@ describe("the proxy carries every path a screen calls (decision 0131)", () => {
     ["POST", "/api/processes/ap/sources"],
     ["POST", "/api/invoices/inv-1/key"],
     ["POST", "/api/invoices/inv-1/document-url"],
+    // The rest of what a task can offer (decision 0138).
+    ["POST", "/api/tasks/t-1/complete"],
+    ["POST", "/api/tasks/t-1/return"],
+    ["POST", "/api/tasks/t-1/return-to-supplier"],
+    ["POST", "/api/tasks/t-1/discard"],
     // The two that were missing.
     ["PATCH", "/api/sources/s-1"],
     ["DELETE", "/api/sources/s-1"],

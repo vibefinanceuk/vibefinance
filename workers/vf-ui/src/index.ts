@@ -88,6 +88,12 @@ const PROXIED_TO_INSTANCE: RegExp[] = [
   /^\/tasks$/,
   /^\/tasks\/[^/]+\/claim$/,
   /^\/tasks\/[^/]+\/release$/,
+  // The rest of what a task can offer (decision 0138). Their icons
+  // rendered and did nothing, because the proxy carried two of six.
+  /^\/tasks\/[^/]+\/complete$/,
+  /^\/tasks\/[^/]+\/return$/,
+  /^\/tasks\/[^/]+\/return-to-supplier$/,
+  /^\/tasks\/[^/]+\/discard$/,
   // What the Validation viewer needs (decision 0106): the keyed values,
   // and a short-lived signed URL for the retained original.
   // Reading one invoice back, so the keying screen shows what it saved
