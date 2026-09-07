@@ -55,6 +55,8 @@ against the current system either.
 | **0126** — an address invoices arrive at | 0141 | `INGESTION_DOMAIN` was hardcoded to a domain **nobody owns**. It is configuration now, and an unset one refuses to issue an address. |
 | **0130** — retiring a source | 0133 | Deletion was refused outright once an address existed. It now **asks**, because an address reserved and never shared is a mistake to correct. |
 | **0135** — the Cloudflare half | 0136 | *"Generated config or one per customer"* was answered by **neither**: the config is data the control plane already held. |
+| **0114** — field visibility | 0143, 0144 | Two things. A **stage-wide** restriction replaces listing fields, because a list cannot know about a field added later. And the mechanism was **enforced only by the screen** — the keying route never consulted it, from September until 7 September. |
+| **0141** — a domain nobody owned | *itself* | `vibefinance-ai.com` is bound. The record stands; the situation it describes is over. |
 
 ---
 
@@ -67,7 +69,8 @@ against the current system either.
 | **0113** | Should extracted codes be validated? | **0116** — yes, against closed lists only. |
 | **0122** | The action icons do nothing | **0138** — they work. |
 | **0125** | Which domain do addresses live on? | **0141** — configuration, and there isn't one yet. |
-| **0140** | Who did what in the control plane? | Built. The **interface** waits on a domain. |
+| **0140** | Who did what in the control plane? | Built. The **interface** is now unblocked — a domain exists. |
+| **0114** | Does a review screen need its own code? | **0142** — no. The same screen, with the stage deciding what is editable. |
 
 ---
 

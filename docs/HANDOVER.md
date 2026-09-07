@@ -21,14 +21,15 @@ which, and it exists because the trap has been fallen into twice.
 
 | | |
 | --- | --- |
-| `origin/main` | `e27e73a` |
-| vf-app deployed | `e27e73a` |
-| vf-licence deployed | `e27e73a` |
-| vf-ui deployed | `e27e73a` · `https://vf-ui.vibefinance.workers.dev` |
-| `vf-app-poc` migrations | through `0040` |
+| `origin/main` | `85cdafc` |
+| vf-app deployed | `85cdafc` |
+| vf-licence deployed | `85cdafc` |
+| vf-ui deployed | `85cdafc` · `https://vf-ui.vibefinance.workers.dev` |
+| Domain | `vibefinance-ai.com`, bound 7 September · **nothing served from it yet** |
+| `vf-app-poc` migrations | through `0041` |
 | `vf-licence-poc` migrations | through `0034` |
-| Tests | vf-app 1055 · vf-licence 315 · vf-ui 44 Worker + 80 browser · shared 252 (+2 known pre-existing failures) |
-| Decision records | 141 |
+| Tests | vf-app 1069 · vf-licence 315 · vf-ui 44 Worker + 91 browser · shared 252 (+2 known pre-existing failures) |
+| Decision records | 144 |
 
 **Everything committed is deployed.**
 
@@ -134,6 +135,16 @@ lists them, creates them, gives an email source its address, and retires
 or deletes one (0126, 0128, 0130). The navigation frame has carried a
 single entry since 0108 waiting for exactly this.
 
+**And a third stage uses the same screen as the second.** An approval
+task opens the keying viewer, with the fields read-only because the
+stage says so and Complete in place of Save (0142, 0143). *"Approvers
+should approve data, not edit data"* is a **property of the stage**, not
+a list of fields somebody has to keep complete.
+
+**Enforced by the route, not the screen** (0144). Field visibility had
+been a screen behaviour since September: a `curl` could always write a
+read-only field, and the keying route now refuses one.
+
 **And a person can now do all of that in a browser.**
 `https://vf-ui.vibefinance.workers.dev` serves a sign-in screen that
 fetches the customer's livery from `vf-licence` (0096), populates the
@@ -227,12 +238,18 @@ worth more than the argument for keeping them separate.
 
 ---
 
-### And one data change, not a code one
+### And two data changes, not code ones
 
-The live Validation rule reads *"assign a task to the AP team requiring
-**AP.Review** permission"* where it should say `AP.Validate`. The rule
-engine is doing exactly what the sentence says; **the sentence needs
-recompiling** and taking through the activation gate. No deploy.
+**The live Validation rule** reads *"assign a task to the AP team
+requiring **AP.Review** permission"* where it should say `AP.Validate`.
+The rule engine is doing exactly what the sentence says; **the sentence
+needs recompiling** and taking through the activation gate. No deploy.
+
+**And Approval spawns two tasks per invoice** — seventeen open requiring
+`AP.Approve` and seventeen requiring `AP.Review`, against the same
+stage. That may be parallel approvers by design (0074 describes how
+multiple approval works) or a rule firing twice. **Nobody has
+established which**, and the two readings have different fixes.
 
 ---
 
@@ -279,6 +296,13 @@ Recorded so nobody re-opens them:
   shared (0130, 0133).
 - **When the screen should speak** — only when it cannot show something
   (0134).
+- **Whether review needs its own screen** — no (0142). Field visibility
+  and the task's own actions were already enough; what was missing was
+  that the viewer opened only for `key`.
+- **How a stage is made read-only** — as a property, not a list (0143).
+  A list cannot know about a field added next month.
+- **Whether the screen was the only guard** — it was (0144), and is not
+  now.
 - **Day time or night time** — a person's setting, with a control, blue
   by day and midnight blue at night (0139).
 - **Where the Worker's config comes from** — the manifest the control
@@ -490,15 +514,16 @@ looks correct in every listing. `validateRule` has the list (0113) and
 does not consult it. The pair to decision 0116, which now validates
 documents.
 
-**6. ~~An Approval screen.~~ Built** (0142), and it is the **same
-screen**. Field visibility makes a stage read-only, a task reports its
+**6. ~~An Approval screen.~~ Built** (0142, 0143, 0144), and it is the
+**same screen**. Field visibility makes a stage read-only, a task reports its
 own actions, and approve and reject already existed as `complete` and
 `return`. What was missing was that the viewer opened only for `key`,
 which an approval task never offers.
 
-**Still to do, and it is data rather than code:** nothing configures
-Approval as read-only, so an approval task today shows editable fields
-and a Save. One `PUT` to `/processes/stages/approval/field-visibility`.
+Approval is configured read-only and working. **Two things it taught:**
+a per-field list was the wrong shape (0143), and **field visibility had
+never been enforced anywhere but the screen** (0144) — which is the
+older and larger finding.
 
 **7. BG-4 and BG-7 in the vocabulary.** The seller and buyer field lists
 live in the viewer (0115). Recording business-group membership in
@@ -552,6 +577,8 @@ missing check — a working one, pointed slightly wrong.
 | 0126 | A configuration screen | Listing sources, while the create route sat unreachable |
 | 0131 | A proxy allow-list | Every path beneath `/sources/:id` but not the path itself |
 | 0132 | A translation system | Every label, and none of the sentences the API sent |
+| 0143 | A stage restriction | Three fields somebody listed, not the ones added later |
+| 0144 | Field visibility | The screen, never the route — since September |
 
 **And this table itself.** It was removed by a rewrite of the section
 above it, and three later edits claimed to add rows to a table that was

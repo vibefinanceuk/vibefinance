@@ -116,10 +116,26 @@ a rule, and left an approval task in a queue.
 
 ## Not built
 
-**Infrastructure provisioning.** Approving a signup creates
-control-plane records; the real D1 database, R2 bucket and Worker are
-not created. Needs an account-level Cloudflare token whose blast
-radius deserves its own design conversation.
+**~~Infrastructure provisioning.~~ Built** (0135, 0136).
+`migrations/provision_infrastructure.py` creates the D1 database,
+applies the migration chain, creates the R2 bucket, verifies the
+manifest, deploys the Worker from a config the control plane supplies,
+and records the URL last.
+
+**A script the operator runs, not a route.** The token can delete every
+customer's database and replace any Worker, and `vf-licence` is
+internet-reachable — so a flaw in any route would become total account
+compromise.
+
+**Email Routing rules.** A domain exists (`vibefinance-ai.com`) and an
+address can be issued, and **nothing delivers to one**. This is the
+remaining piece of email intake, and it needs the same Cloudflare
+credential.
+
+**The operator interface's screen** (0140). The attribution half is
+built — every privileged action recorded, refusals included. The screen
+is now unblocked, since Cloudflare Access can protect a hostname in a
+zone and there is one.
 
 **Image-only PDFs.** A PDF cannot be rasterised inside a Worker — no
 native renderer, and PDF.js needs a canvas workerd does not provide.
