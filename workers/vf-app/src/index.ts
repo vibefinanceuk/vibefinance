@@ -54,6 +54,7 @@ import {
   handleFieldVisibility,
   handleSetFieldVisibility,
   handleSetStageFieldVisibility,
+  handleSetStageReadOnly,
 } from "./field-visibility-route.js";
 import { handlePreflight, withCors } from "@vibefinance/shared";
 import { mintDocumentToken, verifyDocumentToken } from "./document-token.js";
@@ -1364,6 +1365,30 @@ export default {
     }
 
     const stageVisMatch = pathname.match(/^\/processes\/stages\/([^/]+)\/field-visibility$/);
+    // Make a whole stage read-only — decision 0143.
+    const stageReadOnlyMatch = pathname.match(/^\/processes\/stages\/([^/]+)\/read-only$/);
+    if (stageReadOnlyMatch && request.method === "PUT") {
+      const { db } = resolveTenant(request, env);
+      const auth = await requirePermission(db, request, "Admin.Configure", sessionContext(env));
+      if (!auth.authorized) {
+        return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
+      }
+      let roBody: unknown;
+      try {
+        roBody = await request.json();
+      } catch {
+        return json({ error: t("invalidJsonBody", resolveLocale(env.LOCALE)) }, 400);
+      }
+
+      const result = await handleSetStageReadOnly(
+        db,
+        stageReadOnlyMatch[1],
+        (roBody as Record<string, unknown> | null)?.readOnly
+      );
+      return json(result.body, result.status);
+    }
+
+
     if (stageVisMatch && request.method === "PUT") {
       const { db } = resolveTenant(request, env);
       const auth = await requirePermission(db, request, "Admin.Configure", sessionContext(env));

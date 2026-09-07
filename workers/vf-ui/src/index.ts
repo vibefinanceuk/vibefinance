@@ -110,6 +110,8 @@ const PROXIED_TO_INSTANCE: RegExp[] = [
   /^\/sources$/,
   // Listing processes and creating a source (decision 0128).
   /^\/processes$/,
+  // Making a stage read-only (decision 0143).
+  /^\/processes\/stages\/[^/]+\/read-only$/,
   /^\/processes\/[^/]+\/sources$/,
   /^\/sources\/[^/]+\/email$/,
   // Renaming and retiring one (decision 0130). **The bare path**, which

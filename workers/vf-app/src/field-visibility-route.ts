@@ -135,7 +135,33 @@ export async function resolveFieldVisibility(
   const customer = new Map(customerRows.results.map((r) => [r.field, r]));
 
   const stage = new Map<string, Visibility>();
+  /**
+   * A stage that is read-only as a **property**, not as a list —
+   * decision 0143.
+   *
+   * Decision 0114 let a stage restrict a field, and that is per field.
+   * An approval stage is not per field: *"approvers should approve
+   * data, not edit data"* is a statement about the stage.
+   *
+   * Expressed as a list it fails twice. Somebody has to name every
+   * field — the operator named three header fields and no line fields,
+   * so lines stayed editable and a Save button appeared on an approval
+   * screen. And **a field added to the vocabulary next month is
+   * editable there**, because a list cannot know about a field that did
+   * not exist when it was written.
+   *
+   * The same shape decision 0107 records: a hand-maintained list
+   * decays, and the fix is to derive rather than enumerate.
+   */
+  let stageIsReadOnly = false;
+
   if (stageId) {
+    const stageRow = await db
+      .prepare("SELECT read_only FROM process_stages WHERE id = ?")
+      .bind(stageId)
+      .first<{ read_only: number }>();
+    stageIsReadOnly = stageRow?.read_only === 1;
+
     const stageRows = await db
       .prepare("SELECT field, visibility FROM stage_field_visibility WHERE stage_id = ?")
       .bind(stageId)
@@ -149,6 +175,19 @@ export async function resolveFieldVisibility(
     const configured = customer.get(field);
     let visibility: Visibility = configured?.visibility ?? DEFAULT_VISIBILITY[field] ?? UNCONFIGURED;
     let decidedBy: ResolvedField["decidedBy"] = configured ? "customer" : "default";
+
+    /**
+     * **The stage's own answer, and it applies to everything** —
+     * decision 0143.
+     *
+     * Still restrictive-only: a hidden field stays hidden, because a
+     * stage may tighten and never loosen (decision 0114). This turns
+     * `edit` into `read` and leaves the rest alone.
+     */
+    if (stageIsReadOnly && visibility === "edit") {
+      visibility = "read";
+      decidedBy = "stage";
+    }
 
     const restriction = stage.get(field);
     if (restriction && STRICTNESS[restriction] > STRICTNESS[visibility]) {
@@ -314,4 +353,50 @@ export async function handleSetStageFieldVisibility(
 
   await db.batch(statements);
   return { status: 200, body: { stageId, restrictions: fields.length } };
+}
+
+/**
+ * Make a stage read-only, or not — decision 0143.
+ *
+ * **A property of the stage, not a list of fields.** Setting it covers
+ * every field the vocabulary has and every one it grows, which a list
+ * cannot: the operator listed three header fields and no line fields,
+ * and a Save button appeared on an approval screen.
+ */
+export async function handleSetStageReadOnly(
+  db: D1Database,
+  stageId: string,
+  readOnly: unknown
+): Promise<RouteResult> {
+  if (typeof readOnly !== "boolean") {
+    return { status: 400, body: { error: "readOnly (true or false) is required" } };
+  }
+
+  const stage = await db
+    .prepare("SELECT id, name FROM process_stages WHERE id = ?")
+    .bind(stageId)
+    .first<{ id: string; name: string }>();
+
+  if (!stage) {
+    return { status: 404, body: { error: `stage ${stageId} does not exist` } };
+  }
+
+  await db
+    .prepare("UPDATE process_stages SET read_only = ? WHERE id = ?")
+    .bind(readOnly ? 1 : 0, stageId)
+    .run();
+
+  // **What it actually did**, counted rather than asserted: a person
+  // making a stage read-only wants to know it covered everything.
+  const fields = await resolveFieldVisibility(db, stageId);
+
+  return {
+    status: 200,
+    body: {
+      stageId,
+      readOnly,
+      editableFields: fields.filter((f) => f.visibility === "edit").length,
+      readOnlyFields: fields.filter((f) => f.visibility === "read").length,
+    },
+  };
 }
