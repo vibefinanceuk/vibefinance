@@ -165,9 +165,12 @@ demanded.
 
 ## Deliberately not decided here
 
-- **Whether the Worker is deployed from a generated `wrangler.jsonc` or
-  a maintained one per customer.** Decision 0011 records this as the
-  hard part of `deploy-all` and it is the same problem here.
+- ~~**Whether the Worker is deployed from a generated `wrangler.jsonc`
+  or a maintained one per customer.**~~ **Answered by decision 0136**,
+  and by neither: the config is **data the control plane already
+  holds**. `environments` carries `worker_name`, `d1_database_name` and
+  `d1_database_id`, and it was being treated as a file only because
+  nothing had asked the manifest for it.
 - **How a customer's Worker is updated afterwards.** Provisioning
   deploys it once; every subsequent deploy is still per-customer and by
   hand.

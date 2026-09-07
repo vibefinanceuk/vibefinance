@@ -349,6 +349,23 @@ Steps are ordered cheapest-to-undo first with the control-plane rows
 written **last**, so a failure leaves the customer reading
 `not-yet-deployed.invalid` rather than half-real.
 
+**Three of five steps are built** —
+`migrations/provision_infrastructure.py` creates the database, applies
+the chain and creates the bucket, then **stops at the Worker deploy
+rather than claiming success**.
+
+**Decision 0136 unblocks that step**: the Worker's config is **data the
+control plane already holds**. `environments` carries `worker_name`,
+`d1_database_name` and `d1_database_id`, and it was being treated as a
+file only because nothing had asked the manifest for it. `deploy-all`
+becomes a loop rather than a design problem.
+
+Two rules recorded there: **secrets never go in the manifest** —
+decision 0009 is this project's own record of a private key in a
+`wrangler.jsonc` var — and **a deploy must verify what it is about to
+do**, because once a deploy reads the manifest, a changed
+`d1_database_id` points one customer's Worker at another's database.
+
 **2. Email sending**, which decision 0125 evaluates. "Email" means three
 different things — supplier contacts *out to strangers*, user
 notifications *out to colleagues*, and a source which is *inbound* and

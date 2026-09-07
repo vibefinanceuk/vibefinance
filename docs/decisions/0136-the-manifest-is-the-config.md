@@ -1,0 +1,125 @@
+# 0136 — The manifest is the config
+
+**Status: designed, not built.** Answers the question decision 0135 left
+open — generated `wrangler.jsonc` or one maintained per customer — with
+a third option that is better than either.
+
+---
+
+## The question, and why both answers were poor
+
+A Worker deploy needs a config naming that customer's D1 id, their R2
+bucket, their `CUSTOMER_ID` and `ENVIRONMENT_ID`. Decision 0011 records
+this as the hard part of `deploy-all`, and decision 0135 left it open.
+
+**Generated at deploy time**: nothing to maintain, every customer
+identical by construction — and the config a customer runs exists only
+for the seconds of the deploy, so nobody can read what is deployed.
+
+**Maintained per customer in the repository**: reviewable and diffable —
+and a file per customer to keep in step with the control plane, which is
+**two places holding the same facts**, the thing this project finds most
+often.
+
+### The operator's question
+
+> Is there any way this could be stored in the licence server, without
+> physically having to update files to provision?
+
+**It already is.** `environments` carries `worker_name`,
+`d1_database_name` and `d1_database_id`, and `handleSetFleetMetadata`
+exists precisely so the control plane records each customer's deployment
+details. Document 3 describes it as *"a real fleet manifest — a place
+recording which customers exist and their own deployment-specific
+details"*, and names `deploy-all` as what it was waiting for.
+
+**The config is data the control plane already holds.** It was being
+treated as a file because nothing had asked the manifest for it.
+
+---
+
+## The shape
+
+1. The script creates the D1 database and reads back its id.
+2. It **records the id in `vf-licence`** — the manifest, not a file.
+3. It asks `vf-licence` for the environment's config.
+4. It writes a `wrangler.jsonc` **into a temporary directory** and
+   deploys from it.
+
+**No file per customer anywhere.** The manifest is the source of truth
+rather than a copy of one, and a config that disagrees with it is
+impossible because there is only one.
+
+And `deploy-all` becomes a **loop**, not a design problem: read every
+environment, generate, deploy. Decision 0011 listed it as blocked on
+exactly this.
+
+---
+
+## Three things this must not become
+
+### Secrets do not go in it
+
+**This project has already made that mistake.** Decision 0009 records a
+private signing key sitting in a customer's `wrangler.jsonc` as a plain
+`var` — in git history and Cloudflare's deployment logs — caught only
+because a reviewer noticed `key_ops: ["sign"]` where a public key should
+read `["verify"]`.
+
+The manifest holds **non-secret bindings only**. Secrets are still set
+by `wrangler secret put`, by the operator, and never travel through the
+control plane.
+
+Worth stating as a rule rather than a habit, because the manifest will
+look like a natural place to put one.
+
+### It becomes security-relevant
+
+`environments` currently records names. Once a deploy **reads** it, a
+change to `d1_database_id` points a customer's Worker at another
+customer's database — the isolation decision 0001 exists for, undone by
+a row.
+
+Not a new single point of failure: an attacker would need the deploy
+token too, which is the operator's and never in a Worker (decision
+0135). But the manifest stops being a record and starts being an
+instruction, and that deserves saying out loud.
+
+**A deploy should verify what it is about to do**: an environment whose
+`d1_database_id` does not match a database named
+`{environment_id}` is a mismatch worth refusing rather than deploying.
+
+### And the generated config is recorded
+
+Written to `docs/operations/` after a successful deploy — not as the
+source, but as **an artefact of what was deployed**.
+
+The first option's real cost was that nobody could read what a customer
+runs. Keeping the output answers that without making it authoritative.
+
+---
+
+## What needs adding
+
+- **`r2_bucket_name` on `environments`.** The one binding the manifest
+  does not carry.
+- **A route to read an environment's full config**, which
+  `handleListCustomers` nearly is.
+- **The deploy step itself** in `provision_infrastructure.py`, which
+  currently raises rather than pretending (decision 0135).
+
+---
+
+## Deliberately not decided here
+
+- **Which commit gets deployed.** The config comes from the manifest;
+  the *code* comes from a checkout, and nothing records which one a
+  customer is running — decision 0011 names this as unsolved and
+  `DEPLOYED.md` does it by hand.
+- **Whether a customer can be deployed to a version other than the
+  latest.** A loop over the fleet deploys one commit to everybody, and
+  staged rollout is a different question.
+- **What happens when a deploy half-succeeds across the fleet.**
+  Decision 0011 raises the same for `migrate-all` — *"what happens when
+  customer #7 of 20 fails partway through"* — and it is still
+  unanswered.
