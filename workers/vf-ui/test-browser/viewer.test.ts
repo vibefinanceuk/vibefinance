@@ -628,3 +628,102 @@ describe("the actions do something (decision 0138)", () => {
     expect(asked).toBe(false);
   });
 });
+
+describe("the same screen serves review (decision 0142)", () => {
+  /**
+   * **Not a second screen.** The operator's own framing: *"the same as
+   * validate, just with different actions, and with the information
+   * locked read-only."*
+   *
+   * It already worked that way. Field visibility (0114) makes a stage
+   * read-only, the task reports its own actions (0103), and the viewer
+   * fetches both per stage. What was missing was a way to open a task
+   * that does not offer `key`, and a Save button that stopped
+   * promising an effect it could not have.
+   */
+  const READ_ONLY = {
+    fields: FIELDS.fields.map((f) => ({ ...f, visibility: "read" })),
+  };
+
+  const OPEN = {
+    "/api/code-lists": { fields: {} },
+    "/api/ui-strings": STRINGS,
+    "/api/invoices/inv-1": {
+      facts: { "BT-112": 1200 },
+      lines: [],
+      validation: { passed: true, checked: [], failures: [] },
+    },
+    "/api/invoices/inv-1/document-url": { url: null },
+  };
+
+  async function openApproval(actions = ["complete", "return"]) {
+    stubFetch({ ...OPEN, "/api/field-visibility": READ_ONLY });
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    await openViewer(
+      { ...TASK, stageId: "approval", stageName: "Approval", actions },
+      () => {}
+    );
+    await new Promise((r) => setTimeout(r, 0));
+  }
+
+  it("offers no Save when nothing can be saved", async () => {
+    // **A Save that submits nothing is a button promising an effect it
+    // cannot have**, which decision 0122 already called worse than an
+    // absent one.
+    await openApproval();
+    const labels = [...document.querySelectorAll(".actionlink span")].map((n) => n.textContent);
+    expect(labels).not.toContain("Save");
+  });
+
+  it("still offers the document", async () => {
+    // Approving without seeing what is being approved is not approval.
+    await openApproval();
+    const labels = [...document.querySelectorAll(".actionlink span")].map((n) => n.textContent);
+    expect(labels).toContain("Expand");
+  });
+
+  it("makes the task's first action the dominant one", async () => {
+    // With nothing to save, what somebody came to do is what the task
+    // offers.
+    await openApproval(["complete", "return"]);
+    const primary = document.querySelector(".actionlink.primary span");
+    expect(primary?.textContent).toBe("Complete");
+  });
+
+  it("renders every field as text", async () => {
+    await openApproval();
+    expect(document.getElementById("f-BT-112")?.tagName).toBe("DIV");
+    expect(document.querySelector("#f-BT-112 input")).toBeNull();
+  });
+
+  it("shows the value being approved", async () => {
+    // Read-only is not blank.
+    await openApproval();
+    expect(document.getElementById("f-BT-112")?.textContent).toBe("1200");
+  });
+
+  it("names the stage, not the screen", async () => {
+    // **The same screen serves every stage**, and a heading saying
+    // "Validation" on an approval task is the screen lying about where
+    // somebody is.
+    await openApproval();
+    expect(document.querySelector(".topbar h2")?.textContent).toBe("Approval");
+  });
+
+  it("keeps Save where a stage does permit editing", async () => {
+    // The property that makes this configuration rather than a second
+    // screen: a customer who makes Validation read-only gets a
+    // read-only Validation screen, and nothing about the code changes.
+    stubFetch({ ...OPEN, "/api/field-visibility": FIELDS });
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    await openViewer({ ...TASK, actions: ["key", "complete"] }, () => {});
+    await new Promise((r) => setTimeout(r, 0));
+
+    const labels = [...document.querySelectorAll(".actionlink span")].map((n) => n.textContent);
+    expect(labels).toContain("Save");
+  });
+});

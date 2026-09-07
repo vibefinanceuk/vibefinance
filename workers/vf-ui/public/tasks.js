@@ -88,6 +88,37 @@ function ownershipLabel(task) {
 /** Labels come from the control plane, by key (decision 0107). */
 const actionLabel = (action) => t(`action.${action}`);
 
+/**
+ * Open a task's document — decision 0142.
+ *
+ * **Not an action the server authorises.** Whether somebody may look at
+ * a task is already decided by the task being theirs; what they may
+ * *do* once looking is decided by the actions it reports (decision
+ * 0103), and what they may *edit* by field visibility at that stage
+ * (decision 0114).
+ *
+ * So this is navigation, and it works for **any** task — an approval
+ * task opens the same screen as a validation one, with the amounts
+ * read-only because Approval says so and with Complete and Return in
+ * place of Save.
+ *
+ * *"Approvers should approve data, not edit data"* is configuration,
+ * not a second screen.
+ */
+async function openTask(taskId) {
+  const task = lastTasks.find((t) => t.id === taskId);
+  if (!task?.subject) return;
+
+  const { openViewer } = await import("/viewer.js");
+  document.getElementById("shell").hidden = true;
+  document.getElementById("viewer").hidden = false;
+  await openViewer(task, async () => {
+    document.getElementById("viewer").hidden = true;
+    document.getElementById("shell").hidden = false;
+    await loadTasks();
+  });
+}
+
 async function act(taskId, action) {
   // Keying opens a screen rather than calling anything (decision 0106).
   if (action === "key") {
@@ -132,17 +163,28 @@ function taskRow(task) {
     el("button", {
       class: "act",
       text: actionLabel(action),
-      // Actions the proxy does not yet carry are shown and disabled.
-      ...(action === "claim" || action === "release" || action === "key"
-        ? {}
-        : { disabled: "disabled" }),
+      // **Every action works now** (decision 0138). This listed three
+      // and disabled the rest, which was true until the proxy carried
+      // them and three routes accepted a session.
       onclick: () => act(task.id, action),
     })
   );
 
   return el("tr", { class: task.ownership }, [
     el("td", { text: task.stageName ?? task.stageId }),
-    el("td", { text: describe(task.subject) }),
+    // **The document, clickable** — decision 0142. A row names a
+    // document, and looking at one is the first thing anybody wants to
+    // do with it; making that a button among the actions would put
+    // navigation where decisions live.
+    el("td", {}, [
+      task.subject
+        ? el("button", {
+            class: "subjectlink",
+            text: describe(task.subject),
+            onclick: () => openTask(task.id),
+          })
+        : el("span", { class: "muted", text: describe(task.subject) }),
+    ]),
     el("td", { class: "num", text: money(task.subject) }),
     el("td", { text: waitedFor(task.createdAt) }),
     el("td", { text: ownershipLabel(task) }),

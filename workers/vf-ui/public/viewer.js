@@ -26,6 +26,9 @@ let lines = [];
  */
 let exceptions = [];
 
+/** Set on open, from what the stage permits (decision 0142). */
+let canEditAnything = true;
+
 /**
  * The invoice as stored — decision 0120.
  *
@@ -679,6 +682,17 @@ export async function openViewer(task, onClose) {
   // The STAGE decides what may be edited, so this cannot be fetched
   // once and reused across tasks sitting at different stages.
   await loadFields(task.stageId);
+  /**
+   * Whether anything on this screen can be changed — decision 0142.
+   *
+   * Read from what the stage permits rather than from its name: a
+   * customer who makes Validation read-only gets a read-only Validation
+   * screen, which is what decision 0114 is for.
+   */
+  canEditAnything =
+    headerFields.some((f) => f.visibility === "edit") ||
+    lineFields.some((f) => f.visibility === "edit");
+
   current = task;
   // Cleared and then filled by `loadInvoice`, so one document's
   // exceptions never appear against another.
@@ -763,7 +777,10 @@ export async function openViewer(task, onClose) {
   shell.replaceChildren(
     frame(
       el("div", {}, [
-        topbar(t("viewer.title"), task.subject?.id ?? "", [
+        // **The stage's own name**, not "Validation" — decision 0142.
+        // The same screen serves every stage, and a heading that says
+        // otherwise is the screen lying about where somebody is.
+        topbar(task.stageName ?? task.stageId ?? t("viewer.title"), task.subject?.id ?? "", [
           el("button", { text: t("viewer.back"), onclick: onClose }),
         ]),
         status,
@@ -811,13 +828,35 @@ export async function openViewer(task, onClose) {
                */
               el("div", { class: "actionrow" }, [
                 actionLink("expand", { onclick: () => openDocument(task.subject.id) }),
-                actionLink("save", { onclick: () => save(null), primary: true }),
+                /**
+                 * **Save appears where something can be saved** —
+                 * decision 0142.
+                 *
+                 * It was the screen's own, always offered. An approval
+                 * task has every field read-only (decision 0114), so a
+                 * Save that submits nothing is a button promising an
+                 * effect it cannot have — which decision 0122 already
+                 * called worse than an absent one.
+                 *
+                 * The dominant action becomes whatever the task
+                 * actually offers, which for an approval is Complete.
+                 */
+                ...(canEditAnything
+                  ? [actionLink("save", { onclick: () => save(null), primary: true })]
+                  : []),
                 // What else this task offers is the SERVER's decision
                 // (decision 0103) — collecting them visually does not
                 // move where they are decided.
                 ...task.actions
                   .filter((a) => a !== "key")
-                  .map((a) => actionLink(a, { onclick: () => runAction(a, task, onClose) })),
+                  .map((a, index) =>
+                    actionLink(a, {
+                      onclick: () => runAction(a, task, onClose),
+                      // With nothing to save, the first thing the task
+                      // offers is what somebody came to do.
+                      primary: !canEditAnything && index === 0,
+                    })
+                  ),
               ]),
             ]),
             exceptionPanel(),

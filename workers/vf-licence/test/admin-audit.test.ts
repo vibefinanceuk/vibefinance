@@ -102,7 +102,7 @@ describe("every privileged action is recorded", () => {
     await admin("/credentials", { method: "POST", body: "{}" });
     await admin("/access", { method: "POST", body: "{}" });
 
-    const actions = (await logged()).map((r) => r.action);
+    const actions = (await logged()).map((r: { action: string }) => r.action);
     expect(actions).toContain("POST /licences");
     expect(actions).toContain("POST /credentials");
     expect(actions).toContain("POST /access");

@@ -485,9 +485,15 @@ looks correct in every listing. `validateRule` has the list (0113) and
 does not consult it. The pair to decision 0116, which now validates
 documents.
 
-**6. An Approval screen.** The Task Manager lists approval tasks and
-cannot open them. Field visibility (0114) is what makes an approval view
-differ from a keying one — the mechanism exists, the screen does not.
+**6. ~~An Approval screen.~~ Built** (0142), and it is the **same
+screen**. Field visibility makes a stage read-only, a task reports its
+own actions, and approve and reject already existed as `complete` and
+`return`. What was missing was that the viewer opened only for `key`,
+which an approval task never offers.
+
+**Still to do, and it is data rather than code:** nothing configures
+Approval as read-only, so an approval task today shows editable fields
+and a Save. One `PUT` to `/processes/stages/approval/field-visibility`.
 
 **7. BG-4 and BG-7 in the vocabulary.** The seller and buyer field lists
 live in the viewer (0115). Recording business-group membership in
