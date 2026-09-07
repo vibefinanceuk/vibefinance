@@ -43,6 +43,7 @@ import fieldVisibilitySql from "../../../migrations/0038_field_visibility.sql?ra
 import sourceEmailSql from "../../../migrations/0039_source_email_address.sql?raw";
 import sourceStatusSql from "../../../migrations/0040_source_status.sql?raw";
 import readOnlyStageSql from "../../../migrations/0041_read_only_stage.sql?raw";
+import inboundEmailSql from "../../../migrations/0042_inbound_email_events.sql?raw";
 import taskStatesSql from "../../../migrations/0031_task_states_and_returns.sql?raw";
 import orgSettingsSql from "../../../migrations/0032_org_settings_retention.sql?raw";
 import discardedStateSql from "../../../migrations/0033_discarded_task_state.sql?raw";
@@ -91,7 +92,7 @@ function toOneStatementPerLine(sql: string): string {
 // first (children before parents, for the foreign keys) so each test
 // gets a genuinely clean schema regardless of what the pool does or
 // does not reset.
-const TABLES_IN_DROP_ORDER = ["stage_field_visibility", "field_visibility", 
+const TABLES_IN_DROP_ORDER = ["inbound_email_events", "stage_field_visibility", "field_visibility", 
   "purchase_order_lines",
   "purchase_orders",
   "org_settings",
@@ -172,6 +173,7 @@ export async function applyTestSchema(): Promise<void> {
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(sourceEmailSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(sourceStatusSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(readOnlyStageSql)));
+  await env.DB.exec(toOneStatementPerLine(stripSqlComments(inboundEmailSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(taskStatesSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(orgSettingsSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(discardedStateSql)));

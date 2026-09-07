@@ -45,7 +45,7 @@ import { handleCreateSource, handleListSources , handleSetSourceEmail , handleLi
 import { handleIngestPurchaseOrder, handleGetPurchaseOrder } from "./purchase-order-route.js";
 import { handleGetRetention, handleSetRetention, handleListBeyondRetention } from "./retention-route.js";
 import { handleCaptureFromSource } from "./source-capture-route.js";
-import { handleInboundEmail, type EmailMessage } from "./inbound-email.js";
+import { handleInboundEmail, handleListInboundEmail, type EmailMessage } from "./inbound-email.js";
 import { handleKeyInvoiceFields } from "./key-fields-route.js";
 import { handleReturnToStage, handleReturnToSupplier, handleDiscard } from "./return-route.js";
 import { authenticateUserOrSession } from "./user-auth.js";
@@ -1261,6 +1261,20 @@ export default {
       }
 
       const result = await handleListProcesses(db);
+      return json(result.body, result.status);
+    }
+
+
+    // What has arrived by email — decision 0147.
+    if (pathname === "/inbound-email" && request.method === "GET") {
+      const { db } = resolveTenant(request, env);
+      const auth = await requirePermission(db, request, "Admin.Configure", sessionContext(env));
+      if (!auth.authorized) {
+        return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
+      }
+
+      const limit = Number(url.searchParams.get("limit") ?? "50");
+      const result = await handleListInboundEmail(db, Number.isFinite(limit) ? limit : 50);
       return json(result.body, result.status);
     }
 

@@ -195,3 +195,144 @@ describe("a message carrying an invoice", () => {
     expect(message.rejectedWith).toBeNull();
   });
 });
+
+describe("what arrived, recorded (decision 0147)", () => {
+  /**
+   * **The first real invoice by email was rejected**, and the only
+   * place the reason existed was Cloudflare's own activity log — the
+   * operator's, not the customer's.
+   *
+   * A supplier gets a clear bounce. The customer got nothing, and
+   * *"we never received it"* is a conversation they would have blind.
+   */
+  async function arrivals() {
+    const rows = await env.DB.prepare(
+      "SELECT sender, recipient, source_id, outcome, reason, attachments, captured FROM inbound_email_events ORDER BY occurred_at DESC"
+    ).all<{
+      sender: string;
+      recipient: string;
+      source_id: string | null;
+      outcome: string;
+      reason: string | null;
+      attachments: number;
+      captured: number;
+    }>();
+    return rows.results;
+  }
+
+  it("records a message for an address nothing claims", async () => {
+    // **The case that has nowhere else to be recorded**: no source
+    // means no `intake_capture_events` row either, so without this the
+    // message leaves no trace on the customer's side at all.
+    const message = messageWith("nobody.acme@vibefinance-ai.com", [
+      { filename: "invoice.pdf", contentType: "application/pdf", bytes: PDF },
+    ]);
+    await handleInboundEmail(message, env.DB, model);
+
+    const [event] = await arrivals();
+    expect(event.outcome).toBe("rejected");
+    expect(event.reason).toBe("no_such_address");
+    expect(event.source_id).toBeNull();
+  });
+
+  it("records who sent it", async () => {
+    // **The sender is the point.** Somebody chasing "did our invoice
+    // arrive" has an address and a date and nothing else.
+    await seedSource("ap-mailbox.acme@vibefinance-ai.com");
+    const message = messageWith("ap-mailbox.acme@vibefinance-ai.com", [
+      { filename: "invoice.pdf", contentType: "application/pdf", bytes: PDF },
+    ]);
+    await handleInboundEmail(message, env.DB, model);
+
+    const [event] = await arrivals();
+    expect(event.sender).toBe("supplier@example.com");
+    expect(event.recipient).toBe("ap-mailbox.acme@vibefinance-ai.com");
+  });
+
+  it("records a message with nothing attached", async () => {
+    await seedSource("ap-mailbox.acme@vibefinance-ai.com");
+    await handleInboundEmail(
+      messageWith("ap-mailbox.acme@vibefinance-ai.com", []),
+      env.DB,
+      model
+    );
+
+    const [event] = await arrivals();
+    expect(event.reason).toBe("no_attachment");
+  });
+
+  it("counts what arrived against what became an invoice", async () => {
+    await seedSource("ap-mailbox.acme@vibefinance-ai.com");
+    await handleInboundEmail(
+      messageWith("ap-mailbox.acme@vibefinance-ai.com", [
+        { filename: "one.pdf", contentType: "application/pdf", bytes: PDF },
+        { filename: "two.pdf", contentType: "application/pdf", bytes: PDF },
+      ]),
+      env.DB,
+      model
+    );
+
+    const [event] = await arrivals();
+    expect(event.attachments).toBe(2);
+    expect(event.captured).toBe(2);
+  });
+
+  it("marks the source as receiving, on the first message", async () => {
+    // **A routing rule lives in Cloudflare's dashboard and this
+    // database cannot see it**, so a message arriving is the only
+    // honest evidence that routing works.
+    await seedSource("ap-mailbox.acme@vibefinance-ai.com");
+    const before = await env.DB.prepare("SELECT email_routing FROM sources WHERE id = 's-ap'")
+      .first<{ email_routing: string }>();
+    expect(before?.email_routing).toBe("not_configured");
+
+    await handleInboundEmail(
+      messageWith("ap-mailbox.acme@vibefinance-ai.com", [
+        { filename: "invoice.pdf", contentType: "application/pdf", bytes: PDF },
+      ]),
+      env.DB,
+      model
+    );
+
+    const after = await env.DB.prepare("SELECT email_routing FROM sources WHERE id = 's-ap'")
+      .first<{ email_routing: string }>();
+    expect(after?.email_routing).toBe("active");
+  });
+
+  it("does not mark it receiving when the message was rejected", async () => {
+    // Nothing was delivered, so nothing is proven.
+    await seedSource("ap-mailbox.acme@vibefinance-ai.com");
+    await handleInboundEmail(
+      messageWith("ap-mailbox.acme@vibefinance-ai.com", []),
+      env.DB,
+      model
+    );
+
+    const row = await env.DB.prepare("SELECT email_routing FROM sources WHERE id = 's-ap'")
+      .first<{ email_routing: string }>();
+    expect(row?.email_routing).toBe("not_configured");
+  });
+
+  it("reads back, most recent first", async () => {
+    const { handleListInboundEmail } = await import("../src/inbound-email.js");
+    await seedSource("ap-mailbox.acme@vibefinance-ai.com");
+
+    await handleInboundEmail(messageWith("nobody@vibefinance-ai.com", []), env.DB, model);
+    await handleInboundEmail(
+      messageWith("ap-mailbox.acme@vibefinance-ai.com", [
+        { filename: "invoice.pdf", contentType: "application/pdf", bytes: PDF },
+      ]),
+      env.DB,
+      model
+    );
+
+    const body = (await handleListInboundEmail(env.DB, 10)).body as {
+      arrivals: { outcome: string; sourceName: string | null }[];
+    };
+
+    expect(body.arrivals.length).toBe(2);
+    // The one nothing claimed shows a null source rather than being
+    // hidden — it is the entry worth noticing.
+    expect(body.arrivals.some((a) => a.sourceName === null)).toBe(true);
+  });
+});
