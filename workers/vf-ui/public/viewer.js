@@ -324,16 +324,28 @@ function lineRow(line, index) {
     el("td", { class: "num muted", text: String(index + 1) }),
     ...lineFields.map(cell),
     el("td", {}, [
-      el("button", {
-        class: "rm",
-        text: "×",
-        title: t("viewer.removeline"),
-        onclick: () => {
-          lines.splice(index, 1);
-          renderLines();
-  renderExceptions();
-        },
-      }),
+      /**
+       * **Structure, not a field** — decision 0144.
+       *
+       * Field visibility governs fields. Adding and removing a line
+       * changes the shape of the document, and nothing governed it —
+       * so an approver on a read-only stage could add a line and save
+       * it, with every field on that line rendered as text.
+       */
+      ...(canEditAnything
+        ? [
+            el("button", {
+              class: "rm",
+              text: "×",
+              title: t("viewer.removeline"),
+              onclick: () => {
+                lines.splice(index, 1);
+                renderLines();
+                renderExceptions();
+              },
+            }),
+          ]
+        : []),
     ]),
   ]);
 }
@@ -365,14 +377,19 @@ function linePanel() {
       el("tbody", { id: "lines" }),
     ]),
     el("div", { class: "linefoot" }, [
-      el("button", {
-        text: t("viewer.addline"),
-        onclick: () => {
-          lines.push({});
-          renderLines();
-  renderExceptions();
-        },
-      }),
+      // Structure, not a field — decision 0144. See `lineRow`.
+      ...(canEditAnything
+        ? [
+            el("button", {
+              text: t("viewer.addline"),
+              onclick: () => {
+                lines.push({});
+                renderLines();
+                renderExceptions();
+              },
+            }),
+          ]
+        : []),
       el("div", { class: "linetotal", id: "linetotal" }),
     ]),
   ]);

@@ -2,6 +2,7 @@ import type { RouteResult } from "./org-route.js";
 import { isKnownField, type InvoiceFacts } from "@vibefinance/shared";
 import { handleUpsertInvoice } from "./invoice-facts-route.js";
 import { validateInvoiceFacts } from "./validation.js";
+import { resolveFieldVisibility } from "./field-visibility-route.js";
 
 /**
  * Keying — a person producing facts extraction could not.
@@ -36,6 +37,29 @@ export async function handleKeyInvoiceFields(
   // real.
   keyedBy: string
 ): Promise<RouteResult> {
+  /**
+   * What this stage permits, enforced here rather than trusted from the
+   * screen — decision 0144.
+   *
+   * The same discipline as decision 0010's identity: **derived, never
+   * accepted**. A screen that hides a field is a courtesy; a route that
+   * refuses one is the rule.
+   */
+  /**
+   * **Derived from where the invoice actually is**, never taken from
+   * the caller — the same discipline decision 0010 applies to identity.
+   * A stage id in the request body would let somebody key at whichever
+   * stage suited them.
+   */
+  const instance = await db
+    .prepare(
+      "SELECT current_stage_id FROM process_instances WHERE subject_type = 'invoice' AND subject_id = ? AND status = 'in_progress' LIMIT 1"
+    )
+    .bind(invoiceId)
+    .first<{ current_stage_id: string }>();
+
+  const editable = instance ? await editableFieldsAt(db, instance.current_stage_id) : null;
+
   const invoice = await db
     .prepare("SELECT id, facts_json FROM invoice_headers WHERE id = ?")
     .bind(invoiceId)
@@ -49,6 +73,55 @@ export async function handleKeyInvoiceFields(
     return { status: 400, body: { error: "facts (an object) is required" } };
   }
   const entries = Object.entries(supplied as Record<string, unknown>);
+
+  /**
+   * **Refused, not ignored** — decision 0144.
+   *
+   * Silently dropping a field a stage does not permit would tell
+   * somebody their edit was saved when it was not, which is the failure
+   * decision 0119 spent a day on from the other direction. Named
+   * individually, because *"some fields were refused"* sends a person
+   * hunting.
+   */
+  if (editable) {
+    const refused = [
+      ...entries.filter(([field]) => !editable.has(field)).map(([field]) => field),
+      ...(Array.isArray(body.lines)
+        ? body.lines.flatMap((line) =>
+            Object.keys((line as { facts?: Record<string, unknown> })?.facts ?? {}).filter(
+              (field) => !editable.has(field)
+            )
+          )
+        : []),
+    ];
+
+    if (refused.length > 0) {
+      return {
+        status: 403,
+        body: {
+          error: "this stage does not permit editing those fields",
+          reason: "not_editable_here",
+          fields: [...new Set(refused)],
+        },
+      };
+    }
+
+    /**
+     * **A line is structure, not a field.** Adding one changes the
+     * shape of the document, and a stage that permits editing nothing
+     * cannot permit that either — which is how an approver added a line
+     * whose every field was read-only.
+     */
+    if (editable.size === 0 && Array.isArray(body.lines) && body.lines.length > 0) {
+      return {
+        status: 403,
+        body: {
+          error: "this stage does not permit changing lines",
+          reason: "not_editable_here",
+        },
+      };
+    }
+  }
   if (entries.length === 0 && !Array.isArray(body.lines)) {
     // Partial keying is allowed — keying NOTHING is not. It would
     // record a person as having produced facts they did not produce.
@@ -290,4 +363,15 @@ export async function handleKeyInvoiceFields(
       },
     },
   };
+}
+
+/**
+ * The fields a stage permits editing — decision 0144.
+ *
+ * `null` where no stage was given, meaning unrestricted: an inline
+ * harness and every caller that predates this behave as they did.
+ */
+async function editableFieldsAt(db: D1Database, stageId: string): Promise<Set<string>> {
+  const fields = await resolveFieldVisibility(db, stageId);
+  return new Set(fields.filter((f) => f.visibility === "edit").map((f) => f.field));
 }
