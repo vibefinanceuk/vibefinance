@@ -337,6 +337,18 @@ So: an email address can be reserved and **nothing delivers to it**; the
 sources screen says *"Not receiving yet"* and will keep saying it; and
 decision 0117's onboarding cannot provision anybody.
 
+**Decision 0135 designs it**, and answers the three questions 0039 left
+open. The important one: **the token does not live in `vf-licence`.** An
+account-level write token can delete every customer's database and
+replace any Worker, so a flaw in any route would become total account
+compromise. It is a **script the operator runs**, like
+`apply_migrations.py` — and decision 0038 already puts a person in this
+loop at approval, so this is not friction being added.
+
+Steps are ordered cheapest-to-undo first with the control-plane rows
+written **last**, so a failure leaves the customer reading
+`not-yet-deployed.invalid` rather than half-real.
+
 **2. Email sending**, which decision 0125 evaluates. "Email" means three
 different things — supplier contacts *out to strangers*, user
 notifications *out to colleagues*, and a source which is *inbound* and
