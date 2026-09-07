@@ -45,6 +45,7 @@ import { handleCreateSource, handleListSources , handleSetSourceEmail , handleLi
 import { handleIngestPurchaseOrder, handleGetPurchaseOrder } from "./purchase-order-route.js";
 import { handleGetRetention, handleSetRetention, handleListBeyondRetention } from "./retention-route.js";
 import { handleCaptureFromSource } from "./source-capture-route.js";
+import { handleInboundEmail, type EmailMessage } from "./inbound-email.js";
 import { handleKeyInvoiceFields } from "./key-fields-route.js";
 import { handleReturnToStage, handleReturnToSupplier, handleDiscard } from "./return-route.js";
 import { authenticateUserOrSession } from "./user-auth.js";
@@ -2105,6 +2106,49 @@ export default {
    * checking) never caught, only `npx tsc --noEmit` did, since nothing
    * calls this with fewer than 3 arguments in production.
    */
+  /**
+   * An invoice arriving by email — decision 0146.
+   *
+   * A Cloudflare Email Routing rule delivers here, and **this Worker is
+   * one customer's own**: decision 0125 settled that a shared receiver
+   * would put every customer's invoice through the same code on its way
+   * in, which is what decision 0091's split exists to prevent.
+   *
+   * **`resolveTenant` cannot apply here**, and decision 0001's lint
+   * rule is right to object: reading `env.DB` directly commits to
+   * one-Worker-per-tenant.
+   *
+   * That commitment is already made and this is where it becomes
+   * visible. `resolveTenant(request, env)` needs a *request*, and an
+   * email handler has none — so the binding **is** the tenancy, which
+   * is the whole reason a routing rule names one Worker (decision
+   * 0125). Exempted here, with the reason, and nowhere else.
+   */
+  /* eslint-disable no-restricted-properties -- see the comment above:
+     an email handler has no request, so `resolveTenant` cannot apply.
+     Exempted here and nowhere else. */
+  async email(message: EmailMessage, env: Env, _ctx: ExecutionContext): Promise<void> {
+    /**
+     * **Rejected, not swallowed.** A misconfigured instance that
+     * accepted mail and did nothing with it would leave a supplier
+     * certain they had sent an invoice — the failure decision 0125
+     * named. A bounce is the only way anybody finds out today.
+     */
+    if (!env.DB || !env.AI) {
+      message.setReject("This mailbox is not ready to receive invoices.");
+      return;
+    }
+
+    await handleInboundEmail(
+      message,
+      env.DB,
+      createWorkersAiExtractionModel(env.AI, env.EXTRACTION_MODEL_ID),
+      env.DOCUMENTS,
+      env.CUSTOMER_ID
+    );
+  },
+  /* eslint-enable no-restricted-properties */
+
   async scheduled(_event: ScheduledEvent, env: Env, _ctx: ExecutionContext): Promise<void> {
     // Two independent jobs, same cron trigger (see wrangler.jsonc's
     // triggers.crons) — deliberately not one combined guard. A missing
