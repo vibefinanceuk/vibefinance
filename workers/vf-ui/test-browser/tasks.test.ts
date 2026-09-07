@@ -118,17 +118,27 @@ describe("opening a task that cannot be keyed (decision 0142)", () => {
 });
 
 describe("the brand mark (decision 0145)", () => {
-  it("sits at the foot of the column, below the person", async () => {
-    // **The top of a sidebar is where somebody looks to move**, and a
-    // logo there competes with the entries beside it for one glance.
+  it("sits at the head of the column, above the navigation", async () => {
+    // **It sat at the foot first**, on my argument that the top of a
+    // sidebar is where somebody looks to move. The operator wanted it
+    // at the top, which is the conventional place and the one people
+    // look for when orienting themselves rather than navigating —
+    // small enough that it does not compete.
     await openList([APPROVAL_TASK]);
 
-    const nav = document.querySelector(".nav");
-    const children = [...(nav?.children ?? [])];
-    const who = children.findIndex((c) => c.classList.contains("who"));
+    const children = [...(document.querySelector(".nav")?.children ?? [])];
+    const firstLink = children.findIndex((c) => c.tagName === "A");
     const mark = children.findIndex((c) => c.classList.contains("brandmark"));
 
-    expect(mark).toBeGreaterThan(who);
+    expect(mark).toBeLessThan(firstLink);
+  });
+
+  it("is small enough not to compete with the entries", async () => {
+    // A mark at the head of a column orients; one that fills it
+    // announces. 84px against a 190px column.
+    const css = (await import("virtual:stylesheets")).default["index.html"];
+    const rule = css.slice(css.indexOf(".brandmark {"));
+    expect(rule).toContain("max-width: 84px");
   });
 
   it("ships both a dark and a light mark", async () => {

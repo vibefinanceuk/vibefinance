@@ -5,19 +5,22 @@ variants.
 
 ---
 
-## Where it goes, and where it does not
+## Where it goes
 
-Asked for at the **foot of the left column**, and that is the better
-place.
+**At the head of the left column**, at 84px in a 190px width.
 
-**The top of a sidebar is where somebody looks to move.** A logo there
-competes with the navigation entries beside it for the same glance, on a
-screen somebody uses all day. At the foot it is present without asking
-for attention, which is what a mark on a working tool should do.
+It sat at the **foot** first, and the reasoning was mine: the top of a
+sidebar is where somebody looks to *move*, so a logo there competes with
+the entries beside it. The operator moved it, and was right — **the top
+is where people look to orient themselves**, which is a different act
+from navigating, and it is the conventional place for the same reason.
 
-The nav already carried a 30×3 dash as a placeholder mark at the top
-since decision 0108. It stays: it separates the frame from the entries
-and asks for nothing.
+The argument about competing holds at the wrong size, not the wrong
+position. **60% of where it started** answers it: large enough to
+recognise, small enough not to be the first thing read.
+
+It replaces the 30×3 dash decision 0108 left as a placeholder at the top
+of the nav, which is what a placeholder is for.
 
 ---
 
@@ -74,5 +77,8 @@ nobody zooms does not need it, and both variants together are 72KB.
   tokens the operator sets per customer; this is VibeFinance's own mark,
   hardcoded, and a customer seeing it on their own instance may not be
   what anybody wants.
-- **No `srcset`.** The 300px file serves every density, and on a
-  high-density display it is doing so at its limit.
+- **No `srcset`.** The 300px file serves every density. At 84px
+  displayed that is comfortable; the file was sized for the earlier,
+  larger placement and is now generous rather than tight.
+- **"finance" is small at this size.** Legible, and the first thing that
+  would suffer if the mark shrank again.

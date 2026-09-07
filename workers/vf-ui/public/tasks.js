@@ -302,7 +302,24 @@ async function go(screen) {
 export function frame(main) {
   return el("div", { class: "frame" }, [
     el("nav", { class: "nav" }, [
-      el("div", { class: "mark" }),
+      /**
+       * The mark, at the head of the column — decision 0145.
+       *
+       * It sat at the foot first, on the argument that the top of a
+       * sidebar is where somebody looks to move. **The operator wanted
+       * it at the top**, which is the conventional place and the one
+       * people look for when orienting themselves rather than
+       * navigating — and small enough that it does not compete.
+       *
+       * Replaces the 30×3 dash decision 0108 left as a placeholder,
+       * which is what a placeholder is for.
+       *
+       * `alt` is empty on purpose: the name is in the page title, and a
+       * screen reader announcing "VibeFinance logo" before every
+       * navigation is noise rather than information.
+       */
+      el("img", { class: "brandmark dark", src: "/img/logo.png", alt: "" }),
+      el("img", { class: "brandmark light", src: "/img/logo-light.png", alt: "" }),
       // **A second entry, at last.** The frame has carried one since
       // decision 0108, which existed so later screens would sit inside
       // it rather than be retrofitted. This is the first of them.
@@ -320,21 +337,6 @@ export function frame(main) {
         el("div", { text: me?.name ?? "" }),
         el("div", { class: "muted", text: me?.environmentId ?? "" }),
       ]),
-      /**
-       * The mark, at the foot of the column — decision 0145.
-       *
-       * **Below the person, not above the navigation.** The top of a
-       * sidebar is where somebody looks to move; a logo there competes
-       * with the two entries beside it for the same glance. At the foot
-       * it is present without asking for attention, which is what a
-       * mark on a tool somebody uses all day should do.
-       *
-       * `alt` is empty on purpose: the name is already in the page
-       * title, and a screen reader announcing "VibeFinance logo" before
-       * every navigation is noise rather than information.
-       */
-      el("img", { class: "brandmark dark", src: "/img/logo.png", alt: "" }),
-      el("img", { class: "brandmark light", src: "/img/logo-light.png", alt: "" }),
     ]),
     el("div", { class: "main", id: "main" }, [main]),
   ]);

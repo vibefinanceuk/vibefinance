@@ -342,7 +342,7 @@ elsewhere.
 |---|---|
 | `vf-app` | 1069 |
 | `vf-licence` | 315 |
-| `vf-ui` | 44 Worker · 96 browser |
+| `vf-ui` | 44 Worker · 97 browser |
 | `shared` | 252 passing, 2 known pre-existing failures |
 
 Both migration chains replay clean with every standing invariant

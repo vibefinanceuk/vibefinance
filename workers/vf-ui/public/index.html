@@ -211,7 +211,7 @@
     background: var(--surface-1);
   }
 
-  .nav .mark { width: 30px; height: 3px; margin: 4px 10px 22px; }
+
 
   /*
     The mark at the foot of the column — decision 0145.
@@ -250,9 +250,11 @@
   .brandmark {
     display: block;
     width: 100%;
-    max-width: 140px;
+    /* 60% of where it started, at the operator's asking: at the head
+       of a column it orients rather than announces. */
+    max-width: 84px;
     height: auto;
-    margin: 18px auto 4px;
+    margin: 2px auto 20px;
     /*
       **Quieter than the interface it sits in.** A brand mark on a tool
       somebody uses all day should be present rather than insistent, and
