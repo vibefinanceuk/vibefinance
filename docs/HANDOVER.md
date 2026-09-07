@@ -354,18 +354,23 @@ Recorded so nobody re-opens them:
 
 ## Suggested next pieces
 
-**0. A domain.** Not a build, and it is now the single largest
-unblocker: **three separate pieces wait on it**, and one of them is a
-compliance control.
+**0. ~~A domain.~~ Bound.** `vibefinance-ai.com`, 7 September.
+`INGESTION_DOMAIN` is set on `vf-app`, and the one address issued
+against the old hardcoded domain was released first — never given to a
+supplier, so exactly the mistake-correction case decision 0133 exists
+for.
 
-Cloudflare Access applies policies to hostnames in a zone, and
-`workers.dev` is not one — so decision 0140's operator interface cannot
-be protected. Email intake cannot receive without a domain to route
-(0126, 0141). And `vf-ui` reads as infrastructure.
+**Three things it unblocks, none of them yet done:**
 
-`vibefinance.com` is taken. Whatever is bought becomes
-`INGESTION_DOMAIN`, which is configuration now rather than a constant
-(0141) — so the purchase is the whole change.
+- **Cloudflare Access can protect `vf-admin`** — so decision 0140's
+  operator interface can be built. It applies policies to hostnames in a
+  zone, which `workers.dev` is not.
+- **Email intake can receive**, once the **Email Routing rule** exists
+  (0126). The addresses are real now rather than reserved against
+  nothing; nothing delivers to them yet.
+- **`vf-ui` can stop reading as infrastructure**, and a
+  customer-specific backdrop becomes possible before sign-in rather than
+  after.
 
 ---
 

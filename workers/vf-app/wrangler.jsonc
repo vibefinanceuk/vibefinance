@@ -72,6 +72,20 @@
   // any unset or unrecognised value falls back to English, never an
   // error.
   "vars": {
+    /*
+      The domain ingestion addresses live on — decisions 0125, 0141.
+
+      **A var rather than a secret.** It is not sensitive — a supplier
+      is told it — and it belongs where a reviewer can see which domain
+      a customer's invoices arrive at.
+
+      It was a hardcoded `vibefinance.com`, which nobody owned, so every
+      address minted against it could never receive anything (0141). An
+      unset value now refuses to issue an address rather than producing
+      a plausible one.
+    */
+    "INGESTION_DOMAIN": "vibefinance-ai.com",
+
     "LICENCE_SIGNING_PUBLIC_KEY": {
       "key_ops": [
         "verify"

@@ -1,7 +1,11 @@
 # 0141 — A domain nobody owned
 
-**Status: built.** The ingestion domain is configuration, and an
-unconfigured one refuses to issue an address.
+**Status: built, and a domain now exists.**
+`INGESTION_DOMAIN` is `vibefinance-ai.com`, bound on 7 September.
+
+The one address issued against the domain nobody owned was released
+before it was set — never given to a supplier, so exactly the
+mistake-correction case decision 0133 exists for.
 
 ---
 
@@ -94,7 +98,8 @@ honest guard is that an unset value refuses rather than defaults.
 
 - **Nothing verifies the configured domain exists.** Setting
   `INGESTION_DOMAIN` to another domain nobody owns produces the same
-  situation, more deliberately.
+  situation, more deliberately — and the value is now right, which
+  makes the check less urgent and no less absent.
 - **The Email Routing rule** (decision 0126) still does not exist, so a
   correctly configured domain still receives nothing.
 - **Decision 0140's operator interface waits on the domain too.**
