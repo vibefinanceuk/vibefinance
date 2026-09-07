@@ -366,6 +366,17 @@ decision 0009 is this project's own record of a private key in a
 do**, because once a deploy reads the manifest, a changed
 `d1_database_id` points one customer's Worker at another's database.
 
+**Decision 0137 settles what a customer is asked.** The kind is not a
+question — nobody trials in production, and 0118 provisions production
+as a second environment. The **region is**, and is hardcoded to `eu`
+today with no reasoning recorded anywhere. The name is
+`{customer}-{kind}-{region}`, decided by the system.
+
+One guard it adds: a **length check at approval**, because a long
+company name plus `-production-eu` approaches Cloudflare's 64-character
+limit, and that failure would otherwise arrive after the database
+exists.
+
 **2. Email sending**, which decision 0125 evaluates. "Email" means three
 different things — supplier contacts *out to strangers*, user
 notifications *out to colleagues*, and a source which is *inbound* and
