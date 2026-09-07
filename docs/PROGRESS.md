@@ -342,7 +342,7 @@ elsewhere.
 |---|---|
 | `vf-app` | 1069 |
 | `vf-licence` | 315 |
-| `vf-ui` | 44 Worker · 91 browser |
+| `vf-ui` | 44 Worker · 96 browser |
 | `shared` | 252 passing, 2 known pre-existing failures |
 
 Both migration chains replay clean with every standing invariant
@@ -363,7 +363,7 @@ holding — 41 migrations for `vf-app`, 34 for `vf-licence`.
 | `docs/design/mockups/` | Four screens as static HTML | Current |
 | `docs/design/multi-authority-intake.md` | Non-EN-16931 authorities | Design only |
 | `docs/design/text-layer-extraction.md` | Reading a PDF's own text | Design only |
-| `docs/decisions/` | 144 decision records | Current |
+| `docs/decisions/` | 145 decision records | Current |
 | `docs/decisions/SUPERSEDED.md` | Which records supersede which | **Read first** |
 
 Document 4's markdown source is at `docs/documents/`, with

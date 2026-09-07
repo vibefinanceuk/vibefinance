@@ -116,3 +116,36 @@ describe("opening a task that cannot be keyed (decision 0142)", () => {
     expect(document.querySelector("button.subjectlink")).toBeNull();
   });
 });
+
+describe("the brand mark (decision 0145)", () => {
+  it("sits at the foot of the column, below the person", async () => {
+    // **The top of a sidebar is where somebody looks to move**, and a
+    // logo there competes with the entries beside it for one glance.
+    await openList([APPROVAL_TASK]);
+
+    const nav = document.querySelector(".nav");
+    const children = [...(nav?.children ?? [])];
+    const who = children.findIndex((c) => c.classList.contains("who"));
+    const mark = children.findIndex((c) => c.classList.contains("brandmark"));
+
+    expect(mark).toBeGreaterThan(who);
+  });
+
+  it("ships both a dark and a light mark", async () => {
+    // **The navy wordmark all but vanishes** on the night surface:
+    // #001842 against #0d1626 is a difference of value nobody can read.
+    await openList([APPROVAL_TASK]);
+
+    expect(document.querySelector("img.brandmark.dark")).not.toBeNull();
+    expect(document.querySelector("img.brandmark.light")).not.toBeNull();
+  });
+
+  it("announces nothing to a screen reader", async () => {
+    // The name is already in the page title, and "VibeFinance logo"
+    // before every navigation is noise rather than information.
+    await openList([APPROVAL_TASK]);
+
+    const mark = document.querySelector("img.brandmark") as HTMLImageElement;
+    expect(mark.alt).toBe("");
+  });
+});

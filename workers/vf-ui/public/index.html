@@ -213,6 +213,54 @@
 
   .nav .mark { width: 30px; height: 3px; margin: 4px 10px 22px; }
 
+  /*
+    The mark at the foot of the column — decision 0145.
+
+    The nav is a flex column so `.who` can be pushed down; the logo
+    sits below it, centred, and quiet.
+  */
+  .nav { display: flex; flex-direction: column; }
+  .nav .who { margin-top: auto; }
+
+  /*
+    Two marks, swapped by the mood — decision 0145.
+
+    **The navy wordmark all but vanishes** on the night surface:
+    `#001842` against `#0d1626` is a difference of value nobody can
+    read, and the mark becomes an outline. A light variant carries the
+    wordmark at the same weight as the text beside it, and the `V`
+    keeps its gradient in both because the gradient carries itself.
+
+    Swapped in CSS rather than in script, so it follows the mood without
+    a second thing to remember (decision 0139) and needs no repaint.
+  */
+  .brandmark.light { display: none; }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-mood="day"]) .brandmark.dark { display: none; }
+    :root:not([data-mood="day"]) .brandmark.light { display: block; }
+  }
+
+  :root[data-mood="night"] .brandmark.dark { display: none; }
+  :root[data-mood="night"] .brandmark.light { display: block; }
+
+  :root[data-mood="day"] .brandmark.dark { display: block; }
+  :root[data-mood="day"] .brandmark.light { display: none; }
+
+  .brandmark {
+    display: block;
+    width: 100%;
+    max-width: 140px;
+    height: auto;
+    margin: 18px auto 4px;
+    /*
+      **Quieter than the interface it sits in.** A brand mark on a tool
+      somebody uses all day should be present rather than insistent, and
+      the navy reads heavy against the daytime blue of decision 0139.
+    */
+    opacity: 0.85;
+  }
+
   .nav a {
     display: block;
     padding: 8px 10px;

@@ -109,6 +109,22 @@ describe("one font, everywhere", () => {
   });
 });
 
+describe("the brand mark is swapped, not recoloured (decision 0145)", () => {
+  const css = stylesheets["index.html"];
+
+  it("hides the dark mark at night and the light one by day", () => {
+    // **Swapped in CSS rather than in script**, so it follows the mood
+    // without a second thing to remember and needs no repaint.
+    expect(css).toContain('[data-mood="night"] .brandmark.dark');
+    expect(css).toContain('[data-mood="day"] .brandmark.light');
+  });
+
+  it("follows the machine too, where nobody has chosen", () => {
+    const media = css.slice(css.indexOf("@media (prefers-color-scheme: dark)"));
+    expect(media).toContain(".brandmark");
+  });
+});
+
 describe("the stylesheet names files that exist (decision 0124)", () => {
   /**
    * **A stylesheet can reference a font that is not there**, and the

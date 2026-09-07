@@ -320,6 +320,21 @@ export function frame(main) {
         el("div", { text: me?.name ?? "" }),
         el("div", { class: "muted", text: me?.environmentId ?? "" }),
       ]),
+      /**
+       * The mark, at the foot of the column — decision 0145.
+       *
+       * **Below the person, not above the navigation.** The top of a
+       * sidebar is where somebody looks to move; a logo there competes
+       * with the two entries beside it for the same glance. At the foot
+       * it is present without asking for attention, which is what a
+       * mark on a tool somebody uses all day should do.
+       *
+       * `alt` is empty on purpose: the name is already in the page
+       * title, and a screen reader announcing "VibeFinance logo" before
+       * every navigation is noise rather than information.
+       */
+      el("img", { class: "brandmark dark", src: "/img/logo.png", alt: "" }),
+      el("img", { class: "brandmark light", src: "/img/logo-light.png", alt: "" }),
     ]),
     el("div", { class: "main", id: "main" }, [main]),
   ]);
