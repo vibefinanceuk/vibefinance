@@ -1,6 +1,12 @@
 import { env } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
 import { applyTestSchema } from "./setup.js";
+/**
+ * The domain is configuration — decision 0141. It was
+ * `"vibefinance.com"` hardcoded, against a domain nobody owned.
+ */
+const ENV = { INGESTION_DOMAIN: "vibefinance.example" };
+
 import {
   handleSetSourceEmail,
   ingestionAddress,
@@ -37,27 +43,27 @@ describe("the address is derived from the customer, not the environment", () => 
    * supplier on the day a customer goes live.
    */
   it("names the source and the customer", () => {
-    expect(ingestionAddress("AP Mailbox", "acme")).toBe("ap-mailbox.acme@vibefinance.com");
+    expect(ingestionAddress("AP Mailbox", "acme", "vibefinance.example")).toBe("ap-mailbox.acme@vibefinance.example");
   });
 
   it("gives the same address in sandbox and production", () => {
     // The customer id does not change when 0118 moves them.
-    expect(ingestionAddress("AP", "acme")).toBe(ingestionAddress("AP", "acme"));
-    expect(ingestionAddress("AP", "acme")).not.toContain("sandbox");
+    expect(ingestionAddress("AP", "acme", "vibefinance.example")).toBe(ingestionAddress("AP", "acme", "vibefinance.example"));
+    expect(ingestionAddress("AP", "acme", "vibefinance.example")).not.toContain("sandbox");
   });
 
   it("survives a name a mail system would reject", () => {
     // Somebody naming a source "AP Mailbox (UK)" should get a working
     // address, not a rejection.
-    const address = ingestionAddress("AP Mailbox (UK)!", "Acme Ltd");
-    expect(address).toBe("ap-mailbox-uk.acme-ltd@vibefinance.com");
+    const address = ingestionAddress("AP Mailbox (UK)!", "Acme Ltd", "vibefinance.example");
+    expect(address).toBe("ap-mailbox-uk.acme-ltd@vibefinance.example");
     expect(address).toBe(address.toLowerCase());
   });
 
   it("cannot collide with another customer", () => {
     // A customer id is unique across the fleet, so the address is too,
     // without a registry.
-    expect(ingestionAddress("AP", "acme")).not.toBe(ingestionAddress("AP", "globex"));
+    expect(ingestionAddress("AP", "acme", "vibefinance.example")).not.toBe(ingestionAddress("AP", "globex", "vibefinance.example"));
   });
 });
 
@@ -67,24 +73,24 @@ describe("giving a source an address", () => {
     // decision 0039, which is not built. A screen implying mail was
     // arriving would be worse than one admitting it is not.
     await seedSource("s-ap", "AP Mailbox");
-    const result = await handleSetSourceEmail(env.DB, "s-ap", "acme");
+    const result = await handleSetSourceEmail(env.DB, "s-ap", "acme", ENV);
 
     expect(result.status).toBe(200);
     const body = result.body as { emailAddress: string; routing: string; reason: string };
-    expect(body.emailAddress).toBe("ap-mailbox.acme@vibefinance.com");
+    expect(body.emailAddress).toBe("ap-mailbox.acme@vibefinance.example");
     expect(body.routing).toBe("not_configured");
     expect(body.reason).toBe("not_routed_yet");
   });
 
   it("stores it, so the routing rule can name the same string", async () => {
     await seedSource("s-ap", "AP Mailbox");
-    await handleSetSourceEmail(env.DB, "s-ap", "acme");
+    await handleSetSourceEmail(env.DB, "s-ap", "acme", ENV);
 
     const row = await env.DB.prepare(
       "SELECT email_address, email_routing FROM sources WHERE id = 's-ap'"
     ).first<{ email_address: string; email_routing: string }>();
 
-    expect(row?.email_address).toBe("ap-mailbox.acme@vibefinance.com");
+    expect(row?.email_address).toBe("ap-mailbox.acme@vibefinance.example");
     expect(row?.email_routing).toBe("not_configured");
   });
 
@@ -92,9 +98,9 @@ describe("giving a source an address", () => {
     // Suppliers write an address down, and changing it silently would
     // break every one of them.
     await seedSource("s-ap", "AP Mailbox");
-    await handleSetSourceEmail(env.DB, "s-ap", "acme");
+    await handleSetSourceEmail(env.DB, "s-ap", "acme", ENV);
 
-    const again = await handleSetSourceEmail(env.DB, "s-ap", "acme");
+    const again = await handleSetSourceEmail(env.DB, "s-ap", "acme", ENV);
     expect(again.status).toBe(409);
     expect((again.body as { reason: string }).reason).toBe("address_issued");
   });
@@ -103,7 +109,7 @@ describe("giving a source an address", () => {
     // An SFTP source carrying a mailbox is a configuration nobody could
     // act on.
     await seedSource("s-sftp", "Nightly feed", "sftp");
-    const result = await handleSetSourceEmail(env.DB, "s-sftp", "acme");
+    const result = await handleSetSourceEmail(env.DB, "s-sftp", "acme", ENV);
     expect(result.status).toBe(422);
     expect(String((result.body as { error: string }).error)).toContain("sftp");
   });
@@ -112,22 +118,22 @@ describe("giving a source an address", () => {
     // Caught with a reason, rather than as a constraint error.
     await seedSource("s-1", "AP Mailbox");
     await seedSource("s-2", "ap mailbox");
-    await handleSetSourceEmail(env.DB, "s-1", "acme");
+    await handleSetSourceEmail(env.DB, "s-1", "acme", ENV);
 
-    const result = await handleSetSourceEmail(env.DB, "s-2", "acme");
+    const result = await handleSetSourceEmail(env.DB, "s-2", "acme", ENV);
     expect(result.status).toBe(409);
     expect((result.body as { reason: string }).reason).toBe("address_taken");
   });
 
   it("404s a source that does not exist", async () => {
-    expect((await handleSetSourceEmail(env.DB, "nope", "acme")).status).toBe(404);
+    expect((await handleSetSourceEmail(env.DB, "nope", "acme", ENV)).status).toBe(404);
   });
 
   it("refuses when the instance does not know its own customer", async () => {
     // A provisioning fault rather than a caller's mistake, and saying
     // so is the difference between a fixable report and a puzzle.
     await seedSource("s-ap", "AP Mailbox");
-    const result = await handleSetSourceEmail(env.DB, "s-ap", undefined);
+    const result = await handleSetSourceEmail(env.DB, "s-ap", undefined, ENV);
     expect(result.status).toBe(500);
     expect(String((result.body as { error: string }).error)).toContain("CUSTOMER_ID");
   });
@@ -142,10 +148,10 @@ describe("what the platform will accept (decision 0129)", () => {
    * the slug already produced `[a-z0-9-]`.
    */
   it("refuses a name with no letters or numbers in it", async () => {
-    // `!!!` slugs to nothing, and `.acme@vibefinance.com` has a leading
+    // `!!!` slugs to nothing, and `.acme@vibefinance.example` has a leading
     // dot and is not an address at all.
     await seedSource("s-bang", "!!!");
-    const result = await handleSetSourceEmail(env.DB, "s-bang", "acme");
+    const result = await handleSetSourceEmail(env.DB, "s-bang", "acme", ENV);
 
     expect(result.status).toBe(422);
     expect(String((result.body as { error: string }).error)).toContain("no letters or numbers");
@@ -155,7 +161,7 @@ describe("what the platform will accept (decision 0129)", () => {
     // 64 characters, which Cloudflare enforces. An 80-character name
     // produced an 85-character local part.
     await seedSource("s-long", "A".repeat(80));
-    const result = await handleSetSourceEmail(env.DB, "s-long", "acme");
+    const result = await handleSetSourceEmail(env.DB, "s-long", "acme", ENV);
 
     expect(result.status).toBe(422);
     expect(String((result.body as { error: string }).error)).toContain("64");
@@ -163,7 +169,7 @@ describe("what the platform will accept (decision 0129)", () => {
 
   it("says to rename it, rather than only that it failed", async () => {
     await seedSource("s-bang2", "###");
-    const result = await handleSetSourceEmail(env.DB, "s-bang2", "acme");
+    const result = await handleSetSourceEmail(env.DB, "s-bang2", "acme", ENV);
     expect((result.body as { reason: string }).reason).toBe("name_unusable");
   });
 
@@ -171,19 +177,19 @@ describe("what the platform will accept (decision 0129)", () => {
     // **The interface is translated precisely so these customers
     // exist.** A German source named "Rechnungen für Köln" produced
     // `rechnungen-f-r-k-ln` before this — unreadable.
-    expect(ingestionAddress("Rechnungen für Köln", "acme")).toBe(
-      "rechnungen-fur-koln.acme@vibefinance.com"
+    expect(ingestionAddress("Rechnungen für Köln", "acme", "vibefinance.example")).toBe(
+      "rechnungen-fur-koln.acme@vibefinance.example"
     );
   });
 
   it("handles the sharp s the way German does", () => {
-    expect(ingestionAddress("Großkunden", "acme")).toBe("grosskunden.acme@vibefinance.com");
+    expect(ingestionAddress("Großkunden", "acme", "vibefinance.example")).toBe("grosskunden.acme@vibefinance.example");
   });
 
   it("still accepts an ordinary name at the boundary", async () => {
     // The limit must not refuse something reasonable.
     await seedSource("s-ok", "Accounts Payable Mailbox UK");
-    expect((await handleSetSourceEmail(env.DB, "s-ok", "acme")).status).toBe(200);
+    expect((await handleSetSourceEmail(env.DB, "s-ok", "acme", ENV)).status).toBe(200);
   });
 });
 
@@ -241,7 +247,7 @@ describe("retiring a source (decision 0130)", () => {
     // the source does not stop them sending.
     await seedUser();
     await seedSource("s-addr", "AR Mailbox");
-    await handleSetSourceEmail(env.DB, "s-addr", "acme");
+    await handleSetSourceEmail(env.DB, "s-addr", "acme", ENV);
 
     // **Refused, not retired** -- decision 0133. Nothing arrived, so
     // this may be a mistake to correct, and only a person knows whether
@@ -276,7 +282,7 @@ describe("renaming a source (decision 0130)", () => {
     // The address is derived from the name and never reissued, so a
     // rename would make the two disagree permanently.
     await seedSource("s-addr2", "AP Mailbox");
-    await handleSetSourceEmail(env.DB, "s-addr2", "acme");
+    await handleSetSourceEmail(env.DB, "s-addr2", "acme", ENV);
 
     const result = await handleRenameSource(env.DB, "s-addr2", "Something else");
     expect(result.status).toBe(409);
@@ -318,8 +324,8 @@ describe("the API returns codes, not sentences (decision 0132)", () => {
     await seedSource("s-prose", "AP Mailbox");
 
     const bodies = [
-      (await handleSetSourceEmail(env.DB, "s-prose", "acme")).body,
-      (await handleSetSourceEmail(env.DB, "s-prose", "acme")).body,
+      (await handleSetSourceEmail(env.DB, "s-prose", "acme", ENV)).body,
+      (await handleSetSourceEmail(env.DB, "s-prose", "acme", ENV)).body,
       (await handleRenameSource(env.DB, "s-prose", "Something")).body,
       (await handleRetireSource(env.DB, "s-prose", "u-dan")).body,
     ] as Record<string, unknown>[];
@@ -350,7 +356,7 @@ describe("releasing an issued address (decision 0133)", () => {
       "INSERT OR IGNORE INTO org_users (id, email, name) VALUES ('u-dan', 'd@x.com', 'Dan')"
     ).run();
     await seedSource(id, name);
-    await handleSetSourceEmail(env.DB, id, "acme");
+    await handleSetSourceEmail(env.DB, id, "acme", ENV);
   }
 
   it("refuses, and names the address that would be released", async () => {
@@ -362,7 +368,7 @@ describe("releasing an issued address (decision 0133)", () => {
     expect(result.status).toBe(409);
     const body = result.body as { outcome: string; emailAddress: string };
     expect(body.outcome).toBe("confirm_required");
-    expect(body.emailAddress).toBe("ap-mailbox.acme@vibefinance.com");
+    expect(body.emailAddress).toBe("ap-mailbox.acme@vibefinance.example");
   });
 
   it("deletes when somebody confirms", async () => {
@@ -372,7 +378,7 @@ describe("releasing an issued address (decision 0133)", () => {
     expect((result.body as { outcome: string }).outcome).toBe("deleted");
     expect((result.body as { reason: string }).reason).toBe("address_released");
     expect((result.body as { releasedAddress: string }).releasedAddress).toBe(
-      "ar-mailbox.acme@vibefinance.com"
+      "ar-mailbox.acme@vibefinance.example"
     );
 
     expect(await env.DB.prepare("SELECT id FROM sources WHERE id = 's-r2'").first()).toBeNull();
@@ -385,10 +391,10 @@ describe("releasing an issued address (decision 0133)", () => {
     await handleRetireSource(env.DB, "s-r3", "u-dan", true);
 
     await seedSource("s-r4", "AP Mailbox");
-    const result = await handleSetSourceEmail(env.DB, "s-r4", "acme");
+    const result = await handleSetSourceEmail(env.DB, "s-r4", "acme", ENV);
     expect(result.status).toBe(200);
     expect((result.body as { emailAddress: string }).emailAddress).toBe(
-      "ap-mailbox.acme@vibefinance.com"
+      "ap-mailbox.acme@vibefinance.example"
     );
   });
 
@@ -415,5 +421,58 @@ describe("releasing an issued address (decision 0133)", () => {
     const result = await handleRetireSource(env.DB, "s-r6", "u-dan");
     expect((result.body as { outcome: string }).outcome).toBe("deleted");
     expect((result.body as { reason: string }).reason).toBe("never_used");
+  });
+});
+
+describe("no domain, no address (decision 0141)", () => {
+  /**
+   * **A domain nobody owned was hardcoded, and nothing objected.**
+   * Every address minted against `vibefinance.com` was a string that
+   * looked like an address and could never receive anything — and the
+   * screen reported one reserved when nothing had been.
+   *
+   * The same discipline as `not-yet-deployed.invalid` (decision 0039):
+   * a system that admits what it cannot do rather than producing
+   * something plausible.
+   */
+  it("refuses to issue one when no domain is configured", async () => {
+    await seedSource("s-nodomain", "AP Mailbox");
+    const result = await handleSetSourceEmail(env.DB, "s-nodomain", "acme", {});
+
+    expect(result.status).toBe(503);
+    expect((result.body as { reason: string }).reason).toBe("no_ingestion_domain");
+  });
+
+  it("stores nothing when it refuses", async () => {
+    // A refusal that half-wrote a row would be worse than the bug.
+    await seedSource("s-nodomain2", "AP Mailbox");
+    await handleSetSourceEmail(env.DB, "s-nodomain2", "acme", {});
+
+    const row = await env.DB.prepare(
+      "SELECT email_address FROM sources WHERE id = 's-nodomain2'"
+    ).first<{ email_address: string | null }>();
+    expect(row?.email_address).toBeNull();
+  });
+
+  it("treats an empty domain as no domain", async () => {
+    // An env var set to "" is the shape a misconfiguration takes.
+    await seedSource("s-blank", "AP Mailbox");
+    const result = await handleSetSourceEmail(env.DB, "s-blank", "acme", {
+      INGESTION_DOMAIN: "   ",
+    });
+    expect(result.status).toBe(503);
+  });
+
+  it("uses whichever domain is configured", async () => {
+    // The point of making it configuration: a new domain changes every
+    // future address without a code change.
+    await seedSource("s-other", "AP Mailbox");
+    const result = await handleSetSourceEmail(env.DB, "s-other", "acme", {
+      INGESTION_DOMAIN: "invoices.example.net",
+    });
+
+    expect((result.body as { emailAddress: string }).emailAddress).toBe(
+      "ap-mailbox.acme@invoices.example.net"
+    );
   });
 });

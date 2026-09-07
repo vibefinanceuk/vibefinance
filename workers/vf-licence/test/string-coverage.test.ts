@@ -89,6 +89,7 @@ const KEYS_THE_INTERFACE_USES = [
   "outcome.address_taken",
   "outcome.name_unusable",
   "outcome.not_routed_yet",
+  "outcome.no_ingestion_domain",
   "outcome.address_released",
   "outcome.address_would_be_released",
   "sources.confirmrelease",

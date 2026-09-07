@@ -142,6 +142,15 @@ export interface Env {
    */
   CUSTOMER_ID?: string;
   /**
+   * The domain ingestion addresses live on — decision 0141.
+   *
+   * **Unset by default, and deliberately.** It was a hardcoded
+   * `vibefinance.com` that nobody owned, so every address minted
+   * against it could never receive anything. An unset domain refuses to
+   * issue an address rather than producing a plausible one.
+   */
+  INGESTION_DOMAIN?: string;
+  /**
    * This deployment's environment id, matching the `environments.id`
    * row in vf-licence — e.g. "Acme-production", "Acme-sandbox"
    * (decision 0036).
@@ -1322,7 +1331,7 @@ export default {
         return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
       }
 
-      const result = await handleSetSourceEmail(db, sourceEmailMatch[1], env.CUSTOMER_ID);
+      const result = await handleSetSourceEmail(db, sourceEmailMatch[1], env.CUSTOMER_ID, env);
       return json(result.body, result.status);
     }
 

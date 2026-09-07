@@ -34,6 +34,7 @@ import releaseStringsSql from "../migrations/0029_release_address_strings.sql?ra
 import manifestConfigSql from "../migrations/0030_manifest_completes_the_config.sql?raw";
 import actionStringsSql from "../migrations/0031_action_strings.sql?raw";
 import moodStringsSql from "../migrations/0032_mood_strings.sql?raw";
+import noDomainSql from "../migrations/0033_no_domain_string.sql?raw";
 
 function stripSqlComments(sql: string): string {
   return sql
@@ -95,4 +96,5 @@ export async function applyTestSchema(): Promise<void> {
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(manifestConfigSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(actionStringsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(moodStringsSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(noDomainSql)));
 }

@@ -143,13 +143,24 @@ export async function handleListSources(db: D1Database, processId: string): Prom
 }
 
 /**
- * The domain every ingestion address lives on — decision 0125.
+ * The domain every ingestion address lives on — decisions 0125, 0141.
  *
  * A VibeFinance domain rather than a customer's own: no customer DNS to
  * arrange, and an address that works the moment a source is created.
- * Reversible later, because the source owns the address either way.
+ *
+ * **Configuration, not a constant.** It was `"vibefinance.com"`
+ * hardcoded — a domain nobody owned, and nothing objected. Every
+ * address minted against it was a string that looked like an address
+ * and could never receive anything.
+ *
+ * The same argument decision 0099 made for API addresses: a value that
+ * differs between deployments belongs in configuration, and one that
+ * has to be right belongs somewhere a person sets deliberately.
  */
-const INGESTION_DOMAIN = "vibefinance.com";
+function ingestionDomain(env: { INGESTION_DOMAIN?: string }): string | null {
+  const domain = env.INGESTION_DOMAIN?.trim();
+  return domain ? domain.toLowerCase() : null;
+}
 
 /**
  * RFC 5321's limit on a local part, which Cloudflare enforces —
@@ -219,8 +230,8 @@ export function addressableName(
  * Call `addressableName` first: this assumes a name that can become
  * one.
  */
-export function ingestionAddress(sourceName: string, customerId: string): string {
-  return `${slug(sourceName)}.${slug(customerId)}@${INGESTION_DOMAIN}`;
+export function ingestionAddress(sourceName: string, customerId: string, domain: string): string {
+  return `${slug(sourceName)}.${slug(customerId)}@${domain}`;
 }
 
 /**
@@ -241,8 +252,31 @@ export function ingestionAddress(sourceName: string, customerId: string): string
 export async function handleSetSourceEmail(
   db: D1Database,
   sourceId: string,
-  customerId: string | undefined
+  customerId: string | undefined,
+  env: { INGESTION_DOMAIN?: string } = {}
 ): Promise<RouteResult> {
+  /**
+   * **No domain, no address** — decision 0141.
+   *
+   * The alternative is what happened: minting
+   * `ap-mailbox.acme@vibefinance.com` against a domain nobody owned,
+   * and a screen reporting an address reserved when nothing had been.
+   *
+   * The same discipline as `not-yet-deployed.invalid` (decision 0039):
+   * a system that admits what it cannot do, rather than producing
+   * something plausible.
+   */
+  const domain = ingestionDomain(env);
+  if (!domain) {
+    return {
+      status: 503,
+      body: {
+        error: "no ingestion domain is configured, so no address can be issued",
+        reason: "no_ingestion_domain",
+      },
+    };
+  }
+
   if (!customerId) {
     // The instance does not know who it is, which is a provisioning
     // fault rather than a caller's mistake.
@@ -289,7 +323,7 @@ export async function handleSetSourceEmail(
     };
   }
 
-  const address = ingestionAddress(source.name, customerId);
+  const address = ingestionAddress(source.name, customerId, domain);
 
   const taken = await db
     .prepare("SELECT id FROM sources WHERE email_address = ?")
