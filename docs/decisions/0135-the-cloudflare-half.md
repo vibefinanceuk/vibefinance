@@ -1,8 +1,9 @@
 # 0135 — The Cloudflare half of provisioning
 
-**Status: designed, not built.** The three questions decision 0039
-deliberately left open, answered — and one of them changes where the
-work goes.
+**Status: three steps of five built** —
+`migrations/provision_infrastructure.py`. The D1 database, the migration
+chain and the R2 bucket. **The Worker deploy stops deliberately**, and
+the two steps after it are unwritten rather than written and never run.
 
 ---
 
@@ -125,6 +126,40 @@ Three records currently end waiting on this:
 
 It is also what ends *"every customer provisioned by hand"*, which is
 why there is one.
+
+---
+
+## What the script does, and where it stops
+
+Three steps run: **create the D1 database**, **apply the migration
+chain**, **create the R2 bucket**. Each checks whether its object
+already exists, so a second run after a failure continues rather than
+duplicating.
+
+The migration chain is **delegated to `apply_migrations.py`**, not
+reimplemented. Decision 0011 calls it the genuinely hard part — it
+replays against a throwaway copy first, checks every assertion, and
+keeps idempotent bookkeeping — and a second implementation would be a
+second thing to get right.
+
+**The Worker deploy raises rather than warns.** A script reporting
+success having skipped the step that makes an instance reachable would
+be worse than one that stops. Its message says everything before it is
+safe to re-run, which is what somebody needs to know at six o'clock with
+half a customer in their account.
+
+### The dry run was not credential-free, at first
+
+It is promised to touch nothing and need no token. It did not:
+`apply_migrations.py --dry-run` **still reaches the network** to ask
+which migrations are recorded as applied — reasonable for a database
+that exists, wrong for one that has not been created.
+
+**Found by running it.** The dry run stopped asking for a token, which
+is exactly the failure a person would hit on their first use.
+
+It now lists the chain from disk instead, and a test asserts no token is
+demanded.
 
 ---
 
