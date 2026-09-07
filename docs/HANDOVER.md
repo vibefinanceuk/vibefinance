@@ -377,7 +377,28 @@ company name plus `-production-eu` approaches Cloudflare's 64-character
 limit, and that failure would otherwise arrive after the database
 exists.
 
-**2. Email sending**, which decision 0125 evaluates. "Email" means three
+**2. The operator interface** (decision 0140). Approving a customer is
+a `curl` today, and **a decision made blind is a checkpoint in name
+only**.
+
+A fourth Worker — `vf-admin`, behind Cloudflare Access — because
+`vf-ui`'s proxy **refuses admin paths outright** by design, and binding
+an interface to `vf-licence` would redeploy the licence minter on every
+UI change.
+
+**The larger half is attribution, not authentication.** `decided_by` is
+whatever the caller says, because the admin key is a shared secret —
+honest, and it fails ISO 27001 A.8.15 and SOC 2 CC7.2, which want
+privileged actions *attributable* rather than merely recorded. The
+identity comes from a **verified** Access JWT instead, which is the
+discipline decision 0010 already applies in `vf-app` and the control
+plane has been the exception to.
+
+And **seven routes are admin-gated where two record who acted**:
+creating a licence, minting a credential and granting access to an
+environment all record nothing.
+
+**3. Email sending**, which decision 0125 evaluates. "Email" means three
 different things — supplier contacts *out to strangers*, user
 notifications *out to colleagues*, and a source which is *inbound* and
 not sending at all.
@@ -395,7 +416,7 @@ Still open: **which provider**, **where sending lives** (0091 says the
 control plane never holds customer content), **whether templates sit in
 D1** like `ui_strings`, and **what happens when sending fails**.
 
-**3. Wire up the actions that now have icons.** `complete`, `release`,
+**4. Wire up the actions that now have icons.** `complete`, `release`,
 `return`, `return_to_supplier` and `discard` render in the action row
 and **do nothing** (0122). They were disabled as buttons too, but icons
 advertise more confidently than a greyed-out word — which is a worse
@@ -404,37 +425,37 @@ state than before.
 **Nothing confirms an irreversible action** either: discard and return
 to supplier both end a task, and both are one click.
 
-**4. Closed-value enforcement in the compiler.** A rule saying
+**5. Closed-value enforcement in the compiler.** A rule saying
 *"currency is EURO"* compiles, activates, fires against nothing and
 looks correct in every listing. `validateRule` has the list (0113) and
 does not consult it. The pair to decision 0116, which now validates
 documents.
 
-**5. An Approval screen.** The Task Manager lists approval tasks and
+**6. An Approval screen.** The Task Manager lists approval tasks and
 cannot open them. Field visibility (0114) is what makes an approval view
 differ from a keying one — the mechanism exists, the screen does not.
 
-**6. BG-4 and BG-7 in the vocabulary.** The seller and buyer field lists
+**7. BG-4 and BG-7 in the vocabulary.** The seller and buyer field lists
 live in the viewer (0115). Recording business-group membership in
 `shared`, as `INVOICE_LINE_FIELDS` does for BG-25, is the consistent
 thing and a known shortcut until it is done.
 
-**7. BG-23, the VAT breakdown.** Mandatory and **repeating** — one entry
+**8. BG-23, the VAT breakdown.** Mandatory and **repeating** — one entry
 per VAT category and rate, whose tax amounts must sum to BT-110. The
 flat facts model cannot hold a repeating group (0112). A design
 question, not an omission, and *"one of the most common causes of
 validation errors"*.
 
-**8. Despatch Advice (T16).** The goods receipt, and the missing third
+**9. Despatch Advice (T16).** The goods receipt, and the missing third
 leg of three-way matching — **before the matcher, not after** (0082).
 BT-132 now exists, which is what lets matching compare a line to an
 order line.
 
-**9. Reading `cbc:CustomizationID`.** BT-24 is now read into the facts
+**10. Reading `cbc:CustomizationID`.** BT-24 is now read into the facts
 (0112), so the discriminator is available; detection still does not use
 it, and a valid Peppol Order sent to `/sources/:id/capture` is refused.
 
-**10. `party.first_document`**, the **all-users task view**, a **screen
+**11. `party.first_document`**, the **all-users task view**, a **screen
 for placing an invoice** by hand, and **four more languages** —
 `GET /ui-strings/keys` shows the gaps.
 
