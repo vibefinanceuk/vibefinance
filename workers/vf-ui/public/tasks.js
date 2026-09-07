@@ -12,6 +12,7 @@
  */
 
 import { t } from "/strings.js";
+import { moodPicker } from "/mood.js";
 
 const shell = document.getElementById("shell");
 
@@ -289,7 +290,10 @@ export function topbar(title, subtitle, right = []) {
       el("h2", { text: title }),
       el("p", { class: "sub", text: subtitle }),
     ]),
-    el("div", { class: "right" }, right),
+    // **Every screen, because the frame carries it** (decision 0108).
+    // A preference offered on one screen and not another is one
+    // somebody has to remember where to find.
+    el("div", { class: "right" }, [...right, moodPicker(t)]),
   ]);
 }
 

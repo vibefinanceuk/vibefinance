@@ -55,6 +55,10 @@ const KEYS_THE_INTERFACE_USES = [
   "nav.tasks",
   // The sources screen (decision 0126).
   "nav.sources",
+  // The mood control (decision 0139).
+  "mood.label",
+  "mood.day",
+  "mood.night",
   "sources.subtitle",
   "sources.name",
   "sources.mechanism",

@@ -13,6 +13,25 @@
   would mean a visible flash of the wrong colours (decision 0096).
 -->
 <link rel="stylesheet" href="/tokens.css">
+<script>
+  /*
+    The mood, before the first paint — decision 0139.
+
+    Inline and synchronous on purpose: a module loaded normally runs
+    after the stylesheet has already painted, so somebody who chose
+    Night time would see a white screen flash first. That is the failure
+    decision 0103 records as the one a person notices and nobody tests.
+  */
+  try {
+    var mood = localStorage.getItem("vf-mood");
+    if (!mood) {
+      mood = window.matchMedia("(prefers-color-scheme: dark)").matches ? "night" : "day";
+    }
+    document.documentElement.setAttribute("data-mood", mood);
+  } catch (e) {
+    /* A browser refusing storage still gets the media query's answer. */
+  }
+</script>
 <link rel="stylesheet" id="brand" href="">
 <script src="/config.js"></script>
 
@@ -269,7 +288,20 @@
 
   .topbar h2 { margin: 0; font-size: var(--text-lg); font-weight: 600; }
   .topbar .sub { margin: 2px 0 0; font-size: var(--text-base); }
-  .topbar .right { margin-left: auto; display: flex; gap: 8px; }
+  .topbar .right { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+
+  /* The mood control — decision 0139. Quieter than the actions beside
+     it, because it is a preference rather than a thing to do. */
+  select.mood {
+    min-height: 30px;
+    padding: 4px 8px;
+    font-size: var(--text-sm);
+    color: var(--text-secondary);
+    border-color: transparent;
+    background: transparent;
+  }
+
+  select.mood:hover { background: var(--surface-2); }
 
   /* Panels. Each a thing somebody can look at on its own. */
   .panel {
