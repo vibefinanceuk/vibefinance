@@ -177,3 +177,32 @@ class TestManifestVerification:
         result = run(["--customer", "acme", "--environment", "acme-sandbox-eu", "--dry-run"])
         assert result.returncode == 0
         assert "Done." in result.stdout
+
+
+class TestTheGateHolds:
+    """Provisioning cannot run ahead of approval — decision 0038.
+
+    The operator's reason, and it is the whole point of the checkpoint:
+    *"else I might have people requesting an environment to check out
+    the software, such as a competitor."*
+
+    An environment exists **only because somebody approved a signup
+    request**, so an environment that is not there is a request nobody
+    approved — and this script refuses it.
+    """
+
+    def test_confirms_the_environment_before_creating_anything(self):
+        # **Found by asking what happens on a typo.** The check ran at
+        # step four, after the database, forty migrations and the bucket
+        # already existed — and the error read like a control-plane
+        # problem rather than a mistyped argument.
+        result = run(["--customer", "acme", "--environment", "acme-sandbox-eu", "--dry-run"])
+        confirm_at = result.stdout.index("confirm the environment")
+        create_at = result.stdout.index("would run: npx wrangler d1 create")
+        assert confirm_at < create_at
+
+    def test_the_step_is_numbered_zero(self):
+        # It happens before the work rather than as part of it, and the
+        # numbering says so.
+        result = run(["--customer", "acme", "--environment", "acme-sandbox-eu", "--dry-run"])
+        assert "0. confirm" in result.stdout

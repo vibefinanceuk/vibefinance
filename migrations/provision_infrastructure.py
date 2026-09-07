@@ -428,6 +428,36 @@ def main() -> int:
     bucket = f"{args.environment}-documents"
 
     print(f"Provisioning {args.environment} for customer {args.customer}")
+
+    # **Does this environment exist, and is it waiting for
+    # infrastructure?** — checked first, before anything is created.
+    #
+    # Found by asking what happens if this is pointed at an environment
+    # that does not exist: it created the database, applied forty
+    # migrations and created the bucket, then failed at step four with
+    # all of it orphaned. **A typo in the environment name did that**,
+    # and the error read like a control-plane problem rather than a
+    # mistyped argument.
+    #
+    # This does not weaken decision 0038's checkpoint — it enforces it.
+    # An environment exists only because somebody approved a signup
+    # request, so an environment that is not there is a request nobody
+    # approved.
+    print("  0. confirm the environment is waiting for this")
+    existing = read_manifest(args.environment, dry_run=args.dry_run)
+    if not args.dry_run:
+        if existing.get("environmentId") != args.environment:
+            raise ProvisioningError(
+                f"the control plane has no environment called '{args.environment}'.\n\n"
+                "An environment exists only once a signup request has been approved "
+                "(decision 0038). Check the name, or approve the request first — "
+                "nothing has been created."
+            )
+        if existing.get("deployable"):
+            print(
+                "    already provisioned: this environment has every binding recorded.\n"
+                "    Re-running is safe and will redeploy it."
+            )
     print(f"  1. D1 database: {database}")
     database_id = create_database(database, dry_run=args.dry_run)
     if database_id:

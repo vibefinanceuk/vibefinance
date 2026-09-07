@@ -1,5 +1,15 @@
 # 0038 — Signup requests, and the human approval checkpoint
 
+> **The checkpoint survived automation** — decision 0135's provisioning
+> script cannot run ahead of it. `handleProvisionTrial` refuses a
+> request that is not approved, and the script refuses an environment
+> the control plane does not have — which an unapproved request never
+> produces.
+>
+> The operator's reason, restated because it is the point: *"else I
+> might have people requesting an environment to check out the
+> software, such as a competitor."*
+
 Status: settled, 2 September 2026. The first piece built on top of
 decision 0036's environments foundation, and the front door of the
 real signup -> trial -> sandbox -> production flow.
