@@ -1,7 +1,11 @@
 # 0136 — The manifest is the config
 
-**Status: designed, not built.** Answers the question decision 0135 left
-open — generated `wrangler.jsonc` or one maintained per customer — with
+**Status: the manifest is complete and readable.**
+`GET /environments/:id/config` returns every binding a deploy needs, and
+`r2_bucket_name` is the column it was missing. **The deploy step itself
+is still unwritten** — `provision_infrastructure.py` stops at it.
+
+Answers the question decision 0135 left open — generated `wrangler.jsonc` or one maintained per customer — with
 a third option that is better than either.
 
 ---
@@ -99,14 +103,30 @@ runs. Keeping the output answers that without making it authoritative.
 
 ---
 
-## What needs adding
+## Built
 
-- **`r2_bucket_name` on `environments`.** The one binding the manifest
-  does not carry.
-- **A route to read an environment's full config**, which
-  `handleListCustomers` nearly is.
-- **The deploy step itself** in `provision_infrastructure.py`, which
-  currently raises rather than pretending (decision 0135).
+**`r2_bucket_name`**, and a route that returns the whole config with
+**`deployable`** alongside it. A caller reading a config with a null
+`d1_database_id` and deploying anyway would produce a Worker bound to
+nothing — and when it is not deployable, the response **names what is
+missing**, because *"the config is incomplete"* sends somebody looking.
+
+**A test asserts the response carries no secret**, checking for
+`apikey`, `secret`, `private`, `hash` and `password` in the serialised
+body. Decision 0009's incident is the reason that test exists rather
+than a comment saying not to.
+
+**And two standing invariants the manifest did not need when it held
+only names:** no two environments may share a bucket, and none may share
+a `d1_database_id`. Once a deploy reads this, a duplicate is one
+customer's Worker reading another's invoices.
+
+---
+
+## Still to build
+
+- **The deploy step** in `provision_infrastructure.py`, which stops
+  there rather than pretending (decision 0135).
 
 ---
 

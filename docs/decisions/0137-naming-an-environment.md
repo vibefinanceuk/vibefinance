@@ -1,6 +1,6 @@
 # 0137 — What a customer is asked, and what the system decides
 
-**Status: designed, not built.** The signup form, the environment
+**Status: built**, and smaller than it looked — see below. The signup form, the environment
 naming scheme, and one guard that has to run at approval rather than
 during provisioning.
 
@@ -95,13 +95,28 @@ is the property that made 0126 choose the customer in the first place.
 
 ---
 
-## What needs adding
+## Built, and one thing already was
 
-- **`region` on `signup_requests`**, chosen by the requester.
-- **A derived `customerId` at approval**, with an override.
-- **The length check**, run at approval against the longest future name.
-- **`{customer}-{kind}-{region}`** in `handleProvisionTrial`, replacing
-  two hardcoded values.
+**`handleCreateEnvironment` has named environments
+`{customer}-{kind}-{region}` since decision 0084.** The scheme this
+record proposed is what it has always done, and only provisioning's own
+placeholder URL used a different shape.
+
+So the naming needed nothing. Left where it lives rather than
+duplicated: **a second place computing the same name is a second place
+for it to drift.**
+
+What did need building:
+
+- **`region` on `signup_requests`**, and provisioning reading it —
+  falling back to `eu` for a request made before the form asked, because
+  inventing an answer is wrong and so is refusing somebody who applied
+  before the question existed.
+- **`customerIdFrom`**, sharing decision 0129's slug rules including the
+  accent folding.
+- **The length guard at approval**, watched to fail: checking the
+  sandbox name rather than the production one lets through a customer
+  who cannot go live.
 
 ---
 

@@ -38,7 +38,7 @@ import {
   handleRejectSignupRequest,
   handleRecordProvisioning,
 } from "./signup-route.js";
-import { handleProvisionTrial, expireOverdueLicences, warnExpiringLicences } from "./provision-route.js";
+import { handleProvisionTrial, expireOverdueLicences, warnExpiringLicences , handleEnvironmentConfig } from "./provision-route.js";
 import { extractBearerToken, isValidAdminKey, isValidEnvironmentKey } from "./auth.js";
 import { handlePreflight, withCors } from "@vibefinance/shared";
 
@@ -249,6 +249,9 @@ export default {
       (url.pathname.startsWith("/branding/") && request.method === "PUT") ||
       (url.pathname === "/ui-strings" && (request.method === "PUT" || request.method === "POST")) ||
       (url.pathname === "/ui-strings/keys" && request.method === "GET") ||
+      // The manifest names every binding a customer's Worker runs with
+      // (decision 0136), so reading it is the operator's alone.
+      (/^\/environments\/[^/]+\/config$/.test(url.pathname) && request.method === "GET") ||
       (url.pathname === "/access" && (request.method === "POST" || request.method === "DELETE")) ||
       (url.pathname === "/signup-requests" && request.method === "GET") ||
       (approveMatch !== null && request.method === "POST") ||
@@ -329,6 +332,13 @@ export default {
 
     // Every key with its translations and its gaps — what a translator
     // needs, and admin only because it is the whole fleet's wording.
+    // What a deploy needs, from the manifest — decision 0136.
+    const configMatch = url.pathname.match(/^\/environments\/([^/]+)\/config$/);
+    if (configMatch && request.method === "GET") {
+      const result = await handleEnvironmentConfig(env.CONTROL_DB, configMatch[1]);
+      return json(result.body, result.status);
+    }
+
     if (url.pathname === "/ui-strings/keys" && request.method === "GET") {
       const result = await handleListUiStrings(env.CONTROL_DB);
       return json(result.body, result.status);

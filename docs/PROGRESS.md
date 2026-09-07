@@ -325,12 +325,12 @@ elsewhere.
 | Package | Tests |
 |---|---|
 | `vf-app` | 1051 |
-| `vf-licence` | 289 |
+| `vf-licence` | 299 |
 | `vf-ui` | 44 Worker · 62 browser |
 | `shared` | 252 passing, 2 known pre-existing failures |
 
 Both migration chains replay clean with every standing invariant
-holding — 40 migrations for `vf-app`, 29 for `vf-licence`.
+holding — 40 migrations for `vf-app`, 30 for `vf-licence`.
 
 ---
 

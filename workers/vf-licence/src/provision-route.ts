@@ -68,10 +68,34 @@ export async function handleProvisionTrial(
   }
   const trimmedCustomerId = customerId.trim();
 
+  /**
+   * Can this id carry an environment name? — decision 0137.
+   *
+   * **Checked here, before anything is created.** A long company name
+   * plus `-production-eu` approaches Cloudflare's limit, and that
+   * failure would otherwise arrive after the D1 database exists — the
+   * half-created customer decision 0135 orders its steps to avoid.
+   *
+   * Against the **longest** name the customer will ever need, not the
+   * one being created now: an `acme-sandbox-eu` that fits while
+   * `acme-production-eu` would not is a customer who cannot go live,
+   * and they would find out on the day they tried.
+   */
+  const usable = usableCustomerId(trimmedCustomerId);
+  if (!usable.ok) {
+    return { status: 422, body: { error: usable.reason } };
+  }
+
   const signupRequest = await db
-    .prepare("SELECT id, company_name, status, customer_id FROM signup_requests WHERE id = ?")
+    .prepare("SELECT id, company_name, status, customer_id, region FROM signup_requests WHERE id = ?")
     .bind(requestId)
-    .first<{ id: string; company_name: string; status: string; customer_id: string | null }>();
+    .first<{
+      id: string;
+      company_name: string;
+      status: string;
+      customer_id: string | null;
+      region: string | null;
+    }>();
   if (!signupRequest) {
     return { status: 404, body: { error: `signup request ${requestId} does not exist` } };
   }
@@ -94,17 +118,45 @@ export async function handleProvisionTrial(
     return customerResult;
   }
 
+  /**
+   * The region the requester asked for — decision 0137.
+   *
+   * `region: "eu"` was hardcoded, with no reasoning recorded anywhere:
+   * a default that became a decision by nobody noticing. Decision 0084
+   * made environments per region a real dimension, and a German
+   * customer landing in `eu` is right where an Australian one is not.
+   *
+   * Falls back to `eu` for a request made before the form asked —
+   * inventing an answer for them is wrong, and so is refusing to
+   * provision somebody who applied before the question existed.
+   */
+  const region = signupRequest.region ?? "eu";
+
+  /**
+   * **`handleCreateEnvironment` already names it
+   * `{customer}-{kind}-{region}`** — the scheme decision 0137 proposed
+   * is what it has done since decision 0084, and only provisioning's
+   * own placeholder URL used a different shape.
+   *
+   * Left to it rather than duplicated here: a second place computing
+   * the same name is a second place for it to drift.
+   *
+   * The first environment is always a **sandbox**, and that is a
+   * decision rather than an omission — nobody trials in production, and
+   * decision 0118 provisions production as a second environment when a
+   * trial becomes real.
+   */
   const environmentResult = await handleCreateEnvironment(db, {
     customerId: trimmedCustomerId,
     kind: "sandbox",
-    region: "eu",
+    region,
     // A real, honest placeholder: the Worker this points at does not
     // exist yet, because deploying it is the Cloudflare-API half this
     // route deliberately doesn't do. instance_url is NOT NULL in the
     // schema, so something must go here — a URL that visibly says
     // "not deployed" is better than a plausible-looking one that
     // silently 404s.
-    instanceUrl: `https://not-yet-deployed.invalid/${trimmedCustomerId}-sandbox`,
+    instanceUrl: `https://not-yet-deployed.invalid/${trimmedCustomerId}-sandbox-${region}`,
   });
   if (environmentResult.status !== 201) {
     return environmentResult;
@@ -311,4 +363,145 @@ export async function expireOverdueLicences(db: D1Database, now: Date = new Date
   }
 
   return { checked: ids.length, blocked: ids };
+}
+
+/**
+ * Cloudflare's practical limit on a D1 or Worker name — decision 0137.
+ *
+ * Both sit around 64 characters. Kept a little under, because the same
+ * identifier appears in a bucket name with `-documents` appended.
+ */
+const MAX_ENVIRONMENT_NAME = 58;
+
+/**
+ * The longest environment name a customer will ever need.
+ *
+ * **Checked against the longest, not the one being created.** An
+ * `acme-sandbox-eu` that fits while `acme-production-eu` would not is a
+ * customer who cannot go live — and they would find out on the day they
+ * tried.
+ */
+function longestEnvironmentName(customerId: string): string {
+  return `${customerId}-production-eu`;
+}
+
+/**
+ * A company name reduced to an identifier — decision 0137.
+ *
+ * Mirrors the source slug of decision 0129, including folding accents
+ * so *"Großkunden GmbH"* becomes `grosskunden-gmbh` rather than
+ * something unreadable. The interface is translated (0107) precisely so
+ * those customers exist.
+ */
+export function customerIdFrom(companyName: string): string {
+  return companyName
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/ß/g, "ss")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+/**
+ * Whether a customer id can carry an environment name — decision 0137.
+ *
+ * **Run at approval**, before anything is created. A long company name
+ * plus `-production-eu` approaches Cloudflare's limit, and that failure
+ * would otherwise arrive **after the database exists** — the
+ * half-created customer decision 0135 orders its steps to avoid.
+ */
+export function usableCustomerId(customerId: string): { ok: true } | { ok: false; reason: string } {
+  if (customerId === "") {
+    return { ok: false, reason: "the company name has no letters or numbers in it" };
+  }
+
+  const longest = longestEnvironmentName(customerId);
+  if (longest.length > MAX_ENVIRONMENT_NAME) {
+    return {
+      ok: false,
+      reason:
+        `the company name is too long: it would need an environment called "${longest}", ` +
+        `which is ${longest.length} characters against a limit of ${MAX_ENVIRONMENT_NAME}. ` +
+        "Supply a shorter customerId.",
+    };
+  }
+
+  return { ok: true };
+}
+
+/**
+ * What a deploy needs, from the manifest — decision 0136.
+ *
+ * **The config is data, not a file.** A deploy reads this, writes a
+ * `wrangler.jsonc` into a temporary directory, and deploys from it — so
+ * nothing is maintained per customer and the manifest cannot disagree
+ * with a copy of itself.
+ *
+ * **No secrets.** Decision 0009 is this project's own record of a
+ * private signing key sitting in a customer's `wrangler.jsonc` as a
+ * plain var, in git history and Cloudflare's deployment logs, caught
+ * only because a reviewer noticed `key_ops` read `["sign"]` where a
+ * public key should read `["verify"]`. Secrets are set by
+ * `wrangler secret put`, by the operator, and never travel through this.
+ */
+export async function handleEnvironmentConfig(
+  db: D1Database,
+  environmentId: string
+): Promise<RouteResult> {
+  const row = await db
+    .prepare(
+      `SELECT id, customer_id, kind, region, worker_name, d1_database_name, d1_database_id,
+              r2_bucket_name, instance_url
+       FROM environments WHERE id = ?`
+    )
+    .bind(environmentId)
+    .first<{
+      id: string;
+      customer_id: string;
+      kind: string;
+      region: string;
+      worker_name: string | null;
+      d1_database_name: string | null;
+      d1_database_id: string | null;
+      r2_bucket_name: string | null;
+      instance_url: string;
+    }>();
+
+  if (!row) {
+    return { status: 404, body: { error: `environment ${environmentId} does not exist` } };
+  }
+
+  // What a deploy cannot proceed without, named individually. "The
+  // config is incomplete" sends somebody looking; this says where.
+  const missing = [
+    ["d1DatabaseId", row.d1_database_id],
+    ["d1DatabaseName", row.d1_database_name],
+    ["r2BucketName", row.r2_bucket_name],
+    ["workerName", row.worker_name],
+  ].filter(([, value]) => !value).map(([name]) => name);
+
+  return {
+    status: 200,
+    body: {
+      environmentId: row.id,
+      customerId: row.customer_id,
+      kind: row.kind,
+      region: row.region,
+      workerName: row.worker_name,
+      d1DatabaseName: row.d1_database_name,
+      d1DatabaseId: row.d1_database_id,
+      r2BucketName: row.r2_bucket_name,
+      instanceUrl: row.instance_url,
+      /**
+       * **Deployable, said plainly.** A caller reading a config with a
+       * null `d1_database_id` and deploying anyway would produce a
+       * Worker bound to nothing — and decision 0011 already establishes
+       * that a fleet tool must be able to tell "not deployable yet"
+       * from "ready".
+       */
+      deployable: missing.length === 0,
+      ...(missing.length > 0 ? { missing } : {}),
+    },
+  };
 }

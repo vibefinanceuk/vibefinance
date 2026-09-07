@@ -31,6 +31,7 @@ import nameLimitsSql from "../migrations/0026_source_name_limits.sql?raw";
 import sourceActionsSql from "../migrations/0027_source_actions_strings.sql?raw";
 import outcomeStringsSql from "../migrations/0028_source_outcome_strings.sql?raw";
 import releaseStringsSql from "../migrations/0029_release_address_strings.sql?raw";
+import manifestConfigSql from "../migrations/0030_manifest_completes_the_config.sql?raw";
 
 function stripSqlComments(sql: string): string {
   return sql
@@ -89,4 +90,5 @@ export async function applyTestSchema(): Promise<void> {
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(sourceActionsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(outcomeStringsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(releaseStringsSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(manifestConfigSql)));
 }
