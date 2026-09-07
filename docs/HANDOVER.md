@@ -14,10 +14,10 @@ either, so check the dates.
 
 | | |
 | --- | --- |
-| `origin/main` | `5de9ff2` |
-| vf-app deployed | `5de9ff2` |
-| vf-licence deployed | `5de9ff2` |
-| vf-ui deployed | `5de9ff2` · `https://vf-ui.vibefinance.workers.dev` |
+| `origin/main` | `862d8fd` |
+| vf-app deployed | `862d8fd` |
+| vf-licence deployed | `862d8fd` |
+| vf-ui deployed | `862d8fd` · `https://vf-ui.vibefinance.workers.dev` |
 | `vf-app-poc` migrations | through `0040` |
 | `vf-licence-poc` migrations | through `0029` |
 | Tests | vf-app 1051 · vf-licence 289 · vf-ui 44 Worker + 62 browser · shared 252 (+2 known pre-existing failures) |
@@ -170,8 +170,11 @@ no bootstrap account to invent — and approval still gates provisioning,
 which the administrator is a consequence of rather than a substitute
 for.
 
-Not built. Decision 0117 puts it third in an order that starts with
-email.
+Not built, and **its place in the order moved**. Decision 0117 put it
+third behind email; decision 0126 made the **Cloudflare API half of
+provisioning** the blocker in front of both, because provisioning is
+where the `org_users` row is written and provisioning cannot yet create
+anything.
 
 ### 3. Alerting on failed sign-ins
 
@@ -277,8 +280,9 @@ Recorded so nobody re-opens them:
   will not integrate an identity provider, so local accounts are
   permanent rather than a bootstrap concern.
 - **A person with no `org_users` row is refused, not created** (0088).
-  No roles, no unit, nothing known about them — and it makes the
-  bootstrap administrator load-bearing.
+  No roles, no unit, nothing known about them — which is why
+  **provisioning must create that row** for the requester (0117), rather
+  than a first sign-in creating it.
 - **Argon2id, not PBKDF2** (0089). Workers cap PBKDF2 at 100,000
   iterations where OWASP's minimum is 600,000, so native Web Crypto
   cannot meet guidance.
@@ -292,9 +296,13 @@ Recorded so nobody re-opens them:
 - **Progressive delay, not lockout** (0090). Auditors accept it as
   equivalent under SOC 2 CC6.1, and it cannot be used to lock out a
   colleague.
-- **The bootstrap administrator was not needed** (0094). The operator
-  holds the admin key and creates the first credential at provisioning,
-  so the self-disabling account 0083 designed was never built.
+- ~~**The bootstrap administrator was not needed** (0094).~~
+  **Superseded by 0117** — see *"Who the first user is"* above. The
+  conclusion was true as far as it went and reached the wrong
+  destination: it left the customer with **no administrator of their
+  own**. There is no bootstrap account to invent because the
+  **requester** is the administrator, and `signup_requests` already
+  names them.
 - **Branding is five tokens, set by the operator, held in the control
   plane** (0096). The login screen needs a livery *before* an instance
   is chosen, so an instance cannot be the source.
@@ -347,7 +355,7 @@ Still open: **which provider**, **where sending lives** (0091 says the
 control plane never holds customer content), **whether templates sit in
 D1** like `ui_strings`, and **what happens when sending fails**.
 
-**2. Wire up the actions that now have icons.** `complete`, `release`,
+**3. Wire up the actions that now have icons.** `complete`, `release`,
 `return`, `return_to_supplier` and `discard` render in the action row
 and **do nothing** (0122). They were disabled as buttons too, but icons
 advertise more confidently than a greyed-out word — which is a worse
@@ -356,37 +364,37 @@ state than before.
 **Nothing confirms an irreversible action** either: discard and return
 to supplier both end a task, and both are one click.
 
-**3. Closed-value enforcement in the compiler.** A rule saying
+**4. Closed-value enforcement in the compiler.** A rule saying
 *"currency is EURO"* compiles, activates, fires against nothing and
 looks correct in every listing. `validateRule` has the list (0113) and
 does not consult it. The pair to decision 0116, which now validates
 documents.
 
-**4. An Approval screen.** The Task Manager lists approval tasks and
+**5. An Approval screen.** The Task Manager lists approval tasks and
 cannot open them. Field visibility (0114) is what makes an approval view
 differ from a keying one — the mechanism exists, the screen does not.
 
-**5. BG-4 and BG-7 in the vocabulary.** The seller and buyer field lists
+**6. BG-4 and BG-7 in the vocabulary.** The seller and buyer field lists
 live in the viewer (0115). Recording business-group membership in
 `shared`, as `INVOICE_LINE_FIELDS` does for BG-25, is the consistent
 thing and a known shortcut until it is done.
 
-**6. BG-23, the VAT breakdown.** Mandatory and **repeating** — one entry
+**7. BG-23, the VAT breakdown.** Mandatory and **repeating** — one entry
 per VAT category and rate, whose tax amounts must sum to BT-110. The
 flat facts model cannot hold a repeating group (0112). A design
 question, not an omission, and *"one of the most common causes of
 validation errors"*.
 
-**7. Despatch Advice (T16).** The goods receipt, and the missing third
+**8. Despatch Advice (T16).** The goods receipt, and the missing third
 leg of three-way matching — **before the matcher, not after** (0082).
 BT-132 now exists, which is what lets matching compare a line to an
 order line.
 
-**8. Reading `cbc:CustomizationID`.** BT-24 is now read into the facts
+**9. Reading `cbc:CustomizationID`.** BT-24 is now read into the facts
 (0112), so the discriminator is available; detection still does not use
 it, and a valid Peppol Order sent to `/sources/:id/capture` is refused.
 
-**9. `party.first_document`**, the **all-users task view**, a **screen
+**10. `party.first_document`**, the **all-users task view**, a **screen
 for placing an invoice** by hand, and **four more languages** —
 `GET /ui-strings/keys` shows the gaps.
 
@@ -396,7 +404,37 @@ for placing an invoice** by hand, and **four more languages** —
 
 `docs/PROGRESS.md` has the longer list.
 
-**Check one layer against another.** Nine divergences found this way and
+### The shape this project keeps finding
+
+**A real mechanism, aimed at something that used to be true.** Not a
+missing check — a working one, pointed slightly wrong.
+
+| | The mechanism | What it was aimed at |
+| --- | --- | --- |
+| 0084 | A migration test | Existing rows, not new ones |
+| 0093 | A standing invariant | Detection, where prevention was claimed |
+| 0097 | `isAdminRoute` | Routes it never reached |
+| 0100 | A lint rule | Output nobody read |
+| 0103 | A counts test | A page that happened to hold the task |
+| 0105 | A session test | The helper, not the routes calling it |
+| 0109 | A keying screen | A line's columns, not its facts |
+| 0110 | A vocabulary | Two of six mandatory line terms |
+| 0112 | A vocabulary, again | Two of eight mandatory header terms |
+| 0119 | A validation route | A block assembled by hand, which the validator had outgrown |
+| 0120 | A keying form | A summary of five fields, once the form offered more |
+| 0124 | A font stack | A face nobody's machine had installed |
+| 0126 | A configuration screen | Listing sources, while the create route sat unreachable |
+| 0131 | A proxy allow-list | Every path beneath `/sources/:id` but not the path itself |
+| 0132 | A translation system | Every label, and none of the sentences the API sent |
+
+**And this table itself.** It was removed by a rewrite of the section
+above it, and three later edits claimed to add rows to a table that was
+no longer there — a scripted `replace` finds nothing and changes
+nothing, silently. Rebuilt here.
+
+---
+
+**Check one layer against another.** Fifteen divergences found this way and
 none any other way: a column with no vocabulary entry; a fact never
 declared; settings reaching nothing twice over; a parser populating half
 its fields; a constant contradicting its own contents; a storage layer
