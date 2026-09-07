@@ -58,27 +58,40 @@ class TestDryRun:
         assert "acme-sandbox-documents" in result.stdout
 
 
-class TestStoppingHonestly:
-    """A failure must leave the customer readable as not-yet-provisioned."""
+class TestOrdering:
+    """The control-plane record is written last — decision 0135.
 
-    def test_stops_at_the_worker_rather_than_claiming_success(self):
-        # **A script reporting success having skipped the step that
-        # makes an instance reachable would be worse than one that
-        # stops.**
-        result = run(["--customer", "acme", "--environment", "acme-production", "--dry-run"])
-        assert result.returncode == 1
-        assert "not implemented" in result.stderr
+    **Until it is, the customer reads `not-yet-deployed.invalid` and
+    `infrastructureProvisioned: false`**, which decision 0011 says a
+    fleet tool must treat as "not deployable yet". So a failure at any
+    earlier step leaves them honestly unfinished rather than half-real.
+    """
 
-    def test_says_what_a_failure_left_behind(self):
+    def test_records_where_the_worker_is_after_deploying_it(self):
+        # **Asserts the actions, not the headings.** The first version
+        # compared the printed step titles, which stay in place whether
+        # or not the step beneath them runs — so removing the deploy
+        # call entirely left it passing. The third time in a day a check
+        # verified the wrong thing.
         result = run(["--customer", "acme", "--environment", "acme-production", "--dry-run"])
-        assert "infrastructureProvisioned: false" in result.stderr
-        assert "not-yet-deployed.invalid" in result.stderr
+        deploy_at = result.stdout.index("would write a wrangler.jsonc")
+        record_at = result.stdout.index("would record: instanceUrl")
+        assert deploy_at < record_at
 
-    def test_says_earlier_steps_are_safe_to_re_run(self):
-        # The thing a person needs to know at 6pm with half a customer
-        # created.
+    def test_records_the_ids_before_verifying_them(self):
+        # The verification has nothing to check otherwise.
         result = run(["--customer", "acme", "--environment", "acme-production", "--dry-run"])
-        assert "safe to re-run" in result.stderr
+        assert result.stdout.index("would record: d1DatabaseName") < result.stdout.index(
+            "verify the manifest"
+        )
+
+    def test_says_what_is_still_the_operators_to_do(self):
+        # Secrets never travel through the manifest (decision 0009), and
+        # Email Routing rules are per source rather than per customer,
+        # so both outlive this script.
+        result = run(["--customer", "acme", "--environment", "acme-production", "--dry-run"])
+        assert "wrangler secret put" in result.stdout
+        assert "Email" in result.stdout
 
 
 class TestCredentials:
@@ -140,18 +153,27 @@ class TestManifestVerification:
         deploy_at = result.stdout.index("vf-app Worker")
         assert verify_at < deploy_at
 
-    def test_says_it_is_skipping_rather_than_reporting_success(self):
-        # **Honest about doing nothing.** Reading the real manifest
-        # needs an admin key alongside the Cloudflare token, and
-        # reporting a clean verification of an empty config would be
-        # worse than saying so.
-        result = run(["--customer", "acme", "--environment", "acme-sandbox-eu"])
-        assert result.returncode == 2  # no credentials, which is a different stop
+    def test_needs_the_control_plane_key_too(self):
+        # **A second credential, and the reasoning for it** (decision
+        # 0136): recording ids by hand produced a wrong bucket name
+        # within an hour, and an admin key is strictly less dangerous
+        # than the Cloudflare token already here.
+        result = run(
+            ["--customer", "acme", "--environment", "acme-sandbox-eu"],
+            env={
+                "CLOUDFLARE_API_TOKEN": "x",
+                "CLOUDFLARE_ACCOUNT_ID": "x",
+                "VF_LICENCE_ADMIN_KEY": "",
+                "VF_LICENCE_URL": "",
+            },
+        )
+        assert result.returncode == 2
+        assert "VF_LICENCE_ADMIN_KEY" in result.stderr
 
-    def test_the_stop_message_names_what_remains(self):
-        # It said the config question was undecided, which 0136
-        # answered. A message that goes stale sends somebody to reopen a
-        # settled decision.
+    def test_runs_every_step_now(self):
+        # The script stopped at the Worker until the manifest could
+        # supply its config. It no longer does, and a test asserting it
+        # stops would be defending the old behaviour.
         result = run(["--customer", "acme", "--environment", "acme-sandbox-eu", "--dry-run"])
-        assert "0136" in result.stderr
-        assert "undecided" not in result.stderr
+        assert result.returncode == 0
+        assert "Done." in result.stdout

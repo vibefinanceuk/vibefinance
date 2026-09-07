@@ -139,10 +139,37 @@ customer's Worker reading another's invoices.
 
 ---
 
-## Still to build
+## All five steps now run
 
-- **The deploy step** in `provision_infrastructure.py`, which stops
-  there rather than pretending (decision 0135).
+`provision_infrastructure.py` creates the database, applies the chain,
+creates the bucket, **records what it created in the manifest**, reads
+the config back, verifies it, deploys from a generated
+`wrangler.jsonc`, and records the real URL last.
+
+**The script holds a second credential**, and the reasoning is worth
+stating because decision 0135 gave the first real thought.
+
+Recording ids by hand produced a **wrong bucket name within an hour** of
+the column existing. Having the thing that created an id record it
+removes that error class rather than checking for it afterwards. And an
+admin key is **strictly less dangerous than the Cloudflare token already
+there**: anybody holding an account-level token can deploy a Worker that
+reads whatever they like.
+
+**The generated config is written to `docs/operations/`** after a
+successful deploy — not as the source, but as an artefact. Generating at
+deploy time otherwise means nobody can read what a customer runs.
+
+### What the script deliberately does not do
+
+**Secrets.** Decision 0009's incident is why the generated config
+carries bindings and non-secret vars only, and the script ends by saying
+so.
+
+**Email Routing rules.** They are **per source, not per customer**
+(decision 0126) — a source gets its address whenever somebody creates
+one, which may be long after provisioning. Running them once here and
+never again would be wrong.
 
 ---
 

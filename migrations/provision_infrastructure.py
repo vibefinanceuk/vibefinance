@@ -60,6 +60,7 @@ import json
 import os
 import re
 import subprocess
+import tempfile
 import sys
 from dataclasses import dataclass
 
@@ -68,6 +69,23 @@ from dataclasses import dataclass
 # any file in this repository, and never written to one.
 TOKEN_VAR = "CLOUDFLARE_API_TOKEN"
 ACCOUNT_VAR = "CLOUDFLARE_ACCOUNT_ID"
+
+# The control plane, and the operator's key for it.
+#
+# **A second credential, and the reasoning for it.** Decision 0135 gave
+# the Cloudflare token real thought, so a second deserves the same.
+#
+# Recording ids by hand produced a wrong bucket name within an hour of
+# the column existing (decision 0136) — which is why a verification step
+# exists at all. Having the thing that created an id record it removes
+# that error class rather than checking for it afterwards.
+#
+# And an admin key is **strictly less dangerous than the token already
+# here**: anybody holding an account-level Cloudflare token can deploy a
+# Worker that reads whatever they like. This does not widen the blast
+# radius; it narrows the error surface.
+LICENCE_KEY_VAR = "VF_LICENCE_ADMIN_KEY"
+LICENCE_URL_VAR = "VF_LICENCE_URL"
 
 
 class ProvisioningError(Exception):
@@ -197,28 +215,71 @@ def create_bucket(name: str, *, dry_run: bool) -> None:
     run(["npx", "wrangler", "r2", "bucket", "create", name], dry_run=dry_run)
 
 
-def deploy_worker(customer: str, *, dry_run: bool) -> None:
-    """Deploy the customer's own `vf-app`.
+def deploy_worker(config: dict, *, dry_run: bool) -> None:
+    """Deploy the customer's own `vf-app`, from the manifest.
 
-    **Not implemented**, and deliberately not faked. Decision 0011
-    records this as the hard part of `deploy-all`: a Worker deployment is
-    per-config, needing either a generated `wrangler.jsonc` at deploy
-    time or one maintained per customer, and decision 0135 leaves that
-    choice open.
+    **The config is data, not a file** — decision 0136. This writes a
+    `wrangler.jsonc` into a temporary directory and deploys from it, so
+    nothing is maintained per customer and the manifest cannot disagree
+    with a copy of itself.
 
-    Raising here rather than printing a warning: a script that reports
-    success having skipped the step that makes an instance reachable
-    would be worse than one that stops.
+    **No secrets.** Decision 0009 is this project's own record of a
+    private signing key sitting in a customer's `wrangler.jsonc` as a
+    plain var — in git history and Cloudflare's deployment logs, caught
+    only because a reviewer noticed `key_ops` read `["sign"]` where a
+    public key should read `["verify"]`.
+
+    So the generated config carries **bindings and non-secret vars
+    only**. The signing key, the licence API key and everything else are
+    set afterwards with `wrangler secret put`, by the operator.
     """
-    raise ProvisioningError(
-        "deploying the Worker is not implemented. Decision 0136 settled where the "
-        "config comes from — the manifest, read from "
-        "`GET /environments/:id/config` on vf-licence — and what remains is "
-        "recording the ids this script created back into it, writing a "
-        "wrangler.jsonc into a temp directory, and deploying from that.\n\n"
-        "Everything before this step has been done and is safe to re-run; deploy "
-        "by hand and then record the result."
-    )
+    if dry_run:
+        print("    would write a wrangler.jsonc and deploy from it")
+        return
+
+    if not config.get("deployable"):
+        raise ProvisioningError(
+            "the manifest says this environment is not deployable: missing "
+            + ", ".join(config.get("missing", []))
+        )
+
+    generated = {
+        "name": config["workerName"],
+        "main": "src/index.ts",
+        "compatibility_date": "2025-09-01",
+        "d1_databases": [
+            {
+                "binding": "DB",
+                "database_name": config["d1DatabaseName"],
+                "database_id": config["d1DatabaseId"],
+            }
+        ],
+        "r2_buckets": [{"binding": "DOCUMENTS", "bucket_name": config["r2BucketName"]}],
+        "vars": {
+            "CUSTOMER_ID": config["customerId"],
+            "ENVIRONMENT_ID": config["environmentId"],
+        },
+    }
+
+    with tempfile.TemporaryDirectory() as directory:
+        path = os.path.join(directory, "wrangler.json")
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump(generated, handle, indent=2)
+
+        # **Kept, as an artefact of what was deployed** — decision 0136.
+        # Generating at deploy time means nobody can read what a customer
+        # runs; writing the output answers that without making it the
+        # source.
+        record = f"docs/operations/deployed-{config['environmentId']}.json"
+        os.makedirs("docs/operations", exist_ok=True)
+        with open(record, "w", encoding="utf-8") as handle:
+            json.dump(generated, handle, indent=2)
+        print(f"    recorded what was deployed: {record}")
+
+        run(
+            ["npx", "wrangler", "deploy", "--config", path, "--cwd", "workers/vf-app"],
+            dry_run=False,
+        )
 
 
 # ---------------------------------------------------------------------
@@ -269,6 +330,72 @@ def verify_manifest(config: dict, *, dry_run: bool) -> list[str]:
     return problems
 
 
+# ---------------------------------------------------------------------
+# Recording what was created — decisions 0136 and 0006.
+# ---------------------------------------------------------------------
+
+
+def record_in_manifest(environment: str, fields: dict, *, dry_run: bool) -> None:
+    """Tell the control plane what this script just created.
+
+    **Written by the thing that knows.** The alternative is a person
+    reading an id off one terminal and typing it into another, which
+    produced a wrong bucket name the first time it was tried.
+
+    `handleSetFleetMetadata` merges rather than replaces, so a field not
+    named here keeps its current value — which is what lets this be run
+    twice, and what lets an environment be corrected one field at a
+    time.
+    """
+    if dry_run:
+        print(f"    would record: {', '.join(f'{k}={v}' for k, v in fields.items())}")
+        return
+
+    import urllib.request
+
+    url = f"{os.environ[LICENCE_URL_VAR]}/environments/{environment}/fleet-metadata"
+    request = urllib.request.Request(
+        url,
+        data=json.dumps(fields).encode(),
+        headers={
+            "Authorization": f"Bearer {os.environ[LICENCE_KEY_VAR]}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+
+    try:
+        with urllib.request.urlopen(request) as response:
+            if response.status != 200:
+                raise ProvisioningError(f"the control plane refused the manifest update: {response.status}")
+    except Exception as error:  # noqa: BLE001 — the message is what matters here
+        raise ProvisioningError(
+            f"could not record in the manifest: {error}\n\n"
+            "The infrastructure exists and this is safe to re-run. Until the "
+            "manifest records it, nothing can deploy from it."
+        )
+
+
+def read_manifest(environment: str, *, dry_run: bool) -> dict:
+    """The config a deploy needs, from the control plane — decision 0136."""
+    if dry_run:
+        print("    would read the manifest")
+        return {}
+
+    import urllib.request
+
+    url = f"{os.environ[LICENCE_URL_VAR]}/environments/{environment}/config"
+    request = urllib.request.Request(
+        url, headers={"Authorization": f"Bearer {os.environ[LICENCE_KEY_VAR]}"}
+    )
+
+    try:
+        with urllib.request.urlopen(request) as response:
+            return json.loads(response.read())
+    except Exception as error:  # noqa: BLE001
+        raise ProvisioningError(f"could not read the manifest: {error}")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--customer", required=True, help="the customer id, e.g. acme")
@@ -283,7 +410,11 @@ def main() -> int:
     args = parser.parse_args()
 
     if not args.dry_run:
-        missing = [v for v in (TOKEN_VAR, ACCOUNT_VAR) if not os.environ.get(v)]
+        missing = [
+            v
+            for v in (TOKEN_VAR, ACCOUNT_VAR, LICENCE_KEY_VAR, LICENCE_URL_VAR)
+            if not os.environ.get(v)
+        ]
         if missing:
             print(
                 f"Set {' and '.join(missing)} first.\n"
@@ -308,16 +439,25 @@ def main() -> int:
     print(f"  3. R2 bucket: {bucket}")
     create_bucket(bucket, dry_run=args.dry_run)
 
+    # **Recorded before verifying**, so the verification has something
+    # to check. And recorded by the thing that created them, which is
+    # the point (decision 0136).
+    record_in_manifest(
+        args.environment,
+        {
+            "d1DatabaseName": database,
+            "r2BucketName": bucket,
+            **({"d1DatabaseId": database_id} if database_id else {}),
+        },
+        dry_run=args.dry_run,
+    )
+
     print("  4. verify the manifest against the account")
     # **Before deploying, not after.** A manifest that disagrees with
     # the account deploys a Worker bound to something that is not there
     # — or, worse, to another customer's.
-    # **Passed an empty config, so it verifies nothing yet.** Reading
-    # the real one needs an admin key for vf-licence alongside the
-    # Cloudflare token, and two credentials in one script deserves the
-    # thought decision 0135 gave the first — recorded rather than
-    # assumed.
-    problems = verify_manifest({}, dry_run=args.dry_run)
+    config = read_manifest(args.environment, dry_run=args.dry_run)
+    problems = verify_manifest(config, dry_run=args.dry_run)
     if problems:
         joined = "\n  ".join(problems)
         raise ProvisioningError(
@@ -327,11 +467,28 @@ def main() -> int:
         )
 
     print("  5. vf-app Worker")
-    deploy_worker(args.customer, dry_run=args.dry_run)
+    deploy_worker(config, dry_run=args.dry_run)
 
-    # Steps 5 and 6 — Email Routing rules, and recording the result in
-    # the control plane — are unreachable until step 4 exists. Left
-    # unwritten rather than written and never run.
+    print("  6. record where it is")
+    # **Last, deliberately** — decision 0135. Until this runs, the
+    # customer reads `not-yet-deployed.invalid` and
+    # `infrastructureProvisioned: false`, which decision 0011 says a
+    # fleet tool must treat as "not deployable yet".
+    #
+    # So a failure at any earlier step leaves them honestly unfinished
+    # rather than half-real.
+    record_in_manifest(
+        args.environment,
+        {"instanceUrl": f"https://{config.get('workerName', 'vf-app')}.workers.dev"},
+        dry_run=args.dry_run,
+    )
+
+    # Email Routing rules (decision 0126) are **per source, not per
+    # customer** — a source gets its address whenever somebody creates
+    # one, which may be long after provisioning. Left out of this script
+    # rather than run once here and never again.
+    print("\nDone. Set secrets with `wrangler secret put`, and create Email")
+    print("Routing rules when sources get their addresses (decision 0126).")
     return 0
 
 
