@@ -39,6 +39,7 @@ import {
   handleRecordProvisioning,
 } from "./signup-route.js";
 import { handleProvisionTrial, expireOverdueLicences, warnExpiringLicences , handleEnvironmentConfig } from "./provision-route.js";
+import { recordAdminAction, handleListAdminActions } from "./admin-audit.js";
 import { extractBearerToken, isValidAdminKey, isValidEnvironmentKey } from "./auth.js";
 import { handlePreflight, withCors } from "@vibefinance/shared";
 
@@ -99,6 +100,42 @@ function parsePrivateKey(env: Env): { ok: true; key: JsonWebKey } | { ok: false;
   }
 }
 
+/**
+ * Which requests are privileged — decision 0140.
+ *
+ * **Extracted so the gate and the audit ask the same question.** They
+ * were one expression inside the router; the audit needed it too, and a
+ * second copy is a second thing to keep in step — the divergence this
+ * project finds most often.
+ */
+export function isPrivileged(method: string, pathname: string): boolean {
+  const matches = (pattern: RegExp) => pattern.test(pathname);
+
+  return (
+    (pathname === "/customers" && method === "POST") ||
+    (pathname === "/environments" && (method === "POST" || method === "GET")) ||
+    (pathname === "/licences" && method === "POST") ||
+    (pathname === "/credentials" && method === "POST") ||
+    (pathname.startsWith("/branding/") && method === "PUT") ||
+    (pathname === "/ui-strings" && (method === "PUT" || method === "POST")) ||
+    (pathname === "/ui-strings/keys" && method === "GET") ||
+    // The manifest names every binding a customer's Worker runs with
+    // (decision 0136), so reading it is the operator's alone.
+    (matches(/^\/environments\/[^/]+\/config$/) && method === "GET") ||
+    (pathname === "/access" && (method === "POST" || method === "DELETE")) ||
+    (pathname === "/signup-requests" && method === "GET") ||
+    (matches(/^\/signup-requests\/[^/]+\/approve$/) && method === "POST") ||
+    (matches(/^\/signup-requests\/[^/]+\/reject$/) && method === "POST") ||
+    (matches(/^\/signup-requests\/[^/]+\/provisioned$/) && method === "POST") ||
+    (matches(/^\/signup-requests\/[^/]+\/provision$/) && method === "POST") ||
+    (matches(/^\/environments\/[^/]+\/rotate-key$/) && method === "POST") ||
+    (matches(/^\/environments\/[^/]+$/) && method === "DELETE") ||
+    (matches(/^\/environments\/[^/]+\/fleet-metadata$/) && method === "PATCH") ||
+    // The log itself. Reading who did what is a privileged act.
+    (pathname === "/admin-actions" && method === "GET")
+  );
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     // Answered before anything else: a preflight carries no credentials
@@ -110,7 +147,44 @@ export default {
     // individual route has to remember. A route that forgot would work
     // from curl and fail from a browser — the kind of divergence this
     // project keeps finding.
-    return withCors(await this._routed(request, env), request, env.ALLOWED_ORIGINS);
+    const response = await this._routed(request, env);
+
+    /**
+     * Every privileged action, recorded — decision 0140.
+     *
+     * **At the edge, so no individual route has to remember.** Seven
+     * route groups are admin-gated and two recorded who acted; a
+     * convention asking each to log itself would have the same shape,
+     * and the eighth would be the one that forgot.
+     *
+     * The gate already computes which requests are privileged, so this
+     * asks the same question rather than a second one that could
+     * disagree with it.
+     */
+    if (env.CONTROL_DB && isPrivileged(request.method, new URL(request.url).pathname)) {
+      /**
+       * A refusal's reason is read from a **clone**, because reading a
+       * response body consumes it and the caller still needs theirs.
+       *
+       * Only refusals: a successful body may carry a freshly minted API
+       * key (decision 0006) or a credential, and decision 0009 is this
+       * project's own record of key material reaching somewhere nobody
+       * expected. A log is exactly such a place.
+       */
+      const body =
+        response.status >= 400
+          ? ((await response.clone().json().catch(() => ({}))) as Record<string, unknown>)
+          : {};
+
+      await recordAdminAction(
+        env.CONTROL_DB,
+        request,
+        `${request.method} ${new URL(request.url).pathname}`,
+        { status: response.status, body }
+      );
+    }
+
+    return withCors(response, request, env.ALLOWED_ORIGINS);
   },
 
   async _routed(request: Request, env: Env): Promise<Response> {
@@ -241,26 +315,7 @@ export default {
     const rejectMatch = url.pathname.match(/^\/signup-requests\/([^/]+)\/reject$/);
     const provisionedMatch = url.pathname.match(/^\/signup-requests\/([^/]+)\/provisioned$/);
     const provisionMatch = url.pathname.match(/^\/signup-requests\/([^/]+)\/provision$/);
-    const isAdminRoute =
-      (url.pathname === "/customers" && request.method === "POST") ||
-      (url.pathname === "/environments" && (request.method === "POST" || request.method === "GET")) ||
-      (url.pathname === "/licences" && request.method === "POST") ||
-      (url.pathname === "/credentials" && request.method === "POST") ||
-      (url.pathname.startsWith("/branding/") && request.method === "PUT") ||
-      (url.pathname === "/ui-strings" && (request.method === "PUT" || request.method === "POST")) ||
-      (url.pathname === "/ui-strings/keys" && request.method === "GET") ||
-      // The manifest names every binding a customer's Worker runs with
-      // (decision 0136), so reading it is the operator's alone.
-      (/^\/environments\/[^/]+\/config$/.test(url.pathname) && request.method === "GET") ||
-      (url.pathname === "/access" && (request.method === "POST" || request.method === "DELETE")) ||
-      (url.pathname === "/signup-requests" && request.method === "GET") ||
-      (approveMatch !== null && request.method === "POST") ||
-      (rejectMatch !== null && request.method === "POST") ||
-      (provisionedMatch !== null && request.method === "POST") ||
-      (provisionMatch !== null && request.method === "POST") ||
-      (rotateMatch !== null && request.method === "POST") ||
-      (deleteEnvMatch !== null && request.method === "DELETE") ||
-      (fleetMetadataMatch !== null && request.method === "PATCH");
+    const isAdminRoute = isPrivileged(request.method, url.pathname);
     if (isAdminRoute) {
       const providedKey = extractBearerToken(request);
       if (!isValidAdminKey(providedKey, env.ADMIN_API_KEY)) {
@@ -336,6 +391,19 @@ export default {
     const configMatch = url.pathname.match(/^\/environments\/([^/]+)\/config$/);
     if (configMatch && request.method === "GET") {
       const result = await handleEnvironmentConfig(env.CONTROL_DB, configMatch[1]);
+      return json(result.body, result.status);
+    }
+
+    /**
+     * The log — decision 0140. Privileged itself: reading who did what
+     * is an operator's business alone.
+     */
+    if (url.pathname === "/admin-actions" && request.method === "GET") {
+      const limit = Number(url.searchParams.get("limit") ?? "100");
+      const result = await handleListAdminActions(
+        env.CONTROL_DB,
+        Number.isFinite(limit) ? limit : 100
+      );
       return json(result.body, result.status);
     }
 

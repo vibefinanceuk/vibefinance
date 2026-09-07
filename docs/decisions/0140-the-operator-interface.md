@@ -1,8 +1,11 @@
 # 0140 — The operator interface, and who did what
 
-**Status: designed, not built.** An admin interface for the operator,
-and the attribution the controls actually require — which is the larger
-half.
+**Status: the attribution is built; the interface is not.**
+`admin_actions` records every privileged action, refusals included, and
+the identity comes from a verified Access assertion where one exists.
+
+The screen waits on a domain — Cloudflare Access applies policies to
+hostnames in a zone, and `workers.dev` is not one (decision 0141).
 
 ---
 
@@ -142,6 +145,50 @@ a log an auditor discounts.
 Append-only, with no delete route. Not tamper-*proof* — somebody with
 direct database access can do anything — but tamper-**evident** in the
 ordinary path, which is what the controls ask of a system of this size.
+
+---
+
+## Built, and two things it deliberately does
+
+**Recorded at the edge**, in the wrapper that already applies CORS to
+whatever the router produced. Seven route groups are privileged and two
+recorded who acted; a convention asking each route to log itself would
+have had the same shape, **and the eighth would be the one that
+forgot**.
+
+**The gate and the log ask one question.** `isPrivileged` was an
+expression inside the router; the audit needed it too, and a second copy
+is a second thing to keep in step. Extracted, exported, and tested from
+both sides.
+
+### Refusals are the interesting half
+
+*"Did anybody try to provision a customer we rejected"* is the question
+an auditor asks, and **a log of successes cannot answer it.** Decision
+0055 made the same choice for intake: every arrival recorded whether or
+not it succeeded.
+
+An attempt with **no credential at all** is recorded too, which is the
+entry most worth having.
+
+### And a successful body never reaches it
+
+A response that succeeded may carry a **freshly minted API key**
+(decision 0006) or a credential. Decision 0009 is this project's own
+record of key material reaching somewhere nobody expected, and **a log
+is exactly such a place**.
+
+Only refusals carry detail, and only their `error` and `reason` — the
+two fields a refusal uses (decision 0132) — rather than a body whose
+shape nobody has audited. Watched to fail: logging the whole body
+breaks the test that looks for a secret in the row.
+
+### Logging never blocks
+
+`recordAdminAction` cannot throw. **An operator refused because an audit
+insert failed would be a control that denies service** — and acting
+without a record is the risk this accepts deliberately rather than by
+omission.
 
 ---
 

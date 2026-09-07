@@ -35,6 +35,7 @@ import manifestConfigSql from "../migrations/0030_manifest_completes_the_config.
 import actionStringsSql from "../migrations/0031_action_strings.sql?raw";
 import moodStringsSql from "../migrations/0032_mood_strings.sql?raw";
 import noDomainSql from "../migrations/0033_no_domain_string.sql?raw";
+import adminActionsSql from "../migrations/0034_admin_actions.sql?raw";
 
 function stripSqlComments(sql: string): string {
   return sql
@@ -58,7 +59,7 @@ function toOneStatementPerLine(sql: string): string {
 // functions above), and storage does not appear to reset between it()
 // blocks in this pool-workers version, so every table is dropped and
 // recreated before each test rather than relying on framework isolation.
-const TABLES_IN_DROP_ORDER = ["ui_strings", "customer_branding", "user_environment_access", "user_credentials", "login_attempts", "signup_requests", "usage_periods", "licences", "environments", "customers"];
+const TABLES_IN_DROP_ORDER = ["admin_actions", "ui_strings", "customer_branding", "user_environment_access", "user_credentials", "login_attempts", "signup_requests", "usage_periods", "licences", "environments", "customers"];
 
 export async function applyTestSchema(): Promise<void> {
   for (const table of TABLES_IN_DROP_ORDER) {
@@ -97,4 +98,5 @@ export async function applyTestSchema(): Promise<void> {
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(actionStringsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(moodStringsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(noDomainSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(adminActionsSql)));
 }
