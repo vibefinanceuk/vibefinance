@@ -1,6 +1,6 @@
 # Handover
 
-**Written 4 September 2026, updated 6 September (three times).** One page: where things stand, what needs a
+**Written 4 September 2026, updated 7 September.** One page: where things stand, what needs a
 decision rather than work, and what to do next.
 
 `docs/PROGRESS.md` is the map — what exists and what does not.
@@ -8,20 +8,27 @@ decision rather than work, and what to do next.
 **This file is the starting point**, and it goes stale faster than
 either, so check the dates.
 
+**Read `docs/decisions/SUPERSEDED.md` before trusting an old record.**
+Records are never rewritten to agree with later ones — what was decided,
+and why it looked right then, is part of why the current answer is what
+it is. That means **contradictions between records are real and neither
+is wrong**; they are dated. That page is the map of which supersedes
+which, and it exists because the trap has been fallen into twice.
+
 ---
 
 ## Where things stand
 
 | | |
 | --- | --- |
-| `origin/main` | `862d8fd` |
-| vf-app deployed | `862d8fd` |
-| vf-licence deployed | `862d8fd` |
-| vf-ui deployed | `862d8fd` · `https://vf-ui.vibefinance.workers.dev` |
+| `origin/main` | `e27e73a` |
+| vf-app deployed | `e27e73a` |
+| vf-licence deployed | `e27e73a` |
+| vf-ui deployed | `e27e73a` · `https://vf-ui.vibefinance.workers.dev` |
 | `vf-app-poc` migrations | through `0040` |
-| `vf-licence-poc` migrations | through `0029` |
-| Tests | vf-app 1051 · vf-licence 289 · vf-ui 44 Worker + 62 browser · shared 252 (+2 known pre-existing failures) |
-| Decision records | 134 |
+| `vf-licence-poc` migrations | through `0034` |
+| Tests | vf-app 1055 · vf-licence 315 · vf-ui 44 Worker + 80 browser · shared 252 (+2 known pre-existing failures) |
+| Decision records | 141 |
 
 **Everything committed is deployed.**
 
@@ -152,15 +159,25 @@ uses one.
 **Nothing blocks the next piece of work.** Six things worth settling,
 none urgent.
 
-### 1. A custom domain
+### 1. A domain — **now three things, not one**
 
-`vf-ui.vibefinance.workers.dev` works and looks like infrastructure. A
-domain is a routing change plus two config values — the API addresses
-are already configuration rather than compiled in, deliberately (0099).
+It was a cosmetic want: `vf-ui.vibefinance.workers.dev` works and looks
+like infrastructure.
 
-It also unlocks a customer-specific backdrop, which can otherwise only
-appear **after** the password is verified, because that is when the
-customer becomes known.
+It is now the largest unblocker in the project.
+
+- **Decision 0140's operator interface cannot be protected.** Cloudflare
+  Access applies policies to hostnames in a zone, and `workers.dev` is
+  not one. Without it there is no gate in front of a Worker holding the
+  admin key.
+- **Email intake cannot receive** (0126, 0141). `vibefinance.com` was
+  hardcoded and **nobody owns it**, so every address issued was a string
+  that could never receive anything.
+- **And the original want** — a customer-specific backdrop, which can
+  otherwise only appear *after* the password is verified.
+
+`vibefinance.com` is taken. Whatever is bought becomes
+`INGESTION_DOMAIN`, which is configuration now (0141).
 
 ### 2. Who creates the `org_users` row — **answered**
 
@@ -262,6 +279,17 @@ Recorded so nobody re-opens them:
   shared (0130, 0133).
 - **When the screen should speak** — only when it cannot show something
   (0134).
+- **Day time or night time** — a person's setting, with a control, blue
+  by day and midnight blue at night (0139).
+- **Where the Worker's config comes from** — the manifest the control
+  plane already held, not a file (0136).
+- **What a customer is asked at signup** — their **region**, and
+  nothing else. The kind is always sandbox, and the name is
+  `{customer}-{kind}-{region}` (0137).
+- **Who did what in the control plane** — recorded, refusals included,
+  with a verified identity where one exists (0140).
+- **Which domain addresses live on** — configuration, and there isn't
+  one (0141).
 - **Discard vs return-to-supplier** — genuinely distinct.
   `returned_manually` means somebody is dealing with it; `archived`
   means nothing further is needed.
@@ -326,8 +354,30 @@ Recorded so nobody re-opens them:
 
 ## Suggested next pieces
 
-**1. The Cloudflare API half of provisioning (0039).** This is now the
-single largest blocker, and three separate things wait behind it.
+**0. A domain.** Not a build, and it is now the single largest
+unblocker: **three separate pieces wait on it**, and one of them is a
+compliance control.
+
+Cloudflare Access applies policies to hostnames in a zone, and
+`workers.dev` is not one — so decision 0140's operator interface cannot
+be protected. Email intake cannot receive without a domain to route
+(0126, 0141). And `vf-ui` reads as infrastructure.
+
+`vibefinance.com` is taken. Whatever is bought becomes
+`INGESTION_DOMAIN`, which is configuration now rather than a constant
+(0141) — so the purchase is the whole change.
+
+---
+
+**1. ~~The Cloudflare API half of provisioning (0039).~~ Built.**
+`provision_infrastructure.py` runs all five steps: the D1 database, the
+migration chain, the R2 bucket, the Worker deployed from a config the
+manifest supplies (0136), and the URL recorded last so a failure leaves
+a customer honestly unfinished.
+
+Two things remain the operator's: **secrets**, which never travel
+through the manifest (0009), and **Email Routing rules**, which are per
+source rather than per customer and wait on the domain.
 
 Provisioning creates control-plane rows and **honestly reports
 `infrastructureProvisioned: false`** — it does not create the D1
@@ -377,7 +427,12 @@ company name plus `-production-eu` approaches Cloudflare's 64-character
 limit, and that failure would otherwise arrive after the database
 exists.
 
-**2. The operator interface** (decision 0140). Approving a customer is
+**2. The operator interface** (decision 0140) — **half built.** The
+attribution is done: `admin_actions` records every privileged action,
+refusals included, with a verified identity where one exists. **The
+screen waits on the domain.**
+
+Originally: Approving a customer is
 a `curl` today, and **a decision made blind is a checkpoint in name
 only**.
 
@@ -416,14 +471,13 @@ Still open: **which provider**, **where sending lives** (0091 says the
 control plane never holds customer content), **whether templates sit in
 D1** like `ui_strings`, and **what happens when sending fails**.
 
-**4. Wire up the actions that now have icons.** `complete`, `release`,
-`return`, `return_to_supplier` and `discard` render in the action row
-and **do nothing** (0122). They were disabled as buttons too, but icons
-advertise more confidently than a greyed-out word — which is a worse
-state than before.
+**4. ~~Wire up the actions that now have icons.~~ Built** (0138). Two
+reasons they did nothing: the proxy carried **two of six** task paths,
+and three routes authenticated by API key only.
 
-**Nothing confirms an irreversible action** either: discard and return
-to supplier both end a task, and both are one click.
+**Nothing confirms an irreversible action** still: discard and return to
+supplier both end a task, and the reason prompt is the only pause — *why*
+is not *are you sure*.
 
 **5. Closed-value enforcement in the compiler.** A rule saying
 *"currency is EURO"* compiles, activates, fires against nothing and

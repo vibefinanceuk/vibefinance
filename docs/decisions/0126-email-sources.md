@@ -1,5 +1,11 @@
 # 0126 — An address invoices can arrive at
 
+> **Superseded in part by decision 0141.** `INGESTION_DOMAIN` was
+> hardcoded to `vibefinance.com`, **which nobody owns** — so every
+> address described below as *reserved* was a string that could never
+> receive anything. The domain is configuration now, and an unset one
+> refuses to issue an address at all.
+
 **Status: built** — the address, the route, and the first configuration
 screen. **Not built:** the Cloudflare routing rule, so nothing delivers
 to an address yet.

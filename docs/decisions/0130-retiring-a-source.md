@@ -1,5 +1,10 @@
 # 0130 — Retiring a source, and where the form sits
 
+> **Superseded in part by decision 0133.** Deletion was refused
+> outright once an address had been issued. It now **asks**: an address
+> reserved and never given to anybody is a mistake to correct, and only
+> a person knows which it is.
+
 **Status: built.** Rename and retire, and the create form beside the
 list rather than below it.
 

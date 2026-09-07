@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 6 September 2026. A living document: what is built, what
+Last updated 7 September 2026. A living document: what is built, what
 is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -348,6 +348,7 @@ holding — 40 migrations for `vf-app`, 34 for `vf-licence`.
 | `docs/design/multi-authority-intake.md` | Non-EN-16931 authorities | Design only |
 | `docs/design/text-layer-extraction.md` | Reading a PDF's own text | Design only |
 | `docs/decisions/` | 141 decision records | Current |
+| `docs/decisions/SUPERSEDED.md` | Which records supersede which | **Read first** |
 
 Document 4's markdown source is at `docs/documents/`, with
 `scripts/build-document-04.cjs` rendering the Word edition. The `.docx`
@@ -357,6 +358,17 @@ break the traceability the rest of `docs/` depends on.
 **Not written**: a customer-facing API guide, a document on the
 workflow engine, and a document on the interface. Documents 1, 2 and 3
 predate `vf-ui` entirely.
+
+**And a warning about the decision records themselves.** They are never
+rewritten to agree with later ones — what was decided, and why it looked
+right at the time, is part of why the current answer is what it is.
+
+**So contradictions between records are real, and neither is wrong.**
+They are dated. `docs/decisions/SUPERSEDED.md` is the map, and it exists
+because the trap has been fallen into twice: decision 0094's conclusion
+sat in the handover's *resolved* list as settled for days after 0117
+corrected it, and two of 0089's open items were closed by 0090 on the
+same day and went on reading as open.
 
 ---
 
