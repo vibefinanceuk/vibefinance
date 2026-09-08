@@ -297,6 +297,9 @@ async function go(screen) {
   } else if (screen === "rules") {
     const { open } = await import("/rules.js");
     await open();
+  } else if (screen === "documents") {
+    const { open } = await import("/documents.js");
+    await open();
   } else {
     await loadTasks();
   }
@@ -346,6 +349,11 @@ export function frame(main) {
         class: current === "rules" ? "on" : "",
         text: t("nav.rules"),
         onclick: () => go("rules"),
+      }),
+      el("a", {
+        class: current === "documents" ? "on" : "",
+        text: t("nav.documents"),
+        onclick: () => go("documents"),
       }),
       el("div", { class: "who" }, [
         el("div", { text: me?.name ?? "" }),

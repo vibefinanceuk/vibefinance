@@ -58,7 +58,25 @@ export async function handleKeyInvoiceFields(
     .bind(invoiceId)
     .first<{ current_stage_id: string }>();
 
-  const editable = instance ? await editableFieldsAt(db, instance.current_stage_id) : null;
+  /**
+   * **An invoice outside a process is read-only** — decision 0164.
+   *
+   * Decision 0144 left this open and said so: *"an invoice that has
+   * left its process is editable by anybody with `AP.Validate`."*
+   * Nothing could reach one, so it stayed theoretical — until the
+   * document manager made every invoice openable.
+   *
+   * The operator settled the rule: *"anything paid should not be
+   * modified... validation should determine the fields, matching and
+   * coding should assign the PO lines. There need not be any
+   * modifications after that."*
+   *
+   * **Editing belongs to a task.** A document nothing is working on is
+   * a document nobody was asked to change.
+   */
+  const editable = instance
+    ? await editableFieldsAt(db, instance.current_stage_id)
+    : new Set<string>();
 
   const invoice = await db
     .prepare("SELECT id, facts_json FROM invoice_headers WHERE id = ?")
@@ -83,13 +101,24 @@ export async function handleKeyInvoiceFields(
    * individually, because *"some fields were refused"* sends a person
    * hunting.
    */
-  if (editable) {
+  {
+    /**
+     * **Only fields that exist.** A field outside the closed vocabulary
+     * is not an editing-permission problem, and saying *"this stage
+     * does not permit editing that"* about `BT-9999` sends somebody
+     * looking for a setting rather than a typo.
+     *
+     * So an unknown field falls through to the vocabulary check, which
+     * is the one that can explain it.
+     */
     const refused = [
-      ...entries.filter(([field]) => !editable.has(field)).map(([field]) => field),
+      ...entries
+        .filter(([field]) => isKnownField(field) && !editable.has(field))
+        .map(([field]) => field),
       ...(Array.isArray(body.lines)
         ? body.lines.flatMap((line) =>
             Object.keys((line as { facts?: Record<string, unknown> })?.facts ?? {}).filter(
-              (field) => !editable.has(field)
+              (field) => isKnownField(field) && !editable.has(field)
             )
           )
         : []),

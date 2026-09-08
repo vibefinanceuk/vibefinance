@@ -110,6 +110,8 @@ const PROXIED_TO_INSTANCE: RegExp[] = [
   /^\/sources$/,
   // The rules screen (decision 0149).
   /^\/rules$/,
+  // The document manager (decision 0164).
+  /^\/documents$/,
   // Where an invoice has been (decision 0151).
   /^\/invoices\/[^/]+\/progress$/,
   /^\/rules\/stages$/,

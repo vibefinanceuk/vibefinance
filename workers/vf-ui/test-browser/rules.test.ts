@@ -40,6 +40,7 @@ const STRINGS = {
     "rulestate.awaiting_confirmation": "To confirm",
     "rulestate.draft": "Draft",
     "rules.new": "Create rule",
+    "nav.documents": "Documents",
     "mood.label": "Mood",
     "mood.day": "Day time",
     "mood.night": "Night time",
@@ -190,10 +191,12 @@ describe("every word comes from the control plane", () => {
 });
 
 describe("the navigation", () => {
-  it("gains a third entry", async () => {
+  it("lists every screen", async () => {
+    // Documents joined them (decision 0164), so this asserts the set
+    // rather than a count that goes stale on every new screen.
     await open([]);
     const nav = [...document.querySelectorAll(".nav a")].map((a) => a.textContent);
-    expect(nav).toEqual(["Tasks", "Sources", "Rules"]);
+    expect(nav).toEqual(["Tasks", "Sources", "Rules", "Documents"]);
   });
 
   it("marks which screen you are on", async () => {

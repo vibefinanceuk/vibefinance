@@ -50,6 +50,7 @@ import {
   handleSetRuleEnabled,
 } from "./rules-list-route.js";
 import { handleInvoiceProgress } from "./invoice-progress-route.js";
+import { handleListDocuments } from "./documents-route.js";
 import { handleIngestPurchaseOrder, handleGetPurchaseOrder } from "./purchase-order-route.js";
 import { handleGetRetention, handleSetRetention, handleListBeyondRetention } from "./retention-route.js";
 import { handleCaptureFromSource } from "./source-capture-route.js";
@@ -1300,6 +1301,20 @@ export default {
       }
 
       const result = await handleInvoiceProgress(db, progressMatch[1]);
+      return json(result.body, result.status);
+    }
+
+
+    // Every document that has arrived — decision 0164.
+    if (pathname === "/documents" && request.method === "GET") {
+      const { db } = resolveTenant(request, env);
+      const auth = await authenticatePerson(db, request, env);
+      if (!auth.user) return json({ error: auth.reason }, 401);
+      if (!(await hasPermission(db, auth.user.id, "AP.Review"))) {
+        return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
+      }
+
+      const result = await handleListDocuments(db, url.searchParams);
       return json(result.body, result.status);
     }
 

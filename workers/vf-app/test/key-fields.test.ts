@@ -3,9 +3,35 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { applyTestSchema } from "./setup.js";
 import { handleKeyInvoiceFields } from "../src/key-fields-route.js";
 
+/**
+ * An invoice at a stage that permits keying — decision 0164.
+ *
+ * **Keying happens at a stage**, and an invoice outside a process is
+ * read-only: validation determines the fields, matching and coding
+ * assign the lines, and there need not be any modification after that.
+ *
+ * These tests are about keying rather than about stages, so they put
+ * the invoice somewhere keying is allowed.
+ */
 async function seedInvoice(id: string, facts: Record<string, unknown> = {}) {
+  await env.DB.prepare("INSERT OR IGNORE INTO processes (id, name) VALUES ('ap', 'AP')").run();
+  await env.DB.prepare(
+    "INSERT OR IGNORE INTO process_stages (id, process_id, name, sequence) VALUES ('validation', 'ap', 'Validation', 1)"
+  ).run();
+  await env.DB.prepare(
+    `INSERT OR IGNORE INTO process_stage_versions (process_id, version, stage_id, sequence)
+     SELECT p.id, p.version, s.id, s.sequence FROM process_stages s JOIN processes p ON p.id = s.process_id`
+  ).run();
+
   await env.DB.prepare("INSERT INTO invoice_headers (id, facts_json) VALUES (?, ?)")
     .bind(id, JSON.stringify(facts))
+    .run();
+
+  await env.DB.prepare(
+    `INSERT INTO process_instances (id, process_id, subject_type, subject_id, current_stage_id)
+     VALUES (?, 'ap', 'invoice', ?, 'validation')`
+  )
+    .bind(`pi-${id}`, id)
     .run();
 }
 

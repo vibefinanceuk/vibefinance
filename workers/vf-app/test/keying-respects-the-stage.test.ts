@@ -141,10 +141,17 @@ describe("keying at an ordinary stage", () => {
 });
 
 describe("an invoice in no process at all", () => {
-  it("is unrestricted, as it always was", async () => {
-    // **Absent means unrestricted**, which is what every caller
-    // predating this got. A document never put into a process has no
-    // stage to ask.
+  it("is read-only, because editing belongs to a task", async () => {
+    /**
+     * **Decision 0144 left this open and said so**: *"an invoice that
+     * has left its process is editable by anybody with `AP.Validate`."*
+     * Nothing could reach one, so it stayed theoretical — until the
+     * document manager (decision 0164) made every invoice openable.
+     *
+     * The operator settled the rule: validation determines the fields,
+     * matching and coding assign the lines, and there need not be any
+     * modification after that.
+     */
     await env.DB.prepare("INSERT INTO invoice_headers (id, facts_json) VALUES ('inv-loose', '{}')").run();
     await env.DB.prepare(
       "INSERT OR IGNORE INTO org_users (id, email, name) VALUES ('u-dan', 'd@x.com', 'Dan')"
@@ -156,6 +163,8 @@ describe("an invoice in no process at all", () => {
       { facts: { "BT-112": 999 } } as never,
       "u-dan"
     );
-    expect(result.status).toBe(200);
+
+    expect(result.status).toBe(403);
+    expect((result.body as { reason: string }).reason).toBe("not_editable_here");
   });
 });
