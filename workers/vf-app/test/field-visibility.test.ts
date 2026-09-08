@@ -229,3 +229,44 @@ describe("the parties are visible by default (decision 0115)", () => {
     expect(find(fields, "BT-55")?.visibility).toBe("read");
   });
 });
+
+describe("line fields in reading order (decision 0171)", () => {
+  /**
+   * **Business Term order is the standard's numbering, not a reading
+   * order**: quantity before unit, line total before unit price, item
+   * name last.
+   *
+   * The operator asked for the order an invoice actually prints.
+   */
+  it("orders them as somebody reads a line", async () => {
+    const fields = await resolveFieldVisibility(env.DB, null);
+    const lines = fields.filter((f) => f.line).map((f) => f.field);
+
+    const wanted = ["BT-126", "description", "BT-130", "BT-146", "BT-129", "BT-131"];
+    expect(lines.slice(0, wanted.length)).toEqual(wanted);
+  });
+
+  it("keeps a field nobody named, after them", async () => {
+    // So adding one to the vocabulary does not silently disappear.
+    const fields = await resolveFieldVisibility(env.DB, null);
+    const lines = fields.filter((f) => f.line).map((f) => f.field);
+
+    expect(lines).toContain("BT-151");
+    expect(lines.indexOf("BT-151")).toBeGreaterThan(lines.indexOf("BT-131"));
+  });
+
+  it("includes the description, which was extracted and never shown", async () => {
+    // **Stored under a plain key** (decision 0052), so the viewer --
+    // which renders only what this route lists -- displayed it on no
+    // line at all.
+    const fields = await resolveFieldVisibility(env.DB, null);
+    expect(fields.find((f) => f.field === "description")?.line).toBe(true);
+  });
+
+  it("offers the description to read rather than to edit", async () => {
+    // Keying refuses anything outside the closed vocabulary, so an
+    // editable one would render as a text box and fail on save.
+    const fields = await resolveFieldVisibility(env.DB, null);
+    expect(fields.find((f) => f.field === "description")?.visibility).toBe("read");
+  });
+});

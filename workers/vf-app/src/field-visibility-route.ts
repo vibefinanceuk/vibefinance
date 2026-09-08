@@ -209,10 +209,73 @@ export async function resolveFieldVisibility(
     });
   }
 
+  /**
+   * A line's description — decision 0171.
+   *
+   * Stored under a plain `description` key rather than `BT-153`,
+   * deliberately: decision 0052 refused to widen the closed vocabulary
+   * *"purely to carry text no rule tests"*, and `invoice_lines` has its
+   * own column for it.
+   *
+   * **That reasoning holds and its premise changed.** The operator
+   * asked for it as a column, and the viewer renders only what this
+   * resolver lists — so a description extracted from every line was
+   * displayed on none of them.
+   *
+   * A **displayable field, not a vocabulary one**: no rule can test it,
+   * and a person can read it.
+   *
+   * Read, not edit: keying refuses anything outside the closed
+   * vocabulary (decision 0144), so an editable description would render
+   * as a text box and fail on save — worse than not offering it.
+   */
+  resolved.push({
+    field: "description",
+    description: "Description",
+    visibility: "read",
+    type: "text",
+    line: true,
+    decidedBy: "default",
+    sortOrder: 0,
+  });
+
+  /**
+   * The order somebody reads a line in — decision 0171.
+   *
+   * Business Term order is **the standard's numbering, not a reading
+   * order**: quantity before unit, line total before unit price, item
+   * name last. The operator asked for the order an invoice prints:
+   *
+   * > Line No, Description, UOM, Unit Price, Quantity, Total Price.
+   *
+   * A field not named keeps its place after these, so adding one to the
+   * vocabulary does not silently disappear.
+   */
+  const LINE_READING_ORDER = [
+    "BT-126",
+    "description",
+    "BT-130",
+    "BT-146",
+    "BT-129",
+    "BT-131",
+  ];
+
+  const linePlace = (field: string) => {
+    const index = LINE_READING_ORDER.indexOf(field);
+    return index === -1 ? LINE_READING_ORDER.length : index;
+  };
+
   // Configured order first, then the vocabulary's own — which follows
   // the specification, so an unconfigured screen reads in the order the
-  // standard lists things.
-  return resolved.sort((a, b) => a.sortOrder - b.sortOrder);
+  // standard lists things. Line fields are the exception, and say why
+  // above.
+  return resolved.sort((a, b) => {
+    if (a.line && b.line) {
+      const byReading = linePlace(a.field) - linePlace(b.field);
+      if (byReading !== 0) return byReading;
+    }
+    return a.sortOrder - b.sortOrder;
+  });
 }
 
 /**
@@ -231,6 +294,7 @@ export async function handleFieldVisibility(
     status: 200,
     body: {
       stageId,
+      // Already in reading order: the resolver sorts (decision 0171).
       fields: all.filter((f) => f.visibility !== "hidden"),
       /**
        * What a derived field is called — decision 0159.
