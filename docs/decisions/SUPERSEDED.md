@@ -50,8 +50,12 @@ against the current system either.
 | Record | By | What changed |
 | --- | --- | --- |
 | **0045** — multi-page capture | 0046 | Named in the record itself. |
-| **0061** — intake channel structure | 0060 | Channels became sources; the record is retired once capture addresses sources rather than channels. |
+| **0061** — intake channel structure | 0060, 0161 | Channels became sources; the record is retired once capture addresses sources rather than channels. **Decision 0161 entrenched them instead**, creating a channel on arrival because an image had none — the second-best fix, recorded as such, because `intake_capture_events.channel_id` is `NOT NULL`. |
 | **0089** — local accounts | 0090 | **Rate limiting** and **lockout** were listed as open and were built the same day. Reset is narrower than it read: an administrator setting a password works today; **self-service** reset is what is missing. |
+| **0052** — a line's description has no BT code | 0171 | *"Purely to carry text no rule tests"* was right, and the premise changed: the viewer renders only what the field resolver lists, so a description extracted from every line was **displayed on none**. It is a displayable field now, not a vocabulary one. |
+| **0120** — keyed facts merge rather than replace | 0174 | True of **header** facts and never applied to lines. `handleUpsertInvoice` replaced each line wholesale, so decision 0171 making one field read-only turned a latent bug into real data loss. |
+| **0144** — an invoice outside a process | 0164 | The record named it: *"editable by anybody with `AP.Validate`."* Nothing could reach one until the document manager made every invoice openable. It is read-only now. |
+| **0164** — the editability check runs on every save | 0173 | Widening the check widened what it **refused**: the viewer supplies `BT-126` itself, which is `read`, so every line edit at Validation was rejected for a field nobody touched. |
 | **0126** — an address invoices arrive at | 0141 | `INGESTION_DOMAIN` was hardcoded to a domain **nobody owns**. It is configuration now, and an unset one refuses to issue an address. |
 | **0130** — retiring a source | 0133 | Deletion was refused outright once an address existed. It now **asks**, because an address reserved and never shared is a mistake to correct. |
 | **0135** — the Cloudflare half | 0136 | *"Generated config or one per customer"* was answered by **neither**: the config is data the control plane already held. |
@@ -70,6 +74,10 @@ against the current system either.
 | **0122** | The action icons do nothing | **0138** — they work. |
 | **0125** | Which domain do addresses live on? | **0141** — configuration, and there isn't one yet. |
 | **0140** | Who did what in the control plane? | Built. The **interface** is now unblocked — a domain exists. |
+| **0031** | Is the closed vocabulary safe to hand to a customer? | **0153** — yes, and only if they can read the rule back. A compiled condition tree is not something anybody can confirm. |
+| **0033** | Is a refusal an error? | **0153** — no. It is warning-coloured, says what cannot be expressed, and says nothing was saved. |
+| **0055** | What happens to a document nothing can read? | **0161, 0163** — an invoice with no facts, waiting for a person, **and the screen says so**. A timeout takes the same path, because a model that never answered is not a model that read badly. |
+| **0042** | Can a Worker read a scanned PDF? | Still no. **0161** made the consequence visible rather than silent. |
 | **0114** | Does a review screen need its own code? | **0142** — no. The same screen, with the stage deciding what is editable. |
 
 ---

@@ -28,6 +28,18 @@ third is best-effort and is marked as such in its own response —
 `documentPath: "image-extraction"`, a confidence score, and a list of
 fields that could not be read.
 
+**And a fourth outcome, which is not a path but the absence of one.** A
+document nothing could read becomes an invoice with no facts, waiting
+for a person to key it (decision 0055) — and **the screen now says
+so**, with what was tried and the document itself alongside (0161,
+0166). A photographed invoice that exceeds what the model can do in the
+time available takes the same route rather than being lost (0163).
+
+**A document arrives by email**, in practice and not only in principle:
+a supplier sends to an address a source owns, every attachment is
+captured, and every arrival is logged with its outcome and reason
+(0146, 0147, 0162).
+
 A hybrid PDF is never sent to a model. That is the point of checking
 for embedded XML first, and a PDF submitted to the image endpoint is
 refused outright rather than silently degraded.
@@ -127,15 +139,30 @@ customer's database and replace any Worker, and `vf-licence` is
 internet-reachable — so a flaw in any route would become total account
 compromise.
 
-**Email Routing rules.** A domain exists (`vibefinance-ai.com`) and an
-address can be issued, and **nothing delivers to one**. This is the
-remaining piece of email intake, and it needs the same Cloudflare
-credential.
+**~~Email Routing rules.~~ Done, by hand.** A rule delivers to `vf-app`
+and **real invoices arrive by email**. Creating rules through the API,
+per source rather than per customer, is still not built — so a second
+source means a second visit to the dashboard.
 
 **The operator interface's screen** (0140). The attribution half is
 built — every privileged action recorded, refusals included. The screen
-is now unblocked, since Cloudflare Access can protect a hostname in a
-zone and there is one.
+is unblocked and unwritten.
+
+**Publishing a process version** (0150, 0160). Every read of a
+process's stages goes through a version's membership, and **nothing
+creates a second version**: no route adds a stage, removes one, or
+reorders them. The foundation runs; the feature is half a feature, and
+the record says so.
+
+**Per-line VAT extraction.** `BT-151` and `BT-152` are in the
+vocabulary and nothing fills them, so the derived VAT and total columns
+an operator asked for would be empty on every row (0171). Several other
+line columns are blank on every real document for the same reason.
+
+**Downscaling a large image.** A 936KB photograph exceeds what the
+model can do in the time available (0163). It is kept and explained
+rather than lost, and it is not read — nothing resizes, retries or
+splits it.
 
 **Image-only PDFs.** A PDF cannot be rasterised inside a Worker — no
 native renderer, and PDF.js needs a canvas workerd does not provide.

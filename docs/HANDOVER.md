@@ -21,15 +21,15 @@ which, and it exists because the trap has been fallen into twice.
 
 | | |
 | --- | --- |
-| `origin/main` | `85cdafc` |
-| vf-app deployed | `85cdafc` |
-| vf-licence deployed | `85cdafc` |
-| vf-ui deployed | `85cdafc` · `https://vf-ui.vibefinance.workers.dev` |
-| Domain | `vibefinance-ai.com`, bound 7 September · **nothing served from it yet** |
-| `vf-app-poc` migrations | through `0041` |
-| `vf-licence-poc` migrations | through `0034` |
-| Tests | vf-app 1069 · vf-licence 315 · vf-ui 44 Worker + 91 browser · shared 252 (+2 known pre-existing failures) |
-| Decision records | 144 |
+| `origin/main` | `fb7557c` |
+| vf-app deployed | `fb7557c` |
+| vf-licence deployed | `fb7557c` |
+| vf-ui deployed | `fb7557c` · `https://vf-ui.vibefinance.workers.dev` |
+| Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
+| `vf-app-poc` migrations | through `0043` |
+| `vf-licence-poc` migrations | through `0046` |
+| Tests | vf-app 1169 · vf-licence 318 · vf-ui 44 Worker + 185 browser · shared 267 (+2 known pre-existing failures) |
+| Decision records | 175 |
 
 **Everything committed is deployed.**
 
@@ -170,7 +170,17 @@ uses one.
 **Nothing blocks the next piece of work.** Six things worth settling,
 none urgent.
 
-### 1. A domain — **now three things, not one**
+### 1. ~~A domain.~~ Done, and email intake works
+
+`vibefinance-ai.com` is bound, a routing rule delivers to `vf-app`, and
+**real invoices have arrived by email and been read** — a photographed
+one reached Payment-eligible without a person touching it (decisions
+0146, 0147, 0161–0163).
+
+**Still waiting on the domain:** the operator interface behind
+Cloudflare Access (decision 0140), and `vf-ui` on a real hostname.
+
+### 1b. The original note, for the two pieces still open
 
 It was a cosmetic want: `vf-ui.vibefinance.workers.dev` works and looks
 like infrastructure.
@@ -231,20 +241,15 @@ Both are the same question: **does the compiler's prompt teach the
 difference, or does the vocabulary stop sounding ambiguous?** A prompt
 is cheaper and keeps the closed set small, which 0031 argues for.
 
-### 6. "Hold it for review" cannot be said
+### 6. ~~Two stage names, and one stage to remove.~~ Done
 
-Found on the first real use of the rule screen (decision 0153). The
-vocabulary's `hold_until` holds until a **date**; there is no action
-meaning *"stop here and have a person decide"*, which is the most
-ordinary thing an AP rule wants to say.
+*Intake* and *AP Review* were renamed, and Line Review was deleted after
+the work data was cleared — its completed task went with it, so the
+foreign key that blocked deletion no longer existed. Decision 0150's
+membership versioning would have removed it properly; a clean database
+made the simpler answer honest.
 
-`assign_task` and `route_to` both express it, and **neither is what
-anybody would type**. Either a `hold_for_review` action, or the
-compiler's prompt teaches the translation — the second is more in
-keeping with 0031, since the vocabulary is closed and that is the
-feature.
-
-### 6. Two stage names, and one stage to remove
+### 7. Does the sources screen read right?
 
 **Renaming is free** — `name` is display, `id` is the key, and nothing
 references the name:
@@ -259,7 +264,6 @@ completed task against it, so deleting the row would fail on a foreign
 key or orphan history. Versioning the membership removes it properly;
 until then it stays.
 
-### 7. Does the sources screen read right?
 
 Decision 0134 removed every success message from it: a retired source
 shows *"Retired"*, a deleted one is gone, and the list is the answer.
@@ -278,6 +282,26 @@ worth more than the argument for keeping them separate.
 
 ---
 
+### 9. Columns that are empty on every invoice
+
+Extraction reads a description and an amount per line and nothing else,
+so `Line no.`, `Unit`, `Item net price`, `Quantity` and `VAT category`
+are blank on every real document (decisions 0171, 0172).
+
+**A column that never has a value teaches somebody to ignore columns.**
+Either extraction learns to read them — `BT-152` in particular, which
+two derived columns depend on — or a field with nothing in it stops
+being shown.
+
+### 10. What "how much has been keyed" should count
+
+Decision 0175 removed a status reading *"0/4 fields known"* on every
+document, counting four fields chosen when the screen was written.
+
+The idea was right and the implementation was not. **A real version
+counts the fields the current stage asks for**, which is a question
+about field visibility rather than about a hardcoded list.
+
 ### And two data changes, not code ones
 
 **The live Validation rule** reads *"assign a task to the AP team
@@ -292,6 +316,30 @@ multiple approval works) or a rule firing twice. **Nobody has
 established which**, and the two readings have different fixes.
 
 ---
+
+## What the last two days added
+
+**Rules have a face** (0149, 0153–0158). See what runs at each stage,
+write one in a sentence, read the compiled rule back in words, confirm
+its worked examples, activate, pause, revise. The product's own claim,
+reachable by a customer rather than by `curl`.
+
+**Email intake receives real invoices** (0146, 0147, 0161–0163, 0166,
+0168). A supplier emails a document, it is captured, read where it can
+be, retained and explained where it cannot, and every arrival is logged
+with a reason.
+
+**Documents are findable** (0164, 0165, 0167). Every invoice that has
+arrived, searchable, with columns a person chooses — because until then
+**every way into a document was a task**, and a straight-through invoice
+has none.
+
+**An invoice shows where it has been** (0151, 0152). The process as
+chevrons at the head of the viewer, with how long each stage took.
+
+**And process versioning has its foundation** (0150, 0160). Every read
+of a process's stages goes through a version's membership; nothing
+creates a second version yet.
 
 ## Resolved since the last handover
 
@@ -640,6 +688,12 @@ missing check — a working one, pointed slightly wrong.
 | 0143 | A stage restriction | Three fields somebody listed, not the ones added later |
 | 0144 | Field visibility | The screen, never the route — since September |
 | 0152 | A visit timeline | Stages minutes apart, never a straight-through second |
+| 0157 | An authoring flow | Somebody doing it in one sitting, never leaving halfway |
+| 0158 | A read-back | A combinator, never a rule that is one condition |
+| 0165 | A viewer | One caller, so its requirements read as facts |
+| 0167 | A viewer | A task, never a document nobody is working on |
+| 0170 | Extraction | A model that reads badly, never one confident about it |
+| 0174 | A line save | Every field the screen holds being a field it sends |
 
 **And this table itself.** It was removed by a rewrite of the section
 above it, and three later edits claimed to add rows to a table that was
