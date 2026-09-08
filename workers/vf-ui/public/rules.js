@@ -49,11 +49,31 @@ function note(message) {
 }
 
 async function compose(stage) {
+  let ruleSetId = stage.ruleSetId;
+
+  // **Created on the way in**, not on every stage up front: a stage
+  // with no rules needs no rule set, and seeding one everywhere leaves
+  // empty sets nothing references (decision 0154).
+  if (!ruleSetId) {
+    const response = await fetch(
+      `/api/rules/stages/${encodeURIComponent(stage.id)}/rule-set`,
+      { method: "POST" }
+    );
+    if (!response.ok) {
+      note(t("rules.failed"));
+      return;
+    }
+    ruleSetId = (await response.json()).ruleSetId;
+  }
+
   const { openCompose } = await import("/compose.js");
-  await openCompose(stage);
+  await openCompose({ ...stage, ruleSetId });
 }
 
 function ruleRow(rule) {
+  // **A card each** — decision 0154. A list of sentences separated by a
+  // hairline reads as prose; somebody scanning for one rule among ten
+  // needs them to be objects.
   return el("div", { class: "rule" }, [
     el("div", { class: "what" }, [
       // **The sentence somebody wrote.** A person recognises their own
@@ -110,20 +130,21 @@ function render() {
             ? el("div", { class: "rules" }, rules.map(ruleRow))
             : el("p", { class: "muted", text: t("rules.empty") }),
           /**
-           * **Only where rules can go.** A stage with no rule set has
-           * nowhere to put one, and offering the button there would be
-           * offering somebody a dead end.
+           * **At every stage** — decision 0154.
+           *
+           * This appeared only where a stage already had a rule set,
+           * which meant rules could be added only where rules already
+           * existed. A stage that had never had one never could.
+           *
+           * Writing the first rule at a stage now creates the rule set,
+           * so the button belongs everywhere a rule could run.
            */
-          ...(stage?.hasRuleSet
-            ? [
-                el("div", { style: "margin-top:16px" }, [
-                  el("button", { class: "primary", onclick: () => compose(stage) }, [
-                    icon("compile"),
-                    el("span", { text: t("rules.new") }),
-                  ]),
-                ]),
-              ]
-            : []),
+          el("div", { class: "newrule" }, [
+            el("button", { class: "primary", onclick: () => compose(stage) }, [
+              icon("compile"),
+              el("span", { text: t("rules.new") }),
+            ]),
+          ]),
         ]),
         el("div", { class: "problem", id: "rules-note", role: "status" }),
       ])

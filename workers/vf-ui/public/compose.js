@@ -162,7 +162,9 @@ function render() {
   panels.push(
     el("div", { class: "panel" }, [
       el("h3", { text: t("compose.write") }),
-      el("textarea", { id: "sentence", rows: "3" }),
+      // **Room to write in** — decision 0154. Three rows made a rule look
+      // like a search box, and a rule is a sentence somebody thinks about.
+      el("textarea", { id: "sentence", rows: "6" }),
       el("div", { class: "composebar" }, [
         el("button", { class: "primary", onclick: compile }, [
           icon("compile"),

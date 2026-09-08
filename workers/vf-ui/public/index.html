@@ -413,9 +413,37 @@
   .gate .why { font-size: var(--text-sm); color: var(--text-muted); }
   .gate svg { width: 16px; height: 16px; margin-right: 5px; vertical-align: -3px; }
 
-  .rule { display: flex; gap: 16px; padding: 12px 0; border-bottom: 0.5px solid var(--border); align-items: baseline; }
-  .rule:last-child { border-bottom: none; }
+  /*
+    A card each — decision 0154. A list of sentences separated by a
+    hairline reads as prose; somebody scanning for one rule among ten
+    needs them to be objects.
+  */
+  .rule {
+    display: flex;
+    gap: 16px;
+    padding: 12px 14px;
+    margin-bottom: 8px;
+    background: var(--surface-1);
+    border: 0.5px solid var(--border);
+    border-radius: var(--radius);
+    align-items: baseline;
+  }
+
+  .rule:last-child { margin-bottom: 0; }
   .rule .what { flex: 1; }
+
+  /* The button sits apart from the cards rather than among them. */
+  .newrule { margin-top: 16px; }
+
+  /*
+    An icon beside a label, not above it — decision 0154.
+
+    0122 stacked them for the action row, where a column of icons is
+    the point. In a sentence-shaped button a 20px icon reads as
+    cumbersome, which is what it was called.
+  */
+  .newrule button svg,
+  .composebar button svg { width: 15px; height: 15px; }
 
   .rulestate { font-size: var(--text-sm); font-weight: 600; min-width: 96px; display: flex; align-items: center; gap: 5px; }
   .rulestate svg { width: 14px; height: 14px; }

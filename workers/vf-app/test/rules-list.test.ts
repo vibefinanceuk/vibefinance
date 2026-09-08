@@ -1,7 +1,11 @@
 import { env } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
 import { applyTestSchema } from "./setup.js";
-import { handleListRules, handleRuleStages } from "../src/rules-list-route.js";
+import {
+  handleListRules,
+  handleRuleStages,
+  ensureRuleSetForStage,
+} from "../src/rules-list-route.js";
 
 /**
  * The rules that exist, by stage — decision 0149.
@@ -156,5 +160,51 @@ describe("the stages themselves", () => {
       stages: { id: string; ruleCount: number }[];
     };
     expect(body.stages.find((s) => s.id === "validation")?.ruleCount).toBe(2);
+  });
+});
+
+describe("giving a stage somewhere to put rules (decision 0154)", () => {
+  /**
+   * **Nothing created a rule set.** Every one until now came from a
+   * migration or by hand, which is why nobody had noticed the screen
+   * could only add rules where rules already existed.
+   */
+  it("creates one for a stage that has none", async () => {
+    const result = await ensureRuleSetForStage(env.DB, "coding");
+    expect("ruleSetId" in result).toBe(true);
+
+    const stage = await env.DB.prepare(
+      "SELECT rule_set_id FROM process_stages WHERE id = 'coding'"
+    ).first<{ rule_set_id: string }>();
+    expect(stage?.rule_set_id).toBe("rs-coding");
+  });
+
+  it("returns the existing one rather than a second", async () => {
+    // Called on the way in every time somebody writes a rule, so it
+    // must be safe to call twice.
+    const first = await ensureRuleSetForStage(env.DB, "validation");
+    const second = await ensureRuleSetForStage(env.DB, "validation");
+    expect(first).toEqual(second);
+
+    const count = await env.DB.prepare("SELECT count(*) AS n FROM rule_sets").first<{
+      n: number;
+    }>();
+    expect(count?.n).toBe(1);
+  });
+
+  it("matches all rules rather than stopping at the first", async () => {
+    // **A stage where several rules apply should apply them all.**
+    // `first_match` would let the order rules happen to be in decide
+    // which ones counted.
+    await ensureRuleSetForStage(env.DB, "coding");
+    const set = await env.DB.prepare("SELECT mode FROM rule_sets WHERE id = 'rs-coding'").first<{
+      mode: string;
+    }>();
+    expect(set?.mode).toBe("all_matches");
+  });
+
+  it("refuses a stage that does not exist", async () => {
+    const result = await ensureRuleSetForStage(env.DB, "nowhere");
+    expect("error" in result).toBe(true);
   });
 });

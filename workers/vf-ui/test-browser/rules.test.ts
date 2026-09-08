@@ -39,6 +39,7 @@ const STRINGS = {
     "rulestate.paused": "Paused",
     "rulestate.awaiting_confirmation": "To confirm",
     "rulestate.draft": "Draft",
+    "rules.new": "Create rule",
     "mood.label": "Mood",
     "mood.day": "Day time",
     "mood.night": "Night time",
@@ -198,5 +199,36 @@ describe("the navigation", () => {
   it("marks which screen you are on", async () => {
     await open([]);
     expect(document.querySelector(".nav a.on")?.textContent).toBe("Rules");
+  });
+});
+
+describe("creating the first rule at a stage (decision 0154)", () => {
+  /**
+   * **A chicken and egg, found on the screen.** The button appeared
+   * only where a stage already had a rule set — so rules could be added
+   * only where rules already existed, and a stage that had never had
+   * one never could.
+   */
+  it("offers the button at a stage with no rules at all", async () => {
+    await open([], [{ id: "coding", name: "Coding", sequence: 3, ruleCount: 0, hasRuleSet: false }]);
+
+    const labels = [...document.querySelectorAll("button")].map((b) => b.textContent);
+    expect(labels.some((l) => l?.includes("Create rule"))).toBe(true);
+  });
+
+  it("offers it at a stage that has some", async () => {
+    await open([{ id: "r-1", sourceText: "A rule", state: "live" }]);
+    const labels = [...document.querySelectorAll("button")].map((b) => b.textContent);
+    expect(labels.some((l) => l?.includes("Create rule"))).toBe(true);
+  });
+
+  it("draws each rule as its own card", async () => {
+    // A list of sentences separated by a hairline reads as prose.
+    await open([
+      { id: "r-1", sourceText: "One", state: "live" },
+      { id: "r-2", sourceText: "Two", state: "draft" },
+    ]);
+
+    expect(document.querySelectorAll(".rule")).toHaveLength(2);
   });
 });

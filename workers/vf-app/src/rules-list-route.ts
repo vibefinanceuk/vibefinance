@@ -154,3 +154,52 @@ export async function handleRuleStages(db: D1Database): Promise<RouteResult> {
     },
   };
 }
+
+/**
+ * Give a stage somewhere to put rules — decision 0154.
+ *
+ * **A chicken and egg, found on the screen.** The rules screen offered
+ * *"write a new rule"* only where a stage already had a rule set — so
+ * rules could only be added where rules already existed, and a stage
+ * that had never had one never could.
+ *
+ * Every rule set until now came from a migration or by hand, which is
+ * why nobody had noticed: the operator seeded the ones they needed.
+ *
+ * **Created on demand rather than up front.** A stage with no rules
+ * needs no rule set, and creating one for every stage would leave empty
+ * sets nothing references — the shape decision 0060 records about
+ * intake channels outliving their purpose.
+ */
+export async function ensureRuleSetForStage(
+  db: D1Database,
+  stageId: string
+): Promise<{ ruleSetId: string } | { error: string }> {
+  const stage = await db
+    .prepare("SELECT id, name, rule_set_id FROM process_stages WHERE id = ?")
+    .bind(stageId)
+    .first<{ id: string; name: string; rule_set_id: string | null }>();
+
+  if (!stage) return { error: `stage ${stageId} does not exist` };
+  if (stage.rule_set_id) return { ruleSetId: stage.rule_set_id };
+
+  const ruleSetId = `rs-${stageId}`;
+
+  await db.batch([
+    db
+      .prepare(
+        `INSERT INTO rule_sets (id, name, mode, vocabulary)
+         VALUES (?, ?, 'all_matches', 'invoice')`
+      )
+      // **`all_matches`, not `first_match`.** A stage where several
+      // rules apply should apply them all; `first_match` would let the
+      // order rules happen to be in decide which ones counted, which is
+      // a surprise nobody asked for (decision 0031's two modes).
+      .bind(ruleSetId, stage.name),
+    db
+      .prepare("UPDATE process_stages SET rule_set_id = ? WHERE id = ?")
+      .bind(ruleSetId, stageId),
+  ]);
+
+  return { ruleSetId };
+}

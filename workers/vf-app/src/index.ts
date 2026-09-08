@@ -42,7 +42,7 @@ import { createWorkersAiExtractionModel } from "./extraction-model.js";
 import { handleGetExtractionSettings, handleUpdateExtractionSettings } from "./extraction-settings-route.js";
 import { handleToMarkdownDiagnostic } from "./tomarkdown-diagnostic.js";
 import { handleCreateSource, handleListSources , handleSetSourceEmail , handleListAllSources , handleListProcesses , handleRetireSource, handleRenameSource } from "./source-route.js";
-import { handleListRules, handleRuleStages } from "./rules-list-route.js";
+import { handleListRules, handleRuleStages, ensureRuleSetForStage } from "./rules-list-route.js";
 import { handleInvoiceProgress } from "./invoice-progress-route.js";
 import { handleIngestPurchaseOrder, handleGetPurchaseOrder } from "./purchase-order-route.js";
 import { handleGetRetention, handleSetRetention, handleListBeyondRetention } from "./retention-route.js";
@@ -1313,6 +1313,21 @@ export default {
     }
 
     // Every stage, with how many rules run there.
+    // Give a stage somewhere to put rules — decision 0154.
+    const ruleSetMatch = pathname.match(/^\/rules\/stages\/([^/]+)\/rule-set$/);
+    if (ruleSetMatch && request.method === "POST") {
+      const { db } = resolveTenant(request, env);
+      const auth = await requirePermission(db, request, "Admin.Configure", sessionContext(env));
+      if (!auth.authorized) {
+        return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
+      }
+
+      const result = await ensureRuleSetForStage(db, ruleSetMatch[1]);
+      if ("error" in result) return json({ error: result.error }, 404);
+      return json(result, 200);
+    }
+
+
     if (pathname === "/rules/stages" && request.method === "GET") {
       const { db } = resolveTenant(request, env);
       const auth = await authenticatePerson(db, request, env);
