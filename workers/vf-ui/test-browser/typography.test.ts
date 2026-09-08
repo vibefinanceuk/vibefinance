@@ -148,3 +148,22 @@ describe("the stylesheet names files that exist (decision 0124)", () => {
     }
   });
 });
+
+describe("a box somebody writes in (decision 0156)", () => {
+  const css = Object.values(CSS).join("\n");
+
+  it("fills the width it is given", () => {
+    // **Nothing set one**, so a browser's default of roughly twenty
+    // characters applied — reasonable in a narrow form and absurd in a
+    // full-width panel. Reported from the rule screen.
+    const rule = css.slice(css.indexOf("textarea {"));
+    expect(rule.slice(0, rule.indexOf("}"))).toContain("width: 100%");
+  });
+
+  it("stops where prose stops being readable", () => {
+    // **A sentence is read on one line**, and a rule box at 1600px
+    // would put a clause at each end and nothing in the middle.
+    const page = stylesheets["index.html"];
+    expect(page).toContain("#sentence { max-width: 62ch; }");
+  });
+});

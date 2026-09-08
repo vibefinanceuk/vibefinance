@@ -433,6 +433,13 @@
   .rule .what { flex: 1; }
 
   /* The button sits apart from the cards rather than among them. */
+  /*
+    A sentence is read on one line, not across a wide screen — decision
+    0156. A rule box at 1600px would put a clause at each end and
+    nothing in the middle, so it stops where prose stops being readable.
+  */
+  #sentence { max-width: 62ch; }
+
   .newrule { margin-top: 16px; }
 
   /* The sentence is the way into a rule — decision 0155. */

@@ -250,6 +250,19 @@ input,
 textarea {
   min-height: 32px;
   box-sizing: border-box;
+  /*
+    **Full width of whatever holds it.**
+
+    Nothing set one, so a browser's default of roughly twenty
+    characters applied — which looked reasonable in a narrow form and
+    absurd in a full-width panel. Reported from the rule screen, where
+    the box for a sentence sat at a fifth of the space beside it.
+
+    Set here rather than on that screen: every textarea in this
+    interface is a box somebody writes prose into, and none of them
+    wants a browser's guess.
+  */
+  width: 100%;
 }
 
 button {
