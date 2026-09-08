@@ -155,3 +155,29 @@ export async function detectStructure(bytes: Uint8Array): Promise<DetectionResul
 export function summariseAttempts(attempted: readonly { test: string; outcome: string }[]): string {
   return attempted.map((a) => a.test).join(",");
 }
+
+/**
+ * What each test actually found — decision 0169.
+ *
+ * `summariseAttempts` stores the **names** of the tests that ran, in a
+ * comma-separated form matching `validation.failures` so the existing
+ * `contains` operator applies. That format is a contract a customer's
+ * rule may depend on, and it stays.
+ *
+ * **But it discards every answer.** `intake.attempted` read
+ * `pdf_header,xml_declaration,image_magic_bytes` — a list of questions
+ * with none of the results, so decision 0168's opening bytes never
+ * reached storage.
+ *
+ * **The third time in one day that evidence existed and something
+ * summarised it out of existence**: decision 0162 at the email layer,
+ * 0168 at detection, this at storage.
+ *
+ * Kept separate rather than folded in, so a rule matching on which
+ * tests ran is untouched by what they found.
+ */
+export function detailOfAttempts(
+  attempted: readonly { test: string; outcome: string }[]
+): string {
+  return attempted.map((a) => `${a.test}: ${a.outcome}`).join(" · ");
+}

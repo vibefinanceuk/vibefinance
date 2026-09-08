@@ -35,6 +35,15 @@ export const CONFIGURATION_TABLES: readonly string[] = [
   // right, and the thing rebuilding by hand would waste.
   "processes",
   "process_stages",
+  /**
+   * **A process's shape, versioned** (decision 0150).
+   *
+   * Which stages are in a process at a given version is the same kind
+   * of fact as the stages themselves, so it travels with them: a
+   * production environment without it has instances pointing at a
+   * version that does not exist.
+   */
+  "process_stage_versions",
 
   // Rules, with their versions and worked examples. A rule without its
   // examples cannot be activated (decision 0008's gate), so they

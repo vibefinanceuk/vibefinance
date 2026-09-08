@@ -401,3 +401,44 @@ describe("a document nothing could read is still a document (decision 0166)", ()
     ).toBe("application/pdf");
   });
 });
+
+describe("what each detection test found reaches storage (decision 0169)", () => {
+  /**
+   * **`summariseAttempts` stores the names and discards the answers.**
+   * `intake.attempted` read `pdf_header,xml_declaration,
+   * image_magic_bytes` — a list of questions with none of the results —
+   * so decision 0168's opening bytes never left the function.
+   *
+   * The third time in one day that evidence existed and something
+   * summarised it out of existence: decision 0162 at the email layer,
+   * 0168 at detection, this at storage.
+   */
+  it("keeps the comma-separated test names a rule can match", async () => {
+    // **A contract**, matching `validation.failures` so the existing
+    // `contains` operator applies. Untouched.
+    const { summariseAttempts } = await import("../src/detect-structure.js");
+
+    expect(
+      summariseAttempts([
+        { test: "pdf_header", outcome: "not a PDF" },
+        { test: "image_magic_bytes", outcome: "unrecognised (starts 00 01)" },
+      ])
+    ).toBe("pdf_header,image_magic_bytes");
+  });
+
+  it("says what each one found, separately", async () => {
+    const { detailOfAttempts } = await import("../src/detect-structure.js");
+
+    expect(
+      detailOfAttempts([
+        { test: "pdf_header", outcome: "not a PDF" },
+        { test: "image_magic_bytes", outcome: "unrecognised (starts 00 01 02 03)" },
+      ])
+    ).toBe("pdf_header: not a PDF · image_magic_bytes: unrecognised (starts 00 01 02 03)");
+  });
+
+  it("is in the vocabulary, so a rule could reach it", async () => {
+    const { isKnownField } = await import("@vibefinance/shared");
+    expect(isKnownField("intake.detail")).toBe(true);
+  });
+});

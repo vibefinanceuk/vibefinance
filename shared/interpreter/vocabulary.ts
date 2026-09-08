@@ -76,6 +76,7 @@ export const DERIVED_FIELDS = [
   "extraction.pagesFailed",
   "intake.structure",
   "intake.attempted",
+  "intake.detail",
   "provenance.keyed",
   "extraction.confidence",
   "invoice.duplicate_confidence",
@@ -171,6 +172,7 @@ export const INVOICE_FIELD_TYPES: Record<string, FieldType> = {
   "extraction.pagesFailed": "number",
   "intake.structure": "text",
   "intake.attempted": "text",
+  "intake.detail": "text",
   "provenance.keyed": "text",
   "extraction.confidence": "number",
   "invoice.duplicate_confidence": "number",
@@ -328,6 +330,8 @@ export const DERIVED_FIELD_DESCRIPTIONS: Record<DerivedField, string> = {
     "the document structure intake detected — 'structured_xml', 'structured_pdfa', 'image', or empty when nothing was recognised. An empty value means the document arrived with no facts and needs a person: a rule testing for it is how an undetectable document reaches somebody.",
   "intake.attempted":
     "a comma-separated list of the detection tests intake tried, in order. Distinguishes a supplier who has not adopted e-invoicing from one whose implementation is broken — 'a PDF with no embedded invoice' and 'a PDF declaring one that could not be read' are opposite conversations. A string so the existing contains operator works.",
+  "intake.detail":
+    "what each detection test actually found, where `intake.attempted` says only which ran. Reads like 'pdf_header: not a PDF · image_magic_bytes: unrecognised (starts 00 01 02 03)'. Present only on a document nothing could read, because that is the only time anybody asks. Diagnostic rather than something to write a rule against: the wording is ours and may change, where `intake.attempted` is a contract.",
   "extraction.pagesFailed":
     "how many pages of a multi-page document could not be extracted at all, 0 when every page was read. A missing page is often exactly why a total does not match its lines.",
   "extraction.confidence":

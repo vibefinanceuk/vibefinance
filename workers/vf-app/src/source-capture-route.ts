@@ -1,5 +1,10 @@
 import type { RouteResult } from "./org-route.js";
-import { detectStructure, summariseAttempts, type DetectedStructure } from "./detect-structure.js";
+import {
+  detectStructure,
+  summariseAttempts,
+  detailOfAttempts,
+  type DetectedStructure,
+} from "./detect-structure.js";
 import { handleCaptureIntake, handleCaptureImage, handleCaptureUblXml } from "./intake-capture-route.js";
 import type { ExtractionModel } from "./extraction.js";
 import { parseUblInvoice, UblParseError } from "@vibefinance/shared";
@@ -376,6 +381,10 @@ async function captureWithoutFacts(
       // field cannot be tested for.
       "intake.structure": "",
       "intake.attempted": attempted,
+      // **What each test found** — decision 0169. `attempted` names the
+      // tests; this says what they answered, which is the difference
+      // between a diagnosis and a list of questions.
+      "intake.detail": detailOfAttempts(detail),
     },
   } as Parameters<typeof handleCaptureIntake>[2]);
 
