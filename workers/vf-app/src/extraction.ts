@@ -765,7 +765,7 @@ export function mergePageResults(
   // claim about a document half of which was never seen. Found live,
   // where a two-page invoice with a failed page one returned
   // confidence 1 from page two alone.
-  const confidence =
+  let confidence =
     failedPages.length > 0 ? 0 : Math.min(...perPage.map((p) => p.result.confidence));
 
   // Missing only where EVERY page failed to read it: a field on page
@@ -786,6 +786,55 @@ export function mergePageResults(
   // manual task IS the trigger to go and fix it properly.
   facts["extraction.conflicts"] = conflicts.map((c) => c.field).join(",");
   facts["extraction.pagesFailed"] = failedPages.length;
+
+  /**
+   * **Does the reading add up?** — decision 0170.
+   *
+   * A real freight invoice came back with eight plausible lines
+   * summing to 3,137.47 against a header `BT-106` of 2,272.47 — out by
+   * 865.00 — and reported `extraction.confidence: 0.9` with no
+   * conflicts. **The model was confident about a reading that does not
+   * balance.**
+   *
+   * The arithmetic was available here the whole time. A line table that
+   * does not sum to the header total is the strongest single signal
+   * that a table was misread: a wrapped description, a merged cell, a
+   * column taken for another.
+   *
+   * **Not an error, and not a refusal.** The document may genuinely be
+   * inconsistent, and decision 0119's validation says so downstream.
+   * This says something different and more useful to a person: *"we may
+   * have read this badly"*, which wants a different response from
+   * *"this invoice is wrong"*.
+   *
+   * So the confidence drops, and the discrepancy is named.
+   */
+  // An `ExtractedLine` is `InvoiceFacts & { lineNumber }` — the facts
+  // directly, not nested under one.
+  const lineTotal = lines.reduce((sum: number, line) => {
+    const net = (line as Record<string, unknown>)["BT-131"];
+    return sum + (typeof net === "number" ? net : 0);
+  }, 0);
+  const headerTotal = facts["BT-106"];
+
+  if (lines.length > 0 && typeof headerTotal === "number") {
+    // Rounded to the penny before comparing: floating point makes a
+    // sum of decimals disagree with itself, and a rule about half a
+    // penny would fire on arithmetic rather than on documents.
+    const difference = Math.round((lineTotal - headerTotal) * 100) / 100;
+
+    facts["extraction.linesDiffer"] = difference;
+
+    if (difference !== 0) {
+      /**
+       * **Halved rather than zeroed.** The facts are still worth
+       * having — a header read cleanly is a header read cleanly — and
+       * a person keying needs somewhere to start. What is not warranted
+       * is telling them we are 90% sure.
+       */
+      confidence = Math.min(confidence, 0.5);
+    }
+  }
   // The other page's reading, as a parameterised fact — decision
   // 0050. Naming WHICH fields disagreed was not enough to act on:
   // a rule resolving a conflict needs the value it is resolving TO,

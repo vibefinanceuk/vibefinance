@@ -74,6 +74,7 @@ export const DERIVED_FIELDS = [
   "validation.failuresAfterRules",
   "extraction.conflicts",
   "extraction.pagesFailed",
+  "extraction.linesDiffer",
   "intake.structure",
   "intake.attempted",
   "intake.detail",
@@ -170,6 +171,7 @@ export const INVOICE_FIELD_TYPES: Record<string, FieldType> = {
   "validation.failuresAfterRules": "text",
   "extraction.conflicts": "text",
   "extraction.pagesFailed": "number",
+  "extraction.linesDiffer": "number",
   "intake.structure": "text",
   "intake.attempted": "text",
   "intake.detail": "text",
@@ -334,6 +336,8 @@ export const DERIVED_FIELD_DESCRIPTIONS: Record<DerivedField, string> = {
     "what each detection test actually found, where `intake.attempted` says only which ran. Reads like 'pdf_header: not a PDF · image_magic_bytes: unrecognised (starts 00 01 02 03)'. Present only on a document nothing could read, because that is the only time anybody asks. Diagnostic rather than something to write a rule against: the wording is ours and may change, where `intake.attempted` is a contract.",
   "extraction.pagesFailed":
     "how many pages of a multi-page document could not be extracted at all, 0 when every page was read. A missing page is often exactly why a total does not match its lines.",
+  "extraction.linesDiffer":
+    "the line net amounts summed, minus the header's own BT-106, rounded to the penny. 0 when they agree. A non-zero value means the table and the total disagree, which is the strongest single signal that a table was misread — a wrapped description, a merged cell, a column taken for another. Distinct from validation's own arithmetic check: this says 'we may have read this badly', which wants a different response from 'this invoice is wrong'.",
   "extraction.confidence":
     "a score from 0.0 to 1.0 for how confident extraction was in the facts it read off a document — 1.0 for anything parsed from structured XML, lower for a rendered page the model had to interpret, and 0 when any page of a multi-page document failed outright. Not a boolean, for the same reason invoice.duplicate_confidence is not: the threshold is the customer's to choose, not the platform's to assume. Compare it with less_than, or use between for a middle band that is flagged rather than held.",
   "invoice.duplicate_confidence":
