@@ -186,6 +186,8 @@ const KEYS_THE_INTERFACE_USES = [
   "action.save",
   "action.whyreason",
   "viewer.actionfailed",
+  "viewer.unreadable",
+  "viewer.tried",
   "action.release",
   "action.key",
   "action.complete",

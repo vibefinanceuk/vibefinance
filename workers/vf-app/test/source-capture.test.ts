@@ -127,13 +127,31 @@ describe("a document with no detectable structure", () => {
 });
 
 describe("a recognised structure with no channel configured", () => {
-  it("says so plainly rather than falling back to another channel", async () => {
-    // Silently using a different channel would read the document under
-    // rules nobody configured for it.
+  it("makes the right channel rather than falling back to another", async () => {
+    /**
+     * **The concern still holds; the answer changed** — decision 0161.
+     *
+     * This asserted a 422: the structure was recognised, no channel
+     * existed, and refusing was better than silently using a different
+     * one — which would read the document under rules nobody
+     * configured for it.
+     *
+     * That reasoning is untouched. But refusing meant **an image
+     * bounced back to the supplier** because nobody had thought to seed
+     * a channel for images, and a configuration gap was reported as a
+     * document problem.
+     *
+     * So the right channel is created. Falling back to a wrong one is
+     * still refused, because it never happens.
+     */
     await env.DB.prepare("DELETE FROM intake_channels WHERE id = 'ch-xml'").run();
     const result = await handleCaptureFromSource(env.DB, "src-mail", UBL, fakeModel("{}"));
-    expect(result.status).toBe(422);
-    expect(String((result.body as { error: string }).error)).toContain("no structured_xml intake channel");
+    expect(result.status).toBe(201);
+
+    const channel = await env.DB.prepare(
+      "SELECT structure FROM intake_channels WHERE structure = 'structured_xml'"
+    ).first<{ structure: string }>();
+    expect(channel?.structure).toBe("structured_xml");
   });
 });
 

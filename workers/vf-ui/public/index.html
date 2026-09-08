@@ -389,6 +389,20 @@
   .readback .term { color: var(--text-accent); border-bottom: 1px dotted var(--border-accent); cursor: help; }
 
   /* A refusal is an answer, not a failure (decision 0033). */
+  /*
+    A document nothing could read — decision 0161. Warning rather than
+    error: nothing went wrong, and there is something for a person to
+    do.
+  */
+  .unreadable {
+    background: var(--bg-warning);
+    border-left: 3px solid var(--text-warning);
+    border-radius: 0 var(--radius) var(--radius) 0;
+    padding: 11px 14px;
+    margin-bottom: 12px;
+    color: var(--text-warning);
+  }
+
   .refusal {
     background: var(--bg-warning);
     border-left: 3px solid var(--text-warning);

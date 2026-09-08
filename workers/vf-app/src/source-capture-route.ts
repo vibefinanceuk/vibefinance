@@ -143,7 +143,41 @@ export async function handleCaptureFromSource(
     return captureWithoutFacts(db, source, attempted, detection.attempted, bytes, idOverride, bucket, customerId);
   }
 
-  const channel = await channelFor(db, source.process_id, detection.structure);
+  let channel = await channelFor(db, source.process_id, detection.structure);
+
+  /**
+   * A channel for a structure this process has never received —
+   * decision 0161.
+   *
+   * **An image was refused outright.** Nothing seeds a channel for
+   * `image`, so a photographed or scanned invoice reached
+   * *"process ap has no image intake channel"* and bounced to the
+   * supplier — a configuration gap reported as a document problem.
+   *
+   * Created on arrival, the same as decision 0154 does for a stage's
+   * first rule set: **the alternative is a customer who can only
+   * receive the kinds of document somebody thought of in advance.**
+   *
+   * **This is the second-best fix and is recorded as such.** Decision
+   * 0061 retires `intake_channels` *"once capture addresses sources
+   * rather than channels"*, and this entrenches them — because
+   * `intake_capture_events.channel_id` is `NOT NULL` and references
+   * one, so removing the concept is a migration rather than a
+   * deletion.
+   */
+  if (!channel) {
+    const created = `ch-${source.process_id}-${detection.structure}`;
+    await db
+      .prepare(
+        `INSERT OR IGNORE INTO intake_channels (id, process_id, name, structure)
+         VALUES (?, ?, ?, ?)`
+      )
+      .bind(created, source.process_id, detection.structure, detection.structure)
+      .run();
+
+    channel = await channelFor(db, source.process_id, detection.structure);
+  }
+
   if (!channel) {
     // The structure was recognised and this process has no channel for
     // it. A configuration gap rather than a document problem, and said

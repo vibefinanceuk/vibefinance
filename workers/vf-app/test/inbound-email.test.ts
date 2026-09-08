@@ -53,9 +53,32 @@ function messageWith(
   return message;
 }
 
-/** Extraction is not what this tests, so it answers plainly. */
+/**
+ * Extraction is not what this tests, so it answers plainly.
+ *
+ * **Returns a JSON string**, which is what `ExtractionModel.extract`
+ * promises — an object is what my first stub returned, and the image
+ * path refused it as *"the model's response was not valid JSON"*.
+ */
 const model = {
-  extract: vi.fn(async () => ({ fields: {}, confidence: 0.9 })),
+  // `_confidence` is required (decision 0043): a model that does not
+  // say how sure it is has not answered.
+  /**
+   * **Answers in prompt keys, not Business Terms.** The model is asked
+   * for `invoiceNumber` and the answer is mapped back to `BT-1` —
+   * decision 0043's design, and a stub returning `BT-1` produces *"no
+   * fields could be read from this image at all"*.
+   */
+  extract: vi.fn(async () =>
+    JSON.stringify({
+      invoiceNumber: "INV-1",
+      issueDate: "2026-09-01",
+      currency: "EUR",
+      supplierName: "A Supplier",
+      totalWithVat: 100,
+      _confidence: 0.9,
+    })
+  ),
 } as never;
 
 /**
@@ -347,5 +370,65 @@ describe("what arrived, recorded (decision 0147)", () => {
     // The one nothing claimed shows a null source rather than being
     // hidden — it is the entry worth noticing.
     expect(body.arrivals.some((a) => a.sourceName === null)).toBe(true);
+  });
+});
+
+describe("a document nobody configured a channel for (decision 0161)", () => {
+  /**
+   * **An image was refused outright.** Nothing seeds a channel for
+   * `image`, so a photographed invoice reached *"process ap has no
+   * image intake channel"* and bounced to the supplier — a
+   * configuration gap reported as a document problem.
+   *
+   * Found on a real send: `attachments 1, captured 0, unreadable`.
+   */
+  const PNG = new Uint8Array([
+    0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d,
+  ]);
+
+  it("accepts an image, creating the channel on arrival", async () => {
+    await seedSource("ap-mailbox.acme@vibefinance-ai.com");
+    const message = messageWith("ap-mailbox.acme@vibefinance-ai.com", [
+      { filename: "invoice.png", contentType: "image/png", bytes: PNG },
+    ]);
+
+    await handleInboundEmail(message, env.DB, model);
+    expect(message.rejectedWith).toBeNull();
+  });
+
+  it("records the channel it made", async () => {
+    // **A customer should not be limited to the kinds of document
+    // somebody thought of in advance.**
+    await seedSource("ap-mailbox.acme@vibefinance-ai.com");
+    await handleInboundEmail(
+      messageWith("ap-mailbox.acme@vibefinance-ai.com", [
+        { filename: "invoice.png", contentType: "image/png", bytes: PNG },
+      ]),
+      env.DB,
+      model
+    );
+
+    const channel = await env.DB.prepare(
+      "SELECT structure FROM intake_channels WHERE process_id = 'ap' AND structure = 'image'"
+    ).first<{ structure: string }>();
+    expect(channel?.structure).toBe("image");
+  });
+
+  it("makes one channel, not one per message", async () => {
+    await seedSource("ap-mailbox.acme@vibefinance-ai.com");
+    for (let i = 0; i < 3; i++) {
+      await handleInboundEmail(
+        messageWith("ap-mailbox.acme@vibefinance-ai.com", [
+          { filename: `invoice-${i}.png`, contentType: "image/png", bytes: PNG },
+        ]),
+        env.DB,
+        model
+      );
+    }
+
+    const count = await env.DB.prepare(
+      "SELECT count(*) AS n FROM intake_channels WHERE structure = 'image'"
+    ).first<{ n: number }>();
+    expect(count?.n).toBe(1);
   });
 });

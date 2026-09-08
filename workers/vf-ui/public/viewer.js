@@ -125,7 +125,13 @@ async function loadInvoice(invoiceId) {
     const response = await fetch(`/api/invoices/${encodeURIComponent(invoiceId)}`);
     if (!response.ok) return;
     const body = await response.json();
-    stored = { facts: body.facts ?? {}, lines: body.lines ?? [], document: body.document ?? null };
+    stored = {
+      facts: body.facts ?? {},
+      lines: body.lines ?? [],
+      document: body.document ?? null,
+      // Whether the document could be read at all — decision 0161.
+      intake: body.intake ?? null,
+    };
     // **What is wrong on arrival**, not only after saving. Somebody
     // opening a document with three failures should be told, rather
     // than having to change something first (decision 0119).
@@ -547,6 +553,31 @@ function actionLink(name, { onclick, primary } = {}) {
   return node;
 }
 
+/**
+ * A document nothing could read — decision 0161.
+ *
+ * **Said before the exceptions, because it explains them.** Every
+ * arithmetic check fails on an invoice with no facts, and a person
+ * reading *"net plus VAT does not equal the total"* on an empty form
+ * is being told the wrong thing.
+ *
+ * Decision 0055 made an unreadable document an invoice with no facts,
+ * waiting for a person to key it — which is right. Nobody told the
+ * person.
+ */
+function unreadableNote() {
+  if (!stored.intake || stored.intake.readable) return null;
+
+  return el("div", { class: "unreadable" }, [
+    el("div", { text: t("viewer.unreadable") }),
+    // What was tried, for somebody who wants to know why — a scanned
+    // PDF and a corrupt file are different problems.
+    ...(stored.intake.attempted
+      ? [el("div", { class: "sm muted", text: `${t("viewer.tried")} ${stored.intake.attempted}` })]
+      : []),
+  ]);
+}
+
 function exceptionPanel() {
   return el("div", { class: "panel exceptions" }, [
     el("h3", { text: t("viewer.exceptions") }),
@@ -902,6 +933,7 @@ export async function openViewer(task, onClose) {
                   ),
               ]),
             ]),
+            unreadableNote(),
             exceptionPanel(),
           ]),
         ]),

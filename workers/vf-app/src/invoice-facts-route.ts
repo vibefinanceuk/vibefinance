@@ -369,6 +369,27 @@ export async function handleGetInvoice(db: D1Database, invoiceId: string): Promi
       document: document
         ? { contentType: document.content_type, documentType: document.document_type }
         : null,
+      /**
+       * Whether this document could be read at all — decision 0161.
+       *
+       * **The system knows and has never said.** Decision 0055 makes an
+       * undetectable document an invoice with no facts, waiting for a
+       * person — which is right, and it reaches them as an empty form
+       * with no explanation. They conclude the software is broken.
+       *
+       * `intake.structure` is empty when nothing was recognised, and
+       * `intake.attempted` lists what was tried. Both are already
+       * stored; nothing read them.
+       */
+      intake: {
+        structure: (facts as Record<string, unknown>)["intake.structure"] ?? null,
+        attempted: (facts as Record<string, unknown>)["intake.attempted"] ?? null,
+        // **Said rather than inferred.** A screen deciding this from an
+        // empty string would be a second place the rule lives.
+        readable:
+          typeof (facts as Record<string, unknown>)["intake.structure"] === "string" &&
+          (facts as Record<string, unknown>)["intake.structure"] !== "",
+      },
       validation: {
         passed: verdict.passed,
         checked: verdict.checked,
