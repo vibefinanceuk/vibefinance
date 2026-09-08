@@ -957,7 +957,9 @@ describe("the status card is gone (decision 0175)", () => {
       {
         ...TASK,
         createdAt: "2026-09-01 09:00:00",
-        lockedBy: { id: "u-alice", name: "Alice", email: "alice@acme.com", since: null },
+        // **Owned, not locked** — decision 0180. A claim says somebody
+        // is working on it now; ownership says whose it is.
+        ownedBy: { id: "u-alice", name: "Alice", email: "alice@acme.com" },
       },
       () => {}
     );
@@ -1032,21 +1034,21 @@ describe("what identifies the document sits in the heading (decision 0176)", () 
   it("says nobody has claimed it, rather than nothing", async () => {
     // **An absent line reads as a screen that forgot**, and unclaimed
     // is a real answer: anybody may take it.
-    await openWith({ createdAt: "2026-09-01 09:00:00", lockedBy: undefined });
+    await openWith({ createdAt: "2026-09-01 09:00:00", ownedBy: undefined });
     expect(document.querySelector(".subhead")?.textContent).toContain("Nobody yet");
   });
 
   it("names the owner where there is one", async () => {
     await openWith({
       createdAt: "2026-09-01 09:00:00",
-      lockedBy: { id: "u-a", name: "Alice", email: "alice@acme.com", since: null },
+      ownedBy: { id: "u-a", name: "Alice", email: "alice@acme.com" },
     });
     expect(document.querySelector(".subhead")?.textContent).toContain("alice@acme.com");
   });
 
   it("says nothing about ownership on a document with no stage", async () => {
     // A document opened from the manager is not work (decision 0167).
-    await openWith({ createdAt: undefined, stageId: null, lockedBy: undefined });
+    await openWith({ createdAt: undefined, stageId: null, ownedBy: undefined });
     expect(document.querySelector(".subhead")?.textContent).not.toContain("Owner");
   });
 });

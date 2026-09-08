@@ -542,8 +542,25 @@
     What a person needs before they start — decision 0175. Beneath the
     reference, where the status card used to sit below the fold.
   */
-  /* Inside the topbar, above its rule — decision 0176. */
-  .subhead { display: flex; gap: 18px; margin: 6px 0 0; }
+  /*
+    Four facts about this document, read as a list — decision 0180.
+
+    `Stage`, `Unique Ref`, `Waiting` and `Owner` were three different
+    treatments: a bold heading, a subtitle, and a row of two. They
+    answer the same kind of question — **what is this and where does it
+    stand** — so they read as one column, evenly spaced, in one voice.
+
+    The heading keeps its weight; everything under it is the same size
+    and colour.
+  */
+  .subhead { display: flex; flex-direction: column; gap: 4px; margin: 4px 0 0; }
+  .topbar .sub { margin: 4px 0 0; }
+  .topbar .sub,
+  .subhead > div {
+    font-size: var(--text-sm);
+    color: var(--text-secondary);
+    line-height: 1.5;
+  }
 
   .newrule { margin-top: 16px; }
 

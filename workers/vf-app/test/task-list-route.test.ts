@@ -503,3 +503,43 @@ describe("releasing appears where it applies (decision 0104)", () => {
     expect((await list("sarah"))[0].actions).toEqual([]);
   });
 });
+
+describe("who a task belongs to (decision 0180)", () => {
+  /**
+   * **`lockedBy` appears only once somebody claims a task.** A task
+   * assigned to a person and not yet claimed had no `lockedBy`, and the
+   * viewer read that as nobody — reporting *"Owner: Nobody yet"* about
+   * a task sitting in its owner's own queue.
+   *
+   * Assignment and claiming are different facts: decision 0104 records
+   * that a claim **is** a lock.
+   */
+  it("names the person a task is assigned to", async () => {
+    await seedInstance("inv-1", "validation", "v-1");
+    await seedTask("t-own", "validation", "v-1", { user: "alice" });
+    const tasks = await list("alice");
+
+    expect(tasks[0].ownedBy?.name).toBe("Alice");
+  });
+
+  it("names the team where a team owns it", async () => {
+    // *"The AP team"* tells somebody whether it is theirs to take.
+    await seedInstance("inv-1", "validation", "v-1");
+    await seedTask("t-team", "validation", "v-1", { team: "ap" });
+    const tasks = await list("alice");
+
+    expect(tasks[0].ownedBy?.name).toBe("ap");
+    expect(tasks[0].ownedBy?.email).toBeNull();
+  });
+
+  it("reports ownership and a claim separately", async () => {
+    // A claim says somebody is working on it now; ownership says whose
+    // it is. Both can be true and they are not the same.
+    await seedInstance("inv-1", "validation", "v-1");
+    await seedTask("t-both", "validation", "v-1", { team: "ap" }, "alice");
+    const tasks = await list("alice");
+
+    expect(tasks[0].ownedBy?.name).toBe("ap");
+    expect(tasks[0].ownership).toBe("mine");
+  });
+});

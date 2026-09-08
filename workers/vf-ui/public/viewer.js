@@ -769,11 +769,22 @@ function subhead(task) {
      * an absent line reads as a screen that forgot, and unclaimed is a
      * real and useful answer — it means anybody may take it.
      */
+    /**
+     * **Who it belongs to, not who has locked it** — decision 0180.
+     *
+     * This read `lockedBy`, which is set only once somebody **claims**
+     * a task — so a task sitting in its own owner's queue reported
+     * *"Owner: Nobody yet"*.
+     *
+     * Assignment and claiming are different facts (decision 0104: a
+     * claim **is** a lock). The owner is who it belongs to; a claim
+     * says somebody is working on it now.
+     */
     ...(task.stageId
       ? [
           el("div", {
             text: `${t("tasks.owner")} ${
-              task.lockedBy?.email ?? task.lockedBy?.name ?? t("tasks.unclaimed")
+              task.ownedBy?.email ?? task.ownedBy?.name ?? t("tasks.unclaimed")
             }`,
           }),
         ]

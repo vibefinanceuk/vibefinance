@@ -66,6 +66,8 @@ export interface TaskRow {
   /** What this person may do with it — see `TaskAction`. */
   actions: TaskAction[];
   /** Set only when `locked` — who holds it, and since when. */
+  /** Who it belongs to — decision 0180. Not the same as who has it. */
+  ownedBy?: { id: string; name: string; email: string | null };
   lockedBy?: { id: string; name: string; email: string | null; since: string | null };
   createdAt: string;
   instanceId: string | null;
@@ -104,6 +106,8 @@ interface Raw {
   claimed_at: string | null;
   claimed_by_name: string | null;
   claimed_by_email: string | null;
+  owner_email: string | null;
+  owner_name: string | null;
   created_at: string;
   instance_id: string | null;
   subject_type: string | null;
@@ -250,12 +254,15 @@ export async function handleListMyTasks(
          t.claimed_by, t.claimed_at, t.created_at,
          claimer.name AS claimed_by_name,
          claimer.email AS claimed_by_email,
+         owner.email AS owner_email,
+         owner.name AS owner_name,
          s.name AS stage_name, s.process_id,
          v.process_instance_id AS instance_id,
          pi.subject_type, pi.subject_id,
          h.supplier_vat_id, h.currency, h.issue_date, h.total_with_vat, h.facts_json
        FROM tasks t
        LEFT JOIN org_users claimer ON claimer.id = t.claimed_by
+       LEFT JOIN org_users owner ON owner.id = t.owner_user_id
        LEFT JOIN process_stages s ON s.id = t.stage_id
        LEFT JOIN stage_visits v ON v.id = t.stage_visit_id
        LEFT JOIN process_instances pi ON pi.id = v.process_instance_id
@@ -300,6 +307,31 @@ export async function handleListMyTasks(
       createdAt: row.created_at,
       instanceId: row.instance_id,
     };
+
+    /**
+     * **Who a task belongs to, which is not who has locked it** —
+     * decision 0180.
+     *
+     * `lockedBy` appears only once somebody **claims** a task. A task
+     * assigned to a person and not yet claimed had no `lockedBy`, and
+     * the viewer read that as nobody — reporting *"Owner: Nobody yet"*
+     * about a task sitting in its owner's own queue.
+     *
+     * Assignment and claiming are different facts (decision 0104: a
+     * claim **is** a lock). Both are reported now, and a screen can say
+     * whichever it means.
+     */
+    if (row.owner_user_id) {
+      task.ownedBy = {
+        id: row.owner_user_id,
+        name: row.owner_name ?? row.owner_user_id,
+        email: row.owner_email,
+      };
+    } else if (row.owner_team_id) {
+      // A team owns it, and nobody in particular does. Named, because
+      // *"the AP team"* tells somebody whether it is theirs to take.
+      task.ownedBy = { id: row.owner_team_id, name: row.owner_team_id, email: null };
+    }
 
     if (ownership === "locked" && row.claimed_by) {
       // Who and since when. "Locked" alone cannot distinguish five
