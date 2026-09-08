@@ -271,3 +271,13 @@ describe("a document that is not work (decision 0167)", () => {
     expect(document.querySelectorAll("#viewer .actionrow a")).toHaveLength(0);
   });
 });
+
+describe("the column picker has its own name (decision 0177)", () => {
+  it("does not borrow the two-column layout's class", async () => {
+    // **`.columns` meant two things** and the later rule won, so the
+    // viewer's layout was styled as a dropdown.
+    await openDocuments([DOC]);
+    expect(document.querySelector(".columnpicker")).not.toBeNull();
+    expect(document.querySelector("details.columns")).toBeNull();
+  });
+});

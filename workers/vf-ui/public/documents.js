@@ -244,7 +244,9 @@ function columnPicker() {
     })
   );
 
-  const picker = el("details", { class: "columns" }, [
+  // **Not `columns`** — decision 0177. That name belongs to the
+  // two-column layout the viewer and sources have used since 0108.
+  const picker = el("details", { class: "columnpicker" }, [
     el("summary", { title: t("documents.choosecolumns") }, [columnsIcon()]),
     list,
   ]);

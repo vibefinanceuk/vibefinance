@@ -515,11 +515,19 @@
     cursor: pointer; white-space: nowrap;
   }
 
-  /* Which columns to show, kept in the browser (decision 0164). */
-  .columns { position: relative; margin-left: auto; }
-  .columns summary { list-style: none; cursor: pointer; color: var(--text-muted); padding: 7px 9px; border: 0.5px solid var(--border-strong); border-radius: var(--radius); display: inline-flex; }
-  .columns summary::-webkit-details-marker { display: none; }
-  .columns summary:hover { color: var(--text-accent); border-color: var(--border-accent); }
+  /*
+    Which columns to show, kept in the browser (decision 0164).
+
+    **Named `columnpicker`, not `columns`** — decision 0177. It was
+    `columns`, which the viewer and the sources screen have used for a
+    **two-column layout** since decision 0108. This rule came later and
+    won, so the viewer's own layout was styled as a dropdown and its
+    panels collapsed against each other.
+  */
+  .columnpicker { position: relative; margin-left: auto; }
+  .columnpicker summary { list-style: none; cursor: pointer; color: var(--text-muted); padding: 7px 9px; border: 0.5px solid var(--border-strong); border-radius: var(--radius); display: inline-flex; }
+  .columnpicker summary::-webkit-details-marker { display: none; }
+  .columnpicker summary:hover { color: var(--text-accent); border-color: var(--border-accent); }
   .columnlist {
     position: absolute; right: 0; top: calc(100% + 6px); z-index: 5;
     min-width: 170px; padding: 10px 12px;

@@ -167,3 +167,33 @@ describe("a box somebody writes in (decision 0156)", () => {
     expect(page).toContain("#sentence { max-width: 62ch; }");
   });
 });
+
+describe("class names mean one thing (decision 0177)", () => {
+  /**
+   * **`.columns` meant two things.** The viewer and the sources screen
+   * have used it for a two-column layout since decision 0108; decision
+   * 0164's column picker took the same name, came later in the
+   * stylesheet, and won — so the viewer's layout was styled as a
+   * dropdown and its panels collapsed against each other.
+   *
+   * Reported as the process flow touching the seller and buyer boxes.
+   */
+  // The layout rules live in the page, not in the tokens.
+  const css = stylesheets["index.html"];
+
+  it("keeps .columns as a grid", async () => {
+    const rule = css.slice(css.indexOf(".columns {"));
+    expect(rule.slice(0, rule.indexOf("}"))).toContain("display: grid");
+  });
+
+  it("gives the picker its own name", () => {
+    expect(css).toContain(".columnpicker");
+  });
+
+  it("styles the picker, whichever screen draws it", () => {
+    // The rendered check lives in documents.test.ts, which opens the
+    // screen; this asserts the stylesheet has something to apply.
+    const rule = css.slice(css.indexOf(".columnpicker {"));
+    expect(rule.slice(0, rule.indexOf("}"))).toContain("position: relative");
+  });
+});
