@@ -627,3 +627,114 @@ describe("an invoice reports how it validates on arrival (decision 0119)", () =>
     expect(body.validation.passed).toBe(true);
   });
 });
+
+describe("a line keeps the facts nobody sent (decision 0174)", () => {
+  /**
+   * **Saving a line destroyed the facts within it.**
+   *
+   * `handleUpsertInvoice` replaces the whole line set — right, and it
+   * says why: *"never a partial merge, so a caller can never end up
+   * with a mix of old and new lines by accident."* That protects the
+   * **set** of lines.
+   *
+   * The viewer sends only the fields it renders as inputs, and decision
+   * 0171 made `description` read-only. So saving at Validation wrote
+   * back eight lines with no descriptions, and the extracted text was
+   * gone — reported as *"the descriptions appeared in validation, but
+   * not in approval"*, which was the data and not the screen.
+   *
+   * Decision 0120 fixed exactly this for header facts.
+   */
+  async function lineWith(facts: Record<string, unknown>) {
+    await seedInvoice("inv-lines", {});
+    await env.DB.prepare(
+      `INSERT INTO invoice_lines (id, invoice_id, line_number, description, amount, facts_json)
+       VALUES ('l-1', 'inv-lines', 1, ?, ?, ?)`
+    )
+      .bind(
+        (facts.description as string) ?? null,
+        (facts["BT-131"] as number) ?? null,
+        JSON.stringify(facts)
+      )
+      .run();
+  }
+
+  async function factsOfLineOne() {
+    const row = await env.DB.prepare(
+      "SELECT facts_json FROM invoice_lines WHERE invoice_id = 'inv-lines' AND line_number = 1"
+    ).first<{ facts_json: string }>();
+    return JSON.parse(row?.facts_json ?? "{}");
+  }
+
+  it("keeps a description the screen never sent back", async () => {
+    await lineWith({ "BT-131": 1797.47, description: "International Freight" });
+
+    await handleKeyInvoiceFields(
+      env.DB,
+      "inv-lines",
+      { facts: {}, lines: [{ lineNumber: 1, facts: { "BT-131": 1797.47, "BT-129": 1 } }] } as never,
+      "u-dan"
+    );
+
+    expect((await factsOfLineOne()).description).toBe("International Freight");
+  });
+
+  it("lets what was sent win", async () => {
+    await lineWith({ "BT-131": 100, description: "Old" });
+
+    await handleKeyInvoiceFields(
+      env.DB,
+      "inv-lines",
+      { facts: {}, lines: [{ lineNumber: 1, facts: { "BT-131": 250 } }] } as never,
+      "u-dan"
+    );
+
+    expect((await factsOfLineOne())["BT-131"]).toBe(250);
+  });
+
+  it("still replaces the set, so a removed line goes", async () => {
+    // **The guarantee that was right stays right**: a caller cannot end
+    // up with a mix of old and new lines.
+    await lineWith({ "BT-131": 100, description: "One" });
+    await env.DB.prepare(
+      `INSERT INTO invoice_lines (id, invoice_id, line_number, amount, facts_json)
+       VALUES ('l-2', 'inv-lines', 2, 200, '{"BT-131":200}')`
+    ).run();
+
+    await handleKeyInvoiceFields(
+      env.DB,
+      "inv-lines",
+      { facts: {}, lines: [{ lineNumber: 1, facts: { "BT-131": 100 } }] } as never,
+      "u-dan"
+    );
+
+    const count = await env.DB.prepare(
+      "SELECT count(*) AS n FROM invoice_lines WHERE invoice_id = 'inv-lines'"
+    ).first<{ n: number }>();
+    expect(count?.n).toBe(1);
+  });
+
+  it("gives a new line nothing to inherit", async () => {
+    // A line number that did not exist has no previous facts, and must
+    // not pick up another line's.
+    await lineWith({ "BT-131": 100, description: "One" });
+
+    await handleKeyInvoiceFields(
+      env.DB,
+      "inv-lines",
+      {
+        facts: {},
+        lines: [
+          { lineNumber: 1, facts: { "BT-131": 100 } },
+          { lineNumber: 2, facts: { "BT-131": 200 } },
+        ],
+      } as never,
+      "u-dan"
+    );
+
+    const row = await env.DB.prepare(
+      "SELECT facts_json FROM invoice_lines WHERE invoice_id = 'inv-lines' AND line_number = 2"
+    ).first<{ facts_json: string }>();
+    expect(JSON.parse(row?.facts_json ?? "{}").description).toBeUndefined();
+  });
+});

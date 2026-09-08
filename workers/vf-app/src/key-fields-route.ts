@@ -349,12 +349,54 @@ export async function handleKeyInvoiceFields(
     );
   }
 
+  /**
+   * A line keeps the facts nobody sent — decision 0174.
+   *
+   * `handleUpsertInvoice` replaces the whole line set, which is right
+   * and says why: *"never a partial merge, so a caller can never end up
+   * with a mix of old and new lines by accident."* That protects the
+   * **set** of lines.
+   *
+   * **It destroyed the facts within each one.** The viewer sends only
+   * the fields it renders as inputs, and decision 0171 made
+   * `description` read-only — so saving at Validation wrote back eight
+   * lines with no descriptions, and the extracted text was gone.
+   *
+   * Reported as *"the descriptions appeared in validation, but not in
+   * approval"*, which was the data and not the screen.
+   *
+   * **Decision 0120 fixed exactly this for header facts** and lines
+   * were never given the same treatment. Merged by line number, which
+   * is what a person editing line three means by line three.
+   */
+  const previousLineFacts = new Map<number, Record<string, unknown>>();
+  for (const row of existingLines.results) {
+    try {
+      previousLineFacts.set(row.line_number, JSON.parse(row.facts_json || "{}"));
+    } catch {
+      // A line whose facts will not parse has none to preserve.
+    }
+  }
+
+  const mergedLines = Array.isArray(body.lines)
+    ? body.lines.map((line) => {
+        const supplied = line as { lineNumber?: number; facts?: Record<string, unknown> };
+        const previous =
+          supplied.lineNumber === undefined
+            ? {}
+            : previousLineFacts.get(supplied.lineNumber) ?? {};
+
+        // What was sent wins; what was not sent survives.
+        return { ...supplied, facts: { ...previous, ...(supplied.facts ?? {}) } };
+      })
+    : body.lines;
+
   // Reuses the ordinary writer, so the structured columns stay in step
   // with facts_json exactly as they do on every other path.
   const upsert = await handleUpsertInvoice(db, {
     id: invoiceId,
     facts: merged,
-    ...(body.lines === undefined ? {} : { lines: body.lines }),
+    ...(body.lines === undefined ? {} : { lines: mergedLines }),
   } as Parameters<typeof handleUpsertInvoice>[1]);
   if (upsert.status >= 400) return upsert;
 
