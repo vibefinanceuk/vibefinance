@@ -219,7 +219,19 @@ Decision 0115 gave the seller and buyer their own panels, and most of
 their fields default to `read`. If they look thin, that is configuration
 (0114) rather than code — adjustable per customer without a deployment.
 
-### 5. "Hold it for review" cannot be said
+### 5. Two actions that sound like the same thing
+
+Found twice on the first day of real use (decisions 0153, 0158).
+*"Hold it for review"* wants `assign_task` and the vocabulary offers
+`hold_until`, which holds until a **date**. *"Assign to the AP team"*
+wants `assign_task` and the model chose `assign_org`, which assigns an
+**operating unit** (0111).
+
+Both are the same question: **does the compiler's prompt teach the
+difference, or does the vocabulary stop sounding ambiguous?** A prompt
+is cheaper and keeps the closed set small, which 0031 argues for.
+
+### 6. "Hold it for review" cannot be said
 
 Found on the first real use of the rule screen (decision 0153). The
 vocabulary's `hold_until` holds until a **date**; there is no action

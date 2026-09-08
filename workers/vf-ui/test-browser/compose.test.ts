@@ -308,3 +308,46 @@ describe("before anything is written", () => {
     expect(document.body.textContent).toContain("Write what should happen first");
   });
 });
+
+describe("a rule that is one condition (decision 0158)", () => {
+  /**
+   * **The interpreter has always allowed it.** `validateNode` falls
+   * through to a single condition, and *"if the duplicate probability
+   * is over 60%"* compiles to exactly that — no combinator.
+   *
+   * The read-back assumed a combinator, found no `all`, defaulted to
+   * `any`, and rendered an empty list. **So the screen showed a rule
+   * with no conditions when the rule had one** — the trap decision 0153
+   * exists to prevent.
+   *
+   * Found on a real rule, in a screenshot.
+   */
+  const BARE = {
+    status: "compiled",
+    ruleId: "r-1",
+    version: 1,
+    conditions: { field: "BT-112", operator: "greater_than", value: 10000 },
+    actions: [{ type: "hold_until", params: {} }],
+  };
+
+  it("renders the condition rather than an empty list", async () => {
+    await compileWith(BARE);
+    const back = document.querySelector(".readback");
+
+    expect(back?.textContent).toContain("total with VAT");
+    expect(back?.textContent).toContain("is more than");
+    expect(back?.textContent).toContain("10000");
+  });
+
+  it("does not claim a combinator that is not there", async () => {
+    // "When any of these is true:" above nothing was the visible
+    // symptom, and it is a different rule from the one that compiled.
+    await compileWith(BARE);
+    expect(document.querySelector(".readback")?.textContent).not.toContain("any of these");
+  });
+
+  it("still says what happens", async () => {
+    await compileWith(BARE);
+    expect(document.querySelector(".readback")?.textContent).toContain("Hold it");
+  });
+});

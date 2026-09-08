@@ -90,6 +90,24 @@ function conditionClause(condition) {
  * whatever depth it is given rather than assuming one level.
  */
 function combinatorClauses(node, depth = 0) {
+  /**
+   * **A rule may be one condition, with no combinator at all** —
+   * decision 0158.
+   *
+   * The interpreter has always allowed it: `validateNode` falls through
+   * to a single condition, and *"if the duplicate probability is over
+   * 60%"* compiles to exactly that.
+   *
+   * This assumed a combinator, found no `all`, defaulted to `any`, and
+   * rendered an empty list — **so the screen showed a rule with no
+   * conditions when the rule had one.** Which is the trap decision 0153
+   * exists to prevent: somebody confirming examples of a rule they
+   * cannot correctly read.
+   */
+  if (!node.all && !node.any) {
+    return [conditionClause(node)];
+  }
+
   const kind = node.all ? "all" : "any";
   const children = node[kind] ?? [];
 

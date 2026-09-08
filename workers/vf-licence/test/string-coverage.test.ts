@@ -320,3 +320,48 @@ describe("every declared field has a label (decision 0114)", () => {
     expect(body.strings["field.bt-151"]).toBe("VAT category");
   });
 });
+
+describe("every action and operator has a word (decision 0158)", () => {
+  /**
+   * **Derived from the vocabulary, not from a list somebody keeps.**
+   *
+   * `action.assign_org` rendered as its own key on the rule screen,
+   * because decision 0111 added the action and nobody wrote the label —
+   * and until decision 0153 nothing displayed an action's name, so
+   * nobody saw.
+   *
+   * A hand-kept list would have had the same gap, which is the shape
+   * decision 0107 already records: the field-label test decayed until
+   * it derived its expectations from the code.
+   */
+  it("labels every action the vocabulary defines", async () => {
+    const { ACTIONS } = await import("@vibefinance/shared");
+
+    const rows = await env.CONTROL_DB.prepare(
+      "SELECT key FROM ui_strings WHERE key LIKE 'action.%' AND locale = 'en'"
+    ).all<{ key: string }>();
+    const labelled = new Set(rows.results.map((r: { key: string }) => r.key));
+
+    const missing = ACTIONS.filter((a) => !labelled.has(`action.${a}`));
+
+    expect(
+      missing,
+      `Actions with no label: ${missing.join(", ")}. A screen rendering ` +
+        "`action.assign_org` is a screen showing a customer our column names."
+    ).toEqual([]);
+  });
+
+  it("labels every operator too", async () => {
+    // The read-back renders these as a rule's grammar (decision 0153),
+    // so a missing one puts a key mid-sentence.
+    const { OPERATORS } = await import("@vibefinance/shared");
+
+    const rows = await env.CONTROL_DB.prepare(
+      "SELECT key FROM ui_strings WHERE key LIKE 'operator.%' AND locale = 'en'"
+    ).all<{ key: string }>();
+    const labelled = new Set(rows.results.map((r: { key: string }) => r.key));
+
+    const missing = OPERATORS.filter((o) => !labelled.has(`operator.${o}`));
+    expect(missing, `Operators with no label: ${missing.join(", ")}`).toEqual([]);
+  });
+});
