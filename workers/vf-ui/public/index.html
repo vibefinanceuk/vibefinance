@@ -357,6 +357,14 @@
 
   .stage .count { display: block; font-size: var(--text-sm); opacity: 0.85; font-weight: 400; }
 
+  /*
+    A stage the document has not reached — decision 0151.
+
+    Dimmed rather than hidden, so the sequence still reads as a whole
+    and somebody can see what is still to come.
+  */
+  .stage.ahead { opacity: 0.55; }
+
   .rule { display: flex; gap: 16px; padding: 12px 0; border-bottom: 0.5px solid var(--border); align-items: baseline; }
   .rule:last-child { border-bottom: none; }
   .rule .what { flex: 1; }

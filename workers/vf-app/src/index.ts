@@ -43,6 +43,7 @@ import { handleGetExtractionSettings, handleUpdateExtractionSettings } from "./e
 import { handleToMarkdownDiagnostic } from "./tomarkdown-diagnostic.js";
 import { handleCreateSource, handleListSources , handleSetSourceEmail , handleListAllSources , handleListProcesses , handleRetireSource, handleRenameSource } from "./source-route.js";
 import { handleListRules, handleRuleStages } from "./rules-list-route.js";
+import { handleInvoiceProgress } from "./invoice-progress-route.js";
 import { handleIngestPurchaseOrder, handleGetPurchaseOrder } from "./purchase-order-route.js";
 import { handleGetRetention, handleSetRetention, handleListBeyondRetention } from "./retention-route.js";
 import { handleCaptureFromSource } from "./source-capture-route.js";
@@ -1281,6 +1282,22 @@ export default {
 
 
     // What rules exist, and where they run — decision 0149.
+    // Where an invoice has been, and how long it took — decision 0151.
+    const progressMatch = pathname.match(/^\/invoices\/([^/]+)\/progress$/);
+    if (progressMatch && request.method === "GET") {
+      const { db } = resolveTenant(request, env);
+      const auth = await authenticatePerson(db, request, env);
+      if (!auth.user) return json({ error: auth.reason }, 401);
+      // Anybody who may look at an invoice may see where it has been.
+      if (!(await hasPermission(db, auth.user.id, "AP.Review"))) {
+        return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
+      }
+
+      const result = await handleInvoiceProgress(db, progressMatch[1]);
+      return json(result.body, result.status);
+    }
+
+
     if (pathname === "/rules" && request.method === "GET") {
       const { db } = resolveTenant(request, env);
       const auth = await authenticatePerson(db, request, env);

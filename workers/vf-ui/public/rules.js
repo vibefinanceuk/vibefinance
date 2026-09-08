@@ -1,6 +1,7 @@
 import { t } from "/strings.js";
 import { el, frame, topbar, setCurrentScreen } from "/tasks.js";
 import { icon } from "/icons.js";
+import { processRow } from "/process-row.js";
 
 /**
  * What rules exist, and where they run — decision 0149.
@@ -47,45 +48,6 @@ function note(message) {
   if (box) box.textContent = message;
 }
 
-/**
- * The process, as a sequence.
- *
- * **Chevrons rather than tabs**, because this is an order and the shape
- * should say so. A tab row says "pick one of these"; a sequence says
- * "the document passes through these, in this order".
- *
- * A stage with no rules is shown rather than hidden: somebody wondering
- * why nothing happens at Coding needs to see that Coding is empty.
- */
-function processRow() {
-  return el(
-    "div",
-    { class: "process" },
-    stages.map((stage) =>
-      el(
-        "button",
-        {
-          class: stage.id === chosen ? "stage here" : "stage",
-          onclick: () => {
-            chosen = stage.id;
-            open();
-          },
-        },
-        [
-          el("span", { text: stage.name }),
-          el("span", {
-            class: "count",
-            text:
-              stage.ruleCount > 0
-                ? String(stage.ruleCount)
-                : t("rules.norules"),
-          }),
-        ]
-      )
-    )
-  );
-}
-
 function ruleRow(rule) {
   return el("div", { class: "rule" }, [
     el("div", { class: "what" }, [
@@ -119,7 +81,23 @@ function render() {
     frame(
       el("div", {}, [
         topbar(t("nav.rules"), t("rules.subtitle")),
-        el("div", { class: "panel" }, [processRow()]),
+        el("div", { class: "panel" }, [
+          processRow(
+            // The line beneath each chevron, built here rather than at
+            // load: `t()` needs the strings, and a detail computed
+            // before they arrive is a detail built from nothing.
+            stages.map((stage) => ({
+              ...stage,
+              detail:
+                stage.ruleCount > 0 ? String(stage.ruleCount) : t("rules.norules"),
+            })),
+            chosen,
+            (id) => {
+              chosen = id;
+              open();
+            }
+          ),
+        ]),
         el("div", { class: "panel" }, [
           el("h3", { text: stage ? stage.name : t("rules.atstage") }),
           el("p", { class: "sm muted", text: t("rules.order") }),

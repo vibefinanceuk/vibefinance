@@ -13,6 +13,7 @@
 import { t } from "/strings.js";
 import { el, frame, topbar } from "/tasks.js";
 import { icon } from "/icons.js";
+import { processRow } from "/process-row.js";
 
 let current = null;
 /** The line table's working state — decision 0109. */
@@ -40,6 +41,64 @@ let canEditAnything = true;
  * five — and reasonably concluded nothing had saved.
  */
 let stored = { facts: {}, lines: [], document: null };
+
+/**
+ * Where this invoice has been — decision 0151.
+ *
+ * The operator's idea, from the rules screen's chevrons: **the same
+ * display at the head of the viewer**, with the current stage marked
+ * and how long each took beneath.
+ *
+ * Nothing had to be recorded for it. `stage_visits` has held a
+ * timestamp per visit since decision 0009; leaving is the next visit's
+ * arrival, and the duration is the gap.
+ */
+let progress = { inProcess: false, stages: [] };
+
+async function loadProgress(invoiceId) {
+  progress = { inProcess: false, stages: [] };
+  try {
+    const response = await fetch(`/api/invoices/${encodeURIComponent(invoiceId)}/progress`);
+    if (response.ok) progress = await response.json();
+  } catch {
+    // A path nobody can show is not a document nobody can key. The
+    // viewer works without it.
+  }
+}
+
+/**
+ * The chevron row, with what happened at each stage beneath.
+ *
+ * **Time, in the unit a person would use.** "4d 5h" and "40m", because
+ * somebody scanning wants to know whether a stage took a moment or a
+ * fortnight — the server decides the words, so a German customer reads
+ * them in German.
+ */
+function progressRow() {
+  if (!progress.inProcess || progress.stages.length === 0) return null;
+
+  return el("div", { class: "panel" }, [
+    processRow(
+      progress.stages.map((stage) => ({
+        ...stage,
+        detail:
+          stage.state === "here"
+            ? t("progress.since").replace("{when}", shortWhen(stage.enteredAt))
+            : stage.duration ?? "",
+      })),
+      progress.currentStageId,
+      // **No handler.** A chevron here reports where the document has
+      // been; it is not a place to send it.
+      null
+    ),
+  ]);
+}
+
+/** A timestamp somebody can read at a glance. */
+function shortWhen(when) {
+  if (!when) return "";
+  return when.slice(0, 16).replace(" ", " ");
+}
 
 async function loadInvoice(invoiceId) {
   stored = { facts: {}, lines: [], document: null };
@@ -659,6 +718,7 @@ export async function openViewer(task, onClose) {
   // Cleared and then filled by `loadInvoice`, so one document's
   // exceptions never appear against another.
   await loadInvoice(task.subject.id);
+  await loadProgress(task.subject.id);
   // The lines as stored, so keyed ones come back. Held by field code,
   // which is what the table edits.
   lines = stored.lines.map((line) => ({ ...line.facts }));
@@ -748,6 +808,9 @@ export async function openViewer(task, onClose) {
         status,
         // Fields beside actions, rather than fields above a footer.
         // Actions collected in one place (decision 0108).
+        // Above the columns, because it is context for everything
+        // below it rather than one panel among them.
+        progressRow(),
         el("div", { class: "columns" }, [
           el("div", {}, [
             // Seller and buyer side by side, in the space the four

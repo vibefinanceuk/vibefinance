@@ -1,0 +1,136 @@
+import type { RouteResult } from "./examples-route.js";
+
+/**
+ * Where an invoice has been, and how long it took — decision 0151.
+ *
+ * The operator's own idea, from the rules screen's chevrons:
+ *
+ * > It might be a good idea to include the very same display at the head
+ * > of the invoice viewer, with the current stage highlighted... Enter
+ * > and Leave timestamps, so it's clear the progression through the
+ * > process, and also the duration at each stage.
+ *
+ * **Nothing had to be recorded for this.** `stage_visits` has held a
+ * timestamp per visit since decision 0009; the *leaving* time is the
+ * next visit's arrival, and the duration is the gap between them.
+ *
+ * So the data existed and nobody had asked it this question.
+ */
+
+interface VisitRow {
+  stage_id: string;
+  outcome: string;
+  created_at: string;
+}
+
+/**
+ * How long, in words rather than milliseconds.
+ *
+ * **The unit a person would use.** Four days is "4 days"; forty minutes
+ * is "40m". Somebody scanning a row wants to know whether a stage took
+ * a moment or a fortnight, and a precise figure in seconds answers a
+ * question nobody asked.
+ */
+function durationBetween(from: string, to: string): string | null {
+  const ms = Date.parse(to.replace(" ", "T") + "Z") - Date.parse(from.replace(" ", "T") + "Z");
+  if (!Number.isFinite(ms) || ms < 0) return null;
+
+  const minutes = Math.floor(ms / 60000);
+  if (minutes < 1) return "under a minute";
+  if (minutes < 60) return `${minutes}m`;
+
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ${minutes % 60}m`;
+
+  const days = Math.floor(hours / 24);
+  return `${days}d ${hours % 24}h`;
+}
+
+export async function handleInvoiceProgress(
+  db: D1Database,
+  invoiceId: string
+): Promise<RouteResult> {
+  const instance = await db
+    .prepare(
+      `SELECT id, process_id, current_stage_id, status, created_at
+       FROM process_instances
+       WHERE subject_type = 'invoice' AND subject_id = ?
+       ORDER BY created_at DESC LIMIT 1`
+    )
+    .bind(invoiceId)
+    .first<{
+      id: string;
+      process_id: string;
+      current_stage_id: string;
+      status: string;
+      created_at: string;
+    }>();
+
+  if (!instance) {
+    // **A real state, not a failure.** An invoice captured outside a
+    // process has no path to show, and saying so is better than an
+    // empty row of chevrons implying it has not started.
+    return { status: 200, body: { inProcess: false, stages: [] } };
+  }
+
+  const stages = await db
+    .prepare(
+      "SELECT id, name, sequence FROM process_stages WHERE process_id = ? ORDER BY sequence"
+    )
+    .bind(instance.process_id)
+    .all<{ id: string; name: string; sequence: number }>();
+
+  const visits = await db
+    .prepare(
+      `SELECT stage_id, outcome, created_at FROM stage_visits
+       WHERE process_instance_id = ? ORDER BY created_at, id`
+    )
+    .bind(instance.id)
+    .all<VisitRow>();
+
+  return {
+    status: 200,
+    body: {
+      inProcess: true,
+      currentStageId: instance.current_stage_id,
+      status: instance.status,
+      stages: stages.results.map((stage) => {
+        const own = visits.results.filter((v) => v.stage_id === stage.id);
+        const isCurrent = stage.id === instance.current_stage_id;
+
+        if (own.length === 0) {
+          // Ahead of the document. Named rather than omitted, because
+          // the sequence is the point: somebody needs to see what is
+          // still to come.
+          return { id: stage.id, name: stage.name, state: "ahead" };
+        }
+
+        // The most recent visit is the one being described. A stage
+        // visited twice reports its latest, and says it happened twice.
+        const latest = own[own.length - 1];
+        const index = visits.results.indexOf(latest);
+        const next = visits.results[index + 1];
+
+        return {
+          id: stage.id,
+          name: stage.name,
+          state: isCurrent ? "here" : "behind",
+          enteredAt: latest.created_at,
+          // **Null while it is still here.** Leaving is the next
+          // visit's arrival, so a stage nothing followed has not been
+          // left.
+          leftAt: next?.created_at ?? null,
+          duration: next ? durationBetween(latest.created_at, next.created_at) : null,
+          /**
+           * **A returned invoice comes back.** Decision 0075 makes
+           * returning a first-class action, so a stage can be visited
+           * more than once — and a timeline showing one visit would
+           * quietly lose the fact that somebody sent it back.
+           */
+          ...(own.length > 1 ? { visits: own.length } : {}),
+          outcome: latest.outcome,
+        };
+      }),
+    },
+  };
+}

@@ -68,6 +68,9 @@ const KEYS_THE_INTERFACE_USES = [
   "rulestate.paused",
   "rulestate.awaiting_confirmation",
   "rulestate.draft",
+  // An invoice's path (decision 0151).
+  "progress.since",
+  "progress.revisited",
   // The mood control (decision 0139).
   "mood.label",
   "mood.day",

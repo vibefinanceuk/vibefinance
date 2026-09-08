@@ -80,6 +80,7 @@ export default defineConfig({
       "/sources.js": resolve(__dirname, "public/sources.js"),
       "/mood.js": resolve(__dirname, "public/mood.js"),
       "/icons.js": resolve(__dirname, "public/icons.js"),
+      "/process-row.js": resolve(__dirname, "public/process-row.js"),
       "/rules.js": resolve(__dirname, "public/rules.js"),
     },
   },

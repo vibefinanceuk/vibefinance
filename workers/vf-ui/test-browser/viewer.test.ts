@@ -86,6 +86,8 @@ const STRINGS = {
     "action.return": "Return",
     "action.whyreason": "Give a reason.",
     "viewer.actionfailed": "That could not be done.",
+    "progress.since": "here since {when}",
+    "progress.revisited": "This invoice came back to this stage.",
     "viewer.document": "Document",
     "viewer.nodocument": "No document retained",
   },
@@ -725,5 +727,94 @@ describe("the same screen serves review (decision 0142)", () => {
 
     const labels = [...document.querySelectorAll(".actionlink span")].map((n) => n.textContent);
     expect(labels).toContain("Save");
+  });
+});
+
+describe("where the invoice has been (decision 0151)", () => {
+  /**
+   * The operator's idea, from the rules screen's chevrons: **the same
+   * display at the head of the viewer**, with the current stage marked
+   * and how long each took beneath.
+   */
+  const PROGRESS = {
+    inProcess: true,
+    currentStageId: "validation",
+    stages: [
+      { id: "intake", name: "Intake", state: "behind", duration: "40m", enteredAt: "2026-09-01 09:00:00" },
+      { id: "validation", name: "Validation", state: "here", enteredAt: "2026-09-01 09:40:00", duration: null },
+      { id: "approval", name: "Approval", state: "ahead" },
+    ],
+  };
+
+  async function openWithProgress(progress: unknown) {
+    stubFetch({
+      "/api/code-lists": { fields: {} },
+      "/api/ui-strings": STRINGS,
+      "/api/field-visibility": FIELDS,
+      "/api/invoices/inv-1": {
+        facts: {},
+        lines: [],
+        validation: { passed: true, checked: [], failures: [] },
+      },
+      "/api/invoices/inv-1/document-url": { url: null },
+      "/api/invoices/inv-1/progress": progress,
+    });
+
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    await openViewer(TASK, () => {});
+    await new Promise((r) => setTimeout(r, 0));
+  }
+
+  it("shows the whole sequence, not just where it is", async () => {
+    await openWithProgress(PROGRESS);
+    const names = [...document.querySelectorAll(".stage span:first-child")].map(
+      (s) => s.textContent
+    );
+    expect(names).toEqual(["Intake", "Validation", "Approval"]);
+  });
+
+  it("marks the stage it is at", async () => {
+    await openWithProgress(PROGRESS);
+    expect(document.querySelector(".stage.here span:first-child")?.textContent).toBe("Validation");
+  });
+
+  it("dims what is still to come rather than hiding it", async () => {
+    // **The sequence still reads as a whole**, and somebody can see
+    // what is left.
+    await openWithProgress(PROGRESS);
+    const ahead = document.querySelector(".stage.ahead span:first-child");
+    expect(ahead?.textContent).toBe("Approval");
+  });
+
+  it("says how long a finished stage took", async () => {
+    await openWithProgress(PROGRESS);
+    expect(document.body.textContent).toContain("40m");
+  });
+
+  it("says how long it has been at the current one", async () => {
+    await openWithProgress(PROGRESS);
+    expect(document.body.textContent).toContain("here since");
+  });
+
+  it("offers no chevron to click", async () => {
+    // **It reports where the document has been.** It is not a place to
+    // send it.
+    await openWithProgress(PROGRESS);
+    const stages = [...document.querySelectorAll(".stage")];
+    expect(stages.every((s) => s.tagName === "DIV")).toBe(true);
+  });
+
+  it("shows nothing at all for an invoice in no process", async () => {
+    // An empty row of chevrons would imply it has not started.
+    await openWithProgress({ inProcess: false, stages: [] });
+    expect(document.querySelector(".process")).toBeNull();
+  });
+
+  it("still opens when the path cannot be loaded", async () => {
+    // A path nobody can show is not a document nobody can key.
+    await openWithProgress({ inProcess: false, stages: [] });
+    expect(document.getElementById("f-BT-112")).not.toBeNull();
   });
 });
