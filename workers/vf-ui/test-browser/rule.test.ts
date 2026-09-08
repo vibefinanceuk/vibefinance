@@ -49,6 +49,15 @@ const STRINGS = {
     "readback.when_all": "When all of these are true:",
     "readback.then": "Then:",
     "action.hold_until": "Hold it",
+    "compose.examples": "Worked examples",
+    "compose.examplesnote": "Each was run through the real rule.",
+    "compose.fires": "Fires",
+    "compose.quiet": "Stays quiet",
+    "compose.confirm": "Confirm",
+    "compose.confirmed": "Confirmed",
+    "compose.activate": "Activate this rule",
+    "compose.confirmfirst": "Confirm {n} more first.",
+    "compose.allconfirmed": "Every example confirmed.",
   },
 };
 
@@ -96,6 +105,14 @@ async function open(rule = ruleWith(), calls: string[] = []) {
       "/api/field-visibility": FIELDS,
       "/api/rules/r-1": rule,
       "/api/rules/r-1/enabled": { ruleId: "r-1", enabled: false },
+      "/api/rules/r-1/versions/3/examples": {
+        examples: [
+          { id: "e1", expectMatch: true, invoice: { "BT-112": 12400 }, confirmedBy: null },
+          { id: "e2", expectMatch: false, invoice: { "BT-112": 800 }, confirmedBy: null },
+        ],
+      },
+      "/api/rules/examples/e1/confirm": {},
+      "/api/rules/r-1/versions/3/activate": {},
     },
     calls
   );
@@ -188,5 +205,82 @@ describe("writing a new version", () => {
     await open();
     const labels = [...document.querySelectorAll("button")].map((b) => b.textContent);
     expect(labels.some((l) => l?.includes("Write a new version"))).toBe(true);
+  });
+});
+
+describe("confirming from the rule screen (decision 0157)", () => {
+  /**
+   * **The detail screen showed a count and no way to act on it.**
+   * Decision 0153 put confirmation on the compose screen, immediately
+   * after compiling; navigating away stranded the rule, and the list
+   * said *"2 to confirm"* with nowhere to do it.
+   *
+   * Reported exactly that way.
+   */
+  function waiting() {
+    return ruleWith({
+      versions: [
+        {
+          version: 3,
+          sourceText: "A new wording",
+          conditions: { all: [{ field: "BT-112", operator: "greater_than", value: 10000 }] },
+          actions: [{ type: "hold_until", params: {} }],
+          approvedBy: null,
+          approvedAt: null,
+          isLive: false,
+          examplesTotal: 2,
+          examplesConfirmed: 0,
+        },
+      ],
+    });
+  }
+
+  it("shows the examples waiting on somebody", async () => {
+    await open(waiting());
+    expect(document.querySelectorAll(".example")).toHaveLength(2);
+  });
+
+  it("says what each does, in plain terms", async () => {
+    await open(waiting());
+    const verdicts = [...document.querySelectorAll(".verdict")].map((v) => v.textContent);
+    expect(verdicts).toEqual(["Fires", "Stays quiet"]);
+  });
+
+  it("offers the gate, closed until they are confirmed", async () => {
+    await open(waiting());
+    const activate = [...document.querySelectorAll("button")].find((b) =>
+      b.textContent?.includes("Activate")
+    ) as HTMLButtonElement;
+
+    expect(activate.disabled).toBe(true);
+    expect(document.body.textContent).toContain("Confirm 2 more first");
+  });
+
+  it("confirms one by asking the server", async () => {
+    const calls: string[] = [];
+    await open(waiting(), calls);
+
+    const confirm = [...document.querySelectorAll(".example button")][0] as HTMLButtonElement;
+    confirm.click();
+    await new Promise((r) => setTimeout(r, 20));
+
+    expect(calls).toContain("POST /api/rules/examples/e1/confirm");
+  });
+
+  it("shows nothing to confirm for a rule already approved", async () => {
+    // **An approved version's examples were confirmed once and are
+    // history.** Loading them would invite somebody to confirm what is
+    // already running.
+    await open();
+    expect(document.querySelectorAll(".example")).toHaveLength(0);
+    expect(document.querySelector(".gate button.primary")).toBeNull();
+  });
+
+  it("puts them above the version history", async () => {
+    // **This is what somebody came to do**; the history can wait its
+    // turn.
+    await open(waiting());
+    const body = document.body.textContent ?? "";
+    expect(body.indexOf("Worked examples")).toBeLessThan(body.indexOf("Version 3"));
   });
 });

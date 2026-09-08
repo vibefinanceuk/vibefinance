@@ -17,6 +17,20 @@ import { readback, useFieldDescriptions } from "/readback.js";
 let rule = null;
 let stage = null;
 
+/**
+ * The examples waiting on somebody, for the version that has them —
+ * decision 0157.
+ *
+ * **The detail screen showed a count and no way to act on it.** Decision
+ * 0153 put confirmation on the compose screen, immediately after
+ * compiling; navigating away stranded the rule, and the list said
+ * *"2 to confirm"* with nowhere to do it.
+ *
+ * Reported exactly that way: *"which now says in the list 2 to confirm,
+ * but I cannot see what to confirm when navigating to the rule."*
+ */
+let examples = [];
+
 function note(message) {
   const box = document.getElementById("rule-note");
   if (box) box.textContent = message;
@@ -62,7 +76,83 @@ async function load(ruleId) {
   const response = await fetch(`/api/rules/${encodeURIComponent(ruleId)}`);
   if (!response.ok) return false;
   rule = await response.json();
+
+  // **Only for a version that has not been activated.** An approved
+  // version's examples were confirmed once and are history; loading
+  // them would invite somebody to confirm what is already running.
+  const pending = rule.versions.find((v) => !v.approvedAt && v.examplesTotal > 0);
+  examples = pending ? await loadExamples(rule.id, pending.version) : [];
+
   return true;
+}
+
+async function loadExamples(ruleId, version) {
+  const response = await fetch(
+    `/api/rules/${encodeURIComponent(ruleId)}/versions/${version}/examples`
+  );
+  return response.ok ? (await response.json()).examples ?? [] : [];
+}
+
+async function confirmExample(exampleId) {
+  const response = await fetch(`/api/rules/examples/${encodeURIComponent(exampleId)}/confirm`, {
+    method: "POST",
+  });
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    note(body.error ?? t("rules.failed"));
+    return;
+  }
+
+  await load(rule.id);
+  render();
+}
+
+async function activate(version) {
+  const response = await fetch(
+    `/api/rules/${encodeURIComponent(rule.id)}/versions/${version}/activate`,
+    { method: "POST" }
+  );
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    note(body.error ?? t("rules.failed"));
+    return;
+  }
+
+  await load(rule.id);
+  render();
+}
+
+/**
+ * One worked example, as decision 0153 renders them.
+ *
+ * **In plain terms, not `expectMatch: true`.** Somebody confirming is
+ * being asked to agree that an outcome is right, and a boolean beside
+ * a JSON blob is not something anybody can agree with.
+ */
+function exampleRow(example) {
+  return el("div", { class: "example" }, [
+    el("div", {
+      class: `verdict ${example.expectMatch ? "fires" : "quiet"}`,
+      text: example.expectMatch ? t("compose.fires") : t("compose.quiet"),
+    }),
+    el("div", { class: "body" }, [
+      el("div", {
+        class: "facts",
+        text: Object.entries(example.invoice ?? {})
+          .map(([field, value]) => `${field} ${value}`)
+          .join(" · "),
+      }),
+    ]),
+    el(
+      "div",
+      {},
+      example.confirmedBy
+        ? [el("span", { class: "confirmed", text: t("compose.confirmed") })]
+        : [el("button", { text: t("compose.confirm"), onclick: () => confirmExample(example.id) })]
+    ),
+  ]);
 }
 
 /** One version, with what it says and where it stands. */
@@ -112,6 +202,9 @@ function render() {
   const shell = document.getElementById("shell");
   if (!shell) return;
 
+  const outstanding = examples.filter((e) => !e.confirmedBy).length;
+  const pendingVersion = rule.versions.find((v) => !v.approvedAt && v.examplesTotal > 0);
+
   shell.replaceChildren(
     frame(
       el("div", {}, [
@@ -135,6 +228,41 @@ function render() {
           ]),
           el("span", { class: "why", text: rule.enabled ? t("rule.running") : t("rule.notrunning") }),
         ]),
+
+        /**
+         * The examples, and the gate — decision 0157.
+         *
+         * Above the versions, because **this is what somebody came to
+         * do**: a rule saying *"2 to confirm"* is a rule waiting on a
+         * person, and the history can wait its turn.
+         */
+        ...(examples.length > 0
+          ? [
+              el("div", { class: "panel" }, [
+                el("h3", { text: t("compose.examples") }),
+                el("p", { class: "sm muted", text: t("compose.examplesnote") }),
+                ...examples.map(exampleRow),
+              ]),
+              el("div", { class: "gate" }, [
+                el(
+                  "button",
+                  {
+                    class: "primary",
+                    onclick: () => activate(pendingVersion.version),
+                    ...(outstanding > 0 ? { disabled: "disabled" } : {}),
+                  },
+                  [icon("activate"), el("span", { text: t("compose.activate") })]
+                ),
+                el("span", {
+                  class: "why",
+                  text:
+                    outstanding > 0
+                      ? t("compose.confirmfirst").replace("{n}", String(outstanding))
+                      : t("compose.allconfirmed"),
+                }),
+              ]),
+            ]
+          : []),
 
         ...rule.versions.map((version, index) => versionPanel(version, index === 0)),
 
