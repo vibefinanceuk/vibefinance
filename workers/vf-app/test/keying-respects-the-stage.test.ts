@@ -168,3 +168,53 @@ describe("an invoice in no process at all", () => {
     expect((result.body as { reason: string }).reason).toBe("not_editable_here");
   });
 });
+
+describe("a field the screen fills in (decision 0173)", () => {
+  /**
+   * **Every line edit at Validation was refused.**
+   *
+   * The viewer sets `BT-126` itself, to the line's own position, so a
+   * document carrying no line numbers still has them. `BT-126` is
+   * `read` by default, and decision 0164's check refused the whole save
+   * with *"this stage does not permit editing those fields"*.
+   *
+   * Before 0164 the check ran only where a stage restricted something,
+   * so a screen-supplied value never met it. **Widening the check
+   * widened what it refused.**
+   */
+  it("accepts a line whose number the screen supplied", async () => {
+    await seedAt("validation", false);
+    const result = await handleKeyInvoiceFields(
+      env.DB,
+      "inv-1",
+      {
+        facts: {},
+        lines: [{ lineNumber: 1, facts: { "BT-126": "1", "BT-131": 100 } }],
+      } as never,
+      "u-dan"
+    );
+
+    expect(result.status).toBe(200);
+  });
+
+  it("still refuses a read-only field somebody actually edited", async () => {
+    // **Exempted by name rather than by relaxing the rule.**
+    await seedAt("validation", false);
+    await env.DB.prepare(
+      "INSERT INTO stage_field_visibility (stage_id, field, visibility) VALUES ('validation', 'BT-131', 'read')"
+    ).run();
+
+    const result = await handleKeyInvoiceFields(
+      env.DB,
+      "inv-1",
+      {
+        facts: {},
+        lines: [{ lineNumber: 1, facts: { "BT-126": "1", "BT-131": 100 } }],
+      } as never,
+      "u-dan"
+    );
+
+    expect(result.status).toBe(403);
+    expect((result.body as { fields: string[] }).fields).toEqual(["BT-131"]);
+  });
+});

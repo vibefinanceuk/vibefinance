@@ -405,7 +405,6 @@ function lineRow(line, index) {
   };
 
   return el("tr", {}, [
-    el("td", { class: "num muted", text: String(index + 1) }),
     ...lineFields.map(cell),
     el("td", {}, [
       /**
@@ -447,7 +446,9 @@ function linePanel() {
     el("table", { class: "linetable" }, [
       el("thead", {}, [
         el("tr", {}, [
-          el("th", { class: "num", text: "#" }),
+          // **No row counter** — decision 0173. Line no. carries the
+          // sequence where a document does not give one, so a second
+          // column of the same numbers said nothing.
           ...lineFields.map((spec) =>
             el("th", {
               class: spec.type === "number" ? "num" : undefined,

@@ -111,14 +111,40 @@ export async function handleKeyInvoiceFields(
      * So an unknown field falls through to the vocabulary check, which
      * is the one that can explain it.
      */
+    /**
+     * **A field the screen fills in is not a field somebody edited** —
+     * decision 0173.
+     *
+     * The viewer sets `BT-126` itself, to the line's own position, so
+     * that a document carrying no line numbers still has them. `BT-126`
+     * is `read` by default, and decision 0164's check refused the whole
+     * save with *"this stage does not permit editing those fields"* —
+     * **blocking every line edit at Validation.**
+     *
+     * Reported the moment somebody tried to key a line.
+     *
+     * Before decision 0164 the check ran only where a stage restricted
+     * something, so a screen-supplied value never met it. Widening the
+     * check widened what it refused.
+     *
+     * Exempted by name rather than by relaxing the rule: this is one
+     * field the interface derives, and every other read-only field
+     * still refuses.
+     */
+    const SCREEN_SUPPLIED = new Set(["BT-126"]);
+
     const refused = [
       ...entries
-        .filter(([field]) => isKnownField(field) && !editable.has(field))
+        .filter(
+          ([field]) =>
+            isKnownField(field) && !editable.has(field) && !SCREEN_SUPPLIED.has(field)
+        )
         .map(([field]) => field),
       ...(Array.isArray(body.lines)
         ? body.lines.flatMap((line) =>
             Object.keys((line as { facts?: Record<string, unknown> })?.facts ?? {}).filter(
-              (field) => isKnownField(field) && !editable.has(field)
+              (field) =>
+                isKnownField(field) && !editable.has(field) && !SCREEN_SUPPLIED.has(field)
             )
           )
         : []),
