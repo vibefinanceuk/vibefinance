@@ -169,7 +169,9 @@ function cell(doc, key) {
 
     case "expand":
       return el("td", {}, [
-        el("button", { class: "expand", text: t("viewer.expand"), onclick: () => expand(doc) }),
+        // The same word the column is called, rather than a second
+        // key saying the same thing (decision 0165).
+        el("button", { class: "expand", text: t("column.expand"), onclick: () => expand(doc) }),
       ]);
 
     default:
@@ -187,6 +189,22 @@ function cell(doc, key) {
  */
 async function expand(doc) {
   const { openViewer } = await import("/viewer.js");
+
+  /**
+   * **Showing the viewer is the caller's job** — decision 0165.
+   *
+   * `openViewer` renders into `#viewer` and does not unhide it; the
+   * task list swaps the two panes itself. This screen called it without
+   * doing that, so the viewer rendered into a hidden element and
+   * nothing appeared to happen.
+   *
+   * Done here to match, and recorded as duplication: the second caller
+   * of a function that needs three lines of preparation is the one that
+   * finds out the preparation exists.
+   */
+  document.getElementById("shell").hidden = true;
+  document.getElementById("viewer").hidden = false;
+
   await openViewer(
     {
       subject: { type: "invoice", id: doc.id },
@@ -196,7 +214,11 @@ async function expand(doc) {
       // done. The viewer offers no actions without one.
       actions: [],
     },
-    () => open()
+    async () => {
+      document.getElementById("viewer").hidden = true;
+      document.getElementById("shell").hidden = false;
+      await open();
+    }
   );
 }
 
