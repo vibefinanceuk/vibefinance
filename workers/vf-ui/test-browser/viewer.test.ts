@@ -91,6 +91,7 @@ const STRINGS = {
     "viewer.stagelabel": "Stage:",
     "tasks.waiting": "Waiting",
     "tasks.owner": "Owner",
+    "tasks.unclaimed": "Nobody yet",
     "viewer.reflabel": "Unique Ref:",
     "viewer.document": "Document",
     "viewer.nodocument": "No document retained",
@@ -993,5 +994,59 @@ describe("the status card is gone (decision 0175)", () => {
     // tells everybody else nothing. An address is who to ask.
     await openOwned();
     expect(document.querySelector(".subhead")?.textContent).toContain("alice@acme.com");
+  });
+});
+
+describe("what identifies the document sits in the heading (decision 0176)", () => {
+  /**
+   * **The rule under a topbar separates the heading from the page.**
+   * Waiting and Owner sat below it, which read as the first row of
+   * content rather than as part of the heading.
+   */
+  async function openWith(task: Record<string, unknown>) {
+    stubFetch({
+      "/api/code-lists": { fields: {} },
+      "/api/ui-strings": STRINGS,
+      "/api/field-visibility": FIELDS,
+      "/api/invoices/inv-1": {
+        facts: {},
+        lines: [],
+        validation: { passed: true, checked: [], failures: [] },
+      },
+      "/api/invoices/inv-1/document-url": { url: null },
+      "/api/invoices/inv-1/progress": { inProcess: false, stages: [] },
+    });
+
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    await openViewer({ ...TASK, ...task }, () => {});
+    await new Promise((r) => setTimeout(r, 0));
+  }
+
+  it("puts the subhead inside the topbar", async () => {
+    await openWith({ createdAt: "2026-09-01 09:00:00" });
+    expect(document.querySelector(".topbar .subhead")).not.toBeNull();
+  });
+
+  it("says nobody has claimed it, rather than nothing", async () => {
+    // **An absent line reads as a screen that forgot**, and unclaimed
+    // is a real answer: anybody may take it.
+    await openWith({ createdAt: "2026-09-01 09:00:00", lockedBy: undefined });
+    expect(document.querySelector(".subhead")?.textContent).toContain("Nobody yet");
+  });
+
+  it("names the owner where there is one", async () => {
+    await openWith({
+      createdAt: "2026-09-01 09:00:00",
+      lockedBy: { id: "u-a", name: "Alice", email: "alice@acme.com", since: null },
+    });
+    expect(document.querySelector(".subhead")?.textContent).toContain("alice@acme.com");
+  });
+
+  it("says nothing about ownership on a document with no stage", async () => {
+    // A document opened from the manager is not work (decision 0167).
+    await openWith({ createdAt: undefined, stageId: null, lockedBy: undefined });
+    expect(document.querySelector(".subhead")?.textContent).not.toContain("Owner");
   });
 });

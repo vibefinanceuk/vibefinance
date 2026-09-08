@@ -746,6 +746,41 @@ async function save(close) {
  * those are separate acts, and somebody may key what they can read and
  * leave the rest for later.
  */
+/**
+ * What a person needs before they start — decisions 0175, 0176.
+ *
+ * **Inside the topbar**, above its rule, because these identify the
+ * document rather than being the first row of content about it.
+ */
+function subhead(task) {
+  return el("div", { class: "subhead sm muted" }, [
+    // Omitted rather than invented on a document nobody is waiting on
+    // (decision 0167).
+    ...(task.createdAt
+      ? [el("div", { text: `${t("tasks.waiting")} ${waited(task.createdAt)}` })]
+      : []),
+    /**
+     * **An address, not "Mine"** — decision 0175.
+     *
+     * *"Owner: Mine"* tells the person holding a task the one thing
+     * they already know, and tells everybody else nothing.
+     *
+     * A task nobody has claimed **says so** rather than saying nothing:
+     * an absent line reads as a screen that forgot, and unclaimed is a
+     * real and useful answer — it means anybody may take it.
+     */
+    ...(task.stageId
+      ? [
+          el("div", {
+            text: `${t("tasks.owner")} ${
+              task.lockedBy?.email ?? task.lockedBy?.name ?? t("tasks.unclaimed")
+            }`,
+          }),
+        ]
+      : []),
+  ]);
+}
+
 export async function openViewer(task, onClose) {
   // Before rendering, so a field never appears as a text box and then
   // becomes a picker under somebody's hands.
@@ -861,34 +896,10 @@ export async function openViewer(task, onClose) {
         topbar(
           `${t("viewer.stagelabel")} ${task.stageName ?? task.stageId ?? t("viewer.title")}`,
           task.subject?.id ? `${t("viewer.reflabel")} ${task.subject.id}` : "",
-          [el("button", { text: t("viewer.back"), onclick: onClose })]
+          [el("button", { text: t("viewer.back"), onclick: onClose })],
+          [subhead(task)]
         ),
 
-        el("div", { class: "subhead sm muted" }, [
-          // Omitted rather than invented on a document nobody is
-          // waiting on (decision 0167).
-          ...(task.createdAt
-            ? [
-                el("div", {
-                  text: `${t("tasks.waiting")} ${waited(task.createdAt)}`,
-                }),
-              ]
-            : []),
-          /**
-           * **An address, not "Mine"** — decision 0175.
-           *
-           * *"Owner: Mine"* tells the person holding a task the one
-           * thing they already know, and tells everybody else nothing.
-           * An address is who to ask.
-           */
-          ...(task.lockedBy?.email || task.lockedBy?.name
-            ? [
-                el("div", {
-                  text: `${t("tasks.owner")} ${task.lockedBy.email ?? task.lockedBy.name}`,
-                }),
-              ]
-            : []),
-        ]),
         // Fields beside actions, rather than fields above a footer.
         // Actions collected in one place (decision 0108).
         // Above the columns, because it is context for everything

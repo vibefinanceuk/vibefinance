@@ -190,6 +190,7 @@ const KEYS_THE_INTERFACE_USES = [
   "viewer.tried",
   "viewer.stagelabel",
   "viewer.reflabel",
+  "tasks.unclaimed",
   "nav.documents",
   "documents.subtitle",
   "documents.searchhint",

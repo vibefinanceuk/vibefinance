@@ -365,11 +365,20 @@ export function frame(main) {
 }
 
 /** The document's identity, and where to go from here. */
-export function topbar(title, subtitle, right = []) {
+/**
+ * @param extra lines beneath the subtitle, **inside** the topbar.
+ *
+ * The rule under a topbar separates the heading from the page, so
+ * anything that identifies the document belongs above it — decision
+ * 0176. Waiting and Owner sat below, which read as the first row of
+ * content rather than as part of the heading.
+ */
+export function topbar(title, subtitle, right = [], extra = []) {
   return el("div", { class: "topbar" }, [
     el("div", {}, [
       el("h2", { text: title }),
       el("p", { class: "sub", text: subtitle }),
+      ...extra,
     ]),
     // **Every screen, because the frame carries it** (decision 0108).
     // A preference offered on one screen and not another is one
