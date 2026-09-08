@@ -99,6 +99,48 @@ end — which is why `hasRuleSet` was already on the stage list.
 
 ---
 
+## What the first real sentence found
+
+*"Hold any invoice over 10,000 euros from a supplier we have not seen
+before"* was **refused**, and correctly:
+
+> The vocabulary only provides a `hold_until` action that accepts a
+> specific date, not a condition based on user validation.
+
+The model read the vocabulary right. `hold_until` holds until a
+**date**; there is no action meaning *"stop here and have a person
+decide"*.
+
+**The refusal did its job**, and it surfaced a gap rather than a mistake
+— which is the whole argument decision 0033 makes for refusal being a
+first-class output.
+
+### The gap is real
+
+*"Hold it for review"* is the most ordinary thing an accounts-payable
+rule wants to say. The vocabulary makes somebody say **`assign_task`**
+instead — a term from the workflow engine rather than from accounts
+payable, and one a customer has no reason to know.
+
+`assign_task` and `route_to` both express it. Neither is what anybody
+would type.
+
+**Two ways to close it**, and it is worth deciding rather than leaving
+every customer to discover it:
+
+- **A `hold_for_review` action**, which is `assign_task` with a
+  sensible default — and another entry in a vocabulary decision 0031
+  keeps small on purpose.
+- **Or the compiler's prompt teaches the translation**, so *"hold for
+  review"* compiles to `assign_task` without a new action. Cheaper, and
+  it puts the knowledge in a prompt rather than in the closed set.
+
+The second is more in keeping with decision 0031: **the vocabulary is
+closed and that is the feature**, so growing it should cost more than
+teaching the model to speak it.
+
+---
+
 ## What is not built
 
 - **No backtest.** Testing a rule against invoices already captured is

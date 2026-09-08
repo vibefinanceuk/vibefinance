@@ -219,7 +219,20 @@ Decision 0115 gave the seller and buyer their own panels, and most of
 their fields default to `read`. If they look thin, that is configuration
 (0114) rather than code — adjustable per customer without a deployment.
 
-### 5. Two stage names, and one stage to remove
+### 5. "Hold it for review" cannot be said
+
+Found on the first real use of the rule screen (decision 0153). The
+vocabulary's `hold_until` holds until a **date**; there is no action
+meaning *"stop here and have a person decide"*, which is the most
+ordinary thing an AP rule wants to say.
+
+`assign_task` and `route_to` both express it, and **neither is what
+anybody would type**. Either a `hold_for_review` action, or the
+compiler's prompt teaches the translation — the second is more in
+keeping with 0031, since the vocabulary is closed and that is the
+feature.
+
+### 6. Two stage names, and one stage to remove
 
 **Renaming is free** — `name` is display, `id` is the key, and nothing
 references the name:
@@ -234,14 +247,14 @@ completed task against it, so deleting the row would fail on a foreign
 key or orphan history. Versioning the membership removes it properly;
 until then it stays.
 
-### 6. Does the sources screen read right?
+### 7. Does the sources screen read right?
 
 Decision 0134 removed every success message from it: a retired source
 shows *"Retired"*, a deleted one is gone, and the list is the answer.
 **If an action now feels like nothing happened**, that judgement was
 wrong and the message should come back.
 
-### 7. Should the line comparison move into the panel?
+### 8. Should the line comparison move into the panel?
 
 *"Lines total 150.00 · differs by 30.00"* sits under the line table and
 was **read as an exception** (0119). It is not: it is live feedback as
