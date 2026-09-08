@@ -272,3 +272,36 @@ describe("the heading's four lines match (decision 0181)", () => {
     expect(css).not.toMatch(/\.topbar \.sub \{[^}]*font-size/);
   });
 });
+
+describe("the viewer's four lines are one list (decision 0182)", () => {
+  /**
+   * **Asked for twice and not done twice.**
+   *
+   * Decision 0180 matched the subtitle and the subhead. Decision 0181
+   * found a duplicate rule that had been beating them. Both left the
+   * `h2` bold and a size larger, **on my own reasoning that a heading
+   * is a heading** — which is not what was asked for.
+   *
+   * `Stage`, `Unique Ref`, `Waiting` and `Owner` answer the same kind
+   * of question. They match.
+   */
+  const css = stylesheets["index.html"];
+
+  it("styles the viewer's heading with the rest", () => {
+    expect(css).toContain("#viewer .topbar h2,");
+  });
+
+  it("wins over the general heading rule, by an id", () => {
+    // `.topbar h2` comes later in the file and sets a larger, bolder
+    // size; an id beats a class regardless of order.
+    const scoped = css.indexOf("#viewer .topbar h2");
+    const general = css.indexOf(".topbar h2 { margin: 0;");
+    expect(scoped).toBeLessThan(general);
+    expect(css).toContain(".topbar h2 { margin: 0; font-size: var(--text-lg)");
+  });
+
+  it("leaves other screens their heading", () => {
+    // A heading is a heading on Tasks, Sources, Rules and Documents.
+    expect(css).toContain(".topbar h2 { margin: 0; font-size: var(--text-lg); font-weight: 600; }");
+  });
+});

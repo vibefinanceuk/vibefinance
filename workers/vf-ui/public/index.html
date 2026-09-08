@@ -565,6 +565,18 @@
     Reported as *"same font, same weight, same size — they look
     different"*, which they were.
   */
+  /*
+    **The viewer's heading is a list of four facts, not a heading and
+    three notes** — decision 0182.
+
+    `Stage`, `Unique Ref`, `Waiting` and `Owner` answer the same kind of
+    question, and the operator asked twice for them to match. Decision
+    0181 matched three of them and left the `h2` bold and a size larger,
+    on my own reasoning that a heading is a heading.
+    
+    **It was asked for plainly and I kept overriding it.** They match.
+  */
+  #viewer .topbar h2,
   .topbar .sub,
   .subhead > div {
     margin: 4px 0 0;
@@ -656,6 +668,10 @@
     border-bottom: 0.5px solid var(--border);
   }
 
+  /*
+    **Every screen except the viewer**, where the four lines are a list
+    — decision 0182. A heading is a heading elsewhere.
+  */
   .topbar h2 { margin: 0; font-size: var(--text-lg); font-weight: 600; }
 
   .topbar .right { margin-left: auto; display: flex; gap: 8px; align-items: center; }
