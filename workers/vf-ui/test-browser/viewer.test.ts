@@ -377,7 +377,7 @@ describe("the icons say what the actions do (decision 0122)", () => {
   it("draws discard as an archive, never a waste bin", async () => {
     // Discarding archives and deletes nothing (decision 0078). A bin
     // would promise a customer something this system does not do.
-    const { ICONS } = await import("/viewer.js");
+    const { ICONS } = await import("/icons.js");
     // A bin has a lid and a tapered body; the archive is a box with a
     // drawer. Asserted on the path itself, since that is the claim.
     expect(ICONS.discard).toContain("M3 6h18v4H3");
@@ -388,7 +388,7 @@ describe("the icons say what the actions do (decision 0122)", () => {
     // A claim IS a lock, and locks never expire (decision 0104), so
     // letting go is unlocking. The two must be mirrors or neither
     // reads.
-    const { ICONS } = await import("/viewer.js");
+    const { ICONS } = await import("/icons.js");
     expect(ICONS.release).toContain("a3 3 0 0 1 6 0");
     expect(ICONS.claim).toContain("a3 3 0 0 1 6 0v4");
     expect(ICONS.release).not.toBe(ICONS.claim);
@@ -397,7 +397,7 @@ describe("the icons say what the actions do (decision 0122)", () => {
   it("has an icon for every action a task can report", async () => {
     // An action with no icon renders as a blank square, which reads as
     // broken rather than as unstyled.
-    const { ICONS } = await import("/viewer.js");
+    const { ICONS } = await import("/icons.js");
     for (const action of [
       "expand",
       "save",

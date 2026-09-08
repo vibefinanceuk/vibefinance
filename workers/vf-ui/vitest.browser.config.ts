@@ -79,6 +79,8 @@ export default defineConfig({
       "/signin.js": resolve(__dirname, "public/signin.js"),
       "/sources.js": resolve(__dirname, "public/sources.js"),
       "/mood.js": resolve(__dirname, "public/mood.js"),
+      "/icons.js": resolve(__dirname, "public/icons.js"),
+      "/rules.js": resolve(__dirname, "public/rules.js"),
     },
   },
 });

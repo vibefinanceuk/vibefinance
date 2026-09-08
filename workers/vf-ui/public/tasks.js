@@ -294,6 +294,9 @@ async function go(screen) {
   if (screen === "sources") {
     const { openSources } = await import("/sources.js");
     await openSources();
+  } else if (screen === "rules") {
+    const { open } = await import("/rules.js");
+    await open();
   } else {
     await loadTasks();
   }
@@ -320,11 +323,17 @@ export function frame(main) {
        */
       el("img", { class: "brandmark dark", src: "/img/logo.png", alt: "" }),
       el("img", { class: "brandmark light", src: "/img/logo-light.png", alt: "" }),
-      // **A second entry, at last.** The frame has carried one since
-      // decision 0108, which existed so later screens would sit inside
-      // it rather than be retrofitted. This is the first of them.
+      // **Each entry names itself** — decision 0149.
+      //
+      // This read `current === "sources" ? "" : "on"`, written when
+      // there were two screens and "not sources" therefore meant
+      // "tasks". A third screen made that wrong, and it marked Tasks
+      // while showing Rules.
+      //
+      // A comparison that only works while a list has two members is a
+      // comparison that breaks silently when it gains a third.
       el("a", {
-        class: current === "sources" ? "" : "on",
+        class: current === "tasks" ? "on" : "",
         text: t("nav.tasks"),
         onclick: () => go("tasks"),
       }),
@@ -332,6 +341,11 @@ export function frame(main) {
         class: current === "sources" ? "on" : "",
         text: t("nav.sources"),
         onclick: () => go("sources"),
+      }),
+      el("a", {
+        class: current === "rules" ? "on" : "",
+        text: t("nav.rules"),
+        onclick: () => go("rules"),
       }),
       el("div", { class: "who" }, [
         el("div", { text: me?.name ?? "" }),

@@ -55,6 +55,19 @@ const KEYS_THE_INTERFACE_USES = [
   "nav.tasks",
   // The sources screen (decision 0126).
   "nav.sources",
+  // The rules screen (decision 0149).
+  "nav.rules",
+  "rules.subtitle",
+  "rules.atstage",
+  "rules.order",
+  "rules.empty",
+  "rules.norules",
+  "rules.failed",
+  "rules.new",
+  "rulestate.live",
+  "rulestate.paused",
+  "rulestate.awaiting_confirmation",
+  "rulestate.draft",
   // The mood control (decision 0139).
   "mood.label",
   "mood.day",

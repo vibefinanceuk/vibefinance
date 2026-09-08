@@ -309,6 +309,65 @@
 
   button.subjectlink:hover { text-decoration: underline; }
 
+  /*
+    The process, as a sequence — decision 0149.
+
+    **Chevrons rather than tabs**, because this is an order and the
+    shape should say so. A tab row says "pick one of these"; a sequence
+    says "the document passes through these, in this order".
+  */
+  .process { display: flex; overflow-x: auto; padding: 2px 0; }
+
+  .stage {
+    flex: 1 0 auto;
+    min-width: 104px;
+    padding: 9px 12px 9px 22px;
+    background: var(--surface-1);
+    border: 0.5px solid var(--border);
+    border-left: none;
+    border-radius: 0;
+    color: var(--text-muted);
+    font-size: var(--text-sm);
+    text-align: left;
+    white-space: nowrap;
+    position: relative;
+    min-height: 0;
+  }
+
+  .stage:first-child { border-left: 0.5px solid var(--border); border-radius: var(--radius) 0 0 var(--radius); padding-left: 14px; }
+  .stage:last-child { border-radius: 0 var(--radius) var(--radius) 0; }
+
+  .stage::after {
+    content: "";
+    position: absolute;
+    right: -9px; top: 50%;
+    width: 16px; height: 16px;
+    margin-top: -8px;
+    background: var(--surface-1);
+    border-top: 0.5px solid var(--border);
+    border-right: 0.5px solid var(--border);
+    transform: rotate(45deg);
+    z-index: 1;
+  }
+  .stage:last-child::after { display: none; }
+
+  /* Where the rules being shown actually run. The one bold thing. */
+  .stage.here { background: var(--text-accent); border-color: var(--text-accent); color: #fff; font-weight: 600; }
+  .stage.here::after { background: var(--text-accent); border-color: var(--text-accent); }
+
+  .stage .count { display: block; font-size: var(--text-sm); opacity: 0.85; font-weight: 400; }
+
+  .rule { display: flex; gap: 16px; padding: 12px 0; border-bottom: 0.5px solid var(--border); align-items: baseline; }
+  .rule:last-child { border-bottom: none; }
+  .rule .what { flex: 1; }
+
+  .rulestate { font-size: var(--text-sm); font-weight: 600; min-width: 96px; display: flex; align-items: center; gap: 5px; }
+  .rulestate svg { width: 14px; height: 14px; }
+  .rulestate.live { color: var(--text-success); }
+  .rulestate.paused { color: var(--text-muted); }
+  .rulestate.awaiting_confirmation { color: var(--text-warning); }
+  .rulestate.draft { color: var(--text-muted); }
+
   .rowactions { display: flex; gap: 4px; white-space: nowrap; }
   .rowactions button { padding: 4px 8px; min-height: 26px; font-size: var(--text-sm); }
 

@@ -42,6 +42,7 @@ import { createWorkersAiExtractionModel } from "./extraction-model.js";
 import { handleGetExtractionSettings, handleUpdateExtractionSettings } from "./extraction-settings-route.js";
 import { handleToMarkdownDiagnostic } from "./tomarkdown-diagnostic.js";
 import { handleCreateSource, handleListSources , handleSetSourceEmail , handleListAllSources , handleListProcesses , handleRetireSource, handleRenameSource } from "./source-route.js";
+import { handleListRules, handleRuleStages } from "./rules-list-route.js";
 import { handleIngestPurchaseOrder, handleGetPurchaseOrder } from "./purchase-order-route.js";
 import { handleGetRetention, handleSetRetention, handleListBeyondRetention } from "./retention-route.js";
 import { handleCaptureFromSource } from "./source-capture-route.js";
@@ -1275,6 +1276,35 @@ export default {
 
       const limit = Number(url.searchParams.get("limit") ?? "50");
       const result = await handleListInboundEmail(db, Number.isFinite(limit) ? limit : 50);
+      return json(result.body, result.status);
+    }
+
+
+    // What rules exist, and where they run — decision 0149.
+    if (pathname === "/rules" && request.method === "GET") {
+      const { db } = resolveTenant(request, env);
+      const auth = await authenticatePerson(db, request, env);
+      if (!auth.user) return json({ error: auth.reason }, 401);
+      // Reading which rules run is not configuring them: somebody
+      // working a queue may reasonably ask why an invoice was held.
+      if (!(await hasPermission(db, auth.user.id, "AP.Review"))) {
+        return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
+      }
+
+      const result = await handleListRules(db, url.searchParams.get("stage"));
+      return json(result.body, result.status);
+    }
+
+    // Every stage, with how many rules run there.
+    if (pathname === "/rules/stages" && request.method === "GET") {
+      const { db } = resolveTenant(request, env);
+      const auth = await authenticatePerson(db, request, env);
+      if (!auth.user) return json({ error: auth.reason }, 401);
+      if (!(await hasPermission(db, auth.user.id, "AP.Review"))) {
+        return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
+      }
+
+      const result = await handleRuleStages(db);
       return json(result.body, result.status);
     }
 

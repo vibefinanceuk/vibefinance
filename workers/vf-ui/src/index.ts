@@ -108,6 +108,9 @@ const PROXIED_TO_INSTANCE: RegExp[] = [
   /^\/field-visibility$/,
   // The sources configuration screen (decision 0126).
   /^\/sources$/,
+  // The rules screen (decision 0149).
+  /^\/rules$/,
+  /^\/rules\/stages$/,
   // What has arrived by email (decision 0147).
   /^\/inbound-email$/,
   // Listing processes and creating a source (decision 0128).

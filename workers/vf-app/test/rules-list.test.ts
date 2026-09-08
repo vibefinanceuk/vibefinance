@@ -1,0 +1,160 @@
+import { env } from "cloudflare:test";
+import { beforeEach, describe, expect, it } from "vitest";
+import { applyTestSchema } from "./setup.js";
+import { handleListRules, handleRuleStages } from "../src/rules-list-route.js";
+
+/**
+ * The rules that exist, by stage — decision 0149.
+ *
+ * **No route listed rules.** Compiling, confirming and activating all
+ * have one; seeing what is already running does not — the same gap
+ * decision 0128 found with processes.
+ */
+
+async function seed() {
+  await env.DB.prepare("INSERT OR IGNORE INTO processes (id, name) VALUES ('ap', 'AP')").run();
+  await env.DB.prepare(
+    "INSERT INTO rule_sets (id, name, mode) VALUES ('rs-val', 'Validation rules', 'all_matches')"
+  ).run();
+  await env.DB.prepare(
+    "INSERT INTO process_stages (id, process_id, name, sequence, rule_set_id) VALUES ('validation', 'ap', 'Validation', 2, 'rs-val')"
+  ).run();
+  // A stage with no rules at all, which must still appear.
+  await env.DB.prepare(
+    "INSERT INTO process_stages (id, process_id, name, sequence) VALUES ('coding', 'ap', 'Coding', 3)"
+  ).run();
+  await env.DB.prepare(
+    "INSERT OR IGNORE INTO org_users (id, email, name) VALUES ('u-dan', 'd@x.com', 'Dan')"
+  ).run();
+}
+
+async function addRule(
+  id: string,
+  sourceText: string,
+  { enabled = 1, approved = false, examples = 0, confirmed = 0 } = {}
+) {
+  await env.DB.prepare(
+    "INSERT INTO rules (id, rule_set_id, sort_order, enabled) VALUES (?, 'rs-val', 0, ?)"
+  )
+    .bind(id, enabled)
+    .run();
+  await env.DB.prepare(
+    `INSERT INTO rule_versions (rule_id, version, source_text, compiled_json, compiled_by, approved_by, approved_at)
+     VALUES (?, 1, ?, '{}', 'u-dan', ?, ?)`
+  )
+    .bind(id, sourceText, approved ? "u-dan" : null, approved ? "2026-09-01" : null)
+    .run();
+
+  for (let i = 0; i < examples; i++) {
+    await env.DB.prepare(
+      `INSERT INTO rule_examples (id, rule_id, rule_version, invoice_json, expect_match, confirmed_by)
+       VALUES (?, ?, 1, '{}', 1, ?)`
+    )
+      .bind(`${id}-e${i}`, id, i < confirmed ? "u-dan" : null)
+      .run();
+  }
+}
+
+beforeEach(async () => {
+  await applyTestSchema();
+  await seed();
+});
+
+describe("what the list shows", () => {
+  it("shows the sentence somebody wrote, not the compiled rule", async () => {
+    // **A person recognises their own words**; nobody recognises
+    // `{"field":"BT-112","operator":"greater_than"}`.
+    await addRule("r-1", "Hold any invoice over 10,000 euros from a new supplier.");
+    const body = (await handleListRules(env.DB, null)).body as {
+      rules: { sourceText: string }[];
+    };
+
+    expect(body.rules[0].sourceText).toBe(
+      "Hold any invoice over 10,000 euros from a new supplier."
+    );
+  });
+
+  it("names the stage a rule runs at", async () => {
+    // The operator's own point: a rule fires at a stage, and what it
+    // can test depends on what has happened by then.
+    await addRule("r-1", "A rule");
+    const body = (await handleListRules(env.DB, null)).body as {
+      rules: { stageName: string }[];
+    };
+    expect(body.rules[0].stageName).toBe("Validation");
+  });
+
+  it("filters to one stage when asked", async () => {
+    await addRule("r-1", "A rule");
+    const body = (await handleListRules(env.DB, "coding")).body as { rules: unknown[] };
+    expect(body.rules).toHaveLength(0);
+  });
+});
+
+describe("what state a rule is in", () => {
+  /**
+   * **Four words, not four columns.** The database records `enabled`,
+   * `approved_at` and a count of confirmed examples; a person wants to
+   * know whether it is running.
+   */
+  it("calls an approved, enabled rule live", async () => {
+    await addRule("r-live", "A rule", { approved: true, enabled: 1 });
+    const body = (await handleListRules(env.DB, null)).body as { rules: { state: string }[] };
+    expect(body.rules[0].state).toBe("live");
+  });
+
+  it("distinguishes paused from draft", async () => {
+    // **One was trusted once and the other never has been**, which is
+    // a difference worth a word.
+    await addRule("r-paused", "A rule", { approved: true, enabled: 0 });
+    const body = (await handleListRules(env.DB, null)).body as { rules: { state: string }[] };
+    expect(body.rules[0].state).toBe("paused");
+  });
+
+  it("says how many examples are still waiting", async () => {
+    // So the list can say "2 to confirm" rather than making somebody
+    // open the rule to find out.
+    await addRule("r-wait", "A rule", { examples: 3, confirmed: 1 });
+    const body = (await handleListRules(env.DB, null)).body as {
+      rules: { state: string; awaiting: number }[];
+    };
+
+    expect(body.rules[0].state).toBe("awaiting_confirmation");
+    expect(body.rules[0].awaiting).toBe(2);
+  });
+
+  it("calls one with no examples a draft", async () => {
+    await addRule("r-draft", "A rule");
+    const body = (await handleListRules(env.DB, null)).body as { rules: { state: string }[] };
+    expect(body.rules[0].state).toBe("draft");
+  });
+});
+
+describe("the stages themselves", () => {
+  it("shows a stage with no rules rather than hiding it", async () => {
+    // **Somebody wondering why nothing happens at Coding** needs to see
+    // that Coding is empty, which an omitted row cannot tell them.
+    await addRule("r-1", "A rule");
+    const body = (await handleRuleStages(env.DB)).body as {
+      stages: { id: string; ruleCount: number }[];
+    };
+
+    const coding = body.stages.find((s) => s.id === "coding");
+    expect(coding).toBeDefined();
+    expect(coding?.ruleCount).toBe(0);
+  });
+
+  it("returns them in sequence, which is the point", async () => {
+    const body = (await handleRuleStages(env.DB)).body as { stages: { id: string }[] };
+    expect(body.stages.map((s) => s.id)).toEqual(["validation", "coding"]);
+  });
+
+  it("counts the rules at each", async () => {
+    await addRule("r-1", "One");
+    await addRule("r-2", "Two");
+    const body = (await handleRuleStages(env.DB)).body as {
+      stages: { id: string; ruleCount: number }[];
+    };
+    expect(body.stages.find((s) => s.id === "validation")?.ruleCount).toBe(2);
+  });
+});
