@@ -62,6 +62,21 @@ export function contentTypeForDetection(detection: {
   // No structure. Detection may still know what the file is.
   if (outcomeOf("pdf_header") === "found") return "application/pdf";
 
+  /**
+   * **And it may know it is an image** — decision 0166.
+   *
+   * This asked `image_magic_bytes` only when the structure had already
+   * been decided to be an image, so a photograph whose extraction
+   * failed fell through to `application/octet-stream` and **the viewer
+   * had nothing to display**: a browser cannot render *"some bytes"*.
+   *
+   * A person was shown an empty form beside an empty pane and asked to
+   * key from it. **This matters most exactly when extraction failed**,
+   * which is when somebody has to read the document themselves.
+   */
+  const sniffed = outcomeOf("image_magic_bytes");
+  if (sniffed && sniffed.startsWith("image/")) return sniffed;
+
   // Genuinely unrecognised. Honest rather than lazy: the bytes are kept
   // exactly as they arrived and nothing claims to know what they are.
   return "application/octet-stream";

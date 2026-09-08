@@ -334,3 +334,70 @@ describe("the response says what was stored, not just that it was (decision 0070
     expect(doc.key).toBeUndefined();
   });
 });
+
+describe("a document nothing could read is still a document (decision 0166)", () => {
+  /**
+   * **The viewer had nothing to display.** A photographed invoice whose
+   * extraction timed out is kept as an invoice with no facts (decision
+   * 0163) — and it was stored as `application/octet-stream`, so the
+   * browser could not render it.
+   *
+   * A person was shown an empty form beside an empty pane and asked to
+   * key from it. **This matters most exactly when extraction failed**,
+   * which is when somebody has to read the document themselves.
+   */
+  it("keeps a JPEG's own type when nothing was detected", async () => {
+    const { contentTypeForDetection } = await import("../src/document-storage.js");
+
+    expect(
+      contentTypeForDetection({
+        structure: null,
+        attempted: [
+          { test: "pdf_header", outcome: "not a PDF" },
+          { test: "image_magic_bytes", outcome: "image/jpeg" },
+        ],
+      })
+    ).toBe("image/jpeg");
+  });
+
+  it("keeps a PNG's own type too", async () => {
+    const { contentTypeForDetection } = await import("../src/document-storage.js");
+
+    expect(
+      contentTypeForDetection({
+        structure: null,
+        attempted: [{ test: "image_magic_bytes", outcome: "image/png" }],
+      })
+    ).toBe("image/png");
+  });
+
+  it("still says octet-stream for bytes nothing recognised", async () => {
+    // **Honest rather than lazy**: nothing claims to know what they
+    // are, which is the original reasoning and still right.
+    const { contentTypeForDetection } = await import("../src/document-storage.js");
+
+    expect(
+      contentTypeForDetection({
+        structure: null,
+        attempted: [
+          { test: "pdf_header", outcome: "not a PDF" },
+          { test: "image_magic_bytes", outcome: "unrecognised" },
+        ],
+      })
+    ).toBe("application/octet-stream");
+  });
+
+  it("still prefers a detected PDF", async () => {
+    const { contentTypeForDetection } = await import("../src/document-storage.js");
+
+    expect(
+      contentTypeForDetection({
+        structure: null,
+        attempted: [
+          { test: "pdf_header", outcome: "found" },
+          { test: "image_magic_bytes", outcome: "unrecognised" },
+        ],
+      })
+    ).toBe("application/pdf");
+  });
+});

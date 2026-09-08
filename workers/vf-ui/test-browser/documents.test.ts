@@ -105,6 +105,22 @@ async function openDocuments(documents: unknown[]) {
   await new Promise((r) => setTimeout(r, 0));
 }
 
+/**
+ * Wait for the condition rather than for a duration.
+ *
+ * **Decision 0138's own finding**: `setTimeout(30)` is a guess about
+ * how long a dynamic import and four fetches take, and a guess that
+ * passes on one run fails on another. This waits for the thing being
+ * asserted, and gives up rather than hanging.
+ */
+async function until(condition: () => boolean, ms = 500) {
+  const deadline = Date.now() + ms;
+  while (Date.now() < deadline) {
+    if (condition()) return;
+    await new Promise((r) => setTimeout(r, 5));
+  }
+}
+
 beforeEach(() => {
   mountShell();
   vi.resetModules();
@@ -185,7 +201,7 @@ describe("opening a document (decision 0165)", () => {
 
     const expand = document.querySelector("button.expand") as HTMLButtonElement;
     expand.click();
-    await new Promise((r) => setTimeout(r, 30));
+    await until(() => !(document.getElementById("viewer") as HTMLElement).hidden);
 
     expect((document.getElementById("viewer") as HTMLElement).hidden).toBe(false);
     expect((document.getElementById("shell") as HTMLElement).hidden).toBe(true);
@@ -197,7 +213,7 @@ describe("opening a document (decision 0165)", () => {
 
     const link = document.querySelector("button.rulelink") as HTMLButtonElement;
     link.click();
-    await new Promise((r) => setTimeout(r, 30));
+    await until(() => !(document.getElementById("viewer") as HTMLElement).hidden);
 
     expect((document.getElementById("viewer") as HTMLElement).hidden).toBe(false);
   });
