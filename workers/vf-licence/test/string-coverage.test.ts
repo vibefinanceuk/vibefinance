@@ -401,3 +401,36 @@ describe("every action and operator has a word (decision 0158)", () => {
     expect(missing, `Operators with no label: ${missing.join(", ")}`).toEqual([]);
   });
 });
+
+describe("every field a screen renders has a word (decision 0172)", () => {
+  /**
+   * **`field.description` reached a screen as its own key.**
+   *
+   * Decision 0171 added the line description as a *displayable* field
+   * rather than a vocabulary one — deliberately, since no rule can test
+   * it — and every field label comes from `field.<code>` in D1.
+   *
+   * Decision 0158's check derives action and operator labels **from the
+   * vocabulary**, so a field that is deliberately outside it could
+   * never be caught that way. This asks the resolver instead: whatever
+   * a screen is given, it must have a word for.
+   */
+  it("labels every field the resolver returns", async () => {
+    const { INVOICE_FIELDS } = await import("@vibefinance/shared");
+
+    const rows = await env.CONTROL_DB.prepare(
+      "SELECT key FROM ui_strings WHERE key LIKE 'field.%' AND locale = 'en'"
+    ).all<{ key: string }>();
+    const labelled = new Set(rows.results.map((r: { key: string }) => r.key));
+
+    // The vocabulary, plus the displayable fields decision 0171 adds.
+    const rendered = [...INVOICE_FIELDS, "description"];
+    const missing = rendered.filter((f) => !labelled.has(`field.${f.toLowerCase()}`));
+
+    expect(
+      missing,
+      `Fields with no label: ${missing.join(", ")}. A screen rendering ` +
+        "`field.description` is a screen showing a customer our own key."
+    ).toEqual([]);
+  });
+});
