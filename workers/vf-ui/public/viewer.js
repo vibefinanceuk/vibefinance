@@ -827,46 +827,68 @@ export async function openViewer(task, onClose) {
    * The space they were using now belongs to the seller and the buyer,
    * which the screen had nowhere to show at all.
    */
-  const keyed = ["supplierVatId", "currency", "issueDate", "totalWithVat"].filter(
-    (f) => known[f] !== null && known[f] !== undefined
-  ).length;
 
-  const statusItem = (labelKey, value, className) =>
-    el("div", { class: className ? `statitem ${className}` : "statitem" }, [
-      el("div", { class: "label", text: t(labelKey) }),
-      el("div", { class: "value", text: value }),
-    ]);
-
-  const status = el("div", { class: "statusrow" }, [
-    el("div", { class: "panel statusbar" }, [
-      statusItem("viewer.status", `${t("tasks.notkeyed")} · ${keyed}/4 ${t("viewer.known")}`, "warn"),
-      statusItem("tasks.stage", task.stageName ?? task.stageId ?? t("documents.noprocess")),
-      /**
-       * **A document is not always work** — decision 0167.
-       *
-       * The document manager opens the viewer for an invoice nobody has
-       * a task for, so there is no `createdAt` to have waited since and
-       * no `ownership` to report. `waited(undefined)` threw, and the
-       * render stopped mid-way: a blank page.
-       *
-       * Omitted rather than filled in. *"Waiting 0h"* about a document
-       * nobody is waiting on would be a fact invented to fill a row.
-       */
-      ...(task.createdAt ? [statusItem("tasks.waiting", waited(task.createdAt))] : []),
-      ...(task.ownership ? [statusItem("tasks.owner", t(`tasks.${task.ownership}`))] : []),
-    ]),
-  ]);
+  /**
+   * The status panel is gone — decision 0175.
+   *
+   * It carried four things and **none of them earned a card**. The
+   * status read *"Not yet keyed · 0/4 fields known"* on every document,
+   * counting four fields nobody chose. The stage was already the
+   * heading. Waiting and Owner were real and belonged beside the
+   * document's own identity rather than below it.
+   *
+   * Removing it moves the process row (decision 0151) up a screenful,
+   * which is what somebody opening an invoice actually looks at.
+   */
 
   shell.replaceChildren(
     frame(
       el("div", {}, [
-        // **The stage's own name**, not "Validation" — decision 0142.
-        // The same screen serves every stage, and a heading that says
-        // otherwise is the screen lying about where somebody is.
-        topbar(task.stageName ?? task.stageId ?? t("viewer.title"), task.subject?.id ?? "", [
-          el("button", { text: t("viewer.back"), onclick: onClose }),
+        /**
+         * **The stage's own name**, labelled — decisions 0142, 0175.
+         *
+         * The heading read `Validation` alone, which is a word that
+         * could be anything. `Stage: Validation` says what kind of
+         * thing it is, and the same screen serves every stage — a
+         * heading naming one would be the screen lying about where
+         * somebody is.
+         *
+         * Beneath it, what identifies the document and what a person
+         * needs before they start: the reference, how long it has
+         * waited, and who has it. All three were in a card below the
+         * fold, where the last two were the only ones worth reading.
+         */
+        topbar(
+          `${t("viewer.stagelabel")} ${task.stageName ?? task.stageId ?? t("viewer.title")}`,
+          task.subject?.id ? `${t("viewer.reflabel")} ${task.subject.id}` : "",
+          [el("button", { text: t("viewer.back"), onclick: onClose })]
+        ),
+
+        el("div", { class: "subhead sm muted" }, [
+          // Omitted rather than invented on a document nobody is
+          // waiting on (decision 0167).
+          ...(task.createdAt
+            ? [
+                el("div", {
+                  text: `${t("tasks.waiting")} ${waited(task.createdAt)}`,
+                }),
+              ]
+            : []),
+          /**
+           * **An address, not "Mine"** — decision 0175.
+           *
+           * *"Owner: Mine"* tells the person holding a task the one
+           * thing they already know, and tells everybody else nothing.
+           * An address is who to ask.
+           */
+          ...(task.lockedBy?.email || task.lockedBy?.name
+            ? [
+                el("div", {
+                  text: `${t("tasks.owner")} ${task.lockedBy.email ?? task.lockedBy.name}`,
+                }),
+              ]
+            : []),
         ]),
-        status,
         // Fields beside actions, rather than fields above a footer.
         // Actions collected in one place (decision 0108).
         // Above the columns, because it is context for everything

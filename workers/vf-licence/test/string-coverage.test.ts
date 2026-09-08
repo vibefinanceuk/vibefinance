@@ -188,6 +188,8 @@ const KEYS_THE_INTERFACE_USES = [
   "viewer.actionfailed",
   "viewer.unreadable",
   "viewer.tried",
+  "viewer.stagelabel",
+  "viewer.reflabel",
   "nav.documents",
   "documents.subtitle",
   "documents.searchhint",

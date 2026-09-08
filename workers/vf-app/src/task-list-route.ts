@@ -66,7 +66,7 @@ export interface TaskRow {
   /** What this person may do with it — see `TaskAction`. */
   actions: TaskAction[];
   /** Set only when `locked` — who holds it, and since when. */
-  lockedBy?: { id: string; name: string; since: string | null };
+  lockedBy?: { id: string; name: string; email: string | null; since: string | null };
   createdAt: string;
   instanceId: string | null;
   /**
@@ -103,6 +103,7 @@ interface Raw {
   claimed_by: string | null;
   claimed_at: string | null;
   claimed_by_name: string | null;
+  claimed_by_email: string | null;
   created_at: string;
   instance_id: string | null;
   subject_type: string | null;
@@ -248,6 +249,7 @@ export async function handleListMyTasks(
          t.id, t.stage_id, t.required_permission, t.owner_user_id, t.owner_team_id,
          t.claimed_by, t.claimed_at, t.created_at,
          claimer.name AS claimed_by_name,
+         claimer.email AS claimed_by_email,
          s.name AS stage_name, s.process_id,
          v.process_instance_id AS instance_id,
          pi.subject_type, pi.subject_id,
@@ -306,6 +308,14 @@ export async function handleListMyTasks(
       task.lockedBy = {
         id: row.claimed_by,
         name: row.claimed_by_name ?? row.claimed_by,
+        /**
+         * **The address, not just the name** — decision 0175.
+         *
+         * The viewer said *"Owner: Mine"*, which tells the person
+         * holding a task the one thing they already know and tells
+         * everybody else nothing. An address is who to ask.
+         */
+        email: row.claimed_by_email,
         since: row.claimed_at,
       };
     }

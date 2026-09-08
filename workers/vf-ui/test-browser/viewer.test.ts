@@ -88,6 +88,10 @@ const STRINGS = {
     "viewer.actionfailed": "That could not be done.",
     "progress.since": "here since {when}",
     "progress.revisited": "This invoice came back to this stage.",
+    "viewer.stagelabel": "Stage:",
+    "tasks.waiting": "Waiting",
+    "tasks.owner": "Owner",
+    "viewer.reflabel": "Unique Ref:",
     "viewer.document": "Document",
     "viewer.nodocument": "No document retained",
   },
@@ -711,7 +715,8 @@ describe("the same screen serves review (decision 0142)", () => {
     // "Validation" on an approval task is the screen lying about where
     // somebody is.
     await openApproval();
-    expect(document.querySelector(".topbar h2")?.textContent).toBe("Approval");
+    // Labelled since decision 0175: a bare word could be anything.
+    expect(document.querySelector(".topbar h2")?.textContent).toBe("Stage: Approval");
   });
 
   it("keeps Save where a stage does permit editing", async () => {
@@ -919,5 +924,74 @@ describe("a stage returned to (decision 0151)", () => {
       s.textContent?.startsWith("Approval")
     );
     expect(approval?.className).toContain("behind");
+  });
+});
+
+describe("the status card is gone (decision 0175)", () => {
+  /**
+   * **Four things and none of them earned a card.** The status read
+   * *"Not yet keyed · 0/4 fields known"* on every document, counting
+   * four fields nobody chose. The stage was already the heading.
+   * Waiting and Owner were real and belonged beside the document's own
+   * identity rather than below it.
+   */
+  async function openOwned() {
+    stubFetch({
+      "/api/code-lists": { fields: {} },
+      "/api/ui-strings": STRINGS,
+      "/api/field-visibility": FIELDS,
+      "/api/invoices/inv-1": {
+        facts: {},
+        lines: [],
+        validation: { passed: true, checked: [], failures: [] },
+      },
+      "/api/invoices/inv-1/document-url": { url: null },
+      "/api/invoices/inv-1/progress": { inProcess: false, stages: [] },
+    });
+
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    await openViewer(
+      {
+        ...TASK,
+        createdAt: "2026-09-01 09:00:00",
+        lockedBy: { id: "u-alice", name: "Alice", email: "alice@acme.com", since: null },
+      },
+      () => {}
+    );
+    await new Promise((r) => setTimeout(r, 0));
+  }
+
+  it("no longer counts four fields nobody chose", async () => {
+    await openOwned();
+    expect(document.body.textContent).not.toContain("0/4");
+  });
+
+  it("removes the card entirely", async () => {
+    await openOwned();
+    expect(document.querySelector(".statusbar")).toBeNull();
+  });
+
+  it("labels the heading, so a bare word is not ambiguous", async () => {
+    await openOwned();
+    expect(document.querySelector(".topbar h2")?.textContent).toContain("Stage:");
+  });
+
+  it("labels the reference beneath it", async () => {
+    await openOwned();
+    expect(document.querySelector(".topbar")?.textContent).toContain("Unique Ref:");
+  });
+
+  it("keeps how long it has waited, at the top", async () => {
+    await openOwned();
+    expect(document.querySelector(".subhead")?.textContent).toContain("Waiting");
+  });
+
+  it("says who owns it by address, not 'Mine'", async () => {
+    // **"Owner: Mine" tells the person holding it what they know** and
+    // tells everybody else nothing. An address is who to ask.
+    await openOwned();
+    expect(document.querySelector(".subhead")?.textContent).toContain("alice@acme.com");
   });
 });
