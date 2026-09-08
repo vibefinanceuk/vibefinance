@@ -1,0 +1,258 @@
+import { t } from "/strings.js";
+import { el, frame, topbar, setCurrentScreen } from "/tasks.js";
+import { icon } from "/icons.js";
+import { readback, useFieldDescriptions } from "/readback.js";
+
+/**
+ * Writing a rule — decision 0153.
+ *
+ * **The product's actual claim.** A customer writes a sentence and gets
+ * an enforced rule; until now that was a `curl`, which meant only the
+ * operator could do it — and the whole argument for the closed
+ * vocabulary (decision 0031) is that it is safe to hand to a customer.
+ *
+ * Five steps with a real gate in the middle: write, read back, confirm
+ * every worked example, activate. The gate is decision 0034's, and it
+ * is the reason this is a flow rather than a form.
+ */
+
+let stage = null;
+let compiled = null;
+let examples = [];
+let refusal = null;
+
+function note(message) {
+  const box = document.getElementById("compose-note");
+  if (box) box.textContent = message;
+}
+
+/**
+ * Compile the sentence.
+ *
+ * **A refusal is an answer, not a failure** (decision 0033). The model
+ * declining to express something is the vocabulary boundary doing its
+ * job, and a screen that treats it as an error teaches somebody to
+ * distrust a working system.
+ */
+async function compile() {
+  const sourceText = document.getElementById("sentence").value.trim();
+  if (sourceText === "") {
+    note(t("compose.needsentence"));
+    return;
+  }
+
+  compiled = null;
+  refusal = null;
+  examples = [];
+  note(t("compose.compiling"));
+
+  const response = await fetch("/api/rules/compile", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ruleSetId: stage.ruleSetId, sourceText }),
+  });
+
+  const body = await response.json();
+
+  if (body.status === "refused") {
+    refusal = body.reason;
+    render();
+    return;
+  }
+
+  if (!response.ok) {
+    note(body.error ?? t("compose.failed"));
+    return;
+  }
+
+  compiled = body;
+  await loadExamples();
+  render();
+}
+
+async function loadExamples() {
+  const response = await fetch(
+    `/api/rules/${encodeURIComponent(compiled.ruleId)}/versions/${compiled.version}/examples`
+  );
+  examples = response.ok ? (await response.json()).examples ?? [] : [];
+}
+
+/**
+ * Confirm one example.
+ *
+ * **A named person confirms it** (decision 0034), derived from the
+ * authenticated caller rather than sent — the discipline decision 0010
+ * proves with a spoofed-identity test.
+ */
+async function confirmExample(exampleId) {
+  const response = await fetch(`/api/rules/examples/${encodeURIComponent(exampleId)}/confirm`, {
+    method: "POST",
+  });
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    note(body.error ?? t("compose.failed"));
+    return;
+  }
+
+  await loadExamples();
+  render();
+}
+
+async function activate() {
+  const response = await fetch(
+    `/api/rules/${encodeURIComponent(compiled.ruleId)}/versions/${compiled.version}/activate`,
+    { method: "POST" }
+  );
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    note(body.error ?? t("compose.failed"));
+    return;
+  }
+
+  // The rule is live, so this screen has nothing left to say about it.
+  const { open } = await import("/rules.js");
+  await open();
+}
+
+/**
+ * One worked example.
+ *
+ * **In plain terms, not `expectMatch: true`.** Somebody confirming a
+ * batch is being asked to agree that an outcome is right, and a boolean
+ * beside a JSON blob is not something anybody can agree with.
+ */
+function exampleRow(example) {
+  const fires = example.expectMatch;
+
+  return el("div", { class: "example" }, [
+    el("div", {
+      class: `verdict ${fires ? "fires" : "quiet"}`,
+      text: fires ? t("compose.fires") : t("compose.quiet"),
+    }),
+    el("div", { class: "body" }, [
+      el("div", {
+        class: "facts",
+        // The invoice as facts a person reads, rather than the JSON the
+        // interpreter was given.
+        text: Object.entries(example.invoice ?? {})
+          .map(([field, value]) => `${field} ${value}`)
+          .join(" · "),
+      }),
+    ]),
+    el(
+      "div",
+      {},
+      example.confirmedBy
+        ? [el("span", { class: "confirmed", text: t("compose.confirmed") })]
+        : [el("button", { text: t("compose.confirm"), onclick: () => confirmExample(example.id) })]
+    ),
+  ]);
+}
+
+function render() {
+  const shell = document.getElementById("shell");
+  if (!shell) return;
+
+  const outstanding = examples.filter((e) => !e.confirmedBy).length;
+  const panels = [];
+
+  // 1. The sentence.
+  panels.push(
+    el("div", { class: "panel" }, [
+      el("h3", { text: t("compose.write") }),
+      el("textarea", { id: "sentence", rows: "3" }),
+      el("div", { class: "composebar" }, [
+        el("button", { class: "primary", onclick: compile }, [
+          icon("compile"),
+          el("span", { text: t("compose.compile") }),
+        ]),
+        el("span", { class: "sm muted", text: t("compose.plain") }),
+      ]),
+    ])
+  );
+
+  // 2a. Refused — an answer, in warning rather than alarm.
+  if (refusal) {
+    panels.push(
+      el("div", { class: "panel" }, [
+        el("h3", { text: t("compose.cannot") }),
+        el("div", { class: "refusal" }, [el("div", { text: refusal })]),
+        el("p", { class: "sm muted", text: t("compose.nothingsaved") }),
+      ])
+    );
+  }
+
+  // 2b. What it understood.
+  if (compiled) {
+    panels.push(
+      el("div", { class: "panel" }, [
+        el("h3", { text: t("compose.willdo") }),
+        readback(compiled.conditions, compiled.actions),
+        el("p", { class: "sm muted", text: t("readback.check") }),
+      ])
+    );
+
+    // 3. The evidence.
+    panels.push(
+      el("div", { class: "panel" }, [
+        el("h3", { text: t("compose.examples") }),
+        el("p", { class: "sm muted", text: t("compose.examplesnote") }),
+        ...examples.map(exampleRow),
+      ])
+    );
+
+    // 4. The gate.
+    panels.push(
+      el("div", { class: "gate" }, [
+        el(
+          "button",
+          {
+            class: "primary",
+            onclick: activate,
+            ...(outstanding > 0 ? { disabled: "disabled" } : {}),
+          },
+          [icon("activate"), el("span", { text: t("compose.activate") })]
+        ),
+        el("span", {
+          class: "why",
+          text:
+            outstanding > 0
+              ? t("compose.confirmfirst").replace("{n}", String(outstanding))
+              : t("compose.allconfirmed"),
+        }),
+      ])
+    );
+  }
+
+  shell.replaceChildren(
+    frame(
+      el("div", {}, [
+        topbar(t("compose.title"), stage?.name ?? ""),
+        ...panels,
+        el("div", { class: "problem", id: "compose-note", role: "status" }),
+      ])
+    )
+  );
+}
+
+export async function openCompose(forStage) {
+  setCurrentScreen("rules");
+  stage = forStage;
+  compiled = null;
+  refusal = null;
+  examples = [];
+
+  // The field descriptions the read-back needs, from the same route the
+  // keying screen uses — one vocabulary, not two (decision 0031).
+  try {
+    const response = await fetch("/api/field-visibility");
+    if (response.ok) useFieldDescriptions((await response.json()).fields);
+  } catch {
+    // The read-back falls back to Business Term ids, which is worse and
+    // not wrong.
+  }
+
+  render();
+}

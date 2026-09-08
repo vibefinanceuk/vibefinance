@@ -145,7 +145,11 @@ export async function handleRuleStages(db: D1Database): Promise<RouteResult> {
         // fires at a stage, and what a rule can test depends on what
         // has happened to the document by then.
         ruleCount: s.rule_count,
+        // **Where a rule can actually go.** A stage with no rule set
+        // has nowhere to put one, and a screen offering to write one
+        // there would be offering a dead end.
         hasRuleSet: s.rule_set_id !== null,
+        ruleSetId: s.rule_set_id,
       })),
     },
   };

@@ -82,6 +82,8 @@ export default defineConfig({
       "/icons.js": resolve(__dirname, "public/icons.js"),
       "/process-row.js": resolve(__dirname, "public/process-row.js"),
       "/rules.js": resolve(__dirname, "public/rules.js"),
+      "/compose.js": resolve(__dirname, "public/compose.js"),
+      "/readback.js": resolve(__dirname, "public/readback.js"),
     },
   },
 });

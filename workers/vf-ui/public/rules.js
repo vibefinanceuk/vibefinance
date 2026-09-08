@@ -48,6 +48,11 @@ function note(message) {
   if (box) box.textContent = message;
 }
 
+async function compose(stage) {
+  const { openCompose } = await import("/compose.js");
+  await openCompose(stage);
+}
+
 function ruleRow(rule) {
   return el("div", { class: "rule" }, [
     el("div", { class: "what" }, [
@@ -104,6 +109,21 @@ function render() {
           rules.length > 0
             ? el("div", { class: "rules" }, rules.map(ruleRow))
             : el("p", { class: "muted", text: t("rules.empty") }),
+          /**
+           * **Only where rules can go.** A stage with no rule set has
+           * nowhere to put one, and offering the button there would be
+           * offering somebody a dead end.
+           */
+          ...(stage?.hasRuleSet
+            ? [
+                el("div", { style: "margin-top:16px" }, [
+                  el("button", { class: "primary", onclick: () => compose(stage) }, [
+                    icon("compile"),
+                    el("span", { text: t("rules.new") }),
+                  ]),
+                ]),
+              ]
+            : []),
         ]),
         el("div", { class: "problem", id: "rules-note", role: "status" }),
       ])

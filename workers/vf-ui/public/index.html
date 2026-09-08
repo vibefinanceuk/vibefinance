@@ -365,6 +365,54 @@
   */
   .stage.ahead { opacity: 0.55; }
 
+  /*
+    Writing a rule — decision 0153.
+
+    The read-back is the one bold thing: somebody has to check the
+    system understood their sentence, and everything else on the screen
+    is subordinate to that.
+  */
+  .readback {
+    background: var(--bg-accent);
+    border-left: 3px solid var(--border-accent);
+    border-radius: 0 var(--radius) var(--radius) 0;
+    padding: 12px 16px;
+    margin-bottom: 12px;
+  }
+
+  .readback .clause { display: block; margin: 2px 0; }
+  .readback .clause.heading { margin-bottom: 6px; }
+  .readback .clause.then { margin-top: 10px; }
+  .readback .nested { padding-left: 18px; border-left: 1px solid var(--border); margin: 4px 0; }
+
+  /* The Business Term, available and not insisted upon. */
+  .readback .term { color: var(--text-accent); border-bottom: 1px dotted var(--border-accent); cursor: help; }
+
+  /* A refusal is an answer, not a failure (decision 0033). */
+  .refusal {
+    background: var(--bg-warning);
+    border-left: 3px solid var(--text-warning);
+    border-radius: 0 var(--radius) var(--radius) 0;
+    padding: 12px 16px;
+    color: var(--text-warning);
+  }
+
+  .composebar { display: flex; gap: 12px; align-items: center; margin-top: 10px; }
+  .composebar svg { width: 16px; height: 16px; margin-right: 5px; vertical-align: -3px; }
+
+  .example { display: flex; gap: 14px; align-items: flex-start; padding: 12px 0; border-bottom: 0.5px solid var(--border); }
+  .example:last-child { border-bottom: none; }
+  .example .verdict { flex: 0 0 96px; font-size: var(--text-sm); font-weight: 600; }
+  .example .verdict.fires { color: var(--text-accent); }
+  .example .verdict.quiet { color: var(--text-muted); }
+  .example .body { flex: 1; }
+  .example .facts { font-size: var(--text-sm); color: var(--text-secondary); }
+  .example .confirmed { color: var(--text-success); font-size: var(--text-sm); font-weight: 600; }
+
+  .gate { display: flex; align-items: center; gap: 14px; padding: 14px 18px; background: var(--surface-1); border: 0.5px solid var(--border); border-radius: var(--radius); }
+  .gate .why { font-size: var(--text-sm); color: var(--text-muted); }
+  .gate svg { width: 16px; height: 16px; margin-right: 5px; vertical-align: -3px; }
+
   .rule { display: flex; gap: 16px; padding: 12px 0; border-bottom: 0.5px solid var(--border); align-items: baseline; }
   .rule:last-child { border-bottom: none; }
   .rule .what { flex: 1; }
