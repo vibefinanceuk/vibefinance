@@ -55,7 +55,7 @@ export async function handleInvoiceProgress(
 ): Promise<RouteResult> {
   const instance = await db
     .prepare(
-      `SELECT id, process_id, current_stage_id, status, created_at
+      `SELECT id, process_id, current_stage_id, status, created_at, process_version
        FROM process_instances
        WHERE subject_type = 'invoice' AND subject_id = ?
        ORDER BY created_at DESC LIMIT 1`
@@ -67,6 +67,7 @@ export async function handleInvoiceProgress(
       current_stage_id: string;
       status: string;
       created_at: string;
+      process_version: number;
     }>();
 
   if (!instance) {
@@ -78,9 +79,21 @@ export async function handleInvoiceProgress(
 
   const stages = await db
     .prepare(
-      "SELECT id, name, sequence FROM process_stages WHERE process_id = ? ORDER BY sequence"
+      /**
+       * The stages of the version **this invoice** runs under —
+       * decision 0150.
+       *
+       * Not the process's current shape: an invoice that started before
+       * a stage was removed still passed through it, and a timeline
+       * showing today's stages would lose where it has been.
+       */
+      `SELECT s.id, s.name, v.sequence
+       FROM process_stage_versions v
+       JOIN process_stages s ON s.id = v.stage_id
+       WHERE v.process_id = ? AND v.version = ?
+       ORDER BY v.sequence`
     )
-    .bind(instance.process_id)
+    .bind(instance.process_id, instance.process_version)
     .all<{ id: string; name: string; sequence: number }>();
 
   /**

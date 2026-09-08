@@ -70,6 +70,19 @@ async function seedSource(address: string | null, status = "active") {
   await env.DB.prepare(
     "INSERT OR IGNORE INTO process_stages (id, process_id, name, sequence) VALUES ('received', 'ap', 'Received', 1)"
   ).run();
+
+  /**
+   * Membership of the process's current version — decision 0160.
+   *
+   * **A stage in no version is a stage the workflow engine steps
+   * straight past**, so capture would find nowhere to put the invoice.
+   * `process-route.ts` does this when a stage is created through it.
+   */
+  await env.DB.prepare(
+    `INSERT OR IGNORE INTO process_stage_versions (process_id, version, stage_id, sequence)
+     SELECT p.id, p.version, s.id, s.sequence
+     FROM process_stages s JOIN processes p ON p.id = s.process_id`
+  ).run();
   await env.DB.prepare(
     "INSERT OR IGNORE INTO intake_channels (id, process_id, name) VALUES ('ch-email', 'ap', 'Email')"
   ).run();

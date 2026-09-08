@@ -84,5 +84,24 @@ export async function handleCreateStage(
     .bind(id, processId, name, sequence, (ruleSetId as string) ?? null, scope)
     .run();
 
+  /**
+   * The stage joins the process's current version — decision 0150.
+   *
+   * **A stage in no version is a stage nothing can reach.** The
+   * workflow engine reads a version's membership to find what comes
+   * next, so a stage created outside one would exist and never be
+   * visited — which is worse than not existing.
+   *
+   * `INSERT OR IGNORE`, because publishing a version writes its own
+   * membership and this must not fight it.
+   */
+  await db
+    .prepare(
+      `INSERT OR IGNORE INTO process_stage_versions (process_id, version, stage_id, sequence)
+       SELECT ?, p.version, ?, ? FROM processes p WHERE p.id = ?`
+    )
+    .bind(processId, id, sequence, processId)
+    .run();
+
   return { status: 201, body: { id, processId, name, sequence, ruleSetId: ruleSetId ?? null, evaluationScope: scope } };
 }

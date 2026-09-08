@@ -29,6 +29,20 @@ async function seedStages() {
       .bind(id, name, seq)
       .run();
   }
+
+  /**
+   * Membership of the process's current version — decision 0160.
+   *
+   * `process-route.ts` does this when a stage is created through it.
+   * These tests insert directly, so they do it themselves: **a stage in
+   * no version is a stage the workflow engine steps straight past.**
+   */
+  await env.DB.prepare(
+    `INSERT OR IGNORE INTO process_stage_versions (process_id, version, stage_id, sequence)
+     SELECT p.id, p.version, s.id, s.sequence
+     FROM process_stages s JOIN processes p ON p.id = s.process_id`
+  ).run();
+
 }
 
 const find = (fields: ResolvedField[], code: string) => fields.find((f) => f.field === code);

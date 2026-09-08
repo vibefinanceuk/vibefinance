@@ -44,6 +44,7 @@ import sourceEmailSql from "../../../migrations/0039_source_email_address.sql?ra
 import sourceStatusSql from "../../../migrations/0040_source_status.sql?raw";
 import readOnlyStageSql from "../../../migrations/0041_read_only_stage.sql?raw";
 import inboundEmailSql from "../../../migrations/0042_inbound_email_events.sql?raw";
+import processVersionsSql from "../../../migrations/0043_process_versions.sql?raw";
 import taskStatesSql from "../../../migrations/0031_task_states_and_returns.sql?raw";
 import orgSettingsSql from "../../../migrations/0032_org_settings_retention.sql?raw";
 import discardedStateSql from "../../../migrations/0033_discarded_task_state.sql?raw";
@@ -92,7 +93,7 @@ function toOneStatementPerLine(sql: string): string {
 // first (children before parents, for the foreign keys) so each test
 // gets a genuinely clean schema regardless of what the pool does or
 // does not reset.
-const TABLES_IN_DROP_ORDER = ["inbound_email_events", "stage_field_visibility", "field_visibility", 
+const TABLES_IN_DROP_ORDER = ["process_stage_versions", "inbound_email_events", "stage_field_visibility", "field_visibility", 
   "purchase_order_lines",
   "purchase_orders",
   "org_settings",
@@ -174,8 +175,53 @@ export async function applyTestSchema(): Promise<void> {
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(sourceStatusSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(readOnlyStageSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(inboundEmailSql)));
+  await env.DB.exec(toOneStatementPerLine(stripSqlComments(processVersionsSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(taskStatesSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(orgSettingsSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(discardedStateSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(purchaseOrdersSql)));
+}
+
+/**
+ * Seed a stage, and its membership of the process — decision 0160.
+ *
+ * Decision 0150 versioned the **membership**, so a stage exists once and
+ * `process_stage_versions` records which stages are in a process at a
+ * given version. **A stage in no version is in no process**, and the
+ * workflow engine steps straight past it.
+ *
+ * Twelve test seedings inserted into `process_stages` alone and broke
+ * seventeen tests — correctly, because that is what the change means.
+ *
+ * **Not a trigger**, though one was tried: `CREATE TRIGGER` contains
+ * internal semicolons, and this harness flattens every statement to one
+ * line before `exec` (decision 0016's own note about D1's exec), so the
+ * schema would not load at all.
+ *
+ * **And not the real answer either.** A stage created by a route needs
+ * its membership too, and nothing yet gives it one — recorded rather
+ * than hidden behind a helper that makes tests pass.
+ */
+export async function seedStage(
+  id: string,
+  processId: string,
+  name: string,
+  sequence: number,
+  extra: Record<string, string | number> = {}
+): Promise<void> {
+  const columns = ["id", "process_id", "name", "sequence", ...Object.keys(extra)];
+  const values = [id, processId, name, sequence, ...Object.values(extra)];
+
+  await env.DB.prepare(
+    `INSERT INTO process_stages (${columns.join(", ")}) VALUES (${columns.map(() => "?").join(", ")})`
+  )
+    .bind(...values)
+    .run();
+
+  await env.DB.prepare(
+    `INSERT OR IGNORE INTO process_stage_versions (process_id, version, stage_id, sequence)
+     SELECT ?, version, ?, ? FROM processes WHERE id = ?`
+  )
+    .bind(processId, id, sequence, processId)
+    .run();
 }

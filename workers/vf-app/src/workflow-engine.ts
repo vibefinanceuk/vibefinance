@@ -44,6 +44,8 @@ import type { RouteResult } from "./org-route.js";
 const MAX_STAGES_PER_VISIT = 50;
 
 interface ProcessInstanceRow {
+  /** The version this instance runs under — decision 0150. */
+  process_version: number;
   id: string;
   process_id: string;
   current_stage_id: string;
@@ -118,13 +120,30 @@ export async function handleCreateProcessInstance(
   if (typeof subjectType !== "string" || !subjectType || typeof subjectId !== "string" || !subjectId) {
     return { status: 400, body: { error: "subjectType and subjectId (both strings) are required" } };
   }
-  const process = await db.prepare("SELECT id FROM processes WHERE id = ?").bind(processId).first();
+  // **The version an instance starts under** — decision 0150. Whatever
+  // the process is publishing now; it keeps it for life.
+  const process = await db
+    .prepare("SELECT id, version FROM processes WHERE id = ?")
+    .bind(processId)
+    .first<{ id: string; version: number }>();
   if (!process) {
     return { status: 404, body: { error: `process ${processId} does not exist` } };
   }
+  /**
+   * The first stage of the version this instance runs under — decision
+   * 0150.
+   *
+   * **Not `process_stages.sequence`.** That column describes a stage;
+   * the *order* belongs to a version, so an invoice started under v1
+   * keeps v1's path even after v2 is published.
+   */
   const firstStage = await db
-    .prepare("SELECT id FROM process_stages WHERE process_id = ? ORDER BY sequence ASC LIMIT 1")
-    .bind(processId)
+    .prepare(
+      `SELECT v.stage_id AS id FROM process_stage_versions v
+       WHERE v.process_id = ? AND v.version = ?
+       ORDER BY v.sequence ASC LIMIT 1`
+    )
+    .bind(processId, process.version)
     .first<{ id: string }>();
   if (!firstStage) {
     return { status: 422, body: { error: `process ${processId} has no stages — nothing to start an instance at` } };
@@ -133,21 +152,43 @@ export async function handleCreateProcessInstance(
   const id = crypto.randomUUID();
   await db
     .prepare(
-      `INSERT INTO process_instances (id, process_id, subject_type, subject_id, current_stage_id)
-       VALUES (?, ?, ?, ?, ?)`
+      // **Stamped with the version it starts under** — decision 0150.
+      // The operator's requirement: the invoice finished on v1, and the
+      // item has no knowledge of v2.
+      `INSERT INTO process_instances (id, process_id, subject_type, subject_id, current_stage_id, process_version)
+       VALUES (?, ?, ?, ?, ?, ?)`
     )
-    .bind(id, processId, subjectType, subjectId, firstStage.id)
+    .bind(id, processId, subjectType, subjectId, firstStage.id, process.version)
     .run();
 
   return { status: 201, body: { id, processId, subjectType, subjectId, currentStageId: firstStage.id, status: "in_progress" } };
 }
 
-async function nextStageInSequence(db: D1Database, processId: string, currentSequence: number): Promise<StageRow | null> {
+async function nextStageInSequence(
+  db: D1Database,
+  processId: string,
+  currentSequence: number,
+  // **The instance's version, not the process's** — decision 0150. An
+  // invoice finishes the path it started on.
+  processVersion: number
+): Promise<StageRow | null> {
   return db
     .prepare(
-      "SELECT id, process_id, sequence, rule_set_id, evaluation_scope, requires_org FROM process_stages WHERE process_id = ? AND sequence > ? ORDER BY sequence ASC LIMIT 1"
+      /**
+       * What comes next, in this instance's own version — decision
+       * 0150.
+       *
+       * A stage removed in v2 is simply absent from v2's membership,
+       * so an invoice on v1 still visits it and one on v2 does not —
+       * without deleting a row six tables reference.
+       */
+      `SELECT s.id, s.process_id, v.sequence, s.rule_set_id, s.evaluation_scope, s.requires_org
+       FROM process_stage_versions v
+       JOIN process_stages s ON s.id = v.stage_id
+       WHERE v.process_id = ? AND v.version = ? AND v.sequence > ?
+       ORDER BY v.sequence ASC LIMIT 1`
     )
-    .bind(processId, currentSequence)
+    .bind(processId, processVersion, currentSequence)
     .first<StageRow>();
 }
 
@@ -194,7 +235,10 @@ export async function visitCurrentStage(
     // invoice this instance is about, and the engine is otherwise
     // deliberately ignorant of what a subject is.
     .prepare(
-      "SELECT id, process_id, current_stage_id, status, subject_type, subject_id FROM process_instances WHERE id = ?"
+      // `process_version` carried with the instance — decision 0150.
+      // Every stage lookup for it reads that version's membership, so
+      // an invoice finishes the path it started on.
+      "SELECT id, process_id, current_stage_id, status, subject_type, subject_id, process_version FROM process_instances WHERE id = ?"
     )
     .bind(instanceId)
     .first<ProcessInstanceRow & { subject_type: string; subject_id: string }>();
@@ -274,7 +318,7 @@ export async function visitCurrentStage(
         .run();
       visitsThisCall.push({ stageId: stage.id, outcome: "automatic", tasksCreated: 0 });
 
-      const next = await nextStageInSequence(db, stage.process_id, stage.sequence);
+      const next = await nextStageInSequence(db, stage.process_id, stage.sequence, instance.process_version);
       if (!next) {
         await db
           .prepare("UPDATE process_instances SET status = 'completed', updated_at = ? WHERE id = ?")
@@ -546,7 +590,7 @@ export async function visitCurrentStage(
         .bind(routeTarget)
         .first<StageRow>();
     } else {
-      next = await nextStageInSequence(db, stage.process_id, stage.sequence);
+      next = await nextStageInSequence(db, stage.process_id, stage.sequence, instance.process_version);
     }
     if (!next) {
       await db
@@ -597,9 +641,9 @@ export async function onTaskCompleted(db: D1Database, taskId: string): Promise<v
   if (!visit) return;
 
   const instance = await db
-    .prepare("SELECT id, status FROM process_instances WHERE id = ?")
+    .prepare("SELECT id, status, process_version FROM process_instances WHERE id = ?")
     .bind(visit.process_instance_id)
-    .first<{ id: string; status: string }>();
+    .first<{ id: string; status: string; process_version: number }>();
   if (!instance || instance.status !== "in_progress") return;
 
   const stage = await db
@@ -610,7 +654,7 @@ export async function onTaskCompleted(db: D1Database, taskId: string): Promise<v
 
   let currentSequence = stage.sequence;
   for (let i = 0; i < MAX_STAGES_PER_VISIT; i++) {
-    const next = await nextStageInSequence(db, stage.process_id, currentSequence);
+    const next = await nextStageInSequence(db, stage.process_id, currentSequence, instance.process_version);
     if (!next) {
       await db
         .prepare("UPDATE process_instances SET status = 'completed', updated_at = ? WHERE id = ?")
