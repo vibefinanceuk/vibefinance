@@ -1,3 +1,4 @@
+import { isClosedList, isValidCode } from "../standards/code-lists.js";
 import {
   asResolved,
   isKnownAction,
@@ -111,6 +112,38 @@ function validateNode(node: RuleNode, depth: number, vocabulary: VocabularyInput
   validateCondition(node, vocabulary);
 }
 
+/**
+ * A condition's value, where the field has a closed list — decision
+ * 0148.
+ *
+ * **Only closed lists refuse.** The UN/ECE unit list is deliberately a
+ * subset (decision 0113), so a customer with a legitimate unit nobody
+ * seeded must still be able to write a rule about it — refusing there
+ * would make our incomplete list the customer's problem.
+ *
+ * `in` and `not_in` take an array, and **every member is checked**: one
+ * bad code among four makes a rule that matches three things and looks
+ * like it matches four.
+ */
+function validateConditionValue(condition: Condition): void {
+  if (!isClosedList(condition.field)) return;
+
+  const values = Array.isArray(condition.value) ? condition.value : [condition.value];
+
+  for (const value of values) {
+    // An absent value is the previous check's business, and an empty
+    // string is a person meaning "nothing" rather than a bad code.
+    if (value === undefined || value === null || value === "") continue;
+
+    if (!isValidCode(condition.field, value)) {
+      throw new RuleValidationError(
+        `"${String(value)}" is not a valid ${condition.field} code — ` +
+          "a rule naming one that does not exist would never match anything"
+      );
+    }
+  }
+}
+
 function validateCondition(condition: Condition, vocabulary: VocabularyInput): void {
   if (!isKnownField(condition.field, vocabulary)) {
     throw new RuleValidationError(
@@ -135,6 +168,22 @@ function validateCondition(condition: Condition, vocabulary: VocabularyInput): v
   // textual field never satisfies it. No error, no refusal, just a
   // rule that quietly does nothing. Refusing at compile time turns
   // the worst failure mode this engine has into a real message.
+  /**
+   * The **value**, against the standard's own list — decision 0148.
+   *
+   * Decision 0041 made this argument for operators and it is the same
+   * one: a rule saying *"currency is EURO"* names a real field and a
+   * real operator, compiles, activates, and **silently never fires**.
+   * The ISO code is `EUR`. Nothing errors; an invoice that should have
+   * been held goes through, and the only evidence is an absence.
+   *
+   * Decision 0113 built the lists and decision 0116 uses them to check
+   * **documents**. This is the pair: a dropdown stops a person entering
+   * a bad code, validation stops a document carrying one, and this
+   * stops a rule *looking* for one.
+   */
+  validateConditionValue(condition);
+
   if (!isOperatorValidForField(condition.field, condition.operator, vocabulary)) {
     const type = asResolved(vocabulary).fieldTypes[condition.field];
     throw new RuleValidationError(

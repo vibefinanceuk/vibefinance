@@ -508,7 +508,7 @@ and three routes authenticated by API key only.
 supplier both end a task, and the reason prompt is the only pause — *why*
 is not *are you sure*.
 
-**5. Closed-value enforcement in the compiler.** A rule saying
+**5. ~~Closed-value enforcement in the compiler.~~ Built** (0148). A rule saying
 *"currency is EURO"* compiles, activates, fires against nothing and
 looks correct in every listing. `validateRule` has the list (0113) and
 does not consult it. The pair to decision 0116, which now validates

@@ -106,6 +106,12 @@ export const NON_MIGRATING_TABLES: readonly string[] = [
   "invoice_run_steps",
 
   // Intake's own history, and documents half-arrived.
+  //
+  // **`inbound_email_events` belongs here for the same reason**
+  // (decision 0147): it records what a sandbox received, and a
+  // production environment that inherited it would claim invoices
+  // arrived at an address that never existed there.
+  "inbound_email_events",
   "intake_capture_events",
   "intake_channels",
   "pending_documents",
