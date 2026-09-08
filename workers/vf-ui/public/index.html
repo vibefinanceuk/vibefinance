@@ -667,6 +667,22 @@
   /* Nothing dangling below the last card in a column. */
   .panel:last-child { margin-bottom: 0; }
 
+  /*
+    **A grid spaces its own children** — decision 0179.
+
+    Decision 0178 gave every panel a bottom margin, which is right for a
+    stack and wrong inside a grid: `.parties` already has a `gap`, and
+    its panels **stretch to the same row height**. The `:last-child`
+    reset then applied to the Buyer alone, so the Seller lost 14px to a
+    margin inside an equally-tall box and the two borders stopped
+    lining up.
+
+    Reported as *"why is the border under seller different from the
+    border under buyer?"* — which is the sort of thing only a person
+    looking at it would ask, and exactly right.
+  */
+  .parties > .panel { margin-bottom: 0; }
+
   .panel > h3 {
     margin: 0 0 12px;
     font-size: var(--text-base);
@@ -674,14 +690,6 @@
     color: var(--text-secondary);
   }
 
-  /* Status first, and separately (decision 0108) -- the row somebody
-     reads on most documents without reading anything else. */
-  .statusrow {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
-    gap: 12px;
-    margin-bottom: 18px;
-  }
 
   .stat .label { font-size: var(--text-sm); color: var(--text-secondary); }
   .stat .value { font-size: var(--text-xl); font-weight: 600; margin-top: 3px; }
@@ -689,21 +697,7 @@
   .stat.good .value { color: var(--text-success); }
   .stat.warn .value { color: var(--text-warning); }
 
-  /*
-    One status panel rather than four (decision 0115). Four panels for
-    four short values took a lot of room to say very little, and these
-    are one sentence about where a document is.
-  */
-  .statusbar {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-    gap: 18px;
-    padding: 14px 18px;
-  }
 
-  .statitem .label { font-size: var(--text-sm); color: var(--text-secondary); }
-  .statitem .value { font-size: var(--text-lg); font-weight: 600; margin-top: 2px; }
-  .statitem.warn .value { color: var(--text-warning); }
 
   /* Seller beside buyer, collapsing on a narrow screen like everything
      else (decision 0108). */

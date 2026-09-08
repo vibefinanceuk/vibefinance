@@ -219,3 +219,34 @@ describe("panels in a stack do not touch (decision 0178)", () => {
     expect(css).toContain(".panel:last-child { margin-bottom: 0; }");
   });
 });
+
+describe("a grid spaces its own children (decision 0179)", () => {
+  /**
+   * **`.parties` is a grid**, so the Seller and Buyer panels stretch to
+   * the same row height. Decision 0178 gave every panel a bottom margin
+   * — right for a stack — and its `:last-child` reset applied to the
+   * Buyer alone, so the Seller lost 14px inside an equally-tall box and
+   * the two borders stopped lining up.
+   *
+   * Reported as *"why is the border under seller different from the
+   * border under buyer?"*, which is the sort of thing only a person
+   * looking at it would ask.
+   */
+  const css = stylesheets["index.html"];
+
+  it("takes the margin off a panel inside the parties grid", () => {
+    expect(css).toContain(".parties > .panel { margin-bottom: 0; }");
+  });
+
+  it("keeps the gap that spaces them", () => {
+    const rule = css.slice(css.indexOf(".parties {"));
+    expect(rule.slice(0, rule.indexOf("}"))).toContain("gap:");
+  });
+
+  it("leaves no styles for the card decision 0175 removed", () => {
+    // Dead CSS outlives what it styled, and reads as a thing that
+    // exists.
+    expect(css).not.toContain(".statusbar");
+    expect(css).not.toContain(".statitem");
+  });
+});
