@@ -61,12 +61,28 @@ left. It says *"here since"* instead.
 ### An invoice that came back
 
 Decision 0075 makes returning a first-class action, so **a stage can be
-visited more than once.** A timeline showing one visit per stage would
-quietly lose the fact that somebody sent it back.
+visited more than once.**
 
-So the latest visit is described, and the count is carried where it is
-more than one. Watched to fail: describing the first visit instead
-breaks the test that walks a returned invoice.
+The first version described the latest visit and carried a count. The
+operator refined it:
+
+> If a process stage is returned to, we do not need another box in the
+> flow — we simply add another entry and exit timestamp in the same
+> stage box.
+
+**One box per stage, and every period inside it.** A stage entered twice
+took time twice, and **the second time is often the interesting one**:
+it is what happened after somebody sent the document back. A count
+alone loses that.
+
+So the route returns a `periods` array — oldest first, each timed
+against whatever followed it — and the box joins them. Watched to fail:
+showing only the latest breaks the test that walks a returned invoice.
+
+**And a second chevron would have been wrong** for a reason worth
+stating: the row is the *process*, not the journey. A stage appearing
+twice would make the shape of the process depend on what happened to one
+document.
 
 ---
 
@@ -90,8 +106,9 @@ nobody can show is not a document nobody can key.**
   without showing what was in force. *"Why was this held"* is answerable
   only from what the rules say today.
 - **No outcome is shown.** `stage_visits.outcome` records whether a
-  stage was automatic or returned, and the row does not say — so a
-  return looks like an ordinary visit that happened to be second.
+  stage was automatic or returned, and it is carried on each period and
+  never displayed — so a return reads as a second period without saying
+  why there was one.
 - **Times are as recorded, in UTC.** Decision 0057 keeps timestamps in
   UTC deliberately; nothing converts them, so a customer in Berlin reads
   an hour they did not experience.

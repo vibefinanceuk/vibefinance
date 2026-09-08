@@ -81,10 +81,28 @@ function progressRow() {
     processRow(
       progress.stages.map((stage) => ({
         ...stage,
-        detail:
-          stage.state === "here"
-            ? t("progress.since").replace("{when}", shortWhen(stage.enteredAt))
-            : stage.duration ?? "",
+        /**
+         * **Every period, in the one box** — the operator's
+         * refinement:
+         *
+         * > If a process stage is returned to, we do not need another
+         * > box in the flow — we simply add another entry and exit
+         * > timestamp in the same stage box.
+         *
+         * A stage entered twice took time twice, and the second time is
+         * often the interesting one: it is what happened after somebody
+         * sent the document back.
+         */
+        detail: (stage.periods ?? [])
+          .map((period) =>
+            period.leftAt
+              ? period.duration
+              : // Still here: how long it has been, rather than a blank
+                // where a duration would go.
+                t("progress.since").replace("{when}", shortWhen(period.enteredAt))
+          )
+          .filter(Boolean)
+          .join(" · "),
       })),
       progress.currentStageId,
       // **No handler.** A chevron here reports where the document has

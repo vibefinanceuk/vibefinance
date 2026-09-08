@@ -55,10 +55,13 @@ async function progress() {
       id: string;
       name: string;
       state: string;
-      enteredAt?: string;
-      leftAt?: string | null;
-      duration?: string | null;
-      visits?: number;
+      visitCount?: number;
+      periods?: {
+        enteredAt: string;
+        leftAt: string | null;
+        duration: string | null;
+        outcome: string;
+      }[];
     }[];
   };
 }
@@ -108,9 +111,9 @@ describe("enter, leave, and how long", () => {
     ]);
 
     const intake = (await progress()).stages.find((s) => s.id === "intake");
-    expect(intake?.enteredAt).toBe("2026-09-01 09:00:00");
-    expect(intake?.leftAt).toBe("2026-09-01 09:40:00");
-    expect(intake?.duration).toBe("40m");
+    expect(intake?.periods?.[0].enteredAt).toBe("2026-09-01 09:00:00");
+    expect(intake?.periods?.[0].leftAt).toBe("2026-09-01 09:40:00");
+    expect(intake?.periods?.[0].duration).toBe("40m");
   });
 
   it("has not left the stage it is still at", async () => {
@@ -120,8 +123,8 @@ describe("enter, leave, and how long", () => {
     ]);
 
     const here = (await progress()).stages.find((s) => s.id === "validation");
-    expect(here?.leftAt).toBeNull();
-    expect(here?.duration).toBeNull();
+    expect(here?.periods?.[0].leftAt).toBeNull();
+    expect(here?.periods?.[0].duration).toBeNull();
   });
 
   it("says days when it took days", async () => {
@@ -132,7 +135,7 @@ describe("enter, leave, and how long", () => {
       ["validation", "2026-09-05 14:00:00"],
     ]);
 
-    expect((await progress()).stages.find((s) => s.id === "intake")?.duration).toBe("4d 5h");
+    expect((await progress()).stages.find((s) => s.id === "intake")?.periods?.[0].duration).toBe("4d 5h");
   });
 
   it("says so when it was almost instant", async () => {
@@ -143,7 +146,7 @@ describe("enter, leave, and how long", () => {
       ["validation", "2026-09-01 09:00:20"],
     ]);
 
-    expect((await progress()).stages.find((s) => s.id === "intake")?.duration).toBe(
+    expect((await progress()).stages.find((s) => s.id === "intake")?.periods?.[0].duration).toBe(
       "under a minute"
     );
   });
@@ -162,10 +165,15 @@ describe("an invoice that came back", () => {
     ]);
 
     const validation = (await progress()).stages.find((s) => s.id === "validation");
-    expect(validation?.visits).toBe(2);
+    expect(validation?.visitCount).toBe(2);
+    // **Both periods, in the one box** — the operator's refinement. A
+    // stage entered twice took time twice.
+    expect(validation?.periods).toHaveLength(2);
   });
 
-  it("describes the most recent visit, not the first", async () => {
+  it("keeps both periods in order, oldest first", async () => {
+    // **The second time is often the interesting one**: it is what
+    // happened after somebody sent the document back.
     await place("validation", [
       ["validation", "2026-09-01 09:10:00"],
       ["approval", "2026-09-02 11:00:00"],
@@ -173,13 +181,29 @@ describe("an invoice that came back", () => {
     ]);
 
     const validation = (await progress()).stages.find((s) => s.id === "validation");
-    expect(validation?.enteredAt).toBe("2026-09-03 08:00:00");
+    expect(validation?.periods?.[0].enteredAt).toBe("2026-09-01 09:10:00");
+    expect(validation?.periods?.[1].enteredAt).toBe("2026-09-03 08:00:00");
   });
 
-  it("says nothing about visits when there was only one", async () => {
-    // A count of 1 on every row is noise.
+  it("times each period against what followed it", async () => {
+    // The first visit ended when Approval began; the second has not
+    // ended at all.
+    await place("validation", [
+      ["validation", "2026-09-01 09:10:00"],
+      ["approval", "2026-09-02 11:10:00"],
+      ["validation", "2026-09-03 08:00:00"],
+    ]);
+
+    const validation = (await progress()).stages.find((s) => s.id === "validation");
+    expect(validation?.periods?.[0].duration).toBe("1d 2h");
+    expect(validation?.periods?.[1].duration).toBeNull();
+  });
+
+  it("carries one period for a stage visited once", async () => {
     await place("validation", [["validation", "2026-09-01 09:10:00"]]);
-    expect((await progress()).stages.find((s) => s.id === "validation")?.visits).toBeUndefined();
+    const validation = (await progress()).stages.find((s) => s.id === "validation");
+    expect(validation?.visitCount).toBe(1);
+    expect(validation?.periods).toHaveLength(1);
   });
 });
 

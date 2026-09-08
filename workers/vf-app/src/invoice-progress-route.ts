@@ -105,30 +105,39 @@ export async function handleInvoiceProgress(
           return { id: stage.id, name: stage.name, state: "ahead" };
         }
 
-        // The most recent visit is the one being described. A stage
-        // visited twice reports its latest, and says it happened twice.
-        const latest = own[own.length - 1];
-        const index = visits.results.indexOf(latest);
-        const next = visits.results[index + 1];
+        /**
+         * **Every visit, not the latest** — the operator's refinement:
+         *
+         * > If a process stage is returned to, we do not need another
+         * > box in the flow — we simply add another entry and exit
+         * > timestamp in the same stage box.
+         *
+         * One box per stage, and a stage entered twice took time twice.
+         * The second time is often the interesting one: it is what
+         * happened after somebody sent the document back.
+         */
+        const periods = own.map((visit) => {
+          const next = visits.results[visits.results.indexOf(visit) + 1];
+          return {
+            enteredAt: visit.created_at,
+            // **Null while it is still here.** Leaving is the next
+            // visit's arrival, so a stage nothing followed has not been
+            // left.
+            leftAt: next?.created_at ?? null,
+            duration: next ? durationBetween(visit.created_at, next.created_at) : null,
+            outcome: visit.outcome,
+          };
+        });
 
         return {
           id: stage.id,
           name: stage.name,
           state: isCurrent ? "here" : "behind",
-          enteredAt: latest.created_at,
-          // **Null while it is still here.** Leaving is the next
-          // visit's arrival, so a stage nothing followed has not been
-          // left.
-          leftAt: next?.created_at ?? null,
-          duration: next ? durationBetween(latest.created_at, next.created_at) : null,
-          /**
-           * **A returned invoice comes back.** Decision 0075 makes
-           * returning a first-class action, so a stage can be visited
-           * more than once — and a timeline showing one visit would
-           * quietly lose the fact that somebody sent it back.
-           */
-          ...(own.length > 1 ? { visits: own.length } : {}),
-          outcome: latest.outcome,
+          periods,
+          // Carried alongside because the row does not want to compute
+          // it, and "2 visits" is a fact a screen may want to say
+          // without reading the array.
+          visitCount: periods.length,
         };
       }),
     },

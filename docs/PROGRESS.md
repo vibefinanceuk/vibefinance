@@ -340,9 +340,9 @@ elsewhere.
 
 | Package | Tests |
 |---|---|
-| `vf-app` | 1104 |
+| `vf-app` | 1105 |
 | `vf-licence` | 315 |
-| `vf-ui` | 44 Worker · 118 browser |
+| `vf-ui` | 44 Worker · 121 browser |
 | `shared` | 252 passing, 2 known pre-existing failures |
 
 Both migration chains replay clean with every standing invariant

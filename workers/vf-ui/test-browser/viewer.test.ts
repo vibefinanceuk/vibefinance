@@ -740,8 +740,22 @@ describe("where the invoice has been (decision 0151)", () => {
     inProcess: true,
     currentStageId: "validation",
     stages: [
-      { id: "intake", name: "Intake", state: "behind", duration: "40m", enteredAt: "2026-09-01 09:00:00" },
-      { id: "validation", name: "Validation", state: "here", enteredAt: "2026-09-01 09:40:00", duration: null },
+      {
+        id: "intake",
+        name: "Intake",
+        state: "behind",
+        visitCount: 1,
+        periods: [
+          { enteredAt: "2026-09-01 09:00:00", leftAt: "2026-09-01 09:40:00", duration: "40m" },
+        ],
+      },
+      {
+        id: "validation",
+        name: "Validation",
+        state: "here",
+        visitCount: 1,
+        periods: [{ enteredAt: "2026-09-01 09:40:00", leftAt: null, duration: null }],
+      },
       { id: "approval", name: "Approval", state: "ahead" },
     ],
   };
@@ -816,5 +830,94 @@ describe("where the invoice has been (decision 0151)", () => {
     // A path nobody can show is not a document nobody can key.
     await openWithProgress({ inProcess: false, stages: [] });
     expect(document.getElementById("f-BT-112")).not.toBeNull();
+  });
+});
+
+describe("a stage returned to (decision 0151)", () => {
+  /**
+   * The operator's refinement:
+   *
+   * > If a process stage is returned to, we do not need another box in
+   * > the flow — we simply add another entry and exit timestamp in the
+   * > same stage box.
+   *
+   * **One box per stage**, and a stage entered twice took time twice.
+   */
+  const RETURNED = {
+    inProcess: true,
+    currentStageId: "validation",
+    stages: [
+      {
+        id: "intake",
+        name: "Intake",
+        state: "behind",
+        visitCount: 1,
+        periods: [{ enteredAt: "2026-09-01 09:00:00", leftAt: "2026-09-01 09:10:00", duration: "10m" }],
+      },
+      {
+        id: "validation",
+        name: "Validation",
+        state: "here",
+        visitCount: 2,
+        periods: [
+          { enteredAt: "2026-09-01 09:10:00", leftAt: "2026-09-02 11:10:00", duration: "1d 2h" },
+          { enteredAt: "2026-09-03 08:00:00", leftAt: null, duration: null },
+        ],
+      },
+      { id: "approval", name: "Approval", state: "behind", visitCount: 1, periods: [
+        { enteredAt: "2026-09-02 11:10:00", leftAt: "2026-09-03 08:00:00", duration: "20h 50m" },
+      ] },
+    ],
+  };
+
+  async function openReturned() {
+    stubFetch({
+      "/api/code-lists": { fields: {} },
+      "/api/ui-strings": STRINGS,
+      "/api/field-visibility": FIELDS,
+      "/api/invoices/inv-1": {
+        facts: {},
+        lines: [],
+        validation: { passed: true, checked: [], failures: [] },
+      },
+      "/api/invoices/inv-1/document-url": { url: null },
+      "/api/invoices/inv-1/progress": RETURNED,
+    });
+
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    await openViewer(TASK, () => {});
+    await new Promise((r) => setTimeout(r, 0));
+  }
+
+  it("adds no second box for a stage visited twice", async () => {
+    await openReturned();
+    const names = [...document.querySelectorAll(".stage span:first-child")].map(
+      (s) => s.textContent
+    );
+    expect(names).toEqual(["Intake", "Validation", "Approval"]);
+  });
+
+  it("shows both periods in the one box", async () => {
+    // **A stage entered twice took time twice**, and the second time is
+    // often the interesting one.
+    await openReturned();
+    const validation = [...document.querySelectorAll(".stage")].find((s) =>
+      s.textContent?.startsWith("Validation")
+    );
+
+    expect(validation?.textContent).toContain("1d 2h");
+    expect(validation?.textContent).toContain("here since");
+  });
+
+  it("keeps Approval where it happened, not where it ends", async () => {
+    // The document went forward and came back, so Approval is behind
+    // even though Validation is current.
+    await openReturned();
+    const approval = [...document.querySelectorAll(".stage")].find((s) =>
+      s.textContent?.startsWith("Approval")
+    );
+    expect(approval?.className).toContain("behind");
   });
 });
