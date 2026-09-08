@@ -65,6 +65,12 @@ const STRINGS = {
     "viewer.title": "Invoice",
     "viewer.save": "Save",
     "viewer.expand": "Expand",
+    "viewer.status": "Status",
+    "viewer.known": "known",
+    "tasks.notkeyed": "Not keyed",
+    "tasks.stage": "Stage",
+    "tasks.waiting": "Waiting",
+    "tasks.owner": "Owner",
   },
 };
 
@@ -216,5 +222,52 @@ describe("opening a document (decision 0165)", () => {
     await until(() => !(document.getElementById("viewer") as HTMLElement).hidden);
 
     expect((document.getElementById("viewer") as HTMLElement).hidden).toBe(false);
+  });
+});
+
+describe("a document that is not work (decision 0167)", () => {
+  /**
+   * **The viewer was written for a task.** The document manager opens
+   * it for an invoice nobody has a task for, so there is no `createdAt`
+   * to have waited since and no `ownership` to report.
+   *
+   * `waited(undefined)` threw and the render stopped mid-way, so Expand
+   * swapped the panes and showed **a blank page** — reported exactly
+   * that way.
+   */
+  it("renders rather than blanking", async () => {
+    await openDocuments([{ ...DOC, stageId: null, stageName: null, status: "outside" }]);
+
+    const expand = document.querySelector("button.expand") as HTMLButtonElement;
+    expand.click();
+    await until(() => (document.getElementById("viewer") as HTMLElement).childElementCount > 0);
+
+    const viewer = document.getElementById("viewer") as HTMLElement;
+    expect(viewer.childElementCount).toBeGreaterThan(0);
+    expect(viewer.textContent).toContain("Invoice");
+  });
+
+  it("says nothing about waiting or ownership", async () => {
+    // **Omitted rather than filled in.** *"Waiting 0h"* about a
+    // document nobody is waiting on is a fact invented to fill a row.
+    await openDocuments([{ ...DOC, stageId: null, stageName: null, status: "outside" }]);
+
+    const expand = document.querySelector("button.expand") as HTMLButtonElement;
+    expand.click();
+    await until(() => (document.getElementById("viewer") as HTMLElement).childElementCount > 0);
+
+    const viewer = document.getElementById("viewer") as HTMLElement;
+    expect(viewer.textContent).not.toContain("Waiting");
+    expect(viewer.textContent).not.toContain("Owner");
+  });
+
+  it("offers no actions, because there is no task to act on", async () => {
+    await openDocuments([DOC]);
+
+    const expand = document.querySelector("button.expand") as HTMLButtonElement;
+    expand.click();
+    await until(() => (document.getElementById("viewer") as HTMLElement).childElementCount > 0);
+
+    expect(document.querySelectorAll("#viewer .actionrow a")).toHaveLength(0);
   });
 });

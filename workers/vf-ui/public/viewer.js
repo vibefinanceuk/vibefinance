@@ -839,9 +839,20 @@ export async function openViewer(task, onClose) {
   const status = el("div", { class: "statusrow" }, [
     el("div", { class: "panel statusbar" }, [
       statusItem("viewer.status", `${t("tasks.notkeyed")} · ${keyed}/4 ${t("viewer.known")}`, "warn"),
-      statusItem("tasks.stage", task.stageName ?? task.stageId),
-      statusItem("tasks.waiting", waited(task.createdAt)),
-      statusItem("tasks.owner", t(`tasks.${task.ownership}`)),
+      statusItem("tasks.stage", task.stageName ?? task.stageId ?? t("documents.noprocess")),
+      /**
+       * **A document is not always work** — decision 0167.
+       *
+       * The document manager opens the viewer for an invoice nobody has
+       * a task for, so there is no `createdAt` to have waited since and
+       * no `ownership` to report. `waited(undefined)` threw, and the
+       * render stopped mid-way: a blank page.
+       *
+       * Omitted rather than filled in. *"Waiting 0h"* about a document
+       * nobody is waiting on would be a fact invented to fill a row.
+       */
+      ...(task.createdAt ? [statusItem("tasks.waiting", waited(task.createdAt))] : []),
+      ...(task.ownership ? [statusItem("tasks.owner", t(`tasks.${task.ownership}`))] : []),
     ]),
   ]);
 
@@ -921,7 +932,7 @@ export async function openViewer(task, onClose) {
                 // What else this task offers is the SERVER's decision
                 // (decision 0103) — collecting them visually does not
                 // move where they are decided.
-                ...task.actions
+                ...(task.actions ?? [])
                   .filter((a) => a !== "key")
                   .map((a, index) =>
                     actionLink(a, {
