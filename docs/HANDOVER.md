@@ -614,6 +614,7 @@ missing check — a working one, pointed slightly wrong.
 | 0132 | A translation system | Every label, and none of the sentences the API sent |
 | 0143 | A stage restriction | Three fields somebody listed, not the ones added later |
 | 0144 | Field visibility | The screen, never the route — since September |
+| 0152 | A visit timeline | Stages minutes apart, never a straight-through second |
 
 **And this table itself.** It was removed by a rewrite of the section
 above it, and three later edits claimed to add rows to a table that was

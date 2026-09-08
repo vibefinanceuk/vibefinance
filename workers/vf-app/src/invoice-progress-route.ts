@@ -32,6 +32,9 @@ interface VisitRow {
  * question nobody asked.
  */
 function durationBetween(from: string, to: string): string | null {
+  // **Milliseconds where they exist** — decision 0152. Visits recorded
+  // before this carry second resolution and parse just as well; the
+  // fractional part is simply absent.
   const ms = Date.parse(to.replace(" ", "T") + "Z") - Date.parse(from.replace(" ", "T") + "Z");
   if (!Number.isFinite(ms) || ms < 0) return null;
 
@@ -80,10 +83,28 @@ export async function handleInvoiceProgress(
     .bind(instance.process_id)
     .all<{ id: string; name: string; sequence: number }>();
 
+  /**
+   * **Ordered by `rowid`, not by timestamp** — decision 0152.
+   *
+   * `created_at` defaults to `datetime('now')`, which has **one-second
+   * resolution**. An invoice passing Intake and Approval automatically
+   * does both within the same second, so the timestamps are equal and
+   * `ORDER BY created_at, id` falls back to ordering by a **UUID** —
+   * effectively at random.
+   *
+   * Found on a real invoice: Intake read *"here since"* and Approval
+   * read *"under a minute"*, with Approval marked current. The visits
+   * had been read in the wrong order, so each stage was timed against
+   * the wrong neighbour.
+   *
+   * **`rowid` is insertion order**, which is the actual order of
+   * visits. The timestamp is an approximation of it, and straight-
+   * through processing is exactly where the approximation fails.
+   */
   const visits = await db
     .prepare(
       `SELECT stage_id, outcome, created_at FROM stage_visits
-       WHERE process_instance_id = ? ORDER BY created_at, id`
+       WHERE process_instance_id = ? ORDER BY rowid`
     )
     .bind(instance.id)
     .all<VisitRow>();

@@ -215,7 +215,7 @@ export async function handleReturnToStage(
       .bind(stageId, now, instance.id),
     db
       .prepare(
-        "INSERT INTO stage_visits (id, process_instance_id, stage_id, outcome) VALUES (?, ?, ?, 'returned')"
+        "INSERT INTO stage_visits (id, process_instance_id, stage_id, outcome, created_at) VALUES (?, ?, ?, 'returned', strftime('%Y-%m-%d %H:%M:%f', 'now'))"
       )
       .bind(visitId, instance.id, stageId),
   ]);

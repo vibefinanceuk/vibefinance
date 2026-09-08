@@ -216,3 +216,57 @@ describe("an invoice in no process", () => {
     expect(body.stages).toEqual([]);
   });
 });
+
+describe("straight-through processing (decision 0152)", () => {
+  /**
+   * **The case every earlier test missed.** They all used distinct
+   * timestamps, which is not how an automatic path behaves.
+   *
+   * `created_at` defaults to `datetime('now')` — one-second resolution
+   * — so an invoice passing Intake and Approval automatically records
+   * both in the same second. Ordering by timestamp then falls back to
+   * ordering by a UUID, at random.
+   *
+   * Found on a real invoice: Intake read *"here since"* and Approval
+   * read *"under a minute"*, with Approval marked current.
+   */
+  async function placeSameSecond() {
+    await env.DB.prepare(
+      `INSERT INTO process_instances (id, process_id, subject_type, subject_id, current_stage_id)
+       VALUES ('pi-1', 'ap', 'invoice', 'inv-1', 'approval')`
+    ).run();
+
+    // Inserted in order, with identical timestamps and ids whose
+    // alphabetical order is the REVERSE of the visit order — which is
+    // what a UUID gives you half the time.
+    await env.DB.prepare(
+      "INSERT INTO stage_visits (id, process_instance_id, stage_id, outcome, created_at) VALUES ('zzz', 'pi-1', 'intake', 'automatic', '2026-09-02 16:22:06')"
+    ).run();
+    await env.DB.prepare(
+      "INSERT INTO stage_visits (id, process_instance_id, stage_id, outcome, created_at) VALUES ('aaa', 'pi-1', 'approval', 'matched', '2026-09-02 16:22:06')"
+    ).run();
+  }
+
+  it("reads them in the order they happened, not by id", async () => {
+    await placeSameSecond();
+    const body = await progress();
+
+    const intake = body.stages.find((s) => s.id === "intake");
+    const approval = body.stages.find((s) => s.id === "approval");
+
+    // Intake was left the moment Approval was entered.
+    expect(intake?.periods?.[0].leftAt).toBe("2026-09-02 16:22:06");
+    // And Approval is where the invoice still is.
+    expect(approval?.periods?.[0].leftAt).toBeNull();
+  });
+
+  it("does not mark a stage the invoice has left as current", async () => {
+    // **The visible symptom**: Intake said "here since" while the
+    // invoice was at Approval.
+    await placeSameSecond();
+    const body = await progress();
+
+    expect(body.stages.find((s) => s.id === "intake")?.state).toBe("behind");
+    expect(body.stages.find((s) => s.id === "approval")?.state).toBe("here");
+  });
+});

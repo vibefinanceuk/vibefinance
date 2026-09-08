@@ -269,7 +269,7 @@ export async function visitCurrentStage(
       // spawn a task. Record the visit and always advance.
       const visitId = crypto.randomUUID();
       await db
-        .prepare("INSERT INTO stage_visits (id, process_instance_id, stage_id, outcome) VALUES (?, ?, ?, 'automatic')")
+        .prepare("INSERT INTO stage_visits (id, process_instance_id, stage_id, outcome, created_at) VALUES (?, ?, ?, 'automatic', strftime('%Y-%m-%d %H:%M:%f', 'now'))")
         .bind(visitId, currentInstanceId, stage.id)
         .run();
       visitsThisCall.push({ stageId: stage.id, outcome: "automatic", tasksCreated: 0 });
@@ -389,7 +389,7 @@ export async function visitCurrentStage(
           // Recorded only for rule-evaluating stages. An automatic
           // stage never consults validation, so claiming a result
           // there would assert something that did not happen.
-          "INSERT INTO stage_visits (id, process_instance_id, stage_id, outcome, validation_passed, validation_failures, validation_checked, validation_passed_after, validation_failures_after) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+          "INSERT INTO stage_visits (id, process_instance_id, stage_id, outcome, validation_passed, validation_failures, validation_checked, validation_passed_after, validation_failures_after, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%d %H:%M:%f', 'now'))"
         )
         .bind(
           visitId,
@@ -629,7 +629,7 @@ export async function onTaskCompleted(db: D1Database, taskId: string): Promise<v
       return;
     }
     await db
-      .prepare("INSERT INTO stage_visits (id, process_instance_id, stage_id, outcome) VALUES (?, ?, ?, 'automatic')")
+      .prepare("INSERT INTO stage_visits (id, process_instance_id, stage_id, outcome, created_at) VALUES (?, ?, ?, 'automatic', strftime('%Y-%m-%d %H:%M:%f', 'now'))")
       .bind(crypto.randomUUID(), instance.id, next.id)
       .run();
   }
