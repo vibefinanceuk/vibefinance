@@ -92,6 +92,8 @@ const STRINGS = {
     "tasks.waiting": "Waiting",
     "tasks.owner": "Owner",
     "tasks.unclaimed": "Nobody yet",
+    "viewer.waitinglabel": "Waiting:",
+    "viewer.ownerlabel": "Owner:",
     "viewer.reflabel": "Unique Ref:",
     "viewer.document": "Document",
     "viewer.nodocument": "No document retained",

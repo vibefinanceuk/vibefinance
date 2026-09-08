@@ -49,6 +49,7 @@ import documentsSql from "../migrations/0044_documents_screen_strings.sql?raw";
 import lineDescriptionSql from "../migrations/0045_line_description_label.sql?raw";
 import viewerHeadingSql from "../migrations/0046_viewer_heading_labels.sql?raw";
 import unclaimedSql from "../migrations/0047_unclaimed_owner.sql?raw";
+import colonsSql from "../migrations/0048_labels_with_colons.sql?raw";
 
 function stripSqlComments(sql: string): string {
   return sql
@@ -125,5 +126,6 @@ export async function applyTestSchema(): Promise<void> {
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(lineDescriptionSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(viewerHeadingSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(unclaimedSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(colonsSql)));
 
 }

@@ -554,13 +554,27 @@
     and colour.
   */
   .subhead { display: flex; flex-direction: column; gap: 4px; margin: 4px 0 0; }
-  .topbar .sub { margin: 4px 0 0; }
+
+  /*
+    **One rule, because there were three** — decision 0181.
+    
+    `.topbar .sub` was set twice, and the later one won with
+    `--text-base` while the subhead sat at `--text-sm`. Two lines meant
+    to read as one list did not.
+    
+    Reported as *"same font, same weight, same size — they look
+    different"*, which they were.
+  */
   .topbar .sub,
   .subhead > div {
+    margin: 4px 0 0;
     font-size: var(--text-sm);
+    font-weight: 400;
     color: var(--text-secondary);
     line-height: 1.5;
   }
+
+  .subhead > div { margin: 0; }
 
   .newrule { margin-top: 16px; }
 
@@ -643,7 +657,7 @@
   }
 
   .topbar h2 { margin: 0; font-size: var(--text-lg); font-weight: 600; }
-  .topbar .sub { margin: 2px 0 0; font-size: var(--text-base); }
+
   .topbar .right { margin-left: auto; display: flex; gap: 8px; align-items: center; }
 
   /* The mood control — decision 0139. Quieter than the actions beside

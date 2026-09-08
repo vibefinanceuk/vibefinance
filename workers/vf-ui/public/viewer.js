@@ -757,7 +757,7 @@ function subhead(task) {
     // Omitted rather than invented on a document nobody is waiting on
     // (decision 0167).
     ...(task.createdAt
-      ? [el("div", { text: `${t("tasks.waiting")} ${waited(task.createdAt)}` })]
+      ? [el("div", { text: `${t("viewer.waitinglabel")} ${waited(task.createdAt)}` })]
       : []),
     /**
      * **An address, not "Mine"** — decision 0175.
@@ -783,7 +783,7 @@ function subhead(task) {
     ...(task.stageId
       ? [
           el("div", {
-            text: `${t("tasks.owner")} ${
+            text: `${t("viewer.ownerlabel")} ${
               task.ownedBy?.email ?? task.ownedBy?.name ?? t("tasks.unclaimed")
             }`,
           }),

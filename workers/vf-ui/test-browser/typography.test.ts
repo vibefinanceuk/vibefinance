@@ -250,3 +250,25 @@ describe("a grid spaces its own children (decision 0179)", () => {
     expect(css).not.toContain(".statitem");
   });
 });
+
+describe("the heading's four lines match (decision 0181)", () => {
+  /**
+   * **`.topbar .sub` was set twice**, and the later rule won with
+   * `--text-base` while the subhead sat at `--text-sm`. Two lines meant
+   * to read as one list did not.
+   *
+   * Reported as *"same font, same weight, same size — they look
+   * different"*, which they were.
+   */
+  const css = stylesheets["index.html"];
+
+  it("styles the subtitle and the subhead together", () => {
+    expect(css).toContain(".topbar .sub,\n  .subhead > div {");
+  });
+
+  it("declares no font-size for the subtitle on its own", () => {
+    // **A second `.topbar .sub { font-size }` rule is how this
+    // happened**: it came later and won.
+    expect(css).not.toMatch(/\.topbar \.sub \{[^}]*font-size/);
+  });
+});
