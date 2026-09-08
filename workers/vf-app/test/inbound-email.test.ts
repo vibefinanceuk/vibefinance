@@ -574,3 +574,98 @@ describe("a model that never answered (decision 0163)", () => {
     expect(message.rejectedWith).not.toBeNull();
   });
 });
+
+describe("an attachment that arrives with stray characters (decision 0168)", () => {
+  /**
+   * A real JPEG reached detection as *"unrecognised"*, and the decode
+   * was the first suspect: it stripped newlines and trailing dashes and
+   * nothing else.
+   *
+   * **This test does not reproduce that.** `atob` in this runtime
+   * tolerates the tabs and spaces a wrapping client inserts, and the
+   * old decode passes this exactly as the new one does — so the
+   * stricter version is defensible and **is not demonstrably the fix.**
+   *
+   * Kept because it pins the behaviour either way, and labelled
+   * honestly because a test that passes before and after proves
+   * nothing about the change it was written for.
+   */
+  const JPEG = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46]);
+
+  /** A message whose base64 is wrapped with tabs and stray spaces. */
+  function messyMessage(to: string) {
+    const boundary = "----vf-messy";
+    const encoded = btoa(String.fromCharCode(...JPEG));
+    // Broken up the way a wrapping client would, with tabs.
+    const wrapped = `${encoded.slice(0, 4)}\t\r\n ${encoded.slice(4)}`;
+
+    const raw =
+      `From: supplier@example.com\r\nTo: ${to}\r\n` +
+      `Content-Type: multipart/mixed; boundary="${boundary}"\r\n\r\n` +
+      `--${boundary}\r\nContent-Type: text/plain\r\n\r\nInvoice attached.\r\n` +
+      `--${boundary}\r\nContent-Type: image/jpeg; name="invoice.jpg"\r\n` +
+      `Content-Transfer-Encoding: base64\r\n` +
+      `Content-Disposition: attachment; filename="invoice.jpg"\r\n\r\n${wrapped}\r\n` +
+      `--${boundary}--`;
+
+    const message = {
+      from: "supplier@example.com",
+      to,
+      raw: new Response(raw).body as ReadableStream,
+      rawSize: raw.length,
+      rejectedWith: null as string | null,
+      setReject(reason: string) {
+        message.rejectedWith = reason;
+      },
+      async forward() {},
+    };
+    return message;
+  }
+
+  it("decodes to the bytes that were sent", async () => {
+    await seedSource("ap-mailbox.acme@vibefinance-ai.com");
+    const message = messyMessage("ap-mailbox.acme@vibefinance-ai.com");
+
+    await handleInboundEmail(message, env.DB, model);
+    expect(message.rejectedWith).toBeNull();
+
+    // **Recognised as a JPEG**, which is the whole point: a
+    // mis-aligned decode produces bytes that are not any format.
+    const row = await env.DB.prepare(
+      "SELECT facts_json FROM invoice_headers ORDER BY rowid DESC LIMIT 1"
+    ).first<{ facts_json: string }>();
+    const facts = JSON.parse(row?.facts_json ?? "{}");
+
+    expect(facts["intake.structure"]).not.toBe("");
+  });
+});
+
+describe("what unrecognised bytes actually were (decision 0168)", () => {
+  /**
+   * *"Unrecognised"* is true and useless: it does not distinguish a
+   * file that is not an image from an image that arrived damaged, and
+   * **only one of those is our fault.**
+   *
+   * The same lesson as decision 0162 one layer up — the system knew
+   * something and reported a word instead.
+   */
+  it("records the opening bytes", async () => {
+    const { detectStructure } = await import("../src/detect-structure.js");
+    const detection = await detectStructure(new Uint8Array([0x00, 0x01, 0x02, 0x03]));
+
+    const sniff = detection.attempted.find((a) => a.test === "image_magic_bytes");
+    expect(sniff?.outcome).toContain("00 01 02 03");
+  });
+
+  it("names the format where it does recognise one", async () => {
+    // The other half: a real JPEG says what it is, so the two outcomes
+    // are distinguishable at a glance.
+    const { detectStructure } = await import("../src/detect-structure.js");
+    const detection = await detectStructure(
+      new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46])
+    );
+
+    const sniff = detection.attempted.find((a) => a.test === "image_magic_bytes");
+    expect(sniff?.outcome).toBe("image/jpeg");
+  });
+});

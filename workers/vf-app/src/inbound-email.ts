@@ -102,7 +102,24 @@ async function attachmentsOf(
     const filename =
       part.slice(0, headerEnd).match(/filename="?([^"\r\n;]+)"?/i)?.[1]?.trim() ?? "attachment";
 
-    const body = part.slice(headerEnd + 4).replace(/[\r\n]/g, "").replace(/-+$/, "");
+    /**
+     * **Everything that is not base64 goes** — decision 0168.
+     *
+     * This stripped newlines and trailing dashes, which handles the
+     * common case and not the others: a mail client that wraps with
+     * tabs, or leaves a space after a soft break, puts a character in
+     * the stream that `atob` either rejects or silently mis-aligns.
+     *
+     * **This is not demonstrably the fix** for the photograph that
+     * reached detection as *"unrecognised"*: `atob` in this runtime
+     * tolerates those characters, and a test with tabs in the stream
+     * passes with the old decode too.
+     *
+     * Kept because a decoder that accepts only what it decodes is right
+     * regardless, and recorded as speculation rather than a cure. The
+     * diagnostic beside it is what will actually say.
+     */
+    const body = part.slice(headerEnd + 4).replace(/[^A-Za-z0-9+/=]/g, "");
     try {
       const binary = atob(body);
       const bytes = new Uint8Array(binary.length);

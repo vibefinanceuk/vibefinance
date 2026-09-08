@@ -119,7 +119,28 @@ export async function detectStructure(bytes: Uint8Array): Promise<DetectionResul
     attempted.push({ test: "image_magic_bytes", outcome: imageType });
     return { structure: "image", attempted };
   }
-  attempted.push({ test: "image_magic_bytes", outcome: "unrecognised" });
+  /**
+   * **What the bytes actually start with** — decision 0168.
+   *
+   * A real JPEG arrived and this said *"unrecognised"*, which is true
+   * and useless: it does not distinguish a file that is not an image
+   * from an image that arrived damaged, and only one of those is our
+   * fault.
+   *
+   * The same lesson as decision 0162 one layer up — the system knew
+   * something and reported a word instead.
+   *
+   * Eight bytes, hex, which is enough to name any format and far too
+   * few to be a document.
+   */
+  const opening = [...bytes.slice(0, 8)]
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join(" ");
+
+  attempted.push({
+    test: "image_magic_bytes",
+    outcome: bytes.length === 0 ? "no bytes at all" : `unrecognised (starts ${opening})`,
+  });
 
   // 4. Nothing matched. Not an error — a document for a human.
   return { structure: null, attempted };
