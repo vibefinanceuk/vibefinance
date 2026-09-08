@@ -648,7 +648,24 @@
     border: 0.5px solid var(--border);
     border-radius: var(--radius);
     padding: 16px 18px;
+    /*
+      **Panels stacked in a column have always touched** — decision
+      0178.
+      
+      The grid's own `gap` spaced the two columns and nothing spaced
+      panels *within* one, so the process row met the party boxes and
+      the invoice header met its lines. Reported twice, as two separate
+      screens, because it looks like a different problem each time.
+      
+      On the panel rather than on each screen: every one of them is a
+      card in a stack, and a rule per screen is a rule the next screen
+      forgets.
+    */
+    margin: 0 0 14px;
   }
+
+  /* Nothing dangling below the last card in a column. */
+  .panel:last-child { margin-bottom: 0; }
 
   .panel > h3 {
     margin: 0 0 12px;

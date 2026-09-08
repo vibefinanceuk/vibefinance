@@ -197,3 +197,25 @@ describe("class names mean one thing (decision 0177)", () => {
     expect(rule.slice(0, rule.indexOf("}"))).toContain("position: relative");
   });
 });
+
+describe("panels in a stack do not touch (decision 0178)", () => {
+  /**
+   * **`.panel` had no bottom margin at all.** The grid's own `gap`
+   * spaced the two columns and nothing spaced panels *within* one — so
+   * the process row met the party boxes, and the invoice header met its
+   * lines.
+   *
+   * Reported twice, as two separate screens, because it looks like a
+   * different problem each time.
+   */
+  const css = stylesheets["index.html"];
+
+  it("gives every panel room beneath it", () => {
+    const rule = css.slice(css.indexOf(".panel {"));
+    expect(rule.slice(0, rule.indexOf("}"))).toContain("margin: 0 0 14px");
+  });
+
+  it("leaves nothing dangling below the last one", () => {
+    expect(css).toContain(".panel:last-child { margin-bottom: 0; }");
+  });
+});
