@@ -27,13 +27,40 @@ import { el } from "/tasks.js";
  * `/field-visibility` already serves a description per field, so the
  * screen has them without a second vocabulary — which is the property
  * decision 0031 protected by keeping one source of truth.
+ *
+ * **It serves only `INVOICE_FIELDS`**, though, so a derived field
+ * rendered raw: `invoice.duplicate_confidence` beside `BT-112` reading
+ * *"total with VAT"* (decision 0159). Derived fields are computed by
+ * the platform and never keyed, so a screen about visibility had no
+ * reason to mention them — and a screen about rules does.
  */
 let descriptions = {};
 
-export function useFieldDescriptions(fields) {
-  descriptions = Object.fromEntries(
-    (fields ?? []).map((f) => [f.field, f.description ?? f.field])
-  );
+export function useFieldDescriptions(fields, derived) {
+  descriptions = {
+    ...Object.fromEntries((fields ?? []).map((f) => [f.field, f.description ?? f.field])),
+    ...(derived ?? {}),
+  };
+}
+
+/**
+ * Every field a rule actually tests — decision 0159.
+ *
+ * **Decision 0034 already does this**, walking the combinator tree to
+ * build the worked-examples prompt from the fields the conditions
+ * reference. The screen dumped all thirty instead, which made an
+ * example a wall nobody could read.
+ */
+export function fieldsUsedBy(node, found = new Set()) {
+  if (!node) return found;
+
+  if (node.all || node.any) {
+    for (const child of node.all ?? node.any) fieldsUsedBy(child, found);
+    return found;
+  }
+
+  if (node.field) found.add(node.field);
+  return found;
 }
 
 function fieldName(field) {
@@ -162,4 +189,46 @@ export function readback(conditions, actions) {
       ...actions.map(actionClause),
     ]),
   ]);
+}
+
+/**
+ * A worked example's invoice, showing what the rule tests — decision
+ * 0159.
+ *
+ * **It showed everything**, and an invoice carries thirty fields: a
+ * wall of `BT-1 INV-2023-00456 · BT-3 380 · BT-5 USD · ...` in which
+ * the one number the rule turns on is somewhere in the middle.
+ *
+ * Somebody confirming is being asked *"is this outcome right"*, and
+ * they cannot answer without seeing **why** it came out that way.
+ *
+ * Decision 0034 already walks the combinator tree to build the prompt
+ * from the fields a rule references. This uses the same idea for the
+ * screen.
+ *
+ * The rest is kept and folded away rather than dropped: an example is
+ * evidence, and evidence somebody cannot inspect is an assertion.
+ */
+export function exampleFacts(invoice, conditions) {
+  const used = conditions ? fieldsUsedBy(conditions) : new Set();
+
+  const decisive = Object.entries(invoice).filter(([field]) => used.has(field));
+  const rest = Object.entries(invoice).filter(([field]) => !used.has(field));
+
+  const say = ([field, value]) => `${fieldName(field)} ${value}`;
+
+  const node = el("div", { class: "facts" }, [
+    // What the rule turns on, first and in full.
+    el("div", { class: "decisive", text: decisive.map(say).join(" · ") }),
+  ]);
+
+  if (rest.length > 0) {
+    const more = el("details", { class: "morefacts" }, [
+      el("summary", { text: t("compose.morefacts").replace("{n}", String(rest.length)) }),
+      el("div", { class: "sm muted", text: rest.map(say).join(" · ") }),
+    ]);
+    node.append(more);
+  }
+
+  return node;
 }

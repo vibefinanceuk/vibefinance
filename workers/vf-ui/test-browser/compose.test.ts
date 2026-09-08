@@ -67,6 +67,7 @@ const STRINGS = {
     "readback.nested_any": "and any of these:",
     "readback.check": "Read this before the examples.",
     "action.hold_until": "Hold it",
+    "compose.morefacts": "and {n} other fields on this invoice",
   },
 };
 
@@ -75,6 +76,11 @@ const FIELDS = {
     { field: "BT-112", description: "total with VAT", visibility: "edit", type: "number", line: false },
     { field: "BT-5", description: "currency", visibility: "edit", type: "text", line: false },
   ],
+  // Derived fields the platform computes — decision 0159. A rule can
+  // test either, and one rendered raw beside the other.
+  derived: {
+    "invoice.duplicate_confidence": "how likely this duplicates another invoice",
+  },
 };
 
 const STAGE = { id: "validation", name: "Validation", ruleSetId: "rs-val", hasRuleSet: true };
@@ -349,5 +355,86 @@ describe("a rule that is one condition (decision 0158)", () => {
   it("still says what happens", async () => {
     await compileWith(BARE);
     expect(document.querySelector(".readback")?.textContent).toContain("Hold it");
+  });
+});
+
+describe("an example somebody can read (decision 0159)", () => {
+  /**
+   * **It showed everything**, and an invoice carries thirty fields: a
+   * wall in which the one number the rule turns on is somewhere in the
+   * middle.
+   *
+   * Somebody confirming is asked *"is this outcome right"*, and they
+   * cannot answer without seeing **why** it came out that way.
+   */
+  const WALL = {
+    examples: [
+      {
+        id: "e1",
+        expectMatch: true,
+        confirmedBy: null,
+        invoice: {
+          "BT-1": "INV-2023-00123",
+          "BT-3": 380,
+          "BT-5": "EUR",
+          "BT-112": 1800,
+          "invoice.duplicate_confidence": 0.78,
+        },
+      },
+    ],
+  };
+
+  const RULE = {
+    ...COMPILED,
+    conditions: { field: "invoice.duplicate_confidence", operator: "greater_than", value: 0.6 },
+  };
+
+  it("leads with the field the rule turns on", async () => {
+    await compileWith(RULE, WALL);
+    const decisive = document.querySelector(".example .decisive");
+
+    expect(decisive?.textContent).toContain("how likely this duplicates another invoice");
+    expect(decisive?.textContent).toContain("0.78");
+  });
+
+  it("keeps the rest, folded away", async () => {
+    // **An example is evidence**, and evidence somebody cannot inspect
+    // is an assertion.
+    await compileWith(RULE, WALL);
+    const more = document.querySelector(".example .morefacts");
+
+    expect(more).not.toBeNull();
+    expect(more?.textContent).toContain("and 4 other fields");
+    expect(more?.textContent).toContain("INV-2023-00123");
+  });
+
+  it("does not bury the decisive field among the rest", async () => {
+    await compileWith(RULE, WALL);
+    const decisive = document.querySelector(".example .decisive");
+    expect(decisive?.textContent).not.toContain("INV-2023-00123");
+  });
+
+  it("names a derived field in words", async () => {
+    // **`/field-visibility` serves only INVOICE_FIELDS**, so a derived
+    // field rendered raw beside BT-112 reading "total with VAT".
+    await compileWith(RULE, WALL);
+    expect(document.querySelector(".readback")?.textContent).toContain(
+      "how likely this duplicates another invoice"
+    );
+  });
+
+  it("folds nothing when every field matters", async () => {
+    await compileWith(RULE, {
+      examples: [
+        {
+          id: "e1",
+          expectMatch: true,
+          confirmedBy: null,
+          invoice: { "invoice.duplicate_confidence": 0.78 },
+        },
+      ],
+    });
+
+    expect(document.querySelector(".example .morefacts")).toBeNull();
   });
 });

@@ -1,6 +1,7 @@
 import type { RouteResult } from "./org-route.js";
 import {
   INVOICE_FIELDS,
+  DERIVED_FIELD_DESCRIPTIONS,
   FIELD_DESCRIPTIONS,
   INVOICE_FIELD_TYPES,
   INVOICE_LINE_FIELDS,
@@ -231,6 +232,23 @@ export async function handleFieldVisibility(
     body: {
       stageId,
       fields: all.filter((f) => f.visibility !== "hidden"),
+      /**
+       * What a derived field is called — decision 0159.
+       *
+       * **Not a visibility concern**, which is why they were absent:
+       * the platform computes them and nobody keys them, so a screen
+       * about what may be edited had no reason to mention them.
+       *
+       * A screen about **rules** does. `invoice.duplicate_confidence`
+       * rendered raw beside `BT-112` reading *"total with VAT"*, and a
+       * rule a customer cannot read is a rule they cannot confirm
+       * (decision 0153).
+       *
+       * Carried here rather than on a route of their own, because a
+       * screen that needs one needs both and a second call is a second
+       * thing to fail.
+       */
+      derived: DERIVED_FIELD_DESCRIPTIONS,
     },
   };
 }

@@ -1,7 +1,7 @@
 import { t } from "/strings.js";
 import { el, frame, topbar, setCurrentScreen } from "/tasks.js";
 import { icon } from "/icons.js";
-import { readback, useFieldDescriptions } from "/readback.js";
+import { readback, useFieldDescriptions, exampleFacts } from "/readback.js";
 
 /**
  * Writing a rule — decision 0153.
@@ -139,14 +139,7 @@ function exampleRow(example) {
       text: fires ? t("compose.fires") : t("compose.quiet"),
     }),
     el("div", { class: "body" }, [
-      el("div", {
-        class: "facts",
-        // The invoice as facts a person reads, rather than the JSON the
-        // interpreter was given.
-        text: Object.entries(example.invoice ?? {})
-          .map(([field, value]) => `${field} ${value}`)
-          .join(" · "),
-      }),
+      exampleFacts(example.invoice ?? {}, compiled?.conditions),
     ]),
     el(
       "div",
@@ -280,7 +273,12 @@ export async function openCompose(forStage, existing = null) {
   // keying screen uses — one vocabulary, not two (decision 0031).
   try {
     const response = await fetch("/api/field-visibility");
-    if (response.ok) useFieldDescriptions((await response.json()).fields);
+    if (response.ok) {
+      const body = await response.json();
+      // **Both**: the keyed fields, and the derived ones the platform
+      // computes (decision 0159). A rule can test either.
+      useFieldDescriptions(body.fields, body.derived);
+    }
   } catch {
     // The read-back falls back to Business Term ids, which is worse and
     // not wrong.

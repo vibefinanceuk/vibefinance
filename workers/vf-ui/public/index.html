@@ -406,7 +406,16 @@
   .example .verdict.fires { color: var(--text-accent); }
   .example .verdict.quiet { color: var(--text-muted); }
   .example .body { flex: 1; }
+  /*
+    An example shows what the rule turns on — decision 0159. The rest
+    is folded away rather than dropped: an example is evidence, and
+    evidence somebody cannot inspect is an assertion.
+  */
   .example .facts { font-size: var(--text-sm); color: var(--text-secondary); }
+  .example .decisive { color: var(--text-primary); font-size: var(--text-base); }
+  .example .morefacts { margin-top: 5px; }
+  .example .morefacts summary { cursor: pointer; color: var(--text-muted); font-size: var(--text-sm); }
+  .example .morefacts > div { margin-top: 5px; line-height: 1.5; }
   .example .confirmed { color: var(--text-success); font-size: var(--text-sm); font-weight: 600; }
 
   .gate { display: flex; align-items: center; gap: 14px; padding: 14px 18px; background: var(--surface-1); border: 0.5px solid var(--border); border-radius: var(--radius); }

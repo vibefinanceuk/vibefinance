@@ -1,7 +1,7 @@
 import { t } from "/strings.js";
 import { el, frame, topbar, setCurrentScreen } from "/tasks.js";
 import { icon } from "/icons.js";
-import { readback, useFieldDescriptions } from "/readback.js";
+import { readback, useFieldDescriptions, exampleFacts } from "/readback.js";
 
 /**
  * One rule, opened — decision 0155.
@@ -131,6 +131,16 @@ async function activate(version) {
  * being asked to agree that an outcome is right, and a boolean beside
  * a JSON blob is not something anybody can agree with.
  */
+/**
+ * The conditions of the version being confirmed — decision 0159.
+ *
+ * The examples belong to one version, and it is that version's rule
+ * that decides which facts are decisive.
+ */
+function pendingConditions() {
+  return rule?.versions.find((v) => !v.approvedAt && v.examplesTotal > 0)?.conditions;
+}
+
 function exampleRow(example) {
   return el("div", { class: "example" }, [
     el("div", {
@@ -138,12 +148,7 @@ function exampleRow(example) {
       text: example.expectMatch ? t("compose.fires") : t("compose.quiet"),
     }),
     el("div", { class: "body" }, [
-      el("div", {
-        class: "facts",
-        text: Object.entries(example.invoice ?? {})
-          .map(([field, value]) => `${field} ${value}`)
-          .join(" · "),
-      }),
+      exampleFacts(example.invoice ?? {}, pendingConditions()),
     ]),
     el(
       "div",
@@ -278,7 +283,12 @@ export async function openRule(ruleId, forStage) {
 
   try {
     const response = await fetch("/api/field-visibility");
-    if (response.ok) useFieldDescriptions((await response.json()).fields);
+    if (response.ok) {
+      const body = await response.json();
+      // **Both**: the keyed fields, and the derived ones the platform
+      // computes (decision 0159). A rule can test either.
+      useFieldDescriptions(body.fields, body.derived);
+    }
   } catch {
     // The read-back falls back to Business Term ids.
   }

@@ -111,6 +111,7 @@ const KEYS_THE_INTERFACE_USES = [
   "compose.activate",
   "compose.confirmfirst",
   "compose.allconfirmed",
+  "compose.morefacts",
   "rule.title",
   "rule.version",
   "rule.pause",
