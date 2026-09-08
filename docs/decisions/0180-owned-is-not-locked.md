@@ -1,4 +1,4 @@
-# 0180 — Owned is not locked
+# 0180 — Who a task belongs to
 
 **Status: fixed.** A task says who it belongs to, and the heading reads
 as one list.
@@ -13,17 +13,29 @@ as one list.
 read it as the owner, so a task **assigned** and not yet **claimed** had
 no `lockedBy` — and the screen reported nobody.
 
-These are different facts, and decision 0104 already named the
-difference: **a claim is a lock.** It says somebody is working on it
-now. Ownership says whose it is.
-
 `owner_user_id` and `owner_team_id` were loaded on every row and never
-reported. Both are now, joined for a name and an address, and the screen
-says whichever it means.
+reported.
 
-**A team owns it and nobody in particular does** reports the team, not
-*"nobody"* — *"the AP team"* tells somebody whether it is theirs to
-take.
+### And I first drew a distinction the system does not make
+
+The fix reported ownership and a claim as **two separate facts**. The
+operator:
+
+> Claimed by sets ownership — it is the same thing.
+
+**Right, and the code already said so.** `ownershipOf` returns `"mine"`
+for *either* an assignment or a claim, and migration 0008's invariant
+means **a claim only exists on a team task** — a task assigned to a
+person needs none, because it is already theirs.
+
+So there is one owner. My version reported the **team** for a task
+somebody had claimed, which is the opposite of useful: **the claim is
+precisely the news.**
+
+Resolved in the order a person would ask it: whoever took it, else
+whoever it was given to, else the team it is waiting in. A team still
+answers where nobody has taken it, because *"the AP team"* tells
+somebody whether it is theirs.
 
 ---
 
@@ -43,8 +55,8 @@ under it is one size and one colour.
 
 ## What is not built
 
-- **A task owned by a team and claimed by a person shows the team.**
-  Both are true and the screen picks one; *"AP team, with Alice"* would
-  say more.
+- **Where a task came from is not shown.** A team task claimed by Alice
+  says *"Alice"*, and *"Alice, from the AP team"* would say more — but
+  the claim is the fact that matters and the row is one line.
 - **The document manager does not show ownership at all**, though it now
   could.

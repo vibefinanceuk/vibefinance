@@ -309,26 +309,36 @@ export async function handleListMyTasks(
     };
 
     /**
-     * **Who a task belongs to, which is not who has locked it** —
-     * decision 0180.
+     * Who a task belongs to — decision 0180.
      *
-     * `lockedBy` appears only once somebody **claims** a task. A task
-     * assigned to a person and not yet claimed had no `lockedBy`, and
-     * the viewer read that as nobody — reporting *"Owner: Nobody yet"*
-     * about a task sitting in its owner's own queue.
+     * **Claiming is how a team task becomes somebody's**, and the
+     * system has always said so: `ownershipOf` returns `"mine"` for
+     * either an assignment or a claim, and migration 0008's invariant
+     * means **a claim only exists on a team task** — a task assigned to
+     * a person needs none, because it is already theirs.
      *
-     * Assignment and claiming are different facts (decision 0104: a
-     * claim **is** a lock). Both are reported now, and a screen can say
-     * whichever it means.
+     * So there is one owner, not two facts about one. Resolved in the
+     * order a person would: whoever took it, else whoever it was given
+     * to, else the team it is waiting in.
+     *
+     * The first version of this reported the **team** for a task
+     * somebody had claimed, which is the opposite of useful — the
+     * claim is precisely the news.
      */
-    if (row.owner_user_id) {
+    if (row.claimed_by) {
+      task.ownedBy = {
+        id: row.claimed_by,
+        name: row.claimed_by_name ?? row.claimed_by,
+        email: row.claimed_by_email,
+      };
+    } else if (row.owner_user_id) {
       task.ownedBy = {
         id: row.owner_user_id,
         name: row.owner_name ?? row.owner_user_id,
         email: row.owner_email,
       };
     } else if (row.owner_team_id) {
-      // A team owns it, and nobody in particular does. Named, because
+      // Nobody in particular, and the team is still the answer:
       // *"the AP team"* tells somebody whether it is theirs to take.
       task.ownedBy = { id: row.owner_team_id, name: row.owner_team_id, email: null };
     }

@@ -532,14 +532,31 @@ describe("who a task belongs to (decision 0180)", () => {
     expect(tasks[0].ownedBy?.email).toBeNull();
   });
 
-  it("reports ownership and a claim separately", async () => {
-    // A claim says somebody is working on it now; ownership says whose
-    // it is. Both can be true and they are not the same.
+  it("names whoever claimed it, not the team it came from", async () => {
+    /**
+     * **Claiming is how a team task becomes somebody's.**
+     *
+     * The first version of this reported the team for a task somebody
+     * had claimed, which is the opposite of useful — the claim is
+     * precisely the news.
+     *
+     * `ownershipOf` has always agreed: it returns `"mine"` for either
+     * an assignment or a claim.
+     */
     await seedInstance("inv-1", "validation", "v-1");
     await seedTask("t-both", "validation", "v-1", { team: "ap" }, "alice");
     const tasks = await list("alice");
 
-    expect(tasks[0].ownedBy?.name).toBe("ap");
+    expect(tasks[0].ownedBy?.name).toBe("Alice");
     expect(tasks[0].ownership).toBe("mine");
+  });
+
+  it("names the team while nobody has taken it", async () => {
+    // Which is what tells somebody whether it is theirs to take.
+    await seedInstance("inv-1", "validation", "v-1");
+    await seedTask("t-waiting", "validation", "v-1", { team: "ap" });
+    const tasks = await list("alice");
+
+    expect(tasks[0].ownedBy?.name).toBe("ap");
   });
 });

@@ -367,7 +367,7 @@ elsewhere.
 
 | Package | Tests |
 |---|---|
-| `vf-app` | 1172 |
+| `vf-app` | 1173 |
 | `vf-licence` | 318 |
 | `vf-ui` | 44 Worker · 198 browser |
 | `shared` | 252 passing, 2 known pre-existing failures |
