@@ -114,6 +114,9 @@ const PROXIED_TO_INSTANCE: RegExp[] = [
   /^\/invoices\/[^/]+\/progress$/,
   /^\/rules\/stages$/,
   /^\/rules\/stages\/[^/]+\/rule-set$/,
+  // Opening a rule, and pausing it (decision 0155).
+  /^\/rules\/[^/]+$/,
+  /^\/rules\/[^/]+\/enabled$/,
   // Writing a rule (decision 0153).
   /^\/rules\/compile$/,
   /^\/rules\/[^/]+\/versions\/[0-9]+\/examples$/,

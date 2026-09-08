@@ -83,6 +83,7 @@ export default defineConfig({
       "/process-row.js": resolve(__dirname, "public/process-row.js"),
       "/rules.js": resolve(__dirname, "public/rules.js"),
       "/compose.js": resolve(__dirname, "public/compose.js"),
+      "/rule.js": resolve(__dirname, "public/rule.js"),
       "/readback.js": resolve(__dirname, "public/readback.js"),
     },
   },

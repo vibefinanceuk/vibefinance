@@ -48,6 +48,12 @@ function note(message) {
   if (box) box.textContent = message;
 }
 
+async function openRule(ruleId) {
+  const stage = stages.find((s) => s.id === chosen);
+  const { openRule: go } = await import("/rule.js");
+  await go(ruleId, stage);
+}
+
 async function compose(stage) {
   let ruleSetId = stage.ruleSetId;
 
@@ -76,9 +82,17 @@ function ruleRow(rule) {
   // needs them to be objects.
   return el("div", { class: "rule" }, [
     el("div", { class: "what" }, [
+      // **The sentence is the way in** — decision 0155. A rule row
+      // names a rule, and opening one is the first thing anybody wants
+      // to do with it; a separate "open" button would put navigation
+      // where the rule itself is.
       // **The sentence somebody wrote.** A person recognises their own
       // words; nobody recognises a compiled condition tree.
-      el("div", { text: rule.sourceText ?? "" }),
+      el("button", {
+        class: "rulelink",
+        text: rule.sourceText ?? "",
+        onclick: () => openRule(rule.id),
+      }),
     ]),
     el("div", { class: `rulestate ${rule.state}` }, [
       // Live and paused carry a mark; a draft does not, because

@@ -203,3 +203,139 @@ export async function ensureRuleSetForStage(
 
   return { ruleSetId };
 }
+
+/**
+ * Pause a rule, or resume it — decision 0155.
+ *
+ * **Nothing changed `rules.enabled` before this.** A rule was created
+ * enabled and stayed so; the only way to stop one was to delete it,
+ * which loses the sentence somebody wrote and every example they
+ * confirmed.
+ *
+ * **Pausing is not unapproving.** The version keeps its approval and
+ * its confirmed examples, so resuming needs no second trip through the
+ * activation gate (decision 0034) — the gate exists to prove somebody
+ * read the rule, and they did.
+ *
+ * That is why the rules list distinguishes *paused* from *draft*: one
+ * was trusted once and the other never has been.
+ */
+export async function handleSetRuleEnabled(
+  db: D1Database,
+  ruleId: string,
+  enabled: unknown
+): Promise<RouteResult> {
+  if (typeof enabled !== "boolean") {
+    return { status: 400, body: { error: "enabled (true or false) is required" } };
+  }
+
+  const rule = await db
+    .prepare("SELECT id, enabled FROM rules WHERE id = ?")
+    .bind(ruleId)
+    .first<{ id: string; enabled: number }>();
+
+  if (!rule) {
+    return { status: 404, body: { error: `rule ${ruleId} does not exist` } };
+  }
+
+  await db
+    .prepare("UPDATE rules SET enabled = ? WHERE id = ?")
+    .bind(enabled ? 1 : 0, ruleId)
+    .run();
+
+  return { status: 200, body: { ruleId, enabled } };
+}
+
+/**
+ * One rule, with every version — decision 0155.
+ *
+ * **The list shows the latest; this shows the history.** Somebody
+ * asking *"why did this change"* needs to see that v2 replaced v1 and
+ * when, which the list cannot say without becoming a different screen.
+ */
+export async function handleGetRule(db: D1Database, ruleId: string): Promise<RouteResult> {
+  const rule = await db
+    .prepare(
+      `SELECT r.id, r.rule_set_id, r.enabled, s.id AS stage_id, s.name AS stage_name
+       FROM rules r
+       JOIN rule_sets rs ON rs.id = r.rule_set_id
+       LEFT JOIN process_stages s ON s.rule_set_id = rs.id
+       WHERE r.id = ?`
+    )
+    .bind(ruleId)
+    .first<{
+      id: string;
+      rule_set_id: string;
+      enabled: number;
+      stage_id: string | null;
+      stage_name: string | null;
+    }>();
+
+  if (!rule) {
+    return { status: 404, body: { error: `rule ${ruleId} does not exist` } };
+  }
+
+  const versions = await db
+    .prepare(
+      `SELECT v.version, v.source_text, v.compiled_json, v.approved_by, v.approved_at,
+              v.effective_from, v.effective_to,
+              (SELECT count(*) FROM rule_examples e
+                 WHERE e.rule_id = v.rule_id AND e.rule_version = v.version) AS examples_total,
+              (SELECT count(*) FROM rule_examples e
+                 WHERE e.rule_id = v.rule_id AND e.rule_version = v.version
+                   AND e.confirmed_by IS NOT NULL) AS examples_confirmed
+       FROM rule_versions v WHERE v.rule_id = ? ORDER BY v.version DESC`
+    )
+    .bind(ruleId)
+    .all<{
+      version: number;
+      source_text: string;
+      compiled_json: string;
+      approved_by: string | null;
+      approved_at: string | null;
+      effective_from: string | null;
+      effective_to: string | null;
+      examples_total: number;
+      examples_confirmed: number;
+    }>();
+
+  return {
+    status: 200,
+    body: {
+      id: rule.id,
+      ruleSetId: rule.rule_set_id,
+      enabled: rule.enabled === 1,
+      stageId: rule.stage_id,
+      stageName: rule.stage_name,
+      versions: versions.results.map((v) => ({
+        version: v.version,
+        sourceText: v.source_text,
+        // **The compiled rule, so the screen can read it back.** A
+        // person recognises their sentence; the read-back is how they
+        // check the system understood it (decision 0153).
+        ...(() => {
+          try {
+            const compiled = JSON.parse(v.compiled_json);
+            return { conditions: compiled.conditions, actions: compiled.actions };
+          } catch {
+            // A version whose JSON will not parse is a version this
+            // screen cannot read back, and saying nothing is better
+            // than a crash.
+            return {};
+          }
+        })(),
+        approvedBy: v.approved_by,
+        approvedAt: v.approved_at,
+        effectiveFrom: v.effective_from,
+        effectiveTo: v.effective_to,
+        // **Which version is actually running.** A rule can hold three
+        // versions where one is live, and "which" is the first thing
+        // anybody asks.
+        isLive:
+          rule.enabled === 1 && v.approved_at !== null && v.effective_to === null,
+        examplesTotal: v.examples_total,
+        examplesConfirmed: v.examples_confirmed,
+      })),
+    },
+  };
+}

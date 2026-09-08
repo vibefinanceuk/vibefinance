@@ -20,6 +20,7 @@ let stage = null;
 let compiled = null;
 let examples = [];
 let refusal = null;
+let revising = null;
 
 function note(message) {
   const box = document.getElementById("compose-note");
@@ -49,7 +50,13 @@ async function compile() {
   const response = await fetch("/api/rules/compile", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ruleSetId: stage.ruleSetId, sourceText }),
+    body: JSON.stringify({
+      ruleSetId: stage.ruleSetId,
+      sourceText,
+      // Present only when revising, so the route makes a new version
+      // rather than a new rule.
+      ...(revising?.ruleId ? { ruleId: revising.ruleId } : {}),
+    }),
   });
 
   const body = await response.json();
@@ -151,12 +158,20 @@ function exampleRow(example) {
   ]);
 }
 
+/** A box with room to write in, holding whatever it starts from. */
+function textarea(value) {
+  const node = el("textarea", { id: "sentence", rows: "6" });
+  node.value = value;
+  return node;
+}
+
 function render() {
   const shell = document.getElementById("shell");
   if (!shell) return;
 
   const outstanding = examples.filter((e) => !e.confirmedBy).length;
   const panels = [];
+  const startingFrom = revising?.sourceText ?? "";
 
   // 1. The sentence.
   panels.push(
@@ -164,7 +179,10 @@ function render() {
       el("h3", { text: t("compose.write") }),
       // **Room to write in** — decision 0154. Three rows made a rule look
       // like a search box, and a rule is a sentence somebody thinks about.
-      el("textarea", { id: "sentence", rows: "6" }),
+      // **Starts from what exists when revising** — decision 0155.
+      // Rewriting a rule from a blank page invites somebody to lose a
+      // clause they meant to keep.
+      textarea(startingFrom),
       el("div", { class: "composebar" }, [
         el("button", { class: "primary", onclick: compile }, [
           icon("compile"),
@@ -231,7 +249,10 @@ function render() {
   shell.replaceChildren(
     frame(
       el("div", {}, [
-        topbar(t("compose.title"), stage?.name ?? ""),
+        topbar(
+          revising ? t("compose.newversion") : t("compose.title"),
+          stage?.name ?? ""
+        ),
         ...panels,
         el("div", { class: "problem", id: "compose-note", role: "status" }),
       ])
@@ -239,12 +260,21 @@ function render() {
   );
 }
 
-export async function openCompose(forStage) {
+export async function openCompose(forStage, existing = null) {
   setCurrentScreen("rules");
   stage = forStage;
   compiled = null;
   refusal = null;
   examples = [];
+  /**
+   * A new version of an existing rule — decision 0155.
+   *
+   * **The box starts from what exists.** Rewriting a rule from a blank
+   * page invites somebody to lose a clause they meant to keep, and the
+   * compile route already accepts a `ruleId` to produce a v2 rather
+   * than a new rule (decision 0014).
+   */
+  revising = existing;
 
   // The field descriptions the read-back needs, from the same route the
   // keying screen uses — one vocabulary, not two (decision 0031).

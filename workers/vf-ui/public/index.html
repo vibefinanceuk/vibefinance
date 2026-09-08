@@ -435,6 +435,24 @@
   /* The button sits apart from the cards rather than among them. */
   .newrule { margin-top: 16px; }
 
+  /* The sentence is the way into a rule — decision 0155. */
+  button.rulelink {
+    padding: 0;
+    min-height: 0;
+    border: none;
+    background: none;
+    color: var(--text-accent);
+    font: inherit;
+    font-size: var(--text-base);
+    text-align: left;
+    cursor: pointer;
+  }
+  button.rulelink:hover { text-decoration: underline; }
+
+  .versionhead { display: flex; align-items: baseline; gap: 12px; margin-bottom: 8px; }
+  .versionhead h3 { margin: 0; }
+  .said { color: var(--text-secondary); margin: 0 0 10px; }
+
   /*
     An icon beside a label, not above it — decision 0154.
 

@@ -42,7 +42,13 @@ import { createWorkersAiExtractionModel } from "./extraction-model.js";
 import { handleGetExtractionSettings, handleUpdateExtractionSettings } from "./extraction-settings-route.js";
 import { handleToMarkdownDiagnostic } from "./tomarkdown-diagnostic.js";
 import { handleCreateSource, handleListSources , handleSetSourceEmail , handleListAllSources , handleListProcesses , handleRetireSource, handleRenameSource } from "./source-route.js";
-import { handleListRules, handleRuleStages, ensureRuleSetForStage } from "./rules-list-route.js";
+import {
+  handleListRules,
+  handleRuleStages,
+  ensureRuleSetForStage,
+  handleGetRule,
+  handleSetRuleEnabled,
+} from "./rules-list-route.js";
 import { handleInvoiceProgress } from "./invoice-progress-route.js";
 import { handleIngestPurchaseOrder, handleGetPurchaseOrder } from "./purchase-order-route.js";
 import { handleGetRetention, handleSetRetention, handleListBeyondRetention } from "./retention-route.js";
@@ -1328,6 +1334,30 @@ export default {
     }
 
 
+    // Pause a rule, or resume it — decision 0155.
+    const enabledMatch = pathname.match(/^\/rules\/([^/]+)\/enabled$/);
+    if (enabledMatch && request.method === "PUT") {
+      const { db } = resolveTenant(request, env);
+      const auth = await requirePermission(db, request, "Admin.Configure", sessionContext(env));
+      if (!auth.authorized) {
+        return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
+      }
+      let enabledBody: unknown;
+      try {
+        enabledBody = await request.json();
+      } catch {
+        return json({ error: t("invalidJsonBody", resolveLocale(env.LOCALE)) }, 400);
+      }
+
+      const result = await handleSetRuleEnabled(
+        db,
+        enabledMatch[1],
+        (enabledBody as Record<string, unknown> | null)?.enabled
+      );
+      return json(result.body, result.status);
+    }
+
+
     if (pathname === "/rules/stages" && request.method === "GET") {
       const { db } = resolveTenant(request, env);
       const auth = await authenticatePerson(db, request, env);
@@ -1339,6 +1369,29 @@ export default {
       const result = await handleRuleStages(db);
       return json(result.body, result.status);
     }
+
+    /**
+     * One rule, with every version — decision 0155.
+     *
+     * **After `/rules/stages`, and that ordering is load-bearing.**
+     * `^/rules/([^/]+)$` matches `stages` too, so a detail route placed
+     * first would answer the stage list with *"no rule called
+     * stages"* — a 404 that looks like a missing rule and is a routing
+     * mistake.
+     */
+    const ruleDetailMatch = pathname.match(/^\/rules\/([^/]+)$/);
+    if (ruleDetailMatch && request.method === "GET") {
+      const { db } = resolveTenant(request, env);
+      const auth = await authenticatePerson(db, request, env);
+      if (!auth.user) return json({ error: auth.reason }, 401);
+      if (!(await hasPermission(db, auth.user.id, "AP.Review"))) {
+        return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
+      }
+
+      const result = await handleGetRule(db, ruleDetailMatch[1]);
+      return json(result.body, result.status);
+    }
+
 
 
     if (pathname === "/sources" && request.method === "GET") {

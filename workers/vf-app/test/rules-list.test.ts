@@ -1,10 +1,12 @@
-import { env } from "cloudflare:test";
+import { SELF, env } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
 import { applyTestSchema } from "./setup.js";
 import {
   handleListRules,
   handleRuleStages,
   ensureRuleSetForStage,
+  handleGetRule,
+  handleSetRuleEnabled,
 } from "../src/rules-list-route.js";
 
 /**
@@ -206,5 +208,116 @@ describe("giving a stage somewhere to put rules (decision 0154)", () => {
   it("refuses a stage that does not exist", async () => {
     const result = await ensureRuleSetForStage(env.DB, "nowhere");
     expect("error" in result).toBe(true);
+  });
+});
+
+describe("pausing a rule (decision 0155)", () => {
+  /**
+   * **Nothing changed `rules.enabled` before this.** A rule was created
+   * enabled and stayed so; the only way to stop one was to delete it,
+   * which loses the sentence and every confirmed example.
+   */
+  it("pauses one", async () => {
+    await addRule("r-1", "A rule", { approved: true });
+    await handleSetRuleEnabled(env.DB, "r-1", false);
+
+    const body = (await handleListRules(env.DB, null)).body as { rules: { state: string }[] };
+    expect(body.rules[0].state).toBe("paused");
+  });
+
+  it("resumes one without a second trip through the gate", async () => {
+    // **Pausing is not unapproving.** The version keeps its approval
+    // and its confirmed examples, and the gate exists to prove somebody
+    // read the rule — which they did.
+    await addRule("r-1", "A rule", { approved: true });
+    await handleSetRuleEnabled(env.DB, "r-1", false);
+    await handleSetRuleEnabled(env.DB, "r-1", true);
+
+    const body = (await handleListRules(env.DB, null)).body as { rules: { state: string }[] };
+    expect(body.rules[0].state).toBe("live");
+  });
+
+  it("refuses anything that is not true or false", async () => {
+    await addRule("r-1", "A rule");
+    expect((await handleSetRuleEnabled(env.DB, "r-1", "yes")).status).toBe(400);
+  });
+
+  it("404s a rule that does not exist", async () => {
+    expect((await handleSetRuleEnabled(env.DB, "nope", false)).status).toBe(404);
+  });
+});
+
+describe("opening a rule (decision 0155)", () => {
+  it("shows every version, newest first", async () => {
+    // **The list shows the latest; this shows the history.** Somebody
+    // asking "why did this change" needs to see that v2 replaced v1.
+    await addRule("r-1", "The first wording", { approved: true });
+    await env.DB.prepare(
+      `INSERT INTO rule_versions (rule_id, version, source_text, compiled_json, compiled_by)
+       VALUES ('r-1', 2, 'The second wording', '{}', 'u-dan')`
+    ).run();
+
+    const body = (await handleGetRule(env.DB, "r-1")).body as {
+      versions: { version: number; sourceText: string }[];
+    };
+
+    expect(body.versions.map((v) => v.version)).toEqual([2, 1]);
+    expect(body.versions[0].sourceText).toBe("The second wording");
+  });
+
+  it("says which version is actually running", async () => {
+    // **A rule can hold three versions where one is live**, and
+    // "which" is the first thing anybody asks.
+    await addRule("r-1", "A rule", { approved: true });
+    const body = (await handleGetRule(env.DB, "r-1")).body as {
+      versions: { isLive: boolean }[];
+    };
+    expect(body.versions[0].isLive).toBe(true);
+  });
+
+  it("says nothing is live when the rule is paused", async () => {
+    await addRule("r-1", "A rule", { approved: true });
+    await handleSetRuleEnabled(env.DB, "r-1", false);
+
+    const body = (await handleGetRule(env.DB, "r-1")).body as {
+      versions: { isLive: boolean }[];
+    };
+    expect(body.versions.every((v) => !v.isLive)).toBe(true);
+  });
+
+  it("survives a version whose compiled rule will not parse", async () => {
+    // Saying nothing is better than a crash.
+    await addRule("r-1", "A rule");
+    await env.DB.prepare("UPDATE rule_versions SET compiled_json = 'not json' WHERE rule_id = 'r-1'").run();
+
+    const result = await handleGetRule(env.DB, "r-1");
+    expect(result.status).toBe(200);
+  });
+
+  it("404s a rule that does not exist", async () => {
+    expect((await handleGetRule(env.DB, "nope")).status).toBe(404);
+  });
+});
+
+describe("the routes do not shadow each other (decision 0155)", () => {
+  /**
+   * **`^/rules/([^/]+)$` matches `stages` too.** The rule detail route
+   * was placed before the stage list and would have answered it with
+   * *"no rule called stages"* — a 404 that looks like a missing rule
+   * and is a routing mistake.
+   *
+   * Caught by reading the pattern rather than by any test, which is
+   * why this one exists.
+   */
+  it("still lists stages, rather than looking for a rule called 'stages'", async () => {
+    const res = await SELF.fetch("https://app.example.com/rules/stages");
+    // 401 for want of a credential means the route was reached. A 404
+    // would mean it was read as a rule id.
+    expect(res.status).toBe(401);
+  });
+
+  it("still compiles, rather than looking for a rule called 'compile'", async () => {
+    const res = await SELF.fetch("https://app.example.com/rules/compile", { method: "POST" });
+    expect(res.status).not.toBe(404);
   });
 });

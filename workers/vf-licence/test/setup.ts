@@ -41,6 +41,7 @@ import progressSql from "../migrations/0036_progress_strings.sql?raw";
 import readbackSql from "../migrations/0037_readback_strings.sql?raw";
 import composeSql from "../migrations/0038_compose_strings.sql?raw";
 import rulesWordingSql from "../migrations/0039_rules_screen_wording.sql?raw";
+import ruleDetailSql from "../migrations/0040_rule_detail_strings.sql?raw";
 
 function stripSqlComments(sql: string): string {
   return sql
@@ -109,4 +110,5 @@ export async function applyTestSchema(): Promise<void> {
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(readbackSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(composeSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(rulesWordingSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(ruleDetailSql)));
 }
