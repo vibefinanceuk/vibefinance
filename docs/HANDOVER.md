@@ -219,14 +219,29 @@ Decision 0115 gave the seller and buyer their own panels, and most of
 their fields default to `read`. If they look thin, that is configuration
 (0114) rather than code — adjustable per customer without a deployment.
 
-### 5. Does the sources screen read right?
+### 5. Two stage names, and one stage to remove
+
+**Renaming is free** — `name` is display, `id` is the key, and nothing
+references the name:
+
+```
+UPDATE process_stages SET name = 'Intake' WHERE id = 'received';
+UPDATE process_stages SET name = 'AP Review' WHERE id = 'review';
+```
+
+**Removing Line Review is not**, and decision 0150 is why. It has a
+completed task against it, so deleting the row would fail on a foreign
+key or orphan history. Versioning the membership removes it properly;
+until then it stays.
+
+### 6. Does the sources screen read right?
 
 Decision 0134 removed every success message from it: a retired source
 shows *"Retired"*, a deleted one is gone, and the list is the answer.
 **If an action now feels like nothing happened**, that judgement was
 wrong and the message should come back.
 
-### 6. Should the line comparison move into the panel?
+### 7. Should the line comparison move into the panel?
 
 *"Lines total 150.00 · differs by 30.00"* sits under the line table and
 was **read as an exception** (0119). It is not: it is live feedback as
@@ -482,7 +497,27 @@ And **seven routes are admin-gated where two record who acted**:
 creating a licence, minting a credential and granting access to an
 environment all record nothing.
 
-**3. Email sending**, which decision 0125 evaluates. "Email" means three
+**3. Process configuration, versioned** (decision 0150). Adding and
+removing stages through a screen, with a version number an invoice
+carries — so it is always apparent which shape of the process an item
+ran under.
+
+The detail that decides it: **version the membership, not the stages.**
+A version on `processes` alone would be a label with nothing behind it,
+because editing `process_stages` in place shows a v1 instance v2's
+stages. `process_stage_versions (process_id, version, stage_id,
+sequence)` leaves all six foreign keys untouched and makes removing a
+stage *"not in this version"* rather than a deletion that orphans
+history.
+
+**An invoice finishes on the version it started**, and rules resolve on
+arrival rather than on entry — which is already what
+`rule-set-loader.ts` does. The asymmetry is deliberate: the path is
+frozen because changing it mid-flight is incoherent, and the rules are
+current because a threshold tightened this morning should apply to
+invoices reaching Approval this afternoon.
+
+**4. Email sending**, which decision 0125 evaluates. "Email" means three
 different things — supplier contacts *out to strangers*, user
 notifications *out to colleagues*, and a source which is *inbound* and
 not sending at all.
@@ -500,7 +535,7 @@ Still open: **which provider**, **where sending lives** (0091 says the
 control plane never holds customer content), **whether templates sit in
 D1** like `ui_strings`, and **what happens when sending fails**.
 
-**4. ~~Wire up the actions that now have icons.~~ Built** (0138). Two
+**5. ~~Wire up the actions that now have icons.~~ Built** (0138). Two
 reasons they did nothing: the proxy carried **two of six** task paths,
 and three routes authenticated by API key only.
 
@@ -508,13 +543,13 @@ and three routes authenticated by API key only.
 supplier both end a task, and the reason prompt is the only pause — *why*
 is not *are you sure*.
 
-**5. ~~Closed-value enforcement in the compiler.~~ Built** (0148). A rule saying
+**6. ~~Closed-value enforcement in the compiler.~~ Built** (0148). A rule saying
 *"currency is EURO"* compiles, activates, fires against nothing and
 looks correct in every listing. `validateRule` has the list (0113) and
 does not consult it. The pair to decision 0116, which now validates
 documents.
 
-**6. ~~An Approval screen.~~ Built** (0142, 0143, 0144), and it is the
+**7. ~~An Approval screen.~~ Built** (0142, 0143, 0144), and it is the
 **same screen**. Field visibility makes a stage read-only, a task reports its
 own actions, and approve and reject already existed as `complete` and
 `return`. What was missing was that the viewer opened only for `key`,
@@ -525,27 +560,27 @@ a per-field list was the wrong shape (0143), and **field visibility had
 never been enforced anywhere but the screen** (0144) — which is the
 older and larger finding.
 
-**7. BG-4 and BG-7 in the vocabulary.** The seller and buyer field lists
+**8. BG-4 and BG-7 in the vocabulary.** The seller and buyer field lists
 live in the viewer (0115). Recording business-group membership in
 `shared`, as `INVOICE_LINE_FIELDS` does for BG-25, is the consistent
 thing and a known shortcut until it is done.
 
-**8. BG-23, the VAT breakdown.** Mandatory and **repeating** — one entry
+**9. BG-23, the VAT breakdown.** Mandatory and **repeating** — one entry
 per VAT category and rate, whose tax amounts must sum to BT-110. The
 flat facts model cannot hold a repeating group (0112). A design
 question, not an omission, and *"one of the most common causes of
 validation errors"*.
 
-**9. Despatch Advice (T16).** The goods receipt, and the missing third
+**10. Despatch Advice (T16).** The goods receipt, and the missing third
 leg of three-way matching — **before the matcher, not after** (0082).
 BT-132 now exists, which is what lets matching compare a line to an
 order line.
 
-**10. Reading `cbc:CustomizationID`.** BT-24 is now read into the facts
+**11. Reading `cbc:CustomizationID`.** BT-24 is now read into the facts
 (0112), so the discriminator is available; detection still does not use
 it, and a valid Peppol Order sent to `/sources/:id/capture` is refused.
 
-**11. `party.first_document`**, the **all-users task view**, a **screen
+**12. `party.first_document`**, the **all-users task view**, a **screen
 for placing an invoice** by hand, and **four more languages** —
 `GET /ui-strings/keys` shows the gaps.
 
