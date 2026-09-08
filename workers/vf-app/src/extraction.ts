@@ -34,10 +34,28 @@ import {
  *  a half-populated invoice nobody knows to distrust. */
 export class ExtractionRefusal extends Error {
   readonly rawModelOutput?: string;
-  constructor(message: string, rawModelOutput?: string) {
+
+  /**
+   * Whether the model **never answered**, as against answering badly —
+   * decision 0163.
+   *
+   * A timeout is not a bad reading; it is **no reading**. Decision 0055
+   * already says what to do with a document nothing could read: keep it
+   * as an invoice with no facts, and let a person key it.
+   *
+   * Refusing outright is right for a model that read the document and
+   * produced nonsense — *"a refusal, never a half-populated invoice"* —
+   * and wrong for one that never got to look. The first is evidence the
+   * document is not an invoice; the second is evidence about our
+   * infrastructure.
+   */
+  readonly unanswered: boolean;
+
+  constructor(message: string, rawModelOutput?: string, unanswered = false) {
     super(message);
     this.name = "ExtractionRefusal";
     this.rawModelOutput = rawModelOutput;
+    this.unanswered = unanswered;
   }
 }
 
@@ -600,7 +618,7 @@ export async function extractInvoiceFromImages(
   }
 
   const perPage: { page: number; result: ExtractionResult }[] = [];
-  const failedPages: { page: number; reason: string }[] = [];
+  const failedPages: { page: number; reason: string; unanswered: boolean }[] = [];
 
   for (let i = 0; i < pages.length; i++) {
     const pageNumber = i + 1;
@@ -610,6 +628,10 @@ export async function extractInvoiceFromImages(
       failedPages.push({
         page: pageNumber,
         reason: `unsupported image format — expected one of ${SUPPORTED_IMAGE_TYPES.join(", ")}`,
+        // **A real answer about the document**, not a model that failed
+        // to give one: this file is not an image we can read, and no
+        // amount of retrying changes that (decision 0163).
+        unanswered: false,
       });
       continue;
     }
@@ -628,7 +650,14 @@ export async function extractInvoiceFromImages(
       // One unreadable page does not sink the document. The others
       // may carry everything needed, and the failure is recorded so
       // that a later validation mismatch has a visible explanation.
-      failedPages.push({ page: pageNumber, reason: err instanceof Error ? err.message : String(err) });
+      failedPages.push({
+        page: pageNumber,
+        reason: err instanceof Error ? err.message : String(err),
+        // **Whether the model answered at all** — decision 0163. Kept
+        // per page, because one page timing out and another being
+        // unreadable are different facts about the document.
+        unanswered: err instanceof ExtractionRefusal && err.unanswered,
+      });
     }
   }
 
@@ -636,7 +665,18 @@ export async function extractInvoiceFromImages(
     throw new ExtractionRefusal(
       failedPages.length === 1
         ? failedPages[0].reason
-        : `none of the ${pages.length} pages could be read: ${failedPages.map((f) => `page ${f.page}: ${f.reason}`).join("; ")}`
+        : `none of the ${pages.length} pages could be read: ${failedPages.map((f) => `page ${f.page}: ${f.reason}`).join("; ")}`,
+      undefined,
+      /**
+       * **Unanswered only if every page went unanswered** — decision
+       * 0163.
+       *
+       * A document where one page timed out and another was genuinely
+       * unreadable is a document the model *did* look at, and keeping
+       * it as an invoice with no facts would hide a real refusal behind
+       * an infrastructure problem.
+       */
+      failedPages.length > 0 && failedPages.every((f) => f.unanswered)
     );
   }
 

@@ -2,6 +2,7 @@ import { env } from "cloudflare:test";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { applyTestSchema } from "./setup.js";
 import { handleInboundEmail, type EmailMessage } from "../src/inbound-email.js";
+import { ExtractionRefusal } from "../src/extraction.js";
 
 /**
  * Invoices arriving by email — decision 0146.
@@ -486,5 +487,90 @@ describe("why an attachment was refused (decision 0162)", () => {
       "SELECT reason FROM inbound_email_events ORDER BY occurred_at DESC LIMIT 1"
     ).first<{ reason: string }>();
     expect(event?.reason).toBe("no_attachment");
+  });
+});
+
+describe("a model that never answered (decision 0163)", () => {
+  /**
+   * **A timeout is not a bad reading; it is no reading.**
+   *
+   * Found on a real 936KB photograph of an invoice:
+   * `AiError: 3046: Request timeout`. Capture returned 422 and stored
+   * nothing, so the document bounced to the supplier and the customer
+   * never saw it.
+   *
+   * Decision 0055 already says what to do with a document nothing could
+   * read — **an invoice with no facts, waiting for a person to key it**
+   * — and that is what happens when detection finds no structure. An
+   * image whose extraction timed out was thrown away instead.
+   */
+  /**
+   * **Throws what the real model layer throws.** The translation from
+   * `AiError: 3046` into an `ExtractionRefusal` happens inside
+   * `createWorkersAiExtractionModel`, which a stub replaces — so a stub
+   * throwing the raw `AiError` never reaches the branch under test.
+   *
+   * A stub that is wrong in a plausible way sends somebody to read
+   * working code (decisions 0138, 0161).
+   */
+  const timesOut = {
+    extract: vi.fn(async () => {
+      throw new ExtractionRefusal(
+        "the model did not respond in time — a large image or a long line table can exceed the time available",
+        undefined,
+        true
+      );
+    }),
+  } as never;
+
+  it("keeps the invoice rather than bouncing it", async () => {
+    await seedSource("ap-mailbox.acme@vibefinance-ai.com");
+    const message = messageWith("ap-mailbox.acme@vibefinance-ai.com", [
+      { filename: "invoice.png", contentType: "image/png", bytes: PNG_BYTES },
+    ]);
+
+    await handleInboundEmail(message, env.DB, timesOut);
+
+    expect(message.rejectedWith).toBeNull();
+    const count = await env.DB.prepare("SELECT count(*) AS n FROM invoice_headers").first<{
+      n: number;
+    }>();
+    expect(count?.n).toBe(1);
+  });
+
+  it("keeps it with no facts, for a person to key", async () => {
+    await seedSource("ap-mailbox.acme@vibefinance-ai.com");
+    await handleInboundEmail(
+      messageWith("ap-mailbox.acme@vibefinance-ai.com", [
+        { filename: "invoice.png", contentType: "image/png", bytes: PNG_BYTES },
+      ]),
+      env.DB,
+      timesOut
+    );
+
+    const row = await env.DB.prepare(
+      "SELECT facts_json FROM invoice_headers ORDER BY rowid DESC LIMIT 1"
+    ).first<{ facts_json: string }>();
+
+    // **The viewer says so** (decision 0161): empty `intake.structure`
+    // is what makes it show "could not be read automatically".
+    expect(JSON.parse(row?.facts_json ?? "{}")["intake.structure"]).toBe("");
+  });
+
+  it("still refuses a model that answered badly", async () => {
+    // **Refusing outright stays right** for a model that read the
+    // document and produced nonsense — that is evidence the document is
+    // not an invoice. A timeout is evidence about our infrastructure.
+    await seedSource("ap-mailbox.acme@vibefinance-ai.com");
+    const blind = {
+      extract: vi.fn(async () => JSON.stringify({ _confidence: 0.9 })),
+    } as never;
+
+    const message = messageWith("ap-mailbox.acme@vibefinance-ai.com", [
+      { filename: "invoice.png", contentType: "image/png", bytes: PNG_BYTES },
+    ]);
+    await handleInboundEmail(message, env.DB, blind);
+
+    expect(message.rejectedWith).not.toBeNull();
   });
 });

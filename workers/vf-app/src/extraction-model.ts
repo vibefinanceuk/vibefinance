@@ -186,7 +186,12 @@ export function createWorkersAiExtractionModel(ai: AiRunnable, modelId?: string)
         const detail = message.slice(0, 300);
         if (message.includes("3046") || message.toLowerCase().includes("timeout")) {
           throw new ExtractionRefusal(
-            `the model did not respond in time — a large image or a long line table can exceed the time available (${detail})`
+            `the model did not respond in time — a large image or a long line table can exceed the time available (${detail})`,
+            undefined,
+            // **The model never answered**, so this is evidence about
+            // our infrastructure rather than about the document
+            // (decision 0163).
+            true
           );
         }
         throw new ExtractionRefusal(`the extraction model failed: ${detail}`);

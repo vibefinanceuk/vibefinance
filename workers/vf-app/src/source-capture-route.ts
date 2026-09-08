@@ -205,6 +205,35 @@ export async function handleCaptureFromSource(
     result = await handleCaptureUblXml(db, channel.id, new TextDecoder().decode(bytes), idOverride);
   } else {
     result = await handleCaptureImage(db, channel.id, bytes, model, idOverride);
+
+    /**
+     * A model that never answered keeps the document — decision 0163.
+     *
+     * Decision 0055 already says what to do with a document nothing
+     * could read: **an invoice with no facts, waiting for a person to
+     * key it.** That is what happens when detection finds no structure.
+     *
+     * An image whose extraction **timed out** was thrown away instead —
+     * capture returned 422 and stored nothing, so a photographed
+     * invoice bounced to the supplier and the customer never saw it.
+     *
+     * **A timeout is evidence about our infrastructure, not about the
+     * document.** Refusing outright stays right for a model that read
+     * the document and produced nonsense; it is wrong for one that
+     * never got to look.
+     */
+    if (result.status === 422 && (result.body as { unanswered?: boolean })?.unanswered) {
+      return captureWithoutFacts(
+        db,
+        source,
+        attempted,
+        detection.attempted,
+        bytes,
+        idOverride,
+        bucket,
+        customerId
+      );
+    }
   }
 
   if (result.status >= 400) return result;

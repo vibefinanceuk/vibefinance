@@ -472,6 +472,11 @@ export async function handleCaptureImage(
           // code change purely to see the thing the error already
           // held.
           rawModelOutput: err.rawModelOutput?.slice(0, 2000),
+          // **Whether the model answered at all** — decision 0163.
+          // The caller keeps the document when it did not, rather than
+          // discarding a perfectly good invoice because our model was
+          // busy.
+          unanswered: err.unanswered,
         },
       };
     }
@@ -585,6 +590,11 @@ export async function handleFinalisePendingDocument(
           // code change purely to see the thing the error already
           // held.
           rawModelOutput: err.rawModelOutput?.slice(0, 2000),
+          // **Whether the model answered at all** — decision 0163.
+          // The caller keeps the document when it did not, rather than
+          // discarding a perfectly good invoice because our model was
+          // busy.
+          unanswered: err.unanswered,
         },
       };
     }
