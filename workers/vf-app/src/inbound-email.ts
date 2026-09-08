@@ -250,7 +250,21 @@ export async function handleInboundEmail(
       customerId
     );
     if (result.status >= 400) {
-      failures.push(attachment.filename);
+      /**
+       * **Why, not just that** — decision 0162.
+       *
+       * Decision 0146 collected failed attachments by filename and
+       * discarded `result.body`, which holds the actual reason. So a
+       * supplier got *"the attached file could not be read as an
+       * invoice"*, the customer got `unreadable`, and **the one thing
+       * that would explain it was thrown away** — the same fault
+       * decision 0161 fixed for a document that could not be detected.
+       *
+       * `wrangler tail` shows nothing either, because capture returns a
+       * 422 rather than throwing.
+       */
+      const why = (result.body as { error?: string } | undefined)?.error;
+      failures.push(why ? `${attachment.filename}: ${why}` : attachment.filename);
     }
   }
 
@@ -260,7 +274,17 @@ export async function handleInboundEmail(
   const captured = attachments.length - failures.length;
 
   if (captured === 0) {
-    await record(db, message, "rejected", "unreadable", source.id, attachments.length, 0);
+    await record(
+      db,
+      message,
+      "rejected",
+      // **The reason a route gave, not the word this one chose.**
+      // `unreadable` is true of everything here and explains nothing.
+      failures.join(" · ").slice(0, 500) || "unreadable",
+      source.id,
+      attachments.length,
+      0
+    );
     message.setReject("The attached file could not be read as an invoice.");
     return;
   }

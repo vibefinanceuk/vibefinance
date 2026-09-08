@@ -13,6 +13,8 @@ import { handleInboundEmail, type EmailMessage } from "../src/inbound-email.js";
  * *"a supplier who sent an invoice believes they sent it."*
  */
 
+const PNG_BYTES = new Uint8Array([0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a,0x00,0x00,0x00,0x0d]);
+
 const PDF = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x34, 0x0a, 0x25]);
 
 function base64(bytes: Uint8Array): string {
@@ -430,5 +432,59 @@ describe("a document nobody configured a channel for (decision 0161)", () => {
       "SELECT count(*) AS n FROM intake_channels WHERE structure = 'image'"
     ).first<{ n: number }>();
     expect(count?.n).toBe(1);
+  });
+});
+
+describe("why an attachment was refused (decision 0162)", () => {
+  /**
+   * **Decision 0146 discarded the reason.** It collected failed
+   * attachments by filename and threw away `result.body`, which holds
+   * the actual explanation.
+   *
+   * So a supplier got *"the attached file could not be read as an
+   * invoice"*, the customer's log said `unreadable`, and **the one
+   * thing that would explain it was gone.** `wrangler tail` showed
+   * nothing either, because capture returns a 422 rather than throwing.
+   *
+   * Found on a real photographed invoice that would not extract.
+   */
+  it("records what the capture route actually said", async () => {
+    await seedSource("ap-mailbox.acme@vibefinance-ai.com");
+
+    // A model that cannot read the document, which is the real case.
+    const blind = {
+      extract: vi.fn(async () => JSON.stringify({ _confidence: 0.9 })),
+    } as never;
+
+    await handleInboundEmail(
+      messageWith("ap-mailbox.acme@vibefinance-ai.com", [
+        { filename: "invoice.png", contentType: "image/png", bytes: PNG_BYTES },
+      ]),
+      env.DB,
+      blind
+    );
+
+    const event = await env.DB.prepare(
+      "SELECT reason FROM inbound_email_events ORDER BY occurred_at DESC LIMIT 1"
+    ).first<{ reason: string }>();
+
+    // **Not the word "unreadable"**, which is true of everything here
+    // and explains nothing.
+    expect(event?.reason).toContain("invoice.png");
+    expect(event?.reason).toContain("no fields could be read");
+  });
+
+  it("still says something when a route gave no reason", async () => {
+    await seedSource("ap-mailbox.acme@vibefinance-ai.com");
+    await handleInboundEmail(
+      messageWith("ap-mailbox.acme@vibefinance-ai.com", []),
+      env.DB,
+      model
+    );
+
+    const event = await env.DB.prepare(
+      "SELECT reason FROM inbound_email_events ORDER BY occurred_at DESC LIMIT 1"
+    ).first<{ reason: string }>();
+    expect(event?.reason).toBe("no_attachment");
   });
 });
