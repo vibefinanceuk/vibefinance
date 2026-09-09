@@ -42,5 +42,15 @@ screen whose words come from D1 (decision 0107).
   selector; the stylesheet is still hand-written and 1,000 lines long.
 - **A team-owned task shows the team, not an address**, which is
   correct and is not what somebody expects when the task is waiting for
-  them. Claiming it makes it theirs (decision 0180) — and nothing on
-  this screen offers to.
+  them. Claiming it makes it theirs (decision 0180).
+
+  **This record originally said nothing on the screen offers to claim,
+  and that was wrong.** `actionsFor` returns `["claim"]` for an
+  available task, the task list has offered it since decision 0104, and
+  the viewer renders whatever actions a task carries — decision 0122
+  drew it as an open padlock, *because a claim is a lock*.
+
+  It was not visible on the screen in front of me because **every task
+  there was already claimed**, so the action row correctly showed
+  *Release* instead. A note written from one screenshot rather than from
+  the code.
