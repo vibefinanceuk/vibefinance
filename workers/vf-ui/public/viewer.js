@@ -905,7 +905,17 @@ export async function openViewer(task, onClose) {
          * fold, where the last two were the only ones worth reading.
          */
         topbar(
-          `${t("viewer.stagelabel")} ${task.stageName ?? task.stageId ?? t("viewer.title")}`,
+          /**
+           * **Which line, where a task is about one** — decision 0183.
+           *
+           * A stage scoped `per_line` raises a task per invoice line,
+           * and the viewer opens the whole document either way. Without
+           * saying which line, somebody approving line three has to
+           * work out that it is line three.
+           */
+          `${t("viewer.stagelabel")} ${task.stageName ?? task.stageId ?? t("viewer.title")}${
+            task.lineNumber ? ` · ${t("tasks.line")} ${task.lineNumber}` : ""
+          }`,
           task.subject?.id ? `${t("viewer.reflabel")} ${task.subject.id}` : "",
           [el("button", { text: t("viewer.back"), onclick: onClose })],
           [subhead(task)]

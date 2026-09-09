@@ -1,19 +1,27 @@
 # Handover
 
-**Written 4 September 2026, updated 9 September.** One page: where things stand, what needs a
-decision rather than work, and what to do next.
+**Written 4 September 2026, updated 9 September.**
 
-`docs/PROGRESS.md` is the map — what exists and what does not.
-`docs/decisions/` is the authority on *why* anything is the way it is.
-**This file is the starting point**, and it goes stale faster than
-either, so check the dates.
+**For a session starting cold.** Where things stand, what needs a
+decision rather than work, what to do next, and the habits this project
+has earned the hard way.
 
-**Read `docs/decisions/SUPERSEDED.md` before trusting an old record.**
-Records are never rewritten to agree with later ones — what was decided,
-and why it looked right then, is part of why the current answer is what
-it is. That means **contradictions between records are real and neither
-is wrong**; they are dated. That page is the map of which supersedes
-which, and it exists because the trap has been fallen into twice.
+It holds **only what the other files cannot give you**:
+
+- `docs/PROGRESS.md` — the map. What exists, what does not.
+- `docs/decisions/` — the authority on *why* anything is as it is.
+- `docs/decisions/SUPERSEDED.md` — what stopped being true.
+
+**Nothing is struck through here.** When a thing is done it leaves this
+page and appears in `SUPERSEDED.md`, because two copies of the same
+history is one copy that lies — and the stale one is always the copy
+nobody is told to check.
+
+**Read `SUPERSEDED.md` before trusting an old record.** Records are never
+rewritten to agree with later ones, so **contradictions between them are
+real and neither is wrong** — they are dated. That page maps which
+supersedes which, and it exists because the trap has been fallen into
+twice.
 
 ---
 
@@ -44,146 +52,25 @@ not related.
 
 ---
 
-## What the system does end to end
+## What the system does
 
-Proven live, following one real document the whole way:
+**`docs/PROGRESS.md` is the map** — what exists, what does not, and the
+reasoning for each. This page does not repeat it.
 
-1. A supplier PDF arrives at `POST /sources/ic-new/capture`.
-2. Detection finds a PDF header and **no embedded invoice** — no
-   structure this system can extract from.
-3. It is **captured rather than rejected**: an invoice row carrying only
-   provenance, a real process instance, and `intake.structure: ""` —
-   the empty string, because an absent field cannot be tested by a rule.
-4. The original is **retained** in R2 as `application/pdf`.
-5. It stops at **Validation**, where a rule the customer wrote in plain
-   English raises a task.
-6. A person **keys** the fields. Identity is derived from the
-   authenticated caller; a spoofed `keyedBy` in the body is ignored.
-7. Keying reports whether the document **would now validate**.
-8. A **five-minute signed URL** displays the retained PDF in a browser
-   with no `Authorization` header.
-9. A person with the right permissions can **return** it to an earlier
-   stage with a reason, **return it to the supplier**, or **discard** it.
+In one paragraph: an invoice arrives by email, by upload, or as UBL. It
+is captured whether or not anything can read it, evaluated against rules
+a customer wrote **in plain English**, and routed through a process of
+stages where people key, approve and return it. Every visible word comes
+from the control plane and every colour from a token, so a wording fix
+or a new language is rows rather than a deployment.
 
-**Every step above now has a screen.** `vf-ui` serves sign-in, the Task
-Manager and the Validation viewer, so steps 6, 8 and 9 are things a
-person clicks rather than `curl` invocations. This paragraph said the
-opposite until 5 September.
+**Five screens**: Tasks, Sources, Rules, Documents, and the viewer that
+serves every stage.
 
-Separately, **purchase orders** can be ingested from Peppol BIS Order
-Only documents and read back. They are reference data rather than work:
-nothing extracts from them, no rule evaluates them, and they never enter
-a process instance. **Nothing matches an invoice against one yet.**
-
-And **a person can now sign in**, proven end to end against production:
-
-1. `POST /login` on `vf-licence` — email, password, environment.
-2. The **progressive delay** is checked first, so somebody already
-   throttled gets no free password verification (0090, 0094).
-3. The password is verified against a credential held in the control
-   plane, because `vf-licence` cannot reach a customer's `org_users`
-   table at all (0091, 0092).
-4. An **access grant** decides which instances that person may reach.
-   The composite foreign keys make a cross-customer grant impossible to
-   write (0093).
-5. A **session token** comes back, scoped to one environment — one
-   signing key serves the whole fleet, so without that scope a session
-   for one customer would open another's data (0086).
-6. `GET /whoami` on `vf-app` verifies it locally, with no network call,
-   and returns the person's real record and every permission at once
-   (0095).
-
-**And then they see their work.** `https://vf-ui.vibefinance.workers.dev`
-serves a **Task Manager**: one list across every stage, ownership as a
-column, filters by stage and ownership, and buttons drawn from what each
-task says the server will honour. A person can claim a task and release
-it. **Refreshing holds steady** — the session lives in an `HttpOnly`
-cookie the JavaScript never sees (0102).
-
-**And they can key one.** A Validation task opens the viewer (0106): the
-retained original beside the fields it should have yielded, opened in
-its own window through a five-minute signed URL (0073). Saving reports
-whether validation *would* now pass — advisory, because nothing
-re-evaluates the rules (0072).
-
-**In their own language, in the customer's livery.** Every visible word
-comes from D1 in the control plane (0107) and every colour from a token
-(0096), so a wording fix or a new language is rows rather than a
-deployment.
-
-**Showing the fields that customer chose.** Which fields appear, and
-whether they may be edited, is configuration — per customer, restricted
-further per stage, and *"approvers should approve data, not edit
-data"* (0114). Currency, unit and VAT category are pickers drawn from
-the standard's own code lists (0113).
-
-**With the document beside them.** A PDF renders in a frame and an image
-in an image — the browser's own viewer, which decision 0042 was read for
-too long as ruling out (0123).
-
-**And an exceptions panel that says what is wrong on arrival**, in
-readable terms rather than check names, with every field a failure
-involves highlighted and carrying its reason on hover (0119).
-
-**And placed in the right part of the enterprise.** An invoice acquires
-an operating unit at intake, from a rule the customer wrote or from the
-source it arrived through, and a stage can refuse to let it past without
-one (0111).
-
-**There is a second screen now.** Sources — *where invoices arrive* —
-lists them, creates them, gives an email source its address, and retires
-or deletes one (0126, 0128, 0130). The navigation frame has carried a
-single entry since 0108 waiting for exactly this.
-
-**And a third stage uses the same screen as the second.** An approval
-task opens the keying viewer, with the fields read-only because the
-stage says so and Complete in place of Save (0142, 0143). *"Approvers
-should approve data, not edit data"* is a **property of the stage**, not
-a list of fields somebody has to keep complete.
-
-**Enforced by the route, not the screen** (0144). Field visibility had
-been a screen behaviour since September: a `curl` could always write a
-read-only field, and the keying route now refuses one.
-
-**Invoices arrive by email** (0146, 0147). A supplier sends to an
-address a source owns, every attachment is captured, and each arrival is
-logged with its outcome and its reason. A photographed invoice has been
-read automatically and reached Payment-eligible **without a person
-touching it** — and one the model could not read is retained, explained
-on screen, and waits to be keyed (0161–0163, 0166).
-
-**Rules have a face** (0149, 0153–0158). See what runs at each stage,
-write one in a sentence, read the compiled rule back **in words rather
-than as a condition tree**, confirm its worked examples, activate,
-pause, revise. The product's own claim, reachable by a customer rather
-than by `curl`.
-
-**Documents are findable** (0164, 0165, 0167). Every invoice that has
-arrived, searchable, with columns a person chooses — because until then
-**every way into a document was a task**, and an invoice that went
-straight through has none.
-
-**And an invoice shows where it has been** (0151, 0152). The process as
-chevrons at the head of the viewer, with how long each stage took and
-every period a returned document spent there.
-
-**And a person can now do all of that in a browser.**
-`https://vf-ui.vibefinance.workers.dev` serves a sign-in screen that
-fetches the customer's livery from `vf-licence` (0096), populates the
-environment list from what that person may actually reach, and shows
-their last sign-in with every failed attempt since. Proven working, not
-just built.
-
-`ALLOWED_ORIGINS` is set on both API Workers to the UI's origin, which
-is what lets a browser read either response (0098). CORS is a browser
-mechanism — every `curl` in this file works regardless.
-
-**Every authentication failure returns the same message**, so an email
-address cannot be used to enumerate accounts or environments.
-
-Sessions and API keys **coexist**: a session is a person at a screen, an
-API key is a service credential, and every live test in this project
-uses one.
+**Proven on real documents**, not only in tests: a photographed invoice
+has been read automatically and reached Payment-eligible with nobody
+touching it, and one the model could not read was retained, explained on
+screen, and left to be keyed.
 
 ---
 
@@ -300,40 +187,6 @@ multiple approval works) or a rule firing twice. **Nobody has
 established which**, and the two readings have different fixes.
 
 ---
-
-## What the last two days added
-
-**Rules have a face** (0149, 0153–0158). See what runs at each stage,
-write one in a sentence, read the compiled rule back in words, confirm
-its worked examples, activate, pause, revise. The product's own claim,
-reachable by a customer rather than by `curl`.
-
-**Email intake receives real invoices** (0146, 0147, 0161–0163, 0166,
-0168). A supplier emails a document, it is captured, read where it can
-be, retained and explained where it cannot, and every arrival is logged
-with a reason.
-
-**Documents are findable** (0164, 0165, 0167). Every invoice that has
-arrived, searchable, with columns a person chooses — because until then
-**every way into a document was a task**, and a straight-through invoice
-has none.
-
-**An invoice shows where it has been** (0151, 0152). The process as
-chevrons at the head of the viewer, with how long each stage took.
-
-**And process versioning has its foundation** (0150, 0160). Every read
-of a process's stages goes through a version's membership; nothing
-creates a second version yet.
-
-## Resolved since the last handover
-
-**This list has moved.** It lived here and went stale — decision 0094's
-conclusion sat in it as settled for days after decision 0117 corrected
-it, which is the exact hazard `SUPERSEDED.md` was written to close.
-
-**Two copies of the same history is one copy that lies.** It is all in
-`docs/decisions/SUPERSEDED.md` now, which is where a reader is already
-told to look before trusting an old record.
 
 ## Suggested next pieces
 

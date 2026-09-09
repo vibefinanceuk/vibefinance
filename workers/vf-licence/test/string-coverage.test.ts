@@ -191,6 +191,7 @@ const KEYS_THE_INTERFACE_USES = [
   "viewer.stagelabel",
   "viewer.reflabel",
   "tasks.unclaimed",
+  "tasks.line",
   "viewer.waitinglabel",
   "viewer.ownerlabel",
   "nav.documents",

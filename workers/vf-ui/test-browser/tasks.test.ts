@@ -30,6 +30,7 @@ const STRINGS = {
     "nav.tasks": "Tasks",
     "nav.sources": "Sources",
     "tasks.stage": "Stage",
+    "tasks.line": "line",
     "tasks.supplier": "Supplier",
     "tasks.amount": "Amount",
     "tasks.waiting": "Waiting",
@@ -157,5 +158,26 @@ describe("the brand mark (decision 0145)", () => {
 
     const mark = document.querySelector("img.brandmark") as HTMLImageElement;
     expect(mark.alt).toBe("");
+  });
+});
+
+describe("a task about one line (decision 0183)", () => {
+  /**
+   * A stage scoped `per_line` raises one task per invoice line, so an
+   * eight-line invoice produces eight rows naming the same supplier,
+   * the same amount and the same stage.
+   *
+   * **Eight identical rows teach somebody the list is broken.**
+   */
+  it("names the line beside the supplier", async () => {
+    await openList([
+      { ...APPROVAL_TASK, lineNumber: 3 },
+    ]);
+    expect(document.body.textContent).toContain("line 3");
+  });
+
+  it("says nothing where a task is about the whole document", async () => {
+    await openList([APPROVAL_TASK]);
+    expect(document.body.textContent).not.toContain("line ");
   });
 });
