@@ -1,0 +1,40 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "vf-admin",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-01",
+
+  "compatibility_flags": ["global_fetch_strictly_public"],
+
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "run_worker_first": ["/api/*"]
+  },
+
+  /*
+    A service binding, not a URL — decision 0186.
+
+    The same reasoning decision 0005 found the hard way: a plain
+    fetch() to a Worker's own workers.dev URL is silently blocked by
+    Cloudflare's anti-loop protections, and the request never arrives.
+  */
+  "services": [
+    {
+      "binding": "LICENCE_SERVICE",
+      "service": "vf-licence"
+    }
+  ],
+
+  "vars": {
+    /*
+      **The operator's own team domain.** Cloudflare Access verifies the
+      identity and sets `Cf-Access-Authenticated-User-Email`; this
+      Worker refuses anything without one.
+
+      Not a secret: it is a hostname, and a reviewer should see which
+      Access team guards the admin key.
+    */
+    "ACCESS_TEAM_DOMAIN": "not-configured.invalid"
+  }
+}

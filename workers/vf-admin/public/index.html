@@ -1,0 +1,250 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VibeFinance — Operator</title>
+
+<!--
+  The operator interface — decisions 0140, 0186.
+
+  **Deliberately plain, and not the customer's interface.** `vf-ui`
+  fetches its livery from the control plane and every word from D1
+  (0096, 0107), because it belongs to a customer. This belongs to us:
+  one operator, one language, no branding to fetch.
+
+  So it carries its own words and its own colours, and the tokens are
+  copied rather than shared — a change to a customer's palette should
+  not change the screen that approves customers.
+-->
+
+<style>
+:root {
+  --surface-0: #0d1626; --surface-1: #141f33; --surface-2: #1b2941;
+  --text-primary: #e8eef7; --text-secondary: #9dabc0; --text-muted: #6f7e94;
+  --border: rgba(232, 238, 247, 0.12); --border-strong: rgba(232, 238, 247, 0.22);
+  --text-accent: #9fc9f2; --bg-accent: #123a66;
+  --text-warning: #f0c477; --text-success: #a8cf85; --text-danger: #f0a3a3;
+  --text-sm: 12px; --text-base: 14px; --text-lg: 16px; --text-xl: 20px;
+  --radius: 8px;
+  --font-sans: Calibri, Carlito, "Segoe UI", -apple-system, sans-serif;
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0; padding: 26px;
+  font-family: var(--font-sans); font-size: var(--text-base); line-height: 1.6;
+  color: var(--text-primary); background: var(--surface-0);
+}
+input, button, select { font: inherit; }
+
+h1 { font-size: var(--text-xl); margin: 0; font-weight: 600; }
+.who { color: var(--text-muted); font-size: var(--text-sm); margin: 4px 0 0; }
+.rule { border: none; border-top: 0.5px solid var(--border); margin: 18px 0; }
+
+.panel {
+  background: var(--surface-2);
+  border: 0.5px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px 18px;
+  margin: 0 0 14px;
+}
+.panel:last-child { margin-bottom: 0; }
+.panel h2 { font-size: var(--text-lg); margin: 0 0 12px; font-weight: 600; }
+
+table { width: 100%; border-collapse: collapse; }
+th {
+  text-align: left; font-size: var(--text-sm); font-weight: 600;
+  color: var(--text-muted); padding: 0 10px 8px;
+  border-bottom: 0.5px solid var(--border); white-space: nowrap;
+}
+td { padding: 10px; border-bottom: 0.5px solid var(--border); vertical-align: top; }
+tr:last-child td { border-bottom: none; }
+
+.muted { color: var(--text-muted); }
+.sm { font-size: var(--text-sm); }
+.num { text-align: right; font-variant-numeric: tabular-nums; }
+
+button {
+  padding: 5px 12px; min-height: 30px;
+  border: 0.5px solid var(--border-strong); border-radius: var(--radius);
+  background: var(--surface-1); color: var(--text-primary);
+  cursor: pointer; white-space: nowrap;
+}
+button.approve { border-color: var(--text-success); color: var(--text-success); }
+button.reject { border-color: var(--text-danger); color: var(--text-danger); }
+button:disabled { opacity: .45; cursor: not-allowed; }
+
+.outcome-recorded { color: var(--text-success); }
+.outcome-refused { color: var(--text-warning); }
+.outcome-failed { color: var(--text-danger); }
+
+.problem { color: var(--text-warning); min-height: 22px; margin-top: 10px; }
+.empty { padding: 24px 10px; text-align: center; color: var(--text-muted); }
+</style>
+</head>
+<body>
+
+<h1>Operator</h1>
+<p class="who" id="who">…</p>
+<hr class="rule">
+
+<div class="panel">
+  <h2>Waiting for a decision</h2>
+  <p class="sm muted" style="margin:-6px 0 12px">
+    Everything a decision should rest on, in front of the decision.
+  </p>
+  <div id="requests"><div class="empty">Loading…</div></div>
+</div>
+
+<div class="panel">
+  <h2>What has been done</h2>
+  <p class="sm muted" style="margin:-6px 0 12px">
+    Every privileged action, refusals included — because a log of
+    successes cannot answer <em>“did anybody try?”</em>
+  </p>
+  <div id="actions"><div class="empty">Loading…</div></div>
+</div>
+
+<div class="problem" id="note" role="status"></div>
+
+<script type="module">
+const note = (message) => { document.getElementById("note").textContent = message ?? ""; };
+
+async function api(path, init) {
+  const response = await fetch(`/api${path}`, init);
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(body.error ?? `${path} failed`);
+  return body;
+}
+
+/**
+ * A decision needs what it rests on.
+ *
+ * The company, who asked, their address, what they said, and **when**.
+ * Approving a `curl` shows none of it.
+ */
+function requestRow(request) {
+  const tr = document.createElement("tr");
+  tr.innerHTML = `
+    <td>
+      <div>${escapeHtml(request.companyName)}</div>
+      <div class="sm muted">${escapeHtml(request.notes ?? "")}</div>
+    </td>
+    <td>
+      <div>${escapeHtml(request.contactName)}</div>
+      <div class="sm muted">${escapeHtml(request.contactEmail)}</div>
+    </td>
+    <td class="sm">${escapeHtml((request.requestedAt ?? "").slice(0, 16))}</td>
+    <td></td>`;
+
+  const cell = tr.lastElementChild;
+  for (const [action, label, className] of [
+    ["approve", "Approve", "approve"],
+    ["reject", "Reject", "reject"],
+  ]) {
+    const button = document.createElement("button");
+    button.className = className;
+    button.textContent = label;
+    button.style.marginRight = "6px";
+    button.onclick = async () => {
+      // **The buttons go, not just the one pressed.** A second click
+      // while the first is in flight would decide twice.
+      cell.querySelectorAll("button").forEach((b) => (b.disabled = true));
+      try {
+        await api(`/signup-requests/${encodeURIComponent(request.id)}/${action}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({}),
+        });
+        await load();
+      } catch (err) {
+        note(err.message);
+        cell.querySelectorAll("button").forEach((b) => (b.disabled = false));
+      }
+    };
+    cell.append(button);
+  }
+
+  return tr;
+}
+
+function actionRow(action) {
+  const tr = document.createElement("tr");
+  tr.innerHTML = `
+    <td class="sm">${escapeHtml((action.occurredAt ?? "").slice(0, 16))}</td>
+    <td>
+      <div>${escapeHtml(action.actor)}</div>
+      <!-- **Said plainly**: an admin key is a shared secret, and an
+           action attributed to one is attributable to nobody. -->
+      <div class="sm muted">${action.actorSource === "access" ? "verified" : "shared key"}</div>
+    </td>
+    <td class="sm">${escapeHtml(action.action)}</td>
+    <td class="sm outcome-${escapeHtml(action.outcome)}">${escapeHtml(action.outcome)}</td>
+    <td class="sm num muted">${action.statusCode ?? ""}</td>`;
+  return tr;
+}
+
+function table(headings, rows, emptyMessage) {
+  if (rows.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "empty";
+    empty.textContent = emptyMessage;
+    return empty;
+  }
+
+  const el = document.createElement("table");
+  el.innerHTML = `<thead><tr>${headings.map((h) => `<th>${h}</th>`).join("")}</tr></thead>`;
+  const body = document.createElement("tbody");
+  rows.forEach((row) => body.append(row));
+  el.append(body);
+  return el;
+}
+
+function escapeHtml(value) {
+  return String(value ?? "").replace(/[&<>"']/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]
+  );
+}
+
+async function load() {
+  note("");
+
+  try {
+    const { requests = [] } = await api("/signup-requests?status=pending");
+    document
+      .getElementById("requests")
+      .replaceChildren(
+        table(
+          ["Company", "Who asked", "Requested", ""],
+          requests.map(requestRow),
+          "Nothing is waiting."
+        )
+      );
+
+    // Whoever the last action was attributed to is whoever is signed
+    // in, which saves asking a second route.
+    const { actions = [] } = await api("/admin-actions?limit=25");
+    document
+      .getElementById("actions")
+      .replaceChildren(
+        table(
+          ["When", "Who", "What", "Outcome", ""],
+          actions.map(actionRow),
+          "Nothing has been done yet."
+        )
+      );
+
+    const me = actions.find((a) => a.actorSource === "access");
+    document.getElementById("who").textContent = me
+      ? `Signed in as ${me.actor}`
+      : "Signed in through Cloudflare Access";
+  } catch (err) {
+    note(err.message);
+  }
+}
+
+load();
+</script>
+</body>
+</html>

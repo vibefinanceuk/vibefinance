@@ -41,10 +41,12 @@ twice.
 
 **Everything committed is deployed.**
 
-**There are three Workers now.** `vf-app` per customer, `vf-licence`
-shared, and `vf-ui` shared — the interface, its own deployment because
-binding it to `vf-licence` would mean every UI change redeploying the
-component that mints licence tokens for the whole fleet (0099).
+**There are four Workers now.** `vf-app` per customer, `vf-licence`
+shared, `vf-ui` shared — the customer's interface, its own deployment
+because binding it to `vf-licence` would mean every UI change
+redeploying the component that mints licence tokens for the whole fleet
+(0099) — and `vf-admin`, the operator's, behind Cloudflare Access
+(0186).
 
 The two `shared` failures are time-expired JWT keys in the licensing
 token tests, failing on `main` since before any of this work. Not new,
@@ -190,7 +192,21 @@ established which**, and the two readings have different fixes.
 
 ## Suggested next pieces
 
-**1. The operator interface** (decision 0140) — **half built.** The
+**1. Put `vf-admin` behind Access** (decisions 0140, 0186) — **the
+Worker and the screen are built; the gate is not.**
+
+It **refuses every request** until a hostname in a zone has an Access
+policy in front of it, because a missing
+`Cf-Access-Authenticated-User-Email` means the request did not come
+through Access at all. `ACCESS_TEAM_DOMAIN` is a placeholder and
+`ADMIN_KEY` is unset — the latter deliberately, since it is a secret and
+belongs in `wrangler secret put`.
+
+The screen shows what is waiting for a decision and what has been done,
+refusals included. **The fleet, licences, credentials and access grants
+are forwarded routes with no interface yet.**
+
+*The original note, for what it recorded:* The
 attribution is done: `admin_actions` records every privileged action,
 refusals included, with a verified identity where one exists. **The
 screen waits on the domain.**
