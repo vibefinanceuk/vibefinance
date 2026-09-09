@@ -229,10 +229,19 @@ the amount; and a step is one or the other, **never both**.
 *"serial line-level approval"* meant. Decision 0183's per-line tasks are
 the parallel half and already work.
 
-`org_units` is the hierarchy, `org_authority_limits` is the signing
-authority — **written by a route and read by nothing** — and `BT-133` is
-the line's cost centre. **The join is missing**: a cost centre has no
-approver, nothing walks a chain, and completing a task advances nothing.
+**The hierarchy is one of cost objects, not org units.** Escalation
+climbs to a *parent cost object manager*, so a cost object carries a
+default approver, a limit, and a parent of its own — which vindicates
+decision 0031's separation for a reason it did not anticipate.
+
+`org_authority_limits` is the signing authority, **written by a route
+and read by nothing**, and `BT-133` is the line's cost centre. **The
+join is missing**: a cost object has no approver, nothing walks a chain,
+and completing a task advances nothing.
+
+**The first question to answer** is whether the amount tested is the
+line, the cost object's portion, or the invoice total — the sources
+disagree, and it decides which approvals a split invoice needs.
 
 **3. Process configuration, versioned** (decision 0150). Adding and
 removing stages through a screen, with a version number an invoice
