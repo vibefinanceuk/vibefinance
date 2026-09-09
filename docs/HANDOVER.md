@@ -243,6 +243,17 @@ and completing a task advances nothing.
 line, the cost object's portion, or the invoice total — the sources
 disagree, and it decides which approvals a split invoice needs.
 
+**And the configuration screen that goes with it** (decision 0185).
+Supervisory approval and cost object approval are **the same algorithm
+over different trees**: start somewhere, walk up, stop when a signing
+limit covers the amount. A third strategy is then a tree and a starting
+fact rather than a rewrite — decision 0031's *"the vocabulary is closed,
+and that is the feature"*, applied one level up.
+
+`org_units` is already a tree and `org_users.unit_id` points into it, so
+**the people hierarchy exists indirectly**. What no node of it has is a
+manager.
+
 **3. Process configuration, versioned** (decision 0150). Adding and
 removing stages through a screen, with a version number an invoice
 carries — so it is always apparent which shape of the process an item
