@@ -1,19 +1,27 @@
 # Handover
 
-**Written 4 September 2026, updated 7 September.** One page: where things stand, what needs a
-decision rather than work, and what to do next.
+**Written 4 September 2026, updated 9 September.**
 
-`docs/PROGRESS.md` is the map — what exists and what does not.
-`docs/decisions/` is the authority on *why* anything is the way it is.
-**This file is the starting point**, and it goes stale faster than
-either, so check the dates.
+**For a session starting cold.** Where things stand, what needs a
+decision rather than work, what to do next, and the habits this project
+has earned the hard way.
 
-**Read `docs/decisions/SUPERSEDED.md` before trusting an old record.**
-Records are never rewritten to agree with later ones — what was decided,
-and why it looked right then, is part of why the current answer is what
-it is. That means **contradictions between records are real and neither
-is wrong**; they are dated. That page is the map of which supersedes
-which, and it exists because the trap has been fallen into twice.
+It holds **only what the other files cannot give you**:
+
+- `docs/PROGRESS.md` — the map. What exists, what does not.
+- `docs/decisions/` — the authority on *why* anything is as it is.
+- `docs/decisions/SUPERSEDED.md` — what stopped being true.
+
+**Nothing is struck through here.** When a thing is done it leaves this
+page and appears in `SUPERSEDED.md`, because two copies of the same
+history is one copy that lies — and the stale one is always the copy
+nobody is told to check.
+
+**Read `SUPERSEDED.md` before trusting an old record.** Records are never
+rewritten to agree with later ones, so **contradictions between them are
+real and neither is wrong** — they are dated. That page maps which
+supersedes which, and it exists because the trap has been fallen into
+twice.
 
 ---
 
@@ -21,15 +29,15 @@ which, and it exists because the trap has been fallen into twice.
 
 | | |
 | --- | --- |
-| `origin/main` | `fb7557c` |
-| vf-app deployed | `fb7557c` |
-| vf-licence deployed | `fb7557c` |
-| vf-ui deployed | `fb7557c` · `https://vf-ui.vibefinance.workers.dev` |
+| `origin/main` | `061eae6` |
+| vf-app deployed | `061eae6` |
+| vf-licence deployed | `061eae6` |
+| vf-ui deployed | `061eae6` · `https://vf-ui.vibefinance.workers.dev` |
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
 | `vf-app-poc` migrations | through `0043` |
-| `vf-licence-poc` migrations | through `0046` |
-| Tests | vf-app 1169 · vf-licence 318 · vf-ui 44 Worker + 185 browser · shared 267 (+2 known pre-existing failures) |
-| Decision records | 175 |
+| `vf-licence-poc` migrations | through `0048` |
+| Tests | vf-app 1173 · vf-licence 318 · vf-ui 44 Worker + 203 browser · shared 267 (+2 known pre-existing failures) |
+| Decision records | 182 |
 
 **Everything committed is deployed.**
 
@@ -44,124 +52,25 @@ not related.
 
 ---
 
-## What the system does end to end
+## What the system does
 
-Proven live, following one real document the whole way:
+**`docs/PROGRESS.md` is the map** — what exists, what does not, and the
+reasoning for each. This page does not repeat it.
 
-1. A supplier PDF arrives at `POST /sources/ic-new/capture`.
-2. Detection finds a PDF header and **no embedded invoice** — no
-   structure this system can extract from.
-3. It is **captured rather than rejected**: an invoice row carrying only
-   provenance, a real process instance, and `intake.structure: ""` —
-   the empty string, because an absent field cannot be tested by a rule.
-4. The original is **retained** in R2 as `application/pdf`.
-5. It stops at **Validation**, where a rule the customer wrote in plain
-   English raises a task.
-6. A person **keys** the fields. Identity is derived from the
-   authenticated caller; a spoofed `keyedBy` in the body is ignored.
-7. Keying reports whether the document **would now validate**.
-8. A **five-minute signed URL** displays the retained PDF in a browser
-   with no `Authorization` header.
-9. A person with the right permissions can **return** it to an earlier
-   stage with a reason, **return it to the supplier**, or **discard** it.
+In one paragraph: an invoice arrives by email, by upload, or as UBL. It
+is captured whether or not anything can read it, evaluated against rules
+a customer wrote **in plain English**, and routed through a process of
+stages where people key, approve and return it. Every visible word comes
+from the control plane and every colour from a token, so a wording fix
+or a new language is rows rather than a deployment.
 
-**Every step above now has a screen.** `vf-ui` serves sign-in, the Task
-Manager and the Validation viewer, so steps 6, 8 and 9 are things a
-person clicks rather than `curl` invocations. This paragraph said the
-opposite until 5 September.
+**Five screens**: Tasks, Sources, Rules, Documents, and the viewer that
+serves every stage.
 
-Separately, **purchase orders** can be ingested from Peppol BIS Order
-Only documents and read back. They are reference data rather than work:
-nothing extracts from them, no rule evaluates them, and they never enter
-a process instance. **Nothing matches an invoice against one yet.**
-
-And **a person can now sign in**, proven end to end against production:
-
-1. `POST /login` on `vf-licence` — email, password, environment.
-2. The **progressive delay** is checked first, so somebody already
-   throttled gets no free password verification (0090, 0094).
-3. The password is verified against a credential held in the control
-   plane, because `vf-licence` cannot reach a customer's `org_users`
-   table at all (0091, 0092).
-4. An **access grant** decides which instances that person may reach.
-   The composite foreign keys make a cross-customer grant impossible to
-   write (0093).
-5. A **session token** comes back, scoped to one environment — one
-   signing key serves the whole fleet, so without that scope a session
-   for one customer would open another's data (0086).
-6. `GET /whoami` on `vf-app` verifies it locally, with no network call,
-   and returns the person's real record and every permission at once
-   (0095).
-
-**And then they see their work.** `https://vf-ui.vibefinance.workers.dev`
-serves a **Task Manager**: one list across every stage, ownership as a
-column, filters by stage and ownership, and buttons drawn from what each
-task says the server will honour. A person can claim a task and release
-it. **Refreshing holds steady** — the session lives in an `HttpOnly`
-cookie the JavaScript never sees (0102).
-
-**And they can key one.** A Validation task opens the viewer (0106): the
-retained original beside the fields it should have yielded, opened in
-its own window through a five-minute signed URL (0073). Saving reports
-whether validation *would* now pass — advisory, because nothing
-re-evaluates the rules (0072).
-
-**In their own language, in the customer's livery.** Every visible word
-comes from D1 in the control plane (0107) and every colour from a token
-(0096), so a wording fix or a new language is rows rather than a
-deployment.
-
-**Showing the fields that customer chose.** Which fields appear, and
-whether they may be edited, is configuration — per customer, restricted
-further per stage, and *"approvers should approve data, not edit
-data"* (0114). Currency, unit and VAT category are pickers drawn from
-the standard's own code lists (0113).
-
-**With the document beside them.** A PDF renders in a frame and an image
-in an image — the browser's own viewer, which decision 0042 was read for
-too long as ruling out (0123).
-
-**And an exceptions panel that says what is wrong on arrival**, in
-readable terms rather than check names, with every field a failure
-involves highlighted and carrying its reason on hover (0119).
-
-**And placed in the right part of the enterprise.** An invoice acquires
-an operating unit at intake, from a rule the customer wrote or from the
-source it arrived through, and a stage can refuse to let it past without
-one (0111).
-
-**There is a second screen now.** Sources — *where invoices arrive* —
-lists them, creates them, gives an email source its address, and retires
-or deletes one (0126, 0128, 0130). The navigation frame has carried a
-single entry since 0108 waiting for exactly this.
-
-**And a third stage uses the same screen as the second.** An approval
-task opens the keying viewer, with the fields read-only because the
-stage says so and Complete in place of Save (0142, 0143). *"Approvers
-should approve data, not edit data"* is a **property of the stage**, not
-a list of fields somebody has to keep complete.
-
-**Enforced by the route, not the screen** (0144). Field visibility had
-been a screen behaviour since September: a `curl` could always write a
-read-only field, and the keying route now refuses one.
-
-**And a person can now do all of that in a browser.**
-`https://vf-ui.vibefinance.workers.dev` serves a sign-in screen that
-fetches the customer's livery from `vf-licence` (0096), populates the
-environment list from what that person may actually reach, and shows
-their last sign-in with every failed attempt since. Proven working, not
-just built.
-
-`ALLOWED_ORIGINS` is set on both API Workers to the UI's origin, which
-is what lets a browser read either response (0098). CORS is a browser
-mechanism — every `curl` in this file works regardless.
-
-**Every authentication failure returns the same message**, so an email
-address cannot be used to enumerate accounts or environments.
-
-Sessions and API keys **coexist**: a session is a person at a screen, an
-API key is a service credential, and every live test in this project
-uses one.
+**Proven on real documents**, not only in tests: a photographed invoice
+has been read automatically and reached Payment-eligible with nobody
+touching it, and one the model could not read was retained, explained on
+screen, and left to be keyed.
 
 ---
 
@@ -170,37 +79,7 @@ uses one.
 **Nothing blocks the next piece of work.** Six things worth settling,
 none urgent.
 
-### 1. ~~A domain.~~ Done, and email intake works
-
-`vibefinance-ai.com` is bound, a routing rule delivers to `vf-app`, and
-**real invoices have arrived by email and been read** — a photographed
-one reached Payment-eligible without a person touching it (decisions
-0146, 0147, 0161–0163).
-
-**Still waiting on the domain:** the operator interface behind
-Cloudflare Access (decision 0140), and `vf-ui` on a real hostname.
-
-### 1b. The original note, for the two pieces still open
-
-It was a cosmetic want: `vf-ui.vibefinance.workers.dev` works and looks
-like infrastructure.
-
-It is now the largest unblocker in the project.
-
-- **Decision 0140's operator interface cannot be protected.** Cloudflare
-  Access applies policies to hostnames in a zone, and `workers.dev` is
-  not one. Without it there is no gate in front of a Worker holding the
-  admin key.
-- **Email intake cannot receive** (0126, 0141). `vibefinance.com` was
-  hardcoded and **nobody owns it**, so every address issued was a string
-  that could never receive anything.
-- **And the original want** — a customer-specific backdrop, which can
-  otherwise only appear *after* the password is verified.
-
-`vibefinance.com` is taken. Whatever is bought becomes
-`INGESTION_DOMAIN`, which is configuration now (0141).
-
-### 2. Who creates the `org_users` row — **answered**
+### 1. Who creates the `org_users` row — **answered**
 
 **Provisioning does**, for the requester, who becomes the customer's
 administrator (0117). `signup_requests` already names them, so there is
@@ -214,7 +93,7 @@ provisioning** the blocker in front of both, because provisioning is
 where the `org_users` row is written and provisioning cannot yet create
 anything.
 
-### 3. Alerting on failed sign-ins
+### 2. Alerting on failed sign-ins
 
 *"A lockout policy that generates no alert is half a control."* Attempts
 are recorded and shown to the person on their next sign-in (ISO 27001
@@ -223,13 +102,13 @@ A.8.5), but nobody is **told**.
 Waiting on email, which decision 0117 promoted from *"would be nice"* to
 the gate on onboarding itself.
 
-### 4. Do the party panels show enough?
+### 3. Do the party panels show enough?
 
 Decision 0115 gave the seller and buyer their own panels, and most of
 their fields default to `read`. If they look thin, that is configuration
 (0114) rather than code — adjustable per customer without a deployment.
 
-### 5. Two actions that sound like the same thing
+### 4. Two actions that sound like the same thing
 
 Found twice on the first day of real use (decisions 0153, 0158).
 *"Hold it for review"* wants `assign_task` and the vocabulary offers
@@ -241,15 +120,7 @@ Both are the same question: **does the compiler's prompt teach the
 difference, or does the vocabulary stop sounding ambiguous?** A prompt
 is cheaper and keeps the closed set small, which 0031 argues for.
 
-### 6. ~~Two stage names, and one stage to remove.~~ Done
-
-*Intake* and *AP Review* were renamed, and Line Review was deleted after
-the work data was cleared — its completed task went with it, so the
-foreign key that blocked deletion no longer existed. Decision 0150's
-membership versioning would have removed it properly; a clean database
-made the simpler answer honest.
-
-### 7. Does the sources screen read right?
+### 5. Does the sources screen read right?
 
 **Renaming is free** — `name` is display, `id` is the key, and nothing
 references the name:
@@ -270,7 +141,7 @@ shows *"Retired"*, a deleted one is gone, and the list is the answer.
 **If an action now feels like nothing happened**, that judgement was
 wrong and the message should come back.
 
-### 8. Should the line comparison move into the panel?
+### 6. Should the line comparison move into the panel?
 
 *"Lines total 150.00 · differs by 30.00"* sits under the line table and
 was **read as an exception** (0119). It is not: it is live feedback as
@@ -282,7 +153,7 @@ worth more than the argument for keeping them separate.
 
 ---
 
-### 9. Columns that are empty on every invoice
+### 7. Columns that are empty on every invoice
 
 Extraction reads a description and an amount per line and nothing else,
 so `Line no.`, `Unit`, `Item net price`, `Quantity` and `VAT category`
@@ -293,7 +164,7 @@ Either extraction learns to read them — `BT-152` in particular, which
 two derived columns depend on — or a field with nothing in it stops
 being shown.
 
-### 10. What "how much has been keyed" should count
+### 8. What "how much has been keyed" should count
 
 Decision 0175 removed a status reading *"0/4 fields known"* on every
 document, counting four fields chosen when the screen was written.
@@ -317,234 +188,9 @@ established which**, and the two readings have different fixes.
 
 ---
 
-## What the last two days added
-
-**Rules have a face** (0149, 0153–0158). See what runs at each stage,
-write one in a sentence, read the compiled rule back in words, confirm
-its worked examples, activate, pause, revise. The product's own claim,
-reachable by a customer rather than by `curl`.
-
-**Email intake receives real invoices** (0146, 0147, 0161–0163, 0166,
-0168). A supplier emails a document, it is captured, read where it can
-be, retained and explained where it cannot, and every arrival is logged
-with a reason.
-
-**Documents are findable** (0164, 0165, 0167). Every invoice that has
-arrived, searchable, with columns a person chooses — because until then
-**every way into a document was a task**, and a straight-through invoice
-has none.
-
-**An invoice shows where it has been** (0151, 0152). The process as
-chevrons at the head of the viewer, with how long each stage took.
-
-**And process versioning has its foundation** (0150, 0160). Every read
-of a process's stages goes through a version's membership; nothing
-creates a second version yet.
-
-## Resolved since the last handover
-
-Recorded so nobody re-opens them:
-
-- **`require_second_approval`** — removed, not built (0074). Parallel
-  tasks already give multiple approvers; a rule at Review decides when
-  further review is needed; separation of duties is RBAC.
-- **Send-back** — built as returning (0075), plus discarding (0078).
-  Three outcomes now exist: return to a stage, return to the supplier,
-  discard.
-- **The retention period** — configurable per organisation, with a
-  report listing what has passed it (0077). A benchmark, not a purge:
-  nothing is deleted.
-- **Validating extracted codes** — built (0116). A document carrying
-  `currencyID="EURO"` now fails validation with `code_list`, naming the
-  code and the line it sits on. Closed lists are enforced; a working
-  subset is not, so an unusual unit of measure is not rejected.
-- **Who the first user is** — the requester (0117), which corrects 0094.
-  There is no bootstrap account to invent, and approval still gates
-  provisioning.
-- **What a trial's ending looks like** — a second environment,
-  configuration migrated, users not (0118). Every table is classified
-  and a test enforces it.
-- **How to test the browser code** — `jsdom`, in a second config
-  (0121). Playwright remains open for what `jsdom` cannot see, which is
-  anything visual.
-- **Where the document is shown** — inline, by the browser (0123). The
-  viewer frame with zoom and field highlighting is designed there and
-  not built.
-- **Which font** — Carlito shipped, metric-compatible with Calibri
-  (0124). Naming it in a stack was not enough.
-- **Where invoices arrive** — a source carries an address derived from
-  the *customer*, not the environment, so it survives 0118's move to
-  production without telling every supplier a new one (0126).
-- **Whether every route accepts a session** — yes now, and a test reads
-  the router to keep it so (0127). The same gap had been found twice
-  before and fixed two routes at a time.
-- **Deleting a source** — retires it where a document carries its name,
-  deletes it where nothing ever used it, and *asks* where an address was
-  issued but never used, because only a person knows whether it was
-  shared (0130, 0133).
-- **When the screen should speak** — only when it cannot show something
-  (0134).
-- **Whether review needs its own screen** — no (0142). Field visibility
-  and the task's own actions were already enough; what was missing was
-  that the viewer opened only for `key`.
-- **How a stage is made read-only** — as a property, not a list (0143).
-  A list cannot know about a field added next month.
-- **Whether the screen was the only guard** — it was (0144), and is not
-  now.
-- **Day time or night time** — a person's setting, with a control, blue
-  by day and midnight blue at night (0139).
-- **Where the Worker's config comes from** — the manifest the control
-  plane already held, not a file (0136).
-- **What a customer is asked at signup** — their **region**, and
-  nothing else. The kind is always sandbox, and the name is
-  `{customer}-{kind}-{region}` (0137).
-- **Who did what in the control plane** — recorded, refusals included,
-  with a verified identity where one exists (0140).
-- **Which domain addresses live on** — configuration, and there isn't
-  one (0141).
-- **Discard vs return-to-supplier** — genuinely distinct.
-  `returned_manually` means somebody is dealing with it; `archived`
-  means nothing further is needed.
-- **Is PO matching the next domain?** Purchase orders are built (0081).
-  **Three-way matching is the target**, which is why Despatch Advice
-  comes before the matcher rather than after — see below.
-- **The four UI questions** (0083). Served from a separate `vf-ui`
-  Worker; one shared UI rather than one per instance; authentication in
-  the control plane and authorisation in the instance; branding set by
-  the operator in `vf-licence` with the token layer in `vf-ui`. One
-  instance at a time, **never merged**.
-- **SAML or OIDC — parked** (0083 section 8), behind a deliberate seam:
-  everything downstream consumes the session token and does not care how
-  it was minted.
-- **SSO is one path, not the path** (0083 section 7). Some customers
-  will not integrate an identity provider, so local accounts are
-  permanent rather than a bootstrap concern.
-- **A person with no `org_users` row is refused, not created** (0088).
-  No roles, no unit, nothing known about them — which is why
-  **provisioning must create that row** for the requester (0117), rather
-  than a first sign-in creating it.
-- **Argon2id, not PBKDF2** (0089). Workers cap PBKDF2 at 100,000
-  iterations where OWASP's minimum is 600,000, so native Web Crypto
-  cannot meet guidance.
-- **The credential lives in the control plane, `org_users` stays in the
-  instance** (0091). Not a replication — one thing split by purpose,
-  because `vf-licence` has only `CONTROL_DB` and cannot reach a
-  customer's user table.
-- **One password per customer, one grant per environment** (0092).
-  `vf-licence` decides *if* you get access; `org_users` decides *what*
-  you get access to.
-- **Progressive delay, not lockout** (0090). Auditors accept it as
-  equivalent under SOC 2 CC6.1, and it cannot be used to lock out a
-  colleague.
-- ~~**The bootstrap administrator was not needed** (0094).~~
-  **Superseded by 0117** — see *"Who the first user is"* above. The
-  conclusion was true as far as it went and reached the wrong
-  destination: it left the customer with **no administrator of their
-  own**. There is no bootstrap account to invent because the
-  **requester** is the administrator, and `signup_requests` already
-  names them.
-- **Branding is five tokens, set by the operator, held in the control
-  plane** (0096). The login screen needs a livery *before* an instance
-  is chosen, so an instance cannot be the source.
-- **CORS is an explicit allow-list, never a wildcard** (0098), and
-  needs no `Allow-Credentials` because a bearer token is not
-  "credentials" in the CORS sense.
-- **`vf-ui` is its own Worker** (0099), on deployment frequency.
-- **The session lives in an `HttpOnly` cookie**, not in JavaScript
-  (0102). RFC 10017 is blunt that no browser API stores a token
-  securely, so `localStorage` and `sessionStorage` were never the choice
-  they appeared to be. `vf-ui` is a **backend-for-frontend**: it holds
-  the token and forwards data calls, which also made CORS unnecessary.
-- **One task table, filtered by stage** (0103) — never a table per
-  stage. One UI per stage, chosen by what a task points at.
-- **Locks do not expire** (0103, 0104). A browser closing is
-  undetectable, so any automatic release leaks locks; a lease takes
-  somebody's claim mid-thought. Explicit release instead, by the person
-  or by `AP.TaskManage`.
-
----
-
 ## Suggested next pieces
 
-**0. ~~A domain.~~ Bound.** `vibefinance-ai.com`, 7 September.
-`INGESTION_DOMAIN` is set on `vf-app`, and the one address issued
-against the old hardcoded domain was released first — never given to a
-supplier, so exactly the mistake-correction case decision 0133 exists
-for.
-
-**Three things it unblocks, none of them yet done:**
-
-- **Cloudflare Access can protect `vf-admin`** — so decision 0140's
-  operator interface can be built. It applies policies to hostnames in a
-  zone, which `workers.dev` is not.
-- **Email intake can receive**, once the **Email Routing rule** exists
-  (0126). The addresses are real now rather than reserved against
-  nothing; nothing delivers to them yet.
-- **`vf-ui` can stop reading as infrastructure**, and a
-  customer-specific backdrop becomes possible before sign-in rather than
-  after.
-
----
-
-**1. ~~The Cloudflare API half of provisioning (0039).~~ Built.**
-`provision_infrastructure.py` runs all five steps: the D1 database, the
-migration chain, the R2 bucket, the Worker deployed from a config the
-manifest supplies (0136), and the URL recorded last so a failure leaves
-a customer honestly unfinished.
-
-Two things remain the operator's: **secrets**, which never travel
-through the manifest (0009), and **Email Routing rules**, which are per
-source rather than per customer and wait on the domain.
-
-Provisioning creates control-plane rows and **honestly reports
-`infrastructureProvisioned: false`** — it does not create the D1
-database, the Worker, or (since 0126) the **Email Routing rule**.
-
-So: an email address can be reserved and **nothing delivers to it**; the
-sources screen says *"Not receiving yet"* and will keep saying it; and
-decision 0117's onboarding cannot provision anybody.
-
-**Decision 0135 designs it**, and answers the three questions 0039 left
-open. The important one: **the token does not live in `vf-licence`.** An
-account-level write token can delete every customer's database and
-replace any Worker, so a flaw in any route would become total account
-compromise. It is a **script the operator runs**, like
-`apply_migrations.py` — and decision 0038 already puts a person in this
-loop at approval, so this is not friction being added.
-
-Steps are ordered cheapest-to-undo first with the control-plane rows
-written **last**, so a failure leaves the customer reading
-`not-yet-deployed.invalid` rather than half-real.
-
-**Three of five steps are built** —
-`migrations/provision_infrastructure.py` creates the database, applies
-the chain and creates the bucket, then **stops at the Worker deploy
-rather than claiming success**.
-
-**Decision 0136 unblocks that step**: the Worker's config is **data the
-control plane already holds**. `environments` carries `worker_name`,
-`d1_database_name` and `d1_database_id`, and it was being treated as a
-file only because nothing had asked the manifest for it. `deploy-all`
-becomes a loop rather than a design problem.
-
-Two rules recorded there: **secrets never go in the manifest** —
-decision 0009 is this project's own record of a private key in a
-`wrangler.jsonc` var — and **a deploy must verify what it is about to
-do**, because once a deploy reads the manifest, a changed
-`d1_database_id` points one customer's Worker at another's database.
-
-**Decision 0137 settles what a customer is asked.** The kind is not a
-question — nobody trials in production, and 0118 provisions production
-as a second environment. The **region is**, and is hardcoded to `eu`
-today with no reasoning recorded anywhere. The name is
-`{customer}-{kind}-{region}`, decided by the system.
-
-One guard it adds: a **length check at approval**, because a long
-company name plus `-production-eu` approaches Cloudflare's 64-character
-limit, and that failure would otherwise arrive after the database
-exists.
-
-**2. The operator interface** (decision 0140) — **half built.** The
+**1. The operator interface** (decision 0140) — **half built.** The
 attribution is done: `admin_actions` records every privileged action,
 refusals included, with a verified identity where one exists. **The
 screen waits on the domain.**
@@ -570,7 +216,7 @@ And **seven routes are admin-gated where two record who acted**:
 creating a licence, minting a credential and granting access to an
 environment all record nothing.
 
-**3. Process configuration, versioned** (decision 0150). Adding and
+**2. Process configuration, versioned** (decision 0150). Adding and
 removing stages through a screen, with a version number an invoice
 carries — so it is always apparent which shape of the process an item
 ran under.
@@ -590,7 +236,7 @@ frozen because changing it mid-flight is incoherent, and the rules are
 current because a threshold tightened this morning should apply to
 invoices reaching Approval this afternoon.
 
-**4. Email sending**, which decision 0125 evaluates. "Email" means three
+**3. Email sending**, which decision 0125 evaluates. "Email" means three
 different things — supplier contacts *out to strangers*, user
 notifications *out to colleagues*, and a source which is *inbound* and
 not sending at all.
@@ -608,52 +254,27 @@ Still open: **which provider**, **where sending lives** (0091 says the
 control plane never holds customer content), **whether templates sit in
 D1** like `ui_strings`, and **what happens when sending fails**.
 
-**5. ~~Wire up the actions that now have icons.~~ Built** (0138). Two
-reasons they did nothing: the proxy carried **two of six** task paths,
-and three routes authenticated by API key only.
-
-**Nothing confirms an irreversible action** still: discard and return to
-supplier both end a task, and the reason prompt is the only pause — *why*
-is not *are you sure*.
-
-**6. ~~Closed-value enforcement in the compiler.~~ Built** (0148). A rule saying
-*"currency is EURO"* compiles, activates, fires against nothing and
-looks correct in every listing. `validateRule` has the list (0113) and
-does not consult it. The pair to decision 0116, which now validates
-documents.
-
-**7. ~~An Approval screen.~~ Built** (0142, 0143, 0144), and it is the
-**same screen**. Field visibility makes a stage read-only, a task reports its
-own actions, and approve and reject already existed as `complete` and
-`return`. What was missing was that the viewer opened only for `key`,
-which an approval task never offers.
-
-Approval is configured read-only and working. **Two things it taught:**
-a per-field list was the wrong shape (0143), and **field visibility had
-never been enforced anywhere but the screen** (0144) — which is the
-older and larger finding.
-
-**8. BG-4 and BG-7 in the vocabulary.** The seller and buyer field lists
+**4. BG-4 and BG-7 in the vocabulary.** The seller and buyer field lists
 live in the viewer (0115). Recording business-group membership in
 `shared`, as `INVOICE_LINE_FIELDS` does for BG-25, is the consistent
 thing and a known shortcut until it is done.
 
-**9. BG-23, the VAT breakdown.** Mandatory and **repeating** — one entry
+**5. BG-23, the VAT breakdown.** Mandatory and **repeating** — one entry
 per VAT category and rate, whose tax amounts must sum to BT-110. The
 flat facts model cannot hold a repeating group (0112). A design
 question, not an omission, and *"one of the most common causes of
 validation errors"*.
 
-**10. Despatch Advice (T16).** The goods receipt, and the missing third
+**6. Despatch Advice (T16).** The goods receipt, and the missing third
 leg of three-way matching — **before the matcher, not after** (0082).
 BT-132 now exists, which is what lets matching compare a line to an
 order line.
 
-**11. Reading `cbc:CustomizationID`.** BT-24 is now read into the facts
+**7. Reading `cbc:CustomizationID`.** BT-24 is now read into the facts
 (0112), so the discriminator is available; detection still does not use
 it, and a valid Peppol Order sent to `/sources/:id/capture` is refused.
 
-**12. `party.first_document`**, the **all-users task view**, a **screen
+**8. `party.first_document`**, the **all-users task view**, a **screen
 for placing an invoice** by hand, and **four more languages** —
 `GET /ui-strings/keys` shows the gaps.
 
