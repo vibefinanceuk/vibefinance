@@ -216,7 +216,25 @@ And **seven routes are admin-gated where two record who acted**:
 creating a licence, minting a credential and granting access to an
 environment all record nothing.
 
-**2. Process configuration, versioned** (decision 0150). Adding and
+**2. Cost object approval** (decision 0184) — **designed, not built.**
+An invoice line finds its approvers from its cost centre, and how many
+it needs depends on a hierarchy: *"1, 2 or none or 6."*
+
+**It has a name and two established shapes**, taken from SAP Concur and
+Oracle Fusion rather than invented. **Level** walks every rung to the
+top; **Limit** stops at the first person whose signing authority covers
+the amount; and a step is one or the other, **never both**.
+
+**Parallel across cost centres, serial within one** — which is what
+*"serial line-level approval"* meant. Decision 0183's per-line tasks are
+the parallel half and already work.
+
+`org_units` is the hierarchy, `org_authority_limits` is the signing
+authority — **written by a route and read by nothing** — and `BT-133` is
+the line's cost centre. **The join is missing**: a cost centre has no
+approver, nothing walks a chain, and completing a task advances nothing.
+
+**3. Process configuration, versioned** (decision 0150). Adding and
 removing stages through a screen, with a version number an invoice
 carries — so it is always apparent which shape of the process an item
 ran under.
@@ -236,7 +254,7 @@ frozen because changing it mid-flight is incoherent, and the rules are
 current because a threshold tightened this morning should apply to
 invoices reaching Approval this afternoon.
 
-**3. Email sending**, which decision 0125 evaluates. "Email" means three
+**4. Email sending**, which decision 0125 evaluates. "Email" means three
 different things — supplier contacts *out to strangers*, user
 notifications *out to colleagues*, and a source which is *inbound* and
 not sending at all.
@@ -254,27 +272,27 @@ Still open: **which provider**, **where sending lives** (0091 says the
 control plane never holds customer content), **whether templates sit in
 D1** like `ui_strings`, and **what happens when sending fails**.
 
-**4. BG-4 and BG-7 in the vocabulary.** The seller and buyer field lists
+**5. BG-4 and BG-7 in the vocabulary.** The seller and buyer field lists
 live in the viewer (0115). Recording business-group membership in
 `shared`, as `INVOICE_LINE_FIELDS` does for BG-25, is the consistent
 thing and a known shortcut until it is done.
 
-**5. BG-23, the VAT breakdown.** Mandatory and **repeating** — one entry
+**6. BG-23, the VAT breakdown.** Mandatory and **repeating** — one entry
 per VAT category and rate, whose tax amounts must sum to BT-110. The
 flat facts model cannot hold a repeating group (0112). A design
 question, not an omission, and *"one of the most common causes of
 validation errors"*.
 
-**6. Despatch Advice (T16).** The goods receipt, and the missing third
+**7. Despatch Advice (T16).** The goods receipt, and the missing third
 leg of three-way matching — **before the matcher, not after** (0082).
 BT-132 now exists, which is what lets matching compare a line to an
 order line.
 
-**7. Reading `cbc:CustomizationID`.** BT-24 is now read into the facts
+**8. Reading `cbc:CustomizationID`.** BT-24 is now read into the facts
 (0112), so the discriminator is available; detection still does not use
 it, and a valid Peppol Order sent to `/sources/:id/capture` is refused.
 
-**8. `party.first_document`**, the **all-users task view**, a **screen
+**9. `party.first_document`**, the **all-users task view**, a **screen
 for placing an invoice** by hand, and **four more languages** —
 `GET /ui-strings/keys` shows the gaps.
 
