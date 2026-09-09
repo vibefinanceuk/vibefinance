@@ -560,3 +560,45 @@ describe("who a task belongs to (decision 0180)", () => {
     expect(tasks[0].ownedBy?.name).toBe("ap");
   });
 });
+
+describe("a task about one line (decision 0183)", () => {
+  /**
+   * **A stage scoped `per_line`** (decision 0027) evaluates its rules
+   * once per invoice line, so an eight-line invoice raises eight tasks.
+   * `assign_task` has carried the line number since, and the list never
+   * reported it.
+   *
+   * Eight identical rows — same invoice, same supplier, same amount,
+   * same stage — **teach somebody the list is broken.**
+   */
+  it("says which line it is about", async () => {
+    await seedInstance("inv-1", "validation", "v-1");
+    await seedTask("t-line", "validation", "v-1", { user: "alice" });
+    await env.DB.prepare("UPDATE tasks SET line_number = 3 WHERE id = 't-line'").run();
+
+    const tasks = await list("alice");
+    expect(tasks[0].lineNumber).toBe(3);
+  });
+
+  it("says nothing where a task is about the whole document", async () => {
+    // Which is most of them, and `null` means exactly that.
+    await seedInstance("inv-1", "validation", "v-1");
+    await seedTask("t-header", "validation", "v-1", { user: "alice" });
+
+    const tasks = await list("alice");
+    expect(tasks[0].lineNumber).toBeNull();
+  });
+
+  it("distinguishes two tasks on the same invoice", async () => {
+    // **The whole point**: without the line they are the same row
+    // twice.
+    await seedInstance("inv-1", "validation", "v-1");
+    await seedTask("t-l1", "validation", "v-1", { user: "alice" });
+    await seedTask("t-l2", "validation", "v-1", { user: "alice" });
+    await env.DB.prepare("UPDATE tasks SET line_number = 1 WHERE id = 't-l1'").run();
+    await env.DB.prepare("UPDATE tasks SET line_number = 2 WHERE id = 't-l2'").run();
+
+    const lines = (await list("alice")).map((t) => t.lineNumber).sort();
+    expect(lines).toEqual([1, 2]);
+  });
+});

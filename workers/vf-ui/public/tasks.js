@@ -65,6 +65,23 @@ function money(subject) {
  * amount, no date. A row of dashes is honest and useless, so it says
  * what it is instead: the reason the task exists at all.
  */
+/**
+ * What this task is about — decision 0183.
+ *
+ * A stage scoped `per_line` (decision 0027) raises **one task per
+ * invoice line**, so an eight-line invoice produces eight rows naming
+ * the same supplier, the same amount and the same stage.
+ *
+ * **Eight identical rows teach somebody the list is broken.** The line
+ * is what tells them apart, and what they work through in order.
+ */
+function describeTask(task) {
+  const who = describe(task.subject);
+  return task.lineNumber
+    ? `${who} · ${t("tasks.line")} ${task.lineNumber}`
+    : who;
+}
+
 function describe(subject) {
   if (!subject) return t("tasks.nodocument");
   // The seller's NAME first, and its identifier only when the document
@@ -180,10 +197,10 @@ function taskRow(task) {
       task.subject
         ? el("button", {
             class: "subjectlink",
-            text: describe(task.subject),
+            text: describeTask(task),
             onclick: () => openTask(task.id),
           })
-        : el("span", { class: "muted", text: describe(task.subject) }),
+        : el("span", { class: "muted", text: describeTask(task) }),
     ]),
     el("td", { class: "num", text: money(task.subject) }),
     el("td", { text: waitedFor(task.createdAt) }),

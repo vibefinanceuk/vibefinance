@@ -66,6 +66,8 @@ export interface TaskRow {
   /** What this person may do with it — see `TaskAction`. */
   actions: TaskAction[];
   /** Set only when `locked` — who holds it, and since when. */
+  /** Which invoice line, where a stage is scoped per line (0027, 0183). */
+  lineNumber: number | null;
   /** Who it belongs to — decision 0180. Not the same as who has it. */
   ownedBy?: { id: string; name: string; email: string | null };
   lockedBy?: { id: string; name: string; email: string | null; since: string | null };
@@ -102,6 +104,7 @@ interface Raw {
   required_permission: string;
   owner_user_id: string | null;
   owner_team_id: string | null;
+  line_number: number | null;
   claimed_by: string | null;
   claimed_at: string | null;
   claimed_by_name: string | null;
@@ -251,6 +254,7 @@ export async function handleListMyTasks(
     .prepare(
       `SELECT
          t.id, t.stage_id, t.required_permission, t.owner_user_id, t.owner_team_id,
+         t.line_number,
          t.claimed_by, t.claimed_at, t.created_at,
          claimer.name AS claimed_by_name,
          claimer.email AS claimed_by_email,
@@ -306,6 +310,22 @@ export async function handleListMyTasks(
       actions: actionsFor(row, ownership, permissions),
       createdAt: row.created_at,
       instanceId: row.instance_id,
+      /**
+       * Which line this task is about — decision 0183.
+       *
+       * A stage scoped `per_line` (decision 0027) evaluates its rules
+       * once per invoice line, so an eight-line invoice raises **eight
+       * tasks**. `assign_task` has carried the line number since, and
+       * the list never reported it.
+       *
+       * **Eight identical rows teach somebody the list is broken.**
+       * Same invoice, same supplier, same amount, same stage, and
+       * nothing to tell them apart or to work through in order.
+       *
+       * Null on a header-scoped task, which is most of them, and means
+       * *"this is about the whole document"*.
+       */
+      lineNumber: row.line_number,
     };
 
     /**
