@@ -78,6 +78,24 @@ against the current system either.
 | **0033** | Is a refusal an error? | **0153** — no. It is warning-coloured, says what cannot be expressed, and says nothing was saved. |
 | **0055** | What happens to a document nothing can read? | **0161, 0163** — an invoice with no facts, waiting for a person, **and the screen says so**. A timeout takes the same path, because a model that never answered is not a model that read badly. |
 | **0042** | Can a Worker read a scanned PDF? | Still no. **0161** made the consequence visible rather than silent. |
+| **0074** | Should `require_second_approval` exist? | Removed, not built. Parallel approval is a workflow question. |
+| **0075** | What does sending back mean? | Returning, plus discarding (**0078**). |
+| **0094** | Who is the first user? | **0117** — the requester, who becomes the customer's administrator. The record that sat in the handover's *resolved* list as settled for days after this corrected it. |
+| **0104** | Do locks expire? | No, and deliberately: a browser closing is undetectable, so any automatic release leaks locks. |
+| **0107** | Where do the interface's words live? | D1, in the control plane, so a wording fix is rows rather than a deployment. |
+| **0113** | Which font? | **0124** — Carlito, metric-compatible with Calibri and openly licensed. |
+| **0119** | Should the line comparison sit in the exceptions panel? | **Not decided.** They are different things — live feedback against a stored verdict — and the distinction was not obvious to the person looking at it. |
+| **0121** | How is browser code tested? | `jsdom`, in a second vitest config, with the real modules imported. |
+| **0126** | Where do invoices arrive? | A source carries an address derived from its own name, never reissued. |
+| **0127** | Does every route accept a session? | Yes, and a test reads the source to refuse one that does not. |
+| **0130** | What does deleting a source mean? | Retire where a document carries its name, delete where nothing does, ask where an address was issued (**0133**). |
+| **0134** | When should a screen speak? | Only when it cannot show something. |
+| **0136** | Where does a Worker's config come from? | The manifest the control plane already holds. |
+| **0137** | What is a customer asked at signup? | Their region. Kind is always sandbox, because offering *production* would be offering a mistake. |
+| **0139** | Day time or night time? | A person's setting, with a control, and a blue night rather than black. |
+| **0142** | Does review need its own screen? | No. Field visibility and a task's own actions were already enough. |
+| **0143** | How is a stage made read-only? | As a property, not a list of fields somebody keeps complete. |
+| **0144** | Was the screen the only guard? | It was, since September. It is not now. |
 | **0114** | Does a review screen need its own code? | **0142** — no. The same screen, with the stage deciding what is editable. |
 
 ---
@@ -100,6 +118,21 @@ script exists now and **cannot run ahead of it**, which is a stronger
 statement than the record originally made.
 
 ---
+
+## What lives here rather than in the handover
+
+**`HANDOVER.md` holds what is true now.** This page holds what stopped
+being true.
+
+The handover kept its own *resolved since* list for a while, and it is
+exactly where decision 0094's conclusion sat as settled for days after
+decision 0117 corrected it. **Two copies of the same history is one copy
+that lies**, and the stale one is always the copy nobody is told to
+check.
+
+So: a question answered, a record corrected, a thing struck through —
+all of it here. The handover strikes nothing through and carries no
+history; when something is done it leaves that page.
 
 ## Keeping this current
 
