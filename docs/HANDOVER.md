@@ -33,7 +33,7 @@ twice.
 | vf-admin deployed | `e88b8d3` · `https://admin.vibefinance-ai.com` · behind Access |
 | vf-app deployed | `061eae6` |
 | vf-licence deployed | `061eae6` |
-| vf-ui deployed | `061eae6` · `https://vf-ui.vibefinance.workers.dev` |
+| vf-ui deployed | `061eae6` · `https://app.vibefinance-ai.com` |
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
 | `vf-app-poc` migrations | through `0043` |
 | `vf-licence-poc` migrations | through `0048` |

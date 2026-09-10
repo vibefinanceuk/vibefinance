@@ -50,6 +50,29 @@
   // anti-loop protection answers with a 404 the target never sees. The
   // first vf-ui build did exactly that and produced exactly that —
   // `error code: 1042`, from Cloudflare rather than from either Worker.
+  /*
+    The customer's own address — decision 0189.
+
+    **`app.`, not `www.` and not the apex.** Those belong to a marketing
+    site that does not exist yet, and giving the product one of them
+    would mean moving it the day the site arrives — or a front page and
+    an application sharing a hostname, which is a decision nobody would
+    make deliberately.
+
+    `custom_domain` makes Cloudflare create the DNS record itself, so
+    the hostname and the Worker cannot disagree about where it lives.
+
+    **This also disables `workers.dev` for the Worker**, which decision
+    0187 found on `vf-admin`: adding a route turns it off by default. So
+    the product has exactly one address.
+  */
+  "routes": [
+    {
+      "pattern": "app.vibefinance-ai.com",
+      "custom_domain": true
+    }
+  ],
+
   "services": [
     {
       "binding": "LICENCE_SERVICE",

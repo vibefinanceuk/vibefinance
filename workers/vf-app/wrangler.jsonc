@@ -109,7 +109,13 @@
     // Not a security boundary against a determined caller: CORS is a
     // browser mechanism, and curl ignores it entirely. It decides which
     // web PAGES may read a signed-in person's data.
-    "ALLOWED_ORIGINS": "https://vf-ui.vibefinance.workers.dev"
+    //
+    // **Moved with the interface** — decision 0189. `vf-ui` now answers
+    // at `app.vibefinance-ai.com`, and adding that route **disables its
+    // `workers.dev` address** (decision 0187). Leaving this pointed at
+    // the old one would refuse every API call from the new hostname —
+    // a browser would report a CORS failure and nothing would say why.
+    "ALLOWED_ORIGINS": "https://app.vibefinance-ai.com"
   },
 
   // Worker-to-Worker calls to vf-licence go through this Service
