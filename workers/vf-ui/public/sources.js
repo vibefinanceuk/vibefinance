@@ -10,6 +10,14 @@ import { el, frame, topbar, setCurrentScreen } from "/tasks.js";
  */
 
 let sources = [];
+
+/**
+ * The orgs a source may place documents in — decision 0204.
+ *
+ * Only operating units, because a document belongs to one and never to
+ * a legal entity (decision 0036).
+ */
+let units = [];
 let processes = [];
 
 /**
@@ -32,6 +40,24 @@ function slug(value) {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
+}
+
+/**
+ * The orgs a source may place documents in — decision 0204.
+ *
+ * Only operating units, because a document belongs to one and never to
+ * a legal entity (decision 0036).
+ */
+async function loadUnits() {
+  try {
+    const response = await fetch("/api/org/units");
+    if (!response.ok) return;
+    const body = await response.json();
+    units = (body.units ?? []).filter((u) => u.kind === "operating_unit");
+  } catch {
+    // A customer with no orgs configured gets `<Automatic>` alone,
+    // which is a sensible thing to be left with.
+  }
 }
 
 async function load() {
@@ -237,11 +263,58 @@ function note(message) {
  * suppliers an address that swallows invoices — decision 0126 reports
  * `not_configured` for exactly this reason.
  */
+/**
+ * Which org this source places its documents in — decision 0204.
+ *
+ * **`<Automatic>` sits among the orgs**, not beside them, because
+ * *"one email per org"* and *"one email for everybody"* are the same
+ * setting rather than two mechanisms. Choosing it reads the recipient
+ * off the invoice instead.
+ *
+ * Only operating units: a document belongs to one and never to a legal
+ * entity (decision 0036).
+ */
+function orgPicker(source) {
+  const picker = el("select", { class: "orgpicker" });
+
+  picker.append(el("option", { value: "", text: t("sources.orgautomatic") }));
+  for (const unit of units) {
+    picker.append(el("option", { value: unit.id, text: unit.name }));
+  }
+  picker.value = source.defaultOrgUnitId ?? "";
+
+  picker.onchange = async () => {
+    const chosen = picker.value === "" ? null : picker.value;
+    picker.disabled = true;
+
+    try {
+      const response = await fetch(`/api/sources/${encodeURIComponent(source.id)}/org`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orgUnitId: chosen }),
+      });
+      if (!response.ok) throw new Error((await response.json()).error ?? "");
+      source.defaultOrgUnitId = chosen;
+    } catch (err) {
+      // Put it back, so the screen never shows a setting that was not
+      // saved (decision 0134's argument about a screen speaking only
+      // when it cannot show something).
+      picker.value = source.defaultOrgUnitId ?? "";
+      note(err.message || t("sources.orgfailed"));
+    } finally {
+      picker.disabled = false;
+    }
+  };
+
+  return picker;
+}
+
 function sourceRow(source) {
   const cells = [
     el("td", { text: source.name }),
     el("td", { class: "muted", text: source.mechanism }),
     el("td", { class: "muted", text: source.processId }),
+    el("td", {}, [orgPicker(source)]),
   ];
 
   if (source.mechanism !== "email") {
@@ -369,6 +442,7 @@ function render() {
                 el("th", { text: t("sources.name") }),
                 el("th", { text: t("sources.mechanism") }),
                 el("th", { text: t("sources.process") }),
+                el("th", { text: t("sources.org") }),
                 el("th", { text: t("sources.address") }),
                 el("th", { text: "" }),
               ]),
@@ -395,6 +469,9 @@ function render() {
 
 export async function openSources() {
   setCurrentScreen("sources");
+  // Before the sources, because each row's org picker is built from
+  // them — decision 0204.
+  await loadUnits();
   if (!(await load())) {
     note(t("sources.failed"));
     return;

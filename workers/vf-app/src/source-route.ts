@@ -587,3 +587,65 @@ export async function handleRenameSource(
   await db.prepare("UPDATE sources SET name = ? WHERE id = ?").bind(newName.trim(), sourceId).run();
   return { status: 200, body: { sourceId, name: newName.trim() } };
 }
+
+/**
+ * Which org a source places its documents in — decision 0204.
+ *
+ * **`null` is `<Automatic>`**, not *"nowhere"*. The operator wants one
+ * dropdown listing the configured orgs with `<Automatic>` among them,
+ * so *"one email per org"* and *"one email for everybody"* are the same
+ * setting rather than two mechanisms.
+ *
+ * That reading is strictly better than the old one: a source with no
+ * default used to leave every document unplaced, and now the document
+ * gets a chance to say whose it is.
+ */
+export async function handleSetSourceOrg(
+  db: D1Database,
+  sourceId: string,
+  body: Record<string, unknown>
+): Promise<RouteResult> {
+  const unitId = body.orgUnitId;
+
+  if (unitId !== null && typeof unitId !== "string") {
+    return {
+      status: 400,
+      body: { error: "orgUnitId must be a unit id, or null for automatic" },
+    };
+  }
+
+  const source = await db.prepare("SELECT id FROM sources WHERE id = ?").bind(sourceId).first();
+  if (!source) return { status: 404, body: { error: `source ${sourceId} does not exist` } };
+
+  if (unitId !== null) {
+    /**
+     * **An operating unit, never a legal entity.** Decision 0036's
+     * standing invariant is that an invoice belongs to an operating
+     * unit, so a source defaulting to a legal entity would place every
+     * document somewhere the database refuses.
+     */
+    const unit = await db
+      .prepare("SELECT kind FROM org_units WHERE id = ?")
+      .bind(unitId)
+      .first<{ kind: string }>();
+
+    if (!unit) return { status: 404, body: { error: `unit ${unitId} does not exist` } };
+
+    if (unit.kind !== "operating_unit") {
+      return {
+        status: 409,
+        body: {
+          error: "a document belongs to an operating unit, not to a legal entity",
+          reason: "not_an_operating_unit",
+        },
+      };
+    }
+  }
+
+  await db
+    .prepare("UPDATE sources SET default_org_unit_id = ? WHERE id = ?")
+    .bind(unitId, sourceId)
+    .run();
+
+  return { status: 200, body: { sourceId, orgUnitId: unitId } };
+}

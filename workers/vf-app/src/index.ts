@@ -57,6 +57,7 @@ import {
   handleSetRuleEnabled,
 } from "./rules-list-route.js";
 import { handleInvoiceProgress } from "./invoice-progress-route.js";
+import { handleSetSourceOrg } from "./source-route.js";
 import { handleListDocuments } from "./documents-route.js";
 import {
   handleListLedgers,
@@ -841,6 +842,27 @@ export default {
     // decision 0111. Nothing could read them before, so a customer
     // writing an assign_org rule had to guess the id.
     // The accounting frame — decision 0195.
+    // Which org a source places its documents in — decision 0204.
+    {
+      const match = pathname.match(/^\/sources\/([^/]+)\/org$/);
+      if (match && request.method === "PUT") {
+        const { db } = resolveTenant(request, env);
+        const auth = await authenticatePerson(db, request, env);
+        if (!auth.user) return json({ error: auth.reason }, 401);
+        if (!(await hasPermission(db, auth.user.id, "Admin.Configure"))) {
+          return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
+        }
+
+        const result = await handleSetSourceOrg(
+          db,
+          decodeURIComponent(match[1]),
+          (await request.json()) as Record<string, unknown>
+        );
+        return json(result.body, result.status);
+      }
+    }
+
+
     if (pathname === "/ledgers" && request.method === "GET") {
       const { db } = resolveTenant(request, env);
       const auth = await authenticatePerson(db, request, env);

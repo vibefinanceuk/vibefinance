@@ -53,6 +53,7 @@ import colonsSql from "../migrations/0048_labels_with_colons.sql?raw";
 import taskLineSql from "../migrations/0049_task_line_label.sql?raw";
 import signinFailureSql from "../migrations/0050_signin_failure_strings.sql?raw";
 import documentUnitSql from "../migrations/0051_document_unit_column.sql?raw";
+import sourceOrgSql from "../migrations/0052_source_org_column.sql?raw";
 
 function stripSqlComments(sql: string): string {
   return sql
@@ -133,5 +134,6 @@ export async function applyTestSchema(): Promise<void> {
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(taskLineSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(signinFailureSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(documentUnitSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(sourceOrgSql)));
 
 }
