@@ -30,6 +30,7 @@ import {
   permissionsFor,
   hasPermission,
   unitsWherePermitted,
+  isUnclaimed,
   type SessionContext,
 } from "./enforce.js";
 import { handleAddTeamMember, handleCreateTeam } from "./team-route.js";
@@ -1013,6 +1014,30 @@ export default {
     const assignRoleMatch = pathname.match(/^\/org\/users\/([^/]+)\/roles$/);
     if (assignRoleMatch && request.method === "POST") {
       const { db } = resolveTenant(request, env);
+
+      /**
+       * **Ungated only while there is nobody to gate it** — decision
+       * 0201.
+       *
+       * Decision 0010's bootstrap exception was right and permanent,
+       * and the reason it gave — nobody could be authenticated to
+       * create the first account — stops being true the moment one
+       * person exists.
+       *
+       * After that, granting a role requires administering the org it
+       * is granted in: the operator's *"AP Manager (France) would have
+       * user–role allocation permissions for the France org."*
+       */
+      let granterUnits: string[] | null = null;
+
+      if (!(await isUnclaimed(db))) {
+        const auth = await authenticatePerson(db, request, env);
+        if (!auth.user) return json({ error: auth.reason }, 401);
+        if (!(await hasPermission(db, auth.user.id, "Admin.UserManagement"))) {
+          return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
+        }
+        granterUnits = await unitsWherePermitted(db, auth.user.id, "Admin.UserManagement");
+      }
       let body: unknown;
       try {
         body = await request.json();
@@ -1020,7 +1045,13 @@ export default {
         return json({ error: t("invalidJsonBody", resolveLocale(env.LOCALE)) }, 400);
       }
       const roleId = (body as Record<string, unknown> | null)?.roleId;
-      const result = await handleAssignRole(db, assignRoleMatch[1], roleId);
+      const result = await handleAssignRole(
+        db,
+        assignRoleMatch[1],
+        roleId,
+        (body as { unitId?: string | null }).unitId ?? null,
+        granterUnits
+      );
       return json(result.body, result.status);
     }
 

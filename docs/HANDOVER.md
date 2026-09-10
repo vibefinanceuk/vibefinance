@@ -267,6 +267,20 @@ business activities and the activities are the stages. A rule asking for
 something else is refused rather than quietly corrected. **No stage
 declares one yet.**
 
+**And delegated administration** (decision 0201): a role is granted in
+an org by somebody who administers it, bounded above as well as below —
+granting *everywhere* is refused, because it reaches further than the
+granter holds.
+
+**A regional manager needed no new mechanism**: a role is a list of
+permissions and an assignment carries a unit, so *AP Manager (France)*
+is the two together.
+
+**And the org endpoints were ungated for ever**, not only at bootstrap
+— decision 0010's reason holds while there is nobody, and stopped
+holding the moment one person existed. Now authenticated once anybody
+exists.
+
 **Still customer-wide**: teams, settings.
 
 **And the screen agrees with the route** (decision 0198) — which meant

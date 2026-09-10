@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { applyTestSchema } from "./setup.js";
 import { hasPermission, unitsWherePermitted } from "../src/enforce.js";
 import { handleListDocuments } from "../src/documents-route.js";
+import { handleAssignRole } from "../src/org-route.js";
 
 /**
  * A role is held somewhere — decision 0199.
@@ -214,5 +215,175 @@ describe("visibility follows the assignment", () => {
     // null.
     await seedInvoice("inv-fr", "ap-fr");
     expect(await documentsFor("mo")).toEqual([]);
+  });
+});
+
+describe("delegated administration (decision 0201)", () => {
+  /**
+   * The operator's requirement:
+   *
+   *   An Administrator, and AP Manager (France) would have user–role
+   *   allocation permissions for the France Org.
+   *
+   * **The dangerous half is the other direction.** Granting a role
+   * *everywhere*, or in Germany, would hand somebody more than the
+   * granter holds — privilege escalation by a route being helpful.
+   */
+  beforeEach(async () => {
+    await env.DB.prepare(
+      `INSERT INTO org_roles (id, name, permissions_json)
+       VALUES ('ap-clerk', 'AP Clerk', '["AP.Validate"]')`
+    ).run();
+  });
+
+  it("lets a France administrator grant in France", async () => {
+    const result = await handleAssignRole(env.DB, "mo", "ap-clerk", "acme-fr", [
+      "acme-fr",
+      "ap-fr",
+    ]);
+    expect(result.status).toBe(201);
+  });
+
+  it("refuses them granting in Germany", async () => {
+    const result = await handleAssignRole(env.DB, "mo", "ap-clerk", "acme-de", [
+      "acme-fr",
+      "ap-fr",
+    ]);
+
+    expect(result.status).toBe(403);
+    expect((result.body as { reason: string }).reason).toBe("outside_administered_units");
+  });
+
+  it("refuses them granting everywhere", async () => {
+    /**
+     * **The subtle escalation.** A France administrator granting a
+     * role with no unit would hand somebody the whole group — more
+     * than the granter has themselves.
+     */
+    const result = await handleAssignRole(env.DB, "mo", "ap-clerk", null, ["acme-fr"]);
+
+    expect(result.status).toBe(403);
+    expect((result.body as { reason: string }).reason).toBe("cannot_grant_everywhere");
+  });
+
+  it("lets an unrestricted administrator grant everywhere", async () => {
+    // `null` means everywhere, which is every customer not using units.
+    const result = await handleAssignRole(env.DB, "mo", "ap-clerk", null, null);
+    expect(result.status).toBe(201);
+  });
+
+  it("refuses a scoped grant to somebody who already holds it everywhere", async () => {
+    // **Holding it everywhere already covers France**, and the scoped
+    // row would read as a restriction it is not — which migration 0047
+    // refuses as a standing invariant.
+    await handleAssignRole(env.DB, "mo", "ap-clerk", null, null);
+    const result = await handleAssignRole(env.DB, "mo", "ap-clerk", "acme-fr", null);
+
+    expect(result.status).toBe(409);
+    expect((result.body as { reason: string }).reason).toBe("already_held_everywhere");
+  });
+
+  it("refuses a unit that does not exist", async () => {
+    const result = await handleAssignRole(env.DB, "mo", "ap-clerk", "acme-es", null);
+    expect(result.status).toBe(404);
+  });
+});
+
+describe("a regional role covers every stage (decision 0201)", () => {
+  /**
+   * The operator's model, stated in full:
+   *
+   *   Someone assigned AP.Validation does not get access to French
+   *   documents when they have been given access to the German
+   *   AP.Validation role. An AP Manager could be a regional, org-based
+   *   role — it should give access to all stages in a process for that
+   *   org.
+   *
+   * **This needs no new mechanism.** A role is a list of permissions
+   * (decision 0010) and an assignment carries a unit (decision 0199).
+   * A regional manager is the two together, and these tests prove it
+   * rather than a record asserting it.
+   */
+  beforeEach(async () => {
+    // One stage, one permission — the narrow role.
+    await env.DB.prepare(
+      `INSERT INTO org_roles (id, name, permissions_json)
+       VALUES ('ap-validator', 'AP Validator', '["AP.Validate"]')`
+    ).run();
+
+    // Every stage in the process — the regional one.
+    await env.DB.prepare(
+      `INSERT INTO org_roles (id, name, permissions_json)
+       VALUES ('ap-regional', 'AP Manager (regional)',
+               '["AP.Validate","AP.Match","AP.Code","AP.Review","AP.Approve"]')`
+    ).run();
+  });
+
+  async function give(userId: string, roleId: string, unitId: string | null) {
+    await env.DB.prepare(
+      "INSERT INTO org_user_roles (user_id, role_id, unit_id) VALUES (?, ?, ?)"
+    )
+      .bind(userId, roleId, unitId)
+      .run();
+  }
+
+  it("gives a German validator no access to French documents", async () => {
+    // **The operator's sentence, as a test.**
+    await give("alice", "ap-validator", "acme-de");
+
+    expect(await hasPermission(env.DB, "alice", "AP.Validate", "ap-de")).toBe(true);
+    expect(await hasPermission(env.DB, "alice", "AP.Validate", "ap-fr")).toBe(false);
+  });
+
+  it("gives a validator no access to other stages", async () => {
+    // One stage means one stage: they cannot approve what they keyed.
+    await give("alice", "ap-validator", "acme-de");
+
+    expect(await hasPermission(env.DB, "alice", "AP.Approve", "ap-de")).toBe(false);
+    expect(await hasPermission(env.DB, "alice", "AP.Code", "ap-de")).toBe(false);
+  });
+
+  it("gives a regional manager every stage in their org", async () => {
+    await give("mo", "ap-regional", "acme-fr");
+
+    for (const permission of ["AP.Validate", "AP.Match", "AP.Code", "AP.Review", "AP.Approve"]) {
+      expect(await hasPermission(env.DB, "mo", permission as never, "ap-fr")).toBe(true);
+    }
+  });
+
+  it("gives a regional manager nothing in another org", async () => {
+    // **Regional means regional.** The bundle is wide and the place is
+    // narrow, and those are separate facts.
+    await give("mo", "ap-regional", "acme-fr");
+
+    for (const permission of ["AP.Validate", "AP.Approve"]) {
+      expect(await hasPermission(env.DB, "mo", permission as never, "ap-de")).toBe(false);
+    }
+  });
+
+  it("lets one person manage France and validate in Germany", async () => {
+    /**
+     * **Two roles, two places**, which is why decision 0199 put the
+     * scope on the assignment: the same *AP Manager* definition serves
+     * every org, and a person's reach is the set of pairings they hold.
+     */
+    await give("mo", "ap-regional", "acme-fr");
+    await give("mo", "ap-validator", "acme-de");
+
+    expect(await hasPermission(env.DB, "mo", "AP.Approve", "ap-fr")).toBe(true);
+    expect(await hasPermission(env.DB, "mo", "AP.Approve", "ap-de")).toBe(false);
+    expect(await hasPermission(env.DB, "mo", "AP.Validate", "ap-de")).toBe(true);
+  });
+
+  it("shows a regional manager only their own org's documents", async () => {
+    await give("mo", "ap-regional", "acme-fr");
+    await seedInvoice("inv-fr", "ap-fr");
+    await seedInvoice("inv-de", "ap-de");
+
+    const visible = await unitsWherePermitted(env.DB, "mo", "AP.Review");
+    const result = await handleListDocuments(env.DB, new URLSearchParams(), visible);
+    const ids = (result.body as { documents: { id: string }[] }).documents.map((d) => d.id);
+
+    expect(ids).toEqual(["inv-fr"]);
   });
 });

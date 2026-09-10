@@ -961,11 +961,30 @@ describe("org/authority/profiles routes, through the real router", () => {
       method: "POST",
       body: JSON.stringify({ id: "r1", name: "Admin" }),
     });
+    /**
+     * **Now refused, and that is the point** — decision 0201.
+     *
+     * Creating `usr1` is what ends the bootstrap: decision 0010's
+     * exception existed because *"nobody could ever be authenticated to
+     * create the first account"*, and once somebody exists that is no
+     * longer true.
+     *
+     * This test assigned a role over an unauthenticated request, which
+     * is exactly the hole — anybody who could reach the instance could
+     * grant themselves any role.
+     */
     const res = await SELF.fetch("https://example.com/org/users/usr1/roles", {
       method: "POST",
       body: JSON.stringify({ roleId: "r1" }),
     });
-    expect(res.status).toBe(201);
+
+    expect(res.status).toBe(401);
+
+    // And nothing was written.
+    const row = await env.DB.prepare(
+      "SELECT 1 FROM org_user_roles WHERE user_id = 'usr1'"
+    ).first();
+    expect(row).toBeNull();
   });
 
   it("sets an authority limit through the real router", async () => {

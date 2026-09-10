@@ -261,9 +261,72 @@ export async function handleCreateRole(db: D1Database, body: CreateRoleBody): Pr
   return { status: 201, body: { id, name, permissions: permissionList } };
 }
 
-export async function handleAssignRole(db: D1Database, userId: string, roleId: unknown): Promise<RouteResult> {
+export async function handleAssignRole(
+  db: D1Database,
+  userId: string,
+  roleId: unknown,
+  /**
+   * Where the role is to be held — decision 0201. Null means
+   * everywhere, which is every assignment predating decision 0199.
+   */
+  unitId: string | null = null,
+  /**
+   * Which units the person **doing the assigning** administers.
+   *
+   * `null` means everywhere — an administrator with `Admin.Users` held
+   * unscoped, and every customer not using units. Passing it is how a
+   * route says *"this is a delegated administrator"*.
+   */
+  granterUnits: string[] | null = null
+): Promise<RouteResult> {
   if (typeof roleId !== "string" || !roleId) {
     return { status: 400, body: { error: "roleId (string) is required" } };
+  }
+
+  /**
+   * **A France administrator may not grant beyond France** — decision
+   * 0201.
+   *
+   * The operator's requirement is that *AP Manager (France)* has
+   * *"user–role allocation permissions for the France org"*. The
+   * dangerous half is the other direction: granting a role **everywhere**
+   * would hand somebody more than the granter holds, and granting it in
+   * Germany would reach outside their own org.
+   *
+   * Both are privilege escalation by a route being helpful, and both
+   * are refused. A delegated administrator may grant only **at or
+   * below** what they administer.
+   */
+  if (granterUnits !== null) {
+    if (unitId === null) {
+      return {
+        status: 403,
+        body: {
+          error: "you may only assign a role within an org you administer",
+          reason: "cannot_grant_everywhere",
+        },
+      };
+    }
+
+    if (!granterUnits.includes(unitId)) {
+      return {
+        status: 403,
+        body: {
+          error: `you do not administer ${unitId}`,
+          reason: "outside_administered_units",
+        },
+      };
+    }
+  }
+
+  if (unitId !== null) {
+    const unitExists = await db
+      .prepare("SELECT id FROM org_units WHERE id = ?")
+      .bind(unitId)
+      .first();
+    if (!unitExists) {
+      return { status: 404, body: { error: `unit ${unitId} does not exist` } };
+    }
   }
 
   const userExists = await db.prepare("SELECT id FROM org_users WHERE id = ?").bind(userId).first();
@@ -276,16 +339,51 @@ export async function handleAssignRole(db: D1Database, userId: string, roleId: u
   }
 
   const alreadyAssigned = await db
-    .prepare("SELECT 1 FROM org_user_roles WHERE user_id = ? AND role_id = ?")
-    .bind(userId, roleId)
+    /**
+     * **Per place, since decision 0199.** This asked whether the person
+     * held the role *at all*, which was the same question until a role
+     * could be held somewhere — and now wrongly refuses somebody
+     * holding *AP Clerk* in France from also holding it in Germany.
+     */
+    .prepare(
+      `SELECT 1 FROM org_user_roles
+       WHERE user_id = ? AND role_id = ?
+         AND ((unit_id IS NULL AND ?3 IS NULL) OR unit_id = ?3)`
+    )
+    .bind(userId, roleId, unitId)
     .first();
   if (alreadyAssigned) {
     return { status: 409, body: { error: `user ${userId} already has role ${roleId}` } };
   }
 
-  await db.prepare("INSERT INTO org_user_roles (user_id, role_id) VALUES (?, ?)").bind(userId, roleId).run();
+  /**
+   * **Holding it everywhere already covers holding it in France**, and
+   * a scoped row beside an unscoped one would read as a restriction it
+   * is not — which migration 0047 refuses as a standing invariant.
+   */
+  const alreadyEverywhere = await db
+    .prepare(
+      "SELECT 1 FROM org_user_roles WHERE user_id = ? AND role_id = ? AND unit_id IS NULL"
+    )
+    .bind(userId, roleId)
+    .first();
 
-  return { status: 201, body: { userId, roleId } };
+  if (alreadyEverywhere && unitId !== null) {
+    return {
+      status: 409,
+      body: {
+        error: "this person already holds that role everywhere",
+        reason: "already_held_everywhere",
+      },
+    };
+  }
+
+  await db
+    .prepare("INSERT OR IGNORE INTO org_user_roles (user_id, role_id, unit_id) VALUES (?, ?, ?)")
+    .bind(userId, roleId, unitId)
+    .run();
+
+  return { status: 201, body: { userId, roleId, unitId } };
 }
 
 interface SetAuthorityLimitBody {

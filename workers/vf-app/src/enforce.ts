@@ -224,3 +224,25 @@ export async function permissionsFor(db: D1Database, userId: string): Promise<st
   }
   return [...all].sort();
 }
+
+/**
+ * Is this instance still being set up — decision 0201.
+ *
+ * **Decision 0010 left the org endpoints ungated**, and gave a real
+ * reason: *"creating the very first user in a brand-new instance would
+ * otherwise be structurally impossible — nobody could ever be
+ * authenticated to create the first account that grants
+ * authentication."*
+ *
+ * That reason holds **only while there is nobody**. Once a person
+ * exists who can be authenticated, the deadlock is gone and the
+ * exception is a hole: anyone who can reach the instance may grant
+ * themselves any role.
+ *
+ * So the exception is now **conditional on the thing that justified
+ * it**, rather than permanent.
+ */
+export async function isUnclaimed(db: D1Database): Promise<boolean> {
+  const anybody = await db.prepare("SELECT 1 FROM org_users LIMIT 1").first();
+  return anybody === null;
+}
