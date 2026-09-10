@@ -6,6 +6,27 @@
 
   "compatibility_flags": ["global_fetch_strictly_public"],
 
+  /*
+    A hostname in the zone, because **Access cannot protect
+    `workers.dev`** — decision 0187.
+
+    Cloudflare Access applies a policy to a hostname in a zone you
+    control, so a Worker reachable only at `vf-admin.<subdomain>.workers.dev`
+    cannot be put behind it. That address stays reachable and this
+    Worker refuses every request arriving there, because no Access
+    header is present (decision 0186) — which is the correct answer and
+    not a fallback.
+
+    `custom_domain` makes Cloudflare create the DNS record itself, so
+    the hostname and the Worker cannot disagree about where it lives.
+  */
+  "routes": [
+    {
+      "pattern": "admin.vibefinance-ai.com",
+      "custom_domain": true
+    }
+  ],
+
   "assets": {
     "directory": "./public",
     "binding": "ASSETS",

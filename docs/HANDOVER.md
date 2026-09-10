@@ -198,9 +198,19 @@ Worker and the screen are built; the gate is not.**
 It **refuses every request** until a hostname in a zone has an Access
 policy in front of it, because a missing
 `Cf-Access-Authenticated-User-Email` means the request did not come
-through Access at all. `ACCESS_TEAM_DOMAIN` is a placeholder and
-`ADMIN_KEY` is unset — the latter deliberately, since it is a secret and
-belongs in `wrangler secret put`.
+through Access at all.
+
+**The hostname is configured** — `admin.vibefinance-ai.com`, created by
+Cloudflare on the next deploy (decision 0187). What remains is outside
+this repository:
+
+1. An **Access application** on that hostname, with a policy naming who
+   may reach it.
+2. `npx wrangler secret put ADMIN_KEY` in `workers/vf-admin`.
+
+Until the first exists the hostname is public and the Worker refuses
+everything — **safe, and not protection.** The refusal is a second lock,
+not the first.
 
 The screen shows what is waiting for a decision and what has been done,
 refusals included. **The fleet, licences, credentials and access grants
