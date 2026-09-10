@@ -192,6 +192,8 @@ const KEYS_THE_INTERFACE_USES = [
   "viewer.reflabel",
   "tasks.unclaimed",
   "tasks.line",
+  "signin.unavailable",
+  "signin.reachedfailed",
   "viewer.waitinglabel",
   "viewer.ownerlabel",
   "nav.documents",

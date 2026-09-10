@@ -1,4 +1,14 @@
 /**
+ * Signing in.
+ *
+ * **The words here come from D1 like everywhere else** (decision 0107).
+ * This module was written with literals — it runs early, and it looks
+ * as though it must — but `boot.js` loads the strings before it imports
+ * this, so `t()` has always been available. The new messages use it;
+ * the older literals are recorded in decision 0190 as still to move.
+ */
+import { t } from "/strings.js";
+/**
  * Signing in — decision 0099.
  *
  * Two steps, because the environment selector cannot be populated until
@@ -104,9 +114,30 @@ async function loadEnvironments() {
     });
 
     if (!response.ok) {
-      // The same message the API gives, which is the same for every
-      // failure — no account, wrong password, nothing to reach. Saying
-      // more here would undo that deliberately (decision 0094).
+      /**
+       * **A refusal and a failure are not the same thing** — decision
+       * 0190.
+       *
+       * Decision 0094's rule is that every *authentication* failure
+       * gives the same message: no account, wrong password and nothing
+       * to reach must be indistinguishable, or the screen becomes a way
+       * to discover which accounts exist.
+       *
+       * **A 500 is not an authentication failure.** It says our service
+       * could not answer, and reporting it as *"Sign-in failed"* blames
+       * a person for our outage — which is exactly what happened when
+       * `vf-licence` was left carrying an origin that no longer
+       * existed, and somebody retyped a correct password carefully.
+       *
+       * The distinction discloses nothing: a 500 is the same whoever
+       * asked, so it cannot separate a real account from an invented
+       * one.
+       */
+      if (response.status >= 500) {
+        show(t("signin.unavailable"));
+        return;
+      }
+
       const body = await response.json().catch(() => ({}));
       show(body.error ?? "Sign-in failed");
       return;
@@ -206,7 +237,22 @@ form.addEventListener("submit", async (event) => {
       if (await start()) {
         document.getElementById("signin-view").hidden = true;
         document.getElementById("shell").hidden = false;
+        return;
       }
+
+      /**
+       * **Signed in, and going nowhere** — decision 0190.
+       *
+       * `start()` returns false when the first call into the instance
+       * fails, and the screen simply stayed put: *"Signed in. You last
+       * signed in at …"* above a form that would not move.
+       *
+       * A person cannot act on that, and it reads as the page being
+       * broken rather than as something being wrong behind it — which
+       * cost an hour when a `Secure` cookie was correctly withheld over
+       * plain HTTP.
+       */
+      show(t("signin.reachedfailed"));
     }, 1200);
   } catch {
     show("Could not reach the sign-in service.");
