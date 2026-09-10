@@ -43,6 +43,37 @@ they are permitted to.
 environments, and nothing here applies. That is a legal question about
 where bytes may sit, and it is answered above units.
 
+**And it arises less often than it sounds.** The operator:
+
+> Residency conflict never occurs between France and UK — it is
+> typically US vs Europe, or US vs anywhere else.
+
+The EEA is one area for GDPR and the UK has adequacy, so a European
+group shares a database because **it may**, not as a compromise. The
+split is transatlantic, and a customer with only European entities never
+meets it.
+
+### Which matters, because the schema forbids the split anyway
+
+`environments` has **`UNIQUE (customer_id, kind)`** — at most one
+sandbox and one production per customer. `Acme-production-eu` and
+`Acme-production-us` **cannot both exist**.
+
+The migration says why: *"exactly the shape the described flow needs."*
+True for a customer in one place, and the same pattern as every other
+fault found this week — a constraint that was a fact when there was one
+of something.
+
+**And decision 0083 assumed otherwise**, reasoning about *"a customer
+with EU and US instances"* and giving the sign-in screen an environment
+picker for it. **The interface was designed for a shape the database
+prevents**, and nobody had noticed because no customer has needed it.
+
+**Not lifted here, deliberately.** It costs nothing while no customer is
+transatlantic, and lifting it makes `environments` a set rather than a
+pair — touching provisioning, sign-in, the manifest and the fleet view.
+Recorded so the next person does not rediscover it.
+
 **May they share a database?** Then they are units in one environment,
 and their configuration needs scoping.
 
@@ -130,9 +161,19 @@ either correct or a serious hole depending on the customer. A group
 treasury team that approves everywhere is real; so is a French clerk who
 must not see German payroll.
 
-**Not decided here.** It changes `hasPermission`, every route that calls
-it, and the role model itself — and it is the difference between a unit
-being a *filing* boundary and a *security* boundary.
+**Answered by decision 0194, and better than this record proposed.**
+Oracle Fusion scopes the **role** to a business unit and lets a person
+hold **several** — so *AP Approver (France)* and *AP Approver (Germany)*
+are two rows, and a group treasurer holds both.
+
+`org_user_roles` is already `(user_id, role_id)`, so this needs a
+`unit_id` on `org_roles` and **no change to `hasPermission`'s
+signature**. The question becomes *"does this person hold a role scoped
+to this invoice's unit that grants it."*
+
+It is still the difference between a unit being a *filing* boundary and
+a *security* one, and that decision is still the customer's. What is
+settled is the shape.
 
 ---
 

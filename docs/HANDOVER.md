@@ -235,9 +235,19 @@ manager.
 built**, and it touches almost everything.
 
 **Two questions, not one.** *Must these units be hosted apart?* Then
-they are separate **environments** — `environments` carries a region,
-and per-customer D1 and R2 exist for isolation and residency (decision
-0001). *May they share a database?* Then this applies.
+they are separate **environments** — per-customer D1 and R2 exist for
+isolation and residency (decision 0001). *May they share a database?*
+Then this applies.
+
+**The second is the case you have.** Residency splits are transatlantic;
+a European group shares a database because it may, not as a compromise.
+
+**And a contradiction worth knowing about**: `environments` has `UNIQUE
+(customer_id, kind)`, so one production environment per customer — while
+decision 0083 reasoned about *"a customer with EU and US instances"* and
+built the sign-in screen an environment picker for it. **The interface
+expects a shape the database forbids.** Harmless until a customer is
+transatlantic, and recorded rather than lifted.
 
 Four things carry a unit today: a person, an invoice, a source, and
 which national rules apply. **Roles, teams, processes, rule sets and
@@ -253,9 +263,19 @@ returns the group's answer. `resolveTenant` has a lint rule that makes
 the equivalent mistake uncompilable; this has no equivalent, because the
 column is nullable by design.
 
-**And permissions are the hardest part.** `AP.Approve` becomes
-`AP.Approve` *in France*, which decides whether a unit is a filing
-boundary or a security one. Not decided.
+**Permissions have an answer now** (decision 0194): Oracle Fusion scopes
+the **role** to a unit and lets a person hold several, so *AP Approver
+(France)* and *AP Approver (Germany)* are two rows and a group treasurer
+holds both. `org_user_roles` is already `(user_id, role_id)`, so this is
+a column on `org_roles` and **no change to `hasPermission`**.
+
+**And decision 0036 landed on Oracle's own model without knowing it** —
+Legal Entity and Business Unit, with Oracle's older name for the second
+being literally *Operating Unit*. Decision 0194 records what Oracle has
+that this does not: a **ledger**, a **division** that can span legal
+entities, a **department** separate from a business unit, and a shared
+service centre serving several entities, which decision 0036's
+invariant forbids.
 
 **3. Process configuration, versioned** (decision 0150). Adding and
 removing stages through a screen, with a version number an invoice

@@ -55,6 +55,9 @@ const STRINGS = {
     "column.stage": "Stage",
     "column.hands": "Hands",
     "column.expand": "Expand",
+    "column.unit": "Business unit",
+    "documents.nounit": "Unassigned",
+    "documents.allunits": "All business units",
     "docstatus.waiting": "Waiting",
     "docstatus.moving": "In progress",
     "docstatus.done": "Finished",
@@ -92,11 +95,15 @@ const DOC = {
   hands: 0,
 };
 
+/** What the unit filter is built from, per test. */
+let UNITS: { id: string; name: string; kind: string }[] = [];
+
 async function openDocuments(documents: unknown[]) {
   window.localStorage.clear();
   stubFetch({
     "/api/ui-strings": STRINGS,
     "/api/documents": { documents, searched: documents.length },
+    "/api/org/units": { units: UNITS },
     "/api/code-lists": { fields: {} },
     "/api/field-visibility": { fields: [], derived: {} },
     "/api/invoices/inv-1": { facts: {}, lines: [], validation: { passed: true, checked: [], failures: [] } },
@@ -279,5 +286,66 @@ describe("the column picker has its own name (decision 0177)", () => {
     await openDocuments([DOC]);
     expect(document.querySelector(".columnpicker")).not.toBeNull();
     expect(document.querySelector("details.columns")).toBeNull();
+  });
+});
+
+describe("which part of the business (decision 0193)", () => {
+  /**
+   * **`org_unit_id` has existed since decision 0036 and no screen has
+   * ever shown it.** A customer with France, Germany and UK sees one
+   * undifferentiated list.
+   *
+   * Shown, not enforced — a label to read and filter by, not a
+   * boundary.
+   */
+  const TWO_UNITS = [
+    { id: "ap-fr", name: "AP France", kind: "operating_unit" },
+    { id: "ap-de", name: "AP Deutschland", kind: "operating_unit" },
+    { id: "acme-fr", name: "Acme France", kind: "legal_entity" },
+  ];
+
+  it("names the unit on a document", async () => {
+    UNITS = TWO_UNITS;
+    await openDocuments([{ ...DOC, orgUnitId: "ap-fr", orgUnitName: "AP France" }]);
+    expect(document.body.textContent).toContain("AP France");
+  });
+
+  it("says unassigned rather than nothing", async () => {
+    UNITS = TWO_UNITS;
+    await openDocuments([{ ...DOC, orgUnitId: null, orgUnitName: null }]);
+    expect(document.body.textContent).toContain("Unassigned");
+  });
+
+  it("offers a filter where there is a choice", async () => {
+    UNITS = TWO_UNITS;
+    await openDocuments([DOC]);
+    expect(document.querySelector(".unitpicker")).not.toBeNull();
+  });
+
+  it("offers only operating units, never a legal entity", async () => {
+    // **An invoice may belong to an operating unit and never to a legal
+    // entity** — decision 0036's own invariant.
+    UNITS = TWO_UNITS;
+    await openDocuments([DOC]);
+
+    const options = [...document.querySelectorAll(".unitpicker option")].map(
+      (o) => o.textContent
+    );
+    expect(options).toContain("AP France");
+    expect(options).not.toContain("Acme France");
+  });
+
+  it("offers no filter where there is one unit", async () => {
+    // **A dropdown with one entry is a control that cannot do
+    // anything.**
+    UNITS = [{ id: "ap-fr", name: "AP France", kind: "operating_unit" }];
+    await openDocuments([DOC]);
+    expect(document.querySelector(".unitpicker")).toBeNull();
+  });
+
+  it("offers no filter where none are configured", async () => {
+    UNITS = [];
+    await openDocuments([DOC]);
+    expect(document.querySelector(".unitpicker")).toBeNull();
   });
 });
