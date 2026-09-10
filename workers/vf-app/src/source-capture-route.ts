@@ -1,5 +1,6 @@
 import type { RouteResult } from "./org-route.js";
 import { deriveOrgUnit } from "./derive-org.js";
+import { renderPeppolDocument } from "./peppol-render.js";
 import {
   detectStructure,
   summariseAttempts,
@@ -105,6 +106,52 @@ async function retainOriginal(
       key,
       bytes: body,
     });
+    /**
+     * **And a rendering, where the original is XML** — decision 0205.
+     *
+     * Decision 0018 created this document type and said why: *"a plain
+     * XML invoice has nothing a person can look at."* It has been an
+     * allowed value with nothing producing one ever since.
+     *
+     * Rendered **here, at capture**, so the viewer costs nothing at
+     * runtime — and so that what somebody saw when they approved an
+     * invoice is a record rather than something recomputed later from a
+     * stylesheet that may have changed.
+     *
+     * A failure is not a failure of retention: the original is stored
+     * either way, and a document that cannot be rendered is one a
+     * person reads as XML rather than one that was lost.
+     */
+    if (detection.structure === "structured_xml") {
+      try {
+        const { html, reason } = renderPeppolDocument(new TextDecoder().decode(bytes));
+
+        if (html) {
+          await storeInvoiceDocument(bucket, db, {
+            invoiceId,
+            documentType: "generated_rendering",
+            contentType: "text/html; charset=utf-8",
+            key: computeDocumentKey(customerId, invoiceId, "html", issueDate),
+            bytes: new TextEncoder().encode(html).buffer as ArrayBuffer,
+          });
+        } else if (reason) {
+          // **Why, rather than a blank iframe** — decision 0162's
+          // lesson, and decision 0033's that a refusal is an output.
+          await db
+            .prepare(
+              `UPDATE invoice_headers
+               SET facts_json = json_set(facts_json, '$."render.refused"', ?)
+               WHERE id = ?`
+            )
+            .bind(reason, invoiceId)
+            .run();
+        }
+      } catch {
+        // A rendering that throws leaves the original retained and the
+        // invoice usable, which is the whole point of doing it after.
+      }
+    }
+
     // What was stored, not just that something was. Decision 0069 was a
     // mis-typed document that reported `retained: true` and could only
     // be caught by querying the stored row — the response said nothing

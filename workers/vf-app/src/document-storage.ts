@@ -182,3 +182,38 @@ export async function retrieveInvoiceDocument(
 
   return { bytes: await object.arrayBuffer(), contentType: row.content_type, r2Key: row.r2_key };
 }
+
+/**
+ * Which document a person should be shown — decision 0205.
+ *
+ * **The rendering where there is one, the original otherwise.** A plain
+ * XML invoice has nothing anybody can look at, so capture writes an
+ * HTML rendering beside it (decision 0018 created the document type and
+ * said why).
+ *
+ * **This exists because the choice is made twice**: once when
+ * `document-url` reports a content type, and again when
+ * `/documents/:token` serves bytes. The token names an *invoice*, not a
+ * document — so the two must agree, and two copies of the same `ORDER
+ * BY` would eventually not.
+ */
+export async function preferredDocumentType(
+  db: D1Database,
+  invoiceId: string
+): Promise<{ documentType: DocumentType; contentType: string } | null> {
+  const row = await db
+    .prepare(
+      `SELECT document_type, content_type FROM invoice_documents
+       WHERE invoice_id = ?
+       ORDER BY CASE document_type
+                  WHEN 'generated_rendering' THEN 0
+                  WHEN 'original' THEN 1
+                END
+       LIMIT 1`
+    )
+    .bind(invoiceId)
+    .first<{ document_type: string; content_type: string }>();
+
+  if (!row) return null;
+  return { documentType: row.document_type as DocumentType, contentType: row.content_type };
+}
