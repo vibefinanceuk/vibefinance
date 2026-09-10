@@ -161,9 +161,19 @@ either correct or a serious hole depending on the customer. A group
 treasury team that approves everywhere is real; so is a French clerk who
 must not see German payroll.
 
-**Not decided here.** It changes `hasPermission`, every route that calls
-it, and the role model itself — and it is the difference between a unit
-being a *filing* boundary and a *security* boundary.
+**Answered by decision 0194, and better than this record proposed.**
+Oracle Fusion scopes the **role** to a business unit and lets a person
+hold **several** — so *AP Approver (France)* and *AP Approver (Germany)*
+are two rows, and a group treasurer holds both.
+
+`org_user_roles` is already `(user_id, role_id)`, so this needs a
+`unit_id` on `org_roles` and **no change to `hasPermission`'s
+signature**. The question becomes *"does this person hold a role scoped
+to this invoice's unit that grants it."*
+
+It is still the difference between a unit being a *filing* boundary and
+a *security* one, and that decision is still the customer's. What is
+settled is the shape.
 
 ---
 
