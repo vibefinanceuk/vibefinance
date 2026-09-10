@@ -20,6 +20,33 @@ The org model was invented. Here is what it would have been given.
 
 ---
 
+## Two vendors, one shape
+
+The operator named both:
+
+> Oracle eBusiness Suite — Orgs, Operating Units... or SAP Financials
+> and Company Codes.
+
+| This project | Oracle EBS / Fusion | SAP |
+| --- | --- | --- |
+| An **environment** — its own D1 and R2 | — | **Client** |
+| `legal_entity` | **Legal Entity** | **Company Code** |
+| `operating_unit` | **Operating Unit** (EBS) / **Business Unit** (Fusion) | **Purchasing Organisation** |
+| — | **Ledger** | **Controlling Area** |
+| `BT-133` cost centre | Cost centre segment | **Cost Center** |
+
+### Decision 0001 matched SAP's Client without knowing it
+
+SAP's Client is *"a subdivision of the system, enabling separate
+independent organizations to use SAP... contains separate master
+records, a set of tables, and data"*, and *"from a technical standpoint,
+the client represents the database."*
+
+**That is decision 0001 exactly** — a database per customer, for
+isolation. Two records, two vendors, one answer.
+
+---
+
 ## Where decision 0036 landed on Oracle's own answer
 
 | This project | Oracle Fusion |
@@ -72,11 +99,34 @@ circling, and it came from reading rather than thinking.
 
 ## Three things Oracle has that this does not
 
-**A ledger.** *"A legal entity accounts for itself in the Primary
-Ledger"*, and a ledger is a chart of accounts, a calendar and a
-currency. **Two legal entities may share one.** This project has no
-ledger at all — `BT-133` is a cost centre string with no chart of
-accounts behind it, which the operator's own question named.
+**An accounting frame, and SAP names it more usefully.** Oracle's
+Primary Ledger is a chart of accounts, a calendar and a currency, and
+two legal entities may share one. SAP calls the same thing a
+**Controlling Area** and states the rule plainly:
+
+> One or many company codes can be linked to a single controlling area.
+> All the companies within one controlling area should use the same
+> chart of accounts and fiscal year variant.
+
+**And this is where a cost centre lives.** SAP: *"controlling area is
+created under company code, and cost center is created under controlling
+area."* A cost centre belongs to the **accounting frame**, not to a
+legal entity — so one may be charged by several companies sharing a
+chart of accounts.
+
+**Which is what decision 0031 sensed and could not name.** That record
+kept `BT-133` deliberately apart from `org_units` as *"a financial
+construct, not an organizational one"*, and the thing it belongs to
+instead has a name.
+
+**It is also the missing piece of decision 0184.** That record found
+escalation climbs a **parent cost object** and asked where that tree
+lives. It lives under the accounting frame — which is why a cost-object
+chain can cross a company boundary without crossing a chart of
+accounts.
+
+This project has **no ledger, no controlling area and no chart of
+accounts.** `BT-133` is a string.
 
 **A division**, which *"can correspond to a collection of legal
 entities"* and is *"independent"* of them. **A tree cannot express
