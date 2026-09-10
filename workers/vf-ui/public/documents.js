@@ -15,6 +15,15 @@ let searched = 0;
 let query = "";
 
 /**
+ * Which part of the business to show — decision 0193.
+ *
+ * **Empty means all of them**, which is what a customer with one unit
+ * always sees and what a customer with several starts from.
+ */
+let unit = "";
+let units = [];
+
+/**
  * The columns, and which are shown by default.
  *
  * **Defaults answer the questions people arrive with**: what is it, who
@@ -35,6 +44,15 @@ const COLUMNS = [
   { key: "received", on: true },
   { key: "due", on: false },
   { key: "stage", on: true },
+  /**
+   * Which part of the business — decision 0193.
+   *
+   * **On by default**, because a customer with one unit sees a column
+   * of the same word and a customer with several cannot work without
+   * it. The first costs a column; the second costs an undifferentiated
+   * list.
+   */
+  { key: "unit", on: true },
   { key: "hands", on: false },
   { key: "expand", always: true },
 ];
@@ -69,8 +87,24 @@ function saveColumns() {
   }
 }
 
+async function loadUnits() {
+  // Only operating units: an invoice may belong to one and never to a
+  // legal entity (decision 0036's own invariant).
+  try {
+    const response = await fetch("/api/org/units");
+    if (!response.ok) return;
+    const body = await response.json();
+    units = (body.units ?? []).filter((u) => u.kind === "operating_unit");
+  } catch {
+    // A customer with no units configured is the ordinary case, and a
+    // missing filter is better than a broken screen.
+  }
+}
+
 async function load() {
-  const response = await fetch(`/api/documents?q=${encodeURIComponent(query)}`);
+  const response = await fetch(
+    `/api/documents?q=${encodeURIComponent(query)}&unit=${encodeURIComponent(unit)}`
+  );
   if (!response.ok) return false;
 
   const body = await response.json();
@@ -155,6 +189,14 @@ function cell(doc, key) {
         doc.stageName
           ? el("span", { class: doc.status, text: doc.stageName })
           : el("span", { class: "muted", text: t("documents.noprocess") }),
+      ]);
+
+    case "unit":
+      return el("td", {}, [
+        doc.orgUnitName
+          ? el("span", { text: doc.orgUnitName })
+          : // Unassigned is a fact about the document, not a gap.
+            el("span", { class: "muted", text: t("documents.nounit") }),
       ]);
 
     case "hands":
@@ -289,13 +331,38 @@ function render() {
     document.getElementById("docsearch")?.focus();
   };
 
+  /**
+   * **Only where there is a choice to make** — decision 0193.
+   *
+   * A customer with one operating unit gets a dropdown with one entry,
+   * which is a control that cannot do anything. It appears when a
+   * second unit exists.
+   */
+  const unitPicker = el("select", { class: "unitpicker" });
+  if (units.length > 1) {
+    unitPicker.append(el("option", { value: "", text: t("documents.allunits") }));
+    for (const u of units) {
+      unitPicker.append(el("option", { value: u.id, text: u.name }));
+    }
+    unitPicker.value = unit;
+    unitPicker.onchange = async () => {
+      unit = unitPicker.value;
+      await load();
+      render();
+    };
+  }
+
   shell.replaceChildren(
     frame(
       el("div", {}, [
         topbar(t("nav.documents"), t("documents.subtitle")),
 
         el("div", { class: "panel" }, [
-          el("div", { class: "searchrow" }, [search, columnPicker()]),
+          el("div", { class: "searchrow" }, [
+            search,
+            ...(units.length > 1 ? [unitPicker] : []),
+            columnPicker(),
+          ]),
         ]),
 
         el("div", { class: "panel" }, [
@@ -352,6 +419,7 @@ function render() {
 
 export async function open() {
   setCurrentScreen("documents");
+  await loadUnits();
   if (!(await load())) return;
   render();
 }
