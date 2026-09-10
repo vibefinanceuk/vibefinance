@@ -7,6 +7,7 @@ import {
   unitLineage,
   resolveRuleSetForStage,
   explainRuleSetForStage,
+  resolveFieldVisibilityForStage,
 } from "../src/unit-config.js";
 
 /**
@@ -271,5 +272,91 @@ describe("the engine uses the resolver (decision 0196)", () => {
 
     await runAgainst("ap-de");
     expect(await ruleThatRan()).toBe("r-rs-group");
+  });
+});
+
+describe("which fields a unit may key (decision 0197)", () => {
+  /**
+   * **Per field, not per stage.** If a unit's overrides replaced the
+   * stage's whole set, restricting one field in France would silently
+   * drop every restriction the group had made — a loosening dressed as
+   * a tightening, which is what decision 0143 watched for.
+   */
+  async function stageSays(field: string, visibility: string) {
+    await env.DB.prepare(
+      "INSERT INTO stage_field_visibility (stage_id, field, visibility) VALUES ('approval', ?, ?)"
+    )
+      .bind(field, visibility)
+      .run();
+  }
+
+  async function unitSays(unitId: string, field: string, visibility: string) {
+    await env.DB.prepare(
+      `INSERT INTO stage_field_visibility_overrides (stage_id, unit_id, field, visibility)
+       VALUES ('approval', ?, ?, ?)`
+    )
+      .bind(unitId, field, visibility)
+      .run();
+  }
+
+  it("uses the stage's answer where nothing is overridden", async () => {
+    await stageSays("BT-112", "read");
+    const resolved = await resolveFieldVisibilityForStage(env.DB, "approval", "ap-fr");
+    expect(resolved.get("BT-112")).toBe("read");
+  });
+
+  it("lets a unit restrict a field the group left alone", async () => {
+    await unitSays("acme-fr", "BT-110", "hidden");
+    const resolved = await resolveFieldVisibilityForStage(env.DB, "approval", "ap-fr");
+    expect(resolved.get("BT-110")).toBe("hidden");
+  });
+
+  it("keeps the group's other restrictions", async () => {
+    /**
+     * **The whole point.** Restricting one field in France must not
+     * drop what the group said about every other field.
+     */
+    await stageSays("BT-110", "read");
+    await stageSays("BT-115", "hidden");
+    await unitSays("acme-fr", "BT-112", "read");
+
+    const resolved = await resolveFieldVisibilityForStage(env.DB, "approval", "ap-fr");
+    expect(resolved.get("BT-110")).toBe("read");
+    expect(resolved.get("BT-115")).toBe("hidden");
+    expect(resolved.get("BT-112")).toBe("read");
+  });
+
+  it("lets a unit restore a field the group restricted", async () => {
+    // **`edit` exists only as an override**, so a customer whose group
+    // hides a field can say *"except in France."*
+    await stageSays("BT-112", "hidden");
+    await unitSays("acme-fr", "BT-112", "edit");
+
+    const resolved = await resolveFieldVisibilityForStage(env.DB, "approval", "ap-fr");
+    expect(resolved.has("BT-112")).toBe(false);
+  });
+
+  it("lets the nearer unit win", async () => {
+    await unitSays("acme-fr", "BT-112", "hidden");
+    await unitSays("ap-fr", "BT-112", "read");
+
+    const resolved = await resolveFieldVisibilityForStage(env.DB, "approval", "ap-fr");
+    expect(resolved.get("BT-112")).toBe("read");
+  });
+
+  it("does not give France Germany's restrictions", async () => {
+    // The negative proof, again — decision 0022's discipline.
+    await unitSays("acme-de", "BT-112", "hidden");
+
+    const resolved = await resolveFieldVisibilityForStage(env.DB, "approval", "ap-fr");
+    expect(resolved.has("BT-112")).toBe(false);
+  });
+
+  it("gives a document with no unit the group's answer", async () => {
+    await stageSays("BT-112", "read");
+    await unitSays("acme-fr", "BT-112", "hidden");
+
+    const resolved = await resolveFieldVisibilityForStage(env.DB, "approval", null);
+    expect(resolved.get("BT-112")).toBe("read");
   });
 });

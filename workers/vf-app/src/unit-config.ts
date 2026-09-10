@@ -154,3 +154,75 @@ export async function explainRuleSetForStage(
 
   return { ruleSetId: stage.rule_set_id, fromUnitId: null, inherited: lineage.length > 0 };
 }
+
+/**
+ * Which fields a unit may key at this stage — decision 0197.
+ *
+ * **Per field, not per stage.** If a unit's overrides replaced the
+ * stage's whole set, then restricting one field in France would
+ * silently drop every restriction the group had made — a loosening
+ * dressed as a tightening, which is what decision 0143 watched for when
+ * it made a stage read-only as a property rather than as a list of
+ * fields somebody keeps complete.
+ *
+ * So France's rule for `BT-112` wins for `BT-112`, and the group's rule
+ * for `BT-110` still applies to `BT-110`.
+ *
+ * Returns only the fields something says something about. A field
+ * nobody mentions is editable, which is what the caller already
+ * assumes.
+ */
+export async function resolveFieldVisibilityForStage(
+  db: D1Database,
+  stageId: string,
+  unitId: string | null
+): Promise<Map<string, string>> {
+  const resolved = new Map<string, string>();
+
+  const stageRows = await db
+    .prepare("SELECT field, visibility FROM stage_field_visibility WHERE stage_id = ?")
+    .bind(stageId)
+    .all<{ field: string; visibility: string }>();
+
+  for (const row of stageRows.results) resolved.set(row.field, row.visibility);
+
+  const lineage = await unitLineage(db, unitId);
+  if (lineage.length === 0) return resolved;
+
+  const placeholders = lineage.map(() => "?").join(", ");
+  const overrides = await db
+    .prepare(
+      `SELECT unit_id, field, visibility FROM stage_field_visibility_overrides
+       WHERE stage_id = ? AND unit_id IN (${placeholders})`
+    )
+    .bind(stageId, ...lineage)
+    .all<{ unit_id: string; field: string; visibility: string }>();
+
+  if (overrides.results.length === 0) return resolved;
+
+  /**
+   * **Least specific first**, so a nearer unit's answer overwrites a
+   * more distant one. `lineage` runs most-specific-first, so this walks
+   * it backwards — the group's answer applied first, then the country's
+   * over it, then the department's.
+   */
+  for (const unit of [...lineage].reverse()) {
+    for (const override of overrides.results) {
+      if (override.unit_id !== unit) continue;
+
+      if (override.visibility === "edit") {
+        /**
+         * **`edit` restores a field the group restricted**, and it
+         * exists only as an override. Removing the entry is how that is
+         * expressed, because the caller reads an absent field as
+         * editable.
+         */
+        resolved.delete(override.field);
+      } else {
+        resolved.set(override.field, override.visibility);
+      }
+    }
+  }
+
+  return resolved;
+}

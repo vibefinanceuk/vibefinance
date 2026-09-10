@@ -218,3 +218,62 @@ describe("a field the screen fills in (decision 0173)", () => {
     expect((result.body as { fields: string[] }).fields).toEqual(["BT-131"]);
   });
 });
+
+describe("a unit's own restriction is enforced (decision 0197)", () => {
+  /**
+   * **The route, not the screen.**
+   *
+   * Decision 0144 found field visibility enforced only by the screen
+   * since September — a `curl` could always write a read-only field. An
+   * override the screen honours and the route ignores would be that
+   * fault repeated, one layer along.
+   */
+  it("refuses a field France restricted and the group did not", async () => {
+    await seedAt("validation", false);
+    await env.DB.prepare(
+      "INSERT INTO org_units (id, name, kind) VALUES ('acme-fr', 'Acme France', 'legal_entity')"
+    ).run();
+    await env.DB.prepare(
+      "INSERT INTO org_units (id, name, kind, parent_unit_id) VALUES ('ap-fr', 'AP France', 'operating_unit', 'acme-fr')"
+    ).run();
+    await env.DB.prepare(
+      "UPDATE invoice_headers SET org_unit_id = 'ap-fr', org_assigned_by = 'source' WHERE id = 'inv-1'"
+    ).run();
+    await env.DB.prepare(
+      `INSERT INTO stage_field_visibility_overrides (stage_id, unit_id, field, visibility)
+       VALUES ('validation', 'acme-fr', 'BT-112', 'read')`
+    ).run();
+
+    const result = await handleKeyInvoiceFields(
+      env.DB,
+      "inv-1",
+      { facts: { "BT-112": 100 } } as never,
+      "u-dan"
+    );
+
+    expect(result.status).toBe(403);
+    expect((result.body as { fields: string[] }).fields).toEqual(["BT-112"]);
+  });
+
+  it("allows it for a document in another unit", async () => {
+    // **The negative proof, at the enforcing layer.** France's rule
+    // must not silently become everybody's.
+    await seedAt("validation", false);
+    await env.DB.prepare(
+      "INSERT INTO org_units (id, name, kind) VALUES ('acme-fr', 'Acme France', 'legal_entity')"
+    ).run();
+    await env.DB.prepare(
+      `INSERT INTO stage_field_visibility_overrides (stage_id, unit_id, field, visibility)
+       VALUES ('validation', 'acme-fr', 'BT-112', 'read')`
+    ).run();
+
+    const result = await handleKeyInvoiceFields(
+      env.DB,
+      "inv-1",
+      { facts: { "BT-112": 100 } } as never,
+      "u-dan"
+    );
+
+    expect(result.status).toBe(200);
+  });
+});

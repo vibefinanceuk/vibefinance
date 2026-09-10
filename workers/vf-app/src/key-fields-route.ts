@@ -74,8 +74,18 @@ export async function handleKeyInvoiceFields(
    * **Editing belongs to a task.** A document nothing is working on is
    * a document nobody was asked to change.
    */
+  /**
+   * **Which unit this document belongs to** — decision 0197, and read
+   * before the visibility check because that check now depends on it.
+   */
+  const invoiceUnit = await db
+    .prepare("SELECT org_unit_id FROM invoice_headers WHERE id = ?")
+    .bind(invoiceId)
+    .first<{ org_unit_id: string | null }>();
+  const invoiceUnitId = invoiceUnit?.org_unit_id ?? null;
+
   const editable = instance
-    ? await editableFieldsAt(db, instance.current_stage_id)
+    ? await editableFieldsAt(db, instance.current_stage_id, invoiceUnitId)
     : new Set<string>();
 
   const invoice = await db
@@ -468,7 +478,19 @@ export async function handleKeyInvoiceFields(
  * `null` where no stage was given, meaning unrestricted: an inline
  * harness and every caller that predates this behave as they did.
  */
-async function editableFieldsAt(db: D1Database, stageId: string): Promise<Set<string>> {
-  const fields = await resolveFieldVisibility(db, stageId);
+/**
+ * @param unitId which unit the document belongs to — decision 0197.
+ *
+ * **This is the enforcing caller.** A unit's override that the screen
+ * honours and the route ignores is decision 0144's fault repeated: the
+ * screen was the only guard, and a `curl` could always write a
+ * read-only field.
+ */
+async function editableFieldsAt(
+  db: D1Database,
+  stageId: string,
+  unitId: string | null
+): Promise<Set<string>> {
+  const fields = await resolveFieldVisibility(db, stageId, unitId);
   return new Set(fields.filter((f) => f.visibility === "edit").map((f) => f.field));
 }

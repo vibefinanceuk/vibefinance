@@ -1,4 +1,5 @@
 import type { RouteResult } from "./org-route.js";
+import { resolveFieldVisibilityForStage } from "./unit-config.js";
 import {
   INVOICE_FIELDS,
   DERIVED_FIELD_DESCRIPTIONS,
@@ -127,7 +128,20 @@ const STRICTNESS: Record<Visibility, number> = { edit: 0, read: 1, hidden: 2 };
 
 export async function resolveFieldVisibility(
   db: D1Database,
-  stageId: string | null
+  stageId: string | null,
+  /**
+   * Which unit is asking — decision 0197.
+   *
+   * **Optional, and absent means the group's answer**, which is what
+   * every caller got before this existed. A caller that knows the
+   * document's unit passes it; one that does not gets what it always
+   * got.
+   *
+   * Decision 0192's risk lives here: omitting this does not fail, it
+   * quietly returns the group's configuration. Which is why the walk is
+   * in one place and this parameter is the only way to reach it.
+   */
+  unitId: string | null = null
 ): Promise<ResolvedField[]> {
   const customerRows = await db
     .prepare("SELECT field, visibility, sort_order FROM field_visibility")
@@ -163,11 +177,12 @@ export async function resolveFieldVisibility(
       .first<{ read_only: number }>();
     stageIsReadOnly = stageRow?.read_only === 1;
 
-    const stageRows = await db
-      .prepare("SELECT field, visibility FROM stage_field_visibility WHERE stage_id = ?")
-      .bind(stageId)
-      .all<{ field: string; visibility: Visibility }>();
-    for (const row of stageRows.results) stage.set(row.field, row.visibility);
+    // The stage's own rows, plus whatever this unit overrides — one
+    // walk, in `unit-config.ts`, and nowhere else (decision 0196).
+    const resolved = await resolveFieldVisibilityForStage(db, stageId, unitId);
+    for (const [field, visibility] of resolved) {
+      stage.set(field, visibility as Visibility);
+    }
   }
 
   const resolved: ResolvedField[] = [];

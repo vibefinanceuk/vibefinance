@@ -35,7 +35,7 @@ twice.
 | vf-licence deployed | `061eae6` |
 | vf-ui deployed | `061eae6` · `https://app.vibefinance-ai.com` |
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
-| `vf-app-poc` migrations | through `0045` |
+| `vf-app-poc` migrations | through `0046` |
 | `vf-licence-poc` migrations | through `0048` |
 | Tests | vf-app 1173 · vf-licence 318 · vf-ui 44 Worker + 203 browser · shared 267 (+2 known pre-existing failures) |
 | Decision records | 182 |
@@ -250,7 +250,15 @@ A unit may override a stage's rule set, resolved by one walk in
 the same stages and different thresholds, so scoping the process would
 duplicate seven stages to change one rule.
 
-**Still customer-wide**: roles, teams, field visibility, settings. And
+**Field visibility too** (decision 0197), per field so that restricting
+one field in France cannot silently drop what the group said about every
+other — decision 0143's trap, one layer along.
+
+**Still customer-wide**: roles, teams, settings.
+
+**And an open gap**: `/field-visibility` takes no unit, so the screen
+shows the group's answer while the route enforces the unit's. Decision
+0144 inverted — safe and confusing. And
 it is not a boundary — everybody sees every invoice.
 
 *The original design note:* Unit-scoped configuration (decision 0192) — **designed, not
