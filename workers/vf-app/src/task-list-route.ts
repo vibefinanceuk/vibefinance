@@ -1,3 +1,4 @@
+import { unitLineage } from "./unit-config.js";
 import type { RouteResult } from "./org-route.js";
 
 /**
@@ -62,6 +63,8 @@ export interface TaskRow {
   stageName: string | null;
   processId: string | null;
   requiredPermission: string;
+  /** The unit of the document this is about — decision 0202. */
+  orgUnitId: string | null;
   ownership: Ownership;
   /** What this person may do with it — see `TaskAction`. */
   actions: TaskAction[];
@@ -102,6 +105,8 @@ interface Raw {
   stage_name: string | null;
   process_id: string | null;
   required_permission: string;
+  /** The unit of the document this task is about — decision 0202. */
+  org_unit_id: string | null;
   owner_user_id: string | null;
   owner_team_id: string | null;
   line_number: number | null;
@@ -233,17 +238,40 @@ export async function handleListMyTasks(
   // otherwise mean forty identical permission queries.
   const permissionRows = await db
     .prepare(
-      `SELECT r.permissions_json AS permissions_json
+      `SELECT r.permissions_json AS permissions_json, ur.unit_id AS unit_id
        FROM org_user_roles ur JOIN org_roles r ON r.id = ur.role_id
        WHERE ur.user_id = ?`
     )
     .bind(userId)
-    .all<{ permissions_json: string }>();
+    .all<{ permissions_json: string; unit_id: string | null }>();
+
+  /**
+   * **Where each permission is held** — decision 0202.
+   *
+   * A flat set answered *"may this person validate"*, which was the
+   * whole question until decision 0199 let a role be held somewhere.
+   * Now a German validator holds `AP.Validate` and must not be shown
+   * French work — the operator's own requirement, and decision 0199's
+   * largest recorded gap.
+   *
+   * `null` against a permission means **everywhere**, which is every
+   * assignment predating that record and every customer not using
+   * units.
+   */
+  const heldIn = new Map<string, string[] | null>();
 
   const permissions = new Set<string>();
   for (const role of permissionRows.results) {
     try {
-      for (const p of JSON.parse(role.permissions_json) as string[]) permissions.add(p);
+      for (const p of JSON.parse(role.permissions_json) as string[]) {
+        permissions.add(p);
+
+        if (role.unit_id === null) {
+          heldIn.set(p, null);
+        } else if (heldIn.get(p) !== null) {
+          heldIn.set(p, [...(heldIn.get(p) ?? []), role.unit_id]);
+        }
+      }
     } catch {
       // A role with unparseable permissions grants nothing rather than
       // failing the list — one bad row must not empty somebody's queue.
@@ -263,7 +291,8 @@ export async function handleListMyTasks(
          s.name AS stage_name, s.process_id,
          v.process_instance_id AS instance_id,
          pi.subject_type, pi.subject_id,
-         h.supplier_vat_id, h.currency, h.issue_date, h.total_with_vat, h.facts_json
+         h.supplier_vat_id, h.currency, h.issue_date, h.total_with_vat, h.facts_json,
+         h.org_unit_id
        FROM tasks t
        LEFT JOIN org_users claimer ON claimer.id = t.claimed_by
        LEFT JOIN org_users owner ON owner.id = t.owner_user_id
@@ -306,6 +335,7 @@ export async function handleListMyTasks(
       stageName: row.stage_name,
       processId: row.process_id,
       requiredPermission: row.required_permission,
+      orgUnitId: row.org_unit_id,
       ownership,
       actions: actionsFor(row, ownership, permissions),
       createdAt: row.created_at,
@@ -400,9 +430,62 @@ export async function handleListMyTasks(
     return task;
   });
 
+  /**
+   * **Work somebody may not do is work they should not be shown** —
+   * decision 0202.
+   *
+   * A German validator holds `AP.Validate` and would correctly be
+   * refused on a French invoice; until now the list showed it to them
+   * anyway. Decision 0199 recorded that as its largest gap: *"a person
+   * is correctly denied acting and still shown the work."*
+   *
+   * Resolved against the **document's** unit, walking up from it, so a
+   * role held at Acme France covers AP France beneath it.
+   */
+  const lineageCache = new Map<string, Set<string>>();
+
+  async function maySee(task: TaskRow): Promise<boolean> {
+    const held = heldIn.get(task.requiredPermission);
+
+    /**
+     * **Held everywhere, or not held at all — unchanged either way.**
+     *
+     * A permission the person does not hold has never hidden a task:
+     * `required_permission` decided which **actions** were offered, and
+     * ownership decided what was listed. Twenty-two tests depend on
+     * that, and changing it is a separate decision from the one asked
+     * for.
+     *
+     * **The question here is where, not whether.** What was asked is
+     * that a German validator not be shown French work — and that only
+     * bites where the permission is held in specific units.
+     */
+    if (held === undefined || held === null) return true;
+
+    /**
+     * **A task about a document in no unit** stays visible, for the
+     * same reason: it is not French, so a German validator being shown
+     * it is not the fault being fixed.
+     */
+    if (!task.orgUnitId) return true;
+
+    let lineage = lineageCache.get(task.orgUnitId);
+    if (!lineage) {
+      lineage = new Set(await unitLineage(db, task.orgUnitId));
+      lineageCache.set(task.orgUnitId, lineage);
+    }
+
+    return held.some((unit) => lineage.has(unit));
+  }
+
+  const visible: TaskRow[] = [];
+  for (const task of all) {
+    if (await maySee(task)) visible.push(task);
+  }
+
   const filtered = options.ownership
-    ? all.filter((t) => t.ownership === options.ownership)
-    : all;
+    ? visible.filter((t) => t.ownership === options.ownership)
+    : visible;
 
   const limit = Math.min(Math.max(1, options.limit ?? DEFAULT_LIMIT), MAX_LIMIT);
   const offset = Math.max(0, options.offset ?? 0);

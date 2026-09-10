@@ -4,6 +4,7 @@ import { applyTestSchema } from "./setup.js";
 import { hasPermission, unitsWherePermitted } from "../src/enforce.js";
 import { handleListDocuments } from "../src/documents-route.js";
 import { handleAssignRole } from "../src/org-route.js";
+import { handleListMyTasks } from "../src/task-list-route.js";
 
 /**
  * A role is held somewhere — decision 0199.
@@ -385,5 +386,110 @@ describe("a regional role covers every stage (decision 0201)", () => {
     const ids = (result.body as { documents: { id: string }[] }).documents.map((d) => d.id);
 
     expect(ids).toEqual(["inv-fr"]);
+  });
+});
+
+describe("work somebody may not do is work they are not shown (decision 0202)", () => {
+  /**
+   * Decision 0199's largest recorded gap:
+   *
+   *   A person is correctly denied acting and still shown the work.
+   *
+   * **The question is where, not whether.** A permission somebody does
+   * not hold has never hidden a task — `required_permission` decided
+   * which *actions* were offered and ownership decided what was listed.
+   * That is unchanged; what changed is that holding it **only in
+   * Germany** no longer shows French work.
+   */
+  async function seedTaskFor(invoiceId: string, unitId: string, taskId: string) {
+    await seedInvoice(invoiceId, unitId);
+    await env.DB.prepare("INSERT OR IGNORE INTO processes (id, name) VALUES ('ap', 'AP')").run();
+    await env.DB.prepare(
+      "INSERT OR IGNORE INTO process_stages (id, process_id, name, sequence) VALUES ('validation', 'ap', 'Validation', 1)"
+    ).run();
+    await env.DB.prepare(
+      `INSERT INTO process_instances (id, process_id, subject_type, subject_id, current_stage_id)
+       VALUES (?, 'ap', 'invoice', ?, 'validation')`
+    )
+      .bind(`pi-${invoiceId}`, invoiceId)
+      .run();
+    await env.DB.prepare(
+      `INSERT INTO stage_visits (id, process_instance_id, stage_id, outcome)
+       VALUES (?, ?, 'validation', 'matched')`
+    )
+      .bind(`v-${invoiceId}`, `pi-${invoiceId}`)
+      .run();
+    await env.DB.prepare(
+      `INSERT INTO tasks (id, stage_id, stage_visit_id, owner_team_id, required_permission)
+       VALUES (?, 'validation', ?, 'ap-team', 'AP.Validate')`
+    )
+      .bind(taskId, `v-${invoiceId}`)
+      .run();
+  }
+
+  beforeEach(async () => {
+    await env.DB.prepare("INSERT INTO org_teams (id, name) VALUES ('ap-team', 'AP team')").run();
+    await env.DB.prepare(
+      "INSERT INTO org_team_members (team_id, user_id) VALUES ('ap-team', 'alice')"
+    ).run();
+    await env.DB.prepare(
+      `INSERT INTO org_roles (id, name, permissions_json)
+       VALUES ('validator', 'AP Validator', '["AP.Validate"]')`
+    ).run();
+  });
+
+  async function tasksFor(userId: string) {
+    const result = await handleListMyTasks(env.DB, userId);
+    return (result.body as { tasks: { id: string }[] }).tasks.map((t) => t.id);
+  }
+
+  it("hides French work from a German validator", async () => {
+    // **The operator's own sentence, as a test.**
+    await env.DB.prepare(
+      "INSERT INTO org_user_roles (user_id, role_id, unit_id) VALUES ('alice', 'validator', 'acme-de')"
+    ).run();
+
+    await seedTaskFor("inv-fr", "ap-fr", "t-fr");
+    await seedTaskFor("inv-de", "ap-de", "t-de");
+
+    expect(await tasksFor("alice")).toEqual(["t-de"]);
+  });
+
+  it("shows both to somebody holding it in both", async () => {
+    for (const unit of ["acme-fr", "acme-de"]) {
+      await env.DB.prepare(
+        "INSERT INTO org_user_roles (user_id, role_id, unit_id) VALUES ('alice', 'validator', ?)"
+      )
+        .bind(unit)
+        .run();
+    }
+
+    await seedTaskFor("inv-fr", "ap-fr", "t-fr");
+    await seedTaskFor("inv-de", "ap-de", "t-de");
+
+    expect((await tasksFor("alice")).sort()).toEqual(["t-de", "t-fr"]);
+  });
+
+  it("shows everything to somebody holding it everywhere", async () => {
+    // Which is every customer not using units, and every assignment
+    // predating decision 0199.
+    await env.DB.prepare(
+      "INSERT INTO org_user_roles (user_id, role_id, unit_id) VALUES ('alice', 'validator', NULL)"
+    ).run();
+
+    await seedTaskFor("inv-fr", "ap-fr", "t-fr");
+    await seedTaskFor("inv-de", "ap-de", "t-de");
+
+    expect((await tasksFor("alice")).sort()).toEqual(["t-de", "t-fr"]);
+  });
+
+  it("covers every operating unit beneath the one held", async () => {
+    // Held at Acme France, and the task's invoice is in AP France.
+    await env.DB.prepare(
+      "INSERT INTO org_user_roles (user_id, role_id, unit_id) VALUES ('alice', 'validator', 'acme-fr')"
+    ).run();
+
+    await seedTaskFor("inv-fr", "ap-fr", "t-fr");
+    expect(await tasksFor("alice")).toEqual(["t-fr"]);
   });
 });

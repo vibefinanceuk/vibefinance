@@ -281,6 +281,11 @@ is the two together.
 holding the moment one person existed. Now authenticated once anybody
 exists.
 
+**And the task list is unit-aware** (decision 0202) — a German
+validator is no longer shown French work, which was 0199's largest
+recorded gap. **Claiming and completing still are not**: they cannot see
+a French task and could claim one by its id.
+
 **Still customer-wide**: teams, settings.
 
 **And the screen agrees with the route** (decision 0198) — which meant
