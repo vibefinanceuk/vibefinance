@@ -172,7 +172,7 @@ function renderLine(line: Node, currency: string): string {
   const taxCategory = one(item, "ClassifiedTaxCategory");
 
   return `<div class="line">
-  <div class="col-sm-6">
+  <div class="col-sm-5">
     <strong>${esc(value(line, "ID") ?? "")}</strong>
     ${esc(value(item, "Name") ?? "")}
     ${
@@ -181,9 +181,9 @@ function renderLine(line: Node, currency: string): string {
         : ""
     }
   </div>
-  <div class="col-sm-2 text-right">${esc(quantity)} ${esc(unit)}</div>
-  <div class="col-sm-2 text-right">${esc(value(price, "PriceAmount") ?? "")} ${esc(currency)}</div>
-  <div class="col-sm-2 text-right">
+  <div class="col-sm-2 text-right amount">${esc(quantity)} ${esc(unit)}</div>
+  <div class="col-sm-2 text-right amount">${esc(value(price, "PriceAmount") ?? "")} ${esc(currency)}</div>
+  <div class="col-sm-3 text-right amount">
     ${esc(value(line, "LineExtensionAmount") ?? "")} ${esc(currency)}
     ${
       taxCategory
@@ -272,6 +272,142 @@ export function renderPeppolDocument(xml: string, lang: PeppolLanguage = "en"): 
 <title>${esc(typeName)} ${esc(value(root, "ID") ?? "")}</title>
 <style>${PEPPOL_CSS}</style>
 <style>
+  /*
+    **A page, because an invoice is one** — decision 0206.
+
+    Neither the official stylesheet nor ours defined a page: the markup
+    carries a "document" class and no rule ever matched it, so the
+    rendering filled whatever width it was given. In an iframe beside a
+    keying form that reads as a wall of text rather than as a document
+    somebody could have received.
+
+    A4 portrait, because that is what an invoice is printed on
+    everywhere this product operates. The width is fixed and the height
+    is a **minimum** — a two-page invoice grows rather than being cut,
+    which is the opposite of what a fixed height would do.
+  */
+  body {
+    background: #e9e9e9;
+    margin: 0;
+    padding: 12px;
+  }
+  .document {
+    box-sizing: border-box;
+    width: 210mm;
+    min-height: 297mm;
+    max-width: 100%;
+    margin: 0 auto;
+    padding: 15mm;
+    background: #fff;
+    border: 1px solid #ccc;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
+  }
+
+  /*
+    **Headings sized for a page, not for a web page** — decision 0206.
+
+    The imported CSS is Bootstrap's, where an h1 is 36px and an h2 is
+    30px. That is right for a browser at arm's length and wrong on A4
+    beside a keying form: "Supplier" and "Customer" arrived larger than
+    anything on a real invoice, and the document read as a heading with
+    some details attached.
+
+    An invoice's own hierarchy is shallow — a title, then quiet section
+    labels — so the section headings are barely larger than the text
+    they introduce, and separated by weight and space rather than size.
+  */
+  /*
+    **12px, not Bootstrap's 14** — decision 0206.
+
+    Two points of body text is about fifteen percent more invoice on a
+    page, which on a twenty-line document is the difference between two
+    pages and three.
+
+    In px because the imported CSS is entirely in px, and one document
+    measured in two units is one nobody can reason about — the same
+    argument decision 0031 makes about a vocabulary having one source.
+  */
+  .document {
+    font-size: 12px;
+    line-height: 1.45;
+  }
+
+  .document h1 {
+    font-size: 20px;
+    font-weight: 600;
+    margin: 0 0 14px;
+  }
+  .document h2 {
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: #555;
+    margin: 16px 0 6px;
+    padding-bottom: 3px;
+    border-bottom: 1px solid #ddd;
+  }
+
+  /*
+    **An amount is one thing and should not break in half** — decision
+    0206.
+
+    The line grid was 6-2-2-2, and at 210mm the last column is about
+    30mm — enough for "300.00" and not for "300.00 GBP" with a tax rate
+    beneath it. So a currency wrapped onto its own line and the rate
+    followed, and a reader had to reassemble a number that was never
+    two things.
+
+    The description gives up a column and the amount takes it, and every
+    numeric cell refuses to wrap at all: **a number that does not fit is
+    better clipped than silently rearranged**, because the second looks
+    like data.
+  */
+  .document .amount {
+    white-space: nowrap;
+  }
+  .document .amount .details {
+    white-space: normal;
+  }
+
+  /*
+    **Printed, the page is the paper.** The border, the shadow and the
+    grey behind it are all screen furniture — on paper the margins come
+    from @page and the rest would only waste ink.
+  */
+  @page {
+    size: A4 portrait;
+    margin: 15mm;
+  }
+  @media print {
+    body { background: #fff; padding: 0; }
+
+    /*
+      **Where a page may break** — decision 0206.
+
+      Twenty lines is two pages, and a browser given no instruction
+      breaks wherever it runs out of paper — which can be halfway
+      through a line, leaving a description on one page and its amount
+      on the next. That is not a formatting blemish: it reads as two
+      entries, one of which has no money against it.
+
+      A section heading alone at the foot of a page is the same fault
+      in miniature, and a provenance notice split in half says half of
+      what it means.
+    */
+    .line { page-break-inside: avoid; break-inside: avoid; }
+    .document h1, .document h2 { page-break-after: avoid; break-after: avoid; }
+    #rendering-notice { page-break-inside: avoid; break-inside: avoid; }
+    .document {
+      width: auto;
+      min-height: 0;
+      margin: 0;
+      padding: 0;
+      border: none;
+      box-shadow: none;
+    }
+  }
+
   /*
     **What this page is**, and it survives printing — decision 0205.
 

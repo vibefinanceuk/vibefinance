@@ -249,3 +249,104 @@ describe("the choice both routes make (decision 0205)", () => {
     expect(chosen?.documentType).toBe("generated_rendering");
   });
 });
+
+describe("it renders on a page (decision 0206)", () => {
+  /**
+   * **Neither stylesheet defined one.** The markup carries a
+   * `"document"` class and no rule ever matched it, so the rendering
+   * filled whatever width it was given — in an iframe beside a keying
+   * form, a wall of text rather than a document somebody could have
+   * received.
+   */
+  it("is A4 portrait", () => {
+    const { html } = renderPeppolDocument(INVOICE);
+    expect(html).toContain("size: A4 portrait");
+    expect(html).toContain("width: 210mm");
+  });
+
+  it("grows rather than cutting a long invoice", () => {
+    // **A minimum, not a height.** A fixed one would hide the second
+    // page of a two-page invoice, which is the opposite of the point.
+    const { html } = renderPeppolDocument(INVOICE);
+    expect(html).toContain("min-height: 297mm");
+    expect(html).not.toMatch(/\.document\s*\{[^}]*[^-]height:\s*297mm/);
+  });
+
+  it("drops the screen furniture when printed", () => {
+    // The border, the shadow and the grey behind it are for a screen;
+    // on paper the margins come from the page rule.
+    const { html } = renderPeppolDocument(INVOICE);
+    expect(html).toContain("@media print");
+    expect(html).toContain("box-shadow: none");
+  });
+});
+
+describe("a long invoice over several pages (decision 0206)", () => {
+  /**
+   * **Twenty lines is two pages**, and a browser given no instruction
+   * breaks wherever it runs out of paper — which can be halfway through
+   * a line, leaving a description on one page and its amount on the
+   * next.
+   *
+   * That is not a formatting blemish. It reads as two entries, one of
+   * which has no money against it.
+   */
+  const LONG = INVOICE.replace(
+    /<cac:InvoiceLine>[\s\S]*<\/cac:InvoiceLine>/,
+    Array.from({ length: 20 }, (_, i) => `<cac:InvoiceLine>
+      <cbc:ID>${i + 1}</cbc:ID>
+      <cbc:InvoicedQuantity unitCode="C62">${i + 1}</cbc:InvoicedQuantity>
+      <cbc:LineExtensionAmount currencyID="GBP">${(i + 1) * 30}.00</cbc:LineExtensionAmount>
+      <cac:Item><cbc:Name>Line item ${i + 1}</cbc:Name></cac:Item>
+      <cac:Price><cbc:PriceAmount currencyID="GBP">30.00</cbc:PriceAmount></cac:Price>
+    </cac:InvoiceLine>`).join("\n")
+  );
+
+  it("renders every line, not a page's worth", () => {
+    const { html } = renderPeppolDocument(LONG);
+    expect((html?.match(/class="line"/g) ?? []).length).toBe(20);
+    expect(html).toContain("Line item 20");
+  });
+
+  it("refuses to break a line across pages", () => {
+    const { html } = renderPeppolDocument(LONG);
+    expect(html).toContain("page-break-inside: avoid");
+  });
+
+  it("refuses to orphan a heading at the foot of a page", () => {
+    const { html } = renderPeppolDocument(LONG);
+    expect(html).toContain("page-break-after: avoid");
+  });
+
+  it("keeps the provenance notice whole", () => {
+    // **Half a notice says half of what it means.**
+    const { html } = renderPeppolDocument(LONG);
+    const printBlock = html?.slice(html.indexOf("@media print"));
+    expect(printBlock).toContain("#rendering-notice");
+  });
+});
+
+describe("sized for a page (decision 0206)", () => {
+  it("sets body text smaller than Bootstrap's default", () => {
+    // **Two points is about fifteen percent more invoice on a page**,
+    // which on a twenty-line document is two pages rather than three.
+    const { html } = renderPeppolDocument(INVOICE);
+    expect(html).toContain("font-size: 12px");
+  });
+
+  it("measures the document in one unit", () => {
+    /**
+     * **The imported CSS is entirely px**, and one document measured in
+     * two units is one nobody can reason about — decision 0031's
+     * argument about a vocabulary having one source, applied to a
+     * stylesheet.
+     *
+     * `mm` is the exception and deliberately so: a page's size is a
+     * physical fact, not a typographic one.
+     */
+    const { html } = renderPeppolDocument(INVOICE);
+    const ours = html?.slice(html.indexOf("A page, because an invoice is one"));
+    expect(ours).not.toMatch(/font-size:\s*\d+pt/);
+    expect(ours).not.toMatch(/margin:\s*\d+em/);
+  });
+});
