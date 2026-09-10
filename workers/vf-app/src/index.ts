@@ -2256,7 +2256,23 @@ export default {
       const taskId = (claimTaskMatch ?? completeTaskMatch)![1];
 
       const taskRow = await db
-        .prepare("SELECT required_permission FROM tasks WHERE id = ?")
+        /**
+         * **And which document it is about** — decision 0203.
+         *
+         * Decision 0202 stopped showing a German validator French
+         * work, and this route still let them claim one by its id — the
+         * boundary being a screen rather than a route, which is exactly
+         * what decision 0144 warns about.
+         */
+        .prepare(
+          `SELECT t.required_permission, h.org_unit_id
+           FROM tasks t
+           LEFT JOIN stage_visits v ON v.id = t.stage_visit_id
+           LEFT JOIN process_instances pi ON pi.id = v.process_instance_id
+           LEFT JOIN invoice_headers h
+             ON pi.subject_type = 'invoice' AND h.id = pi.subject_id
+           WHERE t.id = ?`
+        )
         .bind(taskId)
         .first<{ required_permission: string }>();
       if (!taskRow) {
@@ -2275,7 +2291,22 @@ export default {
       if (!auth.user) {
         return json({ error: auth.reason }, 401);
       }
-      if (!(await hasPermission(db, auth.user.id, taskRow.required_permission as Permission))) {
+      /**
+       * **Where the permission is exercised** — decision 0203, and the
+       * operator's *"each tied to an org."*
+       *
+       * A task about no document, or a document in no unit, passes
+       * `null` — which asks *"at all"*, and is what every task did
+       * before decision 0199.
+       */
+      if (
+        !(await hasPermission(
+          db,
+          auth.user.id,
+          taskRow.required_permission as Permission,
+          (taskRow as { org_unit_id?: string | null }).org_unit_id ?? null
+        ))
+      ) {
         return json({ error: t("forbidden", locale) }, 403);
       }
 

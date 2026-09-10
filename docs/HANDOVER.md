@@ -283,8 +283,10 @@ exists.
 
 **And the task list is unit-aware** (decision 0202) — a German
 validator is no longer shown French work, which was 0199's largest
-recorded gap. **Claiming and completing still are not**: they cannot see
-a French task and could claim one by its id.
+recorded gap. **Claiming and completing are too** (decision 0203) — the last place the
+boundary was a screen rather than a route. **Twelve of fourteen
+permission checks still ignore the unit**, and those two are the ones
+that matter most.
 
 **Still customer-wide**: teams, settings.
 

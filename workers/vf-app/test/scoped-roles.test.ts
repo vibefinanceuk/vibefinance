@@ -1,10 +1,11 @@
-import { env } from "cloudflare:test";
+import { env, SELF } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
 import { applyTestSchema } from "./setup.js";
 import { hasPermission, unitsWherePermitted } from "../src/enforce.js";
 import { handleListDocuments } from "../src/documents-route.js";
 import { handleAssignRole } from "../src/org-route.js";
 import { handleListMyTasks } from "../src/task-list-route.js";
+import { generateApiKey, hashApiKey } from "../src/user-auth.js";
 
 /**
  * A role is held somewhere — decision 0199.
@@ -491,5 +492,97 @@ describe("work somebody may not do is work they are not shown (decision 0202)", 
 
     await seedTaskFor("inv-fr", "ap-fr", "t-fr");
     expect(await tasksFor("alice")).toEqual(["t-fr"]);
+  });
+});
+
+describe("claiming is bounded by the org too (decision 0203)", () => {
+  /**
+   * **The last place the boundary was a screen.**
+   *
+   * Decision 0202 stopped showing a German validator French work, and
+   * the claim route still let them take one **by its id** — which is
+   * decision 0144's fault exactly: a screen that guards where a route
+   * does not.
+   */
+  async function claimAs(taskId: string, sessionToken: string) {
+    return SELF.fetch(`https://example.com/tasks/${taskId}/claim`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${sessionToken}` },
+    });
+  }
+
+  /** Somebody holding one permission in exactly one org. */
+  async function keyFor(permission: string, unitId: string): Promise<string> {
+    // Also a member of the owning team, so a refusal is about the org
+    // rather than about membership — two different 403s.
+    const id = crypto.randomUUID();
+    const apiKey = generateApiKey();
+    await env.DB.prepare(
+      "INSERT INTO org_users (id, email, name, api_key_hash) VALUES (?, ?, ?, ?)"
+    )
+      .bind(id, `${id}@acme.com`, "Scoped", await hashApiKey(apiKey))
+      .run();
+
+    const roleId = crypto.randomUUID();
+    await env.DB.prepare(
+      "INSERT INTO org_roles (id, name, permissions_json) VALUES (?, ?, ?)"
+    )
+      .bind(roleId, `Scoped ${permission}`, JSON.stringify([permission]))
+      .run();
+    await env.DB.prepare(
+      "INSERT INTO org_user_roles (user_id, role_id, unit_id) VALUES (?, ?, ?)"
+    )
+      .bind(id, roleId, unitId)
+      .run();
+
+    await env.DB.prepare("INSERT OR IGNORE INTO org_teams (id, name) VALUES ('ap-team', 'AP')").run();
+    await env.DB.prepare(
+      "INSERT INTO org_team_members (team_id, user_id) VALUES ('ap-team', ?)"
+    )
+      .bind(id)
+      .run();
+
+    return apiKey;
+  }
+
+  /** A task at Validation, about an invoice in the given unit. */
+  async function taskAbout(unitId: string): Promise<string> {
+    await env.DB.prepare("INSERT OR IGNORE INTO org_teams (id, name) VALUES ('ap-team', 'AP')").run();
+    await seedInvoice("inv-x", unitId);
+    await env.DB.prepare("INSERT OR IGNORE INTO processes (id, name) VALUES ('ap', 'AP')").run();
+    await env.DB.prepare(
+      "INSERT OR IGNORE INTO process_stages (id, process_id, name, sequence) VALUES ('validation', 'ap', 'Validation', 1)"
+    ).run();
+    await env.DB.prepare(
+      `INSERT INTO process_instances (id, process_id, subject_type, subject_id, current_stage_id)
+       VALUES ('pi-x', 'ap', 'invoice', 'inv-x', 'validation')`
+    ).run();
+    await env.DB.prepare(
+      "INSERT INTO stage_visits (id, process_instance_id, stage_id, outcome) VALUES ('v-x', 'pi-x', 'validation', 'matched')"
+    ).run();
+    await env.DB.prepare(
+      `INSERT INTO tasks (id, stage_id, stage_visit_id, owner_team_id, required_permission)
+       VALUES ('t-x', 'validation', 'v-x', 'ap-team', 'AP.Validate')`
+    ).run();
+
+    return "t-x";
+  }
+
+  it("refuses a French task to somebody holding it only in Germany", async () => {
+    const taskId = await taskAbout("ap-fr");
+    const key = await keyFor("AP.Validate", "acme-de");
+
+    const res = await claimAs(taskId, key);
+    expect(res.status).toBe(403);
+  });
+
+  it("allows it to somebody holding it in France", async () => {
+    // Held at the legal entity, and the invoice is in the operating
+    // unit beneath it.
+    const taskId = await taskAbout("ap-fr");
+    const key = await keyFor("AP.Validate", "acme-fr");
+
+    const res = await claimAs(taskId, key);
+    expect(res.status).toBe(200);
   });
 });
