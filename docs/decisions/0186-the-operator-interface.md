@@ -108,8 +108,19 @@ key* so the difference is visible rather than buried in a column name.
 - **Access itself.** The Worker refuses everything until a domain is in
   a zone with a policy in front of it. `ACCESS_TEAM_DOMAIN` is a
   placeholder.
-- **`ADMIN_KEY` is unset**, deliberately — it is a secret and belongs in
-  `wrangler secret put`, never in a var (decision 0009's incident).
+- **`ADMIN_API_KEY` is unset**, deliberately — it is a secret and
+  belongs in `wrangler secret put`, never in a var (decision 0009's
+  incident).
+
+  **This Worker originally asked for `ADMIN_KEY`**, which no route
+  anywhere validates: the control plane has checked `ADMIN_API_KEY`
+  since decision 0006. A forwarded request would have carried a
+  credential nothing compared against, and every call would have been
+  refused by `vf-licence` for a reason no message explained.
+
+  Found by looking for the command that generates one — the wrong name
+  is invisible until something has to use it, and the tests here stub
+  `vf-licence` precisely so nothing depends on it answering.
 - **The screen shows pending requests and recent actions and nothing
   else.** The fleet, licences, credentials and access grants are
   forwarded routes with no interface.

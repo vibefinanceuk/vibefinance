@@ -206,7 +206,9 @@ this repository:
 
 1. An **Access application** on that hostname, with a policy naming who
    may reach it.
-2. `npx wrangler secret put ADMIN_KEY` in `workers/vf-admin`.
+2. `npx wrangler secret put ADMIN_API_KEY` in `workers/vf-admin` — the
+   **existing** fleet key that `vf-licence` already holds, not a new
+   one. Two keys for one door is two keys to rotate.
 
 Until the first exists the hostname is public and the Worker refuses
 everything — **safe, and not protection.** The refusal is a second lock,

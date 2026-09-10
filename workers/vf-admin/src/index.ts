@@ -16,7 +16,20 @@ export interface Env {
   LICENCE_SERVICE: Fetcher;
   ASSETS: Fetcher;
   ACCESS_TEAM_DOMAIN?: string;
-  ADMIN_KEY?: string;
+  /**
+   * **The same secret `vf-licence` checks** — decision 0188.
+   *
+   * Named `ADMIN_KEY` when this Worker was written, which no route
+   * anywhere validates: the control plane has checked `ADMIN_API_KEY`
+   * since decision 0006. A forwarded request would have carried a
+   * credential nothing compared against.
+   *
+   * Set with `wrangler secret put ADMIN_API_KEY`, never a var
+   * (decision 0009's incident), and it is the **existing** fleet key
+   * rather than a new one — two keys for one door is two keys to
+   * rotate.
+   */
+  ADMIN_API_KEY?: string;
 }
 
 /**
@@ -101,7 +114,7 @@ export default {
       return json({ error: `${path} is not an operator route` }, 404);
     }
 
-    if (!env.ADMIN_KEY) {
+    if (!env.ADMIN_API_KEY) {
       // A configuration gap rather than a failure, and the deployment
       // says which — decision 0141's discipline about a missing domain.
       return json({ error: "the admin key is not configured", reason: "no_admin_key" }, 503);
@@ -116,7 +129,7 @@ export default {
      * action attributable to a person rather than to a shared secret.
      */
     const headers = new Headers(request.headers);
-    headers.set("Authorization", `Bearer ${env.ADMIN_KEY}`);
+    headers.set("Authorization", `Bearer ${env.ADMIN_API_KEY}`);
     headers.set("Cf-Access-Authenticated-User-Email", operator);
 
     return env.LICENCE_SERVICE.fetch(

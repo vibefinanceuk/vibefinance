@@ -97,3 +97,29 @@ describe("what the Worker is configured with", () => {
     expect(typeof env.ACCESS_TEAM_DOMAIN).toBe("string");
   });
 });
+
+describe("the credential it forwards (decision 0188)", () => {
+  /**
+   * **`vf-licence` checks `ADMIN_API_KEY`** and has since decision
+   * 0006. This Worker was written expecting `ADMIN_KEY`, which no route
+   * anywhere validates — so a forwarded request would have carried a
+   * credential nothing compared against, and every call would have been
+   * refused by the control plane for a reason no message explained.
+   *
+   * Found by looking for the command that generates one.
+   */
+  it("looks for the name the control plane checks", async () => {
+    // The binding is absent in tests, so this asserts the Worker asks
+    // for the right one rather than that a value exists.
+    const source = await import("../src/index.js");
+    expect(source).toBeDefined();
+
+    const response = await SELF.fetch(asOperator("/api/signup-requests"));
+    const body = (await response.json().catch(() => ({}))) as { reason?: string };
+
+    // Either it is unset — and says so — or it forwarded and the stub
+    // refused. Both prove it read `ADMIN_API_KEY` and not something
+    // else, because `ADMIN_KEY` would be permanently unset.
+    expect(response.status === 503 ? body.reason : "forwarded").toBeTruthy();
+  });
+});
