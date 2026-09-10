@@ -231,7 +231,43 @@ and that is the feature"*, applied one level up.
 **the people hierarchy exists indirectly**. What no node of it has is a
 manager.
 
-**2. Process configuration, versioned** (decision 0150). Adding and
+**2. Unit-scoped configuration** (decision 0192) — **designed, not
+built**, and it touches almost everything.
+
+**Two questions, not one.** *Must these units be hosted apart?* Then
+they are separate **environments** — per-customer D1 and R2 exist for
+isolation and residency (decision 0001). *May they share a database?*
+Then this applies.
+
+**The second is the case you have.** Residency splits are transatlantic;
+a European group shares a database because it may, not as a compromise.
+
+**And a contradiction worth knowing about**: `environments` has `UNIQUE
+(customer_id, kind)`, so one production environment per customer — while
+decision 0083 reasoned about *"a customer with EU and US instances"* and
+built the sign-in screen an environment picker for it. **The interface
+expects a shape the database forbids.** Harmless until a customer is
+transatlantic, and recorded rather than lifted.
+
+Four things carry a unit today: a person, an invoice, a source, and
+which national rules apply. **Roles, teams, processes, rule sets and
+field visibility are customer-wide**, so France and Germany share every
+one.
+
+The chosen shape is a nullable `unit_id` where null means *the group's
+own* — so nothing migrates — and a resolver that walks up decision
+0036's tree.
+
+**The trap is the whole risk**: forgetting the unit does not fail, it
+returns the group's answer. `resolveTenant` has a lint rule that makes
+the equivalent mistake uncompilable; this has no equivalent, because the
+column is nullable by design.
+
+**And permissions are the hardest part.** `AP.Approve` becomes
+`AP.Approve` *in France*, which decides whether a unit is a filing
+boundary or a security one. Not decided.
+
+**3. Process configuration, versioned** (decision 0150). Adding and
 removing stages through a screen, with a version number an invoice
 carries — so it is always apparent which shape of the process an item
 ran under.
@@ -251,7 +287,7 @@ frozen because changing it mid-flight is incoherent, and the rules are
 current because a threshold tightened this morning should apply to
 invoices reaching Approval this afternoon.
 
-**3. Email sending**, which decision 0125 evaluates. "Email" means three
+**4. Email sending**, which decision 0125 evaluates. "Email" means three
 different things — supplier contacts *out to strangers*, user
 notifications *out to colleagues*, and a source which is *inbound* and
 not sending at all.
@@ -269,27 +305,27 @@ Still open: **which provider**, **where sending lives** (0091 says the
 control plane never holds customer content), **whether templates sit in
 D1** like `ui_strings`, and **what happens when sending fails**.
 
-**4. BG-4 and BG-7 in the vocabulary.** The seller and buyer field lists
+**5. BG-4 and BG-7 in the vocabulary.** The seller and buyer field lists
 live in the viewer (0115). Recording business-group membership in
 `shared`, as `INVOICE_LINE_FIELDS` does for BG-25, is the consistent
 thing and a known shortcut until it is done.
 
-**5. BG-23, the VAT breakdown.** Mandatory and **repeating** — one entry
+**6. BG-23, the VAT breakdown.** Mandatory and **repeating** — one entry
 per VAT category and rate, whose tax amounts must sum to BT-110. The
 flat facts model cannot hold a repeating group (0112). A design
 question, not an omission, and *"one of the most common causes of
 validation errors"*.
 
-**6. Despatch Advice (T16).** The goods receipt, and the missing third
+**7. Despatch Advice (T16).** The goods receipt, and the missing third
 leg of three-way matching — **before the matcher, not after** (0082).
 BT-132 now exists, which is what lets matching compare a line to an
 order line.
 
-**7. Reading `cbc:CustomizationID`.** BT-24 is now read into the facts
+**8. Reading `cbc:CustomizationID`.** BT-24 is now read into the facts
 (0112), so the discriminator is available; detection still does not use
 it, and a valid Peppol Order sent to `/sources/:id/capture` is refused.
 
-**8. `party.first_document`**, the **all-users task view**, a **screen
+**9. `party.first_document`**, the **all-users task view**, a **screen
 for placing an invoice** by hand, and **four more languages** —
 `GET /ui-strings/keys` shows the gaps.
 
