@@ -35,7 +35,7 @@ twice.
 | vf-licence deployed | `061eae6` |
 | vf-ui deployed | `061eae6` · `https://app.vibefinance-ai.com` |
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
-| `vf-app-poc` migrations | through `0047` |
+| `vf-app-poc` migrations | through `0048` |
 | `vf-licence-poc` migrations | through `0048` |
 | Tests | vf-app 1173 · vf-licence 318 · vf-ui 44 Worker + 203 browser · shared 267 (+2 known pre-existing failures) |
 | Decision records | 182 |
@@ -260,6 +260,12 @@ fourteen permission checks exist and one is unit-aware, so a person
 restricted to France cannot see German documents in the document
 manager and can reach one by other routes. **That is not a boundary
 yet**, and 0199 says so.
+
+**And a stage may declare its permission** (decision 0200) — the
+vocabulary was already right, since 0010 named permissions after
+business activities and the activities are the stages. A rule asking for
+something else is refused rather than quietly corrected. **No stage
+declares one yet.**
 
 **Still customer-wide**: teams, settings.
 

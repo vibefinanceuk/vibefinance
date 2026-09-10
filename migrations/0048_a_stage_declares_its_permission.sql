@@ -1,0 +1,41 @@
+-- 0048_a_stage_declares_its_permission.sql
+--
+-- **A stage declares who may work there** — decision 0200.
+--
+-- The operator:
+--
+--   Roles and permissions might be well served assigned to stages. AP
+--   Validation, AP Matching, AP Coding, AP Review... each tied to an
+--   org.
+--
+-- **The vocabulary was already right.** Decision 0010 named permissions
+-- after business activities rather than routes — `AP.Validate`,
+-- `AP.Match`, `AP.Code`, `AP.Approve`, `AP.Review` — and the activities
+-- *are* the stages. `AP.Match` and `AP.Code` have sat there since,
+-- recorded as *"not built at all yet."*
+--
+-- **What was missing is the connection.** `assign_task` takes a
+-- permission the **rule author types**, so a rule at Validation could
+-- demand `AP.Review` and nothing objected — both are valid strings.
+--
+-- That is not hypothetical: it happened, and cost a working day of
+-- invoices sitting in a queue nobody could see. A stage that declares
+-- its own permission makes the mistake unsayable rather than merely
+-- unlikely.
+
+ALTER TABLE process_stages ADD COLUMN required_permission TEXT;
+
+-- Point-in-time: no stage declares one, so every rule still supplies
+-- its own and nothing changes.
+-- ASSERT: SELECT count(*) FROM process_stages WHERE required_permission IS NOT NULL == 0
+
+-- Standing invariant: a stage's permission is one of the closed set
+-- decision 0010 defines. Free text here would be a role granting itself
+-- something, which is the exact direction that record forbids:
+--
+--   What is NOT allowed is the reverse: a route checking a permission
+--   string that isn't listed here at all.
+--
+-- Listed by hand because SQLite cannot import a TypeScript constant,
+-- and a test asserts the two lists still agree.
+-- ASSERT ALWAYS: SELECT count(*) FROM process_stages WHERE required_permission IS NOT NULL AND required_permission NOT IN ('AP.Analysis','AP.Approve','AP.Code','AP.Discard','AP.Match','AP.Return','AP.ReturnAny','AP.ReturnToSupplier','AP.Review','AP.TaskManage','AP.Validate','AR.Analysis','AR.Approve','AR.Collect','AR.Issue','AR.Remind','AR.Validate','Admin.ConfigManagement','Admin.Configure','Admin.RuleManagement','Admin.UserManagement','Expense.Approve','Expense.Review','Expense.Submit','System.LicenceRefresh','System.UsagePush') == 0

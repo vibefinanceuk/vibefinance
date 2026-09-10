@@ -57,6 +57,8 @@ interface StageRow {
   process_id: string;
   sequence: number;
   rule_set_id: string | null;
+  /** Who may work here — decision 0200. Null where the stage says nothing. */
+  required_permission: string | null;
   evaluation_scope: string;
   /** Whether this stage refuses to finish without an org (0111). */
   requires_org: number;
@@ -183,7 +185,8 @@ async function nextStageInSequence(
        * so an invoice on v1 still visits it and one on v2 does not —
        * without deleting a row six tables reference.
        */
-      `SELECT s.id, s.process_id, v.sequence, s.rule_set_id, s.evaluation_scope, s.requires_org
+      `SELECT s.id, s.process_id, v.sequence, s.rule_set_id, s.evaluation_scope, s.requires_org,
+              s.required_permission
        FROM process_stage_versions v
        JOIN process_stages s ON s.id = v.stage_id
        WHERE v.process_id = ? AND v.version = ? AND v.sequence > ?
@@ -296,7 +299,9 @@ export async function visitCurrentStage(
 
   for (let i = 0; i < MAX_STAGES_PER_VISIT; i++) {
     const stage = await db
-      .prepare("SELECT id, process_id, sequence, rule_set_id, evaluation_scope, requires_org FROM process_stages WHERE id = ?")
+      .prepare(
+        "SELECT id, process_id, sequence, rule_set_id, evaluation_scope, requires_org, required_permission FROM process_stages WHERE id = ?"
+      )
       .bind(currentStageId)
       .first<StageRow>();
     if (!stage) {
@@ -582,12 +587,38 @@ export async function visitCurrentStage(
     // stage_visits row this references was already inserted above.
     let tasksCreated = 0;
     for (const { params, lineNumber } of pendingTaskActions) {
+      /**
+       * **The stage's own, where it declares one** — decision 0200.
+       *
+       * `assign_task` takes a permission the **rule author types**, so
+       * a rule at Validation could demand `AP.Review` and nothing
+       * objected — both are valid strings. That is not hypothetical: it
+       * happened, and cost a day of invoices sitting in a queue nobody
+       * could see.
+       *
+       * A stage that declares its permission makes the mistake
+       * **unsayable** rather than merely unlikely, and a rule
+       * disagreeing with it is refused rather than quietly preferred —
+       * because silently overriding what somebody wrote is how a rule
+       * comes to mean something other than it says.
+       */
+      if (stage.required_permission && params.permission &&
+          params.permission !== stage.required_permission) {
+        return {
+          status: 409,
+          body: {
+            error: `stage ${stage.id} requires ${stage.required_permission}, and this rule asks for ${String(params.permission)}`,
+            reason: "permission_disagrees_with_stage",
+          },
+        };
+      }
+
       const createResult = await handleCreateTask(db, {
         id: crypto.randomUUID(),
         stageId: stage.id,
         teamId: params.team,
         userId: params.user,
-        requiredPermission: params.permission,
+        requiredPermission: stage.required_permission ?? params.permission,
       });
       if (createResult.status !== 201) {
         return { status: 500, body: { error: `assign_task fired an invalid task: ${JSON.stringify(createResult.body)}` } };
@@ -613,7 +644,9 @@ export async function visitCurrentStage(
     let next: StageRow | null = null;
     if (routeTarget) {
       next = await db
-        .prepare("SELECT id, process_id, sequence, rule_set_id, evaluation_scope, requires_org FROM process_stages WHERE id = ?")
+        .prepare(
+        "SELECT id, process_id, sequence, rule_set_id, evaluation_scope, requires_org, required_permission FROM process_stages WHERE id = ?"
+      )
         .bind(routeTarget)
         .first<StageRow>();
     } else {
