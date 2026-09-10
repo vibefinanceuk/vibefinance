@@ -1,20 +1,40 @@
 import { authenticateUser, authenticateUserOrSession } from "./user-auth.js";
 import type { AuthenticatedUser } from "./user-auth.js";
 import type { Permission } from "./permissions.js";
+import { unitLineage } from "./unit-config.js";
 
 interface RoleRow {
   permissions_json: string;
+  unit_id: string | null;
 }
 
 /**
- * Does this user hold ANY role granting the given permission? A user
- * can hold more than one role (org_user_roles is many-to-many); this
- * returns true if any one of them grants it.
+ * Does this user hold any role granting the given permission —
+ * **and, if a unit is named, do they hold it there?**
+ *
+ * Decision 0199 scopes an assignment to a unit. A role held at Acme
+ * France covers every operating unit beneath it; a role held with no
+ * unit is held **everywhere**, which is what every assignment predating
+ * that record is.
+ *
+ * @param unitId where the permission is being exercised. **Omitted
+ * means anywhere**, which answers *"could this person do this at all"*
+ * — right for a route that is not about one document, and wrong for one
+ * that is.
+ *
+ * That default is decision 0192's risk in its sharpest form: forgetting
+ * the unit does not fail, it grants. Which is why every call site that
+ * has a document was changed with this, rather than after it.
  */
-export async function hasPermission(db: D1Database, userId: string, permission: Permission): Promise<boolean> {
+export async function hasPermission(
+  db: D1Database,
+  userId: string,
+  permission: Permission,
+  unitId?: string | null
+): Promise<boolean> {
   const rows = await db
     .prepare(
-      `SELECT r.permissions_json AS permissions_json
+      `SELECT r.permissions_json AS permissions_json, ur.unit_id AS unit_id
        FROM org_roles r
        JOIN org_user_roles ur ON ur.role_id = r.id
        WHERE ur.user_id = ?`
@@ -22,11 +42,96 @@ export async function hasPermission(db: D1Database, userId: string, permission: 
     .bind(userId)
     .all<RoleRow>();
 
+  // Computed once, and only where it is needed: most calls name no unit
+  // and most customers have none.
+  const covering =
+    unitId === undefined || unitId === null ? null : new Set(await unitLineage(db, unitId));
+
   for (const row of rows.results) {
     const permissions = JSON.parse(row.permissions_json) as string[];
-    if (permissions.includes(permission)) return true;
+    if (!permissions.includes(permission)) continue;
+
+    // Held everywhere.
+    if (row.unit_id === null) return true;
+
+    // Held somewhere, and the caller did not say where — so the
+    // question was *"at all"*, and the answer is yes.
+    if (covering === null) return true;
+
+    // Held at this unit, or at something above it.
+    if (covering.has(row.unit_id)) return true;
   }
+
   return false;
+}
+
+/**
+ * Which units this person may exercise a permission in — decision 0199.
+ *
+ * **This is the visibility half**, and the operator's own requirement:
+ *
+ *   Assigning AP Manager role for one org will not give a user
+ *   visibility outside of that org.
+ *
+ * `null` means **everywhere**, which is both a person holding the role
+ * unscoped and a customer who has never scoped anything. A caller
+ * filtering a list treats null as *"no filter"* — so a customer not
+ * using units sees exactly what they saw before.
+ *
+ * An empty array means **nowhere**, which is a real answer and a
+ * different one: the person holds the permission in no unit at all.
+ */
+export async function unitsWherePermitted(
+  db: D1Database,
+  userId: string,
+  permission: Permission
+): Promise<string[] | null> {
+  const rows = await db
+    .prepare(
+      `SELECT r.permissions_json AS permissions_json, ur.unit_id AS unit_id
+       FROM org_roles r
+       JOIN org_user_roles ur ON ur.role_id = r.id
+       WHERE ur.user_id = ?`
+    )
+    .bind(userId)
+    .all<RoleRow>();
+
+  const held: string[] = [];
+
+  for (const row of rows.results) {
+    const permissions = JSON.parse(row.permissions_json) as string[];
+    if (!permissions.includes(permission)) continue;
+    if (row.unit_id === null) return null;
+    held.push(row.unit_id);
+  }
+
+  if (held.length === 0) return [];
+
+  /**
+   * **Downward, not upward.** `hasPermission` walks up from a document
+   * to see whether an assignment covers it; a filter needs the
+   * opposite — everything beneath the units somebody holds.
+   *
+   * A role at Acme France must show every invoice in AP France, and
+   * listing only Acme France would show none of them.
+   */
+  const covered = new Set(held);
+  let frontier = held;
+
+  // Bounded by the tree's own depth, which decision 0036 keeps shallow:
+  // legal entities nested, with operating units as leaves.
+  for (let depth = 0; depth < 16 && frontier.length > 0; depth++) {
+    const placeholders = frontier.map(() => "?").join(", ");
+    const children = await db
+      .prepare(`SELECT id FROM org_units WHERE parent_unit_id IN (${placeholders})`)
+      .bind(...frontier)
+      .all<{ id: string }>();
+
+    frontier = children.results.map((c) => c.id).filter((id) => !covered.has(id));
+    for (const id of frontier) covered.add(id);
+  }
+
+  return [...covered];
 }
 
 export type AuthorizationResult =

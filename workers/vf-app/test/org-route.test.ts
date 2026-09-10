@@ -198,10 +198,15 @@ describe("handleAssignRole", () => {
     await handleCreateRole(env.DB, { id: "r1", name: "Admin" });
     const result = await handleAssignRole(env.DB, "usr1", "r1");
     expect(result.status).toBe(201);
-    const row = await env.DB.prepare("SELECT * FROM org_user_roles WHERE user_id = ? AND role_id = ?")
+    // **Where it is held, not just that it is** — decision 0199. Null
+    // means everywhere, which is what an unscoped assignment is and
+    // what every assignment predating that record became.
+    const row = await env.DB.prepare(
+      "SELECT user_id, role_id, unit_id FROM org_user_roles WHERE user_id = ? AND role_id = ?"
+    )
       .bind("usr1", "r1")
       .first();
-    expect(row).toEqual({ user_id: "usr1", role_id: "r1" });
+    expect(row).toEqual({ user_id: "usr1", role_id: "r1", unit_id: null });
   });
 
   it("404s when the user does not exist", async () => {

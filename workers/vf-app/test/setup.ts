@@ -48,6 +48,7 @@ import processVersionsSql from "../../../migrations/0043_process_versions.sql?ra
 import accountingFrameSql from "../../../migrations/0044_accounting_frame.sql?raw";
 import unitRuleSetsSql from "../../../migrations/0045_unit_rule_sets.sql?raw";
 import unitFieldVisibilitySql from "../../../migrations/0046_unit_field_visibility.sql?raw";
+import scopedRolesSql from "../../../migrations/0047_roles_are_held_somewhere.sql?raw";
 import taskStatesSql from "../../../migrations/0031_task_states_and_returns.sql?raw";
 import orgSettingsSql from "../../../migrations/0032_org_settings_retention.sql?raw";
 import discardedStateSql from "../../../migrations/0033_discarded_task_state.sql?raw";
@@ -187,6 +188,7 @@ export async function applyTestSchema(): Promise<void> {
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(accountingFrameSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(unitRuleSetsSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(unitFieldVisibilitySql)));
+  await env.DB.exec(toOneStatementPerLine(stripSqlComments(scopedRolesSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(taskStatesSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(orgSettingsSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(discardedStateSql)));

@@ -44,7 +44,19 @@ function statusOf(row: DocumentRow, facts: Record<string, unknown>): string {
 
 export async function handleListDocuments(
   db: D1Database,
-  params: URLSearchParams
+  params: URLSearchParams,
+  /**
+   * Which units this person may see — decision 0199.
+   *
+   * `null` means everywhere, which is both somebody holding the
+   * permission unscoped and a customer who has never scoped anything.
+   * An **empty array means nowhere**, and is a real answer.
+   *
+   * Optional so that a caller which has not been taught about units
+   * behaves as it always did — and every caller was taught with this,
+   * because decision 0192's risk is that forgetting does not fail.
+   */
+  visibleUnits: string[] | null = null
 ): Promise<RouteResult> {
   const query = (params.get("q") ?? "").trim().toLowerCase();
 
@@ -88,10 +100,17 @@ export async function handleListDocuments(
                     WHERE e2.outcome = 'captured' AND e2.occurred_at <= h.created_at
                     ORDER BY e2.occurred_at DESC LIMIT 1)
        WHERE (?1 IS NULL OR h.org_unit_id = ?1)
+         AND (?3 = 0 OR h.org_unit_id IN (SELECT value FROM json_each(?4)))
        ORDER BY h.created_at DESC, h.rowid DESC
        LIMIT ?2`
     )
-    .bind(unit, limit)
+    /**
+     * **A document with no unit is nobody's**, and a person restricted
+     * to France should not see it — it might be Germany's and
+     * unassigned. A customer not using units passes `null` and this
+     * clause is inert.
+     */
+    .bind(unit, limit, visibleUnits === null ? 0 : 1, JSON.stringify(visibleUnits ?? []))
     .all<DocumentRow>();
 
   const documents = rows.results.map((row) => {

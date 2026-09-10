@@ -25,7 +25,13 @@ import {
   handlePlaceInvoice,
 } from "./org-route.js";
 import { handleCreateCostCentre } from "./cost-centre-route.js";
-import { requirePermission, permissionsFor, hasPermission , type SessionContext } from "./enforce.js";
+import {
+  requirePermission,
+  permissionsFor,
+  hasPermission,
+  unitsWherePermitted,
+  type SessionContext,
+} from "./enforce.js";
 import { handleAddTeamMember, handleCreateTeam } from "./team-route.js";
 import { handleUpsertInvoice, mergeStructuredInvoiceFacts , handleGetInvoice } from "./invoice-facts-route.js";
 import { handleUpsertExpenseReport } from "./expense-facts-route.js";
@@ -1381,7 +1387,17 @@ export default {
         return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
       }
 
-      const result = await handleListDocuments(db, url.searchParams);
+      /**
+       * **Which units this person may see** — decision 0199, and the
+       * operator's own requirement: *"assigning AP Manager for one org
+       * will not give a user visibility outside of that org."*
+       *
+       * `null` where they hold `AP.Review` unscoped, which is every
+       * customer not using units.
+       */
+      const visible = await unitsWherePermitted(db, auth.user.id, "AP.Review");
+
+      const result = await handleListDocuments(db, url.searchParams, visible);
       return json(result.body, result.status);
     }
 

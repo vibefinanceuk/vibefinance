@@ -35,7 +35,7 @@ twice.
 | vf-licence deployed | `061eae6` |
 | vf-ui deployed | `061eae6` · `https://app.vibefinance-ai.com` |
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
-| `vf-app-poc` migrations | through `0046` |
+| `vf-app-poc` migrations | through `0047` |
 | `vf-licence-poc` migrations | through `0048` |
 | Tests | vf-app 1173 · vf-licence 318 · vf-ui 44 Worker + 203 browser · shared 267 (+2 known pre-existing failures) |
 | Decision records | 182 |
@@ -254,7 +254,14 @@ duplicate seven stages to change one rule.
 one field in France cannot silently drop what the group said about every
 other — decision 0143's trap, one layer along.
 
-**Still customer-wide**: roles, teams, settings.
+**Roles are scoped too** (decision 0199) — on the *assignment*, so one
+*AP Manager* definition is held per org. **But applied in one place**:
+fourteen permission checks exist and one is unit-aware, so a person
+restricted to France cannot see German documents in the document
+manager and can reach one by other routes. **That is not a boundary
+yet**, and 0199 says so.
+
+**Still customer-wide**: teams, settings.
 
 **And the screen agrees with the route** (decision 0198) — which meant
 loading the invoice before the fields, because its unit now decides
