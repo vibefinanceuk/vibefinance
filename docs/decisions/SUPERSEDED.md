@@ -73,7 +73,7 @@ against the current system either.
 | **0113** | Should extracted codes be validated? | **0116** — yes, against closed lists only. |
 | **0122** | The action icons do nothing | **0138** — they work. |
 | **0125** | Which domain do addresses live on? | **0141** — configuration, and there isn't one yet. |
-| **0140** | Who did what in the control plane? | Built. The **interface** is now unblocked — a domain exists. |
+| **0140** | Who did what in the control plane? | **Answered in full.** The interface is built (0186), behind Access on a hostname in the zone (0187), and the first action attributable to a person rather than a shared secret is recorded. |
 | **0031** | Is the closed vocabulary safe to hand to a customer? | **0153** — yes, and only if they can read the rule back. A compiled condition tree is not something anybody can confirm. |
 | **0033** | Is a refusal an error? | **0153** — no. It is warning-coloured, says what cannot be expressed, and says nothing was saved. |
 | **0055** | What happens to a document nothing can read? | **0161, 0163** — an invoice with no facts, waiting for a person, **and the screen says so**. A timeout takes the same path, because a model that never answered is not a model that read badly. |

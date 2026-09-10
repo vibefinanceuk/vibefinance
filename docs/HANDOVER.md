@@ -30,6 +30,7 @@ twice.
 | | |
 | --- | --- |
 | `origin/main` | `061eae6` |
+| vf-admin deployed | `e88b8d3` · `https://admin.vibefinance-ai.com` · behind Access |
 | vf-app deployed | `061eae6` |
 | vf-licence deployed | `061eae6` |
 | vf-ui deployed | `061eae6` · `https://vf-ui.vibefinance.workers.dev` |
@@ -192,59 +193,7 @@ established which**, and the two readings have different fixes.
 
 ## Suggested next pieces
 
-**1. Put `vf-admin` behind Access** (decisions 0140, 0186) — **the
-Worker and the screen are built; the gate is not.**
-
-It **refuses every request** until a hostname in a zone has an Access
-policy in front of it, because a missing
-`Cf-Access-Authenticated-User-Email` means the request did not come
-through Access at all.
-
-**The hostname is configured** — `admin.vibefinance-ai.com`, created by
-Cloudflare on the next deploy (decision 0187). What remains is outside
-this repository:
-
-1. An **Access application** on that hostname, with a policy naming who
-   may reach it.
-2. `npx wrangler secret put ADMIN_API_KEY` in `workers/vf-admin` — the
-   **existing** fleet key that `vf-licence` already holds, not a new
-   one. Two keys for one door is two keys to rotate.
-
-Until the first exists the hostname is public and the Worker refuses
-everything — **safe, and not protection.** The refusal is a second lock,
-not the first.
-
-The screen shows what is waiting for a decision and what has been done,
-refusals included. **The fleet, licences, credentials and access grants
-are forwarded routes with no interface yet.**
-
-*The original note, for what it recorded:* The
-attribution is done: `admin_actions` records every privileged action,
-refusals included, with a verified identity where one exists. **The
-screen waits on the domain.**
-
-Originally: Approving a customer is
-a `curl` today, and **a decision made blind is a checkpoint in name
-only**.
-
-A fourth Worker — `vf-admin`, behind Cloudflare Access — because
-`vf-ui`'s proxy **refuses admin paths outright** by design, and binding
-an interface to `vf-licence` would redeploy the licence minter on every
-UI change.
-
-**The larger half is attribution, not authentication.** `decided_by` is
-whatever the caller says, because the admin key is a shared secret —
-honest, and it fails ISO 27001 A.8.15 and SOC 2 CC7.2, which want
-privileged actions *attributable* rather than merely recorded. The
-identity comes from a **verified** Access JWT instead, which is the
-discipline decision 0010 already applies in `vf-app` and the control
-plane has been the exception to.
-
-And **seven routes are admin-gated where two record who acted**:
-creating a licence, minting a credential and granting access to an
-environment all record nothing.
-
-**2. Cost object approval** (decision 0184) — **designed, not built.**
+**1. Cost object approval** (decision 0184) — **designed, not built.**
 An invoice line finds its approvers from its cost centre, and how many
 it needs depends on a hierarchy: *"1, 2 or none or 6."*
 
@@ -282,7 +231,7 @@ and that is the feature"*, applied one level up.
 **the people hierarchy exists indirectly**. What no node of it has is a
 manager.
 
-**3. Process configuration, versioned** (decision 0150). Adding and
+**2. Process configuration, versioned** (decision 0150). Adding and
 removing stages through a screen, with a version number an invoice
 carries — so it is always apparent which shape of the process an item
 ran under.
@@ -302,7 +251,7 @@ frozen because changing it mid-flight is incoherent, and the rules are
 current because a threshold tightened this morning should apply to
 invoices reaching Approval this afternoon.
 
-**4. Email sending**, which decision 0125 evaluates. "Email" means three
+**3. Email sending**, which decision 0125 evaluates. "Email" means three
 different things — supplier contacts *out to strangers*, user
 notifications *out to colleagues*, and a source which is *inbound* and
 not sending at all.
@@ -320,27 +269,27 @@ Still open: **which provider**, **where sending lives** (0091 says the
 control plane never holds customer content), **whether templates sit in
 D1** like `ui_strings`, and **what happens when sending fails**.
 
-**5. BG-4 and BG-7 in the vocabulary.** The seller and buyer field lists
+**4. BG-4 and BG-7 in the vocabulary.** The seller and buyer field lists
 live in the viewer (0115). Recording business-group membership in
 `shared`, as `INVOICE_LINE_FIELDS` does for BG-25, is the consistent
 thing and a known shortcut until it is done.
 
-**6. BG-23, the VAT breakdown.** Mandatory and **repeating** — one entry
+**5. BG-23, the VAT breakdown.** Mandatory and **repeating** — one entry
 per VAT category and rate, whose tax amounts must sum to BT-110. The
 flat facts model cannot hold a repeating group (0112). A design
 question, not an omission, and *"one of the most common causes of
 validation errors"*.
 
-**7. Despatch Advice (T16).** The goods receipt, and the missing third
+**6. Despatch Advice (T16).** The goods receipt, and the missing third
 leg of three-way matching — **before the matcher, not after** (0082).
 BT-132 now exists, which is what lets matching compare a line to an
 order line.
 
-**8. Reading `cbc:CustomizationID`.** BT-24 is now read into the facts
+**7. Reading `cbc:CustomizationID`.** BT-24 is now read into the facts
 (0112), so the discriminator is available; detection still does not use
 it, and a valid Peppol Order sent to `/sources/:id/capture` is refused.
 
-**9. `party.first_document`**, the **all-users task view**, a **screen
+**8. `party.first_document`**, the **all-users task view**, a **screen
 for placing an invoice** by hand, and **four more languages** —
 `GET /ui-strings/keys` shows the gaps.
 
