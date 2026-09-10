@@ -35,7 +35,7 @@ twice.
 | vf-licence deployed | `061eae6` |
 | vf-ui deployed | `061eae6` · `https://app.vibefinance-ai.com` |
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
-| `vf-app-poc` migrations | through `0044` |
+| `vf-app-poc` migrations | through `0045` |
 | `vf-licence-poc` migrations | through `0048` |
 | Tests | vf-app 1173 · vf-licence 318 · vf-ui 44 Worker + 203 browser · shared 267 (+2 known pre-existing failures) |
 | Decision records | 182 |
@@ -242,7 +242,18 @@ and that is the feature"*, applied one level up.
 **the people hierarchy exists indirectly**. What no node of it has is a
 manager.
 
-**2. Unit-scoped configuration** (decision 0192) — **designed, not
+**2. Unit-scoped configuration** (decisions 0192, 0196) — **rule sets
+are scoped; nothing else is.**
+
+A unit may override a stage's rule set, resolved by one walk in
+`unit-config.ts`. A process was the wrong grain: France and Germany want
+the same stages and different thresholds, so scoping the process would
+duplicate seven stages to change one rule.
+
+**Still customer-wide**: roles, teams, field visibility, settings. And
+it is not a boundary — everybody sees every invoice.
+
+*The original design note:* Unit-scoped configuration (decision 0192) — **designed, not
 built**, and it touches almost everything.
 
 **Two questions, not one.** *Must these units be hosted apart?* Then

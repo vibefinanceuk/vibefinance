@@ -46,6 +46,7 @@ import readOnlyStageSql from "../../../migrations/0041_read_only_stage.sql?raw";
 import inboundEmailSql from "../../../migrations/0042_inbound_email_events.sql?raw";
 import processVersionsSql from "../../../migrations/0043_process_versions.sql?raw";
 import accountingFrameSql from "../../../migrations/0044_accounting_frame.sql?raw";
+import unitRuleSetsSql from "../../../migrations/0045_unit_rule_sets.sql?raw";
 import taskStatesSql from "../../../migrations/0031_task_states_and_returns.sql?raw";
 import orgSettingsSql from "../../../migrations/0032_org_settings_retention.sql?raw";
 import discardedStateSql from "../../../migrations/0033_discarded_task_state.sql?raw";
@@ -105,6 +106,7 @@ const TABLES_IN_DROP_ORDER = ["process_stage_versions", "inbound_email_events", 
   "pending_documents",
   "custom_fields",
   "invoice_documents",
+  "stage_rule_set_overrides",
   "cost_centres",
   "intake_capture_events",
   "expense_reports",
@@ -181,6 +183,7 @@ export async function applyTestSchema(): Promise<void> {
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(inboundEmailSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(processVersionsSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(accountingFrameSql)));
+  await env.DB.exec(toOneStatementPerLine(stripSqlComments(unitRuleSetsSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(taskStatesSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(orgSettingsSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(discardedStateSql)));

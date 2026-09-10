@@ -7,6 +7,7 @@ import {
   type ValidationSettings,
 } from "./validation.js";
 import { applySetFieldActions, type FieldOverride } from "./set-field.js";
+import { resolveRuleSetForStage } from "./unit-config.js";
 import { loadActiveRuleSet } from "./rule-set-loader.js";
 import { handleCreateTask } from "./task-route.js";
 import type { RouteResult } from "./org-route.js";
@@ -302,7 +303,33 @@ export async function visitCurrentStage(
       return { status: 500, body: { error: `current stage ${currentStageId} no longer exists` } };
     }
 
-    if (!stage.rule_set_id) {
+    /**
+     * **Which rules run here, for this invoice's unit** — decision
+     * 0196.
+     *
+     * The stage's own `rule_set_id` is the group's answer, and a unit
+     * may override it for this stage alone — so France and Germany
+     * share a process and differ on one rule rather than duplicating
+     * seven stages to change one threshold.
+     *
+     * Resolved in one place (`unit-config.ts`) and nowhere else,
+     * because decision 0192's risk is that **forgetting the unit does
+     * not fail** — it returns the group's answer, plausible and quietly
+     * wrong.
+     */
+    const subjectUnitId =
+      instance.subject_type === "invoice"
+        ? (
+            await db
+              .prepare("SELECT org_unit_id FROM invoice_headers WHERE id = ?")
+              .bind(instance.subject_id)
+              .first<{ org_unit_id: string | null }>()
+          )?.org_unit_id ?? null
+        : null;
+
+    const ruleSetId = await resolveRuleSetForStage(db, stage.id, subjectUnitId);
+
+    if (!ruleSetId) {
       // An automatic stage advances without evaluating anything, so the
       // org guard runs here or not at all on this path.
       const refusal = await orgGuard(db, stage, instance);
@@ -335,9 +362,9 @@ export async function visitCurrentStage(
     }
 
     // A real rule-set stage: load, evaluate, record, react.
-    const ruleSet = await loadActiveRuleSet(db, stage.rule_set_id);
+    const ruleSet = await loadActiveRuleSet(db, ruleSetId);
     if (!ruleSet) {
-      return { status: 500, body: { error: `rule set ${stage.rule_set_id} for stage ${stage.id} does not exist` } };
+      return { status: 500, body: { error: `rule set ${ruleSetId} for stage ${stage.id} does not exist` } };
     }
 
     // Header scope: one evaluation, against facts alone — exactly the
