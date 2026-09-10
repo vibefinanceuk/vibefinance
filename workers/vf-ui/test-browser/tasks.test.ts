@@ -29,6 +29,8 @@ const STRINGS = {
   strings: {
     "nav.tasks": "Tasks",
     "nav.sources": "Sources",
+    "nav.rules": "Rules",
+    "nav.documents": "Documents",
     "tasks.stage": "Stage",
     "tasks.line": "line",
     "tasks.supplier": "Supplier",
@@ -70,6 +72,14 @@ async function openList(tasks: unknown[]) {
     "/api/ui-strings": STRINGS,
     "/api/whoami": { id: "u-dan", name: "Dan", permissions: [] },
     "/api/tasks": { tasks, counts: {} },
+    // The other screens fetch their own data on arrival — decision
+    // 0191's test navigates between them.
+    "/api/sources": { sources: [] },
+    "/api/processes": { processes: [] },
+    "/api/rules": { rules: [] },
+    "/api/rules/stages": { stages: [] },
+    "/api/documents": { documents: [], searched: 0 },
+    "/api/field-visibility": { fields: [], derived: {} },
   });
 
   const { loadStrings } = await import("/strings.js");
@@ -179,5 +189,54 @@ describe("a task about one line (decision 0183)", () => {
   it("says nothing where a task is about the whole document", async () => {
     await openList([APPROVAL_TASK]);
     expect(document.body.textContent).not.toContain("line ");
+  });
+});
+
+describe("every screen can reach every other (decision 0191)", () => {
+  /**
+   * **Tasks was unreachable from Sources, Rules and Documents.**
+   *
+   * `go("tasks")` called `loadTasks()` alone, which fetches and updates
+   * the table — right when Tasks is already on screen, and nothing at
+   * all when it is not. The other three branches each rebuild the
+   * shell; this one assumed it was already rendered, which was true
+   * when it was the only screen.
+   */
+  async function navigateFrom(screen: string) {
+    await openList([APPROVAL_TASK]);
+
+    const link = [...document.querySelectorAll(".nav a")].find(
+      (a) => a.textContent === screen
+    ) as HTMLElement;
+    link.click();
+    await new Promise((r) => setTimeout(r, 40));
+
+    const back = [...document.querySelectorAll(".nav a")].find(
+      (a) => a.textContent === "Tasks"
+    ) as HTMLElement;
+    back.click();
+    await new Promise((r) => setTimeout(r, 40));
+  }
+
+  it("reaches Tasks from Sources", async () => {
+    await navigateFrom("Sources");
+    expect(document.querySelector(".nav a.on")?.textContent).toBe("Tasks");
+  });
+
+  it("reaches Tasks from Rules", async () => {
+    await navigateFrom("Rules");
+    expect(document.querySelector(".nav a.on")?.textContent).toBe("Tasks");
+  });
+
+  it("reaches Tasks from Documents", async () => {
+    await navigateFrom("Documents");
+    expect(document.querySelector(".nav a.on")?.textContent).toBe("Tasks");
+  });
+
+  it("puts the task table back, not just the navigation", async () => {
+    // **The whole point**: marking the entry without rebuilding the
+    // screen is what made this look like a dead link.
+    await navigateFrom("Rules");
+    expect(document.querySelector("table")).not.toBeNull();
   });
 });

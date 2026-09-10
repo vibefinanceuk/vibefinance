@@ -318,6 +318,20 @@ async function go(screen) {
     const { open } = await import("/documents.js");
     await open();
   } else {
+    /**
+     * **Rebuild the screen, then fill it** — decision 0191.
+     *
+     * This called `loadTasks()` alone, which fetches and updates the
+     * table. That is right when Tasks is already on screen and does
+     * nothing at all when it is not — so Tasks was unreachable from
+     * Sources, Rules and Documents, each of which replaces the shell
+     * with its own.
+     *
+     * The other three branches call something that renders. This one
+     * assumed it was already rendered, which was true when it was the
+     * only screen.
+     */
+    render();
     await loadTasks();
   }
 }
