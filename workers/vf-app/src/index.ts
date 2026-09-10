@@ -51,6 +51,12 @@ import {
 } from "./rules-list-route.js";
 import { handleInvoiceProgress } from "./invoice-progress-route.js";
 import { handleListDocuments } from "./documents-route.js";
+import {
+  handleListLedgers,
+  handleCreateLedger,
+  handleAssignLedger,
+  handleUpdateCostCentre,
+} from "./ledger-route.js";
 import { handleIngestPurchaseOrder, handleGetPurchaseOrder } from "./purchase-order-route.js";
 import { handleGetRetention, handleSetRetention, handleListBeyondRetention } from "./retention-route.js";
 import { handleCaptureFromSource } from "./source-capture-route.js";
@@ -827,6 +833,67 @@ export default {
     // Every org unit, with what an invoice can be matched against —
     // decision 0111. Nothing could read them before, so a customer
     // writing an assign_org rule had to guess the id.
+    // The accounting frame — decision 0195.
+    if (pathname === "/ledgers" && request.method === "GET") {
+      const { db } = resolveTenant(request, env);
+      const auth = await authenticatePerson(db, request, env);
+      if (!auth.user) return json({ error: auth.reason }, 401);
+
+      const result = await handleListLedgers(db);
+      return json(result.body, result.status);
+    }
+
+    if (pathname === "/ledgers" && request.method === "POST") {
+      const { db } = resolveTenant(request, env);
+      const auth = await authenticatePerson(db, request, env);
+      if (!auth.user) return json({ error: auth.reason }, 401);
+      if (!(await hasPermission(db, auth.user.id, "Admin.Configure"))) {
+        return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
+      }
+
+      const result = await handleCreateLedger(db, (await request.json()) as Record<string, unknown>);
+      return json(result.body, result.status);
+    }
+
+    {
+      const match = pathname.match(/^\/org\/units\/([^/]+)\/ledger$/);
+      if (match && request.method === "PUT") {
+        const { db } = resolveTenant(request, env);
+        const auth = await authenticatePerson(db, request, env);
+        if (!auth.user) return json({ error: auth.reason }, 401);
+        if (!(await hasPermission(db, auth.user.id, "Admin.Configure"))) {
+          return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
+        }
+
+        const result = await handleAssignLedger(
+          db,
+          decodeURIComponent(match[1]),
+          (await request.json()) as Record<string, unknown>
+        );
+        return json(result.body, result.status);
+      }
+    }
+
+    {
+      const match = pathname.match(/^\/cost-centres\/([^/]+)$/);
+      if (match && request.method === "PUT") {
+        const { db } = resolveTenant(request, env);
+        const auth = await authenticatePerson(db, request, env);
+        if (!auth.user) return json({ error: auth.reason }, 401);
+        if (!(await hasPermission(db, auth.user.id, "Admin.Configure"))) {
+          return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
+        }
+
+        const result = await handleUpdateCostCentre(
+          db,
+          decodeURIComponent(match[1]),
+          (await request.json()) as Record<string, unknown>
+        );
+        return json(result.body, result.status);
+      }
+    }
+
+
     if (pathname === "/org/units" && request.method === "GET") {
       const { db } = resolveTenant(request, env);
       const auth = await requirePermission(db, request, "Admin.Configure", sessionContext(env));

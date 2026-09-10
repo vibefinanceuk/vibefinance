@@ -35,7 +35,7 @@ twice.
 | vf-licence deployed | `061eae6` |
 | vf-ui deployed | `061eae6` · `https://app.vibefinance-ai.com` |
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
-| `vf-app-poc` migrations | through `0043` |
+| `vf-app-poc` migrations | through `0044` |
 | `vf-licence-poc` migrations | through `0048` |
 | Tests | vf-app 1173 · vf-licence 318 · vf-ui 44 Worker + 203 browser · shared 267 (+2 known pre-existing failures) |
 | Decision records | 182 |
@@ -193,7 +193,18 @@ established which**, and the two readings have different fixes.
 
 ## Suggested next pieces
 
-**1. Cost object approval** (decision 0184) — **designed, not built.**
+**1. Cost object approval** (decisions 0184, 0195) — **the frame is
+built; nothing calls it.**
+
+A **ledger** exists (Oracle's word; SAP's *controlling area*), legal
+entities account in one, and a cost centre hangs beneath it with a
+parent, an owner and a limit. `resolveApprovalChain` walks it in
+decision 0184's **Limit** mode and is called by nothing.
+
+**The next piece** is wiring it to `assign_task`, which still names one
+team or one person.
+
+*The original design note:* Cost object approval (decision 0184) — **designed, not built.**
 An invoice line finds its approvers from its cost centre, and how many
 it needs depends on a hierarchy: *"1, 2 or none or 6."*
 

@@ -58,6 +58,8 @@ async function list(params = "") {
       currency: string | null;
       status: string;
       stageName: string | null;
+      orgUnitId: string | null;
+      orgUnitName: string | null;
       hands: number;
     }[];
     searched: number;

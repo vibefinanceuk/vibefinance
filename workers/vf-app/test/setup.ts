@@ -45,6 +45,7 @@ import sourceStatusSql from "../../../migrations/0040_source_status.sql?raw";
 import readOnlyStageSql from "../../../migrations/0041_read_only_stage.sql?raw";
 import inboundEmailSql from "../../../migrations/0042_inbound_email_events.sql?raw";
 import processVersionsSql from "../../../migrations/0043_process_versions.sql?raw";
+import accountingFrameSql from "../../../migrations/0044_accounting_frame.sql?raw";
 import taskStatesSql from "../../../migrations/0031_task_states_and_returns.sql?raw";
 import orgSettingsSql from "../../../migrations/0032_org_settings_retention.sql?raw";
 import discardedStateSql from "../../../migrations/0033_discarded_task_state.sql?raw";
@@ -131,6 +132,9 @@ const TABLES_IN_DROP_ORDER = ["process_stage_versions", "inbound_email_events", 
   "org_roles",
   "org_users",
   "org_units",
+  // The accounting frame (decision 0195). After org_units, which
+  // references it, and after cost_centres for the same reason.
+  "ledgers",
 ];
 
 export async function applyTestSchema(): Promise<void> {
@@ -176,6 +180,7 @@ export async function applyTestSchema(): Promise<void> {
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(readOnlyStageSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(inboundEmailSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(processVersionsSql)));
+  await env.DB.exec(toOneStatementPerLine(stripSqlComments(accountingFrameSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(taskStatesSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(orgSettingsSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(discardedStateSql)));
