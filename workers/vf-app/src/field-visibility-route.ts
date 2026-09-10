@@ -302,9 +302,21 @@ export async function resolveFieldVisibility(
  */
 export async function handleFieldVisibility(
   db: D1Database,
-  stageId: string | null
+  stageId: string | null,
+  /**
+   * Which unit is asking — decision 0198.
+   *
+   * **Decision 0197 left the screen behind the route.** The route
+   * enforced a unit's overrides and this reported the group's answer,
+   * so a French keyer saw an editable field and got a 403 on save.
+   *
+   * That is decision 0144 **inverted** — the route stricter than the
+   * screen. Safe, and a trap: a person types into a box the system will
+   * refuse.
+   */
+  unitId: string | null = null
 ): Promise<RouteResult> {
-  const all = await resolveFieldVisibility(db, stageId);
+  const all = await resolveFieldVisibility(db, stageId, unitId);
   return {
     status: 200,
     body: {

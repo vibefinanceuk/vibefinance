@@ -360,3 +360,72 @@ describe("which fields a unit may key (decision 0197)", () => {
     expect(resolved.get("BT-112")).toBe("read");
   });
 });
+
+describe("the screen sees what the route enforces (decision 0198)", () => {
+  /**
+   * **Decision 0197 left the screen behind the route.** The route
+   * enforced a unit's overrides and `/field-visibility` reported the
+   * group's answer, so a French keyer saw an editable field and got a
+   * 403 on save.
+   *
+   * Decision 0144 **inverted** — the route stricter than the screen.
+   * Safe, and a trap: a person types into a box the system will refuse.
+   */
+  it("reports a unit's restriction to the screen", async () => {
+    const { handleFieldVisibility } = await import("../src/field-visibility-route.js");
+
+    await env.DB.prepare(
+      `INSERT INTO stage_field_visibility_overrides (stage_id, unit_id, field, visibility)
+       VALUES ('approval', 'acme-fr', 'BT-112', 'read')`
+    ).run();
+
+    const result = await handleFieldVisibility(env.DB, "approval", "ap-fr");
+    const fields = (result.body as { fields: { field: string; visibility: string }[] }).fields;
+
+    expect(fields.find((f) => f.field === "BT-112")?.visibility).toBe("read");
+  });
+
+  it("reports the group's answer where no unit is asked for", async () => {
+    // Which is what every caller got before, and what a customer with
+    // no units configured still gets.
+    const { handleFieldVisibility } = await import("../src/field-visibility-route.js");
+
+    await env.DB.prepare(
+      `INSERT INTO stage_field_visibility_overrides (stage_id, unit_id, field, visibility)
+       VALUES ('approval', 'acme-fr', 'BT-112', 'read')`
+    ).run();
+
+    const result = await handleFieldVisibility(env.DB, "approval", null);
+    const fields = (result.body as { fields: { field: string; visibility: string }[] }).fields;
+
+    expect(fields.find((f) => f.field === "BT-112")?.visibility).toBe("edit");
+  });
+
+  it("agrees with what keying will allow", async () => {
+    /**
+     * **The point of the whole record.** What the screen offers and
+     * what the route accepts must be one answer, and this asserts they
+     * are rather than trusting that they are.
+     */
+    const { handleFieldVisibility, resolveFieldVisibility } = await import(
+      "../src/field-visibility-route.js"
+    );
+
+    await env.DB.prepare(
+      `INSERT INTO stage_field_visibility_overrides (stage_id, unit_id, field, visibility)
+       VALUES ('approval', 'acme-fr', 'BT-112', 'hidden')`
+    ).run();
+
+    const shown = (
+      (await handleFieldVisibility(env.DB, "approval", "ap-fr")).body as {
+        fields: { field: string; visibility: string }[];
+      }
+    ).fields;
+    const enforced = await resolveFieldVisibility(env.DB, "approval", "ap-fr");
+
+    const editableOnScreen = shown.filter((f) => f.visibility === "edit").map((f) => f.field);
+    const editableInRoute = enforced.filter((f) => f.visibility === "edit").map((f) => f.field);
+
+    expect(editableOnScreen.sort()).toEqual(editableInRoute.sort());
+  });
+});

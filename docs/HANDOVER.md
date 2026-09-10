@@ -256,9 +256,9 @@ other — decision 0143's trap, one layer along.
 
 **Still customer-wide**: roles, teams, settings.
 
-**And an open gap**: `/field-visibility` takes no unit, so the screen
-shows the group's answer while the route enforces the unit's. Decision
-0144 inverted — safe and confusing. And
+**And the screen agrees with the route** (decision 0198) — which meant
+loading the invoice before the fields, because its unit now decides
+which are editable. And
 it is not a boundary — everybody sees every invoice.
 
 *The original design note:* Unit-scoped configuration (decision 0192) — **designed, not

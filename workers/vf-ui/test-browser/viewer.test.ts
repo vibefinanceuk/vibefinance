@@ -1054,3 +1054,47 @@ describe("what identifies the document sits in the heading (decision 0176)", () 
     expect(document.querySelector(".subhead")?.textContent).not.toContain("Owner");
   });
 });
+
+describe("the screen asks for the document's unit (decision 0198)", () => {
+  /**
+   * **The invoice loads before the fields**, because its unit decides
+   * which are editable (decision 0197). They were the other way round,
+   * because until then nothing about the document affected which fields
+   * it offered.
+   */
+  it("passes the unit to field visibility", async () => {
+    const asked: string[] = [];
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        asked.push(String(url));
+        const path = String(url).split("?")[0];
+        const bodies: Record<string, unknown> = {
+          "/api/ui-strings": STRINGS,
+          "/api/code-lists": { fields: {} },
+          "/api/field-visibility": FIELDS,
+          "/api/invoices/inv-1": {
+            facts: {},
+            lines: [],
+            orgUnitId: "ap-fr",
+            validation: { passed: true, checked: [], failures: [] },
+          },
+          "/api/invoices/inv-1/document-url": { url: null },
+          "/api/invoices/inv-1/progress": { inProcess: false, stages: [] },
+        };
+        if (!(path in bodies)) throw new Error(`no stub for ${path}`);
+        return { ok: true, json: async () => bodies[path] } as Response;
+      })
+    );
+
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    await openViewer(TASK, () => {});
+    await new Promise((r) => setTimeout(r, 0));
+
+    const fieldsCall = asked.find((u) => u.startsWith("/api/field-visibility"));
+    expect(fieldsCall).toContain("unit=ap-fr");
+  });
+});

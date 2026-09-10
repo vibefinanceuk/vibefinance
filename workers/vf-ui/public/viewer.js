@@ -131,6 +131,13 @@ async function loadInvoice(invoiceId) {
       document: body.document ?? null,
       // Whether the document could be read at all — decision 0161.
       intake: body.intake ?? null,
+      /**
+       * **Which unit this document belongs to** — decision 0198, and
+       * kept because it decides which fields may be edited (decision
+       * 0197). Reported by the route since decision 0036 and read by
+       * nothing until now.
+       */
+      orgUnitId: body.orgUnitId ?? null,
     };
     // **What is wrong on arrival**, not only after saving. Somebody
     // opening a document with three failures should be told, rather
@@ -191,9 +198,14 @@ function columnsFor(line) {
 let headerFields = [];
 let lineFields = [];
 
-async function loadFields(stageId) {
+async function loadFields(stageId, unitId) {
   try {
-    const query = stageId ? `?stage=${encodeURIComponent(stageId)}` : "";
+    const parts = [];
+    if (stageId) parts.push(`stage=${encodeURIComponent(stageId)}`);
+    // Absent means the group's answer, which is what every caller got
+    // before decision 0198.
+    if (unitId) parts.push(`unit=${encodeURIComponent(unitId)}`);
+    const query = parts.length > 0 ? `?${parts.join("&")}` : "";
     const response = await fetch(`/api/field-visibility${query}`);
     if (!response.ok) return;
     const { fields } = await response.json();
@@ -796,9 +808,25 @@ export async function openViewer(task, onClose) {
   // Before rendering, so a field never appears as a text box and then
   // becomes a picker under somebody's hands.
   await loadCodeLists();
+
+  /**
+   * **The invoice first, because its unit decides what may be edited**
+   * — decision 0198.
+   *
+   * Decision 0197 let a unit override a stage's field visibility and
+   * the route enforced it while this asked without a unit — so a French
+   * keyer saw an editable field and got a 403 on save. Decision 0144
+   * inverted: the route stricter than the screen.
+   *
+   * These were the other way round, because until now nothing about the
+   * document affected which fields it offered.
+   */
+  await loadInvoice(task.subject.id);
+
   // The STAGE decides what may be edited, so this cannot be fetched
-  // once and reused across tasks sitting at different stages.
-  await loadFields(task.stageId);
+  // once and reused across tasks sitting at different stages — and now
+  // the UNIT does too.
+  await loadFields(task.stageId, stored.orgUnitId ?? null);
   /**
    * Whether anything on this screen can be changed — decision 0142.
    *
@@ -811,9 +839,9 @@ export async function openViewer(task, onClose) {
     lineFields.some((f) => f.visibility === "edit");
 
   current = task;
-  // Cleared and then filled by `loadInvoice`, so one document's
-  // exceptions never appear against another.
-  await loadInvoice(task.subject.id);
+  // Already loaded above, because its unit decides which fields are
+  // editable (decision 0198). Cleared and filled by `loadInvoice`, so
+  // one document's exceptions never appear against another.
   await loadProgress(task.subject.id);
   // The lines as stored, so keyed ones come back. Held by field code,
   // which is what the table edits.

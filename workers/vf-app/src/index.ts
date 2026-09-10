@@ -1554,7 +1554,13 @@ export default {
       const auth = await authenticatePerson(db, request, env);
       if (!auth.user) return json({ error: auth.reason }, 401);
 
-      const result = await handleFieldVisibility(db, url.searchParams.get("stage"));
+      const result = await handleFieldVisibility(
+        db,
+        url.searchParams.get("stage"),
+        // Which unit is asking — decision 0198. Absent means the
+        // group's answer, which is what every caller got before.
+        url.searchParams.get("unit")
+      );
       return json(result.body, result.status);
     }
 
