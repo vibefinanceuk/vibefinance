@@ -19,9 +19,17 @@ So the Worker needs an address in the zone. `custom_domain` makes
 Cloudflare create the DNS record itself, so **the hostname and the
 Worker cannot disagree** about where it lives.
 
-**The `workers.dev` address stays reachable and stays refused**, which
-is the honest outcome: an operator interface that answered there would
-be an operator interface with no gate.
+**And the `workers.dev` address disappears entirely**, which is better
+than this record planned for.
+
+Adding a route **disables `workers.dev` by default** — wrangler says so
+on deploy — so the operator interface has exactly one address, and it is
+the one Access can protect.
+
+This record originally expected both to stay reachable, with the Worker
+refusing the `workers.dev` one. That refusal is still there and now has
+nothing to refuse: **one door is better than two doors and a lock on the
+second.**
 
 ---
 
