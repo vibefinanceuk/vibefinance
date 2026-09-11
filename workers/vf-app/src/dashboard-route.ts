@@ -244,9 +244,30 @@ async function itemsAtStage(
    * An instance with no task at all counts as unclaimed, because from
    * the reader's side it is the same thing: nobody is holding it.
    */
+  /**
+   * **Does the stage exist**, asked of the stage — decision 0251.
+   *
+   * The first version asked one question of `process_instances` and
+   * read *no rows* as *no stage*, so **a stage with nothing in it
+   * reported as deleted**: a card added for a quiet queue said *"this
+   * stage no longer exists"* about a stage the save had just verified.
+   *
+   * Decision 0241 was the same shape — a zero and an absence sharing a
+   * representation — and this is the second time.
+   */
+  const stage = await db
+    .prepare("SELECT id, name FROM process_stages WHERE id = ?")
+    .bind(stageId)
+    .first<{ id: string; name: string }>();
+
+  if (!stage) {
+    // **Genuinely gone**, which the card explains and offers to fix.
+    return { count: 0, stageId, stageName: null, missing: true, held: { mine: 0, theirs: 0, unclaimed: 0 } };
+  }
+
   const row = await db
     .prepare(
-      `SELECT s.name AS stage_name,
+      `SELECT
               count(*) AS n,
               sum(CASE WHEN t.owner_user_id = ?2 OR t.claimed_by = ?2 THEN 1 ELSE 0 END) AS mine,
               sum(CASE WHEN t.id IS NOT NULL
@@ -255,14 +276,13 @@ async function itemsAtStage(
                         AND COALESCE(t.claimed_by, '') != ?2
                    THEN 1 ELSE 0 END) AS theirs
        FROM process_instances pi
-       JOIN process_stages s ON s.id = pi.current_stage_id
        LEFT JOIN invoice_headers h ON pi.subject_type = 'invoice' AND h.id = pi.subject_id
        LEFT JOIN stage_visits v ON v.process_instance_id = pi.id AND v.stage_id = pi.current_stage_id
        LEFT JOIN tasks t ON t.stage_visit_id = v.id AND t.status = 'open'
        WHERE pi.status = ${IN_FLIGHT} AND pi.current_stage_id = ?1${clause.sql}`
     )
     .bind(stageId, userId, ...clause.binds)
-    .first<{ stage_name: string | null; n: number; mine: number; theirs: number }>();
+    .first<{ n: number; mine: number; theirs: number }>();
 
   /**
    * **A stage that no longer exists is a card, not an error.** A
@@ -276,8 +296,9 @@ async function itemsAtStage(
   return {
     count,
     stageId,
-    stageName: row?.stage_name ?? null,
-    missing: !row?.stage_name,
+    stageName: stage.name,
+    // **The stage answered this**, not the absence of instances at it.
+    missing: false,
     held: { mine, theirs, unclaimed: Math.max(count - mine - theirs, 0) },
   };
 }

@@ -590,3 +590,66 @@ describe("who holds the work at a stage (decision 0250)", () => {
     expect((data as unknown as { stageId: string }).stageId).toBe("validation");
   });
 });
+
+describe("an empty stage is not a deleted one (decision 0251)", () => {
+  /**
+   * **Reported by adding a card.** A stage card for a quiet queue said
+   * *"this stage no longer exists"* about a stage the save had just
+   * verified — because the query asked `process_instances` and read
+   * **no rows** as **no stage**.
+   *
+   * Decision 0241 was the same shape: a zero and an absence sharing a
+   * representation. **Second time.**
+   */
+  async function cardFor(stageId: string) {
+    await env.DB.prepare(
+      `INSERT INTO dashboard_cards (id, user_id, card_type, settings_json, position)
+       VALUES ('c1', 'alice', 'items_at_stage', ?, 0)`
+    )
+      .bind(JSON.stringify({ stage: stageId }))
+      .run();
+
+    return card<{ count: number; stageName: string | null; missing: boolean }>(
+      await cardsFor("alice"),
+      "items_at_stage"
+    );
+  }
+
+  it("names a stage that exists and holds nothing", async () => {
+    await person("alice", ["AP.Review"], null);
+    await env.DB.prepare("INSERT INTO processes (id, name) VALUES ('ap', 'AP')").run();
+    await env.DB.prepare(
+      "INSERT INTO process_stages (id, process_id, name, sequence) VALUES ('quiet', 'ap', 'Quiet Stage', 1)"
+    ).run();
+
+    const data = await cardFor("quiet");
+
+    expect(data.missing).toBe(false);
+    expect(data.stageName).toBe("Quiet Stage");
+    expect(data.count).toBe(0);
+  });
+
+  it("still says so for a stage that is genuinely gone", async () => {
+    // The message is right; it was being shown for the wrong reason.
+    await person("alice", ["AP.Review"], null);
+
+    const data = await cardFor("never-existed");
+    expect(data.missing).toBe(true);
+    expect(data.stageName).toBeNull();
+  });
+
+  it("counts an empty stage as nobody's, not as a third of nothing", async () => {
+    // Three zeroes, so the ring draws nothing rather than an even split
+    // of an empty whole.
+    await person("alice", ["AP.Review"], null);
+    await env.DB.prepare("INSERT INTO processes (id, name) VALUES ('ap', 'AP')").run();
+    await env.DB.prepare(
+      "INSERT INTO process_stages (id, process_id, name, sequence) VALUES ('quiet', 'ap', 'Quiet', 1)"
+    ).run();
+
+    const data = (await cardFor("quiet")) as unknown as {
+      held: { mine: number; theirs: number; unclaimed: number };
+    };
+    expect(data.held).toEqual({ mine: 0, theirs: 0, unclaimed: 0 });
+  });
+});
