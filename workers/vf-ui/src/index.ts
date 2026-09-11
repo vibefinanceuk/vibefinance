@@ -118,6 +118,8 @@ const PROXIED_TO_INSTANCE: RegExp[] = [
    * **The mirror could not be filled through the app**, only by `curl`
    * against `vf-app` directly — which is not a feature a customer has.
    */
+  // What a person should do next (decision 0240).
+  /^\/dashboard$/,
   /^\/suppliers$/,
   /^\/suppliers\/load$/,
   // Finding and choosing a supplier by hand (decision 0222).

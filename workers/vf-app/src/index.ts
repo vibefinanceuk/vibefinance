@@ -1,5 +1,6 @@
 import { resolveTenant } from "@vibefinance/shared";
 import { searchOrgUnits, setInvoiceOrgUnit } from "./derive-org.js";
+import { handleDashboard } from "./dashboard-route.js";
 import { evaluateRuleSet, validateRule } from "@vibefinance/shared";
 import type { CompiledRuleSet, InvoiceFacts } from "@vibefinance/shared";
 import { COMPILER_MODEL_ID, createWorkersAiCompilerModel } from "./compiler-model.js";
@@ -988,6 +989,16 @@ export default {
         );
         return json(result.body, result.status);
       }
+    }
+
+    // What a person should do next — decision 0240.
+    if (pathname === "/dashboard" && request.method === "GET") {
+      const { db } = resolveTenant(request, env);
+      const auth = await authenticatePerson(db, request, env);
+      if (!auth.user) return json({ error: auth.reason }, 401);
+
+      const result = await handleDashboard(db, auth.user.id);
+      return json(result.body, result.status);
     }
 
     // The supplier list, with how old it is — decision 0213.

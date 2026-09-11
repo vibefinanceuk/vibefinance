@@ -56,6 +56,7 @@ import supplierEmailSql from "../../../migrations/0051_supplier_email.sql?raw";
 import supplierPhoneSql from "../../../migrations/0052_supplier_phone.sql?raw";
 import orgContactSql from "../../../migrations/0053_org_unit_contact.sql?raw";
 import awaitingErpSql from "../../../migrations/0055_a_supplier_awaiting_the_erp.sql?raw";
+import dashboardSql from "../../../migrations/0056_dashboard_cards.sql?raw";
 import taskStatesSql from "../../../migrations/0031_task_states_and_returns.sql?raw";
 import orgSettingsSql from "../../../migrations/0032_org_settings_retention.sql?raw";
 import discardedStateSql from "../../../migrations/0033_discarded_task_state.sql?raw";
@@ -133,6 +134,7 @@ const TABLES_IN_DROP_ORDER = ["process_stage_versions", "inbound_email_events", 
   // Dropping a supplier an invoice still points at fails the foreign
   // key — which is the constraint doing its job on a teardown that had
   // the order wrong.
+  "dashboard_cards",
   "suppliers",
   "suppliers_new",
   "supplier_loads",
@@ -210,6 +212,7 @@ export async function applyTestSchema(): Promise<void> {
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(supplierPhoneSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(orgContactSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(awaitingErpSql)));
+  await env.DB.exec(toOneStatementPerLine(stripSqlComments(dashboardSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(taskStatesSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(orgSettingsSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(discardedStateSql)));
