@@ -32,6 +32,20 @@ export const ICONS = {
   // Arrows to the four corners — "make this bigger", not "leave here".
   expand:
     '<path d="M4 8V4h4M16 4h4v4M20 12v4h-4M8 20H4v-4"/>',
+  /**
+   * **Two arrows circling** — decision 0228, for *change buyer* and
+   * *change seller*.
+   *
+   * Not a pencil: a pencil says *edit this value*, and neither of these
+   * does. They **replace one record with another** — the invoice stops
+   * pointing at Acme UK and starts pointing at Acme Deutschland, and
+   * nothing about either record changes.
+   *
+   * Deliberately the same glyph for both. They are the same act on
+   * either side of the document, and two icons would say they were not.
+   */
+  swap:
+    '<path d="M4 8h13m0 0-3-3m3 3-3 3M20 16H7m0 0 3 3m-3-3 3-3"/>',
   // A down arrow into a tray, as the reference has it.
   save:
     '<path d="M12 3v10m0 0 4-4m-4 4-4-4M4 17v3h16v-3"/>',

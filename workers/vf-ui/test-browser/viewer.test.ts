@@ -84,6 +84,8 @@ const STRINGS = {
     "viewer.supplier.none": "This invoice has not been matched to a supplier.",
     "viewer.supplier.no_match": "No supplier on file matches this seller.",
     "suppliers.pay": "Payment",
+    "action.changebuyer": "Change Buyer",
+    "action.changeseller": "Change Seller",
     "viewer.noexceptions": "Nothing to resolve.",
     "field.bt-106": "Net before VAT",
     "field.bt-110": "VAT amount",
@@ -1346,5 +1348,107 @@ describe("the Buyer card says a name once (decision 0227)", () => {
     // Once as the value of Name, and nowhere else.
     const occurrences = (buyerCard?.textContent?.match(/Acme UK Limited/g) ?? []).length;
     expect(occurrences).toBe(1);
+  });
+});
+
+describe("each party card carries its own action (decision 0228)", () => {
+  /**
+   * **Top right, in space the heading already leaves empty.**
+   *
+   * A footer adds height to a card in a column already short of it, and
+   * the operator said so: *"it might extend the card size if we place
+   * at the bottom right. There is space in the top right already."*
+   */
+  function stub(body: Record<string, unknown>) {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        const path = String(url).split("?")[0];
+        const bodies: Record<string, unknown> = {
+          "/api/ui-strings": STRINGS,
+          "/api/code-lists": { fields: {} },
+          "/api/field-visibility": FIELDS,
+          "/api/invoices/inv-1": {
+            facts: {},
+            lines: [],
+            validation: { passed: true, checked: [], failures: [] },
+            ...body,
+          },
+          "/api/invoices/inv-1/document-url": { url: null },
+          "/api/invoices/inv-1/progress": { inProcess: false, stages: [] },
+        };
+        if (!(path in bodies)) throw new Error(`no stub for ${path}`);
+        return { ok: true, json: async () => bodies[path] } as Response;
+      })
+    );
+  }
+
+  async function open(body: Record<string, unknown>) {
+    stub(body);
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    await openViewer(TASK, () => {});
+    await new Promise((r) => setTimeout(r, 0));
+  }
+
+  const MATCHED = {
+    supplier: { erpIdentifier: "40118", name: "Northwind", isPaySite: true },
+    buyer: { unitId: "acme-uk", unitName: "Acme UK", entityName: "Acme UK", vatId: "GB1" },
+  };
+
+  it("offers both actions when both matched", async () => {
+    /**
+     * **Offered even when a match was found**, because a wrong answer
+     * is worse than none: none stops at the org gate (decision 0037),
+     * and a wrong one sails through every org-scoped stage after it.
+     */
+    await open(MATCHED);
+    const labels = [...document.querySelectorAll(".actionlink span")].map((s) => s.textContent);
+
+    expect(labels).toContain("Change Seller");
+    expect(labels).toContain("Change Buyer");
+  });
+
+  it("offers them when neither matched", async () => {
+    // **The state where they are most needed**, and where a card that
+    // hid its action would strand somebody.
+    await open({ supplier: null, buyer: null, buyerUnplaced: "no_match" });
+    const labels = [...document.querySelectorAll(".actionlink span")].map((s) => s.textContent);
+
+    expect(labels).toContain("Change Seller");
+    expect(labels).toContain("Change Buyer");
+  });
+
+  it("puts the action in the heading row, not below the card", async () => {
+    /**
+     * **The whole point of moving it.** A footer would sit after the
+     * fields; this sits beside the title, using height that is already
+     * spent.
+     */
+    await open(MATCHED);
+
+    const buyerCard = [...document.querySelectorAll(".panel")].find(
+      (p) => p.querySelector("h3")?.textContent === "Buyer"
+    );
+
+    const head = buyerCard?.querySelector(".cardhead");
+    expect(head?.querySelector("h3")?.textContent).toBe("Buyer");
+    expect(head?.querySelector(".actionlink span")?.textContent).toBe("Change Buyer");
+
+    // And nowhere else in the card.
+    expect(buyerCard?.querySelectorAll(".actionlink")).toHaveLength(1);
+  });
+
+  it("opens the search when clicked", async () => {
+    await open(MATCHED);
+
+    const buyerCard = [...document.querySelectorAll(".panel")].find(
+      (p) => p.querySelector("h3")?.textContent === "Buyer"
+    );
+    (buyerCard?.querySelector(".actionlink") as HTMLButtonElement)?.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(document.querySelector(".popout")).not.toBeNull();
   });
 });

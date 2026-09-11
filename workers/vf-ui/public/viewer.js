@@ -1074,6 +1074,28 @@ export async function openViewer(task, onClose) {
   }
 
   /**
+   * A card's title, with its own action beside it — decision 0228.
+   *
+   * **Top right, in space the heading already leaves empty.** The
+   * operator: *"it might extend the card size if we place at the bottom
+   * right. There is space in the top right already."*
+   *
+   * Which is the whole argument — a footer adds height to a card in a
+   * column that is already short of it, and the heading row has room
+   * doing nothing.
+   *
+   * **Re-routing is offered even when a match was found**, because a
+   * wrong answer is worse than none: none stops at the org gate
+   * (decision 0037), and a wrong one sails through every org-scoped
+   * stage after it behaving correctly.
+   */
+  const cardHead = (title, action, onclick) =>
+    el("div", { class: "cardhead" }, [
+      el("h3", { text: title }),
+      actionLink(action, { onclick }),
+    ]);
+
+  /**
    * **Label and value on one line** — decision 0221, from the
    * operator's own mock-up, and shared by both party cards since
    * decision 0224.
@@ -1134,17 +1156,14 @@ export async function openViewer(task, onClose) {
     if (!b) {
       // Amber and a reason — the same ribbon as the Seller's, for the
       // reason decision 0161 gave.
-      const panel = el("div", { class: "panel needsattention" }, [
-        el("h3", { text: t("viewer.buyer") }),
+      return el("div", { class: "panel needsattention" }, [
+        cardHead(t("viewer.buyer"), "changebuyer", () => openBuyerSearch()),
         el("div", { class: "warn", text: t(`viewer.buyer.${stored.buyerUnplaced ?? "none"}`) }),
-        el("button", { class: "linky", text: t("viewer.buyer.find") }),
       ]);
-      panel.querySelector("button").onclick = () => openBuyerSearch();
-      return panel;
     }
 
-    const panel = el("div", { class: "panel" }, [
-      el("h3", { text: t("viewer.buyer") }),
+    return el("div", { class: "panel" }, [
+      cardHead(t("viewer.buyer"), "changebuyer", () => openBuyerSearch()),
       /**
        * **No sub-line here** — decision 0227.
        *
@@ -1169,17 +1188,7 @@ export async function openViewer(task, onClose) {
         ]),
         addressBlock(b, t("viewer.supplier.street")),
       ]),
-      /**
-       * **Re-routing**, which the operator asked for. Offered even when
-       * a unit was found, because a **wrong** one is worse than none:
-       * none stops at the org gate (decision 0037), and a wrong one
-       * sails through every org-scoped stage after it.
-       */
-      el("button", { class: "linky", text: t("viewer.buyer.change") }),
     ]);
-
-    panel.querySelector("button").onclick = () => openBuyerSearch();
-    return panel;
   };
 
 
@@ -1218,21 +1227,17 @@ export async function openViewer(task, onClose) {
        * decision 0222's *"the user can just leave it, to be picked up
        * later in AP Review."*
        */
-      const panel = el("div", { class: "panel needsattention" }, [
-        el("h3", { text: t("viewer.seller") }),
+      return el("div", { class: "panel needsattention" }, [
+        cardHead(t("viewer.seller"), "changeseller", () => openSupplierSearch()),
         el("div", { class: "warn", text: t(`viewer.supplier.${why ?? "none"}`) }),
-        el("button", { class: "linky", text: t("viewer.supplier.find") }),
         shown.length > 0
           ? el("div", { class: "vfields" }, shown.map((spec) => field(spec, existing)))
           : null,
       ].filter(Boolean));
-
-      panel.querySelector("button").onclick = () => openSupplierSearch();
-      return panel;
     }
 
     return el("div", { class: "panel" }, [
-      el("h3", { text: t("viewer.seller") }),
+      cardHead(t("viewer.seller"), "changeseller", () => openSupplierSearch()),
       /**
        * **Which site, and what it is for.** The reason this invoice
        * reached this record rather than one of its siblings — and since
@@ -1258,6 +1263,12 @@ export async function openViewer(task, onClose) {
         ]),
         addressBlock(s, t("viewer.supplier.street")),
       ]),
+      /**
+       * **Bottom right, like the document's own actions** — decision
+       * 0228. The operator asked for it in the same shape as *Expand*,
+       * *Complete*, *Release* and *Return*, and a person who has
+       * learned where an action lives should not have to learn twice.
+       */
     ].filter(Boolean));
   };
 

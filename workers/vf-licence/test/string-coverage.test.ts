@@ -225,6 +225,8 @@ const KEYS_THE_INTERFACE_USES = [
   "viewer.supplier.close",
   "viewer.buyer.find",
   "viewer.buyer.change",
+  "action.changebuyer",
+  "action.changeseller",
   "viewer.buyer.findheading",
   "viewer.buyer.searchhint",
   "viewer.buyer.why",

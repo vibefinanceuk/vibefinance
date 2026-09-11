@@ -785,6 +785,32 @@
     Deliberately not a red border. An unmatched supplier may be a
     genuinely new one, and leaving it is a real answer.
   */
+  /*
+    **A card's own action, beside its title** — decision 0228.
+
+    Bottom right first, and the operator was right that it was wrong:
+    *"it might extend the card size... There is space in the top right
+    already, due to the card heading creating some empty space."*
+
+    A footer adds height to a card in a column already short of it. The
+    heading row has room doing nothing.
+  */
+  .cardhead {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .cardhead > h3 { margin-bottom: 0; }
+  /*
+    Pulled up and out, so the button's own padding does not push the
+    title's baseline down — the row should be the height of the title,
+    not of the button.
+  */
+  .cardhead > .actionlink {
+    margin: -6px -4px 0 0;
+  }
+
   .panel.needsattention {
     border-left: 3px solid var(--text-warning);
     border-radius: 0 var(--radius) var(--radius) 0;
