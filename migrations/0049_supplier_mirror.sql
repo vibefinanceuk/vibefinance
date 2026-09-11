@@ -128,11 +128,23 @@ CREATE INDEX idx_invoice_headers_supplier_ref ON invoice_headers(supplier_id);
 -- ASSERT: SELECT count(*) FROM suppliers == 0
 -- ASSERT: SELECT count(*) FROM invoice_headers WHERE supplier_id IS NOT NULL == 0
 
--- Standing invariant: every supplier has an ERP identifier. Stated here
--- as well as in the column, because it is the whole argument for this
--- table: a supplier we cannot name to the ERP is one we cannot pay
--- against.
--- ASSERT ALWAYS: SELECT count(*) FROM suppliers WHERE erp_identifier IS NULL OR trim(erp_identifier) = '' == 0
+-- SUPERSEDED by migration 0055 — decision 0231.
+--
+-- This said every supplier has an ERP identifier, because *"a supplier
+-- we cannot name to the ERP is one we cannot pay against."*
+--
+-- **Still true, and it is not the same as having no record.** The
+-- operator:
+--
+--   A record might be created and details logged before the record is
+--   created in the ERP. Receipt of an invoice, and supplier record
+--   creation here, could be a precursor to a New Supplier process.
+--
+-- So a supplier may exist here **awaiting** an identifier, and what
+-- cannot happen is paying against one. Migration 0055 states that
+-- instead.
+--
+-- (was: ASSERT ALWAYS ... erp_identifier IS NULL OR trim(...) = '' == 0)
 
 -- Standing invariant: a hold has a reason. A held supplier nobody can
 -- explain is a payment stopped for no stated cause, which is worse than

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
  * The supplier screen — decision 0213, and the bug that followed it.
@@ -34,6 +34,7 @@ const STRINGS = {
     "suppliers.terms": "Terms",
     "suppliers.hold": "Hold",
     "suppliers.status": "Status",
+    "suppliers.new": "Record a new supplier",
     "nav.tasks": "Tasks",
     "nav.sources": "Sources",
     "nav.suppliers": "Suppliers",
@@ -62,6 +63,18 @@ function stubFetch(body: unknown) {
 
 beforeEach(() => {
   mountShell();
+  vi.unstubAllGlobals();
+});
+
+/**
+ * **A stub that outlives its file** — decision 0227, applied to every
+ * file rather than the one that had the symptom.
+ *
+ * `vi.stubGlobal` is not undone between files, so whichever ran next
+ * inherited this one's `fetch` — and failed **depending on the order
+ * the two were scheduled in**.
+ */
+afterEach(() => {
   vi.unstubAllGlobals();
 });
 
@@ -96,10 +109,16 @@ describe("the screen opens at all", () => {
     expect(document.body.textContent).toContain("has ever been loaded");
   });
 
-  it("offers no way to add a supplier", async () => {
+  it("offers to record one the ERP does not have", async () => {
     /**
-     * **Because we are the mirror** (decision 0208). Changing it here
-     * would make this the master and the ERP wrong.
+     * **Inverted by decision 0231.** This asserted there was no way to
+     * add a supplier, because we are the mirror.
+     *
+     * **Still true of a supplier the ERP has** — that one is changed
+     * there. What can be recorded here is one it **does not**, which
+     * the operator described as the precursor to a new-supplier
+     * process: an invoice turns up, somebody writes down who sent it,
+     * and a team creates the ERP record from those details.
      */
     stubFetch({
       suppliers: [
@@ -123,7 +142,8 @@ describe("the screen opens at all", () => {
     await open();
 
     const buttons = [...document.querySelectorAll("button")].map((b) => b.textContent);
-    expect(buttons).toEqual(["Load"]);
+    expect(buttons).toContain("Record a new supplier");
+    expect(buttons).toContain("Load");
     expect(document.body.textContent).toContain("Northwind");
   });
 });

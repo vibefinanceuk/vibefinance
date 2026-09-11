@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
  * The task list — decisions 0103, 0138, 0142.
@@ -81,6 +81,22 @@ async function openList(tasks: unknown[]) {
     "/api/rules/stages": { stages: [] },
     "/api/documents": { documents: [], searched: 0 },
     "/api/field-visibility": { fields: [], derived: {} },
+    /**
+     * **This test only ever passed because another file's stub leaked
+     * in** — decision 0232.
+     *
+     * `vi.stubGlobal` is not undone between files, and until every one
+     * of them cleaned up, the viewer tests' `fetch` was still installed
+     * when this ran. It knew this path; this file did not.
+     *
+     * So the navigation was never tested against this file's own stub,
+     * and *"reaches Tasks from Documents"* went green on somebody
+     * else's fixture.
+     */
+    "/api/invoices/inv-1/document-url": { url: null },
+    "/api/invoices/inv-1/progress": { inProcess: false, stages: [] },
+    "/api/suppliers": { suppliers: [], lastLoad: null, fedByLoad: false },
+    "/api/org/units": { units: [] },
   });
 
   const { loadStrings } = await import("/strings.js");
@@ -93,6 +109,18 @@ async function openList(tasks: unknown[]) {
 beforeEach(() => {
   mountShell();
   vi.resetModules();
+});
+
+/**
+ * **A stub that outlives its file** — decision 0227, applied to every
+ * file rather than the one that had the symptom.
+ *
+ * `vi.stubGlobal` is not undone between files, so whichever ran next
+ * inherited this one's `fetch` — and failed **depending on the order
+ * the two were scheduled in**.
+ */
+afterEach(() => {
+  vi.unstubAllGlobals();
 });
 
 describe("opening a task that cannot be keyed (decision 0142)", () => {

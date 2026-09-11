@@ -347,6 +347,51 @@ export async function handleCaptureFromSource(
     }
 
     /**
+     * **Whether that supplier is held** — decision 0230.
+     *
+     * A fact a rule can test, which is what *wiring the hold* means:
+     * the mirror has carried `on_hold` since decision 0209 and no
+     * process has ever read it.
+     *
+     * **False where nothing matched**, deliberately. An unmatched
+     * invoice has its own field, and one flag answering two questions
+     * is a rule nobody can reason about.
+     */
+    const state = matched.supplierId
+      ? await db
+          .prepare("SELECT on_hold, erp_identifier FROM suppliers WHERE id = ?")
+          .bind(matched.supplierId)
+          .first<{ on_hold: number; erp_identifier: string | null }>()
+      : null;
+
+    /**
+     * **Matched and payable are two claims** — decision 0231.
+     *
+     * Decision 0209 made them one, with `erp_identifier NOT NULL`: if
+     * we recognised a supplier we could name them to the ERP. A
+     * supplier recorded here **before** the ERP record exists breaks
+     * that, and it is the ordinary way a new supplier arrives.
+     *
+     * So the argument survives as a field rather than a constraint:
+     * **matched means we recognise them, awaiting means the ERP cannot
+     * yet.**
+     */
+    await db
+      .prepare(
+        `UPDATE invoice_headers
+         SET facts_json = json_set(
+               json_set(facts_json, '$."supplier.onHold"', ?),
+               '$."supplier.awaitingErp"', ?)
+         WHERE id = ?`
+      )
+      .bind(
+        state?.on_hold === 1 ? 1 : 0,
+        state && !state.erp_identifier ? 1 : 0,
+        invoiceId
+      )
+      .run();
+
+    /**
      * **A fact a rule can test**, which is the whole point: the
      * operator's *"if supplier does not exist, flag as new supplier and
      * require review"* is expressible in the closed vocabulary the
@@ -608,6 +653,51 @@ async function captureWithoutFacts(
         .bind(matched.supplierId, invoiceId)
         .run();
     }
+
+    /**
+     * **Whether that supplier is held** — decision 0230.
+     *
+     * A fact a rule can test, which is what *wiring the hold* means:
+     * the mirror has carried `on_hold` since decision 0209 and no
+     * process has ever read it.
+     *
+     * **False where nothing matched**, deliberately. An unmatched
+     * invoice has its own field, and one flag answering two questions
+     * is a rule nobody can reason about.
+     */
+    const state = matched.supplierId
+      ? await db
+          .prepare("SELECT on_hold, erp_identifier FROM suppliers WHERE id = ?")
+          .bind(matched.supplierId)
+          .first<{ on_hold: number; erp_identifier: string | null }>()
+      : null;
+
+    /**
+     * **Matched and payable are two claims** — decision 0231.
+     *
+     * Decision 0209 made them one, with `erp_identifier NOT NULL`: if
+     * we recognised a supplier we could name them to the ERP. A
+     * supplier recorded here **before** the ERP record exists breaks
+     * that, and it is the ordinary way a new supplier arrives.
+     *
+     * So the argument survives as a field rather than a constraint:
+     * **matched means we recognise them, awaiting means the ERP cannot
+     * yet.**
+     */
+    await db
+      .prepare(
+        `UPDATE invoice_headers
+         SET facts_json = json_set(
+               json_set(facts_json, '$."supplier.onHold"', ?),
+               '$."supplier.awaitingErp"', ?)
+         WHERE id = ?`
+      )
+      .bind(
+        state?.on_hold === 1 ? 1 : 0,
+        state && !state.erp_identifier ? 1 : 0,
+        invoiceId
+      )
+      .run();
 
     /**
      * **A fact a rule can test**, which is the whole point: the

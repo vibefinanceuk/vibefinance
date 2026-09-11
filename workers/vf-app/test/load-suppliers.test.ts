@@ -6,6 +6,8 @@ import {
   handleListSuppliers,
   handleSearchSuppliers,
   handleSetInvoiceSupplier,
+  handleCreateSupplier,
+  handleUpdateSupplier,
   parseCsv,
 } from "../src/load-suppliers.js";
 import { matchSupplier } from "../src/match-supplier.js";
@@ -671,5 +673,116 @@ describe("choosing one by hand (decision 0222)", () => {
   it("refuses an invoice that does not exist", async () => {
     const result = await handleSetInvoiceSupplier(env.DB, "nope", "40118", "alice");
     expect(result.status).toBe(404);
+  });
+});
+
+describe("a supplier the ERP does not have yet (decision 0231)", () => {
+  /**
+   * The operator:
+   *
+   *   A record might be created and details logged before the record is
+   *   created in the ERP. Receipt of an invoice, and supplier record
+   *   creation here, could be a precursor to a New Supplier process.
+   *
+   * **Decision 0209 made that impossible** with `erp_identifier NOT
+   * NULL`, on an argument about *payment* enforced as a rule about
+   * *existence*.
+   */
+  it("records one with no identifier", async () => {
+    const result = await handleCreateSupplier(
+      env.DB,
+      { name: "Kingsway Print Services", vatId: "GB556677889", city: "Leeds" },
+      "alice"
+    );
+
+    expect(result.status).toBe(201);
+    expect((result.body as { awaitingErp: boolean }).awaitingErp).toBe(true);
+  });
+
+  it("records one with an identifier, where somebody has it", async () => {
+    const result = await handleCreateSupplier(
+      env.DB,
+      { name: "Kingsway Print Services", erpIdentifier: "40999" },
+      "alice"
+    );
+    expect((result.body as { awaitingErp: boolean }).awaitingErp).toBe(false);
+  });
+
+  it("refuses one with no name", async () => {
+    // A supplier nobody can recognise is one nobody can check against.
+    const result = await handleCreateSupplier(env.DB, { vatId: "GB1" }, "alice");
+    expect(result.status).toBe(400);
+  });
+
+  it("refuses an identifier the ERP already uses", async () => {
+    /**
+     * **Somebody describing a supplier we have, not a new one** — and
+     * the unique index would refuse it as a constraint error rather
+     * than as an explanation.
+     */
+    await load("ERP ID,Name\n40118,Northwind");
+
+    const result = await handleCreateSupplier(
+      env.DB,
+      { name: "Northwind again", erpIdentifier: "40118" },
+      "alice"
+    );
+    expect(result.status).toBe(409);
+    expect((result.body as { reason: string }).reason).toBe("erp_exists");
+  });
+
+  it("matches an invoice to one awaiting the ERP", async () => {
+    /**
+     * **Matched and payable are two claims now.** We recognise them;
+     * the ERP cannot name them. Decision 0209's argument survives as a
+     * field rather than as a constraint.
+     */
+    await handleCreateSupplier(env.DB, { name: "Kingsway", vatId: "GB556677889" }, "alice");
+
+    const matched = await matchSupplier(env.DB, { "BT-31": "GB556677889" });
+    expect(matched.supplierId).not.toBeNull();
+    expect(matched.erpIdentifier).toBeNull();
+  });
+
+  it("lets a blank identifier be filled in", async () => {
+    // **How a supplier stops awaiting**: the team creates the record
+    // and somebody writes the number down.
+    const created = await handleCreateSupplier(env.DB, { name: "Kingsway" }, "alice");
+    const id = (created.body as { id: string }).id;
+
+    const result = await handleUpdateSupplier(env.DB, id, { erpIdentifier: "40999" }, "alice");
+    expect(result.status).toBe(200);
+
+    const row = await env.DB.prepare("SELECT erp_identifier FROM suppliers WHERE id = ?")
+      .bind(id)
+      .first<{ erp_identifier: string }>();
+    expect(row?.erp_identifier).toBe("40999");
+  });
+
+  it("refuses to overwrite one that is already set", async () => {
+    /**
+     * **Decision 0218's argument, which still holds where the ERP owns
+     * the row**: changing it would point our record at a different
+     * supplier than the ERP has, silently, with invoices attached.
+     *
+     * Filling in a blank is not the same act.
+     */
+    await load("ERP ID,Name\n40118,Northwind");
+
+    const result = await handleUpdateSupplier(env.DB, "40118", { erpIdentifier: "40119" }, "alice");
+    expect(result.status).toBe(409);
+    expect((result.body as { reason: string }).reason).toBe("erp_already_set");
+  });
+
+  it("refuses a blank identifier, which looks like an answer", async () => {
+    // Migration 0055's standing invariant: a blank string is worse than
+    // nothing, because it cannot be paid against either.
+    const created = await handleCreateSupplier(env.DB, { name: "Kingsway", erpIdentifier: "   " }, "alice");
+    const id = (created.body as { id: string }).id;
+
+    const row = await env.DB.prepare("SELECT erp_identifier FROM suppliers WHERE id = ?")
+      .bind(id)
+      .first<{ erp_identifier: string | null }>();
+    expect(row?.erp_identifier).toBeNull();
   });
 });

@@ -155,6 +155,13 @@ export const NON_MIGRATING_TABLES: readonly string[] = [
    */
   "org_user_roles_new",
 
+  /**
+   * **Another intermediate** (decision 0231). Migration 0055 rebuilt
+   * `suppliers` to drop a NOT NULL, which SQLite cannot alter — so the
+   * new shape is created under a temporary name, filled, and renamed.
+   */
+  "suppliers_new",
+
   // Work in flight, and the record of work done.
   "process_instances",
   "stage_visits",

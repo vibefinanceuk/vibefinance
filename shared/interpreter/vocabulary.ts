@@ -80,6 +80,8 @@ export const DERIVED_FIELDS = [
   "intake.detail",
   "supplier.matched",
   "supplier.unmatchedReason",
+  "supplier.onHold",
+  "supplier.awaitingErp",
   "provenance.keyed",
   "extraction.confidence",
   "invoice.duplicate_confidence",
@@ -179,6 +181,8 @@ export const INVOICE_FIELD_TYPES: Record<string, FieldType> = {
   "intake.detail": "text",
   "supplier.matched": "boolean",
   "supplier.unmatchedReason": "text",
+  "supplier.onHold": "boolean",
+  "supplier.awaitingErp": "boolean",
   "provenance.keyed": "text",
   "extraction.confidence": "number",
   "invoice.duplicate_confidence": "number",
@@ -338,6 +342,10 @@ export const DERIVED_FIELD_DESCRIPTIONS: Record<DerivedField, string> = {
     "a comma-separated list of the detection tests intake tried, in order. Distinguishes a supplier who has not adopted e-invoicing from one whose implementation is broken — 'a PDF with no embedded invoice' and 'a PDF declaring one that could not be read' are opposite conversations. A string so the existing contains operator works.",
   "supplier.matched":
     "true where this invoice's seller was found in the supplier list loaded from the customer's ERP, and an ERP identifier is therefore available. **False is what routes a new supplier for review**: not 'we do not recognise this company' but 'we cannot name it to the ERP', and an invoice without that cannot be paid however familiar the name on it. Matched on the seller's electronic address (BT-34), then their VAT id (BT-31).",
+  "supplier.awaitingErp":
+    "true where this invoice's supplier is recorded here but has no ERP identifier yet. **This is the new-supplier process, as a fact a rule can test**: somebody received an invoice, wrote down who sent it, and the ERP record does not exist — so the invoice cannot be paid however complete our own record is. Decision 0209's argument survives in this field rather than in a NOT NULL: matched means we recognise them, and payable means the ERP can. False where no supplier matched at all, which is a different question with its own field.",
+  "supplier.onHold":
+    "true where the supplier this invoice was matched to is on hold. **A hold is a reason to route differently, not a reason to stop**: the ERP holds a supplier because something is disputed, and an invoice from them should reach a person rather than continue quietly to approval. False where the supplier is not held, and false where no supplier matched at all — an unmatched invoice has its own field (supplier.matched) and conflating the two would let one rule answer two questions.",
   "supplier.unmatchedReason":
     "why no supplier matched, where none did: 'no_identifier' (the document named no seller VAT id or endpoint), 'no_match' (nobody in the loaded list), or 'ambiguous_site' (several sites share that VAT number and none was named). Three reasons wanting three different actions, which is why they are not one flag.",
   "intake.detail":

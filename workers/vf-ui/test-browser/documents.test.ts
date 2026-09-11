@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
  * The document manager — decisions 0164, 0165.
@@ -138,6 +138,18 @@ async function until(condition: () => boolean, ms = 500) {
 beforeEach(() => {
   mountShell();
   vi.resetModules();
+});
+
+/**
+ * **A stub that outlives its file** — decision 0227, applied to every
+ * file rather than the one that had the symptom.
+ *
+ * `vi.stubGlobal` is not undone between files, so whichever ran next
+ * inherited this one's `fetch` — and failed **depending on the order
+ * the two were scheduled in**.
+ */
+afterEach(() => {
+  vi.unstubAllGlobals();
 });
 
 describe("what the list shows", () => {

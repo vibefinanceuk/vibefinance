@@ -625,3 +625,286 @@ export async function handleSetInvoiceSupplier(
 
   return { status: 200, body: { invoiceId, supplierId } };
 }
+
+/**
+ * Recording a supplier the ERP does not have yet — decision 0231.
+ *
+ * **The precursor to a new-supplier process**, in the operator's own
+ * words: an invoice turns up, somebody writes down who sent it, and a
+ * team creates the ERP record afterwards **from exactly these
+ * details**.
+ *
+ * Decision 0208 said we are the mirror and there is no create here.
+ * That is still true of a supplier the ERP **has** — this creates one
+ * it does not, which is the opposite act: not overriding a master, but
+ * telling it what is missing.
+ */
+export async function handleCreateSupplier(
+  db: D1Database,
+  body: Record<string, unknown>,
+  createdBy: string
+): Promise<RouteResult> {
+  const name = typeof body.name === "string" ? body.name.trim() : "";
+  if (!name) {
+    // A supplier nobody can recognise is one nobody can check against.
+    return { status: 400, body: { error: "a supplier needs a name" } };
+  }
+
+  const erp = typeof body.erpIdentifier === "string" ? body.erpIdentifier.trim() : "";
+
+  if (erp) {
+    /**
+     * **Somebody typing an identifier the ERP already uses** is
+     * describing a supplier we have, not a new one — and the unique
+     * index would refuse it as a constraint error rather than as an
+     * explanation.
+     */
+    const clash = await db
+      .prepare("SELECT id FROM suppliers WHERE erp_identifier = ?")
+      .bind(erp)
+      .first();
+    if (clash) {
+      return {
+        status: 409,
+        body: { error: `a supplier with ERP identifier ${erp} already exists`, reason: "erp_exists" },
+      };
+    }
+  }
+
+  /**
+   * **An id of our own**, because there is no ERP identifier to build
+   * one from. Decision 0217's lookup finds a supplier by what the ERP
+   * calls it, so a later load naming this one will find it by VAT id
+   * rather than by this.
+   */
+  const id = `local:${crypto.randomUUID()}`;
+
+  await db
+    .prepare(
+      `INSERT INTO suppliers (id, erp_identifier, name, vat_id, electronic_address, country,
+                              email, phone, address_line, city, postal_code, payment_terms)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+    .bind(
+      id,
+      erp || null,
+      name,
+      text(body.vatId),
+      text(body.electronicAddress),
+      text(body.country),
+      text(body.email),
+      text(body.phone),
+      text(body.addressLine),
+      text(body.city),
+      text(body.postalCode),
+      text(body.paymentTerms)
+    )
+    .run();
+
+  return { status: 201, body: { id, createdBy, awaitingErp: !erp } };
+}
+
+/** A trimmed string, or null — an empty box is not an answer. */
+function text(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed === "" ? null : trimmed;
+}
+
+/** Everything a person may change about a supplier by hand. */
+const EDITABLE = [
+  /**
+   * **Editable since decision 0231**, because that is how a supplier
+   * awaiting the ERP stops awaiting it: the team creates the record and
+   * somebody writes the number down.
+   *
+   * Decision 0218 called it not editable, on the argument that changing
+   * it could point our record at a different supplier than the ERP has.
+   * **That argument holds for a row the ERP owns and not for one it
+   * does not** — and filling in a blank is not the same act as
+   * overwriting a value.
+   */
+  "erp_identifier",
+  "name",
+  "vat_id",
+  "electronic_address",
+  "email",
+  "phone",
+  "address_line",
+  "city",
+  "postal_code",
+  "country",
+  "payment_terms",
+] as const;
+
+/**
+ * Changing a supplier by hand — decision 0230.
+ *
+ * **We are the mirror** (decision 0208), and this does not stop being
+ * true because somebody edited a row. A change made here is **overwritten
+ * by the next load**, which is not a bug: the ERP is the master, and a
+ * mirror that defended its own edits would be a master pretending to be
+ * a mirror.
+ *
+ * So the route saves, and the screen says what will happen to it.
+ */
+export async function handleUpdateSupplier(
+  db: D1Database,
+  supplierId: string,
+  body: Record<string, unknown>,
+  changedBy: string
+): Promise<RouteResult> {
+  const supplier = await db
+    .prepare("SELECT id, erp_identifier FROM suppliers WHERE id = ?")
+    .bind(supplierId)
+    .first<{ id: string; erp_identifier: string | null }>();
+  if (!supplier) return { status: 404, body: { error: `supplier ${supplierId} does not exist` } };
+
+  /**
+   * **Filling in a blank is not overwriting a value** — decision 0231.
+   *
+   * A supplier awaiting the ERP gains its identifier when the team
+   * creates the record; a supplier that has one keeps it, because
+   * decision 0218's argument holds there: changing it would point our
+   * record at a different supplier than the ERP has, silently, with
+   * invoices already attached.
+   */
+  if ("erpIdentifier" in body && supplier.erp_identifier) {
+    const wanted = typeof body.erpIdentifier === "string" ? body.erpIdentifier.trim() : "";
+    if (wanted !== supplier.erp_identifier) {
+      return {
+        status: 409,
+        body: {
+          error: "this supplier already has an ERP identifier — change it in the ERP",
+          reason: "erp_already_set",
+        },
+      };
+    }
+  }
+
+  const sets: string[] = [];
+  const values: unknown[] = [];
+
+  for (const column of EDITABLE) {
+    const key = column.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
+    if (!(key in body)) continue;
+
+    const value = body[key];
+    if (value !== null && typeof value !== "string") {
+      return { status: 400, body: { error: `${key} must be text, or null to clear it` } };
+    }
+
+    /**
+     * **The name is the one thing that cannot be cleared.** A supplier
+     * nobody can recognise on a screen is one nobody can check a match
+     * against — the same argument the loader makes when it refuses a
+     * row with no name.
+     */
+    if (column === "name" && (value === null || value.trim() === "")) {
+      return { status: 400, body: { error: "a supplier needs a name" } };
+    }
+
+    sets.push(`${column} = ?`);
+    values.push(value === null || value === "" ? null : value);
+  }
+
+  if (sets.length === 0) return { status: 400, body: { error: "nothing to change" } };
+
+  await db
+    .prepare(`UPDATE suppliers SET ${sets.join(", ")} WHERE id = ?`)
+    .bind(...values, supplierId)
+    .run();
+
+  return { status: 200, body: { id: supplierId, changedBy } };
+}
+
+/**
+ * Holding, releasing, activating and deactivating — decision 0230.
+ *
+ * **Four acts, one route**, because they are the same act: setting a
+ * flag the ERP also sets. Splitting them into four endpoints would make
+ * *hold* and *deactivate* look like different kinds of thing, and they
+ * are not — **one stops payment and the other stops matching**, and
+ * both are reversed by doing the opposite.
+ */
+export async function handleSetSupplierState(
+  db: D1Database,
+  supplierId: string,
+  body: Record<string, unknown>
+): Promise<RouteResult> {
+  const supplier = await db
+    .prepare("SELECT id, on_hold, hold_reason, status FROM suppliers WHERE id = ?")
+    .bind(supplierId)
+    .first<{ id: string; on_hold: number; hold_reason: string | null; status: string }>();
+  if (!supplier) return { status: 404, body: { error: `supplier ${supplierId} does not exist` } };
+
+  const sets: string[] = [];
+  const values: unknown[] = [];
+
+  if ("onHold" in body) {
+    const hold = body.onHold === true;
+    const reason = typeof body.holdReason === "string" ? body.holdReason.trim() : "";
+
+    if (hold && !reason) {
+      /**
+       * **A payment stopped for no stated cause** is worse than one
+       * stopped for a bad one — migration 0049 refuses it as a standing
+       * invariant, and this refuses it with something a person can act
+       * on.
+       */
+      return {
+        status: 400,
+        body: { error: "a hold needs a reason", reason: "hold_without_reason" },
+      };
+    }
+
+    sets.push("on_hold = ?", "hold_reason = ?");
+    values.push(hold ? 1 : 0, hold ? reason : null);
+  }
+
+  if ("status" in body) {
+    if (body.status !== "active" && body.status !== "inactive") {
+      return { status: 400, body: { error: "status must be 'active' or 'inactive'" } };
+    }
+    sets.push("status = ?");
+    values.push(body.status);
+  }
+
+  if (sets.length === 0) return { status: 400, body: { error: "nothing to change" } };
+
+  await db
+    .prepare(`UPDATE suppliers SET ${sets.join(", ")} WHERE id = ?`)
+    .bind(...values, supplierId)
+    .run();
+
+  /**
+   * **Invoices already matched to this supplier keep their flag**, and
+   * that is deliberate. `supplier.onHold` is recorded at capture, so an
+   * invoice assessed yesterday was assessed against yesterday's truth.
+   *
+   * Re-assessing every invoice in flight is a real feature and a
+   * different one — decision 0211's re-match is the same argument, and
+   * this is recorded rather than done.
+   */
+  return { status: 200, body: { id: supplierId } };
+}
+
+/**
+ * Is an ERP the master here — decision 0230.
+ *
+ * **A fact about the customer, not about a supplier row.**
+ *
+ * The operator asked to warn on save *"IF the ERP Identifier is
+ * populated"* — which is always, because decision 0209 made it `NOT
+ * NULL` and a standing invariant says so. **Every supplier has one by
+ * definition.**
+ *
+ * What the question really asks is whether an ERP feeds this list, and
+ * a load having happened is the honest answer: before the first one,
+ * every row was typed here and a warning would be telling somebody off
+ * for the only thing they can do.
+ */
+export async function isFedByLoad(db: D1Database): Promise<boolean> {
+  const load = await db.prepare("SELECT 1 FROM supplier_loads LIMIT 1").first();
+  return load !== null;
+}

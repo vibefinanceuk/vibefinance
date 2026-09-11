@@ -17,6 +17,20 @@ import { el, frame, topbar, setCurrentScreen } from "/tasks.js";
 let suppliers = [];
 let lastLoad = null;
 
+/**
+ * **Whether an ERP is the master here** — decision 0230.
+ *
+ * The operator asked to warn on save *"IF the ERP Identifier is
+ * populated"*, which is always: decision 0209 made it `NOT NULL` and a
+ * standing invariant says so.
+ *
+ * **What the question really asks** is whether an ERP feeds this list,
+ * and a load having happened answers it. Before the first one every row
+ * was typed here, and a warning would be telling somebody off for the
+ * only thing they can do.
+ */
+let fedByLoad = false;
+
 async function load() {
   try {
     const response = await fetch("/api/suppliers");
@@ -24,6 +38,7 @@ async function load() {
     const body = await response.json();
     suppliers = body.suppliers ?? [];
     lastLoad = body.lastLoad ?? null;
+    fedByLoad = body.fedByLoad === true;
     return true;
   } catch {
     return false;
@@ -217,6 +232,285 @@ function loader() {
   ]);
 }
 
+/**
+ * Recording a supplier the ERP does not have yet — decision 0231.
+ *
+ * **Not a contradiction of the mirror.** A supplier the ERP has is
+ * changed there; this creates one it does not, which is the precursor
+ * to a new-supplier process rather than an override of a master.
+ */
+function newSupplier() {
+  const button = el("button", { class: "secondary", text: t("suppliers.new") });
+
+  button.onclick = () => {
+    const problem = el("div", { class: "warn" });
+    const fields = {};
+
+    const asked = [
+      ["name", t("suppliers.name")],
+      ["vatId", t("suppliers.vat")],
+      ["erpIdentifier", t("suppliers.erpid")],
+      ["email", t("viewer.supplier.email")],
+      ["phone", t("viewer.supplier.phone")],
+      ["addressLine", t("viewer.supplier.street")],
+      ["city", t("viewer.supplier.city")],
+      ["postalCode", t("viewer.supplier.postcode")],
+      ["country", t("viewer.supplier.country")],
+    ];
+
+    const form = el(
+      "div",
+      { class: "editgrid" },
+      asked.flatMap(([key, label]) => {
+        const input = el("input", { type: "text" });
+        fields[key] = input;
+        return [el("label", { text: label }), input];
+      })
+    );
+
+    const backdrop = el("div", { class: "backdrop" }, [
+      el("div", { class: "popout" }, [
+        el("h3", { text: t("suppliers.new") }),
+        /**
+         * **Why the ERP number may be left blank**, said before
+         * somebody wonders whether they are doing it wrong.
+         */
+        el("p", { class: "muted", text: t("suppliers.newhelp") }),
+        form,
+        problem,
+        el("div", { class: "statebuttons" }, [
+          el("button", {
+            class: "primary",
+            text: t("suppliers.create"),
+            onclick: async () => {
+              problem.textContent = "";
+              try {
+                const response = await fetch("/api/suppliers", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify(
+                    Object.fromEntries(
+                      Object.entries(fields).map(([k, i]) => [k, i.value.trim()])
+                    )
+                  ),
+                });
+                if (!response.ok) {
+                  problem.textContent = (await response.json()).error ?? t("suppliers.changefailed");
+                  return;
+                }
+                backdrop.remove();
+                await load();
+                render();
+              } catch {
+                problem.textContent = t("suppliers.changefailed");
+              }
+            },
+          }),
+          el("button", {
+            class: "secondary",
+            text: t("viewer.supplier.close"),
+            onclick: () => backdrop.remove(),
+          }),
+        ]),
+      ]),
+    ]);
+
+    backdrop.onclick = (e) => {
+      if (e.target === backdrop) backdrop.remove();
+    };
+    document.body.append(backdrop);
+    fields.name.focus();
+  };
+
+  return el("div", { class: "statebuttons" }, [button]);
+}
+
+/**
+ * One supplier, with what a person may do to it — decision 0230.
+ *
+ * **Three kinds of act, and they are not the same kind.**
+ *
+ * **A hold** stops payment while something is disputed. **Deactivating**
+ * stops an arriving invoice matching at all. **Editing** corrects a
+ * record the ERP owns — and is the only one of the three the next load
+ * overwrites.
+ *
+ * So the third is separated, and warns.
+ */
+function openSupplier(s) {
+  const problem = el("div", { class: "warn" });
+  const fields = {};
+
+  const editable = [
+    /**
+     * **Editable only while blank** — decision 0231. That is how a
+     * supplier awaiting the ERP stops awaiting it; a row the ERP owns
+     * keeps its number, and the route refuses a change with a reason.
+     */
+    ["erpIdentifier", t("suppliers.erpid")],
+    ["name", t("suppliers.name")],
+    ["vatId", t("suppliers.vat")],
+    ["electronicAddress", t("viewer.supplier.endpoint")],
+    ["email", t("viewer.supplier.email")],
+    ["phone", t("viewer.supplier.phone")],
+    ["addressLine", t("viewer.supplier.street")],
+    ["city", t("viewer.supplier.city")],
+    ["postalCode", t("viewer.supplier.postcode")],
+    ["country", t("viewer.supplier.country")],
+    ["paymentTerms", t("suppliers.terms")],
+  ];
+
+  const form = el(
+    "div",
+    { class: "editgrid" },
+    editable.flatMap(([key, label]) => {
+      const input = el("input", {
+        type: "text",
+        value: s[key] ?? "",
+        ...(key === "erpIdentifier" && s.erpIdentifier ? { disabled: "disabled" } : {}),
+      });
+      fields[key] = input;
+      return [el("label", { text: label }), input];
+    })
+  );
+
+  async function send(method, body, onOk) {
+    problem.textContent = "";
+    try {
+      const response = await fetch(`/api/suppliers/${encodeURIComponent(s.id)}`, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!response.ok) {
+        problem.textContent = (await response.json()).error ?? t("suppliers.changefailed");
+        return;
+      }
+      await onOk();
+    } catch {
+      problem.textContent = t("suppliers.changefailed");
+    }
+  }
+
+  const close = () => backdrop.remove();
+  const reload = async () => {
+    close();
+    await load();
+    render();
+  };
+
+  /** Hold, release, activate, deactivate — a flag the ERP also sets. */
+  const stateButtons = el("div", { class: "statebuttons" }, [
+    s.onHold
+      ? el("button", {
+          class: "secondary",
+          text: t("suppliers.release"),
+          onclick: () => send("PATCH", { onHold: false }, reload),
+        })
+      : el("button", {
+          class: "secondary",
+          text: t("suppliers.holdaction"),
+          onclick: () => {
+            /**
+             * **A hold needs a reason** — migration 0049 refuses one
+             * without, and asking here is better than refusing after.
+             */
+            const reason = el("input", {
+              type: "text",
+              class: "searchbox",
+              placeholder: t("suppliers.holdreasonhint"),
+            });
+            problem.replaceChildren(
+              el("div", { text: t("suppliers.holdreason") }),
+              reason,
+              el("button", {
+                class: "primary",
+                text: t("suppliers.holdconfirm"),
+                onclick: () => send("PATCH", { onHold: true, holdReason: reason.value }, reload),
+              })
+            );
+            reason.focus();
+          },
+        }),
+    s.status === "active"
+      ? el("button", {
+          class: "secondary",
+          text: t("suppliers.deactivate"),
+          onclick: () => send("PATCH", { status: "inactive" }, reload),
+        })
+      : el("button", {
+          class: "secondary",
+          text: t("suppliers.activate"),
+          onclick: () => send("PATCH", { status: "active" }, reload),
+        }),
+  ]);
+
+  const save = el("button", {
+    class: "primary",
+    text: t("suppliers.save"),
+    onclick: () => {
+      const body = Object.fromEntries(
+        Object.entries(fields).map(([k, input]) => [k, input.value.trim() || null])
+      );
+
+      if (!fedByLoad) {
+        send("PUT", body, reload);
+        return;
+      }
+
+      /**
+       * **The warning the operator asked for**, shown before the save
+       * rather than after: *"the information master is the ERP system,
+       * and data changes should be made there."*
+       *
+       * And it says what will actually happen — **the next load
+       * overwrites this** — because *"should be made there"* invites
+       * somebody to wonder whether it matters.
+       */
+      problem.replaceChildren(
+        el("div", { class: "warn", text: t("suppliers.mastersays") }),
+        el("button", {
+          class: "primary",
+          text: t("suppliers.saveanyway"),
+          onclick: () => send("PUT", body, reload),
+        })
+      );
+    },
+  });
+
+  const box = el("div", { class: "popout" }, [
+    el("h3", { text: s.name }),
+    // **What the ERP calls it**, which is the reason the record exists
+    // (decision 0209) and the thing a person quotes to somebody else.
+    el("div", {
+      class: "sub",
+      text: [s.erpIdentifier, s.erpSiteIdentifier, s.isPaySite ? t("suppliers.pay") : null]
+        .filter(Boolean)
+        .join(" · "),
+    }),
+    s.onHold ? el("div", { class: "warn", text: `${t("suppliers.hold")}: ${s.holdReason}` }) : null,
+    /**
+     * **What is actually missing**, said where somebody can act on it —
+     * decision 0231. A supplier awaiting the ERP is not broken; it is
+     * work waiting for a team.
+     */
+    s.erpIdentifier ? null : el("div", { class: "warn", text: t("suppliers.awaitingerp") }),
+    stateButtons,
+    form,
+    problem,
+    el("div", { class: "statebuttons" }, [
+      save,
+      el("button", { class: "secondary", text: t("viewer.supplier.close"), onclick: () => close() }),
+    ]),
+  ].filter(Boolean));
+
+  const backdrop = el("div", { class: "backdrop" }, [box]);
+  backdrop.onclick = (e) => {
+    if (e.target === backdrop) close();
+  };
+  document.body.append(backdrop);
+}
+
 function supplierRows() {
   if (suppliers.length === 0) {
     return el("div", { class: "muted", text: t("suppliers.none") });
@@ -238,8 +532,8 @@ function supplierRows() {
   const where = (s) =>
     [s.addressLine, s.postalCode, s.city, s.country].filter(Boolean).join(", ") || "—";
 
-  const rows = suppliers.map((s) =>
-    el("tr", { class: s.status === "inactive" ? "muted" : "" }, [
+  const rows = suppliers.map((s) => {
+    const row = el("tr", { class: s.status === "inactive" ? "clickable muted" : "clickable" }, [
       // **The identifier this record exists for** (decision 0209),
       // named as the thing it is rather than as "supplier number" —
       // what matters is that it is the ERP's, not ours.
@@ -254,8 +548,13 @@ function supplierRows() {
       // tick — it is the reason, which is what somebody needs.
       el("td", { class: s.onHold ? "warn" : "muted", text: s.onHold ? s.holdReason : "—" }),
       el("td", { class: "muted", text: s.status }),
-    ])
-  );
+    ]);
+
+    // **The whole row, not a button in it.** A supplier is one thing,
+    // and a person looking at a row is looking at that supplier.
+    row.onclick = () => openSupplier(s);
+    return row;
+  });
 
   return el("table", {}, [
     el("thead", {}, [
@@ -305,13 +604,21 @@ function render() {
     frame(
       el("div", {}, [
         /**
-         * **Said on the screen, not only in a record.** A person who
-         * does not know this is a mirror will look for an *Add
-         * supplier* button and conclude the product is missing one.
+         * **Said on the screen, not only in a record.**
+         *
+         * Decision 0213 said this because there was no *Add supplier*
+         * and a person who did not know why would conclude the product
+         * was missing one.
+         *
+         * **Decision 0231 added one**, and the sentence still holds: a
+         * supplier the ERP **has** is changed there, and what can be
+         * created here is one it **does not** — which is telling the
+         * master what is missing rather than overriding it.
          */
         topbar(t("suppliers.heading"), t("suppliers.mirror")),
         el("div", { id: "suppliers-note", class: "warn" }),
         freshness(),
+        newSupplier(),
         loader(),
         el("div", { class: "panel" }, [supplierRows()]),
       ])

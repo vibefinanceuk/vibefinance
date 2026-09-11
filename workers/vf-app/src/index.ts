@@ -64,6 +64,10 @@ import {
   handleListSuppliers,
   handleSearchSuppliers,
   handleSetInvoiceSupplier,
+  handleCreateSupplier,
+  handleUpdateSupplier,
+  handleSetSupplierState,
+  isFedByLoad,
 } from "./load-suppliers.js";
 import { handleListDocuments } from "./documents-route.js";
 import {
@@ -901,6 +905,52 @@ export default {
       }
     }
 
+    // Recording a supplier the ERP does not have yet — decision 0231.
+    if (pathname === "/suppliers" && request.method === "POST") {
+      const { db } = resolveTenant(request, env);
+      const auth = await authenticatePerson(db, request, env);
+      if (!auth.user) return json({ error: auth.reason }, 401);
+      if (!(await hasPermission(db, auth.user.id, "Admin.Configure"))) {
+        return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
+      }
+
+      const result = await handleCreateSupplier(
+        db,
+        (await request.json()) as Record<string, unknown>,
+        auth.user.id
+      );
+      return json(result.body, result.status);
+    }
+
+    // Changing a supplier by hand — decision 0230.
+    {
+      const match = pathname.match(/^\/suppliers\/([^/]+)$/);
+      if (match && (request.method === "PUT" || request.method === "PATCH")) {
+        const { db } = resolveTenant(request, env);
+        const auth = await authenticatePerson(db, request, env);
+        if (!auth.user) return json({ error: auth.reason }, 401);
+        if (!(await hasPermission(db, auth.user.id, "Admin.Configure"))) {
+          return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
+        }
+
+        const body = (await request.json()) as Record<string, unknown>;
+        const id = decodeURIComponent(match[1]);
+
+        /**
+         * **`PATCH` sets a flag, `PUT` saves the details.** The two are
+         * different acts: one is a decision about a supplier and the
+         * other is a correction to a record the ERP owns, and only the
+         * second is overwritten by the next load.
+         */
+        const result =
+          request.method === "PATCH"
+            ? await handleSetSupplierState(db, id, body)
+            : await handleUpdateSupplier(db, id, body, auth.user.id);
+
+        return json(result.body, result.status);
+      }
+    }
+
     // Finding a supplier by whatever a person has to hand — 0222.
     if (pathname === "/suppliers/search" && request.method === "GET") {
       const { db } = resolveTenant(request, env);
@@ -947,7 +997,22 @@ export default {
       if (!auth.user) return json({ error: auth.reason }, 401);
 
       const result = await handleListSuppliers(db);
-      return json(result.body, result.status);
+      return json(
+        {
+          ...(result.body as Record<string, unknown>),
+          /**
+           * **Whether an ERP is the master here** — decision 0230, and
+           * what decides whether saving a change warns.
+           *
+           * A fact about the customer rather than about any row: before
+           * the first load every supplier was typed here, and warning
+           * then would tell somebody off for the only thing they can
+           * do.
+           */
+          fedByLoad: await isFedByLoad(db),
+        },
+        result.status
+      );
     }
 
     // Loading the customer's supplier master file — decision 0211.

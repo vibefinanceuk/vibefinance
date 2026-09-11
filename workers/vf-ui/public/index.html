@@ -811,6 +811,39 @@
     margin: -6px -4px 0 0;
   }
 
+  /* A supplier row opens one — decision 0230. */
+  tr.clickable { cursor: pointer; }
+  tr.clickable:hover { background: var(--surface-1); }
+
+  .statebuttons {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin: 10px 0;
+  }
+
+  /*
+    **Label above value**, unlike the read-only party cards. These are
+    inputs: a label beside a text box makes the box narrow, and the
+    argument for inline labels (decision 0221) was that the values were
+    short and read-only.
+  */
+  .editgrid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px 14px;
+    margin: 10px 0;
+  }
+  .editgrid > label {
+    color: var(--text-muted);
+    align-self: end;
+  }
+  .editgrid > input { width: 100%; }
+
+  @media (max-width: 520px) {
+    .editgrid { grid-template-columns: 1fr; }
+  }
+
   .panel.needsattention {
     border-left: 3px solid var(--text-warning);
     border-radius: 0 var(--radius) var(--radius) 0;

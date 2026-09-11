@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import stylesheets from "virtual:stylesheets";
 
 /**
@@ -19,6 +19,18 @@ beforeEach(() => {
   document.documentElement.removeAttribute("data-mood");
   localStorage.clear();
   vi.resetModules();
+});
+
+/**
+ * **A stub that outlives its file** — decision 0227, applied to every
+ * file rather than the one that had the symptom.
+ *
+ * `vi.stubGlobal` is not undone between files, so whichever ran next
+ * inherited this one's `fetch` — and failed **depending on the order
+ * the two were scheduled in**.
+ */
+afterEach(() => {
+  vi.unstubAllGlobals();
 });
 
 describe("what somebody sees before choosing", () => {

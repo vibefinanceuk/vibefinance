@@ -122,6 +122,8 @@ const PROXIED_TO_INSTANCE: RegExp[] = [
   /^\/suppliers\/load$/,
   // Finding and choosing a supplier by hand (decision 0222).
   /^\/suppliers\/search$/,
+  // Changing a supplier by hand (decision 0230).
+  /^\/suppliers\/[^/]+$/,
   // Finding one of our own units, and re-routing (decision 0224).
   /^\/org\/units\/search$/,
   /^\/invoices\/[^/]+\/org$/,
