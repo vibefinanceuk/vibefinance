@@ -44,7 +44,21 @@ export const ICONS = {
    * Deliberately the same glyph for both. They are the same act on
    * either side of the document, and two icons would say they were not.
    */
-  swap:
+  /**
+   * **Keyed by action name, not by what the picture is** — decision
+   * 0229.
+   *
+   * `actionLink` looks a glyph up by the action it labels, so an entry
+   * called `swap` was found by nothing and the button rendered with an
+   * empty `<svg>`: the label appeared, the icon did not, and nothing
+   * failed.
+   *
+   * Two keys and one path, because they are the same act on either side
+   * of the document (decision 0228).
+   */
+  changeseller:
+    '<path d="M4 8h13m0 0-3-3m3 3-3 3M20 16H7m0 0 3 3m-3-3 3-3"/>',
+  changebuyer:
     '<path d="M4 8h13m0 0-3-3m3 3-3 3M20 16H7m0 0 3 3m-3-3 3-3"/>',
   // A down arrow into a tray, as the reference has it.
   save:

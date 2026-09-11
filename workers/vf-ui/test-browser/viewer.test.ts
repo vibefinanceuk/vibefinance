@@ -1452,3 +1452,53 @@ describe("each party card carries its own action (decision 0228)", () => {
     expect(document.querySelector(".popout")).not.toBeNull();
   });
 });
+
+describe("an action that labels itself draws itself (decision 0229)", () => {
+  /**
+   * **A missing glyph renders an empty `<svg>`.**
+   *
+   * `icon()` ends `ICONS[name] ?? ""`, so an action whose name has no
+   * entry gets a button with a label and a blank square. Nothing fails
+   * and nothing logs — the same shape as decision 0223's undefined CSS
+   * variable, which was also invisible until somebody looked.
+   *
+   * The glyph was registered as `swap` and looked up as `changeseller`.
+   */
+  it("draws a glyph for every action on the page", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        const path = String(url).split("?")[0];
+        const bodies: Record<string, unknown> = {
+          "/api/ui-strings": STRINGS,
+          "/api/code-lists": { fields: {} },
+          "/api/field-visibility": FIELDS,
+          "/api/invoices/inv-1": {
+            facts: {},
+            lines: [],
+            supplier: { erpIdentifier: "40118", name: "Northwind", isPaySite: true },
+            buyer: { unitId: "acme-uk", unitName: "Acme UK", entityName: "Acme UK" },
+            validation: { passed: true, checked: [], failures: [] },
+          },
+          "/api/invoices/inv-1/document-url": { url: null },
+          "/api/invoices/inv-1/progress": { inProcess: false, stages: [] },
+        };
+        if (!(path in bodies)) throw new Error(`no stub for ${path}`);
+        return { ok: true, json: async () => bodies[path] } as Response;
+      })
+    );
+
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    await openViewer(TASK, () => {});
+    await new Promise((r) => setTimeout(r, 0));
+
+    const blank = [...document.querySelectorAll(".actionlink")].filter(
+      (b) => (b.querySelector("svg")?.innerHTML ?? "") === ""
+    );
+
+    // Named, so a failure says which one rather than how many.
+    expect(blank.map((b) => b.textContent)).toEqual([]);
+  });
+});
