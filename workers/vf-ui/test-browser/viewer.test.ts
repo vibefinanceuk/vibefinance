@@ -1219,3 +1219,60 @@ describe("one Seller card, not two (decision 0220)", () => {
     expect(document.body.textContent).toContain("No supplier on file matches");
   });
 });
+
+describe("every variable the page uses exists (decision 0223)", () => {
+  /**
+   * **A token nothing defines is not an error. It is transparent.**
+   *
+   * The supplier pop-out read `var(--bg-panel)`, which I invented, and
+   * rendered as a box with no background at all — every word of the
+   * page behind it showing through. Nothing failed and nothing logged;
+   * the screen simply looked broken.
+   *
+   * `--bg-hover` was invented in the same block, and neither was caught
+   * by a type checker, a linter or two hundred tests.
+   */
+  it("names no variable that tokens.css does not define", async () => {
+    const sheets = (await import("virtual:stylesheets")).default;
+    const tokens = sheets["tokens.css"];
+    const page = sheets["index.html"];
+
+    const defined = new Set(
+      [...tokens.matchAll(/(--[a-z0-9-]+)\s*:/gi), ...page.matchAll(/(--[a-z0-9-]+)\s*:\s*[^;]+;/gi)].map(
+        (m) => m[1]
+      )
+    );
+
+    // A guard on the guard: a pattern matching nothing would make the
+    // assertion below pass for the wrong reason.
+    expect(defined.size).toBeGreaterThan(20);
+
+    const used = [...page.matchAll(/var\((--[a-z0-9-]+)/gi)].map((m) => m[1]);
+    const invented = [...new Set(used)].filter((v) => !defined.has(v));
+
+    expect(invented).toEqual([]);
+  });
+
+  it("lets a long address shrink rather than escaping the card", async () => {
+    /**
+     * **`auto` sizes a column to its content and refuses to shrink
+     * below it**, so *United Kingdom of Great Britain and Northern
+     * Ireland* pushed the address straight out through the side of the
+     * card. `minmax(0, …)` is what says otherwise.
+     */
+    const page = (await import("virtual:stylesheets")).default["index.html"];
+    const rule = page.slice(page.indexOf(".sellergrid {"), page.indexOf(".sellergrid {") + 400);
+
+    expect(rule).toContain("minmax(0");
+    expect(rule).not.toMatch(/grid-template-columns:\s*1fr auto/);
+  });
+
+  it("breaks a value that has nowhere natural to break", async () => {
+    // A long email or a VAT number written without spaces would widen
+    // its row instead of wrapping.
+    const page = (await import("virtual:stylesheets")).default["index.html"];
+    const rule = page.slice(page.indexOf(".sfield {"), page.indexOf(".sfield {") + 500);
+
+    expect(rule).toContain("overflow-wrap");
+  });
+});

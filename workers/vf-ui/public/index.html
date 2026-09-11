@@ -739,16 +739,30 @@
   */
   .sellergrid {
     display: grid;
-    grid-template-columns: 1fr auto;
-    gap: 4px 24px;
+    /*
+      **`minmax(0, …)`, not `auto`** — decision 0223.
+
+      `auto` sizes a column to its content and **refuses to shrink
+      below it**, so a country like *United Kingdom of Great Britain and
+      Northern Ireland* pushed the address straight out through the
+      side of the card. A grid track's default minimum is its content,
+      and `minmax(0, …)` is what says otherwise.
+    */
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 4px 20px;
     align-items: start;
   }
   .sfield {
     display: grid;
-    grid-template-columns: 92px 1fr;
+    /* The value track needs the same treatment: a long email has no
+       spaces to break at and would widen the row rather than wrap. */
+    grid-template-columns: 88px minmax(0, 1fr);
     gap: 8px;
     align-items: baseline;
     line-height: 1.5;
+    /* An address line, an email or a VAT number written without spaces
+       has nowhere natural to break. */
+    overflow-wrap: anywhere;
   }
   .slabel {
     color: var(--text-muted);
@@ -798,7 +812,14 @@
     z-index: 50;
   }
   .popout {
-    background: var(--bg-panel);
+    /*
+      **`--surface-2`, which exists** — decision 0223.
+
+      This read `--bg-panel`, a variable I invented: a token nothing
+      defines is not an error, it is **transparent**, so the box
+      rendered over the page with every word behind it showing through.
+    */
+    background: var(--surface-2);
     border: 0.5px solid var(--border);
     border-radius: var(--radius);
     padding: 16px;
@@ -823,7 +844,8 @@
     font: inherit;
     color: inherit;
   }
-  .searchresult:hover { background: var(--bg-hover); }
+  /* `--bg-hover` was invented too. */
+  .searchresult:hover { background: var(--surface-1); }
 
   .panel > h3 {
     margin: 0 0 12px;
