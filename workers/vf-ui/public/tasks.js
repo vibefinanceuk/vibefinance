@@ -19,6 +19,14 @@ const shell = document.getElementById("shell");
 /** Set once the page knows who it is talking to. */
 let me = null;
 let filters = { stage: "", ownership: "" };
+
+/**
+ * The stages the task list has seen — decision 0254.
+ *
+ * A `Map` so a stage appearing twice is one option, and insertion
+ * order so they read in the order the list returned them.
+ */
+let knownStages = new Map();
 /** The last rows loaded, so opening a task does not refetch it. */
 let lastTasks = [];
 
@@ -223,6 +231,17 @@ async function loadTasks() {
 
   const { tasks, counts, total } = await response.json();
   lastTasks = tasks;
+
+  /**
+   * **Remember every stage seen** — decision 0254, so the filter offers
+   * the customer's own rather than six named by hand.
+   *
+   * Only added to, never replaced: filtering to one stage should not
+   * shrink the list of stages you can filter to.
+   */
+  for (const task of tasks) {
+    if (task.stageId && task.stageName) knownStages.set(task.stageId, task.stageName);
+  }
   const body = document.getElementById("rows");
   body.replaceChildren(
     ...(tasks.length
@@ -244,18 +263,31 @@ function filterBar() {
     },
   });
   stages.append(el("option", { value: "", text: t("tasks.allstages") }));
-  for (const [id, name] of [
-    ["received", "Received"],
-    ["validation", "Validation"],
-    ["matching", "Matching"],
-    ["coding", "Coding"],
-    ["approval", "Approval"],
-    ["review", "Review"],
-  ]) {
+
+  /**
+   * **The customer's own stages** — decision 0254.
+   *
+   * Six were named here by hand, which decision 0239 called the trap in
+   * the dashboard and did not check for here: `process_stages` is
+   * customer data, a customer may rename one, and a list that does not
+   * contain a stage cannot select it.
+   *
+   * `knownStages` is filled from whatever the task list returns, so it
+   * offers what actually exists.
+   */
+  for (const [id, name] of knownStages) {
     stages.append(el("option", { value: id, text: name }));
   }
 
+  /**
+   * **And it shows the filter that is in force.** Arriving from a
+   * dashboard card set `filters.stage` and the select still read *all
+   * stages*, so the list was filtered and said it was not.
+   */
+  stages.value = filters.stage;
+
   const ownership = el("select", {
+    value: filters.ownership,
     onchange: (event) => {
       filters.ownership = event.target.value;
       loadTasks();

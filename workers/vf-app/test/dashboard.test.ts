@@ -858,3 +858,69 @@ describe("the card counts what its click can show (decision 0253)", () => {
     expect(data.held.mine).toBe(mine?.n);
   });
 });
+
+describe("a task without a stage visit still counts (decision 0254)", () => {
+  /**
+   * **Three on the card, seven in the list.**
+   *
+   * A task does not need a stage visit to exist, and some do not have
+   * one. The card joined through `stage_visits` and the task list asks
+   * only `t.stage_id` — so the card could not see them.
+   *
+   * **My own diagnostic query joined the same way**, which is why three
+   * hypotheses in a row were wrong: the query I was checking with
+   * shared the fault of the code I was checking.
+   */
+  it("counts a task whose stage visit is missing", async () => {
+    await person("alice", ["AP.Review"], null);
+    await env.DB.prepare("INSERT INTO processes (id, name) VALUES ('ap', 'AP')").run();
+    await env.DB.prepare(
+      "INSERT INTO process_stages (id, process_id, name, sequence) VALUES ('validation', 'ap', 'Validation', 1)"
+    ).run();
+
+    // **No stage visit, no instance, no invoice** — just a task.
+    await env.DB.prepare(
+      `INSERT INTO tasks (id, stage_id, owner_user_id, required_permission, status)
+       VALUES ('orphan', 'validation', 'alice', 'AP.Validate', 'open')`
+    ).run();
+
+    await env.DB.prepare(
+      `INSERT INTO dashboard_cards (id, user_id, card_type, settings_json, position)
+       VALUES ('c', 'alice', 'items_at_stage', '{"stage":"validation"}', 0)`
+    ).run();
+
+    const data = card<{ count: number; held: { mine: number } }>(
+      await cardsFor("alice"),
+      "items_at_stage"
+    );
+
+    expect(data.count).toBe(1);
+    expect(data.held.mine).toBe(1);
+  });
+
+  it("hides it from somebody whose view is restricted", async () => {
+    /**
+     * **A count is a disclosure** (decision 0240), and a task with no
+     * chain cannot be proven to be inside anybody's units — so a
+     * restricted reader does not see it. Unrestricted is the only safe
+     * direction for an unknown.
+     */
+    // `units()` in beforeEach already created acme-fr.
+    await person("alice", ["AP.Review"], "acme-fr");
+    await env.DB.prepare("INSERT INTO processes (id, name) VALUES ('ap', 'AP')").run();
+    await env.DB.prepare(
+      "INSERT INTO process_stages (id, process_id, name, sequence) VALUES ('validation', 'ap', 'Validation', 1)"
+    ).run();
+    await env.DB.prepare(
+      `INSERT INTO tasks (id, stage_id, owner_user_id, required_permission, status)
+       VALUES ('orphan', 'validation', 'alice', 'AP.Validate', 'open')`
+    ).run();
+    await env.DB.prepare(
+      `INSERT INTO dashboard_cards (id, user_id, card_type, settings_json, position)
+       VALUES ('c', 'alice', 'items_at_stage', '{"stage":"validation"}', 0)`
+    ).run();
+
+    const data = card<{ count: number }>(await cardsFor("alice"), "items_at_stage");
+    expect(data.count).toBe(0);
+  });
+});

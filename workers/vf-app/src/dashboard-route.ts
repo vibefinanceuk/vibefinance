@@ -280,6 +280,17 @@ async function itemsAtStage(
    * **Tasks, because that is what the click shows** and what somebody
    * actually does.
    *
+   * **Left joins all the way down** (decision 0254). A task does not
+   * need a stage visit to exist, and some do not have one — joining
+   * through `stage_visits` made those invisible to the card while the
+   * task list, which asks only `t.stage_id`, showed them: **three on
+   * the card and seven in the list.**
+   *
+   * The chain is still walked, because the scope filter needs the
+   * invoice. Where a task has no chain `h.org_unit_id` is null, so an
+   * unrestricted reader sees it and a restricted one does not — the
+   * safe way round for a count that is a disclosure.
+   *
    * **And by the task's own stage, not its instance's current one.**
    * The task list filters on `t.stage_id` (decision 0202), and an open
    * task can sit at a stage its instance has already left — so asking
@@ -295,8 +306,8 @@ async function itemsAtStage(
                         AND COALESCE(t.claimed_by, '') != ?2
                    THEN 1 ELSE 0 END) AS theirs
        FROM tasks t
-       JOIN stage_visits v ON v.id = t.stage_visit_id
-       JOIN process_instances pi ON pi.id = v.process_instance_id
+       LEFT JOIN stage_visits v ON v.id = t.stage_visit_id
+       LEFT JOIN process_instances pi ON pi.id = v.process_instance_id
        LEFT JOIN invoice_headers h ON pi.subject_type = 'invoice' AND h.id = pi.subject_id
        WHERE t.status = 'open'
          AND t.stage_id = ?1${clause.sql}`
