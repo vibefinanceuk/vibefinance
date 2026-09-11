@@ -359,9 +359,20 @@ export async function handleCaptureFromSource(
      */
     const state = matched.supplierId
       ? await db
-          .prepare("SELECT on_hold, erp_identifier FROM suppliers WHERE id = ?")
+          .prepare(
+            `SELECT on_hold, erp_identifier, payment_terms, match_option,
+                    amount_tolerance_pct, quantity_tolerance_pct
+             FROM suppliers WHERE id = ?`
+          )
           .bind(matched.supplierId)
-          .first<{ on_hold: number; erp_identifier: string | null }>()
+          .first<{
+            on_hold: number;
+            erp_identifier: string | null;
+            payment_terms: string | null;
+            match_option: string | null;
+            amount_tolerance_pct: number | null;
+            quantity_tolerance_pct: number | null;
+          }>()
       : null;
 
     /**
@@ -376,17 +387,50 @@ export async function handleCaptureFromSource(
      * **matched means we recognise them, awaiting means the ERP cannot
      * yet.**
      */
+    /**
+     * **What the supplier record says about this invoice** — decision
+     * 0238.
+     *
+     * Terms, match option and tolerances have loaded since decision
+     * 0209 and displayed since decision 0213, and **no process has ever
+     * consulted any of them.** Decisions 0211, 0218 and 0219 each
+     * recorded it.
+     *
+     * Written as facts rather than read at evaluation, for the reason
+     * decision 0231 gives about the hold: **an invoice is assessed
+     * against the truth at the moment it arrived**, and a supplier
+     * whose terms change next week did not change what was agreed for
+     * this one.
+     */
     await db
       .prepare(
         `UPDATE invoice_headers
          SET facts_json = json_set(
-               json_set(facts_json, '$."supplier.onHold"', ?),
-               '$."supplier.awaitingErp"', ?)
+               json_set(
+                 json_set(
+                   json_set(
+                     json_set(
+                       json_set(facts_json, '$."supplier.onHold"', ?),
+                       '$."supplier.awaitingErp"', ?),
+                     '$."supplier.paymentTerms"', ?),
+                   '$."supplier.matchOption"', ?),
+                 '$."supplier.amountTolerancePct"', ?),
+               '$."supplier.quantityTolerancePct"', ?)
          WHERE id = ?`
       )
       .bind(
         state?.on_hold === 1 ? 1 : 0,
         state && !state.erp_identifier ? 1 : 0,
+        state?.payment_terms ?? null,
+        /**
+         * **`none` where a supplier matched and declared nothing.** A
+         * null would mean *no supplier*, and a rule testing *"is the
+         * match option two-way"* should not fire on an invoice that has
+         * no supplier at all.
+         */
+        state ? state.match_option ?? "none" : null,
+        state?.amount_tolerance_pct ?? null,
+        state?.quantity_tolerance_pct ?? null,
         invoiceId
       )
       .run();
@@ -667,9 +711,20 @@ async function captureWithoutFacts(
      */
     const state = matched.supplierId
       ? await db
-          .prepare("SELECT on_hold, erp_identifier FROM suppliers WHERE id = ?")
+          .prepare(
+            `SELECT on_hold, erp_identifier, payment_terms, match_option,
+                    amount_tolerance_pct, quantity_tolerance_pct
+             FROM suppliers WHERE id = ?`
+          )
           .bind(matched.supplierId)
-          .first<{ on_hold: number; erp_identifier: string | null }>()
+          .first<{
+            on_hold: number;
+            erp_identifier: string | null;
+            payment_terms: string | null;
+            match_option: string | null;
+            amount_tolerance_pct: number | null;
+            quantity_tolerance_pct: number | null;
+          }>()
       : null;
 
     /**
@@ -684,17 +739,50 @@ async function captureWithoutFacts(
      * **matched means we recognise them, awaiting means the ERP cannot
      * yet.**
      */
+    /**
+     * **What the supplier record says about this invoice** — decision
+     * 0238.
+     *
+     * Terms, match option and tolerances have loaded since decision
+     * 0209 and displayed since decision 0213, and **no process has ever
+     * consulted any of them.** Decisions 0211, 0218 and 0219 each
+     * recorded it.
+     *
+     * Written as facts rather than read at evaluation, for the reason
+     * decision 0231 gives about the hold: **an invoice is assessed
+     * against the truth at the moment it arrived**, and a supplier
+     * whose terms change next week did not change what was agreed for
+     * this one.
+     */
     await db
       .prepare(
         `UPDATE invoice_headers
          SET facts_json = json_set(
-               json_set(facts_json, '$."supplier.onHold"', ?),
-               '$."supplier.awaitingErp"', ?)
+               json_set(
+                 json_set(
+                   json_set(
+                     json_set(
+                       json_set(facts_json, '$."supplier.onHold"', ?),
+                       '$."supplier.awaitingErp"', ?),
+                     '$."supplier.paymentTerms"', ?),
+                   '$."supplier.matchOption"', ?),
+                 '$."supplier.amountTolerancePct"', ?),
+               '$."supplier.quantityTolerancePct"', ?)
          WHERE id = ?`
       )
       .bind(
         state?.on_hold === 1 ? 1 : 0,
         state && !state.erp_identifier ? 1 : 0,
+        state?.payment_terms ?? null,
+        /**
+         * **`none` where a supplier matched and declared nothing.** A
+         * null would mean *no supplier*, and a rule testing *"is the
+         * match option two-way"* should not fire on an invoice that has
+         * no supplier at all.
+         */
+        state ? state.match_option ?? "none" : null,
+        state?.amount_tolerance_pct ?? null,
+        state?.quantity_tolerance_pct ?? null,
         invoiceId
       )
       .run();

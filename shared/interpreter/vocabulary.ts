@@ -82,6 +82,10 @@ export const DERIVED_FIELDS = [
   "supplier.unmatchedReason",
   "supplier.onHold",
   "supplier.awaitingErp",
+  "supplier.paymentTerms",
+  "supplier.matchOption",
+  "supplier.amountTolerancePct",
+  "supplier.quantityTolerancePct",
   "provenance.keyed",
   "extraction.confidence",
   "invoice.duplicate_confidence",
@@ -183,6 +187,10 @@ export const INVOICE_FIELD_TYPES: Record<string, FieldType> = {
   "supplier.unmatchedReason": "text",
   "supplier.onHold": "boolean",
   "supplier.awaitingErp": "boolean",
+  "supplier.paymentTerms": "text",
+  "supplier.matchOption": "text",
+  "supplier.amountTolerancePct": "number",
+  "supplier.quantityTolerancePct": "number",
   "provenance.keyed": "text",
   "extraction.confidence": "number",
   "invoice.duplicate_confidence": "number",
@@ -342,6 +350,14 @@ export const DERIVED_FIELD_DESCRIPTIONS: Record<DerivedField, string> = {
     "a comma-separated list of the detection tests intake tried, in order. Distinguishes a supplier who has not adopted e-invoicing from one whose implementation is broken — 'a PDF with no embedded invoice' and 'a PDF declaring one that could not be read' are opposite conversations. A string so the existing contains operator works.",
   "supplier.matched":
     "true where this invoice's seller was found in the supplier list loaded from the customer's ERP, and an ERP identifier is therefore available. **False is what routes a new supplier for review**: not 'we do not recognise this company' but 'we cannot name it to the ERP', and an invoice without that cannot be paid however familiar the name on it. Matched on the seller's electronic address (BT-34), then their VAT id (BT-31).",
+  "supplier.paymentTerms":
+    "the payment terms agreed with this supplier, as the customer's ERP holds them — free text, because Peppol BIS 3.0 defines no code list for terms and BT-20 is a note. **This is what was agreed; BT-9 is what the supplier claims**, and a rule can compare them. Absent where no supplier matched.",
+  "supplier.matchOption":
+    "how this supplier's invoices are to be matched: 'two_way' against a purchase order, 'three_way' against a receipt as well, or 'none'. **This decides which stages an invoice visits**, which is why it is a fact rather than a lookup. 'none' where a supplier matched and declared nothing; absent where no supplier matched at all.",
+  "supplier.amountTolerancePct":
+    "how far an invoice's amount may differ from what it is matched against before the match fails, as a percentage agreed with this supplier. Absent where no supplier matched or none was agreed.",
+  "supplier.quantityTolerancePct":
+    "the same for quantity. Kept apart from the amount tolerance because a supplier who may over-deliver by five percent has not thereby agreed to over-charge by five percent.",
   "supplier.awaitingErp":
     "true where this invoice's supplier is recorded here but has no ERP identifier yet. **This is the new-supplier process, as a fact a rule can test**: somebody received an invoice, wrote down who sent it, and the ERP record does not exist — so the invoice cannot be paid however complete our own record is. Decision 0209's argument survives in this field rather than in a NOT NULL: matched means we recognise them, and payable means the ERP can. False where no supplier matched at all, which is a different question with its own field.",
   "supplier.onHold":

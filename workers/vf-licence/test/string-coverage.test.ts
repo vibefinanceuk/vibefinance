@@ -565,7 +565,7 @@ describe("every action a button names has words (decision 0236)", () => {
     const rows = await env.CONTROL_DB.prepare(
       "SELECT key FROM ui_strings WHERE key LIKE 'action.%' AND locale = 'en'"
     ).all<{ key: string }>();
-    const defined = new Set(rows.results.map((r) => r.key.replace("action.", "")));
+    const defined = new Set(rows.results.map((r: { key: string }) => r.key.replace("action.", "")));
 
     /**
      * **Not every icon labels an action.** `paused` marks a rule's

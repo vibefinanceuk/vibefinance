@@ -418,13 +418,15 @@ across multiple departments, cost centers and GL codes."*
 it, and without a PO the Coding stage does — and that stage does not
 exist.
 
-**5. The supplier fields nothing reads.** Terms, match option and
-tolerances load and display, and **no process consults any of them**
-(decisions 0211, 0218, 0219).
+**5. A rule that reads the supplier fields.** All of them are now facts
+a rule can test — hold (decision 0230), terms, match option and
+tolerances (decision 0238) — and **no rule reads any of them.**
 
-**The hold is done** — decision 0230 made it a fact a rule can test.
-**These three are the same job**, and each is a line in
-`source-capture-route.ts` plus a vocabulary entry.
+**That is deliberate.** The sentences are a customer's: *"if the
+supplier is on hold, route this for review"*, *"if the match option is
+three-way, visit Matching"*. **What is missing is a customer writing
+one**, and the match option in particular still decides nothing — the
+stages an invoice visits come from a process definition.
 
 **6. Process configuration, versioned** (decision 0150). Adding and
 removing stages through a screen, with a version number an invoice

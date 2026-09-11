@@ -13,6 +13,8 @@ import {
 import { matchSupplier } from "../src/match-supplier.js";
 import { generateApiKey, hashApiKey } from "../src/user-auth.js";
 import { handleGetInvoice } from "../src/invoice-facts-route.js";
+import { handleCaptureFromSource } from "../src/source-capture-route.js";
+import { handleCreateProcess, handleCreateStage } from "../src/process-route.js";
 
 /**
  * Loading the customer's supplier master file — decision 0211.
@@ -893,5 +895,150 @@ describe("the ERP catches up (decision 0233)", () => {
 
     const result = await load("ERP ID,Name\n40999,Someone Else");
     expect((result.body as { adopted: number }).adopted).toBe(0);
+  });
+});
+
+describe("what the supplier record says about an invoice (decision 0238)", () => {
+  /**
+   * **Terms, match option and tolerances have loaded since decision
+   * 0209 and displayed since decision 0213**, and no process has ever
+   * consulted any of them. Decisions 0211, 0218 and 0219 each recorded
+   * it from a different angle.
+   *
+   * Written as facts at capture rather than read at evaluation, for the
+   * reason decision 0231 gives about the hold: **an invoice is assessed
+   * against the truth at the moment it arrived**, and a supplier whose
+   * terms change next week did not change what was agreed for this one.
+   */
+  it("carries what the ERP agreed", async () => {
+    await load(
+      "ERP ID,Name,VAT,Terms,match_option,amount_tolerance_pct,quantity_tolerance_pct\n" +
+        "40118,Northwind,GB447711223,Net 30,three_way,2.5,5"
+    );
+
+    const row = await env.DB.prepare("SELECT payment_terms, match_option FROM suppliers").first<{
+      payment_terms: string;
+      match_option: string;
+    }>();
+    expect(row?.payment_terms).toBe("Net 30");
+    expect(row?.match_option).toBe("three_way");
+  });
+
+  it("keeps the two tolerances apart", async () => {
+    /**
+     * **A supplier who may over-deliver by five percent has not thereby
+     * agreed to over-charge by five percent.** One column would have
+     * made them one agreement.
+     */
+    await load(
+      "ERP ID,Name,amount_tolerance_pct,quantity_tolerance_pct\n40118,Northwind,2.5,5"
+    );
+
+    const row = await env.DB.prepare(
+      "SELECT amount_tolerance_pct AS a, quantity_tolerance_pct AS q FROM suppliers"
+    ).first<{ a: number; q: number }>();
+    expect(row?.a).toBe(2.5);
+    expect(row?.q).toBe(5);
+  });
+
+  it("reports them with the list, so a screen can show them", async () => {
+    await load("ERP ID,Name,Terms,match_option\n40118,Northwind,Net 30,two_way");
+    const body = (await handleListSuppliers(env.DB)).body as {
+      suppliers: { paymentTerms: string; matchOption: string }[];
+    };
+
+    expect(body.suppliers[0].paymentTerms).toBe("Net 30");
+    expect(body.suppliers[0].matchOption).toBe("two_way");
+  });
+
+  /**
+   * The facts an invoice ends up carrying, through the real capture
+   * path — which is where they are written and where **nothing has ever
+   * asserted them**, including decision 0230's hold.
+   */
+  async function captureWith(xml: string) {
+    // Through the routes, so the stage's version membership exists
+    // (decision 0150) and the instance has somewhere to start.
+    await handleCreateProcess(env.DB, { id: "ap", name: "AP" });
+    await handleCreateStage(env.DB, "ap", { id: "intake", name: "Intake", sequence: 1 });
+    await env.DB.prepare(
+      "INSERT INTO sources (id, process_id, name, mechanism) VALUES ('s1', 'ap', 'Mailbox', 'email')"
+    ).run();
+
+    const result = await handleCaptureFromSource(
+      env.DB,
+      "s1",
+      new TextEncoder().encode(xml),
+      { extract: async () => ({ ok: false, reason: "not needed" }) } as never,
+      "inv-1"
+    );
+    expect(result.status).toBeLessThan(400);
+
+    return env.DB.prepare(
+      `SELECT json_extract(facts_json, '$."supplier.onHold"') AS onHold,
+              json_extract(facts_json, '$."supplier.awaitingErp"') AS awaiting,
+              json_extract(facts_json, '$."supplier.paymentTerms"') AS terms,
+              json_extract(facts_json, '$."supplier.matchOption"') AS matchOption,
+              json_extract(facts_json, '$."supplier.amountTolerancePct"') AS amount
+       FROM invoice_headers WHERE id = 'inv-1'`
+    ).first<Record<string, unknown>>();
+  }
+
+  const UBL = (vat: string) => `<?xml version="1.0" encoding="UTF-8"?>
+<Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"
+         xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
+         xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">
+  <cbc:CustomizationID>urn:cen.eu:en16931:2017#compliant#urn:fdc:peppol.eu:2017:poacc:billing:3.0</cbc:CustomizationID>
+  <cbc:ID>CAP-1</cbc:ID>
+  <cbc:IssueDate>2026-09-11</cbc:IssueDate>
+  <cbc:InvoiceTypeCode>380</cbc:InvoiceTypeCode>
+  <cbc:DocumentCurrencyCode>GBP</cbc:DocumentCurrencyCode>
+  <cac:AccountingSupplierParty><cac:Party>
+    <cac:PartyTaxScheme><cbc:CompanyID>${vat}</cbc:CompanyID>
+      <cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme></cac:PartyTaxScheme>
+  </cac:Party></cac:AccountingSupplierParty>
+</Invoice>`;
+
+  it("writes them onto an invoice at capture", async () => {
+    await load(
+      "ERP ID,Name,VAT,Terms,match_option,amount_tolerance_pct\n" +
+        "40118,Northwind,GB447711223,Net 30,three_way,2.5"
+    );
+
+    const facts = await captureWith(UBL("GB447711223"));
+
+    expect(facts?.terms).toBe("Net 30");
+    expect(facts?.matchOption).toBe("three_way");
+    expect(facts?.amount).toBe(2.5);
+    expect(facts?.onHold).toBe(0);
+    expect(facts?.awaiting).toBe(0);
+  });
+
+  it("says 'none' where a supplier matched and declared nothing", async () => {
+    /**
+     * **A null would mean *no supplier*.** A rule testing *"is the
+     * match option two-way"* should not fire on an invoice that has no
+     * supplier at all, and one value cannot answer both questions.
+     */
+    await load("ERP ID,Name,VAT\n40118,Northwind,GB447711223");
+
+    const facts = await captureWith(UBL("GB447711223"));
+    expect(facts?.matchOption).toBe("none");
+    expect(facts?.terms).toBeNull();
+  });
+
+  it("leaves them absent where no supplier matched", async () => {
+    await load("ERP ID,Name,VAT\n40118,Northwind,GB1");
+
+    const facts = await captureWith(UBL("FR999"));
+    expect(facts?.matchOption).toBeNull();
+    expect(facts?.onHold).toBe(0);
+  });
+
+  it("carries a hold, which decision 0230 wired and nothing asserted", async () => {
+    await load("ERP ID,Name,VAT,Hold,hold_reason\n40118,Northwind,GB447711223,yes,Under dispute");
+
+    const facts = await captureWith(UBL("GB447711223"));
+    expect(facts?.onHold).toBe(1);
   });
 });
