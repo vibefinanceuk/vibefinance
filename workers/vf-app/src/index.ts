@@ -58,6 +58,7 @@ import {
 } from "./rules-list-route.js";
 import { handleInvoiceProgress } from "./invoice-progress-route.js";
 import { handleSetSourceOrg } from "./source-route.js";
+import { handleLoadSuppliers } from "./load-suppliers.js";
 import { handleListDocuments } from "./documents-route.js";
 import {
   handleListLedgers,
@@ -860,6 +861,21 @@ export default {
         );
         return json(result.body, result.status);
       }
+    }
+
+
+    // Loading the customer's supplier master file — decision 0211.
+    if (pathname === "/suppliers/load" && request.method === "POST") {
+      const { db } = resolveTenant(request, env);
+      const auth = await authenticatePerson(db, request, env);
+      if (!auth.user) return json({ error: auth.reason }, 401);
+      if (!(await hasPermission(db, auth.user.id, "Admin.ConfigManagement"))) {
+        return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
+      }
+
+      const csv = await request.text();
+      const result = await handleLoadSuppliers(db, csv, auth.user.id);
+      return json(result.body, result.status);
     }
 
 

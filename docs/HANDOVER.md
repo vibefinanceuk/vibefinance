@@ -402,8 +402,14 @@ team requiring AP.Review."* `supplier.matched` is what is missing.
 
 **Matching is built** (decision 0209): a seller is matched on `BT-34`
 then `BT-31`, and `supplier.matched` is a vocabulary field, so the
-operator's rule is expressible today. **The load is not** — there is no
-spreadsheet parser, so the mirror exists and cannot yet be filled.
+operator's rule is expressible today. **And the load is built** (decision 0211): a CSV with the customer's own
+column names, refusing row by row with the row number, and **re-matching
+every unmatched invoice** — which decision 0208 called part of the
+feature rather than a refinement.
+
+**It corrects the fact and not the queue.** An invoice whose supplier
+now exists keeps its place; a rule that routed it on `supplier.matched`
+is what should route it back.
 
 **Two traps, one handled and one not.** A **stale mirror lies
 confidently** — a supplier added to the ERP on Monday and loaded here on

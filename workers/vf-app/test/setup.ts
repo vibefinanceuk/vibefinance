@@ -112,8 +112,6 @@ const TABLES_IN_DROP_ORDER = ["process_stage_versions", "inbound_email_events", 
   "invoice_documents",
   "stage_rule_set_overrides",
   "stage_field_visibility_overrides",
-  "suppliers",
-  "supplier_loads",
   "cost_centres",
   "intake_capture_events",
   "expense_reports",
@@ -126,6 +124,12 @@ const TABLES_IN_DROP_ORDER = ["process_stage_versions", "inbound_email_events", 
   "processes",
   "invoice_lines",
   "invoice_headers",
+  // **After `invoice_headers`, which references them** (decision 0209).
+  // Dropping a supplier an invoice still points at fails the foreign
+  // key — which is the constraint doing its job on a teardown that had
+  // the order wrong.
+  "suppliers",
+  "supplier_loads",
   "invoice_run_steps",
   "invoice_runs",
   "rule_examples",
