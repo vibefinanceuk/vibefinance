@@ -368,3 +368,84 @@ describe("who may load a supplier file (decision 0215)", () => {
     expect((await postAs(key)).status).toBe(403);
   });
 });
+
+describe("a supplier already there under a different id (decision 0217)", () => {
+  /**
+   * **The live failure**, reported as *"Unexpected token 'e', 'error
+   * code: 1101'"*.
+   *
+   * The loader constructed an id and used `ON CONFLICT(id)` against it,
+   * which catches a row it created before and **not** a row already
+   * there under a different one. The live database had a supplier
+   * inserted by hand as `northwind` carrying ERP identifier `40118`, so
+   * the loader's own `40118` row conflicted on the unique index rather
+   * than on the key.
+   *
+   * SQLite refused, the Worker threw, and Cloudflare returned an error
+   * page — which is how a constraint doing its job reaches somebody as
+   * a JSON parse error.
+   */
+  it("updates it rather than throwing", async () => {
+    await env.DB.prepare(
+      "INSERT INTO suppliers (id, erp_identifier, name, vat_id) VALUES ('northwind', '40118', 'Northwind', 'GB1')"
+    ).run();
+
+    const result = await load("ERP ID,Name,VAT\n40118,Northwind Logistics Ltd,GB2");
+
+    expect(result.status).toBe(200);
+    const row = await env.DB.prepare("SELECT id, name, vat_id FROM suppliers").first<{
+      id: string;
+      name: string;
+      vat_id: string;
+    }>();
+
+    // **Its own id is kept**, because anything already pointing at it
+    // still means it.
+    expect(row?.id).toBe("northwind");
+    expect(row?.name).toBe("Northwind Logistics Ltd");
+    expect(row?.vat_id).toBe("GB2");
+  });
+
+  it("does not deactivate the supplier it just updated", async () => {
+    // It is in the file, so it is in `seen` — under the id it already
+    // had rather than the one we would have given it.
+    await env.DB.prepare(
+      "INSERT INTO suppliers (id, erp_identifier, name) VALUES ('northwind', '40118', 'Northwind')"
+    ).run();
+
+    await load("ERP ID,Name\n40118,Northwind");
+
+    const row = await env.DB.prepare("SELECT status FROM suppliers").first<{ status: string }>();
+    expect(row?.status).toBe("active");
+  });
+
+  it("keeps an invoice pointing at it", async () => {
+    /**
+     * **The reason the id must not change.** An invoice matched to
+     * `northwind` yesterday still means that supplier, and giving the
+     * row a new id would orphan it.
+     */
+    await env.DB.prepare(
+      "INSERT INTO suppliers (id, erp_identifier, name, vat_id) VALUES ('northwind', '40118', 'Northwind', 'GB1')"
+    ).run();
+    await env.DB.prepare(
+      "INSERT INTO invoice_headers (id, facts_json, supplier_id) VALUES ('inv-1', '{}', 'northwind')"
+    ).run();
+
+    await load("ERP ID,Name,VAT\n40118,Northwind,GB1");
+
+    const row = await env.DB.prepare(
+      "SELECT supplier_id FROM invoice_headers WHERE id = 'inv-1'"
+    ).first<{ supplier_id: string }>();
+    expect(row?.supplier_id).toBe("northwind");
+  });
+
+  it("still tells two sites apart", async () => {
+    // The lookup matches on site as well, so one ERP number with two
+    // sites stays two rows.
+    await load("ERP ID,Name,Site\n40121,Acme UK,UK\n40121,Acme IE,IE");
+
+    const count = await env.DB.prepare("SELECT count(*) AS n FROM suppliers").first<{ n: number }>();
+    expect(count?.n).toBe(2);
+  });
+});

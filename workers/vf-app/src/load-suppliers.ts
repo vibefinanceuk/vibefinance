@@ -187,7 +187,37 @@ export async function handleLoadSuppliers(
       continue;
     }
 
-    const id = `${values.erp_identifier}${values.erp_site_identifier ? `:${values.erp_site_identifier}` : ""}`;
+    /**
+     * **Found by what the ERP calls it, not by what we would call it** —
+     * decision 0217.
+     *
+     * The loader used to construct an id and `ON CONFLICT(id)` against
+     * it — which catches a row it created before and **not** a row
+     * already there under a different id. The live database had exactly
+     * that: a supplier inserted by hand as `northwind`, carrying ERP
+     * identifier `40118`, against which the loader's own `40118` row
+     * conflicted on the unique index rather than on the key.
+     *
+     * SQLite refused, the Worker threw, and Cloudflare returned a 1101
+     * page — which is how a constraint doing its job reaches somebody
+     * as *"Unexpected token 'e'"*.
+     *
+     * **The ERP identifier is the identity** (decision 0209). Looking a
+     * row up by it is the only way that stays true for data this loader
+     * did not create.
+     */
+    const existing = await db
+      .prepare(
+        `SELECT id FROM suppliers
+         WHERE erp_identifier = ?
+           AND ((erp_site_identifier IS NULL AND ?2 IS NULL) OR erp_site_identifier = ?2)`
+      )
+      .bind(values.erp_identifier, values.erp_site_identifier || null)
+      .first<{ id: string }>();
+
+    const id =
+      existing?.id ??
+      `${values.erp_identifier}${values.erp_site_identifier ? `:${values.erp_site_identifier}` : ""}`;
     seen.push(id);
 
     /**
