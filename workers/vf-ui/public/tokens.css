@@ -92,6 +92,29 @@
 
   --bg-success: #eaf3de;
   --text-success: #3b6d11;
+
+  /*
+    **A chart palette** — decision 0242.
+
+    Until now three colours carried every chart in the mock-ups: accent,
+    success and warning. **Those mean something** — accent is *this*,
+    warning is *look at this*, success is *good* — and a five-category
+    chart that borrowed them would say a category was a problem because
+    it happened to be third.
+
+    So these are **categorical and deliberately quiet**: distinguishable
+    side by side and carrying no verdict. A chart that needs to say
+    *this one is late* still uses `--text-warning`, which is the point of
+    keeping them apart.
+
+    Five, because a chart needing a sixth is a chart needing a table.
+  */
+  --chart-1: #2f6f9f;
+  --chart-2: #4f8c6b;
+  --chart-3: #8a6a9c;
+  --chart-4: #a8743f;
+  --chart-5: #5c7a8a;
+
   --border-success: #639922;
 
   --radius: 8px;
@@ -126,7 +149,19 @@
   --text-sm: 12px;   /* Labels, captions, secondary detail. */
   --text-base: 14px; /* Body, fields, table cells — most of the screen. */
   --text-lg: 16px;   /* Panel headings, a document's identity. */
-  --text-xl: 20px;   /* The one thing a screen is about. */
+  --text-xl: 20px;
+
+  /*
+    **A figure, not a heading** — decision 0242.
+
+    The scale stopped at 20px because nothing displayed a number.
+    A dashboard does: a count is the whole content of its card, and read
+    at a glance from across a desk rather than in a line of prose.
+
+    Ratio kept at the scale's own 1.25 twice over, so it belongs to the
+    same series rather than being a size somebody liked.
+  */
+  --text-figure: 32px;   /* The one thing a screen is about. */
 
   /* Brand — the only block a white-label deployment replaces. */
   --brand-bar: #0f6e56;
@@ -164,6 +199,21 @@
     --text-warning: #f0c477;
     --bg-success: #1f4310;
     --text-success: #a8cf85;
+
+    /* And the chart palette, for the same reason (decision 0242). */
+    --chart-1: #7db4dd;
+    --chart-2: #8fc4a4;
+    --chart-3: #bba3c9;
+    --chart-4: #d9a878;
+    --chart-5: #9db4bf;
+
+  /* Lifted for the night surface (decision 0242), as the text colours are. */
+  --chart-1: #7db4dd;
+  --chart-2: #8fc4a4;
+  --chart-3: #bba3c9;
+  --chart-4: #d9a878;
+  --chart-5: #9db4bf;
+
   }
 }
 

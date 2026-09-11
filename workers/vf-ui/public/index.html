@@ -844,6 +844,51 @@
     .editgrid { grid-template-columns: 1fr; }
   }
 
+  /*
+    The dashboard — decision 0242.
+
+    **Two columns, and cards that choose their own width.** A grid of
+    equal thirds would make a four-figure count as wide as a worklist,
+    and the worklist is the one somebody came for.
+  */
+  .dashgrid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+    align-items: start;
+  }
+  /* The worklist spans, because a table in half a screen is a table nobody reads. */
+  .dashgrid > .panel:has(.clocktable) { grid-column: 1 / -1; }
+  @media (max-width: 820px) { .dashgrid { grid-template-columns: 1fr; } }
+
+  .bignum { font-size: var(--text-figure); line-height: 1.15; }
+  .bignum.warn { color: var(--text-warning); }
+  .figures { display: flex; gap: 26px; }
+  /* The scale's smallest step, rather than a size below it. */
+  .tiny { font-size: var(--text-sm); }
+
+  .clocktable { width: 100%; }
+  .clocktable .num { text-align: right; white-space: nowrap; }
+
+  /* A sort is a choice among few, so it reads as chips rather than a menu. */
+  .chips { display: flex; gap: 6px; }
+  .chip {
+    background: none;
+    border: 0.5px solid var(--border);
+    border-radius: 999px;
+    padding: 3px 10px;
+    font: inherit;
+    font-size: var(--text-sm);
+    color: var(--text-muted);
+    cursor: pointer;
+  }
+  .chip.on { color: var(--text-primary); border-color: var(--text-accent); }
+
+  .barlist-row { margin-bottom: 9px; }
+  .barlist-head { display: flex; justify-content: space-between; font-size: var(--text-sm); gap: 10px; }
+  .barlist-track { height: 6px; background: var(--border); border-radius: 3px; margin-top: 3px; }
+  .barlist-fill { height: 6px; border-radius: 3px; }
+
   .panel.needsattention {
     border-left: 3px solid var(--text-warning);
     border-radius: 0 var(--radius) var(--radius) 0;

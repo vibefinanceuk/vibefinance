@@ -69,6 +69,7 @@ import recordFromInvoiceSql from "../migrations/0064_record_from_invoice.sql?raw
 import stateActionSql from "../migrations/0065_state_action_labels.sql?raw";
 import activateCloseSql from "../migrations/0066_activate_and_close.sql?raw";
 import loadNewSql from "../migrations/0067_load_and_new_supplier.sql?raw";
+import dashboardStringsSql from "../migrations/0068_dashboard_strings.sql?raw";
 
 function stripSqlComments(sql: string): string {
   return sql
@@ -165,5 +166,6 @@ export async function applyTestSchema(): Promise<void> {
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(stateActionSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(activateCloseSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(loadNewSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(dashboardStringsSql)));
 
 }

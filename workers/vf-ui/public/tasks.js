@@ -314,6 +314,9 @@ async function go(screen) {
   } else if (screen === "rules") {
     const { open } = await import("/rules.js");
     await open();
+  } else if (screen === "dashboard") {
+    const { open } = await import("/dashboard.js");
+    await open();
   } else if (screen === "suppliers") {
     const { open } = await import("/suppliers.js");
     await open();
@@ -373,6 +376,11 @@ export function frame(main) {
         class: current === "tasks" ? "on" : "",
         text: t("nav.tasks"),
         onclick: () => go("tasks"),
+      }),
+      el("a", {
+        class: current === "dashboard" ? "on" : "",
+        text: t("nav.dashboard"),
+        onclick: () => go("dashboard"),
       }),
       el("a", {
         class: current === "sources" ? "on" : "",
