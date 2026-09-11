@@ -230,6 +230,8 @@ const KEYS_THE_INTERFACE_USES = [
   "action.deactivate",
   "action.activate",
   "action.close",
+  "action.newsupplier",
+  "action.load",
   "action.changeseller",
   "viewer.buyer.findheading",
   "viewer.buyer.searchhint",
@@ -579,7 +581,7 @@ describe("every action a button names has words (decision 0236)", () => {
     const asActions = [
       "expand", "save", "complete", "release", "return", "discard", "claim",
       "activate", "deactivate", "hold", "releasehold", "close",
-      "changeseller", "changebuyer",
+      "changeseller", "changebuyer", "newsupplier", "load",
     ];
 
     for (const action of asActions) {

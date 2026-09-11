@@ -79,6 +79,27 @@ export const ICONS = {
    * cross means and what *cancel* would not.
    */
   close: '<path d="M6 6l12 12M18 6 6 18"/>',
+
+  /**
+   * **A person with a plus** — decision 0237, for recording a supplier
+   * the ERP does not have.
+   *
+   * Not a bare plus, which would say *add a row*. This adds a
+   * **party** — and the figure is what distinguishes it from the load
+   * beside it, which adds many at once and is about the file rather
+   * than about anybody.
+   */
+  newsupplier:
+    '<path d="M13 20v-1.5a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4V20"/><circle cx="7.5" cy="6.5" r="3.5"/><path d="M18 8v6M15 11h6"/>',
+
+  /**
+   * **A file going up**, because a load is about the file.
+   *
+   * The inverse of `save`, whose arrow goes down into a tray — and
+   * deliberately so: one takes something out of the screen and the
+   * other puts something in.
+   */
+  load: '<path d="M12 20V10m0 0-4 4m4-4 4 4M4 7V4h16v3"/>',
   releasehold: '<path d="M8 6.5 18 12 8 17.5z"/>',
 
   /**

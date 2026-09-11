@@ -34,7 +34,8 @@ const STRINGS = {
     "suppliers.terms": "Terms",
     "suppliers.hold": "Hold",
     "suppliers.status": "Status",
-    "suppliers.new": "Record a new supplier",
+    "action.newsupplier": "New supplier",
+    "action.load": "Load",
     "nav.tasks": "Tasks",
     "nav.sources": "Sources",
     "nav.suppliers": "Suppliers",
@@ -142,7 +143,7 @@ describe("the screen opens at all", () => {
     await open();
 
     const buttons = [...document.querySelectorAll("button")].map((b) => b.textContent);
-    expect(buttons).toContain("Record a new supplier");
+    expect(buttons).toContain("New supplier");
     expect(buttons).toContain("Load");
     expect(document.body.textContent).toContain("Northwind");
   });
@@ -228,5 +229,48 @@ describe("loading a file (decision 0216)", () => {
 
     expect(document.body.textContent).toContain("needs an ERP identifier column");
     expect(document.body.textContent).not.toContain("could not reach the service");
+  });
+});
+
+describe("both ways in, side by side (decision 0237)", () => {
+  /**
+   * **A load brings many; recording brings one.** Different acts, the
+   * same question — *how does a supplier get into this list* — so a
+   * person looking for either should find both.
+   */
+  it("puts New supplier beside Load", async () => {
+    stubFetch({ suppliers: [], lastLoad: null });
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { open } = await import("/suppliers.js");
+    await open();
+
+    const bar = [...document.querySelectorAll(".statebuttons")].find((b) =>
+      b.textContent?.includes("Load")
+    );
+    expect(bar?.textContent).toContain("New supplier");
+  });
+
+  it("leaves both able to be clicked", async () => {
+    /**
+     * **`actionLink` disables a button with no `onclick`** — decision
+     * 0161's rule that an action with nothing to do says so.
+     *
+     * Assigning `.onclick` after construction leaves it **disabled and
+     * looking fine**: the icon, the label and the hover are all there,
+     * and nothing happens. Both buttons shipped that way for the length
+     * of one test run.
+     */
+    stubFetch({ suppliers: [], lastLoad: null });
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { open } = await import("/suppliers.js");
+    await open();
+
+    const disabled = [...document.querySelectorAll("button.actionlink")]
+      .filter((b) => (b as HTMLButtonElement).disabled)
+      .map((b) => b.textContent);
+
+    expect(disabled).toEqual([]);
   });
 });

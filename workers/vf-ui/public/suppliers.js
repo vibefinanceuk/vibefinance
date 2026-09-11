@@ -160,9 +160,15 @@ function outcome(result) {
 
 function loader() {
   const picker = el("input", { type: "file", accept: ".csv,text/csv", id: "supplierfile" });
-  const button = el("button", { class: "primary", text: t("suppliers.loadbutton") });
+  /**
+   * **The handler goes in at construction** — `actionLink` disables a
+   * button with no `onclick` (decision 0161: an action with nothing to
+   * do says so). Assigning `.onclick` afterwards leaves it disabled and
+   * looking fine.
+   */
+  const button = actionLink("load", { primary: true, onclick: () => runLoad() });
 
-  button.onclick = async () => {
+  async function runLoad() {
     const file = picker.files?.[0];
     if (!file) {
       note(t("suppliers.nofile"));
@@ -170,7 +176,6 @@ function loader() {
     }
 
     button.disabled = true;
-    button.textContent = t("suppliers.loading");
 
     /**
      * **One `try` per thing that can fail, not one around everything** —
@@ -228,9 +233,8 @@ function loader() {
       note(`${t("suppliers.loadbroke")} ${err?.message ?? ""}`);
     } finally {
       button.disabled = false;
-      button.textContent = t("suppliers.loadbutton");
     }
-  };
+  }
 
   return el("div", { class: "panel" }, [
     el("h2", { text: t("suppliers.loadheading") }),
@@ -242,7 +246,16 @@ function loader() {
      */
     el("p", { class: "muted", text: t("suppliers.loadhelp") }),
     picker,
-    button,
+    /**
+     * **Both ways a supplier gets here, side by side** — decision 0237.
+     *
+     * A load brings many at once from the ERP; recording one brings a
+     * single supplier the ERP does not have yet (decision 0231). They
+     * are different acts and the same question — *how does a supplier
+     * get into this list* — so a person looking for either should find
+     * both.
+     */
+    el("div", { class: "statebuttons" }, [button, newSupplier()]),
   ]);
 }
 
@@ -254,9 +267,9 @@ function loader() {
  * to a new-supplier process rather than an override of a master.
  */
 function newSupplier() {
-  const button = el("button", { class: "secondary", text: t("suppliers.new") });
+  const button = actionLink("newsupplier", { onclick: () => openNewSupplier() });
 
-  button.onclick = () => {
+  function openNewSupplier() {
     const problem = el("div", { class: "warn" });
     const fields = {};
 
@@ -330,9 +343,9 @@ function newSupplier() {
     };
     document.body.append(backdrop);
     fields.name.focus();
-  };
+  }
 
-  return el("div", { class: "statebuttons" }, [button]);
+  return button;
 }
 
 /**
@@ -630,7 +643,6 @@ function render() {
         topbar(t("suppliers.heading"), t("suppliers.mirror")),
         el("div", { id: "suppliers-note", class: "warn" }),
         freshness(),
-        newSupplier(),
         loader(),
         el("div", { class: "panel" }, [supplierRows()]),
       ])
