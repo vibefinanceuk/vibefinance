@@ -375,7 +375,27 @@ field can carry its Business Term — an annotation anchored to `BT-48`
 survives re-rendering, zoom and translation, where a coordinate on an
 image does not.
 
-**4. Process configuration, versioned** (decision 0150). Adding and
+**4. Supplier and supplier site** (decision 0207) — **evaluated, and
+there is nothing there today.**
+
+A seller exists only as facts on an invoice, copied to
+`supplier_vat_id` so duplicates can group. **No supplier table, no site,
+no terms, no hold, no ERP identifier** — and `party.first_document` has
+been in the vocabulary since decision 0031 with nothing computing it.
+
+**Oracle's definition is the useful part**: a site is not an address, it
+is *"the business relationship between a procurement business unit and
+the supplier"* — so a site is `(supplier, operating unit)`, and decision
+0036's tree is already the other half.
+
+**Matching is decision 0204 pointed the other way**: `BT-34` and `BT-31`
+instead of `BT-49` and `BT-48`, with the same three failures.
+
+**The first question is whether we are the master or a mirror.** If the
+ERP owns suppliers this is a projection, and *"create a new supplier"*
+means raising a request there — which changes everything below it.
+
+**5. Process configuration, versioned** (decision 0150). Adding and
 removing stages through a screen, with a version number an invoice
 carries — so it is always apparent which shape of the process an item
 ran under.
@@ -395,7 +415,7 @@ frozen because changing it mid-flight is incoherent, and the rules are
 current because a threshold tightened this morning should apply to
 invoices reaching Approval this afternoon.
 
-**5. Email sending**, which decision 0125 evaluates. "Email" means three
+**6. Email sending**, which decision 0125 evaluates. "Email" means three
 different things — supplier contacts *out to strangers*, user
 notifications *out to colleagues*, and a source which is *inbound* and
 not sending at all.
@@ -413,23 +433,23 @@ Still open: **which provider**, **where sending lives** (0091 says the
 control plane never holds customer content), **whether templates sit in
 D1** like `ui_strings`, and **what happens when sending fails**.
 
-**6. BG-4 and BG-7 in the vocabulary.** The seller and buyer field lists
+**7. BG-4 and BG-7 in the vocabulary.** The seller and buyer field lists
 live in the viewer (0115). Recording business-group membership in
 `shared`, as `INVOICE_LINE_FIELDS` does for BG-25, is the consistent
 thing and a known shortcut until it is done.
 
-**7. BG-23, the VAT breakdown.** Mandatory and **repeating** — one entry
+**8. BG-23, the VAT breakdown.** Mandatory and **repeating** — one entry
 per VAT category and rate, whose tax amounts must sum to BT-110. The
 flat facts model cannot hold a repeating group (0112). A design
 question, not an omission, and *"one of the most common causes of
 validation errors"*.
 
-**8. Despatch Advice (T16).** The goods receipt, and the missing third
+**9. Despatch Advice (T16).** The goods receipt, and the missing third
 leg of three-way matching — **before the matcher, not after** (0082).
 BT-132 now exists, which is what lets matching compare a line to an
 order line.
 
-**9. Acting on `cbc:CustomizationID` beyond rendering.** Decision 0205
+**10. Acting on `cbc:CustomizationID` beyond rendering.** Decision 0205
 reads it to decide whether a document is Peppol BIS 3.0 and refuses the
 rendering otherwise — which is the first thing to use it. **Nothing
 routes or validates on it**, so a document from another profile is
@@ -439,7 +459,7 @@ processed as though it were this one.
 (0112), so the discriminator is available; detection still does not use
 it, and a valid Peppol Order sent to `/sources/:id/capture` is refused.
 
-**10. `party.first_document`**, the **all-users task view**, a **screen
+**11. `party.first_document`**, the **all-users task view**, a **screen
 for placing an invoice** by hand, and **four more languages** —
 `GET /ui-strings/keys` shows the gaps.
 
