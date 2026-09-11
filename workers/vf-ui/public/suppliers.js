@@ -320,11 +320,7 @@ function newSupplier() {
               }
             },
           }),
-          el("button", {
-            class: "secondary",
-            text: t("viewer.supplier.close"),
-            onclick: () => backdrop.remove(),
-          }),
+          actionLink("close", { onclick: () => backdrop.remove() }),
         ]),
       ]),
     ]);
@@ -413,6 +409,38 @@ function openSupplier(s) {
     render();
   };
 
+  const save = actionLink("save", {
+    primary: true,
+    onclick: () => {
+      const body = Object.fromEntries(
+        Object.entries(fields).map(([k, input]) => [k, input.value.trim() || null])
+      );
+
+      if (!fedByLoad) {
+        send("PUT", body, reload);
+        return;
+      }
+
+      /**
+       * **The warning the operator asked for**, shown before the save
+       * rather than after: *"the information master is the ERP system,
+       * and data changes should be made there."*
+       *
+       * And it says what will actually happen — **the next load
+       * overwrites this** — because *"should be made there"* invites
+       * somebody to wonder whether it matters.
+       */
+      problem.replaceChildren(
+        el("div", { class: "warn", text: t("suppliers.mastersays") }),
+        el("button", {
+          class: "primary",
+          text: t("suppliers.saveanyway"),
+          onclick: () => send("PUT", body, reload),
+        })
+      );
+    },
+  });
+
   /**
    * Hold, release, activate, deactivate — a flag the ERP also sets, and
    * **each pair replaces the other** — decision 0234.
@@ -453,39 +481,18 @@ function openSupplier(s) {
     s.status === "active"
       ? actionLink("deactivate", { onclick: () => send("PATCH", { status: "inactive" }, reload) })
       : actionLink("activate", { onclick: () => send("PATCH", { status: "active" }, reload) }),
+    /**
+     * **Every action in one row** — decision 0236, at the operator's
+     * asking.
+     *
+     * Save and Close sat below the form while Hold and Deactivate sat
+     * above it, which made the form look like it separated two kinds of
+     * thing. **It does not**: all four act on the supplier, and a person
+     * scanning for what they can do should find one place.
+     */
+    save,
+    actionLink("close", { onclick: () => close() }),
   ]);
-
-  const save = actionLink("save", {
-    primary: true,
-    onclick: () => {
-      const body = Object.fromEntries(
-        Object.entries(fields).map(([k, input]) => [k, input.value.trim() || null])
-      );
-
-      if (!fedByLoad) {
-        send("PUT", body, reload);
-        return;
-      }
-
-      /**
-       * **The warning the operator asked for**, shown before the save
-       * rather than after: *"the information master is the ERP system,
-       * and data changes should be made there."*
-       *
-       * And it says what will actually happen — **the next load
-       * overwrites this** — because *"should be made there"* invites
-       * somebody to wonder whether it matters.
-       */
-      problem.replaceChildren(
-        el("div", { class: "warn", text: t("suppliers.mastersays") }),
-        el("button", {
-          class: "primary",
-          text: t("suppliers.saveanyway"),
-          onclick: () => send("PUT", body, reload),
-        })
-      );
-    },
-  });
 
   const box = el("div", { class: "popout" }, [
     el("h3", { text: s.name }),
@@ -507,10 +514,6 @@ function openSupplier(s) {
     stateButtons,
     form,
     problem,
-    el("div", { class: "statebuttons" }, [
-      save,
-      el("button", { class: "secondary", text: t("viewer.supplier.close"), onclick: () => close() }),
-    ]),
   ].filter(Boolean));
 
   const backdrop = el("div", { class: "backdrop" }, [box]);

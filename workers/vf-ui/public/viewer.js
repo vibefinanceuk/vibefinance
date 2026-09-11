@@ -950,7 +950,8 @@ export async function openViewer(task, onClose) {
             },
           })
         : null,
-      el("button", { class: "secondary", text: t("viewer.supplier.close") }),
+      // One icon for closing, everywhere (decision 0236).
+      actionLink("close"),
     ].filter(Boolean));
 
     const backdrop = el("div", { class: "backdrop" }, [box]);

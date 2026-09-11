@@ -228,6 +228,8 @@ const KEYS_THE_INTERFACE_USES = [
   "action.hold",
   "action.releasehold",
   "action.deactivate",
+  "action.activate",
+  "action.close",
   "action.changeseller",
   "viewer.buyer.findheading",
   "viewer.buyer.searchhint",
@@ -533,5 +535,58 @@ describe("every field a screen renders has a word (decision 0172)", () => {
       `Fields with no label: ${missing.join(", ")}. A screen rendering ` +
         "`field.description` is a screen showing a customer our own key."
     ).toEqual([]);
+  });
+});
+
+describe("every action a button names has words (decision 0236)", () => {
+  /**
+   * **`action.activate` never existed.**
+   *
+   * Migration 0065 left it out on a claim it was already defined, which
+   * came from a grep that matched `action.save` twice — and the same
+   * edit took it out of the list above, so nothing noticed. The button
+   * rendered its own key on screen, in a product.
+   *
+   * **A list checked against itself is not a check.** This reads the
+   * icon set instead, which is the other end of the same pair:
+   * `actionLink` draws `ICONS[name]` and labels it `t("action." +
+   * name)`, so **every glyph needs a string and a missing one is a raw
+   * key in the interface.**
+   */
+  it("defines a string for every icon an action can use", async () => {
+    const icons = await import("../../vf-ui/public/icons.js?raw");
+    const names = [...(icons.default as string).matchAll(/^\s{2}([a-z]+):/gm)].map((m) => m[1]);
+
+    // A guard on the guard: a pattern matching nothing would pass.
+    expect(names.length).toBeGreaterThan(10);
+
+    const rows = await env.CONTROL_DB.prepare(
+      "SELECT key FROM ui_strings WHERE key LIKE 'action.%' AND locale = 'en'"
+    ).all<{ key: string }>();
+    const defined = new Set(rows.results.map((r) => r.key.replace("action.", "")));
+
+    /**
+     * **Not every icon labels an action.** `paused` marks a rule's
+     * state rather than a button, and `compile` sits **inside** a
+     * button whose words come from elsewhere — both are drawn with
+     * `icon()` directly and never through `actionLink`.
+     *
+     * The first version of this list had `compile` in it, and the test
+     * failed: **a glyph used one way does not need what a glyph used
+     * the other way does.** Named explicitly for that reason — a new
+     * action added without a string fails on the line that lists it.
+     */
+    const asActions = [
+      "expand", "save", "complete", "release", "return", "discard", "claim",
+      "activate", "deactivate", "hold", "releasehold", "close",
+      "changeseller", "changebuyer",
+    ];
+
+    for (const action of asActions) {
+      expect(names, `${action} has no icon`).toContain(action);
+    }
+
+    const wordless = asActions.filter((a) => !defined.has(a));
+    expect(wordless).toEqual([]);
   });
 });

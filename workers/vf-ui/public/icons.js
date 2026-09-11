@@ -69,6 +69,16 @@ export const ICONS = {
    * the hard way.
    */
   hold: '<path d="M9.5 7v10M14.5 7v10"/>',
+
+  /**
+   * **A cross, because close is not cancel** — decision 0236.
+   *
+   * Every pop-out has one and none had an icon. An arrow out would say
+   * *go back somewhere*, and these open over a screen that is still
+   * there — **nothing is undone by closing**, which is exactly what a
+   * cross means and what *cancel* would not.
+   */
+  close: '<path d="M6 6l12 12M18 6 6 18"/>',
   releasehold: '<path d="M8 6.5 18 12 8 17.5z"/>',
 
   /**
