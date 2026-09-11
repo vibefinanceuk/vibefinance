@@ -401,7 +401,7 @@ elsewhere.
 
 | Package | Tests |
 |---|---|
-| `vf-app` | 1350 |
+| `vf-app` | 1356 |
 | `vf-licence` | 318 |
 | `vf-ui` | 49 Worker · 224 browser |
 | `shared` | 252 passing, 2 known pre-existing failures |
@@ -424,7 +424,7 @@ holding — 43 migrations for `vf-app`, 42 for `vf-licence`.
 | `docs/design/mockups/` | Four screens as static HTML | Current |
 | `docs/design/multi-authority-intake.md` | Non-EN-16931 authorities | Design only |
 | `docs/design/text-layer-extraction.md` | Reading a PDF's own text | Design only |
-| `docs/decisions/` | 218 decision records | Current |
+| `docs/decisions/` | 219 decision records | Current |
 | `docs/decisions/SUPERSEDED.md` | Which records supersede which | **Read first** |
 
 Document 4's markdown source is at `docs/documents/`, with

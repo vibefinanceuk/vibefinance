@@ -52,6 +52,10 @@ const COLUMNS: Record<string, string> = {
   town: "city",
   postal_code: "postal_code",
   postcode: "postal_code",
+  // Where a person writes to this supplier — decision 0219.
+  email: "email",
+  "email address": "email",
+  "supplier email": "email",
 };
 
 /** A spreadsheet's idea of true. */
@@ -253,8 +257,8 @@ export async function handleLoadSuppliers(
                                 payment_terms, on_hold, hold_reason, match_option,
                                 amount_tolerance_pct, quantity_tolerance_pct,
                                 erp_site_identifier, is_pay_site, is_procurement_site,
-                                address_line, city, postal_code, status, loaded_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', datetime('now'))
+                                address_line, city, postal_code, email, status, loaded_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', datetime('now'))
          ON CONFLICT(id) DO UPDATE SET
            name = excluded.name,
            vat_id = excluded.vat_id,
@@ -271,6 +275,7 @@ export async function handleLoadSuppliers(
            address_line = excluded.address_line,
            city = excluded.city,
            postal_code = excluded.postal_code,
+           email = excluded.email,
            status = 'active',
            loaded_at = datetime('now')`
       )
@@ -292,7 +297,8 @@ export async function handleLoadSuppliers(
         flag(values.is_procurement_site) ? 1 : 0,
         values.address_line || null,
         values.city || null,
-        values.postal_code || null
+        values.postal_code || null,
+        values.email || null
       )
       .run();
 
@@ -421,7 +427,7 @@ export async function handleListSuppliers(db: D1Database): Promise<RouteResult> 
     .prepare(
       `SELECT id, erp_identifier, erp_site_identifier, name, vat_id, electronic_address,
               country, payment_terms, on_hold, hold_reason, match_option, status,
-              is_pay_site, is_procurement_site, address_line, city, postal_code
+              is_pay_site, is_procurement_site, address_line, city, postal_code, email
        FROM suppliers
        ORDER BY status, name`
     )
@@ -443,6 +449,7 @@ export async function handleListSuppliers(db: D1Database): Promise<RouteResult> 
       address_line: string | null;
       city: string | null;
       postal_code: string | null;
+      email: string | null;
     }>();
 
   const load = await db
@@ -470,6 +477,7 @@ export async function handleListSuppliers(db: D1Database): Promise<RouteResult> 
         addressLine: r.address_line,
         city: r.city,
         postalCode: r.postal_code,
+        email: r.email,
       })),
       /**
        * **Null where nothing was ever loaded**, which a screen must say

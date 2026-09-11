@@ -262,7 +262,7 @@ export async function handleGetInvoice(db: D1Database, invoiceId: string): Promi
   const invoice = await db
     .prepare(
       `SELECT id, supplier_vat_id, currency, issue_date, total_with_vat, facts_json,
-              org_unit_id, org_assigned_by
+              org_unit_id, org_assigned_by, supplier_id
        FROM invoice_headers WHERE id = ?`
     )
     .bind(invoiceId)
@@ -274,6 +274,7 @@ export async function handleGetInvoice(db: D1Database, invoiceId: string): Promi
       total_with_vat: number | null;
       facts_json: string;
       org_unit_id: string | null;
+      supplier_id: string | null;
       org_assigned_by: string | null;
     }>();
 
@@ -302,6 +303,22 @@ export async function handleGetInvoice(db: D1Database, invoiceId: string): Promi
    * `document_type`, produced by nothing yet) would be added after the
    * original and is the one to show.
    */
+  /**
+   * The supplier this invoice was matched to, where it was — decision
+   * 0219. Null is a real state and the viewer says so.
+   */
+  const matchedSupplier = invoice.supplier_id
+    ? await db
+        .prepare(
+          `SELECT erp_identifier, erp_site_identifier, name, vat_id, electronic_address,
+                  email, address_line, city, postal_code, country, is_pay_site,
+                  is_procurement_site, on_hold, hold_reason, payment_terms
+           FROM suppliers WHERE id = ?`
+        )
+        .bind(invoice.supplier_id)
+        .first<Record<string, unknown>>()
+    : null;
+
   const document = await db
     .prepare(
       "SELECT content_type, document_type FROM invoice_documents WHERE invoice_id = ? ORDER BY uploaded_at DESC LIMIT 1"
@@ -365,6 +382,20 @@ export async function handleGetInvoice(db: D1Database, invoiceId: string): Promi
       facts,
       lines,
       orgUnitId: invoice.org_unit_id,
+      /**
+       * **Who we matched this to** — decision 0219.
+       *
+       * Not the seller's own fields, which the invoice already carries.
+       * This is **our record of them**, so a person reading the
+       * document can check that the address and email we hold are the
+       * ones printed on it.
+       *
+       * That check is worth more since decision 0218: a supplier with
+       * three sites matches on a pay-site flag rather than on anything
+       * visible, and *"is this the right site"* is exactly what an
+       * image can answer and a VAT number cannot.
+       */
+      supplier: matchedSupplier,
       orgAssignedBy: invoice.org_assigned_by,
       document: document
         ? { contentType: document.content_type, documentType: document.document_type }

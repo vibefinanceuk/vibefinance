@@ -57,6 +57,7 @@ import sourceOrgSql from "../migrations/0052_source_org_column.sql?raw";
 import supplierScreenSql from "../migrations/0053_supplier_screen_strings.sql?raw";
 import supplierLoadErrorSql from "../migrations/0054_supplier_load_error.sql?raw";
 import sitePurposeSql from "../migrations/0055_site_purpose_strings.sql?raw";
+import supplierPanelSql from "../migrations/0056_supplier_panel_strings.sql?raw";
 
 function stripSqlComments(sql: string): string {
   return sql
@@ -141,5 +142,6 @@ export async function applyTestSchema(): Promise<void> {
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(supplierScreenSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(supplierLoadErrorSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(sitePurposeSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(supplierPanelSql)));
 
 }

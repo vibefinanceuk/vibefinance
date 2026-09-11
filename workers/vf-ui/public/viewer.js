@@ -131,6 +131,8 @@ async function loadInvoice(invoiceId) {
       document: body.document ?? null,
       // Whether the document could be read at all — decision 0161.
       intake: body.intake ?? null,
+      // Who we matched this invoice to — decision 0219.
+      supplier: body.supplier ?? null,
       /**
        * **Which unit this document belongs to** — decision 0198, and
        * kept because it decides which fields may be edited (decision
@@ -878,6 +880,89 @@ export async function openViewer(task, onClose) {
   const SELLER_FIELDS = ["BT-27", "BT-31", "BT-34", "BT-40"];
   const BUYER_FIELDS = ["BT-44", "BT-48", "BT-49", "BT-55", "BT-10"];
 
+  /**
+   * **Who we matched this to**, beside the document — decision 0219.
+   *
+   * Not what the invoice says about the seller: that is already in the
+   * fields below. This is **our record of them**, so a person reading
+   * the image can check the address and email we hold are the ones
+   * printed on it.
+   *
+   * The check matters more since decision 0218. A supplier with three
+   * sites matches on a pay-site flag rather than on anything visible,
+   * and *"is this the right site"* is exactly what an image can answer
+   * and a VAT number cannot — all three sites share one.
+   */
+  const supplierPanel = () => {
+    const s = stored.supplier;
+
+    if (!s) {
+      /**
+       * **An unmatched invoice is the case worth explaining**, not
+       * hiding. A panel that simply disappears says nothing; the reason
+       * says whether somebody should be loading a file or choosing a
+       * site.
+       */
+      const why = stored.facts?.["supplier.unmatchedReason"];
+      return el("div", { class: "panel" }, [
+        el("h3", { text: t("viewer.supplier") }),
+        el("div", { class: "warn", text: t(`viewer.supplier.${why ?? "none"}`) }),
+      ]);
+    }
+
+    /** Left: what identifies them. Right: where they are. */
+    const identity = [
+      [t("viewer.supplier.name"), s.name],
+      [t("viewer.supplier.vat"), s.vatId],
+      [t("viewer.supplier.endpoint"), s.electronicAddress],
+      [t("viewer.supplier.email"), s.email],
+    ];
+
+    const where = [
+      [t("viewer.supplier.street"), s.addressLine],
+      [t("viewer.supplier.city"), s.city],
+      [t("viewer.supplier.postcode"), s.postalCode],
+      [t("viewer.supplier.country"), s.country],
+    ];
+
+    const column = (pairs) =>
+      el(
+        "div",
+        { class: "vfields" },
+        pairs.map(([label, value]) =>
+          el("div", { class: "vfield" }, [
+            el("label", { text: label }),
+            // **An empty value is shown as empty**, not omitted: a
+            // missing email is a fact about the supplier record, and a
+            // row that vanishes reads as a field that does not exist.
+            el("div", { class: value ? "" : "muted", text: value || "—" }),
+          ])
+        )
+      );
+
+    return el("div", { class: "panel" }, [
+      el("h3", { text: t("viewer.supplier") }),
+      /**
+       * **Which site, and what it is for.** The reason this invoice
+       * reached this record rather than one of its siblings.
+       */
+      el("div", {
+        class: "sub",
+        text: [
+          s.erpIdentifier,
+          s.erpSiteIdentifier,
+          s.isPaySite ? t("suppliers.pay") : null,
+        ]
+          .filter(Boolean)
+          .join(" · "),
+      }),
+      s.onHold
+        ? el("div", { class: "warn", text: `${t("viewer.supplier.onhold")} ${s.holdReason ?? ""}` })
+        : null,
+      el("div", { class: "columns" }, [column(identity), column(where)]),
+    ].filter(Boolean));
+  };
+
   const partyPanel = (titleKey, codes) => {
     const shown = headerFields.filter((f) => codes.includes(f.field));
     // A panel with nothing in it is worse than no panel: it says
@@ -958,6 +1043,9 @@ export async function openViewer(task, onClose) {
           el("div", {}, [
             // Seller and buyer side by side, in the space the four
             // status panels were using (decision 0115).
+            // Our record of the supplier first, because it is what the
+            // image is being checked against (decision 0219).
+            supplierPanel(),
             el("div", { class: "parties" }, [partyPanel("viewer.seller", SELLER_FIELDS), partyPanel("viewer.buyer", BUYER_FIELDS)].filter(Boolean)),
             el("div", { class: "panel" }, [
               el("h3", { text: t("viewer.fields") }),

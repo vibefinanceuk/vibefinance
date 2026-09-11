@@ -4,6 +4,7 @@ import { applyTestSchema } from "./setup.js";
 import { handleLoadSuppliers, handleListSuppliers, parseCsv } from "../src/load-suppliers.js";
 import { matchSupplier } from "../src/match-supplier.js";
 import { generateApiKey, hashApiKey } from "../src/user-auth.js";
+import { handleGetInvoice } from "../src/invoice-facts-route.js";
 
 /**
  * Loading the customer's supplier master file — decision 0211.
@@ -447,5 +448,90 @@ describe("a supplier already there under a different id (decision 0217)", () => 
 
     const count = await env.DB.prepare("SELECT count(*) AS n FROM suppliers").first<{ n: number }>();
     expect(count?.n).toBe(2);
+  });
+});
+
+describe("an email to write to (decision 0219)", () => {
+  it("loads one", async () => {
+    /**
+     * **Deliberately not the electronic address.** `BT-34` is a Peppol
+     * endpoint under a scheme, machine-routed and unreadable; this is
+     * where a human sends a question — and decision 0031 built
+     * `return_to_supplier` with no way to reach one.
+     */
+    const result = await load("ERP ID,Name,Email Address\n40118,Northwind,ap@northwind.example");
+    expect(result.status).toBe(200);
+
+    const row = await env.DB.prepare("SELECT email FROM suppliers").first<{ email: string }>();
+    expect(row?.email).toBe("ap@northwind.example");
+  });
+
+  it("reports it with the list", async () => {
+    await load("ERP ID,Name,Email\n40118,Northwind,ap@northwind.example");
+    const body = (await handleListSuppliers(env.DB)).body as { suppliers: { email: string }[] };
+    expect(body.suppliers[0].email).toBe("ap@northwind.example");
+  });
+
+  it("leaves it empty where the file has none", async () => {
+    // Most rows, and an empty email is a fact rather than a failure.
+    await load("ERP ID,Name\n40118,Northwind");
+    const body = (await handleListSuppliers(env.DB)).body as { suppliers: { email: null }[] };
+    expect(body.suppliers[0].email).toBeNull();
+  });
+});
+
+describe("what the viewer is told about the supplier (decision 0219)", () => {
+  /**
+   * **Our record of them, not what the invoice says.** A person reading
+   * the image checks the address and email we hold are the ones printed
+   * on it — which matters more since decision 0218, because a supplier
+   * with three sites matches on a pay-site flag rather than on anything
+   * visible.
+   */
+  it("reports the matched supplier with its address and email", async () => {
+    await load(
+      "ERP ID,Site,Name,Pay Site,Address,City,Postcode,Email,VAT\n" +
+        "40121,PAY-UK,Acme Payments,yes,PO Box 44,London,EC2V 7HH,ap@acme.example,GB1"
+    );
+
+    await env.DB.prepare(
+      "INSERT INTO invoice_headers (id, facts_json, supplier_id) VALUES ('inv-1', '{}', '40121:PAY-UK')"
+    ).run();
+
+    const result = await handleGetInvoice(env.DB, "inv-1");
+    const supplier = (result.body as { supplier: Record<string, unknown> }).supplier;
+
+    expect(supplier.name).toBe("Acme Payments");
+    expect(supplier.email).toBe("ap@acme.example");
+    expect(supplier.city).toBe("London");
+    // **Which site, and why this one** — the reason it reached this
+    // record rather than one of its siblings.
+    expect(supplier.erp_site_identifier).toBe("PAY-UK");
+    expect(supplier.is_pay_site).toBe(1);
+  });
+
+  it("says null where nothing was matched", async () => {
+    // **A real state**, and the viewer explains it rather than hiding
+    // the panel.
+    await env.DB.prepare(
+      `INSERT INTO invoice_headers (id, facts_json)
+       VALUES ('inv-1', json_object('supplier.unmatchedReason', 'no_match'))`
+    ).run();
+
+    const result = await handleGetInvoice(env.DB, "inv-1");
+    expect((result.body as { supplier: null }).supplier).toBeNull();
+  });
+
+  it("carries a hold, because it changes what happens next", async () => {
+    await load("ERP ID,Name,Hold,hold_reason\n40118,Northwind,yes,Under dispute");
+    await env.DB.prepare(
+      "INSERT INTO invoice_headers (id, facts_json, supplier_id) VALUES ('inv-1', '{}', '40118')"
+    ).run();
+
+    const result = await handleGetInvoice(env.DB, "inv-1");
+    const supplier = (result.body as { supplier: Record<string, unknown> }).supplier;
+
+    expect(supplier.on_hold).toBe(1);
+    expect(supplier.hold_reason).toBe("Under dispute");
   });
 });
