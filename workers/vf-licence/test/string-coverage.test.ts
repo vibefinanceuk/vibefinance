@@ -655,3 +655,45 @@ describe("every action a button names has words (decision 0236)", () => {
     expect(wordless).toEqual([]);
   });
 });
+
+describe("every key the dashboard asks for exists (decision 0249)", () => {
+  /**
+   * **The list above checks keys the migrations define.** That is a
+   * list checked against itself — decision 0236's finding — and it
+   * passed while the picker listed `dash.waiting_for_me` to a person
+   * choosing what to see.
+   *
+   * This reads the **source**, which is the other end: every
+   * `t("dash.…")` in `dashboard.js`, and every name the picker builds
+   * from a card type.
+   */
+  it("defines every dash key the screen looks up", async () => {
+    const source = (await import("../../vf-ui/public/dashboard.js?raw")).default as string;
+
+    /**
+     * The literal ones, plus the two the picker composes — `dash.` and
+     * `dash.about.` plus a card type, which is exactly where the fault
+     * was: **a key built at runtime is invisible to a grep for
+     * `t("dash.x")`.**
+     */
+    const literal = [...source.matchAll(/t\("(dash\.[a-z._]+)"\)/g)].map((m) => m[1]);
+    const composed = [...source.matchAll(/`dash\.(?:about\.)?\$\{/g)].length;
+
+    expect(literal.length).toBeGreaterThan(10);
+    expect(composed).toBeGreaterThan(0);
+
+    const { CARD_TYPES } = await import("../../vf-app/src/dashboard-route.js");
+    const built = (CARD_TYPES as readonly string[]).flatMap((type) => [
+      `dash.${type}`,
+      `dash.about.${type}`,
+    ]);
+
+    const rows = await env.CONTROL_DB.prepare(
+      "SELECT key FROM ui_strings WHERE locale = 'en'"
+    ).all<{ key: string }>();
+    const defined = new Set(rows.results.map((r: { key: string }) => r.key));
+
+    const missing = [...new Set([...literal, ...built])].filter((k) => !defined.has(k));
+    expect(missing).toEqual([]);
+  });
+});

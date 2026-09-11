@@ -133,10 +133,18 @@ function money(amount, currency) {
  * route's set can grow ahead of this one, and decision 0240 already
  * decided that one card failing is not the dashboard failing.
  */
+/**
+ * **The card type is the name** — decision 0249.
+ *
+ * The picker asks for `dash.<card_type>` and the headings used
+ * different keys, so five of the nine listed their own key to a person
+ * choosing what to see. Two names for one thing is what decision 0236
+ * already cost a morning.
+ */
 const RENDERERS = {
   waiting_for_me: (data) =>
     panel(
-      t("dash.waiting"),
+      t("dash.waiting_for_me"),
       null,
       { weight: "tile" },
       figure(data.count, t("dash.acrossstages").replace("{n}", String(data.stages)))
@@ -174,7 +182,7 @@ const RENDERERS = {
 
     return el("div", { class: "panel" }, [
       el("div", { class: "cardhead" }, [
-        el("h3", { text: t("dash.myclock") }),
+        el("h3", { text: t("dash.on_my_clock") }),
         el("div", { class: "chips" }, sorts),
       ]),
       el("div", { class: "sub", text: t("dash.myclocksub") }),
@@ -202,7 +210,7 @@ const RENDERERS = {
      * the figure does not.
      */
     if (stages.length <= 1) {
-      return panel(t("dash.wherethings"), null, { weight: "tile" },
+      return panel(t("dash.where_things_are"), null, { weight: "tile" },
         stages.length === 0
           ? el("div", { class: "muted", text: t("dash.nothinginflight") })
           : figure(stages[0].n, stages[0].stage_name));
@@ -217,7 +225,7 @@ const RENDERERS = {
      * order a ring destroys.
      */
     return panel(
-      t("dash.wherethings"),
+      t("dash.where_things_are"),
       t("dash.bystage"),
       { weight: "half" },
       donutChart(stages.map((s) => ({ label: s.stage_name, value: s.n })))
@@ -286,12 +294,12 @@ const RENDERERS = {
     const suppliers = data.suppliers ?? [];
     if (suppliers.length === 1) {
       // The same argument as above.
-      return panel(t("dash.exceptions"), null, { weight: "tile" },
+      return panel(t("dash.exceptions_by_supplier"), null, { weight: "tile" },
         figure(suppliers[0].n, suppliers[0].supplier, { warn: true }));
     }
 
     return panel(
-      t("dash.exceptions"),
+      t("dash.exceptions_by_supplier"),
       t("dash.exceptionssub"),
       { weight: "half" },
       suppliers.length === 0
@@ -312,12 +320,12 @@ const RENDERERS = {
      * always full width, which reads as *"100%"* and means nothing.
      */
     if (rows.length === 1) {
-      return panel(t("dash.needssomebody"), null, { weight: "tile" },
+      return panel(t("dash.needs_somebody"), null, { weight: "tile" },
         figure(rows[0].value, rows[0].label, { warn: true }));
     }
 
     return panel(
-      t("dash.needssomebody"),
+      t("dash.needs_somebody"),
       t("dash.needssomebodysub"),
       { weight: "half" },
       rows.length === 0

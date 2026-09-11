@@ -235,6 +235,27 @@ describe("every screen can reach every other (decision 0191)", () => {
    * shell; this one assumed it was already rendered, which was true
    * when it was the only screen.
    */
+  /**
+   * **Wait for the screen, not for a duration** — decision 0249.
+   *
+   * This slept 40ms after each click, which is a guess about how long a
+   * dynamic import and two stubbed fetches take. **It was enough alone
+   * and not enough in a full run**, so the test failed depending on
+   * what else was running — reported three times as a mystery, twice
+   * papered over, and recorded as not understood in decision 0244.
+   *
+   * A fixed sleep in an async test is a race with a number on it.
+   */
+  async function until(condition: () => boolean, what: string) {
+    for (let i = 0; i < 100; i++) {
+      if (condition()) return;
+      await new Promise((r) => setTimeout(r, 10));
+    }
+    throw new Error(`waited a second and ${what} never happened`);
+  }
+
+  const highlighted = () => document.querySelector(".nav a.on")?.textContent;
+
   async function navigateFrom(screen: string) {
     await openList([APPROVAL_TASK]);
 
@@ -242,13 +263,13 @@ describe("every screen can reach every other (decision 0191)", () => {
       (a) => a.textContent === screen
     ) as HTMLElement;
     link.click();
-    await new Promise((r) => setTimeout(r, 40));
+    await until(() => highlighted() === screen, `${screen} never became current`);
 
     const back = [...document.querySelectorAll(".nav a")].find(
       (a) => a.textContent === "Tasks"
     ) as HTMLElement;
     back.click();
-    await new Promise((r) => setTimeout(r, 40));
+    await until(() => highlighted() === "Tasks", "Tasks never became current again");
   }
 
   it("reaches Tasks from Sources", async () => {
