@@ -1146,16 +1146,19 @@ export async function openViewer(task, onClose) {
     const panel = el("div", { class: "panel" }, [
       el("h3", { text: t("viewer.buyer") }),
       /**
-       * **Which unit, where the entity is a different row.** Decision
-       * 0036 put the identity on the legal entity and assigns invoices
-       * to an operating unit beneath it, so naming only one of them
-       * names a department with no identity or a company with no
-       * department.
+       * **No sub-line here** — decision 0227.
+       *
+       * It named the entity and the unit, which decision 0224 needed
+       * when an invoice was assigned to a department beneath a company.
+       * **Since decision 0226 the header names the company**, so the
+       * two are the same row and the line repeated the Name directly
+       * beneath it.
+       *
+       * The Seller card keeps its sub-line, and that is not an
+       * inconsistency: it carries the ERP number, the site and whether
+       * the site takes payment — none of which appears anywhere else on
+       * the card.
        */
-      el("div", {
-        class: "sub",
-        text: b.unitName !== b.entityName ? `${b.entityName} · ${b.unitName}` : b.unitName,
-      }),
       el("div", { class: "sellergrid" }, [
         el("div", {}, [
           pair(t("viewer.supplier.name"), b.entityName),

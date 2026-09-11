@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
  * The Validation viewer, in a DOM — decision 0121.
@@ -116,6 +116,21 @@ const STRINGS = {
 beforeEach(() => {
   mountShell();
   vi.resetModules();
+});
+
+/**
+ * **A stub that outlives its file** — decision 0227.
+ *
+ * `vi.stubGlobal` is not undone between files, so this one's `fetch`
+ * was still installed when `tasks.test.ts` ran, and that file's
+ * navigation test failed **depending on the order the two were
+ * scheduled in** — passing alone and failing together.
+ *
+ * A test that fails by order is worse than one that fails: the first
+ * time it goes green nobody knows whether it was fixed or reshuffled.
+ */
+afterEach(() => {
+  vi.unstubAllGlobals();
 });
 
 describe("the form shows what was saved (decision 0120)", () => {
@@ -1274,5 +1289,62 @@ describe("every variable the page uses exists (decision 0223)", () => {
     const rule = page.slice(page.indexOf(".sfield {"), page.indexOf(".sfield {") + 500);
 
     expect(rule).toContain("overflow-wrap");
+  });
+});
+
+describe("the Buyer card says a name once (decision 0227)", () => {
+  /**
+   * **The sub-line repeated the Name directly beneath it.**
+   *
+   * Decision 0224 put the entity and the unit there because an invoice
+   * was assigned to a department beneath a company. **Since decision
+   * 0226 the header names the company**, so the two are the same row.
+   */
+  it("does not repeat the name under the heading", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        const path = String(url).split("?")[0];
+        const bodies: Record<string, unknown> = {
+          "/api/ui-strings": STRINGS,
+          "/api/code-lists": { fields: {} },
+          "/api/field-visibility": FIELDS,
+          "/api/invoices/inv-1": {
+            facts: {},
+            lines: [],
+            supplier: null,
+            buyer: {
+              unitId: "acme-uk",
+              unitName: "Acme UK Limited",
+              entityName: "Acme UK Limited",
+              vatId: "GB123456789",
+              addressLine: "1 Handover Street",
+              city: "London",
+              countryName: "United Kingdom",
+              postalCode: "EC1A 1AA",
+            },
+            validation: { passed: true, checked: [], failures: [] },
+          },
+          "/api/invoices/inv-1/document-url": { url: null },
+          "/api/invoices/inv-1/progress": { inProcess: false, stages: [] },
+        };
+        if (!(path in bodies)) throw new Error(`no stub for ${path}`);
+        return { ok: true, json: async () => bodies[path] } as Response;
+      })
+    );
+
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    await openViewer(TASK, () => {});
+    await new Promise((r) => setTimeout(r, 0));
+
+    const buyerCard = [...document.querySelectorAll(".panel")].find(
+      (p) => p.querySelector("h3")?.textContent === "Buyer"
+    );
+
+    // Once as the value of Name, and nowhere else.
+    const occurrences = (buyerCard?.textContent?.match(/Acme UK Limited/g) ?? []).length;
+    expect(occurrences).toBe(1);
   });
 });
