@@ -38,7 +38,26 @@ const COLUMNS: Record<string, string> = {
   quantity_tolerance_pct: "quantity_tolerance_pct",
   erp_site_identifier: "erp_site_identifier",
   site: "erp_site_identifier",
+  // What a site is for, and where it is — decision 0218.
+  is_pay_site: "is_pay_site",
+  "pay site": "is_pay_site",
+  pay: "is_pay_site",
+  is_procurement_site: "is_procurement_site",
+  "procurement site": "is_procurement_site",
+  purchasing: "is_procurement_site",
+  address_line: "address_line",
+  address: "address_line",
+  street: "address_line",
+  city: "city",
+  town: "city",
+  postal_code: "postal_code",
+  postcode: "postal_code",
 };
+
+/** A spreadsheet's idea of true. */
+function flag(value: string | undefined): boolean {
+  return ["1", "y", "yes", "true", "x"].includes((value ?? "").trim().toLowerCase());
+}
 
 export interface LoadResult {
   loadId: string;
@@ -169,7 +188,7 @@ export async function handleLoadSuppliers(
       continue;
     }
 
-    const onHold = ["1", "y", "yes", "true"].includes((values.on_hold ?? "").toLowerCase());
+    const onHold = flag(values.on_hold);
     if (onHold && !values.hold_reason) {
       /**
        * **A held supplier nobody can explain** is a payment stopped for
@@ -233,8 +252,9 @@ export async function handleLoadSuppliers(
         `INSERT INTO suppliers (id, erp_identifier, name, vat_id, electronic_address, country,
                                 payment_terms, on_hold, hold_reason, match_option,
                                 amount_tolerance_pct, quantity_tolerance_pct,
-                                erp_site_identifier, status, loaded_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', datetime('now'))
+                                erp_site_identifier, is_pay_site, is_procurement_site,
+                                address_line, city, postal_code, status, loaded_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', datetime('now'))
          ON CONFLICT(id) DO UPDATE SET
            name = excluded.name,
            vat_id = excluded.vat_id,
@@ -246,6 +266,11 @@ export async function handleLoadSuppliers(
            match_option = excluded.match_option,
            amount_tolerance_pct = excluded.amount_tolerance_pct,
            quantity_tolerance_pct = excluded.quantity_tolerance_pct,
+           is_pay_site = excluded.is_pay_site,
+           is_procurement_site = excluded.is_procurement_site,
+           address_line = excluded.address_line,
+           city = excluded.city,
+           postal_code = excluded.postal_code,
            status = 'active',
            loaded_at = datetime('now')`
       )
@@ -262,7 +287,12 @@ export async function handleLoadSuppliers(
         matchOption || null,
         values.amount_tolerance_pct ? Number(values.amount_tolerance_pct) : null,
         values.quantity_tolerance_pct ? Number(values.quantity_tolerance_pct) : null,
-        values.erp_site_identifier || null
+        values.erp_site_identifier || null,
+        flag(values.is_pay_site) ? 1 : 0,
+        flag(values.is_procurement_site) ? 1 : 0,
+        values.address_line || null,
+        values.city || null,
+        values.postal_code || null
       )
       .run();
 
@@ -390,7 +420,8 @@ export async function handleListSuppliers(db: D1Database): Promise<RouteResult> 
   const rows = await db
     .prepare(
       `SELECT id, erp_identifier, erp_site_identifier, name, vat_id, electronic_address,
-              country, payment_terms, on_hold, hold_reason, match_option, status
+              country, payment_terms, on_hold, hold_reason, match_option, status,
+              is_pay_site, is_procurement_site, address_line, city, postal_code
        FROM suppliers
        ORDER BY status, name`
     )
@@ -407,6 +438,11 @@ export async function handleListSuppliers(db: D1Database): Promise<RouteResult> 
       hold_reason: string | null;
       match_option: string | null;
       status: string;
+      is_pay_site: number;
+      is_procurement_site: number;
+      address_line: string | null;
+      city: string | null;
+      postal_code: string | null;
     }>();
 
   const load = await db
@@ -429,6 +465,11 @@ export async function handleListSuppliers(db: D1Database): Promise<RouteResult> 
         holdReason: r.hold_reason,
         matchOption: r.match_option,
         status: r.status,
+        isPaySite: r.is_pay_site === 1,
+        isProcurementSite: r.is_procurement_site === 1,
+        addressLine: r.address_line,
+        city: r.city,
+        postalCode: r.postal_code,
       })),
       /**
        * **Null where nothing was ever loaded**, which a screen must say

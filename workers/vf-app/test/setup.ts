@@ -51,6 +51,7 @@ import unitFieldVisibilitySql from "../../../migrations/0046_unit_field_visibili
 import scopedRolesSql from "../../../migrations/0047_roles_are_held_somewhere.sql?raw";
 import stagePermissionSql from "../../../migrations/0048_a_stage_declares_its_permission.sql?raw";
 import supplierMirrorSql from "../../../migrations/0049_supplier_mirror.sql?raw";
+import sitePurposeSql from "../../../migrations/0050_site_purpose_and_address.sql?raw";
 import taskStatesSql from "../../../migrations/0031_task_states_and_returns.sql?raw";
 import orgSettingsSql from "../../../migrations/0032_org_settings_retention.sql?raw";
 import discardedStateSql from "../../../migrations/0033_discarded_task_state.sql?raw";
@@ -199,6 +200,7 @@ export async function applyTestSchema(): Promise<void> {
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(scopedRolesSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(stagePermissionSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(supplierMirrorSql)));
+  await env.DB.exec(toOneStatementPerLine(stripSqlComments(sitePurposeSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(taskStatesSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(orgSettingsSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(discardedStateSql)));

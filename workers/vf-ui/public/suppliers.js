@@ -222,12 +222,33 @@ function supplierRows() {
     return el("div", { class: "muted", text: t("suppliers.none") });
   }
 
+  /**
+   * **What a site is for** — decision 0218, and two flags rather than
+   * one label because a site can be both.
+   *
+   * A site that is neither is a site loaded before the columns existed,
+   * and shows nothing rather than a guess.
+   */
+  const purpose = (s) =>
+    [s.isPaySite ? t("suppliers.pay") : null, s.isProcurementSite ? t("suppliers.procurement") : null]
+      .filter(Boolean)
+      .join(", ") || "—";
+
+  /** Where it is, on one line, which is how an address is read. */
+  const where = (s) =>
+    [s.addressLine, s.postalCode, s.city, s.country].filter(Boolean).join(", ") || "—";
+
   const rows = suppliers.map((s) =>
     el("tr", { class: s.status === "inactive" ? "muted" : "" }, [
+      // **The identifier this record exists for** (decision 0209),
+      // named as the thing it is rather than as "supplier number" —
+      // what matters is that it is the ERP's, not ours.
       el("td", { text: s.erpIdentifier }),
+      el("td", { class: "muted", text: s.erpSiteIdentifier ?? "—" }),
       el("td", { text: s.name }),
+      el("td", { class: "muted", text: purpose(s) }),
+      el("td", { class: "muted", text: where(s) }),
       el("td", { class: "muted", text: s.vatId ?? "—" }),
-      el("td", { class: "muted", text: s.country ?? "—" }),
       el("td", { class: "muted", text: s.paymentTerms ?? "—" }),
       // **A hold is why an invoice routes differently**, so it is not a
       // tick — it is the reason, which is what somebody needs.
@@ -240,9 +261,11 @@ function supplierRows() {
     el("thead", {}, [
       el("tr", {}, [
         el("th", { text: t("suppliers.erpid") }),
+        el("th", { text: t("suppliers.site") }),
         el("th", { text: t("suppliers.name") }),
+        el("th", { text: t("suppliers.purpose") }),
+        el("th", { text: t("suppliers.address") }),
         el("th", { text: t("suppliers.vat") }),
-        el("th", { text: t("suppliers.country") }),
         el("th", { text: t("suppliers.terms") }),
         el("th", { text: t("suppliers.hold") }),
         el("th", { text: t("suppliers.status") }),

@@ -104,18 +104,38 @@ export async function matchSupplier(
      */
     const matches = await db
       .prepare(
-        `SELECT id, erp_identifier FROM suppliers
+        `SELECT id, erp_identifier, is_pay_site FROM suppliers
          WHERE status = 'active'
            AND ${identifier.column} IS NOT NULL
            AND upper(replace(${identifier.column}, ' ', '')) = upper(replace(?, ' ', ''))`
       )
       .bind(value)
-      .all<{ id: string; erp_identifier: string }>();
+      .all<{ id: string; erp_identifier: string; is_pay_site: number }>();
 
     if (matches.results.length === 0) continue;
 
-    if (matches.results.length === 1) {
-      const found = matches.results[0];
+    /**
+     * **An invoice arrives at a pay site** — decision 0218.
+     *
+     * The operator: *"3 sites in the UK, 2 procurement sites and 1
+     * payment site — effectively where orders are sent, versus where
+     * payment is sent."*
+     *
+     * So where several sites share a VAT number and exactly one of them
+     * is the pay site, **that is not a disambiguation guess**: it is
+     * what the flag means. Oracle's `PayPurposeFlag` says which site an
+     * invoice is meant for, and a procurement site was never going to
+     * be the answer.
+     *
+     * Where no site declares a purpose — every row loaded before this
+     * existed — the whole set is considered, and the answer is what it
+     * was.
+     */
+    const paySites = matches.results.filter((m) => m.is_pay_site === 1);
+    const candidates = paySites.length > 0 ? paySites : matches.results;
+
+    if (candidates.length === 1) {
+      const found = candidates[0];
       return {
         supplierId: found.id,
         erpIdentifier: found.erp_identifier,
@@ -126,10 +146,13 @@ export async function matchSupplier(
     }
 
     /**
-     * **Several sites share a VAT number**, which is normal rather than
-     * a data fault: Oracle's site is the relationship between our
-     * business unit and theirs, and a company has one VAT registration
-     * across all of them.
+     * **Several sites share a VAT number *and more than one takes
+     * payment***, which is rarer than it was: decision 0218's pay-site
+     * filter answers the ordinary case, and this is what is left.
+     *
+     * Still normal rather than a data fault: Oracle's site is the
+     * relationship between our business unit and theirs, and a company
+     * has one VAT registration across all of them.
      *
      * Decision 0207 recorded this as harder than the buyer's side, and
      * it is: a supplier with three sites is common, where a buyer with

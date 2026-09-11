@@ -16,12 +16,20 @@ import { matchSupplier } from "../src/match-supplier.js";
 
 async function supplier(
   id: string,
-  fields: { erp?: string; vat?: string; endpoint?: string; site?: string; status?: string } = {}
+  fields: {
+    erp?: string;
+    vat?: string;
+    endpoint?: string;
+    site?: string;
+    status?: string;
+    pay?: boolean;
+    procurement?: boolean;
+  } = {}
 ) {
   await env.DB.prepare(
     `INSERT INTO suppliers (id, erp_identifier, name, vat_id, electronic_address,
-                            erp_site_identifier, status)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`
+                            erp_site_identifier, status, is_pay_site, is_procurement_site)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
   )
     .bind(
       id,
@@ -30,7 +38,9 @@ async function supplier(
       fields.vat ?? null,
       fields.endpoint ?? null,
       fields.site ?? null,
-      fields.status ?? "active"
+      fields.status ?? "active",
+      fields.pay ? 1 : 0,
+      fields.procurement ? 1 : 0
     )
     .run();
 }
@@ -179,5 +189,78 @@ describe("a stale mirror", () => {
      */
     const result = await matchSupplier(env.DB, { "BT-31": "GB9" });
     expect(result.listLoadedAt).toBeNull();
+  });
+});
+
+describe("an invoice arrives at a pay site (decision 0218)", () => {
+  /**
+   * The operator:
+   *
+   *   A supplier might have 3 sites in the UK, 2 procurement sites and
+   *   1 payment site. Effectively where orders are sent, versus where
+   *   payment is sent.
+   *
+   * **So this is not a disambiguation guess.** Oracle's `PayPurposeFlag`
+   * says which site an invoice is meant for, and a procurement site was
+   * never going to be the answer.
+   */
+  it("picks the pay site out of three", async () => {
+    await supplier("uk-buy-1", { erp: "40121", site: "BUY1", vat: "GB1", procurement: true });
+    await supplier("uk-buy-2", { erp: "40121", site: "BUY2", vat: "GB1", procurement: true });
+    await supplier("uk-pay", { erp: "40121", site: "PAY", vat: "GB1", pay: true });
+
+    const result = await matchSupplier(env.DB, { "BT-31": "GB1" });
+    expect(result.supplierId).toBe("uk-pay");
+    expect(result.reason).toBeNull();
+  });
+
+  it("counts a site that does both", async () => {
+    // **Two flags rather than one label**, because a site doing two
+    // jobs is not a third kind of place.
+    await supplier("buy-only", { erp: "40121", site: "BUY", vat: "GB1", procurement: true });
+    await supplier("both", { erp: "40121", site: "BOTH", vat: "GB1", pay: true, procurement: true });
+
+    const result = await matchSupplier(env.DB, { "BT-31": "GB1" });
+    expect(result.supplierId).toBe("both");
+  });
+
+  it("is still ambiguous where two sites take payment", async () => {
+    /**
+     * **What is left after the filter**, and rarer than it was. Picking
+     * one would attach an invoice to terms nobody agreed for it.
+     */
+    await supplier("pay-1", { erp: "40121", site: "P1", vat: "GB1", pay: true });
+    await supplier("pay-2", { erp: "40121", site: "P2", vat: "GB1", pay: true });
+
+    const result = await matchSupplier(env.DB, { "BT-31": "GB1" });
+    expect(result.reason).toBe("ambiguous_site");
+  });
+
+  it("behaves as before where no site declares a purpose", async () => {
+    // **Every row loaded before this existed.** The whole set is
+    // considered, and the answer is what it was.
+    await supplier("a", { erp: "40121", site: "A", vat: "GB1" });
+    await supplier("b", { erp: "40121", site: "B", vat: "GB1" });
+
+    const result = await matchSupplier(env.DB, { "BT-31": "GB1" });
+    expect(result.reason).toBe("ambiguous_site");
+  });
+
+  it("does not need a purpose where there is only one site", async () => {
+    // The ordinary case, and the flags must not break it.
+    await supplier("only", { vat: "GB1" });
+
+    const result = await matchSupplier(env.DB, { "BT-31": "GB1" });
+    expect(result.supplierId).toBe("only");
+  });
+
+  it("ignores a pay site that is inactive", async () => {
+    // **Absent from a later load is inactive** (decision 0208), and an
+    // invoice arriving now belongs to the ERP's current truth.
+    await supplier("old-pay", { erp: "40121", site: "OLD", vat: "GB1", pay: true, status: "inactive" });
+    await supplier("new-pay", { erp: "40121", site: "NEW", vat: "GB1", pay: true });
+
+    const result = await matchSupplier(env.DB, { "BT-31": "GB1" });
+    expect(result.supplierId).toBe("new-pay");
   });
 });
