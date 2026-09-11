@@ -879,7 +879,17 @@ export default {
       const { db } = resolveTenant(request, env);
       const auth = await authenticatePerson(db, request, env);
       if (!auth.user) return json({ error: auth.reason }, 401);
-      if (!(await hasPermission(db, auth.user.id, "Admin.ConfigManagement"))) {
+      /**
+       * **`Admin.Configure`, like the other twenty-one** — decision
+       * 0215.
+       *
+       * `Admin.ConfigManagement` also exists and is used by nothing.
+       * Picking it made this route the only one demanding a permission
+       * no role granted, and a person with every other configuration
+       * right was told *"you do not have permission to do this"* —
+       * correctly, and for a distinction nobody had made.
+       */
+      if (!(await hasPermission(db, auth.user.id, "Admin.Configure"))) {
         return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
       }
 

@@ -91,9 +91,21 @@ const EXPENSE_PERMISSIONS = ["Expense.Submit", "Expense.Approve", "Expense.Revie
  * POST /rules/compile) — though only RuleManagement is actually
  * enforced by this bundle; the /org/* routes stay deliberately
  * unauthenticated (see the decision doc's bootstrap-deadlock
- * reasoning). Configure has no specific route of its own yet — this
- * system's configuration today is entirely `wrangler.jsonc` vars, not
- * an API.
+ * reasoning).
+ *
+ * **`Admin.Configure` is the one routes actually use** — twenty-two of
+ * them, covering sources, ledgers, cost centres and the supplier load.
+ * The note that once said it had "no specific route of its own yet" was
+ * true when written and has not been for months.
+ *
+ * **`Admin.ConfigManagement` is used by nothing**, and is the kind of
+ * placeholder decision 0010 warned about: *"several permissions in this
+ * scheme are placeholders today, unbacked by any real route."*
+ *
+ * Two names a permission could plausibly have is one too many, and
+ * decision 0215 chose one route wrongly because of it. **Not removed
+ * here**: a permission a customer may already have granted is not
+ * something to delete in passing.
  */
 const ADMIN_PERMISSIONS = [
   "Admin.Configure",

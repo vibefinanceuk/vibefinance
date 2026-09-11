@@ -1,8 +1,9 @@
-import { env } from "cloudflare:test";
+import { env, SELF } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
 import { applyTestSchema } from "./setup.js";
 import { handleLoadSuppliers, handleListSuppliers, parseCsv } from "../src/load-suppliers.js";
 import { matchSupplier } from "../src/match-supplier.js";
+import { generateApiKey, hashApiKey } from "../src/user-auth.js";
 
 /**
  * Loading the customer's supplier master file — decision 0211.
@@ -310,5 +311,60 @@ describe("the list, and how old it is (decision 0213)", () => {
     };
     expect(body.suppliers[0].onHold).toBe(true);
     expect(body.suppliers[0].holdReason).toBe("Under dispute");
+  });
+});
+
+describe("who may load a supplier file (decision 0215)", () => {
+  /**
+   * **A permission no role granted.**
+   *
+   * `Admin.Configure` and `Admin.ConfigManagement` both exist. Twenty-
+   * two routes use the first and nothing uses the second — and this
+   * route was written against the second, so a person holding every
+   * other configuration right was told *"you do not have permission to
+   * do this"*, correctly, for a distinction nobody had made.
+   */
+  async function keyFor(permissions: string[]) {
+    const id = crypto.randomUUID();
+    const apiKey = generateApiKey();
+    await env.DB.prepare(
+      "INSERT INTO org_users (id, email, name, api_key_hash) VALUES (?, ?, ?, ?)"
+    )
+      .bind(id, `${id}@acme.com`, "Configurer", await hashApiKey(apiKey))
+      .run();
+
+    const roleId = crypto.randomUUID();
+    await env.DB.prepare(
+      "INSERT INTO org_roles (id, name, permissions_json) VALUES (?, ?, ?)"
+    )
+      .bind(roleId, `Role ${roleId}`, JSON.stringify(permissions))
+      .run();
+    await env.DB.prepare(
+      "INSERT INTO org_user_roles (user_id, role_id, unit_id) VALUES (?, ?, NULL)"
+    )
+      .bind(id, roleId)
+      .run();
+
+    return apiKey;
+  }
+
+  async function postAs(key: string) {
+    return SELF.fetch("https://example.com/suppliers/load", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${key}`, "Content-Type": "text/csv" },
+      body: "ERP ID,Name\n40118,Northwind",
+    });
+  }
+
+  it("lets somebody who configures everything else load a file", async () => {
+    // **The permission twenty-two other routes ask for.**
+    const key = await keyFor(["Admin.Configure"]);
+    expect((await postAs(key)).status).toBe(200);
+  });
+
+  it("refuses somebody with no configuration rights", async () => {
+    // The boundary is real; it was the *name* that was wrong.
+    const key = await keyFor(["AP.Validate"]);
+    expect((await postAs(key)).status).toBe(403);
   });
 });
