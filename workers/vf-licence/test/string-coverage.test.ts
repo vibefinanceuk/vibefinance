@@ -248,6 +248,7 @@ const KEYS_THE_INTERFACE_USES = [
   "dash.today",
   "dash.overdue",
   "dash.duein",
+  "dash.duetoday",
   "dash.sort.held",
   "dash.sort.due",
   "dash.sort.value",

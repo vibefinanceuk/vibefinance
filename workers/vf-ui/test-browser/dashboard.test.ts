@@ -30,6 +30,7 @@ const STRINGS = {
     "dash.today": "today",
     "dash.overdue": "{n}d overdue",
     "dash.duein": "due in {n}d",
+    "dash.duetoday": "due today",
     "dash.sort.held": "Longest held",
     "dash.sort.due": "Soonest due",
     "dash.sort.value": "Highest value",
@@ -467,6 +468,60 @@ describe("a card asks for the room it needs (decision 0244)", () => {
     ]);
 
     expect(document.querySelectorAll(".donutwrap svg circle")).toHaveLength(2);
+  });
+
+  it("leaves room for the legend beside the ring", async () => {
+    /**
+     * **A ring has no width to mean anything with** — decision 0248.
+     *
+     * `svg()` kept `width: 100%` even for a fixed chart, so the donut
+     * took the whole flex row and the legend was squeezed to zero:
+     * five coloured dots in a column and not one word beside them.
+     */
+    await openDashboard([
+      {
+        id: "g2",
+        cardType: "where_things_are",
+        settings: {},
+        position: 0,
+        data: { stages: [{ stage_name: "Validation", n: 8 }, { stage_name: "Approval", n: 11 }] },
+      },
+    ]);
+
+    const ring = document.querySelector(".donutwrap svg");
+    expect(ring?.style.width).not.toBe("100%");
+
+    // And the names are actually there, not only the dots.
+    const keys = [...document.querySelectorAll(".donutkey")].map((k) => k.textContent);
+    expect(keys).toEqual(["Validation8", "Approval11"]);
+  });
+
+  it("says due today rather than due in 0d", async () => {
+    // **Zero days is a number nobody says out loud**, and it is the
+    // most urgent row on the card that decides what to pay.
+    await openDashboard([
+      {
+        id: "g3",
+        cardType: "on_my_clock",
+        settings: {},
+        position: 0,
+        data: {
+          items: [
+            {
+              id: "t",
+              created_at: daysAgo(1),
+              supplier_name: "Acme",
+              due_date: new Date().toISOString().slice(0, 10),
+              total_with_vat: 100,
+              currency: "GBP",
+            },
+          ],
+        },
+      },
+    ]);
+
+    expect(document.body.textContent).toContain("due today");
+    expect(document.body.textContent).not.toContain("due in 0d");
   });
 
   it("folds a sixth stage into a rest", async () => {

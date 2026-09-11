@@ -107,6 +107,14 @@ function dueIn(dueDate) {
   const days = Math.round((due - today) / 86400000);
   if (Number.isNaN(days)) return { text: "—", tone: "muted" };
   if (days < 0) return { text: t("dash.overdue").replace("{n}", String(-days)), tone: "warn" };
+  /**
+   * **"Due today", not "due in 0d"** — decision 0248.
+   *
+   * Zero days is a number nobody says out loud, and on the card that
+   * decides what to pay it is the most urgent row there is. It should
+   * not read like an arithmetic result.
+   */
+  if (days === 0) return { text: t("dash.duetoday"), tone: "warn" };
   return { text: t("dash.duein").replace("{n}", String(days)), tone: days <= 7 ? "" : "muted" };
 }
 

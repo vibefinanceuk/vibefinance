@@ -28,7 +28,17 @@ function svg(width, height, extra = {}) {
   const node = document.createElementNS(NS, "svg");
   node.setAttribute("viewBox", `0 0 ${width} ${height}`);
   node.setAttribute("preserveAspectRatio", extra.stretch ? "none" : "xMidYMid meet");
-  node.style.width = "100%";
+  /**
+   * **Fixed means fixed in both directions** — decision 0248.
+   *
+   * The first version kept `width: 100%` even for a ring, so the donut
+   * took the whole flex row and **the legend was squeezed to zero**:
+   * five coloured dots in a column and not one word beside them.
+   *
+   * A chart that fills its card is right for bars, whose meaning is
+   * their width. A ring has no width to mean anything with.
+   */
+  node.style.width = extra.fixed ? `${width}px` : "100%";
   node.style.height = extra.fixed ? `${height}px` : "auto";
   node.style.display = "block";
   return node;
