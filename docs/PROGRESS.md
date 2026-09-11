@@ -46,6 +46,17 @@ the document — the electronic address Peppol routes on, then the VAT
 id, then the buyer's routing reference (0204). Where it cannot, it
 records **which** of three reasons applied rather than leaving a blank.
 
+**And it names the company that was billed** (0226). An invoice bills a
+legal entity — the one with the tax identifier — matched on the buyer's
+electronic address or VAT number. **Which department bears the cost is a
+line-level question** and is not built.
+
+**The supplier mirror runs end to end** (0207–0219): a CSV loads from
+the customer's ERP, an arriving invoice matches on the seller's endpoint
+or VAT id, a **pay site** wins where several sites share a number, and a
+load re-matches whatever was unmatched. Both party cards show our own
+record beside the image, with a search on each for choosing by hand.
+
 **A UBL invoice is rendered as a document** (0205, 0206): A4 portrait,
 at capture, stored beside the original, using OpenPEPPOL's own CSS,
 code lists and labels — with a notice saying it is a rendering and of
@@ -187,6 +198,15 @@ line columns are blank on every real document for the same reason.
 things are inside a rendered document, and both need same-origin
 delivery first — the operator chose to do them together rather than
 build pagination with a mechanism annotation would replace.
+
+**Coding — where a line is charged.** `invoice_lines.cost_centre` has
+existed since 0007 and `BT-133` since 0031, and **nothing assigns one**
+(0225, 0226). The largest gap, and the one the operator's own correction
+pointed at.
+
+**The supplier fields nothing reads.** Terms, hold, match option and
+tolerances load and display, and **no process consults any of them**
+(0211, 0218, 0219).
 
 **A screen for unplaced documents.** `org.unplaced` records *why* an
 invoice could not be placed and nothing reads it (0204) — so a queue
@@ -424,7 +444,7 @@ holding — 43 migrations for `vf-app`, 42 for `vf-licence`.
 | `docs/design/mockups/` | Four screens as static HTML | Current |
 | `docs/design/multi-authority-intake.md` | Non-EN-16931 authorities | Design only |
 | `docs/design/text-layer-extraction.md` | Reading a PDF's own text | Design only |
-| `docs/decisions/` | 229 decision records | Current |
+| `docs/decisions/` | 230 decision records | Current |
 | `docs/decisions/SUPERSEDED.md` | Which records supersede which | **Read first** |
 
 Document 4's markdown source is at `docs/documents/`, with

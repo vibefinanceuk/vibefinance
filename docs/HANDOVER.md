@@ -1,6 +1,6 @@
 # Handover
 
-**Written 4 September 2026, updated 10 September.**
+**Written 4 September 2026, updated 11 September.**
 
 **For a session starting cold.** Where things stand, what needs a
 decision rather than work, what to do next, and the habits this project
@@ -29,16 +29,16 @@ twice.
 
 | | |
 | --- | --- |
-| `origin/main` | `e3b8798` |
-| vf-admin deployed | `e3b8798` · `https://admin.vibefinance-ai.com` · behind Access |
-| vf-app deployed | `e3b8798` |
-| vf-licence deployed | `e3b8798` |
-| vf-ui deployed | `e3b8798` · `https://app.vibefinance-ai.com` |
+| `origin/main` | `a019e01` |
+| vf-admin deployed | `a019e01` · `https://admin.vibefinance-ai.com` · behind Access |
+| vf-app deployed | `a019e01` |
+| vf-licence deployed | `a019e01` |
+| vf-ui deployed | `a019e01` · `https://app.vibefinance-ai.com` |
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
-| `vf-app-poc` migrations | through `0049` |
-| `vf-licence-poc` migrations | through `0052` |
-| Tests | vf-admin 9 · vf-app 1300 · vf-licence 318 · vf-ui 44 Worker + 219 browser · shared 267 (+2 known pre-existing failures) |
-| Decision records | 206 |
+| `vf-app-poc` migrations | through `0054` |
+| `vf-licence-poc` migrations | through `0061` |
+| Tests | vf-admin 9 · vf-app 1371 · vf-licence 318 · vf-ui 49 Worker + 235 browser · shared 267 (+2 known pre-existing failures) |
+| Decision records | 229 |
 
 **Everything committed is deployed.**
 
@@ -69,6 +69,23 @@ or a new language is rows rather than a deployment.
 
 **Six screens**: Tasks, Sources, Suppliers, Rules, Documents, and the viewer that
 serves every stage.
+
+**An invoice bills a company** (decision 0226), matched on its buyer
+VAT id or electronic address. **Which department bears the cost is a
+line-level question** and is not built — decision 0225 named three
+things that were sharing the word *business unit*, and decision 0226
+settled the first. The Coding stage, where a line is charged to a cost
+centre or GL code, **does not exist**.
+
+**The supplier mirror is built end to end** (decisions 0207–0219): a CSV
+loads from the customer's ERP, an arriving invoice matches on the
+seller's endpoint or VAT id, a pay site wins where several sites share a
+number, and a load re-matches whatever was unmatched. **Nothing reads
+the terms, hold, match option or tolerances** — they load, they display,
+and no process consults them.
+
+**Both party cards show our own record beside the image** (decisions
+0219–0229), with a search on each for choosing by hand.
 
 **A UBL invoice is rendered as a document** (decisions 0205, 0206), at
 capture and stored beside the original — A4 portrait, using OpenPEPPOL's
@@ -375,51 +392,27 @@ field can carry its Business Term — an annotation anchored to `BT-48`
 survives re-rendering, zoom and translation, where a coordinate on an
 image does not.
 
-**4. Supplier and supplier site** (decision 0207) — **evaluated, and
-there is nothing there today.**
+**4. Coding — where a line is charged.** **The largest gap, and the one
+the operator's own correction pointed at** (decisions 0225, 0226).
 
-A seller exists only as facts on an invoice, copied to
-`supplier_vat_id` so duplicates can group. **No supplier table, no site,
-no terms, no hold, no ERP identifier** — and `party.first_document` has
-been in the vocabulary since decision 0031 with nothing computing it.
+An invoice bills a company; **which department bears the cost is
+per-line**, and routinely split — *"a purchase for stationery is booked
+across multiple departments, cost centers and GL codes."*
 
-**Oracle's definition is the useful part**: a site is not an address, it
-is *"the business relationship between a procurement business unit and
-the supplier"* — so a site is `(supplier, operating unit)`, and decision
-0036's tree is already the other half.
+`invoice_lines.cost_centre` has existed since decision 0007 and
+`BT-133` since decision 0031. **Nothing assigns one.** A PO would carry
+it, and without a PO the Coding stage does — and that stage does not
+exist.
 
-**Matching is decision 0204 pointed the other way**: `BT-34` and `BT-31`
-instead of `BT-49` and `BT-48`, with the same three failures.
+**5. The supplier fields nothing reads.** The mirror loads terms, hold,
+match option and tolerances, and **no process consults any of them**
+(decisions 0211, 0218, 0219).
 
-**We are the mirror** (decision 0208), which removes most of those
-eighty attributes: no create, no merge, no vendor approval. A customer
-supplies a spreadsheet and we hold the subset that changes what happens
-to an invoice — terms, hold, match option, tolerances, status.
+**The hold is the one to wire first**: a card saying *"this supplier is
+on hold: under dispute"* while the invoice sails through to approval is
+a system that knows something and does not act on it.
 
-**The rule the operator described already fits the vocabulary**, save
-one field: *"if the supplier is not matched, assign a task to the AP
-team requiring AP.Review."* `supplier.matched` is what is missing.
-
-**Matching is built** (decision 0209): a seller is matched on `BT-34`
-then `BT-31`, and `supplier.matched` is a vocabulary field, so the
-operator's rule is expressible today. **And the load is built** (decision 0211): a CSV with the customer's own
-column names, refusing row by row with the row number, and **re-matching
-every unmatched invoice** — which decision 0208 called part of the
-feature rather than a refinement.
-
-**It corrects the fact and not the queue.** An invoice whose supplier
-now exists keeps its place; a rule that routed it on `supplier.matched`
-is what should route it back.
-
-**Two traps, one handled and one not.** A **stale mirror lies
-confidently** — a supplier added to the ERP on Monday and loaded here on
-Friday means four days of invoices routed for review, so an unmatched
-supplier must be reported with the load date beside it. And **nothing
-re-checks**: an invoice sitting in AP Review stays there after its
-supplier is loaded, so **re-matching after a load is part of the
-feature**, not a refinement — **and it is not built.**
-
-**5. Process configuration, versioned** (decision 0150). Adding and
+**6. Process configuration, versioned** (decision 0150). Adding and
 removing stages through a screen, with a version number an invoice
 carries — so it is always apparent which shape of the process an item
 ran under.
@@ -439,7 +432,7 @@ frozen because changing it mid-flight is incoherent, and the rules are
 current because a threshold tightened this morning should apply to
 invoices reaching Approval this afternoon.
 
-**6. Email sending**, which decision 0125 evaluates. "Email" means three
+**7. Email sending**, which decision 0125 evaluates. "Email" means three
 different things — supplier contacts *out to strangers*, user
 notifications *out to colleagues*, and a source which is *inbound* and
 not sending at all.
@@ -457,23 +450,23 @@ Still open: **which provider**, **where sending lives** (0091 says the
 control plane never holds customer content), **whether templates sit in
 D1** like `ui_strings`, and **what happens when sending fails**.
 
-**7. BG-4 and BG-7 in the vocabulary.** The seller and buyer field lists
+**8. BG-4 and BG-7 in the vocabulary.** The seller and buyer field lists
 live in the viewer (0115). Recording business-group membership in
 `shared`, as `INVOICE_LINE_FIELDS` does for BG-25, is the consistent
 thing and a known shortcut until it is done.
 
-**8. BG-23, the VAT breakdown.** Mandatory and **repeating** — one entry
+**9. BG-23, the VAT breakdown.** Mandatory and **repeating** — one entry
 per VAT category and rate, whose tax amounts must sum to BT-110. The
 flat facts model cannot hold a repeating group (0112). A design
 question, not an omission, and *"one of the most common causes of
 validation errors"*.
 
-**9. Despatch Advice (T16).** The goods receipt, and the missing third
+**10. Despatch Advice (T16).** The goods receipt, and the missing third
 leg of three-way matching — **before the matcher, not after** (0082).
 BT-132 now exists, which is what lets matching compare a line to an
 order line.
 
-**10. Acting on `cbc:CustomizationID` beyond rendering.** Decision 0205
+**11. Acting on `cbc:CustomizationID` beyond rendering.** Decision 0205
 reads it to decide whether a document is Peppol BIS 3.0 and refuses the
 rendering otherwise — which is the first thing to use it. **Nothing
 routes or validates on it**, so a document from another profile is
@@ -483,11 +476,26 @@ processed as though it were this one.
 (0112), so the discriminator is available; detection still does not use
 it, and a valid Peppol Order sent to `/sources/:id/capture` is refused.
 
-**11. `party.first_document`**, the **all-users task view**, a **screen
+**12. `party.first_document`**, the **all-users task view**, a **screen
 for placing an invoice** by hand, and **four more languages** —
 `GET /ui-strings/keys` shows the gaps.
 
 ---
+
+### A check worth having
+
+**Nineteen comments cited two records nobody had written** — decisions
+0188 and 0224, found by a script comparing citations against
+`docs/decisions/`, not by anyone reading the code.
+
+```
+grep -rho "decisions\? 0[0-9]\{3\}" --include="*.ts" --include="*.js" \
+  --include="*.sql" --include="*.md" . | grep -o "0[0-9]\{3\}" | sort -u
+```
+
+against `ls docs/decisions/`. **A one-liner, and it should run with the
+tests** — the convention is that a citation can be followed, and twice
+it could not.
 
 ## Habits worth keeping
 
