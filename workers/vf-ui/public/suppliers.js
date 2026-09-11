@@ -99,6 +99,19 @@ function outcome(result) {
     );
   }
 
+  if (result.adopted > 0) {
+    /**
+     * **The retroactive update, made visible** — decision 0233. A
+     * supplier recorded here before the ERP had one now has its
+     * identifier, and invoices already matched to it became payable.
+     */
+    lines.push(
+      el("div", {
+        text: t("suppliers.adopted").replace("{n}", String(result.adopted)),
+      })
+    );
+  }
+
   if (result.rematched > 0) {
     /**
      * **The part that clears somebody's queue.** Decision 0208 called

@@ -259,6 +259,8 @@ const KEYS_THE_INTERFACE_USES = [
   "suppliers.create",
   "suppliers.newhelp",
   "suppliers.awaitingerp",
+  "suppliers.adopted",
+  "viewer.supplier.record",
   "suppliers.site",
   "suppliers.purpose",
   "suppliers.address",

@@ -786,3 +786,112 @@ describe("a supplier the ERP does not have yet (decision 0231)", () => {
     expect(row?.erp_identifier).toBeNull();
   });
 });
+
+describe("the ERP catches up (decision 0233)", () => {
+  /**
+   * The operator's own sequence:
+   *
+   *   The new supplier would be created and the record here updated to
+   *   include the ERP Identifier retroactively.
+   *
+   * **Decision 0231 recorded the absence of this as its largest hole**:
+   * a load naming a company somebody had already recorded by hand would
+   * create a second row, and every invoice matched to the first would
+   * keep pointing at a supplier the ERP still could not name.
+   */
+  it("adopts a locally recorded supplier rather than adding a second", async () => {
+    const created = await handleCreateSupplier(
+      env.DB,
+      { name: "Kingsway Print", vatId: "GB556677889" },
+      "alice"
+    );
+    const localId = (created.body as { id: string }).id;
+
+    const result = await load("ERP ID,Name,VAT\n40999,Kingsway Print Services,GB556677889");
+
+    expect((result.body as { adopted: number }).adopted).toBe(1);
+
+    const count = await env.DB.prepare("SELECT count(*) AS n FROM suppliers").first<{ n: number }>();
+    expect(count?.n).toBe(1);
+
+    // **And it keeps its own id**, so anything pointing at it still
+    // means it (decision 0217).
+    const row = await env.DB.prepare("SELECT id, erp_identifier FROM suppliers").first<{
+      id: string;
+      erp_identifier: string;
+    }>();
+    expect(row?.id).toBe(localId);
+    expect(row?.erp_identifier).toBe("40999");
+  });
+
+  it("makes an invoice matched to it payable", async () => {
+    /**
+     * **The point of the whole sequence.** An invoice matched to a
+     * locally recorded supplier was recognised and not payable; after
+     * the load it is both.
+     */
+    const created = await handleCreateSupplier(
+      env.DB,
+      { name: "Kingsway", vatId: "GB556677889" },
+      "alice"
+    );
+    const localId = (created.body as { id: string }).id;
+
+    await env.DB.prepare(
+      "INSERT INTO invoice_headers (id, facts_json, supplier_id) VALUES ('inv-1', '{}', ?)"
+    )
+      .bind(localId)
+      .run();
+
+    const before = await matchSupplier(env.DB, { "BT-31": "GB556677889" });
+    expect(before.erpIdentifier).toBeNull();
+
+    await load("ERP ID,Name,VAT\n40999,Kingsway,GB556677889");
+
+    const after = await matchSupplier(env.DB, { "BT-31": "GB556677889" });
+    expect(after.erpIdentifier).toBe("40999");
+
+    // The invoice never moved.
+    const row = await env.DB.prepare(
+      "SELECT supplier_id FROM invoice_headers WHERE id = 'inv-1'"
+    ).first<{ supplier_id: string }>();
+    expect(row?.supplier_id).toBe(localId);
+  });
+
+  it("adopts on the electronic address too", async () => {
+    // Both identifiers, because a local row may carry either.
+    await handleCreateSupplier(
+      env.DB,
+      { name: "Kingsway", electronicAddress: "0088:5555" },
+      "alice"
+    );
+
+    const result = await load("ERP ID,Name,Peppol ID\n40999,Kingsway,0088:5555");
+    expect((result.body as { adopted: number }).adopted).toBe(1);
+  });
+
+  it("does not adopt a supplier the ERP already named", async () => {
+    /**
+     * **Only a row with no identifier is adopted.** One that has one is
+     * found by decision 0217's lookup, and treating it as local would
+     * let a load rewrite an identifier decision 0231 refuses a person
+     * to change.
+     */
+    await load("ERP ID,Name,VAT\n40118,Northwind,GB1");
+    const result = await load("ERP ID,Name,VAT\n40119,Different Co,GB1");
+
+    expect((result.body as { adopted: number }).adopted).toBe(0);
+
+    const count = await env.DB.prepare("SELECT count(*) AS n FROM suppliers").first<{ n: number }>();
+    expect(count?.n).toBe(2);
+  });
+
+  it("does not adopt on a blank identifier", async () => {
+    // A local row with no VAT and no endpoint matches nothing, which is
+    // correct: there is nothing to match it on.
+    await handleCreateSupplier(env.DB, { name: "Nameless" }, "alice");
+
+    const result = await load("ERP ID,Name\n40999,Someone Else");
+    expect((result.body as { adopted: number }).adopted).toBe(0);
+  });
+});

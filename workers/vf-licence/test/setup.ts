@@ -65,6 +65,7 @@ import buyerCardSql from "../migrations/0060_buyer_card_strings.sql?raw";
 import cardActionsSql from "../migrations/0061_card_actions.sql?raw";
 import supplierDetailSql from "../migrations/0062_supplier_detail_strings.sql?raw";
 import awaitingErpSql from "../migrations/0063_awaiting_erp_strings.sql?raw";
+import recordFromInvoiceSql from "../migrations/0064_record_from_invoice.sql?raw";
 
 function stripSqlComments(sql: string): string {
   return sql
@@ -157,5 +158,6 @@ export async function applyTestSchema(): Promise<void> {
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(cardActionsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(supplierDetailSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(awaitingErpSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(recordFromInvoiceSql)));
 
 }

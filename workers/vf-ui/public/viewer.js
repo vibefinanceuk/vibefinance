@@ -907,7 +907,7 @@ export async function openViewer(task, onClose) {
    * in **where they look and what they say** — two near-copies would
    * drift, and the second would get the debounce wrong.
    */
-  function openSearch({ heading, hint, note, search, describe, choose }) {
+  function openSearch({ heading, hint, note, search, describe, choose, alsoOffer }) {
     const input = el("input", { type: "text", class: "searchbox", placeholder: hint });
     const results = el("div", { class: "searchresults" });
     const box = el("div", { class: "popout" }, [
@@ -915,12 +915,40 @@ export async function openViewer(task, onClose) {
       el("p", { class: "muted", text: note }),
       input,
       results,
+      /**
+       * **An offer, not a default.** Somebody should look for the
+       * supplier before recording a second one — so this sits below the
+       * search rather than beside the heading.
+       */
+      alsoOffer
+        ? el("button", {
+            class: "secondary",
+            text: alsoOffer.label,
+            onclick: async () => {
+              try {
+                const response = await alsoOffer.run();
+                if (!response.ok) {
+                  const body = await response.json();
+                  results.replaceChildren(el("div", { class: "warn", text: body.error }));
+                  return;
+                }
+                close();
+                await openViewer(current, onClose);
+              } catch {
+                results.replaceChildren(
+                  el("div", { class: "warn", text: t("viewer.supplier.choosefailed") })
+                );
+              }
+            },
+          })
+        : null,
       el("button", { class: "secondary", text: t("viewer.supplier.close") }),
-    ]);
+    ].filter(Boolean));
 
     const backdrop = el("div", { class: "backdrop" }, [box]);
     const close = () => backdrop.remove();
-    box.querySelector("button").onclick = close;
+    // The last button is Close; an offer may sit before it.
+    box.querySelectorAll("button")[box.querySelectorAll("button").length - 1].onclick = close;
     backdrop.onclick = (e) => {
       if (e.target === backdrop) close();
     };
@@ -1008,6 +1036,44 @@ export async function openViewer(task, onClose) {
       heading: t("viewer.supplier.findheading"),
       hint: t("viewer.supplier.searchhint"),
       note: t("viewer.supplier.orleave"),
+      /**
+       * **Recording the supplier from the invoice in front of you** —
+       * decision 0233.
+       *
+       * The operator: *"a new invoice from a new supplier could be
+       * received. We want a way to capture the supplier information and
+       * save it, but that would trigger a new supplier process."*
+       *
+       * **Pre-filled from what the document said**, because a person
+       * who has just read it should not retype it — and because the
+       * facts extracted are exactly what the team creating the ERP
+       * record will need.
+       */
+      alsoOffer: {
+        label: t("viewer.supplier.record"),
+        run: async () => {
+          const facts = stored.facts ?? {};
+          const response = await fetch("/api/suppliers", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              name: facts["BT-27"] ?? "",
+              vatId: facts["BT-31"] ?? "",
+              electronicAddress: facts["BT-34"] ?? "",
+              country: facts["BT-40"] ?? "",
+            }),
+          });
+          if (!response.ok) return response;
+
+          // And attach this invoice to it, which is why we are here.
+          const { id } = await response.json();
+          return fetch(`/api/invoices/${encodeURIComponent(current.subject.id)}/supplier`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ supplierId: id }),
+          });
+        },
+      },
       search: async (q) => {
         const response = await fetch(`/api/suppliers/search?q=${encodeURIComponent(q)}`);
         if (!response.ok) throw new Error();

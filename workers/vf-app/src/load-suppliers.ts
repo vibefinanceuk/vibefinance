@@ -86,6 +86,11 @@ export interface LoadResult {
    * this **part of the feature rather than a refinement**.
    */
   rematched: number;
+  /**
+   * Suppliers recorded here before the ERP had them, which this load
+   * has now given an identifier — decision 0233.
+   */
+  adopted: number;
 }
 
 /**
@@ -179,6 +184,8 @@ export async function handleLoadSuppliers(
   const refused: { row: number; reason: string }[] = [];
   const seen: string[] = [];
   let loaded = 0;
+  /** Locally recorded suppliers the ERP has now caught up with. */
+  let adoptedCount = 0;
 
   for (let i = 1; i < rows.length; i++) {
     const values: Record<string, string> = {};
@@ -243,10 +250,51 @@ export async function handleLoadSuppliers(
       .bind(values.erp_identifier, values.erp_site_identifier || null)
       .first<{ id: string }>();
 
+    /**
+     * **Adopting a supplier somebody recorded before the ERP had one** —
+     * decision 0233.
+     *
+     * The operator's own sequence: *"the new supplier would be created
+     * and the record here updated to include the ERP Identifier
+     * retroactively."*
+     *
+     * Without this the load **creates a second row** for a company we
+     * already know, and every invoice matched to the first keeps
+     * pointing at a supplier the ERP still cannot name. Decision 0231
+     * recorded that as the largest hole in it, and this is the hole.
+     *
+     * **Matched on what both rows carry** — the VAT id or the
+     * electronic address — because a local row has no ERP identifier by
+     * definition, which is the whole reason it exists.
+     */
+    const adopted = existing
+      ? null
+      : await db
+          .prepare(
+            `SELECT id FROM suppliers
+             WHERE erp_identifier IS NULL
+               AND (
+                 (?1 != '' AND upper(replace(vat_id, ' ', '')) = upper(replace(?1, ' ', '')))
+                 OR (?2 != '' AND electronic_address = ?2)
+               )
+             LIMIT 1`
+          )
+          .bind(values.vat_id ?? "", values.electronic_address ?? "")
+          .first<{ id: string }>();
+
+    /**
+     * **An adopted row keeps its own id**, like any existing one
+     * (decision 0217). Invoices matched to it yesterday still mean that
+     * supplier, and a new id would orphan them — which is the entire
+     * point of adopting rather than inserting.
+     */
     const id =
       existing?.id ??
+      adopted?.id ??
       `${values.erp_identifier}${values.erp_site_identifier ? `:${values.erp_site_identifier}` : ""}`;
     seen.push(id);
+
+    if (adopted) adoptedCount++;
 
     /**
      * **Replace rather than merge** — decision 0208. A load is the
@@ -265,6 +313,9 @@ export async function handleLoadSuppliers(
                                 address_line, city, postal_code, email, phone, status, loaded_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', datetime('now'))
          ON CONFLICT(id) DO UPDATE SET
+           -- **The retroactive part.** An adopted row had none.
+           erp_identifier = excluded.erp_identifier,
+           erp_site_identifier = excluded.erp_site_identifier,
            name = excluded.name,
            vat_id = excluded.vat_id,
            electronic_address = excluded.electronic_address,
@@ -361,6 +412,7 @@ export async function handleLoadSuppliers(
       refused,
       deactivated: deactivated.meta?.changes ?? 0,
       rematched,
+      adopted: adoptedCount,
     },
   };
 }
