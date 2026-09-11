@@ -391,9 +391,22 @@ the supplier"* — so a site is `(supplier, operating unit)`, and decision
 **Matching is decision 0204 pointed the other way**: `BT-34` and `BT-31`
 instead of `BT-49` and `BT-48`, with the same three failures.
 
-**The first question is whether we are the master or a mirror.** If the
-ERP owns suppliers this is a projection, and *"create a new supplier"*
-means raising a request there — which changes everything below it.
+**We are the mirror** (decision 0208), which removes most of those
+eighty attributes: no create, no merge, no vendor approval. A customer
+supplies a spreadsheet and we hold the subset that changes what happens
+to an invoice — terms, hold, match option, tolerances, status.
+
+**The rule the operator described already fits the vocabulary**, save
+one field: *"if the supplier is not matched, assign a task to the AP
+team requiring AP.Review."* `supplier.matched` is what is missing.
+
+**Two traps recorded before anything is built.** A **stale mirror lies
+confidently** — a supplier added to the ERP on Monday and loaded here on
+Friday means four days of invoices routed for review, so an unmatched
+supplier must be reported with the load date beside it. And **nothing
+re-checks**: an invoice sitting in AP Review stays there after its
+supplier is loaded, so **re-matching after a load is part of the
+feature**, not a refinement.
 
 **5. Process configuration, versioned** (decision 0150). Adding and
 removing stages through a screen, with a version number an invoice
