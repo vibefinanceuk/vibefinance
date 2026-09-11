@@ -1,5 +1,6 @@
 import { t } from "/strings.js";
 import { el, frame, topbar, setCurrentScreen } from "/tasks.js";
+import { actionLink } from "/viewer.js";
 
 /**
  * The supplier list, and loading one — decision 0213.
@@ -412,17 +413,21 @@ function openSupplier(s) {
     render();
   };
 
-  /** Hold, release, activate, deactivate — a flag the ERP also sets. */
+  /**
+   * Hold, release, activate, deactivate — a flag the ERP also sets, and
+   * **each pair replaces the other** — decision 0234.
+   *
+   * The operator: *"Release Hold and De-activate buttons which appear
+   * interchangeably when others are selected."*
+   *
+   * Which is the honest shape: a held supplier cannot be held again,
+   * and offering both would make somebody read two buttons to find the
+   * one that applies.
+   */
   const stateButtons = el("div", { class: "statebuttons" }, [
     s.onHold
-      ? el("button", {
-          class: "secondary",
-          text: t("suppliers.release"),
-          onclick: () => send("PATCH", { onHold: false }, reload),
-        })
-      : el("button", {
-          class: "secondary",
-          text: t("suppliers.holdaction"),
+      ? actionLink("releasehold", { onclick: () => send("PATCH", { onHold: false }, reload) })
+      : actionLink("hold", {
           onclick: () => {
             /**
              * **A hold needs a reason** — migration 0049 refuses one
@@ -446,21 +451,12 @@ function openSupplier(s) {
           },
         }),
     s.status === "active"
-      ? el("button", {
-          class: "secondary",
-          text: t("suppliers.deactivate"),
-          onclick: () => send("PATCH", { status: "inactive" }, reload),
-        })
-      : el("button", {
-          class: "secondary",
-          text: t("suppliers.activate"),
-          onclick: () => send("PATCH", { status: "active" }, reload),
-        }),
+      ? actionLink("deactivate", { onclick: () => send("PATCH", { status: "inactive" }, reload) })
+      : actionLink("activate", { onclick: () => send("PATCH", { status: "active" }, reload) }),
   ]);
 
-  const save = el("button", {
-    class: "primary",
-    text: t("suppliers.save"),
+  const save = actionLink("save", {
+    primary: true,
     onclick: () => {
       const body = Object.fromEntries(
         Object.entries(fields).map(([k, input]) => [k, input.value.trim() || null])

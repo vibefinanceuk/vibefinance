@@ -559,7 +559,15 @@ async function runAction(name, task, onClose) {
  * **Still the server's decision** which appear (decision 0103). Giving
  * them icons changes how they look, not where they are decided.
  */
-function actionLink(name, { onclick, primary } = {}) {
+/**
+ * **Exported since decision 0234**, because the supplier screen's own
+ * actions are the same kind of thing: an icon, a label a person can
+ * read, and a disabled state where there is nothing to do.
+ *
+ * A second copy would drift — and the first thing to drift would be the
+ * `title`, which is the part that makes the icon legible.
+ */
+export function actionLink(name, { onclick, primary } = {}) {
   const node = el("button", {
     class: primary ? "actionlink primary" : "actionlink",
     // A label a person can read, because an icon alone is a guess. The

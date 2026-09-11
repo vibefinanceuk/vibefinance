@@ -183,7 +183,6 @@ const KEYS_THE_INTERFACE_USES = [
   "action.claim",
   // The action row (decision 0122).
   "action.expand",
-  "action.save",
   "action.whyreason",
   "viewer.actionfailed",
   "viewer.unreadable",
@@ -226,6 +225,9 @@ const KEYS_THE_INTERFACE_USES = [
   "viewer.buyer.find",
   "viewer.buyer.change",
   "action.changebuyer",
+  "action.hold",
+  "action.releasehold",
+  "action.deactivate",
   "action.changeseller",
   "viewer.buyer.findheading",
   "viewer.buyer.searchhint",

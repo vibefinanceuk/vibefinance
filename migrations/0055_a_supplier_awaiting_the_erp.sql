@@ -22,6 +22,29 @@
 -- **Refusing that row forced the work to happen on paper**, outside the
 -- system that noticed it was needed.
 
+-- **The references are parked, not deferred.**
+--
+-- `invoice_headers.supplier_id` references `suppliers`, so `DROP TABLE`
+-- fails the moment one invoice points at one — which **every real
+-- database has and no replay did**: replay runs against empty data, and
+-- a drop with no child rows succeeds. This failed against the live
+-- database and passed every check before it.
+--
+-- `PRAGMA defer_foreign_keys` does not save it. SQLite counts each
+-- dropped child as a violation and the later rename does not clear the
+-- count, so the **commit** fails rather than the drop — tested
+-- directly, not assumed. `PRAGMA legacy_alter_table` fails the same
+-- way.
+--
+-- So the links are lifted out, the table is rebuilt, and they are put
+-- back. **No pragma**, which means D1 behaves exactly as a local replay
+-- does — and the whole thing is one transaction, so a failure halfway
+-- leaves the links where they were.
+CREATE TABLE _supplier_links AS
+  SELECT id, supplier_id FROM invoice_headers WHERE supplier_id IS NOT NULL;
+
+UPDATE invoice_headers SET supplier_id = NULL;
+
 -- SQLite cannot drop a NOT NULL, so the table is rebuilt.
 CREATE TABLE suppliers_new (
   id TEXT PRIMARY KEY,
@@ -63,6 +86,12 @@ INSERT INTO suppliers_new
 DROP TABLE suppliers;
 ALTER TABLE suppliers_new RENAME TO suppliers;
 
+-- And the links go back, to the same ids they pointed at.
+UPDATE invoice_headers
+   SET supplier_id = (SELECT supplier_id FROM _supplier_links l WHERE l.id = invoice_headers.id);
+
+DROP TABLE _supplier_links;
+
 -- Rebuilt with the table. The partial indexes are unchanged in shape:
 -- one ERP identifier per site, and one per supplier where there is no
 -- site.
@@ -76,6 +105,11 @@ CREATE UNIQUE INDEX idx_suppliers_erp_no_site
 CREATE INDEX idx_suppliers_vat ON suppliers(vat_id);
 CREATE INDEX idx_suppliers_endpoint ON suppliers(electronic_address);
 CREATE INDEX idx_suppliers_pay_site ON suppliers(vat_id, is_pay_site);
+
+-- Point-in-time: no invoice lost its supplier. **The one this migration
+-- could plausibly break**, and the reason the links are parked rather
+-- than dropped.
+-- ASSERT: SELECT count(*) FROM invoice_headers h LEFT JOIN suppliers s ON s.id = h.supplier_id WHERE h.supplier_id IS NOT NULL AND s.id IS NULL == 0
 
 -- Point-in-time: every supplier loaded so far has an identifier,
 -- because every one came from a file the ERP produced.

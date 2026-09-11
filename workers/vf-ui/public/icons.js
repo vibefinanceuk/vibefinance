@@ -56,6 +56,31 @@ export const ICONS = {
    * Two keys and one path, because they are the same act on either side
    * of the document (decision 0228).
    */
+  /**
+   * **Hold and release, as pause and play** — decision 0234.
+   *
+   * A hold is **temporary and reversible**: payment stops while
+   * something is disputed, and resumes. A stop square would say
+   * *finished* and a raised hand would say *refused*; neither is what a
+   * held supplier is.
+   *
+   * The same two bars as `paused`, under their own key — `actionLink`
+   * looks a glyph up by the **action name**, which decision 0229 found
+   * the hard way.
+   */
+  hold: '<path d="M9.5 7v10M14.5 7v10"/>',
+  releasehold: '<path d="M8 6.5 18 12 8 17.5z"/>',
+
+  /**
+   * **Deactivate is `activate` mirrored** — the same switch with the
+   * knob on the other side.
+   *
+   * A pair a person reads without learning anything: one is the other,
+   * reversed. A slashed circle or an archive box would have been a
+   * second idea to hold.
+   */
+  deactivate: '<rect x="3" y="7" width="18" height="10" rx="5"/><circle cx="8" cy="12" r="2.6"/>',
+
   changeseller:
     '<path d="M4 8h13m0 0-3-3m3 3-3 3M20 16H7m0 0 3 3m-3-3 3-3"/>',
   changebuyer:
