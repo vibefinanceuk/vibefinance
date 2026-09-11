@@ -1,6 +1,7 @@
 import type { InvoiceFacts } from "@vibefinance/shared";
 import { validateInvoiceFacts } from "./validation.js";
 import type { RouteResult } from "./org-route.js";
+import { CODE_LISTS } from "./peppol-render-data.js";
 import { findSimilarInvoices } from "./invoice-history.js";
 
 /**
@@ -311,7 +312,7 @@ export async function handleGetInvoice(db: D1Database, invoiceId: string): Promi
     ? await db
         .prepare(
           `SELECT erp_identifier, erp_site_identifier, name, vat_id, electronic_address,
-                  email, address_line, city, postal_code, country, is_pay_site,
+                  email, phone, address_line, city, postal_code, country, is_pay_site,
                   is_procurement_site, on_hold, hold_reason, payment_terms
            FROM suppliers WHERE id = ?`
         )
@@ -395,7 +396,27 @@ export async function handleGetInvoice(db: D1Database, invoiceId: string): Promi
        * visible, and *"is this the right site"* is exactly what an
        * image can answer and a VAT number cannot.
        */
-      supplier: matchedSupplier,
+      supplier: matchedSupplier
+        ? {
+            ...matchedSupplier,
+            /**
+             * **The country as a person reads it** — decision 0221.
+             *
+             * An invoice prints *United Kingdom*; our record holds
+             * `GB`. A card that exists to be compared against an image
+             * should say what the image says.
+             *
+             * Expanded from **OpenPEPPOL's own ISO 3166 list**, already
+             * here for decision 0205's rendering — 249 countries
+             * transcribed by script rather than a second list somebody
+             * maintains.
+             */
+            countryName:
+              typeof matchedSupplier.country === "string"
+                ? CODE_LISTS.iso3166?.[matchedSupplier.country]?.en ?? matchedSupplier.country
+                : null,
+          }
+        : null,
       orgAssignedBy: invoice.org_assigned_by,
       document: document
         ? { contentType: document.content_type, documentType: document.document_type }

@@ -730,6 +730,101 @@
   */
   .parties > .panel { margin-bottom: 0; }
 
+  /*
+    The Seller card — decision 0221, from the operator's own mock-up.
+
+    **Label and value on one line**, because these are short, read-only
+    and being scanned against a document. The keying form stacks them
+    and should: its values are inputs.
+  */
+  .sellergrid {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 4px 24px;
+    align-items: start;
+  }
+  .sfield {
+    display: grid;
+    grid-template-columns: 92px 1fr;
+    gap: 8px;
+    align-items: baseline;
+    line-height: 1.5;
+  }
+  .slabel {
+    color: var(--text-muted);
+    /* **A label that wraps pushes its value down** and the column stops
+       lining up, which is the whole reason for a fixed width. */
+    white-space: nowrap;
+  }
+
+  @media (max-width: 520px) {
+    /* Two columns at this width means an address of one word per line. */
+    .sellergrid { grid-template-columns: 1fr; }
+  }
+
+  /*
+    **An amber ribbon on a card with something to do** — decision 0222,
+    the same shape as decision 0161's unreadable notice and for the same
+    reason its comment gives: nothing went wrong, and there is something
+    for a person to do.
+
+    Deliberately not a red border. An unmatched supplier may be a
+    genuinely new one, and leaving it is a real answer.
+  */
+  .panel.needsattention {
+    border-left: 3px solid var(--text-warning);
+    border-radius: 0 var(--radius) var(--radius) 0;
+  }
+
+  /* A button that reads as a link, because it opens rather than acts. */
+  .linky {
+    background: none;
+    border: none;
+    padding: 0;
+    color: var(--text-accent);
+    text-decoration: underline;
+    cursor: pointer;
+    font: inherit;
+  }
+
+  .backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.55);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    z-index: 50;
+  }
+  .popout {
+    background: var(--bg-panel);
+    border: 0.5px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px;
+    width: min(520px, 100%);
+    max-height: 80vh;
+    overflow: auto;
+  }
+  .searchbox {
+    width: 100%;
+    margin: 8px 0;
+  }
+  .searchresults { margin-bottom: 10px; }
+  .searchresult {
+    display: block;
+    width: 100%;
+    text-align: left;
+    background: none;
+    border: none;
+    border-bottom: 0.5px solid var(--border);
+    padding: 8px 4px;
+    cursor: pointer;
+    font: inherit;
+    color: inherit;
+  }
+  .searchresult:hover { background: var(--bg-hover); }
+
   .panel > h3 {
     margin: 0 0 12px;
     font-size: var(--text-base);

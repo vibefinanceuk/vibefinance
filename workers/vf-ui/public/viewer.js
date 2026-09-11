@@ -880,6 +880,128 @@ export async function openViewer(task, onClose) {
   const SELLER_FIELDS = ["BT-27", "BT-31", "BT-34", "BT-40"];
   const BUYER_FIELDS = ["BT-44", "BT-48", "BT-49", "BT-55", "BT-10"];
 
+  /**
+   * Finding a supplier by hand — decision 0222.
+   *
+   * **One box, not a form.** Somebody looking at an invoice has a name,
+   * or a VAT number, or an address on the page, and does not know which
+   * of those we hold. Asking them to pick a field first is asking them
+   * to guess what we stored.
+   */
+  function openSupplierSearch() {
+    const input = el("input", {
+      type: "text",
+      class: "searchbox",
+      placeholder: t("viewer.supplier.searchhint"),
+    });
+    const results = el("div", { class: "searchresults" });
+    const box = el("div", { class: "popout" }, [
+      el("h3", { text: t("viewer.supplier.findheading") }),
+      /**
+       * **Leaving it is a real answer**, and the box says so. The
+       * document may be from a genuinely new supplier, and a person who
+       * cannot find one has not failed at anything.
+       */
+      el("p", { class: "muted", text: t("viewer.supplier.orleave") }),
+      input,
+      results,
+      el("button", { class: "secondary", text: t("viewer.supplier.close") }),
+    ]);
+
+    const backdrop = el("div", { class: "backdrop" }, [box]);
+    const close = () => backdrop.remove();
+    box.querySelector("button").onclick = close;
+    backdrop.onclick = (e) => {
+      if (e.target === backdrop) close();
+    };
+
+    let latest = 0;
+    input.oninput = async () => {
+      const q = input.value;
+      // **Only the newest answer counts.** Typing is faster than the
+      // network, and an earlier reply arriving late would replace a
+      // later one — the list would then not match the box above it.
+      const mine = ++latest;
+
+      if (q.trim().length < 2) {
+        results.replaceChildren();
+        return;
+      }
+
+      try {
+        const response = await fetch(`/api/suppliers/search?q=${encodeURIComponent(q)}`);
+        if (!response.ok || mine !== latest) return;
+        const { suppliers } = await response.json();
+
+        if (suppliers.length === 0) {
+          results.replaceChildren(el("div", { class: "muted", text: t("viewer.supplier.nomatches") }));
+          return;
+        }
+
+        results.replaceChildren(
+          ...suppliers.map((s) => {
+            const row = el("button", { class: "searchresult" }, [
+              el("div", { text: s.name }),
+              /**
+               * **Everything a person might have searched on**, so they
+               * can see why this row came back and whether it is the
+               * right site — which since decision 0218 is not obvious
+               * from a VAT number three sites share.
+               */
+              el("div", {
+                class: "muted",
+                text: [
+                  s.erp_identifier,
+                  s.erp_site_identifier,
+                  s.is_pay_site ? t("suppliers.pay") : null,
+                  s.vat_id,
+                  [s.address_line, s.city, s.postal_code].filter(Boolean).join(", "),
+                ]
+                  .filter(Boolean)
+                  .join(" · "),
+              }),
+            ]);
+
+            row.onclick = async () => {
+              try {
+                const put = await fetch(
+                  `/api/invoices/${encodeURIComponent(current.subject.id)}/supplier`,
+                  {
+                    method: "PUT",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ supplierId: s.id }),
+                  }
+                );
+                if (!put.ok) {
+                  const body = await put.json();
+                  results.replaceChildren(el("div", { class: "warn", text: body.error }));
+                  return;
+                }
+                close();
+                // Reopen on the same task, so the card redraws with the
+                // supplier now attached.
+                await openViewer(current, onClose);
+              } catch {
+                results.replaceChildren(
+                  el("div", { class: "warn", text: t("viewer.supplier.choosefailed") })
+                );
+              }
+            };
+
+            return row;
+          })
+        );
+      } catch {
+        if (mine === latest) {
+          results.replaceChildren(el("div", { class: "warn", text: t("viewer.supplier.searchfailed") }));
+        }
+      }
+    };
+
+    document.body.append(backdrop);
+    input.focus();
+  }
+
   const partyPanel = (titleKey, codes) => {
     const shown = headerFields.filter((f) => codes.includes(f.field));
     // A panel with nothing in it is worse than no panel: it says
@@ -916,30 +1038,52 @@ export async function openViewer(task, onClose) {
       const shown = headerFields.filter((f) => SELLER_FIELDS.includes(f.field));
       const why = stored.facts?.["supplier.unmatchedReason"];
 
-      return el("div", { class: "panel" }, [
+      /**
+       * **An amber ribbon, like decision 0161's unreadable notice** —
+       * whose own words fit this exactly: *"nothing went wrong, and
+       * there is something for a person to do."*
+       *
+       * An unmatched supplier is not an error. The document may be from
+       * a genuinely new supplier, and leaving it is a real answer —
+       * decision 0222's *"the user can just leave it, to be picked up
+       * later in AP Review."*
+       */
+      const panel = el("div", { class: "panel needsattention" }, [
         el("h3", { text: t("viewer.seller") }),
         el("div", { class: "warn", text: t(`viewer.supplier.${why ?? "none"}`) }),
+        el("button", { class: "linky", text: t("viewer.supplier.find") }),
         shown.length > 0
           ? el("div", { class: "vfields" }, shown.map((spec) => field(spec, existing)))
           : null,
       ].filter(Boolean));
+
+      panel.querySelector("button").onclick = () => openSupplierSearch();
+      return panel;
     }
 
-    /** Left: what identifies them. Right: where they are. */
-    const column = (pairs) =>
-      el(
-        "div",
-        { class: "vfields" },
-        pairs.map(([label, value]) =>
-          el("div", { class: "vfield" }, [
-            el("label", { text: label }),
-            // **An empty value is shown as empty**, not omitted: a
-            // missing email is a fact about the supplier record, and a
-            // row that vanishes reads as a field that does not exist.
-            el("div", { class: value ? "" : "muted", text: value || "—" }),
-          ])
-        )
-      );
+    /**
+     * **Label and value on one line** — decision 0221, from the
+     * operator's own mock-up.
+     *
+     * Decision 0219 stacked them, which is how the keying form works
+     * because its values are inputs. **These are not**: they are short,
+     * read-only, and being scanned against a document — so a label
+     * above each one doubles the height for nothing.
+     */
+    const pair = (label, value) =>
+      el("div", { class: "sfield" }, [
+        el("span", { class: "slabel", text: label }),
+        el("span", { class: value ? "" : "muted", text: value || "—" }),
+      ]);
+
+    /**
+     * **The address as a block, under one label.**
+     *
+     * Four labelled rows is four labels for one thing. An invoice
+     * prints an address as lines, and a card being compared against an
+     * invoice should too.
+     */
+    const address = [s.addressLine, s.city, s.countryName ?? s.country, s.postalCode].filter(Boolean);
 
     return el("div", { class: "panel" }, [
       el("h3", { text: t("viewer.seller") }),
@@ -958,22 +1102,28 @@ export async function openViewer(task, onClose) {
       s.onHold
         ? el("div", { class: "warn", text: `${t("viewer.supplier.onhold")} ${s.holdReason ?? ""}` })
         : null,
-      el("div", { class: "columns" }, [
-        column([
-          [t("viewer.supplier.name"), s.name],
-          [t("viewer.supplier.vat"), s.vatId],
-          [t("viewer.supplier.endpoint"), s.electronicAddress],
-          [t("viewer.supplier.email"), s.email],
+      el("div", { class: "sellergrid" }, [
+        el("div", {}, [
+          pair(t("viewer.supplier.name"), s.name),
+          pair(t("viewer.supplier.vat"), s.vatId),
+          pair(t("viewer.supplier.endpoint"), s.electronicAddress),
+          pair(t("viewer.supplier.email"), s.email),
+          pair(t("viewer.supplier.phone"), s.phone),
         ]),
-        column([
-          [t("viewer.supplier.street"), s.addressLine],
-          [t("viewer.supplier.city"), s.city],
-          [t("viewer.supplier.postcode"), s.postalCode],
-          [t("viewer.supplier.country"), s.country],
+        el("div", { class: "sfield" }, [
+          el("span", { class: "slabel", text: t("viewer.supplier.street") }),
+          address.length > 0
+            ? el(
+                "span",
+                {},
+                address.map((line) => el("div", { text: line }))
+              )
+            : el("span", { class: "muted", text: "—" }),
         ]),
       ]),
     ].filter(Boolean));
   };
+
 
   /**
    * One status panel, not four — decision 0115.

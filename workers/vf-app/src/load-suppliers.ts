@@ -56,6 +56,11 @@ const COLUMNS: Record<string, string> = {
   email: "email",
   "email address": "email",
   "supplier email": "email",
+  // A number to ring — decision 0221.
+  phone: "phone",
+  telephone: "phone",
+  "phone number": "phone",
+  tel: "phone",
 };
 
 /** A spreadsheet's idea of true. */
@@ -257,8 +262,8 @@ export async function handleLoadSuppliers(
                                 payment_terms, on_hold, hold_reason, match_option,
                                 amount_tolerance_pct, quantity_tolerance_pct,
                                 erp_site_identifier, is_pay_site, is_procurement_site,
-                                address_line, city, postal_code, email, status, loaded_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', datetime('now'))
+                                address_line, city, postal_code, email, phone, status, loaded_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', datetime('now'))
          ON CONFLICT(id) DO UPDATE SET
            name = excluded.name,
            vat_id = excluded.vat_id,
@@ -276,6 +281,7 @@ export async function handleLoadSuppliers(
            city = excluded.city,
            postal_code = excluded.postal_code,
            email = excluded.email,
+           phone = excluded.phone,
            status = 'active',
            loaded_at = datetime('now')`
       )
@@ -298,7 +304,8 @@ export async function handleLoadSuppliers(
         values.address_line || null,
         values.city || null,
         values.postal_code || null,
-        values.email || null
+        values.email || null,
+        values.phone || null
       )
       .run();
 
@@ -427,7 +434,7 @@ export async function handleListSuppliers(db: D1Database): Promise<RouteResult> 
     .prepare(
       `SELECT id, erp_identifier, erp_site_identifier, name, vat_id, electronic_address,
               country, payment_terms, on_hold, hold_reason, match_option, status,
-              is_pay_site, is_procurement_site, address_line, city, postal_code, email
+              is_pay_site, is_procurement_site, address_line, city, postal_code, email, phone
        FROM suppliers
        ORDER BY status, name`
     )
@@ -450,6 +457,7 @@ export async function handleListSuppliers(db: D1Database): Promise<RouteResult> 
       city: string | null;
       postal_code: string | null;
       email: string | null;
+      phone: string | null;
     }>();
 
   const load = await db
@@ -478,6 +486,7 @@ export async function handleListSuppliers(db: D1Database): Promise<RouteResult> 
         city: r.city,
         postalCode: r.postal_code,
         email: r.email,
+        phone: r.phone,
       })),
       /**
        * **Null where nothing was ever loaded**, which a screen must say
@@ -494,4 +503,125 @@ export async function handleListSuppliers(db: D1Database): Promise<RouteResult> 
         : null,
     },
   };
+}
+
+/**
+ * Finding a supplier by whatever a person has to hand — decision 0222.
+ *
+ * **One box, not a form.** Somebody looking at an invoice has a name, or
+ * a VAT number, or an address on the page — and does not know which of
+ * those we hold. Asking them to pick a field first is asking them to
+ * guess what we stored.
+ *
+ * So the search is across every identifying field at once, and the
+ * caller types what they can see.
+ */
+export async function handleSearchSuppliers(
+  db: D1Database,
+  query: string
+): Promise<RouteResult> {
+  const q = query.trim();
+  if (q.length < 2) {
+    // One character matches most of a supplier list, which is the same
+    // as no help at all.
+    return { status: 200, body: { suppliers: [] } };
+  }
+
+  const like = `%${q.replace(/[%_]/g, "")}%`;
+
+  const rows = await db
+    .prepare(
+      `SELECT id, erp_identifier, erp_site_identifier, name, vat_id, electronic_address,
+              email, phone, address_line, city, postal_code, country,
+              is_pay_site, is_procurement_site, on_hold, hold_reason, payment_terms
+       FROM suppliers
+       WHERE status = 'active'
+         AND (
+           name LIKE ?1
+           OR erp_identifier LIKE ?1
+           OR vat_id LIKE ?1
+           OR replace(vat_id, ' ', '') LIKE ?1
+           OR electronic_address LIKE ?1
+           OR email LIKE ?1
+           OR address_line LIKE ?1
+           OR city LIKE ?1
+           OR postal_code LIKE ?1
+         )
+       ORDER BY
+         /**
+          * **Pay sites first.** An invoice goes to one (decision 0218),
+          * so a person choosing by hand is usually choosing one — and
+          * the list should not make them scroll past two procurement
+          * sites to reach it.
+          */
+         is_pay_site DESC, name
+       LIMIT 25`
+    )
+    .bind(like)
+    .all<Record<string, unknown>>();
+
+  return { status: 200, body: { suppliers: rows.results } };
+}
+
+/**
+ * Attaching an invoice to a supplier by hand — decision 0222.
+ *
+ * **Recorded as a person's choice, not as a match.** Decision 0209's
+ * matching writes `supplier.matched`; this writes it too, and adds who
+ * decided — because *"we found this"* and *"somebody said so"* are
+ * different claims and only one of them can be wrong in a way a rule
+ * could have prevented.
+ */
+export async function handleSetInvoiceSupplier(
+  db: D1Database,
+  invoiceId: string,
+  supplierId: unknown,
+  chosenBy: string
+): Promise<RouteResult> {
+  if (typeof supplierId !== "string" || !supplierId) {
+    return { status: 400, body: { error: "supplierId (string) is required" } };
+  }
+
+  const invoice = await db
+    .prepare("SELECT id FROM invoice_headers WHERE id = ?")
+    .bind(invoiceId)
+    .first();
+  if (!invoice) return { status: 404, body: { error: `invoice ${invoiceId} does not exist` } };
+
+  const supplier = await db
+    .prepare("SELECT id, status FROM suppliers WHERE id = ?")
+    .bind(supplierId)
+    .first<{ id: string; status: string }>();
+  if (!supplier) {
+    return { status: 404, body: { error: `supplier ${supplierId} does not exist` } };
+  }
+
+  if (supplier.status !== "active") {
+    /**
+     * **An inactive supplier is one the ERP no longer has** (decision
+     * 0208), and attaching an invoice to it would produce a payment
+     * instruction the ERP refuses. Refused here with a reason rather
+     * than discovered at payment.
+     */
+    return {
+      status: 409,
+      body: { error: "that supplier is no longer active", reason: "supplier_inactive" },
+    };
+  }
+
+  await db
+    .prepare(
+      `UPDATE invoice_headers
+       SET supplier_id = ?,
+           facts_json = json_remove(
+             json_set(
+               json_set(facts_json, '$."supplier.matched"', 1),
+               '$."supplier.chosenBy"', ?),
+             '$."supplier.unmatchedReason"')
+       WHERE id = ?`
+    )
+    .bind(supplierId, chosenBy, invoiceId)
+    .run();
+
+  return { status: 200, body: { invoiceId, supplierId } };
 }

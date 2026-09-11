@@ -1,7 +1,13 @@
 import { env, SELF } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
 import { applyTestSchema } from "./setup.js";
-import { handleLoadSuppliers, handleListSuppliers, parseCsv } from "../src/load-suppliers.js";
+import {
+  handleLoadSuppliers,
+  handleListSuppliers,
+  handleSearchSuppliers,
+  handleSetInvoiceSupplier,
+  parseCsv,
+} from "../src/load-suppliers.js";
 import { matchSupplier } from "../src/match-supplier.js";
 import { generateApiKey, hashApiKey } from "../src/user-auth.js";
 import { handleGetInvoice } from "../src/invoice-facts-route.js";
@@ -533,5 +539,137 @@ describe("what the viewer is told about the supplier (decision 0219)", () => {
 
     expect(supplier.on_hold).toBe(1);
     expect(supplier.hold_reason).toBe("Under dispute");
+  });
+});
+
+describe("finding a supplier by hand (decision 0222)", () => {
+  /**
+   * **One box, not a form.** Somebody looking at an invoice has a name,
+   * or a VAT number, or an address on the page, and does not know which
+   * of those we hold. Asking them to pick a field first is asking them
+   * to guess what we stored.
+   */
+  beforeEach(async () => {
+    await load(
+      "ERP ID,Site,Name,Pay Site,Address,City,Postcode,VAT,Email,Phone\n" +
+        "40121,PAY-UK,Acme Supplies Payments,yes,PO Box 44,London,EC2V 7HH,GB112233445,pay@acme.example,+44 20 7946 0991\n" +
+        "40121,BUY-UK,Acme Supplies UK,,1 Trading Estate,Slough,SL1 4AA,GB112233445,,\n" +
+        "40118,,Northwind Logistics,yes,14 Dock Road,Felixstowe,IP11 3TA,GB447711223,,"
+    );
+  });
+
+  async function search(q: string) {
+    const result = await handleSearchSuppliers(env.DB, q);
+    return (result.body as { suppliers: { id: string; name: string }[] }).suppliers;
+  }
+
+  it("finds by name", async () => {
+    expect((await search("northwind")).map((s) => s.name)).toEqual(["Northwind Logistics"]);
+  });
+
+  it("finds by VAT number", async () => {
+    expect(await search("GB447711223")).toHaveLength(1);
+  });
+
+  it("finds a VAT number written with spaces", async () => {
+    // A person copying from an invoice types what is printed.
+    expect(await search("GB 447 711 223")).toHaveLength(0);
+    expect(await search("447711223")).toHaveLength(1);
+  });
+
+  it("finds by city", async () => {
+    // **Since decision 0218 the address is the distinguishing mark**,
+    // because three sites share one VAT number.
+    expect((await search("slough")).map((s) => s.name)).toEqual(["Acme Supplies UK"]);
+  });
+
+  it("finds by postcode", async () => {
+    expect(await search("EC2V")).toHaveLength(1);
+  });
+
+  it("finds by ERP number", async () => {
+    expect(await search("40121")).toHaveLength(2);
+  });
+
+  it("puts the pay site first", async () => {
+    /**
+     * **An invoice goes to one** (decision 0218), so a person choosing
+     * by hand is usually choosing one — and should not scroll past a
+     * procurement site to reach it.
+     */
+    expect((await search("acme"))[0].name).toBe("Acme Supplies Payments");
+  });
+
+  it("says nothing for one character", async () => {
+    // One character matches most of a supplier list, which is the same
+    // as no help at all.
+    expect(await search("a")).toHaveLength(0);
+  });
+
+  it("does not offer an inactive supplier", async () => {
+    await load("ERP ID,Name\n40118,Northwind Logistics");
+    expect(await search("acme")).toHaveLength(0);
+  });
+});
+
+describe("choosing one by hand (decision 0222)", () => {
+  beforeEach(async () => {
+    await load("ERP ID,Name,VAT\n40118,Northwind,GB1");
+    await env.DB.prepare(
+      `INSERT INTO invoice_headers (id, facts_json)
+       VALUES ('inv-1', json_object('supplier.matched', 0, 'supplier.unmatchedReason', 'no_match'))`
+    ).run();
+  });
+
+  it("attaches the invoice and clears the reason", async () => {
+    const result = await handleSetInvoiceSupplier(env.DB, "inv-1", "40118", "alice");
+    expect(result.status).toBe(200);
+
+    const row = await env.DB.prepare(
+      `SELECT supplier_id,
+              json_extract(facts_json, '$."supplier.matched"') AS matched,
+              json_extract(facts_json, '$."supplier.unmatchedReason"') AS why
+       FROM invoice_headers WHERE id = 'inv-1'`
+    ).first<{ supplier_id: string; matched: number; why: string | null }>();
+
+    expect(row?.supplier_id).toBe("40118");
+    expect(row?.matched).toBe(1);
+    expect(row?.why).toBeNull();
+  });
+
+  it("records who decided", async () => {
+    /**
+     * ***"We found this"* and *"somebody said so"* are different
+     * claims**, and only one of them could have been prevented by a
+     * rule. An auditor wants to know which.
+     */
+    await handleSetInvoiceSupplier(env.DB, "inv-1", "40118", "alice");
+
+    const row = await env.DB.prepare(
+      `SELECT json_extract(facts_json, '$."supplier.chosenBy"') AS who
+       FROM invoice_headers WHERE id = 'inv-1'`
+    ).first<{ who: string }>();
+    expect(row?.who).toBe("alice");
+  });
+
+  it("refuses an inactive supplier", async () => {
+    // **One the ERP no longer has** (decision 0208) would produce a
+    // payment instruction the ERP refuses — caught here rather than at
+    // payment.
+    await env.DB.prepare("UPDATE suppliers SET status = 'inactive'").run();
+
+    const result = await handleSetInvoiceSupplier(env.DB, "inv-1", "40118", "alice");
+    expect(result.status).toBe(409);
+    expect((result.body as { reason: string }).reason).toBe("supplier_inactive");
+  });
+
+  it("refuses a supplier that does not exist", async () => {
+    const result = await handleSetInvoiceSupplier(env.DB, "inv-1", "nobody", "alice");
+    expect(result.status).toBe(404);
+  });
+
+  it("refuses an invoice that does not exist", async () => {
+    const result = await handleSetInvoiceSupplier(env.DB, "nope", "40118", "alice");
+    expect(result.status).toBe(404);
   });
 });

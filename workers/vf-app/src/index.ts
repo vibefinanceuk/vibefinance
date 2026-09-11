@@ -58,7 +58,12 @@ import {
 } from "./rules-list-route.js";
 import { handleInvoiceProgress } from "./invoice-progress-route.js";
 import { handleSetSourceOrg } from "./source-route.js";
-import { handleLoadSuppliers, handleListSuppliers } from "./load-suppliers.js";
+import {
+  handleLoadSuppliers,
+  handleListSuppliers,
+  handleSearchSuppliers,
+  handleSetInvoiceSupplier,
+} from "./load-suppliers.js";
 import { handleListDocuments } from "./documents-route.js";
 import {
   handleListLedgers,
@@ -863,6 +868,45 @@ export default {
       }
     }
 
+
+    // Finding a supplier by whatever a person has to hand — 0222.
+    if (pathname === "/suppliers/search" && request.method === "GET") {
+      const { db } = resolveTenant(request, env);
+      const auth = await authenticatePerson(db, request, env);
+      if (!auth.user) return json({ error: auth.reason }, 401);
+
+      const result = await handleSearchSuppliers(db, url.searchParams.get("q") ?? "");
+      return json(result.body, result.status);
+    }
+
+    {
+      const match = pathname.match(/^\/invoices\/([^/]+)\/supplier$/);
+      if (match && request.method === "PUT") {
+        const { db } = resolveTenant(request, env);
+        const auth = await authenticatePerson(db, request, env);
+        if (!auth.user) return json({ error: auth.reason }, 401);
+        /**
+         * **The permission that keys an invoice** — decision 0222.
+         * Choosing a supplier is part of getting a document right, not
+         * a configuration act, so it belongs with validation rather
+         * than with `Admin.Configure`.
+         */
+        if (!(await hasPermission(db, auth.user.id, "AP.Validate"))) {
+          return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
+        }
+
+        const body = (await request.json()) as { supplierId?: unknown };
+        const result = await handleSetInvoiceSupplier(
+          db,
+          decodeURIComponent(match[1]),
+          body.supplierId,
+          // **Derived, never accepted** — decision 0010's rule that who
+          // did a thing is read from the caller and not the body.
+          auth.user.id
+        );
+        return json(result.body, result.status);
+      }
+    }
 
     // The supplier list, with how old it is — decision 0213.
     if (pathname === "/suppliers" && request.method === "GET") {
