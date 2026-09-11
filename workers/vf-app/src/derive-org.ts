@@ -39,32 +39,42 @@ const IDENTIFIERS: readonly { fact: string; column: string }[] = [
 ];
 
 export interface DerivedOrg {
-  /** The operating unit to assign, where one could be resolved. */
+  /**
+   * The company this invoice bills — decision 0226.
+   *
+   * **The legal entity itself**, not a department beneath it. An
+   * invoice bills the company with the tax identifier; which department
+   * bears the cost is a line-level question, answered at Coding against
+   * `invoice_lines.cost_centre`.
+   */
   unitId: string | null;
-  /** The legal entity the document named, matched or not. */
+  /** The same thing, kept for callers that read it. */
   entityId: string | null;
   /** Which identifier matched — `BT-49`, `BT-48`, `BT-10`, or null. */
   matchedOn: string | null;
   /**
-   * Why no unit resulted, where none did. **A fact about the document
-   * rather than a failure**, and the thing somebody needs in order to
-   * fix it.
+   * Why nothing resulted, where nothing did.
+   *
+   * **Two reasons, where there were four.** `ambiguous_unit` and
+   * `no_operating_unit` existed only because a match on a company had
+   * to be forced down to a department — decision 0225 called them
+   * artefacts, and they are gone rather than fixed.
    */
-  reason: "no_identifier" | "no_match" | "ambiguous_unit" | "no_operating_unit" | null;
+  reason: "no_identifier" | "no_match" | null;
 }
 
 /**
- * Read the recipient off the invoice and find whose it is.
+ * Read the recipient off the invoice and find which company it bills.
  *
- * **The identifiers name a legal entity and an invoice may only be
- * assigned to an operating unit** — decision 0036's standing invariant,
- * *"an operating unit's parent is a legal entity"*, read the other way.
+ * **The identifiers name a legal entity, and a legal entity is the
+ * answer** — decision 0226. This used to resolve down to a department
+ * and report `ambiguous_unit` where a company had several, which
+ * decision 0225 found was a question nobody had asked:
  *
- * So a match on *Acme UK* is not yet an answer. Where that entity has
- * **exactly one** operating unit beneath it, the answer is unambiguous.
- * Where it has several, the document belongs to the entity and to no
- * particular department — **which is a real answer and not a failure**,
- * and is reported rather than guessed at.
+ *   An invoice may be booked to the general ledger across business
+ *   units / departments.
+ *
+ * **So the header names the company and the lines carry the coding.**
  */
 export async function deriveOrgUnit(
   db: D1Database,
@@ -99,30 +109,23 @@ export async function deriveOrgUnit(
 
     if (!entity) continue;
 
-    const beneath = await db
-      .prepare("SELECT id FROM org_units WHERE parent_unit_id = ? AND kind = 'operating_unit'")
-      .bind(entity.id)
-      .all<{ id: string }>();
-
-    if (beneath.results.length === 1) {
-      return {
-        unitId: beneath.results[0].id,
-        entityId: entity.id,
-        matchedOn: identifier.fact,
-        reason: null,
-      };
-    }
-
+    /**
+     * **The company is the answer** — decision 0226.
+     *
+     * This used to resolve down to a single operating unit beneath the
+     * entity and report `ambiguous_unit` where there were several. **A
+     * company with three departments was never ambiguous**: the
+     * question is which company bought it, and the document said.
+     *
+     * Which department bears the cost is a line-level question, and
+     * `invoice_lines.cost_centre` has been where it belongs since
+     * migration 0007.
+     */
     return {
-      unitId: null,
+      unitId: entity.id,
       entityId: entity.id,
       matchedOn: identifier.fact,
-      /**
-       * **Named apart**, because they need different fixes: an entity
-       * with no operating unit needs one created, and an entity with
-       * several needs somebody to say which — or a rule that does.
-       */
-      reason: beneath.results.length === 0 ? "no_operating_unit" : "ambiguous_unit",
+      reason: null,
     };
   }
 
@@ -135,9 +138,11 @@ export async function deriveOrgUnit(
  * **The mirror of decision 0222's supplier search**, and the operator's
  * reason for it: *"sometimes re-routing is needed."*
  *
- * Only **operating units**, because decision 0036's standing invariant
- * says an invoice belongs to one. Offering a legal entity would offer a
- * choice the database refuses.
+ * **Companies first, and departments still offered** — decision 0226.
+ * An invoice bills a legal entity, so that is what a person is usually
+ * choosing; a customer with none configured has operating units and
+ * nothing else, and refusing those would leave them unable to choose
+ * anything.
  */
 export async function searchOrgUnits(
   db: D1Database,
@@ -154,8 +159,7 @@ export async function searchOrgUnits(
               u.vat_id, u.city, u.postal_code
        FROM org_units u
        LEFT JOIN org_units p ON p.id = u.parent_unit_id
-       WHERE u.kind = 'operating_unit'
-         AND (
+       WHERE (
            u.name LIKE ?1
            OR u.id LIKE ?1
            OR p.name LIKE ?1
@@ -164,7 +168,13 @@ export async function searchOrgUnits(
            OR u.city LIKE ?1
            OR p.city LIKE ?1
          )
-       ORDER BY u.name
+       /**
+        * **Companies first** — decision 0226. An invoice bills one, and
+        * a person choosing by hand is choosing one. An operating unit
+        * is still offered, because a customer with no legal entities
+        * configured has nothing else.
+        */
+       ORDER BY CASE u.kind WHEN 'legal_entity' THEN 0 ELSE 1 END, u.name
        LIMIT 25`
     )
     .bind(like)
@@ -208,17 +218,21 @@ export async function setInvoiceOrgUnit(
     .first<{ id: string; kind: string }>();
   if (!unit) return { status: 404, body: { error: `unit ${unitId} does not exist` } };
 
-  if (unit.kind !== "operating_unit") {
-    // Decision 0036's invariant, refused with a reason rather than as a
-    // constraint error.
-    return {
-      status: 409,
-      body: {
-        error: "an invoice belongs to an operating unit, not to a legal entity",
-        reason: "not_an_operating_unit",
-      },
-    };
-  }
+  /**
+   * **No guard on the kind** — decision 0226.
+   *
+   * This refused anything that was not an operating unit, which is
+   * migration 0036's invariant and is now inverted: an invoice bills a
+   * **company**.
+   *
+   * And the obvious replacement — refusing anything that is not a legal
+   * entity — would be wrong in the same way. **A customer with no legal
+   * entities configured has operating units and nothing else**, and an
+   * invoice placed on one is placed as well as it can be.
+   *
+   * So a person may choose either, and the search offers companies
+   * first.
+   */
 
   await db
     .prepare(

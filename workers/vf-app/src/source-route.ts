@@ -619,10 +619,17 @@ export async function handleSetSourceOrg(
 
   if (unitId !== null) {
     /**
-     * **An operating unit, never a legal entity.** Decision 0036's
-     * standing invariant is that an invoice belongs to an operating
-     * unit, so a source defaulting to a legal entity would place every
-     * document somewhere the database refuses.
+     * **Any unit** — decision 0226.
+     *
+     * This demanded an **operating unit**, which was migration 0036's
+     * invariant and is now inverted: a mailbox belongs to a **company**.
+     * Nobody sends an invoice to *Finance*; they send it to Acme UK
+     * Limited, and which department bears the cost is decided later at
+     * Coding.
+     *
+     * Not replaced with the opposite guard, for the reason decision
+     * 0226 gives: a customer with no legal entities configured has
+     * operating units and nothing else.
      */
     const unit = await db
       .prepare("SELECT kind FROM org_units WHERE id = ?")
@@ -630,16 +637,6 @@ export async function handleSetSourceOrg(
       .first<{ kind: string }>();
 
     if (!unit) return { status: 404, body: { error: `unit ${unitId} does not exist` } };
-
-    if (unit.kind !== "operating_unit") {
-      return {
-        status: 409,
-        body: {
-          error: "a document belongs to an operating unit, not to a legal entity",
-          reason: "not_an_operating_unit",
-        },
-      };
-    }
   }
 
   await db

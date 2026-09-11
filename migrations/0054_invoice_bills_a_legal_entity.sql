@@ -1,0 +1,49 @@
+-- 0054_invoice_bills_a_legal_entity.sql
+--
+-- **An invoice bills a company** — decision 0226.
+--
+-- The operator, with a diagram:
+--
+--   When an invoice is received it typically is billing a legal entity,
+--   or sub-org. The legal entity has a tax identifier. This is what
+--   should be specified in the Buyer card... So when we look at
+--   sources, and the validation UI, I think we just need to determine
+--   which company bought it, and then the actual internal cross
+--   charges, which occurs at line level, can happen deeper into the
+--   workflow.
+--
+-- **Migration 0036 had this the wrong way up.** Its invariant said an
+-- invoice belongs to an operating unit because *"the operating unit is
+-- where payables happen"* — which is about **processing** — and then
+-- matched invoices on `BT-48` and `BT-49`, which are the **taxable
+-- company's**. The two were never about the same thing.
+--
+-- Decision 0225 named the three things that were sharing one word: the
+-- taxable company, the charge coding, and the processing organisation.
+-- **This settles the first**, and the second is where it always
+-- belonged: `invoice_lines.cost_centre`, since migration 0007.
+
+-- Point-in-time: every invoice placed so far sits on an operating unit,
+-- which is what the old invariant demanded. Stated rather than
+-- corrected — **an assignment made under the old rule is not wrong
+-- data**, it is data placed a level down from where it now belongs, and
+-- a migration that silently re-pointed live invoices would be deciding
+-- something an operator should.
+-- ASSERT: SELECT count(*) FROM invoice_headers h JOIN org_units u ON u.id = h.org_unit_id WHERE u.kind = 'legal_entity' == 0
+
+-- Standing invariant: an invoice's unit exists. Unchanged from 0036,
+-- and restated because the file it lived in now has a superseded note
+-- beside it.
+-- ASSERT ALWAYS: SELECT count(*) FROM invoice_headers WHERE org_unit_id IS NOT NULL AND org_unit_id NOT IN (SELECT id FROM org_units) == 0
+
+-- **Deliberately no invariant on the kind.**
+--
+-- The obvious one — *an invoice's unit must be a legal entity* — would
+-- refuse every row placed before today, and refusing existing data is
+-- how a migration becomes something nobody dares run.
+--
+-- More than that, it would be wrong in the same way the old one was:
+-- **a customer with no legal entities configured has operating units
+-- and nothing else**, and an invoice placed there is placed as well as
+-- it can be. What matters is that the header names the company where
+-- one is known, not that it never names anything else.

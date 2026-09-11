@@ -86,12 +86,22 @@ CREATE INDEX idx_invoice_headers_org ON invoice_headers(org_unit_id);
 -- nobody can explain, or a provenance pointing at nothing.
 -- ASSERT ALWAYS: SELECT count(*) FROM invoice_headers WHERE (org_unit_id IS NULL) != (org_assigned_by IS NULL) == 0
 
--- Standing invariant: an invoice is only ever assigned to an operating
--- unit, never to a legal entity above it. A legal entity is a tax and
--- reporting boundary; the operating unit is where payables happen, and
--- posting to the wrong level is the thing this whole record exists to
--- prevent.
--- ASSERT ALWAYS: SELECT count(*) FROM invoice_headers h JOIN org_units u ON u.id = h.org_unit_id WHERE u.kind != 'operating_unit' == 0
+-- SUPERSEDED by migration 0054 — decision 0226.
+--
+-- This said an invoice is only ever assigned to an **operating unit**,
+-- never to a legal entity, because *"the operating unit is where
+-- payables happen."*
+--
+-- **That was about processing, and the identifiers this record matches
+-- on are the taxable company's.** An invoice bills a legal entity —
+-- the one with the tax identifier — and which department bears the
+-- cost is a line-level question answered later, at Coding.
+--
+-- The invariant is inverted rather than removed: migration 0054 states
+-- the new one, and this file was edited after being applied, with
+-- `--refresh-checksums`, which is the act of saying so.
+--
+-- (was: ASSERT ALWAYS ... u.kind != 'operating_unit' == 0)
 
 -- Standing invariant: an operating unit's parent, where it has one, is
 -- a legal entity. A hierarchy that can nest arbitrarily is a hierarchy

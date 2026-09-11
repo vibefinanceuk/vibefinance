@@ -53,7 +53,17 @@ async function loadUnits() {
     const response = await fetch("/api/org/units");
     if (!response.ok) return;
     const body = await response.json();
-    units = (body.units ?? []).filter((u) => u.kind === "operating_unit");
+    /**
+     * **Companies first** — decision 0226. A mailbox belongs to one:
+     * nobody sends an invoice to *Finance*, they send it to Acme UK
+     * Limited.
+     *
+     * Operating units stay in the list because a customer with no legal
+     * entities configured has nothing else to choose.
+     */
+    units = (body.units ?? []).sort((a, b) =>
+      a.kind === b.kind ? a.name.localeCompare(b.name) : a.kind === "legal_entity" ? -1 : 1
+    );
   } catch {
     // A customer with no orgs configured gets `<Automatic>` alone,
     // which is a sensible thing to be left with.

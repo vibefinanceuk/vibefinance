@@ -49,7 +49,8 @@ describe("reading the recipient off the invoice", () => {
 
     const result = await deriveOrgUnit(env.DB, { "BT-49": "0088:5790000435975" });
 
-    expect(result.unitId).toBe("ap-uk");
+    // **The company, not the department beneath it** — decision 0226.
+    expect(result.unitId).toBe("acme-uk");
     expect(result.matchedOn).toBe("BT-49");
   });
 
@@ -64,7 +65,7 @@ describe("reading the recipient off the invoice", () => {
 
     const result = await deriveOrgUnit(env.DB, { "BT-48": "DE273445064" });
 
-    expect(result.unitId).toBe("ap-de");
+    expect(result.unitId).toBe("acme-de");
     expect(result.matchedOn).toBe("BT-48");
   });
 
@@ -76,7 +77,7 @@ describe("reading the recipient off the invoice", () => {
     await operatingUnit("ap-uk", "acme-uk");
 
     const result = await deriveOrgUnit(env.DB, { "BT-48": "gb 907 856 199" });
-    expect(result.unitId).toBe("ap-uk");
+    expect(result.unitId).toBe("acme-uk");
   });
 
   it("prefers the electronic address where both are present", async () => {
@@ -87,7 +88,7 @@ describe("reading the recipient off the invoice", () => {
     await operatingUnit("ap-vat", "by-vat");
 
     const result = await deriveOrgUnit(env.DB, { "BT-49": "0088:X", "BT-48": "DE1" });
-    expect(result.unitId).toBe("ap-endpoint");
+    expect(result.unitId).toBe("by-endpoint");
   });
 
   it("falls through to the next identifier where the first does not match", async () => {
@@ -95,7 +96,7 @@ describe("reading the recipient off the invoice", () => {
     await operatingUnit("ap-de", "acme-de");
 
     const result = await deriveOrgUnit(env.DB, { "BT-49": "0088:nobody", "BT-48": "DE1" });
-    expect(result.unitId).toBe("ap-de");
+    expect(result.unitId).toBe("acme-de");
   });
 });
 
@@ -119,12 +120,19 @@ describe("when it cannot say", () => {
     expect(result.entityId).toBeNull();
   });
 
-  it("says which entity, where the department is ambiguous", async () => {
+  it("answers with the company where it has several departments", async () => {
     /**
-     * **The identifiers name a legal entity and an invoice may only be
-     * assigned to an operating unit** — decision 0036's invariant read
-     * the other way. Two departments beneath it, and the document
-     * belongs to the entity and to no particular one.
+     * **This used to be `ambiguous_unit`** — decision 0225 called it an
+     * artefact, and decision 0226 removed it.
+     *
+     * A company with three departments was never ambiguous. The
+     * question is which company bought it, and the document said:
+     *
+     *   An invoice may be booked to the general ledger across business
+     *   units / departments.
+     *
+     * Which department bears the cost is a line-level question,
+     * answered at Coding.
      */
     await entity("acme-uk", { vat: "GB1" });
     await operatingUnit("ap-uk", "acme-uk");
@@ -132,18 +140,17 @@ describe("when it cannot say", () => {
 
     const result = await deriveOrgUnit(env.DB, { "BT-48": "GB1" });
 
-    expect(result.unitId).toBeNull();
-    expect(result.entityId).toBe("acme-uk");
-    expect(result.reason).toBe("ambiguous_unit");
+    expect(result.unitId).toBe("acme-uk");
+    expect(result.reason).toBeNull();
   });
 
-  it("names the other case apart, because it needs a different fix", async () => {
-    // An entity with no operating unit needs one created; one with
-    // several needs somebody to say which.
+  it("answers with the company where it has no departments at all", async () => {
+    // **This used to be `no_operating_unit`**, and is the ordinary case
+    // for a customer who has not modelled departments.
     await entity("acme-uk", { vat: "GB1" });
 
     const result = await deriveOrgUnit(env.DB, { "BT-48": "GB1" });
-    expect(result.reason).toBe("no_operating_unit");
+    expect(result.unitId).toBe("acme-uk");
   });
 
   it("does not match an operating unit directly", async () => {
@@ -207,15 +214,30 @@ describe("what a source chooses (decision 0204)", () => {
     expect(row?.default_org_unit_id).toBeNull();
   });
 
-  it("refuses a legal entity", async () => {
-    // **A document belongs to an operating unit** — decision 0036's
-    // invariant, so a source defaulting to an entity would place every
-    // document somewhere the database refuses.
+  it("takes a legal entity, which is the ordinary case", async () => {
+    /**
+     * **Inverted by decision 0226.** This refused a legal entity,
+     * because migration 0036 said an invoice belongs to an operating
+     * unit.
+     *
+     * **A mailbox belongs to a company.** Nobody sends an invoice to
+     * *Finance*; they send it to Acme UK Limited, and which department
+     * bears the cost is decided later at Coding.
+     */
     await entity("acme-uk");
 
     const result = await handleSetSourceOrg(env.DB, "s1", { orgUnitId: "acme-uk" });
-    expect(result.status).toBe(409);
-    expect((result.body as { reason: string }).reason).toBe("not_an_operating_unit");
+    expect(result.status).toBe(200);
+  });
+
+  it("still takes an operating unit", async () => {
+    // **A customer with no legal entities configured has nothing
+    // else**, and refusing this would leave them unable to choose.
+    await entity("acme-uk");
+    await operatingUnit("ap-uk", "acme-uk");
+
+    const result = await handleSetSourceOrg(env.DB, "s1", { orgUnitId: "ap-uk" });
+    expect(result.status).toBe(200);
   });
 
   it("refuses a unit that does not exist", async () => {
