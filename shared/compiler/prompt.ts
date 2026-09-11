@@ -73,11 +73,38 @@ const SYSTEM_DESCRIPTION: Record<VocabularyName, string> = {
   expense: "an expense-management system",
 };
 
-export function buildCompilerPrompt(sourceText: string, vocabulary: VocabularyInput = "invoice"): string {
+export function buildCompilerPrompt(
+  sourceText: string,
+  vocabulary: VocabularyInput = "invoice",
+  /**
+   * What the stage this rule belongs to requires — decision 0210.
+   *
+   * **Decision 0200 taught the engine to fill a missing permission from
+   * the stage and nobody taught the compiler that one could be
+   * missing.** So a customer writing *"assign a task to the AP team"*
+   * was refused — *"assign_task action requires a permission
+   * parameter"* — and had to type a value the stage would have supplied
+   * anyway, **and could type the wrong one.**
+   *
+   * Worst of both: the compiler demanded it, and the engine then
+   * refused it if it disagreed.
+   *
+   * Null where the stage declares nothing, which is every stage today.
+   */
+  stagePermission: string | null = null
+): string {
   const workedExample = vocabulary === "expense" ? EXPENSE_WORKED_EXAMPLE : WORKED_EXAMPLE;
   return `You are compiling a business rule for ${SYSTEM_DESCRIPTION[asResolved(vocabulary).name]}. A customer has described a rule in their own words. Your job is to translate it into a strict, closed vocabulary — never to write general-purpose code, and never to approximate something the vocabulary can't express.
 
 ${buildVocabularyDoc(vocabulary)}
+${
+  stagePermission
+    ? `
+THIS STAGE'S OWN PERMISSION: ${stagePermission}
+
+Every task raised here requires it, and a rule may not ask for a different one — so if the sentence does not name a permission, use "${stagePermission}". If the sentence names a different one, that is a contradiction the author should be told about rather than a value to override.`
+    : ""
+}
 
 ${OUTPUT_CONTRACT}
 

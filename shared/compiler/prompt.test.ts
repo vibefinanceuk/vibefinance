@@ -48,3 +48,53 @@ describe("buildCompilerPrompt — Intake channel examples (decision 0023)", () =
     expect(prompt).not.toContain("Mailroom"); // an AP-specific example, not expense's
   });
 });
+
+describe("what the stage requires (decision 0210)", () => {
+  /**
+   * **Decision 0200 taught the engine to fill a missing permission from
+   * the stage, and nobody taught the compiler that one could be
+   * missing.**
+   *
+   * So a customer writing *"assign a task to the AP team"* was refused
+   * — *"assign_task action requires a permission parameter"* — and had
+   * to type a value the stage would have supplied anyway, **and could
+   * type the wrong one.** The engine would then refuse it for
+   * disagreeing.
+   *
+   * Worst of both, found by writing a rule.
+   */
+  it("tells the model what the stage requires", () => {
+    const prompt = buildCompilerPrompt("assign a task to the AP team", "invoice", "AP.Validate");
+    expect(prompt).toContain("AP.Validate");
+    expect(prompt).toContain("THIS STAGE'S OWN PERMISSION");
+  });
+
+  it("says to use it where the sentence names none", () => {
+    const prompt = buildCompilerPrompt("assign a task to the AP team", "invoice", "AP.Validate");
+    expect(prompt).toMatch(/does not name a permission/);
+  });
+
+  it("says a different one is a contradiction, not a value to override", () => {
+    /**
+     * **Decision 0033's argument.** Silently preferring the stage's is
+     * how a rule comes to mean something other than it says, and the
+     * author is the one who should hear about it.
+     */
+    const prompt = buildCompilerPrompt("assign a task", "invoice", "AP.Validate");
+    expect(prompt).toContain("contradiction");
+  });
+
+  it("says nothing where the stage declares nothing", () => {
+    // Which is every stage today, so this is the ordinary case and the
+    // prompt must not grow a section about it.
+    const prompt = buildCompilerPrompt("assign a task to the AP team", "invoice", null);
+    expect(prompt).not.toContain("THIS STAGE'S OWN PERMISSION");
+  });
+
+  it("still documents the parameter as omittable", () => {
+    // The model refused on the params description, not on a validator,
+    // so the description is where the fix has to land too.
+    const prompt = buildCompilerPrompt("assign a task", "invoice");
+    expect(prompt).toContain("may be omitted where the stage declares its own");
+  });
+});

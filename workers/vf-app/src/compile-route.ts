@@ -102,7 +102,29 @@ export async function handleCompileRequest(
   const customFields = await loadCustomFields(db);
   const vocabulary = resolveVocabulary(ruleSetExists.vocabulary, customFields);
 
-  const outcome = await compileRule(model, sourceText, vocabulary);
+  /**
+   * **What the stage this rule belongs to requires** — decision 0210.
+   *
+   * A rule set belongs to a stage, so the compiler can be told what
+   * every task raised there must require — and a sentence that names no
+   * permission compiles rather than being refused for a value the stage
+   * would have supplied.
+   *
+   * Null where no stage uses this rule set, which is a rule set nothing
+   * runs, and null where the stage declares nothing, which is every
+   * stage today.
+   */
+  const stage = await db
+    .prepare("SELECT required_permission FROM process_stages WHERE rule_set_id = ? LIMIT 1")
+    .bind(ruleSetId)
+    .first<{ required_permission: string | null }>();
+
+  const outcome = await compileRule(
+    model,
+    sourceText,
+    vocabulary,
+    stage?.required_permission ?? null
+  );
 
   // Refusal as a first-class output (Blueprint, "Subsystem one"): a
   // sentence the model can't express in the closed vocabulary is

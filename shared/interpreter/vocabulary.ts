@@ -412,7 +412,7 @@ export const ACTION_DESCRIPTIONS: Record<ActionType, string> = {
   notify: 'sends a notification — params: { "target": "<who or what to notify>" }',
   escalate_after: 'escalates if untouched past a duration — params: { "after": "<duration, e.g. \\"2d\\">" }',
   assign_task:
-    'creates a task — params: exactly one of { "team": "<team id>" } or { "user": "<user id>" }, plus { "permission": "<permission>" }',
+    'creates a task — params: exactly one of { "team": "<team id>" } or { "user": "<user id>" }, plus { "permission": "<permission>" }. **The permission may be omitted where the stage declares its own** (decision 0200): the stage supplies it, and a rule naming a different one is refused rather than quietly overridden. Omitting it is the better shape, because it cannot disagree.',
 };
 
 // A closed set of named vocabularies — the real infrastructure

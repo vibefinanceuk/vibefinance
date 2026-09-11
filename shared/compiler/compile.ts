@@ -18,9 +18,14 @@ import type { VocabularyInput } from "../interpreter/vocabulary.js";
 export async function compileRule(
   model: CompilerModel,
   sourceText: string,
-  vocabulary: VocabularyInput = "invoice"
+  vocabulary: VocabularyInput = "invoice",
+  /**
+   * What the stage this rule belongs to requires — decision 0210.
+   * Null where it declares nothing, which is every stage today.
+   */
+  stagePermission: string | null = null
 ): Promise<CompileOutcome> {
-  const prompt = buildCompilerPrompt(sourceText, vocabulary);
+  const prompt = buildCompilerPrompt(sourceText, vocabulary, stagePermission);
   const raw = await model.compile(prompt);
   return parseModelOutput(raw, vocabulary);
 }
