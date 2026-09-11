@@ -520,17 +520,18 @@ describe("who holds the work at a stage (decision 0250)", () => {
     await work("nobody", null, { team: "ap" });
 
     const data = await stageCard();
+    // **Four open tasks**, one of them on a team queue and so
+    // unclaimed — which the click can show, unlike an idle instance.
     expect(data.count).toBe(4);
     expect(data.held.mine).toBe(2);
     expect(data.held.theirs).toBe(1);
     expect(data.held.unclaimed).toBe(1);
   });
 
-  it("counts an instance with no task at all as unclaimed", async () => {
+  it("leaves an instance with no task out of the count", async () => {
     /**
-     * **From the reader's side it is the same thing**: nobody is
-     * holding it. A stage between tasks is not a different kind of
-     * idle.
+     * **Decision 0253**: the card counts what its click can show, and a
+     * task list cannot show an instance that has no task.
      */
     await person("alice", ["AP.Review"], null);
     await env.DB.prepare("INSERT OR IGNORE INTO processes (id, name) VALUES ('ap','AP')").run();
@@ -546,7 +547,8 @@ describe("who holds the work at a stage (decision 0250)", () => {
     ).run();
 
     const data = await stageCard();
-    expect(data.held.unclaimed).toBe(1);
+    expect(data.held.unclaimed).toBe(0);
+    expect(data.count).toBe(0);
   });
 
   it("never reports more held than there are", async () => {
@@ -718,8 +720,16 @@ describe("the count agrees with the list it links to (decision 0252)", () => {
     expect(data.held.mine + data.held.theirs + data.held.unclaimed).toBe(data.count);
   });
 
-  it("counts an instance with no task once", async () => {
-    // A stage between tasks is still a stage with work in it.
+  it("does not count an instance with no task", async () => {
+    /**
+     * **Decision 0253 reversed decision 0252 here**, a day after
+     * writing it. Counting an idle instance as unclaimed was true about
+     * the work and false about the card: it links to a task list, and
+     * an instance with no task **can never appear in one**.
+     *
+     * The card said ten and the list showed nine, by construction —
+     * which is exactly what decision 0252 was written to prevent.
+     */
     await person("alice", ["AP.Review"], null);
     await env.DB.prepare("INSERT INTO processes (id, name) VALUES ('ap', 'AP')").run();
     await env.DB.prepare(
@@ -739,8 +749,8 @@ describe("the count agrees with the list it links to (decision 0252)", () => {
       await cardsFor("alice"),
       "items_at_stage"
     );
-    expect(data.count).toBe(1);
-    expect(data.held.unclaimed).toBe(1);
+    expect(data.count).toBe(0);
+    expect(data.held.unclaimed).toBe(0);
   });
 });
 
@@ -788,5 +798,63 @@ describe("the card and the list ask the same question (decision 0252)", () => {
     // The task list would show it under Validation; so does the card.
     expect(data.count).toBe(1);
     expect(data.held.mine).toBe(1);
+  });
+});
+
+describe("the card counts what its click can show (decision 0253)", () => {
+  /**
+   * **The assertion decision 0252 needed and did not have.**
+   *
+   * That record was written to make the count agree with the list it
+   * links to, and the same change added idle instances to the count —
+   * which a task list cannot show. **The card said ten and the list
+   * showed nine, by construction.**
+   *
+   * This compares the two directly, so a future card counting something
+   * unclickable fails here rather than on somebody's screen.
+   */
+  it("agrees with the task list it opens", async () => {
+    await person("alice", ["AP.Review"], null);
+    await person("mo", ["AP.Review"], null);
+    await env.DB.prepare("INSERT INTO org_teams (id, name) VALUES ('ap', 'AP')").run();
+
+    await work("mine", null, { owner: "alice" });
+    await work("claimed", null, { claimed: "alice" });
+    await work("theirs", null, { owner: "mo" });
+    await work("queued", null, { team: "ap" });
+
+    // And one idling with nothing raised, which no list can show.
+    await env.DB.prepare(
+      "INSERT INTO invoice_headers (id, facts_json) VALUES ('idle', '{}')"
+    ).run();
+    await env.DB.prepare(
+      `INSERT INTO process_instances (id, process_id, subject_type, subject_id, current_stage_id, status)
+       VALUES ('pi-idle', 'ap', 'invoice', 'idle', 'validation', 'in_progress')`
+    ).run();
+
+    await env.DB.prepare(
+      `INSERT INTO dashboard_cards (id, user_id, card_type, settings_json, position)
+       VALUES ('c', 'alice', 'items_at_stage', '{"stage":"validation"}', 0)`
+    ).run();
+
+    const data = card<{ count: number; held: { mine: number } }>(
+      await cardsFor("alice"),
+      "items_at_stage"
+    );
+
+    /** What the list the card links to would return, in its own terms. */
+    const listed = await env.DB.prepare(
+      "SELECT count(*) AS n FROM tasks WHERE status = 'open' AND stage_id = 'validation'"
+    ).first<{ n: number }>();
+
+    expect(data.count).toBe(listed?.n);
+
+    const mine = await env.DB.prepare(
+      `SELECT count(*) AS n FROM tasks
+       WHERE status = 'open' AND stage_id = 'validation'
+         AND (owner_user_id = 'alice' OR claimed_by = 'alice')`
+    ).first<{ n: number }>();
+
+    expect(data.held.mine).toBe(mine?.n);
   });
 });

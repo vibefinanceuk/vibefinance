@@ -305,30 +305,27 @@ async function itemsAtStage(
     .first<{ n: number; mine: number; theirs: number }>();
 
   /**
-   * **Instances sitting here with nothing raised**, counted once each.
+   * **Instances with no open task are not counted here** — decision
+   * 0253.
    *
-   * A stage between tasks is still a stage with work in it, and from
-   * the reader's side *"nobody is holding it"* covers both.
+   * Decision 0252 counted them as unclaimed, on the argument that a
+   * stage between tasks is still a stage with work in it. **True, and
+   * it broke the thing that record was about**: the card links to a
+   * task list, and an instance with no task **can never appear in
+   * one**. The card said ten and the list showed nine, by
+   * construction.
+   *
+   * So the card counts what its click can show, and *unclaimed* means
+   * **an open task nobody has taken** — a team queue, which is still
+   * the one that grows quietly.
+   *
+   * An instance idling with nothing raised is a real thing and wants a
+   * card of its own. **It is not this one.**
    */
-  const idle = await db
-    .prepare(
-      `SELECT count(*) AS n
-       FROM process_instances pi
-       LEFT JOIN invoice_headers h ON pi.subject_type = 'invoice' AND h.id = pi.subject_id
-       WHERE pi.status = ${IN_FLIGHT}
-         AND pi.current_stage_id = ?1${clause.sql}
-         AND NOT EXISTS (
-           SELECT 1 FROM tasks t
-           JOIN stage_visits v ON v.id = t.stage_visit_id
-           WHERE v.process_instance_id = pi.id AND t.status = 'open'
-         )`
-    )
-    .bind(stageId, ...clause.binds)
-    .first<{ n: number }>();
 
   const mine = tasks?.mine ?? 0;
   const theirs = tasks?.theirs ?? 0;
-  const unclaimed = (tasks?.n ?? 0) - mine - theirs + (idle?.n ?? 0);
+  const unclaimed = (tasks?.n ?? 0) - mine - theirs;
   /**
    * **The three add to the count by construction**, rather than the
    * count being divided into three. A ring whose segments are derived
