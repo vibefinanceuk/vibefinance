@@ -490,3 +490,150 @@ function safeJson(text: string): Record<string, unknown> {
     return {};
   }
 }
+
+/**
+ * What a person may choose from — decision 0243.
+ *
+ * **The catalogue, not the queries.** A picker needs to know a type
+ * exists, whether it takes a setting, and what to call it — and the
+ * words live in `ui_strings` where every other label does, so the list
+ * is keys rather than sentences.
+ */
+export const CARD_CATALOGUE: {
+  cardType: CardType;
+  /** Which setting it takes, where it takes one. */
+  parameter?: "stage";
+  /** More than one is useful — `items_at_stage` is the point of it. */
+  repeatable?: boolean;
+}[] = [
+  { cardType: "waiting_for_me" },
+  { cardType: "on_my_clock" },
+  { cardType: "where_things_are" },
+  { cardType: "items_at_stage", parameter: "stage", repeatable: true },
+  { cardType: "ageing" },
+  { cardType: "done" },
+  { cardType: "received" },
+  { cardType: "exceptions_by_supplier" },
+  { cardType: "needs_somebody" },
+];
+
+/**
+ * The catalogue, and the stages a card could name.
+ *
+ * **Stages come from the database**, because they are customer data
+ * (decision 0008) and decision 0239's whole argument was that a
+ * hardcoded six would be wrong for the second customer.
+ */
+export async function handleCardCatalogue(db: D1Database): Promise<RouteResult> {
+  const stages = await db
+    .prepare(
+      `SELECT s.id, s.name, p.name AS process_name
+       FROM process_stages s
+       JOIN processes p ON p.id = s.process_id
+       ORDER BY p.name, s.sequence`
+    )
+    .all<{ id: string; name: string; process_name: string }>();
+
+  return { status: 200, body: { types: CARD_CATALOGUE, stages: stages.results } };
+}
+
+/**
+ * Saving a dashboard — decision 0243.
+ *
+ * **The whole set, not one card.** Adding, removing and reordering are
+ * three verbs over one list, and three endpoints would each have to
+ * renumber the positions afterwards — which is where migration 0056's
+ * one-position-per-person invariant would be broken.
+ *
+ * So the browser sends what it wants the dashboard to be, and this
+ * writes it.
+ */
+export async function handleSaveDashboard(
+  db: D1Database,
+  userId: string,
+  body: unknown
+): Promise<RouteResult> {
+  const cards = (body as { cards?: unknown }).cards;
+  if (!Array.isArray(cards)) {
+    return { status: 400, body: { error: "cards (array) is required" } };
+  }
+
+  if (cards.length > 20) {
+    /**
+     * **A dashboard of twenty is a wall** — decision 0239 asked how
+     * many before it stops helping, and this is not the answer so much
+     * as a ceiling on the question.
+     */
+    return { status: 400, body: { error: "a dashboard holds at most 20 cards" } };
+  }
+
+  const rows: { type: CardType; settings: string }[] = [];
+
+  for (const card of cards) {
+    const type = (card as { cardType?: unknown }).cardType;
+    if (typeof type !== "string" || !(CARD_TYPES as readonly string[]).includes(type)) {
+      return { status: 400, body: { error: `${String(type)} is not a card type` } };
+    }
+
+    const settings = (card as { settings?: unknown }).settings ?? {};
+    if (typeof settings !== "object" || settings === null || Array.isArray(settings)) {
+      return { status: 400, body: { error: "settings must be an object" } };
+    }
+
+    /**
+     * **A stage that does not exist is refused here**, rather than
+     * saved and reported as missing on every load. The card copes with
+     * a stage that disappears **later** (decision 0240) — that is a
+     * different thing from one that never existed.
+     */
+    const wanted = (settings as { stage?: unknown }).stage;
+    if (typeof wanted === "string" && wanted) {
+      const stage = await db
+        .prepare("SELECT id FROM process_stages WHERE id = ?")
+        .bind(wanted)
+        .first();
+      if (!stage) {
+        return { status: 404, body: { error: `stage ${wanted} does not exist` } };
+      }
+    }
+
+    rows.push({ type: type as CardType, settings: JSON.stringify(settings) });
+  }
+
+  /**
+   * **Replace, not merge.** Decision 0211 made the same choice for the
+   * supplier load and for the same reason: a person who removed a card
+   * expects it gone, and merging would make removal the one act the
+   * interface could not perform.
+   */
+  await db.prepare("DELETE FROM dashboard_cards WHERE user_id = ?").bind(userId).run();
+
+  for (const [index, row] of rows.entries()) {
+    await db
+      .prepare(
+        `INSERT INTO dashboard_cards (id, user_id, card_type, settings_json, position)
+         VALUES (?, ?, ?, ?, ?)`
+      )
+      .bind(crypto.randomUUID(), userId, row.type, row.settings, index)
+      .run();
+  }
+
+  return { status: 200, body: { cards: rows.length } };
+}
+
+/**
+ * Back to the default — decision 0243.
+ *
+ * **Deleting is the reset.** Decision 0240 gives a person with no rows
+ * the default set without writing it, so removing everything is exactly
+ * *"start again"* — and a separate reset that wrote the default back
+ * would freeze today's one into their account, which is the thing that
+ * record avoided.
+ */
+export async function handleResetDashboard(
+  db: D1Database,
+  userId: string
+): Promise<RouteResult> {
+  await db.prepare("DELETE FROM dashboard_cards WHERE user_id = ?").bind(userId).run();
+  return { status: 200, body: { reset: true } };
+}

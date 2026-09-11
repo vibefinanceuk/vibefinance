@@ -1,6 +1,11 @@
 import { resolveTenant } from "@vibefinance/shared";
 import { searchOrgUnits, setInvoiceOrgUnit } from "./derive-org.js";
-import { handleDashboard } from "./dashboard-route.js";
+import {
+  handleDashboard,
+  handleCardCatalogue,
+  handleSaveDashboard,
+  handleResetDashboard,
+} from "./dashboard-route.js";
 import { evaluateRuleSet, validateRule } from "@vibefinance/shared";
 import type { CompiledRuleSet, InvoiceFacts } from "@vibefinance/shared";
 import { COMPILER_MODEL_ID, createWorkersAiCompilerModel } from "./compiler-model.js";
@@ -989,6 +994,36 @@ export default {
         );
         return json(result.body, result.status);
       }
+    }
+
+    // What a person may choose from — decision 0243.
+    if (pathname === "/dashboard/catalogue" && request.method === "GET") {
+      const { db } = resolveTenant(request, env);
+      const auth = await authenticatePerson(db, request, env);
+      if (!auth.user) return json({ error: auth.reason }, 401);
+
+      const result = await handleCardCatalogue(db);
+      return json(result.body, result.status);
+    }
+
+    /**
+     * **Anybody may arrange their own dashboard**, so this is gated by
+     * being signed in and nothing more. It changes what one person
+     * sees, never what they may see — decision 0240's scope filter
+     * still decides that, and a card added here cannot show work the
+     * filter would hide.
+     */
+    if (pathname === "/dashboard" && (request.method === "PUT" || request.method === "DELETE")) {
+      const { db } = resolveTenant(request, env);
+      const auth = await authenticatePerson(db, request, env);
+      if (!auth.user) return json({ error: auth.reason }, 401);
+
+      const result =
+        request.method === "DELETE"
+          ? await handleResetDashboard(db, auth.user.id)
+          : await handleSaveDashboard(db, auth.user.id, await request.json());
+
+      return json(result.body, result.status);
     }
 
     // What a person should do next — decision 0240.

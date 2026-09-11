@@ -120,6 +120,7 @@ const PROXIED_TO_INSTANCE: RegExp[] = [
    */
   // What a person should do next (decision 0240).
   /^\/dashboard$/,
+  /^\/dashboard\/catalogue$/,
   /^\/suppliers$/,
   /^\/suppliers\/load$/,
   // Finding and choosing a supplier by hand (decision 0222).

@@ -884,6 +884,28 @@
   }
   .chip.on { color: var(--text-primary); border-color: var(--text-accent); }
 
+  /* The picker — decision 0243. Cards, because a list of nine names
+     says nothing about what each one shows. */
+  .pickgrid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin: 10px 0;
+  }
+  .pickcard {
+    text-align: left;
+    background: none;
+    border: 0.5px solid var(--border);
+    border-radius: var(--radius);
+    padding: 9px 11px;
+    font: inherit;
+    color: inherit;
+    cursor: pointer;
+  }
+  .pickcard:hover { background: var(--surface-1); }
+  .pickcard.on { border-color: var(--text-accent); }
+  @media (max-width: 520px) { .pickgrid { grid-template-columns: 1fr; } }
+
   .barlist-row { margin-bottom: 9px; }
   .barlist-head { display: flex; justify-content: space-between; font-size: var(--text-sm); gap: 10px; }
   .barlist-track { height: 6px; background: var(--border); border-radius: 3px; margin-top: 3px; }

@@ -1,7 +1,14 @@
 import { env } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
 import { applyTestSchema } from "./setup.js";
-import { handleDashboard, CARD_TYPES, DEFAULT_CARDS } from "../src/dashboard-route.js";
+import {
+  handleDashboard,
+  handleSaveDashboard,
+  handleResetDashboard,
+  handleCardCatalogue,
+  CARD_TYPES,
+  DEFAULT_CARDS,
+} from "../src/dashboard-route.js";
 import migrationSql from "../../../migrations/0056_dashboard_cards.sql?raw";
 
 /**
@@ -92,7 +99,10 @@ async function work(
 
 async function cardsFor(userId: string) {
   const result = await handleDashboard(env.DB, userId);
-  const body = result.body as { cards: { cardType: string; data: unknown }[]; usingDefault: boolean };
+  const body = result.body as {
+    cards: { cardType: string; data: unknown; settings: Record<string, unknown> }[];
+    usingDefault: boolean;
+  };
   return body;
 }
 
@@ -324,5 +334,154 @@ describe("a card reading a status nothing writes (decision 0241)", () => {
 
     const body = await cardsFor("alice");
     expect(card<{ count: number; missing: boolean }>(body, "items_at_stage").count).toBe(1);
+  });
+});
+
+describe("arranging a dashboard (decision 0243)", () => {
+  /**
+   * **The whole set, not one card.** Adding, removing and reordering
+   * are three verbs over one list, and three endpoints would each have
+   * to renumber afterwards — which is where migration 0056's
+   * one-position-per-person invariant would break.
+   */
+  async function save(cards: unknown[]) {
+    return handleSaveDashboard(env.DB, "alice", { cards });
+  }
+
+  beforeEach(async () => {
+    await person("alice", ["AP.Review"], null);
+  });
+
+  it("saves what was sent, in order", async () => {
+    const result = await save([
+      { cardType: "ageing", settings: {} },
+      { cardType: "waiting_for_me", settings: {} },
+    ]);
+    expect(result.status).toBe(200);
+
+    const body = await cardsFor("alice");
+    expect(body.usingDefault).toBe(false);
+    expect(body.cards.map((c) => c.cardType)).toEqual(["ageing", "waiting_for_me"]);
+  });
+
+  it("keeps one card per position", async () => {
+    // Migration 0056's standing invariant, which two cards in the same
+    // place would break — and then the order would depend on row order,
+    // which is not a rule anybody could state.
+    await save([
+      { cardType: "ageing", settings: {} },
+      { cardType: "done", settings: {} },
+      { cardType: "received", settings: {} },
+    ]);
+
+    const clash = await env.DB.prepare(
+      `SELECT count(*) AS n FROM (
+         SELECT position FROM dashboard_cards WHERE user_id = 'alice'
+         GROUP BY position HAVING count(*) > 1)`
+    ).first<{ n: number }>();
+    expect(clash?.n).toBe(0);
+  });
+
+  it("replaces rather than merges", async () => {
+    /**
+     * **A person who removed a card expects it gone.** Merging would
+     * make removal the one act the interface could not perform —
+     * decision 0211 made the same choice for the supplier load.
+     */
+    await save([{ cardType: "ageing", settings: {} }, { cardType: "done", settings: {} }]);
+    await save([{ cardType: "done", settings: {} }]);
+
+    const body = await cardsFor("alice");
+    expect(body.cards.map((c) => c.cardType)).toEqual(["done"]);
+  });
+
+  it("takes the same type twice, with different settings", async () => {
+    /**
+     * **The point of the parameterised card** (decision 0239): six
+     * stage cards are six instances of one type, and a customer's own
+     * stages decide what they are.
+     */
+    await env.DB.prepare("INSERT INTO processes (id, name) VALUES ('ap', 'AP')").run();
+    await env.DB.prepare(
+      `INSERT INTO process_stages (id, process_id, name, sequence) VALUES
+         ('validation', 'ap', 'Validation', 1), ('approval', 'ap', 'Approval', 2)`
+    ).run();
+
+    const result = await save([
+      { cardType: "items_at_stage", settings: { stage: "validation" } },
+      { cardType: "items_at_stage", settings: { stage: "approval" } },
+    ]);
+    expect(result.status).toBe(200);
+
+    const body = await cardsFor("alice");
+    expect(body.cards).toHaveLength(2);
+    expect(body.cards.map((c) => c.settings.stage)).toEqual(["validation", "approval"]);
+  });
+
+  it("refuses a stage that does not exist", async () => {
+    /**
+     * **Refused here rather than reported missing on every load.** The
+     * card copes with a stage that disappears *later* (decision 0240),
+     * which is a different thing from one that never existed.
+     */
+    const result = await save([{ cardType: "items_at_stage", settings: { stage: "invented" } }]);
+    expect(result.status).toBe(404);
+  });
+
+  it("refuses a type that is not in the closed set", async () => {
+    const result = await save([{ cardType: "run_arbitrary_sql", settings: {} }]);
+    expect(result.status).toBe(400);
+  });
+
+  it("refuses a wall of cards", async () => {
+    // Decision 0239 asked how many before a dashboard stops helping.
+    // This is a ceiling on the question rather than an answer to it.
+    const result = await save(Array.from({ length: 21 }, () => ({ cardType: "done", settings: {} })));
+    expect(result.status).toBe(400);
+  });
+
+  it("goes back to the default by deleting", async () => {
+    /**
+     * **Deleting is the reset.** A separate one that wrote the default
+     * back would freeze today's into their account — the thing decision
+     * 0240 avoided.
+     */
+    await save([{ cardType: "done", settings: {} }]);
+    await handleResetDashboard(env.DB, "alice");
+
+    const body = await cardsFor("alice");
+    expect(body.usingDefault).toBe(true);
+
+    const written = await env.DB.prepare(
+      "SELECT count(*) AS n FROM dashboard_cards WHERE user_id = 'alice'"
+    ).first<{ n: number }>();
+    expect(written?.n).toBe(0);
+  });
+
+  it("does not touch anybody else's dashboard", async () => {
+    await person("mo", ["AP.Review"], null);
+    await handleSaveDashboard(env.DB, "mo", { cards: [{ cardType: "ageing", settings: {} }] });
+    await save([{ cardType: "done", settings: {} }]);
+
+    const theirs = await cardsFor("mo");
+    expect(theirs.cards.map((c) => c.cardType)).toEqual(["ageing"]);
+  });
+
+  it("offers the customer's own stages, not a hardcoded six", async () => {
+    /**
+     * **Decision 0239's whole argument.** `process_stages` is customer
+     * data, and a catalogue naming Validation and Approval by hand
+     * would be wrong for the second customer.
+     */
+    await env.DB.prepare("INSERT INTO processes (id, name) VALUES ('ap', 'AP')").run();
+    await env.DB.prepare(
+      "INSERT INTO process_stages (id, process_id, name, sequence) VALUES ('triage', 'ap', 'Triage', 1)"
+    ).run();
+
+    const result = await handleCardCatalogue(env.DB);
+    const body = result.body as { stages: { id: string }[]; types: unknown[] };
+
+    expect(body.stages.map((s) => s.id)).toEqual(["triage"]);
+    expect(body.types.length).toBe(CARD_TYPES.length);
   });
 });

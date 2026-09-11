@@ -23,6 +23,17 @@ import { barChart, barList } from "/charts.js";
  */
 
 let cards = [];
+let catalogue = null;
+
+/**
+ * **Arranging is a mode, not a screen** — decision 0243.
+ *
+ * A dashboard somebody is rearranging is still the dashboard: the cards
+ * stay where they are and gain a handle. A separate settings page would
+ * make a person choose blind, and the whole question is *"do I want
+ * this one here."*
+ */
+let arranging = false;
 
 async function load() {
   try {
@@ -291,14 +302,182 @@ function render() {
     })
     .filter(Boolean);
 
+  /**
+   * **A handle on each card while arranging**, and nothing while not.
+   * Decision 0161's argument about the unreadable notice: a control
+   * with nothing to do should not be there at all.
+   */
+  const withHandles = rendered.map((node, index) => {
+    if (!arranging) return node;
+    node.append(
+      el("div", { class: "cardactions" }, [
+        el("button", { class: "chip", text: "↑", onclick: () => move(index, -1) }),
+        el("button", { class: "chip", text: "↓", onclick: () => move(index, 1) }),
+        el("button", { class: "chip", text: t("dash.remove"), onclick: () => remove(index) }),
+      ])
+    );
+    return node;
+  });
+
   shell.replaceChildren(
     frame(
       el("div", {}, [
         topbar(t("dash.heading"), t("dash.sub")),
-        el("div", { class: "dashgrid" }, rendered),
+        el("div", { class: "statebuttons" }, [
+          el("button", {
+            class: arranging ? "primary" : "secondary",
+            text: arranging ? t("dash.done_arranging") : t("dash.arrange"),
+            onclick: () => {
+              arranging = !arranging;
+              render();
+            },
+          }),
+          arranging ? el("button", { class: "secondary", text: t("dash.addcard"), onclick: () => openPicker() }) : null,
+          arranging
+            ? el("button", {
+                class: "secondary",
+                text: t("dash.reset"),
+                onclick: async () => {
+                  await fetch("/api/dashboard", { method: "DELETE" });
+                  await load();
+                  render();
+                },
+              })
+            : null,
+        ].filter(Boolean)),
+        el("div", { class: "dashgrid" }, withHandles),
       ])
     )
   );
+}
+
+/** The whole set, because that is what the route takes. */
+async function save() {
+  try {
+    const response = await fetch("/api/dashboard", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        cards: cards.map((c) => ({ cardType: c.cardType, settings: c.settings })),
+      }),
+    });
+    if (!response.ok) return false;
+    await load();
+    render();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function move(index, by) {
+  const to = index + by;
+  if (to < 0 || to >= cards.length) return;
+  const [card] = cards.splice(index, 1);
+  cards.splice(to, 0, card);
+  save();
+}
+
+function remove(index) {
+  cards.splice(index, 1);
+  save();
+}
+
+/** What can be added, and which stage a stage-card would name. */
+async function openPicker() {
+  if (!catalogue) {
+    try {
+      catalogue = await (await fetch("/api/dashboard/catalogue")).json();
+    } catch {
+      return;
+    }
+  }
+
+  const chosen = { cardType: null, stage: null };
+  const problem = el("div", { class: "warn" });
+  const stagePick = el("div", {});
+
+  const types = el(
+    "div",
+    { class: "pickgrid" },
+    catalogue.types.map((type) => {
+      const button = el("button", { class: "pickcard" }, [
+        el("div", { text: t(`dash.${type.cardType}`) }),
+        el("div", { class: "muted tiny", text: t(`dash.about.${type.cardType}`) }),
+      ]);
+
+      button.onclick = () => {
+        chosen.cardType = type.cardType;
+        for (const other of types.querySelectorAll(".pickcard")) other.classList.remove("on");
+        button.classList.add("on");
+
+        /**
+         * **A stage card asks which stage**, from the customer's own
+         * list — decision 0239's argument that a hardcoded six would be
+         * wrong for the second customer.
+         */
+        if (type.parameter === "stage") {
+          const select = el(
+            "select",
+            {},
+            catalogue.stages.map((stage) =>
+              el("option", { value: stage.id, text: `${stage.process_name} · ${stage.name}` })
+            )
+          );
+          select.onchange = () => {
+            chosen.stage = select.value;
+          };
+          chosen.stage = catalogue.stages[0]?.id ?? null;
+          stagePick.replaceChildren(el("label", { text: t("dash.whichstage") }), select);
+        } else {
+          chosen.stage = null;
+          stagePick.replaceChildren();
+        }
+      };
+
+      return button;
+    })
+  );
+
+  const backdrop = el("div", { class: "backdrop" }, [
+    el("div", { class: "popout" }, [
+      el("h3", { text: t("dash.addcard") }),
+      types,
+      stagePick,
+      problem,
+      el("div", { class: "statebuttons" }, [
+        el("button", {
+          class: "primary",
+          text: t("dash.add"),
+          onclick: async () => {
+            if (!chosen.cardType) {
+              problem.textContent = t("dash.pickone");
+              return;
+            }
+            cards.push({
+              cardType: chosen.cardType,
+              settings: chosen.stage ? { stage: chosen.stage } : {},
+            });
+            if (!(await save())) {
+              problem.textContent = t("dash.savefailed");
+              return;
+            }
+            backdrop.remove();
+          },
+        }),
+        el("button", {
+          class: "secondary",
+          text: t("viewer.supplier.close"),
+          onclick: () => backdrop.remove(),
+        }),
+      ]),
+    ]),
+  ]);
+
+  backdrop.onclick = (e) => {
+    if (e.target === backdrop) backdrop.remove();
+  };
+  document.body.append(backdrop);
 }
 
 export async function open() {
