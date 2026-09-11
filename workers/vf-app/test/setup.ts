@@ -54,6 +54,7 @@ import supplierMirrorSql from "../../../migrations/0049_supplier_mirror.sql?raw"
 import sitePurposeSql from "../../../migrations/0050_site_purpose_and_address.sql?raw";
 import supplierEmailSql from "../../../migrations/0051_supplier_email.sql?raw";
 import supplierPhoneSql from "../../../migrations/0052_supplier_phone.sql?raw";
+import orgContactSql from "../../../migrations/0053_org_unit_contact.sql?raw";
 import taskStatesSql from "../../../migrations/0031_task_states_and_returns.sql?raw";
 import orgSettingsSql from "../../../migrations/0032_org_settings_retention.sql?raw";
 import discardedStateSql from "../../../migrations/0033_discarded_task_state.sql?raw";
@@ -205,6 +206,7 @@ export async function applyTestSchema(): Promise<void> {
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(sitePurposeSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(supplierEmailSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(supplierPhoneSql)));
+  await env.DB.exec(toOneStatementPerLine(stripSqlComments(orgContactSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(taskStatesSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(orgSettingsSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(discardedStateSql)));

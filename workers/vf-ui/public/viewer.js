@@ -133,6 +133,9 @@ async function loadInvoice(invoiceId) {
       intake: body.intake ?? null,
       // Who we matched this invoice to — decision 0219.
       supplier: body.supplier ?? null,
+      // And which of our own units it is for — decision 0224.
+      buyer: body.buyer ?? null,
+      buyerUnplaced: body.buyerUnplaced ?? null,
       /**
        * **Which unit this document belongs to** — decision 0198, and
        * kept because it decides which fields may be edited (decision
@@ -878,31 +881,38 @@ export async function openViewer(task, onClose) {
    * is exactly what happened to the line fields before decision 0114.
    */
   const SELLER_FIELDS = ["BT-27", "BT-31", "BT-34", "BT-40"];
+  /**
+   * **No longer a panel of its own** — decision 0224. The Buyer card
+   * shows our record of the unit an invoice is for, the way the Seller
+   * card shows our record of the supplier.
+   *
+   * The list stays, because these fields must still be **kept out of
+   * the main form**: they describe a party and the form below is
+   * everything else. `SELLER_FIELDS` is read twice now — once for that,
+   * and once as what the Seller card falls back to when nothing
+   * matched.
+   */
   const BUYER_FIELDS = ["BT-44", "BT-48", "BT-49", "BT-55", "BT-10"];
 
   /**
-   * Finding a supplier by hand — decision 0222.
+   * A pop-out that finds one thing and attaches it — decisions 0222 and
+   * 0224.
    *
    * **One box, not a form.** Somebody looking at an invoice has a name,
    * or a VAT number, or an address on the page, and does not know which
    * of those we hold. Asking them to pick a field first is asking them
    * to guess what we stored.
+   *
+   * Shared by the supplier and buyer searches because they differ only
+   * in **where they look and what they say** — two near-copies would
+   * drift, and the second would get the debounce wrong.
    */
-  function openSupplierSearch() {
-    const input = el("input", {
-      type: "text",
-      class: "searchbox",
-      placeholder: t("viewer.supplier.searchhint"),
-    });
+  function openSearch({ heading, hint, note, search, describe, choose }) {
+    const input = el("input", { type: "text", class: "searchbox", placeholder: hint });
     const results = el("div", { class: "searchresults" });
     const box = el("div", { class: "popout" }, [
-      el("h3", { text: t("viewer.supplier.findheading") }),
-      /**
-       * **Leaving it is a real answer**, and the box says so. The
-       * document may be from a genuinely new supplier, and a person who
-       * cannot find one has not failed at anything.
-       */
-      el("p", { class: "muted", text: t("viewer.supplier.orleave") }),
+      el("h3", { text: heading }),
+      el("p", { class: "muted", text: note }),
       input,
       results,
       el("button", { class: "secondary", text: t("viewer.supplier.close") }),
@@ -918,9 +928,11 @@ export async function openViewer(task, onClose) {
     let latest = 0;
     input.oninput = async () => {
       const q = input.value;
-      // **Only the newest answer counts.** Typing is faster than the
-      // network, and an earlier reply arriving late would replace a
-      // later one — the list would then not match the box above it.
+      /**
+       * **Only the newest answer counts.** Typing is faster than the
+       * network, and an earlier reply arriving late would replace a
+       * later one — the list would then not match the box above it.
+       */
       const mine = ++latest;
 
       if (q.trim().length < 2) {
@@ -929,57 +941,37 @@ export async function openViewer(task, onClose) {
       }
 
       try {
-        const response = await fetch(`/api/suppliers/search?q=${encodeURIComponent(q)}`);
-        if (!response.ok || mine !== latest) return;
-        const { suppliers } = await response.json();
+        const found = await search(q);
+        if (mine !== latest) return;
 
-        if (suppliers.length === 0) {
-          results.replaceChildren(el("div", { class: "muted", text: t("viewer.supplier.nomatches") }));
+        if (found.length === 0) {
+          results.replaceChildren(
+            el("div", { class: "muted", text: t("viewer.supplier.nomatches") })
+          );
           return;
         }
 
         results.replaceChildren(
-          ...suppliers.map((s) => {
+          ...found.map((item) => {
+            const [title, detail] = describe(item);
             const row = el("button", { class: "searchresult" }, [
-              el("div", { text: s.name }),
-              /**
-               * **Everything a person might have searched on**, so they
-               * can see why this row came back and whether it is the
-               * right site — which since decision 0218 is not obvious
-               * from a VAT number three sites share.
-               */
-              el("div", {
-                class: "muted",
-                text: [
-                  s.erp_identifier,
-                  s.erp_site_identifier,
-                  s.is_pay_site ? t("suppliers.pay") : null,
-                  s.vat_id,
-                  [s.address_line, s.city, s.postal_code].filter(Boolean).join(", "),
-                ]
-                  .filter(Boolean)
-                  .join(" · "),
-              }),
+              el("div", { text: title }),
+              // **Everything a person might have searched on**, so they
+              // can see why this row came back and whether it is right.
+              el("div", { class: "muted", text: detail }),
             ]);
 
             row.onclick = async () => {
               try {
-                const put = await fetch(
-                  `/api/invoices/${encodeURIComponent(current.subject.id)}/supplier`,
-                  {
-                    method: "PUT",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ supplierId: s.id }),
-                  }
-                );
-                if (!put.ok) {
-                  const body = await put.json();
+                const response = await choose(item);
+                if (!response.ok) {
+                  const body = await response.json();
                   results.replaceChildren(el("div", { class: "warn", text: body.error }));
                   return;
                 }
                 close();
                 // Reopen on the same task, so the card redraws with the
-                // supplier now attached.
+                // choice applied.
                 await openViewer(current, onClose);
               } catch {
                 results.replaceChildren(
@@ -993,7 +985,9 @@ export async function openViewer(task, onClose) {
         );
       } catch {
         if (mine === latest) {
-          results.replaceChildren(el("div", { class: "warn", text: t("viewer.supplier.searchfailed") }));
+          results.replaceChildren(
+            el("div", { class: "warn", text: t("viewer.supplier.searchfailed") })
+          );
         }
       }
     };
@@ -1002,16 +996,189 @@ export async function openViewer(task, onClose) {
     input.focus();
   }
 
-  const partyPanel = (titleKey, codes) => {
-    const shown = headerFields.filter((f) => codes.includes(f.field));
-    // A panel with nothing in it is worse than no panel: it says
-    // "there should be something here" and there never will be.
-    if (shown.length === 0) return null;
-    return el("div", { class: "panel" }, [
-      el("h3", { text: t(titleKey) }),
-      el("div", { class: "vfields" }, shown.map((spec) => field(spec, existing))),
+  /**
+   * Finding a supplier by hand — decision 0222.
+   *
+   * **Leaving it is a real answer**, which the note says out loud: the
+   * document may be from a genuinely new supplier, and the person
+   * keying it cannot create one because we are the mirror.
+   */
+  function openSupplierSearch() {
+    openSearch({
+      heading: t("viewer.supplier.findheading"),
+      hint: t("viewer.supplier.searchhint"),
+      note: t("viewer.supplier.orleave"),
+      search: async (q) => {
+        const response = await fetch(`/api/suppliers/search?q=${encodeURIComponent(q)}`);
+        if (!response.ok) throw new Error();
+        return (await response.json()).suppliers;
+      },
+      describe: (s) => [
+        s.name,
+        [
+          s.erp_identifier,
+          s.erp_site_identifier,
+          s.is_pay_site ? t("suppliers.pay") : null,
+          s.vat_id,
+          [s.address_line, s.city, s.postal_code].filter(Boolean).join(", "),
+        ]
+          .filter(Boolean)
+          .join(" · "),
+      ],
+      choose: (s) =>
+        fetch(`/api/invoices/${encodeURIComponent(current.subject.id)}/supplier`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ supplierId: s.id }),
+        }),
+    });
+  }
+
+  /**
+   * Finding one of our own units by hand — decision 0224.
+   *
+   * **The same pop-out as decision 0222's**, with a different endpoint
+   * and a different sentence: a supplier that is not on file may be
+   * genuinely new and leaving it is a real answer, where an invoice in
+   * no unit **stops at the org gate** (decision 0037) and one in the
+   * wrong unit is handled wrongly by every stage after it.
+   *
+   * So this one does not say *"leave it"*.
+   */
+  function openBuyerSearch() {
+    openSearch({
+      heading: t("viewer.buyer.findheading"),
+      hint: t("viewer.buyer.searchhint"),
+      note: t("viewer.buyer.why"),
+      search: async (q) => {
+        const response = await fetch(`/api/org/units/search?q=${encodeURIComponent(q)}`);
+        if (!response.ok) throw new Error();
+        return (await response.json()).units;
+      },
+      describe: (u) => [
+        u.name,
+        [u.parent_name, u.parent_vat_id ?? u.vat_id, u.city].filter(Boolean).join(" · "),
+      ],
+      choose: async (u) => {
+        const put = await fetch(
+          `/api/invoices/${encodeURIComponent(current.subject.id)}/org`,
+          {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ unitId: u.id }),
+          }
+        );
+        return put;
+      },
+    });
+  }
+
+  /**
+   * **Label and value on one line** — decision 0221, from the
+   * operator's own mock-up, and shared by both party cards since
+   * decision 0224.
+   *
+   * Decision 0219 stacked them, which is how the keying form works
+   * **because its values are inputs**. These are short, read-only and
+   * scanned against a document — a label above each doubles the height
+   * for nothing.
+   */
+  const pair = (label, value) =>
+    el("div", { class: "sfield" }, [
+      el("span", { class: "slabel", text: label }),
+      el("span", { class: value ? "" : "muted", text: value || "—" }),
+    ]);
+
+  /**
+   * **The address as a block, under one label.** Four labelled rows is
+   * four labels for one thing, and an invoice prints an address as
+   * lines.
+   */
+  const addressBlock = (party, label) => {
+    const lines = [
+      party.addressLine,
+      party.city,
+      party.countryName ?? party.country,
+      party.postalCode,
+    ].filter(Boolean);
+
+    return el("div", { class: "sfield" }, [
+      el("span", { class: "slabel", text: label }),
+      lines.length > 0
+        ? el("span", {}, lines.map((line) => el("div", { text: line })))
+        : el("span", { class: "muted", text: "—" }),
     ]);
   };
+
+  /**
+   * The Buyer card — decision 0224.
+   *
+   * **The same shape as the Seller's, because it is the same question
+   * from the other side**: our record of who this invoice is for, set
+   * beside the image so a person can see it is addressed to us.
+   *
+   * The operator's reason it matters:
+   *
+   *   The Buyer Org should be defined before validation, or validation
+   *   at the latest, because subsequent stages — Matching, Coding,
+   *   Approval — are impacted by Org specific configurations.
+   *
+   * Which is exact. Decision 0196 scopes rule sets to a unit, decision
+   * 0197 field visibility, decision 0199 who may act, decision 0202 who
+   * is shown the work. **An invoice in the wrong unit is one every
+   * later stage handles wrongly**, and silently.
+   */
+  const buyerPanel = () => {
+    const b = stored.buyer;
+
+    if (!b) {
+      // Amber and a reason — the same ribbon as the Seller's, for the
+      // reason decision 0161 gave.
+      const panel = el("div", { class: "panel needsattention" }, [
+        el("h3", { text: t("viewer.buyer") }),
+        el("div", { class: "warn", text: t(`viewer.buyer.${stored.buyerUnplaced ?? "none"}`) }),
+        el("button", { class: "linky", text: t("viewer.buyer.find") }),
+      ]);
+      panel.querySelector("button").onclick = () => openBuyerSearch();
+      return panel;
+    }
+
+    const panel = el("div", { class: "panel" }, [
+      el("h3", { text: t("viewer.buyer") }),
+      /**
+       * **Which unit, where the entity is a different row.** Decision
+       * 0036 put the identity on the legal entity and assigns invoices
+       * to an operating unit beneath it, so naming only one of them
+       * names a department with no identity or a company with no
+       * department.
+       */
+      el("div", {
+        class: "sub",
+        text: b.unitName !== b.entityName ? `${b.entityName} · ${b.unitName}` : b.unitName,
+      }),
+      el("div", { class: "sellergrid" }, [
+        el("div", {}, [
+          pair(t("viewer.supplier.name"), b.entityName),
+          pair(t("viewer.supplier.vat"), b.vatId),
+          pair(t("viewer.supplier.endpoint"), b.electronicAddress),
+          pair(t("viewer.supplier.email"), b.email),
+          pair(t("viewer.supplier.phone"), b.phone),
+        ]),
+        addressBlock(b, t("viewer.supplier.street")),
+      ]),
+      /**
+       * **Re-routing**, which the operator asked for. Offered even when
+       * a unit was found, because a **wrong** one is worse than none:
+       * none stops at the org gate (decision 0037), and a wrong one
+       * sails through every org-scoped stage after it.
+       */
+      el("button", { class: "linky", text: t("viewer.buyer.change") }),
+    ]);
+
+    panel.querySelector("button").onclick = () => openBuyerSearch();
+    return panel;
+  };
+
 
   /**
    * The Seller card — decision 0220.
@@ -1061,30 +1228,6 @@ export async function openViewer(task, onClose) {
       return panel;
     }
 
-    /**
-     * **Label and value on one line** — decision 0221, from the
-     * operator's own mock-up.
-     *
-     * Decision 0219 stacked them, which is how the keying form works
-     * because its values are inputs. **These are not**: they are short,
-     * read-only, and being scanned against a document — so a label
-     * above each one doubles the height for nothing.
-     */
-    const pair = (label, value) =>
-      el("div", { class: "sfield" }, [
-        el("span", { class: "slabel", text: label }),
-        el("span", { class: value ? "" : "muted", text: value || "—" }),
-      ]);
-
-    /**
-     * **The address as a block, under one label.**
-     *
-     * Four labelled rows is four labels for one thing. An invoice
-     * prints an address as lines, and a card being compared against an
-     * invoice should too.
-     */
-    const address = [s.addressLine, s.city, s.countryName ?? s.country, s.postalCode].filter(Boolean);
-
     return el("div", { class: "panel" }, [
       el("h3", { text: t("viewer.seller") }),
       /**
@@ -1110,16 +1253,7 @@ export async function openViewer(task, onClose) {
           pair(t("viewer.supplier.email"), s.email),
           pair(t("viewer.supplier.phone"), s.phone),
         ]),
-        el("div", { class: "sfield" }, [
-          el("span", { class: "slabel", text: t("viewer.supplier.street") }),
-          address.length > 0
-            ? el(
-                "span",
-                {},
-                address.map((line) => el("div", { text: line }))
-              )
-            : el("span", { class: "muted", text: "—" }),
-        ]),
+        addressBlock(s, t("viewer.supplier.street")),
       ]),
     ].filter(Boolean));
   };
@@ -1194,7 +1328,7 @@ export async function openViewer(task, onClose) {
           el("div", {}, [
             // Seller and buyer side by side, in the space the four
             // status panels were using (decision 0115).
-            el("div", { class: "parties" }, [sellerPanel(), partyPanel("viewer.buyer", BUYER_FIELDS)].filter(Boolean)),
+            el("div", { class: "parties" }, [sellerPanel(), buyerPanel()].filter(Boolean)),
             el("div", { class: "panel" }, [
               el("h3", { text: t("viewer.fields") }),
               // **Party fields removed**, or they would appear twice —

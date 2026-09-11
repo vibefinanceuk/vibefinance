@@ -1,4 +1,5 @@
 import { resolveTenant } from "@vibefinance/shared";
+import { searchOrgUnits, setInvoiceOrgUnit } from "./derive-org.js";
 import { evaluateRuleSet, validateRule } from "@vibefinance/shared";
 import type { CompiledRuleSet, InvoiceFacts } from "@vibefinance/shared";
 import { COMPILER_MODEL_ID, createWorkersAiCompilerModel } from "./compiler-model.js";
@@ -868,6 +869,37 @@ export default {
       }
     }
 
+
+    // Finding one of our own units, and re-routing — decision 0224.
+    if (pathname === "/org/units/search" && request.method === "GET") {
+      const { db } = resolveTenant(request, env);
+      const auth = await authenticatePerson(db, request, env);
+      if (!auth.user) return json({ error: auth.reason }, 401);
+
+      const result = await searchOrgUnits(db, url.searchParams.get("q") ?? "");
+      return json(result.body, result.status);
+    }
+
+    {
+      const match = pathname.match(/^\/invoices\/([^/]+)\/org$/);
+      if (match && request.method === "PUT") {
+        const { db } = resolveTenant(request, env);
+        const auth = await authenticatePerson(db, request, env);
+        if (!auth.user) return json({ error: auth.reason }, 401);
+        if (!(await hasPermission(db, auth.user.id, "AP.Validate"))) {
+          return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
+        }
+
+        const body = (await request.json()) as { unitId?: unknown };
+        const result = await setInvoiceOrgUnit(
+          db,
+          decodeURIComponent(match[1]),
+          body.unitId,
+          auth.user.id
+        );
+        return json(result.body, result.status);
+      }
+    }
 
     // Finding a supplier by whatever a person has to hand — 0222.
     if (pathname === "/suppliers/search" && request.method === "GET") {

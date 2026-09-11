@@ -2,6 +2,7 @@ import type { InvoiceFacts } from "@vibefinance/shared";
 import { validateInvoiceFacts } from "./validation.js";
 import type { RouteResult } from "./org-route.js";
 import { CODE_LISTS } from "./peppol-render-data.js";
+import { unitLineage } from "./unit-config.js";
 import { findSimilarInvoices } from "./invoice-history.js";
 
 /**
@@ -320,6 +321,53 @@ export async function handleGetInvoice(db: D1Database, invoiceId: string): Promi
         .first<Record<string, unknown>>()
     : null;
 
+  /**
+   * **Which of our own units this invoice is for** — decision 0224.
+   *
+   * The mirror of the supplier panel, and it has to **walk up**:
+   * decision 0036 put the identifiers an invoice is matched on — VAT
+   * id, buyer endpoint, buyer reference — on the **legal entity**,
+   * while an invoice is assigned to an **operating unit** beneath it.
+   *
+   * So *"which unit"* and *"whose VAT number"* are two different rows,
+   * and a card showing one without the other would show a department
+   * with no identity.
+   */
+  const buyerUnit = invoice.org_unit_id
+    ? await db
+        .prepare(
+          `SELECT id, name, kind, parent_unit_id, vat_id, buyer_endpoint, buyer_reference,
+                  address_line, city, postal_code, country, email, phone
+           FROM org_units WHERE id = ?`
+        )
+        .bind(invoice.org_unit_id)
+        .first<Record<string, unknown>>()
+    : null;
+
+  /**
+   * The nearest ancestor carrying an identity. **Usually the parent**,
+   * because decision 0036's invariant says an operating unit's parent
+   * is a legal entity — but a unit that carries its own is its own
+   * answer, which is how a customer with no departments works.
+   */
+  let buyerEntity = buyerUnit;
+  if (buyerUnit && !buyerUnit.vat_id) {
+    for (const id of (await unitLineage(db, String(buyerUnit.id))).slice(1)) {
+      const up = await db
+        .prepare(
+          `SELECT id, name, vat_id, buyer_endpoint, buyer_reference,
+                  address_line, city, postal_code, country, email, phone
+           FROM org_units WHERE id = ?`
+        )
+        .bind(id)
+        .first<Record<string, unknown>>();
+      if (up?.vat_id || up?.address_line) {
+        buyerEntity = up;
+        break;
+      }
+    }
+  }
+
   const document = await db
     .prepare(
       "SELECT content_type, document_type FROM invoice_documents WHERE invoice_id = ? ORDER BY uploaded_at DESC LIMIT 1"
@@ -396,6 +444,37 @@ export async function handleGetInvoice(db: D1Database, invoiceId: string): Promi
        * visible, and *"is this the right site"* is exactly what an
        * image can answer and a VAT number cannot.
        */
+      /**
+       * **Our own side of the document** — decision 0224. The unit the
+       * invoice is assigned to, and the entity whose identity it
+       * carries, which are usually two different rows.
+       */
+      buyer: buyerUnit
+        ? {
+            unitId: buyerUnit.id,
+            unitName: buyerUnit.name,
+            kind: buyerUnit.kind,
+            entityName: buyerEntity?.name ?? buyerUnit.name,
+            vatId: buyerEntity?.vat_id ?? null,
+            electronicAddress: buyerEntity?.buyer_endpoint ?? null,
+            reference: buyerEntity?.buyer_reference ?? null,
+            email: buyerEntity?.email ?? null,
+            phone: buyerEntity?.phone ?? null,
+            addressLine: buyerEntity?.address_line ?? null,
+            city: buyerEntity?.city ?? null,
+            postalCode: buyerEntity?.postal_code ?? null,
+            country: buyerEntity?.country ?? null,
+            countryName:
+              typeof buyerEntity?.country === "string"
+                ? CODE_LISTS.iso3166?.[buyerEntity.country]?.en ?? buyerEntity.country
+                : null,
+          }
+        : null,
+      /**
+       * Why no unit, where none — decision 0204 records three reasons
+       * and nothing has ever shown them.
+       */
+      buyerUnplaced: invoice.org_unit_id ? null : facts["org.unplaced"] ?? null,
       supplier: matchedSupplier
         ? {
             ...matchedSupplier,
