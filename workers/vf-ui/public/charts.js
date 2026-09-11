@@ -13,12 +13,24 @@
 
 const NS = "http://www.w3.org/2000/svg";
 
+/**
+ * **A chart fills the card it is in** — decision 0245.
+ *
+ * The first version set a fixed pixel height with the aspect ratio
+ * preserved, so a 300-wide drawing in an 840px card rendered **300px
+ * wide and centred**, floating in white space.
+ *
+ * `height: auto` lets the viewBox decide the shape and the container
+ * decide the size — a wide card gets a wide chart, a narrow one gets a
+ * short chart, and the text stays upright either way.
+ */
 function svg(width, height, extra = {}) {
   const node = document.createElementNS(NS, "svg");
   node.setAttribute("viewBox", `0 0 ${width} ${height}`);
   node.setAttribute("preserveAspectRatio", extra.stretch ? "none" : "xMidYMid meet");
   node.style.width = "100%";
-  node.style.height = `${height}px`;
+  node.style.height = extra.fixed ? `${height}px` : "auto";
+  node.style.display = "block";
   return node;
 }
 
@@ -38,7 +50,7 @@ function el(name, attrs = {}, text) {
  */
 export function sparkline(values, { colour = "var(--chart-1)", height = 38 } = {}) {
   const width = 150;
-  const node = svg(width, height, { stretch: true });
+  const node = svg(width, height, { stretch: true, fixed: true });
 
   if (values.length < 2) return node;
 
@@ -74,8 +86,21 @@ export function sparkline(values, { colour = "var(--chart-1)", height = 38 } = {
  * something to look at, which is why the palette and the warning colour
  * are separate (decision 0242).
  */
-export function barChart(rows, { height = 150 } = {}) {
-  const width = 300;
+export function barChart(rows, { height = 112 } = {}) {
+  /**
+   * **Wider than it is tall, and more so than at first** — decision
+   * 0246.
+   *
+   * A chart that fills its card takes the card's proportions, so the
+   * viewBox decides how much vertical room the card asks for. At 3:1 a
+   * half-width card was three hundred pixels tall for five bars and
+   * four labels, most of it air.
+   *
+   * At 5:1 the same card is a band rather than a box, which is what a
+   * count-by-category chart is: the bars carry the meaning and the
+   * height above them carries none.
+   */
+  const width = 560;
   const node = svg(width, height);
   if (rows.length === 0) return node;
 
@@ -184,7 +209,8 @@ export function barChart(rows, { height = 150 } = {}) {
  * badly; this says *"64% of them"* and leaves the rest to a number.
  */
 export function donut(percent, { label = "", colour = "var(--chart-2)" } = {}) {
-  const node = svg(140, 140);
+  // A ring is square, so it keeps its pixels rather than filling.
+  const node = svg(140, 140, { fixed: true });
   const r = 52;
   const c = 70;
   const circumference = 2 * Math.PI * r;
@@ -226,6 +252,13 @@ export function donut(percent, { label = "", colour = "var(--chart-2)" } = {}) {
  * label is a picture of a word.
  */
 export function barList(rows, { colour = "var(--chart-1)" } = {}) {
+  /**
+   * **One row is not a proportion** — decision 0245.
+   *
+   * A single bar is always full width, which reads as *"100%"* and
+   * means nothing. The caller shows a figure instead; this guards the
+   * case anyway, because a list that shrinks to one is a list that will.
+   */
   const hi = Math.max(...rows.map((r) => r.value), 1);
   const wrap = document.createElement("div");
 
@@ -258,5 +291,112 @@ export function barList(rows, { colour = "var(--chart-1)" } = {}) {
     wrap.append(line);
   }
 
+  return wrap;
+}
+
+/**
+ * Parts of a whole, with a legend — decision 0247.
+ *
+ * **A donut is for a share, and bars are for a comparison.** Every
+ * in-flight invoice is at exactly one stage, so *"where things are"* is
+ * genuinely a whole being divided — and the reader's question is *"how
+ * much of my work is stuck in Approval"*, which is a proportion.
+ *
+ * **Ageing stays bars**, because its buckets have an order and a ring
+ * destroys it: *under a day* and *over thirty days* are not two slices
+ * of a pie, they are two ends of a line.
+ */
+export function donutChart(segments, { size = 150 } = {}) {
+  const wrap = document.createElement("div");
+  wrap.className = "donutwrap";
+
+  const total = segments.reduce((sum, s) => sum + s.value, 0);
+  if (total === 0) return wrap;
+
+  const node = svg(size, size, { fixed: true });
+  const r = size * 0.37;
+  const c = size / 2;
+  const circumference = 2 * Math.PI * r;
+  const thickness = size * 0.12;
+
+  /**
+   * **Six or more becomes five and a rest.** A ring of nine slices is a
+   * colour-matching exercise, and the palette has five (decision 0242).
+   */
+  const shown =
+    segments.length > 5
+      ? [
+          ...segments.slice(0, 4),
+          {
+            label: "…",
+            value: segments.slice(4).reduce((sum, s) => sum + s.value, 0),
+            rest: true,
+          },
+        ]
+      : segments;
+
+  let offset = 0;
+  shown.forEach((segment, i) => {
+    const length = (segment.value / total) * circumference;
+    const colour = segment.rest ? "var(--text-muted)" : `var(--chart-${(i % 5) + 1})`;
+
+    node.append(
+      el("circle", {
+        cx: c,
+        cy: c,
+        r,
+        fill: "none",
+        stroke: colour,
+        "stroke-width": thickness,
+        "stroke-dasharray": `${length.toFixed(2)} ${(circumference - length).toFixed(2)}`,
+        "stroke-dashoffset": (-offset).toFixed(2),
+        transform: `rotate(-90 ${c} ${c})`,
+      })
+    );
+    offset += length;
+    segment.colour = colour;
+  });
+
+  /**
+   * **The total in the middle**, because a ring says the shape and a
+   * reader still wants the number — and a donut without one makes
+   * somebody add up the legend.
+   */
+  node.append(
+    el(
+      "text",
+      { x: c, y: c - 1, "text-anchor": "middle", "font-size": 24, fill: "var(--text-primary)" },
+      total
+    ),
+    el(
+      "text",
+      { x: c, y: c + 15, "text-anchor": "middle", "font-size": 9, fill: "var(--text-muted)" },
+      shown.length === 1 ? shown[0].label : "in all"
+    )
+  );
+
+  const legend = document.createElement("div");
+  legend.className = "donutlegend";
+
+  for (const segment of shown) {
+    const row = document.createElement("div");
+    row.className = "donutkey";
+
+    const dot = document.createElement("span");
+    dot.className = "donutdot";
+    dot.style.background = segment.colour;
+
+    const name = document.createElement("span");
+    name.textContent = segment.label;
+
+    const value = document.createElement("span");
+    value.className = "muted";
+    value.textContent = String(segment.value);
+
+    row.append(dot, name, value);
+    legend.append(row);
+  }
+
+  wrap.append(node, legend);
   return wrap;
 }

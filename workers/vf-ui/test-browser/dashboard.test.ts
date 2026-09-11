@@ -125,7 +125,12 @@ describe("the cards render what the route returned", () => {
     expect(document.body.textContent).toContain("across 3 stages");
   });
 
-  it("draws a bar per stage", async () => {
+  it("draws a ring segment per stage", async () => {
+    /**
+     * **A whole being divided** — decision 0247. Every in-flight
+     * invoice is at exactly one stage, so the question is a proportion.
+     * This asserted bars until then.
+     */
     await openDashboard([
       {
         id: "b",
@@ -136,8 +141,11 @@ describe("the cards render what the route returned", () => {
       },
     ]);
 
-    expect(document.querySelectorAll("svg rect")).toHaveLength(2);
+    // One circle per segment, and the legend names them.
+    expect(document.querySelectorAll(".donutwrap svg circle")).toHaveLength(2);
     expect(document.body.textContent).toContain("Validation");
+    // The total in the middle, so nobody adds up the legend.
+    expect(document.body.textContent).toContain("19");
   });
 
   it("says a stage is gone rather than showing a zero", async () => {
@@ -446,6 +454,8 @@ describe("a card asks for the room it needs (decision 0244)", () => {
   });
 
   it("still charts two stages", async () => {
+    // The same, from the layout side: two stages is a chart and one is
+    // a figure.
     await openDashboard([
       {
         id: "d",
@@ -456,7 +466,28 @@ describe("a card asks for the room it needs (decision 0244)", () => {
       },
     ]);
 
-    expect(document.querySelectorAll("svg rect")).toHaveLength(2);
+    expect(document.querySelectorAll(".donutwrap svg circle")).toHaveLength(2);
+  });
+
+  it("folds a sixth stage into a rest", async () => {
+    /**
+     * **A ring of nine slices is a colour-matching exercise**, and the
+     * palette has five (decision 0242).
+     */
+    await openDashboard([
+      {
+        id: "h",
+        cardType: "where_things_are",
+        settings: {},
+        position: 0,
+        data: {
+          stages: Array.from({ length: 7 }, (_, i) => ({ stage_name: `S${i}`, n: i + 1 })),
+        },
+      },
+    ]);
+
+    expect(document.querySelectorAll(".donutkey")).toHaveLength(5);
+    expect(document.body.textContent).toContain("…");
   });
 });
 

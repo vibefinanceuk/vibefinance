@@ -109,11 +109,11 @@
 
     Five, because a chart needing a sixth is a chart needing a table.
   */
-  --chart-1: #2f6f9f;
-  --chart-2: #4f8c6b;
-  --chart-3: #8a6a9c;
-  --chart-4: #a8743f;
-  --chart-5: #5c7a8a;
+  --chart-1: #1f6fb2;
+  --chart-2: #1b8f77;
+  --chart-3: #7a4fa8;
+  --chart-4: #c06a2a;
+  --chart-5: #3d7a96;
 
   --border-success: #639922;
 
@@ -200,19 +200,27 @@
     --bg-success: #1f4310;
     --text-success: #a8cf85;
 
-    /* And the chart palette, for the same reason (decision 0242). */
-    --chart-1: #7db4dd;
-    --chart-2: #8fc4a4;
-    --chart-3: #bba3c9;
-    --chart-4: #d9a878;
-    --chart-5: #9db4bf;
+    /* And the chart palette, for the same reason (decisions 0242, 0247). */
+    --chart-1: #4da3f0;
+    --chart-2: #35c9a3;
+    --chart-3: #b08bff;
+    --chart-4: #ffb057;
+    --chart-5: #6fd0e8;
 
-  /* Lifted for the night surface (decision 0242), as the text colours are. */
-  --chart-1: #7db4dd;
-  --chart-2: #8fc4a4;
-  --chart-3: #bba3c9;
-  --chart-4: #d9a878;
-  --chart-5: #9db4bf;
+  /*
+    **Lifted and saturated for the night surface** — decisions 0242 and
+    0247.
+    
+    The first version was muted in both moods, which on a dark ground
+    read as grey. A colour on black needs more saturation than the same
+    colour on white to carry the same weight — and these still refuse a
+    verdict, which is what keeps them apart from warning and success.
+  */
+  --chart-1: #4da3f0;
+  --chart-2: #35c9a3;
+  --chart-3: #b08bff;
+  --chart-4: #ffb057;
+  --chart-5: #6fd0e8;
 
   }
 }

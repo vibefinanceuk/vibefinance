@@ -11,7 +11,7 @@ import { el, frame, topbar, setCurrentScreen } from "/tasks.js";
  *
  * Both are in `charts.js`, tested, and waiting for the data.
  */
-import { barChart, barList } from "/charts.js";
+import { barChart, barList, donutChart } from "/charts.js";
 
 /**
  * What a person should do next — decision 0242, on decision 0240's
@@ -193,17 +193,26 @@ const RENDERERS = {
      * chart of one bar is a rectangle, and the rectangle says nothing
      * the figure does not.
      */
-    if (stages.length === 1) {
+    if (stages.length <= 1) {
       return panel(t("dash.wherethings"), null, { weight: "tile" },
-        figure(stages[0].n, stages[0].stage_name));
+        stages.length === 0
+          ? el("div", { class: "muted", text: t("dash.nothinginflight") })
+          : figure(stages[0].n, stages[0].stage_name));
     }
+    /**
+     * **A ring, because this is a whole being divided** — decision
+     * 0247.
+     *
+     * Every in-flight invoice is at exactly one stage, and the reader's
+     * question is *"how much of my work is stuck in Approval"* — which
+     * is a proportion. Ageing stays bars, because its buckets have an
+     * order a ring destroys.
+     */
     return panel(
       t("dash.wherethings"),
       t("dash.bystage"),
       { weight: "half" },
-      stages.length === 0
-        ? el("div", { class: "muted", text: t("dash.nothinginflight") })
-        : barChart(stages.map((s) => ({ label: s.stage_name, value: s.n })))
+      donutChart(stages.map((s) => ({ label: s.stage_name, value: s.n })))
     );
   },
 
@@ -267,6 +276,12 @@ const RENDERERS = {
 
   exceptions_by_supplier: (data) => {
     const suppliers = data.suppliers ?? [];
+    if (suppliers.length === 1) {
+      // The same argument as above.
+      return panel(t("dash.exceptions"), null, { weight: "tile" },
+        figure(suppliers[0].n, suppliers[0].supplier, { warn: true }));
+    }
+
     return panel(
       t("dash.exceptions"),
       t("dash.exceptionssub"),
@@ -283,6 +298,15 @@ const RENDERERS = {
       { label: t("dash.awaitingerp"), value: data.awaitingErp },
       { label: t("dash.duplicates"), value: data.duplicates },
     ].filter((r) => r.value > 0);
+
+    /**
+     * **One row is not a proportion** — decision 0245. A single bar is
+     * always full width, which reads as *"100%"* and means nothing.
+     */
+    if (rows.length === 1) {
+      return panel(t("dash.needssomebody"), null, { weight: "tile" },
+        figure(rows[0].value, rows[0].label, { warn: true }));
+    }
 
     return panel(
       t("dash.needssomebody"),
@@ -345,6 +369,21 @@ function render() {
     return node;
   });
 
+  /**
+   * **Two bands, not one grid** — decision 0246.
+   *
+   * The first version put tiles and charts in the same grid with
+   * `align-items: start`, so every row had a ragged bottom and a short
+   * tile beside a tall chart left a void the height of the chart.
+   *
+   * A strip of figures across the top and the wider cards beneath is
+   * what every dashboard worth looking at does, and it is not a style
+   * choice: **a figure and a chart are different heights by nature**,
+   * and a grid that lets them fight produces holes.
+   */
+  const tiles = withHandles.filter((node) => node.classList.contains("card-tile"));
+  const rest = withHandles.filter((node) => !node.classList.contains("card-tile"));
+
   shell.replaceChildren(
     frame(
       el("div", {}, [
@@ -371,8 +410,9 @@ function render() {
               })
             : null,
         ].filter(Boolean)),
-        el("div", { class: "dashgrid" }, withHandles),
-      ])
+        tiles.length > 0 ? el("div", { class: "dashstrip" }, tiles) : null,
+        rest.length > 0 ? el("div", { class: "dashgrid" }, rest) : null,
+      ].filter(Boolean))
     )
   );
 }

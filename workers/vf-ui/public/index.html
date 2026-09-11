@@ -858,36 +858,114 @@
     panel the width of a worklist with a void beside it. A count and a
     table are both cards and are not the same size of thing.
   */
-  .dashgrid {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 12px;
-    align-items: start;
-  }
-  .dashgrid > .card-tile { grid-column: span 1; }
-  .dashgrid > .card-half { grid-column: span 2; }
-  /* The worklist spans, because a table in a quarter is a table nobody reads. */
-  .dashgrid > .panel:has(.clocktable) { grid-column: 1 / -1; }
-
-  @media (max-width: 1040px) {
-    .dashgrid { grid-template-columns: repeat(2, 1fr); }
-    .dashgrid > .card-half { grid-column: 1 / -1; }
-  }
-  @media (max-width: 560px) {
-    .dashgrid { grid-template-columns: 1fr; }
-    .dashgrid > .card-tile { grid-column: 1 / -1; }
-  }
-
   /*
-    **A tile is mostly its number**, so it needs less chrome than a
-    panel holding a table: tighter padding, and the figure doing the
-    work the heading would otherwise.
+    **A strip of figures, then the wider cards** — decision 0246.
+
+    Mixing the two in one grid gave every row a ragged bottom: a short
+    tile beside a tall chart left a void the height of the chart. **A
+    figure and a chart are different heights by nature**, and a grid
+    that lets them fight produces holes.
+
+    The strip stretches, so four figures are four equal cards rather
+    than four different ones.
   */
-  .dashgrid > .card-tile { padding: 13px 15px; }
-  .dashgrid > .card-tile > .cardhead > h3 {
+  /*
+    **Flex, not grid** — decision 0246.
+
+    `auto-fit` sizes tracks to a minimum and then collapses the empty
+    ones, which is right for a gallery and wrong for a row of figures:
+    three tiles took three narrow columns and left the rest of the row
+    empty.
+
+    Flex with `grow` shares the whole row between however many there
+    are — three take thirds, four take quarters — and `min-width` is
+    what decides when they wrap rather than a column count.
+  */
+  /*
+    **One gap, everywhere** — decision 0246.
+
+    The strip, the grid and a panel's own margin were 12px, 12px and
+    14px, which reads as a mistake rather than a rhythm. A dashboard is
+    a page of rectangles and **the eye measures the space between them
+    against itself**; two values two pixels apart are the worst case,
+    because it looks wrong and nobody can say why.
+  */
+  .dashstrip,
+  .dashgrid { --dash-gap: 12px; }
+
+  .dashstrip {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--dash-gap);
+    align-items: stretch;
+    /* The same gap below the strip as between its cards. */
+    margin-bottom: var(--dash-gap);
+  }
+  .dashstrip > .panel {
+    /*
+      **Grow to share, shrink to fit, and wrap below 200px** — which on
+      a phone means one per row and on a desk means all of them on one.
+    */
+    flex: 1 1 200px;
+    min-width: 200px;
+    margin-bottom: 0;
+  }
+  /*
+    **The same padding as every other panel.** A tile was tighter, which
+    made a strip of figures sit on a different grid from the cards below
+    it — visible as a heading that did not line up with the heading
+    beneath.
+  */
+  .dashstrip > .panel {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+  }
+  .dashstrip > .panel > .cardhead > h3 {
     font-size: var(--text-sm);
     color: var(--text-muted);
     font-weight: 400;
+    margin-bottom: 0;
+  }
+
+  /*
+    **A card's sub-line is a caption, not a page intro** — decision
+    0246.
+
+    `.sub` carries a 34px bottom margin from the topbar it was written
+    for, which put a third of an inch of nothing between *"All open
+    work"* and the chart it describes. Inside a dashboard card it sits
+    under its heading and gets out of the way.
+  */
+  .dashstrip .sub,
+  .dashgrid .sub { margin: 2px 0 10px; }
+
+  /*
+    **The content fills what is left**, so two cards of a row that share
+    a height do not both leave their slack at the bottom.
+  */
+  .dashgrid > .panel { display: flex; flex-direction: column; }
+  .dashgrid > .panel > svg { margin-top: auto; }
+
+  /*
+    The wider cards. **Equal heights within a row**, so two charts
+    side by side share a baseline instead of each finding its own.
+  */
+  .dashgrid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: var(--dash-gap);
+    /*
+      **Equal heights within a row.** Two charts side by side share a
+      baseline rather than each finding its own.
+    */
+    align-items: stretch;
+  }
+  /* The worklist spans, because a table in half a screen is a table nobody reads. */
+  .dashgrid > .panel:has(.clocktable) { grid-column: 1 / -1; }
+
+  @media (max-width: 820px) {
+    .dashgrid { grid-template-columns: 1fr; }
   }
 
   .bignum {
@@ -907,8 +985,20 @@
   /* The scale's smallest step, rather than a size below it. */
   .tiny { font-size: var(--text-sm); }
 
-  .clocktable { width: 100%; }
-  .clocktable .num { text-align: right; white-space: nowrap; }
+  /*
+    **A supplier name is left, a number is right** — decision 0246.
+
+    `th` centres by default, so the first heading floated over the
+    middle of a wide column while the names beneath it began at the
+    left. A heading that does not sit above its column is a heading
+    for something else.
+  */
+  .clocktable { width: 100%; margin-top: 10px; }
+  .clocktable th { text-align: left; font-weight: 400; color: var(--text-muted); }
+  .clocktable th.num, .clocktable .num { text-align: right; white-space: nowrap; }
+  /* The names get what they need; the numbers get what they are. */
+  .clocktable th:first-child { width: 50%; }
+  .clocktable td { padding: 7px 0; }
 
   /* A sort is a choice among few, so it reads as chips rather than a menu. */
   .chips { display: flex; gap: 6px; }
@@ -945,6 +1035,30 @@
   .pickcard:hover { background: var(--surface-1); }
   .pickcard.on { border-color: var(--text-accent); }
   @media (max-width: 520px) { .pickgrid { grid-template-columns: 1fr; } }
+
+  /* The ring beside its legend — decision 0247. */
+  .donutwrap {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    margin-top: auto;
+  }
+  .donutwrap > svg { flex: 0 0 auto; }
+  .donutlegend { flex: 1 1 auto; min-width: 0; }
+  .donutkey {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: var(--text-sm);
+    padding: 2px 0;
+  }
+  /* The value sits right, so a column of them reads as a column. */
+  .donutkey > span:nth-child(2) { flex: 1 1 auto; min-width: 0; }
+  .donutdot { width: 9px; height: 9px; border-radius: 999px; flex: 0 0 auto; }
+
+  @media (max-width: 480px) {
+    .donutwrap { flex-direction: column; align-items: stretch; }
+  }
 
   .barlist-row { margin-bottom: 9px; }
   .barlist-head { display: flex; justify-content: space-between; font-size: var(--text-sm); gap: 10px; }
