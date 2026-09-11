@@ -67,7 +67,7 @@ stages where people key, approve and return it. Every visible word comes
 from the control plane and every colour from a token, so a wording fix
 or a new language is rows rather than a deployment.
 
-**Five screens**: Tasks, Sources, Rules, Documents, and the viewer that
+**Six screens**: Tasks, Sources, Suppliers, Rules, Documents, and the viewer that
 serves every stage.
 
 **A UBL invoice is rendered as a document** (decisions 0205, 0206), at

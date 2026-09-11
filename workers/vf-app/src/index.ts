@@ -58,7 +58,7 @@ import {
 } from "./rules-list-route.js";
 import { handleInvoiceProgress } from "./invoice-progress-route.js";
 import { handleSetSourceOrg } from "./source-route.js";
-import { handleLoadSuppliers } from "./load-suppliers.js";
+import { handleLoadSuppliers, handleListSuppliers } from "./load-suppliers.js";
 import { handleListDocuments } from "./documents-route.js";
 import {
   handleListLedgers,
@@ -863,6 +863,16 @@ export default {
       }
     }
 
+
+    // The supplier list, with how old it is — decision 0213.
+    if (pathname === "/suppliers" && request.method === "GET") {
+      const { db } = resolveTenant(request, env);
+      const auth = await authenticatePerson(db, request, env);
+      if (!auth.user) return json({ error: auth.reason }, 401);
+
+      const result = await handleListSuppliers(db);
+      return json(result.body, result.status);
+    }
 
     // Loading the customer's supplier master file — decision 0211.
     if (pathname === "/suppliers/load" && request.method === "POST") {

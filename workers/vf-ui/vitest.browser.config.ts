@@ -78,6 +78,7 @@ export default defineConfig({
       "/viewer.js": resolve(__dirname, "public/viewer.js"),
       "/signin.js": resolve(__dirname, "public/signin.js"),
       "/sources.js": resolve(__dirname, "public/sources.js"),
+      "/suppliers.js": resolve(__dirname, "public/suppliers.js"),
       "/mood.js": resolve(__dirname, "public/mood.js"),
       "/icons.js": resolve(__dirname, "public/icons.js"),
       "/process-row.js": resolve(__dirname, "public/process-row.js"),

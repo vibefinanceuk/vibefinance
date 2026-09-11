@@ -347,3 +347,72 @@ export async function rematchUnmatchedInvoices(db: D1Database): Promise<number> 
 
   return rematched;
 }
+
+/**
+ * The supplier list, and how old it is — decision 0213.
+ *
+ * **The load date travels with the list**, because a person judging
+ * whether a supplier is missing needs to know when we were last told
+ * (decision 0208). Two calls would let a screen show one without the
+ * other.
+ */
+export async function handleListSuppliers(db: D1Database): Promise<RouteResult> {
+  const rows = await db
+    .prepare(
+      `SELECT id, erp_identifier, erp_site_identifier, name, vat_id, electronic_address,
+              country, payment_terms, on_hold, hold_reason, match_option, status
+       FROM suppliers
+       ORDER BY status, name`
+    )
+    .all<{
+      id: string;
+      erp_identifier: string;
+      erp_site_identifier: string | null;
+      name: string;
+      vat_id: string | null;
+      electronic_address: string | null;
+      country: string | null;
+      payment_terms: string | null;
+      on_hold: number;
+      hold_reason: string | null;
+      match_option: string | null;
+      status: string;
+    }>();
+
+  const load = await db
+    .prepare("SELECT loaded_at, loaded_by, row_count, refused_count FROM supplier_loads ORDER BY loaded_at DESC LIMIT 1")
+    .first<{ loaded_at: string; loaded_by: string; row_count: number; refused_count: number }>();
+
+  return {
+    status: 200,
+    body: {
+      suppliers: rows.results.map((r) => ({
+        id: r.id,
+        erpIdentifier: r.erp_identifier,
+        erpSiteIdentifier: r.erp_site_identifier,
+        name: r.name,
+        vatId: r.vat_id,
+        electronicAddress: r.electronic_address,
+        country: r.country,
+        paymentTerms: r.payment_terms,
+        onHold: r.on_hold === 1,
+        holdReason: r.hold_reason,
+        matchOption: r.match_option,
+        status: r.status,
+      })),
+      /**
+       * **Null where nothing was ever loaded**, which a screen must say
+       * differently from *"loaded a long time ago"* — one is fixed by
+       * asking for a file and the other by asking for a newer one.
+       */
+      lastLoad: load
+        ? {
+            loadedAt: load.loaded_at,
+            loadedBy: load.loaded_by,
+            rowCount: load.row_count,
+            refusedCount: load.refused_count,
+          }
+        : null,
+    },
+  };
+}

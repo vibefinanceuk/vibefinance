@@ -29,6 +29,7 @@ const STRINGS = {
   strings: {
     "nav.tasks": "Tasks",
     "nav.sources": "Sources",
+    "nav.suppliers": "Suppliers",
     "sources.subtitle": "Where invoices arrive",
     "sources.name": "Source",
     "sources.mechanism": "Arrives by",

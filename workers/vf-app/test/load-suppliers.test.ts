@@ -1,7 +1,7 @@
 import { env } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
 import { applyTestSchema } from "./setup.js";
-import { handleLoadSuppliers, parseCsv } from "../src/load-suppliers.js";
+import { handleLoadSuppliers, handleListSuppliers, parseCsv } from "../src/load-suppliers.js";
 import { matchSupplier } from "../src/match-supplier.js";
 
 /**
@@ -260,5 +260,55 @@ describe("the load date a match depends on", () => {
 
     expect(row?.row_count).toBe(1);
     expect(row?.refused_count).toBe(1);
+  });
+});
+
+describe("the list, and how old it is (decision 0213)", () => {
+  it("reports the load date with the list", async () => {
+    /**
+     * **They travel together on purpose.** A person judging whether a
+     * supplier is missing needs to know when we were last told
+     * (decision 0208), and two calls would let a screen show one
+     * without the other.
+     */
+    await load("ERP ID,Name\n40118,Northwind");
+    const result = await handleListSuppliers(env.DB);
+    const body = result.body as { suppliers: unknown[]; lastLoad: { rowCount: number } | null };
+
+    expect(body.suppliers).toHaveLength(1);
+    expect(body.lastLoad?.rowCount).toBe(1);
+  });
+
+  it("says null where nothing was ever loaded", async () => {
+    // **Which a screen must say differently from "loaded long ago"** —
+    // one is fixed by asking for a file and the other by asking for a
+    // newer one.
+    const result = await handleListSuppliers(env.DB);
+    expect((result.body as { lastLoad: null }).lastLoad).toBeNull();
+  });
+
+  it("shows an inactive supplier rather than hiding it", async () => {
+    // **Absent from a load is inactive, never deleted** (decision
+    // 0208), and an invoice pointing at one must still name it.
+    await load("ERP ID,Name\n40118,Northwind\n40119,Acme");
+    await load("ERP ID,Name\n40118,Northwind");
+
+    const body = (await handleListSuppliers(env.DB)).body as {
+      suppliers: { status: string }[];
+    };
+    expect(body.suppliers).toHaveLength(2);
+    expect(body.suppliers.some((s) => s.status === "inactive")).toBe(true);
+  });
+
+  it("gives back the hold reason, not just that there is one", async () => {
+    // **A hold is why an invoice routes differently**, so the reason is
+    // the useful part.
+    await load("ERP ID,Name,Hold,hold_reason\n40118,Northwind,yes,Under dispute");
+
+    const body = (await handleListSuppliers(env.DB)).body as {
+      suppliers: { onHold: boolean; holdReason: string }[];
+    };
+    expect(body.suppliers[0].onHold).toBe(true);
+    expect(body.suppliers[0].holdReason).toBe("Under dispute");
   });
 });

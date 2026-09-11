@@ -28,6 +28,7 @@ const STRINGS = {
   strings: {
     "nav.tasks": "Tasks",
     "nav.sources": "Sources",
+    "nav.suppliers": "Suppliers",
     "nav.rules": "Rules",
     "rules.subtitle": "What should happen to an invoice, in your words",
     "rules.atstage": "Rules at this stage",
@@ -196,7 +197,9 @@ describe("the navigation", () => {
     // rather than a count that goes stale on every new screen.
     await open([]);
     const nav = [...document.querySelectorAll(".nav a")].map((a) => a.textContent);
-    expect(nav).toEqual(["Tasks", "Sources", "Rules", "Documents"]);
+    // **Suppliers, since decision 0213.** This test exists to notice a
+    // screen appearing or disappearing, and it did.
+    expect(nav).toEqual(["Tasks", "Sources", "Suppliers", "Rules", "Documents"]);
   });
 
   it("marks which screen you are on", async () => {
