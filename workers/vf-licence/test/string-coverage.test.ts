@@ -208,6 +208,7 @@ const KEYS_THE_INTERFACE_USES = [
   "suppliers.loading",
   "suppliers.nofile",
   "suppliers.loadfailed",
+  "suppliers.loadbroke",
   "suppliers.loaded",
   "suppliers.deactivated",
   "suppliers.rematched",

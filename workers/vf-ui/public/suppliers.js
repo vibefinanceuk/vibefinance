@@ -132,7 +132,6 @@ function outcome(result) {
 function loader() {
   const picker = el("input", { type: "file", accept: ".csv,text/csv", id: "supplierfile" });
   const button = el("button", { class: "primary", text: t("suppliers.loadbutton") });
-  const result = el("div", {});
 
   button.onclick = async () => {
     const file = picker.files?.[0];
@@ -144,24 +143,43 @@ function loader() {
     button.disabled = true;
     button.textContent = t("suppliers.loading");
 
+    /**
+     * **One `try` per thing that can fail, not one around everything** —
+     * decision 0216.
+     *
+     * The first version wrapped the request, the parse and the redraw
+     * together, so a bug in the redraw reported *"we could not reach
+     * the service"* — which is decision 0190's finding, where a 500 was
+     * reported as *"sign-in failed"* and blamed the person for
+     * something they could not see.
+     *
+     * **A message that names the wrong layer sends somebody to check
+     * their network when their screen is broken.**
+     */
+    let response;
     try {
-      const response = await fetch("/api/suppliers/load", {
+      response = await fetch("/api/suppliers/load", {
         method: "POST",
         headers: { "Content-Type": "text/csv" },
         body: await file.text(),
       });
+    } catch {
+      note(t("suppliers.loadfailed"));
+      button.disabled = false;
+      button.textContent = t("suppliers.loadbutton");
+      return;
+    }
+
+    try {
       const body = await response.json();
 
       if (!response.ok) {
         /**
          * **The route's own words**, not a generic failure. A file with
          * no ERP identifier column is refused for a specific reason and
-         * a person can fix it — decision 0190's finding that a generic
-         * message blames the user for something they cannot see.
+         * a person can fix it.
          */
-        result.replaceChildren(
-          el("div", { class: "panel" }, [el("div", { class: "warn", text: body.error })])
-        );
+        note(body.error);
         return;
       }
 
@@ -170,10 +188,15 @@ function loader() {
       // After the rebuild, so the outcome is not cleared by it.
       const panel = document.getElementById("suppliers-note");
       if (panel) panel.replaceChildren(outcome(body));
-    } catch {
-      result.replaceChildren(
-        el("div", { class: "panel" }, [el("div", { class: "warn", text: t("suppliers.loadfailed") })])
-      );
+    } catch (err) {
+      /**
+       * **The file reached the service and something here went wrong.**
+       *
+       * Said as itself, with the real message, because a person who is
+       * told the network failed will retry a load that already
+       * succeeded.
+       */
+      note(`${t("suppliers.loadbroke")} ${err?.message ?? ""}`);
     } finally {
       button.disabled = false;
       button.textContent = t("suppliers.loadbutton");
@@ -191,7 +214,6 @@ function loader() {
     el("p", { class: "muted", text: t("suppliers.loadhelp") }),
     picker,
     button,
-    result,
   ]);
 }
 

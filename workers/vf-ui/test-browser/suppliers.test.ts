@@ -39,6 +39,12 @@ const STRINGS = {
     "nav.suppliers": "Suppliers",
     "nav.rules": "Rules",
     "nav.documents": "Documents",
+    "suppliers.loaded": "{n} suppliers loaded.",
+    "suppliers.rematched": "{n} invoices which had no supplier now have one.",
+    "suppliers.loadfailed": "We could not reach the service to load that file.",
+    "suppliers.loadbroke": "The file was loaded, but this screen could not show the result:",
+    "suppliers.nofile": "Choose a file first.",
+    "suppliers.loading": "Loading...",
   },
 };
 
@@ -119,5 +125,88 @@ describe("the screen opens at all", () => {
     const buttons = [...document.querySelectorAll("button")].map((b) => b.textContent);
     expect(buttons).toEqual(["Load"]);
     expect(document.body.textContent).toContain("Northwind");
+  });
+});
+
+describe("loading a file (decision 0216)", () => {
+  /**
+   * **The first version wrapped the request, the parse and the redraw
+   * in one `try`**, so a bug in the redraw reported *"we could not
+   * reach the service"* — decision 0190's finding, where a 500 was
+   * reported as *"sign-in failed"* and blamed the person for something
+   * they could not see.
+   *
+   * **A message that names the wrong layer sends somebody to check
+   * their network when their screen is broken.**
+   */
+  function stubLoad(loadResponse: unknown, ok = true) {
+    let listCalls = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        const path = String(url).split("?")[0];
+        if (path === "/api/ui-strings") return { ok: true, json: async () => STRINGS } as Response;
+        if (path === "/api/suppliers/load") {
+          return { ok, json: async () => loadResponse } as Response;
+        }
+        if (path === "/api/suppliers") {
+          listCalls++;
+          return {
+            ok: true,
+            json: async () => ({
+              suppliers: [],
+              lastLoad:
+                listCalls > 1
+                  ? { loadedAt: "2026-09-11 09:00:00", loadedBy: "a", rowCount: 5, refusedCount: 0 }
+                  : null,
+            }),
+          } as Response;
+        }
+        throw new Error(`no stub for ${path} ${init?.method ?? ""}`);
+      })
+    );
+  }
+
+  async function openScreen() {
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { open } = await import("/suppliers.js");
+    await open();
+  }
+
+  /** A file picker cannot be filled by a test, so the file is supplied. */
+  function chooseFile(text: string) {
+    const picker = document.querySelector("#supplierfile") as HTMLInputElement;
+    Object.defineProperty(picker, "files", {
+      value: [{ text: async () => text }],
+      configurable: true,
+    });
+  }
+
+  it("shows what a load did", async () => {
+    stubLoad({ loadId: "l1", loaded: 5, refused: [], deactivated: 0, rematched: 2 });
+    await openScreen();
+    chooseFile("ERP ID,Name\n40118,Northwind");
+
+    const button = [...document.querySelectorAll("button")].find((b) => b.textContent === "Load");
+    button?.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(document.body.textContent).toContain("5 suppliers loaded");
+    expect(document.body.textContent).toContain("2 invoices");
+  });
+
+  it("does not blame the network for a refusal", async () => {
+    // **The route's own words**, so a person can fix the file.
+    stubLoad({ error: "the file needs an ERP identifier column" }, false);
+    await openScreen();
+    chooseFile("Name\nNorthwind");
+
+    const button = [...document.querySelectorAll("button")].find((b) => b.textContent === "Load");
+    button?.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(document.body.textContent).toContain("needs an ERP identifier column");
+    expect(document.body.textContent).not.toContain("could not reach the service");
   });
 });
