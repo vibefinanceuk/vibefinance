@@ -265,33 +265,77 @@ async function itemsAtStage(
     return { count: 0, stageId, stageName: null, missing: true, held: { mine: 0, theirs: 0, unclaimed: 0 } };
   }
 
-  const row = await db
+  /**
+   * **The card counts work items, and a work item is a task** —
+   * decision 0252.
+   *
+   * The first version counted rows after a `LEFT JOIN` to tasks, so an
+   * invoice with three open tasks counted as three — and **per-line
+   * evaluation makes that routine** (decision 0027): a stage scoped to
+   * evaluate once per invoice line raises a task per line.
+   *
+   * So the count was neither instances nor tasks but the product of
+   * them, and it disagreed with the task list the card links to.
+   *
+   * **Tasks, because that is what the click shows** and what somebody
+   * actually does.
+   *
+   * **And by the task's own stage, not its instance's current one.**
+   * The task list filters on `t.stage_id` (decision 0202), and an open
+   * task can sit at a stage its instance has already left — so asking
+   * `pi.current_stage_id` made the card and the list answer different
+   * questions and disagree about the same queue.
+   */
+  const tasks = await db
     .prepare(
-      `SELECT
-              count(*) AS n,
+      `SELECT count(*) AS n,
               sum(CASE WHEN t.owner_user_id = ?2 OR t.claimed_by = ?2 THEN 1 ELSE 0 END) AS mine,
-              sum(CASE WHEN t.id IS NOT NULL
-                        AND (t.owner_user_id IS NOT NULL OR t.claimed_by IS NOT NULL)
+              sum(CASE WHEN (t.owner_user_id IS NOT NULL OR t.claimed_by IS NOT NULL)
                         AND COALESCE(t.owner_user_id, '') != ?2
                         AND COALESCE(t.claimed_by, '') != ?2
                    THEN 1 ELSE 0 END) AS theirs
-       FROM process_instances pi
+       FROM tasks t
+       JOIN stage_visits v ON v.id = t.stage_visit_id
+       JOIN process_instances pi ON pi.id = v.process_instance_id
        LEFT JOIN invoice_headers h ON pi.subject_type = 'invoice' AND h.id = pi.subject_id
-       LEFT JOIN stage_visits v ON v.process_instance_id = pi.id AND v.stage_id = pi.current_stage_id
-       LEFT JOIN tasks t ON t.stage_visit_id = v.id AND t.status = 'open'
-       WHERE pi.status = ${IN_FLIGHT} AND pi.current_stage_id = ?1${clause.sql}`
+       WHERE t.status = 'open'
+         AND t.stage_id = ?1${clause.sql}`
     )
     .bind(stageId, userId, ...clause.binds)
     .first<{ n: number; mine: number; theirs: number }>();
 
   /**
-   * **A stage that no longer exists is a card, not an error.** A
-   * customer may rename or remove one, and the card should say so
-   * rather than showing nothing or a zero that looks like good news.
+   * **Instances sitting here with nothing raised**, counted once each.
+   *
+   * A stage between tasks is still a stage with work in it, and from
+   * the reader's side *"nobody is holding it"* covers both.
    */
-  const count = row?.n ?? 0;
-  const mine = row?.mine ?? 0;
-  const theirs = row?.theirs ?? 0;
+  const idle = await db
+    .prepare(
+      `SELECT count(*) AS n
+       FROM process_instances pi
+       LEFT JOIN invoice_headers h ON pi.subject_type = 'invoice' AND h.id = pi.subject_id
+       WHERE pi.status = ${IN_FLIGHT}
+         AND pi.current_stage_id = ?1${clause.sql}
+         AND NOT EXISTS (
+           SELECT 1 FROM tasks t
+           JOIN stage_visits v ON v.id = t.stage_visit_id
+           WHERE v.process_instance_id = pi.id AND t.status = 'open'
+         )`
+    )
+    .bind(stageId, ...clause.binds)
+    .first<{ n: number }>();
+
+  const mine = tasks?.mine ?? 0;
+  const theirs = tasks?.theirs ?? 0;
+  const unclaimed = (tasks?.n ?? 0) - mine - theirs + (idle?.n ?? 0);
+  /**
+   * **The three add to the count by construction**, rather than the
+   * count being divided into three. A ring whose segments are derived
+   * from a total it did not produce is a ring that can lie about the
+   * whole it divides.
+   */
+  const count = mine + theirs + unclaimed;
 
   return {
     count,
@@ -299,7 +343,7 @@ async function itemsAtStage(
     stageName: stage.name,
     // **The stage answered this**, not the absence of instances at it.
     missing: false,
-    held: { mine, theirs, unclaimed: Math.max(count - mine - theirs, 0) },
+    held: { mine, theirs, unclaimed: Math.max(unclaimed, 0) },
   };
 }
 

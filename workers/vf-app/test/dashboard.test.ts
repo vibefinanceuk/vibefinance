@@ -653,3 +653,140 @@ describe("an empty stage is not a deleted one (decision 0251)", () => {
     expect(data.held).toEqual({ mine: 0, theirs: 0, unclaimed: 0 });
   });
 });
+
+describe("the count agrees with the list it links to (decision 0252)", () => {
+  /**
+   * **Reported by clicking the card.** The stage card said one number
+   * and the task list it opened showed more.
+   *
+   * The query counted rows after a `LEFT JOIN` to tasks, so an invoice
+   * with three open tasks counted as three — **and per-line evaluation
+   * makes that routine** (decision 0027). The count was neither
+   * instances nor tasks but the product of them.
+   */
+  async function withTasks(count: number) {
+    await person("alice", ["AP.Review"], null);
+    await env.DB.prepare("INSERT INTO processes (id, name) VALUES ('ap', 'AP')").run();
+    await env.DB.prepare(
+      "INSERT INTO process_stages (id, process_id, name, sequence) VALUES ('approval', 'ap', 'Approval', 1)"
+    ).run();
+    await env.DB.prepare(
+      "INSERT INTO invoice_headers (id, facts_json) VALUES ('inv', '{}')"
+    ).run();
+    await env.DB.prepare(
+      `INSERT INTO process_instances (id, process_id, subject_type, subject_id, current_stage_id, status)
+       VALUES ('pi', 'ap', 'invoice', 'inv', 'approval', 'in_progress')`
+    ).run();
+    await env.DB.prepare(
+      "INSERT INTO stage_visits (id, process_instance_id, stage_id, outcome) VALUES ('v', 'pi', 'approval', 'matched')"
+    ).run();
+
+    // **One invoice, several lines, several tasks** — decision 0027.
+    for (let i = 0; i < count; i++) {
+      await env.DB.prepare(
+        `INSERT INTO tasks (id, stage_id, stage_visit_id, owner_user_id, required_permission, status, line_number)
+         VALUES (?, 'approval', 'v', 'alice', 'AP.Approve', 'open', ?)`
+      )
+        .bind(`t${i}`, i + 1)
+        .run();
+    }
+
+    await env.DB.prepare(
+      `INSERT INTO dashboard_cards (id, user_id, card_type, settings_json, position)
+       VALUES ('c', 'alice', 'items_at_stage', '{"stage":"approval"}', 0)`
+    ).run();
+
+    return card<{ count: number; held: { mine: number; theirs: number; unclaimed: number } }>(
+      await cardsFor("alice"),
+      "items_at_stage"
+    );
+  }
+
+  it("counts three tasks on one invoice as three, not nine", async () => {
+    const data = await withTasks(3);
+    expect(data.count).toBe(3);
+    expect(data.held.mine).toBe(3);
+  });
+
+  it("has its segments add to its count", async () => {
+    /**
+     * **By construction, not by subtraction.** A ring whose segments
+     * are derived from a total it did not produce is a ring that can
+     * lie about the whole it divides.
+     */
+    const data = await withTasks(3);
+    expect(data.held.mine + data.held.theirs + data.held.unclaimed).toBe(data.count);
+  });
+
+  it("counts an instance with no task once", async () => {
+    // A stage between tasks is still a stage with work in it.
+    await person("alice", ["AP.Review"], null);
+    await env.DB.prepare("INSERT INTO processes (id, name) VALUES ('ap', 'AP')").run();
+    await env.DB.prepare(
+      "INSERT INTO process_stages (id, process_id, name, sequence) VALUES ('approval', 'ap', 'Approval', 1)"
+    ).run();
+    await env.DB.prepare("INSERT INTO invoice_headers (id, facts_json) VALUES ('inv', '{}')").run();
+    await env.DB.prepare(
+      `INSERT INTO process_instances (id, process_id, subject_type, subject_id, current_stage_id, status)
+       VALUES ('pi', 'ap', 'invoice', 'inv', 'approval', 'in_progress')`
+    ).run();
+    await env.DB.prepare(
+      `INSERT INTO dashboard_cards (id, user_id, card_type, settings_json, position)
+       VALUES ('c', 'alice', 'items_at_stage', '{"stage":"approval"}', 0)`
+    ).run();
+
+    const data = card<{ count: number; held: { unclaimed: number } }>(
+      await cardsFor("alice"),
+      "items_at_stage"
+    );
+    expect(data.count).toBe(1);
+    expect(data.held.unclaimed).toBe(1);
+  });
+});
+
+describe("the card and the list ask the same question (decision 0252)", () => {
+  /**
+   * **A task can sit at a stage its instance has left.**
+   *
+   * The task list filters on `t.stage_id` (decision 0202) and the card
+   * asked `pi.current_stage_id`, so the two answered different
+   * questions about the same queue — which is what the operator saw
+   * when the card said one number and the list it opened showed more.
+   */
+  it("counts a task left behind at an earlier stage", async () => {
+    await person("alice", ["AP.Review"], null);
+    await env.DB.prepare("INSERT INTO processes (id, name) VALUES ('ap', 'AP')").run();
+    await env.DB.prepare(
+      `INSERT INTO process_stages (id, process_id, name, sequence) VALUES
+         ('validation', 'ap', 'Validation', 1), ('approval', 'ap', 'Approval', 2)`
+    ).run();
+    await env.DB.prepare("INSERT INTO invoice_headers (id, facts_json) VALUES ('inv', '{}')").run();
+
+    // **The instance has moved on; the task has not.**
+    await env.DB.prepare(
+      `INSERT INTO process_instances (id, process_id, subject_type, subject_id, current_stage_id, status)
+       VALUES ('pi', 'ap', 'invoice', 'inv', 'approval', 'in_progress')`
+    ).run();
+    await env.DB.prepare(
+      "INSERT INTO stage_visits (id, process_instance_id, stage_id, outcome) VALUES ('v', 'pi', 'validation', 'matched')"
+    ).run();
+    await env.DB.prepare(
+      `INSERT INTO tasks (id, stage_id, stage_visit_id, owner_user_id, required_permission, status)
+       VALUES ('t', 'validation', 'v', 'alice', 'AP.Validate', 'open')`
+    ).run();
+
+    await env.DB.prepare(
+      `INSERT INTO dashboard_cards (id, user_id, card_type, settings_json, position)
+       VALUES ('c', 'alice', 'items_at_stage', '{"stage":"validation"}', 0)`
+    ).run();
+
+    const data = card<{ count: number; held: { mine: number } }>(
+      await cardsFor("alice"),
+      "items_at_stage"
+    );
+
+    // The task list would show it under Validation; so does the card.
+    expect(data.count).toBe(1);
+    expect(data.held.mine).toBe(1);
+  });
+});
