@@ -15,6 +15,18 @@ import type { RouteResult } from "./org-route.js";
  * than a list."*
  */
 
+/**
+ * **An instance that has not finished** — decision 0241.
+ *
+ * `'in_progress'`, from migration 0009's own default. Two cards were
+ * written against `'active'`, which is not a value this system ever
+ * writes, and **returned nothing while three tasks sat open** — a
+ * count of zero being indistinguishable from a quiet queue.
+ *
+ * Named once so the next card cannot get it wrong differently.
+ */
+const IN_FLIGHT = "'in_progress'";
+
 /** The closed set. Migration 0056 names the same list, and a test agrees them. */
 export const CARD_TYPES = [
   "waiting_for_me",
@@ -196,7 +208,7 @@ async function whereThingsAre(db: D1Database, scope: Scope) {
        FROM process_instances pi
        JOIN process_stages s ON s.id = pi.current_stage_id
        LEFT JOIN invoice_headers h ON pi.subject_type = 'invoice' AND h.id = pi.subject_id
-       WHERE pi.status = 'active'${clause.sql}
+       WHERE pi.status = ${IN_FLIGHT}${clause.sql}
        GROUP BY s.id
        ORDER BY s.sequence`
     )
@@ -219,7 +231,7 @@ async function itemsAtStage(db: D1Database, scope: Scope, settings: Record<strin
        FROM process_instances pi
        JOIN process_stages s ON s.id = pi.current_stage_id
        LEFT JOIN invoice_headers h ON pi.subject_type = 'invoice' AND h.id = pi.subject_id
-       WHERE pi.status = 'active' AND pi.current_stage_id = ?1${clause.sql}`
+       WHERE pi.status = ${IN_FLIGHT} AND pi.current_stage_id = ?1${clause.sql}`
     )
     .bind(stageId, ...clause.binds)
     .first<{ stage_name: string | null; n: number }>();

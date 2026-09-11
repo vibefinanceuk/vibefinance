@@ -55,9 +55,15 @@ async function work(
     .bind(id, id, opts.due ?? null, unit, unit ? "source" : null, opts.value ?? 100)
     .run();
 
+  /**
+   * **`'in_progress'`, which is what the system writes** — migration
+   * 0009's default. The first version of the seed said `'active'`, so
+   * the two cards reading it agreed with the test and **both were
+   * wrong** (decision 0241).
+   */
   await env.DB.prepare(
     `INSERT INTO process_instances (id, process_id, subject_type, subject_id, current_stage_id, status)
-     VALUES (?, 'ap', 'invoice', ?, 'validation', 'active')`
+     VALUES (?, 'ap', 'invoice', ?, 'validation', 'in_progress')`
   )
     .bind(`pi-${id}`, id)
     .run();
@@ -260,5 +266,63 @@ describe("one card failing is not the dashboard failing", () => {
     expect(body.cards).toHaveLength(2);
     expect(card<{ missing: boolean }>(body, "items_at_stage").missing).toBe(true);
     expect(card<{ buckets: unknown[] }>(body, "ageing").buckets).toHaveLength(5);
+  });
+});
+
+describe("a card reading a status nothing writes (decision 0241)", () => {
+  /**
+   * **Reported by looking at the JSON.** Three tasks were open and
+   * `where_things_are` returned an empty list, because it filtered on
+   * `status = 'active'` — a value this system has never written.
+   *
+   * **A count of zero is indistinguishable from a quiet queue**, which
+   * is what makes this class of fault survive: nothing fails, nothing
+   * logs, and the card looks like good news.
+   *
+   * The tests agreed with it because the seed used the same wrong
+   * value. **A fixture that shares a mistake with the code proves the
+   * mistake.**
+   */
+  it("counts an instance the engine actually created", async () => {
+    await person("alice", ["AP.Review"], null);
+    await work("inv-1", null, { owner: "alice" });
+
+    const body = await cardsFor("alice");
+    const stages = card<{ stages: { stage_id: string; n: number }[] }>(body, "where_things_are").stages;
+
+    expect(stages).toHaveLength(1);
+    expect(stages[0].n).toBe(1);
+  });
+
+  it("agrees with the other cards about how much work there is", async () => {
+    /**
+     * **The assertion that would have caught it**, and the one the
+     * first version did not make: two cards counting the same work
+     * should not disagree.
+     */
+    await person("alice", ["AP.Review"], null);
+    await work("inv-1", null, { owner: "alice" });
+    await work("inv-2", null, { owner: "alice" });
+
+    const body = await cardsFor("alice");
+    const waiting = card<{ count: number }>(body, "waiting_for_me").count;
+    const byStage = card<{ stages: { n: number }[] }>(body, "where_things_are").stages.reduce(
+      (sum, s) => sum + s.n,
+      0
+    );
+
+    expect(byStage).toBe(waiting);
+  });
+
+  it("counts one at a named stage", async () => {
+    await person("alice", ["AP.Review"], null);
+    await work("inv-1", null, { owner: "alice" });
+    await env.DB.prepare(
+      `INSERT INTO dashboard_cards (id, user_id, card_type, settings_json, position)
+       VALUES ('c1', 'alice', 'items_at_stage', '{"stage":"validation"}', 0)`
+    ).run();
+
+    const body = await cardsFor("alice");
+    expect(card<{ count: number; missing: boolean }>(body, "items_at_stage").count).toBe(1);
   });
 });
