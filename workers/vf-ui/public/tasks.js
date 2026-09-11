@@ -306,6 +306,37 @@ export function setCurrentScreen(screen) {
  * function call is honest about that, and the day the back button
  * matters is the day to design it properly.
  */
+/**
+ * Open the task list already filtered — decision 0250.
+ *
+ * **The filters existed and nothing else could set them.** A stage card
+ * on the dashboard says *"eleven at Approval, three of them mine"*, and
+ * the obvious next question is *"show me those three"* — which the task
+ * list could already answer and had no way of being asked.
+ */
+export async function openTasksFiltered(next) {
+  filters = { stage: next.stage ?? "", ownership: next.ownership ?? "" };
+  await go("tasks");
+}
+
+/**
+ * Open one document from anywhere — decision 0250.
+ *
+ * The worklist on the dashboard names an invoice and could not open it.
+ * **A row that reads like a link and does nothing is worse than a row
+ * that does not**, because somebody clicks it twice before believing.
+ */
+export async function openTaskById(task) {
+  const { openViewer } = await import("/viewer.js");
+  document.getElementById("shell").hidden = true;
+  document.getElementById("viewer").hidden = false;
+  await openViewer(task, async () => {
+    document.getElementById("viewer").hidden = true;
+    document.getElementById("shell").hidden = false;
+    await go(current);
+  });
+}
+
 async function go(screen) {
   current = screen;
   if (screen === "sources") {

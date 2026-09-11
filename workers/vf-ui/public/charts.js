@@ -316,7 +316,7 @@ export function barList(rows, { colour = "var(--chart-1)" } = {}) {
  * destroys it: *under a day* and *over thirty days* are not two slices
  * of a pie, they are two ends of a line.
  */
-export function donutChart(segments, { size = 150 } = {}) {
+export function donutChart(segments, { size = 150, legend = true } = {}) {
   const wrap = document.createElement("div");
   wrap.className = "donutwrap";
 
@@ -385,8 +385,21 @@ export function donutChart(segments, { size = 150 } = {}) {
     )
   );
 
-  const legend = document.createElement("div");
-  legend.className = "donutlegend";
+  /**
+   * **A ring without a legend, where the colours are the whole point**
+   * — decision 0250's stage card, which has three segments and a
+   * heading that names none of them.
+   *
+   * The card's own text carries the meaning there; a legend would
+   * repeat it in a tile that has no room.
+   */
+  if (!legend) {
+    wrap.append(node);
+    return wrap;
+  }
+
+  const keys = document.createElement("div");
+  keys.className = "donutlegend";
 
   for (const segment of shown) {
     const row = document.createElement("div");
@@ -404,9 +417,9 @@ export function donutChart(segments, { size = 150 } = {}) {
     value.textContent = String(segment.value);
 
     row.append(dot, name, value);
-    legend.append(row);
+    keys.append(row);
   }
 
-  wrap.append(node, legend);
+  wrap.append(node, keys);
   return wrap;
 }

@@ -31,6 +31,12 @@ const STRINGS = {
     "dash.overdue": "{n}d overdue",
     "dash.duein": "due in {n}d",
     "dash.duetoday": "due today",
+    "dash.mine": "Mine",
+    "dash.theirs": "Taken",
+    "dash.unclaimed": "Unclaimed",
+    "dash.showmine": "Show mine",
+    "dash.waitinghere": "waiting here",
+    "dash.astage": "A stage",
     "dash.sort.held": "Longest held",
     "dash.sort.due": "Soonest due",
     "dash.sort.value": "Highest value",
@@ -229,23 +235,52 @@ describe("both clocks, side by side", () => {
     expect(warned).not.toContain("due in 45d");
   });
 
-  it("asks the route again when the sort changes", async () => {
+  it("saves the sort so the route applies it", async () => {
     /**
-     * **Sorted where the data is.** The list is capped at 25 rows by
-     * decision 0240, so sorting in the browser would reorder a sample
-     * and call it an order.
+     * **Sorted where the data is** — the list is capped at 25 rows by
+     * decision 0240, so reordering in the browser would rearrange a
+     * sample and call it an order.
+     *
+     * Which means the server has to be told, and **telling it is saving
+     * it** (decision 0250). The first version set a local object and
+     * re-fetched, so the buttons highlighted and nothing moved.
      */
     const seen: string[] = [];
-    await openDashboard(
-      [{ id: "g", cardType: "on_my_clock", settings: { sort: "held" }, position: 0, data: { items: [ITEM] } }],
-      seen
+    const posted: string[] = [];
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        const path = String(url);
+        seen.push(path);
+        if (init?.method === "PUT") posted.push(init.body as string);
+        if (path.startsWith("/api/ui-strings")) {
+          return { ok: true, json: async () => STRINGS } as Response;
+        }
+        return {
+          ok: true,
+          json: async () => ({
+            cards: [
+              { id: "g", cardType: "on_my_clock", settings: { sort: "held" }, position: 0, data: { items: [ITEM] } },
+            ],
+            usingDefault: false,
+          }),
+        } as Response;
+      })
     );
 
-    const before = seen.filter((u) => u.startsWith("/api/dashboard")).length;
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { open } = await import("/dashboard.js");
+    await open();
+
     (document.querySelectorAll(".chip")[1] as HTMLButtonElement).click();
     await new Promise((r) => setTimeout(r, 0));
 
-    expect(seen.filter((u) => u.startsWith("/api/dashboard")).length).toBe(before + 1);
+    expect(posted).toHaveLength(1);
+    expect(JSON.parse(posted[0])).toEqual({
+      cards: [{ cardType: "on_my_clock", settings: { sort: "due" } }],
+    });
   });
 
   it("says so when nothing is mine", async () => {
@@ -602,5 +637,123 @@ describe("the bars are read against something (decision 0244)", () => {
 
     const ids = [...document.querySelectorAll("linearGradient")].map((g) => g.id);
     expect(new Set(ids).size).toBe(ids.length);
+  });
+});
+
+describe("clicking through (decision 0250)", () => {
+  /**
+   * **The filters existed and nothing could set them.** A stage card
+   * says *"eleven at Approval, three of them mine"*, and the obvious
+   * next question is *"show me those three"* — which the task list
+   * could already answer and had no way of being asked.
+   */
+  function stageCard(held: { mine: number; theirs: number; unclaimed: number }) {
+    return [
+      {
+        id: "s",
+        cardType: "items_at_stage",
+        settings: { stage: "approval" },
+        position: 0,
+        data: {
+          count: held.mine + held.theirs + held.unclaimed,
+          stageId: "approval",
+          stageName: "Approval",
+          missing: false,
+          held,
+        },
+      },
+    ];
+  }
+
+  it("draws a ring of who holds it, with no legend", async () => {
+    /**
+     * **No legend in a tile that has no room.** The card's own text
+     * carries the meaning; a legend would repeat it.
+     */
+    await openDashboard(stageCard({ mine: 3, theirs: 5, unclaimed: 3 }));
+
+    expect(document.querySelectorAll(".donutwrap svg circle")).toHaveLength(3);
+    expect(document.querySelectorAll(".donutkey")).toHaveLength(0);
+    expect(document.querySelector(".bignum")?.textContent).toBe("11");
+  });
+
+  it("offers to show mine where any are mine", async () => {
+    await openDashboard(stageCard({ mine: 3, theirs: 5, unclaimed: 3 }));
+
+    const card = document.querySelector(".panel.clickable");
+    expect(card).not.toBeNull();
+    expect(card?.textContent).toContain("Show mine");
+  });
+
+  it("does not offer it where none are", async () => {
+    // **A card that leads nowhere should not look like a link**, which
+    // is decision 0161's argument about an action with nothing to do.
+    await openDashboard(stageCard({ mine: 0, theirs: 8, unclaimed: 3 }));
+
+    expect(document.querySelector(".panel.clickable")).toBeNull();
+    expect(document.body.textContent).not.toContain("Show mine");
+  });
+
+  it("scrolls the worklist rather than growing it", async () => {
+    /**
+     * **Twenty-five rows is a card taller than the screen**, and
+     * everything beneath becomes unreachable without scrolling past
+     * somebody else's work.
+     */
+    await openDashboard([
+      {
+        id: "c",
+        cardType: "on_my_clock",
+        settings: {},
+        position: 0,
+        data: {
+          items: Array.from({ length: 20 }, (_, i) => ({
+            id: `t${i}`,
+            invoice_id: `inv${i}`,
+            created_at: daysAgo(i),
+            supplier_name: `Supplier ${i}`,
+            due_date: daysAhead(i),
+            total_with_vat: 100,
+            currency: "GBP",
+          })),
+        },
+      },
+    ]);
+
+    const scroller = document.querySelector(".clockscroll");
+    expect(scroller).not.toBeNull();
+    expect(document.querySelectorAll(".clocktable tbody tr")).toHaveLength(20);
+  });
+
+  it("makes each row openable", async () => {
+    // **A row that reads like a link and does nothing is worse than one
+    // that does not**, because somebody clicks it twice before
+    // believing.
+    await openDashboard([
+      {
+        id: "d",
+        cardType: "on_my_clock",
+        settings: {},
+        position: 0,
+        data: {
+          items: [
+            {
+              id: "t1",
+              invoice_id: "inv-1",
+              stage_id: "approval",
+              created_at: daysAgo(2),
+              supplier_name: "Northwind",
+              due_date: daysAhead(9),
+              total_with_vat: 576,
+              currency: "GBP",
+            },
+          ],
+        },
+      },
+    ]);
+
+    const rows = document.querySelectorAll(".clocktable tbody tr.clickable");
+    expect(rows).toHaveLength(1);
+    expect(typeof (rows[0] as HTMLElement).onclick).toBe("function");
   });
 });

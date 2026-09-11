@@ -219,29 +219,67 @@ async function whereThingsAre(db: D1Database, scope: Scope) {
 }
 
 /** One stage, named in the card's own settings. */
-async function itemsAtStage(db: D1Database, scope: Scope, settings: Record<string, unknown>) {
+async function itemsAtStage(
+  db: D1Database,
+  userId: string,
+  scope: Scope,
+  settings: Record<string, unknown>
+) {
   const stageId = typeof settings.stage === "string" ? settings.stage : null;
   if (!stageId) return { count: 0, stageName: null, unconfigured: true };
 
   const clause = unitClause(scope, "h.org_unit_id");
 
+  /**
+   * **Who holds the work here** — decision 0250.
+   *
+   * A count says *how much* and this says *whether it is anybody's*.
+   * Three states, and they are genuinely different questions:
+   *
+   * - **mine** — assigned to me or claimed by me (decision 0180)
+   * - **somebody else's** — taken, and not by me
+   * - **unclaimed** — on a team queue or nobody's at all, which is the
+   *   one that grows quietly
+   *
+   * An instance with no task at all counts as unclaimed, because from
+   * the reader's side it is the same thing: nobody is holding it.
+   */
   const row = await db
     .prepare(
-      `SELECT s.name AS stage_name, count(*) AS n
+      `SELECT s.name AS stage_name,
+              count(*) AS n,
+              sum(CASE WHEN t.owner_user_id = ?2 OR t.claimed_by = ?2 THEN 1 ELSE 0 END) AS mine,
+              sum(CASE WHEN t.id IS NOT NULL
+                        AND (t.owner_user_id IS NOT NULL OR t.claimed_by IS NOT NULL)
+                        AND COALESCE(t.owner_user_id, '') != ?2
+                        AND COALESCE(t.claimed_by, '') != ?2
+                   THEN 1 ELSE 0 END) AS theirs
        FROM process_instances pi
        JOIN process_stages s ON s.id = pi.current_stage_id
        LEFT JOIN invoice_headers h ON pi.subject_type = 'invoice' AND h.id = pi.subject_id
+       LEFT JOIN stage_visits v ON v.process_instance_id = pi.id AND v.stage_id = pi.current_stage_id
+       LEFT JOIN tasks t ON t.stage_visit_id = v.id AND t.status = 'open'
        WHERE pi.status = ${IN_FLIGHT} AND pi.current_stage_id = ?1${clause.sql}`
     )
-    .bind(stageId, ...clause.binds)
-    .first<{ stage_name: string | null; n: number }>();
+    .bind(stageId, userId, ...clause.binds)
+    .first<{ stage_name: string | null; n: number; mine: number; theirs: number }>();
 
   /**
    * **A stage that no longer exists is a card, not an error.** A
    * customer may rename or remove one, and the card should say so
    * rather than showing nothing or a zero that looks like good news.
    */
-  return { count: row?.n ?? 0, stageName: row?.stage_name ?? null, missing: !row?.stage_name };
+  const count = row?.n ?? 0;
+  const mine = row?.mine ?? 0;
+  const theirs = row?.theirs ?? 0;
+
+  return {
+    count,
+    stageId,
+    stageName: row?.stage_name ?? null,
+    missing: !row?.stage_name,
+    held: { mine, theirs, unclaimed: Math.max(count - mine - theirs, 0) },
+  };
 }
 
 /** How long things have waited, in buckets rather than an average. */
@@ -465,7 +503,7 @@ async function runCard(
     case "where_things_are":
       return whereThingsAre(db, scope);
     case "items_at_stage":
-      return itemsAtStage(db, scope, settings);
+      return itemsAtStage(db, userId, scope, settings);
     case "ageing":
       return ageing(db, scope);
     case "done":

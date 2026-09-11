@@ -1060,6 +1060,39 @@
     .donutwrap { flex-direction: column; align-items: stretch; }
   }
 
+  /*
+    **The worklist scrolls rather than growing** — decision 0250.
+
+    Twenty-five rows is a card taller than the screen, and everything
+    beneath it becomes unreachable without scrolling past somebody
+    else's work. A fixed height makes the page's shape stable whatever
+    is in the queue.
+  */
+  .clockscroll {
+    max-height: 340px;
+    overflow-y: auto;
+    margin-top: 10px;
+  }
+  .clockscroll thead th {
+    position: sticky;
+    top: 0;
+    /* Opaque, or the rows scroll under a transparent heading. */
+    background: var(--surface-2);
+    z-index: 1;
+  }
+
+  /* The count and the ring side by side, in a tile. */
+  .stagesplit {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+  }
+
+  tr.clickable, .panel.clickable { cursor: pointer; }
+  tr.clickable:hover { background: var(--surface-1); }
+  .panel.clickable:hover { border-color: var(--text-accent); }
+
   .barlist-row { margin-bottom: 9px; }
   .barlist-head { display: flex; justify-content: space-between; font-size: var(--text-sm); gap: 10px; }
   .barlist-track { height: 6px; background: var(--border); border-radius: 3px; margin-top: 3px; }

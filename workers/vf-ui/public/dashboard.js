@@ -1,5 +1,5 @@
 import { t } from "/strings.js";
-import { el, frame, topbar, setCurrentScreen } from "/tasks.js";
+import { el, frame, topbar, setCurrentScreen, openTasksFiltered, openTaskById } from "/tasks.js";
 /**
  * **`sparkline` and `donut` are built and not used here** — decision
  * 0242.
@@ -153,7 +153,7 @@ const RENDERERS = {
   on_my_clock: (data, card) => {
     const rows = (data.items ?? []).map((item) => {
       const due = dueIn(item.due_date);
-      return el("tr", {}, [
+      const row = el("tr", { class: "clickable" }, [
         el("td", {}, [
           el("div", { text: item.supplier_name ?? "—" }),
           el("div", {
@@ -165,6 +165,21 @@ const RENDERERS = {
         el("td", { class: `num ${due.tone}`, text: due.text }),
         el("td", { class: "num", text: money(item.total_with_vat, item.currency) }),
       ]);
+
+      /**
+       * **A row that names an invoice should open it** — decision 0250.
+       * A row that reads like a link and does nothing is worse than one
+       * that does not, because somebody clicks it twice before
+       * believing.
+       */
+      row.onclick = () =>
+        openTaskById({
+          id: item.id,
+          stageId: item.stage_id,
+          subject: { id: item.invoice_id, type: "invoice" },
+        });
+
+      return row;
     });
 
     /**
@@ -188,7 +203,7 @@ const RENDERERS = {
       el("div", { class: "sub", text: t("dash.myclocksub") }),
       rows.length === 0
         ? el("div", { class: "muted", text: t("dash.nothingmine") })
-        : el("table", { class: "clocktable" }, [
+        : el("div", { class: "clockscroll" }, [el("table", { class: "clocktable" }, [
             el("thead", {}, [
               el("tr", {}, [
                 el("th", { text: t("dash.supplier") }),
@@ -198,7 +213,7 @@ const RENDERERS = {
               ]),
             ]),
             el("tbody", {}, rows),
-          ]),
+          ])]),
     ]);
   },
 
@@ -232,17 +247,53 @@ const RENDERERS = {
     );
   },
 
-  items_at_stage: (data) =>
-    panel(
+  items_at_stage: (data) => {
+    if (data.missing) {
+      // **A stage that no longer exists says so** rather than showing a
+      // zero, which would look like good news.
+      return panel(data.stageName ?? t("dash.astage"), null, { weight: "tile" },
+        el("div", { class: "warn", text: t("dash.stagegone") }));
+    }
+
+    const held = data.held ?? { mine: 0, theirs: 0, unclaimed: 0 };
+
+    /**
+     * **Who holds it, beside how many** — decision 0250.
+     *
+     * A count says *how much* and this says *whether it is anybody's*.
+     * **Unclaimed is the one that grows quietly**, and a stage where
+     * every item is somebody else's needs nothing from the reader.
+     */
+    const card = panel(
       data.stageName ?? t("dash.astage"),
       null,
       { weight: "tile" },
-      data.missing
-        ? // **A stage that no longer exists says so** rather than
-          // showing a zero, which would look like good news.
-          el("div", { class: "warn", text: t("dash.stagegone") })
-        : figure(data.count, t("dash.waitinghere"))
-    ),
+      el("div", { class: "stagesplit" }, [
+        figure(data.count, t("dash.waitinghere")),
+        donutChart(
+          [
+            { label: t("dash.mine"), value: held.mine },
+            { label: t("dash.theirs"), value: held.theirs },
+            { label: t("dash.unclaimed"), value: held.unclaimed },
+          ].filter((seg) => seg.value > 0),
+          { size: 92, legend: false }
+        ),
+      ])
+    );
+
+    /**
+     * **The obvious next question, answerable.** *"Eleven at Approval,
+     * three of them mine"* invites *"show me those three"*, which the
+     * task list could already answer and had no way of being asked.
+     */
+    if (held.mine > 0) {
+      card.classList.add("clickable");
+      card.onclick = () => openTasksFiltered({ stage: data.stageId, ownership: "mine" });
+      card.append(el("div", { class: "muted tiny", text: t("dash.showmine") }));
+    }
+
+    return card;
+  },
 
   ageing: (data) => {
     const buckets = data.buckets ?? [];
@@ -336,18 +387,30 @@ const RENDERERS = {
   },
 };
 
+/**
+ * **The sort is saved, then read back** — decision 0250.
+ *
+ * The first version set the local object and reloaded, which fetched a
+ * dashboard sorted by **what the server had stored** — so the buttons
+ * highlighted and nothing moved.
+ *
+ * Sorted where the data is, because the list is capped at 25 rows by
+ * decision 0240 and reordering in the browser would rearrange a sample
+ * and call it an order. Which means the server has to be told, and
+ * telling it is saving it — **so the choice sticks between visits**,
+ * which is what somebody who always sorts by due date would want
+ * anyway.
+ */
 async function sortBy(card, key) {
-  card.settings = { ...card.settings, sort: key };
+  const index = cards.indexOf(card);
+  if (index >= 0) cards[index] = { ...card, settings: { ...card.settings, sort: key } };
 
-  /**
-   * **Sorted where the data is.** The list is capped at 25 rows by
-   * decision 0240, so sorting in the browser would reorder a sample and
-   * call it an order.
-   */
-  await load();
-  const fresh = cards.find((c) => c.cardType === "on_my_clock");
-  if (fresh) fresh.settings = card.settings;
-  render();
+  if (!(await save())) {
+    // The save reloads and redraws on success; on failure the buttons
+    // should not lie about which sort is in force.
+    await load();
+    render();
+  }
 }
 
 function render() {

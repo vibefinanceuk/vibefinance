@@ -485,3 +485,108 @@ describe("arranging a dashboard (decision 0243)", () => {
     expect(body.types.length).toBe(CARD_TYPES.length);
   });
 });
+
+describe("who holds the work at a stage (decision 0250)", () => {
+  /**
+   * **A count says how much, and this says whether it is anybody's.**
+   *
+   * Three states, genuinely different: mine is work I am responsible
+   * for, taken is work somebody has and I need nothing from, and
+   * **unclaimed is the one that grows quietly** — nobody holding it and
+   * nobody neglecting it either.
+   */
+  async function stageCard(userId = "alice") {
+    await env.DB.prepare(
+      `INSERT INTO dashboard_cards (id, user_id, card_type, settings_json, position)
+       VALUES ('c1', ?, 'items_at_stage', '{"stage":"validation"}', 0)`
+    )
+      .bind(userId)
+      .run();
+    const body = await cardsFor(userId);
+    return card<{ count: number; held: { mine: number; theirs: number; unclaimed: number } }>(
+      body,
+      "items_at_stage"
+    );
+  }
+
+  it("splits mine, theirs and unclaimed", async () => {
+    await person("alice", ["AP.Review"], null);
+    await person("mo", ["AP.Review"], null);
+
+    await work("mine", null, { owner: "alice" });
+    await work("claimed", null, { claimed: "alice" });
+    await work("theirs", null, { owner: "mo" });
+    await env.DB.prepare("INSERT INTO org_teams (id, name) VALUES ('ap', 'AP')").run();
+    await work("nobody", null, { team: "ap" });
+
+    const data = await stageCard();
+    expect(data.count).toBe(4);
+    expect(data.held.mine).toBe(2);
+    expect(data.held.theirs).toBe(1);
+    expect(data.held.unclaimed).toBe(1);
+  });
+
+  it("counts an instance with no task at all as unclaimed", async () => {
+    /**
+     * **From the reader's side it is the same thing**: nobody is
+     * holding it. A stage between tasks is not a different kind of
+     * idle.
+     */
+    await person("alice", ["AP.Review"], null);
+    await env.DB.prepare("INSERT OR IGNORE INTO processes (id, name) VALUES ('ap','AP')").run();
+    await env.DB.prepare(
+      "INSERT OR IGNORE INTO process_stages (id, process_id, name, sequence) VALUES ('validation','ap','Validation',1)"
+    ).run();
+    await env.DB.prepare(
+      "INSERT INTO invoice_headers (id, facts_json) VALUES ('lonely', '{}')"
+    ).run();
+    await env.DB.prepare(
+      `INSERT INTO process_instances (id, process_id, subject_type, subject_id, current_stage_id, status)
+       VALUES ('pi-lonely', 'ap', 'invoice', 'lonely', 'validation', 'in_progress')`
+    ).run();
+
+    const data = await stageCard();
+    expect(data.held.unclaimed).toBe(1);
+  });
+
+  it("never reports more held than there are", async () => {
+    // The three must add to the count, or a ring of them lies about
+    // the whole it divides.
+    await person("alice", ["AP.Review"], null);
+    await work("a", null, { owner: "alice" });
+    await work("b", null, { claimed: "alice" });
+
+    const data = await stageCard();
+    expect(data.held.mine + data.held.theirs + data.held.unclaimed).toBe(data.count);
+  });
+
+  it("counts as mine only for me", async () => {
+    // **The card is per person**, so the same stage says something
+    // different to two people looking at it.
+    await person("alice", ["AP.Review"], null);
+    await person("mo", ["AP.Review"], null);
+    await work("a", null, { owner: "alice" });
+
+    await env.DB.prepare(
+      `INSERT INTO dashboard_cards (id, user_id, card_type, settings_json, position)
+       VALUES ('c2', 'mo', 'items_at_stage', '{"stage":"validation"}', 0)`
+    ).run();
+
+    const theirs = card<{ held: { mine: number; theirs: number } }>(
+      await cardsFor("mo"),
+      "items_at_stage"
+    );
+    expect(theirs.held.mine).toBe(0);
+    expect(theirs.held.theirs).toBe(1);
+  });
+
+  it("names the stage it counted, so a card can link to it", async () => {
+    // Decision 0250's click: the task list already filtered by stage
+    // and nothing could tell it which.
+    await person("alice", ["AP.Review"], null);
+    await work("a", null, { owner: "alice" });
+
+    const data = await stageCard();
+    expect((data as unknown as { stageId: string }).stageId).toBe("validation");
+  });
+});

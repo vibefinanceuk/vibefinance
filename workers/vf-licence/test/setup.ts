@@ -73,6 +73,7 @@ import dashboardStringsSql from "../migrations/0068_dashboard_strings.sql?raw";
 import dashboardLibrarySql from "../migrations/0069_dashboard_library_strings.sql?raw";
 import dueTodaySql from "../migrations/0070_due_today.sql?raw";
 import cardNamesSql from "../migrations/0071_a_name_per_card_type.sql?raw";
+import whoHoldsSql from "../migrations/0072_who_holds_it.sql?raw";
 
 function stripSqlComments(sql: string): string {
   return sql
@@ -173,5 +174,6 @@ export async function applyTestSchema(): Promise<void> {
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(dashboardLibrarySql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(dueTodaySql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(cardNamesSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(whoHoldsSql)));
 
 }
