@@ -851,19 +851,59 @@
     equal thirds would make a four-figure count as wide as a worklist,
     and the worklist is the one somebody came for.
   */
+  /*
+    **Four columns, and a card asks for what it needs** — decision 0244.
+
+    The first version gave every card an equal half, so a count sat in a
+    panel the width of a worklist with a void beside it. A count and a
+    table are both cards and are not the same size of thing.
+  */
   .dashgrid {
     display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 14px;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
     align-items: start;
   }
-  /* The worklist spans, because a table in half a screen is a table nobody reads. */
+  .dashgrid > .card-tile { grid-column: span 1; }
+  .dashgrid > .card-half { grid-column: span 2; }
+  /* The worklist spans, because a table in a quarter is a table nobody reads. */
   .dashgrid > .panel:has(.clocktable) { grid-column: 1 / -1; }
-  @media (max-width: 820px) { .dashgrid { grid-template-columns: 1fr; } }
 
-  .bignum { font-size: var(--text-figure); line-height: 1.15; }
+  @media (max-width: 1040px) {
+    .dashgrid { grid-template-columns: repeat(2, 1fr); }
+    .dashgrid > .card-half { grid-column: 1 / -1; }
+  }
+  @media (max-width: 560px) {
+    .dashgrid { grid-template-columns: 1fr; }
+    .dashgrid > .card-tile { grid-column: 1 / -1; }
+  }
+
+  /*
+    **A tile is mostly its number**, so it needs less chrome than a
+    panel holding a table: tighter padding, and the figure doing the
+    work the heading would otherwise.
+  */
+  .dashgrid > .card-tile { padding: 13px 15px; }
+  .dashgrid > .card-tile > .cardhead > h3 {
+    font-size: var(--text-sm);
+    color: var(--text-muted);
+    font-weight: 400;
+  }
+
+  .bignum {
+    font-size: var(--text-figure);
+    line-height: 1.1;
+    /* Lining figures of one width, so 11 and 44 are the same size on
+       screen and a column of counts does not shimmer. */
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.02em;
+    margin-top: 2px;
+  }
   .bignum.warn { color: var(--text-warning); }
-  .figures { display: flex; gap: 26px; }
+  /* Three small figures in the space of one, which is what makes a
+     tile denser than a panel rather than emptier. */
+  .figures { display: flex; gap: 18px; }
+  .figures .bignum { font-size: var(--text-xl); }
   /* The scale's smallest step, rather than a size below it. */
   .tiny { font-size: var(--text-sm); }
 

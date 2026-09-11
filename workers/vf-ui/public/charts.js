@@ -81,22 +81,73 @@ export function barChart(rows, { height = 150 } = {}) {
 
   const hi = Math.max(...rows.map((r) => r.value), 1);
   const slot = width / rows.length;
-  const barWidth = slot * 0.55;
+
+  /**
+   * **A bar that is alone should not be a wall** — decision 0244.
+   *
+   * With one row, `slot` is the whole width and a 55% bar is 165px of
+   * flat colour. The eye reads size as quantity, and one bar has
+   * nothing to be larger than.
+   */
+  const barWidth = Math.min(slot * 0.55, 54);
+
+  /**
+   * **A hairline grid**, so a bar is read against something.
+   *
+   * Four lines at quarters of the tallest value. Without them the
+   * heights are relative to each other and to nothing else, which is
+   * fine for two bars and guesswork for six.
+   */
+  const plot = height - 34;
+  for (let i = 1; i <= 4; i++) {
+    const y = height - 22 - (plot * i) / 4;
+    node.append(
+      el("line", {
+        x1: 0,
+        x2: width,
+        y1: y.toFixed(1),
+        y2: y.toFixed(1),
+        stroke: "var(--border)",
+        "stroke-width": 0.5,
+        opacity: 0.55,
+      })
+    );
+  }
 
   rows.forEach((row, i) => {
     const barHeight = (row.value / hi) * (height - 34);
     const x = i * slot + (slot - barWidth) / 2;
     const y = height - 22 - barHeight;
 
+    /**
+     * **A bar fading downward**, which is where the reference's depth
+     * comes from — and is four lines of SVG rather than a library.
+     *
+     * Each needs its own gradient because the id must be unique in the
+     * document, and two charts on one screen would otherwise share one.
+     */
+    const gradientId = `bar-${Math.random().toString(36).slice(2, 9)}`;
+    const colour = row.warn ? "var(--text-warning)" : "var(--chart-1)";
+    const gradient = el("linearGradient", { id: gradientId, x1: 0, y1: 0, x2: 0, y2: 1 });
+    gradient.append(
+      el("stop", { offset: "0%", "stop-color": colour, "stop-opacity": 0.95 }),
+      el("stop", { offset: "100%", "stop-color": colour, "stop-opacity": 0.45 })
+    );
+    const defs = el("defs");
+    defs.append(gradient);
+
     node.append(
+      defs,
       el("rect", {
         x: x.toFixed(1),
         y: y.toFixed(1),
         width: barWidth.toFixed(1),
-        height: Math.max(barHeight, 1).toFixed(1),
-        rx: 2,
-        fill: row.warn ? "var(--text-warning)" : "var(--chart-1)",
-        opacity: 0.8,
+        // **A zero is a hairline, not a bar.** One pixel of colour
+        // reads as "a little"; nothing reads as nothing, and the
+        // number above says which.
+        height: Math.max(barHeight, row.value === 0 ? 0.5 : 2).toFixed(1),
+        rx: 3,
+        fill: row.value === 0 ? "var(--border)" : `url(#${gradientId})`,
       }),
       el(
         "text",

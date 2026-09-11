@@ -400,3 +400,121 @@ describe("arranging it (decision 0243)", () => {
     expect(document.querySelector(".popout select")).toBeNull();
   });
 });
+
+describe("a card asks for the room it needs (decision 0244)", () => {
+  /**
+   * **A count and a table are not the same size of thing.**
+   *
+   * The first version gave every card an equal half, so *"waiting for
+   * me: 3"* sat in a panel the width of a worklist with a void beside
+   * it — reported by looking at it.
+   */
+  it("makes a count a tile and a chart a half", async () => {
+    await openDashboard([
+      { id: "a", cardType: "waiting_for_me", settings: {}, position: 0, data: { count: 3, stages: 1 } },
+      {
+        id: "b",
+        cardType: "ageing",
+        settings: {},
+        position: 1,
+        data: { buckets: [{ label: "<1d", n: 3 }, { label: "30d+", n: 0 }] },
+      },
+    ]);
+
+    expect(document.querySelectorAll(".card-tile")).toHaveLength(1);
+    expect(document.querySelectorAll(".card-half")).toHaveLength(1);
+  });
+
+  it("draws a figure rather than a chart for one stage", async () => {
+    /**
+     * **A bar chart of one bar is a rectangle**, and the rectangle says
+     * nothing the figure does not.
+     */
+    await openDashboard([
+      {
+        id: "c",
+        cardType: "where_things_are",
+        settings: {},
+        position: 0,
+        data: { stages: [{ stage_name: "Approval", n: 3 }] },
+      },
+    ]);
+
+    expect(document.querySelector("svg")).toBeNull();
+    expect(document.querySelector(".bignum")?.textContent).toBe("3");
+    expect(document.body.textContent).toContain("Approval");
+  });
+
+  it("still charts two stages", async () => {
+    await openDashboard([
+      {
+        id: "d",
+        cardType: "where_things_are",
+        settings: {},
+        position: 0,
+        data: { stages: [{ stage_name: "Validation", n: 8 }, { stage_name: "Approval", n: 3 }] },
+      },
+    ]);
+
+    expect(document.querySelectorAll("svg rect")).toHaveLength(2);
+  });
+});
+
+describe("the bars are read against something (decision 0244)", () => {
+  it("draws a grid behind them", async () => {
+    /**
+     * Without it the heights are relative to each other and to nothing
+     * else — fine for two bars and guesswork for six.
+     */
+    await openDashboard([
+      {
+        id: "e",
+        cardType: "ageing",
+        settings: {},
+        position: 0,
+        data: { buckets: [{ label: "<1d", n: 21 }, { label: "30d+", n: 2 }] },
+      },
+    ]);
+
+    expect(document.querySelectorAll("svg line").length).toBeGreaterThanOrEqual(4);
+  });
+
+  it("gives a zero a hairline rather than a bar", async () => {
+    /**
+     * **One pixel of colour reads as "a little"**; nothing reads as
+     * nothing, and the number above says which. Four of your five
+     * ageing buckets are zero.
+     */
+    await openDashboard([
+      {
+        id: "f",
+        cardType: "ageing",
+        settings: {},
+        position: 0,
+        data: { buckets: [{ label: "<1d", n: 3 }, { label: "1–3d", n: 0 }] },
+      },
+    ]);
+
+    const bars = [...document.querySelectorAll("svg rect")];
+    const zero = bars[1];
+    expect(zero.getAttribute("fill")).toBe("var(--border)");
+    expect(Number(zero.getAttribute("height"))).toBeLessThan(1);
+  });
+
+  it("gives each bar its own gradient", async () => {
+    // The id must be unique in the document, or two charts on one
+    // screen share one and the second is drawn in the first's colours.
+    await openDashboard([
+      {
+        id: "g",
+        cardType: "ageing",
+        settings: {},
+        position: 0,
+        data: { buckets: [{ label: "a", n: 3 }, { label: "b", n: 5 }] },
+      },
+    ]);
+
+    const ids = [...document.querySelectorAll("linearGradient")].map((g) => g.id);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+});

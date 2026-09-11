@@ -46,9 +46,18 @@ async function load() {
   }
 }
 
-/** A card with a heading, and whatever it holds. */
-function panel(title, sub, ...children) {
-  return el("div", { class: "panel" }, [
+/**
+ * A card with a heading, and whatever it holds.
+ *
+ * **`weight` decides how much room it asks for** — decision 0244.
+ *
+ * A count and a table are both cards and are not the same size of
+ * thing. The first version gave every card an equal half, so *"waiting
+ * for me: 3"* sat in a panel the width of a worklist with a void beside
+ * it.
+ */
+function panel(title, sub, { weight = "half" } = {}, ...children) {
+  return el("div", { class: `panel card-${weight}` }, [
     el("div", { class: "cardhead" }, [el("h3", { text: title })]),
     sub ? el("div", { class: "sub", text: sub }) : null,
     ...children,
@@ -120,7 +129,8 @@ const RENDERERS = {
   waiting_for_me: (data) =>
     panel(
       t("dash.waiting"),
-      t("dash.waitingsub"),
+      null,
+      { weight: "tile" },
       figure(data.count, t("dash.acrossstages").replace("{n}", String(data.stages)))
     ),
 
@@ -178,9 +188,19 @@ const RENDERERS = {
 
   where_things_are: (data) => {
     const stages = data.stages ?? [];
+    /**
+     * **One stage is a number, not a chart** — decision 0244. A bar
+     * chart of one bar is a rectangle, and the rectangle says nothing
+     * the figure does not.
+     */
+    if (stages.length === 1) {
+      return panel(t("dash.wherethings"), null, { weight: "tile" },
+        figure(stages[0].n, stages[0].stage_name));
+    }
     return panel(
       t("dash.wherethings"),
       t("dash.bystage"),
+      { weight: "half" },
       stages.length === 0
         ? el("div", { class: "muted", text: t("dash.nothinginflight") })
         : barChart(stages.map((s) => ({ label: s.stage_name, value: s.n })))
@@ -191,6 +211,7 @@ const RENDERERS = {
     panel(
       data.stageName ?? t("dash.astage"),
       null,
+      { weight: "tile" },
       data.missing
         ? // **A stage that no longer exists says so** rather than
           // showing a zero, which would look like good news.
@@ -203,6 +224,7 @@ const RENDERERS = {
     return panel(
       t("dash.ageing"),
       t("dash.ageingsub"),
+      { weight: "half" },
       barChart(
         buckets.map((b, i) => ({
           label: b.label,
@@ -218,6 +240,7 @@ const RENDERERS = {
     panel(
       t("dash.done"),
       null,
+      { weight: "tile" },
       el("div", { class: "figures" }, [
         figure(data.today, t("dash.todaylabel")),
         figure(data.week, t("dash.weeklabel")),
@@ -230,6 +253,7 @@ const RENDERERS = {
     return panel(
       t("dash.received"),
       t("dash.receivedsub"),
+      { weight: "half" },
       days.length === 0
         ? el("div", { class: "muted", text: t("dash.nonereceived") })
         : barChart(
@@ -246,6 +270,7 @@ const RENDERERS = {
     return panel(
       t("dash.exceptions"),
       t("dash.exceptionssub"),
+      { weight: "half" },
       suppliers.length === 0
         ? el("div", { class: "muted", text: t("dash.noexceptions") })
         : barList(suppliers.map((s) => ({ label: s.supplier, value: s.n, warn: true })))
@@ -262,6 +287,7 @@ const RENDERERS = {
     return panel(
       t("dash.needssomebody"),
       t("dash.needssomebodysub"),
+      { weight: "half" },
       rows.length === 0
         ? // **Nothing to do is an answer**, and a good one.
           el("div", { class: "muted", text: t("dash.allclear") })

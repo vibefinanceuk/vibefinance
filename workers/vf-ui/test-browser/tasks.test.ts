@@ -98,6 +98,9 @@ async function openList(tasks: unknown[]) {
     "/api/invoices/inv-1/progress": { inProcess: false, stages: [] },
     "/api/suppliers": { suppliers: [], lastLoad: null, fedByLoad: false },
     "/api/org/units": { units: [] },
+    // **A screen this test now visits** (decision 0244): the navigation
+    // covers every tab, and My work was added by decision 0242.
+    "/api/dashboard": { cards: [], usingDefault: true },
   });
 
   const { loadStrings } = await import("/strings.js");
