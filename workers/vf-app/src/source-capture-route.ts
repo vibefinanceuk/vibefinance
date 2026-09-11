@@ -1,6 +1,7 @@
 import type { RouteResult } from "./org-route.js";
 import { deriveOrgUnit } from "./derive-org.js";
 import { renderPeppolDocument } from "./peppol-render.js";
+import { matchSupplier } from "./match-supplier.js";
 import {
   detectStructure,
   summariseAttempts,
@@ -314,7 +315,70 @@ export async function handleCaptureFromSource(
       )
       .bind(source.default_org_unit_id, invoiceId)
       .run();
-  } else if (invoiceId) {
+  }
+
+  /**
+   * **Which supplier, and can we name it to the ERP** — decision 0209.
+   *
+   * Independent of the org, and deliberately: an invoice can belong to
+   * a known supplier and an unknown business unit, or the reverse, and
+   * treating either as one answer would hide half of what is wrong.
+   */
+  if (invoiceId) {
+    const invoiceForSupplier = await db
+      .prepare("SELECT facts_json FROM invoice_headers WHERE id = ?")
+      .bind(invoiceId)
+      .first<{ facts_json: string }>();
+
+    let supplierFacts: Record<string, unknown> = {};
+    try {
+      supplierFacts = JSON.parse(invoiceForSupplier?.facts_json ?? "{}") as Record<string, unknown>;
+    } catch {
+      // A document whose facts will not parse names no supplier.
+    }
+
+    const matched = await matchSupplier(db, supplierFacts);
+
+    if (matched.supplierId) {
+      await db
+        .prepare("UPDATE invoice_headers SET supplier_id = ? WHERE id = ? AND supplier_id IS NULL")
+        .bind(matched.supplierId, invoiceId)
+        .run();
+    }
+
+    /**
+     * **A fact a rule can test**, which is the whole point: the
+     * operator's *"if supplier does not exist, flag as new supplier and
+     * require review"* is expressible in the closed vocabulary the
+     * moment this exists.
+     *
+     * And the load date beside it, because a stale mirror lies
+     * confidently (decision 0208).
+     */
+    await db
+      .prepare(
+        `UPDATE invoice_headers
+         SET facts_json = json_set(
+               json_set(facts_json, '$."supplier.matched"', ?),
+               '$."supplier.listLoadedAt"', ?)
+         WHERE id = ?`
+      )
+      .bind(matched.supplierId ? 1 : 0, matched.listLoadedAt, invoiceId)
+      .run();
+
+    if (matched.reason) {
+      await db
+        .prepare(
+          `UPDATE invoice_headers
+           SET facts_json = json_set(facts_json, '$."supplier.unmatchedReason"', ?)
+           WHERE id = ?`
+        )
+        .bind(matched.reason, invoiceId)
+        .run();
+    }
+  }
+
+  if (invoiceId && !source.default_org_unit_id) {
     /**
      * **No default means read it off the document** — decision 0204.
      *
@@ -514,7 +578,70 @@ async function captureWithoutFacts(
       )
       .bind(source.default_org_unit_id, invoiceId)
       .run();
-  } else if (invoiceId) {
+  }
+
+  /**
+   * **Which supplier, and can we name it to the ERP** — decision 0209.
+   *
+   * Independent of the org, and deliberately: an invoice can belong to
+   * a known supplier and an unknown business unit, or the reverse, and
+   * treating either as one answer would hide half of what is wrong.
+   */
+  if (invoiceId) {
+    const invoiceForSupplier = await db
+      .prepare("SELECT facts_json FROM invoice_headers WHERE id = ?")
+      .bind(invoiceId)
+      .first<{ facts_json: string }>();
+
+    let supplierFacts: Record<string, unknown> = {};
+    try {
+      supplierFacts = JSON.parse(invoiceForSupplier?.facts_json ?? "{}") as Record<string, unknown>;
+    } catch {
+      // A document whose facts will not parse names no supplier.
+    }
+
+    const matched = await matchSupplier(db, supplierFacts);
+
+    if (matched.supplierId) {
+      await db
+        .prepare("UPDATE invoice_headers SET supplier_id = ? WHERE id = ? AND supplier_id IS NULL")
+        .bind(matched.supplierId, invoiceId)
+        .run();
+    }
+
+    /**
+     * **A fact a rule can test**, which is the whole point: the
+     * operator's *"if supplier does not exist, flag as new supplier and
+     * require review"* is expressible in the closed vocabulary the
+     * moment this exists.
+     *
+     * And the load date beside it, because a stale mirror lies
+     * confidently (decision 0208).
+     */
+    await db
+      .prepare(
+        `UPDATE invoice_headers
+         SET facts_json = json_set(
+               json_set(facts_json, '$."supplier.matched"', ?),
+               '$."supplier.listLoadedAt"', ?)
+         WHERE id = ?`
+      )
+      .bind(matched.supplierId ? 1 : 0, matched.listLoadedAt, invoiceId)
+      .run();
+
+    if (matched.reason) {
+      await db
+        .prepare(
+          `UPDATE invoice_headers
+           SET facts_json = json_set(facts_json, '$."supplier.unmatchedReason"', ?)
+           WHERE id = ?`
+        )
+        .bind(matched.reason, invoiceId)
+        .run();
+    }
+  }
+
+  if (invoiceId && !source.default_org_unit_id) {
     /**
      * **No default means read it off the document** — decision 0204.
      *

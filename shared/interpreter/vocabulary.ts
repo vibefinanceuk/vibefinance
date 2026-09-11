@@ -78,6 +78,8 @@ export const DERIVED_FIELDS = [
   "intake.structure",
   "intake.attempted",
   "intake.detail",
+  "supplier.matched",
+  "supplier.unmatchedReason",
   "provenance.keyed",
   "extraction.confidence",
   "invoice.duplicate_confidence",
@@ -175,6 +177,8 @@ export const INVOICE_FIELD_TYPES: Record<string, FieldType> = {
   "intake.structure": "text",
   "intake.attempted": "text",
   "intake.detail": "text",
+  "supplier.matched": "boolean",
+  "supplier.unmatchedReason": "text",
   "provenance.keyed": "text",
   "extraction.confidence": "number",
   "invoice.duplicate_confidence": "number",
@@ -332,6 +336,10 @@ export const DERIVED_FIELD_DESCRIPTIONS: Record<DerivedField, string> = {
     "the document structure intake detected — 'structured_xml', 'structured_pdfa', 'image', or empty when nothing was recognised. An empty value means the document arrived with no facts and needs a person: a rule testing for it is how an undetectable document reaches somebody.",
   "intake.attempted":
     "a comma-separated list of the detection tests intake tried, in order. Distinguishes a supplier who has not adopted e-invoicing from one whose implementation is broken — 'a PDF with no embedded invoice' and 'a PDF declaring one that could not be read' are opposite conversations. A string so the existing contains operator works.",
+  "supplier.matched":
+    "true where this invoice's seller was found in the supplier list loaded from the customer's ERP, and an ERP identifier is therefore available. **False is what routes a new supplier for review**: not 'we do not recognise this company' but 'we cannot name it to the ERP', and an invoice without that cannot be paid however familiar the name on it. Matched on the seller's electronic address (BT-34), then their VAT id (BT-31).",
+  "supplier.unmatchedReason":
+    "why no supplier matched, where none did: 'no_identifier' (the document named no seller VAT id or endpoint), 'no_match' (nobody in the loaded list), or 'ambiguous_site' (several sites share that VAT number and none was named). Three reasons wanting three different actions, which is why they are not one flag.",
   "intake.detail":
     "what each detection test actually found, where `intake.attempted` says only which ran. Reads like 'pdf_header: not a PDF · image_magic_bytes: unrecognised (starts 00 01 02 03)'. Present only on a document nothing could read, because that is the only time anybody asks. Diagnostic rather than something to write a rule against: the wording is ours and may change, where `intake.attempted` is a contract.",
   "extraction.pagesFailed":

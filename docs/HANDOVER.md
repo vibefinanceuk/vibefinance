@@ -35,7 +35,7 @@ twice.
 | vf-licence deployed | `e3b8798` |
 | vf-ui deployed | `e3b8798` · `https://app.vibefinance-ai.com` |
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
-| `vf-app-poc` migrations | through `0048` |
+| `vf-app-poc` migrations | through `0049` |
 | `vf-licence-poc` migrations | through `0052` |
 | Tests | vf-admin 9 · vf-app 1300 · vf-licence 318 · vf-ui 44 Worker + 219 browser · shared 267 (+2 known pre-existing failures) |
 | Decision records | 206 |
@@ -400,13 +400,18 @@ to an invoice — terms, hold, match option, tolerances, status.
 one field: *"if the supplier is not matched, assign a task to the AP
 team requiring AP.Review."* `supplier.matched` is what is missing.
 
-**Two traps recorded before anything is built.** A **stale mirror lies
+**Matching is built** (decision 0209): a seller is matched on `BT-34`
+then `BT-31`, and `supplier.matched` is a vocabulary field, so the
+operator's rule is expressible today. **The load is not** — there is no
+spreadsheet parser, so the mirror exists and cannot yet be filled.
+
+**Two traps, one handled and one not.** A **stale mirror lies
 confidently** — a supplier added to the ERP on Monday and loaded here on
 Friday means four days of invoices routed for review, so an unmatched
 supplier must be reported with the load date beside it. And **nothing
 re-checks**: an invoice sitting in AP Review stays there after its
 supplier is loaded, so **re-matching after a load is part of the
-feature**, not a refinement.
+feature**, not a refinement — **and it is not built.**
 
 **5. Process configuration, versioned** (decision 0150). Adding and
 removing stages through a screen, with a version number an invoice

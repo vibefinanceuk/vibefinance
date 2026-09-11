@@ -71,6 +71,35 @@ export const CONFIGURATION_TABLES: readonly string[] = [
   // structure.
   "custom_fields",
   "cost_centres",
+  /**
+   * **The supplier mirror** (decisions 0208, 0209). Configuration, and
+   * the argument is the ERP identifier: a production environment
+   * without these cannot name an invoice's supplier to the ERP, so
+   * every invoice arrives unmatched and every one routes for review.
+   *
+   * Loaded from the customer's own master file rather than created
+   * here, which is why it travels with configuration and not with work.
+   */
+  "suppliers",
+
+  /**
+   * **The accounting frame** (decision 0195). Oracle's ledger, SAP's
+   * controlling area: a chart of accounts and a fiscal calendar, to
+   * which legal entities are assigned. Cost centres hang beneath it,
+   * so an environment without it has a tree with no root.
+   */
+  "ledgers",
+
+  /**
+   * **Which rules run for which unit** (decision 0196), and **which
+   * fields a unit may key** (decision 0197).
+   *
+   * Both are overrides on a stage rather than tables of their own
+   * subject — absent, every unit gets the group's answer, which is what
+   * a new environment should have until somebody says otherwise.
+   */
+  "stage_rule_set_overrides",
+  "stage_field_visibility_overrides",
 
   // Where documents arrive, and the settings governing them.
   "sources",
@@ -105,6 +134,26 @@ export const NON_MIGRATING_TABLES: readonly string[] = [
   // (decision 0081).
   "purchase_orders",
   "purchase_order_lines",
+
+  /**
+   * **When the mirror was last told the truth.** A record of something
+   * that happened, like any other event — and a new environment has no
+   * loads because it has had none.
+   */
+  "supplier_loads",
+
+  /**
+   * **Not a table, an intermediate.** Migration 0047 rebuilt
+   * `org_user_roles` to change its primary key, and SQLite cannot alter
+   * one — so the new shape is created under a temporary name, filled,
+   * and renamed.
+   *
+   * It does not exist in any finished schema. Classified only because
+   * decision 0118's check reads `CREATE TABLE` statements rather than
+   * the schema they produce, and an unclassified name is an error
+   * whether or not the table survives.
+   */
+  "org_user_roles_new",
 
   // Work in flight, and the record of work done.
   "process_instances",
