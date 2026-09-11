@@ -110,6 +110,15 @@ const PROXIED_TO_INSTANCE: RegExp[] = [
   /^\/field-visibility$/,
   // The sources configuration screen (decision 0126).
   /^\/sources$/,
+  // Which org a source places its documents in (decision 0204).
+  /^\/sources\/[^/]+\/org$/,
+  /**
+   * Loading the customer's supplier master file (decision 0211).
+   *
+   * **The mirror could not be filled through the app**, only by `curl`
+   * against `vf-app` directly — which is not a feature a customer has.
+   */
+  /^\/suppliers\/load$/,
   // The rules screen (decision 0149).
   /^\/rules$/,
   // The document manager (decision 0164).

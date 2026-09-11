@@ -379,3 +379,39 @@ describe("the proxy carries every path a screen calls (decision 0131)", () => {
     ).toEqual([]);
   });
 });
+
+describe("paths the app is allowed to reach (decision 0212)", () => {
+  /**
+   * **A route the proxy does not know is a route that does not exist**,
+   * however well it works on `vf-app`.
+   *
+   * Two shipped without one: decision 0204's org picker on the sources
+   * screen, and decision 0211's supplier load — which returned
+   * `{"error":"not found"}` to a `curl` that was otherwise correct.
+   *
+   * The allow-list is right to be a list. **The gap is that adding a
+   * route and adding it here are two steps, and nothing ties them
+   * together.**
+   */
+  const reachable = [
+    "/suppliers/load",
+    "/sources/s1/org",
+    "/org/units",
+    "/field-visibility",
+  ];
+
+  for (const path of reachable) {
+    it(`forwards ${path}`, async () => {
+      const res = await SELF.fetch(`https://example.com/api${path}`, { method: "POST" });
+      // **401 is the proxy working**: it recognised the path and asked
+      // for a session. A 404 would mean it did not recognise it at all.
+      expect(res.status).not.toBe(404);
+    });
+  }
+
+  it("still refuses a path nobody listed", async () => {
+    // The list is a boundary, not a formality.
+    const res = await SELF.fetch("https://example.com/api/not-a-real-route", { method: "POST" });
+    expect(res.status).toBe(404);
+  });
+});
