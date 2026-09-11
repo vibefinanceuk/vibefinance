@@ -880,51 +880,52 @@ export async function openViewer(task, onClose) {
   const SELLER_FIELDS = ["BT-27", "BT-31", "BT-34", "BT-40"];
   const BUYER_FIELDS = ["BT-44", "BT-48", "BT-49", "BT-55", "BT-10"];
 
+  const partyPanel = (titleKey, codes) => {
+    const shown = headerFields.filter((f) => codes.includes(f.field));
+    // A panel with nothing in it is worse than no panel: it says
+    // "there should be something here" and there never will be.
+    if (shown.length === 0) return null;
+    return el("div", { class: "panel" }, [
+      el("h3", { text: t(titleKey) }),
+      el("div", { class: "vfields" }, shown.map((spec) => field(spec, existing))),
+    ]);
+  };
+
   /**
-   * **Who we matched this to**, beside the document — decision 0219.
+   * The Seller card — decision 0220.
    *
-   * Not what the invoice says about the seller: that is already in the
-   * fields below. This is **our record of them**, so a person reading
-   * the image can check the address and email we hold are the ones
-   * printed on it.
+   * **One card, not two.** Decision 0219 added a second panel beside
+   * this one, which the operator refused for a plain reason: *"screen
+   * real-estate constraints."* A viewer that shows the document and the
+   * form side by side has no room for a card that repeats what the card
+   * above it says differently.
    *
-   * The check matters more since decision 0218. A supplier with three
-   * sites matches on a pay-site flag rather than on anything visible,
-   * and *"is this the right site"* is exactly what an image can answer
-   * and a VAT number cannot — all three sites share one.
+   * **Matched, it shows our record**; unmatched, what the document
+   * said. Never both — the two answer the same question and showing
+   * both makes a person compare them instead of comparing our record
+   * against the image, which is the comparison that matters.
    */
-  const supplierPanel = () => {
+  const sellerPanel = () => {
     const s = stored.supplier;
 
     if (!s) {
       /**
-       * **An unmatched invoice is the case worth explaining**, not
-       * hiding. A panel that simply disappears says nothing; the reason
-       * says whether somebody should be loading a file or choosing a
-       * site.
+       * **What was extracted**, which is all there is — plus why no
+       * supplier was found, because three causes need three actions.
        */
+      const shown = headerFields.filter((f) => SELLER_FIELDS.includes(f.field));
       const why = stored.facts?.["supplier.unmatchedReason"];
+
       return el("div", { class: "panel" }, [
-        el("h3", { text: t("viewer.supplier") }),
+        el("h3", { text: t("viewer.seller") }),
         el("div", { class: "warn", text: t(`viewer.supplier.${why ?? "none"}`) }),
-      ]);
+        shown.length > 0
+          ? el("div", { class: "vfields" }, shown.map((spec) => field(spec, existing)))
+          : null,
+      ].filter(Boolean));
     }
 
     /** Left: what identifies them. Right: where they are. */
-    const identity = [
-      [t("viewer.supplier.name"), s.name],
-      [t("viewer.supplier.vat"), s.vatId],
-      [t("viewer.supplier.endpoint"), s.electronicAddress],
-      [t("viewer.supplier.email"), s.email],
-    ];
-
-    const where = [
-      [t("viewer.supplier.street"), s.addressLine],
-      [t("viewer.supplier.city"), s.city],
-      [t("viewer.supplier.postcode"), s.postalCode],
-      [t("viewer.supplier.country"), s.country],
-    ];
-
     const column = (pairs) =>
       el(
         "div",
@@ -941,37 +942,37 @@ export async function openViewer(task, onClose) {
       );
 
     return el("div", { class: "panel" }, [
-      el("h3", { text: t("viewer.supplier") }),
+      el("h3", { text: t("viewer.seller") }),
       /**
        * **Which site, and what it is for.** The reason this invoice
-       * reached this record rather than one of its siblings.
+       * reached this record rather than one of its siblings — and since
+       * decision 0218 that reason is a pay-site flag, which is nowhere
+       * on the document.
        */
       el("div", {
         class: "sub",
-        text: [
-          s.erpIdentifier,
-          s.erpSiteIdentifier,
-          s.isPaySite ? t("suppliers.pay") : null,
-        ]
+        text: [s.erpIdentifier, s.erpSiteIdentifier, s.isPaySite ? t("suppliers.pay") : null]
           .filter(Boolean)
           .join(" · "),
       }),
       s.onHold
         ? el("div", { class: "warn", text: `${t("viewer.supplier.onhold")} ${s.holdReason ?? ""}` })
         : null,
-      el("div", { class: "columns" }, [column(identity), column(where)]),
+      el("div", { class: "columns" }, [
+        column([
+          [t("viewer.supplier.name"), s.name],
+          [t("viewer.supplier.vat"), s.vatId],
+          [t("viewer.supplier.endpoint"), s.electronicAddress],
+          [t("viewer.supplier.email"), s.email],
+        ]),
+        column([
+          [t("viewer.supplier.street"), s.addressLine],
+          [t("viewer.supplier.city"), s.city],
+          [t("viewer.supplier.postcode"), s.postalCode],
+          [t("viewer.supplier.country"), s.country],
+        ]),
+      ]),
     ].filter(Boolean));
-  };
-
-  const partyPanel = (titleKey, codes) => {
-    const shown = headerFields.filter((f) => codes.includes(f.field));
-    // A panel with nothing in it is worse than no panel: it says
-    // "there should be something here" and there never will be.
-    if (shown.length === 0) return null;
-    return el("div", { class: "panel" }, [
-      el("h3", { text: t(titleKey) }),
-      el("div", { class: "vfields" }, shown.map((spec) => field(spec, existing))),
-    ]);
   };
 
   /**
@@ -1043,10 +1044,7 @@ export async function openViewer(task, onClose) {
           el("div", {}, [
             // Seller and buyer side by side, in the space the four
             // status panels were using (decision 0115).
-            // Our record of the supplier first, because it is what the
-            // image is being checked against (decision 0219).
-            supplierPanel(),
-            el("div", { class: "parties" }, [partyPanel("viewer.seller", SELLER_FIELDS), partyPanel("viewer.buyer", BUYER_FIELDS)].filter(Boolean)),
+            el("div", { class: "parties" }, [sellerPanel(), partyPanel("viewer.buyer", BUYER_FIELDS)].filter(Boolean)),
             el("div", { class: "panel" }, [
               el("h3", { text: t("viewer.fields") }),
               // **Party fields removed**, or they would appear twice —

@@ -71,6 +71,19 @@ const STRINGS = {
   strings: {
     "check.vat_arithmetic": "Net plus VAT does not equal the total",
     "viewer.exceptions": "Exceptions",
+    "viewer.seller": "Seller",
+    "viewer.buyer": "Buyer",
+    "viewer.supplier.name": "Name",
+    "viewer.supplier.vat": "VAT number",
+    "viewer.supplier.endpoint": "Electronic address",
+    "viewer.supplier.email": "Email",
+    "viewer.supplier.street": "Address",
+    "viewer.supplier.city": "City",
+    "viewer.supplier.postcode": "Postcode",
+    "viewer.supplier.country": "Country",
+    "viewer.supplier.none": "This invoice has not been matched to a supplier.",
+    "viewer.supplier.no_match": "No supplier on file matches this seller.",
+    "suppliers.pay": "Payment",
     "viewer.noexceptions": "Nothing to resolve.",
     "field.bt-106": "Net before VAT",
     "field.bt-110": "VAT amount",
@@ -1096,5 +1109,113 @@ describe("the screen asks for the document's unit (decision 0198)", () => {
 
     const fieldsCall = asked.find((u) => u.startsWith("/api/field-visibility"));
     expect(fieldsCall).toContain("unit=ap-fr");
+  });
+});
+
+describe("one Seller card, not two (decision 0220)", () => {
+  /**
+   * **Screen real estate**, in the operator's own words. A viewer
+   * showing the document and the form side by side has no room for a
+   * card that repeats what the card above it says differently.
+   *
+   * Decision 0219 added a second panel; this folds it into the first.
+   */
+  it("shows our record inside the Seller card when matched", async () => {
+    const asked: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        asked.push(String(url));
+        const path = String(url).split("?")[0];
+        const bodies: Record<string, unknown> = {
+          "/api/ui-strings": STRINGS,
+          "/api/code-lists": { fields: {} },
+          "/api/field-visibility": FIELDS,
+          "/api/invoices/inv-1": {
+            facts: {},
+            lines: [],
+            supplier: {
+              erpIdentifier: "40121",
+              erpSiteIdentifier: "PAY-UK",
+              isPaySite: true,
+              name: "Acme Payments",
+              vatId: "GB112233445",
+              email: "payments@acme.example",
+              addressLine: "PO Box 44",
+              city: "London",
+              postalCode: "EC2V 7HH",
+              country: "GB",
+            },
+            validation: { passed: true, checked: [], failures: [] },
+          },
+          "/api/invoices/inv-1/document-url": { url: null },
+          "/api/invoices/inv-1/progress": { inProcess: false, stages: [] },
+        };
+        if (!(path in bodies)) throw new Error(`no stub for ${path}`);
+        return { ok: true, json: async () => bodies[path] } as Response;
+      })
+    );
+
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    await openViewer(TASK, () => {});
+    await new Promise((r) => setTimeout(r, 0));
+
+    const text = document.body.textContent ?? "";
+
+    // Our record, with the address a person checks against the image.
+    expect(text).toContain("Acme Payments");
+    expect(text).toContain("payments@acme.example");
+    expect(text).toContain("PO Box 44");
+
+    // **And the site, which is why this record and not a sibling** —
+    // decision 0218 matches on a pay-site flag that is nowhere on the
+    // document.
+    expect(text).toContain("PAY-UK");
+
+    // **One card.** The second heading is gone.
+    const headings = [...document.querySelectorAll("h3")].map((h) => h.textContent);
+    expect(headings.filter((h) => h === "Seller")).toHaveLength(1);
+    expect(headings).not.toContain("Supplier on file");
+  });
+
+  it("falls back to what the document said when unmatched", async () => {
+    /**
+     * **What was extracted is all there is**, plus why no supplier was
+     * found — and the card stays in the same place, so a person is not
+     * hunting for a panel that appears and disappears.
+     */
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        const path = String(url).split("?")[0];
+        const bodies: Record<string, unknown> = {
+          "/api/ui-strings": STRINGS,
+          "/api/code-lists": { fields: {} },
+          "/api/field-visibility": FIELDS,
+          "/api/invoices/inv-1": {
+            facts: { "supplier.unmatchedReason": "no_match" },
+            lines: [],
+            supplier: null,
+            validation: { passed: true, checked: [], failures: [] },
+          },
+          "/api/invoices/inv-1/document-url": { url: null },
+          "/api/invoices/inv-1/progress": { inProcess: false, stages: [] },
+        };
+        if (!(path in bodies)) throw new Error(`no stub for ${path}`);
+        return { ok: true, json: async () => bodies[path] } as Response;
+      })
+    );
+
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    await openViewer(TASK, () => {});
+    await new Promise((r) => setTimeout(r, 0));
+
+    const headings = [...document.querySelectorAll("h3")].map((h) => h.textContent);
+    expect(headings.filter((h) => h === "Seller")).toHaveLength(1);
+    expect(document.body.textContent).toContain("No supplier on file matches");
   });
 });
