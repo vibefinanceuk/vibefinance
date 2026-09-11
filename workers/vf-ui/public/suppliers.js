@@ -1,4 +1,5 @@
-import { el, note, setCurrentScreen, t } from "/strings.js";
+import { t } from "/strings.js";
+import { el, frame, topbar, setCurrentScreen } from "/tasks.js";
 
 /**
  * The supplier list, and loading one — decision 0213.
@@ -164,9 +165,11 @@ function loader() {
         return;
       }
 
-      result.replaceChildren(outcome(body));
       await load();
-      render(result);
+      render();
+      // After the rebuild, so the outcome is not cleared by it.
+      const panel = document.getElementById("suppliers-note");
+      if (panel) panel.replaceChildren(outcome(body));
     } catch {
       result.replaceChildren(
         el("div", { class: "panel" }, [el("div", { class: "warn", text: t("suppliers.loadfailed") })])
@@ -227,23 +230,47 @@ function supplierRows() {
   ]);
 }
 
-function render() {
-  const main = document.getElementById("main");
-  if (!main) return;
+/**
+ * A refusal about the last action, where the person can see it.
+ *
+ * Local, like every other screen's: a note belongs to the screen that
+ * raised it, and a shared one would outlive the thing it was about.
+ */
+function note(message) {
+  const box = document.getElementById("suppliers-note");
+  if (box) box.textContent = message;
+}
 
-  main.replaceChildren(
-    el("div", { class: "topbar" }, [
-      el("h2", { text: t("suppliers.heading") }),
-      /**
-       * **Said on the screen, not only in a record.** A person who does
-       * not know this is a mirror will look for an *Add supplier*
-       * button and conclude the product is missing one.
-       */
-      el("div", { class: "sub", text: t("suppliers.mirror") }),
-    ]),
-    freshness(),
-    loader(),
-    el("div", { class: "panel" }, [supplierRows()])
+function render() {
+  const shell = document.getElementById("shell");
+  if (!shell) return;
+
+  /**
+   * **Through `frame` and `topbar`, like every other screen.**
+   *
+   * Writing to `#main` directly is what the first version did, and the
+   * menu item then went nowhere: `#main` does not exist, and the module
+   * threw on an import that was wrong as well — `el` and
+   * `setCurrentScreen` live in `tasks.js`, not `strings.js`.
+   *
+   * **Decision 0191's finding, again**: a screen that does not follow
+   * the shell's own pattern is a screen the navigation cannot reach.
+   */
+  shell.replaceChildren(
+    frame(
+      el("div", {}, [
+        /**
+         * **Said on the screen, not only in a record.** A person who
+         * does not know this is a mirror will look for an *Add
+         * supplier* button and conclude the product is missing one.
+         */
+        topbar(t("suppliers.heading"), t("suppliers.mirror")),
+        el("div", { id: "suppliers-note", class: "warn" }),
+        freshness(),
+        loader(),
+        el("div", { class: "panel" }, [supplierRows()]),
+      ])
+    )
   );
 }
 
