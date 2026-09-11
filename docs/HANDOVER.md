@@ -29,16 +29,16 @@ twice.
 
 | | |
 | --- | --- |
-| `origin/main` | `a019e01` |
-| vf-admin deployed | `a019e01` · `https://admin.vibefinance-ai.com` · behind Access |
-| vf-app deployed | `a019e01` |
-| vf-licence deployed | `a019e01` |
-| vf-ui deployed | `a019e01` · `https://app.vibefinance-ai.com` |
+| `origin/main` | `8e27a34` |
+| vf-admin deployed | `8e27a34` · `https://admin.vibefinance-ai.com` · behind Access |
+| vf-app deployed | `8e27a34` |
+| vf-licence deployed | `8e27a34` |
+| vf-ui deployed | `8e27a34` · `https://app.vibefinance-ai.com` |
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
-| `vf-app-poc` migrations | through `0054` |
-| `vf-licence-poc` migrations | through `0061` |
-| Tests | vf-admin 9 · vf-app 1371 · vf-licence 318 · vf-ui 49 Worker + 235 browser · shared 267 (+2 known pre-existing failures) |
-| Decision records | 229 |
+| `vf-app-poc` migrations | through `0055` |
+| `vf-licence-poc` migrations | through `0067` |
+| Tests | vf-admin 9 · vf-app 1384 · vf-licence 319 · vf-ui 49 Worker + 237 browser · shared 267 (+2 known pre-existing failures) |
+| Decision records | 237 |
 
 **Everything committed is deployed.**
 
@@ -86,6 +86,20 @@ and no process consults them.
 
 **Both party cards show our own record beside the image** (decisions
 0219–0229), with a search on each for choosing by hand.
+
+**And a supplier can be recorded before the ERP has one** (decision
+0231). `erp_identifier` is nullable, `supplier.awaitingErp` is a fact a
+rule can test, and **the next load adopts that row** and fills the
+identifier in — which is decision 0233, and the whole sequence the
+operator described. **Nothing triggers the process**: the rule that
+routes an awaiting supplier to a setup team is a sentence a customer
+writes, with their team and their stage.
+
+**The Suppliers screen is complete as a piece** (decisions 0230, 0234,
+0236, 0237): load a file or record one, click a row to hold, release,
+activate, deactivate or edit — with a warning on save that the ERP is
+the master and the next load overwrites this. **`supplier.onHold` is
+testable and no rule reads it**, which is the same shape.
 
 **A UBL invoice is rendered as a document** (decisions 0205, 0206), at
 capture and stored beside the original — A4 portrait, using OpenPEPPOL's
@@ -404,13 +418,13 @@ across multiple departments, cost centers and GL codes."*
 it, and without a PO the Coding stage does — and that stage does not
 exist.
 
-**5. The supplier fields nothing reads.** The mirror loads terms, hold,
-match option and tolerances, and **no process consults any of them**
+**5. The supplier fields nothing reads.** Terms, match option and
+tolerances load and display, and **no process consults any of them**
 (decisions 0211, 0218, 0219).
 
-**The hold is the one to wire first**: a card saying *"this supplier is
-on hold: under dispute"* while the invoice sails through to approval is
-a system that knows something and does not act on it.
+**The hold is done** — decision 0230 made it a fact a rule can test.
+**These three are the same job**, and each is a line in
+`source-capture-route.ts` plus a vocabulary entry.
 
 **6. Process configuration, versioned** (decision 0150). Adding and
 removing stages through a screen, with a version number an invoice
@@ -482,20 +496,30 @@ for placing an invoice** by hand, and **four more languages** —
 
 ---
 
-### A check worth having
+### Two habits this week earned
+
+**A failed remote apply is not a no-op** (decision 0235). `wrangler`'s
+file import does not roll back across a whole migration, so a failure
+halfway leaves the database part-changed — **check the schema, not the
+bookkeeping table**, before retrying.
+
+**And replay runs against empty data.** A migration that cannot survive
+a database with rows in it will pass every check here. The honest fix is
+a fixture and it is not built.
+
+### The citation check runs with the tests
 
 **Nineteen comments cited two records nobody had written** — decisions
-0188 and 0224, found by a script comparing citations against
-`docs/decisions/`, not by anyone reading the code.
+0188 and 0224, found by comparing citations against `docs/decisions/`
+and not by anyone reading the code.
 
-```
-grep -rho "decisions\? 0[0-9]\{3\}" --include="*.ts" --include="*.js" \
-  --include="*.sql" --include="*.md" . | grep -o "0[0-9]\{3\}" | sort -u
-```
+`npm test` now runs `scripts/check-citations.py` first. It names the
+record and where it is cited, and **it was watched to fail** by deleting
+decision 0224 and seeing it report eight references.
 
-against `ls docs/decisions/`. **A one-liner, and it should run with the
-tests** — the convention is that a citation can be followed, and twice
-it could not.
+**The convention is that a citation can be followed.** Twice it could
+not, and neither was noticed while writing three of the records in
+between.
 
 ## Habits worth keeping
 

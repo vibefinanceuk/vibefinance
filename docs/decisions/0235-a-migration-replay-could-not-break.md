@@ -55,6 +55,25 @@ trusted.
 
 ---
 
+## And a remote apply does not roll back
+
+**The failed attempt left `suppliers_new` behind**, which the operator
+had to drop by hand before retrying.
+
+So `wrangler`'s file import is **not transactional across the whole
+file**: a migration that fails halfway leaves the database part-changed.
+
+**Which makes the script's own message do real work** rather than being
+cautious:
+
+> chain now needs manual inspection before continuing
+
+**It means what it says.** A failed remote apply is not a no-op, and the
+next thing to check is what the database actually looks like — not what
+the bookkeeping table claims.
+
+---
+
 ## What is not fixed
 
 **Replay still runs against empty data.** This migration is now proven
