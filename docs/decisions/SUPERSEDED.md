@@ -56,6 +56,12 @@ against the current system either.
 | **0120** — keyed facts merge rather than replace | 0174 | True of **header** facts and never applied to lines. `handleUpsertInvoice` replaced each line wholesale, so decision 0171 making one field read-only turned a latent bug into real data loss. |
 | **0144** — an invoice outside a process | 0164 | The record named it: *"editable by anybody with `AP.Validate`."* Nothing could reach one until the document manager made every invoice openable. It is read-only now. |
 | **0164** — the editability check runs on every save | 0173 | Widening the check widened what it **refused**: the viewer supplies `BT-126` itself, which is `read`, so every line edit at Validation was rejected for a field nobody touched. |
+| **0010** — the org endpoints are ungated | 0201 | The bootstrap exception was permanent and its reason was not: *"nobody could be authenticated to create the first account"* holds while there is nobody, and stops the moment one person exists. **Anybody who could reach the instance could grant themselves any role.** Now ungated only while `org_users` is empty. |
+| **0018** — a generated rendering | 0205 | Created the document type and said why — *"a plain XML invoice has nothing a person can look at"* — and nothing produced one for three months. |
+| **0036** — the buyer's identifiers | 0204 | Added `buyer_endpoint`, `vat_id` and `buyer_reference` as *"the identifiers an arriving invoice can be matched against"*, and **nothing read them** until automatic org placement. |
+| **0192** — how permissions are scoped | 0194, 0199 | That record left it open and proposed permission pairs. Oracle scopes the **role**; the operator's phrasing put it on the **assignment**, which is better still — one *AP Manager* definition held per org. |
+| **0199** — a boundary in one place | 0202, 0203 | Recorded its own gap plainly: *"a person is correctly denied acting and still shown the work."* The task list, then claiming and completing. |
+| **0197** — the screen behind the route | 0198 | Field visibility was enforced per unit and reported without one, so a French keyer saw an editable field and got a 403 on save. **Decision 0144 inverted.** |
 | **0126** — an address invoices arrive at | 0141 | `INGESTION_DOMAIN` was hardcoded to a domain **nobody owns**. It is configuration now, and an unset one refuses to issue an address. |
 | **0130** — retiring a source | 0133 | Deletion was refused outright once an address existed. It now **asks**, because an address reserved and never shared is a mistake to correct. |
 | **0135** — the Cloudflare half | 0136 | *"Generated config or one per customer"* was answered by **neither**: the config is data the control plane already held. |
@@ -78,6 +84,11 @@ against the current system either.
 | **0033** | Is a refusal an error? | **0153** — no. It is warning-coloured, says what cannot be expressed, and says nothing was saved. |
 | **0055** | What happens to a document nothing can read? | **0161, 0163** — an invoice with no facts, waiting for a person, **and the screen says so**. A timeout takes the same path, because a model that never answered is not a model that read badly. |
 | **0042** | Can a Worker read a scanned PDF? | Still no. **0161** made the consequence visible rather than silent. |
+| **0031** | Where does a cost centre belong? | **0194, 0195** — to a **ledger** (Oracle) or **controlling area** (SAP), not to a legal entity. That record kept `BT-133` apart from `org_units` as *"a financial construct, not an organizational one"* and could not name what it belonged to instead. |
+| **0001** | Why a database per customer? | Isolation between customers and data residency — **SAP's Client, arrived at independently** (0194). Not a mechanism for splitting one customer up, which is what 0192 first assumed. |
+| **0036** | Legal entity and operating unit | **0194** — Oracle's own model, and Oracle EBS's older name for a business unit is literally *Operating Unit*. Reached without knowing it. |
+| **0184** | Where does the cost object tree live? | **0195** — under the accounting frame, which is why a chain can cross a company boundary without crossing a chart of accounts. |
+| **0205** | Can we run OpenPEPPOL's stylesheet? | **No.** It is XSLT 2.0, browsers implement 1.0, and SaxonJS fails on import inside `workerd`. Their design and code lists; our traversal. |
 | **0074** | Should `require_second_approval` exist? | Removed, not built. Parallel approval is a workflow question. |
 | **0075** | What does sending back mean? | Returning, plus discarding (**0078**). |
 | **0094** | Who is the first user? | **0117** — the requester, who becomes the customer's administrator. The record that sat in the handover's *resolved* list as settled for days after this corrected it. |

@@ -1,6 +1,6 @@
 # Handover
 
-**Written 4 September 2026, updated 9 September.**
+**Written 4 September 2026, updated 10 September.**
 
 **For a session starting cold.** Where things stand, what needs a
 decision rather than work, what to do next, and the habits this project
@@ -29,16 +29,16 @@ twice.
 
 | | |
 | --- | --- |
-| `origin/main` | `061eae6` |
-| vf-admin deployed | `e88b8d3` · `https://admin.vibefinance-ai.com` · behind Access |
-| vf-app deployed | `061eae6` |
-| vf-licence deployed | `061eae6` |
-| vf-ui deployed | `061eae6` · `https://app.vibefinance-ai.com` |
+| `origin/main` | `e3b8798` |
+| vf-admin deployed | `e3b8798` · `https://admin.vibefinance-ai.com` · behind Access |
+| vf-app deployed | `e3b8798` |
+| vf-licence deployed | `e3b8798` |
+| vf-ui deployed | `e3b8798` · `https://app.vibefinance-ai.com` |
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
 | `vf-app-poc` migrations | through `0048` |
-| `vf-licence-poc` migrations | through `0048` |
-| Tests | vf-app 1173 · vf-licence 318 · vf-ui 44 Worker + 203 browser · shared 267 (+2 known pre-existing failures) |
-| Decision records | 182 |
+| `vf-licence-poc` migrations | through `0052` |
+| Tests | vf-admin 9 · vf-app 1300 · vf-licence 318 · vf-ui 44 Worker + 219 browser · shared 267 (+2 known pre-existing failures) |
+| Decision records | 206 |
 
 **Everything committed is deployed.**
 
@@ -69,6 +69,12 @@ or a new language is rows rather than a deployment.
 
 **Five screens**: Tasks, Sources, Rules, Documents, and the viewer that
 serves every stage.
+
+**A UBL invoice is rendered as a document** (decisions 0205, 0206), at
+capture and stored beside the original — A4 portrait, using OpenPEPPOL's
+own CSS, code lists and labels, with a notice saying it is a rendering
+and what of. **We could not run their stylesheet**: it is XSLT 2.0,
+browsers do 1.0, and SaxonJS fails on import inside `workerd`.
 
 **Proven on real documents**, not only in tests: a photographed invoice
 has been read automatically and reached Payment-eligible with nobody
@@ -292,7 +298,17 @@ that matter most.
 
 **And the screen agrees with the route** (decision 0198) — which meant
 loading the invoice before the fields, because its unit now decides
-which are editable. And
+which are editable.
+
+**An invoice can place itself** (decision 0204). A source chooses a
+fixed org or `<Automatic>`, and `<Automatic>` reads the buyer's
+identifiers off the document — decision 0036 added those columns in
+September and nothing had ever read them.
+
+**A match names a legal entity and an invoice needs an operating unit**,
+so one department beneath it is unambiguous, several means *"the entity,
+and no particular one"*, and none needs a department created. All three
+are recorded in `org.unplaced`, **which no screen reads.** And
 it is not a boundary — everybody sees every invoice.
 
 *The original design note:* Unit-scoped configuration (decision 0192) — **designed, not
@@ -341,7 +357,25 @@ entities, a **department** separate from a business unit, and a shared
 service centre serving several entities, which decision 0036's
 invariant forbids.
 
-**3. Process configuration, versioned** (decision 0150). Adding and
+**3. Measured pagination and annotation** (decision 0206) — **one piece
+of work, by the operator's own choice.**
+
+Both need to know where things are inside a rendered document, and both
+need **same-origin delivery**: the document URL is minted on `vf-app`'s
+origin and the viewer runs on `app.vibefinance-ai.com`, so the iframe is
+cross-origin and the parent can read nothing.
+
+**A same-origin iframe, not a shadow root** — that correction is in 0206
+and the reason matters: shadow DOM isolates CSS and **not JavaScript**,
+and this document is built as a string with an `esc()` on every
+supplier-controlled value.
+
+**And annotation here beats annotation on a photograph**, because a
+field can carry its Business Term — an annotation anchored to `BT-48`
+survives re-rendering, zoom and translation, where a coordinate on an
+image does not.
+
+**4. Process configuration, versioned** (decision 0150). Adding and
 removing stages through a screen, with a version number an invoice
 carries — so it is always apparent which shape of the process an item
 ran under.
@@ -361,7 +395,7 @@ frozen because changing it mid-flight is incoherent, and the rules are
 current because a threshold tightened this morning should apply to
 invoices reaching Approval this afternoon.
 
-**4. Email sending**, which decision 0125 evaluates. "Email" means three
+**5. Email sending**, which decision 0125 evaluates. "Email" means three
 different things — supplier contacts *out to strangers*, user
 notifications *out to colleagues*, and a source which is *inbound* and
 not sending at all.
@@ -379,27 +413,33 @@ Still open: **which provider**, **where sending lives** (0091 says the
 control plane never holds customer content), **whether templates sit in
 D1** like `ui_strings`, and **what happens when sending fails**.
 
-**5. BG-4 and BG-7 in the vocabulary.** The seller and buyer field lists
+**6. BG-4 and BG-7 in the vocabulary.** The seller and buyer field lists
 live in the viewer (0115). Recording business-group membership in
 `shared`, as `INVOICE_LINE_FIELDS` does for BG-25, is the consistent
 thing and a known shortcut until it is done.
 
-**6. BG-23, the VAT breakdown.** Mandatory and **repeating** — one entry
+**7. BG-23, the VAT breakdown.** Mandatory and **repeating** — one entry
 per VAT category and rate, whose tax amounts must sum to BT-110. The
 flat facts model cannot hold a repeating group (0112). A design
 question, not an omission, and *"one of the most common causes of
 validation errors"*.
 
-**7. Despatch Advice (T16).** The goods receipt, and the missing third
+**8. Despatch Advice (T16).** The goods receipt, and the missing third
 leg of three-way matching — **before the matcher, not after** (0082).
 BT-132 now exists, which is what lets matching compare a line to an
 order line.
 
-**8. Reading `cbc:CustomizationID`.** BT-24 is now read into the facts
+**9. Acting on `cbc:CustomizationID` beyond rendering.** Decision 0205
+reads it to decide whether a document is Peppol BIS 3.0 and refuses the
+rendering otherwise — which is the first thing to use it. **Nothing
+routes or validates on it**, so a document from another profile is
+processed as though it were this one.
+
+*The original note:* Reading `cbc:CustomizationID`. BT-24 is now read into the facts
 (0112), so the discriminator is available; detection still does not use
 it, and a valid Peppol Order sent to `/sources/:id/capture` is refused.
 
-**9. `party.first_document`**, the **all-users task view**, a **screen
+**10. `party.first_document`**, the **all-users task view**, a **screen
 for placing an invoice** by hand, and **four more languages** —
 `GET /ui-strings/keys` shows the gaps.
 

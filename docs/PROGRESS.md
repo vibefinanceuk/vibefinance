@@ -40,6 +40,17 @@ a supplier sends to an address a source owns, every attachment is
 captured, and every arrival is logged with its outcome and reason
 (0146, 0147, 0162).
 
+**And it places itself.** A source chooses a fixed business unit or
+`<Automatic>`, and `<Automatic>` reads the buyer's own identifiers off
+the document — the electronic address Peppol routes on, then the VAT
+id, then the buyer's routing reference (0204). Where it cannot, it
+records **which** of three reasons applied rather than leaving a blank.
+
+**A UBL invoice is rendered as a document** (0205, 0206): A4 portrait,
+at capture, stored beside the original, using OpenPEPPOL's own CSS,
+code lists and labels — with a notice saying it is a rendering and of
+what, which survives printing.
+
 A hybrid PDF is never sent to a model. That is the point of checking
 for embedded XML first, and a PDF submitted to the image endpoint is
 refused outright rather than silently degraded.
@@ -144,6 +155,19 @@ and **real invoices arrive by email**. Creating rules through the API,
 per source rather than per customer, is still not built — so a second
 source means a second visit to the dashboard.
 
+**The whole organisational model is scoped** (0192 onwards). Legal
+entities and operating units were already Oracle's and SAP's own shape
+(0194); what has been added is a **ledger** — their accounting frame —
+with cost centres beneath it carrying an owner and a limit (0195), rule
+sets and field visibility per unit (0196, 0197), and roles held **in an
+org** rather than everywhere (0199), with delegated administration
+bounded above as well as below (0201).
+
+**Still not a full boundary**: twelve of fourteen permission checks ask
+*"at all"* rather than *"where"*. Claiming, completing, the task list
+and the document list are scoped; keying, approving and returning are
+not.
+
 **The operator interface's screen** (0140). The attribution half is
 built — every privileged action recorded, refusals included. The screen
 is unblocked and unwritten.
@@ -158,6 +182,16 @@ the record says so.
 vocabulary and nothing fills them, so the derived VAT and total columns
 an operator asked for would be empty on every row (0171). Several other
 line columns are blank on every real document for the same reason.
+
+**Measured pagination and annotation** (0206). Both need to know where
+things are inside a rendered document, and both need same-origin
+delivery first — the operator chose to do them together rather than
+build pagination with a mechanism annotation would replace.
+
+**A screen for unplaced documents.** `org.unplaced` records *why* an
+invoice could not be placed and nothing reads it (0204) — so a queue
+could build up invisibly. **Decision 0162's own shape, for the fourth
+time.**
 
 **Downscaling a large image.** A 936KB photograph exceeds what the
 model can do in the time available (0163). It is kept and explained
