@@ -28,7 +28,7 @@ import { handleListMyTasks } from "./task-list-route.js";
  */
 const IN_FLIGHT = "'in_progress'";
 
-/** The closed set. Migration 0056 names the same list, and a test agrees them. */
+/** The closed set. Migration 0057 names the same list, and a test agrees them. */
 export const CARD_TYPES = [
   "waiting_for_me",
   "on_my_clock",
@@ -37,7 +37,9 @@ export const CARD_TYPES = [
   "done",
   "ageing",
   "exceptions_by_supplier",
-  "needs_somebody",
+  "unplaced_documents",
+  "suppliers_awaiting_erp",
+  "possible_duplicates",
   "received",
 ] as const;
 
@@ -56,7 +58,9 @@ export const DEFAULT_CARDS: { cardType: CardType; settings: Record<string, unkno
   { cardType: "where_things_are", settings: {} },
   { cardType: "ageing", settings: {} },
   { cardType: "done", settings: {} },
-  { cardType: "needs_somebody", settings: {} },
+  { cardType: "unplaced_documents", settings: {} },
+  { cardType: "suppliers_awaiting_erp", settings: {} },
+  { cardType: "possible_duplicates", settings: {} },
 ];
 
 /**
@@ -453,16 +457,26 @@ async function exceptionsBySupplier(db: D1Database, scope: Scope) {
 }
 
 /**
- * **Things nothing else surfaces** — decision 0239.
+ * **Things nothing else surfaces** — decision 0239, split into three
+ * cards at decision 0259's asking.
  *
- * Each of these is a fact this system records and no screen reads: an
- * unplaced document (decision 0204), a supplier awaiting the ERP
- * (decision 0231), and a duplicate suspicion (decision 0028).
+ * Each of these is a fact this system records and, until now, no
+ * screen read: an unplaced document (decision 0204), a supplier
+ * awaiting the ERP (decision 0231), and a duplicate suspicion
+ * (decision 0028). One combined card said all three; the operator
+ * asked for one each, with something to click through to — which a
+ * combined count could never honestly offer, since a click needs to
+ * land on one kind of thing, not three.
  */
-async function needsSomebody(db: D1Database, scope: Scope) {
-  const clause = unitClause(scope, "h.org_unit_id");
-
-  const unplaced = await db
+async function unplacedDocuments(db: D1Database) {
+  /**
+   * **No scope clause, deliberately** — decision 0255 made
+   * `unitClause` treat a null unit as visible to everyone, because a
+   * document belonging to nowhere is not a secret from anyone. Adding
+   * the clause here would be a no-op given that fix, so it is left off
+   * rather than written and not exercised.
+   */
+  const row = await db
     .prepare(
       `SELECT count(*) AS n FROM invoice_headers h
        WHERE h.org_unit_id IS NULL
@@ -470,13 +484,23 @@ async function needsSomebody(db: D1Database, scope: Scope) {
     )
     .first<{ n: number }>();
 
-  const awaiting = await db
+  return { count: row?.n ?? 0 };
+}
+
+async function suppliersAwaitingErp(db: D1Database) {
+  const row = await db
     .prepare(
       "SELECT count(*) AS n FROM suppliers WHERE status = 'active' AND erp_identifier IS NULL"
     )
     .first<{ n: number }>();
 
-  const duplicates = await db
+  return { count: row?.n ?? 0 };
+}
+
+async function possibleDuplicates(db: D1Database, scope: Scope) {
+  const clause = unitClause(scope, "h.org_unit_id");
+
+  const row = await db
     .prepare(
       `SELECT count(*) AS n FROM invoice_headers h
        WHERE CAST(json_extract(h.facts_json, '$."invoice.duplicate_confidence"') AS REAL) >= 0.5
@@ -485,11 +509,7 @@ async function needsSomebody(db: D1Database, scope: Scope) {
     .bind(...clause.binds)
     .first<{ n: number }>();
 
-  return {
-    unplaced: unplaced?.n ?? 0,
-    awaitingErp: awaiting?.n ?? 0,
-    duplicates: duplicates?.n ?? 0,
-  };
+  return { count: row?.n ?? 0 };
 }
 
 /**
@@ -573,8 +593,12 @@ async function runCard(
       return received(db, scope);
     case "exceptions_by_supplier":
       return exceptionsBySupplier(db, scope);
-    case "needs_somebody":
-      return needsSomebody(db, scope);
+    case "unplaced_documents":
+      return unplacedDocuments(db);
+    case "suppliers_awaiting_erp":
+      return suppliersAwaitingErp(db);
+    case "possible_duplicates":
+      return possibleDuplicates(db, scope);
   }
 }
 
@@ -613,7 +637,9 @@ export const CARD_CATALOGUE: {
   { cardType: "done" },
   { cardType: "received" },
   { cardType: "exceptions_by_supplier" },
-  { cardType: "needs_somebody" },
+  { cardType: "unplaced_documents" },
+  { cardType: "suppliers_awaiting_erp" },
+  { cardType: "possible_duplicates" },
 ];
 
 /**

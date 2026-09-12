@@ -9,7 +9,7 @@ import {
   CARD_TYPES,
   DEFAULT_CARDS,
 } from "../src/dashboard-route.js";
-import migrationSql from "../../../migrations/0056_dashboard_cards.sql?raw";
+import migrationSql from "../../../migrations/0057_split_needs_somebody.sql?raw";
 import { handleListMyTasks } from "../src/task-list-route.js";
 
 /**
@@ -123,13 +123,18 @@ describe("the closed set, in two places", () => {
      * twice in an hour, and decision 0236 found a key that existed in
      * neither place because the check and the value were removed
      * together.
+     *
+     * **Reads migration 0057, not 0056** — decision 0259 rebuilt the
+     * table under a new CHECK constraint, and a test comparing against
+     * the superseded file would still pass while checking the wrong
+     * list, which decision 0254 already showed is worse than failing.
      */
     const inSql = [...migrationSql.matchAll(/'([a-z_]+)'(?=[,\s)])/g)]
       .map((m) => m[1])
       .filter((v) => (CARD_TYPES as readonly string[]).includes(v) || v.includes("_"));
 
     for (const type of CARD_TYPES) {
-      expect(inSql, `${type} is not in migration 0056`).toContain(type);
+      expect(inSql, `${type} is not in migration 0057`).toContain(type);
     }
   });
 

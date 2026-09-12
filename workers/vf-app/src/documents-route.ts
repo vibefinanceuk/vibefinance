@@ -73,6 +73,14 @@ export async function handleListDocuments(
   const limit = Math.min(Math.max(Number(params.get("limit") ?? "50") || 50, 1), 200);
 
   /**
+   * **Two new filters, decision 0259** — for the dashboard's
+   * *Unplaced Documents* and *Possible Duplicates* cards, each of
+   * which now needs somewhere real to send a click.
+   */
+  const unplacedOnly = params.get("unplaced") === "1";
+  const duplicatesOnly = params.get("duplicates") === "1";
+
+  /**
    * The sender and recipient come from the email that brought it —
    * decision 0147's log — because that is what a person searches by
    * when the supplier name was never extracted.
@@ -100,17 +108,53 @@ export async function handleListDocuments(
                     WHERE e2.outcome = 'captured' AND e2.occurred_at <= h.created_at
                     ORDER BY e2.occurred_at DESC LIMIT 1)
        WHERE (?1 IS NULL OR h.org_unit_id = ?1)
-         AND (?3 = 0 OR h.org_unit_id IN (SELECT value FROM json_each(?4)))
+         AND (
+           ?5 = 1
+           OR (?3 = 0 OR h.org_unit_id IN (SELECT value FROM json_each(?4)))
+         )
+         AND (?5 = 0 OR (h.org_unit_id IS NULL AND json_extract(h.facts_json, '$."org.unplaced"') IS NOT NULL))
+         AND (?6 = 0 OR CAST(json_extract(h.facts_json, '$."invoice.duplicate_confidence"') AS REAL) >= 0.5)
        ORDER BY h.created_at DESC, h.rowid DESC
        LIMIT ?2`
     )
     /**
-     * **A document with no unit is nobody's**, and a person restricted
-     * to France should not see it — it might be Germany's and
-     * unassigned. A customer not using units passes `null` and this
-     * clause is inert.
+     * **A document with no unit is nobody's, unless somebody asked for
+     * exactly that** — decision 0199, carved out by decision 0259.
+     *
+     * 0199's policy is right for ordinary browsing: a person restricted
+     * to France should not see an unassigned document that might turn
+     * out to be Germany's. But *"unplaced"* is not ordinary browsing —
+     * it is the alert this same policy would otherwise hide from
+     * everyone who could act on it, which is decision 0255's argument
+     * in `dashboard-route.ts`'s `unplacedDocuments()`: an unplaced
+     * document is not a secret from anyone, because somebody has to
+     * notice it before it can be placed at all.
+     *
+     * Without `?5` bypassing the visibility clause here, the dashboard
+     * card and this list would disagree for every scoped person on
+     * earth — the card built from `unplacedDocuments()`'s unscoped
+     * count, and the click landing on a list that the ordinary
+     * visibility rule had just emptied to zero. Found by tracing the
+     * click through rather than wiring it and trusting it.
+     *
+     * **And the filter matches `unplacedDocuments()`'s exact
+     * definition**, not just "has no unit" — a document can have no
+     * unit for reasons that are not the one this card is about (nobody
+     * has run org-derivation on it yet, say), and only a null unit
+     * *paired with the recorded failure reason* is what the count on
+     * the card actually means. The first version of this checked the
+     * unit alone and a test caught it: a document nobody had assigned
+     * for any reason showed up under "unplaced" when it should not
+     * have, over-counting in the list relative to what the card claims.
      */
-    .bind(unit, limit, visibleUnits === null ? 0 : 1, JSON.stringify(visibleUnits ?? []))
+    .bind(
+      unit,
+      limit,
+      visibleUnits === null ? 0 : 1,
+      JSON.stringify(visibleUnits ?? []),
+      unplacedOnly ? 1 : 0,
+      duplicatesOnly ? 1 : 0
+    )
     .all<DocumentRow>();
 
   const documents = rows.results.map((row) => {

@@ -1,5 +1,8 @@
 import { t } from "/strings.js";
 import { el, frame, topbar, setCurrentScreen, openTasksFiltered, openTaskById } from "/tasks.js";
+import { icon } from "/icons.js";
+import { openDocumentsFiltered } from "/documents.js";
+import { openSuppliersAwaitingErp } from "/suppliers.js";
 /**
  * **`sparkline` and `donut` are built and not used here** — decision
  * 0242.
@@ -412,31 +415,75 @@ const RENDERERS = {
     );
   },
 
-  needs_somebody: (data) => {
-    const rows = [
-      { label: t("dash.unplaced"), value: data.unplaced },
-      { label: t("dash.awaitingerp"), value: data.awaitingErp },
-      { label: t("dash.duplicates"), value: data.duplicates },
-    ].filter((r) => r.value > 0);
+  /**
+   * **Three cards, not one** — decision 0259.
+   *
+   * The operator: *"The needs somebody card holds important items. I
+   * think it deserves a separate card each, with a graphic, and a link
+   * to those documents."* A combined count could never honestly link
+   * anywhere, since a click has to land on one kind of thing.
+   *
+   * **Clickable only when there is something to click through to** —
+   * decision 0161's rule, applied consistently everywhere else a tile
+   * links out. And the icon stays muted even when the count is not
+   * zero: the figure already carries the alert, so colouring the
+   * graphic too would say the same thing twice.
+   */
+  unplaced_documents: (data) => {
+    const card = panel(
+      t("dash.unplaced_documents"),
+      null,
+      { weight: "tile" },
+      el("div", { class: "stagesplit" }, [
+        figure(data.count, t("dash.about.unplaced_documents"), { warn: data.count > 0 }),
+        el("div", { class: "tileicon" }, [icon("unplaced")]),
+      ])
+    );
 
-    /**
-     * **One row is not a proportion** — decision 0245. A single bar is
-     * always full width, which reads as *"100%"* and means nothing.
-     */
-    if (rows.length === 1) {
-      return panel(t("dash.needs_somebody"), null, { weight: "tile" },
-        figure(rows[0].value, rows[0].label, { warn: true }));
+    if (data.count > 0) {
+      card.classList.add("clickable");
+      card.onclick = () => openDocumentsFiltered("unplaced");
     }
 
-    return panel(
-      t("dash.needs_somebody"),
-      t("dash.needssomebodysub"),
-      { weight: "half" },
-      rows.length === 0
-        ? // **Nothing to do is an answer**, and a good one.
-          el("div", { class: "muted", text: t("dash.allclear") })
-        : barList(rows.map((r) => ({ ...r, warn: true })))
+    return card;
+  },
+
+  suppliers_awaiting_erp: (data) => {
+    const card = panel(
+      t("dash.suppliers_awaiting_erp"),
+      null,
+      { weight: "tile" },
+      el("div", { class: "stagesplit" }, [
+        figure(data.count, t("dash.about.suppliers_awaiting_erp"), { warn: data.count > 0 }),
+        el("div", { class: "tileicon" }, [icon("awaitingerp")]),
+      ])
     );
+
+    if (data.count > 0) {
+      card.classList.add("clickable");
+      card.onclick = () => openSuppliersAwaitingErp();
+    }
+
+    return card;
+  },
+
+  possible_duplicates: (data) => {
+    const card = panel(
+      t("dash.possible_duplicates"),
+      null,
+      { weight: "tile" },
+      el("div", { class: "stagesplit" }, [
+        figure(data.count, t("dash.about.possible_duplicates"), { warn: data.count > 0 }),
+        el("div", { class: "tileicon" }, [icon("duplicate")]),
+      ])
+    );
+
+    if (data.count > 0) {
+      card.classList.add("clickable");
+      card.onclick = () => openDocumentsFiltered("duplicates");
+    }
+
+    return card;
   },
 };
 

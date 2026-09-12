@@ -54,10 +54,17 @@ const STRINGS = {
     "dash.minelabel": "by me this week",
     "dash.needs_somebody": "Needs somebody",
     "dash.needssomebodysub": "Nothing else surfaces these",
-    "dash.unplaced": "Unplaced documents",
-    "dash.awaitingerp": "Suppliers awaiting the ERP",
-    "dash.duplicates": "Possible duplicates",
+    "dash.unplaced_documents": "Unplaced documents",
+    "dash.about.unplaced_documents": "No business unit could be assigned",
+    "dash.suppliers_awaiting_erp": "Suppliers awaiting the ERP",
+    "dash.about.suppliers_awaiting_erp": "No identifier from the system of record",
+    "dash.possible_duplicates": "Possible duplicates",
+    "dash.about.possible_duplicates": "Invoices that may already be on file",
     "dash.allclear": "Nothing is stuck.",
+    // The suppliers screen's own strings, needed because navigating
+    // there is exactly what one of these tests does.
+    "suppliers.showingawaiting": "Showing suppliers awaiting the ERP only",
+    "documents.clearfilter": "Clear filter",
     "nav.tasks": "Tasks",
     "nav.dashboard": "My work",
     "nav.sources": "Sources",
@@ -175,18 +182,137 @@ describe("the cards render what the route returned", () => {
   });
 
   it("says nothing is stuck when nothing is", async () => {
-    // **Nothing to do is an answer**, and a good one.
+    /**
+     * **Reversed by decision 0259**: one combined card became three, so
+     * "nothing is stuck" is now three separate quiet tiles rather than
+     * one row saying so. Each shows its own count and stays unclickable
+     * at zero — decision 0161's rule, applied here as everywhere else a
+     * tile links out.
+     */
     await openDashboard([
-      {
-        id: "d",
-        cardType: "needs_somebody",
-        settings: {},
-        position: 0,
-        data: { unplaced: 0, awaitingErp: 0, duplicates: 0 },
-      },
+      { id: "d1", cardType: "unplaced_documents", settings: {}, position: 0, data: { count: 0 } },
+      { id: "d2", cardType: "suppliers_awaiting_erp", settings: {}, position: 1, data: { count: 0 } },
+      { id: "d3", cardType: "possible_duplicates", settings: {}, position: 2, data: { count: 0 } },
     ]);
 
-    expect(document.body.textContent).toContain("Nothing is stuck");
+    expect(document.body.textContent).toContain("Unplaced documents");
+    expect(document.body.textContent).toContain("Suppliers awaiting the ERP");
+    expect(document.body.textContent).toContain("Possible duplicates");
+    expect(document.querySelectorAll(".panel.clickable")).toHaveLength(0);
+  });
+
+  it("draws a graphic on each of the three split-out alert cards", async () => {
+    // **"With a graphic"**, per the operator's own words. Each renderer
+    // includes an icon, distinct from the figure it sits beside.
+    await openDashboard([
+      { id: "u", cardType: "unplaced_documents", settings: {}, position: 0, data: { count: 6 } },
+      { id: "s", cardType: "suppliers_awaiting_erp", settings: {}, position: 1, data: { count: 1 } },
+      { id: "p", cardType: "possible_duplicates", settings: {}, position: 2, data: { count: 2 } },
+    ]);
+
+    expect(document.querySelectorAll(".tileicon svg")).toHaveLength(3);
+    expect(document.querySelector(".bignum")?.textContent).toBe("6");
+  });
+
+  it("links unplaced documents to the documents screen, filtered", async () => {
+    const seen: string[] = [];
+    stubDashboard(
+      [{ id: "u", cardType: "unplaced_documents", settings: {}, position: 0, data: { count: 6 } }],
+      seen
+    );
+    // openDocumentsFiltered's own dependencies, beyond the dashboard's:
+    // the unit picker and the document list itself.
+    const real = globalThis.fetch;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        const path = String(url);
+        seen.push(path);
+        if (path.startsWith("/api/org/units")) return { ok: true, json: async () => ({ units: [] }) } as Response;
+        if (path.startsWith("/api/documents"))
+          return { ok: true, json: async () => ({ documents: [], searched: 0 }) } as Response;
+        return real(url);
+      })
+    );
+
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { open } = await import("/dashboard.js");
+    await open();
+
+    const card = document.querySelector(".panel.clickable") as HTMLElement;
+    expect(card).not.toBeNull();
+    card.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(seen.some((u) => u.includes("/api/documents") && u.includes("unplaced=1"))).toBe(true);
+  });
+
+  it("links possible duplicates to the documents screen, filtered", async () => {
+    const seen: string[] = [];
+    stubDashboard(
+      [{ id: "p", cardType: "possible_duplicates", settings: {}, position: 0, data: { count: 2 } }],
+      seen
+    );
+    const real = globalThis.fetch;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        const path = String(url);
+        seen.push(path);
+        if (path.startsWith("/api/org/units")) return { ok: true, json: async () => ({ units: [] }) } as Response;
+        if (path.startsWith("/api/documents"))
+          return { ok: true, json: async () => ({ documents: [], searched: 0 }) } as Response;
+        return real(url);
+      })
+    );
+
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { open } = await import("/dashboard.js");
+    await open();
+
+    (document.querySelector(".panel.clickable") as HTMLElement).click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(seen.some((u) => u.includes("/api/documents") && u.includes("duplicates=1"))).toBe(true);
+  });
+
+  it("links suppliers awaiting the ERP to the suppliers screen, filtered", async () => {
+    /**
+     * **Client-side, unlike the documents filters** — decision 0259.
+     * `/api/suppliers` already returns everything, so the click fetches
+     * the plain list and the screen filters what it already has. The
+     * banner it renders is the only observable evidence the filter is
+     * in force, since the request itself carries no filter parameter.
+     */
+    stubDashboard(
+      [{ id: "s", cardType: "suppliers_awaiting_erp", settings: {}, position: 0, data: { count: 1 } }]
+    );
+    const real = globalThis.fetch;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        const path = String(url);
+        if (path.startsWith("/api/suppliers"))
+          return {
+            ok: true,
+            json: async () => ({ suppliers: [{ id: "s1", name: "Acme", erpIdentifier: null, status: "active" }] }),
+          } as Response;
+        return real(url);
+      })
+    );
+
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { open } = await import("/dashboard.js");
+    await open();
+
+    (document.querySelector(".panel.clickable") as HTMLElement).click();
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(document.body.textContent).toContain("awaiting the ERP only");
   });
 });
 

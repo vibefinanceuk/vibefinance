@@ -15,6 +15,20 @@ let searched = 0;
 let query = "";
 
 /**
+ * A drill-through filter from the dashboard — decision 0259.
+ *
+ * **Not the search box, and not the unit picker.** *Unplaced* and
+ * *duplicate* are not something a person types or chooses from a list
+ * of the customer's own units; they are a fixed, named question a
+ * dashboard card already answered with a count, and this is where the
+ * click lands.
+ *
+ * `null` means neither is active, which is every ordinary visit to this
+ * screen.
+ */
+let alertFilter = null;
+
+/**
  * Which part of the business to show — decision 0193.
  *
  * **Empty means all of them**, which is what a customer with one unit
@@ -102,9 +116,11 @@ async function loadUnits() {
 }
 
 async function load() {
-  const response = await fetch(
-    `/api/documents?q=${encodeURIComponent(query)}&unit=${encodeURIComponent(unit)}`
-  );
+  const params = new URLSearchParams({ q: query, unit });
+  if (alertFilter === "unplaced") params.set("unplaced", "1");
+  if (alertFilter === "duplicates") params.set("duplicates", "1");
+
+  const response = await fetch(`/api/documents?${params}`);
   if (!response.ok) return false;
 
   const body = await response.json();
@@ -357,6 +373,28 @@ function render() {
       el("div", {}, [
         topbar(t("nav.documents"), t("documents.subtitle")),
 
+        /**
+         * **Said on the screen, not just in the URL.** A person
+         * arriving here from a dashboard card sees a list that could
+         * otherwise look like *all* documents when it is a fixed six or
+         * one — decision 0256 fixed exactly this shape of confusion for
+         * a dropdown that quietly filtered without saying so.
+         */
+        alertFilter
+          ? el("div", { class: "panel alertbanner" }, [
+              el("span", { text: t(`documents.showing.${alertFilter}`) }),
+              el("button", {
+                class: "chip",
+                text: t("documents.clearfilter"),
+                onclick: async () => {
+                  alertFilter = null;
+                  await load();
+                  render();
+                },
+              }),
+            ])
+          : null,
+
         el("div", { class: "panel" }, [
           el("div", { class: "searchrow" }, [
             search,
@@ -412,12 +450,33 @@ function render() {
               ]
             : []),
         ]),
-      ])
+      ].filter(Boolean))
     )
   );
 }
 
 export async function open() {
+  setCurrentScreen("documents");
+  await loadUnits();
+  if (!(await load())) return;
+  render();
+}
+
+/**
+ * Open the documents screen already filtered — decision 0259.
+ *
+ * The dashboard's *Unplaced Documents* and *Possible Duplicates* cards
+ * each said a count and, until now, had nowhere to send a click.
+ * `alertFilter` clears the ordinary search and unit choice, because the
+ * two kinds of narrowing do not compose in a way a person reading the
+ * screen could make sense of — arriving to see *"6 unplaced"* and
+ * finding it silently ANDed with whatever unit was last chosen would be
+ * a smaller version of the exact confusion decision 0256 fixed.
+ */
+export async function openDocumentsFiltered(kind) {
+  query = "";
+  unit = "";
+  alertFilter = kind;
   setCurrentScreen("documents");
   await loadUnits();
   if (!(await load())) return;

@@ -276,3 +276,126 @@ describe("which part of the business a document belongs to (decision 0193)", () 
     expect(body.searched).toBe(1);
   });
 });
+
+describe("linking a dashboard alert to the documents it names (decision 0259)", () => {
+  /**
+   * **The operator asked each \"needs somebody\" fact for its own card,
+   * with a link to the documents behind it.** A combined count could
+   * never honestly link anywhere; splitting it is what makes a link
+   * possible at all.
+   *
+   * `unplacedDocuments()` in `dashboard-route.ts` counts with no scope
+   * clause at all, because decision 0255 made a null-unit document
+   * visible to everyone. Wiring its click through to this list without
+   * checking would have reproduced exactly that bug one layer over: the
+   * card's count built from an unscoped query, landing on a list this
+   * route's own decision 0199 scopes the opposite way.
+   */
+  async function listAs(visibleUnits: string[] | null, params = "") {
+    return (await handleListDocuments(env.DB, new URLSearchParams(params), visibleUnits)).body as {
+      documents: { id: string; orgUnitId: string | null }[];
+      searched: number;
+    };
+  }
+
+  describe("unplaced=1", () => {
+    it("shows an unplaced document to somebody scoped to a unit", async () => {
+      /**
+       * **The load-bearing case.** Decision 0199 hides a null-unit
+       * document from anyone restricted, because it might belong to a
+       * region they cannot see. That policy is right for ordinary
+       * browsing and wrong here: the dashboard already told this exact
+       * person there is one unplaced document, and the click has to
+       * agree.
+       */
+      await seedDocument("inv-unplaced", { "BT-1": "UNPLACED-1" }, null);
+      await env.DB.prepare(
+        `UPDATE invoice_headers
+         SET facts_json = json_set(facts_json, '$."org.unplaced"', 'no_match')
+         WHERE id = 'inv-unplaced'`
+      ).run();
+
+      const body = await listAs(["some-other-unit"], "unplaced=1");
+      expect(body.documents).toHaveLength(1);
+      expect(body.documents[0].id).toBe("inv-unplaced");
+    });
+
+    it("still excludes a document that does have a unit", async () => {
+      // The filter's whole job — only the ones genuinely unplaced.
+      await env.DB.prepare(
+        "INSERT INTO org_units (id, name, kind) VALUES ('acme-fr', 'Acme France', 'legal_entity')"
+      ).run();
+      await seedDocument("inv-placed", { "BT-1": "PLACED-1" }, null);
+      await env.DB.prepare(
+        "UPDATE invoice_headers SET org_unit_id = 'acme-fr' WHERE id = 'inv-placed'"
+      ).run();
+      await seedDocument("inv-unplaced", { "BT-1": "UNPLACED-1" }, null);
+      await env.DB.prepare(
+        `UPDATE invoice_headers
+         SET facts_json = json_set(facts_json, '$."org.unplaced"', 'no_match')
+         WHERE id = 'inv-unplaced'`
+      ).run();
+
+      const body = await listAs(null, "unplaced=1");
+      expect(body.documents.map((d) => d.id)).toEqual(["inv-unplaced"]);
+    });
+
+    it("shows nothing when there is nothing unplaced", async () => {
+      await seedDocument("inv-1", { "BT-1": "ORDINARY-1" });
+      expect((await listAs(null, "unplaced=1")).documents).toHaveLength(0);
+    });
+  });
+
+  describe("duplicates=1", () => {
+    async function seedDuplicate(id: string, confidence: number) {
+      await seedDocument(id, { "BT-1": id });
+      await env.DB.prepare(
+        `UPDATE invoice_headers
+         SET facts_json = json_set(facts_json, '$."invoice.duplicate_confidence"', ?)
+         WHERE id = ?`
+      )
+        .bind(confidence, id)
+        .run();
+    }
+
+    it("shows only invoices at or above the suspicion threshold", async () => {
+      await seedDuplicate("inv-suspect", 0.82);
+      await seedDuplicate("inv-fine", 0.1);
+
+      const body = await listAs(null, "duplicates=1");
+      expect(body.documents.map((d) => d.id)).toEqual(["inv-suspect"]);
+    });
+
+    it("respects the ordinary unit scope, unlike unplaced", async () => {
+      /**
+       * **Deliberately the opposite of the unplaced carve-out.** A
+       * duplicate suspicion has a real unit — decision 0239's
+       * `possibleDuplicates()` scopes it normally — so there is no
+       * disclosure problem to work around, and a scoped person should
+       * see only their own region's duplicates, same as any other
+       * document.
+       */
+      await env.DB.prepare(
+        "INSERT INTO org_units (id, name, kind) VALUES ('acme-fr', 'Acme France', 'legal_entity')"
+      ).run();
+      await env.DB.prepare(
+        "INSERT INTO org_units (id, name, kind) VALUES ('acme-de', 'Acme Deutschland', 'legal_entity')"
+      ).run();
+      await seedDuplicate("inv-fr", 0.9);
+      await env.DB.prepare("UPDATE invoice_headers SET org_unit_id = 'acme-fr' WHERE id = 'inv-fr'").run();
+      await seedDuplicate("inv-de", 0.9);
+      await env.DB.prepare("UPDATE invoice_headers SET org_unit_id = 'acme-de' WHERE id = 'inv-de'").run();
+
+      const body = await listAs(["acme-fr"], "duplicates=1");
+      expect(body.documents.map((d) => d.id)).toEqual(["inv-fr"]);
+    });
+  });
+
+  it("leaves the ordinary list unchanged when neither flag is set", async () => {
+    // A regression guard on the two new bind parameters: present and
+    // inert unless asked for.
+    await seedDocument("inv-1", { "BT-1": "ORDINARY-1" });
+    expect((await listAs(null, "")).documents).toHaveLength(1);
+  });
+});
+

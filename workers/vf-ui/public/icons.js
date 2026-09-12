@@ -29,6 +29,26 @@
  * (decision 0104), so letting go is unlocking.
  */
 export const ICONS = {
+  /**
+   * **Three graphics for the dashboard's split-out alert cards** —
+   * decision 0259. Drawn purely as decoration on a tile, not as an
+   * `actionLink` glyph, so they are not part of the `action.*` naming
+   * convention decision 0229/0236 test against — nothing here is
+   * clicked directly; the whole tile is.
+   */
+
+  // A pin with no place to land — a document assigned to no unit.
+  unplaced:
+    '<path d="M12 21s7-7.5 7-12a7 7 0 1 0-14 0c0 4.5 7 12 7 12z"/><circle cx="12" cy="9" r="2.3"/><path d="M4 4l16 16"/>',
+
+  // A tag with nothing written on it — a supplier with no ERP number.
+  awaitingerp:
+    '<path d="M3 12 12 3h6a3 3 0 0 1 3 3v6l-9 9-9-9z"/><circle cx="15" cy="6" r="1.4" fill="currentColor" stroke="none"/>',
+
+  // Two sheets, offset — a document that may be the same as another.
+  duplicate:
+    '<rect x="4" y="7" width="12" height="15" rx="2"/><rect x="8" y="3" width="12" height="15" rx="2"/>',
+
   // Arrows to the four corners — "make this bigger", not "leave here".
   expand:
     '<path d="M4 8V4h4M16 4h4v4M20 12v4h-4M8 20H4v-4"/>',

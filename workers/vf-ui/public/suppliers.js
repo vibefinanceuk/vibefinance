@@ -19,6 +19,20 @@ let suppliers = [];
 let lastLoad = null;
 
 /**
+ * A drill-through from the dashboard's *Suppliers awaiting the ERP*
+ * card — decision 0259.
+ *
+ * **Client-side, unlike the documents filters.** `/api/suppliers`
+ * already returns the whole list with no pagination (decision 0213 —
+ * one customer's supplier master, not a growing transaction log), so
+ * there is a full array in memory to filter the moment it is asked for.
+ * Adding a server-side filter for a dataset that is already entirely on
+ * the client would be a second way to do the same narrowing, and decision
+ * 0236's whole finding was that two names for one thing drift.
+ */
+let awaitingErpOnly = false;
+
+/**
  * **Whether an ERP is the master here** — decision 0230.
  *
  * The operator asked to warn on save *"IF the ERP Identifier is
@@ -537,8 +551,25 @@ function openSupplier(s) {
 }
 
 function supplierRows() {
-  if (suppliers.length === 0) {
-    return el("div", { class: "muted", text: t("suppliers.none") });
+  /**
+   * **Filtered here, in one place**, rather than at every call site
+   * that reads `suppliers` — this function is the only reader of the
+   * raw list, so the narrowing and the "nothing matches" message live
+   * together.
+   */
+  const shown = awaitingErpOnly ? suppliers.filter((s) => !s.erpIdentifier) : suppliers;
+
+  if (shown.length === 0) {
+    /**
+     * **A different message for a different absence.** "No suppliers
+     * have been loaded yet" is false the moment a filter is why the
+     * list is empty — the mirror is not empty, the question just has no
+     * answer today.
+     */
+    return el("div", {
+      class: "muted",
+      text: awaitingErpOnly ? t("suppliers.noneawaiting") : t("suppliers.none"),
+    });
   }
 
   /**
@@ -557,7 +588,7 @@ function supplierRows() {
   const where = (s) =>
     [s.addressLine, s.postalCode, s.city, s.country].filter(Boolean).join(", ") || "—";
 
-  const rows = suppliers.map((s) => {
+  const rows = shown.map((s) => {
     const row = el("tr", { class: s.status === "inactive" ? "clickable muted" : "clickable" }, [
       // **The identifier this record exists for** (decision 0209),
       // named as the thing it is rather than as "supplier number" —
@@ -644,14 +675,48 @@ function render() {
         el("div", { id: "suppliers-note", class: "warn" }),
         freshness(),
         loader(),
+        /**
+         * **The filter, said out loud** — decision 0259, the same rule
+         * as the documents screen's banner: a person arriving from the
+         * dashboard's *"1 awaiting the ERP"* card should not have to
+         * infer from a shorter table that they are looking at a filtered
+         * view rather than everybody.
+         */
+        awaitingErpOnly
+          ? el("div", { class: "panel alertbanner" }, [
+              el("span", { text: t("suppliers.showingawaiting") }),
+              el("button", {
+                class: "chip",
+                text: t("documents.clearfilter"),
+                onclick: () => {
+                  awaitingErpOnly = false;
+                  render();
+                },
+              }),
+            ])
+          : null,
         el("div", { class: "panel" }, [supplierRows()]),
-      ])
+      ].filter(Boolean))
     )
   );
 }
 
 export async function open() {
   setCurrentScreen("suppliers");
+  if (!(await load())) {
+    note(t("suppliers.failed"));
+    return;
+  }
+  render();
+}
+
+/**
+ * Open the suppliers screen already filtered to those awaiting the
+ * ERP — decision 0259.
+ */
+export async function openSuppliersAwaitingErp() {
+  setCurrentScreen("suppliers");
+  awaitingErpOnly = true;
   if (!(await load())) {
     note(t("suppliers.failed"));
     return;
