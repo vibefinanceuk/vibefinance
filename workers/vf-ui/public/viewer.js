@@ -14,6 +14,7 @@ import { t } from "/strings.js";
 import { el, frame, topbar } from "/tasks.js";
 import { icon } from "/icons.js";
 import { processRow } from "/process-row.js";
+import { activityPanel } from "/activity.js";
 
 let current = null;
 /** The line table's working state — decision 0109. */
@@ -1488,9 +1489,10 @@ export async function openViewer(task, onClose) {
             ]),
             unreadableNote(),
             exceptionPanel(),
-          ]),
-        ]),
-      ])
+            task.subject?.id ? activityPanel(task.subject.id) : null,
+          ].filter(Boolean)),
+        ].filter(Boolean)),
+      ].filter(Boolean))
     )
   );
 

@@ -89,6 +89,7 @@ export default defineConfig({
       "/rule.js": resolve(__dirname, "public/rule.js"),
       "/documents.js": resolve(__dirname, "public/documents.js"),
       "/readback.js": resolve(__dirname, "public/readback.js"),
+      "/activity.js": resolve(__dirname, "public/activity.js"),
     },
   },
 });

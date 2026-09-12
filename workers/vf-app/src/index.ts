@@ -77,6 +77,7 @@ import {
   isFedByLoad,
 } from "./load-suppliers.js";
 import { handleListDocuments } from "./documents-route.js";
+import { handleGetActivity, handlePostComment } from "./activity-route.js";
 import {
   handleListLedgers,
   handleCreateLedger,
@@ -1695,6 +1696,47 @@ export default {
       const visible = await unitsWherePermitted(db, auth.user.id, "AP.Review");
 
       const result = await handleListDocuments(db, url.searchParams, visible, auth.user.id);
+      return json(result.body, result.status);
+    }
+
+    /**
+     * A document's activity — decision 0267.
+     *
+     * **`AP.Review`, the same permission that grants document
+     * visibility.** "Internal only for honest dialogue between
+     * colleagues" was the operator's own scope; nobody who cannot see
+     * a document has a reason to see or comment on its history.
+     */
+    const activityMatch = pathname.match(/^\/documents\/([^/]+)\/activity$/);
+    if (activityMatch && request.method === "GET") {
+      const { db } = resolveTenant(request, env);
+      const auth = await authenticatePerson(db, request, env);
+      if (!auth.user) return json({ error: auth.reason }, 401);
+      if (!(await hasPermission(db, auth.user.id, "AP.Review"))) {
+        return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
+      }
+
+      const result = await handleGetActivity(db, activityMatch[1]);
+      return json(result.body, result.status);
+    }
+
+    const commentsMatch = pathname.match(/^\/documents\/([^/]+)\/comments$/);
+    if (commentsMatch && request.method === "POST") {
+      const { db } = resolveTenant(request, env);
+      const locale = resolveLocale(env.LOCALE);
+      const auth = await authenticatePerson(db, request, env);
+      if (!auth.user) return json({ error: auth.reason }, 401);
+      if (!(await hasPermission(db, auth.user.id, "AP.Review"))) {
+        return json({ error: t("forbidden", locale) }, 403);
+      }
+      let commentBody: unknown;
+      try {
+        commentBody = await request.json();
+      } catch {
+        return json({ error: t("invalidJsonBody", locale) }, 400);
+      }
+
+      const result = await handlePostComment(db, commentsMatch[1], auth.user.id, commentBody, locale);
       return json(result.body, result.status);
     }
 

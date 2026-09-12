@@ -112,6 +112,18 @@ const STRINGS = {
     "viewer.reflabel": "Unique Ref:",
     "viewer.document": "Document",
     "viewer.nodocument": "No document retained",
+    "activity.tab": "Activity",
+    "activity.title": "Activity",
+    "activity.loading": "Loading…",
+    "activity.empty": "Nothing here yet.",
+    "activity.placeholder": "Leave a note for your team…",
+    "activity.post": "Post",
+    "activity.internalonly": "Internal only — not visible to the supplier.",
+    "activity.loadfailed": "Could not load the activity for this document.",
+    "activity.postfailed": "That did not post. Try again.",
+    "activity.received": "Invoice received",
+    "activity.stagecompleted": "{who} completed {stage}",
+    "activity.rulefired": "Business rule \u2018{rule}\u2019 fired: {actions}",
   },
 };
 
@@ -1500,5 +1512,188 @@ describe("an action that labels itself draws itself (decision 0229)", () => {
 
     // Named, so a failure says which one rather than how many.
     expect(blank.map((b) => b.textContent)).toEqual([]);
+  });
+});
+
+describe("the activity panel (decision 0267)", () => {
+  const BASE_ROUTES = {
+    "/api/code-lists": { fields: {} },
+    "/api/ui-strings": STRINGS,
+    "/api/field-visibility": FIELDS,
+    "/api/invoices/inv-1": { facts: {}, lines: [], validation: { passed: true, checked: [], failures: [] } },
+    "/api/invoices/inv-1/progress": { visits: [] },
+  };
+
+  it("is closed by default, with no count until opened", async () => {
+    stubFetch(BASE_ROUTES);
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    await openViewer(TASK, () => {});
+
+    const tab = [...document.querySelectorAll("button")].find((b) => b.textContent?.includes("Activity"));
+    expect(tab).toBeDefined();
+    expect(tab?.textContent).toBe("Activity");
+    expect(document.querySelector(".activitydrawer")).toBeNull();
+  });
+
+  it("loads and shows the feed only once opened", async () => {
+    const seen: string[] = [];
+    stubFetch(
+      {
+        ...BASE_ROUTES,
+        "/api/documents/inv-1/activity": {
+          items: [
+            { kind: "received", at: "2026-09-01 09:00:00" },
+            { kind: "stage_completed", at: "2026-09-01 11:00:00", stageName: "Validation", userName: "Priya Patel" },
+          ],
+        },
+      },
+      seen
+    );
+    const real = globalThis.fetch;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        seen.push(String(url).split("?")[0]);
+        return real(url, init);
+      })
+    );
+
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    await openViewer(TASK, () => {});
+
+    expect(seen.some((u) => u.includes("/activity"))).toBe(false);
+
+    const tab = [...document.querySelectorAll("button")].find((b) => b.textContent?.includes("Activity"));
+    (tab as HTMLButtonElement).click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(seen.some((u) => u === "/api/documents/inv-1/activity")).toBe(true);
+    expect(document.body.textContent).toContain("Invoice received");
+    expect(document.body.textContent).toContain("Priya Patel completed Validation");
+  });
+
+  it("phrases a fired rule from its own name and its own actions", async () => {
+    stubFetch({
+      ...BASE_ROUTES,
+      "/api/documents/inv-1/activity": {
+        items: [
+          {
+            kind: "rule_fired",
+            at: "2026-09-01 09:16:00",
+            ruleName: "Spend Threshold",
+            actionDescriptions: ["routed to AP Review", "assigned to AP Team"],
+          },
+        ],
+      },
+    });
+
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    await openViewer(TASK, () => {});
+
+    const tab = [...document.querySelectorAll("button")].find((b) => b.textContent?.includes("Activity"));
+    (tab as HTMLButtonElement).click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(document.body.textContent).toContain(
+      "Business rule \u2018Spend Threshold\u2019 fired: routed to AP Review and assigned to AP Team"
+    );
+  });
+
+  it("shows a comment with an avatar, not as a system line", async () => {
+    stubFetch({
+      ...BASE_ROUTES,
+      "/api/documents/inv-1/activity": {
+        items: [{ kind: "comment", id: "c-1", at: "2026-09-01 12:00:00", userName: "Priya Patel", body: "Checked with procurement." }],
+      },
+    });
+
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    await openViewer(TASK, () => {});
+
+    const tab = [...document.querySelectorAll("button")].find((b) => b.textContent?.includes("Activity"));
+    (tab as HTMLButtonElement).click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(document.querySelector(".activitycomment .activityavatar")?.textContent).toBe("PP");
+    expect(document.body.textContent).toContain("Checked with procurement.");
+    expect(document.querySelectorAll(".activitysysline")).toHaveLength(0);
+  });
+
+  it("posts a comment and reloads the feed", async () => {
+    const bodies: { path: string; method?: string; body: unknown }[] = [];
+    let posted = false;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        const path = String(url).split("?")[0];
+        bodies.push({ path, method: init?.method, body: init?.body ? JSON.parse(init.body as string) : null });
+        const routes: Record<string, unknown> = { ...BASE_ROUTES };
+        routes["/api/documents/inv-1/activity"] = {
+          items: posted ? [{ kind: "comment", id: "c-1", at: "2026-09-01 12:00:00", userName: "Priya Patel", body: "Noted." }] : [],
+        };
+        if (path === "/api/documents/inv-1/comments" && init?.method === "POST") {
+          posted = true;
+          return { ok: true, json: async () => ({ id: "c-1" }) } as Response;
+        }
+        if (!(path in routes)) throw new Error(`no stub for ${path}`);
+        return { ok: true, json: async () => routes[path] } as Response;
+      })
+    );
+
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    await openViewer(TASK, () => {});
+
+    const tab = [...document.querySelectorAll("button")].find((b) => b.textContent?.includes("Activity"));
+    (tab as HTMLButtonElement).click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    (document.getElementById("activity-input") as HTMLTextAreaElement).value = "Noted.";
+    (document.getElementById("activity-post") as HTMLButtonElement).click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    const post = bodies.find((b) => b.path === "/api/documents/inv-1/comments");
+    expect(post?.body).toEqual({ body: "Noted." });
+    expect(document.body.textContent).toContain("Noted.");
+  });
+
+  it("closes via its own close button", async () => {
+    stubFetch({ ...BASE_ROUTES, "/api/documents/inv-1/activity": { items: [] } });
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    await openViewer(TASK, () => {});
+
+    const tab = [...document.querySelectorAll("button")].find((b) => b.textContent?.includes("Activity"));
+    (tab as HTMLButtonElement).click();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(document.querySelector(".activitydrawer")).not.toBeNull();
+
+    const close = document.querySelector(".activityclose") as HTMLButtonElement;
+    close.click();
+    expect(document.querySelector(".activitydrawer")).toBeNull();
+  });
+
+  it("never renders the literal text 'null' anywhere on the page", async () => {
+    // **The bug found while wiring this in.** `unreadableNote()`
+    // returns null in its common case, and `Node.append(null)`
+    // stringifies rather than skips — confirmed directly against the
+    // real DOM before this was fixed with `.filter(Boolean)`.
+    stubFetch({ ...BASE_ROUTES, "/api/documents/inv-1/activity": { items: [] } });
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    await openViewer(TASK, () => {});
+
+    expect(document.body.innerHTML).not.toContain(">null<");
   });
 });

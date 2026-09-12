@@ -39,6 +39,7 @@ export type MessageKey =
   | "ruleNameMustBeString"
   | "ruleNameRequired"
   | "ruleDoesNotExist"
+  | "commentBodyRequired"
   | "ruleDoesNotExistInRuleSet"
   | "invoiceDoesNotExist";
 
@@ -224,6 +225,14 @@ const MESSAGES: Record<MessageKey, Record<Locale, string>> = {
     es: "la regla {ruleId} no existe",
     it: "la regola {ruleId} non esiste",
     nl: "regel {ruleId} bestaat niet",
+  },
+  commentBodyRequired: {
+    en: "body (a non-empty string) is required",
+    de: "Text (eine nicht leere Zeichenkette) ist erforderlich",
+    fr: "le texte (une chaîne de caractères non vide) est requis",
+    es: "el texto (una cadena de texto no vacía) es obligatorio",
+    it: "il testo (una stringa non vuota) è obbligatorio",
+    nl: "tekst (een niet-lege tekenreeks) is verplicht",
   },
   ruleDoesNotExistInRuleSet: {
     en: "rule {ruleId} does not exist in rule set {ruleSetId}",
