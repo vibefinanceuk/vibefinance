@@ -1024,3 +1024,64 @@ describe("the card agrees with the real task list (decision 0255)", () => {
     expect(onCard.count).toBe(3);
   });
 });
+
+describe("a real trend for done, and none for waiting (decision 0257)", () => {
+  /**
+   * **`completed_at` is a timestamp every finished task actually has**,
+   * so a day-by-day count over the last week is genuine history — the
+   * same bucketing `received()` already does for invoices in.
+   *
+   * Deliberately not attempted for `waiting_for_me`: that number is a
+   * live queue depth, and nothing in this system has ever recorded what
+   * it was on a past day. Decision 0242 already declined to draw a line
+   * from no history, and this record does not reopen that.
+   */
+  async function completedOn(id: string, daysAgo: number) {
+    await env.DB.prepare("INSERT OR IGNORE INTO processes (id, name) VALUES ('ap', 'AP')").run();
+    await env.DB.prepare(
+      "INSERT OR IGNORE INTO process_stages (id, process_id, name, sequence) VALUES ('validation', 'ap', 'Validation', 1)"
+    ).run();
+    await env.DB.prepare(
+      "INSERT INTO invoice_headers (id, facts_json) VALUES (?, '{}')"
+    )
+      .bind(id)
+      .run();
+    await env.DB.prepare(
+      `INSERT INTO tasks (id, stage_id, owner_user_id, required_permission, status, completed_by, completed_at)
+       VALUES (?, 'validation', 'alice', 'AP.Validate', 'completed', 'alice',
+               datetime('now', ?))`
+    )
+      .bind(id, `-${daysAgo} days`)
+      .run();
+  }
+
+  it("carries a day-by-day count of completions", async () => {
+    await person("alice", ["AP.Review"], null);
+    await completedOn("a", 0);
+    await completedOn("b", 0);
+    await completedOn("c", 2);
+
+    const data = card<{ trend: { day: string; n: number }[] }>(await cardsFor("alice"), "done");
+
+    const today = new Date().toISOString().slice(0, 10);
+    const todayRow = data.trend.find((r) => r.day === today);
+    expect(todayRow?.n).toBe(2);
+
+    // A day with nothing completed is simply absent, not a zero row —
+    // gap-filling for display is the screen's job, not the query's.
+    const yesterday = data.trend.find(
+      (r) => r.day === new Date(Date.now() - 86400000).toISOString().slice(0, 10)
+    );
+    expect(yesterday).toBeUndefined();
+  });
+
+  it("does not carry a trend for waiting_for_me", async () => {
+    // The absence is the point: nothing here should be tempted to
+    // invent one later without re-reading why it is missing.
+    await person("alice", ["AP.Review"], null);
+    await work("open", null, { owner: "alice" });
+
+    const data = card<Record<string, unknown>>(await cardsFor("alice"), "waiting_for_me");
+    expect(data.trend).toBeUndefined();
+  });
+});

@@ -903,20 +903,53 @@
   }
   .dashstrip > .panel {
     /*
-      **Grow to share, shrink to fit, and wrap below 200px** — which on
-      a phone means one per row and on a desk means all of them on one.
+      **Grow to share, shrink to fit, and wrap below 240px** — decision
+      0257 raised this from 200px at the operator's asking that a tile
+      be easier to read "across a desk." On a phone this still means one
+      per row; on a desk it means three or four rather than five or six
+      cramped ones.
     */
-    flex: 1 1 200px;
-    min-width: 200px;
+    flex: 1 1 240px;
+    min-width: 240px;
+    min-height: 148px;
     margin-bottom: 0;
   }
   /*
-    **The same padding as every other panel.** A tile was tighter, which
-    made a strip of figures sit on a different grid from the cards below
-    it — visible as a heading that did not line up with the heading
-    beneath.
+    **Roomier than the base panel** — decision 0257. The same padding as
+    every other panel was right when a tile held one line of text
+    (decision 0246); it is tight around a 40px figure and a background
+    line. A little more air on all sides, kept even so nothing looks
+    accidental.
   */
   .dashstrip > .panel {
+    display: flex;
+    flex-direction: column;
+    padding: 20px 22px 18px;
+    /* A positioning context for the background chart below. */
+    position: relative;
+    overflow: hidden;
+  }
+
+  /*
+    **A chart behind the text, not beside it** — decision 0257.
+
+    Absolutely positioned and given `z-index: 0` explicitly rather than
+    relying on paint order: a statically positioned element is not
+    guaranteed to sit below a positioned sibling just because it comes
+    later in the document, and this must never end up on top of the
+    number it is meant to sit behind.
+  */
+  .tilebg {
+    position: absolute;
+    inset: auto 0 0 0;
+    height: 46px;
+    z-index: 0;
+    pointer-events: none;
+  }
+  .tilefg {
+    position: relative;
+    z-index: 1;
+    flex: 1 1 auto;
     display: flex;
     flex-direction: column;
     justify-content: space-between;

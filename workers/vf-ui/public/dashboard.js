@@ -11,7 +11,7 @@ import { el, frame, topbar, setCurrentScreen, openTasksFiltered, openTaskById } 
  *
  * Both are in `charts.js`, tested, and waiting for the data.
  */
-import { barChart, barList, donutChart } from "/charts.js";
+import { barChart, barList, donutChart, sparkline } from "/charts.js";
 
 /**
  * What a person should do next — decision 0242, on decision 0240's
@@ -56,12 +56,48 @@ async function load() {
  * for me: 3"* sat in a panel the width of a worklist with a void beside
  * it.
  */
-function panel(title, sub, { weight = "half" } = {}, ...children) {
-  return el("div", { class: `panel card-${weight}` }, [
+/**
+ * **A background chart, behind the foreground, in that order** —
+ * decision 0257.
+ *
+ * `background` sits as an absolutely positioned first child; the rest
+ * is wrapped in `.tilefg` so it never has to know a background is
+ * there. This is deliberately not a property every card gets: it is
+ * only ever passed where the data behind it is real history — decision
+ * 0242's rule that a trend drawn from nothing is a decoration wearing a
+ * claim.
+ */
+function panel(title, sub, { weight = "half", background = null } = {}, ...children) {
+  const foreground = el("div", { class: "tilefg" }, [
     el("div", { class: "cardhead" }, [el("h3", { text: title })]),
     sub ? el("div", { class: "sub", text: sub }) : null,
     ...children,
   ].filter(Boolean));
+
+  const backgroundLayer = background ? el("div", { class: "tilebg" }, [background]) : null;
+
+  return el("div", { class: `panel card-${weight}` }, [backgroundLayer, foreground].filter(Boolean));
+}
+
+/**
+ * **The last seven calendar days, gaps filled with zero** — decision
+ * 0257.
+ *
+ * `done()`'s own query only returns a row for a day that had at least
+ * one completion. A sparkline drawn from that alone would compress five
+ * quiet days into the same width as two busy ones and call the result
+ * a week — the same kind of misrepresentation decision 0248 fixed for
+ * the ageing buckets, here at the source rather than in the drawing.
+ */
+function last7Days(rows) {
+  const byDay = new Map((rows ?? []).map((r) => [r.day, r.n]));
+  const values = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    values.push(byDay.get(d.toISOString().slice(0, 10)) ?? 0);
+  }
+  return values;
 }
 
 /**
@@ -313,10 +349,27 @@ const RENDERERS = {
   },
 
   done: (data) =>
+    /**
+     * **The one card with real history behind it** — decision 0257.
+     * `completed_at` is a timestamp every finished task actually has,
+     * so a day-by-day count over the last week is genuine — the same
+     * bucketing `received()` already does for invoices in.
+     *
+     * `waiting_for_me` does not get the same treatment: that number is
+     * a live queue depth, and nothing in this system has ever recorded
+     * what it was yesterday. A line under that card would have to be
+     * invented, which is exactly what decision 0242 declined to do.
+     */
     panel(
       t("dash.done"),
       null,
-      { weight: "tile" },
+      {
+        weight: "tile",
+        background: sparkline(last7Days(data.trend), {
+          background: true,
+          colour: "var(--chart-2)",
+        }),
+      },
       el("div", { class: "figures" }, [
         figure(data.today, t("dash.todaylabel")),
         figure(data.week, t("dash.weeklabel")),

@@ -366,7 +366,44 @@ async function done(db: D1Database, userId: string, scope: Scope) {
     .bind(userId, ...clause.binds)
     .first<{ today: number; week: number; mine: number }>();
 
-  return { today: row?.today ?? 0, week: row?.week ?? 0, mine: row?.mine ?? 0 };
+  /**
+   * **A real trend, not a decorative one** — decision 0257.
+   *
+   * `completed_at` is a timestamp every finished task actually has, so
+   * a day-by-day count over the last week is genuine history — the
+   * same bucketing `received()` already does for invoices in. This is
+   * what the operator's reference image calls for under a KPI figure,
+   * and here it is backed by something real.
+   *
+   * **Deliberately not attempted for `waiting_for_me`.** That number is
+   * a live queue depth, and nothing in this system has ever recorded
+   * what it was yesterday — there is no snapshot table, only the
+   * current row count. A line under that card would have to be
+   * invented, which decision 0242 already declined to do for the same
+   * reason: a trend drawn from no history is a decoration that implies
+   * a claim the data cannot back.
+   */
+  const trend = await db
+    .prepare(
+      `SELECT date(t.completed_at) AS day, count(*) AS n
+       FROM tasks t
+       LEFT JOIN stage_visits v ON v.id = t.stage_visit_id
+       LEFT JOIN process_instances pi ON pi.id = v.process_instance_id
+       LEFT JOIN invoice_headers h ON pi.subject_type = 'invoice' AND h.id = pi.subject_id
+       WHERE t.completed_at IS NOT NULL
+         AND julianday('now') - julianday(t.completed_at) < 7${clause.sql}
+       GROUP BY date(t.completed_at)
+       ORDER BY day`
+    )
+    .bind(...clause.binds)
+    .all<{ day: string; n: number }>();
+
+  return {
+    today: row?.today ?? 0,
+    week: row?.week ?? 0,
+    mine: row?.mine ?? 0,
+    trend: trend.results,
+  };
 }
 
 /** Invoices in, by day, for the last week. */

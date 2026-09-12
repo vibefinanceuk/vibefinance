@@ -160,8 +160,13 @@
 
     Ratio kept at the scale's own 1.25 twice over, so it belongs to the
     same series rather than being a size somebody liked.
+
+    **Stepped up once more** — decision 0257, at the operator's asking
+    that the cards read easily "across a desk." 32px was two 1.25 steps
+    above `--text-xl`; 40px is a third, keeping it a step on the scale
+    rather than a size chosen by eye.
   */
-  --text-figure: 32px;   /* The one thing a screen is about. */
+  --text-figure: 40px;   /* The one thing a screen is about. */
 
   /* Brand — the only block a white-label deployment replaces. */
   --brand-bar: #0f6e56;

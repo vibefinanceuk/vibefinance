@@ -757,3 +757,94 @@ describe("clicking through (decision 0250)", () => {
     expect(typeof (rows[0] as HTMLElement).onclick).toBe("function");
   });
 });
+
+describe("a background line, where the data is real (decision 0257)", () => {
+  /**
+   * **`completed_at` gives Done a genuine week to draw**, and
+   * `waiting_for_me` has no equivalent — nothing has ever recorded what
+   * the queue depth was on a past day. This asserts the line appears
+   * exactly where the history is real and nowhere else.
+   */
+  it("draws a background line on the Done tile", async () => {
+    await openDashboard([
+      {
+        id: "a",
+        cardType: "done",
+        settings: {},
+        position: 0,
+        data: { today: 2, week: 9, mine: 5, trend: [{ day: new Date().toISOString().slice(0, 10), n: 2 }] },
+      },
+    ]);
+
+    const tile = [...document.querySelectorAll(".panel")].find((p) =>
+      p.textContent?.includes("Done")
+    );
+    expect(tile?.querySelector(".tilebg svg")).not.toBeNull();
+  });
+
+  it("draws no background line on Waiting for me", async () => {
+    /**
+     * **The absence is deliberate, not an oversight.** A line here
+     * would have to be invented, since nothing records what this count
+     * was yesterday.
+     */
+    await openDashboard([
+      { id: "b", cardType: "waiting_for_me", settings: {}, position: 0, data: { count: 3, stages: 1 } },
+    ]);
+
+    const tile = [...document.querySelectorAll(".panel")].find((p) =>
+      p.textContent?.includes("Waiting for me")
+    );
+    expect(tile?.querySelector(".tilebg")).toBeNull();
+  });
+
+  it("fills a day with no completions as zero rather than skipping it", async () => {
+    /**
+     * **Gap-filled to seven points**, so five quiet days do not
+     * compress into the same width as two busy ones. The backend only
+     * returns rows for days with at least one completion (decision
+     * 0257); the screen fills the rest.
+     */
+    const today = new Date().toISOString().slice(0, 10);
+    await openDashboard([
+      {
+        id: "c",
+        cardType: "done",
+        settings: {},
+        position: 0,
+        data: { today: 1, week: 1, mine: 1, trend: [{ day: today, n: 1 }] },
+      },
+    ]);
+
+    const tile = [...document.querySelectorAll(".panel")].find((p) =>
+      p.textContent?.includes("Done")
+    );
+    const line = tile?.querySelector(".tilebg polyline");
+    // Seven days means six segments in the polyline's point list.
+    const points = line?.getAttribute("points")?.trim().split(/\s+/) ?? [];
+    expect(points).toHaveLength(7);
+  });
+
+  it("sits behind the figures rather than on top of them", async () => {
+    /**
+     * **Stacking asserted from the stylesheet, not from a rendered
+     * page** — this app's own established pattern (decision 0223 and
+     * the typography test): these browser tests do not load the real
+     * CSS into the DOM, so `getComputedStyle` here would only ever
+     * report the browser's defaults and pass or fail for the wrong
+     * reason.
+     *
+     * The explicit z-index is the thing decision 0257 relied on rather
+     * than paint order, so this checks the rule exists and orders the
+     * two layers correctly.
+     */
+    const stylesheets = (await import("virtual:stylesheets")).default;
+    const css = stylesheets["index.html"];
+
+    const bgRule = css.slice(css.indexOf(".tilebg {"), css.indexOf(".tilebg {") + 300);
+    const fgRule = css.slice(css.indexOf(".tilefg {"), css.indexOf(".tilefg {") + 300);
+
+    expect(bgRule).toContain("z-index: 0");
+    expect(fgRule).toContain("z-index: 1");
+  });
+});

@@ -37,9 +37,25 @@ function svg(width, height, extra = {}) {
    *
    * A chart that fills its card is right for bars, whose meaning is
    * their width. A ring has no width to mean anything with.
+   *
+   * **A third mode, `fill`** — decision 0257, for a background
+   * sparkline. Neither existing mode fit it: `fixed` is a literal pixel
+   * box (right for a ring, wrong for a tile of unknown width), and the
+   * default `auto` height scales with the viewBox's own aspect ratio
+   * (right for a bar chart, wrong here because it would make a wide
+   * tile's line disproportionately tall). `fill` takes both dimensions
+   * from a sized, positioned ancestor instead — the tile itself.
    */
-  node.style.width = extra.fixed ? `${width}px` : "100%";
-  node.style.height = extra.fixed ? `${height}px` : "auto";
+  if (extra.fixed) {
+    node.style.width = `${width}px`;
+    node.style.height = `${height}px`;
+  } else if (extra.fill) {
+    node.style.width = "100%";
+    node.style.height = "100%";
+  } else {
+    node.style.width = "100%";
+    node.style.height = "auto";
+  }
   node.style.display = "block";
   return node;
 }
@@ -57,10 +73,21 @@ function el(name, attrs = {}, text) {
  * **No axes and no labels.** A sparkline answers *"which way is this
  * going"* and nothing else; a reader who needs the number has it
  * beside, in type they can read.
+ *
+ * **First built and never used** — decision 0242 held it back for the
+ * honest reason that no card had real history behind it. Decision 0257
+ * gives it its first real caller: a week of completions, which
+ * `completed_at` genuinely records day by day.
+ *
+ * **`background: true` fills its container** rather than sitting at a
+ * fixed 150×38 — a card can be resized (decision 0257 just made these
+ * ones bigger) and a sparkline meant to sit low in the card behind the
+ * figure has to fill whatever width and height it is given, not a size
+ * chosen when this function was written.
  */
-export function sparkline(values, { colour = "var(--chart-1)", height = 38 } = {}) {
+export function sparkline(values, { colour = "var(--chart-1)", height = 38, background = false } = {}) {
   const width = 150;
-  const node = svg(width, height, { stretch: true, fixed: true });
+  const node = svg(width, height, background ? { stretch: true, fill: true } : { stretch: true, fixed: true });
 
   if (values.length < 2) return node;
 
@@ -75,7 +102,13 @@ export function sparkline(values, { colour = "var(--chart-1)", height = 38 } = {
   const line = points.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(" ");
 
   node.append(
-    el("polygon", { points: `0,${height} ${line} ${width},${height}`, fill: colour, opacity: 0.12 }),
+    el("polygon", {
+      points: `0,${height} ${line} ${width},${height}`,
+      fill: colour,
+      // **Quieter behind text than beside it.** A background line has
+      // to lose to the number sitting on top of it, not compete with it.
+      opacity: background ? 0.16 : 0.12,
+    }),
     el("polyline", {
       points: line,
       fill: "none",
@@ -83,6 +116,7 @@ export function sparkline(values, { colour = "var(--chart-1)", height = 38 } = {
       "stroke-width": 1.5,
       "stroke-linejoin": "round",
       "stroke-linecap": "round",
+      opacity: background ? 0.55 : 1,
     })
   );
 
