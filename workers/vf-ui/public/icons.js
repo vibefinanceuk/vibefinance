@@ -210,6 +210,13 @@ Object.assign(ICONS, {
   // vocabulary is closed precisely so it is not.
   compile: '<path d="M3 6h9M3 11h6M3 16h9"/><path d="M17 5v14M15 5h4M15 19h4"/>',
 
+  // A paper plane, for posting a comment on the activity panel —
+  // decision 0268. The same shape almost every messaging surface
+  // already uses for "send", chosen over inventing a new one for the
+  // sake of it: a person should recognise this without reading the
+  // label beside it.
+  post: '<line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>',
+
   // A switch thrown, not a play button: a rule is not something that
   // runs once.
   activate: '<rect x="3" y="7" width="18" height="10" rx="5"/><circle cx="16" cy="12" r="2.6"/>',

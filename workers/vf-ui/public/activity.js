@@ -1,5 +1,6 @@
 import { t } from "/strings.js";
 import { el } from "/tasks.js";
+import { icon } from "/icons.js";
 
 /**
  * The activity panel — decision 0267.
@@ -139,9 +140,9 @@ function drawer(invoiceId, container) {
   const postButton = el("button", {
     id: "activity-post",
     class: "activitypost",
-    text: t("activity.post"),
     onclick: () => post(invoiceId, container),
   });
+  postButton.append(icon("post"), el("span", { text: t("activity.post") }));
 
   return el(
     "div",

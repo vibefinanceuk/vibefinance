@@ -1666,6 +1666,25 @@ describe("the activity panel (decision 0267)", () => {
     expect(document.body.textContent).toContain("Noted.");
   });
 
+  it("gives the post button an icon, matching every other action button", async () => {
+    // **Consistency, per the operator's own request** — decision 0268.
+    // Every actionLink/toolButton in this app pairs an icon with its
+    // label; the post button was text-only until now.
+    stubFetch({ ...BASE_ROUTES, "/api/documents/inv-1/activity": { items: [] } });
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    await openViewer(TASK, () => {});
+
+    const tab = [...document.querySelectorAll("button")].find((b) => b.textContent?.includes("Activity"));
+    (tab as HTMLButtonElement).click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    const post = document.getElementById("activity-post");
+    expect(post?.querySelector("svg")).not.toBeNull();
+    expect(post?.textContent).toBe("Post");
+  });
+
   it("closes via its own close button", async () => {
     stubFetch({ ...BASE_ROUTES, "/api/documents/inv-1/activity": { items: [] } });
     const { loadStrings } = await import("/strings.js");
