@@ -452,3 +452,103 @@ describe("an example somebody can read (decision 0159)", () => {
     expect(document.querySelector(".example .morefacts")).toBeNull();
   });
 });
+
+describe("a rule's own name (decision 0266)", () => {
+  function bodyStubFetch(routes: Record<string, unknown>, bodies: { path: string; body: unknown }[] = []) {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        const path = String(url).split("?")[0];
+        if (init?.method === "POST") {
+          bodies.push({ path, body: init.body ? JSON.parse(init.body as string) : null });
+        }
+        if (!(path in routes)) throw new Error(`no stub for ${path}`);
+        const entry = routes[path] as { ok?: boolean; body?: unknown };
+        const isEnvelope = entry && typeof entry === "object" && "body" in entry;
+        return {
+          ok: isEnvelope ? entry.ok !== false : true,
+          json: async () => (isEnvelope ? entry.body : entry),
+        } as Response;
+      })
+    );
+  }
+
+  it("offers a name field when writing a brand new rule", async () => {
+    stubFetch({ "/api/ui-strings": STRINGS, "/api/field-visibility": FIELDS });
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openCompose: go } = await import("/compose.js");
+    await go(STAGE);
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(document.getElementById("rule-name")).not.toBeNull();
+  });
+
+  it("offers no name field while revising an existing one", async () => {
+    // **Nothing to type into that would do anything** — decision 0266.
+    // compile-route.ts ignores a name on a recompile regardless; an
+    // input here would promise an effect it does not have.
+    stubFetch({ "/api/ui-strings": STRINGS, "/api/field-visibility": FIELDS });
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openCompose: go } = await import("/compose.js");
+    await go(STAGE, { ruleId: "r-1", sourceText: "old wording" });
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(document.getElementById("rule-name")).toBeNull();
+  });
+
+  it("sends the name typed when compiling a brand new rule", async () => {
+    const bodies: { path: string; body: unknown }[] = [];
+    bodyStubFetch(
+      {
+        "/api/ui-strings": STRINGS,
+        "/api/field-visibility": FIELDS,
+        "/api/rules/compile": COMPILED,
+        "/api/rules/r-1/versions/1/examples": examples(0),
+      },
+      bodies
+    );
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openCompose: go } = await import("/compose.js");
+    await go(STAGE);
+    await new Promise((r) => setTimeout(r, 0));
+
+    (document.getElementById("sentence") as HTMLTextAreaElement).value = "Hold any invoice over 10,000 euros.";
+    (document.getElementById("rule-name") as HTMLInputElement).value = "Spend Threshold";
+    (document.querySelector("button.primary") as HTMLButtonElement).click();
+    await new Promise((r) => setTimeout(r, 20));
+
+    const sent = bodies.find((b) => b.path === "/api/rules/compile");
+    expect((sent?.body as { name?: string })?.name).toBe("Spend Threshold");
+  });
+
+  it("sends no name field at all when the box is left blank", async () => {
+    // **Absent, not an empty string** — an empty string would 400 at
+    // the route (decision 0266's own validation); leaving it out
+    // entirely is what "I have not named this yet" actually means.
+    const bodies: { path: string; body: unknown }[] = [];
+    bodyStubFetch(
+      {
+        "/api/ui-strings": STRINGS,
+        "/api/field-visibility": FIELDS,
+        "/api/rules/compile": COMPILED,
+        "/api/rules/r-1/versions/1/examples": examples(0),
+      },
+      bodies
+    );
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openCompose: go } = await import("/compose.js");
+    await go(STAGE);
+    await new Promise((r) => setTimeout(r, 0));
+
+    (document.getElementById("sentence") as HTMLTextAreaElement).value = "Hold any invoice over 10,000 euros.";
+    (document.querySelector("button.primary") as HTMLButtonElement).click();
+    await new Promise((r) => setTimeout(r, 20));
+
+    const sent = bodies.find((b) => b.path === "/api/rules/compile");
+    expect(sent?.body as Record<string, unknown>).not.toHaveProperty("name");
+  });
+});

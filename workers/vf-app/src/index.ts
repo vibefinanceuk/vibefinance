@@ -62,6 +62,7 @@ import {
   ensureRuleSetForStage,
   handleGetRule,
   handleSetRuleEnabled,
+  handleRenameRule,
 } from "./rules-list-route.js";
 import { handleInvoiceProgress } from "./invoice-progress-route.js";
 import { handleSetSourceOrg } from "./source-route.js";
@@ -1747,6 +1748,37 @@ export default {
         db,
         enabledMatch[1],
         (enabledBody as Record<string, unknown> | null)?.enabled
+      );
+      return json(result.body, result.status);
+    }
+
+    /**
+     * A rule's name, changed without recompiling it — decision 0266.
+     *
+     * **`Admin.RuleManagement`**, matching `/rules/compile` — naming a
+     * rule is rule authorship, the same act as writing the sentence
+     * that becomes one, not general configuration.
+     */
+    const ruleNameMatch = pathname.match(/^\/rules\/([^/]+)\/name$/);
+    if (ruleNameMatch && request.method === "PUT") {
+      const { db } = resolveTenant(request, env);
+      const locale = resolveLocale(env.LOCALE);
+      const auth = await requirePermission(db, request, "Admin.RuleManagement", sessionContext(env));
+      if (!auth.authorized) {
+        return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", locale) }, auth.status);
+      }
+      let nameBody: unknown;
+      try {
+        nameBody = await request.json();
+      } catch {
+        return json({ error: t("invalidJsonBody", locale) }, 400);
+      }
+
+      const result = await handleRenameRule(
+        db,
+        ruleNameMatch[1],
+        (nameBody as Record<string, unknown> | null)?.name,
+        locale
       );
       return json(result.body, result.status);
     }

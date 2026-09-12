@@ -78,6 +78,7 @@ import threeAlertsSql from "../migrations/0073_three_alerts_not_one.sql?raw";
 import moverPickerSql from "../migrations/0074_the_mover_picker.sql?raw";
 import showingOneStageSql from "../migrations/0075_showing_one_stage.sql?raw";
 import whatIActedOnSql from "../migrations/0076_what_i_acted_on.sql?raw";
+import nameARuleSql from "../migrations/0077_name_a_rule.sql?raw";
 
 function stripSqlComments(sql: string): string {
   return sql
@@ -183,5 +184,6 @@ export async function applyTestSchema(): Promise<void> {
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(moverPickerSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(showingOneStageSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(whatIActedOnSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(nameARuleSql)));
 
 }

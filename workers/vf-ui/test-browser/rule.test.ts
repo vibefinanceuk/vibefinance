@@ -42,6 +42,9 @@ const STRINGS = {
     "rule.running": "This rule runs on invoices reaching this stage.",
     "rule.notrunning": "Paused.",
     "rule.approvedby": "Confirmed by {who} on {when}.",
+    "rule.rename": "Rename",
+    "rule.namethis": "Name this rule",
+    "rule.unnamed": "Not yet named",
     "rulestate.live": "Live",
     "rulestate.paused": "Paused",
     "rulestate.awaiting_confirmation": "To confirm",
@@ -296,5 +299,67 @@ describe("confirming from the rule screen (decision 0157)", () => {
     await open(waiting());
     const body = document.body.textContent ?? "";
     expect(body.indexOf("Worked examples")).toBeLessThan(body.indexOf("Version 3"));
+  });
+});
+
+describe("a rule's own name (decision 0266)", () => {
+  it("shows an invitation to name it, when it has none", async () => {
+    await open(ruleWith({ name: null }));
+    expect(document.body.textContent).toContain("Name this rule");
+  });
+
+  it("shows the name it has, and offers to rename rather than name it", async () => {
+    await open(ruleWith({ name: "Spend Threshold" }));
+    expect(document.body.textContent).toContain("Spend Threshold");
+    expect(document.body.textContent).toContain("Rename");
+  });
+
+  it("sends the new name via PUT, and reloads", async () => {
+    const calls: string[] = [];
+    vi.stubGlobal("prompt", () => "Spend Threshold");
+    const bodies: unknown[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        const path = String(url).split("?")[0];
+        if (init?.method === "PUT") {
+          calls.push(path);
+          bodies.push(init.body ? JSON.parse(init.body as string) : null);
+        }
+        const routes: Record<string, unknown> = {
+          "/api/ui-strings": STRINGS,
+          "/api/field-visibility": FIELDS,
+          "/api/rules/r-1": ruleWith({ name: null }),
+          "/api/rules/r-1/name": { ruleId: "r-1", name: "Spend Threshold" },
+        };
+        if (!(path in routes)) throw new Error(`no stub for ${path}`);
+        return { ok: true, json: async () => routes[path] } as Response;
+      })
+    );
+
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openRule } = await import("/rule.js");
+    await openRule("r-1");
+    await new Promise((r) => setTimeout(r, 0));
+
+    const rename = [...document.querySelectorAll("button")].find((b) => b.textContent === "Name this rule");
+    (rename as HTMLButtonElement).click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(calls).toContain("/api/rules/r-1/name");
+    expect(bodies[0]).toEqual({ name: "Spend Threshold" });
+  });
+
+  it("does nothing when the prompt is cancelled", async () => {
+    vi.stubGlobal("prompt", () => null);
+    const calls: string[] = [];
+    await open(ruleWith({ name: "Existing Name" }), calls);
+
+    const rename = [...document.querySelectorAll("button")].find((b) => b.textContent === "Rename");
+    (rename as HTMLButtonElement).click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(calls.some((c) => c.includes("/name"))).toBe(false);
   });
 });

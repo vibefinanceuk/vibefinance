@@ -1,4 +1,6 @@
 import type { RouteResult } from "./examples-route.js";
+import { t } from "./i18n.js";
+import type { Locale } from "./i18n.js";
 
 /**
  * The rules that exist, by stage — decision 0149.
@@ -18,6 +20,7 @@ interface RuleRow {
   rule_set_id: string;
   enabled: number;
   sort_order: number;
+  name: string | null;
   stage_id: string | null;
   stage_name: string | null;
   sequence: number | null;
@@ -65,7 +68,7 @@ export async function handleListRules(
    */
   const rows = await db
     .prepare(
-      `SELECT r.id, r.rule_set_id, r.enabled, r.sort_order,
+      `SELECT r.id, r.rule_set_id, r.enabled, r.sort_order, r.name,
               s.id AS stage_id, s.name AS stage_name, s.sequence,
               v.version, v.source_text, v.approved_by, v.approved_at,
               (SELECT count(*) FROM rule_examples e
@@ -90,6 +93,7 @@ export async function handleListRules(
       rules: rows.results.map((r) => ({
         id: r.id,
         ruleSetId: r.rule_set_id,
+        name: r.name,
         // **The sentence somebody wrote**, not the compiled JSON. A
         // person recognises their own words; nobody recognises
         // `{"field":"BT-112","operator":"greater_than"}`.
@@ -256,7 +260,7 @@ export async function handleSetRuleEnabled(
 export async function handleGetRule(db: D1Database, ruleId: string): Promise<RouteResult> {
   const rule = await db
     .prepare(
-      `SELECT r.id, r.rule_set_id, r.enabled, s.id AS stage_id, s.name AS stage_name
+      `SELECT r.id, r.rule_set_id, r.enabled, r.name, s.id AS stage_id, s.name AS stage_name
        FROM rules r
        JOIN rule_sets rs ON rs.id = r.rule_set_id
        LEFT JOIN process_stages s ON s.rule_set_id = rs.id
@@ -267,6 +271,7 @@ export async function handleGetRule(db: D1Database, ruleId: string): Promise<Rou
       id: string;
       rule_set_id: string;
       enabled: number;
+      name: string | null;
       stage_id: string | null;
       stage_name: string | null;
     }>();
@@ -304,6 +309,7 @@ export async function handleGetRule(db: D1Database, ruleId: string): Promise<Rou
     body: {
       id: rule.id,
       ruleSetId: rule.rule_set_id,
+      name: rule.name,
       enabled: rule.enabled === 1,
       stageId: rule.stage_id,
       stageName: rule.stage_name,
@@ -338,4 +344,35 @@ export async function handleGetRule(db: D1Database, ruleId: string): Promise<Rou
       })),
     },
   };
+}
+
+/**
+ * A rule's own name, changed without touching its logic — decision
+ * 0266.
+ *
+ * **Deliberately not part of `handleCompileRequest`.** Compiling a new
+ * version means a real model call, a fresh worked-examples generation,
+ * and a new draft awaiting activation — all of it wasted if somebody
+ * only wanted to fix a typo in what a rule is called. Renaming updates
+ * one column and nothing else: no version, no re-approval, no effect
+ * on what the rule does.
+ */
+export async function handleRenameRule(
+  db: D1Database,
+  ruleId: string,
+  newName: unknown,
+  locale: Locale = "en"
+): Promise<RouteResult> {
+  if (typeof newName !== "string" || !newName.trim()) {
+    return { status: 400, body: { error: t("ruleNameRequired", locale) } };
+  }
+
+  const rule = await db.prepare("SELECT id FROM rules WHERE id = ?").bind(ruleId).first();
+  if (!rule) {
+    return { status: 404, body: { error: t("ruleDoesNotExist", locale, { ruleId }) } };
+  }
+
+  await db.prepare("UPDATE rules SET name = ? WHERE id = ?").bind(newName.trim(), ruleId).run();
+
+  return { status: 200, body: { ruleId, name: newName.trim() } };
 }

@@ -134,6 +134,33 @@ describe("what a rule row says", () => {
     expect(document.body.textContent).toContain("Hold any invoice over 10,000 euros");
   });
 
+  it("shows a named rule by its name, with the sentence underneath (decision 0266)", async () => {
+    await open([
+      {
+        id: "r-1",
+        name: "Spend Threshold",
+        sourceText: "Hold any invoice over 10,000 euros from a new supplier.",
+        state: "live",
+        stageName: "Validation",
+      },
+    ]);
+
+    const link = document.querySelector(".rulelink");
+    expect(link?.textContent).toBe("Spend Threshold");
+    // The sentence is not gone — still there to read, just not the
+    // headline once a name exists.
+    expect(document.body.textContent).toContain("Hold any invoice over 10,000 euros");
+  });
+
+  it("falls back to the sentence as the headline when there is no name", async () => {
+    await open([
+      { id: "r-1", name: null, sourceText: "A rule with no name yet.", state: "live", stageName: "Validation" },
+    ]);
+
+    const link = document.querySelector(".rulelink");
+    expect(link?.textContent).toBe("A rule with no name yet.");
+  });
+
   it("says how many examples are waiting, not just that some are", async () => {
     await open([
       { id: "r-2", sourceText: "A rule", state: "awaiting_confirmation", awaiting: 2 },

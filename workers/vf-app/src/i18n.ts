@@ -36,6 +36,9 @@ export type MessageKey =
   | "unauthorized"
   | "forbidden"
   | "ruleIdMustBeString"
+  | "ruleNameMustBeString"
+  | "ruleNameRequired"
+  | "ruleDoesNotExist"
   | "ruleDoesNotExistInRuleSet"
   | "invoiceDoesNotExist";
 
@@ -197,6 +200,30 @@ const MESSAGES: Record<MessageKey, Record<Locale, string>> = {
     es: "ruleId, si se proporciona, debe ser una cadena de texto",
     it: "ruleId, se fornito, deve essere una stringa",
     nl: "ruleId moet, indien opgegeven, een tekenreeks zijn",
+  },
+  ruleNameMustBeString: {
+    en: "name, if provided, must be a non-empty string",
+    de: "der Name muss, sofern angegeben, eine nicht leere Zeichenkette sein",
+    fr: "le nom, si fourni, doit être une chaîne de caractères non vide",
+    es: "el nombre, si se proporciona, debe ser una cadena de texto no vacía",
+    it: "il nome, se fornito, deve essere una stringa non vuota",
+    nl: "de naam moet, indien opgegeven, een niet-lege tekenreeks zijn",
+  },
+  ruleNameRequired: {
+    en: "name (a non-empty string) is required",
+    de: "Name (eine nicht leere Zeichenkette) ist erforderlich",
+    fr: "le nom (une chaîne de caractères non vide) est requis",
+    es: "el nombre (una cadena de texto no vacía) es obligatorio",
+    it: "il nome (una stringa non vuota) è obbligatorio",
+    nl: "naam (een niet-lege tekenreeks) is verplicht",
+  },
+  ruleDoesNotExist: {
+    en: "rule {ruleId} does not exist",
+    de: "Regel {ruleId} existiert nicht",
+    fr: "la règle {ruleId} n'existe pas",
+    es: "la regla {ruleId} no existe",
+    it: "la regola {ruleId} non esiste",
+    nl: "regel {ruleId} bestaat niet",
   },
   ruleDoesNotExistInRuleSet: {
     en: "rule {ruleId} does not exist in rule set {ruleSetId}",

@@ -86,13 +86,17 @@ function ruleRow(rule) {
       // names a rule, and opening one is the first thing anybody wants
       // to do with it; a separate "open" button would put navigation
       // where the rule itself is.
-      // **The sentence somebody wrote.** A person recognises their own
-      // words; nobody recognises a compiled condition tree.
+      // **Named where it has a name, decision 0266** — a list of ten
+      // rules reads as ten sentences otherwise, and a name is what a
+      // person actually scans for. The sentence stays underneath,
+      // muted, for the rule nobody has named yet and for whoever wants
+      // to confirm what a named one actually does.
       el("button", {
         class: "rulelink",
-        text: rule.sourceText ?? "",
+        text: rule.name ?? rule.sourceText ?? "",
         onclick: () => openRule(rule.id),
       }),
+      ...(rule.name ? [el("div", { class: "sm muted", text: rule.sourceText ?? "" })] : []),
     ]),
     el("div", { class: `rulestate ${rule.state}` }, [
       // Live and paused carry a mark; a draft does not, because

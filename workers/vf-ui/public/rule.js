@@ -203,6 +203,34 @@ function versionPanel(version, isLatest) {
   return el("div", { class: "panel" }, parts);
 }
 
+/**
+ * Give a rule a name, or change it — decision 0266.
+ *
+ * **`window.prompt`, matching `sources.js`'s own rename** — the same
+ * established, minimal pattern, not a second way to do the same kind
+ * of thing. No recompile, no new version: this touches nothing but the
+ * name.
+ */
+async function rename() {
+  const name = window.prompt(t("rule.rename"), rule.name ?? "");
+  if (name === null || name.trim() === "") return;
+
+  const response = await fetch(`/api/rules/${encodeURIComponent(rule.id)}/name`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name: name.trim() }),
+  });
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    note(body.error ?? t("rules.failed"));
+    return;
+  }
+
+  await load(rule.id);
+  render();
+}
+
 function render() {
   const shell = document.getElementById("shell");
   if (!shell) return;
@@ -214,6 +242,18 @@ function render() {
     frame(
       el("div", {}, [
         topbar(t("rule.title"), rule.stageName ?? ""),
+
+        /**
+         * **The rule's own name, or an invitation to give it one** —
+         * decision 0266. Not folded into the topbar's title, which
+         * belongs to the screen ("Rule") rather than to this one rule.
+         */
+        el("div", { class: "rulenamerow" }, [
+          rule.name
+            ? el("h2", { class: "rulename", text: rule.name })
+            : el("span", { class: "muted", text: t("rule.unnamed") }),
+          el("button", { class: "sm", onclick: rename, text: rule.name ? t("rule.rename") : t("rule.namethis") }),
+        ]),
 
         el("div", { class: "gate" }, [
           // **The word the list already uses.** "Deactivate" and

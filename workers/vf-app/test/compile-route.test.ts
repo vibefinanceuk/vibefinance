@@ -501,3 +501,86 @@ describe("handleCompileRequest — rule sets carry their own vocabulary (decisio
     expect(ruleCount).toEqual({ n: 0 }); // refused — nothing stored
   });
 });
+
+describe("handleCompileRequest — a rule's own name (decision 0266)", () => {
+  const compiledResponse = (threshold: number) =>
+    JSON.stringify({
+      status: "compiled",
+      conditions: { field: "BT-112", operator: "greater_than", value: threshold },
+      actions: [{ type: "flag" }],
+    });
+
+  it("stores the name given when a new rule is created", async () => {
+    await seedRuleSet("rs1");
+    const model = fakeModel(compiledResponse(10000));
+    const result = await handleCompileRequest(model, "test-model@v1", env.DB, {
+      ruleSetId: "rs1",
+      sourceText: "flag anything over 10000",
+      name: "Spend Threshold",
+    });
+
+    expect(result.status).toBe(201);
+    expect((result.body as { name: string }).name).toBe("Spend Threshold");
+
+    const row = await env.DB.prepare("SELECT name FROM rules WHERE id = ?")
+      .bind((result.body as { ruleId: string }).ruleId)
+      .first<{ name: string | null }>();
+    expect(row?.name).toBe("Spend Threshold");
+  });
+
+  it("leaves a rule nameless when none is given", async () => {
+    // **Nullable, no invented default** — decision 0071's precedent,
+    // the same rule this migration's own record cites.
+    await seedRuleSet("rs1");
+    const model = fakeModel(compiledResponse(10000));
+    const result = await handleCompileRequest(model, "test-model@v1", env.DB, {
+      ruleSetId: "rs1",
+      sourceText: "flag anything over 10000",
+    });
+
+    const row = await env.DB.prepare("SELECT name FROM rules WHERE id = ?")
+      .bind((result.body as { ruleId: string }).ruleId)
+      .first<{ name: string | null }>();
+    expect(row?.name).toBeNull();
+  });
+
+  it("does not let a recompile change or blank an existing name", async () => {
+    /**
+     * **The load-bearing case.** A name lives on `rules`, not
+     * `rule_versions` — this route must never touch it on a recompile,
+     * whether or not the caller happens to send one. Renaming is
+     * `handleRenameRule`'s job, deliberately not this route's, so a
+     * routine recompile can never silently rename or un-name a rule.
+     */
+    await seedRuleSet("rs1");
+    const create = await handleCompileRequest(fakeModel(compiledResponse(10000)), "test-model@v1", env.DB, {
+      ruleSetId: "rs1",
+      sourceText: "flag anything over 10000",
+      name: "Spend Threshold",
+    });
+    const ruleId = (create.body as { ruleId: string }).ruleId;
+
+    await handleCompileRequest(fakeModel(compiledResponse(15000)), "test-model@v1", env.DB, {
+      ruleSetId: "rs1",
+      sourceText: "flag anything over 15000",
+      ruleId,
+      name: "Something Else Entirely",
+    });
+
+    const row = await env.DB.prepare("SELECT name FROM rules WHERE id = ?").bind(ruleId).first<{ name: string }>();
+    expect(row?.name).toBe("Spend Threshold");
+  });
+
+  it("400s on an empty name rather than storing a blank one", async () => {
+    await seedRuleSet("rs1");
+    const model = fakeModel(compiledResponse(10000));
+    const result = await handleCompileRequest(model, "test-model@v1", env.DB, {
+      ruleSetId: "rs1",
+      sourceText: "flag anything over 10000",
+      name: "   ",
+    });
+
+    expect(result.status).toBe(400);
+    expect(model.compile).not.toHaveBeenCalled();
+  });
+});

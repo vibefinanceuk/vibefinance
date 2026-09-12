@@ -56,6 +56,12 @@ async function compile() {
       // Present only when revising, so the route makes a new version
       // rather than a new rule.
       ...(revising?.ruleId ? { ruleId: revising.ruleId } : {}),
+      // Only meaningful on creation — decision 0266. A recompile
+      // ignores this field regardless, but not sending it while
+      // revising keeps the request honest about what it is asking for.
+      ...(!revising && document.getElementById("rule-name")?.value.trim()
+        ? { name: document.getElementById("rule-name").value.trim() }
+        : {}),
     }),
   });
 
@@ -158,6 +164,21 @@ function textarea(value) {
   return node;
 }
 
+/**
+ * A rule's own name, entered only when writing a new one — decision
+ * 0266.
+ *
+ * **Absent while revising.** The name lives on the rule itself, not on
+ * a version, and a recompile never touches it (`compile-route.ts`
+ * ignores whatever this would send) — showing an input that has no
+ * effect would be worse than not offering it, the same argument
+ * decision 0142 already made for Save on a read-only form.
+ */
+function nameInput() {
+  const node = el("input", { id: "rule-name", type: "text", placeholder: t("compose.nameplaceholder") });
+  return node;
+}
+
 function render() {
   const shell = document.getElementById("shell");
   if (!shell) return;
@@ -176,6 +197,13 @@ function render() {
       // Rewriting a rule from a blank page invites somebody to lose a
       // clause they meant to keep.
       textarea(startingFrom),
+      // **A name, only for a brand new rule** — decision 0266.
+      ...(revising
+        ? []
+        : [
+            el("label", { class: "sm muted", for: "rule-name", text: t("compose.namelabel") }),
+            nameInput(),
+          ]),
       el("div", { class: "composebar" }, [
         el("button", { class: "primary", onclick: compile }, [
           icon("compile"),

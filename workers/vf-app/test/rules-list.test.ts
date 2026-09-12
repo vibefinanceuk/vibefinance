@@ -7,6 +7,7 @@ import {
   ensureRuleSetForStage,
   handleGetRule,
   handleSetRuleEnabled,
+  handleRenameRule,
 } from "../src/rules-list-route.js";
 
 /**
@@ -51,12 +52,12 @@ async function seed() {
 async function addRule(
   id: string,
   sourceText: string,
-  { enabled = 1, approved = false, examples = 0, confirmed = 0 } = {}
+  { enabled = 1, approved = false, examples = 0, confirmed = 0, name = null as string | null } = {}
 ) {
   await env.DB.prepare(
-    "INSERT INTO rules (id, rule_set_id, sort_order, enabled) VALUES (?, 'rs-val', 0, ?)"
+    "INSERT INTO rules (id, rule_set_id, sort_order, enabled, name) VALUES (?, 'rs-val', 0, ?, ?)"
   )
-    .bind(id, enabled)
+    .bind(id, enabled, name)
     .run();
   await env.DB.prepare(
     `INSERT INTO rule_versions (rule_id, version, source_text, compiled_json, compiled_by, approved_by, approved_at)
@@ -333,5 +334,88 @@ describe("the routes do not shadow each other (decision 0155)", () => {
   it("still compiles, rather than looking for a rule called 'compile'", async () => {
     const res = await SELF.fetch("https://app.example.com/rules/compile", { method: "POST" });
     expect(res.status).not.toBe(404);
+  });
+});
+
+describe("a rule's own name (decision 0266)", () => {
+  beforeEach(async () => {
+    await applyTestSchema();
+    await seed();
+  });
+
+  it("carries a name through to the list", async () => {
+    await addRule("r1", "flag anything over 10000", { name: "Spend Threshold" });
+    const result = await handleListRules(env.DB, null);
+    const row = (result.body as { rules: { id: string; name: string | null }[] }).rules.find(
+      (r) => r.id === "r1"
+    );
+    expect(row?.name).toBe("Spend Threshold");
+  });
+
+  it("carries a name through to the detail route too", async () => {
+    await addRule("r1", "flag anything over 10000", { name: "Spend Threshold" });
+    const body = (await handleGetRule(env.DB, "r1")).body as { name: string | null };
+    expect(body.name).toBe("Spend Threshold");
+  });
+
+  it("carries a null name for a rule that has never been named", async () => {
+    await addRule("r1", "flag anything over 10000");
+    const result = await handleListRules(env.DB, null);
+    const row = (result.body as { rules: { id: string; name: string | null }[] }).rules.find(
+      (r) => r.id === "r1"
+    );
+    expect(row?.name).toBeNull();
+  });
+
+  it("renames a rule without touching anything else about it", async () => {
+    await addRule("r1", "flag anything over 10000", { enabled: 1, approved: true });
+    const before = await env.DB.prepare(
+      "SELECT sort_order, enabled FROM rules WHERE id = 'r1'"
+    ).first<{ sort_order: number; enabled: number }>();
+
+    const result = await handleRenameRule(env.DB, "r1", "Spend Threshold");
+    expect(result.status).toBe(200);
+    expect(result.body).toEqual({ ruleId: "r1", name: "Spend Threshold" });
+
+    const after = await env.DB.prepare(
+      "SELECT name, sort_order, enabled FROM rules WHERE id = 'r1'"
+    ).first<{ name: string; sort_order: number; enabled: number }>();
+    expect(after?.name).toBe("Spend Threshold");
+    expect(after?.sort_order).toBe(before?.sort_order);
+    expect(after?.enabled).toBe(before?.enabled);
+
+    // Still exactly one version — a rename triggers no recompile.
+    const versions = await env.DB.prepare(
+      "SELECT count(*) AS n FROM rule_versions WHERE rule_id = 'r1'"
+    ).first<{ n: number }>();
+    expect(versions?.n).toBe(1);
+  });
+
+  it("overwrites a rule's existing name, rather than refusing to", async () => {
+    await addRule("r1", "flag anything over 10000", { name: "Old Name" });
+    await handleRenameRule(env.DB, "r1", "New Name");
+    const row = await env.DB.prepare("SELECT name FROM rules WHERE id = 'r1'").first<{ name: string }>();
+    expect(row?.name).toBe("New Name");
+  });
+
+  it("404s for a rule that does not exist", async () => {
+    const result = await handleRenameRule(env.DB, "nope", "Anything");
+    expect(result.status).toBe(404);
+  });
+
+  it("400s on an empty name", async () => {
+    await addRule("r1", "flag anything over 10000", { name: "Kept" });
+    const result = await handleRenameRule(env.DB, "r1", "   ");
+    expect(result.status).toBe(400);
+
+    // Refused, not silently applied as whitespace.
+    const row = await env.DB.prepare("SELECT name FROM rules WHERE id = 'r1'").first<{ name: string }>();
+    expect(row?.name).toBe("Kept");
+  });
+
+  it("400s when no name is given at all", async () => {
+    await addRule("r1", "flag anything over 10000");
+    const result = await handleRenameRule(env.DB, "r1", undefined);
+    expect(result.status).toBe(400);
   });
 });

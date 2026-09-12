@@ -14,6 +14,15 @@ export interface CompileRequestBody {
    * Omitted or absent means "create a new rule", exactly the original
    * behaviour, unchanged. */
   ruleId?: unknown;
+  /**
+   * **A name, only meaningful when creating a new rule** — decision
+   * 0266. Lives on `rules`, not `rule_versions`, because a rule's name
+   * is its own identity and does not change just because its sentence
+   * was edited and recompiled. Ignored on a recompile of an existing
+   * rule — renaming one is `handleRenameRule`'s job, not this route's,
+   * so a compile can never silently blank a name nobody meant to touch.
+   */
+  name?: unknown;
 }
 
 export interface CompileRouteResult {
@@ -41,12 +50,15 @@ export async function handleCompileRequest(
   body: CompileRequestBody,
   locale: Locale = "en"
 ): Promise<CompileRouteResult> {
-  const { ruleSetId, sourceText, ruleId: providedRuleId } = body;
+  const { ruleSetId, sourceText, ruleId: providedRuleId, name } = body;
   if (typeof ruleSetId !== "string" || !ruleSetId || typeof sourceText !== "string" || !sourceText) {
     return { status: 400, body: { error: t("ruleSetIdSourceTextRequired", locale) } };
   }
   if (providedRuleId !== undefined && (typeof providedRuleId !== "string" || !providedRuleId)) {
     return { status: 400, body: { error: t("ruleIdMustBeString", locale) } };
+  }
+  if (name !== undefined && (typeof name !== "string" || !name.trim())) {
+    return { status: 400, body: { error: t("ruleNameMustBeString", locale) } };
   }
 
   const ruleSetExists = await db
@@ -146,8 +158,8 @@ export async function handleCompileRequest(
     const sortOrder = nextSortOrder?.next ?? 0;
     statements.push(
       db
-        .prepare("INSERT INTO rules (id, rule_set_id, sort_order, enabled) VALUES (?, ?, ?, 1)")
-        .bind(ruleId, ruleSetId, sortOrder)
+        .prepare("INSERT INTO rules (id, rule_set_id, sort_order, enabled, name) VALUES (?, ?, ?, 1, ?)")
+        .bind(ruleId, ruleSetId, sortOrder, typeof name === "string" ? name.trim() : null)
     );
   }
 
@@ -220,6 +232,14 @@ export async function handleCompileRequest(
       conditions: outcome.conditions,
       actions: outcome.actions,
       examples: examplesSummary,
+      /**
+       * **Only on creation.** A recompile leaves an existing rule's
+       * name untouched — this route never sets one on a rule that
+       * already exists, so echoing back whatever the caller happened
+       * to send on a recompile would claim a change this request never
+       * made.
+       */
+      ...(isNewRule ? { name: typeof name === "string" ? name.trim() : null } : {}),
     },
   };
 }
