@@ -111,7 +111,14 @@
   */
   --chart-1: #1f6fb2;
   --chart-2: #1b8f77;
-  --chart-3: #7a4fa8;
+  /*
+    **Deepened at the operator's asking** — decision 0258. `#7a4fa8`
+    read as lavender rather than the saturated violet they pointed at
+    in a reference dashboard. Still no verdict attached to it — a
+    richer purple is still just the third category, not a warning
+    wearing a disguise.
+  */
+  --chart-3: #6a3aa0;
   --chart-4: #c06a2a;
   --chart-5: #3d7a96;
 
