@@ -28,7 +28,7 @@ const STRINGS = {
   strings: {
     "nav.tasks": "Tasks",
     "nav.sources": "Sources",
-    "nav.dashboard": "My work",
+    "nav.dashboard": "Dashboard",
     "nav.suppliers": "Suppliers",
     "nav.rules": "Rules",
     "rules.subtitle": "What should happen to an invoice, in your words",
@@ -239,9 +239,11 @@ describe("the navigation", () => {
     const nav = [...document.querySelectorAll(".nav a")].map((a) => a.textContent);
     // **Suppliers, since decision 0213.** This test exists to notice a
     // screen appearing or disappearing, and it did.
-    // **My work, since decision 0242.** This test exists to notice a
-    // screen appearing or disappearing, and it did.
-    expect(nav).toEqual(["Tasks", "My work", "Sources", "Suppliers", "Rules", "Documents"]);
+    // **Dashboard, first, since decision 0274.** Renamed from "My
+    // work" (decision 0242) and moved to the front of the list, at
+    // the operator's own request — this test caught both changes at
+    // once, which is what it is for.
+    expect(nav).toEqual(["Dashboard", "Tasks", "Sources", "Suppliers", "Rules", "Documents"]);
   });
 
   it("marks which screen you are on", async () => {

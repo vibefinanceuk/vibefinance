@@ -38,7 +38,7 @@ const STRINGS = {
     "action.load": "Load",
     "nav.tasks": "Tasks",
     "nav.sources": "Sources",
-    "nav.dashboard": "My work",
+    "nav.dashboard": "Dashboard",
     "nav.suppliers": "Suppliers",
     "nav.rules": "Rules",
     "nav.documents": "Documents",

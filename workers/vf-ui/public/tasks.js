@@ -13,6 +13,7 @@
 
 import { t } from "/strings.js";
 import { moodPicker } from "/mood.js";
+import { icon } from "/icons.js";
 
 const shell = document.getElementById("shell");
 
@@ -417,73 +418,156 @@ async function go(screen) {
   }
 }
 
+/**
+ * The nav's own two folded states — decision 0274.
+ *
+ * **Persisted the same way mood is** (decision 0139): a person's own
+ * setting, not a customer's, and a browser refusing storage still
+ * gets a usable nav, just one that forgets the choice next visit.
+ */
+const NAV_COLLAPSED_KEY = "vf-nav-collapsed";
+const VIBE_AP_EXPANDED_KEY = "vf-vibeap-expanded";
+
+function navCollapsed() {
+  try {
+    return localStorage.getItem(NAV_COLLAPSED_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function setNavCollapsed(collapsed) {
+  try {
+    localStorage.setItem(NAV_COLLAPSED_KEY, collapsed ? "1" : "0");
+  } catch {
+    // The nav is still usable this session either way.
+  }
+}
+
+/**
+ * **Defaults open.** Collapsing five of the app's six real screens
+ * behind one click on a person's first visit would hide more than it
+ * revealed — closing it is something somebody chooses to do, not a
+ * state they arrive in.
+ */
+function vibeApExpanded() {
+  try {
+    const stored = localStorage.getItem(VIBE_AP_EXPANDED_KEY);
+    return stored === null ? true : stored === "1";
+  } catch {
+    return true;
+  }
+}
+
+function setVibeApExpanded(expanded) {
+  try {
+    localStorage.setItem(VIBE_AP_EXPANDED_KEY, expanded ? "1" : "0");
+  } catch {
+    // Still usable this session either way.
+  }
+}
+
+/** One nav entry: an icon, a label, and which screen it opens. */
+function navLink(screen, iconName) {
+  return el(
+    "a",
+    {
+      class: `navitem${current === screen ? " on" : ""}`,
+      title: t(`nav.${screen}`),
+      onclick: () => go(screen),
+    },
+    [icon(iconName), el("span", { class: "navlabel", text: t(`nav.${screen}`) })]
+  );
+}
+
 export function frame(main) {
-  return el("div", { class: "frame" }, [
-    el("nav", { class: "nav" }, [
-      /**
-       * The mark, at the head of the column — decision 0145.
-       *
-       * It sat at the foot first, on the argument that the top of a
-       * sidebar is where somebody looks to move. **The operator wanted
-       * it at the top**, which is the conventional place and the one
-       * people look for when orienting themselves rather than
-       * navigating — and small enough that it does not compete.
-       *
-       * Replaces the 30×3 dash decision 0108 left as a placeholder,
-       * which is what a placeholder is for.
-       *
-       * `alt` is empty on purpose: the name is in the page title, and a
-       * screen reader announcing "VibeFinance logo" before every
-       * navigation is noise rather than information.
-       */
-      el("img", { class: "brandmark dark", src: "/img/logo.png", alt: "" }),
-      el("img", { class: "brandmark light", src: "/img/logo-light.png", alt: "" }),
-      // **Each entry names itself** — decision 0149.
-      //
-      // This read `current === "sources" ? "" : "on"`, written when
-      // there were two screens and "not sources" therefore meant
-      // "tasks". A third screen made that wrong, and it marked Tasks
-      // while showing Rules.
-      //
-      // A comparison that only works while a list has two members is a
-      // comparison that breaks silently when it gains a third.
-      el("a", {
-        class: current === "tasks" ? "on" : "",
-        text: t("nav.tasks"),
-        onclick: () => go("tasks"),
-      }),
-      el("a", {
-        class: current === "dashboard" ? "on" : "",
-        text: t("nav.dashboard"),
-        onclick: () => go("dashboard"),
-      }),
-      el("a", {
-        class: current === "sources" ? "on" : "",
-        text: t("nav.sources"),
-        onclick: () => go("sources"),
-      }),
-      el("a", {
-        class: current === "suppliers" ? "on" : "",
-        text: t("nav.suppliers"),
-        onclick: () => go("suppliers"),
-      }),
-      el("a", {
-        class: current === "rules" ? "on" : "",
-        text: t("nav.rules"),
-        onclick: () => go("rules"),
-      }),
-      el("a", {
-        class: current === "documents" ? "on" : "",
-        text: t("nav.documents"),
-        onclick: () => go("documents"),
-      }),
-      el("div", { class: "who" }, [
-        el("div", { text: me?.name ?? "" }),
-        el("div", { class: "muted", text: me?.environmentId ?? "" }),
-      ]),
+  const VIBE_AP_SCREENS = [
+    ["tasks", "tasks"],
+    ["sources", "sources"],
+    ["suppliers", "suppliers"],
+    ["rules", "rules"],
+    ["documents", "documents"],
+  ];
+
+  const groupChildren = el(
+    "div",
+    { class: "navgroupchildren" },
+    VIBE_AP_SCREENS.map(([screen, iconName]) => navLink(screen, iconName))
+  );
+  groupChildren.hidden = !vibeApExpanded();
+
+  const groupChevron = icon("navcollapse");
+  groupChevron.classList.add("navgroupchevron");
+  if (vibeApExpanded()) groupChevron.classList.add("open");
+
+  const groupHead = el(
+    "button",
+    {
+      class: `navgrouphead${VIBE_AP_SCREENS.some(([s]) => s === current) ? " on" : ""}`,
+      title: t("nav.vibeap"),
+      onclick: () => {
+        const expanded = groupChildren.hidden;
+        groupChildren.hidden = !expanded;
+        groupChevron.classList.toggle("open", expanded);
+        setVibeApExpanded(expanded);
+      },
+    },
+    [icon("vibeap"), el("span", { class: "navlabel", text: t("nav.vibeap") }), groupChevron]
+  );
+
+  const navEl = el("nav", { class: navCollapsed() ? "nav collapsed" : "nav" }, [
+    /**
+     * The mark, at the head of the column — decision 0145.
+     *
+     * It sat at the foot first, on the argument that the top of a
+     * sidebar is where somebody looks to move. **The operator wanted
+     * it at the top**, which is the conventional place and the one
+     * people look for when orienting themselves rather than
+     * navigating — and small enough that it does not compete.
+     *
+     * **A third image, decision 0274**: `navmark` is the same "V" the
+     * full wordmark already draws as its first letter, cropped from
+     * the same source rather than redrawn — shown only when the nav
+     * is folded to icons, in place of the full logo neither collapsed
+     * width can hold.
+     *
+     * `alt` is empty on purpose: the name is in the page title, and a
+     * screen reader announcing "VibeFinance logo" before every
+     * navigation is noise rather than information.
+     */
+    el("img", { class: "brandmark dark", src: "/img/logo.png", alt: "" }),
+    el("img", { class: "brandmark light", src: "/img/logo-light.png", alt: "" }),
+    el("img", { class: "navmark", src: "/img/logo-mark.png", alt: "" }),
+    navLink("dashboard", "dashboard"),
+    el("div", { class: "navgroup" }, [groupHead, groupChildren]),
+    el("div", { class: "who" }, [
+      el("div", { text: me?.name ?? "" }),
+      el("div", { class: "muted", text: me?.environmentId ?? "" }),
     ]),
+    /**
+     * **Toggles the class directly, not a re-render.** Every other
+     * choice on this nav (which group is open, which screen is
+     * current) already lives as a DOM class a click can flip; folding
+     * the whole nav is the same kind of change, not a reason to
+     * rebuild the screen underneath it.
+     */
+    el("button", {
+      class: "navcollapsetoggle",
+      "aria-label": navCollapsed() ? t("nav.expand") : t("nav.collapse"),
+      onclick: (e) => {
+        const collapsed = !frameEl.classList.contains("collapsed");
+        frameEl.classList.toggle("collapsed", collapsed);
+        setNavCollapsed(collapsed);
+        e.currentTarget.setAttribute("aria-label", collapsed ? t("nav.expand") : t("nav.collapse"));
+      },
+    }, [icon("navcollapse")]),
+  ]);
+
+  const frameEl = el("div", { class: navCollapsed() ? "frame collapsed" : "frame" }, [
+    navEl,
     el("div", { class: "main", id: "main" }, [main]),
   ]);
+  return frameEl;
 }
 
 /** The document's identity, and where to go from here. */

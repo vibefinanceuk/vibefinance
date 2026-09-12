@@ -236,3 +236,58 @@ Object.assign(ICONS, {
   // Two bars. The convention nobody has to learn.
   paused: '<path d="M9.5 7v10M14.5 7v10"/>',
 });
+
+/**
+ * The navigation's own icons — decision 0274, for the operator's own
+ * request: "create icons for each of the side menu items that
+ * exist... Tasks, Dashboard, Sources, Suppliers, Rule and Documents."
+ *
+ * **Each icon says what the screen is, not what it does.** `compile`
+ * is an action drawn for a button; a nav icon has to be recognised at
+ * a glance, in passing, on the way to something else — so these are
+ * plainer shapes than the action set, chosen for what a person
+ * already associates with the word beside them.
+ */
+Object.assign(ICONS, {
+  // A checklist — two rows, a box and a line each. The thing a task
+  // list actually is.
+  tasks: '<rect x="4" y="5" width="4" height="4" rx="1"/><path d="M11 7h9"/><rect x="4" y="15" width="4" height="4" rx="1"/><path d="M11 17h9"/>',
+
+  // Four tiles of different sizes — the dashboard's own cards are
+  // never uniform (decision 0244's tile/half weighting), so a grid of
+  // identical squares would say something the screen does not.
+  dashboard:
+    '<rect x="3" y="3" width="8" height="8" rx="1.5"/><rect x="13" y="3" width="8" height="5" rx="1.5"/><rect x="13" y="10" width="8" height="11" rx="1.5"/><rect x="3" y="13" width="8" height="8" rx="1.5"/>',
+
+  // An inbox tray — where a document arrives from, not what it says
+  // once it has.
+  sources: '<path d="M3 12h5l2 3h4l2-3h5"/><path d="M4 12 5.5 5h13L20 12"/><path d="M3 12v6a1 1 0 0 0 1 1h16a1 1 0 0 0 1-1v-6"/>',
+
+  // A building, not a person — a supplier here is an organisation
+  // this app matches invoices to, never an individual it has a name
+  // and a face for.
+  suppliers:
+    '<path d="M4 21V5a1 1 0 0 1 1-1h8a1 1 0 0 1 1 1v16"/><path d="M14 21v-9a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v9"/><path d="M4 21h16"/><path d="M7 7h2M7 11h2M7 15h2M11 7h1M11 11h1M11 15h1"/>',
+
+  // A branch, not the lines-and-brackets `compile` already draws for
+  // the act of writing one. This is what a rule *is* once it exists:
+  // one condition, two ways an invoice can go from it.
+  rules:
+    '<circle cx="6" cy="5" r="2"/><path d="M6 7v3a3 3 0 0 0 3 3h6a3 3 0 0 1 3 3v3"/><circle cx="18" cy="19" r="2"/><path d="M6 7v10"/><circle cx="6" cy="19" r="2"/>',
+
+  // A page with a folded corner — the plainest possible "a document,"
+  // deliberately generic since this screen holds every kind at once.
+  documents: '<path d="M6 3h9l4 4v14a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/><path d="M15 3v4h4"/><path d="M8 12h8M8 16h5"/>',
+
+  // A panel with a chevron — decision 0274's collapse toggle. One
+  // icon rather than two: the chevron is flipped with a CSS transform
+  // for "expand," since the shape is the same claim pointed the other
+  // way, not a different one.
+  navcollapse: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/><path d="M14 9l-2 3 2 3"/>',
+
+  // A folder — decision 0274's "Vibe AP" group header. It groups a
+  // handful of real screens the same way a folder groups files; a
+  // text badge in its place would have been the one thing on this bar
+  // that was not a drawn icon.
+  vibeap: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
+});

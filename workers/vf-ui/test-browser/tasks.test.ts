@@ -29,10 +29,13 @@ const STRINGS = {
   strings: {
     "nav.tasks": "Tasks",
     "nav.sources": "Sources",
-    "nav.dashboard": "My work",
+    "nav.dashboard": "Dashboard",
     "nav.suppliers": "Suppliers",
     "nav.rules": "Rules",
     "nav.documents": "Documents",
+    "nav.vibeap": "Vibe AP",
+    "nav.collapse": "Collapse the menu",
+    "nav.expand": "Expand the menu",
     "tasks.stage": "Stage",
     "tasks.line": "line",
     "tasks.supplier": "Supplier",
@@ -113,6 +116,12 @@ async function openList(tasks: unknown[]) {
 beforeEach(() => {
   mountShell();
   vi.resetModules();
+  // **Cleared for every test, not just this file's own.** localStorage
+  // is a real browser global jsdom backs for the whole run, unlike
+  // `vi.stubGlobal`'s own state — decision 0274's nav-fold and
+  // Vibe-AP-group state both live there now, and a test that sets one
+  // must not leak it into the next.
+  localStorage.clear();
 });
 
 /**
@@ -201,6 +210,144 @@ describe("the brand mark (decision 0145)", () => {
 
     const mark = document.querySelector("img.brandmark") as HTMLImageElement;
     expect(mark.alt).toBe("");
+  });
+});
+
+describe("the folded nav, and the Vibe AP group (decision 0274)", () => {
+  function vibeApHead() {
+    return document.querySelector(".navgrouphead") as HTMLButtonElement;
+  }
+  function vibeApChildren() {
+    return document.querySelector(".navgroupchildren") as HTMLElement;
+  }
+  function collapseToggle() {
+    return document.querySelector(".navcollapsetoggle") as HTMLButtonElement;
+  }
+  function frameEl() {
+    return document.querySelector(".frame") as HTMLElement;
+  }
+
+  it("puts Dashboard first, standalone, ahead of the Vibe AP group", async () => {
+    await openList([APPROVAL_TASK]);
+
+    const nav = document.querySelector(".nav");
+    const dashboard = [...(nav?.querySelectorAll(".navitem") ?? [])].find((a) =>
+      a.textContent?.includes("Dashboard")
+    );
+    const group = nav?.querySelector(".navgroup");
+    const position = dashboard?.compareDocumentPosition(group as Node) ?? 0;
+    expect(Boolean(position & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
+  });
+
+  it("groups Tasks, Sources, Suppliers, Rules and Documents under Vibe AP", async () => {
+    await openList([APPROVAL_TASK]);
+
+    const labels = [...vibeApChildren().querySelectorAll(".navitem")].map((a) => a.textContent);
+    expect(labels).toEqual(["Tasks", "Sources", "Suppliers", "Rules", "Documents"]);
+  });
+
+  it("gives every real nav item an icon", async () => {
+    await openList([APPROVAL_TASK]);
+
+    // Six real screens (Dashboard, Tasks, Sources, Suppliers, Rules,
+    // Documents) plus the Vibe AP group header itself.
+    const items = [...document.querySelectorAll(".navitem"), vibeApHead()];
+    expect(items).toHaveLength(7);
+    for (const item of items) {
+      expect(item.querySelector("svg")).not.toBeNull();
+    }
+  });
+
+  it("starts with the Vibe AP group expanded", async () => {
+    await openList([APPROVAL_TASK]);
+    expect(vibeApChildren().hidden).toBe(false);
+  });
+
+  it("collapses and re-expands the group without navigating anywhere", async () => {
+    await openList([APPROVAL_TASK]);
+
+    vibeApHead().click();
+    expect(vibeApChildren().hidden).toBe(true);
+
+    vibeApHead().click();
+    expect(vibeApChildren().hidden).toBe(false);
+  });
+
+  it("remembers the group's own state across a fresh render", async () => {
+    await openList([APPROVAL_TASK]);
+    vibeApHead().click();
+    expect(vibeApChildren().hidden).toBe(true);
+
+    // A second, independent render of the same shell — the state has
+    // to come from storage, not from the DOM node just closed.
+    await openList([APPROVAL_TASK]);
+    expect(vibeApChildren().hidden).toBe(true);
+  });
+
+  it("starts with the nav open, showing the full mark and every label", async () => {
+    await openList([APPROVAL_TASK]);
+
+    expect(frameEl().classList.contains("collapsed")).toBe(false);
+    expect(document.querySelector(".navlabel")).not.toBeNull();
+  });
+
+  it("folds the whole nav to icons on the collapse toggle, and back", async () => {
+    await openList([APPROVAL_TASK]);
+
+    collapseToggle().click();
+    expect(frameEl().classList.contains("collapsed")).toBe(true);
+    expect(collapseToggle().getAttribute("aria-label")).toBe("Expand the menu");
+
+    collapseToggle().click();
+    expect(frameEl().classList.contains("collapsed")).toBe(false);
+    expect(collapseToggle().getAttribute("aria-label")).toBe("Collapse the menu");
+  });
+
+  it("remembers the fold across a fresh render", async () => {
+    await openList([APPROVAL_TASK]);
+    collapseToggle().click();
+    expect(frameEl().classList.contains("collapsed")).toBe(true);
+
+    await openList([APPROVAL_TASK]);
+    expect(frameEl().classList.contains("collapsed")).toBe(true);
+  });
+
+  it("hides labels and the full logo when folded, showing the V mark instead", async () => {
+    // **Read from the real stylesheet**, this app's established
+    // pattern for a CSS effect these tests do not otherwise render —
+    // checking the class is present proves the toggle worked; this
+    // proves the toggle actually hides what it claims to.
+    const css = (await import("virtual:stylesheets")).default["index.html"];
+    const rule = css.slice(css.indexOf(".frame.collapsed .navlabel"), css.indexOf(".frame.collapsed .navlabel") + 250);
+    expect(rule).toContain("display: none");
+
+    const markRule = css.slice(css.indexOf(".frame.collapsed .navmark"), css.indexOf(".frame.collapsed .navmark") + 60);
+    expect(markRule).toContain("display: block");
+  });
+
+  it("navigating to another screen does not collapse the toggle back to closed", async () => {
+    // Toggling the nav must not depend on which screen is open, since
+    // nothing about `frame()`'s own call site changes when it does.
+    //
+    // **Waits for the real thing, not a tick** — decision 0249's own
+    // lesson, found again: a fixed `setTimeout(r, 0)` here left
+    // `go("dashboard")`'s own async chain (a dynamic import, then a
+    // fetch) still in flight when this test completed, and it bled
+    // into whichever test ran next rather than this one failing.
+    await openList([APPROVAL_TASK]);
+    collapseToggle().click();
+    expect(frameEl().classList.contains("collapsed")).toBe(true);
+
+    const dashboardLink = [...document.querySelectorAll(".nav a")].find(
+      (a) => a.textContent === "Dashboard"
+    ) as HTMLElement;
+    dashboardLink.click();
+    for (let i = 0; i < 100; i++) {
+      if (document.querySelector(".nav a.on")?.textContent === "Dashboard") break;
+      await new Promise((r) => setTimeout(r, 10));
+    }
+
+    expect(document.querySelector(".frame")?.classList.contains("collapsed")).toBe(true);
   });
 });
 

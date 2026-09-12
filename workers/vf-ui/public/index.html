@@ -276,6 +276,110 @@
   .nav a:hover { background: var(--surface-2); }
   .nav a.on { background: var(--surface-2); color: var(--text-primary); }
 
+  /*
+    Icons on every entry — decision 0274. `.navitem` covers the base
+    `.nav a` styling above and adds the icon-and-label row; the group
+    header below is a `<button>`, styled to match rather than
+    inheriting it, since buttons carry none of a link's defaults.
+  */
+  .navitem, .navgrouphead {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+  }
+  .navgrouphead {
+    background: none;
+    border: none;
+    text-align: left;
+    font: inherit;
+    padding: 8px 10px;
+    border-radius: var(--radius);
+    color: var(--text-secondary);
+    cursor: pointer;
+  }
+  .navgrouphead:hover { background: var(--surface-2); }
+  .navgrouphead.on { background: var(--surface-2); color: var(--text-primary); }
+
+  .navitem svg, .navgrouphead svg { width: 18px; height: 18px; flex: 0 0 auto; }
+  .navlabel { flex: 1 1 auto; min-width: 0; }
+
+  /*
+    The group's own children, indented beneath its header — decision
+    0274. A left border rather than deeper padding alone: five items
+    at the same indent as the header would read as one long list, not
+    as a group with something above it.
+  */
+  .navgroup { display: flex; flex-direction: column; }
+  .navgroupchildren {
+    display: flex;
+    flex-direction: column;
+    margin-left: 10px;
+    padding-left: 9px;
+    border-left: 0.5px solid var(--border);
+  }
+
+  .navgroupchevron {
+    transition: transform 0.15s;
+  }
+  .navgroupchevron.open { transform: rotate(90deg); }
+
+  /*
+    The whole nav folded to icons — decision 0274, the operator's own
+    request. `.frame.collapsed` narrows the grid column itself, not
+    just the nav's own width, since a narrower `.nav` inside an
+    unchanged grid track would leave the gained space unused rather
+    than given back to the page.
+  */
+  .frame.collapsed { grid-template-columns: 64px minmax(0, 1fr); }
+  .frame.collapsed .navlabel,
+  .frame.collapsed .navgroupchevron,
+  .frame.collapsed .brandmark,
+  .frame.collapsed .who {
+    display: none;
+  }
+  .frame.collapsed .navmark { display: block; }
+  .frame.collapsed .navitem,
+  .frame.collapsed .navgrouphead {
+    justify-content: center;
+    padding: 8px 0;
+  }
+  .frame.collapsed .navgroupchildren {
+    margin-left: 0;
+    padding-left: 0;
+    border-left: none;
+    align-items: center;
+  }
+
+  /*
+    The "V" alone — decision 0274. The same mark the full wordmark's
+    own first letter already draws, cropped from the same source
+    image rather than redrawn, shown only once the full logo's own
+    "ibe finance" has nowhere left to sit.
+  */
+  .navmark {
+    display: none;
+    width: 28px;
+    height: auto;
+    margin: 2px auto 20px;
+  }
+
+  .navcollapsetoggle {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 8px;
+    margin-top: 10px;
+    border-radius: var(--radius);
+    align-self: flex-start;
+  }
+  .navcollapsetoggle:hover { background: var(--surface-2); color: var(--text-primary); }
+  .navcollapsetoggle svg { width: 18px; height: 18px; }
+  /* Points the other way once open — the same claim, read backwards. */
+  .frame.collapsed .navcollapsetoggle svg { transform: scaleX(-1); }
+  .frame.collapsed .navcollapsetoggle { align-self: center; }
+
   /* The create form — decision 0128. Inline, because three fields and
      a button is a row rather than a stack. */
   .newsource {

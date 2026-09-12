@@ -84,6 +84,7 @@ import timelineChatTabSql from "../migrations/0079_timeline_chat_tab.sql?raw";
 import systemAlertLabelSql from "../migrations/0080_system_alert_label.sql?raw";
 import unreadableWordingSql from "../migrations/0081_unreadable_wording.sql?raw";
 import xmlTabSql from "../migrations/0082_xml_tab.sql?raw";
+import navRestructureSql from "../migrations/0083_nav_restructure.sql?raw";
 
 function stripSqlComments(sql: string): string {
   return sql
@@ -195,5 +196,6 @@ export async function applyTestSchema(): Promise<void> {
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(systemAlertLabelSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(unreadableWordingSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(xmlTabSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(navRestructureSql)));
 
 }

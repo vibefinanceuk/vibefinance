@@ -72,7 +72,7 @@ const STRINGS = {
     "suppliers.showingawaiting": "Showing suppliers awaiting the ERP only",
     "documents.clearfilter": "Clear filter",
     "nav.tasks": "Tasks",
-    "nav.dashboard": "My work",
+    "nav.dashboard": "Dashboard",
     "nav.sources": "Sources",
     "nav.suppliers": "Suppliers",
     "nav.rules": "Rules",
@@ -1071,6 +1071,12 @@ describe("the bars are read against something (decision 0244)", () => {
      * **One pixel of colour reads as "a little"**; nothing reads as
      * nothing, and the number above says which. Four of your five
      * ageing buckets are zero.
+     *
+     * **Scoped to the chart's own svg, not the whole page.** Decision
+     * 0274 gave the nav its own `<rect>`-based icons, present on every
+     * screen via `frame()` — an unscoped `document.querySelectorAll`
+     * here would count them too, the same class of fault decision
+     * 0257 already found once for an unscoped `querySelector("svg")`.
      */
     await openDashboard([
       {
@@ -1082,7 +1088,8 @@ describe("the bars are read against something (decision 0244)", () => {
       },
     ]);
 
-    const bars = [...document.querySelectorAll("svg rect")];
+    const card = [...document.querySelectorAll(".panel")].find((p) => p.querySelector("svg rect"));
+    const bars = [...(card?.querySelectorAll("svg rect") ?? [])];
     const zero = bars[1];
     expect(zero.getAttribute("fill")).toBe("var(--border)");
     expect(Number(zero.getAttribute("height"))).toBeLessThan(1);
