@@ -1,4 +1,5 @@
 import type { RouteResult } from "./examples-route.js";
+import { mondayOfThisWeek } from "./dates.js";
 
 /**
  * Every document that has arrived — decision 0164.
@@ -56,7 +57,14 @@ export async function handleListDocuments(
    * behaves as it always did — and every caller was taught with this,
    * because decision 0192's risk is that forgetting does not fail.
    */
-  visibleUnits: string[] | null = null
+  visibleUnits: string[] | null = null,
+  /**
+   * **Who is asking**, needed only for "completed by me this week" —
+   * decision 0265. Optional and defaulted to `null` so every existing
+   * caller behaves as it always did; the new filter is simply inert
+   * without a real id to filter by.
+   */
+  userId: string | null = null
 ): Promise<RouteResult> {
   const query = (params.get("q") ?? "").trim().toLowerCase();
 
@@ -113,6 +121,15 @@ export async function handleListDocuments(
   const stageId = params.get("stage");
 
   /**
+   * **What I completed this week** — decision 0265, from the
+   * dashboard's redefined "Done" card. Matched with the exact same
+   * `mondayOfThisWeek()` the card's own query uses, so the two can
+   * never quietly disagree about which day the week began.
+   */
+  const doneByMe = params.get("doneByMe") === "1";
+  const monday = mondayOfThisWeek();
+
+  /**
    * The sender and recipient come from the email that brought it —
    * decision 0147's log — because that is what a person searches by
    * when the supplier name was never extracted.
@@ -147,6 +164,16 @@ export async function handleListDocuments(
          AND (?5 = 0 OR (h.org_unit_id IS NULL AND json_extract(h.facts_json, '$."org.unplaced"') IS NOT NULL))
          AND (?6 = 0 OR CAST(json_extract(h.facts_json, '$."invoice.duplicate_confidence"') AS REAL) >= 0.5)
          AND (?7 IS NULL OR (i.current_stage_id = ?7 AND i.status = 'in_progress'))
+         AND (
+           ?8 = 0
+           OR EXISTS (
+             SELECT 1 FROM tasks dt
+             JOIN stage_visits dv ON dv.id = dt.stage_visit_id
+             WHERE dv.process_instance_id = i.id
+               AND dt.completed_by = ?9
+               AND date(dt.completed_at) >= ?10
+           )
+         )
        ORDER BY h.created_at DESC, h.rowid DESC
        LIMIT ?2`
     )
@@ -187,7 +214,10 @@ export async function handleListDocuments(
       JSON.stringify(visibleUnits ?? []),
       unplacedOnly ? 1 : 0,
       duplicatesOnly ? 1 : 0,
-      stageId
+      stageId,
+      doneByMe ? 1 : 0,
+      userId ?? "",
+      monday
     )
     .all<DocumentRow>();
 

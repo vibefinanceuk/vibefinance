@@ -11,6 +11,7 @@ import {
 } from "../src/dashboard-route.js";
 import migrationSql from "../../../migrations/0057_split_needs_somebody.sql?raw";
 import { handleListMyTasks } from "../src/task-list-route.js";
+import { mondayOfThisWeek } from "../src/dates.js";
 
 /**
  * What a person should do next — decision 0240.
@@ -1030,54 +1031,84 @@ describe("the card agrees with the real task list (decision 0255)", () => {
   });
 });
 
-describe("a real trend for done, and none for waiting (decision 0257)", () => {
+describe("what I have acted on this week (decision 0265)", () => {
   /**
-   * **`completed_at` is a timestamp every finished task actually has**,
-   * so a day-by-day count over the last week is genuine history — the
-   * same bucketing `received()` already does for invoices in.
+   * **Redefined at the operator's own request** — a daily count of
+   * items I have personally acted on, Monday through Sunday of the
+   * current calendar week, not the three-number split (today / anyone
+   * this week / me this week) decision 0257 built.
    *
-   * Deliberately not attempted for `waiting_for_me`: that number is a
-   * live queue depth, and nothing in this system has ever recorded what
-   * it was on a past day. Decision 0242 already declined to draw a line
-   * from no history, and this record does not reopen that.
+   * **Seeded by offset from the real Monday**, computed the same way
+   * the route itself computes it — a test seeding "two days ago" would
+   * silently fall into the wrong week depending on which day of the
+   * week the suite happened to run on, and pass or fail by accident.
    */
-  async function completedOn(id: string, daysAgo: number) {
+  async function completedOnDayOfWeek(id: string, offsetFromMonday: number) {
     await env.DB.prepare("INSERT OR IGNORE INTO processes (id, name) VALUES ('ap', 'AP')").run();
     await env.DB.prepare(
       "INSERT OR IGNORE INTO process_stages (id, process_id, name, sequence) VALUES ('validation', 'ap', 'Validation', 1)"
     ).run();
-    await env.DB.prepare(
-      "INSERT INTO invoice_headers (id, facts_json) VALUES (?, '{}')"
-    )
-      .bind(id)
-      .run();
+    await env.DB.prepare("INSERT INTO invoice_headers (id, facts_json) VALUES (?, '{}')").bind(id).run();
+
+    const monday = mondayOfThisWeek();
     await env.DB.prepare(
       `INSERT INTO tasks (id, stage_id, owner_user_id, required_permission, status, completed_by, completed_at)
        VALUES (?, 'validation', 'alice', 'AP.Validate', 'completed', 'alice',
-               datetime('now', ?))`
+               datetime(?, ?))`
     )
-      .bind(id, `-${daysAgo} days`)
+      .bind(id, monday, `+${offsetFromMonday} days`)
       .run();
   }
 
-  it("carries a day-by-day count of completions", async () => {
+  it("carries a real count for each day of the current week", async () => {
     await person("alice", ["AP.Review"], null);
-    await completedOn("a", 0);
-    await completedOn("b", 0);
-    await completedOn("c", 2);
+    await completedOnDayOfWeek("mon-1", 0);
+    await completedOnDayOfWeek("mon-2", 0);
+    await completedOnDayOfWeek("wed", 2);
 
-    const data = card<{ trend: { day: string; n: number }[] }>(await cardsFor("alice"), "done");
-
-    const today = new Date().toISOString().slice(0, 10);
-    const todayRow = data.trend.find((r) => r.day === today);
-    expect(todayRow?.n).toBe(2);
-
-    // A day with nothing completed is simply absent, not a zero row —
-    // gap-filling for display is the screen's job, not the query's.
-    const yesterday = data.trend.find(
-      (r) => r.day === new Date(Date.now() - 86400000).toISOString().slice(0, 10)
+    const data = card<{ days: { date: string; n: number }[]; total: number }>(
+      await cardsFor("alice"),
+      "done"
     );
-    expect(yesterday).toBeUndefined();
+
+    expect(data.days).toHaveLength(7);
+    expect(data.days[0].n).toBe(2); // Monday
+    expect(data.days[2].n).toBe(1); // Wednesday
+    expect(data.total).toBe(3);
+  });
+
+  it("fills a day with nothing completed as zero, not an absence", async () => {
+    /**
+     * **Every day is present, unlike decision 0257's rolling trend**,
+     * which left a quiet day out of the array and made the screen fill
+     * the gap. Seven fixed day-of-week columns need seven real entries
+     * to sit under, not five with two implied.
+     */
+    await person("alice", ["AP.Review"], null);
+    await completedOnDayOfWeek("mon-1", 0);
+
+    const data = card<{ days: { date: string; n: number }[] }>(await cardsFor("alice"), "done");
+    expect(data.days.map((d) => d.n)).toEqual([1, 0, 0, 0, 0, 0, 0]);
+  });
+
+  it("counts only what I completed, not the team's", async () => {
+    // **The scope that makes the link honest** (decision 0264's finding
+    // for "Where things are" does not apply here): this was never about
+    // anyone else's work.
+    await person("alice", ["AP.Review"], null);
+    await person("mo", ["AP.Review"], null);
+    await completedOnDayOfWeek("mine", 0);
+
+    await env.DB.prepare("INSERT INTO invoice_headers (id, facts_json) VALUES ('theirs', '{}')").run();
+    await env.DB.prepare(
+      `INSERT INTO tasks (id, stage_id, owner_user_id, required_permission, status, completed_by, completed_at)
+       VALUES ('theirs-task', 'validation', 'mo', 'AP.Validate', 'completed', 'mo', datetime(?, '+0 days'))`
+    )
+      .bind(mondayOfThisWeek())
+      .run();
+
+    const data = card<{ total: number }>(await cardsFor("alice"), "done");
+    expect(data.total).toBe(1);
   });
 
   it("does not carry a trend for waiting_for_me", async () => {

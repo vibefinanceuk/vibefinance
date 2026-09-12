@@ -1693,7 +1693,7 @@ export default {
        */
       const visible = await unitsWherePermitted(db, auth.user.id, "AP.Review");
 
-      const result = await handleListDocuments(db, url.searchParams, visible);
+      const result = await handleListDocuments(db, url.searchParams, visible, auth.user.id);
       return json(result.body, result.status);
     }
 

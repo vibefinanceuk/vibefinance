@@ -128,6 +128,7 @@ async function load() {
   const params = new URLSearchParams({ q: query, unit });
   if (alertFilter === "unplaced") params.set("unplaced", "1");
   if (alertFilter === "duplicates") params.set("duplicates", "1");
+  if (alertFilter === "donebyme") params.set("doneByMe", "1");
   if (stageFilter) params.set("stage", stageFilter.id);
 
   const response = await fetch(`/api/documents?${params}`);
@@ -497,6 +498,19 @@ export async function openDocumentsFiltered(kind) {
   await loadUnits();
   if (!(await load())) return;
   render();
+}
+
+/**
+ * Open the documents screen filtered to what I completed this week —
+ * decision 0265, from the dashboard's redefined "Done" card.
+ *
+ * **No userId sent from here.** The server already knows who is
+ * asking — `auth.user.id`, from the same session cookie every
+ * authenticated route reads — so the client only has to say *what*
+ * it wants, not *who* is asking for it.
+ */
+export async function openDocumentsCompletedByMe() {
+  return openDocumentsFiltered("donebyme");
 }
 
 /**

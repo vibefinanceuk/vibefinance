@@ -1,20 +1,22 @@
 import { t } from "/strings.js";
 import { el, frame, topbar, setCurrentScreen, openTasksFiltered, openTaskById } from "/tasks.js";
 import { icon } from "/icons.js";
-import { openDocumentsFiltered, openDocumentsAtStage } from "/documents.js";
+import { openDocumentsFiltered, openDocumentsAtStage, openDocumentsCompletedByMe } from "/documents.js";
 import { openSuppliersAwaitingErp } from "/suppliers.js";
 /**
- * **`sparkline` and `donut` are built and not used here** — decision
- * 0242.
+ * **`sparkline` is built and not used here** — decisions 0242 and 0265.
  *
- * A sparkline needs history and decision 0240 returns none: a trend
- * drawn from one point is a decoration that implies a claim. A donut
- * needs a proportion, and the one worth showing — straight-through rate
- * — is a flow metric that `stage_visits` cannot yet answer.
+ * `done()` used it once, for a rolling seven-day trend behind three
+ * numbers (decision 0257). Redefined by the operator into seven real,
+ * named daily counts plus a total, a `barChart` says the same thing in
+ * the open rather than as a faint line behind the figures — leaving
+ * `sparkline` without a caller again, the same place `donutChart` sat
+ * until it found `whereThingsAre()`.
  *
- * Both are in `charts.js`, tested, and waiting for the data.
+ * It stays in `charts.js`, tested, for whichever card next has a real
+ * trend and no room to show it plainly.
  */
-import { barChart, barList, donutChart, sparkline } from "/charts.js";
+import { barChart, barList, donutChart } from "/charts.js";
 
 /**
  * What a person should do next — decision 0242, on decision 0240's
@@ -80,27 +82,6 @@ function panel(title, sub, { weight = "half", background = null } = {}, ...child
   const backgroundLayer = background ? el("div", { class: "tilebg" }, [background]) : null;
 
   return el("div", { class: `panel card-${weight}` }, [backgroundLayer, foreground].filter(Boolean));
-}
-
-/**
- * **The last seven calendar days, gaps filled with zero** — decision
- * 0257.
- *
- * `done()`'s own query only returns a row for a day that had at least
- * one completion. A sparkline drawn from that alone would compress five
- * quiet days into the same width as two busy ones and call the result
- * a week — the same kind of misrepresentation decision 0248 fixed for
- * the ageing buckets, here at the source rather than in the drawing.
- */
-function last7Days(rows) {
-  const byDay = new Map((rows ?? []).map((r) => [r.day, r.n]));
-  const values = [];
-  for (let i = 6; i >= 0; i--) {
-    const d = new Date();
-    d.setDate(d.getDate() - i);
-    values.push(byDay.get(d.toISOString().slice(0, 10)) ?? 0);
-  }
-  return values;
 }
 
 /**
@@ -387,34 +368,44 @@ const RENDERERS = {
     );
   },
 
-  done: (data) =>
+  done: (data) => {
     /**
-     * **The one card with real history behind it** — decision 0257.
-     * `completed_at` is a timestamp every finished task actually has,
-     * so a day-by-day count over the last week is genuine — the same
-     * bucketing `received()` already does for invoices in.
+     * **What I acted on this week, by day** — decision 0265, redefined
+     * from the three-number split decision 0257 built, at the
+     * operator's own request: *"a daily count of items I have acted
+     * upon."*
      *
-     * `waiting_for_me` does not get the same treatment: that number is
-     * a live queue depth, and nothing in this system has ever recorded
-     * what it was yesterday. A line under that card would have to be
-     * invented, which is exactly what decision 0242 declined to do.
+     * **A half-weight card now, not a tile.** A tile suited three small
+     * numbers; seven real daily counts and a total deserve the same
+     * room `received` and `ageing` already get for their own bar
+     * charts, which this reuses rather than inventing a second way to
+     * draw a week.
      */
-    panel(
+    const days = data.days ?? [];
+    const dayKeys = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
+
+    const card = panel(
       t("dash.done"),
-      null,
-      {
-        weight: "tile",
-        background: sparkline(last7Days(data.trend), {
-          background: true,
-          colour: "var(--chart-2)",
-        }),
-      },
-      el("div", { class: "figures" }, [
-        figure(data.today, t("dash.todaylabel")),
-        figure(data.week, t("dash.weeklabel")),
-        figure(data.mine, t("dash.minelabel")),
+      t("dash.donesub"),
+      { weight: "half" },
+      el("div", {}, [
+        figure(data.total ?? 0, t("dash.thisweek")),
+        barChart(days.map((d, i) => ({ label: t(`dash.day.${dayKeys[i]}`), value: d.n }))),
       ])
-    ),
+    );
+
+    /**
+     * **Clickable only where there is something to show** — decision
+     * 0161's rule, and the whole card links to one filtered view rather
+     * than each day separately, at the operator's own choice.
+     */
+    if ((data.total ?? 0) > 0) {
+      card.classList.add("clickable");
+      card.onclick = () => openDocumentsCompletedByMe();
+    }
+
+    return card;
+  },
 
   received: (data) => {
     const days = data.days ?? [];

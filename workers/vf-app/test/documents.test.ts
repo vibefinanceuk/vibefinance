@@ -2,6 +2,7 @@ import { env } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
 import { applyTestSchema } from "./setup.js";
 import { handleListDocuments } from "../src/documents-route.js";
+import { mondayOfThisWeek } from "../src/dates.js";
 
 /**
  * Every document that has arrived — decision 0164.
@@ -48,8 +49,8 @@ async function seedDocument(
   }
 }
 
-async function list(params = "", visibleUnits: string[] | null = null) {
-  return (await handleListDocuments(env.DB, new URLSearchParams(params), visibleUnits)).body as {
+async function list(params = "", visibleUnits: string[] | null = null, userId: string | null = null) {
+  return (await handleListDocuments(env.DB, new URLSearchParams(params), visibleUnits, userId)).body as {
     documents: {
       id: string;
       number: string | null;
@@ -497,5 +498,84 @@ describe("filtering documents by stage, for the dashboard's own donut (decision 
   it("leaves the ordinary list unaffected when no stage is asked for", async () => {
     await seedAt("inv-1", "validation");
     expect((await list("")).documents).toHaveLength(1);
+  });
+});
+
+describe("filtering documents by what I completed this week (decision 0265)", () => {
+  /**
+   * **Must match `done()`'s exact scope** — `completed_by = me`, on or
+   * after the Monday of the current calendar week. A looser or
+   * tighter filter here and the dashboard's own total would disagree
+   * with what a click on it shows, the same fault decisions 0252
+   * through 0264 kept finding in other pairs of screens.
+   */
+  async function completedByOnDayOfWeek(
+    docId: string,
+    completedBy: string,
+    offsetFromMonday: number
+  ) {
+    await env.DB.prepare(
+      "INSERT OR IGNORE INTO org_users (id, email, name) VALUES (?, ?, ?)"
+    )
+      .bind(completedBy, `${completedBy}@acme.com`, completedBy)
+      .run();
+    await env.DB.prepare("INSERT INTO invoice_headers (id, facts_json) VALUES (?, '{}')").bind(docId).run();
+    await env.DB.prepare(
+      `INSERT INTO process_instances (id, process_id, subject_type, subject_id, current_stage_id, status)
+       VALUES (?, 'ap', 'invoice', ?, 'validation', 'in_progress')`
+    )
+      .bind(`pi-${docId}`, docId)
+      .run();
+    await env.DB.prepare(
+      "INSERT INTO stage_visits (id, process_instance_id, stage_id, outcome) VALUES (?, ?, 'validation', 'matched')"
+    )
+      .bind(`v-${docId}`, `pi-${docId}`)
+      .run();
+
+    const monday = mondayOfThisWeek();
+    await env.DB.prepare(
+      `INSERT INTO tasks (id, stage_id, stage_visit_id, required_permission, status, completed_by, completed_at)
+       VALUES (?, 'validation', ?, 'AP.Validate', 'completed', ?, datetime(?, ?))`
+    )
+      .bind(`t-${docId}`, `v-${docId}`, completedBy, monday, `+${offsetFromMonday} days`)
+      .run();
+  }
+
+  it("shows a document I completed this week", async () => {
+    await completedByOnDayOfWeek("inv-1", "alice", 2);
+
+    const body = await list("doneByMe=1", null, "alice");
+    expect(body.documents.map((d) => d.id)).toEqual(["inv-1"]);
+  });
+
+  it("excludes a document someone else completed", async () => {
+    await completedByOnDayOfWeek("inv-1", "mo", 2);
+
+    const body = await list("doneByMe=1", null, "alice");
+    expect(body.documents).toHaveLength(0);
+  });
+
+  it("excludes a document I completed last week", async () => {
+    /**
+     * **The load-bearing case for the week boundary.** `-1` is the
+     * Sunday just before this week's Monday — the last day of the
+     * previous calendar week, not this one.
+     */
+    await completedByOnDayOfWeek("inv-1", "alice", -1);
+
+    const body = await list("doneByMe=1", null, "alice");
+    expect(body.documents).toHaveLength(0);
+  });
+
+  it("leaves the ordinary list unaffected when the filter is not asked for", async () => {
+    await completedByOnDayOfWeek("inv-1", "alice", 2);
+    expect((await list("", null, "alice")).documents).toHaveLength(1);
+  });
+
+  it("is inert without a real userId, even if the flag is set", async () => {
+    // The route accepts userId as optional; a caller that forgets it
+    // must not accidentally match everyone's completions.
+    await completedByOnDayOfWeek("inv-1", "alice", 2);
+    expect((await list("doneByMe=1")).documents).toHaveLength(0);
   });
 });

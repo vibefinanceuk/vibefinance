@@ -49,9 +49,15 @@ const STRINGS = {
     "dash.ageing": "How long they have waited",
     "dash.ageingsub": "All open work",
     "dash.done": "Done",
-    "dash.todaylabel": "today",
-    "dash.weeklabel": "this week",
-    "dash.minelabel": "by me this week",
+    "dash.donesub": "What I have acted on, by day",
+    "dash.thisweek": "this week",
+    "dash.day.mon": "M",
+    "dash.day.tue": "T",
+    "dash.day.wed": "W",
+    "dash.day.thu": "T",
+    "dash.day.fri": "F",
+    "dash.day.sat": "S",
+    "dash.day.sun": "S",
     "dash.needs_somebody": "Needs somebody",
     "dash.needssomebodysub": "Nothing else surfaces these",
     "dash.unplaced_documents": "Unplaced documents",
@@ -1218,28 +1224,41 @@ describe("clicking through (decision 0250)", () => {
   });
 });
 
-describe("a background line, where the data is real (decision 0257)", () => {
+describe("what I acted on this week, by day (decision 0265)", () => {
   /**
-   * **`completed_at` gives Done a genuine week to draw**, and
-   * `waiting_for_me` has no equivalent — nothing has ever recorded what
-   * the queue depth was on a past day. This asserts the line appears
-   * exactly where the history is real and nowhere else.
+   * **Redefined from a background sparkline behind three numbers**
+   * (decision 0257) **to a real bar chart of the week**, at the
+   * operator's own request. The old shape's tests are replaced rather
+   * than patched — `data.trend`/`today`/`week`/`mine` no longer exist,
+   * and asserting against them would test a card that is not built
+   * anymore.
    */
-  it("draws a background line on the Done tile", async () => {
+  it("draws a total and a bar for each day of the week", async () => {
     await openDashboard([
       {
         id: "a",
         cardType: "done",
         settings: {},
         position: 0,
-        data: { today: 2, week: 9, mine: 5, trend: [{ day: new Date().toISOString().slice(0, 10), n: 2 }] },
+        data: {
+          total: 5,
+          days: [
+            { date: "2026-09-14", n: 2 },
+            { date: "2026-09-15", n: 0 },
+            { date: "2026-09-16", n: 3 },
+            { date: "2026-09-17", n: 0 },
+            { date: "2026-09-18", n: 0 },
+            { date: "2026-09-19", n: 0 },
+            { date: "2026-09-20", n: 0 },
+          ],
+        },
       },
     ]);
 
-    const tile = [...document.querySelectorAll(".panel")].find((p) =>
-      p.textContent?.includes("Done")
-    );
-    expect(tile?.querySelector(".tilebg svg")).not.toBeNull();
+    expect(document.body.textContent).toContain("5");
+    // Seven days, seven bars — real, gap-filled data, not a rolling
+    // trend with the quiet days left out.
+    expect(document.querySelectorAll(".panel svg rect")).toHaveLength(7);
   });
 
   it("draws no background line on Waiting for me", async () => {
@@ -1258,31 +1277,47 @@ describe("a background line, where the data is real (decision 0257)", () => {
     expect(tile?.querySelector(".tilebg")).toBeNull();
   });
 
-  it("fills a day with no completions as zero rather than skipping it", async () => {
-    /**
-     * **Gap-filled to seven points**, so five quiet days do not
-     * compress into the same width as two busy ones. The backend only
-     * returns rows for days with at least one completion (decision
-     * 0257); the screen fills the rest.
-     */
-    const today = new Date().toISOString().slice(0, 10);
+  it("links to my completions this week, and not when there are none", async () => {
+    const withTotal = [
+      { id: "c", cardType: "done", settings: {}, position: 0, data: { total: 5, days: [] } },
+    ];
+    const seen: string[] = [];
+    stubDashboard(withTotal, seen);
+    const real = globalThis.fetch;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        const path = String(url);
+        seen.push(path);
+        if (path.startsWith("/api/org/units")) return { ok: true, json: async () => ({ units: [] }) } as Response;
+        if (path.startsWith("/api/documents"))
+          return { ok: true, json: async () => ({ documents: [], searched: 0 }) } as Response;
+        return real(url);
+      })
+    );
+
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { open } = await import("/dashboard.js");
+    await open();
+
+    const card = [...document.querySelectorAll(".panel.clickable")].find((p) =>
+      p.textContent?.includes("Done")
+    ) as HTMLElement;
+    expect(card).toBeDefined();
+    card.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(seen.find((u) => u.startsWith("/api/documents"))).toContain("doneByMe=1");
+  });
+
+  it("is not clickable with nothing done this week", async () => {
     await openDashboard([
-      {
-        id: "c",
-        cardType: "done",
-        settings: {},
-        position: 0,
-        data: { today: 1, week: 1, mine: 1, trend: [{ day: today, n: 1 }] },
-      },
+      { id: "d", cardType: "done", settings: {}, position: 0, data: { total: 0, days: [] } },
     ]);
 
-    const tile = [...document.querySelectorAll(".panel")].find((p) =>
-      p.textContent?.includes("Done")
-    );
-    const line = tile?.querySelector(".tilebg polyline");
-    // Seven days means six segments in the polyline's point list.
-    const points = line?.getAttribute("points")?.trim().split(/\s+/) ?? [];
-    expect(points).toHaveLength(7);
+    const card = [...document.querySelectorAll(".panel")].find((p) => p.textContent?.includes("Done"));
+    expect(card?.classList.contains("clickable")).toBe(false);
   });
 
   it("sits behind the figures rather than on top of them", async () => {
@@ -1294,9 +1329,10 @@ describe("a background line, where the data is real (decision 0257)", () => {
      * report the browser's defaults and pass or fail for the wrong
      * reason.
      *
-     * The explicit z-index is the thing decision 0257 relied on rather
-     * than paint order, so this checks the rule exists and orders the
-     * two layers correctly.
+     * **Kept even though `done` no longer uses this layer** — decision
+     * 0257's `.tilebg`/`.tilefg` infrastructure stays available for
+     * whichever card next has real history and no room to show it
+     * plainly, and the rule itself is still real, still shipped CSS.
      */
     const stylesheets = (await import("virtual:stylesheets")).default;
     const css = stylesheets["index.html"];
