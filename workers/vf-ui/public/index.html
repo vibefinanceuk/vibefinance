@@ -1595,7 +1595,23 @@
     browser's own viewer scrolls and zooms inside it.
   */
   .vpreview {
-    height: 320px;
+    /**
+     * **Reaches toward the bottom of the viewport** — decision 0271.
+     * Reported live, once the unreadable-document note moved out of
+     * this column and into the Timeline / Chat tab: "the Document
+     * image should be aligned with the base of the bottom of the
+     * screen."
+     *
+     * `calc(100vh - 300px)` is a real estimate of everything else
+     * sharing this column's own vertical space above and below the
+     * image — the topbar, the tabs, this panel's own padding, and the
+     * action row beneath it — not a precise measurement taken from a
+     * live page. `min-height` is the floor this box had before this
+     * change, so a very short window or a page with more chrome above
+     * it never gets an image smaller than the original fixed size.
+     */
+    height: calc(100vh - 300px);
+    min-height: 320px;
     border: 0.5px solid var(--border);
     border-radius: var(--radius);
     overflow: hidden;
@@ -1674,15 +1690,18 @@
   }
 
   .vthumb {
-    height: 150px;
+    /**
+     * **Fills `.vpreview` now that box is taller** — decision 0271.
+     * Only ever used inside it (the initial placeholder and the "no
+     * document retained" fallback), so there is no other context this
+     * would need to stay small for.
+     */
+    height: 100%;
     display: grid;
     place-items: center;
     background: var(--surface-1);
-    border: 0.5px solid var(--border);
-    border-radius: var(--radius);
     color: var(--text-muted);
     font-size: var(--text-base);
-    margin-bottom: 8px;
   }
 
   .vdoc .act { width: 100%; }

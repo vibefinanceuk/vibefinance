@@ -601,19 +601,6 @@ export function actionLink(name, { onclick, primary } = {}) {
  * waiting for a person to key it — which is right. Nobody told the
  * person.
  */
-function unreadableNote() {
-  if (!stored.intake || stored.intake.readable) return null;
-
-  return el("div", { class: "unreadable" }, [
-    el("div", { text: t("viewer.unreadable") }),
-    // What was tried, for somebody who wants to know why — a scanned
-    // PDF and a corrupt file are different problems.
-    ...(stored.intake.attempted
-      ? [el("div", { class: "sm muted", text: `${t("viewer.tried")} ${stored.intake.attempted}` })]
-      : []),
-  ]);
-}
-
 function exceptionPanel() {
   return el("div", { class: "panel exceptions" }, [
     el("h3", { text: t("viewer.exceptions") }),
@@ -676,7 +663,37 @@ function documentPanel(task, onClose) {
   }
 
   const { content: timelineContent, countBadge } = buildActivityTab(invoiceId);
-  timelineContent.hidden = docPanelTab !== "timeline";
+
+  /**
+   * **The unreadable-document note now lives here, not beneath the
+   * image** — decision 0271. Reported live: *"I would rather this
+   * information appeared in the Timeline / Chat... to make room for
+   * the image."* A standing note about the document, not a timestamped
+   * event, so it sits as its own banner above the feed rather than
+   * mixed in among comments and stage completions.
+   *
+   * **Wrapping `timelineContent` rather than hiding it directly.**
+   * `activity.js` replaces `timelineContent`'s own children on every
+   * load, post, and error — a banner appended straight into it would
+   * be wiped out the moment the eager load finishes. The wrapper is
+   * the stable node; `activity.js` never touches it.
+   */
+  const timelinePane = el(
+    "div",
+    {},
+    [
+      !stored.intake || stored.intake.readable
+        ? null
+        : el("div", { class: "unreadable" }, [
+            el("div", { text: t("viewer.unreadable") }),
+            ...(stored.intake.attempted
+              ? [el("div", { class: "sm muted", text: `${t("viewer.tried")} ${stored.intake.attempted}` })]
+              : []),
+          ]),
+      timelineContent,
+    ].filter(Boolean)
+  );
+  timelinePane.hidden = docPanelTab !== "timeline";
 
   const docTab = el("button", { class: docPanelTab === "doc" ? "doctab on" : "doctab" }, [
     el("span", { text: t("viewer.document") }),
@@ -697,7 +714,7 @@ function documentPanel(task, onClose) {
     docTab.className = which === "doc" ? "doctab on" : "doctab";
     timelineTab.className = which === "timeline" ? "doctab on" : "doctab";
     docContent.hidden = which !== "doc";
-    timelineContent.hidden = which !== "timeline";
+    timelinePane.hidden = which !== "timeline";
   }
   docTab.onclick = () => select("doc");
   timelineTab.onclick = () => select("timeline");
@@ -705,7 +722,7 @@ function documentPanel(task, onClose) {
   return el("div", { class: "panel" }, [
     el("div", { class: "doctabs" }, [docTab, timelineTab]),
     docContent,
-    timelineContent,
+    timelinePane,
   ]);
 }
 
@@ -1535,7 +1552,6 @@ export async function openViewer(task, onClose) {
           ]),
           el("div", {}, [
             documentPanel(task, onClose),
-            unreadableNote(),
             exceptionPanel(),
           ].filter(Boolean)),
         ].filter(Boolean)),

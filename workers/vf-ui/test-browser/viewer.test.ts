@@ -112,6 +112,8 @@ const STRINGS = {
     "viewer.reflabel": "Unique Ref:",
     "viewer.document": "Document",
     "viewer.nodocument": "No document retained",
+    "viewer.unreadable": "This document could not be read automatically. Key the fields from the image on the right.",
+    "viewer.tried": "Tried:",
     "activity.tab": "Activity",
     "activity.title": "Activity",
     "activity.loading": "Loading…",
@@ -1542,7 +1544,7 @@ describe("the document/timeline tabs (decision 0269)", () => {
     expect(docTabButton()?.className).toContain("on");
     expect(timelineTabButton()?.className).not.toContain("on");
     expect(document.getElementById("vpreview")?.closest("[hidden]")).toBeNull();
-    expect(document.querySelector(".activitytabcontent")).toHaveProperty("hidden", true);
+    expect(document.querySelector(".activitytabcontent")?.closest("[hidden]")).not.toBeNull();
   });
 
   it("loads the feed eagerly, showing a real count on the tab before it is ever clicked", async () => {
@@ -1733,6 +1735,63 @@ describe("the document/timeline tabs (decision 0269)", () => {
       css.indexOf(".activitytabcontent[hidden]") + 120
     );
     expect(rule).toContain("display: none");
+  });
+
+  it("shows the unreadable-document note in Timeline / Chat, not under the image", async () => {
+    /**
+     * **Reported live**: "I would rather this information appeared in
+     * the Timeline / Chat... it should be removed from beneath the
+     * document image, to make room for the image." — decision 0271.
+     */
+    stubFetch({
+      ...BASE_ROUTES,
+      "/api/invoices/inv-1": {
+        facts: {},
+        lines: [],
+        validation: { passed: true, checked: [], failures: [] },
+        intake: { readable: false, attempted: "OCR" },
+      },
+      "/api/documents/inv-1/activity": { items: [] },
+    });
+
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    await openViewer(TASK, () => {});
+    await new Promise((r) => setTimeout(r, 0));
+
+    // Not visible under the image, on the Document tab.
+    const docPane = document.getElementById("vpreview")?.parentElement;
+    expect(docPane?.querySelector(".unreadable")).toBeNull();
+
+    (timelineTabButton() as HTMLButtonElement).click();
+
+    const note = document.querySelector(".unreadable");
+    expect(note).not.toBeNull();
+    expect(note?.textContent).toContain("This document could not be read automatically");
+    expect(note?.textContent).toContain("Tried: OCR");
+  });
+
+  it("shows no unreadable note anywhere when the document was read fine", async () => {
+    stubFetch({
+      ...BASE_ROUTES,
+      "/api/invoices/inv-1": {
+        facts: {},
+        lines: [],
+        validation: { passed: true, checked: [], failures: [] },
+        intake: { readable: true },
+      },
+      "/api/documents/inv-1/activity": { items: [] },
+    });
+
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    await openViewer(TASK, () => {});
+    await new Promise((r) => setTimeout(r, 0));
+
+    (timelineTabButton() as HTMLButtonElement).click();
+    expect(document.querySelector(".unreadable")).toBeNull();
   });
 
   it("resets to the Document tab when a different document is opened", async () => {
