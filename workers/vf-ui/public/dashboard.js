@@ -813,11 +813,7 @@ async function openPicker() {
             backdrop.remove();
           },
         }),
-        el("button", {
-          class: "secondary",
-          text: t("viewer.supplier.close"),
-          onclick: () => backdrop.remove(),
-        }),
+        toolButton("close", t("viewer.supplier.close"), { onclick: () => backdrop.remove() }),
       ]),
     ]),
   ]);
