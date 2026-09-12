@@ -3,53 +3,56 @@ import { el } from "/tasks.js";
 import { icon } from "/icons.js";
 
 /**
- * The activity panel — decision 0267.
+ * The activity tab — decision 0269.
  *
- * **Hidden by default, opens into real room** — the operator's own
- * words: "it can be hidden but also opened." A tab at the edge when
- * closed; a wide drawer when open, not a strip squeezed into whatever
- * space was left over.
+ * **Was a self-contained drawer (decision 0267); is now one pane of a
+ * shared tab row.** The operator's own picture: "two tabs, reading
+ * 'Document' and 'Timeline / Chat'" in the same panel the document
+ * preview already lives in — not a separate strip that opens below it.
+ * `viewer.js` owns the tab row and which pane is showing; this module
+ * only builds the count badge and the pane's own content.
  *
- * **Self-contained.** `viewer.js` rebuilds its whole shell on every
- * render (`shell.replaceChildren(...)`), which would reset this
- * panel's own open/closed state and throw away whatever was loaded —
- * so this manages its own container directly rather than depending on
- * the viewer re-inserting it. `activityPanel()` is called once per
- * document; everything after that is this module updating the same
- * node.
+ * **Loads eagerly now, not on first click.** The tab wants to show a
+ * real count before anyone switches to it — showing "Timeline / Chat"
+ * with no number until clicked once would be a tab lying about how
+ * much is behind it for its entire first moment on screen.
+ *
+ * **Still self-contained against re-renders.** `viewer.js` rebuilds
+ * its whole shell on every save or action, which would otherwise
+ * throw away whatever this loaded — so this keeps updating the exact
+ * `content` node it was first given, the same discipline the drawer
+ * version used.
  */
 
-let open = false;
 let items = null;
 let loading = false;
 let error = null;
 
 function reset() {
-  open = false;
   items = null;
   loading = false;
   error = null;
 }
 
-async function load(invoiceId, container) {
+async function load(invoiceId, content, countBadge) {
   loading = true;
   error = null;
-  renderInto(container, invoiceId);
+  renderContent(content, countBadge, invoiceId);
 
   const response = await fetch(`/api/documents/${encodeURIComponent(invoiceId)}/activity`);
   if (!response.ok) {
     loading = false;
     error = t("activity.loadfailed");
-    renderInto(container, invoiceId);
+    renderContent(content, countBadge, invoiceId);
     return;
   }
 
   items = (await response.json()).items ?? [];
   loading = false;
-  renderInto(container, invoiceId);
+  renderContent(content, countBadge, invoiceId);
 }
 
-async function post(invoiceId, container) {
+async function post(invoiceId, content, countBadge) {
   const box = document.getElementById("activity-input");
   const body = box?.value.trim();
   if (!body) return;
@@ -66,7 +69,7 @@ async function post(invoiceId, container) {
   if (!response.ok) {
     error = t("activity.postfailed");
     if (button) button.disabled = false;
-    renderInto(container, invoiceId);
+    renderContent(content, countBadge, invoiceId);
     return;
   }
 
@@ -74,7 +77,7 @@ async function post(invoiceId, container) {
   // discipline the rest of this app follows: the server's own
   // ordering and timestamp are what render, not a client guess at
   // what it just sent.
-  await load(invoiceId, container);
+  await load(invoiceId, content, countBadge);
 }
 
 /**
@@ -125,7 +128,10 @@ function itemRow(item) {
   ]);
 }
 
-function drawer(invoiceId, container) {
+function renderContent(content, countBadge, invoiceId) {
+  countBadge.textContent = items !== null ? String(items.length) : "";
+  countBadge.hidden = items === null;
+
   const feed = el(
     "div",
     { class: "activityfeed" },
@@ -140,25 +146,12 @@ function drawer(invoiceId, container) {
   const postButton = el("button", {
     id: "activity-post",
     class: "activitypost",
-    onclick: () => post(invoiceId, container),
+    onclick: () => post(invoiceId, content, countBadge),
   });
   postButton.append(icon("post"), el("span", { text: t("activity.post") }));
 
-  return el(
-    "div",
-    { class: "activitydrawer" },
-    [
-      el("div", { class: "activityhead" }, [
-        el("h3", {}, [el("span", { text: t("activity.title") })]),
-        el("button", {
-          class: "activityclose",
-          text: "\u2715",
-          onclick: () => {
-            open = false;
-            renderInto(container, invoiceId);
-          },
-        }),
-      ]),
+  content.replaceChildren(
+    ...[
       error ? el("div", { class: "warn sm", text: error }) : null,
       feed,
       el("div", { class: "activityinput" }, [box, postButton]),
@@ -167,38 +160,22 @@ function drawer(invoiceId, container) {
   );
 }
 
-function renderInto(container, invoiceId) {
-  container.className = open ? "activitywrap open" : "activitywrap";
-  const tab = el(
-    "button",
-    {
-      class: "activitytab",
-      onclick: () => {
-        open = !open;
-        renderInto(container, invoiceId);
-        if (open && items === null && !loading) load(invoiceId, container);
-      },
-    },
-    [
-      el("span", { text: t("activity.tab") }),
-      items !== null ? el("span", { class: "activitycount", text: String(items.length) }) : null,
-    ].filter(Boolean)
-  );
-
-  container.replaceChildren(...[tab, open ? drawer(invoiceId, container) : null].filter(Boolean));
-}
-
 /**
- * Build the panel for one document — called once per `openViewer()`.
+ * Build the tab's pane and its count badge for one document — called
+ * once per `openViewer()`.
  *
  * **State resets per document.** Opening invoice B must not show
- * invoice A's comments for a moment before they are replaced — a
- * fresh document starts closed and unloaded, the same as arriving at
- * the viewer for the first time.
+ * invoice A's comments for a moment before they are replaced.
+ *
+ * Returns `{ content, countBadge }`: `content` is the pane
+ * `viewer.js` shows or hides alongside the document preview;
+ * `countBadge` is a live node meant to sit inside `viewer.js`'s own
+ * tab button, updated in place as loading completes.
  */
-export function activityPanel(invoiceId) {
+export function buildActivityTab(invoiceId) {
   reset();
-  const container = el("div", { class: "activitywrap" });
-  renderInto(container, invoiceId);
-  return container;
+  const content = el("div", { class: "activitytabcontent" });
+  const countBadge = el("span", { class: "activitycount", hidden: "hidden" });
+  load(invoiceId, content, countBadge);
+  return { content, countBadge };
 }

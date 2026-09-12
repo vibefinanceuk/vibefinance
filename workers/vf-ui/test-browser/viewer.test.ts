@@ -124,6 +124,7 @@ const STRINGS = {
     "activity.received": "Invoice received",
     "activity.stagecompleted": "{who} completed {stage}",
     "activity.rulefired": "Business rule \u2018{rule}\u2019 fired: {actions}",
+    "activity.timelinetab": "Timeline / Chat",
   },
 };
 
@@ -1515,7 +1516,7 @@ describe("an action that labels itself draws itself (decision 0229)", () => {
   });
 });
 
-describe("the activity panel (decision 0267)", () => {
+describe("the document/timeline tabs (decision 0269)", () => {
   const BASE_ROUTES = {
     "/api/code-lists": { fields: {} },
     "/api/ui-strings": STRINGS,
@@ -1524,20 +1525,31 @@ describe("the activity panel (decision 0267)", () => {
     "/api/invoices/inv-1/progress": { visits: [] },
   };
 
-  it("is closed by default, with no count until opened", async () => {
-    stubFetch(BASE_ROUTES);
+  function docTabButton() {
+    return [...document.querySelectorAll(".doctab")].find((b) => b.textContent?.includes("Document"));
+  }
+  function timelineTabButton() {
+    return [...document.querySelectorAll(".doctab")].find((b) => b.textContent?.includes("Timeline / Chat"));
+  }
+
+  it("shows the Document tab active by default, with the preview visible", async () => {
+    stubFetch({ ...BASE_ROUTES, "/api/documents/inv-1/activity": { items: [] } });
     const { loadStrings } = await import("/strings.js");
     await loadStrings();
     const { openViewer } = await import("/viewer.js");
     await openViewer(TASK, () => {});
 
-    const tab = [...document.querySelectorAll("button")].find((b) => b.textContent?.includes("Activity"));
-    expect(tab).toBeDefined();
-    expect(tab?.textContent).toBe("Activity");
-    expect(document.querySelector(".activitydrawer")).toBeNull();
+    expect(docTabButton()?.className).toContain("on");
+    expect(timelineTabButton()?.className).not.toContain("on");
+    expect(document.getElementById("vpreview")?.closest("[hidden]")).toBeNull();
+    expect(document.querySelector(".activitytabcontent")).toHaveProperty("hidden", true);
   });
 
-  it("loads and shows the feed only once opened", async () => {
+  it("loads the feed eagerly, showing a real count on the tab before it is ever clicked", async () => {
+    // **Not lazy anymore** — decision 0269. The tab has to show how
+    // much is there without being opened first, or "Timeline / Chat"
+    // with no number would be a tab lying about its own contents for
+    // its entire first moment on screen.
     const seen: string[] = [];
     stubFetch(
       {
@@ -1564,16 +1576,38 @@ describe("the activity panel (decision 0267)", () => {
     await loadStrings();
     const { openViewer } = await import("/viewer.js");
     await openViewer(TASK, () => {});
-
-    expect(seen.some((u) => u.includes("/activity"))).toBe(false);
-
-    const tab = [...document.querySelectorAll("button")].find((b) => b.textContent?.includes("Activity"));
-    (tab as HTMLButtonElement).click();
     await new Promise((r) => setTimeout(r, 0));
 
     expect(seen.some((u) => u === "/api/documents/inv-1/activity")).toBe(true);
+    expect(timelineTabButton()?.textContent).toContain("2");
+  });
+
+  it("switches to the Timeline tab without losing the loaded document preview", async () => {
+    stubFetch({
+      ...BASE_ROUTES,
+      "/api/documents/inv-1/activity": {
+        items: [{ kind: "received", at: "2026-09-01 09:00:00" }],
+      },
+    });
+
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    await openViewer(TASK, () => {});
+    await new Promise((r) => setTimeout(r, 0));
+
+    (timelineTabButton() as HTMLButtonElement).click();
+
+    expect(timelineTabButton()?.className).toContain("on");
+    expect(docTabButton()?.className).not.toContain("on");
     expect(document.body.textContent).toContain("Invoice received");
-    expect(document.body.textContent).toContain("Priya Patel completed Validation");
+    // The preview node is still in the DOM, just hidden — not torn
+    // down and rebuilt, which would have discarded whatever
+    // showPreview() had already filled it with.
+    expect(document.getElementById("vpreview")).not.toBeNull();
+
+    (docTabButton() as HTMLButtonElement).click();
+    expect(document.getElementById("vpreview")?.closest("[hidden]")).toBeNull();
   });
 
   it("phrases a fired rule from its own name and its own actions", async () => {
@@ -1595,10 +1629,9 @@ describe("the activity panel (decision 0267)", () => {
     await loadStrings();
     const { openViewer } = await import("/viewer.js");
     await openViewer(TASK, () => {});
-
-    const tab = [...document.querySelectorAll("button")].find((b) => b.textContent?.includes("Activity"));
-    (tab as HTMLButtonElement).click();
     await new Promise((r) => setTimeout(r, 0));
+
+    (timelineTabButton() as HTMLButtonElement).click();
 
     expect(document.body.textContent).toContain(
       "Business rule \u2018Spend Threshold\u2019 fired: routed to AP Review and assigned to AP Team"
@@ -1617,10 +1650,9 @@ describe("the activity panel (decision 0267)", () => {
     await loadStrings();
     const { openViewer } = await import("/viewer.js");
     await openViewer(TASK, () => {});
-
-    const tab = [...document.querySelectorAll("button")].find((b) => b.textContent?.includes("Activity"));
-    (tab as HTMLButtonElement).click();
     await new Promise((r) => setTimeout(r, 0));
+
+    (timelineTabButton() as HTMLButtonElement).click();
 
     expect(document.querySelector(".activitycomment .activityavatar")?.textContent).toBe("PP");
     expect(document.body.textContent).toContain("Checked with procurement.");
@@ -1652,10 +1684,9 @@ describe("the activity panel (decision 0267)", () => {
     await loadStrings();
     const { openViewer } = await import("/viewer.js");
     await openViewer(TASK, () => {});
-
-    const tab = [...document.querySelectorAll("button")].find((b) => b.textContent?.includes("Activity"));
-    (tab as HTMLButtonElement).click();
     await new Promise((r) => setTimeout(r, 0));
+
+    (timelineTabButton() as HTMLButtonElement).click();
 
     (document.getElementById("activity-input") as HTMLTextAreaElement).value = "Noted.";
     (document.getElementById("activity-post") as HTMLButtonElement).click();
@@ -1667,40 +1698,46 @@ describe("the activity panel (decision 0267)", () => {
   });
 
   it("gives the post button an icon, matching every other action button", async () => {
-    // **Consistency, per the operator's own request** — decision 0268.
-    // Every actionLink/toolButton in this app pairs an icon with its
-    // label; the post button was text-only until now.
     stubFetch({ ...BASE_ROUTES, "/api/documents/inv-1/activity": { items: [] } });
     const { loadStrings } = await import("/strings.js");
     await loadStrings();
     const { openViewer } = await import("/viewer.js");
     await openViewer(TASK, () => {});
-
-    const tab = [...document.querySelectorAll("button")].find((b) => b.textContent?.includes("Activity"));
-    (tab as HTMLButtonElement).click();
     await new Promise((r) => setTimeout(r, 0));
+
+    (timelineTabButton() as HTMLButtonElement).click();
 
     const post = document.getElementById("activity-post");
     expect(post?.querySelector("svg")).not.toBeNull();
     expect(post?.textContent).toBe("Post");
   });
 
-  it("closes via its own close button", async () => {
+  it("resets to the Document tab when a different document is opened", async () => {
+    // **Not a global toggle any more** — decision 0269's own state
+    // lives per document. Arriving at a second invoice must not carry
+    // over whichever tab the first one was left on.
     stubFetch({ ...BASE_ROUTES, "/api/documents/inv-1/activity": { items: [] } });
     const { loadStrings } = await import("/strings.js");
     await loadStrings();
     const { openViewer } = await import("/viewer.js");
     await openViewer(TASK, () => {});
-
-    const tab = [...document.querySelectorAll("button")].find((b) => b.textContent?.includes("Activity"));
-    (tab as HTMLButtonElement).click();
     await new Promise((r) => setTimeout(r, 0));
-    expect(document.querySelector(".activitydrawer")).not.toBeNull();
+    (timelineTabButton() as HTMLButtonElement).click();
+    expect(timelineTabButton()?.className).toContain("on");
 
-    const close = document.querySelector(".activityclose") as HTMLButtonElement;
-    close.click();
-    expect(document.querySelector(".activitydrawer")).toBeNull();
+    const TASK_2 = { ...TASK, subject: { ...TASK.subject, id: "inv-2" } };
+    stubFetch({
+      ...BASE_ROUTES,
+      "/api/invoices/inv-2": { facts: {}, lines: [], validation: { passed: true, checked: [], failures: [] } },
+      "/api/invoices/inv-2/progress": { visits: [] },
+      "/api/documents/inv-2/activity": { items: [] },
+    });
+    await openViewer(TASK_2, () => {});
+
+    expect(docTabButton()?.className).toContain("on");
+    expect(document.getElementById("vpreview")?.closest("[hidden]")).toBeNull();
   });
+
 
   it("never renders the literal text 'null' anywhere on the page", async () => {
     // **The bug found while wiring this in.** `unreadableNote()`

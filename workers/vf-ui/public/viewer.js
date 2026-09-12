@@ -14,7 +14,7 @@ import { t } from "/strings.js";
 import { el, frame, topbar } from "/tasks.js";
 import { icon } from "/icons.js";
 import { processRow } from "/process-row.js";
-import { activityPanel } from "/activity.js";
+import { buildActivityTab } from "/activity.js";
 
 let current = null;
 /** The line table's working state — decision 0109. */
@@ -55,6 +55,15 @@ let stored = { facts: {}, lines: [], document: null };
  * arrival, and the duration is the gap.
  */
 let progress = { inProcess: false, stages: [] };
+
+/**
+ * Which tab the document panel is showing — decision 0269.
+ *
+ * **Resets to "doc" per document opened**, in `openViewer()` itself,
+ * the same discipline `activity.js`'s own state reset uses: arriving
+ * at invoice B must not show whichever tab invoice A was left on.
+ */
+let docPanelTab = "doc";
 
 async function loadProgress(invoiceId) {
   progress = { inProcess: false, stages: [] };
@@ -612,6 +621,94 @@ function exceptionPanel() {
   ]);
 }
 
+/**
+ * The document panel — two tabs sharing one space, decision 0269.
+ *
+ * **Replaces the drawer decision 0267 shipped**, at the operator's own
+ * request: "two tabs, reading 'Document' and 'Timeline / Chat'," in
+ * the same panel the preview has always occupied, rather than the
+ * feed opening in a strip below it.
+ *
+ * **No invoice id, no second tab.** A task can in principle have no
+ * real subject — the tab needing something to fetch activity for is
+ * exactly what the old drawer already guarded with the same check.
+ */
+function documentPanel(task, onClose) {
+  const invoiceId = task.subject?.id ?? null;
+
+  const docPane = el("div", { class: "vpreview", id: "vpreview" }, [
+    el("div", { class: "vthumb", text: t("viewer.document") }),
+  ]);
+  const actionsRow = el("div", { class: "actionrow" }, [
+    actionLink("expand", { onclick: () => openDocument(invoiceId) }),
+    /**
+     * **Save appears where something can be saved** — decision 0142.
+     *
+     * It was the screen's own, always offered. An approval task has
+     * every field read-only (decision 0114), so a Save that submits
+     * nothing is a button promising an effect it cannot have — which
+     * decision 0122 already called worse than an absent one.
+     *
+     * The dominant action becomes whatever the task actually offers,
+     * which for an approval is Complete.
+     */
+    ...(canEditAnything ? [actionLink("save", { onclick: () => save(null), primary: true })] : []),
+    // What else this task offers is the SERVER's decision (decision
+    // 0103) — collecting them visually does not move where they are
+    // decided.
+    ...(task.actions ?? [])
+      .filter((a) => a !== "key")
+      .map((a, index) =>
+        actionLink(a, {
+          onclick: () => runAction(a, task, onClose),
+          // With nothing to save, the first thing the task offers is
+          // what somebody came to do.
+          primary: !canEditAnything && index === 0,
+        })
+      ),
+  ]);
+  const docContent = el("div", {}, [docPane, actionsRow]);
+  docContent.hidden = docPanelTab !== "doc";
+
+  if (!invoiceId) {
+    // Nothing to show a timeline for — the old, un-tabbed panel.
+    return el("div", { class: "panel" }, [el("h3", { text: t("viewer.document") }), docPane, actionsRow]);
+  }
+
+  const { content: timelineContent, countBadge } = buildActivityTab(invoiceId);
+  timelineContent.hidden = docPanelTab !== "timeline";
+
+  const docTab = el("button", { class: docPanelTab === "doc" ? "doctab on" : "doctab" }, [
+    el("span", { text: t("viewer.document") }),
+  ]);
+  const timelineTab = el("button", { class: docPanelTab === "timeline" ? "doctab on" : "doctab" }, [
+    el("span", { text: t("activity.timelinetab") }),
+    countBadge,
+  ]);
+
+  /**
+   * **Toggled directly, not re-rendered** — switching tabs must not
+   * call the viewer's own `render()`, which would tear down
+   * `#vpreview` after `showPreview()` has already filled it and
+   * discard whatever the timeline tab has loaded.
+   */
+  function select(which) {
+    docPanelTab = which;
+    docTab.className = which === "doc" ? "doctab on" : "doctab";
+    timelineTab.className = which === "timeline" ? "doctab on" : "doctab";
+    docContent.hidden = which !== "doc";
+    timelineContent.hidden = which !== "timeline";
+  }
+  docTab.onclick = () => select("doc");
+  timelineTab.onclick = () => select("timeline");
+
+  return el("div", { class: "panel" }, [
+    el("div", { class: "doctabs" }, [docTab, timelineTab]),
+    docContent,
+    timelineContent,
+  ]);
+}
+
 /** One row: what is wrong, and where. */
 function exceptionRow(failure) {
   const where = failure.line ? ` · ${t("viewer.online")} ${failure.line}` : "";
@@ -819,6 +916,8 @@ function subhead(task) {
 }
 
 export async function openViewer(task, onClose) {
+  docPanelTab = "doc";
+
   // Before rendering, so a field never appears as a text box and then
   // becomes a picker under somebody's hands.
   await loadCodeLists();
@@ -1435,61 +1534,9 @@ export async function openViewer(task, onClose) {
             el("div", { class: "problem", id: "viewer-note", role: "status" }),
           ]),
           el("div", {}, [
-            el("div", { class: "panel" }, [
-              el("h3", { text: t("viewer.document") }),
-              // **The document is visible, not behind a button.** The
-              // panel is a placeholder until something can render a PDF
-              // (decision 0042); the original still opens in its own
-              // window through a signed URL.
-              // Filled once the signed URL is minted, so the panel has
-              // somewhere to put it and does not jump when it arrives.
-              el("div", { class: "vpreview", id: "vpreview" }, [
-                el("div", { class: "vthumb", text: t("viewer.document") }),
-              ]),
-              /**
-               * The actions, below the document — decision 0122.
-               *
-               * A horizontal row rather than a stack of full-width
-               * buttons: they belong to the document above them, and
-               * eight stacked buttons read as a menu rather than as
-               * things to do with what is on screen.
-               */
-              el("div", { class: "actionrow" }, [
-                actionLink("expand", { onclick: () => openDocument(task.subject.id) }),
-                /**
-                 * **Save appears where something can be saved** —
-                 * decision 0142.
-                 *
-                 * It was the screen's own, always offered. An approval
-                 * task has every field read-only (decision 0114), so a
-                 * Save that submits nothing is a button promising an
-                 * effect it cannot have — which decision 0122 already
-                 * called worse than an absent one.
-                 *
-                 * The dominant action becomes whatever the task
-                 * actually offers, which for an approval is Complete.
-                 */
-                ...(canEditAnything
-                  ? [actionLink("save", { onclick: () => save(null), primary: true })]
-                  : []),
-                // What else this task offers is the SERVER's decision
-                // (decision 0103) — collecting them visually does not
-                // move where they are decided.
-                ...(task.actions ?? [])
-                  .filter((a) => a !== "key")
-                  .map((a, index) =>
-                    actionLink(a, {
-                      onclick: () => runAction(a, task, onClose),
-                      // With nothing to save, the first thing the task
-                      // offers is what somebody came to do.
-                      primary: !canEditAnything && index === 0,
-                    })
-                  ),
-              ]),
-            ]),
+            documentPanel(task, onClose),
             unreadableNote(),
             exceptionPanel(),
-            task.subject?.id ? activityPanel(task.subject.id) : null,
           ].filter(Boolean)),
         ].filter(Boolean)),
       ].filter(Boolean))
