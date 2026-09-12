@@ -977,8 +977,34 @@
     **The content fills what is left**, so two cards of a row that share
     a height do not both leave their slack at the bottom.
   */
-  .dashgrid > .panel { display: flex; flex-direction: column; }
-  .dashgrid > .panel > svg { margin-top: auto; }
+  .dashgrid > .panel {
+    display: flex;
+    flex-direction: column;
+    /*
+      **A panel's own margin is off inside a dashboard, here too** —
+      decision 0261.
+      
+      Decision 0246 recorded this exact fix — "twenty-six between rows"
+      — but only ever wrote the override for `.dashstrip`. `.dashgrid`
+      never got it: every panel inside it has carried the base panel's
+      14px bottom margin on top of the grid's own 12px gap the entire
+      time, undetected because nothing before had a tall enough
+      neighbour to make 26px look wrong next to a correct 12px.
+    */
+    margin: 0;
+  }
+  /*
+    **The donut gets the same treatment as the bar chart** — decision
+    0261. `donutChart()` returns a wrapping `.donutwrap`, not a raw
+    `svg`, so it never matched the rule below: a bar chart sat pinned to
+    the bottom of a stretched card and a donut sat pinned to the top
+    with visible empty space below it, which is what read as two cards
+    of different heights even when their borders were already equal.
+  */
+  .dashgrid > .panel > svg,
+  .dashgrid > .panel > .donutwrap {
+    margin-top: auto;
+  }
 
   /*
     The wider cards. **Equal heights within a row**, so two charts

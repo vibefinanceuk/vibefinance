@@ -974,3 +974,56 @@ describe("a background line, where the data is real (decision 0257)", () => {
     expect(fgRule).toContain("z-index: 1");
   });
 });
+
+describe("a panel's own margin does not add to the grid's gap (decision 0261)", () => {
+  /**
+   * **Decision 0246 recorded this fix and only ever wrote half of it.**
+   * The record's own words — "twenty-six between rows" — describe
+   * exactly the bug reported live: the base panel's 14px margin adding
+   * to the grid's 12px gap. The override was written for `.dashstrip`
+   * and never for `.dashgrid`, so every row inside the grid carried the
+   * extra 14px the whole time, unnoticed until a tall enough neighbour
+   * made 26px look wrong next to a correct 12px above it.
+   *
+   * Read from the stylesheet's own text, not measured computed style —
+   * this codebase's established pattern (decision 0257's stacking
+   * test), since these browser tests do not load real CSS into the
+   * DOM.
+   */
+  it("zeroes a dashgrid panel's own margin", async () => {
+    const stylesheets = (await import("virtual:stylesheets")).default;
+    const css = stylesheets["index.html"];
+
+    const rule = css.slice(css.indexOf(".dashgrid > .panel {"), css.indexOf(".dashgrid > .panel {") + 700);
+    expect(rule).toContain("margin: 0");
+  });
+
+  it("pins a donut to the bottom of its card, like a bar chart", async () => {
+    /**
+     * **`donutChart()` returns a `.donutwrap`, not a raw `svg`.** The
+     * existing `margin-top: auto` rule only ever matched a bar chart's
+     * direct-child svg, so a donut sat at the top of a stretched card
+     * with visible empty space below it, while its row sibling's bar
+     * chart sat pinned to the bottom — two cards of equal border height
+     * that read as different because their content was anchored
+     * opposite ends of it.
+     *
+     * **Checked as the exact compound selector, not a substring.** A
+     * first version of this test only looked for the text ".donutwrap"
+     * somewhere nearby, which is still true even if the selector were
+     * renamed to something that targets nothing real — caught by
+     * probing it directly, which is why this checks the full selector
+     * string instead.
+     */
+    const stylesheets = (await import("virtual:stylesheets")).default;
+    const css = stylesheets["index.html"];
+
+    expect(css).toContain(".dashgrid > .panel > .donutwrap {");
+
+    const rule = css.slice(
+      css.indexOf(".dashgrid > .panel > .donutwrap {"),
+      css.indexOf(".dashgrid > .panel > .donutwrap {") + 60
+    );
+    expect(rule).toContain("margin-top: auto");
+  });
+});
