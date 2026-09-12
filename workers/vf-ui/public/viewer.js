@@ -684,11 +684,15 @@ function documentPanel(task, onClose) {
     [
       !stored.intake || stored.intake.readable
         ? null
-        : el("div", { class: "unreadable" }, [
-            el("div", { text: t("viewer.unreadable") }),
-            ...(stored.intake.attempted
-              ? [el("div", { class: "sm muted", text: `${t("viewer.tried")} ${stored.intake.attempted}` })]
-              : []),
+        : el("div", { class: "systemalert" }, [
+            el("div", { class: "icon" }, [icon("systemalert")]),
+            el("div", {}, [
+              el("div", { class: "systemalertlabel", text: t("activity.systemalert") }),
+              el("div", { class: "systemalertheadline", text: t("viewer.unreadable") }),
+              ...(stored.intake.attempted
+                ? [el("div", { class: "systemalertdetail", text: `${t("viewer.tried")} ${stored.intake.attempted}` })]
+                : []),
+            ]),
           ]),
       timelineContent,
     ].filter(Boolean)

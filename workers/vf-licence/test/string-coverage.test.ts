@@ -124,6 +124,7 @@ const KEYS_THE_INTERFACE_USES = [
   "rule.namethis",
   "rule.unnamed",
   "activity.timelinetab",
+  "activity.systemalert",
   "activity.loading",
   "activity.empty",
   "activity.placeholder",

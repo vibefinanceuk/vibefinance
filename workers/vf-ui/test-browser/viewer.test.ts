@@ -127,6 +127,7 @@ const STRINGS = {
     "activity.stagecompleted": "{who} completed {stage}",
     "activity.rulefired": "Business rule \u2018{rule}\u2019 fired: {actions}",
     "activity.timelinetab": "Timeline / Chat",
+    "activity.systemalert": "System Alert",
   },
 };
 
@@ -1737,11 +1738,14 @@ describe("the document/timeline tabs (decision 0269)", () => {
     expect(rule).toContain("display: none");
   });
 
-  it("shows the unreadable-document note in Timeline / Chat, not under the image", async () => {
+  it("shows the unreadable-document note in Timeline / Chat, not under the image, as a System Alert", async () => {
     /**
      * **Reported live**: "I would rather this information appeared in
      * the Timeline / Chat... it should be removed from beneath the
-     * document image, to make room for the image." — decision 0271.
+     * document image, to make room for the image." (decision 0271),
+     * then: "have the look and feel of the mock-up... identified as a
+     * 'System Alert'... it does not need to be highlighted in Orange"
+     * (decision 0272).
      */
     stubFetch({
       ...BASE_ROUTES,
@@ -1762,14 +1766,25 @@ describe("the document/timeline tabs (decision 0269)", () => {
 
     // Not visible under the image, on the Document tab.
     const docPane = document.getElementById("vpreview")?.parentElement;
-    expect(docPane?.querySelector(".unreadable")).toBeNull();
+    expect(docPane?.querySelector(".systemalert")).toBeNull();
 
     (timelineTabButton() as HTMLButtonElement).click();
 
-    const note = document.querySelector(".unreadable");
+    const note = document.querySelector(".systemalert");
     expect(note).not.toBeNull();
+    expect(note?.querySelector(".systemalertlabel")?.textContent).toBe("System Alert");
     expect(note?.textContent).toContain("This document could not be read automatically");
     expect(note?.textContent).toContain("Tried: OCR");
+  });
+
+  it("does not colour the system alert orange", async () => {
+    // **The operator's own words**: "it does not need to be
+    // highlighted in Orange." Checked against the real stylesheet,
+    // since jsdom applies no CSS at all.
+    const css = (await import("virtual:stylesheets")).default["index.html"];
+    const rule = css.slice(css.indexOf(".systemalert {"), css.indexOf(".systemalert {") + 300);
+    expect(rule).not.toContain("--bg-warning");
+    expect(rule).not.toContain("--text-warning");
   });
 
   it("shows no unreadable note anywhere when the document was read fine", async () => {
@@ -1791,7 +1806,7 @@ describe("the document/timeline tabs (decision 0269)", () => {
     await new Promise((r) => setTimeout(r, 0));
 
     (timelineTabButton() as HTMLButtonElement).click();
-    expect(document.querySelector(".unreadable")).toBeNull();
+    expect(document.querySelector(".systemalert")).toBeNull();
   });
 
   it("resets to the Document tab when a different document is opened", async () => {

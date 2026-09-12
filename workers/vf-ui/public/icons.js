@@ -125,6 +125,12 @@ export const ICONS = {
    */
   close: '<path d="M6 6l12 12M18 6 6 18"/>',
 
+  // A triangle with an exclamation mark — decision 0272. Not coloured
+  // orange itself (that lives in CSS, not the shape); the shape says
+  // "worth noticing" honestly regardless of which colour a card around
+  // it ends up using.
+  systemalert: '<path d="M12 3 2 20h20z"/><path d="M12 10v4"/><circle cx="12" cy="17" r="0.6" fill="currentColor" stroke="none"/>',
+
   /**
    * **A person with a plus** — decision 0237, for recording a supplier
    * the ERP does not have.

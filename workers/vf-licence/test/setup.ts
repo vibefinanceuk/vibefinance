@@ -81,6 +81,7 @@ import whatIActedOnSql from "../migrations/0076_what_i_acted_on.sql?raw";
 import nameARuleSql from "../migrations/0077_name_a_rule.sql?raw";
 import activityPanelSql from "../migrations/0078_activity_panel.sql?raw";
 import timelineChatTabSql from "../migrations/0079_timeline_chat_tab.sql?raw";
+import systemAlertLabelSql from "../migrations/0080_system_alert_label.sql?raw";
 
 function stripSqlComments(sql: string): string {
   return sql
@@ -189,5 +190,6 @@ export async function applyTestSchema(): Promise<void> {
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(nameARuleSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(activityPanelSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(timelineChatTabSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(systemAlertLabelSql)));
 
 }
