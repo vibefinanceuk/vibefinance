@@ -69,7 +69,26 @@ export async function handleListDocuments(
    * asking for France gets France's most recent, not France's share of
    * everybody's most recent.
    */
-  const unit = params.get("unit");
+  /**
+   * **A live defect, unrelated to decision 0259** — decision 0260.
+   *
+   * `documents.js` has always sent `unit=` explicitly, even when
+   * nothing is selected — `new URLSearchParams({ q: query, unit })`
+   * includes the key regardless of whether `unit` is an empty string.
+   * `params.get("unit")` then returns `""`, not `null`.
+   *
+   * Bound straight into `(?1 IS NULL OR h.org_unit_id = ?1)`, an empty
+   * string is not `NULL` and is not equal to any real unit id or to a
+   * genuinely null column — **the clause matches nothing at all**,
+   * for every visit to this screen with no unit chosen, which is every
+   * visit before today nobody had a reason to look closely at.
+   *
+   * Every existing test built its request from a query string via
+   * `new URLSearchParams("")`, which omits `unit` entirely and gets a
+   * real `null` — a different construction from what the real
+   * frontend sends, and exactly where the fault hid.
+   */
+  const unit = params.get("unit") || null;
   const limit = Math.min(Math.max(Number(params.get("limit") ?? "50") || 50, 1), 200);
 
   /**

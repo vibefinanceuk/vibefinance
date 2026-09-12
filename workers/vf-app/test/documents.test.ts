@@ -399,3 +399,44 @@ describe("linking a dashboard alert to the documents it names (decision 0259)", 
   });
 });
 
+
+describe("the ordinary screen, with an empty unit exactly as the frontend sends it (decision 0260)", () => {
+  /**
+   * **Reported live: the Documents screen looked empty, and searching
+   * found nothing.**
+   *
+   * `documents.js` builds its request with `new URLSearchParams({ q:
+   * query, unit })`, which includes `unit` even when it is `""` —
+   * unlike every existing test here, which built its request from a
+   * query *string* via `new URLSearchParams("")`, omitting the key
+   * entirely and getting a real `null`. The two constructions are not
+   * the same request, and the difference is exactly where this hid.
+   *
+   * This test builds the request the way the real screen actually
+   * does, not the way it was convenient to write for.
+   */
+  it("shows documents when the frontend's real, empty unit param arrives", async () => {
+    await seedDocument("inv-1", { "BT-1": "ORDINARY-1" });
+
+    const asTheScreenSendsIt = new URLSearchParams({ q: "", unit: "" });
+    const body = (await handleListDocuments(env.DB, asTheScreenSendsIt)).body as {
+      documents: { id: string }[];
+    };
+
+    expect(body.documents).toHaveLength(1);
+  });
+
+  it("still narrows correctly when a real unit is chosen", async () => {
+    // The fix must not break the case it was not breaking.
+    await env.DB.prepare(
+      "INSERT INTO org_units (id, name, kind) VALUES ('acme-fr', 'Acme France', 'legal_entity')"
+    ).run();
+    await seedDocument("inv-fr", { "BT-1": "FR-1" });
+    await env.DB.prepare("UPDATE invoice_headers SET org_unit_id = 'acme-fr' WHERE id = 'inv-fr'").run();
+    await seedDocument("inv-none", { "BT-1": "NONE-1" });
+
+    const params = new URLSearchParams({ q: "", unit: "acme-fr" });
+    const body = (await handleListDocuments(env.DB, params)).body as { documents: { id: string }[] };
+    expect(body.documents.map((d) => d.id)).toEqual(["inv-fr"]);
+  });
+});
