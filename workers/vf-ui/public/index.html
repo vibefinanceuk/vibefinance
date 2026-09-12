@@ -1382,6 +1382,15 @@
     padding: 1px 7px; color: var(--text-secondary); font-weight: 400;
   }
   .activitytabcontent { display: flex; flex-direction: column; }
+  /*
+    **`hidden` alone is not enough here** — `display: flex` above wins
+    over the browser's own default `[hidden] { display: none }` once
+    any other rule sets `display` on the same element, so the pane
+    stayed visible under the document even while its `hidden` property
+    was correctly set. Reported live: "the timeline appears under the
+    document image, and also within the Timeline / Chat tab."
+  */
+  .activitytabcontent[hidden] { display: none; }
   .activityfeed {
     max-height: 300px; overflow-y: auto; margin-bottom: 8px;
     display: flex; flex-direction: column; gap: 10px;

@@ -1712,6 +1712,29 @@ describe("the document/timeline tabs (decision 0269)", () => {
     expect(post?.textContent).toBe("Post");
   });
 
+  it("actually hides the timeline pane visually, not only its own hidden property", async () => {
+    /**
+     * **Reported live**: "the timeline appears under the document
+     * image, and also within the Timeline / Chat tab." `.hidden` as a
+     * DOM property was set correctly the whole time — every test
+     * above checking `.hidden` genuinely passed — but
+     * `.activitytabcontent { display: flex }` overrides the browser's
+     * own default `[hidden] { display: none }` once any other rule
+     * sets `display` on the same element, and nothing here loads real
+     * CSS to have caught that.
+     *
+     * Read from the stylesheet's own text instead, this app's
+     * established pattern (decision 0257's stacking test, 0261's
+     * margin test) for exactly this kind of thing.
+     */
+    const css = (await import("virtual:stylesheets")).default["index.html"];
+    const rule = css.slice(
+      css.indexOf(".activitytabcontent[hidden]"),
+      css.indexOf(".activitytabcontent[hidden]") + 120
+    );
+    expect(rule).toContain("display: none");
+  });
+
   it("resets to the Document tab when a different document is opened", async () => {
     // **Not a global toggle any more** — decision 0269's own state
     // lives per document. Arriving at a second invoice must not carry
