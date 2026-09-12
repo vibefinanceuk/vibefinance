@@ -325,6 +325,45 @@ describe("the folded nav, and the Vibe AP group (decision 0274)", () => {
     expect(markRule).toContain("display: block");
   });
 
+  it("hides the full logo at a specificity that actually beats the mood rules", async () => {
+    /**
+     * **Reported live**: a screenshot of the folded nav showed the
+     * full "Vibe finance" wordmark still sitting above the "V" mark,
+     * not replaced by it.
+     *
+     * `.frame.collapsed .brandmark { display: none; }` — three
+     * class-level selectors — lost every time to whichever mood rule
+     * was active, e.g. `:root[data-mood="day"] .brandmark.dark {
+     * display: block; }`, which carries four. CSS does not care which
+     * rule comes later in the file when one has lower specificity;
+     * jsdom applies no CSS at all, so no test caught this before a
+     * real screenshot did.
+     *
+     * Confirmed with an actual specificity calculator (the `specificity`
+     * npm package), not eyeballed: the old three-class rule computed
+     * to {A:0,B:3,C:0} against the mood rules' {A:0,B:4,C:0}. The fix
+     * names `.dark` and `.light` explicitly to tie at four, so this
+     * test checks for exactly that — a rule this specific existing,
+     * later in the file than the mood rules it has to beat.
+     */
+    const css = (await import("virtual:stylesheets")).default["index.html"];
+
+    const dayIndex = css.indexOf(':root[data-mood="day"] .brandmark.dark');
+    const nightIndex = css.indexOf(':root[data-mood="night"] .brandmark.light');
+    const fixIndex = css.indexOf(".frame.collapsed .brandmark.dark");
+    expect(dayIndex).toBeGreaterThan(-1);
+    expect(nightIndex).toBeGreaterThan(-1);
+    expect(fixIndex).toBeGreaterThan(-1);
+
+    // Tied specificity is broken by source order — this rule has to
+    // come after both of the ones it is competing with.
+    expect(fixIndex).toBeGreaterThan(dayIndex);
+    expect(fixIndex).toBeGreaterThan(nightIndex);
+
+    // The light variant needs the same treatment, for the same reason.
+    expect(css.slice(fixIndex, fixIndex + 120)).toContain(".frame.collapsed .brandmark.light");
+  });
+
   it("navigating to another screen does not collapse the toggle back to closed", async () => {
     // Toggling the nav must not depend on which screen is open, since
     // nothing about `frame()`'s own call site changes when it does.

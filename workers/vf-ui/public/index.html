@@ -334,8 +334,21 @@
   .frame.collapsed { grid-template-columns: 64px minmax(0, 1fr); }
   .frame.collapsed .navlabel,
   .frame.collapsed .navgroupchevron,
-  .frame.collapsed .brandmark,
   .frame.collapsed .who {
+    display: none;
+  }
+  /**
+   * **Matched at the same specificity as the rules it has to beat**,
+   * not the class alone — found live: `:root[data-mood="day"]
+   * .brandmark.dark { display: block; }` carries four class-level
+   * selectors against this rule's three, so it won regardless of
+   * which came later in the file, and the full wordmark kept showing
+   * above the "V" mark rather than being replaced by it. Naming
+   * `.dark` and `.light` explicitly here ties the specificity; being
+   * later in the file is what then makes this one win.
+   */
+  .frame.collapsed .brandmark.dark,
+  .frame.collapsed .brandmark.light {
     display: none;
   }
   .frame.collapsed .navmark { display: block; }
