@@ -24,6 +24,8 @@
  * production, so nothing here needs a test double.
  */
 
+import type { DocumentType } from "./document-storage.js";
+
 const TOKEN_TTL_SECONDS = 300;
 
 function base64UrlEncode(bytes: Uint8Array): string {
@@ -65,19 +67,31 @@ function timingSafeEqual(a: Uint8Array, b: Uint8Array): boolean {
   return diff === 0;
 }
 
+/**
+ * **The document type travels inside the token now, not recomputed at
+ * fetch time** — decision 0273.
+ *
+ * Before this, `/documents/:token` re-derived "which document" via
+ * `preferredDocumentType()`, and the route minting the token had
+ * already made that same choice once — two call sites the code's own
+ * comment already flagged as needing to "agree," which is exactly the
+ * shape of thing that drifts. Embedding the type in the signed payload
+ * means there is only one choice made, ever, for a given token.
+ */
 export async function mintDocumentToken(
   secret: string,
   invoiceId: string,
+  documentType: DocumentType,
   nowSeconds: number = Math.floor(Date.now() / 1000)
 ): Promise<{ token: string; expiresAt: number }> {
   const expiresAt = nowSeconds + TOKEN_TTL_SECONDS;
-  const payload = `${invoiceId}.${expiresAt}`;
+  const payload = `${invoiceId}.${documentType}.${expiresAt}`;
   const sig = await hmac(secret, payload);
   return { token: `${payload}.${base64UrlEncode(sig)}`, expiresAt };
 }
 
 export type TokenVerification =
-  | { valid: true; invoiceId: string }
+  | { valid: true; invoiceId: string; documentType: DocumentType }
   | { valid: false; reason: "malformed" | "expired" | "bad signature" };
 
 export async function verifyDocumentToken(
@@ -86,16 +100,20 @@ export async function verifyDocumentToken(
   nowSeconds: number = Math.floor(Date.now() / 1000)
 ): Promise<TokenVerification> {
   const parts = token.split(".");
-  if (parts.length !== 3) return { valid: false, reason: "malformed" };
-  const [invoiceId, expiryText, providedSig] = parts;
+  if (parts.length !== 4) return { valid: false, reason: "malformed" };
+  const [invoiceId, documentTypeText, expiryText, providedSig] = parts;
 
   const expiresAt = Number(expiryText);
   if (!Number.isFinite(expiresAt) || !invoiceId) return { valid: false, reason: "malformed" };
+  if (documentTypeText !== "original" && documentTypeText !== "generated_rendering") {
+    return { valid: false, reason: "malformed" };
+  }
+  const documentType = documentTypeText;
 
   // Signature before expiry, deliberately. Reporting "expired" for a
   // token whose signature was never valid would tell an attacker their
   // forgery was structurally right and only mistimed.
-  const expected = await hmac(secret, `${invoiceId}.${expiresAt}`);
+  const expected = await hmac(secret, `${invoiceId}.${documentType}.${expiresAt}`);
   let provided: Uint8Array;
   try {
     provided = base64UrlDecode(providedSig);
@@ -106,7 +124,7 @@ export async function verifyDocumentToken(
 
   if (nowSeconds >= expiresAt) return { valid: false, reason: "expired" };
 
-  return { valid: true, invoiceId };
+  return { valid: true, invoiceId, documentType };
 }
 
 export { TOKEN_TTL_SECONDS };

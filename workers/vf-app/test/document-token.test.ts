@@ -5,21 +5,38 @@ const SECRET = "a-real-looking-secret-value-for-testing";
 const NOW = 1_760_000_000;
 
 describe("minting and verifying a document token", () => {
-  it("round-trips, yielding the invoice it was minted for", async () => {
-    const { token } = await mintDocumentToken(SECRET, "inv-1", NOW);
-    expect(await verifyDocumentToken(SECRET, token, NOW)).toEqual({ valid: true, invoiceId: "inv-1" });
+  it("round-trips, yielding the invoice and document type it was minted for", async () => {
+    // **The document type travels with the token now** — decision
+    // 0273, so `/documents/:token` never has to re-derive "which
+    // document" and risk disagreeing with the choice already made at
+    // mint time.
+    const { token } = await mintDocumentToken(SECRET, "inv-1", "original", NOW);
+    expect(await verifyDocumentToken(SECRET, token, NOW)).toEqual({
+      valid: true,
+      invoiceId: "inv-1",
+      documentType: "original",
+    });
+  });
+
+  it("round-trips the other document type just as well", async () => {
+    const { token } = await mintDocumentToken(SECRET, "inv-1", "generated_rendering", NOW);
+    expect(await verifyDocumentToken(SECRET, token, NOW)).toEqual({
+      valid: true,
+      invoiceId: "inv-1",
+      documentType: "generated_rendering",
+    });
   });
 
   it("expires within minutes, not hours", async () => {
     // A window left open across a split screen is the use case; a token
     // that outlives the task is a credential sitting in a URL bar.
-    const { expiresAt } = await mintDocumentToken(SECRET, "inv-1", NOW);
+    const { expiresAt } = await mintDocumentToken(SECRET, "inv-1", "original", NOW);
     expect(expiresAt - NOW).toBe(TOKEN_TTL_SECONDS);
     expect(TOKEN_TTL_SECONDS).toBeLessThanOrEqual(600);
   });
 
   it("rejects a token past its expiry", async () => {
-    const { token } = await mintDocumentToken(SECRET, "inv-1", NOW);
+    const { token } = await mintDocumentToken(SECRET, "inv-1", "original", NOW);
     expect(await verifyDocumentToken(SECRET, token, NOW + TOKEN_TTL_SECONDS)).toEqual({
       valid: false,
       reason: "expired",
@@ -27,7 +44,7 @@ describe("minting and verifying a document token", () => {
   });
 
   it("accepts it one second before", async () => {
-    const { token } = await mintDocumentToken(SECRET, "inv-1", NOW);
+    const { token } = await mintDocumentToken(SECRET, "inv-1", "original", NOW);
     const result = await verifyDocumentToken(SECRET, token, NOW + TOKEN_TTL_SECONDS - 1);
     expect(result.valid).toBe(true);
   });
@@ -35,23 +52,33 @@ describe("minting and verifying a document token", () => {
 
 describe("forgery and tampering", () => {
   it("rejects a token signed with a different secret", async () => {
-    const { token } = await mintDocumentToken("some-other-secret", "inv-1", NOW);
+    const { token } = await mintDocumentToken("some-other-secret", "inv-1", "original", NOW);
     expect(await verifyDocumentToken(SECRET, token, NOW)).toEqual({ valid: false, reason: "bad signature" });
   });
 
   it("rejects a token whose invoice was swapped after signing", async () => {
     // The attack the signature exists to prevent: a valid token for a
     // document you may see, edited to name one you may not.
-    const { token } = await mintDocumentToken(SECRET, "inv-mine", NOW);
-    const [, expiry, sig] = token.split(".");
-    const forged = `inv-theirs.${expiry}.${sig}`;
+    const { token } = await mintDocumentToken(SECRET, "inv-mine", "original", NOW);
+    const [, documentType, expiry, sig] = token.split(".");
+    const forged = `inv-theirs.${documentType}.${expiry}.${sig}`;
+    expect(await verifyDocumentToken(SECRET, forged, NOW)).toEqual({ valid: false, reason: "bad signature" });
+  });
+
+  it("rejects a token whose document type was swapped after signing", async () => {
+    // **The new attack this token shape makes possible, and refuses**
+    // — decision 0273. A token signed for the generated rendering must
+    // not be edited to fetch the original instead, or vice versa.
+    const { token } = await mintDocumentToken(SECRET, "inv-1", "generated_rendering", NOW);
+    const [invoiceId, , expiry, sig] = token.split(".");
+    const forged = `${invoiceId}.original.${expiry}.${sig}`;
     expect(await verifyDocumentToken(SECRET, forged, NOW)).toEqual({ valid: false, reason: "bad signature" });
   });
 
   it("rejects a token whose expiry was extended after signing", async () => {
-    const { token } = await mintDocumentToken(SECRET, "inv-1", NOW);
-    const [id, , sig] = token.split(".");
-    const forged = `${id}.${NOW + 999999}.${sig}`;
+    const { token } = await mintDocumentToken(SECRET, "inv-1", "original", NOW);
+    const [id, documentType, , sig] = token.split(".");
+    const forged = `${id}.${documentType}.${NOW + 999999}.${sig}`;
     expect(await verifyDocumentToken(SECRET, forged, NOW)).toEqual({ valid: false, reason: "bad signature" });
   });
 
@@ -59,13 +86,13 @@ describe("forgery and tampering", () => {
     // Reporting "expired" for a token that was never validly signed
     // would tell an attacker their forgery was structurally right and
     // only mistimed.
-    const { token } = await mintDocumentToken("other-secret", "inv-1", NOW);
+    const { token } = await mintDocumentToken("other-secret", "inv-1", "original", NOW);
     const result = await verifyDocumentToken(SECRET, token, NOW + 99999);
     expect(result).toEqual({ valid: false, reason: "bad signature" });
   });
 
-  it("rejects malformed input without throwing", async () => {
-    for (const bad of ["", "nonsense", "a.b", "a.b.c.d", "inv.notanumber.sig"]) {
+  it("rejects an unrecognised document type even with a well-formed signature shape", async () => {
+    for (const bad of ["", "nonsense", "a.b", "a.b.c.d.e", "inv.notatype.123.sig", "inv.original.notanumber.sig"]) {
       const result = await verifyDocumentToken(SECRET, bad, NOW);
       expect(result.valid).toBe(false);
     }

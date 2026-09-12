@@ -125,6 +125,7 @@ const KEYS_THE_INTERFACE_USES = [
   "rule.unnamed",
   "activity.timelinetab",
   "activity.systemalert",
+  "viewer.xmltab",
   "activity.loading",
   "activity.empty",
   "activity.placeholder",

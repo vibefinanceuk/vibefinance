@@ -1,7 +1,7 @@
 import { env } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
 import { applyTestSchema } from "./setup.js";
-import { preferredDocumentType } from "../src/document-storage.js";
+import { preferredDocumentType, documentTypeInfo } from "../src/document-storage.js";
 import { renderPeppolDocument } from "../src/peppol-render.js";
 
 /**
@@ -247,6 +247,44 @@ describe("the choice both routes make (decision 0205)", () => {
 
     const chosen = await preferredDocumentType(env.DB, "inv-1");
     expect(chosen?.documentType).toBe("generated_rendering");
+  });
+});
+
+describe("documentTypeInfo — one specific type, not a choice between them (decision 0273)", () => {
+  /**
+   * **For the XML tab**, which wants exactly the original regardless
+   * of whether a nicer rendering also exists — the one case
+   * `preferredDocumentType` would never return on its own.
+   */
+  beforeEach(async () => {
+    await applyTestSchema();
+    await env.DB.prepare("INSERT INTO invoice_headers (id, facts_json) VALUES ('inv-1', '{}')").run();
+  });
+
+  async function store(documentType: string, contentType: string) {
+    await env.DB.prepare(
+      `INSERT INTO invoice_documents (id, invoice_id, r2_key, document_type, content_type)
+       VALUES (?, 'inv-1', ?, ?, ?)`
+    )
+      .bind(crypto.randomUUID(), `k-${documentType}`, documentType, contentType)
+      .run();
+  }
+
+  it("finds the original even when a generated rendering is preferred", async () => {
+    await store("original", "application/xml");
+    await store("generated_rendering", "text/html; charset=utf-8");
+
+    const info = await documentTypeInfo(env.DB, "inv-1", "original");
+    expect(info).toEqual({ contentType: "application/xml" });
+  });
+
+  it("says nothing when that specific type does not exist, even if the other one does", async () => {
+    await store("generated_rendering", "text/html; charset=utf-8");
+    expect(await documentTypeInfo(env.DB, "inv-1", "original")).toBeNull();
+  });
+
+  it("says nothing where nothing at all is retained", async () => {
+    expect(await documentTypeInfo(env.DB, "inv-1", "original")).toBeNull();
   });
 });
 

@@ -101,7 +101,7 @@ import {
 } from "./field-visibility-route.js";
 import { handlePreflight, withCors } from "@vibefinance/shared";
 import { mintDocumentToken, verifyDocumentToken } from "./document-token.js";
-import { retrieveInvoiceDocument, preferredDocumentType } from "./document-storage.js";
+import { retrieveInvoiceDocument, preferredDocumentType, documentTypeInfo } from "./document-storage.js";
 import { resolveVocabulary } from "@vibefinance/shared";
 import { getSupplierHistory } from "./invoice-history.js";
 import { handleCreateCustomField, handleListCustomFields, loadCustomFields } from "./custom-field-route.js";
@@ -1437,19 +1437,36 @@ export default {
         return json({ error: "DOCUMENT_URL_SECRET is not configured" }, 500);
       }
       /**
-       * **Chosen in one place**, because `/documents/:token` has to
-       * make the same choice and the token names an invoice rather than
-       * a document — decision 0205.
+       * **Which document, chosen once and only once** — decision 0273.
+       * A caller may ask for a specific type (`?type=original`, for
+       * the XML tab); otherwise `preferredDocumentType` picks as it
+       * always has. Whichever is chosen travels inside the signed
+       * token itself now, so `/documents/:token` never re-derives it
+       * and cannot disagree with the choice made here.
        */
-      const stored = await preferredDocumentType(db, docUrlMatch[1]);
-      if (!stored) {
-        return json({ error: `no document is retained for invoice ${docUrlMatch[1]}` }, 404);
+      const requestedType = url.searchParams.get("type");
+      let documentType: "original" | "generated_rendering";
+      let contentType: string;
+      if (requestedType === "original") {
+        const info = await documentTypeInfo(db, docUrlMatch[1], "original");
+        if (!info) {
+          return json({ error: `no original document is retained for invoice ${docUrlMatch[1]}` }, 404);
+        }
+        documentType = "original";
+        contentType = info.contentType;
+      } else {
+        const stored = await preferredDocumentType(db, docUrlMatch[1]);
+        if (!stored) {
+          return json({ error: `no document is retained for invoice ${docUrlMatch[1]}` }, 404);
+        }
+        documentType = stored.documentType;
+        contentType = stored.contentType;
       }
-      const minted = await mintDocumentToken(env.DOCUMENT_URL_SECRET, docUrlMatch[1]);
+      const minted = await mintDocumentToken(env.DOCUMENT_URL_SECRET, docUrlMatch[1], documentType);
       return json({
         url: `${url.origin}/documents/${minted.token}`,
         expiresAt: new Date(minted.expiresAt * 1000).toISOString(),
-        contentType: stored.contentType,
+        contentType,
       }, 200);
     }
 
@@ -1471,24 +1488,15 @@ export default {
         return json({ error: `document link ${verified.reason}` }, 403);
       }
       /**
-       * **The rendering where there is one, the original otherwise** —
-       * decision 0205, and it must agree with what `document-url`
-       * reported the content type of.
-       *
-       * The token names an invoice rather than a document, so the
-       * choice is made twice and has to be made the same way. Written
-       * as one helper for that reason.
+       * **The choice travels in the token itself now** — decision
+       * 0273. This used to re-derive "which document" via
+       * `preferredDocumentType`, the same choice `document-url` had
+       * already made once — two call sites the code's own comment
+       * here used to flag as needing to "agree." Now there is exactly
+       * one choice, made at mint time, and this reads it back rather
+       * than making it again.
        */
-      /**
-       * **The same choice `document-url` made** — decision 0205. The
-       * token names an invoice rather than a document, so both sides
-       * ask `preferredDocumentType` rather than each ordering for
-       * themselves.
-       */
-      const preferred = await preferredDocumentType(db, verified.invoiceId);
-      const doc = preferred
-        ? await retrieveInvoiceDocument(documents, db, verified.invoiceId, preferred.documentType)
-        : null;
+      const doc = await retrieveInvoiceDocument(documents, db, verified.invoiceId, verified.documentType);
       if (!doc) {
         return json({ error: "the document is no longer retained" }, 404);
       }

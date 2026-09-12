@@ -112,7 +112,8 @@ const STRINGS = {
     "viewer.reflabel": "Unique Ref:",
     "viewer.document": "Document",
     "viewer.nodocument": "No document retained",
-    "viewer.unreadable": "This document could not be read automatically. Key the fields from the image on the right.",
+    "viewer.unreadable": "This document could not be read automatically. Please manually enter the fields in the cells provided.",
+    "viewer.xmltab": "XML",
     "viewer.tried": "Tried:",
     "activity.tab": "Activity",
     "activity.title": "Activity",
@@ -1848,5 +1849,177 @@ describe("the document/timeline tabs (decision 0269)", () => {
     await openViewer(TASK, () => {});
 
     expect(document.body.innerHTML).not.toContain(">null<");
+  });
+});
+
+describe("the XML tab, offered only when it exists (decision 0273)", () => {
+  const BASE_ROUTES = {
+    "/api/code-lists": { fields: {} },
+    "/api/ui-strings": STRINGS,
+    "/api/field-visibility": FIELDS,
+    "/api/invoices/inv-1/progress": { visits: [] },
+    "/api/documents/inv-1/activity": { items: [] },
+  };
+
+  function xmlTabButton() {
+    return [...document.querySelectorAll(".doctab")].find((b) => b.textContent === "XML");
+  }
+  function docTabButton() {
+    return [...document.querySelectorAll(".doctab")].find((b) => b.textContent?.includes("Document"));
+  }
+
+  it("offers no XML tab when the original was never XML", async () => {
+    stubFetch({
+      ...BASE_ROUTES,
+      "/api/invoices/inv-1": {
+        facts: {},
+        lines: [],
+        validation: { passed: true, checked: [], failures: [] },
+        originalDocument: { contentType: "application/pdf" },
+      },
+    });
+
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    await openViewer(TASK, () => {});
+
+    expect(xmlTabButton()).toBeUndefined();
+  });
+
+  it("offers no XML tab when there is no original at all", async () => {
+    stubFetch({
+      ...BASE_ROUTES,
+      "/api/invoices/inv-1": {
+        facts: {},
+        lines: [],
+        validation: { passed: true, checked: [], failures: [] },
+        originalDocument: null,
+      },
+    });
+
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    await openViewer(TASK, () => {});
+
+    expect(xmlTabButton()).toBeUndefined();
+  });
+
+  it("offers the XML tab when the original genuinely is XML", async () => {
+    // **A custom mock, not the shared `stubFetch` helper.** That
+    // helper strips the query string before recording what was
+    // called, which hides exactly the thing this test needs to see:
+    // whether `type=original` was actually asked for.
+    const seen: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        seen.push(String(url));
+        const path = String(url).split("?")[0];
+        const routes: Record<string, unknown> = {
+          ...BASE_ROUTES,
+          "/api/invoices/inv-1": {
+            facts: {},
+            lines: [],
+            validation: { passed: true, checked: [], failures: [] },
+            originalDocument: { contentType: "application/xml" },
+          },
+          "/api/invoices/inv-1/document-url": { url: "https://files.example/inv-1.xml" },
+        };
+        if (!(path in routes)) throw new Error(`no stub for ${path}`);
+        return { ok: true, json: async () => routes[path] } as Response;
+      })
+    );
+
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    await openViewer(TASK, () => {});
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(xmlTabButton()).not.toBeUndefined();
+
+    // **Asked for the original specifically**, not whatever is
+    // preferred for the main preview — decision 0273's own point.
+    expect(seen.some((u) => u.includes("/document-url") && u.includes("type=original"))).toBe(true);
+  });
+
+  it("switches to the XML tab and shows the fetched document, without disturbing the Document tab", async () => {
+    stubFetch({
+      ...BASE_ROUTES,
+      "/api/invoices/inv-1": {
+        facts: {},
+        lines: [],
+        validation: { passed: true, checked: [], failures: [] },
+        originalDocument: { contentType: "application/xml" },
+      },
+      "/api/invoices/inv-1/document-url": { url: "https://files.example/inv-1.xml" },
+    });
+
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    await openViewer(TASK, () => {});
+    await new Promise((r) => setTimeout(r, 0));
+
+    (xmlTabButton() as HTMLButtonElement).click();
+
+    expect(xmlTabButton()?.className).toContain("on");
+    expect(document.getElementById("vxml")?.closest("[hidden]")).toBeNull();
+    expect(document.getElementById("vxml")?.querySelector("iframe")?.getAttribute("src")).toBe(
+      "https://files.example/inv-1.xml"
+    );
+    // The Document pane is hidden, not gone — switching back must
+    // still find #vpreview intact.
+    expect(document.getElementById("vpreview")?.closest("[hidden]")).not.toBeNull();
+
+    (docTabButton() as HTMLButtonElement).click();
+    expect(document.getElementById("vpreview")?.closest("[hidden]")).toBeNull();
+  });
+
+  it("falls back to the Document tab when a new document has no XML to show", async () => {
+    // **The tab list is rebuilt per document, not carried over.**
+    // `openViewer()` already resets `docPanelTab` to `"doc"`
+    // unconditionally for every document (decision 0269) — this test
+    // checks the other half: that the XML tab itself genuinely
+    // disappears for a document with none, not just that the active
+    // selection moved.
+    stubFetch({
+      ...BASE_ROUTES,
+      "/api/invoices/inv-1": {
+        facts: {},
+        lines: [],
+        validation: { passed: true, checked: [], failures: [] },
+        originalDocument: { contentType: "application/xml" },
+      },
+      "/api/invoices/inv-1/document-url": { url: "https://files.example/inv-1.xml" },
+    });
+
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    await openViewer(TASK, () => {});
+    await new Promise((r) => setTimeout(r, 0));
+    (xmlTabButton() as HTMLButtonElement).click();
+    expect(xmlTabButton()?.className).toContain("on");
+
+    const TASK_2 = { ...TASK, subject: { ...TASK.subject, id: "inv-2" } };
+    stubFetch({
+      ...BASE_ROUTES,
+      "/api/invoices/inv-2": {
+        facts: {},
+        lines: [],
+        validation: { passed: true, checked: [], failures: [] },
+        originalDocument: null,
+      },
+      "/api/invoices/inv-2/progress": { visits: [] },
+      "/api/documents/inv-2/activity": { items: [] },
+    });
+    await openViewer(TASK_2, () => {});
+
+    expect(xmlTabButton()).toBeUndefined();
+    expect(docTabButton()?.className).toContain("on");
+    expect(document.getElementById("vpreview")?.closest("[hidden]")).toBeNull();
   });
 });

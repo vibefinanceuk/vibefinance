@@ -217,3 +217,21 @@ export async function preferredDocumentType(
   if (!row) return null;
   return { documentType: row.document_type as DocumentType, contentType: row.content_type };
 }
+
+/**
+ * One specific document type, if this invoice has it — decision 0273,
+ * for the new XML tab. Unlike `preferredDocumentType`, this asks for
+ * exactly the type named rather than choosing between them; the
+ * caller already knows which one it wants.
+ */
+export async function documentTypeInfo(
+  db: D1Database,
+  invoiceId: string,
+  documentType: DocumentType
+): Promise<{ contentType: string } | null> {
+  const row = await db
+    .prepare("SELECT content_type FROM invoice_documents WHERE invoice_id = ? AND document_type = ?")
+    .bind(invoiceId, documentType)
+    .first<{ content_type: string }>();
+  return row ? { contentType: row.content_type } : null;
+}

@@ -375,6 +375,19 @@ export async function handleGetInvoice(db: D1Database, invoiceId: string): Promi
     .bind(invoiceId)
     .first<{ content_type: string; document_type: string }>();
 
+  /**
+   * **The original specifically, not whichever was uploaded most
+   * recently** — decision 0273, for the new XML tab. `document` above
+   * answers "what does the preview show"; an invoice that arrived as
+   * UBL/XML and later got a generated rendering has both, and the
+   * rendering is what `document` reports — the original is a genuinely
+   * different row, asked for by name.
+   */
+  const originalDocument = await db
+    .prepare("SELECT content_type FROM invoice_documents WHERE invoice_id = ? AND document_type = 'original'")
+    .bind(invoiceId)
+    .first<{ content_type: string }>();
+
   const lineRows = await db
     .prepare(
       "SELECT line_number, description, amount, cost_centre, facts_json FROM invoice_lines WHERE invoice_id = ? ORDER BY line_number"
@@ -500,6 +513,11 @@ export async function handleGetInvoice(db: D1Database, invoiceId: string): Promi
       document: document
         ? { contentType: document.content_type, documentType: document.document_type }
         : null,
+      // **Only the original, only when it is genuinely there** —
+      // decision 0273. `null` for the (usual) case of a PDF or image
+      // that never had a separate rendering generated from it, same as
+      // for an invoice with no document retained at all.
+      originalDocument: originalDocument ? { contentType: originalDocument.content_type } : null,
       /**
        * Whether this document could be read at all — decision 0161.
        *

@@ -496,6 +496,67 @@ describe("reading an invoice back (decision 0120)", () => {
     expect(body.lines[0].facts["BT-129"]).toBe(2);
   });
 
+  describe("the original document, reported separately from the preview (decision 0273)", () => {
+    /**
+     * **For the new XML tab.** `document` answers "what does the
+     * preview show" — the most recently uploaded row, which for an
+     * invoice that arrived as UBL and later got a generated rendering
+     * is the rendering, not the XML. `originalDocument` asks a
+     * different, specific question: is there a real original, and
+     * what is it.
+     */
+    async function storeDocument(invoiceId: string, documentType: string, contentType: string) {
+      await env.DB.prepare(
+        `INSERT INTO invoice_documents (id, invoice_id, r2_key, document_type, content_type)
+         VALUES (?, ?, ?, ?, ?)`
+      )
+        .bind(crypto.randomUUID(), invoiceId, `k-${documentType}`, documentType, contentType)
+        .run();
+    }
+
+    it("reports the original even when a generated rendering is what the preview shows", async () => {
+      await seedInvoice("inv-xml", {});
+      await storeDocument("inv-xml", "original", "application/xml");
+      await storeDocument("inv-xml", "generated_rendering", "text/html; charset=utf-8");
+
+      const { handleGetInvoice } = await import("../src/invoice-facts-route.js");
+      const body = (await handleGetInvoice(env.DB, "inv-xml")).body as {
+        document: { documentType: string } | null;
+        originalDocument: { contentType: string } | null;
+      };
+
+      // The preview's own choice is unaffected by this addition.
+      expect(body.document?.documentType).toBe("generated_rendering");
+      expect(body.originalDocument).toEqual({ contentType: "application/xml" });
+    });
+
+    it("reports null when the original is the only document, same as the preview shows", async () => {
+      await seedInvoice("inv-pdf", {});
+      await storeDocument("inv-pdf", "original", "application/pdf");
+
+      const { handleGetInvoice } = await import("../src/invoice-facts-route.js");
+      const body = (await handleGetInvoice(env.DB, "inv-pdf")).body as {
+        originalDocument: { contentType: string } | null;
+      };
+
+      // **Reported regardless of content type** — a native PDF's
+      // original is still "the original," even though nothing in the
+      // interface would show a PDF in an XML tab. That filtering
+      // belongs to the screen deciding what to do with the fact, not
+      // to this route deciding which facts exist.
+      expect(body.originalDocument).toEqual({ contentType: "application/pdf" });
+    });
+
+    it("reports null when nothing at all is retained", async () => {
+      await seedInvoice("inv-none", {});
+      const { handleGetInvoice } = await import("../src/invoice-facts-route.js");
+      const body = (await handleGetInvoice(env.DB, "inv-none")).body as {
+        originalDocument: { contentType: string } | null;
+      };
+      expect(body.originalDocument).toBeNull();
+    });
+  });
+
   it("survives an invoice whose facts cannot be parsed", async () => {
     // A row that cannot be read still has an identity and lines.
     // Returning nothing would hide a document somebody needs to look

@@ -139,6 +139,8 @@ async function loadInvoice(invoiceId) {
       facts: body.facts ?? {},
       lines: body.lines ?? [],
       document: body.document ?? null,
+      // The original specifically, for the XML tab — decision 0273.
+      originalDocument: body.originalDocument ?? null,
       // Whether the document could be read at all — decision 0161.
       intake: body.intake ?? null,
       // Who we matched this invoice to — decision 0219.
@@ -324,8 +326,9 @@ function field(spec, existing) {
  * and a URL fetched at render time would be stale before somebody
  * pressed anything.
  */
-async function documentUrl(invoiceId) {
-  const response = await fetch(`/api/invoices/${encodeURIComponent(invoiceId)}/document-url`, {
+async function documentUrl(invoiceId, type) {
+  const qs = type ? `?type=${encodeURIComponent(type)}` : "";
+  const response = await fetch(`/api/invoices/${encodeURIComponent(invoiceId)}/document-url${qs}`, {
     method: "POST",
   });
   if (!response.ok) return null;
@@ -372,6 +375,28 @@ async function showPreview(invoiceId, type) {
       ? el("img", { src: url, alt: t("viewer.document"), class: "vimage" })
       : el("iframe", { src: url, class: "vframe", title: t("viewer.document") })
   );
+}
+
+/**
+ * The XML tab's own content — decision 0273.
+ *
+ * **Always an iframe, never an image.** Unlike `showPreview()`, there
+ * is no image case to branch on: the original document this asks for
+ * is only ever fetched when its own content type is XML-like in the
+ * first place (checked in `documentPanel()`, before this tab is even
+ * offered).
+ */
+async function showXmlPreview(invoiceId) {
+  const holder = document.getElementById("vxml");
+  if (!holder) return;
+
+  const url = await documentUrl(invoiceId, "original");
+  if (!url) {
+    holder.replaceChildren(el("div", { class: "vthumb", text: t("viewer.nodocument") }));
+    return;
+  }
+
+  holder.replaceChildren(el("iframe", { src: url, class: "vframe", title: t("viewer.xmltab") }));
 }
 
 function note(message) {
@@ -609,16 +634,24 @@ function exceptionPanel() {
 }
 
 /**
- * The document panel — two tabs sharing one space, decision 0269.
+ * The document panel — tabs sharing one space, decisions 0269 and
+ * 0273.
  *
  * **Replaces the drawer decision 0267 shipped**, at the operator's own
  * request: "two tabs, reading 'Document' and 'Timeline / Chat'," in
  * the same panel the preview has always occupied, rather than the
- * feed opening in a strip below it.
+ * feed opening in a strip below it. A third tab, "XML," was added
+ * after: "include after document, the original XML document in
+ * another tab (if it exists)."
  *
  * **No invoice id, no second tab.** A task can in principle have no
  * real subject — the tab needing something to fetch activity for is
  * exactly what the old drawer already guarded with the same check.
+ *
+ * **Built as N tabs, not two hand-wired ones.** Adding "XML" to a
+ * design that hard-coded "doc" and "timeline" everywhere would have
+ * meant touching every branch a second time; each tab is instead an
+ * entry in one list, and `select()` treats all of them alike.
  */
 function documentPanel(task, onClose) {
   const invoiceId = task.subject?.id ?? null;
@@ -655,12 +688,33 @@ function documentPanel(task, onClose) {
       ),
   ]);
   const docContent = el("div", {}, [docPane, actionsRow]);
-  docContent.hidden = docPanelTab !== "doc";
 
   if (!invoiceId) {
     // Nothing to show a timeline for — the old, un-tabbed panel.
     return el("div", { class: "panel" }, [el("h3", { text: t("viewer.document") }), docPane, actionsRow]);
   }
+
+  /**
+   * **Offered only when the original genuinely is XML** — decision
+   * 0273's "if it exists." Most invoices arrive as a PDF or an image;
+   * their own original is not a second, different thing worth a tab
+   * of its own the way an XML original is next to its generated
+   * rendering.
+   */
+  const hasXml = /xml/i.test(stored.originalDocument?.contentType ?? "");
+  const xmlContent = hasXml
+    ? el("div", { class: "vpreview", id: "vxml" }, [el("div", { class: "vthumb", text: t("viewer.document") })])
+    : null;
+  /**
+   * **No fallback needed here** — `openViewer()` already resets
+   * `docPanelTab` to `"doc"` unconditionally for every document it
+   * opens (decision 0269), before `documentPanel()` ever runs. A
+   * check here for "was `xml` selected on a document with none" would
+   * be checking a condition that can never be true by the time this
+   * function sees it — confirmed by removing the reset in
+   * `openViewer()` and watching the tab-switch test fail, not this
+   * one.
+   */
 
   const { content: timelineContent, countBadge } = buildActivityTab(invoiceId);
 
@@ -697,36 +751,37 @@ function documentPanel(task, onClose) {
       timelineContent,
     ].filter(Boolean)
   );
-  timelinePane.hidden = docPanelTab !== "timeline";
 
-  const docTab = el("button", { class: docPanelTab === "doc" ? "doctab on" : "doctab" }, [
-    el("span", { text: t("viewer.document") }),
-  ]);
-  const timelineTab = el("button", { class: docPanelTab === "timeline" ? "doctab on" : "doctab" }, [
-    el("span", { text: t("activity.timelinetab") }),
-    countBadge,
-  ]);
+  const tabs = [{ key: "doc", label: t("viewer.document"), pane: docContent }];
+  if (hasXml) tabs.push({ key: "xml", label: t("viewer.xmltab"), pane: xmlContent });
+  tabs.push({ key: "timeline", label: t("activity.timelinetab"), pane: timelinePane, badge: countBadge });
 
   /**
    * **Toggled directly, not re-rendered** — switching tabs must not
    * call the viewer's own `render()`, which would tear down
    * `#vpreview` after `showPreview()` has already filled it and
-   * discard whatever the timeline tab has loaded.
+   * discard whatever the timeline or XML tab has already loaded.
    */
   function select(which) {
     docPanelTab = which;
-    docTab.className = which === "doc" ? "doctab on" : "doctab";
-    timelineTab.className = which === "timeline" ? "doctab on" : "doctab";
-    docContent.hidden = which !== "doc";
-    timelinePane.hidden = which !== "timeline";
+    for (const entry of tabs) {
+      entry.button.className = entry.key === which ? "doctab on" : "doctab";
+      entry.pane.hidden = entry.key !== which;
+    }
   }
-  docTab.onclick = () => select("doc");
-  timelineTab.onclick = () => select("timeline");
+
+  for (const entry of tabs) {
+    entry.button = el("button", { class: entry.key === docPanelTab ? "doctab on" : "doctab" }, [
+      el("span", { text: entry.label }),
+      entry.badge ?? null,
+    ].filter(Boolean));
+    entry.button.onclick = () => select(entry.key);
+    entry.pane.hidden = entry.key !== docPanelTab;
+  }
 
   return el("div", { class: "panel" }, [
-    el("div", { class: "doctabs" }, [docTab, timelineTab]),
-    docContent,
-    timelinePane,
+    el("div", { class: "doctabs" }, tabs.map((entry) => entry.button)),
+    ...tabs.map((entry) => entry.pane),
   ]);
 }
 
@@ -1568,6 +1623,10 @@ export async function openViewer(task, onClose) {
   // Not awaited: the form is usable while the document loads, and a
   // slow R2 fetch should not hold up somebody who knows what to type.
   showPreview(task.subject.id, stored.document?.contentType);
+  // **A no-op when the XML tab was not offered** — `#vxml` only exists
+  // when `documentPanel()` built it, and `showXmlPreview()` already
+  // checks for the element before doing anything.
+  showXmlPreview(task.subject.id);
   // The comparison follows the printed total as it is typed, not only
   // when a line changes.
   document.getElementById("f-BT-112")?.addEventListener("input", updateTotals);
