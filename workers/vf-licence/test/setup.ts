@@ -76,6 +76,7 @@ import cardNamesSql from "../migrations/0071_a_name_per_card_type.sql?raw";
 import whoHoldsSql from "../migrations/0072_who_holds_it.sql?raw";
 import threeAlertsSql from "../migrations/0073_three_alerts_not_one.sql?raw";
 import moverPickerSql from "../migrations/0074_the_mover_picker.sql?raw";
+import showingOneStageSql from "../migrations/0075_showing_one_stage.sql?raw";
 
 function stripSqlComments(sql: string): string {
   return sql
@@ -179,5 +180,6 @@ export async function applyTestSchema(): Promise<void> {
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(whoHoldsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(threeAlertsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(moverPickerSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(showingOneStageSql)));
 
 }

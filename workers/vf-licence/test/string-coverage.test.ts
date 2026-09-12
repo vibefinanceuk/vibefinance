@@ -381,6 +381,7 @@ const KEYS_THE_INTERFACE_USES = [
   "documents.showing.unplaced",
   "documents.showing.duplicates",
   "documents.clearfilter",
+  "documents.showing.stage",
   "column.number",
   "column.type",
   "column.status",

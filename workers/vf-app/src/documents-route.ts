@@ -100,6 +100,19 @@ export async function handleListDocuments(
   const duplicatesOnly = params.get("duplicates") === "1";
 
   /**
+   * **A stage, for the dashboard's own "Where things are"** — decision
+   * 0264. That card counts `process_instances` at a stage with
+   * `status = 'in_progress'` (`whereThingsAre()` in
+   * `dashboard-route.ts`), not tasks — one row per document, which is
+   * exactly what this list already shows one row per. The same status
+   * restriction is applied here, so a document whose instance finished
+   * at this stage long ago (if `current_stage_id` is ever left set
+   * after completion) cannot appear in a list the card's own count
+   * would not have included.
+   */
+  const stageId = params.get("stage");
+
+  /**
    * The sender and recipient come from the email that brought it —
    * decision 0147's log — because that is what a person searches by
    * when the supplier name was never extracted.
@@ -133,6 +146,7 @@ export async function handleListDocuments(
          )
          AND (?5 = 0 OR (h.org_unit_id IS NULL AND json_extract(h.facts_json, '$."org.unplaced"') IS NOT NULL))
          AND (?6 = 0 OR CAST(json_extract(h.facts_json, '$."invoice.duplicate_confidence"') AS REAL) >= 0.5)
+         AND (?7 IS NULL OR (i.current_stage_id = ?7 AND i.status = 'in_progress'))
        ORDER BY h.created_at DESC, h.rowid DESC
        LIMIT ?2`
     )
@@ -172,7 +186,8 @@ export async function handleListDocuments(
       visibleUnits === null ? 0 : 1,
       JSON.stringify(visibleUnits ?? []),
       unplacedOnly ? 1 : 0,
-      duplicatesOnly ? 1 : 0
+      duplicatesOnly ? 1 : 0,
+      stageId
     )
     .all<DocumentRow>();
 

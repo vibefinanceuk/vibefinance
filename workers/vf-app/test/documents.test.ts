@@ -48,8 +48,8 @@ async function seedDocument(
   }
 }
 
-async function list(params = "") {
-  return (await handleListDocuments(env.DB, new URLSearchParams(params))).body as {
+async function list(params = "", visibleUnits: string[] | null = null) {
+  return (await handleListDocuments(env.DB, new URLSearchParams(params), visibleUnits)).body as {
     documents: {
       id: string;
       number: string | null;
@@ -438,5 +438,64 @@ describe("the ordinary screen, with an empty unit exactly as the frontend sends 
     const params = new URLSearchParams({ q: "", unit: "acme-fr" });
     const body = (await handleListDocuments(env.DB, params)).body as { documents: { id: string }[] };
     expect(body.documents.map((d) => d.id)).toEqual(["inv-fr"]);
+  });
+});
+
+describe("filtering documents by stage, for the dashboard's own donut (decision 0264)", () => {
+  /**
+   * **Must match `whereThingsAre()`'s exact scope** — process instances
+   * at a stage with `status = 'in_progress'`, one per document. A
+   * looser filter here would show more documents than the card counted
+   * at that stage; a tighter one would show fewer — either way the
+   * click and the count would disagree, which is the fault decisions
+   * 0252 through 0260 kept finding in other pairs of screens.
+   */
+  async function seedAt(id: string, stage: string, status = "in_progress") {
+    await seedDocument(id, { "BT-1": id }, null);
+    await env.DB.prepare(
+      `INSERT INTO process_instances (id, process_id, subject_type, subject_id, current_stage_id, status)
+       VALUES (?, 'ap', 'invoice', ?, ?, ?)`
+    )
+      .bind(`pi-${id}`, id, stage, status)
+      .run();
+  }
+
+  it("shows the documents at a chosen stage, and none at another", async () => {
+    await seedAt("inv-val", "validation");
+    await seedAt("inv-app", "payment");
+
+    const body = await list("stage=validation");
+    expect(body.documents.map((d) => d.id)).toEqual(["inv-val"]);
+  });
+
+  it("excludes an instance that has finished, even if it ended at that stage", async () => {
+    /**
+     * **The load-bearing case.** `whereThingsAre()` only counts
+     * `status = 'in_progress'`; a completed instance whose
+     * `current_stage_id` still names its last stage must not appear
+     * here, or the list would show a document the card never counted.
+     */
+    await seedAt("inv-done", "validation", "completed");
+    await seedAt("inv-live", "validation", "in_progress");
+
+    const body = await list("stage=validation");
+    expect(body.documents.map((d) => d.id)).toEqual(["inv-live"]);
+  });
+
+  it("still applies the ordinary unit scope alongside a stage", async () => {
+    await env.DB.prepare(
+      "INSERT INTO org_units (id, name, kind) VALUES ('acme-fr', 'Acme France', 'legal_entity')"
+    ).run();
+    await seedAt("inv-fr", "validation");
+    await env.DB.prepare("UPDATE invoice_headers SET org_unit_id = 'acme-fr' WHERE id = 'inv-fr'").run();
+    await seedAt("inv-none", "validation");
+
+    const scoped = await list("stage=validation", ["acme-fr"]);
+    expect(scoped.documents.map((d) => d.id)).toEqual(["inv-fr"]);
+  });
+
+  it("leaves the ordinary list unaffected when no stage is asked for", async () => {
+    await seedAt("inv-1", "validation");
+    expect((await list("")).documents).toHaveLength(1);
   });
 });

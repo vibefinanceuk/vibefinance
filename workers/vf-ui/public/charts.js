@@ -350,7 +350,7 @@ export function barList(rows, { colour = "var(--chart-1)" } = {}) {
  * destroys it: *under a day* and *over thirty days* are not two slices
  * of a pie, they are two ends of a line.
  */
-export function donutChart(segments, { size = 150, legend = true } = {}) {
+export function donutChart(segments, { size = 150, legend = true, onSelect = null } = {}) {
   const wrap = document.createElement("div");
   wrap.className = "donutwrap";
 
@@ -451,6 +451,23 @@ export function donutChart(segments, { size = 150, legend = true } = {}) {
     value.textContent = String(segment.value);
 
     row.append(dot, name, value);
+
+    /**
+     * **The legend is the click target, not the arc** — decision 0264.
+     * A stroke a few pixels wide is a poor place to ask for a tap; the
+     * row beside it already exists to be read, and reading and
+     * clicking are the same gesture here.
+     *
+     * **Not offered for the folded "…" rest segment** — it stands for
+     * several real stages at once, and a click has to land on one
+     * thing, not a mixture decision 0259 already refused to build a
+     * link for once.
+     */
+    if (onSelect && !segment.rest) {
+      row.classList.add("clickable");
+      row.onclick = () => onSelect(segment);
+    }
+
     keys.append(row);
   }
 

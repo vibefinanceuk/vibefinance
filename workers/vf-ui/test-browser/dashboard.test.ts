@@ -142,6 +142,74 @@ describe("the cards render what the route returned", () => {
     expect(document.body.textContent).toContain("across 3 stages");
   });
 
+  it("links to my tasks across every stage", async () => {
+    /**
+     * **`waitingForMe()` has no stage filter of its own** — it counts
+     * open tasks assigned to me, claimed by me, or owned by a team I am
+     * on, at any stage — so the click asks for exactly that: every
+     * stage, `ownership: "mine"`.
+     *
+     * **The first test ever to click a dashboard link through to
+     * Tasks.** Decision 0250 built the stage card's own "Show mine"
+     * link on the same `openTasksFiltered`, and every test for it only
+     * ever checked the text appeared — never that clicking it actually
+     * landed anywhere. `tasks.js`'s `render()` reads `me.name`, which
+     * only exists once `/api/whoami` has resolved; a real page always
+     * gets there via `boot.js` before the dashboard is ever shown, but
+     * a test reaching the dashboard directly has to stub it too or
+     * `render()` throws on a null `me`.
+     */
+    const seen: string[] = [];
+    stubDashboard(
+      [{ id: "a", cardType: "waiting_for_me", settings: {}, position: 0, data: { count: 4, stages: 2 } }],
+      seen
+    );
+    const real = globalThis.fetch;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        const path = String(url);
+        seen.push(path);
+        if (path.startsWith("/api/whoami"))
+          return { ok: true, json: async () => ({ id: "u1", name: "Dan", permissions: [] }) } as Response;
+        if (path.startsWith("/api/tasks")) return { ok: true, json: async () => ({ tasks: [], counts: {} }) } as Response;
+        return real(url);
+      })
+    );
+
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+
+    /**
+     * **`start()` first, as a real page always has by the time the
+     * dashboard is on screen.** `boot.js` calls it before anything else
+     * renders; a test that jumps straight to the dashboard has to do
+     * the same, or `render()` throws on a null `me` the instant the
+     * click lands.
+     */
+    const { start } = await import("/tasks.js");
+    await start();
+
+    const { open } = await import("/dashboard.js");
+    await open();
+
+    const card = [...document.querySelectorAll(".panel.clickable")].find((p) =>
+      p.textContent?.includes("Waiting for me")
+    ) as HTMLElement;
+    expect(card).toBeDefined();
+    card.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    /**
+     * **The last `/api/tasks` request, not the first.** `start()`'s own
+     * call to `loadTasks()` already issued one, unfiltered — the one
+     * that matters here is the one the click causes afterward.
+     */
+    const request = seen.filter((u) => u.startsWith("/api/tasks")).pop();
+    expect(request).toContain("ownership=mine");
+    expect(request).not.toContain("stage=");
+  });
+
   it("draws a ring segment per stage", async () => {
     /**
      * **A whole being divided** — decision 0247. Every in-flight
@@ -154,7 +222,12 @@ describe("the cards render what the route returned", () => {
         cardType: "where_things_are",
         settings: {},
         position: 0,
-        data: { stages: [{ stage_name: "Validation", n: 8 }, { stage_name: "Approval", n: 11 }] },
+        data: {
+          stages: [
+            { stage_id: "validation", stage_name: "Validation", n: 8 },
+            { stage_id: "approval", stage_name: "Approval", n: 11 },
+          ],
+        },
       },
     ]);
 
@@ -163,6 +236,102 @@ describe("the cards render what the route returned", () => {
     expect(document.body.textContent).toContain("Validation");
     // The total in the middle, so nobody adds up the legend.
     expect(document.body.textContent).toContain("19");
+  });
+
+  it("links a stage's legend row to the documents at that stage", async () => {
+    /**
+     * **Documents, not Tasks** — decision 0264. `whereThingsAre()`
+     * counts every document at a stage regardless of who owns any work
+     * on it; the only task list in the app is permanently scoped to
+     * the viewer's own work, which would silently narrow this card to
+     * a fraction of what it actually counts. Confirmed here by the
+     * fetch landing on `/api/documents`, not `/api/tasks`.
+     */
+    const seen: string[] = [];
+    stubDashboard(
+      [
+        {
+          id: "w",
+          cardType: "where_things_are",
+          settings: {},
+          position: 0,
+          data: {
+            stages: [
+              { stage_id: "validation", stage_name: "Validation", n: 8 },
+              { stage_id: "approval", stage_name: "Approval", n: 11 },
+            ],
+          },
+        },
+      ],
+      seen
+    );
+    const real = globalThis.fetch;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        const path = String(url);
+        seen.push(path);
+        if (path.startsWith("/api/org/units")) return { ok: true, json: async () => ({ units: [] }) } as Response;
+        if (path.startsWith("/api/documents"))
+          return { ok: true, json: async () => ({ documents: [], searched: 0 }) } as Response;
+        return real(url);
+      })
+    );
+
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { open } = await import("/dashboard.js");
+    await open();
+
+    const row = [...document.querySelectorAll(".donutkey")].find((r) => r.textContent?.includes("Approval"));
+    (row as HTMLElement).click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    const request = seen.find((u) => u.startsWith("/api/documents"));
+    expect(request).toContain("stage=approval");
+    expect(seen.some((u) => u.startsWith("/api/tasks"))).toBe(false);
+  });
+
+  it("links the tile figure to its stage when only one is in flight", async () => {
+    const seen: string[] = [];
+    stubDashboard(
+      [
+        {
+          id: "w",
+          cardType: "where_things_are",
+          settings: {},
+          position: 0,
+          data: { stages: [{ stage_id: "approval", stage_name: "Approval", n: 5 }] },
+        },
+      ],
+      seen
+    );
+    const real = globalThis.fetch;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        const path = String(url);
+        seen.push(path);
+        if (path.startsWith("/api/org/units")) return { ok: true, json: async () => ({ units: [] }) } as Response;
+        if (path.startsWith("/api/documents"))
+          return { ok: true, json: async () => ({ documents: [], searched: 0 }) } as Response;
+        return real(url);
+      })
+    );
+
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { open } = await import("/dashboard.js");
+    await open();
+
+    const card = [...document.querySelectorAll(".panel.clickable")].find((p) =>
+      p.textContent?.includes("Approval")
+    ) as HTMLElement;
+    expect(card).toBeDefined();
+    card.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(seen.find((u) => u.startsWith("/api/documents"))).toContain("stage=approval");
   });
 
   it("says a stage is gone rather than showing a zero", async () => {

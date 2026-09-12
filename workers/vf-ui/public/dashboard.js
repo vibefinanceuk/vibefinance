@@ -1,7 +1,7 @@
 import { t } from "/strings.js";
 import { el, frame, topbar, setCurrentScreen, openTasksFiltered, openTaskById } from "/tasks.js";
 import { icon } from "/icons.js";
-import { openDocumentsFiltered } from "/documents.js";
+import { openDocumentsFiltered, openDocumentsAtStage } from "/documents.js";
 import { openSuppliersAwaitingErp } from "/suppliers.js";
 /**
  * **`sparkline` and `donut` are built and not used here** — decision
@@ -181,13 +181,28 @@ function money(amount, currency) {
  * already cost a morning.
  */
 const RENDERERS = {
-  waiting_for_me: (data) =>
-    panel(
+  waiting_for_me: (data) => {
+    /**
+     * **Everything mine, across every stage** — decision 0264. The
+     * card's own definition has no stage filter (`waitingForMe()`
+     * counts open tasks assigned to me, claimed by me, or owned by a
+     * team I am on, at any stage), so the click asks for exactly that
+     * and nothing narrower — an empty stage filter, `ownership: "mine"`.
+     */
+    const card = panel(
       t("dash.waiting_for_me"),
       null,
       { weight: "tile" },
       figure(data.count, t("dash.acrossstages").replace("{n}", String(data.stages)))
-    ),
+    );
+
+    if (data.count > 0) {
+      card.classList.add("clickable");
+      card.onclick = () => openTasksFiltered({ ownership: "mine" });
+    }
+
+    return card;
+  },
 
   on_my_clock: (data, card) => {
     const rows = (data.items ?? []).map((item) => {
@@ -264,10 +279,17 @@ const RENDERERS = {
      * the figure does not.
      */
     if (stages.length <= 1) {
-      return panel(t("dash.where_things_are"), null, { weight: "tile" },
+      const card = panel(t("dash.where_things_are"), null, { weight: "tile" },
         stages.length === 0
           ? el("div", { class: "muted", text: t("dash.nothinginflight") })
           : figure(stages[0].n, stages[0].stage_name));
+
+      if (stages.length === 1) {
+        card.classList.add("clickable");
+        card.onclick = () => openDocumentsAtStage(stages[0].stage_id, stages[0].stage_name);
+      }
+
+      return card;
     }
     /**
      * **A ring, because this is a whole being divided** — decision
@@ -282,7 +304,21 @@ const RENDERERS = {
       t("dash.where_things_are"),
       t("dash.bystage"),
       { weight: "half" },
-      donutChart(stages.map((s) => ({ label: s.stage_name, value: s.n })))
+      donutChart(
+        stages.map((s) => ({ label: s.stage_name, value: s.n, stageId: s.stage_id })),
+        {
+          /**
+           * **Documents, not Tasks** — decision 0264. `whereThingsAre()`
+           * counts every in-flight document at a stage, regardless of
+           * who owns any work on it; the Tasks screen only ever shows
+           * *my* work, which would silently narrow this to whatever
+           * fraction of a stage happens to be mine — the same
+           * disagreement decisions 0252 through 0260 kept finding
+           * elsewhere, caught here before it shipped once.
+           */
+          onSelect: (segment) => openDocumentsAtStage(segment.stageId, segment.label),
+        }
+      )
     );
   },
 

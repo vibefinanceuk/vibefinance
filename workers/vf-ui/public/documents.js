@@ -29,6 +29,15 @@ let query = "";
 let alertFilter = null;
 
 /**
+ * **A stage, named as well as identified** — decision 0264.
+ *
+ * The banner has to say *which* stage without another round trip; the
+ * dashboard already has the stage's own name from `whereThingsAre()`,
+ * so it is carried here alongside the id rather than looked up again.
+ */
+let stageFilter = null;
+
+/**
  * Which part of the business to show — decision 0193.
  *
  * **Empty means all of them**, which is what a customer with one unit
@@ -119,6 +128,7 @@ async function load() {
   const params = new URLSearchParams({ q: query, unit });
   if (alertFilter === "unplaced") params.set("unplaced", "1");
   if (alertFilter === "duplicates") params.set("duplicates", "1");
+  if (stageFilter) params.set("stage", stageFilter.id);
 
   const response = await fetch(`/api/documents?${params}`);
   if (!response.ok) return false;
@@ -380,14 +390,19 @@ function render() {
          * one — decision 0256 fixed exactly this shape of confusion for
          * a dropdown that quietly filtered without saying so.
          */
-        alertFilter
+        alertFilter || stageFilter
           ? el("div", { class: "panel alertbanner" }, [
-              el("span", { text: t(`documents.showing.${alertFilter}`) }),
+              el("span", {
+                text: stageFilter
+                  ? t("documents.showing.stage").replace("{stage}", stageFilter.name)
+                  : t(`documents.showing.${alertFilter}`),
+              }),
               el("button", {
                 class: "chip",
                 text: t("documents.clearfilter"),
                 onclick: async () => {
                   alertFilter = null;
+                  stageFilter = null;
                   await load();
                   render();
                 },
@@ -477,6 +492,28 @@ export async function openDocumentsFiltered(kind) {
   query = "";
   unit = "";
   alertFilter = kind;
+  stageFilter = null;
+  setCurrentScreen("documents");
+  await loadUnits();
+  if (!(await load())) return;
+  render();
+}
+
+/**
+ * Open the documents screen filtered to one stage — decision 0264,
+ * from the dashboard's "Where things are" donut.
+ *
+ * **Not `openDocumentsFiltered`, deliberately.** That one exists for a
+ * fixed, named question a card already answered; a stage is one of a
+ * customer's own, chosen at the moment of the click, which is a
+ * different shape of filter even though the banner and the clearing
+ * behave the same way.
+ */
+export async function openDocumentsAtStage(stageId, stageName) {
+  query = "";
+  unit = "";
+  alertFilter = null;
+  stageFilter = { id: stageId, name: stageName };
   setCurrentScreen("documents");
   await loadUnits();
   if (!(await load())) return;

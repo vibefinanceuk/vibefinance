@@ -1185,6 +1185,19 @@
   .donutkey > span:nth-child(2) { flex: 1 1 auto; min-width: 0; }
   .donutdot { width: 9px; height: 9px; border-radius: 999px; flex: 0 0 auto; }
 
+  /*
+    **A legend row that leads somewhere** — decision 0264. Widened
+    hit area beyond the text itself, since a row a few pixels tall is a
+    small target otherwise.
+  */
+  .donutkey.clickable {
+    cursor: pointer;
+    margin: 0 -6px;
+    padding: 2px 6px;
+    border-radius: 6px;
+  }
+  .donutkey.clickable:hover { background: var(--surface-1); }
+
   @media (max-width: 480px) {
     .donutwrap { flex-direction: column; align-items: stretch; }
   }
