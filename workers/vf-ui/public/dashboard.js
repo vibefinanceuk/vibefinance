@@ -513,6 +513,26 @@ async function sortBy(card, key) {
   }
 }
 
+/**
+ * **A control that looks like the viewer's own** — decision 0262.
+ *
+ * `actionLink` in `viewer.js` is keyed to the `action.*` string
+ * convention and tested against a fixed list of real invoice actions
+ * (decisions 0229/0236); this toolbar is not that — it arranges a
+ * dashboard, not a document. Same shape, same `.actionlink` class, so
+ * it reads as one family of control across the app, reading from
+ * `dash.*` strings instead.
+ */
+function toolButton(iconName, label, { primary = false, onclick } = {}) {
+  const node = el("button", {
+    class: primary ? "actionlink primary" : "actionlink",
+    title: label,
+    onclick,
+  });
+  node.append(icon(iconName), el("span", { text: label }));
+  return node;
+}
+
 function render() {
   const shell = document.getElementById("shell");
   if (!shell) return;
@@ -567,20 +587,17 @@ function render() {
     frame(
       el("div", {}, [
         topbar(t("dash.heading"), t("dash.sub")),
-        el("div", { class: "statebuttons" }, [
-          el("button", {
-            class: arranging ? "primary" : "secondary",
-            text: arranging ? t("dash.done_arranging") : t("dash.arrange"),
+        el("div", { class: "actionrow" }, [
+          toolButton(arranging ? "donearranging" : "arrange", arranging ? t("dash.done_arranging") : t("dash.arrange"), {
+            primary: arranging,
             onclick: () => {
               arranging = !arranging;
               render();
             },
           }),
-          arranging ? el("button", { class: "secondary", text: t("dash.addcard"), onclick: () => openPicker() }) : null,
+          arranging ? toolButton("addcard", t("dash.addcard"), { onclick: () => openPicker() }) : null,
           arranging
-            ? el("button", {
-                class: "secondary",
-                text: t("dash.reset"),
+            ? toolButton("restoredefault", t("dash.reset"), {
                 onclick: async () => {
                   await fetch("/api/dashboard", { method: "DELETE" });
                   await load();
@@ -628,7 +645,20 @@ function remove(index) {
   save();
 }
 
-/** What can be added, and which stage a stage-card would name. */
+/**
+ * **Two columns, and a working copy** — decision 0262.
+ *
+ * The operator: *"I picture two columns — Hidden cards on the left and
+ * Displayed cards on the right. A user can use center arrows to add or
+ * remove cards, based on the user needs."*
+ *
+ * **A local copy, not the live one.** `save()` reloads the whole
+ * dashboard and re-renders the page on every call — right for a single
+ * add, wrong for a session of several moves back and forth, since each
+ * save would tear down the popout it was called from. This works on a
+ * clone and only touches the real `cards` array once, when the person
+ * confirms.
+ */
 async function openPicker() {
   if (!catalogue) {
     try {
@@ -638,71 +668,144 @@ async function openPicker() {
     }
   }
 
+  const stageName = (id) => {
+    const stage = catalogue.stages.find((s) => s.id === id);
+    return stage ? `${stage.process_name} · ${stage.name}` : id;
+  };
+
+  // A working copy, so nothing is saved until the person says so.
+  const working = cards.map((c) => ({ cardType: c.cardType, settings: { ...c.settings } }));
   const chosen = { cardType: null, stage: null };
+  let selectedHiddenType = null;
+  let selectedDisplayedIndex = null;
+
   const problem = el("div", { class: "warn" });
   const stagePick = el("div", {});
+  const hiddenList = el("div", { class: "movercol" });
+  const displayedList = el("div", { class: "movercol" });
+  const addBtn = el("button", { class: "moverarrow", text: "→" });
+  const removeBtn = el("button", { class: "moverarrow", text: "←" });
 
-  const types = el(
-    "div",
-    { class: "pickgrid" },
-    catalogue.types.map((type) => {
-      const button = el("button", { class: "pickcard" }, [
-        el("div", { text: t(`dash.${type.cardType}`) }),
-        el("div", { class: "muted tiny", text: t(`dash.about.${type.cardType}`) }),
-      ]);
+  /**
+   * **A repeatable type never leaves the hidden column** — `items_at_
+   * stage` can hold several instances at once (one per stage), so
+   * "hidden" for it means "another one can still be added," not "none
+   * exist yet."
+   */
+  function isHidden(type) {
+    if (type.repeatable) return true;
+    return !working.some((c) => c.cardType === type.cardType);
+  }
 
-      button.onclick = () => {
-        chosen.cardType = type.cardType;
-        for (const other of types.querySelectorAll(".pickcard")) other.classList.remove("on");
-        button.classList.add("on");
+  function refresh() {
+    problem.textContent = "";
 
-        /**
-         * **A stage card asks which stage**, from the customer's own
-         * list — decision 0239's argument that a hardcoded six would be
-         * wrong for the second customer.
-         */
-        if (type.parameter === "stage") {
-          const select = el(
-            "select",
-            {},
-            catalogue.stages.map((stage) =>
-              el("option", { value: stage.id, text: `${stage.process_name} · ${stage.name}` })
-            )
-          );
-          select.onchange = () => {
-            chosen.stage = select.value;
-          };
-          chosen.stage = catalogue.stages[0]?.id ?? null;
-          stagePick.replaceChildren(el("label", { text: t("dash.whichstage") }), select);
-        } else {
-          chosen.stage = null;
+    hiddenList.replaceChildren(
+      ...catalogue.types.filter(isHidden).map((type) => {
+        const row = el("button", { class: "pickcard" }, [
+          el("div", { text: t(`dash.${type.cardType}`) }),
+          el("div", { class: "muted tiny", text: t(`dash.about.${type.cardType}`) }),
+        ]);
+        if (selectedHiddenType === type.cardType) row.classList.add("on");
+        row.onclick = () => {
+          selectedHiddenType = type.cardType;
+          selectedDisplayedIndex = null;
+          chosen.cardType = type.cardType;
+
+          if (type.parameter === "stage") {
+            const select = el(
+              "select",
+              {},
+              catalogue.stages.map((stage) =>
+                el("option", { value: stage.id, text: `${stage.process_name} · ${stage.name}` })
+              )
+            );
+            select.onchange = () => {
+              chosen.stage = select.value;
+            };
+            chosen.stage = catalogue.stages[0]?.id ?? null;
+            stagePick.replaceChildren(el("label", { text: t("dash.whichstage") }), select);
+          } else {
+            chosen.stage = null;
+            stagePick.replaceChildren();
+          }
+          refresh();
+        };
+        return row;
+      })
+    );
+
+    displayedList.replaceChildren(
+      ...working.map((card, index) => {
+        const label =
+          card.cardType === "items_at_stage" && card.settings.stage
+            ? `${t("dash.items_at_stage")} — ${stageName(card.settings.stage)}`
+            : t(`dash.${card.cardType}`);
+        const row = el("button", { class: "pickcard" }, [el("div", { text: label })]);
+        if (selectedDisplayedIndex === index) row.classList.add("on");
+        row.onclick = () => {
+          selectedDisplayedIndex = index;
+          selectedHiddenType = null;
           stagePick.replaceChildren();
-        }
-      };
+          refresh();
+        };
+        return row;
+      })
+    );
 
-      return button;
-    })
-  );
+    // **Nothing to click has nothing to press** — decision 0161's rule,
+    // held here as everywhere else a control can lead nowhere. A
+    // stage-parameterised type with no stages to offer (a customer
+    // with none defined yet) leaves `chosen.stage` null, and the add
+    // arrow should not pretend that is a choice.
+    const selectedType = catalogue.types.find((t2) => t2.cardType === selectedHiddenType);
+    const needsStageNotChosen = selectedType?.parameter === "stage" && !chosen.stage;
+    addBtn.disabled = !selectedHiddenType || needsStageNotChosen;
+    removeBtn.disabled = selectedDisplayedIndex === null;
+  }
+
+  addBtn.onclick = () => {
+    if (!chosen.cardType) return;
+    working.push({
+      cardType: chosen.cardType,
+      settings: chosen.stage ? { stage: chosen.stage } : {},
+    });
+    selectedHiddenType = null;
+    chosen.cardType = null;
+    chosen.stage = null;
+    stagePick.replaceChildren();
+    refresh();
+  };
+
+  removeBtn.onclick = () => {
+    if (selectedDisplayedIndex === null) return;
+    working.splice(selectedDisplayedIndex, 1);
+    selectedDisplayedIndex = null;
+    refresh();
+  };
 
   const backdrop = el("div", { class: "backdrop" }, [
-    el("div", { class: "popout" }, [
+    el("div", { class: "popout moverpopout" }, [
       el("h3", { text: t("dash.addcard") }),
-      types,
+      el("div", { class: "movergrid" }, [
+        el("div", {}, [
+          el("div", { class: "muted tiny movercollabel", text: t("dash.hiddencards") }),
+          hiddenList,
+        ]),
+        el("div", { class: "moverarrows" }, [addBtn, removeBtn]),
+        el("div", {}, [
+          el("div", { class: "muted tiny movercollabel", text: t("dash.displayedcards") }),
+          displayedList,
+        ]),
+      ]),
       stagePick,
       problem,
-      el("div", { class: "statebuttons" }, [
-        el("button", {
-          class: "primary",
-          text: t("dash.add"),
+      el("div", { class: "actionrow" }, [
+        toolButton("donearranging", t("dash.savechanges"), {
+          primary: true,
           onclick: async () => {
-            if (!chosen.cardType) {
-              problem.textContent = t("dash.pickone");
-              return;
-            }
-            cards.push({
-              cardType: chosen.cardType,
-              settings: chosen.stage ? { stage: chosen.stage } : {},
-            });
+            cards.length = 0;
+            cards.push(...working);
             if (!(await save())) {
               problem.textContent = t("dash.savefailed");
               return;
@@ -718,6 +821,8 @@ async function openPicker() {
       ]),
     ]),
   ]);
+
+  refresh();
 
   backdrop.onclick = (e) => {
     if (e.target === backdrop) backdrop.remove();

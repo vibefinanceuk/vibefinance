@@ -79,6 +79,9 @@ const STRINGS = {
     "dash.reset": "Back to the default",
     "dash.whichstage": "Which stage?",
     "dash.pickone": "Choose a card first.",
+    "dash.hiddencards": "Hidden cards",
+    "dash.displayedcards": "Displayed cards",
+    "dash.savechanges": "Save changes",
     "dash.items_at_stage": "Items at a stage",
     "dash.about.ageing": "How long open work has waited",
     "dash.about.items_at_stage": "One stage you choose",
@@ -472,7 +475,24 @@ describe("arranging it (decision 0243)", () => {
           } as Response;
         }
         if (path.startsWith("/api/dashboard")) {
-          return { ok: true, json: async () => ({ cards, usingDefault: false }) } as Response;
+          /**
+           * **A fresh copy, not the fixture itself** — decision 0262.
+           *
+           * `remove()` and the mover's "Save changes" both mutate
+           * `cards` in place (`splice`, `length = 0` then `push`). A
+           * real `fetch().json()` always hands back a freshly
+           * deserialised object; this mock was handing back the exact
+           * `ONE` array reference the test file's constant points to,
+           * so mutating "the response" silently mutated the fixture
+           * itself — permanently, for every later test in the file,
+           * however many tests away the mutation happened to run.
+           *
+           * Found because two mover tests failed only when run after
+           * an unrelated, already-passing test that removes a card —
+           * a fixed extra wait did not help, because the fault was
+           * never about timing.
+           */
+          return { ok: true, json: async () => ({ cards: [...cards], usingDefault: false }) } as Response;
         }
         throw new Error(`no stub for ${path}`);
       })
@@ -569,6 +589,142 @@ describe("arranging it (decision 0243)", () => {
 
     expect(document.querySelector(".popout select")).toBeNull();
   });
+
+  /**
+   * **The two-column mover** — decision 0262, the operator's own
+   * picture: "Hidden cards on the left and Displayed cards on the
+   * right... center arrows to add or remove."
+   */
+  async function openMover(cards: unknown[], seen: { url: string; method?: string; body?: string }[] = []) {
+    await openArranging(cards, seen);
+    const add = [...document.querySelectorAll("button")].find((b) => b.textContent === "Add a card");
+    add?.click();
+    await new Promise((r) => setTimeout(r, 0));
+  }
+
+  function columnRows(label: string) {
+    const heading = [...document.querySelectorAll(".movercollabel")].find((h) => h.textContent === label);
+    return [...(heading?.parentElement?.querySelectorAll(".pickcard") ?? [])];
+  }
+
+  it("puts an already-displayed card in the right column, not the left", async () => {
+    await openMover(ONE);
+
+    expect(columnRows("Hidden cards").some((r) => r.textContent?.includes("Waiting for me"))).toBe(false);
+    expect(columnRows("Displayed cards").some((r) => r.textContent?.includes("Waiting for me"))).toBe(true);
+  });
+
+  it("keeps the add arrow disabled until something hidden is selected", async () => {
+    await openMover(ONE);
+
+    const add = document.querySelectorAll(".moverarrow")[0] as HTMLButtonElement;
+    expect(add.disabled).toBe(true);
+
+    const hidden = columnRows("Hidden cards").find((r) => r.textContent?.includes("How long they have waited"));
+    (hidden as HTMLButtonElement)?.click();
+
+    expect(add.disabled).toBe(false);
+  });
+
+  it("moves a card from hidden to displayed without touching the server", async () => {
+    /**
+     * **A working copy, not the live one.** Decision 0262's whole
+     * reason for not reusing `save()` per click: it reloads and
+     * re-renders the entire page, which would tear down this popout on
+     * the first move if every arrow-press saved immediately.
+     */
+    const seen: { url: string; method?: string; body?: string }[] = [];
+    await openMover(ONE, seen);
+
+    const before = seen.filter((r) => r.method === "PUT").length;
+
+    const hidden = columnRows("Hidden cards").find((r) => r.textContent?.includes("How long they have waited")) as HTMLButtonElement;
+    hidden.click();
+    (document.querySelectorAll(".moverarrow")[0] as HTMLButtonElement).click();
+
+    expect(columnRows("Displayed cards").some((r) => r.textContent?.includes("How long they have waited"))).toBe(true);
+    expect(columnRows("Hidden cards").some((r) => r.textContent?.includes("How long they have waited"))).toBe(false);
+    expect(seen.filter((r) => r.method === "PUT").length).toBe(before);
+  });
+
+  it("moves a card back from displayed to hidden", async () => {
+    /**
+     * **Uses a type the catalogue actually offers.** `waiting_for_me`
+     * is not in this file's stubbed catalogue (only `ageing` and
+     * `items_at_stage` are), so removing it could never legitimately
+     * make it reappear on the hidden side — the first version of this
+     * test asserted an outcome its own fixture could not produce.
+     */
+    const AGEING_DISPLAYED = [{ id: "b", cardType: "ageing", settings: {}, position: 0, data: {} }];
+    await openMover(AGEING_DISPLAYED);
+
+    const displayed = columnRows("Displayed cards").find((r) =>
+      r.textContent?.includes("How long they have waited")
+    ) as HTMLButtonElement;
+    displayed.click();
+    (document.querySelectorAll(".moverarrow")[1] as HTMLButtonElement).click();
+
+    expect(columnRows("Hidden cards").some((r) => r.textContent?.includes("How long they have waited"))).toBe(
+      true
+    );
+    expect(
+      columnRows("Displayed cards").some((r) => r.textContent?.includes("How long they have waited"))
+    ).toBe(false);
+  });
+
+  it("keeps a repeatable type in the hidden column after adding one instance", async () => {
+    /**
+     * **`items_at_stage` never runs out.** A stage card added for
+     * Validation does not use up the ability to add one for Approval —
+     * unlike every other type here, which disappears from hidden once
+     * it is displayed.
+     */
+    await openMover(ONE);
+
+    const stageRow = columnRows("Hidden cards").find((r) =>
+      r.textContent?.includes("Items at a stage")
+    ) as HTMLButtonElement;
+    stageRow.click();
+    (document.querySelectorAll(".moverarrow")[0] as HTMLButtonElement).click();
+
+    expect(columnRows("Hidden cards").some((r) => r.textContent?.includes("Items at a stage"))).toBe(true);
+    expect(columnRows("Displayed cards").filter((r) => r.textContent?.includes("Items at a stage"))).toHaveLength(1);
+  });
+
+  it("saves the whole working set only when told to", async () => {
+    const seen: { url: string; method?: string; body?: string }[] = [];
+    await openMover(ONE, seen);
+
+    const hidden = columnRows("Hidden cards").find((r) => r.textContent?.includes("How long they have waited")) as HTMLButtonElement;
+    hidden.click();
+    (document.querySelectorAll(".moverarrow")[0] as HTMLButtonElement).click();
+
+    const saveButton = [...document.querySelectorAll("button")].find((b) => b.textContent === "Save changes");
+    saveButton?.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    const put = seen.filter((r) => r.method === "PUT").pop();
+    expect(put).toBeDefined();
+    expect(JSON.parse(put!.body!).cards.map((c: { cardType: string }) => c.cardType)).toEqual([
+      "waiting_for_me",
+      "ageing",
+    ]);
+  });
+
+  it("discards the working copy on close, without saving", async () => {
+    const seen: { url: string; method?: string; body?: string }[] = [];
+    await openMover(ONE, seen);
+
+    const hidden = columnRows("Hidden cards").find((r) => r.textContent?.includes("How long they have waited")) as HTMLButtonElement;
+    hidden.click();
+    (document.querySelectorAll(".moverarrow")[0] as HTMLButtonElement).click();
+
+    const close = [...document.querySelectorAll("button")].find((b) => b.textContent === "Close");
+    close?.click();
+
+    expect(seen.some((r) => r.method === "PUT")).toBe(false);
+    expect(document.querySelector(".popout")).toBeNull();
+  });
 });
 
 describe("a card asks for the room it needs (decision 0244)", () => {
@@ -599,6 +755,12 @@ describe("a card asks for the room it needs (decision 0244)", () => {
     /**
      * **A bar chart of one bar is a rectangle**, and the rectangle says
      * nothing the figure does not.
+     *
+     * **Scoped to the card, not the page** — decision 0262 gave the
+     * toolbar its own icons, so `document.querySelector("svg")` now
+     * finds the toolbar's icon regardless of what the card drew. The
+     * assertion was always about this one card's content, not about
+     * whether an svg exists anywhere on the screen.
      */
     await openDashboard([
       {
@@ -610,7 +772,10 @@ describe("a card asks for the room it needs (decision 0244)", () => {
       },
     ]);
 
-    expect(document.querySelector("svg")).toBeNull();
+    const card = [...document.querySelectorAll(".panel")].find((p) =>
+      p.textContent?.includes("Approval")
+    );
+    expect(card?.querySelector("svg")).toBeNull();
     expect(document.querySelector(".bignum")?.textContent).toBe("3");
     expect(document.body.textContent).toContain("Approval");
   });

@@ -49,6 +49,31 @@ export const ICONS = {
   duplicate:
     '<rect x="4" y="7" width="12" height="15" rx="2"/><rect x="8" y="3" width="12" height="15" rx="2"/>',
 
+  /**
+   * **Four graphics for the dashboard's own toolbar** — decision 0262,
+   * so it reads as a row of controls the way the document viewer's
+   * does rather than a row of plain text buttons. Also decorative
+   * rather than `actionLink` glyphs in the domain sense — these sit
+   * outside the `action.*` convention decisions 0229/0236 test, the
+   * same as the alert-card icons above.
+   */
+
+  // Two sliders — the shape a settings/adjustment control usually
+  // takes, which "arrange" genuinely is: choosing what shows and where.
+  arrange: '<path d="M4 7h10M18 7h2M4 17h2M8 17h12"/><circle cx="16" cy="7" r="2"/><circle cx="6" cy="17" r="2"/>',
+
+  // A plain checkmark — leaving arrange mode is confirming a choice,
+  // not undoing one, so this is not the same glyph as `close`.
+  donearranging: '<path d="M5 13l4 4L19 7"/>',
+
+  // A plus, standing alone rather than attached to a person or a file
+  // the way `newsupplier`'s is — this adds a card, not a record.
+  addcard: '<path d="M12 5v14M5 12h14"/>',
+
+  // An arrow curling back on itself — undoing every choice made since
+  // the default, not undoing one step at a time.
+  restoredefault: '<path d="M4 4v6h6"/><path d="M20 12a8 8 0 1 1-2.5-5.8L20 10"/>',
+
   // Arrows to the four corners — "make this bigger", not "leave here".
   expand:
     '<path d="M4 8V4h4M16 4h4v4M20 12v4h-4M8 20H4v-4"/>',
