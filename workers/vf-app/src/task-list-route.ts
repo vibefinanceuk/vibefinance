@@ -498,10 +498,21 @@ export async function handleListMyTasks(
       // not over the page returned. A count that changed as somebody
       // paged would be telling them about the page rather than about
       // their work.
+      /**
+       * **Counted over what the person may see** — decision 0255.
+       *
+       * These were counted over `all`, before `maySee` ran, so the
+       * numbers under the table could include tasks the table would
+       * never show — a German validator's summary counting French work
+       * that decision 0202 had just hidden from the rows.
+       *
+       * Found because the dashboard's stage card now reads these, and a
+       * card that links to a list must say what the list shows.
+       */
       counts: {
-        mine: all.filter((t) => t.ownership === "mine").length,
-        available: all.filter((t) => t.ownership === "available").length,
-        locked: all.filter((t) => t.ownership === "locked").length,
+        mine: visible.filter((t) => t.ownership === "mine").length,
+        available: visible.filter((t) => t.ownership === "available").length,
+        locked: visible.filter((t) => t.ownership === "locked").length,
       },
       total: filtered.length,
       limit,

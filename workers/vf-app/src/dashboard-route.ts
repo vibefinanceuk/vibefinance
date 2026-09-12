@@ -1,5 +1,6 @@
 import { unitsWherePermitted } from "./enforce.js";
 import type { RouteResult } from "./org-route.js";
+import { handleListMyTasks } from "./task-list-route.js";
 
 /**
  * What a person should do next — decision 0240.
@@ -100,7 +101,28 @@ function unitClause(scope: Scope, column: string): { sql: string; binds: unknown
     return { sql: " AND 1 = 0", binds: [] };
   }
   const placeholders = scope.units.map(() => "?").join(", ");
-  return { sql: ` AND ${column} IN (${placeholders})`, binds: scope.units };
+
+  /**
+   * **A document that belongs to no unit is visible to everyone** —
+   * decision 0255, matching the task list.
+   *
+   * The task list has said so since decision 0202: `if (!task.orgUnitId)
+   * return true`. This clause said the opposite — a null unit is not
+   * *in* any list — so a scoped person's card said **three** and the
+   * list it opened showed **four**, the fourth being an unplaced
+   * invoice.
+   *
+   * The task list's answer is the right one. An unplaced document is
+   * exactly the thing somebody needs to notice and fix (decision 0204),
+   * and hiding it from the people who would is hiding the problem
+   * rather than the data. **A count is still a disclosure** — but what
+   * it discloses here is that something is nobody's, and that is not a
+   * secret from anyone.
+   */
+  return {
+    sql: ` AND (${column} IS NULL OR ${column} IN (${placeholders}))`,
+    binds: scope.units,
+  };
 }
 
 export interface Card {
@@ -222,38 +244,14 @@ async function whereThingsAre(db: D1Database, scope: Scope) {
 async function itemsAtStage(
   db: D1Database,
   userId: string,
-  scope: Scope,
   settings: Record<string, unknown>
 ) {
   const stageId = typeof settings.stage === "string" ? settings.stage : null;
   if (!stageId) return { count: 0, stageName: null, unconfigured: true };
 
-  const clause = unitClause(scope, "h.org_unit_id");
-
   /**
-   * **Who holds the work here** — decision 0250.
-   *
-   * A count says *how much* and this says *whether it is anybody's*.
-   * Three states, and they are genuinely different questions:
-   *
-   * - **mine** — assigned to me or claimed by me (decision 0180)
-   * - **somebody else's** — taken, and not by me
-   * - **unclaimed** — on a team queue or nobody's at all, which is the
-   *   one that grows quietly
-   *
-   * An instance with no task at all counts as unclaimed, because from
-   * the reader's side it is the same thing: nobody is holding it.
-   */
-  /**
-   * **Does the stage exist**, asked of the stage — decision 0251.
-   *
-   * The first version asked one question of `process_instances` and
-   * read *no rows* as *no stage*, so **a stage with nothing in it
-   * reported as deleted**: a card added for a quiet queue said *"this
-   * stage no longer exists"* about a stage the save had just verified.
-   *
-   * Decision 0241 was the same shape — a zero and an absence sharing a
-   * representation — and this is the second time.
+   * **Does the stage exist**, asked of the stage (decision 0251). A
+   * stage with nothing in it is not a deleted one.
    */
   const stage = await db
     .prepare("SELECT id, name FROM process_stages WHERE id = ?")
@@ -261,97 +259,50 @@ async function itemsAtStage(
     .first<{ id: string; name: string }>();
 
   if (!stage) {
-    // **Genuinely gone**, which the card explains and offers to fix.
-    return { count: 0, stageId, stageName: null, missing: true, held: { mine: 0, theirs: 0, unclaimed: 0 } };
+    return {
+      count: 0,
+      stageId,
+      stageName: null,
+      missing: true,
+      held: { mine: 0, theirs: 0, unclaimed: 0 },
+    };
   }
 
   /**
-   * **The card counts work items, and a work item is a task** —
-   * decision 0252.
+   * **The card is the list, counted** — decision 0255.
    *
-   * The first version counted rows after a `LEFT JOIN` to tasks, so an
-   * invoice with three open tasks counted as three — and **per-line
-   * evaluation makes that routine** (decision 0027): a stage scoped to
-   * evaluate once per invoice line raises a task per line.
+   * Four records in two days (0252, 0253, 0254, and this one) each
+   * found the card's own query disagreeing with the task list it links
+   * to — a multiplication, a stage column, an idle instance, a missing
+   * visit, and finally a scope keyed on `AP.Review` where the list keys
+   * on **each task's own permission.**
    *
-   * So the count was neither instances nor tasks but the product of
-   * them, and it disagreed with the task list the card links to.
+   * Every one was a real fault, and none was the last. **Two queries
+   * for one question will drift**, and the only way a card can promise
+   * to say what its click shows is to ask the click.
    *
-   * **Tasks, because that is what the click shows** and what somebody
-   * actually does.
+   * So this calls `handleListMyTasks` — the route the card opens — and
+   * counts what came back. Slower than a `count(*)`, and correct by
+   * construction rather than by four rounds of repair.
    *
-   * **Left joins all the way down** (decision 0254). A task does not
-   * need a stage visit to exist, and some do not have one — joining
-   * through `stage_visits` made those invisible to the card while the
-   * task list, which asks only `t.stage_id`, showed them: **three on
-   * the card and seven in the list.**
-   *
-   * The chain is still walked, because the scope filter needs the
-   * invoice. Where a task has no chain `h.org_unit_id` is null, so an
-   * unrestricted reader sees it and a restricted one does not — the
-   * safe way round for a count that is a disclosure.
-   *
-   * **And by the task's own stage, not its instance's current one.**
-   * The task list filters on `t.stage_id` (decision 0202), and an open
-   * task can sit at a stage its instance has already left — so asking
-   * `pi.current_stage_id` made the card and the list answer different
-   * questions and disagree about the same queue.
+   * The names are the list's own: `mine`, `available` (nobody's — a
+   * team queue), and `locked` (somebody else's). The card called the
+   * last two *unclaimed* and *taken*, and keeps those words on screen.
    */
-  const tasks = await db
-    .prepare(
-      `SELECT count(*) AS n,
-              sum(CASE WHEN t.owner_user_id = ?2 OR t.claimed_by = ?2 THEN 1 ELSE 0 END) AS mine,
-              sum(CASE WHEN (t.owner_user_id IS NOT NULL OR t.claimed_by IS NOT NULL)
-                        AND COALESCE(t.owner_user_id, '') != ?2
-                        AND COALESCE(t.claimed_by, '') != ?2
-                   THEN 1 ELSE 0 END) AS theirs
-       FROM tasks t
-       LEFT JOIN stage_visits v ON v.id = t.stage_visit_id
-       LEFT JOIN process_instances pi ON pi.id = v.process_instance_id
-       LEFT JOIN invoice_headers h ON pi.subject_type = 'invoice' AND h.id = pi.subject_id
-       WHERE t.status = 'open'
-         AND t.stage_id = ?1${clause.sql}`
-    )
-    .bind(stageId, userId, ...clause.binds)
-    .first<{ n: number; mine: number; theirs: number }>();
+  const listed = (await handleListMyTasks(db, userId, { stageId, limit: 1000 })).body as {
+    counts: { mine: number; available: number; locked: number };
+  };
 
-  /**
-   * **Instances with no open task are not counted here** — decision
-   * 0253.
-   *
-   * Decision 0252 counted them as unclaimed, on the argument that a
-   * stage between tasks is still a stage with work in it. **True, and
-   * it broke the thing that record was about**: the card links to a
-   * task list, and an instance with no task **can never appear in
-   * one**. The card said ten and the list showed nine, by
-   * construction.
-   *
-   * So the card counts what its click can show, and *unclaimed* means
-   * **an open task nobody has taken** — a team queue, which is still
-   * the one that grows quietly.
-   *
-   * An instance idling with nothing raised is a real thing and wants a
-   * card of its own. **It is not this one.**
-   */
-
-  const mine = tasks?.mine ?? 0;
-  const theirs = tasks?.theirs ?? 0;
-  const unclaimed = (tasks?.n ?? 0) - mine - theirs;
-  /**
-   * **The three add to the count by construction**, rather than the
-   * count being divided into three. A ring whose segments are derived
-   * from a total it did not produce is a ring that can lie about the
-   * whole it divides.
-   */
-  const count = mine + theirs + unclaimed;
+  const mine = listed.counts.mine;
+  const unclaimed = listed.counts.available;
+  const theirs = listed.counts.locked;
 
   return {
-    count,
+    count: mine + theirs + unclaimed,
     stageId,
     stageName: stage.name,
-    // **The stage answered this**, not the absence of instances at it.
     missing: false,
-    held: { mine, theirs, unclaimed: Math.max(unclaimed, 0) },
+    held: { mine, theirs, unclaimed },
   };
 }
 
@@ -576,7 +527,7 @@ async function runCard(
     case "where_things_are":
       return whereThingsAre(db, scope);
     case "items_at_stage":
-      return itemsAtStage(db, userId, scope, settings);
+      return itemsAtStage(db, userId, settings);
     case "ageing":
       return ageing(db, scope);
     case "done":

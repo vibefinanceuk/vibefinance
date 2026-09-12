@@ -10,6 +10,7 @@ import {
   DEFAULT_CARDS,
 } from "../src/dashboard-route.js";
 import migrationSql from "../../../migrations/0056_dashboard_cards.sql?raw";
+import { handleListMyTasks } from "../src/task-list-route.js";
 
 /**
  * What a person should do next — decision 0240.
@@ -509,23 +510,37 @@ describe("who holds the work at a stage (decision 0250)", () => {
     );
   }
 
-  it("splits mine, theirs and unclaimed", async () => {
+  it("splits mine, taken and unclaimed the way the task list does", async () => {
+    /**
+     * **The list's rules, not mine** — decision 0255. `handleListMyTasks`
+     * shows what is assigned to me or owned by a team I am in, and
+     * nothing else: a task owned by another person is not in my list
+     * however the stage counts it.
+     *
+     * So *mine* is assigned to me, *unclaimed* is on my team with
+     * nobody holding it, and *taken* is on my team with somebody else
+     * holding it. **A task owned outright by somebody else is in none
+     * of the three**, because it is not in the list the card opens.
+     */
     await person("alice", ["AP.Review"], null);
     await person("mo", ["AP.Review"], null);
-
-    await work("mine", null, { owner: "alice" });
-    await work("claimed", null, { claimed: "alice" });
-    await work("theirs", null, { owner: "mo" });
     await env.DB.prepare("INSERT INTO org_teams (id, name) VALUES ('ap', 'AP')").run();
-    await work("nobody", null, { team: "ap" });
+    await env.DB.prepare(
+      "INSERT INTO org_team_members (team_id, user_id) VALUES ('ap', 'alice')"
+    ).run();
+
+    await work("mine-1", null, { owner: "alice" });
+    await work("mine-2", null, { owner: "alice" });
+    await work("queued", null, { team: "ap" });
+    await work("taken", null, { team: "ap", claimed: "mo" });
+    await work("theirs", null, { owner: "mo" });
 
     const data = await stageCard();
-    // **Four open tasks**, one of them on a team queue and so
-    // unclaimed — which the click can show, unlike an idle instance.
-    expect(data.count).toBe(4);
     expect(data.held.mine).toBe(2);
-    expect(data.held.theirs).toBe(1);
     expect(data.held.unclaimed).toBe(1);
+    expect(data.held.theirs).toBe(1);
+    // And the one owned outright by mo is not counted at all.
+    expect(data.count).toBe(4);
   });
 
   it("leaves an instance with no task out of the count", async () => {
@@ -574,12 +589,13 @@ describe("who holds the work at a stage (decision 0250)", () => {
        VALUES ('c2', 'mo', 'items_at_stage', '{"stage":"validation"}', 0)`
     ).run();
 
-    const theirs = card<{ held: { mine: number; theirs: number } }>(
+    const theirs = card<{ count: number; held: { mine: number; theirs: number } }>(
       await cardsFor("mo"),
       "items_at_stage"
     );
+    // **Not mo's, and not in mo's list** — so not on mo's card either.
     expect(theirs.held.mine).toBe(0);
-    expect(theirs.held.theirs).toBe(1);
+    expect(theirs.count).toBe(0);
   });
 
   it("names the stage it counted, so a card can link to it", async () => {
@@ -842,20 +858,18 @@ describe("the card counts what its click can show (decision 0253)", () => {
       "items_at_stage"
     );
 
-    /** What the list the card links to would return, in its own terms. */
-    const listed = await env.DB.prepare(
-      "SELECT count(*) AS n FROM tasks WHERE status = 'open' AND stage_id = 'validation'"
-    ).first<{ n: number }>();
+    /**
+     * **The list itself, not a query about it** — decision 0255.
+     * This test's first version wrote its own SQL as the oracle, which
+     * is the mistake decisions 0252–0254 made four times over.
+     */
+    const listed = (await handleListMyTasks(env.DB, "alice", { stageId: "validation" })).body as {
+      tasks: unknown[];
+      counts: { mine: number };
+    };
 
-    expect(data.count).toBe(listed?.n);
-
-    const mine = await env.DB.prepare(
-      `SELECT count(*) AS n FROM tasks
-       WHERE status = 'open' AND stage_id = 'validation'
-         AND (owner_user_id = 'alice' OR claimed_by = 'alice')`
-    ).first<{ n: number }>();
-
-    expect(data.held.mine).toBe(mine?.n);
+    expect(data.count).toBe(listed.tasks.length);
+    expect(data.held.mine).toBe(listed.counts.mine);
   });
 });
 
@@ -898,12 +912,13 @@ describe("a task without a stage visit still counts (decision 0254)", () => {
     expect(data.held.mine).toBe(1);
   });
 
-  it("hides it from somebody whose view is restricted", async () => {
+  it("shows it to somebody whose view is restricted, as the list does", async () => {
     /**
-     * **A count is a disclosure** (decision 0240), and a task with no
-     * chain cannot be proven to be inside anybody's units — so a
-     * restricted reader does not see it. Unrestricted is the only safe
-     * direction for an unknown.
+     * **Reversed by decision 0255.** This asserted the opposite: that a
+     * task with no chain was hidden from a scoped reader. The task list
+     * has shown it since decision 0202 — `if (!task.orgUnitId) return
+     * true` — and a card that disagrees with the list it opens is the
+     * fault, whichever policy is better.
      */
     // `units()` in beforeEach already created acme-fr.
     await person("alice", ["AP.Review"], "acme-fr");
@@ -921,6 +936,91 @@ describe("a task without a stage visit still counts (decision 0254)", () => {
     ).run();
 
     const data = card<{ count: number }>(await cardsFor("alice"), "items_at_stage");
-    expect(data.count).toBe(0);
+    expect(data.count).toBe(1);
+  });
+});
+
+describe("the card agrees with the real task list (decision 0255)", () => {
+  /**
+   * **Every previous test compared the card to a query I wrote**, and
+   * four times running the query shared the fault of the code it was
+   * checking (decisions 0252–0254).
+   *
+   * This one calls `handleListMyTasks` — **the route the click actually
+   * opens** — and compares numbers. If the two ever disagree it does
+   * not matter which of them is right; a card that links to a list must
+   * say what the list says.
+   */
+  async function bothFor(userId: string, stage: string) {
+    await env.DB.prepare(
+      `INSERT INTO dashboard_cards (id, user_id, card_type, settings_json, position)
+       VALUES (?, ?, 'items_at_stage', ?, 0)`
+    )
+      .bind(`c-${userId}`, userId, JSON.stringify({ stage }))
+      .run();
+
+    const onCard = card<{ count: number; held: { mine: number } }>(
+      await cardsFor(userId),
+      "items_at_stage"
+    );
+
+    const listed = (await handleListMyTasks(env.DB, userId, { stageId: stage })).body as {
+      tasks: unknown[];
+      counts: { mine: number };
+      total?: number;
+    };
+
+    return { onCard, listed };
+  }
+
+  it("says the same number as the list for an unplaced document", async () => {
+    /**
+     * **The operator's four.** Three were on units, one was on an
+     * invoice with no unit at all — and the card dropped that one while
+     * the list kept it.
+     */
+    await person("alice", ["AP.Validate"], "acme-fr");
+    await work("placed-1", "acme-fr", { owner: "alice" });
+    await work("placed-2", "acme-fr", { owner: "alice" });
+    await work("placed-3", "acme-fr", { owner: "alice" });
+    await work("unplaced", null, { owner: "alice" });
+
+    const { onCard, listed } = await bothFor("alice", "validation");
+
+    expect(listed.tasks).toHaveLength(4);
+    expect(onCard.count).toBe(4);
+    expect(onCard.held.mine).toBe(listed.counts.mine);
+  });
+
+  it("still hides another unit's document from both", async () => {
+    /**
+     * The policy that stays: a document in a unit you do not hold is
+     * invisible to the card and to the list alike.
+     *
+     * **Scoped on the task's own permission** — `work()` raises tasks
+     * needing `AP.Validate`, so that is what alice must hold at a unit
+     * for the list to filter by it. Holding `AP.Review` there filters
+     * nothing, which is exactly the difference that broke the card.
+     */
+    await person("alice", ["AP.Validate"], "acme-fr");
+    await work("theirs", "acme-de", { owner: "alice" });
+    await work("mine", "acme-fr", { owner: "alice" });
+
+    const { onCard, listed } = await bothFor("alice", "validation");
+
+    expect(listed.tasks).toHaveLength(1);
+    expect(onCard.count).toBe(1);
+  });
+
+  it("shows everything to somebody unrestricted, in both", async () => {
+    await person("alice", ["AP.Review"], null);
+    await work("a", "acme-fr", { owner: "alice" });
+    await work("b", "acme-de", { owner: "alice" });
+    await work("c", null, { owner: "alice" });
+
+    const { onCard, listed } = await bothFor("alice", "validation");
+
+    expect(listed.tasks).toHaveLength(3);
+    expect(onCard.count).toBe(3);
   });
 });
