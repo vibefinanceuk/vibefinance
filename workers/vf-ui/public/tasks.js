@@ -287,7 +287,6 @@ function filterBar() {
   stages.value = filters.stage;
 
   const ownership = el("select", {
-    value: filters.ownership,
     onchange: (event) => {
       filters.ownership = event.target.value;
       loadTasks();
@@ -301,6 +300,19 @@ function filterBar() {
   ]) {
     ownership.append(el("option", { value, text: t(key) }));
   }
+
+  /**
+   * **Set after the options exist, like the stage select beside it** —
+   * decision 0256. A `select`'s `value` attribute has nothing to bind
+   * to at construction, before any `option` is a child of it.
+   *
+   * Decision 0254 fixed exactly this for `stages` and left `ownership`
+   * with the same fault: arriving from a dashboard card set
+   * `filters.ownership = "mine"`, the list filtered to mine correctly,
+   * and the dropdown kept showing *Everything* — so five items looked
+   * like all of them when four were hidden.
+   */
+  ownership.value = filters.ownership;
 
   return el("div", { class: "filters" }, [stages, ownership]);
 }

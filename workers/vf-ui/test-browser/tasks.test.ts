@@ -294,3 +294,90 @@ describe("every screen can reach every other (decision 0191)", () => {
     expect(document.querySelector("table")).not.toBeNull();
   });
 });
+
+describe("the ownership dropdown shows the filter in force (decision 0256)", () => {
+  /**
+   * **Reported by using it.** Clicking a dashboard card opened the task
+   * list correctly filtered to *mine*, and the dropdown kept reading
+   * *Everything* — so five items on screen looked like all of them
+   * when a filter was hiding the rest.
+   *
+   * Decision 0254 fixed exactly this for the stage select and left
+   * `ownership` with the same fault: `value` was set at construction,
+   * before any `option` existed for it to bind to.
+   */
+  it("reads mine when opened filtered to mine", async () => {
+    /**
+     * **`openTasksFiltered` is only ever called from a running
+     * dashboard**, where `start()` has already populated the signed-in
+     * user. Calling it cold — as the first version of this test did —
+     * hits a null `me` that never occurs in real use.
+     *
+     * `start()` first, as the app itself always does.
+     */
+    stubFetch({
+      "/api/ui-strings": STRINGS,
+      "/api/whoami": { id: "u-dan", name: "Dan", permissions: [] },
+      "/api/tasks": { tasks: [], counts: {} },
+      "/api/dashboard": { cards: [], usingDefault: true },
+    });
+
+    mountShell();
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { start, openTasksFiltered } = await import("/tasks.js");
+    await start();
+    await openTasksFiltered({ stage: "approval", ownership: "mine" });
+
+    const selects = document.querySelectorAll(".filters select");
+    const ownership = selects[1] as HTMLSelectElement;
+
+    expect(ownership.value).toBe("mine");
+  });
+
+  it("reads the stage the same way, unaffected by this fix", async () => {
+    /**
+     * Decision 0254's fix, still standing. The stage select only ever
+     * offers stages it has **seen** in real rows (`knownStages`), so a
+     * task at Approval must be in the stub for that option to exist —
+     * unlike ownership, whose four options are fixed and always
+     * present.
+     */
+    stubFetch({
+      "/api/ui-strings": STRINGS,
+      "/api/whoami": { id: "u-dan", name: "Dan", permissions: [] },
+      // The file's own complete fixture, already at approval/mine.
+      "/api/tasks": { tasks: [APPROVAL_TASK], counts: {} },
+      "/api/dashboard": { cards: [], usingDefault: true },
+    });
+
+    mountShell();
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { start, openTasksFiltered } = await import("/tasks.js");
+    await start();
+    await openTasksFiltered({ stage: "approval", ownership: "mine" });
+
+    const stages = document.querySelectorAll(".filters select")[0] as HTMLSelectElement;
+    expect(stages.value).toBe("approval");
+  });
+
+  it("reads everything when opened with no filter", async () => {
+    // The default case must not regress: an empty filter is a real
+    // value, not the absence of one.
+    stubFetch({
+      "/api/ui-strings": STRINGS,
+      "/api/whoami": { id: "u-dan", name: "Dan", permissions: [] },
+      "/api/tasks": { tasks: [], counts: {} },
+    });
+
+    mountShell();
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { start } = await import("/tasks.js");
+    await start();
+
+    const ownership = document.querySelectorAll(".filters select")[1] as HTMLSelectElement;
+    expect(ownership.value).toBe("");
+  });
+});
