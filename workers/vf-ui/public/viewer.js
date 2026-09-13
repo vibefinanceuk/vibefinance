@@ -268,8 +268,23 @@ function codeInput(code, id, value) {
   return select;
 }
 
-function field(spec, existing) {
+/**
+ * @param options.id Override for the control's own DOM id, `f-${field}`
+ * by default. Used when the same field needs a second, genuinely
+ * distinct rendering elsewhere on the page — decision 0293's own
+ * pop-out copy of a field the card already shows, which must not
+ * share the card's own id.
+ * @param options.forceReadOnly Renders read-only text regardless of
+ * the field's own visibility. For the same pop-out copy: the field is
+ * already editable on the card, and a second, differently-id'd
+ * `<input>` for it would be a real one `save()` never reads from,
+ * since that only ever looks for `f-${field}` by its own, singular
+ * name — an edit typed into a second copy would look accepted and
+ * then silently not exist.
+ */
+function field(spec, existing, options = {}) {
   const value = existing?.[spec.field] ?? "";
+  const id = options.id ?? `f-${spec.field}`;
 
   /**
    * A read-only field is **text, not a disabled input** — decision
@@ -291,16 +306,16 @@ function field(spec, existing) {
    * a worse state than either read-only or genuinely editable.
    */
   const control =
-    spec.visibility === "read" || !canEditAnything
+    spec.visibility === "read" || !canEditAnything || options.forceReadOnly
       ? el("div", {
           class: "readonly",
-          id: `f-${spec.field}`,
+          id,
           text: value === "" ? "—" : String(value),
         })
-      : codeInput(spec.field, `f-${spec.field}`, value) ??
+      : codeInput(spec.field, id, value) ??
         el("input", {
           type: spec.type === "number" ? "number" : spec.type === "date" ? "date" : "text",
-          id: `f-${spec.field}`,
+          id,
           step: spec.type === "number" ? "0.01" : undefined,
           // What is already known is shown, so somebody correcting one
           // value does not have to retype the rest.
@@ -310,7 +325,7 @@ function field(spec, existing) {
   return el("div", { class: "kf" }, [
     // Labels by key, so a customer's language reaches the fields too.
     el("label", {
-      for: `f-${spec.field}`,
+      for: id,
       // The vocabulary's own description as a tooltip, so an
       // unfamiliar code is explicable without leaving the screen.
       title: spec.description,
@@ -1629,15 +1644,16 @@ export async function openViewer(task, onClose) {
    * `.backdrop`, the same box `suppliers.js`'s own detail view already
    * opens on a row click, here opened by "Header Fields" instead.
    *
-   * **Only the genuine overflow — never a field the card already
-   * shows.** Reported live: the pop-out listed every header field,
-   * duplicating everything the card already had, which is what made
-   * read-only the only safe choice at the time — `field()` renders a
-   * live `<input id="f-${field}">`, and a second one for a field the
-   * card already rendered would put two elements with the same id on
-   * the page, with only one of them ever read back on save. Excluding
-   * `HEADER_SUMMARY_FIELDS` here removes the overlap that made that
-   * true, which is what makes `field()` safe to call directly below.
+   * **Every configured field, not only the overflow** — decision 0293
+   * corrected decision 0292's own narrower reading: the pop-out's
+   * title has always said "All invoice header fields," and only
+   * showing what the card omitted made that title wrong about what
+   * was actually inside it. A field the card already shows renders
+   * here too, forced read-only under its own `hf-${field}` id rather
+   * than the card's own `f-${field}` — `field()` renders a live
+   * `<input id="f-${field}">` when a field is editable, and a second
+   * one under the card's own id would put two elements with the same
+   * id on the page, with only one of them ever read back on save.
    *
    * **Hidden on close, never removed.** `save()` reads a field's value
    * from `document.getElementById`, wherever in the page that element
@@ -1648,12 +1664,30 @@ export async function openViewer(task, onClose) {
    *
    * **Reopened, never rebuilt**, for the same reason: a second call
    * to `field()` for the same spec on a second open would be exactly
-   * the duplicate-id problem this function was rewritten to avoid,
-   * just deferred to a re-open instead of avoided by the exclusion
-   * above. `popoutBackdrop` remembers the one already built.
+   * the duplicate-id problem the `hf-` prefix above exists to avoid,
+   * just deferred to a re-open instead. `popoutBackdrop` remembers the
+   * one already built.
    */
   let popoutBackdrop = null;
 
+  /**
+   * **Every configured field, matching its own title** — decision
+   * 0293. The operator's own correction: "I had thought that the
+   * pop-out would show fields on the card, and any additional fields
+   * not shown on the card... Hence the pop-out title — 'All invoice
+   * header fields.'" Showing only the overflow (decision 0292) made
+   * the title wrong about what was actually in it.
+   *
+   * **A field already on the card renders here too, forced read-only
+   * under its own, different id.** The card already has the one real,
+   * editable copy; a second editable one here — even genuinely
+   * distinct in the DOM — would be an input `save()` never reads,
+   * since that looks for `f-${field}` specifically and nothing else.
+   * An edit typed into this copy would look accepted and then
+   * silently not exist. Read-only here says correctly that this is
+   * the same value shown a second time, not a second place to change
+   * it.
+   */
   function openHeaderFieldsPopout() {
     if (popoutBackdrop) {
       popoutBackdrop.hidden = false;
@@ -1661,7 +1695,13 @@ export async function openViewer(task, onClose) {
     }
 
     const shown = headerFields.filter(
-      (spec) => ![...SELLER_FIELDS, ...BUYER_FIELDS, ...HEADER_SUMMARY_FIELDS].includes(spec.field)
+      (spec) => ![...SELLER_FIELDS, ...BUYER_FIELDS].includes(spec.field)
+    );
+
+    const rows = shown.map((spec) =>
+      HEADER_SUMMARY_FIELDS.includes(spec.field)
+        ? field(spec, existing, { id: `hf-${spec.field}`, forceReadOnly: true })
+        : field(spec, existing)
     );
 
     const close = () => {
@@ -1670,7 +1710,7 @@ export async function openViewer(task, onClose) {
     const backdrop = el("div", { class: "backdrop" }, [
       el("div", { class: "popout" }, [
         el("h3", { text: t("viewer.allheaderfields") }),
-        el("div", { class: "vfields" }, shown.map((spec) => field(spec, existing))),
+        el("div", { class: "vfields" }, rows),
         el("div", { class: "statebuttons" }, [actionLink("close", { onclick: close })]),
       ]),
     ]);

@@ -1767,14 +1767,13 @@ describe("the Invoice header card is a curated summary, with a pop-out for the r
     expect(labels).not.toContain("Header Fields");
   });
 
-  it("opens a pop-out listing only the overflow — never a field the card already shows", async () => {
+  it("opens a pop-out listing every configured field, matching its own title (decision 0293)", async () => {
     /**
-     * **Reported live**: the pop-out duplicated every field the card
-     * already had, which was the reason read-only was the only safe
-     * choice at the time. Restricted to genuine overflow, both to
-     * remove that duplication and because it is what makes the
-     * pop-out's own fields safe to render as real, editable ones —
-     * nothing here has a second copy anywhere else on the page.
+     * **The operator's own correction**: "I had thought that the
+     * pop-out would show fields on the card, and any additional
+     * fields not shown on the card... Hence the pop-out title — 'All
+     * invoice header fields.'" Restricting it to only the overflow
+     * (decision 0292) made the title wrong about what was in it.
      */
     const withExtras = {
       fields: [
@@ -1797,11 +1796,44 @@ describe("the Invoice header card is a curated summary, with a pop-out for the r
 
     const popout = document.querySelector(".popout");
     expect(popout).not.toBeNull();
+    // The genuine overflow, as before.
     expect(popout?.textContent).toContain("Business process");
     expect(popout?.textContent).toContain("Specification");
     expect(popout?.textContent).toContain("urn:fdc:peppol.eu:2017:poacc:billing:01:1.0");
-    // Not Invoice number — that's already on the card itself.
-    expect(popout?.textContent).not.toContain("Invoice number");
+    // Now also every field the card itself already shows.
+    expect(popout?.textContent).toContain("Invoice number");
+    expect(popout?.textContent).toContain("INV-2026-04471");
+  });
+
+  it("renders a field already on the card as read-only in the pop-out, under a different id from the card's own", async () => {
+    /**
+     * **The card already has the one real, editable copy.** A second
+     * one here, even genuinely distinct in the DOM, would be an input
+     * `save()` never reads — it looks for `f-${field}` specifically,
+     * nothing else — so an edit typed into a second copy would look
+     * accepted and then silently not exist. This is the test that
+     * proves the pop-out's own copy is read-only text, not a second,
+     * inert-looking input.
+     */
+    const withOverflow = {
+      fields: [...CURATED_FIELDS.fields, { field: "BT-23", visibility: "read", type: "text", line: false }],
+    };
+    await open(withOverflow, { "BT-1": "INV-2026-04471" });
+
+    const trigger = [...headerCard().querySelectorAll(".actionlink")].find(
+      (a) => a.querySelector("span")?.textContent === "Header Fields"
+    ) as HTMLButtonElement;
+    trigger.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    // The card's own, real, editable copy — untouched.
+    expect(document.getElementById("f-BT-1")?.tagName).toBe("INPUT");
+    // The pop-out's own copy of the same field: a different id, and
+    // read-only regardless of the field's own edit visibility.
+    const popoutCopy = document.getElementById("hf-BT-1");
+    expect(popoutCopy).not.toBeNull();
+    expect(popoutCopy?.tagName).toBe("DIV");
+    expect(popoutCopy?.textContent).toBe("INV-2026-04471");
   });
 
   it("lets an overflow field the person may edit actually be edited, and Save picks it up (decision 0292)", async () => {
