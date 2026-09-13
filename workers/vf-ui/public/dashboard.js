@@ -560,6 +560,37 @@ function toolButton(iconName, label, { primary = false, onclick } = {}) {
   return node;
 }
 
+/**
+ * Arrange, and what it unhides — decision 0303, moved from a row of
+ * its own beneath the heading into the topbar itself.
+ *
+ * **Extracted rather than left inline** so the same three buttons can
+ * be passed into `topbar()`'s own `right` array from `render()`,
+ * which is the only place both `topbar()` and this logic are already
+ * in scope together.
+ */
+function arrangeButtons() {
+  return [
+    toolButton(arranging ? "donearranging" : "arrange", arranging ? t("dash.done_arranging") : t("dash.arrange"), {
+      primary: arranging,
+      onclick: () => {
+        arranging = !arranging;
+        render();
+      },
+    }),
+    arranging ? toolButton("addcard", t("dash.addcard"), { onclick: () => openPicker() }) : null,
+    arranging
+      ? toolButton("restoredefault", t("dash.reset"), {
+          onclick: async () => {
+            await fetch("/api/dashboard", { method: "DELETE" });
+            await load();
+            render();
+          },
+        })
+      : null,
+  ].filter(Boolean);
+}
+
 function render() {
   const shell = document.getElementById("shell");
   if (!shell) return;
@@ -613,26 +644,18 @@ function render() {
   shell.replaceChildren(
     frame(
       el("div", {}, [
-        topbar(t("dash.heading"), t("dash.sub")),
-        el("div", { class: "actionrow" }, [
-          toolButton(arranging ? "donearranging" : "arrange", arranging ? t("dash.done_arranging") : t("dash.arrange"), {
-            primary: arranging,
-            onclick: () => {
-              arranging = !arranging;
-              render();
-            },
-          }),
-          arranging ? toolButton("addcard", t("dash.addcard"), { onclick: () => openPicker() }) : null,
-          arranging
-            ? toolButton("restoredefault", t("dash.reset"), {
-                onclick: async () => {
-                  await fetch("/api/dashboard", { method: "DELETE" });
-                  await load();
-                  render();
-                },
-              })
-            : null,
-        ].filter(Boolean)),
+        /**
+         * **Arrange, top right, left of Night/Day** — decision 0303,
+         * reported live: "move the Arrange button to the top right,
+         * next to the left of the Night / Day button... Done
+         * arranging, Add a card, and Back to the default. These
+         * buttons should also display on the top right." Passed into
+         * `topbar()`'s own `right` array, the same way decision 0298
+         * moved the viewer's own Save and task actions there —
+         * `right` renders before `moodPicker`, `languagePicker`, and
+         * Sign out, so this lands exactly to their left.
+         */
+        topbar(t("dash.heading"), t("dash.sub"), arrangeButtons()),
         tiles.length > 0 ? el("div", { class: "dashstrip" }, tiles) : null,
         rest.length > 0 ? el("div", { class: "dashgrid" }, rest) : null,
       ].filter(Boolean))

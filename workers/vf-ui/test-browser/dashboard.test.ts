@@ -79,6 +79,8 @@ const STRINGS = {
     "nav.rules": "Rules",
     "nav.documents": "Documents",
     "dash.arrange": "Arrange",
+    "mood.day": "Day",
+    "mood.night": "Night",
     "dash.done_arranging": "Done arranging",
     "dash.addcard": "Add a card",
     "dash.add": "Add",
@@ -703,6 +705,47 @@ describe("arranging it (decision 0243)", () => {
 
     expect(document.querySelectorAll(".cardactions")).toHaveLength(0);
     expect(document.body.textContent).toContain("Arrange");
+  });
+
+  it("puts Arrange in the topbar, left of Night/Day, not in a row of its own (decision 0303)", async () => {
+    /**
+     * **Reported live**: "move the Arrange button to the top right,
+     * next to the left of the Night / Day button." Passed into
+     * `topbar()`'s own `right` array, the same way decision 0298
+     * moved the viewer's own Save and task actions there.
+     */
+    stubAll(ONE);
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { open } = await import("/dashboard.js");
+    await open();
+
+    const topRight = document.querySelector(".topbar .right");
+    const titles = [...(topRight?.querySelectorAll("button") ?? [])].map((b) => b.getAttribute("title"));
+    const arrangeIndex = titles.indexOf("Arrange");
+    const moodIndex = titles.findIndex((t) => t === "Day" || t === "Night");
+
+    expect(arrangeIndex).toBeGreaterThan(-1);
+    expect(moodIndex).toBeGreaterThan(-1);
+    expect(arrangeIndex).toBeLessThan(moodIndex);
+    // No row of its own left beneath the heading — the picker modal's
+    // own .actionrow (a different feature) never opened in this test,
+    // so any match here would be this one, resurfaced.
+    const strayArrange = [...document.querySelectorAll(".actionrow")].some((row) =>
+      row.textContent?.includes("Arrange")
+    );
+    expect(strayArrange).toBe(false);
+  });
+
+  it("shows Add a card and Back to the default in the topbar too, once arranging", async () => {
+    await openArranging(ONE);
+
+    const topRight = document.querySelector(".topbar .right");
+    const titles = [...(topRight?.querySelectorAll("button") ?? [])].map((b) => b.getAttribute("title"));
+
+    expect(titles).toContain("Done arranging");
+    expect(titles).toContain("Add a card");
+    expect(titles).toContain("Back to the default");
   });
 
   it("gives each card a handle while arranging", async () => {
