@@ -302,8 +302,16 @@ h1 {
 
   `select` is the worst offender: several platforms ignore a family set
   any other way.
+
+  **`input` here means a text-like input, not every input** — decision
+  0282, found live: a bare `input` selector matches a checkbox exactly
+  as it matches a text box, and a checkbox styled with this rule's own
+  padding, border and background stops looking like a checkbox at all.
+  Excluded here rather than overridden later per screen, the same
+  reasoning `:not([type="checkbox"])` gives once and every future text
+  input still needs nothing extra to get this by default.
 */
-input,
+input:not([type="checkbox"]):not([type="radio"]),
 textarea,
 button,
 select {
@@ -316,7 +324,7 @@ select {
   padding: 6px 10px;
 }
 
-input,
+input:not([type="checkbox"]):not([type="radio"]),
 textarea {
   min-height: 32px;
   box-sizing: border-box;

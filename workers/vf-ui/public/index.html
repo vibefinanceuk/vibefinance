@@ -128,7 +128,13 @@
     margin-bottom: var(--gap-tight);
   }
 
-  input, select {
+  /**
+   * **Text-like inputs only** — decision 0282's same reasoning,
+   * applied here too even though nothing on this specific form is a
+   * checkbox today: the next field added to it should not have to
+   * rediscover why one would look wrong.
+   */
+  input:not([type="checkbox"]):not([type="radio"]), select {
     width: 100%;
     font-size: var(--step-1);
     min-height: 38px;
@@ -676,6 +682,20 @@
     box-shadow: 0 6px 18px rgba(0, 0, 0, .12);
   }
   .columnlist label { display: block; padding: 3px 0; font-size: var(--text-sm); cursor: pointer; }
+  /*
+    **A deliberate size, not whatever the browser happens to render** —
+    decision 0282. Excluding the checkbox from the global input rules
+    fixed the real bug (a native checkbox styled as a 32px text box),
+    but a bare, unstyled checkbox is a different size on every browser
+    and platform. Sized against the label's own `--text-sm` beside it,
+    the same discipline this scale already applies everywhere else.
+  */
+  .columnlist input[type="checkbox"] {
+    width: 14px;
+    height: 14px;
+    margin: 0 8px 0 0;
+    vertical-align: middle;
+  }
 
   /*
     What a person needs before they start — decision 0175. Beneath the

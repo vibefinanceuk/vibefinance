@@ -83,7 +83,9 @@ describe("one font, everywhere", () => {
     // defaults — which is why the entry cells always looked larger than
     // everything around them.
     const tokens = Object.values(CSS).join("\n");
-    const controlRule = tokens.slice(tokens.indexOf("input,\ntextarea,\nbutton,\nselect {"));
+    const controlRule = tokens.slice(
+      tokens.indexOf('input:not([type="checkbox"]):not([type="radio"]),\ntextarea,\nbutton,\nselect {')
+    );
     expect(controlRule).toContain("font: inherit");
   });
 

@@ -211,6 +211,42 @@ describe("which columns to show", () => {
     const boxes = [...document.querySelectorAll(".columnlist input")] as HTMLInputElement[];
     expect(boxes[0].disabled).toBe(true);
   });
+
+  it("gives the checkbox a real, small size rather than the 32px text-input default (decision 0282)", async () => {
+    /**
+     * **Reported live, from a screenshot**: "the check boxes appear
+     * very large and cumbersome." `tokens.css`'s own global
+     * `input, textarea { min-height: 32px; width: 100%; ... }` never
+     * excluded `[type="checkbox"]` — a bare `input` selector matches a
+     * checkbox exactly as it matches a text box, so every checkbox in
+     * the app inherited a 32px-tall, full-width, padded, bordered box
+     * built for prose.
+     *
+     * jsdom applies no CSS, so this reads the real stylesheet rather
+     * than measure a rendered checkbox no test here can produce.
+     */
+    const css = (await import("virtual:stylesheets")).default["tokens.css"];
+
+    // The exclusion has to exist on both rules that were the actual
+    // bug — the shared appearance rule and the sizing rule. Matched
+    // against `input:not(...)` specifically, not the bare `:not(...)`
+    // fragment alone — an earlier version of this test matched that
+    // shorter string and was also finding this very comment's own
+    // explanation of the fix, silently counting a sentence as a rule.
+    const occurrences = css.split('input:not([type="checkbox"])').length - 1;
+    expect(occurrences).toBeGreaterThanOrEqual(2);
+
+    // And a deliberate size was given back, rather than left to
+    // whatever a bare, unstyled checkbox happens to render as on
+    // whichever browser opens it.
+    const page = (await import("virtual:stylesheets")).default["index.html"];
+    const sizeRule = page.slice(
+      page.indexOf('.columnlist input[type="checkbox"]'),
+      page.indexOf('.columnlist input[type="checkbox"]') + 150
+    );
+    expect(sizeRule).toContain("width: 14px");
+    expect(sizeRule).toContain("height: 14px");
+  });
 });
 
 describe("opening a document (decision 0165)", () => {
