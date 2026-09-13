@@ -288,6 +288,31 @@ describe("creating the first rule at a stage (decision 0154)", () => {
     expect(labels.some((l) => l?.includes("Create rule"))).toBe(true);
   });
 
+  it("sits in the topbar, left of Night/Day, not beneath the table any more (decision 0309)", async () => {
+    /**
+     * **Reported live**: "there is a create rule button beneath the
+     * table of rules. Please can you move this button to the top
+     * right of the page, to the left of the Night / Day button (with
+     * the horizontal line as a break)."
+     */
+    await open([{ id: "r-1", sourceText: "A rule", state: "live" }]);
+
+    const topRight = document.querySelector(".topbar .right");
+    const titles = [...(topRight?.querySelectorAll("button") ?? [])].map((b) => b.getAttribute("title"));
+    const createIndex = titles.indexOf("Create rule");
+    const moodIndex = titles.findIndex((t) => t === "Day" || t === "Night");
+
+    expect(createIndex).toBeGreaterThan(-1);
+    expect(moodIndex).toBeGreaterThan(-1);
+    expect(createIndex).toBeLessThan(moodIndex);
+    // Decision 0304's own boundary line, since a page-specific
+    // control now sits in the topbar.
+    expect(topRight?.querySelector(".topbardivider")).not.toBeNull();
+
+    // Not left behind beneath the table any more.
+    expect(document.querySelector(".newrule")).toBeNull();
+  });
+
   it("draws each rule as its own card", async () => {
     // A list of sentences separated by a hairline reads as prose.
     await open([

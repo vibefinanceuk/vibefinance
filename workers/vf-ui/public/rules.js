@@ -123,7 +123,39 @@ function render() {
   shell.replaceChildren(
     frame(
       el("div", {}, [
-        topbar(t("nav.rules"), t("rules.subtitle")),
+        /**
+         * **Create rule, top right, decision 0309** — reported live:
+         * "there is a create rule button beneath the table of rules.
+         * Please can you move this button to the top right of the
+         * page, to the left of the Night / Day button (with the
+         * horizontal line as a break)." Passed into `topbar()`'s own
+         * `right` array, the same mechanism decisions 0298, 0303, and
+         * 0305 already used to move a screen's own action there —
+         * `right` renders before `moodPicker`, so this lands left of
+         * Night/Day, and decision 0304's own boundary line appears
+         * beside it automatically, since `right` is no longer empty.
+         *
+         * **Same icon and label as before** (`compile`, `rules.new`),
+         * rebuilt as `.actionlink` — the shape every other topbar
+         * button already uses — rather than the standalone
+         * `<button class="primary">` a footer row could afford but a
+         * compact row of icon-and-label buttons cannot.
+         *
+         * **Still every stage's own button, decision 0154's own
+         * reasoning unchanged** — writing the first rule at a stage
+         * creates the rule set, so the button was never conditional
+         * on a stage already having one; in the topbar it is, if
+         * anything, more obviously that: present regardless of which
+         * stage is even selected, not folded into one panel among
+         * several.
+         */
+        topbar(t("nav.rules"), t("rules.subtitle"), [
+          el(
+            "button",
+            { class: "actionlink", title: t("rules.new"), onclick: () => compose(stage) },
+            [icon("compile"), el("span", { text: t("rules.new") })]
+          ),
+        ]),
         el("div", { class: "panel" }, [
           processRow(
             // The line beneath each chevron, built here rather than at
@@ -147,22 +179,6 @@ function render() {
           rules.length > 0
             ? el("div", { class: "rules" }, rules.map(ruleRow))
             : el("p", { class: "muted", text: t("rules.empty") }),
-          /**
-           * **At every stage** — decision 0154.
-           *
-           * This appeared only where a stage already had a rule set,
-           * which meant rules could be added only where rules already
-           * existed. A stage that had never had one never could.
-           *
-           * Writing the first rule at a stage now creates the rule set,
-           * so the button belongs everywhere a rule could run.
-           */
-          el("div", { class: "newrule" }, [
-            el("button", { class: "primary", onclick: () => compose(stage) }, [
-              icon("compile"),
-              el("span", { text: t("rules.new") }),
-            ]),
-          ]),
         ]),
         el("div", { class: "problem", id: "rules-note", role: "status" }),
       ])
