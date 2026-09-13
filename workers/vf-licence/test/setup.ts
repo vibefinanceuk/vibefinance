@@ -92,6 +92,7 @@ import paymentTermsFieldSql from "../migrations/0087_payment_terms_field.sql?raw
 import supplierStatusCardSql from "../migrations/0088_supplier_status_card.sql?raw";
 import composeBackSql from "../migrations/0089_compose_back.sql?raw";
 import dashboardHeadingRewordSql from "../migrations/0090_dashboard_heading_reword.sql?raw";
+import rulesTableColumnSql from "../migrations/0091_rules_table_column.sql?raw";
 
 function stripSqlComments(sql: string): string {
   return sql
@@ -211,5 +212,6 @@ export async function applyTestSchema(): Promise<void> {
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(supplierStatusCardSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(composeBackSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(dashboardHeadingRewordSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(rulesTableColumnSql)));
 
 }

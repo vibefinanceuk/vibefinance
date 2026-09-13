@@ -582,26 +582,6 @@
   .rulename { margin: 0; font-size: var(--text-lg); }
 
   /*
-    A card each — decision 0154. A list of sentences separated by a
-    hairline reads as prose; somebody scanning for one rule among ten
-    needs them to be objects.
-  */
-  .rule {
-    display: flex;
-    gap: 16px;
-    padding: 12px 14px;
-    margin-bottom: 8px;
-    background: var(--surface-1);
-    border: 0.5px solid var(--border);
-    border-radius: var(--radius);
-    align-items: baseline;
-  }
-
-  .rule:last-child { margin-bottom: 0; }
-  .rule .what { flex: 1; }
-
-  /* The button sits apart from the cards rather than among them. */
-  /*
     A sentence is read on one line, not across a wide screen — decision
     0156. A rule box at 1600px would put a clause at each end and
     nothing in the middle, so it stops where prose stops being readable.
@@ -737,20 +717,6 @@
   }
 
   .subhead > div { margin: 0; }
-
-  /* The sentence is the way into a rule — decision 0155. */
-  button.rulelink {
-    padding: 0;
-    min-height: 0;
-    border: none;
-    background: none;
-    color: var(--text-accent);
-    font: inherit;
-    font-size: var(--text-base);
-    text-align: left;
-    cursor: pointer;
-  }
-  button.rulelink:hover { text-decoration: underline; }
 
   .versionhead { display: flex; align-items: baseline; gap: 12px; margin-bottom: 8px; }
   .versionhead h3 { margin: 0; }

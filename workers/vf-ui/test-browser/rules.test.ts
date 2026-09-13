@@ -42,6 +42,8 @@ const STRINGS = {
     "rulestate.awaiting_confirmation": "To confirm",
     "rulestate.draft": "Draft",
     "rules.new": "Create rule",
+    "column.rule": "Rule",
+    "column.status": "Status",
     "nav.documents": "Documents",
     "mood.label": "Mood",
     "mood.day": "Day",
@@ -135,6 +137,31 @@ describe("the process as a sequence", () => {
   });
 });
 
+describe("a real table, matching Documents and Tasks (decision 0310)", () => {
+  /**
+   * **Reported live**: "update the Rules table, so that the look and
+   * feel is the same as other tables in the solution. For example, in
+   * the Documents, and Tasks pages."
+   */
+  it("wraps a real <table> in .tablewrap, with Rule and Status columns", async () => {
+    await open([{ id: "r-1", sourceText: "One", state: "live", stageName: "Validation" }]);
+
+    const wrap = document.querySelector(".tablewrap");
+    expect(wrap).not.toBeNull();
+    expect(wrap?.querySelector("table")).not.toBeNull();
+
+    const headers = [...(wrap?.querySelectorAll("thead th") ?? [])].map((h) => h.textContent);
+    expect(headers).toEqual(["Rule", "Status"]);
+  });
+
+  it("makes the whole row the click target, the same shape Documents and Tasks already use", async () => {
+    await open([{ id: "r-1", sourceText: "One", state: "live", stageName: "Validation" }]);
+
+    const row = document.querySelector("tbody tr");
+    expect(row?.classList.contains("clickable")).toBe(true);
+  });
+});
+
 describe("what a rule row says", () => {
   it("shows the sentence somebody wrote", async () => {
     // **Not the compiled rule.** A person recognises their own words.
@@ -161,8 +188,8 @@ describe("what a rule row says", () => {
       },
     ]);
 
-    const link = document.querySelector(".rulelink");
-    expect(link?.textContent).toBe("Spend Threshold");
+    const headline = document.querySelector("tbody tr td div");
+    expect(headline?.textContent).toBe("Spend Threshold");
     // The sentence is not gone — still there to read, just not the
     // headline once a name exists.
     expect(document.body.textContent).toContain("Hold any invoice over 10,000 euros");
@@ -173,8 +200,8 @@ describe("what a rule row says", () => {
       { id: "r-1", name: null, sourceText: "A rule with no name yet.", state: "live", stageName: "Validation" },
     ]);
 
-    const link = document.querySelector(".rulelink");
-    expect(link?.textContent).toBe("A rule with no name yet.");
+    const headline = document.querySelector("tbody tr td div");
+    expect(headline?.textContent).toBe("A rule with no name yet.");
   });
 
   it("says how many examples are waiting, not just that some are", async () => {
@@ -313,13 +340,15 @@ describe("creating the first rule at a stage (decision 0154)", () => {
     expect(document.querySelector(".newrule")).toBeNull();
   });
 
-  it("draws each rule as its own card", async () => {
-    // A list of sentences separated by a hairline reads as prose.
+  it("draws each rule as its own table row (decision 0310)", async () => {
+    // Decision 0154's own "a card each" is what this reverses —
+    // reported live, matching the row-per-item shape Documents and
+    // Tasks already use.
     await open([
       { id: "r-1", sourceText: "One", state: "live" },
       { id: "r-2", sourceText: "Two", state: "draft" },
     ]);
 
-    expect(document.querySelectorAll(".rule")).toHaveLength(2);
+    expect(document.querySelectorAll("tbody tr")).toHaveLength(2);
   });
 });

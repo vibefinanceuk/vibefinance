@@ -76,42 +76,52 @@ async function compose(stage) {
   await openCompose({ ...stage, ruleSetId });
 }
 
+/**
+ * A row in the rules table — decision 0310, reported live: "update
+ * the Rules table, so that the look and feel is the same as other
+ * tables in the solution... Documents, and Tasks pages."
+ *
+ * **A real `<table>`, not decision 0154's own card list.** The whole
+ * row is the click target and `.rulestate` sits in its own column,
+ * the same shape decisions 0287 and 0288 already gave Documents and
+ * Tasks — one family of list across the app, not three different
+ * ideas of what a row is.
+ */
 function ruleRow(rule) {
-  // **A card each** — decision 0154. A list of sentences separated by a
-  // hairline reads as prose; somebody scanning for one rule among ten
-  // needs them to be objects.
-  return el("div", { class: "rule" }, [
-    el("div", { class: "what" }, [
-      // **The sentence is the way in** — decision 0155. A rule row
-      // names a rule, and opening one is the first thing anybody wants
-      // to do with it; a separate "open" button would put navigation
-      // where the rule itself is.
-      // **Named where it has a name, decision 0266** — a list of ten
-      // rules reads as ten sentences otherwise, and a name is what a
-      // person actually scans for. The sentence stays underneath,
-      // muted, for the rule nobody has named yet and for whoever wants
-      // to confirm what a named one actually does.
-      el("button", {
-        class: "rulelink",
-        text: rule.name ?? rule.sourceText ?? "",
-        onclick: () => openRule(rule.id),
-      }),
+  const row = el("tr", { class: "clickable" }, [
+    el("td", {}, [
+      /**
+       * **Named where it has a name, decision 0266, unchanged.** A
+       * list of ten rules reads as ten sentences otherwise, and a
+       * name is what a person actually scans for. The sentence stays
+       * underneath, muted, for the rule nobody has named yet and for
+       * whoever wants to confirm what a named one actually does.
+       */
+      el("div", { text: rule.name ?? rule.sourceText ?? "" }),
       ...(rule.name ? [el("div", { class: "sm muted", text: rule.sourceText ?? "" })] : []),
     ]),
-    el("div", { class: `rulestate ${rule.state}` }, [
-      // Live and paused carry a mark; a draft does not, because
-      // "nothing is happening" needs no symbol.
-      ...(rule.state === "live" || rule.state === "paused"
-        ? [icon(rule.state === "live" ? "complete" : "paused")]
-        : []),
-      el("span", {
-        text:
-          rule.state === "awaiting_confirmation" && rule.awaiting
-            ? `${rule.awaiting} ${t("rulestate.awaiting_confirmation").toLowerCase()}`
-            : t(`rulestate.${rule.state}`),
-      }),
+    el("td", {}, [
+      el("div", { class: `rulestate ${rule.state}` }, [
+        // Live and paused carry a mark; a draft does not, because
+        // "nothing is happening" needs no symbol.
+        ...(rule.state === "live" || rule.state === "paused"
+          ? [icon(rule.state === "live" ? "complete" : "paused")]
+          : []),
+        el("span", {
+          text:
+            rule.state === "awaiting_confirmation" && rule.awaiting
+              ? `${rule.awaiting} ${t("rulestate.awaiting_confirmation").toLowerCase()}`
+              : t(`rulestate.${rule.state}`),
+        }),
+      ]),
     ]),
   ]);
+  // **The sentence is the way in, decision 0155, unchanged** — opening
+  // a rule is the first thing anybody wants to do with a row, and a
+  // whole clickable row (decisions 0287, 0288) is that gesture without
+  // needing a link styled apart from the rest of the cell.
+  row.onclick = () => openRule(rule.id);
+  return row;
 }
 
 function render() {
@@ -177,7 +187,17 @@ function render() {
           el("h3", { text: stage ? stage.name : t("rules.atstage") }),
           el("p", { class: "sm muted", text: t("rules.order") }),
           rules.length > 0
-            ? el("div", { class: "rules" }, rules.map(ruleRow))
+            ? el("div", { class: "tablewrap" }, [
+                el("table", {}, [
+                  el("thead", {}, [
+                    el("tr", {}, [
+                      el("th", { text: t("column.rule") }),
+                      el("th", { text: t("column.status") }),
+                    ]),
+                  ]),
+                  el("tbody", {}, rules.map(ruleRow)),
+                ]),
+              ])
             : el("p", { class: "muted", text: t("rules.empty") }),
         ]),
         el("div", { class: "problem", id: "rules-note", role: "status" }),
