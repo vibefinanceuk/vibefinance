@@ -1309,6 +1309,76 @@ describe("every variable the page uses exists (decision 0223)", () => {
 
     expect(rule).toContain("overflow-wrap");
   });
+
+  it("stacks the address under its own label rather than beside it (decision 0280)", async () => {
+    /**
+     * **Reported live, from a marked-up screenshot**: "move the
+     * position of the Seller and Buyer address, so that the address
+     * appears under the Address title, rather than to the right of
+     * it... screen space I would like to make better use of."
+     */
+    const page = (await import("virtual:stylesheets")).default["index.html"];
+    const rule = page.slice(page.indexOf(".sfield.address {"), page.indexOf(".sfield.address {") + 100);
+
+    expect(rule).toContain("grid-template-columns: 1fr");
+  });
+});
+
+describe("the address block itself carries the stacked class (decision 0280)", () => {
+  it("puts the address value beneath its label on both the Seller and Buyer cards", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        const path = String(url).split("?")[0];
+        const bodies: Record<string, unknown> = {
+          "/api/ui-strings": STRINGS,
+          "/api/code-lists": { fields: {} },
+          "/api/field-visibility": FIELDS,
+          "/api/invoices/inv-1": {
+            facts: {},
+            lines: [],
+            supplier: {
+              name: "Northwind Logistics Ltd",
+              vatId: null,
+              electronicAddress: null,
+              email: null,
+              phone: null,
+              addressLine: null,
+              city: null,
+              countryName: "United Kingdom of Great Britain and Northern Ireland",
+              postalCode: null,
+            },
+            buyer: {
+              unitId: "acme-uk",
+              unitName: "Acme UK Limited",
+              entityName: "Acme UK Limited",
+              vatId: "GB123456789",
+              addressLine: "1 Handover Street",
+              city: "London",
+              countryName: "United Kingdom of Great Britain and Northern Ireland",
+              postalCode: "EC1A 1AA",
+            },
+            validation: { passed: true, checked: [], failures: [] },
+          },
+          "/api/invoices/inv-1/progress": { visits: [] },
+          "/api/documents/inv-1/activity": { items: [] },
+        };
+        if (!(path in bodies)) throw new Error(`no stub for ${path}`);
+        return { ok: true, json: async () => bodies[path] } as Response;
+      })
+    );
+
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    await openViewer(TASK, () => {});
+
+    const addressFields = [...document.querySelectorAll(".sfield.address")];
+    expect(addressFields).toHaveLength(2);
+    for (const field of addressFields) {
+      expect(field.textContent).toContain("United Kingdom of Great Britain and Northern Ireland");
+    }
+  });
 });
 
 describe("the Buyer card says a name once (decision 0227)", () => {

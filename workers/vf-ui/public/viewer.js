@@ -1375,7 +1375,7 @@ export async function openViewer(task, onClose) {
       party.postalCode,
     ].filter(Boolean);
 
-    return el("div", { class: "sfield" }, [
+    return el("div", { class: "sfield address" }, [
       el("span", { class: "slabel", text: label }),
       lines.length > 0
         ? el("span", {}, lines.map((line) => el("div", { text: line })))

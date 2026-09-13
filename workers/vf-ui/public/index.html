@@ -880,6 +880,22 @@
        has nowhere natural to break. */
     overflow-wrap: anywhere;
   }
+  /*
+    **The address, stacked rather than beside its label** — decision
+    0280, the operator's own marked-up screenshot: "move the position
+    of the Seller and Buyer address, so that the address appears under
+    the Address title, rather than to the right of it... screen space
+    I would like to make better use of."
+
+    A single grid column rather than the shared 88px-label layout: the
+    address lines no longer share their row with a label column, so a
+    country name that wrapped across five narrow lines gets the full
+    width of the card's own second column instead.
+  */
+  .sfield.address {
+    grid-template-columns: 1fr;
+    row-gap: 2px;
+  }
   .slabel {
     color: var(--text-muted);
     /* **A label that wraps pushes its value down** and the column stops
