@@ -69,6 +69,7 @@ const FIELDS = {
 const STRINGS = {
   locale: "en",
   strings: {
+    "viewer.back": "Back",
     "check.vat_arithmetic": "Net plus VAT does not equal the total",
     "viewer.exceptions": "Exceptions",
     "viewer.seller": "Seller",
@@ -2091,5 +2092,58 @@ describe("the XML tab, offered only when it exists (decision 0273)", () => {
     expect(xmlTabButton()).toBeUndefined();
     expect(docTabButton()?.className).toContain("on");
     expect(document.getElementById("vpreview")?.closest("[hidden]")).toBeNull();
+  });
+});
+
+describe("the Back button matches the other topbar actions (decision 0284)", () => {
+  const ROUTES = {
+    "/api/code-lists": { fields: {} },
+    "/api/ui-strings": STRINGS,
+    "/api/field-visibility": FIELDS,
+    "/api/invoices/inv-1": { facts: {}, lines: [], validation: { passed: true, checked: [], failures: [] } },
+    "/api/invoices/inv-1/progress": { visits: [] },
+    "/api/documents/inv-1/activity": { items: [] },
+  };
+
+  /**
+   * **Reported live, from a screenshot**: "Back to tasks" sat in the
+   * same row as Sign out, a bordered rectangle with no icon beside a
+   * clean icon-and-label button — "also appears to not comply with
+   * the style, and missing an icon... updated to read simply 'Back'."
+   */
+  function backButton() {
+    return [...document.querySelectorAll(".topbar button")].find(
+      (b) => b.getAttribute("title") === "Back"
+    );
+  }
+
+  it("reads \"Back\", carries an icon, and shares the actionlink class other topbar buttons use", async () => {
+    stubFetch(ROUTES);
+
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    await openViewer(TASK, () => {});
+
+    const back = backButton();
+    expect(back).not.toBeUndefined();
+    expect(back?.className).toContain("actionlink");
+    expect(back?.querySelector("svg")).not.toBeNull();
+    expect(back?.textContent).toBe("Back");
+  });
+
+  it("still calls the close handler when clicked", async () => {
+    stubFetch(ROUTES);
+
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    let closed = false;
+    await openViewer(TASK, () => {
+      closed = true;
+    });
+
+    (backButton() as HTMLButtonElement).click();
+    expect(closed).toBe(true);
   });
 });

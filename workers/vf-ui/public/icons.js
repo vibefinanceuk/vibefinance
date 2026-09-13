@@ -311,4 +311,11 @@ Object.assign(ICONS, {
   // an invented one: the point of an icon here is instant recognition,
   // not originality.
   signout: '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/>',
+
+  // A plain left arrow — decision 0284. Not `return` (a document sent
+  // backward through the workflow) or `restoredefault` (settings
+  // undone) — this is neither; it is only "go back to the list,"
+  // and reusing either would claim an action this button does not
+  // take.
+  back: '<path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/>',
 });

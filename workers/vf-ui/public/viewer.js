@@ -1580,7 +1580,13 @@ export async function openViewer(task, onClose) {
             task.lineNumber ? ` · ${t("tasks.line")} ${task.lineNumber}` : ""
           }`,
           task.subject?.id ? `${t("viewer.reflabel")} ${task.subject.id}` : "",
-          [el("button", { text: t("viewer.back"), onclick: onClose })],
+          [
+            el(
+              "button",
+              { class: "actionlink", title: t("viewer.back"), onclick: onClose },
+              [icon("back"), el("span", { text: t("viewer.back") })]
+            ),
+          ],
           [subhead(task)]
         ),
 
