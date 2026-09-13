@@ -20,6 +20,17 @@ export const INVOICE_FIELDS = [
   "BT-9", // due date
   "BT-10", // buyer reference
   "BT-13", // purchase order ref
+  // New — payment terms, decision 0296. Not mandatory under BIS
+  // Billing 3.0 (unlike everything else in this file marked
+  // "mandatory") — added on the real customer's own asking, a free-
+  // text note (cbc:PaymentTerms/cbc:Note), the same reasoning
+  // `shared/interpreter/vocabulary.ts`'s own `supplier.paymentTerms`
+  // already gives for why it carries no code list: "Peppol BIS 3.0
+  // defines no code list for terms and BT-20 is a note." That
+  // existing field is the terms *agreed with the supplier*, held in
+  // the customer's own ERP; this is what the invoice itself says,
+  // read from the document the way every other header field is.
+  "BT-20",
   "BT-31", // seller VAT id
   "BT-40", // seller country
   "BT-48", // buyer VAT id
@@ -141,6 +152,7 @@ export const INVOICE_FIELD_TYPES: Record<string, FieldType> = {
   "BT-9": "date",
   "BT-10": "text",
   "BT-13": "text",
+  "BT-20": "text", // free-text note, per the standard's own definition
   "BT-31": "text",
   "BT-40": "text", // country code
   "BT-23": "text",
@@ -289,6 +301,7 @@ export const FIELD_DESCRIPTIONS: Record<InvoiceField, string> = {
   "BT-9": "due date",
   "BT-10": "buyer reference",
   "BT-13": "purchase order reference",
+  "BT-20": "payment terms — free text as the invoice itself states them, e.g. \"Net 30\". Distinct from supplier.paymentTerms: this is what the document says, that is what was agreed with the supplier in the customer's own ERP.",
   "BT-31": "seller VAT id",
   "BT-40": "seller country",
   "BT-23": "business process type — the procurement process this invoice belongs to, as a URN",

@@ -41,6 +41,25 @@ const DEFAULT_VISIBILITY: Record<string, Visibility> = {
   "BT-110": "edit",
   "BT-112": "edit",
   "BT-115": "edit",
+
+  /**
+   * **Not mandatory by the standard, visible by the real customer's
+   * own asking** — decision 0295. Every other entry above is on this
+   * list because BIS Billing 3.0 requires it; these are optional
+   * terms a genuine AP workflow still depends on daily — when payment
+   * falls due, and which purchase order an invoice is checked
+   * against. The operator's own mock-up already carried both as part
+   * of the invoice header, and asked directly for the deployed screen
+   * to match it.
+   */
+  "BT-9": "edit",
+  "BT-13": "edit",
+  // BT-20, payment terms — decision 0296, added to the vocabulary
+  // itself for the same reason, replacing Cost centre's own slot on
+  // the header card once that turned out to be a line field that
+  // could never have appeared there.
+  "BT-20": "edit",
+
   // Mandatory on a line.
   "BT-129": "edit",
   "BT-130": "edit",

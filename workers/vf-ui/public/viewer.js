@@ -1143,6 +1143,27 @@ export async function openViewer(task, onClose) {
    * third of that highlight nowhere visible without opening Header
    * Fields first, for the one check on this screen most likely to
    * actually fail. The column holds both rather than dropping either.
+   *
+   * **Cost centre never belonged here, decision 0295** — a genuine
+   * mistake in the mock-up itself, not a field-visibility
+   * configuration gap the way the operator's own screenshot first
+   * read: `shared/interpreter/vocabulary.ts`'s own
+   * `INVOICE_LINE_FIELDS` includes BT-133 by name (`"BT-133", //
+   * line accounting/cost centre reference`), and
+   * `field-visibility-route.ts` sets `line: INVOICE_LINE_FIELDS
+   * .includes(field)` when building its response — BT-133 is
+   * structurally a per-line value, and `headerFields` filters those
+   * out unconditionally. No amount of configuration could ever have
+   * put it on this card; it was never reachable in the first place.
+   *
+   * **Payment terms took its slot, decision 0296.** Not a field the
+   * system already had, unlike Due date or Purchase order — BT-20 was
+   * added to the closed vocabulary itself for this, with the document
+   * parser taught to actually extract it from a real invoice's own
+   * `cac:PaymentTerms/cbc:Note`, on the same reasoning `field-coverage
+   * .test.ts` already enforces for every other declared field: one
+   * nothing can ever populate is a rule nobody can write, and here, a
+   * slot on a card nothing could ever fill.
    */
   const HEADER_SUMMARY_FIELDS = [
     "BT-1",
@@ -1150,7 +1171,7 @@ export async function openViewer(task, onClose) {
     "BT-2",
     "BT-9",
     "BT-13",
-    "BT-133",
+    "BT-20",
     "BT-106",
     "BT-110",
     "BT-112",
@@ -1159,10 +1180,43 @@ export async function openViewer(task, onClose) {
   const HEADER_SUMMARY_COLUMNS = [
     ["BT-1", "BT-5"],
     ["BT-2", "BT-9"],
-    ["BT-13", "BT-133"],
+    ["BT-13", "BT-20"],
     ["BT-106", "BT-110"],
     ["BT-112", "BT-115"],
   ];
+
+  /**
+   * **Header Fields' own reading order, decision 0297** — the
+   * operator's own mock-up, field by field, rather than whatever
+   * order the field-visibility API happens to return: a customer's
+   * own `sort_order` is theirs to set for other purposes, and this
+   * pop-out reads better as one deliberate sequence — identity, then
+   * dates, then references, then money, then what's genuinely
+   * technical — than left to drift with it. A field not named here
+   * (a customer's own custom field, say) is not dropped — it simply
+   * sorts after everything that is, in whatever order it already had.
+   */
+  const HEADER_FIELDS_ORDER = [
+    "BT-1",
+    "BT-3",
+    "BT-5",
+    "BT-2",
+    "BT-9",
+    "BT-13",
+    "BT-20",
+    "BT-106",
+    "BT-110",
+    "BT-112",
+    "BT-115",
+    "BT-23",
+    "BT-24",
+  ];
+  // A field not named above sorts after everything that is, rather
+  // than being dropped or thrown to the front by a -1 index.
+  const headerFieldsOrderIndex = (fieldCode) => {
+    const i = HEADER_FIELDS_ORDER.indexOf(fieldCode);
+    return i === -1 ? HEADER_FIELDS_ORDER.length : i;
+  };
 
   /**
    * A pop-out that finds one thing and attaches it — decisions 0222 and
@@ -1694,9 +1748,10 @@ export async function openViewer(task, onClose) {
       return;
     }
 
-    const shown = headerFields.filter(
-      (spec) => ![...SELLER_FIELDS, ...BUYER_FIELDS].includes(spec.field)
-    );
+    const shown = headerFields
+      .filter((spec) => ![...SELLER_FIELDS, ...BUYER_FIELDS].includes(spec.field))
+      .slice()
+      .sort((a, b) => headerFieldsOrderIndex(a.field) - headerFieldsOrderIndex(b.field));
 
     const rows = shown.map((spec) =>
       HEADER_SUMMARY_FIELDS.includes(spec.field)

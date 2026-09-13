@@ -98,7 +98,9 @@ const STRINGS = {
     "field.bt-2": "Issue date",
     "field.bt-9": "Due date",
     "field.bt-13": "Purchase order",
-    "field.bt-133": "Cost centre",
+    "field.bt-20": "Payment terms",
+    "field.bt-3": "Invoice type",
+    "field.bt-109": "Total without VAT",
     "field.bt-115": "Amount due",
     "field.bt-23": "Business process",
     "field.bt-24": "Specification",
@@ -1684,7 +1686,7 @@ describe("the Invoice header card is a curated summary, with a pop-out for the r
       { field: "BT-2", visibility: "read", type: "date", line: false, description: "issue date" },
       { field: "BT-9", visibility: "read", type: "date", line: false, description: "due date" },
       { field: "BT-13", visibility: "read", type: "text", line: false, description: "purchase order" },
-      { field: "BT-133", visibility: "read", type: "text", line: false, description: "cost centre" },
+      { field: "BT-20", visibility: "read", type: "text", line: false, description: "payment terms" },
       { field: "BT-106", visibility: "read", type: "number", line: false, description: "net before vat" },
       { field: "BT-110", visibility: "read", type: "number", line: false, description: "vat amount" },
       { field: "BT-112", visibility: "read", type: "number", line: false, description: "total with vat" },
@@ -2000,13 +2002,13 @@ describe("the Invoice header card is a curated summary, with a pop-out for the r
   });
 
   it("leaves a field's own slot empty, rather than the layout breaking, when a customer does not use it", async () => {
-    // No Cost centre in this customer's own configuration.
-    const withoutCostCentre = {
-      fields: CURATED_FIELDS.fields.filter((f) => f.field !== "BT-133"),
+    // No Payment terms in this customer's own configuration.
+    const withoutPaymentTerms = {
+      fields: CURATED_FIELDS.fields.filter((f) => f.field !== "BT-20"),
     };
-    await open(withoutCostCentre, {});
+    await open(withoutPaymentTerms, {});
 
-    expect(headerCard().textContent).not.toContain("Cost centre");
+    expect(headerCard().textContent).not.toContain("Payment terms");
     // Still five columns — the third simply holds one field instead
     // of two, not a rearranged four-column layout.
     expect(headerCard().querySelectorAll(".headersummary > .hscolumn").length).toBe(5);
@@ -2017,14 +2019,14 @@ describe("the Invoice header card is a curated summary, with a pop-out for the r
      * **Reported live, from a screenshot**: "I am missing some fields
      * on the card" — a wide, unexplained gap where Purchase order and
      * Cost centre would have sat, because neither was in this
-     * customer's own field-visibility configuration for the stage.
-     * One missing field beside a present one reads as a made choice;
-     * a column with nothing in it at all was still one more track for
-     * the grid to divide the row into, which read as broken rather
-     * than empty.
+     * customer's own field-visibility configuration for the stage —
+     * Cost centre specifically because it could never have been
+     * (decision 0295, it's a line field), replaced on the card by
+     * Payment terms (decision 0296). The scenario this test proves is
+     * about an empty column generally, not either field specifically.
      */
     const withoutThirdColumn = {
-      fields: CURATED_FIELDS.fields.filter((f) => f.field !== "BT-13" && f.field !== "BT-133"),
+      fields: CURATED_FIELDS.fields.filter((f) => f.field !== "BT-13" && f.field !== "BT-20"),
     };
     await open(withoutThirdColumn, {});
 
@@ -2066,6 +2068,70 @@ describe("the Invoice header card is a curated summary, with a pop-out for the r
 
     expect(document.querySelectorAll(".backdrop").length).toBe(1);
     expect((document.getElementById("f-BT-23") as HTMLInputElement).value).toBe("urn:still-here");
+  });
+
+  it("shows Payment terms in Purchase order's own column, decision 0296", async () => {
+    // The operator's own follow-up: "replace the field Cost Center
+    // with Terms, which should be a header field." Built properly —
+    // BT-20 added to the closed vocabulary itself, not just this
+    // screen — rather than folded into an existing field.
+    await open(CURATED_FIELDS, { "BT-13": "PO-1", "BT-20": "Net 30" });
+
+    const columns = headerCard().querySelectorAll(".headersummary > .hscolumn");
+    const thirdColumnLabels = [...columns[2].querySelectorAll(".kf label")].map((l) => l.textContent);
+    expect(thirdColumnLabels).toEqual(["Purchase order", "Payment terms"]);
+  });
+
+  it("orders Header Fields to match the operator's own mock-up, not whatever order the API returned them in", async () => {
+    /**
+     * **Decision 0297.** Given fields in a different order than the
+     * mock-up's own sequence, the pop-out still reads Invoice number,
+     * then Invoice type, then Issue date, then Business process —
+     * proving the order is a deliberate sort, not an accident of
+     * already-sorted test data.
+     */
+    const shuffled = {
+      fields: [
+        { field: "BT-23", visibility: "read", type: "text", line: false },
+        { field: "BT-2", visibility: "read", type: "date", line: false },
+        { field: "BT-3", visibility: "read", type: "text", line: false },
+        { field: "BT-1", visibility: "edit", type: "text", line: false },
+      ],
+    };
+    await open(shuffled, {});
+
+    const trigger = [...headerCard().querySelectorAll(".actionlink")].find(
+      (a) => a.querySelector("span")?.textContent === "Header Fields"
+    ) as HTMLButtonElement;
+    trigger.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    const labels = [...document.querySelectorAll(".popout .kf label")].map((l) => l.textContent);
+    expect(labels).toEqual(["Invoice number", "Invoice type", "Issue date", "Business process"]);
+  });
+
+  it("puts a field the mock-up never named after every field it did, rather than dropping it", async () => {
+    // A field not in the curated sequence at all — BT-109 (total
+    // without VAT) isn't part of HEADER_FIELDS_ORDER — must still
+    // appear, just after everything that is named.
+    const withUnlisted = {
+      fields: [
+        { field: "BT-109", visibility: "read", type: "number", line: false },
+        { field: "BT-2", visibility: "read", type: "date", line: false },
+        { field: "BT-1", visibility: "edit", type: "text", line: false },
+      ],
+    };
+    await open(withUnlisted, {});
+
+    const trigger = [...headerCard().querySelectorAll(".actionlink")].find(
+      (a) => a.querySelector("span")?.textContent === "Header Fields"
+    ) as HTMLButtonElement;
+    trigger.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    const labels = [...document.querySelectorAll(".popout .kf label")].map((l) => l.textContent);
+    // BT-1, then BT-2, both named in the order; BT-109 unlisted, last.
+    expect(labels).toEqual(["Invoice number", "Issue date", "Total without VAT"]);
   });
 
   it("the browser's own [hidden] default actually applies to .backdrop (decision 0294)", async () => {

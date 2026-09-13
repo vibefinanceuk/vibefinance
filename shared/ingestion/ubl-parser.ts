@@ -275,6 +275,20 @@ export function parseUblInvoice(xml: string): ParsedUblInvoice {
   const orderReference = getText((invoice.OrderReference as Record<string, unknown> | undefined)?.ID);
   if (orderReference !== undefined) facts["BT-13"] = orderReference;
 
+  /**
+   * BT-20, payment terms — decision 0296, the real customer's own
+   * asking. `cac:PaymentTerms` is cardinality 0..n in the general UBL
+   * schema, though BIS Billing 3.0 restricts it to at most one in
+   * practice; the array-or-single-object handling matches the same
+   * defensive pattern `findVatSchemeCompanyId` already uses above for
+   * exactly this shape of ambiguity, rather than assuming a parser
+   * always returns one or the other.
+   */
+  const paymentTermsGroup = invoice.PaymentTerms;
+  const firstPaymentTerms = Array.isArray(paymentTermsGroup) ? paymentTermsGroup[0] : paymentTermsGroup;
+  const paymentTerms = getText((firstPaymentTerms as Record<string, unknown> | undefined)?.Note);
+  if (paymentTerms !== undefined) facts["BT-20"] = paymentTerms;
+
   const monetaryTotal = invoice.LegalMonetaryTotal as Record<string, unknown> | undefined;
 
   const totalWithVat = getNumber(monetaryTotal?.TaxInclusiveAmount);

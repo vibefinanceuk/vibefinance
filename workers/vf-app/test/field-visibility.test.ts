@@ -72,9 +72,12 @@ describe("an unconfigured customer gets a working screen", () => {
 
   it("hides everything nobody chose to show", async () => {
     // The safer direction: a field nobody chose is one nobody has to
-    // scan past.
+    // scan past. BT-13 no longer proves this — decision 0295 added it
+    // to the default, since the real customer's own AP workflow
+    // depends on it daily. BT-3 (invoice type) is still genuinely
+    // unconfigured.
     const fields = await resolveFieldVisibility(env.DB, null);
-    expect(find(fields, "BT-13")?.visibility).toBe("hidden");
+    expect(find(fields, "BT-3")?.visibility).toBe("hidden");
   });
 
   it("says the default decided it", async () => {
@@ -190,7 +193,7 @@ describe("what a screen receives", () => {
     const fields = (result.body as { fields: ResolvedField[] }).fields;
 
     expect(fields.every((f) => f.visibility !== "hidden")).toBe(true);
-    expect(fields.some((f) => f.field === "BT-13")).toBe(false);
+    expect(fields.some((f) => f.field === "BT-3")).toBe(false);
   });
 
   it("carries what each field is, so a label can be written", async () => {
