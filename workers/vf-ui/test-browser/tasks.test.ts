@@ -531,6 +531,72 @@ describe("the nav stays pinned to the browser window, not the page (decision 028
   });
 });
 
+describe("sign out is the frame's own, not one screen's (decision 0283)", () => {
+  /**
+   * **Reported live**: "update the Sign Out button so that it appears
+   * on every screen, and has an icon like other buttons." It used to
+   * be the Tasks screen's own, one-off addition to its own `topbar()`
+   * call — present there, absent everywhere else, the exact gap the
+   * mood picker's own comment already named on the line above it.
+   */
+  function signOutButton() {
+    return [...document.querySelectorAll(".topbar .right button")].find(
+      (b) => b.getAttribute("title") === "Sign out"
+    );
+  }
+
+  it("appears exactly once on the Tasks screen, with an icon", async () => {
+    await openList([APPROVAL_TASK]);
+
+    const buttons = [...document.querySelectorAll(".topbar .right button")].filter(
+      (b) => b.getAttribute("title") === "Sign out"
+    );
+    expect(buttons).toHaveLength(1);
+    expect(buttons[0].querySelector("svg")).not.toBeNull();
+  });
+
+  it("also appears on the Dashboard, without needing its own topbar call to add it", async () => {
+    await openList([APPROVAL_TASK]);
+
+    const dashboardLink = [...document.querySelectorAll(".nav a")].find((a) => a.textContent === "Dashboard");
+    (dashboardLink as HTMLElement).click();
+    for (let i = 0; i < 100; i++) {
+      if (document.querySelector(".nav a.on")?.textContent === "Dashboard") break;
+      await new Promise((r) => setTimeout(r, 10));
+    }
+
+    expect(signOutButton()).not.toBeUndefined();
+  });
+
+  it("posts to /api/sign-out when clicked", async () => {
+    const posted: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        const path = String(url).split("?")[0];
+        if (init?.method === "POST") posted.push(path);
+        const routes: Record<string, unknown> = {
+          "/api/ui-strings": STRINGS,
+          "/api/whoami": { id: "u-dan", name: "Dan", permissions: ALL_NAV_PERMISSIONS },
+          "/api/tasks": { tasks: [], counts: {} },
+          "/api/sign-out": {},
+        };
+        if (!(path in routes)) throw new Error(`no stub for ${path}`);
+        return { ok: true, json: async () => routes[path] } as Response;
+      })
+    );
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { start } = await import("/tasks.js");
+    await start();
+
+    (signOutButton() as HTMLButtonElement).click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(posted).toContain("/api/sign-out");
+  });
+});
+
 describe("a task about one line (decision 0183)", () => {
   /**
    * A stage scoped `per_line` raises one task per invoice line, so an

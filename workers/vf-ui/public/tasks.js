@@ -576,10 +576,37 @@ export function topbar(title, subtitle, right = [], extra = []) {
       el("p", { class: "sub", text: subtitle }),
       ...extra,
     ]),
-    // **Every screen, because the frame carries it** (decision 0108).
-    // A preference offered on one screen and not another is one
-    // somebody has to remember where to find.
-    el("div", { class: "right" }, [...right, moodPicker(t)]),
+    /**
+     * **Every screen, because the frame carries it** (decision 0108).
+     * A preference offered on one screen and not another is one
+     * somebody has to remember where to find.
+     *
+     * **Sign out joined it here, decision 0283.** It used to be the
+     * Tasks screen's own, one-off addition to its own topbar call —
+     * present on Tasks, absent everywhere else, the exact class of
+     * gap this comment already named for the mood picker. Built the
+     * same way `actionLink()` builds every other icon-and-label
+     * button (viewer.js's own document actions, a card's "Change
+     * Seller") rather than imported from there directly: tasks.js is
+     * already what viewer.js imports `topbar` from, and importing
+     * `actionLink` back the other way would be a circular one.
+     */
+    el("div", { class: "right" }, [
+      ...right,
+      moodPicker(t),
+      el(
+        "button",
+        {
+          class: "actionlink",
+          title: t("tasks.signout"),
+          onclick: async () => {
+            await fetch("/api/sign-out", { method: "POST" });
+            location.reload();
+          },
+        },
+        [icon("signout"), el("span", { text: t("tasks.signout") })]
+      ),
+    ]),
   ]);
 }
 
@@ -588,15 +615,7 @@ function render() {
   shell.replaceChildren(
     frame(
       el("div", {}, [
-        topbar(t("nav.tasks"), `${me.name} · ${me.environmentId ?? ""}`, [
-          el("button", {
-            text: t("tasks.signout"),
-            onclick: async () => {
-              await fetch("/api/sign-out", { method: "POST" });
-              location.reload();
-            },
-          }),
-        ]),
+        topbar(t("nav.tasks"), `${me.name} · ${me.environmentId ?? ""}`),
         filterBar(),
         el("p", { class: "counts", id: "counts" }),
         // The list in a panel of its own, like everything else

@@ -305,4 +305,10 @@ Object.assign(ICONS, {
   // for "expand," since the shape is the same claim pointed the other
   // way, not a different one.
   navcollapse: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/><path d="M14 9l-2 3 2 3"/>',
+
+  // A door, open on one side, with an arrow leaving through it —
+  // decision 0283. The conventional shape for "sign out" rather than
+  // an invented one: the point of an icon here is instant recognition,
+  // not originality.
+  signout: '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/>',
 });
