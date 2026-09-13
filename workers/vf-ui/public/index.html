@@ -285,7 +285,20 @@
     share a baseline without it, which read as slightly misaligned at
     the smaller size.
   */
-  .navitem {
+  /**
+   * **`.nav .navitem`, not `.navitem` alone** — found live, the same
+   * class of mistake as decision 0275's brandmark fix, on a different
+   * property. `.nav a` computes to (0,1,1) — the element selector "a"
+   * counts — against `.navitem` alone at (0,1,0), so `.nav a`'s own
+   * `display: block` was winning over this rule's `display: flex` the
+   * entire time. Every flex property below it — `align-items`, `gap`,
+   * and `.frame.collapsed .navitem`'s own `justify-content: center` —
+   * had no container to act on, which is why centering the icon in
+   * the folded nav never worked regardless of what else changed.
+   * Scoped under `.nav` to reach (0,2,0), clearly ahead of `.nav a`'s
+   * (0,1,1) rather than tied and hoping source order saves it.
+   */
+  .nav .navitem {
     display: flex;
     align-items: center;
     gap: 14px;

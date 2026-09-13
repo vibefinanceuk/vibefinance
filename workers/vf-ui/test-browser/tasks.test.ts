@@ -334,6 +334,31 @@ describe("the flat nav, permission-filtered (decisions 0274 and 0276)", () => {
     expect(markRule).toContain("display: block");
   });
 
+  it("puts the nav item in a real flex container, not one that lost to .nav a", async () => {
+    /**
+     * **The actual bug, decision 0278.** Reported live: an icon in the
+     * folded nav sat well left of centre despite `justify-content:
+     * center` existing exactly for this case. Confirmed with a real
+     * specificity calculator, not eyeballed: `.nav a` computes to
+     * (0,1,1) — the element selector "a" counts — against `.navitem`
+     * alone at (0,1,0). `.nav a`'s own `display: block` was winning
+     * over `.navitem`'s `display: flex` the whole time, which meant
+     * every flex property on it — `align-items`, `gap`, and the
+     * collapsed override's own `justify-content: center` — had no
+     * flex container to act on. The exact same class of mistake as
+     * decision 0275's brandmark fix, on a different property.
+     *
+     * Fixed by scoping the rule as `.nav .navitem`, reaching (0,2,0) —
+     * clearly ahead of `.nav a`'s (0,1,1), not merely tied to it and
+     * left to source order.
+     */
+    const css = (await import("virtual:stylesheets")).default["index.html"];
+    // The bare, losing selector must be gone, not just superseded —
+    // leaving both would tempt a future edit to "simplify" back to it.
+    expect(css).not.toContain("\n  .navitem {");
+    expect(css).toContain(".nav .navitem {");
+  });
+
   it("hides the full logo at a specificity that actually beats the mood rules", async () => {
     /**
      * **Reported live**: a screenshot of the folded nav showed the
