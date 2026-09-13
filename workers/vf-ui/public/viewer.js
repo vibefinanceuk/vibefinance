@@ -1898,32 +1898,44 @@ export async function openViewer(task, onClose) {
     frame(
       el("div", {}, [
         /**
-         * **The stage's own name**, labelled — decisions 0142, 0175.
+         * **The document's own reference, not the stage, decision
+         * 0312** — reported live: "we state the 'Stage: <stage
+         * name>'... this information is duplicated, because it is
+         * highlighted in the Process flow, which shows the current
+         * stage highlighted, on the same page." `processRow()` (below,
+         * via `progressRow()`) already labels every chevron with its
+         * own `stage.name`, and marks the current one with its own
+         * `.here` class — the heading naming the stage again was
+         * saying the same fact twice on the same screen.
          *
-         * The heading read `Validation` alone, which is a word that
-         * could be anything. `Stage: Validation` says what kind of
-         * thing it is, and the same screen serves every stage — a
-         * heading naming one would be the screen lying about where
-         * somebody is.
+         * **The one accepted gap**: a task with no real process
+         * instance (`!progress.inProcess`) shows neither the chevron
+         * row nor a stage name anywhere — the operator's own call,
+         * choosing simplicity over covering a case confirmed to be
+         * rare rather than carrying the duplication everywhere else to
+         * guard against it.
          *
          * Beneath it, what identifies the document and what a person
-         * needs before they start: the reference, how long it has
-         * waited, and who has it. All three were in a card below the
-         * fold, where the last two were the only ones worth reading.
+         * needs before they start: how long it has waited and who has
+         * it, in `subhead()`. All three were in a card below the fold
+         * before decision 0175, where the last two were the only ones
+         * worth reading.
          */
         topbar(
           /**
-           * **Which line, where a task is about one** — decision 0183.
-           *
-           * A stage scoped `per_line` raises a task per invoice line,
-           * and the viewer opens the whole document either way. Without
-           * saying which line, somebody approving line three has to
-           * work out that it is line three.
+           * **Which line, where a task is about one** — decision 0183,
+           * carried over from the stage heading this replaces. A stage
+           * scoped `per_line` raises a task per invoice line, and the
+           * viewer opens the whole document either way. Without saying
+           * which line, somebody approving line three has to work out
+           * that it is line three.
            */
-          `${t("viewer.stagelabel")} ${task.stageName ?? task.stageId ?? t("viewer.title")}${
-            task.lineNumber ? ` · ${t("tasks.line")} ${task.lineNumber}` : ""
-          }`,
-          task.subject?.id ? `${t("viewer.reflabel")} ${task.subject.id}` : "",
+          task.subject?.id
+            ? `${t("viewer.reflabel")} ${task.subject.id}${
+                task.lineNumber ? ` · ${t("tasks.line")} ${task.lineNumber}` : ""
+              }`
+            : t("viewer.title"),
+          "",
           [
             /**
              * **Save and the task's own actions, beside Back** —

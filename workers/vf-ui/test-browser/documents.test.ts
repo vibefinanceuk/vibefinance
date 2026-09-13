@@ -69,6 +69,7 @@ const STRINGS = {
     "doctype.380": "Invoice",
     "doctype.unknown": "Unknown",
     "viewer.title": "Invoice",
+    "viewer.reflabel": "Unique Ref:",
     "viewer.save": "Save",
     "viewer.expand": "Expand",
     "viewer.status": "Status",
@@ -339,7 +340,14 @@ describe("a document that is not work (decision 0167)", () => {
 
     const viewer = document.getElementById("viewer") as HTMLElement;
     expect(viewer.childElementCount).toBeGreaterThan(0);
-    expect(viewer.textContent).toContain("Invoice");
+    /**
+     * **The document's own reference, decision 0312** — the heading
+     * used to fall back to the generic "Invoice" only when a task had
+     * no stage at all; now the heading always names the document by
+     * its own reference when one exists (this fixture's own row
+     * click always supplies one), so this checks for that instead.
+     */
+    expect(viewer.textContent).toContain("inv-1");
   });
 
   it("says nothing about waiting or ownership", async () => {

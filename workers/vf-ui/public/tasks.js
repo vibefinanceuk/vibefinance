@@ -606,11 +606,21 @@ export function frame(main) {
  */
 export function topbar(title, subtitle, right = [], extra = []) {
   return el("div", { class: "topbar" }, [
-    el("div", {}, [
-      el("h2", { text: title }),
-      el("p", { class: "sub", text: subtitle }),
-      ...extra,
-    ]),
+    el(
+      "div",
+      {},
+      [
+        el("h2", { text: title }),
+        // **Omitted rather than rendered empty** — decision 0312. A
+        // `<p class="sub">` with nothing in it still occupies its own
+        // line-height, leaving a visible gap between the title and
+        // whatever `extra` renders beneath it; the same "nothing to
+        // show" reasoning decision 0161 already gives a button applies
+        // here to a line of text.
+        subtitle ? el("p", { class: "sub", text: subtitle }) : null,
+        ...extra,
+      ].filter(Boolean)
+    ),
     /**
      * **Every screen, because the frame carries it** (decision 0108).
      * A preference offered on one screen and not another is one

@@ -815,13 +815,15 @@ describe("the same screen serves review (decision 0142)", () => {
     expect(document.getElementById("f-BT-112")?.textContent).toBe("1200");
   });
 
-  it("names the stage, not the screen", async () => {
-    // **The same screen serves every stage**, and a heading saying
-    // "Validation" on an approval task is the screen lying about where
-    // somebody is.
+  it("names the document by its reference, not the stage (decision 0312)", async () => {
+    /**
+     * **Reported live**: "we state the 'Stage: <stage name>'... this
+     * information is duplicated, because it is highlighted in the
+     * Process flow." The heading now names the document instead; the
+     * Process flow's own chevrons already carry the stage's own name.
+     */
     await openApproval();
-    // Labelled since decision 0175: a bare word could be anything.
-    expect(document.querySelector(".topbar h2")?.textContent).toBe("Stage: Approval");
+    expect(document.querySelector(".topbar h2")?.textContent).toBe("Unique Ref: inv-1");
   });
 
   it("keeps Save where a stage does permit editing", async () => {
@@ -1133,14 +1135,23 @@ describe("the status card is gone (decision 0175)", () => {
     expect(document.querySelector(".statusbar")).toBeNull();
   });
 
-  it("labels the heading, so a bare word is not ambiguous", async () => {
+  it("labels the heading, so a bare id is not ambiguous (decision 0312)", async () => {
+    // The heading used to read "Stage: X"; decision 0175's own
+    // reasoning — a bare word could be anything — still applies to
+    // what replaced it: "inv-1" alone could be any kind of thing,
+    // "Unique Ref: inv-1" says what it is.
     await openOwned();
-    expect(document.querySelector(".topbar h2")?.textContent).toContain("Stage:");
+    expect(document.querySelector(".topbar h2")?.textContent).toContain("Unique Ref:");
   });
 
-  it("labels the reference beneath it", async () => {
+  it("no longer renders an empty subtitle line beneath it, decision 0312", async () => {
+    // The reference used to sit in a separate .sub paragraph beneath
+    // the heading; now that it's the heading itself, that paragraph
+    // has nothing left to say — topbar() omits it rather than
+    // rendering an empty line (decision 0312's own change to topbar()
+    // itself, in tasks.js).
     await openOwned();
-    expect(document.querySelector(".topbar")?.textContent).toContain("Unique Ref:");
+    expect(document.querySelector(".topbar .sub")).toBeNull();
   });
 
   it("keeps how long it has waited, at the top", async () => {
