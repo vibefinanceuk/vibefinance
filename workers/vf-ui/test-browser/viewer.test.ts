@@ -1562,6 +1562,28 @@ describe("each party card carries its own action (decision 0228)", () => {
     expect(labels).toContain("Change Buyer");
   });
 
+  it("hides both actions on an unclaimed task, matching every other edit affordance (decision 0289)", async () => {
+    /**
+     * **Reported live**: "I was able to click the Change Seller and
+     * Change Buyer buttons on invoices that are not claimed to my
+     * user." Reassigning who an invoice is from or billed to is
+     * exactly the kind of edit decision 0288 already gates behind
+     * `"mine"` ownership for every field and the Save button —
+     * `cardHead()`'s own action had simply never been reached by that
+     * fix.
+     */
+    stub(MATCHED);
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    await openViewer({ ...TASK, ownership: "available", actions: ["claim"] }, () => {});
+    await new Promise((r) => setTimeout(r, 0));
+
+    const labels = [...document.querySelectorAll(".actionlink span")].map((s) => s.textContent);
+    expect(labels).not.toContain("Change Seller");
+    expect(labels).not.toContain("Change Buyer");
+  });
+
   it("puts the action in the heading row, not below the card", async () => {
     /**
      * **The whole point of moving it.** A footer would sit after the

@@ -1366,10 +1366,20 @@ export async function openViewer(task, onClose) {
    * (decision 0037), and a wrong one sails through every org-scoped
    * stage after it behaving correctly.
    */
+  /**
+   * **The action only where editing is allowed at all, decision
+   * 0289** — reported live: "I was able to click the Change Seller
+   * and Change Buyer buttons on invoices that are not claimed to my
+   * user." Reassigning who an invoice is from or billed to is exactly
+   * the kind of edit decision 0288 already gates behind `"mine"`
+   * ownership; `cardHead()` rendered its own action unconditionally,
+   * the same gap decision 0288 closed for `field()` and the Save
+   * button, just not reached yet here.
+   */
   const cardHead = (title, action, onclick) =>
     el("div", { class: "cardhead" }, [
       el("h3", { text: title }),
-      actionLink(action, { onclick }),
+      ...(canEditAnything ? [actionLink(action, { onclick })] : []),
     ]);
 
   /**
