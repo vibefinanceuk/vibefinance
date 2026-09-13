@@ -1767,7 +1767,15 @@ describe("the Invoice header card is a curated summary, with a pop-out for the r
     expect(labels).not.toContain("Header Fields");
   });
 
-  it("opens a read-only pop-out listing every configured field when clicked", async () => {
+  it("opens a pop-out listing only the overflow — never a field the card already shows", async () => {
+    /**
+     * **Reported live**: the pop-out duplicated every field the card
+     * already had, which was the reason read-only was the only safe
+     * choice at the time. Restricted to genuine overflow, both to
+     * remove that duplication and because it is what makes the
+     * pop-out's own fields safe to render as real, editable ones —
+     * nothing here has a second copy anywhere else on the page.
+     */
     const withExtras = {
       fields: [
         ...CURATED_FIELDS.fields,
@@ -1789,17 +1797,152 @@ describe("the Invoice header card is a curated summary, with a pop-out for the r
 
     const popout = document.querySelector(".popout");
     expect(popout).not.toBeNull();
-    // Everything configured, including what the card itself omits.
     expect(popout?.textContent).toContain("Business process");
     expect(popout?.textContent).toContain("Specification");
     expect(popout?.textContent).toContain("urn:fdc:peppol.eu:2017:poacc:billing:01:1.0");
-    // Read-only: no live input duplicating what the card already renders.
-    expect(popout?.querySelector("input")).toBeNull();
+    // Not Invoice number — that's already on the card itself.
+    expect(popout?.textContent).not.toContain("Invoice number");
   });
 
-  it("closes the pop-out from its own Close action", async () => {
+  it("lets an overflow field the person may edit actually be edited, and Save picks it up (decision 0292)", async () => {
+    /**
+     * **The operator's own request**: "Perhaps the pop-out should be
+     * edit-mode also, if my user permissions allow." An overflow field
+     * marked `edit` now renders through the same `field()` every other
+     * editable field on this screen uses — and because the field
+     * genuinely has no second copy on the page (the previous test),
+     * `save()`'s own `document.getElementById` lookup finds this one
+     * exactly the way it finds any other.
+     */
+    const withEditableExtra = {
+      fields: [
+        ...CURATED_FIELDS.fields,
+        { field: "BT-23", visibility: "edit", type: "text", line: false },
+      ],
+    };
+    const posted: unknown[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        const path = String(url).split("?")[0];
+        if (init?.method === "POST" && path.endsWith("/key")) {
+          posted.push(JSON.parse(String(init.body)));
+        }
+        const bodies: Record<string, unknown> = {
+          "/api/ui-strings": STRINGS,
+          "/api/code-lists": { fields: {} },
+          "/api/field-visibility": withEditableExtra,
+          "/api/invoices/inv-1": { facts: {}, lines: [], validation: { passed: true, checked: [], failures: [] } },
+          "/api/invoices/inv-1/document-url": { url: null },
+          "/api/invoices/inv-1/progress": { inProcess: false, stages: [] },
+          "/api/invoices/inv-1/key": { facts: {} },
+        };
+        if (!(path in bodies)) throw new Error(`no stub for ${path}`);
+        return { ok: true, json: async () => bodies[path] } as Response;
+      })
+    );
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    await openViewer(TASK, () => {});
+    await new Promise((r) => setTimeout(r, 0));
+
+    const trigger = [...headerCard().querySelectorAll(".actionlink")].find(
+      (a) => a.querySelector("span")?.textContent === "Header Fields"
+    ) as HTMLButtonElement;
+    trigger.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    const input = document.getElementById("f-BT-23") as HTMLInputElement;
+    expect(input.tagName).toBe("INPUT");
+    input.value = "urn:fdc:peppol.eu:2017:poacc:billing:01:1.0";
+
+    const save = [...document.querySelectorAll(".actionlink")].find(
+      (a) => a.querySelector("span")?.textContent === "Save"
+    ) as HTMLButtonElement;
+    save.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect((posted[0] as { facts: Record<string, unknown> }).facts["BT-23"]).toBe(
+      "urn:fdc:peppol.eu:2017:poacc:billing:01:1.0"
+    );
+  });
+
+  it("keeps an overflow edit even after the pop-out is closed, then Save is pressed", async () => {
+    /**
+     * **The scenario that actually matters.** A person edits a field
+     * in the pop-out, closes it to look at the rest of the document,
+     * and presses Save minutes later — the input has to still be in
+     * the page at that point for `save()` to find it at all.
+     */
+    const withEditableExtra = {
+      fields: [
+        ...CURATED_FIELDS.fields,
+        { field: "BT-23", visibility: "edit", type: "text", line: false },
+      ],
+    };
+    const posted: unknown[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        const path = String(url).split("?")[0];
+        if (init?.method === "POST" && path.endsWith("/key")) {
+          posted.push(JSON.parse(String(init.body)));
+        }
+        const bodies: Record<string, unknown> = {
+          "/api/ui-strings": STRINGS,
+          "/api/code-lists": { fields: {} },
+          "/api/field-visibility": withEditableExtra,
+          "/api/invoices/inv-1": { facts: {}, lines: [], validation: { passed: true, checked: [], failures: [] } },
+          "/api/invoices/inv-1/document-url": { url: null },
+          "/api/invoices/inv-1/progress": { inProcess: false, stages: [] },
+          "/api/invoices/inv-1/key": { facts: {} },
+        };
+        if (!(path in bodies)) throw new Error(`no stub for ${path}`);
+        return { ok: true, json: async () => bodies[path] } as Response;
+      })
+    );
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    await openViewer(TASK, () => {});
+    await new Promise((r) => setTimeout(r, 0));
+
+    const trigger = [...headerCard().querySelectorAll(".actionlink")].find(
+      (a) => a.querySelector("span")?.textContent === "Header Fields"
+    ) as HTMLButtonElement;
+    trigger.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    (document.getElementById("f-BT-23") as HTMLInputElement).value = "urn:kept-after-close";
+
+    const close = [...document.querySelectorAll(".popout .actionlink")].find(
+      (a) => a.querySelector("span")?.textContent === "Close"
+    ) as HTMLButtonElement;
+    close.click();
+
+    const save = [...document.querySelectorAll(".actionlink")].find(
+      (a) => a.querySelector("span")?.textContent === "Save"
+    ) as HTMLButtonElement;
+    save.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect((posted[0] as { facts: Record<string, unknown> }).facts["BT-23"]).toBe("urn:kept-after-close");
+  });
+
+  it("hides the pop-out on Close, without removing its own fields from the page", async () => {
+    /**
+     * **Hidden, not removed** — decision 0292's own reason: `save()`
+     * reads a field's value from `document.getElementById`, wherever
+     * it lives in the page. An input built here and then deleted on
+     * close would silently lose whatever was typed into it the next
+     * time Save runs, since nothing would be left to read.
+     */
     const withExtras = {
-      fields: [...CURATED_FIELDS.fields, { field: "BT-23", visibility: "read", type: "text", line: false }],
+      fields: [
+        ...CURATED_FIELDS.fields,
+        { field: "BT-23", visibility: "edit", type: "text", line: false },
+      ],
     };
     await open(withExtras, {});
 
@@ -1808,14 +1951,20 @@ describe("the Invoice header card is a curated summary, with a pop-out for the r
     ) as HTMLButtonElement;
     trigger.click();
     await new Promise((r) => setTimeout(r, 0));
-    expect(document.querySelector(".popout")).not.toBeNull();
+    const backdrop = document.querySelector(".backdrop") as HTMLElement;
+    expect(backdrop).not.toBeNull();
+    expect(backdrop.hidden).toBe(false);
+
+    (document.getElementById("f-BT-23") as HTMLInputElement).value = "urn:example";
 
     const close = [...document.querySelectorAll(".popout .actionlink")].find(
       (a) => a.querySelector("span")?.textContent === "Close"
     ) as HTMLButtonElement;
     close.click();
 
-    expect(document.querySelector(".popout")).toBeNull();
+    expect(backdrop.hidden).toBe(true);
+    // Still in the page — this is what save() depends on.
+    expect((document.getElementById("f-BT-23") as HTMLInputElement)?.value).toBe("urn:example");
   });
 
   it("leaves a field's own slot empty, rather than the layout breaking, when a customer does not use it", async () => {
@@ -1829,6 +1978,62 @@ describe("the Invoice header card is a curated summary, with a pop-out for the r
     // Still five columns — the third simply holds one field instead
     // of two, not a rearranged four-column layout.
     expect(headerCard().querySelectorAll(".headersummary > .hscolumn").length).toBe(5);
+  });
+
+  it("drops a column entirely, rather than reserving a blank grid track, when neither of its fields is configured", async () => {
+    /**
+     * **Reported live, from a screenshot**: "I am missing some fields
+     * on the card" — a wide, unexplained gap where Purchase order and
+     * Cost centre would have sat, because neither was in this
+     * customer's own field-visibility configuration for the stage.
+     * One missing field beside a present one reads as a made choice;
+     * a column with nothing in it at all was still one more track for
+     * the grid to divide the row into, which read as broken rather
+     * than empty.
+     */
+    const withoutThirdColumn = {
+      fields: CURATED_FIELDS.fields.filter((f) => f.field !== "BT-13" && f.field !== "BT-133"),
+    };
+    await open(withoutThirdColumn, {});
+
+    expect(headerCard().querySelectorAll(".headersummary > .hscolumn").length).toBe(4);
+  });
+
+  it("reopens the same pop-out rather than building a second one, keeping whatever was already typed", async () => {
+    /**
+     * **A second call to `field()` for the same spec would be exactly
+     * the duplicate-id problem this whole rewrite exists to avoid**,
+     * just deferred from "the card and the pop-out overlap" to "the
+     * pop-out was opened twice." `popoutBackdrop` is what prevents a
+     * second build.
+     */
+    const withEditableExtra = {
+      fields: [
+        ...CURATED_FIELDS.fields,
+        { field: "BT-23", visibility: "edit", type: "text", line: false },
+      ],
+    };
+    await open(withEditableExtra, {});
+
+    const trigger = () =>
+      [...headerCard().querySelectorAll(".actionlink")].find(
+        (a) => a.querySelector("span")?.textContent === "Header Fields"
+      ) as HTMLButtonElement;
+
+    trigger().click();
+    await new Promise((r) => setTimeout(r, 0));
+    (document.getElementById("f-BT-23") as HTMLInputElement).value = "urn:still-here";
+
+    const close = [...document.querySelectorAll(".popout .actionlink")].find(
+      (a) => a.querySelector("span")?.textContent === "Close"
+    ) as HTMLButtonElement;
+    close.click();
+
+    trigger().click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(document.querySelectorAll(".backdrop").length).toBe(1);
+    expect((document.getElementById("f-BT-23") as HTMLInputElement).value).toBe("urn:still-here");
   });
 });
 

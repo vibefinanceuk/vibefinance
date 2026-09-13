@@ -1621,39 +1621,56 @@ export async function openViewer(task, onClose) {
 
 
   /**
-   * The curated summary's own overflow — decision 0291.
+   * The curated summary's own overflow — decision 0291, editable
+   * where permitted since decision 0292.
    *
    * **A pop-out, matching the Supplier screen's own pattern** rather
    * than a new one invented for this card: `.popout` inside
    * `.backdrop`, the same box `suppliers.js`'s own detail view already
    * opens on a row click, here opened by "Header Fields" instead.
    *
-   * **Read-only, deliberately** — never `field()`. That function
-   * renders a live `<input id="f-${field}">` when a field is
-   * editable, and the curated summary above already renders one for
-   * every field it shows; a second `field()` call for the same spec
-   * here would put two elements with the same id on the page at once,
-   * and only one of them would ever be read back on save. Every field
-   * a person can act on already has exactly one place to do it — this
-   * is only ever somewhere to look.
+   * **Only the genuine overflow — never a field the card already
+   * shows.** Reported live: the pop-out listed every header field,
+   * duplicating everything the card already had, which is what made
+   * read-only the only safe choice at the time — `field()` renders a
+   * live `<input id="f-${field}">`, and a second one for a field the
+   * card already rendered would put two elements with the same id on
+   * the page, with only one of them ever read back on save. Excluding
+   * `HEADER_SUMMARY_FIELDS` here removes the overlap that made that
+   * true, which is what makes `field()` safe to call directly below.
+   *
+   * **Hidden on close, never removed.** `save()` reads a field's value
+   * from `document.getElementById`, wherever in the page that element
+   * happens to live — an input built here and then deleted from the
+   * DOM on close would silently lose whatever was typed into it the
+   * moment Save is next pressed, since nothing would exist left to
+   * read. Hiding keeps it exactly where it is.
+   *
+   * **Reopened, never rebuilt**, for the same reason: a second call
+   * to `field()` for the same spec on a second open would be exactly
+   * the duplicate-id problem this function was rewritten to avoid,
+   * just deferred to a re-open instead of avoided by the exclusion
+   * above. `popoutBackdrop` remembers the one already built.
    */
+  let popoutBackdrop = null;
+
   function openHeaderFieldsPopout() {
+    if (popoutBackdrop) {
+      popoutBackdrop.hidden = false;
+      return;
+    }
+
     const shown = headerFields.filter(
-      (spec) => ![...SELLER_FIELDS, ...BUYER_FIELDS].includes(spec.field)
+      (spec) => ![...SELLER_FIELDS, ...BUYER_FIELDS, ...HEADER_SUMMARY_FIELDS].includes(spec.field)
     );
 
-    const rows = shown.map((spec) =>
-      el("div", { class: "hfrow" }, [
-        el("span", { class: "hflabel", text: t(`field.${spec.field.toLowerCase()}`) }),
-        el("span", { class: "hfvalue", text: String(existing?.[spec.field] ?? "—") }),
-      ])
-    );
-
-    const close = () => backdrop.remove();
+    const close = () => {
+      popoutBackdrop.hidden = true;
+    };
     const backdrop = el("div", { class: "backdrop" }, [
       el("div", { class: "popout" }, [
         el("h3", { text: t("viewer.allheaderfields") }),
-        el("div", { class: "hflist" }, rows),
+        el("div", { class: "vfields" }, shown.map((spec) => field(spec, existing))),
         el("div", { class: "statebuttons" }, [actionLink("close", { onclick: close })]),
       ]),
     ]);
@@ -1661,6 +1678,7 @@ export async function openViewer(task, onClose) {
       if (e.target === backdrop) close();
     };
     document.body.append(backdrop);
+    popoutBackdrop = backdrop;
   }
 
   /**
@@ -1698,15 +1716,26 @@ export async function openViewer(task, onClose) {
         "div",
         { class: "headersummary" },
         HEADER_SUMMARY_COLUMNS.map((column) =>
-          el(
-            "div",
-            { class: "hscolumn" },
-            column
-              .map((code) => headerFields.find((spec) => spec.field === code))
-              .filter(Boolean)
-              .map((spec) => field(spec, existing))
-          )
+          column
+            .map((code) => headerFields.find((spec) => spec.field === code))
+            .filter(Boolean)
         )
+          /**
+           * **A column with nothing in it is not rendered at all** —
+           * reported live, from a screenshot: "I am missing some
+           * fields on the card." A customer whose own configuration
+           * leaves an entire column empty (neither field in it
+           * configured as visible) still had that column's own grid
+           * track reserved, since `auto-fit` counts every element
+           * passed to it, empty or not — an empty `<div>` is still one
+           * more column for the grid to divide the row into, which
+           * read as a wide, unexplained gap rather than nothing. One
+           * field missing from a column that still has the other
+           * looks like a made choice; a whole column of blank space
+           * does not.
+           */
+          .filter((specs) => specs.length > 0)
+          .map((specs) => el("div", { class: "hscolumn" }, specs.map((spec) => field(spec, existing))))
       ),
     ]);
   }
