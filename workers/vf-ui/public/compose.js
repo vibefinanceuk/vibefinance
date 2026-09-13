@@ -270,9 +270,38 @@ function render() {
   shell.replaceChildren(
     frame(
       el("div", {}, [
+        /**
+         * **Back, top right, decision 0305** — reported live: "add the
+         * back button, at the top right of the page for Write a
+         * rule." Same shape as the viewer's own Back (decision 0284):
+         * icon left, label beside it, `.actionlink` styling — and the
+         * same reasoning decision 0304 already gave `topbar()`'s own
+         * boundary line for landing to the left of Night/Day, since
+         * this is exactly the kind of page-specific control that line
+         * exists to set apart.
+         *
+         * **A dynamic import back to Rules**, matching the direction
+         * `rules.js` already imports `compose.js` — a static import
+         * either way would be circular, since each screen already
+         * opens the other.
+         */
         topbar(
           revising ? t("compose.newversion") : t("compose.title"),
-          stage?.name ?? ""
+          stage?.name ?? "",
+          [
+            el(
+              "button",
+              {
+                class: "actionlink",
+                title: t("compose.back"),
+                onclick: async () => {
+                  const { open } = await import("/rules.js");
+                  await open();
+                },
+              },
+              [icon("back"), el("span", { text: t("compose.back") })]
+            ),
+          ]
         ),
         ...panels,
         el("div", { class: "problem", id: "compose-note", role: "status" }),

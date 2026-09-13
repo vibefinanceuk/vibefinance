@@ -41,6 +41,7 @@ const STRINGS = {
     "mood.day": "Day",
     "mood.night": "Night",
     "compose.title": "Write a rule",
+    "compose.back": "Back",
     "compose.write": "What should happen",
     "compose.compile": "Compile",
     "compose.plain": "Plain English.",
@@ -151,6 +152,60 @@ beforeEach(() => {
  */
 afterEach(() => {
   vi.unstubAllGlobals();
+});
+
+describe("the back button, top right (decision 0305)", () => {
+  it("sits in the topbar's own right side, left of Night/Day, with the boundary line beside it", async () => {
+    await openCompose();
+
+    const topRight = document.querySelector(".topbar .right");
+    const titles = [...(topRight?.querySelectorAll("button") ?? [])].map((b) => b.getAttribute("title"));
+    const backIndex = titles.indexOf("Back");
+    const moodIndex = titles.findIndex((t) => t === "Day" || t === "Night");
+
+    expect(backIndex).toBeGreaterThan(-1);
+    expect(moodIndex).toBeGreaterThan(-1);
+    expect(backIndex).toBeLessThan(moodIndex);
+    // Decision 0304's own boundary line, since this is exactly a
+    // page-specific control landing beside every screen's own.
+    expect(topRight?.querySelector(".topbardivider")).not.toBeNull();
+  });
+
+  it("returns to the Rules list when clicked", async () => {
+    await openCompose({
+      "/api/rules/stages": { stages: [{ id: "st-1", name: "Approval", sequence: 1, ruleCount: 1 }] },
+      "/api/rules": { rules: [] },
+    });
+
+    const back = [...document.querySelectorAll(".topbar .right button")].find(
+      (b) => b.getAttribute("title") === "Back"
+    ) as HTMLButtonElement;
+    back.click();
+    /**
+     * **Polled, not a fixed wait** — the chain here is genuinely
+     * deeper than a tick or two: a dynamic `import()`, then
+     * `Promise.all` of two fetches, then a render. A fixed
+     * `setTimeout(0)` (even twice) resolved before the real work did
+     * and made this test race its own subject — confirmed directly:
+     * logging the heading at each tick showed it still read "Write a
+     * rule" two ticks in, and only "Rules" once genuinely waited for.
+     */
+    for (let i = 0; i < 50; i++) {
+      if (document.querySelector(".topbar h2")?.textContent === "Rules") break;
+      await new Promise((r) => setTimeout(r, 10));
+    }
+
+    /**
+     * **The topbar's own title, not just any text on the page** —
+     * "Rules" also appears in the nav sidebar on every screen,
+     * compose.js included, so checking `document.body.textContent`
+     * would pass whether or not the button actually navigated
+     * anywhere. `.topbar h2` is rules.js's own heading specifically;
+     * compose.js's own reads "Write a rule" or "New version", never
+     * this.
+     */
+    expect(document.querySelector(".topbar h2")?.textContent).toBe("Rules");
+  });
 });
 
 describe("reading the rule back", () => {
