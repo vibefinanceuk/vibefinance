@@ -419,14 +419,13 @@ async function go(screen) {
 }
 
 /**
- * The nav's own two folded states — decision 0274.
+ * The nav's own folded state — decision 0274.
  *
  * **Persisted the same way mood is** (decision 0139): a person's own
  * setting, not a customer's, and a browser refusing storage still
  * gets a usable nav, just one that forgets the choice next visit.
  */
 const NAV_COLLAPSED_KEY = "vf-nav-collapsed";
-const VIBE_AP_EXPANDED_KEY = "vf-vibeap-expanded";
 
 function navCollapsed() {
   try {
@@ -445,27 +444,32 @@ function setNavCollapsed(collapsed) {
 }
 
 /**
- * **Defaults open.** Collapsing five of the app's six real screens
- * behind one click on a person's first visit would hide more than it
- * revealed — closing it is something somebody chooses to do, not a
- * state they arrive in.
+ * **Which permission unlocks which menu item** — decision 0276, the
+ * operator's own instruction to "underpin with some kind of role, menu
+ * mapping so that we can control who sees certain menus," now that a
+ * Role permissions screen for an administrator is a real, named future
+ * plan rather than a someday idea.
+ *
+ * Reuses whatever the underlying screen's own API already requires
+ * wherever one exists (`Admin.Configure` for Sources, `Admin.RuleManagement`
+ * for Rules, `AP.Review` for Documents) rather than inventing a second,
+ * nav-only notion of access that could drift from what the API
+ * actually enforces. Dashboard, Tasks and Suppliers had no such
+ * permission to reuse — see decision 0276 for the three added
+ * specifically for this.
+ *
+ * A person with none of these sees an empty nav below the logo, which
+ * is an honest description of an account with no AP role assigned yet
+ * — not a bug to guard against.
  */
-function vibeApExpanded() {
-  try {
-    const stored = localStorage.getItem(VIBE_AP_EXPANDED_KEY);
-    return stored === null ? true : stored === "1";
-  } catch {
-    return true;
-  }
-}
-
-function setVibeApExpanded(expanded) {
-  try {
-    localStorage.setItem(VIBE_AP_EXPANDED_KEY, expanded ? "1" : "0");
-  } catch {
-    // Still usable this session either way.
-  }
-}
+const NAV_PERMISSIONS = {
+  dashboard: "AP.Dashboard",
+  tasks: "AP.TaskView",
+  sources: "Admin.Configure",
+  suppliers: "AP.Supplier",
+  rules: "Admin.RuleManagement",
+  documents: "AP.Review",
+};
 
 /** One nav entry: an icon, a label, and which screen it opens. */
 function navLink(screen, iconName) {
@@ -481,38 +485,25 @@ function navLink(screen, iconName) {
 }
 
 export function frame(main) {
-  const VIBE_AP_SCREENS = [
+  /**
+   * **A flat list again, decision 0276** — the "Vibe AP" group
+   * decision 0274 built was reverted at the operator's own request:
+   * "I've decided that the sub menu... looks bad... I'd like to
+   * revert that change, so that no sub menu exists and the menu items
+   * beneath it are always displayed." The icons, the rename, and the
+   * fold-to-icons toggle it shipped alongside all stayed — only the
+   * grouping wrapper is gone.
+   */
+  const SCREENS = [
+    ["dashboard", "dashboard"],
     ["tasks", "tasks"],
     ["sources", "sources"],
     ["suppliers", "suppliers"],
     ["rules", "rules"],
     ["documents", "documents"],
   ];
-
-  const groupChildren = el(
-    "div",
-    { class: "navgroupchildren" },
-    VIBE_AP_SCREENS.map(([screen, iconName]) => navLink(screen, iconName))
-  );
-  groupChildren.hidden = !vibeApExpanded();
-
-  const groupChevron = icon("navcollapse");
-  groupChevron.classList.add("navgroupchevron");
-  if (vibeApExpanded()) groupChevron.classList.add("open");
-
-  const groupHead = el(
-    "button",
-    {
-      class: `navgrouphead${VIBE_AP_SCREENS.some(([s]) => s === current) ? " on" : ""}`,
-      title: t("nav.vibeap"),
-      onclick: () => {
-        const expanded = groupChildren.hidden;
-        groupChildren.hidden = !expanded;
-        groupChevron.classList.toggle("open", expanded);
-        setVibeApExpanded(expanded);
-      },
-    },
-    [icon("vibeap"), el("span", { class: "navlabel", text: t("nav.vibeap") }), groupChevron]
+  const navItems = SCREENS.filter(([screen]) => me?.permissions?.includes(NAV_PERMISSIONS[screen])).map(
+    ([screen, iconName]) => navLink(screen, iconName)
   );
 
   const navEl = el("nav", { class: navCollapsed() ? "nav collapsed" : "nav" }, [
@@ -538,18 +529,17 @@ export function frame(main) {
     el("img", { class: "brandmark dark", src: "/img/logo.png", alt: "" }),
     el("img", { class: "brandmark light", src: "/img/logo-light.png", alt: "" }),
     el("img", { class: "navmark", src: "/img/logo-mark.png", alt: "" }),
-    navLink("dashboard", "dashboard"),
-    el("div", { class: "navgroup" }, [groupHead, groupChildren]),
+    ...navItems,
     el("div", { class: "who" }, [
       el("div", { text: me?.name ?? "" }),
       el("div", { class: "muted", text: me?.environmentId ?? "" }),
     ]),
     /**
      * **Toggles the class directly, not a re-render.** Every other
-     * choice on this nav (which group is open, which screen is
-     * current) already lives as a DOM class a click can flip; folding
-     * the whole nav is the same kind of change, not a reason to
-     * rebuild the screen underneath it.
+     * choice on this nav (which screen is current) already lives as a
+     * DOM class a click can flip; folding the whole nav is the same
+     * kind of change, not a reason to rebuild the screen underneath
+     * it.
      */
     el("button", {
       class: "navcollapsetoggle",

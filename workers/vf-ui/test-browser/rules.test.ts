@@ -60,10 +60,26 @@ async function open(rules: unknown[], stages = STAGES) {
     "/api/ui-strings": STRINGS,
     "/api/rules/stages": { stages },
     "/api/rules": { rules },
+    /**
+     * **Real usage always reaches a screen through `start()` first**,
+     * which is what actually populates `me` — decision 0276's nav
+     * permission filter is the first thing in `frame()` to depend on
+     * it. This test called `rules.js`'s own `open()` directly, the
+     * one path that skipped `start()` entirely, so `me` stayed `null`
+     * and the nav filtered out every item.
+     */
+    "/api/whoami": {
+      id: "u-dan",
+      name: "Dan",
+      permissions: ["AP.Dashboard", "AP.TaskView", "Admin.Configure", "AP.Supplier", "Admin.RuleManagement", "AP.Review"],
+    },
+    "/api/tasks": { tasks: [], counts: {} },
   });
 
   const { loadStrings } = await import("/strings.js");
   await loadStrings();
+  const { start } = await import("/tasks.js");
+  await start();
   const { open: openRules } = await import("/rules.js");
   await openRules();
   await new Promise((r) => setTimeout(r, 0));

@@ -1950,3 +1950,115 @@ describe("custom fields through the real router (decision 0041)", () => {
     expect(res.status).toBe(201);
   });
 });
+
+describe("the nav's own new permission gates (decision 0276)", () => {
+  /**
+   * Four routes changed together for one reason: the operator's own
+   * instruction to "underpin with some kind of role, menu mapping so
+   * that we can control who sees certain menus," ahead of a future
+   * Role permissions screen. Three had no permission gate at all
+   * before this (Dashboard, Tasks, Suppliers); Rules had one, and it
+   * was tightened at the operator's own follow-up: "tighten the API
+   * too."
+   *
+   * Every positive case here reuses `authHeaders()` — the fully
+   * authorized user seeded in `beforeEach` — precisely because that
+   * seed already grants every permission in `PERMISSIONS`, including
+   * these three new ones. That is also why none of the 1,499 tests
+   * elsewhere in this suite broke when these gates were added: they
+   * were never exercising the boundary, only the fully-authorized
+   * path. These tests exist specifically to prove the boundary is
+   * real, using `seedUserWithPermissions` with a deliberately wrong
+   * permission for each 403 case.
+   */
+
+  it("GET /dashboard succeeds with AP.Dashboard", async () => {
+    const res = await SELF.fetch("https://example.com/dashboard", { headers: authHeaders() });
+    expect(res.status).toBe(200);
+  });
+
+  it("GET /dashboard 401s with no credentials", async () => {
+    const res = await SELF.fetch("https://example.com/dashboard");
+    expect(res.status).toBe(401);
+  });
+
+  it("GET /dashboard 403s authenticated but lacking AP.Dashboard", async () => {
+    const key = await seedUserWithPermissions(["AP.Review"]); // wrong permission on purpose
+    const res = await SELF.fetch("https://example.com/dashboard", {
+      headers: { Authorization: `Bearer ${key}` },
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("GET /tasks succeeds with AP.TaskView", async () => {
+    const res = await SELF.fetch("https://example.com/tasks", { headers: authHeaders() });
+    expect(res.status).toBe(200);
+  });
+
+  it("GET /tasks 403s authenticated but lacking AP.TaskView", async () => {
+    // **The query-level scoping decision 0103 made is unaffected by
+    // this** — this proves the new screen-level gate in front of it,
+    // not a change to what a fully-permitted person's own query
+    // returns.
+    const key = await seedUserWithPermissions(["AP.Review"]); // wrong permission on purpose
+    const res = await SELF.fetch("https://example.com/tasks", {
+      headers: { Authorization: `Bearer ${key}` },
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("GET /suppliers succeeds with AP.Supplier", async () => {
+    const res = await SELF.fetch("https://example.com/suppliers", { headers: authHeaders() });
+    expect(res.status).toBe(200);
+  });
+
+  it("GET /suppliers 403s authenticated but lacking AP.Supplier", async () => {
+    const key = await seedUserWithPermissions(["AP.Review"]); // wrong permission on purpose
+    const res = await SELF.fetch("https://example.com/suppliers", {
+      headers: { Authorization: `Bearer ${key}` },
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("POST /suppliers still requires the more privileged Admin.Configure, unaffected by AP.Supplier existing", async () => {
+    // AP.Supplier is deliberately not enough to create or edit a
+    // supplier — that already required Admin.Configure, and adding a
+    // lesser, read-oriented permission alongside it must not loosen
+    // the write side.
+    const key = await seedUserWithPermissions(["AP.Supplier"]);
+    const res = await SELF.fetch("https://example.com/suppliers", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${key}`, "content-type": "application/json" },
+      body: JSON.stringify({ name: "Should not be created" }),
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("GET /rules succeeds with Admin.RuleManagement", async () => {
+    const res = await SELF.fetch("https://example.com/rules", { headers: authHeaders() });
+    expect(res.status).toBe(200);
+  });
+
+  it("GET /rules 403s with only the old AP.Review permission, now that the gate is tightened", async () => {
+    // **The actual regression this decision was about**: AP.Review
+    // alone used to be sufficient. It no longer is.
+    const key = await seedUserWithPermissions(["AP.Review"]);
+    const res = await SELF.fetch("https://example.com/rules", {
+      headers: { Authorization: `Bearer ${key}` },
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("GET /rules/stages succeeds with Admin.RuleManagement", async () => {
+    const res = await SELF.fetch("https://example.com/rules/stages", { headers: authHeaders() });
+    expect(res.status).toBe(200);
+  });
+
+  it("GET /rules/stages 403s with only the old AP.Review permission", async () => {
+    const key = await seedUserWithPermissions(["AP.Review"]);
+    const res = await SELF.fetch("https://example.com/rules/stages", {
+      headers: { Authorization: `Bearer ${key}` },
+    });
+    expect(res.status).toBe(403);
+  });
+});

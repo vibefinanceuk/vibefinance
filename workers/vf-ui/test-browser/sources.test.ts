@@ -67,6 +67,18 @@ const SOURCES = (sources: unknown[], processes: unknown[] = [{ id: "ap", name: "
   "/api/ui-strings": STRINGS,
   "/api/sources": { sources },
   "/api/processes": { processes },
+  /**
+   * **`start()` is what actually populates `me`**, and this test opens
+   * `sources.js` directly, the one path that skips it — decision
+   * 0276's nav permission filter is the first thing in `frame()` to
+   * depend on `me` being real.
+   */
+  "/api/whoami": {
+    id: "u-dan",
+    name: "Dan",
+    permissions: ["AP.Dashboard", "AP.TaskView", "Admin.Configure", "AP.Supplier", "Admin.RuleManagement", "AP.Review"],
+  },
+  "/api/tasks": { tasks: [], counts: {} },
 });
 
 async function open(
@@ -78,6 +90,8 @@ async function open(
   stubFetch({ ...SOURCES(sources, processes), ...extra }, posted);
   const { loadStrings } = await import("/strings.js");
   await loadStrings();
+  const { start } = await import("/tasks.js");
+  await start();
   const { openSources } = await import("/sources.js");
   await openSources();
 }

@@ -284,10 +284,4 @@ Object.assign(ICONS, {
   // for "expand," since the shape is the same claim pointed the other
   // way, not a different one.
   navcollapse: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/><path d="M14 9l-2 3 2 3"/>',
-
-  // A folder — decision 0274's "Vibe AP" group header. It groups a
-  // handful of real screens the same way a folder groups files; a
-  // text badge in its place would have been the one thing on this bar
-  // that was not a drawn icon.
-  vibeap: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
 });

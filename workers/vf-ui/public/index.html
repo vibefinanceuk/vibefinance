@@ -277,52 +277,23 @@
   .nav a.on { background: var(--surface-2); color: var(--text-primary); }
 
   /*
-    Icons on every entry — decision 0274. `.navitem` covers the base
-    `.nav a` styling above and adds the icon-and-label row; the group
-    header below is a `<button>`, styled to match rather than
-    inheriting it, since buttons carry none of a link's defaults.
+    Icons on every entry — decision 0274, sized up and re-centred at
+    decision 0276's own asking: "increase the size on the icons... the
+    current font is very small." `align-items: center` plus a shared
+    `line-height: 1` on icon and label is what actually centres them —
+    the icon's own 24px box and the label's default line box do not
+    share a baseline without it, which read as slightly misaligned at
+    the smaller size.
   */
-  .navitem, .navgrouphead {
+  .navitem {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 14px;
     width: 100%;
+    padding: 10px 12px;
   }
-  .navgrouphead {
-    background: none;
-    border: none;
-    text-align: left;
-    font: inherit;
-    padding: 8px 10px;
-    border-radius: var(--radius);
-    color: var(--text-secondary);
-    cursor: pointer;
-  }
-  .navgrouphead:hover { background: var(--surface-2); }
-  .navgrouphead.on { background: var(--surface-2); color: var(--text-primary); }
-
-  .navitem svg, .navgrouphead svg { width: 18px; height: 18px; flex: 0 0 auto; }
-  .navlabel { flex: 1 1 auto; min-width: 0; }
-
-  /*
-    The group's own children, indented beneath its header — decision
-    0274. A left border rather than deeper padding alone: five items
-    at the same indent as the header would read as one long list, not
-    as a group with something above it.
-  */
-  .navgroup { display: flex; flex-direction: column; }
-  .navgroupchildren {
-    display: flex;
-    flex-direction: column;
-    margin-left: 10px;
-    padding-left: 9px;
-    border-left: 0.5px solid var(--border);
-  }
-
-  .navgroupchevron {
-    transition: transform 0.15s;
-  }
-  .navgroupchevron.open { transform: rotate(90deg); }
+  .navitem svg { width: 24px; height: 24px; flex: 0 0 auto; }
+  .navlabel { flex: 1 1 auto; min-width: 0; font-size: var(--text-lg); line-height: 1; }
 
   /*
     The whole nav folded to icons — decision 0274, the operator's own
@@ -333,7 +304,6 @@
   */
   .frame.collapsed { grid-template-columns: 64px minmax(0, 1fr); }
   .frame.collapsed .navlabel,
-  .frame.collapsed .navgroupchevron,
   .frame.collapsed .who {
     display: none;
   }
@@ -352,16 +322,9 @@
     display: none;
   }
   .frame.collapsed .navmark { display: block; }
-  .frame.collapsed .navitem,
-  .frame.collapsed .navgrouphead {
+  .frame.collapsed .navitem {
     justify-content: center;
     padding: 8px 0;
-  }
-  .frame.collapsed .navgroupchildren {
-    margin-left: 0;
-    padding-left: 0;
-    border-left: none;
-    align-items: center;
   }
 
   /*

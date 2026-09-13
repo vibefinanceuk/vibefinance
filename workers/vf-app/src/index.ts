@@ -1033,6 +1033,16 @@ export default {
       const { db } = resolveTenant(request, env);
       const auth = await authenticatePerson(db, request, env);
       if (!auth.user) return json({ error: auth.reason }, 401);
+      /**
+       * **New, decision 0276** — this route had no permission check
+       * beyond authentication before. Added so the nav's own new
+       * per-item permission map (workers/vf-ui/public/tasks.js) has a
+       * real gate to reuse rather than a nav-only notion of access
+       * that the API itself would not agree with.
+       */
+      if (!(await hasPermission(db, auth.user.id, "AP.Dashboard"))) {
+        return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
+      }
 
       const result = await handleDashboard(db, auth.user.id);
       return json(result.body, result.status);
@@ -1043,6 +1053,17 @@ export default {
       const { db } = resolveTenant(request, env);
       const auth = await authenticatePerson(db, request, env);
       if (!auth.user) return json({ error: auth.reason }, 401);
+      /**
+       * **New, decision 0276** — reading the supplier list had no
+       * permission check at all before this; creating or editing one
+       * already required `Admin.Configure` above. `AP.Supplier` sits
+       * beneath that: ordinary AP work reasonably needs to see who a
+       * payment is going to without needing the standing to change
+       * supplier master data.
+       */
+      if (!(await hasPermission(db, auth.user.id, "AP.Supplier"))) {
+        return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
+      }
 
       const result = await handleListSuppliers(db);
       return json(
@@ -1596,10 +1617,26 @@ export default {
       const auth = await authenticatePerson(db, request, env);
       if (!auth.user) return json({ error: auth.reason }, 401);
 
-      // No permission check beyond being a real user. **What a person
-      // may see is decided by the query, not by a gate**: it returns
-      // their own tasks and their teams', and there is nothing to
-      // withhold from somebody who is already entitled to all of it.
+      /**
+       * **A screen-level gate added in front of the query-level one
+       * below, decision 0276** — the query-level reasoning that
+       * follows is unchanged and still correct: what a person may see
+       * WITHIN their own task list is decided by the query, and there
+       * is nothing to withhold from somebody who is already entitled
+       * to all of it. `AP.TaskView` answers a different, earlier
+       * question — can this person see a task list at all — the same
+       * way `Admin.Configure` already gates whether somebody can see
+       * Sources before anything about which sources they could see is
+       * relevant.
+       */
+      if (!(await hasPermission(db, auth.user.id, "AP.TaskView"))) {
+        return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
+      }
+
+      // What a person may see is decided by the query, not by a
+      // further gate: it returns their own tasks and their teams',
+      // and there is nothing to withhold from somebody who is already
+      // entitled to all of it.
       const ownership = url.searchParams.get("ownership");
       const result = await handleListMyTasks(db, auth.user.id, {
         includeCompleted: url.searchParams.get("completed") === "true",
@@ -1753,9 +1790,19 @@ export default {
       const { db } = resolveTenant(request, env);
       const auth = await authenticatePerson(db, request, env);
       if (!auth.user) return json({ error: auth.reason }, 401);
-      // Reading which rules run is not configuring them: somebody
-      // working a queue may reasonably ask why an invoice was held.
-      if (!(await hasPermission(db, auth.user.id, "AP.Review"))) {
+      /**
+       * **Tightened to `Admin.RuleManagement`, decision 0276** — the
+       * operator's own instruction, after being shown that this had
+       * only ever required `AP.Review`: "tighten the API too." The
+       * comment this replaces argued reading which rules run is not
+       * configuring them, and somebody working a queue may reasonably
+       * ask why an invoice was held — that reasoning was correct on
+       * its own terms and is not being disputed here, only overridden
+       * by a newer, more deliberate decision that Rules is an
+       * administrative screen end to end, matching `/rules/compile`'s
+       * own gate rather than sitting apart from it.
+       */
+      if (!(await hasPermission(db, auth.user.id, "Admin.RuleManagement"))) {
         return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
       }
 
@@ -1838,7 +1885,10 @@ export default {
       const { db } = resolveTenant(request, env);
       const auth = await authenticatePerson(db, request, env);
       if (!auth.user) return json({ error: auth.reason }, 401);
-      if (!(await hasPermission(db, auth.user.id, "AP.Review"))) {
+      // Tightened alongside /rules — decision 0276. Used only by the
+      // Rules screen itself (rules.js), never elsewhere, so there is
+      // no other caller this could be narrowing unintentionally.
+      if (!(await hasPermission(db, auth.user.id, "Admin.RuleManagement"))) {
         return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
       }
 

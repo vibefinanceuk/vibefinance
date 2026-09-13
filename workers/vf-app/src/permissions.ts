@@ -22,10 +22,11 @@
 /**
  * Accounts Payable — the side of the business this product actually
  * handles today (validating and processing invoices a customer
- * receives). Real, enforced right now: Validate, Approve, Review.
- * Not built at all yet: Match (3-way match against PO/goods receipt),
- * Code (GL coding). Analysis has real data behind it (invoice_runs in
- * D1) but no route reads it back yet, so it's listed but unenforced.
+ * receives). Real, enforced right now: Validate, Approve, Review,
+ * Dashboard, TaskView, Supplier. Not built at all yet: Match (3-way
+ * match against PO/goods receipt), Code (GL coding). Analysis has real
+ * data behind it (invoice_runs in D1) but no route reads it back yet,
+ * so it's listed but unenforced.
  */
 const AP_PERMISSIONS = [
   "AP.Validate",
@@ -34,6 +35,31 @@ const AP_PERMISSIONS = [
   "AP.Approve",
   "AP.Review",
   "AP.Analysis",
+  /**
+   * **Three added for menu visibility, decision 0276** — the
+   * operator's own instruction to underpin the nav with real
+   * permissions ahead of a future Role permissions screen: "now seems
+   * like a sensible time to underpin with some kind of role, menu
+   * mapping so that we can control who sees certain menus."
+   *
+   * Each gates both a nav item and the route the screen behind it
+   * calls — `AP.Dashboard` for `GET /dashboard`, `AP.TaskView` for
+   * `GET /tasks`, `AP.Supplier` for `GET /suppliers` (and its own
+   * writes — see suppliers-route.ts). None of the three existed
+   * before this: those routes checked only that somebody was
+   * authenticated, which was a real, deliberate choice at the time
+   * (`/tasks`' own comment still explains why row-level scoping was
+   * enough on its own) — this adds a screen-level gate in front of
+   * that scoping, not a replacement for it.
+   *
+   * `AP.TaskView` is deliberately not `AP.TaskManage` — that already
+   * exists, and grants the more privileged capability of releasing or
+   * seeing every user's tasks (decision 0104). Seeing your own task
+   * list at all is a lesser, more basic thing to be able to do.
+   */
+  "AP.Dashboard",
+  "AP.TaskView",
+  "AP.Supplier",
   // Returning — decision 0075. Two shapes, deliberately.
   //
   // Return and ReturnToSupplier are capability MODIFIERS: they activate

@@ -60,6 +60,22 @@ const STRINGS = {
   },
 };
 
+/**
+ * Every permission the nav's own decision-0276 mapping checks for —
+ * used so tests about navigation, task keying, and the brand mark
+ * continue to see every screen, the same way they did before that
+ * mapping existed. Tests about the permission gate itself grant a
+ * narrower, deliberately incomplete list instead.
+ */
+const ALL_NAV_PERMISSIONS = [
+  "AP.Dashboard",
+  "AP.TaskView",
+  "Admin.Configure",
+  "AP.Supplier",
+  "Admin.RuleManagement",
+  "AP.Review",
+];
+
 const APPROVAL_TASK = {
   id: "t-approve",
   stageId: "approval",
@@ -75,7 +91,7 @@ const APPROVAL_TASK = {
 async function openList(tasks: unknown[]) {
   stubFetch({
     "/api/ui-strings": STRINGS,
-    "/api/whoami": { id: "u-dan", name: "Dan", permissions: [] },
+    "/api/whoami": { id: "u-dan", name: "Dan", permissions: ALL_NAV_PERMISSIONS },
     "/api/tasks": { tasks, counts: {} },
     // The other screens fetch their own data on arrival — decision
     // 0191's test navigates between them.
@@ -213,13 +229,7 @@ describe("the brand mark (decision 0145)", () => {
   });
 });
 
-describe("the folded nav, and the Vibe AP group (decision 0274)", () => {
-  function vibeApHead() {
-    return document.querySelector(".navgrouphead") as HTMLButtonElement;
-  }
-  function vibeApChildren() {
-    return document.querySelector(".navgroupchildren") as HTMLElement;
-  }
+describe("the flat nav, permission-filtered (decisions 0274 and 0276)", () => {
   function collapseToggle() {
     return document.querySelector(".navcollapsetoggle") as HTMLButtonElement;
   }
@@ -227,61 +237,31 @@ describe("the folded nav, and the Vibe AP group (decision 0274)", () => {
     return document.querySelector(".frame") as HTMLElement;
   }
 
-  it("puts Dashboard first, standalone, ahead of the Vibe AP group", async () => {
+  it("lists every screen flat, Dashboard first, when every permission is held", async () => {
+    /**
+     * **The group is gone, decision 0276** — reported live: "I've
+     * decided that the sub menu, entitled 'Vibe AP' looks bad... I'd
+     * like to revert that change, so that no sub menu exists and the
+     * menu items beneath it are always displayed." No `.navgroup`,
+     * `.navgrouphead`, or `.navgroupchildren` exists anywhere now.
+     */
     await openList([APPROVAL_TASK]);
 
-    const nav = document.querySelector(".nav");
-    const dashboard = [...(nav?.querySelectorAll(".navitem") ?? [])].find((a) =>
-      a.textContent?.includes("Dashboard")
-    );
-    const group = nav?.querySelector(".navgroup");
-    const position = dashboard?.compareDocumentPosition(group as Node) ?? 0;
-    expect(Boolean(position & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
-  });
+    expect(document.querySelector(".navgroup")).toBeNull();
+    expect(document.querySelector(".navgrouphead")).toBeNull();
 
-  it("groups Tasks, Sources, Suppliers, Rules and Documents under Vibe AP", async () => {
-    await openList([APPROVAL_TASK]);
-
-    const labels = [...vibeApChildren().querySelectorAll(".navitem")].map((a) => a.textContent);
-    expect(labels).toEqual(["Tasks", "Sources", "Suppliers", "Rules", "Documents"]);
+    const labels = [...document.querySelectorAll(".navitem")].map((a) => a.textContent);
+    expect(labels).toEqual(["Dashboard", "Tasks", "Sources", "Suppliers", "Rules", "Documents"]);
   });
 
   it("gives every real nav item an icon", async () => {
     await openList([APPROVAL_TASK]);
 
-    // Six real screens (Dashboard, Tasks, Sources, Suppliers, Rules,
-    // Documents) plus the Vibe AP group header itself.
-    const items = [...document.querySelectorAll(".navitem"), vibeApHead()];
-    expect(items).toHaveLength(7);
+    const items = [...document.querySelectorAll(".navitem")];
+    expect(items).toHaveLength(6);
     for (const item of items) {
       expect(item.querySelector("svg")).not.toBeNull();
     }
-  });
-
-  it("starts with the Vibe AP group expanded", async () => {
-    await openList([APPROVAL_TASK]);
-    expect(vibeApChildren().hidden).toBe(false);
-  });
-
-  it("collapses and re-expands the group without navigating anywhere", async () => {
-    await openList([APPROVAL_TASK]);
-
-    vibeApHead().click();
-    expect(vibeApChildren().hidden).toBe(true);
-
-    vibeApHead().click();
-    expect(vibeApChildren().hidden).toBe(false);
-  });
-
-  it("remembers the group's own state across a fresh render", async () => {
-    await openList([APPROVAL_TASK]);
-    vibeApHead().click();
-    expect(vibeApChildren().hidden).toBe(true);
-
-    // A second, independent render of the same shell — the state has
-    // to come from storage, not from the DOM node just closed.
-    await openList([APPROVAL_TASK]);
-    expect(vibeApChildren().hidden).toBe(true);
   });
 
   it("starts with the nav open, showing the full mark and every label", async () => {
@@ -387,6 +367,79 @@ describe("the folded nav, and the Vibe AP group (decision 0274)", () => {
     }
 
     expect(document.querySelector(".frame")?.classList.contains("collapsed")).toBe(true);
+  });
+
+  it("hides a nav item when the required permission is missing", async () => {
+    /**
+     * **The actual new behaviour, decision 0276** — the operator's own
+     * instruction to underpin the nav with real permissions. Rules
+     * requires Admin.RuleManagement; a person without it should never
+     * see the nav item at all, not just be refused after clicking it.
+     */
+    stubFetch({
+      "/api/ui-strings": STRINGS,
+      "/api/whoami": {
+        id: "u-dan",
+        name: "Dan",
+        permissions: ALL_NAV_PERMISSIONS.filter((p) => p !== "Admin.RuleManagement"),
+      },
+      "/api/tasks": { tasks: [APPROVAL_TASK], counts: {} },
+      "/api/sources": { sources: [] },
+      "/api/processes": { processes: [] },
+      "/api/rules": { rules: [] },
+      "/api/rules/stages": { stages: [] },
+      "/api/dashboard": { cards: [], usingDefault: true },
+    });
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { start } = await import("/tasks.js");
+    await start();
+
+    const labels = [...document.querySelectorAll(".navitem")].map((a) => a.textContent);
+    expect(labels).not.toContain("Rules");
+    expect(labels).toEqual(["Dashboard", "Tasks", "Sources", "Suppliers", "Documents"]);
+  });
+
+  it("shows nothing but the logo for a person with none of the six permissions", async () => {
+    // An account with no AP role assigned yet is a real, expected
+    // state — not a bug to guard against with a fallback screen.
+    stubFetch({
+      "/api/ui-strings": STRINGS,
+      "/api/whoami": { id: "u-dan", name: "Dan", permissions: [] },
+      "/api/tasks": { tasks: [APPROVAL_TASK], counts: {} },
+    });
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { start } = await import("/tasks.js");
+    await start();
+
+    expect(document.querySelectorAll(".navitem")).toHaveLength(0);
+    expect(document.querySelector("img.brandmark")).not.toBeNull();
+  });
+
+  it("shows exactly the items each permission unlocks, one at a time", async () => {
+    const cases: [string, string][] = [
+      ["AP.Dashboard", "Dashboard"],
+      ["AP.TaskView", "Tasks"],
+      ["Admin.Configure", "Sources"],
+      ["AP.Supplier", "Suppliers"],
+      ["Admin.RuleManagement", "Rules"],
+      ["AP.Review", "Documents"],
+    ];
+    for (const [permission, label] of cases) {
+      stubFetch({
+        "/api/ui-strings": STRINGS,
+        "/api/whoami": { id: "u-dan", name: "Dan", permissions: [permission] },
+        "/api/tasks": { tasks: [], counts: {} },
+      });
+      const { loadStrings } = await import("/strings.js");
+      await loadStrings();
+      const { start } = await import("/tasks.js");
+      await start();
+
+      const labels = [...document.querySelectorAll(".navitem")].map((a) => a.textContent);
+      expect(labels, `permission ${permission}`).toEqual([label]);
+    }
   });
 });
 
@@ -503,7 +556,7 @@ describe("the ownership dropdown shows the filter in force (decision 0256)", () 
      */
     stubFetch({
       "/api/ui-strings": STRINGS,
-      "/api/whoami": { id: "u-dan", name: "Dan", permissions: [] },
+      "/api/whoami": { id: "u-dan", name: "Dan", permissions: ALL_NAV_PERMISSIONS },
       "/api/tasks": { tasks: [], counts: {} },
       "/api/dashboard": { cards: [], usingDefault: true },
     });
@@ -531,7 +584,7 @@ describe("the ownership dropdown shows the filter in force (decision 0256)", () 
      */
     stubFetch({
       "/api/ui-strings": STRINGS,
-      "/api/whoami": { id: "u-dan", name: "Dan", permissions: [] },
+      "/api/whoami": { id: "u-dan", name: "Dan", permissions: ALL_NAV_PERMISSIONS },
       // The file's own complete fixture, already at approval/mine.
       "/api/tasks": { tasks: [APPROVAL_TASK], counts: {} },
       "/api/dashboard": { cards: [], usingDefault: true },
@@ -553,7 +606,7 @@ describe("the ownership dropdown shows the filter in force (decision 0256)", () 
     // value, not the absence of one.
     stubFetch({
       "/api/ui-strings": STRINGS,
-      "/api/whoami": { id: "u-dan", name: "Dan", permissions: [] },
+      "/api/whoami": { id: "u-dan", name: "Dan", permissions: ALL_NAV_PERMISSIONS },
       "/api/tasks": { tasks: [], counts: {} },
     });
 
