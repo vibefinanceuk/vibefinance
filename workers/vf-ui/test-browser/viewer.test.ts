@@ -434,7 +434,14 @@ describe("the action row (decision 0122)", () => {
     // every one of its three.
     await openWith(["key", "complete", "release"]);
     for (const link of document.querySelectorAll(".actionlink")) {
-      expect(link.querySelector("svg"), link.textContent ?? "").not.toBeNull();
+      /**
+       * **The language toggle's own exception** — decision 0302. It
+       * carries a short-code badge rather than an SVG glyph, by the
+       * operator's own request, since there is no shape for "this is
+       * now in German." Every other action still needs a real icon.
+       */
+      const iconEl = link.querySelector("svg") ?? link.querySelector(".langbadge");
+      expect(iconEl, link.textContent ?? "").not.toBeNull();
       expect(link.querySelector("span")?.textContent?.trim()).toBeTruthy();
     }
   });
@@ -2263,9 +2270,11 @@ describe("an action that labels itself draws itself (decision 0229)", () => {
     await openViewer(TASK, () => {});
     await new Promise((r) => setTimeout(r, 0));
 
-    const blank = [...document.querySelectorAll(".actionlink")].filter(
-      (b) => (b.querySelector("svg")?.innerHTML ?? "") === ""
-    );
+    const blank = [...document.querySelectorAll(".actionlink")]
+      // The language toggle's own exception — decision 0302, a
+      // short-code badge rather than an SVG glyph, by request.
+      .filter((b) => !b.querySelector(".langbadge"))
+      .filter((b) => (b.querySelector("svg")?.innerHTML ?? "") === "");
 
     // Named, so a failure says which one rather than how many.
     expect(blank.map((b) => b.textContent)).toEqual([]);

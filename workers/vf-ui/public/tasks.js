@@ -11,7 +11,7 @@
  * the browser would mean two versions of one rule, which drift.
  */
 
-import { t } from "/strings.js";
+import { t, languagePicker } from "/strings.js";
 import { moodPicker } from "/mood.js";
 import { icon } from "/icons.js";
 
@@ -621,6 +621,12 @@ export function topbar(title, subtitle, right = [], extra = []) {
     el("div", { class: "right" }, [
       ...right,
       moodPicker(t),
+      /**
+       * **Language, between Night/Day and Sign out** — decision 0302,
+       * reported live: "At the top of the page, between Night / Day,
+       * and Sign out... add a Language button."
+       */
+      languagePicker(),
       el(
         "button",
         {

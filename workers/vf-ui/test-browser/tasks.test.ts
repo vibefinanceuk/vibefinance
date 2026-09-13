@@ -675,6 +675,81 @@ describe("sign out is the frame's own, not one screen's (decision 0283)", () => 
   });
 });
 
+describe("the language toggle, between Night/Day and Sign out (decision 0302)", () => {
+  /**
+   * **Reported live**: "At the top of the page, between Night / Day,
+   * and Sign out, on each of the available screens, please can you
+   * add a Language button and icon, where English, or German can be
+   * selected."
+   */
+  function rightButtons() {
+    return [...document.querySelectorAll(".topbar .right > button")];
+  }
+
+  it("sits between the mood toggle and Sign out, on every screen", async () => {
+    await openList([APPROVAL_TASK]);
+
+    const titles = rightButtons().map((b) => b.getAttribute("title"));
+    const moodIndex = titles.findIndex((t) => t === "Day" || t === "Night");
+    const langIndex = titles.findIndex((t) => t === "English" || t === "Deutsch");
+    const signOutIndex = titles.findIndex((t) => t === "Sign out");
+
+    expect(moodIndex).toBeGreaterThan(-1);
+    expect(langIndex).toBeGreaterThan(-1);
+    expect(signOutIndex).toBeGreaterThan(-1);
+    expect(langIndex).toBeGreaterThan(moodIndex);
+    expect(signOutIndex).toBeGreaterThan(langIndex);
+  });
+
+  it("defaults to English, showing the EN badge, when nobody has chosen", async () => {
+    await openList([APPROVAL_TASK]);
+
+    const button = rightButtons().find((b) => b.getAttribute("title") === "English");
+    expect(button).not.toBeUndefined();
+    expect(button?.querySelector(".langbadge")?.textContent).toBe("EN");
+    expect(button?.querySelector("span:last-child")?.textContent).toBe("English");
+  });
+
+  it("remembers a language chosen earlier, across a fresh load", async () => {
+    localStorage.setItem("vf-locale", "de");
+    await openList([APPROVAL_TASK]);
+
+    const button = rightButtons().find((b) => b.getAttribute("title") === "Deutsch");
+    expect(button).not.toBeUndefined();
+    expect(button?.querySelector(".langbadge")?.textContent).toBe("DE");
+  });
+
+  it("stores the other language when clicked", async () => {
+    await openList([APPROVAL_TASK]);
+
+    const button = rightButtons().find((b) => b.getAttribute("title") === "English") as HTMLButtonElement;
+    button.click();
+
+    expect(localStorage.getItem("vf-locale")).toBe("de");
+  });
+
+  it("requests the chosen locale's own strings on the next load", async () => {
+    localStorage.setItem("vf-locale", "de");
+    const requested: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        const parsed = new URL(url, "http://x");
+        if (parsed.pathname === "/api/ui-strings") {
+          requested.push(parsed.searchParams.get("locale") ?? "");
+          return { ok: true, json: async () => STRINGS } as Response;
+        }
+        throw new Error(`no stub for ${parsed.pathname}`);
+      })
+    );
+
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+
+    expect(requested).toContain("de");
+  });
+});
+
 describe("a task about one line (decision 0183)", () => {
   /**
    * A stage scoped `per_line` raises one task per invoice line, so an

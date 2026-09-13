@@ -4,19 +4,42 @@
  * Fetched from the control plane rather than bundled, so fixing a
  * wording or adding a language does not need a UI deployment.
  *
- * **The language comes from the browser.** `vf-app` takes it from a
- * per-deployment var, on the reasoning that one Worker serves one
- * customer operating in one language (decision 0008). `vf-ui` is one
- * shared deployment, so that reasoning does not carry and the person's
- * own browser is the best available answer.
+ * **The language comes from the browser, unless a person has chosen
+ * their own — decision 0302.** `vf-app` takes it from a per-deployment
+ * var, on the reasoning that one Worker serves one customer operating
+ * in one language (decision 0008). `vf-ui` is one shared deployment,
+ * so that reasoning does not carry and the person's own browser is
+ * the best *default* available — but a person using this in a
+ * language their own browser was never set to should not have to
+ * change their operating system's own locale to read the screen in
+ * theirs.
  */
 
 let strings = {};
 let locale = "en";
 
+const LOCALE_KEY = "vf-locale";
+
+/**
+ * **A person's own choice, the same way `mood.js`'s own `KEY` is** —
+ * `localStorage`, read once at load and written the moment somebody
+ * picks a language explicitly. `null` means nobody has chosen, which
+ * is different from "chose English" — the browser's own language
+ * still decides until somebody actually picks one.
+ */
+function storedLocale() {
+  try {
+    return localStorage.getItem(LOCALE_KEY);
+  } catch {
+    // A browser refusing storage still gets the browser's own guess.
+    return null;
+  }
+}
+
 export async function loadStrings() {
   try {
-    const response = await fetch(`/api/ui-strings?locale=${encodeURIComponent(navigator.language ?? "en")}`);
+    const requested = storedLocale() ?? navigator.language ?? "en";
+    const response = await fetch(`/api/ui-strings?locale=${encodeURIComponent(requested)}`);
     if (!response.ok) return;
     const body = await response.json();
     strings = body.strings ?? {};
@@ -57,4 +80,81 @@ export function applyStrings(root = document) {
   for (const node of root.querySelectorAll("[data-t]")) {
     node.textContent = t(node.dataset.t);
   }
+}
+
+/**
+ * The two languages a person can actually pick — decision 0302.
+ *
+ * **Not the server's own `SUPPORTED` list.** vf-licence accepts six
+ * codes so a translation can be added one language at a time without
+ * a schema change first; only `en` and `de` have any rows behind them
+ * today. Offering the other four here would be a menu of screens that
+ * render entirely in English regardless of what was picked — a choice
+ * that does nothing is worse than a choice not offered.
+ *
+ * **Native names, not translated ones.** "Deutsch" reads the same
+ * whichever language the screen is currently in, on purpose: the
+ * point of a language picker is to be findable by someone who cannot
+ * read the language currently on screen, which a name translated into
+ * that same language would defeat.
+ */
+const LANGUAGES = [
+  { code: "en", name: "English" },
+  { code: "de", name: "Deutsch" },
+];
+
+/**
+ * The control itself, for a screen's top bar — decision 0302, reported
+ * live: "add a Language button and icon, where English, or German can
+ * be selected... Use De, or En as the Icon perhaps."
+ *
+ * **A toggle, matching `moodPicker`'s own shape** — decision 0286's
+ * own reasoning carries over unchanged: two real options today, and a
+ * button that shows the current one and flips it needs no menu to
+ * open. A third language, the day one is actually translated, is the
+ * day this earns a real dropdown; building one now for a choice
+ * nobody can make yet would be speculative.
+ *
+ * **A short code stands in for the SVG `icon()` every other button
+ * here uses** — there is no glyph for "this is now in German" the way
+ * there is for day and night, and the operator's own suggestion was
+ * the code itself.
+ *
+ * **A full reload, not a re-render in place.** Decision 0126 built no
+ * router and no in-memory way to re-open whichever screen is
+ * currently showing from outside itself — the same reason Sign Out
+ * (decision 0283) reloads rather than re-renders. Every screen's own
+ * `render()` calls `t()` throughout, and a fresh `loadStrings()` on
+ * load is the one place already guaranteed to run before any of them
+ * do.
+ */
+export function languagePicker() {
+  const button = document.createElement("button");
+  button.className = "actionlink";
+
+  function render(code) {
+    const lang = LANGUAGES.find((l) => l.code === code) ?? LANGUAGES[0];
+    button.title = lang.name;
+    const badge = document.createElement("span");
+    badge.className = "langbadge";
+    badge.textContent = lang.code.toUpperCase();
+    const label = document.createElement("span");
+    label.textContent = lang.name;
+    button.replaceChildren(badge, label);
+  }
+
+  button.onclick = () => {
+    const current = storedLocale() ?? locale;
+    const next = LANGUAGES.find((l) => l.code !== current)?.code ?? "en";
+    try {
+      localStorage.setItem(LOCALE_KEY, next);
+    } catch {
+      // The screen is right for this session either way, since
+      // loadStrings() falls back to the browser's own language.
+    }
+    location.reload();
+  };
+
+  render(storedLocale() ?? locale);
+  return button;
 }

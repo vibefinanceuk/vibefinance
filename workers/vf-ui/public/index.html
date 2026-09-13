@@ -1898,6 +1898,26 @@
   }
 
   .actionlink svg { width: 20px; height: 20px; }
+  /*
+    **The language toggle's own "icon", decision 0302** — a short code
+    standing in for the SVG shape every other `.actionlink` uses,
+    since there is no glyph for "this is now in German" the way there
+    is a sun for day and a moon for night. Sized and weighted to read
+    at the same visual scale as the 20px icons beside it, not simply
+    left as plain text.
+  */
+  .langbadge {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    font-size: var(--text-sm);
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    border: 1px solid currentColor;
+    border-radius: 4px;
+  }
   .actionlink:hover:not(:disabled) { background: var(--surface-2); color: var(--text-primary); }
 
   /*
