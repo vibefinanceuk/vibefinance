@@ -823,6 +823,14 @@
     — decision 0182. A heading is a heading elsewhere.
   */
   .topbar h2 { margin: 0; font-size: var(--text-lg); font-weight: 600; }
+  /*
+    **The Dashboard's own title, larger** — decision 0307, reported
+    live: "increased the Font size of the Title (Dashboard)." Scoped
+    to this one screen rather than `.topbar h2` itself, which every
+    screen shares — `--text-xl`, the next step up the same four-step
+    scale `--text-lg` already belongs to, not a new, one-off size.
+  */
+  .dashboardpage .topbar h2 { font-size: var(--text-xl); }
 
   .topbar .right { margin-left: auto; display: flex; gap: 8px; align-items: center; }
   /*

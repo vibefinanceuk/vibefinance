@@ -15,8 +15,8 @@ function mountShell() {
 const STRINGS = {
   locale: "en",
   strings: {
-    "dash.heading": "My work",
-    "dash.sub": "What is waiting, and what is on the clock",
+    "dash.heading": "Dashboard",
+    "dash.sub": "Items pending for my user - {name}",
     "dash.waiting_for_me": "Waiting for me",
     "dash.waitingsub": "Mine, and work my teams own",
     "dash.acrossstages": "across {n} stages",
@@ -107,7 +107,7 @@ function daysAhead(n: number) {
   return new Date(Date.now() + n * 86400000).toISOString().slice(0, 10);
 }
 
-function stubDashboard(cards: unknown[], seen: string[] = []) {
+function stubDashboard(cards: unknown[], seen: string[] = [], name = "Alice") {
   vi.stubGlobal(
     "fetch",
     vi.fn(async (url: string) => {
@@ -118,6 +118,9 @@ function stubDashboard(cards: unknown[], seen: string[] = []) {
       }
       if (path.startsWith("/api/dashboard")) {
         return { ok: true, json: async () => ({ cards, usingDefault: true }) } as Response;
+      }
+      if (path.startsWith("/api/whoami")) {
+        return { ok: true, json: async () => ({ id: "u-1", name, permissions: [] }) } as Response;
       }
       throw new Error(`no stub for ${path}`);
     })
@@ -139,6 +142,58 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+});
+
+describe("the heading, its subtitle, and its own larger size (decision 0307)", () => {
+  /**
+   * **Reported live**: "change the heading / title... which currently
+   * reads 'My Work' to read 'Dashboard'. Beneath I would like the
+   * current text 'What is waiting, and what is on the clock', to
+   * read 'Items pending for my user - <username>'... increased the
+   * Font size of the Title."
+   */
+  it("reads Dashboard, with the signed-in person's own name in the subtitle", async () => {
+    await openDashboard([]);
+
+    expect(document.querySelector(".topbar h2")?.textContent).toBe("Dashboard");
+    expect(document.querySelector(".topbar .sub")?.textContent).toBe("Items pending for my user - Alice");
+  });
+
+  it("falls back to no name at all if /api/whoami cannot be reached, rather than breaking the screen", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        const path = String(url);
+        if (path.startsWith("/api/ui-strings")) return { ok: true, json: async () => STRINGS } as Response;
+        if (path.startsWith("/api/dashboard")) return { ok: true, json: async () => ({ cards: [] }) } as Response;
+        throw new Error(`no stub for ${path}`);
+      })
+    );
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { open } = await import("/dashboard.js");
+    await open();
+
+    // dashboard.js's own load() still succeeds — the missing name is
+    // the only thing degraded, not the screen itself.
+    expect(document.querySelector(".topbar h2")?.textContent).toBe("Dashboard");
+    expect(document.querySelector(".topbar .sub")?.textContent).toBe("Items pending for my user - ");
+  });
+
+  it("gives the Dashboard's own title a larger size than every other screen shares", async () => {
+    // jsdom applies no CSS, so this reads the real stylesheet rather
+    // than measure a rendered layout.
+    const css = (await import("virtual:stylesheets")).default["index.html"];
+    const baseStart = css.indexOf(".topbar h2 {");
+    expect(baseStart, "the base .topbar h2 rule must exist").toBeGreaterThan(-1);
+    const baseRule = css.slice(baseStart, css.indexOf("}", baseStart) + 1);
+    expect(baseRule).toContain("var(--text-lg)");
+
+    const dashStart = css.indexOf(".dashboardpage .topbar h2 {");
+    expect(dashStart, "the .dashboardpage .topbar h2 override must exist").toBeGreaterThan(-1);
+    const dashRule = css.slice(dashStart, css.indexOf("}", dashStart) + 1);
+    expect(dashRule).toContain("var(--text-xl)");
+  });
 });
 
 describe("the cards render what the route returned", () => {

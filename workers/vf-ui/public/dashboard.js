@@ -28,6 +28,17 @@ import { barChart, barList, donutChart } from "/charts.js";
  */
 
 let cards = [];
+
+/**
+ * **Who is signed in**, fetched independently rather than reached for
+ * in `tasks.js`'s own, unexported `me` — every screen already owns
+ * its own data rather than reaching into another screen's module
+ * state, and `tasks.js`'s own `me` is not guaranteed to be set by the
+ * time this screen opens in the first place (a test opening this
+ * screen directly, never having called `tasks.js`'s own `start()`,
+ * is exactly that case).
+ */
+let me = null;
 let catalogue = null;
 
 /**
@@ -45,10 +56,25 @@ async function load() {
     const response = await fetch("/api/dashboard");
     if (!response.ok) return false;
     cards = (await response.json()).cards ?? [];
-    return true;
   } catch {
     return false;
   }
+
+  /**
+   * **Best-effort, not a reason to fail the whole screen.** The
+   * dashboard's own cards are the thing this screen exists to show;
+   * a name in the subtitle is a nicety on top of that, the same
+   * reasoning `loadStrings()` already gives a failed fetch — a screen
+   * with a blank name is better than no screen.
+   */
+  try {
+    const whoami = await fetch("/api/whoami");
+    if (whoami.ok) me = await whoami.json();
+  } catch {
+    // The subtitle falls back to no name at all.
+  }
+
+  return true;
 }
 
 /**
@@ -643,7 +669,7 @@ function render() {
 
   shell.replaceChildren(
     frame(
-      el("div", {}, [
+      el("div", { class: "dashboardpage" }, [
         /**
          * **Arrange, top right, left of Night/Day** — decision 0303,
          * reported live: "move the Arrange button to the top right,
@@ -655,7 +681,21 @@ function render() {
          * `right` renders before `moodPicker`, `languagePicker`, and
          * Sign out, so this lands exactly to their left.
          */
-        topbar(t("dash.heading"), t("dash.sub"), arrangeButtons()),
+        topbar(
+          t("dash.heading"),
+          /**
+           * **"Items pending for my user - Alice," decision 0307** —
+           * reported live, replacing "What is waiting, and what is on
+           * the clock." `{name}` is the same placeholder convention
+           * `suppliers.loaded`'s own `{n}` and `suppliers.loadedago`'s
+           * own `{days}` already use — filled here rather than baked
+           * into the string, since the name is a fact about who is
+           * looking at the screen, not a fact `ui_strings` itself
+           * knows.
+           */
+          t("dash.sub").replace("{name}", me?.name ?? ""),
+          arrangeButtons()
+        ),
         tiles.length > 0 ? el("div", { class: "dashstrip" }, tiles) : null,
         rest.length > 0 ? el("div", { class: "dashgrid" }, rest) : null,
       ].filter(Boolean))
