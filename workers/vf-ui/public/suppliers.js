@@ -285,7 +285,26 @@ function loader() {
   }
 
   return el("div", { class: "panel" }, [
-    el("h2", { text: t("suppliers.loadheading") }),
+    /**
+     * **Load and New supplier move to the top right, decision 0300**
+     * — reported live: "move the Load, and New Supplier buttons to be
+     * in the top right of the Load a supplier file card. This will
+     * free space at the bottom of the card." The same `.cardhead`
+     * shape every other card's own action already uses — Change
+     * Seller, Header Fields — reused rather than a fifth version of
+     * the same pattern.
+     *
+     * **Still both together, decision 0237's own reasoning
+     * unchanged**: a load brings many suppliers at once from the ERP;
+     * recording one brings a single supplier the ERP does not have
+     * yet (decision 0231). Different acts, the same question — *how
+     * does a supplier get into this list* — so a person looking for
+     * either still finds both, just higher on the card than before.
+     */
+    el("div", { class: "cardhead" }, [
+      el("h3", { text: t("suppliers.loadheading") }),
+      el("div", { class: "statebuttons" }, [button, newSupplier()]),
+    ]),
     /**
      * **What this is for**, because a file picker with no explanation
      * is a file picker nobody uses. And it names the one column that is
@@ -294,16 +313,6 @@ function loader() {
      */
     el("p", { class: "muted", text: t("suppliers.loadhelp") }),
     picker,
-    /**
-     * **Both ways a supplier gets here, side by side** — decision 0237.
-     *
-     * A load brings many at once from the ERP; recording one brings a
-     * single supplier the ERP does not have yet (decision 0231). They
-     * are different acts and the same question — *how does a supplier
-     * get into this list* — so a person looking for either should find
-     * both.
-     */
-    el("div", { class: "statebuttons" }, [button, newSupplier()]),
   ]);
 }
 
@@ -690,6 +699,12 @@ function note(message) {
  * dashboard's own stage and ownership rings already use — the ring
  * itself, the legend, the five-colour palette, and `onSelect` are all
  * the one component, not a second chart built to look similar.
+ *
+ * **No "All suppliers" row any more, decision 0300** — the operator's
+ * own correction, once the filter banner shipped its own "Clear
+ * filter" chip alongside it: "you have added a 'Clear Filter' button,
+ * which actually means the All Suppliers Link is no longer needed."
+ * Two ways to the same place is one more than a person has to learn.
  */
 function supplierStatusCard() {
   const counts = { active: 0, inactive: 0, onhold: 0, awaitingerp: 0 };
@@ -707,30 +722,11 @@ function supplierStatusCard() {
     render();
   }
 
-  const allRow = el(
-    "div",
-    { class: statusFilter ? "donutkey clickable" : "donutkey clickable on", onclick: () => select(null) },
-    [
-      el("span", { class: "donutdot", style: "background: var(--text-muted)" }),
-      el("span", { text: t("suppliers.allsuppliers") }),
-      el("span", { class: "muted", text: String(suppliers.length) }),
-    ]
-  );
-
   return el("div", { class: "panel" }, [
     el("h3", { text: t("suppliers.statusheading") }),
     segments.length > 0
       ? donutChart(segments, { onSelect: (segment) => select(segment.key) })
       : el("div", { class: "muted", text: t("suppliers.none") }),
-    /**
-     * **Its own row, beneath the ring's own legend** — the operator's
-     * own request: "add an All Suppliers row, at the bottom, to allow
-     * a user to launch all suppliers again." Not one of the ring's
-     * own segments — it is every supplier, not a fifth, mutually
-     * exclusive bucket alongside the other four, and `donutChart()`'s
-     * own legend only ever draws what it was actually given arcs for.
-     */
-    allRow,
   ]);
 }
 

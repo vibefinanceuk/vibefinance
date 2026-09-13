@@ -974,6 +974,16 @@
     flex-wrap: wrap;
     margin: 10px 0;
   }
+  /*
+    **No margin inside a `.cardhead` row, decision 0300** — Load and
+    New supplier moved into the same title-left, action-right row
+    Change Seller and Header Fields already use. `.statebuttons`'s own
+    `margin: 10px 0` is right for a block sitting beneath a heading,
+    which is what it always did before; inside a flex row aligned to
+    `flex-start`, that same margin would nudge the buttons down from
+    the title's own top edge rather than sitting level with it.
+  */
+  .cardhead .statebuttons { margin: 0; }
 
   /*
     **Label above value**, unlike the read-only party cards. These are
@@ -1512,10 +1522,29 @@
   */
   .supplierhead {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    /**
+     * **The status card no longer matches the load-file card's own
+     * width** — reported live: "the Supplier Status card width be
+     * reduced, therefore the counts are closer to the text." An equal
+     * `auto-fit` split gave it as much room as the load-file card's
+     * own help text and file picker actually use, which the ring and
+     * a four-row legend never needed — `.donutlegend`'s own
+     * `flex: 1 1 auto` stretched the label to fill whatever was left,
+     * pushing every count to the far right edge of space nothing was
+     * using.
+     */
+    grid-template-columns: minmax(0, 1fr) minmax(260px, 380px);
     gap: 16px;
     margin-bottom: 16px;
-    align-items: start;
+    /**
+     * **No forced top alignment any more** — reported live: "the card
+     * height on the Supplier Status card be changed to match the
+     * 'Load a supplier file' card." Grid's own default, stretch,
+     * already does this the moment nothing overrides it.
+     */
+  }
+  @media (max-width: 900px) {
+    .supplierhead { grid-template-columns: 1fr; }
   }
   /*
     **The Seller card's own sub-line, decision 0290** — reported live:

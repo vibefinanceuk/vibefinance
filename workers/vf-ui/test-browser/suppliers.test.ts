@@ -264,6 +264,23 @@ describe("both ways in, side by side (decision 0237)", () => {
     expect(bar?.textContent).toContain("New supplier");
   });
 
+  it("puts Load and New supplier top right of the card, beside its own heading (decision 0300)", async () => {
+    // Reported live: "move the Load, and New Supplier buttons to be
+    // in the top right of the Load a supplier file card. This will
+    // free space at the bottom of the card."
+    stubFetch({ suppliers: [], lastLoad: null });
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { open } = await import("/suppliers.js");
+    await open();
+
+    const cardhead = [...document.querySelectorAll(".cardhead")].find((c) =>
+      c.querySelector("h3")?.textContent === "Load a supplier file"
+    );
+    expect(cardhead).not.toBeUndefined();
+    expect(cardhead?.querySelector(".statebuttons")).not.toBeNull();
+  });
+
   it("leaves both able to be clicked", async () => {
     /**
      * **`actionLink` disables a button with no `onclick`** — decision
@@ -346,7 +363,20 @@ describe("the status card (decision 0299)", () => {
     expect(document.body.textContent).toContain("Showing suppliers on hold only");
   });
 
-  it("All suppliers shows the true total and clears the filter", async () => {
+  it("has no All suppliers row of its own any more", async () => {
+    // The operator's own correction: "you have added a 'Clear
+    // Filter' button, which actually means the All Suppliers Link is
+    // no longer needed."
+    stubFetch({ suppliers: SUPPLIERS, lastLoad: null });
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { open } = await import("/suppliers.js");
+    await open();
+
+    expect(legendRow("All suppliers")).toBeUndefined();
+  });
+
+  it("Clear filter, on the banner, is now the one way back to everyone", async () => {
     stubFetch({ suppliers: SUPPLIERS, lastLoad: null });
     const { loadStrings } = await import("/strings.js");
     await loadStrings();
@@ -357,12 +387,32 @@ describe("the status card (decision 0299)", () => {
     await new Promise((r) => setTimeout(r, 0));
     expect(document.querySelectorAll("tbody tr").length).toBe(2);
 
-    const allRow = legendRow("All suppliers");
-    expect(allRow?.textContent).toContain(String(SUPPLIERS.length));
-    (allRow as HTMLElement).click();
+    const clear = [...document.querySelectorAll("button.chip")].find((b) => b.textContent === "Clear filter");
+    expect(clear).not.toBeUndefined();
+    (clear as HTMLButtonElement).click();
     await new Promise((r) => setTimeout(r, 0));
 
     expect(document.querySelectorAll("tbody tr").length).toBe(SUPPLIERS.length);
     expect(document.body.textContent).not.toContain("Showing suppliers");
+  });
+
+  it("matches the load-file card's own height, and gives the status card less width (decision 0300)", async () => {
+    /**
+     * **Reported live**: "the card height on the Supplier Status card
+     * be changed to match the 'Load a supplier file' card" and "the
+     * Supplier Status card width be reduced, therefore the counts are
+     * closer to the text." jsdom applies no CSS, so this reads the
+     * real stylesheet rather than measure a rendered layout.
+     */
+    const css = (await import("virtual:stylesheets")).default["index.html"];
+    const ruleStart = css.indexOf(".supplierhead {");
+    expect(ruleStart, "the .supplierhead rule must exist").toBeGreaterThan(-1);
+    const rule = css.slice(ruleStart, css.indexOf("}", ruleStart) + 1);
+
+    expect(rule).not.toContain("align-items: start");
+    // Genuinely unequal now, not the auto-fit 1fr/1fr split both cards
+    // used to share.
+    expect(rule).not.toContain("auto-fit, minmax(300px, 1fr)");
+    expect(rule).toContain("minmax(260px, 380px)");
   });
 });
