@@ -1,7 +1,7 @@
 import { env } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
 import { applyTestSchema } from "./setup.js";
-import { computeDocumentKey, storeInvoiceDocument, retrieveInvoiceDocument } from "../src/document-storage.js";
+import { computeDocumentKey, storeInvoiceDocument, retrieveInvoiceDocument, renderXmlForDisplay } from "../src/document-storage.js";
 
 beforeEach(async () => {
   await applyTestSchema();
@@ -188,5 +188,60 @@ describe("retrieveInvoiceDocument — real round trip", () => {
       .run();
     const retrieved = await retrieveInvoiceDocument(env.DOCUMENTS, env.DB, "inv-1", "original");
     expect(retrieved).toBeNull();
+  });
+});
+
+describe("renderXmlForDisplay — dark, readable, and safe from what it displays (decision 0279)", () => {
+  function bytesOf(text: string): ArrayBuffer {
+    return new TextEncoder().encode(text).buffer as ArrayBuffer;
+  }
+
+  it("wraps the XML in a dark-styled HTML page rather than serving it raw", async () => {
+    /**
+     * **Reported live**: "the XML tab view is difficult to read, when
+     * the dark UI mode is applied" — a browser handed raw XML reaches
+     * for its own built-in viewer, styled for a light page regardless
+     * of the app's own mood.
+     */
+    const html = renderXmlForDisplay(bytesOf("<Invoice><ID>1</ID></Invoice>"));
+    expect(html).toContain("<html>");
+    expect(html).toContain("background: #0d1626");
+    expect(html).toContain("color: #e8eef7");
+  });
+
+  it("shows the real content, escaped for safe display inside <pre>", () => {
+    const html = renderXmlForDisplay(bytesOf("<Invoice><ID>INV-42</ID></Invoice>"));
+    expect(html).toContain("&lt;Invoice&gt;&lt;ID&gt;INV-42&lt;/ID&gt;&lt;/Invoice&gt;");
+    // The real angle brackets must never reach the output unescaped —
+    // that would be the raw XML tag, not its escaped display form.
+    expect(html).not.toContain("<Invoice>");
+  });
+
+  it("escapes a supplier-controlled attempt to break out of the <pre> element", () => {
+    /**
+     * **This is the real risk, not a hypothetical one** — an invoice's
+     * own XML arrives from a supplier, an external, untrusted source.
+     * A file containing this exact payload, served unescaped, would
+     * execute arbitrary script in this app's own origin.
+     */
+    const hostile = "<Invoice><Note>x</Note></Invoice></pre><script>alert(1)</script>";
+    const html = renderXmlForDisplay(bytesOf(hostile));
+    expect(html).not.toContain("</pre><script>");
+    expect(html).toContain("&lt;script&gt;");
+  });
+
+  it("escapes ampersands so an escaped angle bracket cannot be re-mangled into a real one", () => {
+    // &lt; written literally in the source, then escaped again, must
+    // read back as the literal text "&lt;" on screen — not decode to
+    // "<" a second time and reopen the same risk the other tests check.
+    const html = renderXmlForDisplay(bytesOf("literal &lt; not a tag"));
+    expect(html).toContain("&amp;lt; not a tag");
+  });
+
+  it("preserves a real UBL document's own single unbroken line, wrapped rather than truncated", () => {
+    const longLine = "<Invoice>" + "x".repeat(500) + "</Invoice>";
+    const html = renderXmlForDisplay(bytesOf(longLine));
+    expect(html).toContain("white-space: pre-wrap");
+    expect(html).toContain("x".repeat(500));
   });
 });

@@ -235,3 +235,66 @@ export async function documentTypeInfo(
     .first<{ content_type: string }>();
   return row ? { contentType: row.content_type } : null;
 }
+
+/**
+ * Escaped, because a supplier's own XML is somebody else's text —
+ * the same reasoning peppol-render.ts's own `esc()` already states,
+ * duplicated rather than imported since the two exist for genuinely
+ * different purposes (rendering an invoice's fields vs. showing a raw
+ * file's source) and a shared dependency between them would be a
+ * coupling neither actually needs. This one only needs the two
+ * characters that could break out of a `<pre>` element, plus the
+ * ampersand that would otherwise mangle either of them once escaped.
+ */
+function escapeForPre(value: string): string {
+  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+/**
+ * The XML tab's own view — decision 0279.
+ *
+ * **Reported live**: "the XML tab view is difficult to read, when the
+ * dark UI mode is applied." The tab's own `<iframe>` was pointed
+ * directly at the raw `application/xml` response, which a browser
+ * renders with its own built-in XML viewer — a separate document the
+ * host page's own CSS cannot reach into, styled for a light page
+ * regardless of which mood the surrounding app is in.
+ *
+ * **Wrapped in real HTML this app actually controls**, styled with
+ * the same dark colours used throughout the rest of the interface,
+ * rather than left to a browser default this app has no say over.
+ * Always dark — not mood-aware — the same way a code viewer
+ * conventionally keeps its own consistent theme regardless of the
+ * page around it; threading the viewer's current mood through the
+ * token-minting flow for a screen this narrow would be real
+ * complexity for a distinction nobody asked for.
+ *
+ * `white-space: pre-wrap`, not plain `pre`: a real UBL document is
+ * routinely one unbroken line with no formatting whitespace of its
+ * own, and a browser's native viewer already wrapped it for exactly
+ * that reason.
+ */
+export function renderXmlForDisplay(bytes: ArrayBuffer): string {
+  const text = new TextDecoder("utf-8").decode(bytes);
+  return `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  body { margin: 0; padding: 16px; background: #0d1626; }
+  pre {
+    margin: 0;
+    color: #e8eef7;
+    font-family: ui-monospace, "SF Mono", Consolas, "Liberation Mono", monospace;
+    font-size: 13px;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+</style>
+</head>
+<body>
+<pre>${escapeForPre(text)}</pre>
+</body>
+</html>`;
+}

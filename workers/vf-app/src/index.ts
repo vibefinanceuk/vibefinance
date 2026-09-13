@@ -101,7 +101,7 @@ import {
 } from "./field-visibility-route.js";
 import { handlePreflight, withCors } from "@vibefinance/shared";
 import { mintDocumentToken, verifyDocumentToken } from "./document-token.js";
-import { retrieveInvoiceDocument, preferredDocumentType, documentTypeInfo } from "./document-storage.js";
+import { retrieveInvoiceDocument, preferredDocumentType, documentTypeInfo, renderXmlForDisplay } from "./document-storage.js";
 import { resolveVocabulary } from "@vibefinance/shared";
 import { getSupplierHistory } from "./invoice-history.js";
 import { handleCreateCustomField, handleListCustomFields, loadCustomFields } from "./custom-field-route.js";
@@ -1520,6 +1520,23 @@ export default {
       const doc = await retrieveInvoiceDocument(documents, db, verified.invoiceId, verified.documentType);
       if (!doc) {
         return json({ error: "the document is no longer retained" }, 404);
+      }
+      /**
+       * **XML rendered as real, styled HTML, decision 0279** — a
+       * browser handed raw `application/xml` reaches for its own
+       * built-in viewer, styled for a light page regardless of the
+       * app's own current mood. Every other content type is served
+       * exactly as retrieved, unaffected.
+       */
+      if (doc.contentType.includes("xml")) {
+        return new Response(renderXmlForDisplay(doc.bytes), {
+          status: 200,
+          headers: {
+            "Content-Type": "text/html; charset=utf-8",
+            "Content-Disposition": "inline",
+            "Cache-Control": "private, no-store",
+          },
+        });
       }
       return new Response(doc.bytes, {
         status: 200,
