@@ -308,8 +308,16 @@ describe("the brand mark (decision 0145)", () => {
 });
 
 describe("the flat nav, permission-filtered (decisions 0274 and 0276)", () => {
+  /**
+   * **Clicks the nav itself, decision 0311** — reported live: "remove
+   * the collapse and expand button from the side menu... the collapse
+   * and expand functionality happen when a user clicks on the side
+   * menu." `.nav` directly, not a `.navitem` within it, so the click
+   * lands where `navEl.onclick`'s own `.closest(".navitem")` check
+   * finds nothing and folds the menu instead of navigating.
+   */
   function collapseToggle() {
-    return document.querySelector(".navcollapsetoggle") as HTMLButtonElement;
+    return document.querySelector(".nav") as HTMLElement;
   }
   function frameEl() {
     return document.querySelector(".frame") as HTMLElement;
@@ -378,16 +386,29 @@ describe("the flat nav, permission-filtered (decisions 0274 and 0276)", () => {
     expect(document.querySelector(".navlabel")).not.toBeNull();
   });
 
-  it("folds the whole nav to icons on the collapse toggle, and back", async () => {
+  it("folds the whole nav to icons on a click, and back (decision 0311)", async () => {
     await openList([APPROVAL_TASK]);
 
     collapseToggle().click();
     expect(frameEl().classList.contains("collapsed")).toBe(true);
-    expect(collapseToggle().getAttribute("aria-label")).toBe("Expand the menu");
 
     collapseToggle().click();
     expect(frameEl().classList.contains("collapsed")).toBe(false);
-    expect(collapseToggle().getAttribute("aria-label")).toBe("Collapse the menu");
+  });
+
+  it("does not fold when the click lands on a nav item — it navigates instead (decision 0311)", async () => {
+    await openList([APPROVAL_TASK]);
+
+    const dashboardLink = [...document.querySelectorAll(".navitem")].find(
+      (a) => a.textContent === "Dashboard"
+    ) as HTMLElement;
+    dashboardLink.click();
+    for (let i = 0; i < 100; i++) {
+      if (document.querySelector(".nav a.on")?.textContent === "Dashboard") break;
+      await new Promise((r) => setTimeout(r, 10));
+    }
+
+    expect(frameEl().classList.contains("collapsed")).toBe(false);
   });
 
   it("remembers the fold across a fresh render", async () => {

@@ -561,24 +561,32 @@ export function frame(main) {
       el("div", { text: me?.name ?? "" }),
       el("div", { class: "muted", text: me?.environmentId ?? "" }),
     ]),
-    /**
-     * **Toggles the class directly, not a re-render.** Every other
-     * choice on this nav (which screen is current) already lives as a
-     * DOM class a click can flip; folding the whole nav is the same
-     * kind of change, not a reason to rebuild the screen underneath
-     * it.
-     */
-    el("button", {
-      class: "navcollapsetoggle",
-      "aria-label": navCollapsed() ? t("nav.expand") : t("nav.collapse"),
-      onclick: (e) => {
-        const collapsed = !frameEl.classList.contains("collapsed");
-        frameEl.classList.toggle("collapsed", collapsed);
-        setNavCollapsed(collapsed);
-        e.currentTarget.setAttribute("aria-label", collapsed ? t("nav.expand") : t("nav.collapse"));
-      },
-    }, [icon("navcollapse")]),
   ]);
+
+  /**
+   * **The nav itself is the toggle, decision 0311** — reported live:
+   * "remove the collapse and expand button from the side menu... the
+   * collapse and expand functionality happen when a user clicks on
+   * the side menu, if they do not select a button that redirects to
+   * another screen." A click anywhere in `navEl` bubbles here;
+   * `.closest(\".navitem\")` tells a real navigation click apart from
+   * everywhere else in the nav — the logo, `.who`, the empty space a
+   * `.navcollapsetoggle` button used to occupy — without needing
+   * `stopPropagation()` on every nav item individually.
+   *
+   * **Toggles the class directly, not a re-render** — decision 0274's
+   * own reasoning, unchanged. Every other choice on this nav already
+   * lives as a DOM class a click can flip; folding the whole nav is
+   * the same kind of change, not a reason to rebuild the screen
+   * underneath it.
+   */
+  navEl.onclick = (e) => {
+    if (e.target.closest(".navitem")) return;
+    const collapsed = !frameEl.classList.contains("collapsed");
+    frameEl.classList.toggle("collapsed", collapsed);
+    navEl.classList.toggle("collapsed", collapsed);
+    setNavCollapsed(collapsed);
+  };
 
   const frameEl = el("div", { class: navCollapsed() ? "frame collapsed" : "frame" }, [
     navEl,

@@ -248,6 +248,14 @@
     top: 0;
     height: 100vh;
     align-self: start;
+    /**
+     * **The nav itself is the collapse toggle, decision 0311** — a
+     * standalone `.navcollapsetoggle` button used to be the only
+     * clickable, non-navigating thing here; now the whole nav is,
+     * `cursor: pointer` says so the same way `tr.clickable` already
+     * signals a clickable row that carries no button of its own.
+     */
+    cursor: pointer;
   }
   .nav .who { margin-top: auto; }
 
@@ -333,6 +341,13 @@
     gap: 14px;
     width: 100%;
     padding: 10px 12px;
+    /**
+     * **Its own cursor, decision 0311** — the nav around it now
+     * toggles collapse on click; a nav item's own cursor still needs
+     * to say "this navigates," not "this folds the menu," since the
+     * two are genuinely different actions sharing one region.
+     */
+    cursor: pointer;
   }
   .navitem svg { width: 24px; height: 24px; flex: 0 0 auto; }
   .navlabel { flex: 1 1 auto; min-width: 0; font-size: var(--text-lg); line-height: 1; }
@@ -381,22 +396,6 @@
     height: auto;
     margin: 2px auto 20px;
   }
-
-  .navcollapsetoggle {
-    background: none;
-    border: none;
-    color: var(--text-muted);
-    cursor: pointer;
-    padding: 8px;
-    margin-top: 10px;
-    border-radius: var(--radius);
-    align-self: flex-start;
-  }
-  .navcollapsetoggle:hover { background: var(--surface-2); color: var(--text-primary); }
-  .navcollapsetoggle svg { width: 18px; height: 18px; }
-  /* Points the other way once open — the same claim, read backwards. */
-  .frame.collapsed .navcollapsetoggle svg { transform: scaleX(-1); }
-  .frame.collapsed .navcollapsetoggle { align-self: center; }
 
   /* The create form — decision 0128. Inline, because three fields and
      a button is a row rather than a stack. */
