@@ -54,8 +54,10 @@ let units = [];
  * once a customer has several mailboxes; Due to somebody chasing
  * payment terms; Hands is the product's own claim made countable.
  *
- * `always` is the document number and Expand — **a row that cannot be
- * identified or opened is not a row.**
+ * `always` is the document number alone now — decision 0287 removed
+ * Expand as a column of its own. **A row that cannot be identified is
+ * not a row**, decision 0164's own reasoning, unchanged; opening one
+ * no longer needs a column, since the row itself does that now.
  */
 const COLUMNS = [
   { key: "number", always: true },
@@ -77,7 +79,6 @@ const COLUMNS = [
    */
   { key: "unit", on: true },
   { key: "hands", on: false },
-  { key: "expand", always: true },
 ];
 
 /**
@@ -164,15 +165,18 @@ function cell(doc, key) {
   const unreadable = doc.status === "unreadable";
 
   switch (key) {
+    /**
+     * **Plain text, not its own button, decision 0287.** The row
+     * itself opens the document now; a second clickable element inside
+     * a clickable row would fire twice on a click here — its own
+     * `onclick`, then the row's own handler again once the click
+     * bubbles up to it.
+     */
     case "number":
       return el("td", {}, [
         unreadable
           ? el("span", { class: "sm unread", text: t("documents.unreadable") })
-          : el("button", {
-              class: "rulelink",
-              text: doc.number ?? doc.id.slice(0, 8),
-              onclick: () => expand(doc),
-            }),
+          : el("span", { text: doc.number ?? doc.id.slice(0, 8) }),
       ]);
 
     case "type":
@@ -234,13 +238,6 @@ function cell(doc, key) {
               ? t("documents.straightthrough")
               : t("documents.handcount").replace("{n}", String(doc.hands)),
         }),
-      ]);
-
-    case "expand":
-      return el("td", {}, [
-        // The same word the column is called, rather than a second
-        // key saying the same thing (decision 0165).
-        el("button", { class: "expand", text: t("column.expand"), onclick: () => expand(doc) }),
       ]);
 
     default:
@@ -429,9 +426,7 @@ function render() {
                       {},
                       visible.map((c) =>
                         el("th", { class: c.key === "amount" ? "num" : "" }, [
-                          // Expand's column needs no heading; the
-                          // button says what it does.
-                          el("span", { text: c.key === "expand" ? "" : t(`column.${c.key}`) }),
+                          el("span", { text: t(`column.${c.key}`) }),
                         ])
                       )
                     ),
@@ -442,7 +437,20 @@ function render() {
                     documents.map((doc) =>
                       el(
                         "tr",
-                        {},
+                        {
+                          class: "clickable",
+                          /**
+                           * **The row itself opens the document** —
+                           * decision 0287, matching the dashboard's own
+                           * "On my clock" list (decision 0250): "a row
+                           * that reads like a link and does nothing is
+                           * worse than one that does not." Removes the
+                           * need for a separate Expand button or column
+                           * — the whole row already says what clicking
+                           * it does.
+                           */
+                          onclick: () => expand(doc),
+                        },
                         visible.map((c) => cell(doc, c.key))
                       )
                     )

@@ -263,20 +263,28 @@ describe("opening a document (decision 0165)", () => {
   it("shows the viewer pane", async () => {
     await openDocuments([DOC]);
 
-    const expand = document.querySelector("button.expand") as HTMLButtonElement;
-    expand.click();
+    const row = document.querySelector("tbody tr.clickable") as HTMLElement;
+    row.click();
     await until(() => !(document.getElementById("viewer") as HTMLElement).hidden);
 
     expect((document.getElementById("viewer") as HTMLElement).hidden).toBe(false);
     expect((document.getElementById("shell") as HTMLElement).hidden).toBe(true);
   });
 
-  it("opens from the document number too", async () => {
-    // **The number is the way in**, the same as a rule's sentence.
+  it("opens from a click anywhere on the row, not just one cell (decision 0287)", async () => {
+    /**
+     * **The row itself is the way in now**, not a specific cell within
+     * it. The document number used to be its own separate clickable
+     * link alongside a dedicated Expand button; both are gone, and the
+     * whole row carries the click instead — matching the dashboard's
+     * own "On my clock" list (decision 0250).
+     */
     await openDocuments([DOC]);
 
-    const link = document.querySelector("button.rulelink") as HTMLButtonElement;
-    link.click();
+    const numberCell = [...document.querySelectorAll("tbody td")].find((td) =>
+      td.textContent?.includes(DOC.number)
+    ) as HTMLElement;
+    numberCell.click();
     await until(() => !(document.getElementById("viewer") as HTMLElement).hidden);
 
     expect((document.getElementById("viewer") as HTMLElement).hidden).toBe(false);
@@ -294,8 +302,8 @@ describe("opening a document (decision 0165)", () => {
      */
     await openDocuments([DOC]);
 
-    const expand = document.querySelector("button.expand") as HTMLButtonElement;
-    expand.click();
+    const row = document.querySelector("tbody tr.clickable") as HTMLElement;
+    row.click();
     await until(() => !(document.getElementById("viewer") as HTMLElement).hidden);
 
     const back = [...document.querySelectorAll(".topbar button")].find(
@@ -325,8 +333,8 @@ describe("a document that is not work (decision 0167)", () => {
   it("renders rather than blanking", async () => {
     await openDocuments([{ ...DOC, stageId: null, stageName: null, status: "outside" }]);
 
-    const expand = document.querySelector("button.expand") as HTMLButtonElement;
-    expand.click();
+    const row = document.querySelector("tbody tr.clickable") as HTMLElement;
+    row.click();
     await until(() => (document.getElementById("viewer") as HTMLElement).childElementCount > 0);
 
     const viewer = document.getElementById("viewer") as HTMLElement;
@@ -339,8 +347,8 @@ describe("a document that is not work (decision 0167)", () => {
     // document nobody is waiting on is a fact invented to fill a row.
     await openDocuments([{ ...DOC, stageId: null, stageName: null, status: "outside" }]);
 
-    const expand = document.querySelector("button.expand") as HTMLButtonElement;
-    expand.click();
+    const row = document.querySelector("tbody tr.clickable") as HTMLElement;
+    row.click();
     await until(() => (document.getElementById("viewer") as HTMLElement).childElementCount > 0);
 
     const viewer = document.getElementById("viewer") as HTMLElement;
@@ -351,8 +359,8 @@ describe("a document that is not work (decision 0167)", () => {
   it("offers no actions, because there is no task to act on", async () => {
     await openDocuments([DOC]);
 
-    const expand = document.querySelector("button.expand") as HTMLButtonElement;
-    expand.click();
+    const row = document.querySelector("tbody tr.clickable") as HTMLElement;
+    row.click();
     await until(() => (document.getElementById("viewer") as HTMLElement).childElementCount > 0);
 
     expect(document.querySelectorAll("#viewer .actionrow a")).toHaveLength(0);
