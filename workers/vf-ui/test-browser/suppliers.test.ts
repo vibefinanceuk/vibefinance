@@ -396,23 +396,33 @@ describe("the status card (decision 0299)", () => {
     expect(document.body.textContent).not.toContain("Showing suppliers");
   });
 
-  it("matches the load-file card's own height, and gives the status card less width (decision 0300)", async () => {
+  it("matches the load-file card's own height, and gives the status card less width (decisions 0300, 0301)", async () => {
     /**
-     * **Reported live**: "the card height on the Supplier Status card
-     * be changed to match the 'Load a supplier file' card" and "the
-     * Supplier Status card width be reduced, therefore the counts are
-     * closer to the text." jsdom applies no CSS, so this reads the
-     * real stylesheet rather than measure a rendered layout.
+     * **Reported live, twice**: first "the card height on the
+     * Supplier Status card be changed to match the 'Load a supplier
+     * file' card" and "the Supplier Status card width be reduced,
+     * therefore the counts are closer to the text" (decision 0300);
+     * then, against the real, deployed result, "alignment between
+     * cards at the bottom still seems off" (decision 0301) — grid's
+     * own default stretch was not visibly enough, so `height: 100%`
+     * on each panel is the thing actually checked here now, not the
+     * absence of the override that turned out not to be the whole
+     * story. jsdom applies no CSS, so this reads the real stylesheet
+     * rather than measure a rendered layout.
      */
     const css = (await import("virtual:stylesheets")).default["index.html"];
-    const ruleStart = css.indexOf(".supplierhead {");
-    expect(ruleStart, "the .supplierhead rule must exist").toBeGreaterThan(-1);
-    const rule = css.slice(ruleStart, css.indexOf("}", ruleStart) + 1);
+    const headStart = css.indexOf(".supplierhead {");
+    expect(headStart, "the .supplierhead rule must exist").toBeGreaterThan(-1);
+    const headRule = css.slice(headStart, css.indexOf("}", headStart) + 1);
 
-    expect(rule).not.toContain("align-items: start");
     // Genuinely unequal now, not the auto-fit 1fr/1fr split both cards
     // used to share.
-    expect(rule).not.toContain("auto-fit, minmax(300px, 1fr)");
-    expect(rule).toContain("minmax(260px, 380px)");
+    expect(headRule).not.toContain("auto-fit, minmax(300px, 1fr)");
+    expect(headRule).toContain("minmax(260px, 380px)");
+
+    const panelStart = css.indexOf(".supplierhead > .panel {");
+    expect(panelStart, "the .supplierhead > .panel rule must exist").toBeGreaterThan(-1);
+    const panelRule = css.slice(panelStart, css.indexOf("}", panelStart) + 1);
+    expect(panelRule).toContain("height: 100%");
   });
 });

@@ -1536,15 +1536,27 @@
     grid-template-columns: minmax(0, 1fr) minmax(260px, 380px);
     gap: 16px;
     margin-bottom: 16px;
-    /**
-     * **No forced top alignment any more** — reported live: "the card
-     * height on the Supplier Status card be changed to match the
-     * 'Load a supplier file' card." Grid's own default, stretch,
-     * already does this the moment nothing overrides it.
-     */
+  }
+  /*
+    **Still not matched, decision 0301** — reported live, against the
+    real, deployed screen: "alignment between cards at the bottom
+    still seems off." Decision 0300's own fix removed `align-items:
+    start`, leaving grid's own default, stretch, to apply — which
+    should have been enough, and evidently was not: the two panels
+    still ended at different heights on the actual screen.
+
+    `height: 100%` says directly, on the element itself, what
+    `align-items: stretch` was only ever implying by omission. A more
+    forceful, explicit instruction in place of one that was not
+    visibly taking hold.
+  */
+  .supplierhead > .panel {
+    height: 100%;
+    box-sizing: border-box;
   }
   @media (max-width: 900px) {
     .supplierhead { grid-template-columns: 1fr; }
+    .supplierhead > .panel { height: auto; }
   }
   /*
     **The Seller card's own sub-line, decision 0290** — reported live:
