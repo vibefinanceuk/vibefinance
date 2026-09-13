@@ -390,12 +390,43 @@ describe("the action row (decision 0122)", () => {
     await openViewer({ ...TASK, actions }, () => {});
   }
 
-  it("puts the actions below the document, not in a panel of their own", async () => {
+  it("puts Save and the task's own actions in the topbar, beside Back (decision 0298)", async () => {
+    /**
+     * **The operator's own request**: "move Save, Complete, Release
+     * and Return buttons to the top right of the page, next to the
+     * Back button. This will free space below the document image."
+     * Decision 0122's own placement — a row directly beneath the
+     * document — is exactly what moved.
+     */
     await openWith(["key", "complete"]);
-    const row = document.querySelector(".actionrow");
-    expect(row).not.toBeNull();
+
+    const topRight = document.querySelector(".topbar .right");
+    const labels = [...(topRight?.querySelectorAll(".actionlink span") ?? [])].map((n) => n.textContent);
+    expect(labels).toContain("Complete");
+    expect(labels).toContain("Back");
     // The old stacked panel is gone.
     expect(document.querySelector(".panel.actions")).toBeNull();
+    // Nothing left in a row beneath the document — that row is gone
+    // entirely, not merely emptied.
+    expect(document.querySelector(".vpreview + .actionrow")).toBeNull();
+  });
+
+  it("puts Expand top right of the document image, beside its own tabs, not in the topbar", async () => {
+    // The operator's own request named where each set of buttons
+    // should land — Save and the task's own actions in the topbar,
+    // but Expand stays with the document it belongs to, just moved
+    // from a footer row to the same row as the Document/Timeline tabs.
+    await openWith(["key", "complete"]);
+
+    const topRight = document.querySelector(".topbar .right");
+    const topRightLabels = [...(topRight?.querySelectorAll(".actionlink span") ?? [])].map((n) => n.textContent);
+    expect(topRightLabels).not.toContain("Expand");
+
+    const doctabsHead = document.querySelector(".doctabs")?.closest(".cardhead");
+    const expand = [...(doctabsHead?.querySelectorAll(".actionlink span") ?? [])].find(
+      (n) => n.textContent === "Expand"
+    );
+    expect(expand).not.toBeUndefined();
   });
 
   it("gives every action an icon and a label", async () => {
@@ -2486,9 +2517,11 @@ describe("the document/timeline tabs (decision 0269)", () => {
     await openViewer(TASK, () => {});
     await new Promise((r) => setTimeout(r, 0));
 
-    // Not visible under the image, on the Document tab.
-    const docPane = document.getElementById("vpreview")?.parentElement;
-    expect(docPane?.querySelector(".systemalert")).toBeNull();
+    // Not visible while the Document tab is active — its own pane,
+    // not `#vpreview` itself (which never contained it either way),
+    // is what must be hidden.
+    const alertPane = document.querySelector(".systemalert")?.closest("[hidden]");
+    expect(alertPane).not.toBeNull();
 
     (timelineTabButton() as HTMLButtonElement).click();
 

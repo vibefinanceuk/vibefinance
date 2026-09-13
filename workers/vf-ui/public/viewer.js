@@ -678,25 +678,25 @@ function exceptionPanel() {
  * meant touching every branch a second time; each tab is instead an
  * entry in one list, and `select()` treats all of them alike.
  */
-function documentPanel(task, onClose) {
-  const invoiceId = task.subject?.id ?? null;
 
-  const docPane = el("div", { class: "vpreview", id: "vpreview" }, [
-    el("div", { class: "vthumb", text: t("viewer.document") }),
-  ]);
-  const actionsRow = el("div", { class: "actionrow" }, [
-    actionLink("expand", { onclick: () => openDocument(invoiceId) }),
-    /**
-     * **Save appears where something can be saved** — decision 0142.
-     *
-     * It was the screen's own, always offered. An approval task has
-     * every field read-only (decision 0114), so a Save that submits
-     * nothing is a button promising an effect it cannot have — which
-     * decision 0122 already called worse than an absent one.
-     *
-     * The dominant action becomes whatever the task actually offers,
-     * which for an approval is Complete.
-     */
+/**
+ * Save, and whatever the task itself offers — decision 0298, moved
+ * out of `documentPanel()`'s own footer and into the topbar, beside
+ * Back.
+ *
+ * **Extracted rather than duplicated.** These buttons used to be
+ * built once, inline, inside `documentPanel()`'s own `actionsRow`.
+ * `topbar()` is called earlier in the render than `documentPanel()`
+ * is, so the same logic needed a home either function could reach —
+ * a shared helper, not a second, drifting copy of the same rules.
+ */
+function taskActionButtons(task, onClose) {
+  return [
+    // **Save appears where something can be saved** — decision 0142.
+    // An approval task has every field read-only (decision 0114), so
+    // a Save that submits nothing is a button promising an effect it
+    // cannot have — which decision 0122 already called worse than an
+    // absent one.
     ...(canEditAnything ? [actionLink("save", { onclick: () => save(null), primary: true })] : []),
     // What else this task offers is the SERVER's decision (decision
     // 0103) — collecting them visually does not move where they are
@@ -711,12 +711,31 @@ function documentPanel(task, onClose) {
           primary: !canEditAnything && index === 0,
         })
       ),
+  ];
+}
+
+function documentPanel(task) {
+  const invoiceId = task.subject?.id ?? null;
+
+  const docPane = el("div", { class: "vpreview", id: "vpreview" }, [
+    el("div", { class: "vthumb", text: t("viewer.document") }),
   ]);
-  const docContent = el("div", {}, [docPane, actionsRow]);
+  /**
+   * **Top right of the document image, beside its own tabs** —
+   * decision 0298. It used to sit in a row of its own beneath the
+   * image, alongside Save and whatever the task offered; those moved
+   * to the topbar (see `taskActionButtons()`), and Expand moved here
+   * rather than being left to anchor a now much shorter row by
+   * itself.
+   */
+  const expandButton = actionLink("expand", { onclick: () => openDocument(invoiceId) });
 
   if (!invoiceId) {
     // Nothing to show a timeline for — the old, un-tabbed panel.
-    return el("div", { class: "panel" }, [el("h3", { text: t("viewer.document") }), docPane, actionsRow]);
+    return el("div", { class: "panel" }, [
+      el("div", { class: "cardhead" }, [el("h3", { text: t("viewer.document") }), expandButton]),
+      docPane,
+    ]);
   }
 
   /**
@@ -777,7 +796,7 @@ function documentPanel(task, onClose) {
     ].filter(Boolean)
   );
 
-  const tabs = [{ key: "doc", label: t("viewer.document"), pane: docContent }];
+  const tabs = [{ key: "doc", label: t("viewer.document"), pane: docPane }];
   if (hasXml) tabs.push({ key: "xml", label: t("viewer.xmltab"), pane: xmlContent });
   tabs.push({ key: "timeline", label: t("activity.timelinetab"), pane: timelinePane, badge: countBadge });
 
@@ -805,7 +824,10 @@ function documentPanel(task, onClose) {
   }
 
   return el("div", { class: "panel" }, [
-    el("div", { class: "doctabs" }, tabs.map((entry) => entry.button)),
+    el("div", { class: "cardhead" }, [
+      el("div", { class: "doctabs" }, tabs.map((entry) => entry.button)),
+      expandButton,
+    ]),
     ...tabs.map((entry) => entry.pane),
   ]);
 }
@@ -1903,6 +1925,17 @@ export async function openViewer(task, onClose) {
           }`,
           task.subject?.id ? `${t("viewer.reflabel")} ${task.subject.id}` : "",
           [
+            /**
+             * **Save and the task's own actions, beside Back** —
+             * decision 0298, the operator's own request: "move Save,
+             * Complete, Release and Return buttons to the top right
+             * of the page, next to the Back button. This will free
+             * space below the document image." Built once, in
+             * `taskActionButtons()`, since `topbar()` is called here,
+             * before `documentPanel()` — which used to build the same
+             * buttons itself — ever runs.
+             */
+            ...taskActionButtons(task, onClose),
             el(
               "button",
               { class: "actionlink", title: t("viewer.back"), onclick: onClose },
@@ -1927,7 +1960,7 @@ export async function openViewer(task, onClose) {
             el("div", { class: "problem", id: "viewer-note", role: "status" }),
           ]),
           el("div", {}, [
-            documentPanel(task, onClose),
+            documentPanel(task),
             exceptionPanel(),
           ].filter(Boolean)),
         ].filter(Boolean)),
