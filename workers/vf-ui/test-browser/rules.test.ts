@@ -44,8 +44,8 @@ const STRINGS = {
     "rules.new": "Create rule",
     "nav.documents": "Documents",
     "mood.label": "Mood",
-    "mood.day": "Day time",
-    "mood.night": "Night time",
+    "mood.day": "Day",
+    "mood.night": "Night",
   },
 };
 

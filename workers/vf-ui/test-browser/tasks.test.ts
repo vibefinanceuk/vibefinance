@@ -55,8 +55,8 @@ const STRINGS = {
     "action.return": "Return",
     "action.key": "Key",
     "mood.label": "Mood",
-    "mood.day": "Day time",
-    "mood.night": "Night time",
+    "mood.day": "Day",
+    "mood.night": "Night",
   },
 };
 

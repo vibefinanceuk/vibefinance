@@ -86,6 +86,7 @@ import unreadableWordingSql from "../migrations/0081_unreadable_wording.sql?raw"
 import xmlTabSql from "../migrations/0082_xml_tab.sql?raw";
 import navRestructureSql from "../migrations/0083_nav_restructure.sql?raw";
 import backButtonWordingSql from "../migrations/0084_back_button_wording.sql?raw";
+import moodButtonWordingSql from "../migrations/0085_mood_button_wording.sql?raw";
 
 function stripSqlComments(sql: string): string {
   return sql
@@ -199,5 +200,6 @@ export async function applyTestSchema(): Promise<void> {
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(xmlTabSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(navRestructureSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(backButtonWordingSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(moodButtonWordingSql)));
 
 }

@@ -7,6 +7,8 @@
  * livery sets the accent (0096); this sets the surfaces.
  */
 
+import { icon } from "/icons.js";
+
 const KEY = "vf-mood";
 
 /**
@@ -50,21 +52,40 @@ export function applyMood(mood) {
   }
 }
 
-/** The control itself, for a screen's top bar. */
+/**
+ * The control itself, for a screen's top bar — decision 0286's own
+ * toggle button, replacing the `<select>` decision 0139 built.
+ *
+ * **A toggle, not a dropdown, now that there are only ever two
+ * states.** A `<select>` with two options was always going to look
+ * like a dropdown rather than a button beside it — the operator's own
+ * request: "the same size and width as other buttons." A button that
+ * shows the current mood and flips it on click needs no menu to open
+ * at all.
+ *
+ * **`document.createElement`, not `el()` from tasks.js.** `tasks.js`
+ * already imports `moodPicker` from this file; importing anything
+ * back the other way would be a circular import, the same reasoning
+ * decision 0283 gave for building its own button locally rather than
+ * importing `actionLink` from viewer.js.
+ */
 export function moodPicker(t) {
-  const select = document.createElement("select");
-  select.id = "mood";
-  select.className = "mood";
-  select.setAttribute("aria-label", t("mood.label"));
+  const button = document.createElement("button");
+  button.className = "actionlink";
 
-  for (const value of ["day", "night"]) {
-    const option = document.createElement("option");
-    option.value = value;
-    option.textContent = t(`mood.${value}`);
-    select.append(option);
+  function render(mood) {
+    button.title = t(`mood.${mood}`);
+    const span = document.createElement("span");
+    span.textContent = t(`mood.${mood}`);
+    button.replaceChildren(icon(mood === "night" ? "moon" : "sun"), span);
   }
 
-  select.value = currentMood();
-  select.addEventListener("change", (event) => applyMood(event.target.value));
-  return select;
+  button.onclick = () => {
+    const next = currentMood() === "night" ? "day" : "night";
+    applyMood(next);
+    render(next);
+  };
+
+  render(currentMood());
+  return button;
 }

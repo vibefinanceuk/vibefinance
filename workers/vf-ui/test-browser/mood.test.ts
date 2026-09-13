@@ -9,7 +9,7 @@ import stylesheets from "virtual:stylesheets";
  */
 
 const t = (key: string) =>
-  ({ "mood.label": "Mood", "mood.day": "Day time", "mood.night": "Night time" })[key] ?? key;
+  ({ "mood.label": "Mood", "mood.day": "Day", "mood.night": "Night" })[key] ?? key;
 
 function withSystem(dark: boolean) {
   vi.stubGlobal("matchMedia", () => ({ matches: dark }));
@@ -87,22 +87,41 @@ describe("choosing", () => {
     Storage.prototype.setItem = setItem;
   });
 
-  it("offers exactly the two moods, named", async () => {
+  it("shows both moods, one at a time, each with its own icon, sized like the other topbar buttons", async () => {
+    /**
+     * **A toggle, not a dropdown, decision 0286** — the operator's own
+     * request: "the same size and width as other buttons." A
+     * `<select>` with two options always looked like a dropdown; a
+     * button showing the current mood and flipping it on click needs
+     * no menu to hold both options at once.
+     */
     withSystem(false);
     const { moodPicker } = await import("/mood.js");
-    const select = moodPicker(t);
+    const button = moodPicker(t);
 
-    expect([...select.options].map((o) => o.textContent)).toEqual(["Day time", "Night time"]);
+    // The same class Sign out and Back both use, not a bespoke one —
+    // this is what actually makes it the same size and width.
+    expect(button.className).toBe("actionlink");
+    expect(button.textContent).toBe("Day");
+    const dayIcon = button.querySelector("svg")?.innerHTML;
+    expect(dayIcon).toBeTruthy();
+
+    button.click();
+    expect(button.textContent).toBe("Night");
+    const nightIcon = button.querySelector("svg")?.innerHTML;
+    expect(nightIcon).toBeTruthy();
+
+    // Genuinely a different icon, not the same mark shown twice.
+    expect(nightIcon).not.toBe(dayIcon);
   });
 
-  it("applies the choice when it changes", async () => {
+  it("applies the choice when clicked", async () => {
     withSystem(false);
     const { moodPicker } = await import("/mood.js");
-    const select = moodPicker(t);
-    document.body.append(select);
+    const button = moodPicker(t);
+    document.body.append(button);
 
-    select.value = "night";
-    select.dispatchEvent(new Event("change"));
+    button.click();
 
     expect(document.documentElement.getAttribute("data-mood")).toBe("night");
   });
