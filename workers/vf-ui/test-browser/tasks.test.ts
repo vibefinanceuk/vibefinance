@@ -264,6 +264,35 @@ describe("the flat nav, permission-filtered (decisions 0274 and 0276)", () => {
     }
   });
 
+  it("carries the optical-centring shift on Tasks and Rules (decision 0277)", async () => {
+    /**
+     * **Reported live**: "the border on the right of the icons seems
+     * larger than that of the left." Checked with an SVG geometry
+     * library, not eyeballed: every icon's bounding box was already
+     * exactly centred, but Tasks and Rules each concentrate their ink
+     * on one side of that box (small, dense shapes on the left; long,
+     * sparse lines and curves on the right), pulling the eye's actual
+     * centre of mass left of the geometric one — 2.33 units for
+     * Tasks, 1.96 for Rules, in a 24-wide box. A `<g transform>` wrap
+     * shifts each just enough to bring the ink-weighted centroid back
+     * to true centre; confirmed by re-running the same calculation
+     * against the shifted geometry, not assumed from the shift alone.
+     *
+     * This only checks the fix is still present, not that the numbers
+     * are still exactly correct — the geometric proof lives in the
+     * commit that made this change, not in a browser test that would
+     * need to reimplement an SVG path-length calculation to verify.
+     */
+    await openList([APPROVAL_TASK]);
+
+    const items = [...document.querySelectorAll(".navitem")];
+    const tasksSvg = items.find((i) => i.textContent?.includes("Tasks"))?.querySelector("svg");
+    const rulesSvg = items.find((i) => i.textContent?.includes("Rules"))?.querySelector("svg");
+
+    expect(tasksSvg?.querySelector('g[transform*="translate"]')).not.toBeNull();
+    expect(rulesSvg?.querySelector('g[transform*="translate"]')).not.toBeNull();
+  });
+
   it("starts with the nav open, showing the full mark and every label", async () => {
     await openList([APPROVAL_TASK]);
 

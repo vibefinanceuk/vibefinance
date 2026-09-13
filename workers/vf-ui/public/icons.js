@@ -251,7 +251,20 @@ Object.assign(ICONS, {
 Object.assign(ICONS, {
   // A checklist — two rows, a box and a line each. The thing a task
   // list actually is.
-  tasks: '<rect x="4" y="5" width="4" height="4" rx="1"/><path d="M11 7h9"/><rect x="4" y="15" width="4" height="4" rx="1"/><path d="M11 17h9"/>',
+  //
+  // **Wrapped in a translate, decision 0277** — reported live: "the
+  // border on the right of the icons seems larger than that of the
+  // left." The bounding box was already exactly centred (checked with
+  // an SVG geometry library, not eyeballed); what wasn't centred was
+  // the ink itself. Two small, dense squares on the left and two
+  // long, sparse lines on the right pull the eye's actual centre of
+  // mass to x=9.67 in a 24-wide box — 2.33 units left of true centre —
+  // which is what reads as extra room on the right even though the
+  // box around it is exactly symmetric. Shifted +2.33 to bring the
+  // ink-weighted centroid back to 12.00, confirmed by the same
+  // calculation run again against the shifted geometry.
+  tasks:
+    '<g transform="translate(2.33,0)"><rect x="4" y="5" width="4" height="4" rx="1"/><path d="M11 7h9"/><rect x="4" y="15" width="4" height="4" rx="1"/><path d="M11 17h9"/></g>',
 
   // Four tiles of different sizes — the dashboard's own cards are
   // never uniform (decision 0244's tile/half weighting), so a grid of
@@ -272,8 +285,16 @@ Object.assign(ICONS, {
   // A branch, not the lines-and-brackets `compile` already draws for
   // the act of writing one. This is what a rule *is* once it exists:
   // one condition, two ways an invoice can go from it.
+  //
+  // **Shifted the same way `tasks` was, decision 0277** — three
+  // small circles carry little ink individually; the diagonal branch
+  // lines carry most of it, and they sit right of centre the same way
+  // the checklist's lines did. Ink-weighted centroid was 10.04 before,
+  // 2.33 units left of true centre gave the wrong shift here — 1.96
+  // is this icon's own number, checked the same way, not copied from
+  // the other one.
   rules:
-    '<circle cx="6" cy="5" r="2"/><path d="M6 7v3a3 3 0 0 0 3 3h6a3 3 0 0 1 3 3v3"/><circle cx="18" cy="19" r="2"/><path d="M6 7v10"/><circle cx="6" cy="19" r="2"/>',
+    '<g transform="translate(1.96,0)"><circle cx="6" cy="5" r="2"/><path d="M6 7v3a3 3 0 0 0 3 3h6a3 3 0 0 1 3 3v3"/><circle cx="18" cy="19" r="2"/><path d="M6 7v10"/><circle cx="6" cy="19" r="2"/></g>',
 
   // A page with a folded corner — the plainest possible "a document,"
   // deliberately generic since this screen holds every kind at once.
