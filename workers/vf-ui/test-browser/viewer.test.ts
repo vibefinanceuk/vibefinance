@@ -1584,6 +1584,42 @@ describe("each party card carries its own action (decision 0228)", () => {
     expect(labels).not.toContain("Change Buyer");
   });
 
+  it("omits the Seller card's own identifier line entirely when there is nothing in it (decision 0290)", async () => {
+    /**
+     * **Reported live**: "The fields beneath the word Seller appear
+     * to be aligned to the bottom of the card. The Buyer card, details
+     * seem aligned to the top." This line rendered unconditionally —
+     * a supplier with no ERP identifier, no site, and not a pay site
+     * still produced an empty line, present in the layout and carrying
+     * its own margin, pushing the fields beneath it down for no
+     * reason a person reading the card could see.
+     */
+    await open({ supplier: { name: "Acme Payments" }, buyer: null });
+    expect(document.querySelector(".parties .sub")).toBeNull();
+  });
+
+  it("keeps the identifier line when there is something to say", async () => {
+    await open(MATCHED);
+    expect(document.querySelector(".parties .sub")?.textContent).toContain("40118");
+  });
+
+  it("gives the identifier line a caption's margin, not the sign-in page's own subtitle margin", async () => {
+    /**
+     * **The other half of the same fix.** Even with real content, the
+     * base `.sub` rule — written for the sign-in page's own subtitle,
+     * a full sentence needing real air beneath it — carried a 34px
+     * bottom margin nothing here had ever overridden, the way
+     * `#shell .sub` and `.vhead .sub` already override it for their
+     * own contexts. jsdom applies no CSS, so this reads the real
+     * stylesheet text.
+     */
+    const css = (await import("virtual:stylesheets")).default["index.html"];
+    const ruleStart = css.indexOf(".parties .sub {");
+    expect(ruleStart, "the .parties .sub override must exist").toBeGreaterThan(-1);
+    const rule = css.slice(ruleStart, css.indexOf("}", ruleStart) + 1);
+    expect(rule).not.toContain("34px");
+  });
+
   it("puts the action in the heading row, not below the card", async () => {
     /**
      * **The whole point of moving it.** A footer would sit after the

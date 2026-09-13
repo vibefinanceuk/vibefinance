@@ -1492,6 +1492,21 @@
     gap: 16px;
     margin-bottom: 16px;
   }
+  /*
+    **The Seller card's own sub-line, decision 0290** — reported live:
+    "The fields beneath the word Seller appear to be aligned to the
+    bottom of the card. The Buyer card, details seem aligned to the
+    top."
+
+    The only `.sub` this screen ever renders sits here, and the base
+    `.sub` rule (written for the sign-in page's own subtitle, a full
+    sentence needing real air beneath it) carries a 34px bottom
+    margin — never overridden here the way `#shell .sub` and
+    `.vhead .sub` already override it for their own, unrelated
+    contexts. A supplier identifier line is a caption, not an intro
+    paragraph.
+  */
+  .parties .sub { margin: 2px 0 8px; }
 
   /*
     Three columns on a wide monitor, fewer as it narrows.

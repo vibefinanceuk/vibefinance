@@ -1530,13 +1530,28 @@ export async function openViewer(task, onClose) {
        * reached this record rather than one of its siblings — and since
        * decision 0218 that reason is a pay-site flag, which is nowhere
        * on the document.
+       *
+       * **Omitted entirely when there is nothing to say, decision
+       * 0290.** Reported live: "The fields beneath the word Seller
+       * appear to be aligned to the bottom of the card." This rendered
+       * unconditionally, so a supplier with no ERP identifier, no
+       * site, and not a pay site still produced an empty `.sub` line —
+       * present in the layout, carrying its own margin, saying
+       * nothing. An empty line reserving space is never the right
+       * default, the same reasoning behind every other "show nothing
+       * rather than something with nothing in it" choice already made
+       * throughout this screen.
        */
-      el("div", {
-        class: "sub",
-        text: [s.erpIdentifier, s.erpSiteIdentifier, s.isPaySite ? t("suppliers.pay") : null]
-          .filter(Boolean)
-          .join(" · "),
-      }),
+      ...(s.erpIdentifier || s.erpSiteIdentifier || s.isPaySite
+        ? [
+            el("div", {
+              class: "sub",
+              text: [s.erpIdentifier, s.erpSiteIdentifier, s.isPaySite ? t("suppliers.pay") : null]
+                .filter(Boolean)
+                .join(" · "),
+            }),
+          ]
+        : []),
       s.onHold
         ? el("div", { class: "warn", text: `${t("viewer.supplier.onhold")} ${s.holdReason ?? ""}` })
         : null,
