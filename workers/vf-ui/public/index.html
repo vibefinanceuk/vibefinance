@@ -822,15 +822,31 @@
     **Every screen except the viewer**, where the four lines are a list
     — decision 0182. A heading is a heading elsewhere.
   */
-  .topbar h2 { margin: 0; font-size: var(--text-lg); font-weight: 600; }
+  .topbar h2 { margin: 0; font-size: var(--text-xl); font-weight: 600; }
   /*
-    **The Dashboard's own title, larger** — decision 0307, reported
-    live: "increased the Font size of the Title (Dashboard)." Scoped
-    to this one screen rather than `.topbar h2` itself, which every
-    screen shares — `--text-xl`, the next step up the same four-step
-    scale `--text-lg` already belongs to, not a new, one-off size.
+    **Almost every screen's own title, decision 0308** — reported
+    live: "replicate the font increase on other pages? Tasks, Sources,
+    Suppliers, Rules, Documents." Decision 0307's own scoped
+    `.dashboardpage` override applied `--text-xl` to one screen; once
+    five more asked for the identical value, the override was the
+    norm and `--text-lg` the exception — inverted here rather than
+    repeating the same scoped rule five more times.
+
+    **The viewer needs no override of its own here.** Its own `#viewer
+    .topbar h2` rule (decision 0182, above) already wins over this
+    general one by id specificity regardless of what value either
+    carries — a second rule targeting the same selector would only
+    have shadowed that one by coming later in the file, which very
+    nearly happened: this line originally repeated `#viewer .topbar
+    h2` alongside `.composepage`, silently overriding decision 0182's
+    own `--text-sm` with `--text-lg` since an equal-specificity tie
+    resolves by source order. Caught before shipping by the typography
+    suite's own two tests for that exact rule, further up the file.
+
+    **"Write a rule" does need one**, since it was never named and has
+    no existing rule of its own to fall back on.
   */
-  .dashboardpage .topbar h2 { font-size: var(--text-xl); }
+  .composepage .topbar h2 { font-size: var(--text-lg); }
 
   .topbar .right { margin-left: auto; display: flex; gap: 8px; align-items: center; }
   /*

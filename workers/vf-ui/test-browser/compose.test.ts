@@ -155,6 +155,21 @@ afterEach(() => {
 });
 
 describe("the back button, top right (decision 0305)", () => {
+  it("renders inside its own .composepage, so its title stays the smaller size (decision 0308)", async () => {
+    /**
+     * **Not named when the font size grew everywhere else** —
+     * decision 0308 reported Tasks, Sources, Suppliers, Rules, and
+     * Documents specifically; "Write a rule" needs its own scoped
+     * class to stay at the size it already had, since it shares
+     * `#shell` with every other screen rather than rendering into its
+     * own root the way the viewer does.
+     */
+    await openCompose();
+
+    expect(document.querySelector(".composepage")).not.toBeNull();
+    expect(document.querySelector(".composepage .topbar h2")?.textContent).toBe("Write a rule");
+  });
+
   it("sits in the topbar's own right side, left of Night/Day, with the boundary line beside it", async () => {
     await openCompose();
 

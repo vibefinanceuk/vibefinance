@@ -180,19 +180,36 @@ describe("the heading, its subtitle, and its own larger size (decision 0307)", (
     expect(document.querySelector(".topbar .sub")?.textContent).toBe("Items pending for my user - ");
   });
 
-  it("gives the Dashboard's own title a larger size than every other screen shares", async () => {
-    // jsdom applies no CSS, so this reads the real stylesheet rather
-    // than measure a rendered layout.
+  it("shares the same, larger title size with Tasks, Sources, Suppliers, Rules, and Documents (decision 0308)", async () => {
+    /**
+     * **Reported live**: "replicate the font increase on other pages?
+     * Tasks, Sources, Suppliers, Rules, Documents." Decision 0307's
+     * own scoped `.dashboardpage` override became the shared,
+     * every-screen default once six screens wanted the identical
+     * value — the viewer and "Write a rule," neither named, are
+     * scoped back down instead. jsdom applies no CSS, so this reads
+     * the real stylesheet rather than measure a rendered layout.
+     */
     const css = (await import("virtual:stylesheets")).default["index.html"];
     const baseStart = css.indexOf(".topbar h2 {");
     expect(baseStart, "the base .topbar h2 rule must exist").toBeGreaterThan(-1);
     const baseRule = css.slice(baseStart, css.indexOf("}", baseStart) + 1);
-    expect(baseRule).toContain("var(--text-lg)");
+    expect(baseRule).toContain("var(--text-xl)");
 
-    const dashStart = css.indexOf(".dashboardpage .topbar h2 {");
-    expect(dashStart, "the .dashboardpage .topbar h2 override must exist").toBeGreaterThan(-1);
-    const dashRule = css.slice(dashStart, css.indexOf("}", dashStart) + 1);
-    expect(dashRule).toContain("var(--text-xl)");
+    const smallerStart = css.indexOf(".composepage .topbar h2");
+    expect(smallerStart, "the compose screen's own smaller-size rule must exist").toBeGreaterThan(-1);
+    const smallerRule = css.slice(smallerStart, css.indexOf("}", smallerStart) + 1);
+    expect(smallerRule).toContain("var(--text-lg)");
+
+    /**
+     * **The viewer needs no rule of its own here** — decision 0182's
+     * own `#viewer .topbar h2` rule already wins over the general one
+     * by id specificity, whatever value either carries. Confirmed
+     * directly rather than assumed: that rule still sets `--text-sm`,
+     * unrelated to and untouched by this change.
+     */
+    const viewerRuleStart = css.indexOf("#viewer .topbar h2,");
+    expect(viewerRuleStart, "decision 0182's own #viewer .topbar h2 rule must still exist").toBeGreaterThan(-1);
   });
 });
 

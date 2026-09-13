@@ -299,11 +299,20 @@ describe("the viewer's four lines are one list (decision 0182)", () => {
     const scoped = css.indexOf("#viewer .topbar h2");
     const general = css.indexOf(".topbar h2 { margin: 0;");
     expect(scoped).toBeLessThan(general);
-    expect(css).toContain(".topbar h2 { margin: 0; font-size: var(--text-lg)");
+    /**
+     * **`--text-xl` since decision 0308**, not the `--text-lg` this
+     * test originally checked — Tasks, Sources, Suppliers, Rules and
+     * Documents all asked for the same larger size Dashboard already
+     * had, so the shared rule grew to match rather than five more
+     * screens each getting their own copy of it. The claim this test
+     * exists to prove — an id wins regardless of the general rule's
+     * own value — is unchanged by which value that happens to be.
+     */
+    expect(css).toContain(".topbar h2 { margin: 0; font-size: var(--text-xl)");
   });
 
   it("leaves other screens their heading", () => {
     // A heading is a heading on Tasks, Sources, Rules and Documents.
-    expect(css).toContain(".topbar h2 { margin: 0; font-size: var(--text-lg); font-weight: 600; }");
+    expect(css).toContain(".topbar h2 { margin: 0; font-size: var(--text-xl); font-weight: 600; }");
   });
 });

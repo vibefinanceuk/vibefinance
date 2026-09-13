@@ -269,7 +269,7 @@ function render() {
 
   shell.replaceChildren(
     frame(
-      el("div", {}, [
+      el("div", { class: "composepage" }, [
         /**
          * **Back, top right, decision 0305** — reported live: "add the
          * back button, at the top right of the page for Write a
