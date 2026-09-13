@@ -825,6 +825,14 @@
   .topbar h2 { margin: 0; font-size: var(--text-lg); font-weight: 600; }
 
   .topbar .right { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+  /*
+    **The boundary between what a page added and what every screen
+    has** — decision 0304, from a mock-up: "a small vertical line...
+    which distinguishes the standard set of icons... from the other
+    page specific icons." Shorter than the row itself, the same way a
+    divider in a menu never touches its own edges.
+  */
+  .topbardivider { width: 1px; height: 28px; background: var(--border); flex-shrink: 0; }
 
   /* Panels. Each a thing somebody can look at on its own. */
   .panel {

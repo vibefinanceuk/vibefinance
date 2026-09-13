@@ -750,6 +750,22 @@ describe("the language toggle, between Night/Day and Sign out (decision 0302)", 
   });
 });
 
+describe("the boundary between a page's own controls and every screen's own (decision 0304)", () => {
+  /**
+   * **From a mock-up, confirmed**: "a small vertical line, to the
+   * left of the Night / Day button, which distinguishes the standard
+   * set of icons, Night / Day, Language & Sign out, from the other
+   * page specific icons which would appear to the left."
+   */
+  it("does not appear on a screen with nothing of its own in the topbar", async () => {
+    // Tasks itself calls topbar() with no third argument — no
+    // Arrange, no Back, nothing to draw a boundary in front of.
+    await openList([APPROVAL_TASK]);
+
+    expect(document.querySelector(".topbardivider")).toBeNull();
+  });
+});
+
 describe("a task about one line (decision 0183)", () => {
   /**
    * A stage scoped `per_line` raises one task per invoice line, so an

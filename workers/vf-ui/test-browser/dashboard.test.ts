@@ -748,6 +748,16 @@ describe("arranging it (decision 0243)", () => {
     expect(titles).toContain("Back to the default");
   });
 
+  it("draws the boundary line beside Arrange, since Arrange is the topbar's own addition here (decision 0304)", async () => {
+    stubAll(ONE);
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { open } = await import("/dashboard.js");
+    await open();
+
+    expect(document.querySelector(".topbardivider")).not.toBeNull();
+  });
+
   it("gives each card a handle while arranging", async () => {
     await openArranging(ONE);
     expect(document.querySelectorAll(".cardactions")).toHaveLength(1);

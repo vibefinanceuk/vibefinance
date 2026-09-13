@@ -620,6 +620,19 @@ export function topbar(title, subtitle, right = [], extra = []) {
      */
     el("div", { class: "right" }, [
       ...right,
+      /**
+       * **A rule between what this page added and what every screen
+       * has** — decision 0304, from a mock-up: "a small vertical
+       * line... which distinguishes the standard set of icons, Night
+       * / Day, Language & Sign out, from the other page specific
+       * icons which would appear to the left."
+       *
+       * **Only when there is something to separate.** Most screens
+       * pass nothing of their own into `right` — Documents, Suppliers
+       * — and a rule with nothing to its left is a stray mark, not a
+       * boundary.
+       */
+      right.length > 0 ? el("div", { class: "topbardivider" }) : null,
       moodPicker(t),
       /**
        * **Language, between Night/Day and Sign out** — decision 0302,
@@ -639,7 +652,7 @@ export function topbar(title, subtitle, right = [], extra = []) {
         },
         [icon("signout"), el("span", { text: t("tasks.signout") })]
       ),
-    ]),
+    ].filter(Boolean)),
   ]);
 }
 
