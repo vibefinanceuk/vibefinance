@@ -1,6 +1,7 @@
 import { t } from "/strings.js";
 import { el, frame, topbar, setCurrentScreen } from "/tasks.js";
 import { actionLink } from "/viewer.js";
+import { donutChart } from "/charts.js";
 
 /**
  * The supplier list, and loading one — decision 0213.
@@ -20,7 +21,8 @@ let lastLoad = null;
 
 /**
  * A drill-through from the dashboard's *Suppliers awaiting the ERP*
- * card — decision 0259.
+ * card — decision 0259, generalised to any of the Supplier status
+ * card's own four buckets since decision 0299.
  *
  * **Client-side, unlike the documents filters.** `/api/suppliers`
  * already returns the whole list with no pagination (decision 0213 —
@@ -29,8 +31,40 @@ let lastLoad = null;
  * Adding a server-side filter for a dataset that is already entirely on
  * the client would be a second way to do the same narrowing, and decision
  * 0236's whole finding was that two names for one thing drift.
+ *
+ * **One of `"active"`, `"inactive"`, `"onhold"`, `"awaitingerp"`, or
+ * `null`** for every supplier — not a boolean any more, now that the
+ * status card's own ring needs the same four names the list filters
+ * by.
  */
-let awaitingErpOnly = false;
+let statusFilter = null;
+
+/**
+ * **Which one bucket a supplier counts in** — decision 0299. A
+ * supplier is not one dimension: `status` is active or inactive,
+ * `onHold` is a separate flag, and having no `erpIdentifier` at all is
+ * a third, independent fact — a supplier can genuinely be active,
+ * on hold, and missing its own ERP identifier all at once. A ring
+ * needs each supplier counted exactly once, so this gives one
+ * priority order to both the chart's own counts and the list's own
+ * filter, the same order applied everywhere it matters rather than
+ * two places that could disagree.
+ *
+ * **Awaiting ERP first.** Nothing else about a supplier with no
+ * `erpIdentifier` is really settled yet — decision 0209 made the
+ * identifier the thing an invoice is actually matched against, so a
+ * supplier without one is "not really set up here" before it is
+ * anything else.
+ *
+ * **On hold second.** The one state decision 0208's own column
+ * already treats as the reason an invoice routes differently, ahead
+ * of the plain active/inactive split.
+ */
+function supplierBucket(s) {
+  if (!s.erpIdentifier) return "awaitingerp";
+  if (s.onHold) return "onhold";
+  return s.status === "inactive" ? "inactive" : "active";
+}
 
 /**
  * **Whether an ERP is the master here** — decision 0230.
@@ -556,8 +590,14 @@ function supplierRows() {
    * that reads `suppliers` — this function is the only reader of the
    * raw list, so the narrowing and the "nothing matches" message live
    * together.
+   *
+   * **The same `supplierBucket()` the ring counts against.** A person
+   * clicking "Active" on the chart has to see exactly the suppliers
+   * that were counted into that slice — a second, independently
+   * written filter here could disagree with the ring's own count the
+   * moment either one changed without the other.
    */
-  const shown = awaitingErpOnly ? suppliers.filter((s) => !s.erpIdentifier) : suppliers;
+  const shown = statusFilter ? suppliers.filter((s) => supplierBucket(s) === statusFilter) : suppliers;
 
   if (shown.length === 0) {
     /**
@@ -568,7 +608,7 @@ function supplierRows() {
      */
     return el("div", {
       class: "muted",
-      text: awaitingErpOnly ? t("suppliers.noneawaiting") : t("suppliers.none"),
+      text: statusFilter ? t("suppliers.nonefiltered") : t("suppliers.none"),
     });
   }
 
@@ -641,6 +681,59 @@ function note(message) {
   if (box) box.textContent = message;
 }
 
+/**
+ * The status ring beside the load-file card — decision 0299, from a
+ * mock-up: "we could introduce a card with a diagram indicating some
+ * Supplier KPI's."
+ *
+ * **Reuses `donutChart()` directly**, the same component the
+ * dashboard's own stage and ownership rings already use — the ring
+ * itself, the legend, the five-colour palette, and `onSelect` are all
+ * the one component, not a second chart built to look similar.
+ */
+function supplierStatusCard() {
+  const counts = { active: 0, inactive: 0, onhold: 0, awaitingerp: 0 };
+  for (const s of suppliers) counts[supplierBucket(s)]++;
+
+  const segments = [
+    { key: "active", label: t("suppliers.status.active"), value: counts.active },
+    { key: "onhold", label: t("suppliers.status.onhold"), value: counts.onhold },
+    { key: "inactive", label: t("suppliers.status.inactive"), value: counts.inactive },
+    { key: "awaitingerp", label: t("suppliers.status.awaitingerp"), value: counts.awaitingerp },
+  ].filter((seg) => seg.value > 0);
+
+  function select(key) {
+    statusFilter = key;
+    render();
+  }
+
+  const allRow = el(
+    "div",
+    { class: statusFilter ? "donutkey clickable" : "donutkey clickable on", onclick: () => select(null) },
+    [
+      el("span", { class: "donutdot", style: "background: var(--text-muted)" }),
+      el("span", { text: t("suppliers.allsuppliers") }),
+      el("span", { class: "muted", text: String(suppliers.length) }),
+    ]
+  );
+
+  return el("div", { class: "panel" }, [
+    el("h3", { text: t("suppliers.statusheading") }),
+    segments.length > 0
+      ? donutChart(segments, { onSelect: (segment) => select(segment.key) })
+      : el("div", { class: "muted", text: t("suppliers.none") }),
+    /**
+     * **Its own row, beneath the ring's own legend** — the operator's
+     * own request: "add an All Suppliers row, at the bottom, to allow
+     * a user to launch all suppliers again." Not one of the ring's
+     * own segments — it is every supplier, not a fifth, mutually
+     * exclusive bucket alongside the other four, and `donutChart()`'s
+     * own legend only ever draws what it was actually given arcs for.
+     */
+    allRow,
+  ]);
+}
+
 function render() {
   const shell = document.getElementById("shell");
   if (!shell) return;
@@ -674,22 +767,31 @@ function render() {
         topbar(t("suppliers.heading"), t("suppliers.mirror")),
         el("div", { id: "suppliers-note", class: "warn" }),
         freshness(),
-        loader(),
+        /**
+         * **Half width, beside the status card** — decision 0299,
+         * reported live: "the 'Load a supplier file' card is wide,
+         * and takes up space." `.supplierhead` is the same auto-fit,
+         * equal-column shape `.parties` already gives the Seller and
+         * Buyer cards, named for this screen rather than reused under
+         * a name that says party.
+         */
+        el("div", { class: "supplierhead" }, [loader(), supplierStatusCard()]),
         /**
          * **The filter, said out loud** — decision 0259, the same rule
          * as the documents screen's banner: a person arriving from the
-         * dashboard's *"1 awaiting the ERP"* card should not have to
-         * infer from a shorter table that they are looking at a filtered
-         * view rather than everybody.
+         * dashboard's *"1 awaiting the ERP"* card, or clicking a slice
+         * of the status ring, should not have to infer from a shorter
+         * table that they are looking at a filtered view rather than
+         * everybody.
          */
-        awaitingErpOnly
+        statusFilter
           ? el("div", { class: "panel alertbanner" }, [
-              el("span", { text: t("suppliers.showingawaiting") }),
+              el("span", { text: t(`suppliers.showing.${statusFilter}`) }),
               el("button", {
                 class: "chip",
                 text: t("documents.clearfilter"),
                 onclick: () => {
-                  awaitingErpOnly = false;
+                  statusFilter = null;
                   render();
                 },
               }),
@@ -716,7 +818,7 @@ export async function open() {
  */
 export async function openSuppliersAwaitingErp() {
   setCurrentScreen("suppliers");
-  awaitingErpOnly = true;
+  statusFilter = "awaitingerp";
   if (!(await load())) {
     note(t("suppliers.failed"));
     return;

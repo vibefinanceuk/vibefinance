@@ -48,6 +48,18 @@ const STRINGS = {
     "suppliers.loadbroke": "The file was loaded, but this screen could not show the result:",
     "suppliers.nofile": "Choose a file first.",
     "suppliers.loading": "Loading...",
+    "suppliers.statusheading": "Supplier status",
+    "suppliers.status.active": "Active",
+    "suppliers.status.inactive": "Inactive",
+    "suppliers.status.onhold": "On hold",
+    "suppliers.status.awaitingerp": "Awaiting ERP",
+    "suppliers.allsuppliers": "All suppliers",
+    "suppliers.showing.active": "Showing active suppliers only",
+    "suppliers.showing.inactive": "Showing inactive suppliers only",
+    "suppliers.showing.onhold": "Showing suppliers on hold only",
+    "suppliers.showing.awaitingerp": "Showing suppliers awaiting the ERP only",
+    "suppliers.nonefiltered": "No suppliers match this filter.",
+    "documents.clearfilter": "Clear filter",
   },
 };
 
@@ -273,5 +285,84 @@ describe("both ways in, side by side (decision 0237)", () => {
       .map((b) => b.textContent);
 
     expect(disabled).toEqual([]);
+  });
+});
+
+describe("the status card (decision 0299)", () => {
+  /**
+   * **Six suppliers, two of them chosen to test priority, not just
+   * category.** Every field in this system is independent — a
+   * supplier can be active, on hold, and missing its own ERP
+   * identifier all at the same time — so counting them correctly
+   * means proving the priority order, not just that each label works
+   * once in isolation.
+   */
+  const SUPPLIERS = [
+    { id: "s1", name: "Acme", erpIdentifier: "E1", status: "active", onHold: false },
+    { id: "s2", name: "Beta", erpIdentifier: "E2", status: "inactive", onHold: false },
+    { id: "s3", name: "Gamma", erpIdentifier: "E3", status: "active", onHold: true, holdReason: "Dispute" },
+    { id: "s4", name: "Delta", erpIdentifier: null, status: "active", onHold: false },
+    // Missing its own identifier AND on hold — awaiting ERP wins.
+    { id: "s5", name: "Epsilon", erpIdentifier: null, status: "active", onHold: true, holdReason: "x" },
+    // Inactive AND on hold — on hold wins over the plain status split.
+    { id: "s6", name: "Zeta", erpIdentifier: "E6", status: "inactive", onHold: true, holdReason: "y" },
+  ];
+
+  function legendRow(label: string) {
+    return [...document.querySelectorAll(".donutkey")].find((row) => row.textContent?.includes(label));
+  }
+
+  it("buckets each supplier into exactly one status, even when more than one condition applies", async () => {
+    stubFetch({ suppliers: SUPPLIERS, lastLoad: null });
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { open } = await import("/suppliers.js");
+    await open();
+
+    // Active: only s1 — s3 is on hold despite being active, s4/s5 are
+    // awaiting ERP despite one of them also being active.
+    expect(legendRow("Active")?.textContent).toContain("1");
+    expect(legendRow("Inactive")?.textContent).toContain("1");
+    // On hold: s3 and s6 — s6 counts here rather than under Inactive.
+    expect(legendRow("On hold")?.textContent).toContain("2");
+    // Awaiting ERP: s4 and s5 — s5 counts here rather than under On hold.
+    expect(legendRow("Awaiting ERP")?.textContent).toContain("2");
+  });
+
+  it("filters the list to exactly the suppliers a clicked slice counted", async () => {
+    stubFetch({ suppliers: SUPPLIERS, lastLoad: null });
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { open } = await import("/suppliers.js");
+    await open();
+
+    (legendRow("On hold") as HTMLElement).click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    const names = [...document.querySelectorAll("tbody tr")].map((row) => row.textContent);
+    expect(names.some((t) => t?.includes("Gamma"))).toBe(true);
+    expect(names.some((t) => t?.includes("Zeta"))).toBe(true);
+    expect(names.some((t) => t?.includes("Acme"))).toBe(false);
+    expect(document.body.textContent).toContain("Showing suppliers on hold only");
+  });
+
+  it("All suppliers shows the true total and clears the filter", async () => {
+    stubFetch({ suppliers: SUPPLIERS, lastLoad: null });
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { open } = await import("/suppliers.js");
+    await open();
+
+    (legendRow("Awaiting ERP") as HTMLElement).click();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(document.querySelectorAll("tbody tr").length).toBe(2);
+
+    const allRow = legendRow("All suppliers");
+    expect(allRow?.textContent).toContain(String(SUPPLIERS.length));
+    (allRow as HTMLElement).click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(document.querySelectorAll("tbody tr").length).toBe(SUPPLIERS.length);
+    expect(document.body.textContent).not.toContain("Showing suppliers");
   });
 });

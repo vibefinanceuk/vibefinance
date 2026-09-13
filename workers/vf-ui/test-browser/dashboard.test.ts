@@ -70,6 +70,7 @@ const STRINGS = {
     // The suppliers screen's own strings, needed because navigating
     // there is exactly what one of these tests does.
     "suppliers.showingawaiting": "Showing suppliers awaiting the ERP only",
+    "suppliers.showing.awaitingerp": "Showing suppliers awaiting the ERP only",
     "documents.clearfilter": "Clear filter",
     "nav.tasks": "Tasks",
     "nav.dashboard": "Dashboard",

@@ -1504,6 +1504,20 @@
     margin-bottom: 16px;
   }
   /*
+    Load a supplier file, beside the status ring — decision 0299,
+    reported live: "the 'Load a supplier file' card is wide, and
+    takes up space." Same shape `.parties` already gives the Seller
+    and Buyer cards, named for this screen rather than reused under a
+    name that says party.
+  */
+  .supplierhead {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 16px;
+    margin-bottom: 16px;
+    align-items: start;
+  }
+  /*
     **The Seller card's own sub-line, decision 0290** — reported live:
     "The fields beneath the word Seller appear to be aligned to the
     bottom of the card. The Buyer card, details seem aligned to the

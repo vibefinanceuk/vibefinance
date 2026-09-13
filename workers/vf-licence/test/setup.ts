@@ -89,6 +89,7 @@ import backButtonWordingSql from "../migrations/0084_back_button_wording.sql?raw
 import moodButtonWordingSql from "../migrations/0085_mood_button_wording.sql?raw";
 import headerFieldsPopoutSql from "../migrations/0086_header_fields_popout.sql?raw";
 import paymentTermsFieldSql from "../migrations/0087_payment_terms_field.sql?raw";
+import supplierStatusCardSql from "../migrations/0088_supplier_status_card.sql?raw";
 
 function stripSqlComments(sql: string): string {
   return sql
@@ -205,5 +206,6 @@ export async function applyTestSchema(): Promise<void> {
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(moodButtonWordingSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(headerFieldsPopoutSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(paymentTermsFieldSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(supplierStatusCardSql)));
 
 }
