@@ -564,27 +564,42 @@ function openSupplier(s) {
     actionLink("close", { onclick: () => close() }),
   ]);
 
-  const box = el("div", { class: "popout" }, [
-    el("h3", { text: s.name }),
-    // **What the ERP calls it**, which is the reason the record exists
-    // (decision 0209) and the thing a person quotes to somebody else.
-    el("div", {
-      class: "sub",
-      text: [s.erpIdentifier, s.erpSiteIdentifier, s.isPaySite ? t("suppliers.pay") : null]
-        .filter(Boolean)
-        .join(" · "),
-    }),
-    s.onHold ? el("div", { class: "warn", text: `${t("suppliers.hold")}: ${s.holdReason}` }) : null,
-    /**
-     * **What is actually missing**, said where somebody can act on it —
-     * decision 0231. A supplier awaiting the ERP is not broken; it is
-     * work waiting for a team.
-     */
-    s.erpIdentifier ? null : el("div", { class: "warn", text: t("suppliers.awaitingerp") }),
-    stateButtons,
-    form,
-    problem,
-  ].filter(Boolean));
+  const box = el(
+    "div",
+    { class: "popout" },
+    [
+      /**
+       * **Release Hold/Hold, Activate/Deactivate, Save, and Close —
+       * top right, decision 0306** — reported live: "move the
+       * buttons... to the top right of the pop-out." Same
+       * title-left, action-right shape `.cardhead` already gives
+       * Change Seller and the Invoice header's own Header Fields
+       * pop-out, rather than a fifth version of the same pattern.
+       *
+       * **Decision 0236's own reasoning still holds** — all four act
+       * on the supplier and belong in one place, which they still
+       * are; only where that one place sits has moved.
+       */
+      el("div", { class: "cardhead" }, [el("h3", { text: s.name }), stateButtons]),
+      // **What the ERP calls it**, which is the reason the record exists
+      // (decision 0209) and the thing a person quotes to somebody else.
+      el("div", {
+        class: "sub",
+        text: [s.erpIdentifier, s.erpSiteIdentifier, s.isPaySite ? t("suppliers.pay") : null]
+          .filter(Boolean)
+          .join(" · "),
+      }),
+      s.onHold ? el("div", { class: "warn", text: `${t("suppliers.hold")}: ${s.holdReason}` }) : null,
+      /**
+       * **What is actually missing**, said where somebody can act on it —
+       * decision 0231. A supplier awaiting the ERP is not broken; it is
+       * work waiting for a team.
+       */
+      s.erpIdentifier ? null : el("div", { class: "warn", text: t("suppliers.awaitingerp") }),
+      form,
+      problem,
+    ].filter(Boolean)
+  );
 
   const backdrop = el("div", { class: "backdrop" }, [box]);
   backdrop.onclick = (e) => {

@@ -36,6 +36,12 @@ const STRINGS = {
     "suppliers.status": "Status",
     "action.newsupplier": "New supplier",
     "action.load": "Load",
+    "action.hold": "Hold",
+    "action.releasehold": "Release hold",
+    "action.activate": "Activate",
+    "action.deactivate": "Deactivate",
+    "action.save": "Save",
+    "action.close": "Close",
     "nav.tasks": "Tasks",
     "nav.sources": "Sources",
     "nav.dashboard": "Dashboard",
@@ -424,5 +430,62 @@ describe("the status card (decision 0299)", () => {
     expect(panelStart, "the .supplierhead > .panel rule must exist").toBeGreaterThan(-1);
     const panelRule = css.slice(panelStart, css.indexOf("}", panelStart) + 1);
     expect(panelRule).toContain("height: 100%");
+  });
+});
+
+describe("the supplier detail pop-out's own buttons, top right (decision 0306)", () => {
+  /**
+   * **Reported live**: "upon selecting a supplier, it launches a
+   * pop-out. Please can you move the buttons - Release Hold / Hold,
+   * Activate / Deactivate, Save and Close to the top right of the
+   * pop-out."
+   */
+  const ONE_SUPPLIER = [
+    {
+      id: "s1",
+      erpIdentifier: "E1",
+      name: "Acme",
+      status: "active",
+      onHold: false,
+    },
+  ];
+
+  async function openDetail() {
+    stubFetch({ suppliers: ONE_SUPPLIER, lastLoad: null });
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { open } = await import("/suppliers.js");
+    await open();
+
+    (document.querySelector("tbody tr") as HTMLElement).click();
+  }
+
+  it("puts Hold, Activate, Save, and Close in the pop-out's own cardhead, beside its own name", async () => {
+    await openDetail();
+
+    const cardhead = [...document.querySelectorAll(".popout .cardhead")].find(
+      (c) => c.querySelector("h3")?.textContent === "Acme"
+    );
+    expect(cardhead).not.toBeUndefined();
+
+    const titles = [...(cardhead?.querySelectorAll(".statebuttons button") ?? [])].map((b) =>
+      b.getAttribute("title")
+    );
+    expect(titles).toEqual(["Hold", "Deactivate", "Save", "Close"]);
+
+    // Not left behind in a row of its own, further down the pop-out.
+    const looseStatebuttons = [...document.querySelectorAll(".popout > .statebuttons")];
+    expect(looseStatebuttons).toHaveLength(0);
+  });
+
+  it("still closes the pop-out from its new position", async () => {
+    await openDetail();
+
+    const closeButton = [...document.querySelectorAll(".popout .cardhead button")].find(
+      (b) => b.getAttribute("title") === "Close"
+    ) as HTMLButtonElement;
+    closeButton.click();
+
+    expect(document.querySelector(".backdrop")).toBeNull();
   });
 });
