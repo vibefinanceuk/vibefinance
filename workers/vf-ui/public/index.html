@@ -1432,6 +1432,17 @@
     padding: 16px;
     z-index: 50;
   }
+  /*
+    **`display: flex` beats `[hidden]`'s own default** — the exact
+    pattern decision 0271 already found and fixed once, in a different
+    element: a class rule and the browser's own `[hidden] { display:
+    none }` land at equal specificity, and the author's own rule wins
+    the tie. Reported live: "I cannot get away from the screen unless I
+    refresh the browser" — `popoutBackdrop.hidden = true` was setting
+    the attribute correctly; nothing was reading it, since `.backdrop`
+    itself never yielded to it.
+  */
+  .backdrop[hidden] { display: none; }
   .popout {
     /*
       **`--surface-2`, which exists** — decision 0223.
@@ -1914,6 +1925,32 @@
     flex-direction: column;
     gap: 14px;
   }
+
+  /*
+    "Header Fields"'s own pop-out — decision 0294, the operator's own
+    request: "list the field in a single row stacked, with field name
+    on the left and field value on the right." One column, not
+    `.vfields`'s own multi-column grid, and `.kf` itself laid out as a
+    row rather than its default label-above-value stack — scoped to
+    `.hffields` alone, so every other use of `field()` on this screen
+    keeps its own layout.
+  */
+  .hffields .kf {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 16px;
+    padding: 8px 0;
+    border-top: 0.5px solid var(--border);
+  }
+  .hffields .kf:first-child { border-top: none; }
+  .hffields .kf label { margin-bottom: 0; flex-shrink: 0; }
+  .hffields .kf input,
+  .hffields .kf .readonly {
+    text-align: right;
+    max-width: 60%;
+  }
+  .hffields .kf .readonly { word-break: break-all; }
 
   .kf label {
     display: block;

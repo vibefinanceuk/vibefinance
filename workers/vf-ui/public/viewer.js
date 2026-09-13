@@ -1709,9 +1709,19 @@ export async function openViewer(task, onClose) {
     };
     const backdrop = el("div", { class: "backdrop" }, [
       el("div", { class: "popout" }, [
-        el("h3", { text: t("viewer.allheaderfields") }),
-        el("div", { class: "vfields" }, rows),
-        el("div", { class: "statebuttons" }, [actionLink("close", { onclick: close })]),
+        el("div", { class: "cardhead" }, [
+          el("h3", { text: t("viewer.allheaderfields") }),
+          /**
+           * **Top right, not the footer** — the operator's own
+           * request, matching every other card's own action
+           * (`cardHead()`'s Change Seller, `headerSummary()`'s own
+           * Header Fields). Not `cardHead()` itself: closing has to
+           * stay reachable even when `canEditAnything` is false — the
+           * same reasoning "Header Fields" itself already carries.
+           */
+          actionLink("close", { onclick: close }),
+        ]),
+        el("div", { class: "hffields" }, rows),
       ]),
     ]);
     backdrop.onclick = (e) => {

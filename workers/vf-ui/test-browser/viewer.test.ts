@@ -2067,6 +2067,62 @@ describe("the Invoice header card is a curated summary, with a pop-out for the r
     expect(document.querySelectorAll(".backdrop").length).toBe(1);
     expect((document.getElementById("f-BT-23") as HTMLInputElement).value).toBe("urn:still-here");
   });
+
+  it("the browser's own [hidden] default actually applies to .backdrop (decision 0294)", async () => {
+    /**
+     * **Reported live**: "The Close button does not work currently.
+     * So when I open the pop-out, I cannot get away from the screen
+     * unless I refresh the browser." The exact pattern decision 0271
+     * already found and fixed once, in a different element: `.backdrop
+     * { display: flex }` and the browser's own `[hidden] { display:
+     * none }` land at equal specificity, and the author's own rule won
+     * the tie — `popoutBackdrop.hidden = true` was setting the
+     * attribute correctly; nothing was reading it.
+     */
+    const css = (await import("virtual:stylesheets")).default["index.html"];
+    expect(css).toContain(".backdrop[hidden] { display: none; }");
+  });
+
+  it("moves Close into the pop-out's own header, beside the title", async () => {
+    // The operator's own request: consistent with every other card's
+    // action — cardHead()'s own Change Seller, headerSummary()'s own
+    // Header Fields — top right, not a footer row of its own.
+    const withOverflow = {
+      fields: [...CURATED_FIELDS.fields, { field: "BT-23", visibility: "read", type: "text", line: false }],
+    };
+    await open(withOverflow, {});
+
+    const trigger = [...headerCard().querySelectorAll(".actionlink")].find(
+      (a) => a.querySelector("span")?.textContent === "Header Fields"
+    ) as HTMLButtonElement;
+    trigger.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    const close = [...document.querySelectorAll(".popout .cardhead .actionlink")].find(
+      (a) => a.querySelector("span")?.textContent === "Close"
+    );
+    expect(close).not.toBeUndefined();
+  });
+
+  it("lays out each field as a row, name on the left and value on the right", async () => {
+    // The operator's own request: "list the field in a single row
+    // stacked, with field name on the left and field value on the
+    // right."
+    const withOverflow = {
+      fields: [...CURATED_FIELDS.fields, { field: "BT-23", visibility: "read", type: "text", line: false }],
+    };
+    await open(withOverflow, { "BT-23": "urn:example" });
+
+    const trigger = [...headerCard().querySelectorAll(".actionlink")].find(
+      (a) => a.querySelector("span")?.textContent === "Header Fields"
+    ) as HTMLButtonElement;
+    trigger.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    const list = document.querySelector(".hffields");
+    expect(list).not.toBeNull();
+    expect(list?.querySelector(".kf")).not.toBeNull();
+  });
 });
 
 describe("an action that labels itself draws itself (decision 0229)", () => {
