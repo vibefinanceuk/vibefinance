@@ -54,6 +54,7 @@ const STRINGS = {
     "action.complete": "Complete",
     "action.return": "Return",
     "action.key": "Key",
+    "action.claim": "Claim",
     "mood.label": "Mood",
     "mood.day": "Day",
     "mood.night": "Night",
@@ -159,8 +160,85 @@ describe("opening a task that cannot be keyed (decision 0142)", () => {
     // actions would put navigation where decisions live.
     await openList([APPROVAL_TASK]);
 
-    const link = document.querySelector("button.subjectlink");
-    expect(link?.textContent).toBe("Munch GmbH");
+    const row = document.querySelector("tbody tr.clickable") as HTMLElement;
+    expect(row?.textContent).toContain("Munch GmbH");
+  });
+
+  it("opens the viewer when the row itself is clicked, matching Documents (decision 0288)", async () => {
+    await openList([APPROVAL_TASK]);
+
+    const row = document.querySelector("tbody tr.clickable") as HTMLElement;
+    row.click();
+    for (let i = 0; i < 100; i++) {
+      if (!(document.getElementById("viewer") as HTMLElement).hidden) break;
+      await new Promise((r) => setTimeout(r, 10));
+    }
+
+    expect((document.getElementById("viewer") as HTMLElement).hidden).toBe(false);
+    expect((document.getElementById("shell") as HTMLElement).hidden).toBe(true);
+  });
+
+  it("never shows Key as its own button — the row already opens it (decision 0288)", async () => {
+    const keyable = { ...APPROVAL_TASK, id: "t-key", stageId: "validation", actions: ["key", "complete"] };
+    await openList([keyable]);
+
+    const labels = [...document.querySelectorAll("button.act")].map((b) => b.textContent);
+    expect(labels).not.toContain("Key");
+    expect(labels).toContain("Complete");
+  });
+
+  it("keeps Claim as its own button, since the row's own click does not claim anything (decision 0288)", async () => {
+    const unclaimed = { ...APPROVAL_TASK, id: "t-avail", ownership: "available", actions: ["claim"] };
+    await openList([unclaimed]);
+
+    const labels = [...document.querySelectorAll("button.act")].map((b) => b.textContent);
+    expect(labels).toContain("Claim");
+  });
+
+  it("clicking an action does not also open the row underneath it", async () => {
+    /**
+     * **Every remaining action button sits inside the now-clickable
+     * row** — without stopping the click from bubbling, pressing
+     * Complete or Claim would also fire the row's own handler and open
+     * the document at the same moment the action is still in flight,
+     * using whatever stale ownership the row was rendered with.
+     */
+    await openList([APPROVAL_TASK]);
+
+    const posted: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        const path = String(url).split("?")[0];
+        if (init?.method === "POST") posted.push(path);
+        const routes: Record<string, unknown> = {
+          "/api/ui-strings": STRINGS,
+          "/api/whoami": { id: "u-dan", name: "Dan", permissions: ALL_NAV_PERMISSIONS },
+          "/api/tasks": { tasks: [APPROVAL_TASK], counts: {} },
+          "/api/tasks/t-approve/complete": {},
+        };
+        if (!(path in routes)) throw new Error(`no stub for ${path}`);
+        return { ok: true, json: async () => routes[path] } as Response;
+      })
+    );
+
+    const complete = [...document.querySelectorAll("button.act")].find(
+      (b) => b.textContent === "Complete"
+    ) as HTMLButtonElement;
+    complete.click();
+
+    // **Waits for the real outcome, not a guessed duration** — decision
+    // 0249's own lesson, found again while probing this very test: a
+    // fixed setTimeout(0) passed whether or not the row's own click
+    // handler had fired, since neither async chain had resolved either
+    // way in that short a wait. The action's own POST completing is
+    // the real signal to wait for.
+    for (let i = 0; i < 100; i++) {
+      if (posted.includes("/api/tasks/t-approve/complete")) break;
+      await new Promise((r) => setTimeout(r, 10));
+    }
+
+    expect((document.getElementById("viewer") as HTMLElement).hidden).toBe(true);
   });
 
   it("offers no disabled buttons", async () => {

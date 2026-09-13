@@ -279,9 +279,19 @@ function field(spec, existing) {
    * says the value is information rather than something to change,
    * which is what `read` means: *"approvers should approve data, not
    * edit data."*
+   *
+   * **`!canEditAnything` joins the field's own visibility, decision
+   * 0288.** Without it, a field the stage marks `edit` rendered as a
+   * real `<input>` for anyone who could open the task at all —
+   * unclaimed or someone-else's-locked included, since this only ever
+   * asked the field what it allowed, never who was asking. The
+   * `canEditAnything` flag above already answers that; a field
+   * ignoring it once it had rendered would leave every input on
+   * screen editable-looking with nowhere to save the result, which is
+   * a worse state than either read-only or genuinely editable.
    */
   const control =
-    spec.visibility === "read"
+    spec.visibility === "read" || !canEditAnything
       ? el("div", {
           class: "readonly",
           id: `f-${spec.field}`,
@@ -1022,10 +1032,26 @@ export async function openViewer(task, onClose) {
    * Read from what the stage permits rather than from its name: a
    * customer who makes Validation read-only gets a read-only Validation
    * screen, which is what decision 0114 is for.
+   *
+   * **A second condition, decision 0288 — the operator's own question,
+   * answered.** "A document can be opened in read-only mode, when it
+   * is not claimed, however in order to act on the document in Edit
+   * mode, it must be claimed." Before this, a stage permitting edits
+   * permitted them for *anyone* who could open the task at all — an
+   * unclaimed or someone-else's-locked document included, since
+   * nothing here had ever asked whose it was. `task.ownership` already
+   * answers that: `"mine"` only for a task assigned to this person
+   * directly or claimed by them (`task-list-route.ts`'s own
+   * `ownershipOf`). A document opened outside any task at all (the
+   * Documents screen's own use of this viewer, decision 0167) has no
+   * `ownership` field to be `"mine"`, so it stays read-only exactly as
+   * it already did — this adds a real gate where none existed, rather
+   * than changing behaviour that was already correct.
    */
   canEditAnything =
-    headerFields.some((f) => f.visibility === "edit") ||
-    lineFields.some((f) => f.visibility === "edit");
+    (headerFields.some((f) => f.visibility === "edit") ||
+      lineFields.some((f) => f.visibility === "edit")) &&
+    task.ownership === "mine";
 
   current = task;
   // Already loaded above, because its unit decides which fields are

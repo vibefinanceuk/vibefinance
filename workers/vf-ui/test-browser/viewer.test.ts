@@ -95,6 +95,7 @@ const STRINGS = {
     "field.bt-131": "Line net amount",
     "action.expand": "Expand",
     "action.save": "Save",
+    "action.claim": "Claim",
     "action.complete": "Complete",
     "action.release": "Release",
     "action.discard": "Discard",
@@ -783,6 +784,59 @@ describe("the same screen serves review (decision 0142)", () => {
 
     const labels = [...document.querySelectorAll(".actionlink span")].map((n) => n.textContent);
     expect(labels).toContain("Save");
+  });
+
+  it("stays read-only for an unclaimed task even when the stage permits editing (decision 0288)", async () => {
+    /**
+     * **The operator's own question, answered**: "a document can be
+     * opened in read-only mode, when it is not claimed, however in
+     * order to act on the document in Edit mode, it must be claimed."
+     *
+     * Before this, field visibility was the *only* thing gating
+     * `canEditAnything` — an editable stage was editable for anyone who
+     * could open the task at all, unclaimed included. This is the
+     * regression test for the actual gap: an "available" task, on a
+     * stage whose own field visibility permits editing, must still
+     * render read-only.
+     */
+    stubFetch({ ...OPEN, "/api/field-visibility": FIELDS });
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    await openViewer({ ...TASK, ownership: "available", actions: ["claim"] }, () => {});
+    await new Promise((r) => setTimeout(r, 0));
+
+    const labels = [...document.querySelectorAll(".actionlink span")].map((n) => n.textContent);
+    expect(labels).not.toContain("Save");
+    expect(document.getElementById("f-BT-112")?.tagName).toBe("DIV");
+    expect(document.querySelector("#f-BT-112 input")).toBeNull();
+  });
+
+  it("stays read-only for a task someone else has already claimed", async () => {
+    stubFetch({ ...OPEN, "/api/field-visibility": FIELDS });
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    await openViewer({ ...TASK, ownership: "locked", actions: [] }, () => {});
+    await new Promise((r) => setTimeout(r, 0));
+
+    const labels = [...document.querySelectorAll(".actionlink span")].map((n) => n.textContent);
+    expect(labels).not.toContain("Save");
+  });
+
+  it("still offers Claim from within the read-only view of an unclaimed task", async () => {
+    // The one thing an unclaimed task's own read-only view has to
+    // offer — otherwise a person who opened it to look has no way to
+    // take it without closing the viewer and finding the row again.
+    stubFetch({ ...OPEN, "/api/field-visibility": FIELDS });
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    await openViewer({ ...TASK, ownership: "available", actions: ["claim"] }, () => {});
+    await new Promise((r) => setTimeout(r, 0));
+
+    const labels = [...document.querySelectorAll(".actionlink span")].map((n) => n.textContent);
+    expect(labels).toContain("Claim");
   });
 });
 

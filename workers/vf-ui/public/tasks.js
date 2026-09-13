@@ -185,37 +185,64 @@ function problem(message) {
 }
 
 function taskRow(task) {
-  const actions = task.actions.map((action) =>
-    el("button", {
-      class: "act",
-      text: actionLabel(action),
-      // **Every action works now** (decision 0138). This listed three
-      // and disabled the rest, which was true until the proxy carried
-      // them and three routes accepted a session.
-      onclick: () => act(task.id, action),
-    })
-  );
+  /**
+   * **"Key" is redundant now, decision 0288** — matching decision
+   * 0287's own reasoning for Documents. The row itself opens the
+   * viewer; a button whose only effect was also opening the viewer
+   * duplicates it rather than doing something different. Every other
+   * action (Claim, Release, Complete, Return) stays, since each does
+   * something the row's own click does not.
+   */
+  const actions = task.actions
+    .filter((action) => action !== "key")
+    .map((action) =>
+      el("button", {
+        class: "act",
+        text: actionLabel(action),
+        // **Every action works now** (decision 0138). This listed three
+        // and disabled the rest, which was true until the proxy carried
+        // them and three routes accepted a session.
+        onclick: (event) => {
+          // The row itself opens the same document this button sits on
+          // top of — without this, clicking Claim would also open it.
+          event.stopPropagation();
+          act(task.id, action);
+        },
+      })
+    );
 
-  return el("tr", { class: task.ownership }, [
-    el("td", { text: task.stageName ?? task.stageId }),
-    // **The document, clickable** — decision 0142. A row names a
-    // document, and looking at one is the first thing anybody wants to
-    // do with it; making that a button among the actions would put
-    // navigation where decisions live.
-    el("td", {}, [
-      task.subject
-        ? el("button", {
-            class: "subjectlink",
-            text: describeTask(task),
-            onclick: () => openTask(task.id),
-          })
-        : el("span", { class: "muted", text: describeTask(task) }),
-    ]),
-    el("td", { class: "num", text: money(task.subject) }),
-    el("td", { text: waitedFor(task.createdAt) }),
-    el("td", { text: ownershipLabel(task) }),
-    el("td", {}, actions.length ? actions : [el("span", { class: "muted", text: "—" })]),
-  ]);
+  return el(
+    "tr",
+    {
+      class: `${task.ownership} clickable`,
+      /**
+       * **The row opens the document** — decision 0288, matching
+       * decision 0287's own change to Documents and decision 0250's
+       * original reasoning on the dashboard: a row that names a
+       * document and does nothing when clicked is worse than one that
+       * does not look clickable at all.
+       */
+      onclick: () => openTask(task.id),
+    },
+    [
+      el("td", { text: task.stageName ?? task.stageId }),
+      // **Plain text, not its own button, decision 0288.** The row
+      // itself is what opens the document now; a second clickable
+      // element inside a clickable row would fire twice on a click
+      // here — its own handler, then the row's again once the click
+      // bubbles up to it. The same fix decision 0287 already made for
+      // the Documents list's own number cell.
+      el("td", {}, [
+        task.subject
+          ? el("span", { text: describeTask(task) })
+          : el("span", { class: "muted", text: describeTask(task) }),
+      ]),
+      el("td", { class: "num", text: money(task.subject) }),
+      el("td", { text: waitedFor(task.createdAt) }),
+      el("td", { text: ownershipLabel(task) }),
+      el("td", {}, actions.length ? actions : [el("span", { class: "muted", text: "—" })]),
+    ]
+  );
 }
 
 async function loadTasks() {
