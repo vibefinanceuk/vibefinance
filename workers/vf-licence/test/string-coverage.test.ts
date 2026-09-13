@@ -243,6 +243,8 @@ const KEYS_THE_INTERFACE_USES = [
   "viewer.buyer.find",
   "viewer.buyer.change",
   "action.changebuyer",
+  "action.headerfields",
+  "viewer.allheaderfields",
   "action.hold",
   "action.releasehold",
   "action.deactivate",

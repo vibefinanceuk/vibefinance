@@ -93,6 +93,19 @@ const STRINGS = {
     "field.bt-112": "Total with VAT",
     "field.bt-27": "Seller name",
     "field.bt-131": "Line net amount",
+    "field.bt-1": "Invoice number",
+    "field.bt-5": "Currency",
+    "field.bt-2": "Issue date",
+    "field.bt-9": "Due date",
+    "field.bt-13": "Purchase order",
+    "field.bt-133": "Cost centre",
+    "field.bt-115": "Amount due",
+    "field.bt-23": "Business process",
+    "field.bt-24": "Specification",
+    "action.headerfields": "Header Fields",
+    "viewer.allheaderfields": "All invoice header fields",
+    "viewer.fields": "Invoice header",
+    "action.close": "Close",
     "action.expand": "Expand",
     "action.save": "Save",
     "action.claim": "Claim",
@@ -1650,6 +1663,172 @@ describe("each party card carries its own action (decision 0228)", () => {
     await new Promise((r) => setTimeout(r, 0));
 
     expect(document.querySelector(".popout")).not.toBeNull();
+  });
+});
+
+describe("the Invoice header card is a curated summary, with a pop-out for the rest (decision 0291)", () => {
+  /**
+   * **Reported live, from a screenshot and two mock-ups**: "Business
+   * Process and Specification... do not display well and overlap."
+   * Both are EN 16931 technical identifiers — long URN strings with
+   * no spaces to wrap at — never meant for a person reviewing an
+   * invoice. Replaced with a curated, fixed arrangement of the fields
+   * that are, plus a pop-out (matching the Supplier screen's own
+   * pattern) for anything a customer's own configuration adds beyond
+   * them.
+   */
+  const CURATED_FIELDS = {
+    fields: [
+      { field: "BT-1", visibility: "edit", type: "text", line: false, description: "invoice number" },
+      { field: "BT-5", visibility: "read", type: "text", line: false, description: "currency" },
+      { field: "BT-2", visibility: "read", type: "date", line: false, description: "issue date" },
+      { field: "BT-9", visibility: "read", type: "date", line: false, description: "due date" },
+      { field: "BT-13", visibility: "read", type: "text", line: false, description: "purchase order" },
+      { field: "BT-133", visibility: "read", type: "text", line: false, description: "cost centre" },
+      { field: "BT-106", visibility: "read", type: "number", line: false, description: "net before vat" },
+      { field: "BT-110", visibility: "read", type: "number", line: false, description: "vat amount" },
+      { field: "BT-112", visibility: "read", type: "number", line: false, description: "total with vat" },
+      { field: "BT-115", visibility: "read", type: "number", line: false, description: "amount due" },
+    ],
+  };
+
+  function stub(fieldVisibility: Record<string, unknown>, facts: Record<string, unknown>) {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        const path = String(url).split("?")[0];
+        const bodies: Record<string, unknown> = {
+          "/api/ui-strings": STRINGS,
+          "/api/code-lists": { fields: {} },
+          "/api/field-visibility": fieldVisibility,
+          "/api/invoices/inv-1": {
+            facts,
+            lines: [],
+            validation: { passed: true, checked: [], failures: [] },
+          },
+          "/api/invoices/inv-1/document-url": { url: null },
+          "/api/invoices/inv-1/progress": { inProcess: false, stages: [] },
+        };
+        if (!(path in bodies)) throw new Error(`no stub for ${path}`);
+        return { ok: true, json: async () => bodies[path] } as Response;
+      })
+    );
+  }
+
+  async function open(fieldVisibility: Record<string, unknown>, facts: Record<string, unknown> = {}) {
+    stub(fieldVisibility, facts);
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    await openViewer(TASK, () => {});
+    await new Promise((r) => setTimeout(r, 0));
+  }
+
+  function headerCard() {
+    return [...document.querySelectorAll(".panel")].find(
+      (p) => p.querySelector("h3")?.textContent === "Invoice header"
+    ) as HTMLElement;
+  }
+
+  it("shows the curated fields, arranged in their own columns", async () => {
+    await open(CURATED_FIELDS, { "BT-1": "INV-1", "BT-115": "1200" });
+
+    const columns = headerCard().querySelectorAll(".headersummary > .hscolumn");
+    expect(columns.length).toBe(5);
+    // First column: Invoice number, then Currency.
+    const firstColumnLabels = [...columns[0].querySelectorAll(".kf label")].map((l) => l.textContent);
+    expect(firstColumnLabels).toEqual(["Invoice number", "Currency"]);
+  });
+
+  it("never shows Business process or Specification in the summary card itself", async () => {
+    const withExtras = {
+      fields: [...CURATED_FIELDS.fields, { field: "BT-23", visibility: "read", type: "text", line: false }],
+    };
+    await open(withExtras, { "BT-23": "urn:fdc:peppol.eu:2017:poacc:billing:01:1.0" });
+
+    expect(headerCard().textContent).not.toContain("Business process");
+    expect(document.getElementById("f-BT-23")).toBeNull();
+  });
+
+  it("offers Header Fields when a customer's own configuration adds fields beyond the curated set", async () => {
+    const withExtras = {
+      fields: [...CURATED_FIELDS.fields, { field: "BT-23", visibility: "read", type: "text", line: false }],
+    };
+    await open(withExtras, {});
+
+    const labels = [...headerCard().querySelectorAll(".actionlink span")].map((s) => s.textContent);
+    expect(labels).toContain("Header Fields");
+  });
+
+  it("omits Header Fields when the curated set is everything that's configured", async () => {
+    await open(CURATED_FIELDS, {});
+
+    const labels = [...headerCard().querySelectorAll(".actionlink span")].map((s) => s.textContent);
+    expect(labels).not.toContain("Header Fields");
+  });
+
+  it("opens a read-only pop-out listing every configured field when clicked", async () => {
+    const withExtras = {
+      fields: [
+        ...CURATED_FIELDS.fields,
+        { field: "BT-23", visibility: "read", type: "text", line: false },
+        { field: "BT-24", visibility: "read", type: "text", line: false },
+      ],
+    };
+    await open(withExtras, {
+      "BT-1": "INV-2026-04471",
+      "BT-23": "urn:fdc:peppol.eu:2017:poacc:billing:01:1.0",
+      "BT-24": "urn:cen.eu:en16931:2017",
+    });
+
+    const trigger = [...headerCard().querySelectorAll(".actionlink")].find(
+      (a) => a.querySelector("span")?.textContent === "Header Fields"
+    ) as HTMLButtonElement;
+    trigger.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    const popout = document.querySelector(".popout");
+    expect(popout).not.toBeNull();
+    // Everything configured, including what the card itself omits.
+    expect(popout?.textContent).toContain("Business process");
+    expect(popout?.textContent).toContain("Specification");
+    expect(popout?.textContent).toContain("urn:fdc:peppol.eu:2017:poacc:billing:01:1.0");
+    // Read-only: no live input duplicating what the card already renders.
+    expect(popout?.querySelector("input")).toBeNull();
+  });
+
+  it("closes the pop-out from its own Close action", async () => {
+    const withExtras = {
+      fields: [...CURATED_FIELDS.fields, { field: "BT-23", visibility: "read", type: "text", line: false }],
+    };
+    await open(withExtras, {});
+
+    const trigger = [...headerCard().querySelectorAll(".actionlink")].find(
+      (a) => a.querySelector("span")?.textContent === "Header Fields"
+    ) as HTMLButtonElement;
+    trigger.click();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(document.querySelector(".popout")).not.toBeNull();
+
+    const close = [...document.querySelectorAll(".popout .actionlink")].find(
+      (a) => a.querySelector("span")?.textContent === "Close"
+    ) as HTMLButtonElement;
+    close.click();
+
+    expect(document.querySelector(".popout")).toBeNull();
+  });
+
+  it("leaves a field's own slot empty, rather than the layout breaking, when a customer does not use it", async () => {
+    // No Cost centre in this customer's own configuration.
+    const withoutCostCentre = {
+      fields: CURATED_FIELDS.fields.filter((f) => f.field !== "BT-133"),
+    };
+    await open(withoutCostCentre, {});
+
+    expect(headerCard().textContent).not.toContain("Cost centre");
+    // Still five columns — the third simply holds one field instead
+    // of two, not a rearranged four-column layout.
+    expect(headerCard().querySelectorAll(".headersummary > .hscolumn").length).toBe(5);
   });
 });
 

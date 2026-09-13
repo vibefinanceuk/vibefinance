@@ -1893,6 +1893,49 @@
     align-content: start;
   }
 
+  /*
+    The curated Invoice header summary — decision 0291.
+
+    **`auto-fit`, not a fixed 5 columns**, matching every other grid on
+    this screen (`.vfields`, `.parties`). The card sits in a column
+    already sharing the screen with the document panel, narrower than
+    the mock-up's own full-width canvas — a rigid 5-column grid would
+    crush every value at anything less than a wide desktop. Wrapping
+    to fewer, wider columns on a narrower screen keeps every value
+    readable at the cost of a taller card, which is the right trade.
+  */
+  .headersummary {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+    gap: 16px;
+  }
+  .hscolumn {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  /*
+    "Header Fields"'s own pop-out — decision 0291. Read-only rows, not
+    `.kf`: nothing here is a field a person can act on, only one to
+    look up.
+  */
+  .hflist {
+    display: flex;
+    flex-direction: column;
+  }
+  .hfrow {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 8px 0;
+    border-top: 0.5px solid var(--border);
+    font-size: var(--text-sm);
+  }
+  .hfrow:first-child { border-top: none; }
+  .hflabel { color: var(--text-secondary); flex-shrink: 0; }
+  .hfvalue { text-align: right; word-break: break-all; }
+
   .kf label {
     display: block;
     font-size: var(--text-sm);

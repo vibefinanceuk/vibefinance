@@ -324,4 +324,10 @@ Object.assign(ICONS, {
 
   // A crescent moon — decision 0286, the mood toggle's own night state.
   moon: '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>',
+
+  // A bordered panel with rows inside — decision 0291. Not `documents`
+  // (a page with a folded corner, meaning "a document" generally):
+  // this specifically means the fields themselves, laid out as rows in
+  // a panel, matching what the pop-out it opens actually contains.
+  headerfields: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9h10M7 13h10M7 17h6"/>',
 });

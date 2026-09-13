@@ -1105,6 +1105,51 @@ export async function openViewer(task, onClose) {
   const BUYER_FIELDS = ["BT-44", "BT-48", "BT-49", "BT-55", "BT-10"];
 
   /**
+   * **A curated summary, not every configured field** — decision 0291,
+   * from the operator's own mock-up. `.vfields`'s auto-fit grid showed
+   * every header field in whatever order the field-visibility API
+   * returned them, which is what let two technical, URN-valued fields
+   * (Business process, Specification) land beside short ones and
+   * overlap them — reported live as *"the fields beneath the word
+   * Seller appear to be aligned to the bottom,"* the same root cause
+   * decision 0290 already fixed once for the Seller card's own
+   * sub-line.
+   *
+   * **Five columns, each a fixed set of slots**, not a reflowing grid:
+   * a field a particular customer doesn't use leaves its own slot
+   * empty rather than the layout rearranging around it, so the card
+   * looks the same shape for everyone.
+   *
+   * **Total with VAT stayed, against the operator's own mock-up.**
+   * Their sketch paired Amount due alone in the last column; the VAT
+   * arithmetic check (decision 0119) highlights Net before VAT, VAT
+   * amount and Total with VAT together as the one relationship it
+   * checks. Leaving Total with VAT out of the card would leave a
+   * third of that highlight nowhere visible without opening Header
+   * Fields first, for the one check on this screen most likely to
+   * actually fail. The column holds both rather than dropping either.
+   */
+  const HEADER_SUMMARY_FIELDS = [
+    "BT-1",
+    "BT-5",
+    "BT-2",
+    "BT-9",
+    "BT-13",
+    "BT-133",
+    "BT-106",
+    "BT-110",
+    "BT-112",
+    "BT-115",
+  ];
+  const HEADER_SUMMARY_COLUMNS = [
+    ["BT-1", "BT-5"],
+    ["BT-2", "BT-9"],
+    ["BT-13", "BT-133"],
+    ["BT-106", "BT-110"],
+    ["BT-112", "BT-115"],
+  ];
+
+  /**
    * A pop-out that finds one thing and attaches it — decisions 0222 and
    * 0224.
    *
@@ -1576,6 +1621,98 @@ export async function openViewer(task, onClose) {
 
 
   /**
+   * The curated summary's own overflow — decision 0291.
+   *
+   * **A pop-out, matching the Supplier screen's own pattern** rather
+   * than a new one invented for this card: `.popout` inside
+   * `.backdrop`, the same box `suppliers.js`'s own detail view already
+   * opens on a row click, here opened by "Header Fields" instead.
+   *
+   * **Read-only, deliberately** — never `field()`. That function
+   * renders a live `<input id="f-${field}">` when a field is
+   * editable, and the curated summary above already renders one for
+   * every field it shows; a second `field()` call for the same spec
+   * here would put two elements with the same id on the page at once,
+   * and only one of them would ever be read back on save. Every field
+   * a person can act on already has exactly one place to do it — this
+   * is only ever somewhere to look.
+   */
+  function openHeaderFieldsPopout() {
+    const shown = headerFields.filter(
+      (spec) => ![...SELLER_FIELDS, ...BUYER_FIELDS].includes(spec.field)
+    );
+
+    const rows = shown.map((spec) =>
+      el("div", { class: "hfrow" }, [
+        el("span", { class: "hflabel", text: t(`field.${spec.field.toLowerCase()}`) }),
+        el("span", { class: "hfvalue", text: String(existing?.[spec.field] ?? "—") }),
+      ])
+    );
+
+    const close = () => backdrop.remove();
+    const backdrop = el("div", { class: "backdrop" }, [
+      el("div", { class: "popout" }, [
+        el("h3", { text: t("viewer.allheaderfields") }),
+        el("div", { class: "hflist" }, rows),
+        el("div", { class: "statebuttons" }, [actionLink("close", { onclick: close })]),
+      ]),
+    ]);
+    backdrop.onclick = (e) => {
+      if (e.target === backdrop) close();
+    };
+    document.body.append(backdrop);
+  }
+
+  /**
+   * The card itself — decision 0291's curated replacement for the flat
+   * `.vfields` grid every header field used to share.
+   *
+   * **"Header Fields" only appears when there is something in it.** A
+   * customer whose every configured header field already fits the nine
+   * curated slots has nothing left to show, and an action promising
+   * more fields with none behind it is worse than no action at all —
+   * decision 0122's own reasoning, applied here rather than restated.
+   *
+   * **Not `cardHead()`.** That helper gates its action on
+   * `canEditAnything`, correct for Change Seller and Change Buyer —
+   * genuine edits, rightly locked down for an unclaimed task by
+   * decision 0289. Looking up a field's own value is not an edit; it
+   * stays available the same way Expand does regardless of
+   * `canEditAnything`, so this builds its own header rather than
+   * inheriting a gate written for a different kind of action.
+   */
+  function headerSummary() {
+    const overflow = headerFields.some(
+      (spec) =>
+        ![...SELLER_FIELDS, ...BUYER_FIELDS, ...HEADER_SUMMARY_FIELDS].includes(spec.field)
+    );
+
+    return el("div", { class: "panel" }, [
+      el("div", { class: "cardhead" }, [
+        el("h3", { text: t("viewer.fields") }),
+        ...(overflow
+          ? [actionLink("headerfields", { onclick: () => openHeaderFieldsPopout() })]
+          : []),
+      ]),
+      el(
+        "div",
+        { class: "headersummary" },
+        HEADER_SUMMARY_COLUMNS.map((column) =>
+          el(
+            "div",
+            { class: "hscolumn" },
+            column
+              .map((code) => headerFields.find((spec) => spec.field === code))
+              .filter(Boolean)
+              .map((spec) => field(spec, existing))
+          )
+        )
+      ),
+    ]);
+  }
+
+
+  /**
    * One status panel, not four — decision 0115.
    *
    * The operator's observation: four panels for four short values took
@@ -1651,18 +1788,7 @@ export async function openViewer(task, onClose) {
             // Seller and buyer side by side, in the space the four
             // status panels were using (decision 0115).
             el("div", { class: "parties" }, [sellerPanel(), buyerPanel()].filter(Boolean)),
-            el("div", { class: "panel" }, [
-              el("h3", { text: t("viewer.fields") }),
-              // **Party fields removed**, or they would appear twice —
-              // once in their own panel and once here.
-              el(
-                "div",
-                { class: "vfields" },
-                headerFields
-                  .filter((spec) => ![...SELLER_FIELDS, ...BUYER_FIELDS].includes(spec.field))
-                  .map((spec) => field(spec, existing))
-              ),
-            ]),
+            headerSummary(),
             linePanel(),
             el("div", { class: "problem", id: "viewer-note", role: "status" }),
           ]),
