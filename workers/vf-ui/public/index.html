@@ -219,7 +219,30 @@
     The nav is a flex column so `.who` can be pushed down; the logo
     sits below it, centred, and quiet.
   */
-  .nav { display: flex; flex-direction: column; }
+  .nav {
+    display: flex;
+    flex-direction: column;
+    /**
+     * **Pinned to the browser window, not the page** — decision 0281,
+     * the operator's own request: "align the side panel bottom, with
+     * the bottom of the browser size... this will ensure that user,
+     * and instance are always visible, and not hidden from view."
+     *
+     * `.frame` is a grid row, and a grid cell stretches to match its
+     * row's own height by default — so `.nav` grew as tall as `.main`
+     * did, and on any screen with enough content to scroll, `.who`'s
+     * own `margin-top: auto` pushed the signed-in name and environment
+     * far down the page rather than to the bottom of what was actually
+     * visible. `position: sticky` with an explicit `height: 100vh`
+     * keeps the nav exactly one viewport tall and pinned to it as the
+     * page scrolls; `align-self: start` is what stops the grid's own
+     * stretch from overriding that height with the row's taller one.
+     */
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    align-self: start;
+  }
   .nav .who { margin-top: auto; }
 
   /*
@@ -1489,7 +1512,22 @@
   @media (max-width: 1100px) {
     .columns { grid-template-columns: minmax(0, 1fr); }
     .frame { grid-template-columns: 1fr; }
-    .nav { display: flex; gap: 6px; border-right: none; border-bottom: 0.5px solid var(--border); padding: 10px; }
+    .nav {
+      display: flex;
+      gap: 6px;
+      border-right: none;
+      border-bottom: 0.5px solid var(--border);
+      padding: 10px;
+      /**
+       * **Undoes decision 0281's sticky sidebar**, here specifically —
+       * this nav is a horizontal bar at this width, not a column with
+       * a foot to pin. `position: sticky` plus `height: 100vh` on a
+       * bar this short would hold a mostly-empty, page-tall box open
+       * at the top of the screen instead.
+       */
+      position: static;
+      height: auto;
+    }
     .nav .mark, .nav .who { display: none; }
   }
 

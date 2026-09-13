@@ -497,6 +497,40 @@ describe("the flat nav, permission-filtered (decisions 0274 and 0276)", () => {
   });
 });
 
+describe("the nav stays pinned to the browser window, not the page (decision 0281)", () => {
+  /**
+   * **Reported live**: "align the side panel bottom, with the bottom
+   * of the browser size. this will ensure that user, and instance are
+   * always visible, and not hidden from view." `.nav` was a grid cell
+   * that stretched to match `.main`'s own height, so on a page tall
+   * enough to scroll, `.who` (signed-in name and environment) could
+   * sit far below the visible window rather than at the bottom of it.
+   *
+   * jsdom applies no CSS, so these read the real stylesheet text
+   * rather than assert a scroll position no test here can produce.
+   */
+  it("pins the nav to the viewport with an explicit, non-stretched height", async () => {
+    const css = (await import("virtual:stylesheets")).default["index.html"];
+    const rule = css.slice(css.indexOf(".nav {\n    display: flex;"), css.indexOf(".nav .who { margin-top: auto; }"));
+
+    expect(rule).toContain("position: sticky");
+    expect(rule).toContain("top: 0");
+    expect(rule).toContain("height: 100vh");
+    // Without this, the grid's own default stretch would override the
+    // explicit height above with the row's taller one regardless.
+    expect(rule).toContain("align-self: start");
+  });
+
+  it("undoes the sticky sidebar once the nav becomes a horizontal bar on a narrow screen", async () => {
+    const css = (await import("virtual:stylesheets")).default["index.html"];
+    const mediaStart = css.indexOf("@media (max-width: 1100px)");
+    const mediaBlock = css.slice(mediaStart, css.indexOf("}", css.indexOf("}", css.indexOf("}", mediaStart) + 1) + 1) + 1);
+
+    expect(mediaBlock).toContain("position: static");
+    expect(mediaBlock).toContain("height: auto");
+  });
+});
+
 describe("a task about one line (decision 0183)", () => {
   /**
    * A stage scoped `per_line` raises one task per invoice line, so an
