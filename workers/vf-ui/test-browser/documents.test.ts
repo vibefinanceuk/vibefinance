@@ -25,6 +25,7 @@ function stubFetch(routes: Record<string, unknown>) {
 const STRINGS = {
   locale: "en",
   strings: {
+    "viewer.back": "Back",
     "nav.tasks": "Tasks",
     "nav.sources": "Sources",
     "nav.dashboard": "Dashboard",
@@ -279,6 +280,35 @@ describe("opening a document (decision 0165)", () => {
     await until(() => !(document.getElementById("viewer") as HTMLElement).hidden);
 
     expect((document.getElementById("viewer") as HTMLElement).hidden).toBe(false);
+  });
+
+  it("returns here, not to the task list, when Back is clicked (decision 0284)", async () => {
+    /**
+     * **Reported live**: "the back appears in the viewer launched from
+     * Tasks and Documents links, so Back is generic as you may not
+     * return to the Task." The label reads generically on purpose —
+     * this proves the behaviour underneath actually matches it: the
+     * viewer's own `onClose` is documents.js's own callback, not
+     * tasks.js's, so closing it re-shows the document list and
+     * re-fetches it, never the task list.
+     */
+    await openDocuments([DOC]);
+
+    const expand = document.querySelector("button.expand") as HTMLButtonElement;
+    expand.click();
+    await until(() => !(document.getElementById("viewer") as HTMLElement).hidden);
+
+    const back = [...document.querySelectorAll(".topbar button")].find(
+      (b) => b.getAttribute("title") === "Back"
+    ) as HTMLButtonElement;
+    back.click();
+    await until(() => (document.getElementById("viewer") as HTMLElement).hidden);
+
+    expect((document.getElementById("viewer") as HTMLElement).hidden).toBe(true);
+    expect((document.getElementById("shell") as HTMLElement).hidden).toBe(false);
+    // The documents list itself, not the tasks screen's own table —
+    // this is what proves it returned to Documents specifically.
+    expect(document.querySelector(".searchrow")).not.toBeNull();
   });
 });
 
