@@ -1,5 +1,5 @@
 import { isKnownInvoiceProfile, isKnownR2Jurisdiction, R2_JURISDICTIONS } from "./profiles.js";
-import { isKnownPermissionList } from "./permissions.js";
+import { isKnownPermissionList, PERMISSIONS } from "./permissions.js";
 import { generateApiKey, hashApiKey } from "./user-auth.js";
 
 export interface RouteResult {
@@ -298,6 +298,16 @@ export async function handleGetOrgOverview(
         }
         return { id: r.id, name: r.name, permissions };
       }),
+      /**
+       * **The closed vocabulary itself, decision 0326** — so an edit
+       * form can offer a checkbox per real permission rather than a
+       * free-text field somebody could mistype. Not sensitive by
+       * itself: the list of possible permissions a system defines is
+       * not the same thing as who holds which, and everyone reaching
+       * this screen at all already holds at least one of the two
+       * permissions that gate reading it.
+       */
+      knownPermissions: PERMISSIONS,
       assignments: assignments.results.map((r) => ({
         userId: r.user_id,
         userName: r.user_name,
@@ -406,6 +416,53 @@ export async function handleCreateRole(db: D1Database, body: CreateRoleBody): Pr
     .run();
 
   return { status: 201, body: { id, name, permissions: permissionList } };
+}
+
+interface UpdateRoleBody {
+  name?: unknown;
+  permissions?: unknown;
+}
+
+/**
+ * **Editing what a role itself means — decision 0326.** The write
+ * side this session's own raw-SQL work stood in for every time a
+ * role's own permissions changed — creating "AP Coding", fixing the
+ * `AP.TaskManage`/`AP.TaskView` mistake on three roles at once,
+ * expanding "AP Manager", building "Administrator (Global)" — all of
+ * it a full replacement of `permissions_json`, never a partial patch,
+ * the same "replace, not merge" reasoning decision 0208 already gives
+ * a supplier load: a role's own permission set is what was just
+ * agreed for it, not an accumulation of edits nobody can see the
+ * history of.
+ */
+export async function handleUpdateRole(
+  db: D1Database,
+  roleId: string,
+  body: UpdateRoleBody
+): Promise<RouteResult> {
+  const { name, permissions } = body;
+  if (typeof name !== "string" || !name) {
+    return { status: 400, body: { error: "name (a string) is required" } };
+  }
+  const permissionList = permissions ?? [];
+  if (!isKnownPermissionList(permissionList)) {
+    return {
+      status: 422,
+      body: { error: "one or more permissions are not in the closed permission vocabulary" },
+    };
+  }
+
+  const existing = await db.prepare("SELECT id FROM org_roles WHERE id = ?").bind(roleId).first();
+  if (!existing) {
+    return { status: 404, body: { error: `role ${roleId} does not exist` } };
+  }
+
+  await db
+    .prepare("UPDATE org_roles SET name = ?, permissions_json = ? WHERE id = ?")
+    .bind(name, JSON.stringify(permissionList), roleId)
+    .run();
+
+  return { status: 200, body: { id: roleId, name, permissions: permissionList } };
 }
 
 export async function handleAssignRole(

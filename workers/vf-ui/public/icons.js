@@ -144,6 +144,17 @@ export const ICONS = {
     '<path d="M13 20v-1.5a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4V20"/><circle cx="7.5" cy="6.5" r="3.5"/><path d="M18 8v6M15 11h6"/>',
 
   /**
+   * **A badge with a plus** — decision 0326, for creating a new role.
+   *
+   * Deliberately not `newsupplier`'s person shape: a role is a badge
+   * of permission, not somebody. The shield is smaller and sits left
+   * so the plus reads as its own mark beside it, the same composition
+   * `newsupplier` already uses.
+   */
+  newrole:
+    '<path d="M9 3l6 2.5v4c0 4.5-3 7.5-6 8.5-3-1-6-4-6-8.5v-4z"/><path d="M19 8v6M16 11h6"/>',
+
+  /**
    * **A file going up**, because a load is about the file.
    *
    * The inverse of `save`, whose arrow goes down into a tray — and

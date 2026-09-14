@@ -24,6 +24,7 @@ import type { Locale } from "./i18n.js";
 import {
   handleAssignRole,
   handleCreateRole,
+  handleUpdateRole,
   handleCreateUnit,
   handleCreateUser,
   handleSetAuthorityLimit,
@@ -1324,6 +1325,18 @@ export default {
 
     if (pathname === "/org/roles" && request.method === "POST") {
       const { db } = resolveTenant(request, env);
+      /**
+       * **`Admin.RoleManagement`, decision 0326** — reported live:
+       * "write permission for the Role screen... limited to the
+       * Administrator (Global) role." Global-only, deliberately not
+       * delegable like `Admin.UserManagement`: what a role itself
+       * grants means the same thing everywhere it is held, so there
+       * is no org boundary that would make delegating this safe.
+       */
+      const auth = await requirePermission(db, request, "Admin.RoleManagement", sessionContext(env));
+      if (!auth.authorized) {
+        return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
+      }
       let body: unknown;
       try {
         body = await request.json();
@@ -1331,6 +1344,23 @@ export default {
         return json({ error: t("invalidJsonBody", resolveLocale(env.LOCALE)) }, 400);
       }
       const result = await handleCreateRole(db, (body ?? {}) as Record<string, unknown>);
+      return json(result.body, result.status);
+    }
+
+    const updateRoleMatch = pathname.match(/^\/org\/roles\/([^/]+)$/);
+    if (updateRoleMatch && request.method === "PUT") {
+      const { db } = resolveTenant(request, env);
+      const auth = await requirePermission(db, request, "Admin.RoleManagement", sessionContext(env));
+      if (!auth.authorized) {
+        return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
+      }
+      let body: unknown;
+      try {
+        body = await request.json();
+      } catch {
+        return json({ error: t("invalidJsonBody", resolveLocale(env.LOCALE)) }, 400);
+      }
+      const result = await handleUpdateRole(db, updateRoleMatch[1], (body ?? {}) as Record<string, unknown>);
       return json(result.body, result.status);
     }
 

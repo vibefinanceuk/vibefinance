@@ -4,6 +4,7 @@ import { applyTestSchema } from "./setup.js";
 import {
   handleAssignRole,
   handleCreateRole,
+  handleUpdateRole,
   handleCreateUnit,
   handleCreateUser,
   handleGetOrgOverview,
@@ -11,6 +12,7 @@ import {
   handleSetProfile,
 } from "../src/org-route.js";
 import { authenticateUser, generateApiKey, hashApiKey } from "../src/user-auth.js";
+import { PERMISSIONS } from "../src/permissions.js";
 
 beforeEach(async () => {
   await applyTestSchema();
@@ -193,6 +195,59 @@ describe("handleCreateRole — the closed permission vocabulary", () => {
   });
 });
 
+describe("handleUpdateRole — decision 0326", () => {
+  /**
+   * **The write side this session's own raw SQL stood in for**, every
+   * time a role's own permissions changed this whole conversation.
+   * "Replace, not merge" — the same reasoning decision 0208 already
+   * gives a supplier load — so this always sets the full permission
+   * list, never patches one entry into whatever was already there.
+   */
+  it("replaces an existing role's own name and permissions", async () => {
+    await handleCreateRole(env.DB, { id: "r1", name: "Old Name", permissions: ["AP.Validate"] });
+    const result = await handleUpdateRole(env.DB, "r1", { name: "New Name", permissions: ["AP.Approve", "AP.Review"] });
+    expect(result.status).toBe(200);
+
+    const row = await env.DB.prepare("SELECT name, permissions_json FROM org_roles WHERE id = ?")
+      .bind("r1")
+      .first();
+    expect(row).toEqual({ name: "New Name", permissions_json: '["AP.Approve","AP.Review"]' });
+  });
+
+  it("404s a role that does not exist", async () => {
+    const result = await handleUpdateRole(env.DB, "does-not-exist", { name: "New Name", permissions: [] });
+    expect(result.status).toBe(404);
+  });
+
+  it("400s with no name given at all", async () => {
+    await handleCreateRole(env.DB, { id: "r1", name: "Old Name" });
+    const result = await handleUpdateRole(env.DB, "r1", { permissions: ["AP.Approve"] });
+    expect(result.status).toBe(400);
+  });
+
+  it("422s when a permission is not in the closed vocabulary — refused, not silently stored", async () => {
+    await handleCreateRole(env.DB, { id: "r1", name: "Old Name", permissions: ["AP.Validate"] });
+    const result = await handleUpdateRole(env.DB, "r1", { name: "New Name", permissions: ["not_a_real_permission"] });
+    expect(result.status).toBe(422);
+
+    // The original, unchanged — a rejected write must not leave a
+    // half-applied result behind.
+    const row = await env.DB.prepare("SELECT name, permissions_json FROM org_roles WHERE id = ?")
+      .bind("r1")
+      .first();
+    expect(row).toEqual({ name: "Old Name", permissions_json: '["AP.Validate"]' });
+  });
+
+  it("replaces with an empty permission list — a legitimate way to strip a role bare", async () => {
+    await handleCreateRole(env.DB, { id: "r1", name: "Old Name", permissions: ["AP.Validate", "AP.Approve"] });
+    const result = await handleUpdateRole(env.DB, "r1", { name: "Old Name", permissions: [] });
+    expect(result.status).toBe(200);
+
+    const row = await env.DB.prepare("SELECT permissions_json FROM org_roles WHERE id = ?").bind("r1").first();
+    expect(row).toEqual({ permissions_json: "[]" });
+  });
+});
+
 describe("handleAssignRole", () => {
   it("assigns a role to a real user", async () => {
     await handleCreateUser(env.DB, { id: "usr1", email: "a@b.com", name: "Alice" });
@@ -317,7 +372,16 @@ describe("handleGetOrgOverview (decision 0319)", () => {
       roles: [],
       assignments: [],
       authorityLimits: [],
+      knownPermissions: PERMISSIONS,
     });
+  });
+
+  it("returns the real, closed permission vocabulary, decision 0326 — for an edit form to offer, not free text to mistype", async () => {
+    const result = await handleGetOrgOverview(env.DB);
+    const body = result.body as { knownPermissions: string[] };
+    expect(body.knownPermissions).toEqual([...PERMISSIONS]);
+    expect(body.knownPermissions).toContain("Admin.RoleManagement");
+    expect(body.knownPermissions).not.toContain("rules.activate");
   });
 
   it("returns every unit, user, and role", async () => {
@@ -531,6 +595,120 @@ describe("GET /org/overview, the real route — decision 0322", () => {
     });
 
     expect(res.status).toBe(403);
+  });
+});
+
+describe("POST /org/roles and PUT /org/roles/:id, the real routes — decision 0326", () => {
+  /**
+   * **`Admin.RoleManagement`, global-only.** Unlike `/org/overview`
+   * above, a delegated `Admin.UserManagement` holder must NOT succeed
+   * here — assigning an existing role to a person stays delegable,
+   * decision 0201, but editing what a role itself grants does not:
+   * "AP Manager" means the same thing everywhere it is held.
+   */
+  async function keyForPermission(permission: string): Promise<string> {
+    const id = crypto.randomUUID();
+    const apiKey = generateApiKey();
+    await env.DB.prepare("INSERT INTO org_users (id, email, name, api_key_hash) VALUES (?, ?, ?, ?)")
+      .bind(id, `${id}@acme.com`, "Test", await hashApiKey(apiKey))
+      .run();
+
+    const roleId = crypto.randomUUID();
+    await env.DB.prepare("INSERT INTO org_roles (id, name, permissions_json) VALUES (?, ?, ?)")
+      .bind(roleId, `Role granting ${permission}`, JSON.stringify([permission]))
+      .run();
+    await env.DB.prepare("INSERT INTO org_user_roles (user_id, role_id) VALUES (?, ?)").bind(id, roleId).run();
+
+    return apiKey;
+  }
+
+  it("POST creates a role for a real request holding Admin.RoleManagement", async () => {
+    const apiKey = await keyForPermission("Admin.RoleManagement");
+
+    const res = await SELF.fetch("https://example.com/org/roles", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ id: "new-role", name: "New Role", permissions: ["AP.Validate"] }),
+    });
+
+    expect(res.status).toBe(201);
+    const row = await env.DB.prepare("SELECT name FROM org_roles WHERE id = 'new-role'").first();
+    expect(row).toEqual({ name: "New Role" });
+  });
+
+  it("POST 401s with no credential at all", async () => {
+    const res = await SELF.fetch("https://example.com/org/roles", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: "new-role", name: "New Role" }),
+    });
+    expect(res.status).toBe(401);
+  });
+
+  it("POST 403s a delegated Admin.UserManagement holder — deliberately not enough here", async () => {
+    const apiKey = await keyForPermission("Admin.UserManagement");
+
+    const res = await SELF.fetch("https://example.com/org/roles", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ id: "new-role", name: "New Role" }),
+    });
+
+    expect(res.status).toBe(403);
+    const row = await env.DB.prepare("SELECT id FROM org_roles WHERE id = 'new-role'").first();
+    expect(row).toBeNull();
+  });
+
+  it("PUT replaces an existing role's own permissions for a real request holding Admin.RoleManagement", async () => {
+    const apiKey = await keyForPermission("Admin.RoleManagement");
+    await env.DB.prepare("INSERT INTO org_roles (id, name, permissions_json) VALUES ('r1', 'Old Name', '[]')").run();
+
+    const res = await SELF.fetch("https://example.com/org/roles/r1", {
+      method: "PUT",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "New Name", permissions: ["AP.Review"] }),
+    });
+
+    expect(res.status).toBe(200);
+    const row = await env.DB.prepare("SELECT name, permissions_json FROM org_roles WHERE id = 'r1'").first();
+    expect(row).toEqual({ name: "New Name", permissions_json: '["AP.Review"]' });
+  });
+
+  it("PUT 401s with no credential at all", async () => {
+    await env.DB.prepare("INSERT INTO org_roles (id, name, permissions_json) VALUES ('r1', 'Old Name', '[]')").run();
+    const res = await SELF.fetch("https://example.com/org/roles/r1", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "New Name" }),
+    });
+    expect(res.status).toBe(401);
+  });
+
+  it("PUT 403s a delegated Admin.UserManagement holder — deliberately not enough here", async () => {
+    const apiKey = await keyForPermission("Admin.UserManagement");
+    await env.DB.prepare("INSERT INTO org_roles (id, name, permissions_json) VALUES ('r1', 'Old Name', '[]')").run();
+
+    const res = await SELF.fetch("https://example.com/org/roles/r1", {
+      method: "PUT",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "New Name" }),
+    });
+
+    expect(res.status).toBe(403);
+    const row = await env.DB.prepare("SELECT name FROM org_roles WHERE id = 'r1'").first();
+    expect(row).toEqual({ name: "Old Name" });
+  });
+
+  it("PUT 404s a role that does not exist, through the real router", async () => {
+    const apiKey = await keyForPermission("Admin.RoleManagement");
+
+    const res = await SELF.fetch("https://example.com/org/roles/does-not-exist", {
+      method: "PUT",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "New Name" }),
+    });
+
+    expect(res.status).toBe(404);
   });
 });
 

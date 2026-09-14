@@ -1,0 +1,17 @@
+-- 0063_admin_role_management_permission.sql
+--
+-- **A specific permission for editing what a role itself grants** —
+-- decision 0326, reported live: "write permission for the Role
+-- screen... limited to the Administrator (Global) role." Global-only,
+-- deliberately not delegable like `Admin.UserManagement` — assigning
+-- an existing role to a person at one org stays delegable, decision
+-- 0201, but changing what a role itself grants does not: it means the
+-- same thing everywhere it is held.
+--
+-- No schema change: `process_stages.required_permission` already
+-- accepts any text, checked only by the standing invariant decision
+-- 0200 established (migration 0048), already restated once by
+-- migration 0062. Restated again here with the vocabulary as it now
+-- stands, rather than editing either earlier, already-applied
+-- migration in place.
+-- ASSERT ALWAYS: SELECT count(*) FROM process_stages WHERE required_permission IS NOT NULL AND required_permission NOT IN ('AP.Analysis','AP.Approve','AP.Code','AP.Dashboard','AP.Discard','AP.Match','AP.Return','AP.ReturnAny','AP.ReturnToSupplier','AP.Review','AP.Supplier','AP.TaskManage','AP.TaskView','AP.Validate','AR.Analysis','AR.Approve','AR.Collect','AR.Issue','AR.Remind','AR.Validate','Admin.ConfigManagement','Admin.Configure','Admin.RoleManagement','Admin.RuleActivation','Admin.RuleManagement','Admin.UserManagement','Expense.Approve','Expense.Review','Expense.Submit','System.LicenceRefresh','System.UsagePush') == 0

@@ -23,6 +23,19 @@ let me = null;
 let filters = { stage: "", ownership: "" };
 
 /**
+ * **What the current person may do, for a screen deciding what to
+ * show them — decision 0326.** `frame()`'s own `unlocked()` has
+ * checked `me?.permissions` for nav visibility since decision 0313;
+ * this is the same data, exported for the first time because a
+ * screen now needs it for something other than the nav itself — the
+ * Roles screen deciding whether to show its own write controls at
+ * all, not just whether the nav item leading to it appears.
+ */
+export function hasMyPermission(permission) {
+  return me?.permissions?.includes(permission) ?? false;
+}
+
+/**
  * The stages the task list has seen — decision 0254.
  *
  * A `Map` so a stage appearing twice is one option, and insertion

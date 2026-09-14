@@ -973,6 +973,7 @@ describe("org/authority/profiles routes, through the real router", () => {
   it("creates a role through the real router", async () => {
     const res = await SELF.fetch("https://example.com/org/roles", {
       method: "POST",
+      headers: authHeaders(),
       body: JSON.stringify({ id: "r1", name: "Admin", permissions: ["AP.Approve"] }),
     });
     expect(res.status).toBe(201);
@@ -981,6 +982,7 @@ describe("org/authority/profiles routes, through the real router", () => {
   it("422s a role with an unknown permission through the real router", async () => {
     const res = await SELF.fetch("https://example.com/org/roles", {
       method: "POST",
+      headers: authHeaders(),
       body: JSON.stringify({ id: "r1", name: "Admin", permissions: ["not_a_real_permission"] }),
     });
     expect(res.status).toBe(422);

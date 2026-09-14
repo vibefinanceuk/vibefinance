@@ -4,6 +4,7 @@ import { applyTestSchema } from "./setup.js";
 import { PERMISSIONS } from "../src/permissions.js";
 import migrationSql from "../../../migrations/0048_a_stage_declares_its_permission.sql?raw";
 import ruleActivationMigrationSql from "../../../migrations/0062_admin_rule_activation_permission.sql?raw";
+import roleManagementMigrationSql from "../../../migrations/0063_admin_role_management_permission.sql?raw";
 import { handleCreateProcess, handleCreateStage } from "../src/process-route.js";
 import { handleCreateProcessInstance, visitCurrentStage } from "../src/workflow-engine.js";
 
@@ -20,19 +21,21 @@ describe("the closed set, in two places", () => {
    * exist and omitted five that do — caught by comparing the two
    * before committing, which is what this now does on every run.
    *
-   * **Two migrations, not one, decision 0325.** `0048`'s own
-   * standing invariant is re-checked forever and was never edited in
-   * place; `0062` restates the same invariant with the vocabulary as
-   * it now stands, adding `Admin.RuleActivation`. Combining both
-   * files' own permission strings is what "the closed set, in two
-   * places" now means — an already-applied migration's own list
-   * frozen at what it said when it was written, plus whatever later
-   * ones have since added.
+   * **Three migrations now, decision 0326.** `0048`'s own standing
+   * invariant is re-checked forever and was never edited in place;
+   * `0062` and `0063` each restate the same invariant with the
+   * vocabulary as it stood when written, adding `Admin.RuleActivation`
+   * and `Admin.RoleManagement` respectively. Combining every file's
+   * own permission strings is what "the closed set, in two places"
+   * now means — each already-applied migration's own list frozen at
+   * what it said when it was written, plus whatever later ones have
+   * since added.
    */
   it("names exactly the permissions the code defines", () => {
     const inSql = [
       ...migrationSql.matchAll(/'([A-Za-z]+\.[A-Za-z]+)'/g),
       ...ruleActivationMigrationSql.matchAll(/'([A-Za-z]+\.[A-Za-z]+)'/g),
+      ...roleManagementMigrationSql.matchAll(/'([A-Za-z]+\.[A-Za-z]+)'/g),
     ]
       .map((m) => m[1])
       .sort();

@@ -1002,6 +1002,34 @@
   }
 
   /*
+    **Permission checkboxes, grouped by category — decision 0326.**
+    The same namespacing the permissions themselves already use
+    (`AP.*`, `Admin.*`), so a form offering the closed vocabulary
+    reads the way the vocabulary itself is organised.
+  */
+  .permissiongroups { margin: 10px 0; }
+  .permissiongroup { margin: 0 0 12px; }
+  .permissiongroup:last-child { margin-bottom: 0; }
+  .permissiongroup h4 {
+    color: var(--text-muted);
+    font-size: var(--text-sm);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin: 0 0 6px;
+  }
+  .permissionchecks {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 16px;
+  }
+  .permissioncheck {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: var(--text-base);
+  }
+
+  /*
     The dashboard — decision 0242.
 
     **Two columns, and cards that choose their own width.** A grid of

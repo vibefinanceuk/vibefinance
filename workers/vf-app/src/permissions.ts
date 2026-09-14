@@ -151,6 +151,20 @@ const ADMIN_PERMISSIONS = [
    * sitting alongside it, at the operator's own request.
    */
   "Admin.RuleActivation",
+  /**
+   * **Editing what a role itself means — decision 0326.** Genuinely
+   * distinct from `Admin.RuleManagement` (rule definitions) and from
+   * `Admin.UserManagement` (deliberately delegable, decision 0201 —
+   * assigning an *existing* role to a person at one org). This one is
+   * not: changing what a role grants is instance-wide by nature —
+   * "AP Manager" means the same thing everywhere it is held, and a
+   * delegated administrator scoped to one org has no boundary that
+   * would make editing it safe to delegate. Deliberately named
+   * "Role", not "Rule" — easy to mis-type as the existing permission
+   * two lines above, and worth the caution that cost this session
+   * real time to catch once already.
+   */
+  "Admin.RoleManagement",
 ] as const;
 
 /**

@@ -92,6 +92,17 @@ const PROXIED_TO_INSTANCE: RegExp[] = [
    * the backend itself permits.
    */
   /^\/org\/overview$/,
+  /**
+   * **Creating and editing a role's own definition — decision 0326.**
+   * `/org/roles` (create) has existed in `vf-app` since before this
+   * session and was never on this list either — the exact shape
+   * decision 0212 already documents happening twice, and decision
+   * 0324 found a third time on `/org/overview`. Added here alongside
+   * the new update route rather than leaving the older gap to be
+   * found the same way those were: by a real request failing.
+   */
+  /^\/org\/roles$/,
+  /^\/org\/roles\/[^/]+$/,
   // The task list and the actions the list offers (decisions 0103,
   // 0104). Each added deliberately: the point of a list rather than a
   // prefix is that `/tasks/:id/anything` is not automatically
