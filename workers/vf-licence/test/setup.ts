@@ -95,6 +95,7 @@ import dashboardHeadingRewordSql from "../migrations/0090_dashboard_heading_rewo
 import rulesTableColumnSql from "../migrations/0091_rules_table_column.sql?raw";
 import orgSwitcherStringsSql from "../migrations/0092_org_switcher_strings.sql?raw";
 import roleManagementStringsSql from "../migrations/0093_role_management_strings.sql?raw";
+import roleManagementLoadFailedSql from "../migrations/0094_role_management_load_failed.sql?raw";
 
 function stripSqlComments(sql: string): string {
   return sql
@@ -217,5 +218,6 @@ export async function applyTestSchema(): Promise<void> {
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(rulesTableColumnSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(orgSwitcherStringsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(roleManagementStringsSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(roleManagementLoadFailedSql)));
 
 }

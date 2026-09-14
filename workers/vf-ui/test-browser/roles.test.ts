@@ -38,6 +38,7 @@ const STRINGS = {
     "roles.noassignments": "Holds no role.",
     "roles.nolimits": "No limit set.",
     "roles.everywhere": "everywhere",
+    "roles.loadfailed": "We could not load this screen. Try again in a moment.",
     "column.unit": "Unit",
     "column.role": "Role",
     "column.person": "Person",
@@ -79,6 +80,33 @@ describe("the screen opens at all", () => {
   it("renders into the shell", async () => {
     await openRoles(EMPTY);
     expect(document.getElementById("shell")?.textContent).toContain("Roles");
+  });
+
+  it("shows a real error, and keeps the nav reachable, when the load fails (decision 0322)", async () => {
+    /**
+     * **Reported live**: "the Roles menu option does not launch
+     * anything." `open()` used to return silently on a failed
+     * request, leaving `#shell` exactly as it was — a click that
+     * visibly did nothing.
+     */
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        const path = String(url).split("?")[0];
+        if (path === "/api/ui-strings") return { ok: true, json: async () => STRINGS } as Response;
+        if (path === "/api/org/overview") return { ok: false, status: 500, json: async () => ({}) } as Response;
+        throw new Error(`no stub for ${path}`);
+      })
+    );
+
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { open } = await import("/roles.js");
+    await open();
+
+    const shell = document.getElementById("shell");
+    expect(shell?.textContent).toContain("We could not load this screen");
+    expect(shell?.querySelector(".nav")).not.toBeNull();
   });
 });
 

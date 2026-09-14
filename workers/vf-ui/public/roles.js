@@ -19,16 +19,24 @@ let assignments = [];
 let authorityLimits = [];
 
 async function load() {
-  const response = await fetch("/api/org/overview");
-  if (!response.ok) return false;
+  try {
+    const response = await fetch("/api/org/overview");
+    if (!response.ok) {
+      console.error(`/api/org/overview failed: ${response.status}`);
+      return false;
+    }
 
-  const body = await response.json();
-  units = body.units ?? [];
-  users = body.users ?? [];
-  roles = body.roles ?? [];
-  assignments = body.assignments ?? [];
-  authorityLimits = body.authorityLimits ?? [];
-  return true;
+    const body = await response.json();
+    units = body.units ?? [];
+    users = body.users ?? [];
+    roles = body.roles ?? [];
+    assignments = body.assignments ?? [];
+    authorityLimits = body.authorityLimits ?? [];
+    return true;
+  } catch (err) {
+    console.error("/api/org/overview failed", err);
+    return false;
+  }
 }
 
 /**
@@ -122,8 +130,39 @@ function render() {
   );
 }
 
+/**
+ * **A failed load says so, decision 0322** — reported live: "the
+ * Roles menu option does not launch anything." `open()` used to
+ * return silently when the request failed, leaving whatever was on
+ * screen before untouched — a click that visibly did nothing,
+ * indistinguishable from the nav item not working at all. The same
+ * gap `documents.js` and `rules.js` have on a cold first load, since
+ * neither has anywhere to put a message before their own first
+ * `render()` has ever run.
+ *
+ * Wrapped in `frame()` regardless, so a failed load still leaves the
+ * nav reachable rather than stranding somebody on a blank page with
+ * no way off it.
+ */
+function renderLoadFailed() {
+  const shell = document.getElementById("shell");
+  if (!shell) return;
+
+  shell.replaceChildren(
+    frame(
+      el("div", {}, [
+        topbar(t("nav.roles"), t("roles.subtitle")),
+        el("p", { class: "problem", role: "status", text: t("roles.loadfailed") }),
+      ])
+    )
+  );
+}
+
 export async function open() {
   setCurrentScreen("roles");
-  if (!(await load())) return;
+  if (!(await load())) {
+    renderLoadFailed();
+    return;
+  }
   render();
 }
