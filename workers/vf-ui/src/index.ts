@@ -83,6 +83,15 @@ const PROXIED_TO_INSTANCE: RegExp[] = [
   /^\/whoami$/,
   // The business units a document may belong to — decision 0193.
   /^\/org\/units$/,
+  /**
+   * **Everything a role-management screen needs — decision 0319.**
+   * Added to the backend's own `index.ts` and never added here,
+   * which is why a real request to it always returned this proxy's
+   * own `"not found"` fallback: the path was never on the list of
+   * things this Worker will forward at all, regardless of anything
+   * the backend itself permits.
+   */
+  /^\/org\/overview$/,
   // The task list and the actions the list offers (decisions 0103,
   // 0104). Each added deliberately: the point of a list rather than a
   // prefix is that `/tasks/:id/anything` is not automatically
