@@ -617,6 +617,24 @@ describe("the flat nav, permission-filtered (decisions 0274 and 0276)", () => {
     const labels = [...document.querySelectorAll(".navitem")].map((a) => a.textContent);
     expect(labels, "permission Admin.Configure").toEqual(["Sources", "Roles"]);
   });
+
+  it("unlocks Roles for a delegated administrator too, decision 0321", async () => {
+    // Admin.UserManagement alone, no Admin.Configure — the person
+    // decision 0201 was written for, still able to see their own
+    // scope even without instance-wide standing.
+    stubFetch({
+      "/api/ui-strings": STRINGS,
+      "/api/whoami": { id: "u-dan", name: "Dan", permissions: ["Admin.UserManagement"] },
+      "/api/tasks": { tasks: [], counts: {} },
+    });
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { start } = await import("/tasks.js");
+    await start();
+
+    const labels = [...document.querySelectorAll(".navitem")].map((a) => a.textContent);
+    expect(labels).toEqual(["Roles"]);
+  });
 });
 
 describe("the nav stays pinned to the browser window, not the page (decision 0281)", () => {

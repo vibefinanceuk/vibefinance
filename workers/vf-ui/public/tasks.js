@@ -510,14 +510,16 @@ const NAV_PERMISSIONS = {
   rules: "Admin.RuleManagement",
   documents: "AP.Review",
   /**
-   * **`Admin.Configure`, decision 0319** — corrected live: this is
-   * instance-administrator standing, the same as `sources` above,
-   * because the screen exists to configure the org hierarchy itself.
-   * Not `Admin.UserManagement`, which decision 0201 made delegable —
-   * a person holding it only in one unit would open a screen built to
-   * show every unit at once and see none of the rest.
+   * **Either standing opens it, decision 0321** — extending decision
+   * 0320's own `Admin.Configure` correction rather than reverting it:
+   * an instance administrator sees every unit and person; a delegated
+   * one (`Admin.UserManagement`, decision 0201) sees their own scope,
+   * the exact gap that decision named and never closed — *"'AP
+   * Manager (France)' is a pairing nobody can see listed."* The
+   * backend itself decides which; the nav only needs to know at
+   * least one of the two is held.
    */
-  roles: "Admin.Configure",
+  roles: ["Admin.Configure", "Admin.UserManagement"],
 };
 
 /** One nav entry: an icon, a label, and which screen it opens. */
@@ -552,7 +554,19 @@ export function frame(main) {
     ["documents", "documents"],
     ["roles", "users"],
   ];
-  const navItems = SCREENS.filter(([screen]) => me?.permissions?.includes(NAV_PERMISSIONS[screen])).map(
+  /**
+   * **Held, whether one permission or a choice of several** — most
+   * screens name exactly one; `roles` (decision 0321) names either of
+   * two, and this same check works for both without the caller
+   * needing to know which shape it is.
+   */
+  function unlocked(screen) {
+    const required = NAV_PERMISSIONS[screen];
+    const names = Array.isArray(required) ? required : [required];
+    return names.some((p) => me?.permissions?.includes(p));
+  }
+
+  const navItems = SCREENS.filter(([screen]) => unlocked(screen)).map(
     ([screen, iconName]) => navLink(screen, iconName)
   );
 

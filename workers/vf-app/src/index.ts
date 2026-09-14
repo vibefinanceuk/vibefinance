@@ -1200,25 +1200,31 @@ export default {
      * this data needs already exists as its own route; writes through
      * a screen are separate, later work.
      *
-     * **`Admin.Configure`, not `Admin.UserManagement`** — corrected
-     * live: "the roles menu item is at parent level permission, i.e.
-     * instance administrator, because it permits the setup and
-     * configuration of the Org hierarchy." `Admin.Configure` already
-     * gates `/org/units` on exactly that reasoning, and is never
-     * scoped or delegated anywhere in this codebase — the same
-     * instance-wide standing `sources` already uses in the nav.
-     * `Admin.UserManagement` is delegable (decision 0201): a France
-     * administrator holding it only in France would otherwise open a
-     * screen built to show every unit and person at once and see
-     * none of the other units it exists to show.
+     * **Either instance-wide or delegated standing, decision 0321.**
+     * `Admin.Configure` (decision 0320's own correction) sees
+     * everything, the same instance-administrator reasoning `sources`
+     * already carries in the nav. Failing that, `Admin.UserManagement`
+     * — decision 0201's own delegated administrator — sees their own
+     * scope: exactly the gap that decision named and never closed,
+     * *"'AP Manager (France)' is a pairing nobody can see listed."*
+     * Holding neither is the only real refusal.
      */
     if (pathname === "/org/overview" && request.method === "GET") {
       const { db } = resolveTenant(request, env);
-      const auth = await requirePermission(db, request, "Admin.Configure", sessionContext(env));
-      if (!auth.authorized) {
-        return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
+      const auth = await authenticatePerson(db, request, env);
+      if (!auth.user) {
+        return json({ error: auth.reason }, 401);
       }
-      const result = await handleGetOrgOverview(db);
+
+      let scopeUnits: string[] | null = null;
+      if (!(await hasPermission(db, auth.user.id, "Admin.Configure"))) {
+        if (!(await hasPermission(db, auth.user.id, "Admin.UserManagement"))) {
+          return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
+        }
+        scopeUnits = await unitsWherePermitted(db, auth.user.id, "Admin.UserManagement");
+      }
+
+      const result = await handleGetOrgOverview(db, scopeUnits);
       return json(result.body, result.status);
     }
 

@@ -382,6 +382,93 @@ describe("handleGetOrgOverview (decision 0319)", () => {
   });
 });
 
+describe("handleGetOrgOverview, scoped for a delegated administrator (decision 0321)", () => {
+  /**
+   * **The exact gap decision 0201 itself named**: "'AP Manager
+   * (France)' is a pairing nobody can see listed." Mirrors
+   * `handleAssignRole`'s own delegation logic exactly, rather than
+   * inventing a second rule for the same boundary: a scoped
+   * assignment is visible only where `unitId` is one of the units
+   * passed in, and an unscoped ("everywhere") assignment is never
+   * included — the same shape as that route's own
+   * `cannot_grant_everywhere` refusal.
+   */
+  it("shows only units within the delegated scope", async () => {
+    await handleCreateUnit(env.DB, { id: "fr", name: "Acme France" });
+    await handleCreateUnit(env.DB, { id: "de", name: "Acme Germany" });
+
+    const result = await handleGetOrgOverview(env.DB, ["fr"]);
+    const body = result.body as { units: { id: string }[] };
+    expect(body.units.map((u) => u.id)).toEqual(["fr"]);
+  });
+
+  it("shows an assignment at a scoped unit, and never an unscoped one", async () => {
+    await handleCreateUnit(env.DB, { id: "fr", name: "Acme France" });
+    await handleCreateUser(env.DB, { id: "usr1", email: "a@b.com", name: "Alice" });
+    await handleCreateUser(env.DB, { id: "usr2", email: "b@b.com", name: "Bob" });
+    await handleCreateRole(env.DB, { id: "r1", name: "AP Manager" });
+    await handleAssignRole(env.DB, "usr1", "r1", "fr");
+    await handleAssignRole(env.DB, "usr2", "r1");
+
+    const result = await handleGetOrgOverview(env.DB, ["fr"]);
+    const body = result.body as { assignments: { userName: string; unitId: string | null }[] };
+    expect(body.assignments).toEqual([expect.objectContaining({ userName: "Alice", unitId: "fr" })]);
+  });
+
+  it("shows a person whose own home unit is in scope, even with no assignment yet", async () => {
+    await handleCreateUnit(env.DB, { id: "fr", name: "Acme France" });
+    await handleCreateUser(env.DB, { id: "usr1", email: "a@b.com", name: "Alice", unitId: "fr" });
+
+    const result = await handleGetOrgOverview(env.DB, ["fr"]);
+    const body = result.body as { users: { name: string }[] };
+    expect(body.users.map((u) => u.name)).toEqual(["Alice"]);
+  });
+
+  it("does not show a person entirely outside the scope", async () => {
+    await handleCreateUnit(env.DB, { id: "fr", name: "Acme France" });
+    await handleCreateUnit(env.DB, { id: "de", name: "Acme Germany" });
+    await handleCreateUser(env.DB, { id: "usr1", email: "a@b.com", name: "Alice", unitId: "de" });
+
+    const result = await handleGetOrgOverview(env.DB, ["fr"]);
+    const body = result.body as { users: { name: string }[] };
+    expect(body.users).toEqual([]);
+  });
+
+  it("never scopes role definitions, since they name no person or org", async () => {
+    await handleCreateUnit(env.DB, { id: "fr", name: "Acme France" });
+    await handleCreateUnit(env.DB, { id: "de", name: "Acme Germany" });
+    await handleCreateUser(env.DB, { id: "usr1", email: "a@b.com", name: "Alice" });
+    await handleCreateRole(env.DB, { id: "r1", name: "Germany Only", permissions: ["AP.Validate"] });
+    await handleAssignRole(env.DB, "usr1", "r1", "de");
+
+    const result = await handleGetOrgOverview(env.DB, ["fr"]);
+    const body = result.body as { roles: { name: string }[] };
+    expect(body.roles.map((r) => r.name)).toEqual(["Germany Only"]);
+  });
+
+  it("does not leak an out-of-scope person's own approval limit", async () => {
+    await handleCreateUnit(env.DB, { id: "fr", name: "Acme France" });
+    await handleCreateUnit(env.DB, { id: "de", name: "Acme Germany" });
+    await handleCreateUser(env.DB, { id: "usr1", email: "a@b.com", name: "Alice", unitId: "fr" });
+    await handleCreateUser(env.DB, { id: "usr2", email: "b@b.com", name: "Bob", unitId: "de" });
+    await handleSetAuthorityLimit(env.DB, "usr1", { currency: "EUR", maxAmount: 5000 });
+    await handleSetAuthorityLimit(env.DB, "usr2", { currency: "EUR", maxAmount: 9000 });
+
+    const result = await handleGetOrgOverview(env.DB, ["fr"]);
+    const body = result.body as { authorityLimits: { userName: string }[] };
+    expect(body.authorityLimits.map((l) => l.userName)).toEqual(["Alice"]);
+  });
+
+  it("shows everything, unscoped, when nothing is passed — the instance administrator's own view", async () => {
+    await handleCreateUnit(env.DB, { id: "fr", name: "Acme France" });
+    await handleCreateUnit(env.DB, { id: "de", name: "Acme Germany" });
+
+    const result = await handleGetOrgOverview(env.DB);
+    const body = result.body as { units: { id: string }[] };
+    expect(body.units.map((u) => u.id).sort()).toEqual(["de", "fr"]);
+  });
+});
+
 describe("handleSetProfile — the closed CIUS profile vocabulary", () => {
   it("sets a real, known profile", async () => {
     const result = await handleSetProfile(env.DB, { id: "p1", ciusProfile: "xrechnung" });

@@ -180,25 +180,41 @@ export async function handleListUnits(db: D1Database): Promise<RouteResult> {
  * needs — assigning a role, revoking one, setting a limit — already
  * exists as its own route; this adds only the ability to see the
  * result of them, which today requires reading the database directly.
+ *
+ * **Scoped for a delegated administrator, decision 0321** — the exact
+ * gap decision 0201 itself named: *"'AP Manager (France)' is a
+ * pairing nobody can see listed."* Decision 0319 closed that only for
+ * an instance administrator (`Admin.Configure`); this closes it for
+ * the delegated one that decision was written for. `null` means no
+ * restriction — an instance administrator, or a person holding
+ * `Admin.UserManagement` unscoped. A real list mirrors exactly what
+ * `handleAssignRole` already lets the same person grant: units at or
+ * beneath what they administer, and assignments *at* one of those
+ * units specifically — never an unscoped ("everywhere") assignment,
+ * the same `cannot_grant_everywhere` refusal that route already
+ * enforces for granting one.
+ *
+ * **Roles themselves are never scoped.** A role's own name and the
+ * permissions it grants are a global definition, not a fact about any
+ * person or any org — showing "AP Manager: AP.Approve, AP.Review" to
+ * a delegated administrator reveals nothing about who holds it or
+ * where.
  */
-export async function handleGetOrgOverview(db: D1Database): Promise<RouteResult> {
+export async function handleGetOrgOverview(
+  db: D1Database,
+  scopeUnits: string[] | null = null
+): Promise<RouteResult> {
+  const unitPlaceholders = scopeUnits ? scopeUnits.map(() => "?").join(", ") : "";
+
   const units = await db
-    .prepare(`SELECT id, name, kind, parent_unit_id FROM org_units ORDER BY kind DESC, name ASC`)
+    .prepare(
+      `SELECT id, name, kind, parent_unit_id FROM org_units
+       ${scopeUnits ? `WHERE id IN (${unitPlaceholders})` : ""}
+       ORDER BY kind DESC, name ASC`
+    )
+    .bind(...(scopeUnits ?? []))
     .all<{ id: string; name: string; kind: string; parent_unit_id: string | null }>();
 
-  const users = await db
-    .prepare(`SELECT id, email, name, unit_id, status FROM org_users ORDER BY name ASC`)
-    .all<{ id: string; email: string; name: string; unit_id: string | null; status: string }>();
-
-  const roles = await db
-    .prepare(`SELECT id, name, permissions_json FROM org_roles ORDER BY name ASC`)
-    .all<{ id: string; name: string; permissions_json: string }>();
-
-  /**
-   * **Every assignment, joined to names rather than ids** — a screen
-   * showing "Alice — AP Manager — Acme France" should not have to
-   * hold three lookup tables in memory to say that sentence.
-   */
   const assignments = await db
     .prepare(
       `SELECT ur.user_id, u.name AS user_name, ur.role_id, r.name AS role_name,
@@ -207,8 +223,10 @@ export async function handleGetOrgOverview(db: D1Database): Promise<RouteResult>
        JOIN org_users u ON u.id = ur.user_id
        JOIN org_roles r ON r.id = ur.role_id
        LEFT JOIN org_units un ON un.id = ur.unit_id
+       ${scopeUnits ? `WHERE ur.unit_id IN (${unitPlaceholders})` : ""}
        ORDER BY u.name ASC, r.name ASC`
     )
+    .bind(...(scopeUnits ?? []))
     .all<{
       user_id: string;
       user_name: string;
@@ -219,13 +237,43 @@ export async function handleGetOrgOverview(db: D1Database): Promise<RouteResult>
       granted_at: string;
     }>();
 
+  /**
+   * **A person is in scope by either door** — holding a scoped
+   * assignment, or having their own home unit within it. A delegated
+   * administrator naming a colleague nobody has assigned a role to
+   * yet is exactly the case a "who is here, unassigned" view exists
+   * for.
+   */
+  const users = await db
+    .prepare(
+      `SELECT id, email, name, unit_id, status FROM org_users
+       ${
+         scopeUnits
+           ? `WHERE unit_id IN (${unitPlaceholders})
+              OR id IN (SELECT user_id FROM org_user_roles WHERE unit_id IN (${unitPlaceholders}))`
+           : ""
+       }
+       ORDER BY name ASC`
+    )
+    .bind(...(scopeUnits ?? []), ...(scopeUnits ?? []))
+    .all<{ id: string; email: string; name: string; unit_id: string | null; status: string }>();
+
+  const roles = await db
+    .prepare(`SELECT id, name, permissions_json FROM org_roles ORDER BY name ASC`)
+    .all<{ id: string; name: string; permissions_json: string }>();
+
+  const scopedUserIds = users.results.map((u) => u.id);
+  const limitPlaceholders = scopeUnits ? scopedUserIds.map(() => "?").join(", ") : "";
+
   const authorityLimits = await db
     .prepare(
       `SELECT al.user_id, u.name AS user_name, al.currency, al.max_amount
        FROM org_authority_limits al
        JOIN org_users u ON u.id = al.user_id
+       ${scopeUnits ? `WHERE al.user_id IN (${limitPlaceholders})` : ""}
        ORDER BY u.name ASC, al.currency ASC`
     )
+    .bind(...(scopeUnits ? scopedUserIds : []))
     .all<{ user_id: string; user_name: string; currency: string; max_amount: number }>();
 
   return {
