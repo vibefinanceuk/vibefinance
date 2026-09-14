@@ -209,6 +209,17 @@ export interface TaskListOptions {
   /** One stage, by id. Absent means every stage. */
   stageId?: string;
   /**
+   * **The one org a person has chosen to focus on** — decision 0314,
+   * reported live, following directly from decision 0313's own
+   * switcher: "let me pick one org to focus on, seeing only that
+   * org's work until I switch." Narrows what is shown; grants
+   * nothing of its own. A person still sees only what they are
+   * already permitted to see everywhere else in this function —
+   * choosing an org they hold no role in simply empties the list,
+   * the same as any other filter with nothing to match.
+   */
+  currentOrgUnitId?: string | null;
+  /**
    * One ownership kind.
    *
    * Applied **after** the rows are read, unlike `stageId`, because
@@ -448,24 +459,12 @@ export async function handleListMyTasks(
     const held = heldIn.get(task.requiredPermission);
 
     /**
-     * **Held everywhere, or not held at all — unchanged either way.**
-     *
-     * A permission the person does not hold has never hidden a task:
-     * `required_permission` decided which **actions** were offered, and
-     * ownership decided what was listed. Twenty-two tests depend on
-     * that, and changing it is a separate decision from the one asked
-     * for.
-     *
-     * **The question here is where, not whether.** What was asked is
-     * that a German validator not be shown French work — and that only
-     * bites where the permission is held in specific units.
-     */
-    if (held === undefined || held === null) return true;
-
-    /**
-     * **A task about a document in no unit** stays visible, for the
-     * same reason: it is not French, so a German validator being shown
-     * it is not the fault being fixed.
+     * **A task about a document in no unit stays visible regardless of
+     * which org is chosen** — the same reasoning decision 0202 already
+     * gives for the permission-denial check below: hiding it would make
+     * it invisible under every choice, since it belongs to none of
+     * them, and that is a loss of real work rather than the narrowing
+     * either feature is meant to do.
      */
     if (!task.orgUnitId) return true;
 
@@ -475,7 +474,29 @@ export async function handleListMyTasks(
       lineageCache.set(task.orgUnitId, lineage);
     }
 
-    return held.some((unit) => lineage.has(unit));
+    /**
+     * **Decision 0202's own check, unchanged**: a permission held
+     * nowhere in particular (`undefined` or `null`) imposes no
+     * restriction of its own; held somewhere, the task's own unit must
+     * be reachable from at least one of those.
+     */
+    if (held !== undefined && held !== null && !held.some((unit) => lineage!.has(unit))) {
+      return false;
+    }
+
+    /**
+     * **Decision 0314's own narrowing, layered on top** — focused on
+     * one org, the task's own unit must also be reachable from that
+     * one specifically, not merely from somewhere the person happens
+     * to hold the permission. Applies even when the permission itself
+     * is held everywhere: "seeing only that org's work" was the
+     * operator's own request regardless of how broadly a role reaches.
+     */
+    if (options.currentOrgUnitId && !lineage.has(options.currentOrgUnitId)) {
+      return false;
+    }
+
+    return true;
   }
 
   const visible: TaskRow[] = [];

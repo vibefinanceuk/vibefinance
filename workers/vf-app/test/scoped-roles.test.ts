@@ -495,6 +495,125 @@ describe("work somebody may not do is work they are not shown (decision 0202)", 
   });
 });
 
+describe("focused on one org (decision 0314)", () => {
+  /**
+   * **The operator's own request, directly following decision 0313's
+   * own switcher**: "let me pick one org to focus on, seeing only
+   * that org's work until I switch." Layered on top of decision
+   * 0202's own visibility check, using the same fixtures and helpers.
+   */
+  async function seedTaskFor(invoiceId: string, unitId: string, taskId: string) {
+    await seedInvoice(invoiceId, unitId);
+    await env.DB.prepare("INSERT OR IGNORE INTO processes (id, name) VALUES ('ap', 'AP')").run();
+    await env.DB.prepare(
+      "INSERT OR IGNORE INTO process_stages (id, process_id, name, sequence) VALUES ('validation', 'ap', 'Validation', 1)"
+    ).run();
+    await env.DB.prepare(
+      `INSERT INTO process_instances (id, process_id, subject_type, subject_id, current_stage_id)
+       VALUES (?, 'ap', 'invoice', ?, 'validation')`
+    )
+      .bind(`pi-${invoiceId}`, invoiceId)
+      .run();
+    await env.DB.prepare(
+      `INSERT INTO stage_visits (id, process_instance_id, stage_id, outcome)
+       VALUES (?, ?, 'validation', 'matched')`
+    )
+      .bind(`v-${invoiceId}`, `pi-${invoiceId}`)
+      .run();
+    await env.DB.prepare(
+      `INSERT INTO tasks (id, stage_id, stage_visit_id, owner_team_id, required_permission)
+       VALUES (?, 'validation', ?, 'ap-team', 'AP.Validate')`
+    )
+      .bind(taskId, `v-${invoiceId}`)
+      .run();
+  }
+
+  beforeEach(async () => {
+    await env.DB.prepare("INSERT INTO org_teams (id, name) VALUES ('ap-team', 'AP team')").run();
+    await env.DB.prepare(
+      "INSERT INTO org_team_members (team_id, user_id) VALUES ('ap-team', 'alice')"
+    ).run();
+    await env.DB.prepare(
+      `INSERT INTO org_roles (id, name, permissions_json)
+       VALUES ('validator', 'AP Validator', '["AP.Validate"]')`
+    ).run();
+  });
+
+  async function tasksForFocusedOn(userId: string, currentOrgUnitId: string | undefined) {
+    const result = await handleListMyTasks(env.DB, userId, { currentOrgUnitId });
+    return (result.body as { tasks: { id: string }[] }).tasks.map((t) => t.id);
+  }
+
+  it("narrows to the chosen org even when the permission is held everywhere", async () => {
+    await env.DB.prepare(
+      "INSERT INTO org_user_roles (user_id, role_id, unit_id) VALUES ('alice', 'validator', NULL)"
+    ).run();
+    await seedTaskFor("inv-fr", "ap-fr", "t-fr");
+    await seedTaskFor("inv-de", "ap-de", "t-de");
+
+    expect(await tasksForFocusedOn("alice", "acme-fr")).toEqual(["t-fr"]);
+  });
+
+  it("narrows to the chosen org when the permission is held directly in both", async () => {
+    for (const unit of ["acme-fr", "acme-de"]) {
+      await env.DB.prepare(
+        "INSERT INTO org_user_roles (user_id, role_id, unit_id) VALUES ('alice', 'validator', ?)"
+      )
+        .bind(unit)
+        .run();
+    }
+    await seedTaskFor("inv-fr", "ap-fr", "t-fr");
+    await seedTaskFor("inv-de", "ap-de", "t-de");
+
+    expect(await tasksForFocusedOn("alice", "acme-de")).toEqual(["t-de"]);
+  });
+
+  it("still empties the list when the permission is not held in the chosen org at all", async () => {
+    // Held only in Germany; focused on France.
+    await env.DB.prepare(
+      "INSERT INTO org_user_roles (user_id, role_id, unit_id) VALUES ('alice', 'validator', 'acme-de')"
+    ).run();
+    await seedTaskFor("inv-fr", "ap-fr", "t-fr");
+
+    expect(await tasksForFocusedOn("alice", "acme-fr")).toEqual([]);
+  });
+
+  it("still shows a task about a document in no unit, regardless of which org is chosen", async () => {
+    await env.DB.prepare(
+      "INSERT INTO org_user_roles (user_id, role_id, unit_id) VALUES ('alice', 'validator', NULL)"
+    ).run();
+    await env.DB.prepare("INSERT INTO invoice_headers (id, facts_json) VALUES ('inv-none', '{}')").run();
+    await env.DB.prepare("INSERT OR IGNORE INTO processes (id, name) VALUES ('ap', 'AP')").run();
+    await env.DB.prepare(
+      "INSERT OR IGNORE INTO process_stages (id, process_id, name, sequence) VALUES ('validation', 'ap', 'Validation', 1)"
+    ).run();
+    await env.DB.prepare(
+      `INSERT INTO process_instances (id, process_id, subject_type, subject_id, current_stage_id)
+       VALUES ('pi-none', 'ap', 'invoice', 'inv-none', 'validation')`
+    ).run();
+    await env.DB.prepare(
+      `INSERT INTO stage_visits (id, process_instance_id, stage_id, outcome)
+       VALUES ('v-none', 'pi-none', 'validation', 'matched')`
+    ).run();
+    await env.DB.prepare(
+      `INSERT INTO tasks (id, stage_id, stage_visit_id, owner_team_id, required_permission)
+       VALUES ('t-none', 'validation', 'v-none', 'ap-team', 'AP.Validate')`
+    ).run();
+
+    expect(await tasksForFocusedOn("alice", "acme-fr")).toEqual(["t-none"]);
+  });
+
+  it("shows the full union, unnarrowed, when nothing is chosen", async () => {
+    await env.DB.prepare(
+      "INSERT INTO org_user_roles (user_id, role_id, unit_id) VALUES ('alice', 'validator', NULL)"
+    ).run();
+    await seedTaskFor("inv-fr", "ap-fr", "t-fr");
+    await seedTaskFor("inv-de", "ap-de", "t-de");
+
+    expect((await tasksForFocusedOn("alice", undefined)).sort()).toEqual(["t-de", "t-fr"]);
+  });
+});
+
 describe("claiming is bounded by the org too (decision 0203)", () => {
   /**
    * **The last place the boundary was a screen.**

@@ -837,7 +837,7 @@ describe("the org switcher (decision 0313)", () => {
     expect(orgIndex).toBeLessThan(langIndex);
   });
 
-  it("opens a list of every org, picks one, and remembers it", async () => {
+  it("opens a list of every org, picks one, and remembers the choice", async () => {
     await openWithOrgs(
       [
         { id: "fr", name: "Acme France" },
@@ -855,10 +855,61 @@ describe("the org switcher (decision 0313)", () => {
       (b) => b.textContent === "Acme France"
     ) as HTMLButtonElement;
     expect(row).not.toBeUndefined();
+    /**
+     * **Reloads rather than re-rendering, decision 0314** — the same
+     * reasoning decision 0302's own language toggle already gives, so
+     * the label itself is not expected to update here; only the
+     * choice being remembered is. A separate test below confirms the
+     * label reflects it, the same way decision 0302's own "remembers
+     * a language chosen earlier" test checks it on a fresh load.
+     */
     row.click();
 
     expect(localStorage.getItem("vf-current-org")).toBe("fr");
-    expect(button.title).toBe("Acme France");
+  });
+
+  it("shows the previously-chosen org's own name on a fresh load", async () => {
+    localStorage.setItem("vf-current-org", "fr");
+    await openWithOrgs(
+      [
+        { id: "fr", name: "Acme France" },
+        { id: "de", name: "Acme Germany" },
+      ],
+      true
+    );
+
+    const titles = [...document.querySelectorAll(".topbar .right button")].map((b) => b.title);
+    expect(titles).toContain("Acme France");
+    expect(titles).not.toContain("All organisations");
+  });
+
+  it("sends the chosen org to /api/tasks, decision 0314", async () => {
+    localStorage.setItem("vf-current-org", "fr");
+    await openWithOrgs(
+      [
+        { id: "fr", name: "Acme France" },
+        { id: "de", name: "Acme Germany" },
+      ],
+      true
+    );
+
+    const calls = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls.map((c) => String(c[0]));
+    const tasksCall = calls.find((u) => u.startsWith("/api/tasks?"));
+    expect(tasksCall).toContain("org=fr");
+  });
+
+  it("sends no org param at all when nothing is chosen", async () => {
+    await openWithOrgs(
+      [
+        { id: "fr", name: "Acme France" },
+        { id: "de", name: "Acme Germany" },
+      ],
+      true
+    );
+
+    const calls = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls.map((c) => String(c[0]));
+    const tasksCall = calls.find((u) => u.startsWith("/api/tasks?"));
+    expect(tasksCall).not.toContain("org=");
   });
 
   it("offers All organisations only when a role is genuinely held everywhere", async () => {

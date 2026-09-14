@@ -13,7 +13,7 @@
 
 import { t, languagePicker } from "/strings.js";
 import { moodPicker } from "/mood.js";
-import { orgPicker } from "/orgs.js";
+import { orgPicker, currentOrgId } from "/orgs.js";
 import { icon } from "/icons.js";
 
 const shell = document.getElementById("shell");
@@ -251,6 +251,15 @@ async function loadTasks() {
   const query = new URLSearchParams();
   if (filters.stage) query.set("stage", filters.stage);
   if (filters.ownership) query.set("ownership", filters.ownership);
+  /**
+   * **The chosen org, decision 0314** — following directly from
+   * decision 0313's own switcher: "let me pick one org to focus on,
+   * seeing only that org's work until I switch." Nothing is chosen
+   * means nothing is sent, the same unfiltered union every screen has
+   * always shown.
+   */
+  const org = currentOrgId();
+  if (org) query.set("org", org);
 
   const response = await fetch(`/api/tasks?${query}`);
   if (!response.ok) {

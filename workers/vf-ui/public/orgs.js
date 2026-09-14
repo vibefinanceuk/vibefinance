@@ -101,8 +101,15 @@ export function orgPicker(units, holdsEverywhere) {
 
   function choose(id) {
     setCurrentOrgId(id);
-    render();
-    if (backdrop) backdrop.hidden = true;
+    /**
+     * **A full reload, not a re-render in place** — decision 0314,
+     * the same reasoning decision 0302's own language toggle already
+     * gives: this app has no router and no way, from outside a
+     * screen, to ask whichever one is open to re-fetch itself. A
+     * fresh load is the one place already guaranteed to read the
+     * newly-chosen org before anything renders.
+     */
+    location.reload();
   }
 
   function row(text, onclick) {

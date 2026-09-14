@@ -1659,6 +1659,14 @@ export default {
       const result = await handleListMyTasks(db, auth.user.id, {
         includeCompleted: url.searchParams.get("completed") === "true",
         stageId: url.searchParams.get("stage") ?? undefined,
+        /**
+         * **The chosen org, from the request itself, not from
+         * anywhere stored server-side** — decision 0314. The same
+         * per-call shape decision 0199's own `unitId` parameter
+         * already established for `hasPermission`, since there is no
+         * session row here to hold it in between requests.
+         */
+        currentOrgUnitId: url.searchParams.get("org") ?? undefined,
         // Only the three real values. An unrecognised one is ignored
         // rather than returning nothing, because a filter nobody asked
         // for should not empty a queue.
