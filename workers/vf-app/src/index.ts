@@ -29,6 +29,7 @@ import {
   handleSetAuthorityLimit,
   handleSetProfile,
   handleListUnits,
+  handleGetOrgOverview,
   handlePlaceInvoice,
 } from "./org-route.js";
 import { handleCreateCostCentre } from "./cost-centre-route.js";
@@ -1188,6 +1189,27 @@ export default {
         return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
       }
       const result = await handleListUnits(db);
+      return json(result.body, result.status);
+    }
+
+    /**
+     * **Everything a role-management screen needs — decision 0319**,
+     * reported live: "consider a UI for Role Management... Role
+     * permissions (including approval limits) fall into this
+     * category as a sub task." Read-only, deliberately: every write
+     * this data needs already exists as its own route; writes through
+     * a screen are separate, later work.
+     *
+     * Gated the same as assigning a role itself (`Admin.UserManagement`)
+     * — seeing who holds what is the same trust boundary as granting it.
+     */
+    if (pathname === "/org/overview" && request.method === "GET") {
+      const { db } = resolveTenant(request, env);
+      const auth = await requirePermission(db, request, "Admin.UserManagement", sessionContext(env));
+      if (!auth.authorized) {
+        return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
+      }
+      const result = await handleGetOrgOverview(db);
       return json(result.body, result.status);
     }
 

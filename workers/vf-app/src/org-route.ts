@@ -170,6 +170,105 @@ export async function handleListUnits(db: D1Database): Promise<RouteResult> {
   };
 }
 
+/**
+ * **Everything a role-management screen needs, in one call** —
+ * decision 0319, the same reasoning decision 0240's own dashboard
+ * already gives for reading every card's data at once: computed once
+ * rather than four or five round trips for one screen.
+ *
+ * **Read-only, deliberately the first half.** Every write this data
+ * needs — assigning a role, revoking one, setting a limit — already
+ * exists as its own route; this adds only the ability to see the
+ * result of them, which today requires reading the database directly.
+ */
+export async function handleGetOrgOverview(db: D1Database): Promise<RouteResult> {
+  const units = await db
+    .prepare(`SELECT id, name, kind, parent_unit_id FROM org_units ORDER BY kind DESC, name ASC`)
+    .all<{ id: string; name: string; kind: string; parent_unit_id: string | null }>();
+
+  const users = await db
+    .prepare(`SELECT id, email, name, unit_id, status FROM org_users ORDER BY name ASC`)
+    .all<{ id: string; email: string; name: string; unit_id: string | null; status: string }>();
+
+  const roles = await db
+    .prepare(`SELECT id, name, permissions_json FROM org_roles ORDER BY name ASC`)
+    .all<{ id: string; name: string; permissions_json: string }>();
+
+  /**
+   * **Every assignment, joined to names rather than ids** — a screen
+   * showing "Alice — AP Manager — Acme France" should not have to
+   * hold three lookup tables in memory to say that sentence.
+   */
+  const assignments = await db
+    .prepare(
+      `SELECT ur.user_id, u.name AS user_name, ur.role_id, r.name AS role_name,
+              ur.unit_id, un.name AS unit_name, ur.granted_at
+       FROM org_user_roles ur
+       JOIN org_users u ON u.id = ur.user_id
+       JOIN org_roles r ON r.id = ur.role_id
+       LEFT JOIN org_units un ON un.id = ur.unit_id
+       ORDER BY u.name ASC, r.name ASC`
+    )
+    .all<{
+      user_id: string;
+      user_name: string;
+      role_id: string;
+      role_name: string;
+      unit_id: string | null;
+      unit_name: string | null;
+      granted_at: string;
+    }>();
+
+  const authorityLimits = await db
+    .prepare(
+      `SELECT al.user_id, u.name AS user_name, al.currency, al.max_amount
+       FROM org_authority_limits al
+       JOIN org_users u ON u.id = al.user_id
+       ORDER BY u.name ASC, al.currency ASC`
+    )
+    .all<{ user_id: string; user_name: string; currency: string; max_amount: number }>();
+
+  return {
+    status: 200,
+    body: {
+      units: units.results.map((r) => ({ id: r.id, name: r.name, kind: r.kind, parentUnitId: r.parent_unit_id })),
+      users: users.results.map((r) => ({
+        id: r.id,
+        email: r.email,
+        name: r.name,
+        unitId: r.unit_id,
+        status: r.status,
+      })),
+      roles: roles.results.map((r) => {
+        let permissions: string[] = [];
+        try {
+          permissions = JSON.parse(r.permissions_json) as string[];
+        } catch {
+          // A role with unparseable permissions is shown as granting
+          // nothing, the same fallback enforce.ts's own permissionsFor
+          // already uses — one bad row must not break the whole screen.
+        }
+        return { id: r.id, name: r.name, permissions };
+      }),
+      assignments: assignments.results.map((r) => ({
+        userId: r.user_id,
+        userName: r.user_name,
+        roleId: r.role_id,
+        roleName: r.role_name,
+        unitId: r.unit_id,
+        unitName: r.unit_name,
+        grantedAt: r.granted_at,
+      })),
+      authorityLimits: authorityLimits.results.map((r) => ({
+        userId: r.user_id,
+        userName: r.user_name,
+        currency: r.currency,
+        maxAmount: r.max_amount,
+      })),
+    },
+  };
+}
+
 interface CreateUserBody {
   id?: unknown;
   email?: unknown;

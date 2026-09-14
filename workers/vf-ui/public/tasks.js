@@ -436,6 +436,9 @@ async function go(screen) {
   } else if (screen === "documents") {
     const { open } = await import("/documents.js");
     await open();
+  } else if (screen === "roles") {
+    const { open } = await import("/roles.js");
+    await open();
   } else {
     /**
      * **Rebuild the screen, then fill it** — decision 0191.
@@ -506,6 +509,12 @@ const NAV_PERMISSIONS = {
   suppliers: "AP.Supplier",
   rules: "Admin.RuleManagement",
   documents: "AP.Review",
+  /**
+   * **Decision 0319** — the same permission `handleAssignRole`'s own
+   * route already gates on: seeing who holds what is the same trust
+   * boundary as granting it.
+   */
+  roles: "Admin.UserManagement",
 };
 
 /** One nav entry: an icon, a label, and which screen it opens. */
@@ -538,6 +547,7 @@ export function frame(main) {
     ["suppliers", "suppliers"],
     ["rules", "rules"],
     ["documents", "documents"],
+    ["roles", "users"],
   ];
   const navItems = SCREENS.filter(([screen]) => me?.permissions?.includes(NAV_PERMISSIONS[screen])).map(
     ([screen, iconName]) => navLink(screen, iconName)

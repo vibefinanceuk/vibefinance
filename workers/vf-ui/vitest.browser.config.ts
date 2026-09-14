@@ -89,6 +89,7 @@ export default defineConfig({
       "/compose.js": resolve(__dirname, "public/compose.js"),
       "/rule.js": resolve(__dirname, "public/rule.js"),
       "/documents.js": resolve(__dirname, "public/documents.js"),
+      "/roles.js": resolve(__dirname, "public/roles.js"),
       "/readback.js": resolve(__dirname, "public/readback.js"),
       "/activity.js": resolve(__dirname, "public/activity.js"),
     },

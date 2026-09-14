@@ -6,6 +6,7 @@ import {
   handleCreateRole,
   handleCreateUnit,
   handleCreateUser,
+  handleGetOrgOverview,
   handleSetAuthorityLimit,
   handleSetProfile,
 } from "../src/org-route.js";
@@ -296,6 +297,88 @@ describe("handleSetAuthorityLimit", () => {
       .bind("usr1")
       .first();
     expect(count).toEqual({ n: 2 });
+  });
+});
+
+describe("handleGetOrgOverview (decision 0319)", () => {
+  /**
+   * **The first, read-only half** of a role-management screen,
+   * reported live: "consider a UI for Role Management... Role
+   * permissions (including approval limits) fall into this category
+   * as a sub task." Built on the same create functions above, so this
+   * exercises the real shape those writes already produce.
+   */
+  it("returns an empty picture for a customer with nothing configured yet", async () => {
+    const result = await handleGetOrgOverview(env.DB);
+    expect(result.status).toBe(200);
+    expect(result.body).toEqual({
+      units: [],
+      users: [],
+      roles: [],
+      assignments: [],
+      authorityLimits: [],
+    });
+  });
+
+  it("returns every unit, user, and role", async () => {
+    await handleCreateUnit(env.DB, { id: "fr", name: "Acme France" });
+    await handleCreateUser(env.DB, { id: "usr1", email: "alice@acme.com", name: "Alice" });
+    await handleCreateRole(env.DB, { id: "r1", name: "AP Manager", permissions: ["AP.Approve"] });
+
+    const result = await handleGetOrgOverview(env.DB);
+    const body = result.body as {
+      units: { id: string; name: string }[];
+      users: { id: string; email: string; name: string }[];
+      roles: { id: string; name: string; permissions: string[] }[];
+    };
+
+    expect(body.units).toEqual([{ id: "fr", name: "Acme France", kind: "operating_unit", parentUnitId: null }]);
+    expect(body.users[0]).toMatchObject({ id: "usr1", email: "alice@acme.com", name: "Alice" });
+    expect(body.roles[0]).toEqual({ id: "r1", name: "AP Manager", permissions: ["AP.Approve"] });
+  });
+
+  it("joins an assignment to real names, not just ids", async () => {
+    await handleCreateUnit(env.DB, { id: "fr", name: "Acme France" });
+    await handleCreateUser(env.DB, { id: "usr1", email: "a@b.com", name: "Alice" });
+    await handleCreateRole(env.DB, { id: "r1", name: "AP Manager" });
+    await handleAssignRole(env.DB, "usr1", "r1", "fr");
+
+    const result = await handleGetOrgOverview(env.DB);
+    const body = result.body as {
+      assignments: { userName: string; roleName: string; unitName: string | null }[];
+    };
+    expect(body.assignments).toEqual([
+      expect.objectContaining({ userName: "Alice", roleName: "AP Manager", unitName: "Acme France" }),
+    ]);
+  });
+
+  it("shows an unscoped assignment's own unit as null, not omitted", async () => {
+    await handleCreateUser(env.DB, { id: "usr1", email: "a@b.com", name: "Alice" });
+    await handleCreateRole(env.DB, { id: "r1", name: "AP Manager" });
+    await handleAssignRole(env.DB, "usr1", "r1");
+
+    const result = await handleGetOrgOverview(env.DB);
+    const body = result.body as { assignments: { unitId: string | null; unitName: string | null }[] };
+    expect(body.assignments[0]).toMatchObject({ unitId: null, unitName: null });
+  });
+
+  it("survives a role with unparseable permissions, the same fallback permissionsFor already uses", async () => {
+    await env.DB.prepare(
+      "INSERT INTO org_roles (id, name, permissions_json) VALUES ('r1', 'Broken', 'not json')"
+    ).run();
+
+    const result = await handleGetOrgOverview(env.DB);
+    const body = result.body as { roles: { id: string; permissions: string[] }[] };
+    expect(body.roles[0]).toEqual({ id: "r1", name: "Broken", permissions: [] });
+  });
+
+  it("returns every authority limit, joined to the person's own name", async () => {
+    await handleCreateUser(env.DB, { id: "usr1", email: "a@b.com", name: "Alice" });
+    await handleSetAuthorityLimit(env.DB, "usr1", { currency: "EUR", maxAmount: 5000 });
+
+    const result = await handleGetOrgOverview(env.DB);
+    const body = result.body as { authorityLimits: { userName: string; currency: string; maxAmount: number }[] };
+    expect(body.authorityLimits).toEqual([{ userName: "Alice", currency: "EUR", maxAmount: 5000, userId: "usr1" }]);
   });
 });
 
