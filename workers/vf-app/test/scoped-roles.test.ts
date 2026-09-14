@@ -1,7 +1,7 @@
 import { env, SELF } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
 import { applyTestSchema } from "./setup.js";
-import { hasPermission, unitsWherePermitted } from "../src/enforce.js";
+import { hasPermission, unitsWherePermitted, scopedToChosenOrg } from "../src/enforce.js";
 import { handleListDocuments } from "../src/documents-route.js";
 import { handleAssignRole } from "../src/org-route.js";
 import { handleListMyTasks } from "../src/task-list-route.js";
@@ -217,6 +217,65 @@ describe("visibility follows the assignment", () => {
     // null.
     await seedInvoice("inv-fr", "ap-fr");
     expect(await documentsFor("mo")).toEqual([]);
+  });
+});
+
+describe("focused on one org, extended to Documents (decision 0315)", () => {
+  /**
+   * **The same treatment decision 0314 already gave Tasks**, applied
+   * to the screen decision 0313's original investigation found had
+   * its own, separate mechanism already — `documents-route.ts`'s own
+   * `visibleUnits` parameter, decision 0199's version of this for
+   * documents specifically.
+   */
+  async function documentsFocusedOn(userId: string, currentOrg: string | null) {
+    const visible = await unitsWherePermitted(env.DB, userId, "AP.Review");
+    const scoped = await scopedToChosenOrg(env.DB, visible, currentOrg);
+    const result = await handleListDocuments(env.DB, new URLSearchParams(), scoped);
+    return (result.body as { documents: { id: string }[] }).documents.map((d) => d.id);
+  }
+
+  it("narrows to the chosen org even when the permission is held everywhere", async () => {
+    await grant("alice", null);
+    await seedInvoice("inv-fr", "ap-fr");
+    await seedInvoice("inv-de", "ap-de");
+
+    expect(await documentsFocusedOn("alice", "acme-fr")).toEqual(["inv-fr"]);
+  });
+
+  it("narrows to the chosen org when the permission is held directly in both", async () => {
+    await grant("mo", "acme-fr");
+    await grant("mo", "acme-de");
+    await seedInvoice("inv-fr", "ap-fr");
+    await seedInvoice("inv-de", "ap-de");
+
+    expect(await documentsFocusedOn("mo", "acme-de")).toEqual(["inv-de"]);
+  });
+
+  it("still shows nothing when the permission is not held in the chosen org at all", async () => {
+    await grant("alice", "acme-de");
+    await seedInvoice("inv-fr", "ap-fr");
+
+    expect(await documentsFocusedOn("alice", "acme-fr")).toEqual([]);
+  });
+
+  it("still hides an unassigned document, the same as with no org chosen", async () => {
+    // Documents' own rule, decision 0199, unchanged by this: an
+    // unassigned document is nobody's, and showing it under any
+    // chosen org would be guessing which one.
+    await grant("alice", null);
+    await seedInvoice("inv-fr", "ap-fr");
+    await seedInvoice("inv-nowhere", null);
+
+    expect(await documentsFocusedOn("alice", "acme-fr")).toEqual(["inv-fr"]);
+  });
+
+  it("shows the full, unnarrowed visibility when nothing is chosen", async () => {
+    await grant("alice", null);
+    await seedInvoice("inv-fr", "ap-fr");
+    await seedInvoice("inv-de", "ap-de");
+
+    expect((await documentsFocusedOn("alice", null)).sort()).toEqual(["inv-de", "inv-fr"]);
   });
 });
 

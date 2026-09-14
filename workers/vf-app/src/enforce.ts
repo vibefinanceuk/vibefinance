@@ -81,6 +81,42 @@ export async function hasPermission(
  * An empty array means **nowhere**, which is a real answer and a
  * different one: the person holds the permission in no unit at all.
  */
+/**
+ * **Every unit beneath one, including itself** — the same downward
+ * walk `unitsWherePermitted` below already does, kept as its own
+ * function for decision 0315's own narrowing: a single chosen org,
+ * not a held permission, needs the identical walk from one starting
+ * unit rather than a batch of them.
+ *
+ * **Not reused inside `unitsWherePermitted` itself.** That function
+ * batches every held unit into one query per BFS level; calling this
+ * once per unit instead would mean several times the queries for a
+ * person holding several — kept separate on purpose, not a
+ * duplication that drifted.
+ *
+ * A role, or a choice, at Acme France must reach every invoice in AP
+ * France; stopping at Acme France itself would reach none of them.
+ */
+export async function unitsBeneath(db: D1Database, unitId: string): Promise<string[]> {
+  const covered = new Set([unitId]);
+  let frontier = [unitId];
+
+  // Bounded by the tree's own depth, which decision 0036 keeps shallow:
+  // legal entities nested, with operating units as leaves.
+  for (let depth = 0; depth < 16 && frontier.length > 0; depth++) {
+    const placeholders = frontier.map(() => "?").join(", ");
+    const children = await db
+      .prepare(`SELECT id FROM org_units WHERE parent_unit_id IN (${placeholders})`)
+      .bind(...frontier)
+      .all<{ id: string }>();
+
+    frontier = children.results.map((c) => c.id).filter((id) => !covered.has(id));
+    for (const id of frontier) covered.add(id);
+  }
+
+  return [...covered];
+}
+
 export async function unitsWherePermitted(
   db: D1Database,
   userId: string,
@@ -114,6 +150,12 @@ export async function unitsWherePermitted(
    *
    * A role at Acme France must show every invoice in AP France, and
    * listing only Acme France would show none of them.
+   *
+   * **Batched across every held unit together**, one query per BFS
+   * level rather than one per unit — `unitsBeneath()` above walks a
+   * single unit at a time and is not reused here on purpose, since a
+   * person holding several units would otherwise mean several times
+   * the queries for the same answer.
    */
   const covered = new Set(held);
   let frontier = held;
@@ -132,6 +174,29 @@ export async function unitsWherePermitted(
   }
 
   return [...covered];
+}
+
+/**
+ * **A visible-units list, narrowed to one chosen org** — decision
+ * 0315, extending decision 0314's own treatment of Tasks to whichever
+ * screen calls this. Extracted so the intersection itself is directly
+ * testable, rather than only provable by simulating a full request.
+ *
+ * Intersected with `visible` rather than replacing it: a person
+ * permitted everywhere who focuses on Finance sees exactly Finance's
+ * own units; a person permitted only in Germany who somehow focuses
+ * on France (a stale switch, another tab, a hand-built URL) sees
+ * nothing rather than being granted France by the choice itself.
+ * Narrowing can only ever reduce what `visible` already allows.
+ */
+export async function scopedToChosenOrg(
+  db: D1Database,
+  visible: string[] | null,
+  currentOrg: string | null
+): Promise<string[] | null> {
+  if (!currentOrg) return visible;
+  const beneath = await unitsBeneath(db, currentOrg);
+  return visible === null ? beneath : beneath.filter((id) => visible.includes(id));
 }
 
 export type AuthorizationResult =

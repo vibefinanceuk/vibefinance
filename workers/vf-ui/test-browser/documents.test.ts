@@ -445,3 +445,42 @@ describe("which part of the business (decision 0193)", () => {
     expect(document.querySelector(".unitpicker")).toBeNull();
   });
 });
+
+describe("focused on one org, decision 0315", () => {
+  /**
+   * **Extends decision 0314's own treatment of Tasks to Documents.**
+   * A different, wider concept from the existing `unit` filter above
+   * — `unit` narrows within whichever org is already in scope; `org`
+   * is the org itself, decision 0313's own switcher.
+   */
+  it("sends the chosen org to /api/documents", async () => {
+    window.localStorage.clear();
+    stubFetch({
+      "/api/ui-strings": STRINGS,
+      "/api/documents": { documents: [DOC], searched: 1 },
+      "/api/org/units": { units: UNITS },
+      "/api/code-lists": { fields: {} },
+    });
+    // After the clear `openDocuments()` itself would otherwise do,
+    // since this test is specifically about what survives it.
+    localStorage.setItem("vf-current-org", "fr");
+
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { open } = await import("/documents.js");
+    await open();
+    await new Promise((r) => setTimeout(r, 0));
+
+    const calls = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls.map((c) => String(c[0]));
+    const call = calls.find((u) => u.startsWith("/api/documents?"));
+    expect(call).toContain("org=fr");
+  });
+
+  it("sends no org param at all when nothing is chosen", async () => {
+    await openDocuments([DOC]);
+
+    const calls = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls.map((c) => String(c[0]));
+    const call = calls.find((u) => u.startsWith("/api/documents?"));
+    expect(call).not.toContain("org=");
+  });
+});

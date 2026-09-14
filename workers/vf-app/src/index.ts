@@ -38,6 +38,7 @@ import {
   unitsFor,
   hasPermission,
   unitsWherePermitted,
+  scopedToChosenOrg,
   isUnclaimed,
   type SessionContext,
 } from "./enforce.js";
@@ -1766,7 +1767,14 @@ export default {
        */
       const visible = await unitsWherePermitted(db, auth.user.id, "AP.Review");
 
-      const result = await handleListDocuments(db, url.searchParams, visible, auth.user.id);
+      /**
+       * **Narrowed further to the chosen org, decision 0315** —
+       * extending decision 0314's own treatment of Tasks to
+       * Documents.
+       */
+      const scopedToOrg = await scopedToChosenOrg(db, visible, url.searchParams.get("org"));
+
+      const result = await handleListDocuments(db, url.searchParams, scopedToOrg, auth.user.id);
       return json(result.body, result.status);
     }
 

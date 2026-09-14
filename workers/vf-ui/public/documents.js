@@ -1,5 +1,6 @@
 import { t } from "/strings.js";
 import { el, frame, topbar, setCurrentScreen } from "/tasks.js";
+import { currentOrgId } from "/orgs.js";
 
 /**
  * Every document that has arrived — decision 0164.
@@ -131,6 +132,14 @@ async function load() {
   if (alertFilter === "duplicates") params.set("duplicates", "1");
   if (alertFilter === "donebyme") params.set("doneByMe", "1");
   if (stageFilter) params.set("stage", stageFilter.id);
+  /**
+   * **The chosen org, decision 0315** — extending decision 0314's own
+   * treatment of Tasks to Documents. A different, wider concept from
+   * `unit` above: `unit` is one operating unit within whichever org
+   * is already in scope; this is the org itself.
+   */
+  const org = currentOrgId();
+  if (org) params.set("org", org);
 
   const response = await fetch(`/api/documents?${params}`);
   if (!response.ok) return false;
