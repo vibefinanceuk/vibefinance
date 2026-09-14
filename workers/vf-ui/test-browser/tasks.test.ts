@@ -33,6 +33,7 @@ const STRINGS = {
     "nav.suppliers": "Suppliers",
     "nav.rules": "Rules",
     "nav.documents": "Documents",
+    "nav.roles": "Roles",
     "nav.vibeap": "Vibe AP",
     "nav.collapse": "Collapse the menu",
     "nav.expand": "Expand the menu",
@@ -340,14 +341,14 @@ describe("the flat nav, permission-filtered (decisions 0274 and 0276)", () => {
     expect(document.querySelector(".navgrouphead")).toBeNull();
 
     const labels = [...document.querySelectorAll(".navitem")].map((a) => a.textContent);
-    expect(labels).toEqual(["Dashboard", "Tasks", "Sources", "Suppliers", "Rules", "Documents"]);
+    expect(labels).toEqual(["Dashboard", "Tasks", "Sources", "Suppliers", "Rules", "Documents", "Roles"]);
   });
 
   it("gives every real nav item an icon", async () => {
     await openList([APPROVAL_TASK]);
 
     const items = [...document.querySelectorAll(".navitem")];
-    expect(items).toHaveLength(6);
+    expect(items).toHaveLength(7);
     for (const item of items) {
       expect(item.querySelector("svg")).not.toBeNull();
     }
@@ -553,7 +554,7 @@ describe("the flat nav, permission-filtered (decisions 0274 and 0276)", () => {
 
     const labels = [...document.querySelectorAll(".navitem")].map((a) => a.textContent);
     expect(labels).not.toContain("Rules");
-    expect(labels).toEqual(["Dashboard", "Tasks", "Sources", "Suppliers", "Documents"]);
+    expect(labels).toEqual(["Dashboard", "Tasks", "Sources", "Suppliers", "Documents", "Roles"]);
   });
 
   it("shows nothing but the logo for a person with none of the six permissions", async () => {
@@ -574,10 +575,17 @@ describe("the flat nav, permission-filtered (decisions 0274 and 0276)", () => {
   });
 
   it("shows exactly the items each permission unlocks, one at a time", async () => {
+    /**
+     * **`Admin.Configure` unlocks two items together, decision 0319**
+     * — Roles now shares Sources's own instance-administrator
+     * standing, corrected live: "the roles menu item is at parent
+     * level permission, i.e. instance administrator." Not a case this
+     * loop's own one-permission-one-label shape can express, so it is
+     * pulled out and asserted directly instead.
+     */
     const cases: [string, string][] = [
       ["AP.Dashboard", "Dashboard"],
       ["AP.TaskView", "Tasks"],
-      ["Admin.Configure", "Sources"],
       ["AP.Supplier", "Suppliers"],
       ["Admin.RuleManagement", "Rules"],
       ["AP.Review", "Documents"],
@@ -596,6 +604,18 @@ describe("the flat nav, permission-filtered (decisions 0274 and 0276)", () => {
       const labels = [...document.querySelectorAll(".navitem")].map((a) => a.textContent);
       expect(labels, `permission ${permission}`).toEqual([label]);
     }
+
+    stubFetch({
+      "/api/ui-strings": STRINGS,
+      "/api/whoami": { id: "u-dan", name: "Dan", permissions: ["Admin.Configure"] },
+      "/api/tasks": { tasks: [], counts: {} },
+    });
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { start } = await import("/tasks.js");
+    await start();
+    const labels = [...document.querySelectorAll(".navitem")].map((a) => a.textContent);
+    expect(labels, "permission Admin.Configure").toEqual(["Sources", "Roles"]);
   });
 });
 

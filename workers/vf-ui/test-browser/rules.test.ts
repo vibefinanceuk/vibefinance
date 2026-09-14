@@ -45,6 +45,7 @@ const STRINGS = {
     "column.rule": "Rule",
     "column.status": "Status",
     "nav.documents": "Documents",
+    "nav.roles": "Roles",
     "mood.label": "Mood",
     "mood.day": "Day",
     "mood.night": "Night",
@@ -286,7 +287,7 @@ describe("the navigation", () => {
     // work" (decision 0242) and moved to the front of the list, at
     // the operator's own request — this test caught both changes at
     // once, which is what it is for.
-    expect(nav).toEqual(["Dashboard", "Tasks", "Sources", "Suppliers", "Rules", "Documents"]);
+    expect(nav).toEqual(["Dashboard", "Tasks", "Sources", "Suppliers", "Rules", "Documents", "Roles"]);
   });
 
   it("marks which screen you are on", async () => {

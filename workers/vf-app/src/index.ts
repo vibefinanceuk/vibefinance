@@ -1200,12 +1200,21 @@ export default {
      * this data needs already exists as its own route; writes through
      * a screen are separate, later work.
      *
-     * Gated the same as assigning a role itself (`Admin.UserManagement`)
-     * — seeing who holds what is the same trust boundary as granting it.
+     * **`Admin.Configure`, not `Admin.UserManagement`** — corrected
+     * live: "the roles menu item is at parent level permission, i.e.
+     * instance administrator, because it permits the setup and
+     * configuration of the Org hierarchy." `Admin.Configure` already
+     * gates `/org/units` on exactly that reasoning, and is never
+     * scoped or delegated anywhere in this codebase — the same
+     * instance-wide standing `sources` already uses in the nav.
+     * `Admin.UserManagement` is delegable (decision 0201): a France
+     * administrator holding it only in France would otherwise open a
+     * screen built to show every unit and person at once and see
+     * none of the other units it exists to show.
      */
     if (pathname === "/org/overview" && request.method === "GET") {
       const { db } = resolveTenant(request, env);
-      const auth = await requirePermission(db, request, "Admin.UserManagement", sessionContext(env));
+      const auth = await requirePermission(db, request, "Admin.Configure", sessionContext(env));
       if (!auth.authorized) {
         return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
       }

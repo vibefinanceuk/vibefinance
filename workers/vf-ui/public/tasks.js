@@ -510,11 +510,14 @@ const NAV_PERMISSIONS = {
   rules: "Admin.RuleManagement",
   documents: "AP.Review",
   /**
-   * **Decision 0319** — the same permission `handleAssignRole`'s own
-   * route already gates on: seeing who holds what is the same trust
-   * boundary as granting it.
+   * **`Admin.Configure`, decision 0319** — corrected live: this is
+   * instance-administrator standing, the same as `sources` above,
+   * because the screen exists to configure the org hierarchy itself.
+   * Not `Admin.UserManagement`, which decision 0201 made delegable —
+   * a person holding it only in one unit would open a screen built to
+   * show every unit at once and see none of the rest.
    */
-  roles: "Admin.UserManagement",
+  roles: "Admin.Configure",
 };
 
 /** One nav entry: an icon, a label, and which screen it opens. */
