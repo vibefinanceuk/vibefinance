@@ -390,7 +390,7 @@ describe("creating a role — decision 0326", () => {
     button?.click();
     expect(document.querySelector(".backdrop")).not.toBeNull();
 
-    const close = [...document.querySelectorAll("button")].find((b) => b.textContent?.includes("Close"));
+    const close = document.querySelector<HTMLButtonElement>(".popout .cardhead button");
     close?.click();
     expect(document.querySelector(".backdrop")).toBeNull();
   });
@@ -793,5 +793,61 @@ describe("creating a person — decision 0328", () => {
     await new Promise((r) => setTimeout(r, 0));
 
     expect(document.querySelector(".backdrop")).toBeNull();
+  });
+});
+
+describe("popout icons — decision 0329", () => {
+  const ONE_ROLE = { id: "r1", name: "AP Manager", permissions: ["AP.Approve"] };
+  const ONE_UNIT = { id: "acme-fr", name: "Acme France", kind: "legal_entity", parentUnitId: null };
+  const ALICE = { id: "usr1", email: "alice@acme.com", name: "Alice", unitId: null, status: "active" };
+
+  it("the role popout's own close icon sits in the header, not beside the primary button", async () => {
+    await openRolesAs(["Admin.RoleManagement"], { ...EMPTY, knownPermissions: [] });
+    const button = [...document.querySelectorAll("button")].find((b) => b.textContent?.includes("New role"));
+    button?.click();
+
+    // In the header, beside the title.
+    expect(document.querySelector(".popout .cardhead svg")).not.toBeNull();
+    // Not beside the primary button anymore.
+    const stateButtons = document.querySelector(".popout .statebuttons");
+    expect(stateButtons?.querySelectorAll("button")).toHaveLength(1);
+  });
+
+  it("the role popout's own primary button carries an icon", async () => {
+    await openRolesAs(["Admin.RoleManagement"], { ...EMPTY, roles: [ONE_ROLE], knownPermissions: [] });
+    const row = [...document.querySelectorAll("tr")].find((r) => r.textContent?.includes("AP Manager"));
+    row?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    const submit = [...document.querySelectorAll(".statebuttons button")].find((b) =>
+      b.textContent?.includes("Save")
+    );
+    expect(submit?.querySelector("svg")).not.toBeNull();
+  });
+
+  it("the assign popout's own close icon sits in the header, and Assign carries an icon", async () => {
+    await openRolesAs(["Admin.UserManagement"], {
+      ...EMPTY,
+      users: [ALICE],
+      roles: [ONE_ROLE],
+      units: [ONE_UNIT],
+    });
+    const row = [...document.querySelectorAll("tr")].find((r) => r.textContent?.includes("Alice"));
+    row?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    expect(document.querySelector(".popout .cardhead svg")).not.toBeNull();
+    const stateButtons = document.querySelector(".popout .statebuttons");
+    expect(stateButtons?.querySelectorAll("button")).toHaveLength(1);
+    const submit = [...document.querySelectorAll(".statebuttons button")].find((b) =>
+      b.textContent?.includes("Assign")
+    );
+    expect(submit?.querySelector("svg")).not.toBeNull();
+  });
+
+  it("the new-person popout's own close icon sits in the header", async () => {
+    await openRolesAs(["Admin.UserManagement"], { ...EMPTY, units: [ONE_UNIT] });
+    const button = [...document.querySelectorAll("button")].find((b) => b.textContent?.includes("New person"));
+    button?.click();
+
+    expect(document.querySelector(".popout .cardhead svg")).not.toBeNull();
   });
 });
