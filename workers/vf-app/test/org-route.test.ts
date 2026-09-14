@@ -1,4 +1,4 @@
-import { env } from "cloudflare:test";
+import { env, SELF } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
 import { applyTestSchema } from "./setup.js";
 import {
@@ -10,7 +10,7 @@ import {
   handleSetAuthorityLimit,
   handleSetProfile,
 } from "../src/org-route.js";
-import { authenticateUser } from "../src/user-auth.js";
+import { authenticateUser, generateApiKey, hashApiKey } from "../src/user-auth.js";
 
 beforeEach(async () => {
   await applyTestSchema();
@@ -466,6 +466,71 @@ describe("handleGetOrgOverview, scoped for a delegated administrator (decision 0
     const result = await handleGetOrgOverview(env.DB);
     const body = result.body as { units: { id: string }[] };
     expect(body.units.map((u) => u.id).sort()).toEqual(["de", "fr"]);
+  });
+});
+
+describe("GET /org/overview, the real route — decision 0322", () => {
+  /**
+   * **Every earlier test called `handleGetOrgOverview` directly**,
+   * never through the real HTTP route — so `authenticatePerson`,
+   * `hasPermission`, and everything `index.ts` itself does around the
+   * function were never exercised at all. Reported live: "the Roles
+   * menu option does not launch anything" — a real 500 or 403 the
+   * unit tests above could not have caught, because none of them ever
+   * went through the route that produces one.
+   */
+  async function keyForPermission(permission: string): Promise<string> {
+    const id = crypto.randomUUID();
+    const apiKey = generateApiKey();
+    await env.DB.prepare("INSERT INTO org_users (id, email, name, api_key_hash) VALUES (?, ?, ?, ?)")
+      .bind(id, `${id}@acme.com`, "Test", await hashApiKey(apiKey))
+      .run();
+
+    const roleId = crypto.randomUUID();
+    await env.DB.prepare("INSERT INTO org_roles (id, name, permissions_json) VALUES (?, ?, ?)")
+      .bind(roleId, `Role granting ${permission}`, JSON.stringify([permission]))
+      .run();
+    await env.DB.prepare("INSERT INTO org_user_roles (user_id, role_id) VALUES (?, ?)").bind(id, roleId).run();
+
+    return apiKey;
+  }
+
+  it("succeeds for a real request from somebody holding Admin.Configure", async () => {
+    const apiKey = await keyForPermission("Admin.Configure");
+
+    const res = await SELF.fetch("https://example.com/org/overview", {
+      headers: { Authorization: `Bearer ${apiKey}` },
+    });
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { units: unknown[]; roles: unknown[] };
+    expect(body.units).toEqual([]);
+    expect(body.roles).toHaveLength(1);
+  });
+
+  it("succeeds for a real request from a delegated Admin.UserManagement holder", async () => {
+    const apiKey = await keyForPermission("Admin.UserManagement");
+
+    const res = await SELF.fetch("https://example.com/org/overview", {
+      headers: { Authorization: `Bearer ${apiKey}` },
+    });
+
+    expect(res.status).toBe(200);
+  });
+
+  it("401s with no credential at all", async () => {
+    const res = await SELF.fetch("https://example.com/org/overview");
+    expect(res.status).toBe(401);
+  });
+
+  it("403s somebody holding neither permission", async () => {
+    const apiKey = await keyForPermission("AP.Validate");
+
+    const res = await SELF.fetch("https://example.com/org/overview", {
+      headers: { Authorization: `Bearer ${apiKey}` },
+    });
+
+    expect(res.status).toBe(403);
   });
 });
 
