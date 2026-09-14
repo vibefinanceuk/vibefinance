@@ -317,6 +317,70 @@ export async function handleCaptureFromSource(
       .run();
   }
 
+  if (invoiceId && !source.default_org_unit_id) {
+    /**
+     * **No default means read it off the document** — decision 0204.
+     *
+     * The operator's `<Automatic>`: one mailbox for everybody, and the
+     * invoice says whose it is. Decision 0036 added the identifiers to
+     * match against — the buyer's electronic address, VAT id and
+     * routing reference — and nothing has ever read them.
+     *
+     * **Only where nothing could be derived does a document stay
+     * unassigned**, which is strictly better than before: today a
+     * source with no default leaves every document unplaced.
+     */
+    const invoice = await db
+      .prepare("SELECT facts_json FROM invoice_headers WHERE id = ?")
+      .bind(invoiceId)
+      .first<{ facts_json: string }>();
+
+    let facts: Record<string, unknown> = {};
+    try {
+      facts = JSON.parse(invoice?.facts_json ?? "{}") as Record<string, unknown>;
+    } catch {
+      // A document whose facts will not parse names no recipient.
+    }
+
+    const derived = await deriveOrgUnit(db, facts);
+
+    if (derived.unitId) {
+      await db
+        .prepare(
+          "UPDATE invoice_headers SET org_unit_id = ?, org_assigned_by = 'rule' WHERE id = ? AND org_unit_id IS NULL"
+        )
+        .bind(derived.unitId, invoiceId)
+        .run();
+    }
+
+    /**
+     * **Why, where it could not be placed** — decision 0162's lesson.
+     * That record found a refusal reporting *"unreadable"* while the
+     * reason sat in a field nobody read, and this is the same shape: a
+     * document nobody can see is one somebody has to explain.
+     */
+    if (derived.reason) {
+      await db
+        .prepare(
+          `UPDATE invoice_headers
+           SET facts_json = json_set(facts_json, '$."org.unplaced"', ?)
+           WHERE id = ? AND org_unit_id IS NULL`
+        )
+        .bind(derived.reason, invoiceId)
+        .run();
+    }
+  }
+
+  /**
+   * **Placed before matching, deliberately** — decision 0317's own
+   * follow-on, reported live: "the invoice should know the receiving
+   * entity... because of this, the derivation of the supplier should
+   * be aligned with the supplier record for the relevant org." A
+   * source with no default org only settles which org an invoice
+   * belongs to in the block just above; matching needs that answer
+   * already in hand to use it as its own tiebreaker.
+   */
+
   /**
    * **Which supplier, and can we name it to the ERP** — decision 0209.
    *
@@ -463,60 +527,6 @@ export async function handleCaptureFromSource(
            WHERE id = ?`
         )
         .bind(matched.reason, invoiceId)
-        .run();
-    }
-  }
-
-  if (invoiceId && !source.default_org_unit_id) {
-    /**
-     * **No default means read it off the document** — decision 0204.
-     *
-     * The operator's `<Automatic>`: one mailbox for everybody, and the
-     * invoice says whose it is. Decision 0036 added the identifiers to
-     * match against — the buyer's electronic address, VAT id and
-     * routing reference — and nothing has ever read them.
-     *
-     * **Only where nothing could be derived does a document stay
-     * unassigned**, which is strictly better than before: today a
-     * source with no default leaves every document unplaced.
-     */
-    const invoice = await db
-      .prepare("SELECT facts_json FROM invoice_headers WHERE id = ?")
-      .bind(invoiceId)
-      .first<{ facts_json: string }>();
-
-    let facts: Record<string, unknown> = {};
-    try {
-      facts = JSON.parse(invoice?.facts_json ?? "{}") as Record<string, unknown>;
-    } catch {
-      // A document whose facts will not parse names no recipient.
-    }
-
-    const derived = await deriveOrgUnit(db, facts);
-
-    if (derived.unitId) {
-      await db
-        .prepare(
-          "UPDATE invoice_headers SET org_unit_id = ?, org_assigned_by = 'rule' WHERE id = ? AND org_unit_id IS NULL"
-        )
-        .bind(derived.unitId, invoiceId)
-        .run();
-    }
-
-    /**
-     * **Why, where it could not be placed** — decision 0162's lesson.
-     * That record found a refusal reporting *"unreadable"* while the
-     * reason sat in a field nobody read, and this is the same shape: a
-     * document nobody can see is one somebody has to explain.
-     */
-    if (derived.reason) {
-      await db
-        .prepare(
-          `UPDATE invoice_headers
-           SET facts_json = json_set(facts_json, '$."org.unplaced"', ?)
-           WHERE id = ? AND org_unit_id IS NULL`
-        )
-        .bind(derived.reason, invoiceId)
         .run();
     }
   }
@@ -669,6 +679,70 @@ async function captureWithoutFacts(
       .run();
   }
 
+  if (invoiceId && !source.default_org_unit_id) {
+    /**
+     * **No default means read it off the document** — decision 0204.
+     *
+     * The operator's `<Automatic>`: one mailbox for everybody, and the
+     * invoice says whose it is. Decision 0036 added the identifiers to
+     * match against — the buyer's electronic address, VAT id and
+     * routing reference — and nothing has ever read them.
+     *
+     * **Only where nothing could be derived does a document stay
+     * unassigned**, which is strictly better than before: today a
+     * source with no default leaves every document unplaced.
+     */
+    const invoice = await db
+      .prepare("SELECT facts_json FROM invoice_headers WHERE id = ?")
+      .bind(invoiceId)
+      .first<{ facts_json: string }>();
+
+    let facts: Record<string, unknown> = {};
+    try {
+      facts = JSON.parse(invoice?.facts_json ?? "{}") as Record<string, unknown>;
+    } catch {
+      // A document whose facts will not parse names no recipient.
+    }
+
+    const derived = await deriveOrgUnit(db, facts);
+
+    if (derived.unitId) {
+      await db
+        .prepare(
+          "UPDATE invoice_headers SET org_unit_id = ?, org_assigned_by = 'rule' WHERE id = ? AND org_unit_id IS NULL"
+        )
+        .bind(derived.unitId, invoiceId)
+        .run();
+    }
+
+    /**
+     * **Why, where it could not be placed** — decision 0162's lesson.
+     * That record found a refusal reporting *"unreadable"* while the
+     * reason sat in a field nobody read, and this is the same shape: a
+     * document nobody can see is one somebody has to explain.
+     */
+    if (derived.reason) {
+      await db
+        .prepare(
+          `UPDATE invoice_headers
+           SET facts_json = json_set(facts_json, '$."org.unplaced"', ?)
+           WHERE id = ? AND org_unit_id IS NULL`
+        )
+        .bind(derived.reason, invoiceId)
+        .run();
+    }
+  }
+
+  /**
+   * **Placed before matching, deliberately** — decision 0317's own
+   * follow-on, reported live: "the invoice should know the receiving
+   * entity... because of this, the derivation of the supplier should
+   * be aligned with the supplier record for the relevant org." A
+   * source with no default org only settles which org an invoice
+   * belongs to in the block just above; matching needs that answer
+   * already in hand to use it as its own tiebreaker.
+   */
+
   /**
    * **Which supplier, and can we name it to the ERP** — decision 0209.
    *
@@ -815,60 +889,6 @@ async function captureWithoutFacts(
            WHERE id = ?`
         )
         .bind(matched.reason, invoiceId)
-        .run();
-    }
-  }
-
-  if (invoiceId && !source.default_org_unit_id) {
-    /**
-     * **No default means read it off the document** — decision 0204.
-     *
-     * The operator's `<Automatic>`: one mailbox for everybody, and the
-     * invoice says whose it is. Decision 0036 added the identifiers to
-     * match against — the buyer's electronic address, VAT id and
-     * routing reference — and nothing has ever read them.
-     *
-     * **Only where nothing could be derived does a document stay
-     * unassigned**, which is strictly better than before: today a
-     * source with no default leaves every document unplaced.
-     */
-    const invoice = await db
-      .prepare("SELECT facts_json FROM invoice_headers WHERE id = ?")
-      .bind(invoiceId)
-      .first<{ facts_json: string }>();
-
-    let facts: Record<string, unknown> = {};
-    try {
-      facts = JSON.parse(invoice?.facts_json ?? "{}") as Record<string, unknown>;
-    } catch {
-      // A document whose facts will not parse names no recipient.
-    }
-
-    const derived = await deriveOrgUnit(db, facts);
-
-    if (derived.unitId) {
-      await db
-        .prepare(
-          "UPDATE invoice_headers SET org_unit_id = ?, org_assigned_by = 'rule' WHERE id = ? AND org_unit_id IS NULL"
-        )
-        .bind(derived.unitId, invoiceId)
-        .run();
-    }
-
-    /**
-     * **Why, where it could not be placed** — decision 0162's lesson.
-     * That record found a refusal reporting *"unreadable"* while the
-     * reason sat in a field nobody read, and this is the same shape: a
-     * document nobody can see is one somebody has to explain.
-     */
-    if (derived.reason) {
-      await db
-        .prepare(
-          `UPDATE invoice_headers
-           SET facts_json = json_set(facts_json, '$."org.unplaced"', ?)
-           WHERE id = ? AND org_unit_id IS NULL`
-        )
-        .bind(derived.reason, invoiceId)
         .run();
     }
   }

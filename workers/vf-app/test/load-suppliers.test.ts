@@ -283,12 +283,12 @@ describe("looking again at what could not be matched", () => {
    * unknown stays there after the supplier is loaded, and the fact that
    * sent it there is no longer true.
    */
-  async function unmatchedInvoice(id: string, vat: string) {
+  async function unmatchedInvoice(id: string, vat: string, orgUnitId: string | null = null) {
     await env.DB.prepare(
-      `INSERT INTO invoice_headers (id, facts_json)
-       VALUES (?, json_object('BT-31', ?, 'supplier.matched', 0, 'supplier.unmatchedReason', 'no_match'))`
+      `INSERT INTO invoice_headers (id, facts_json, org_unit_id)
+       VALUES (?, json_object('BT-31', ?, 'supplier.matched', 0, 'supplier.unmatchedReason', 'no_match'), ?)`
     )
-      .bind(id, vat)
+      .bind(id, vat, orgUnitId)
       .run();
   }
 
@@ -339,6 +339,28 @@ describe("looking again at what could not be matched", () => {
       "SELECT count(*) AS n FROM process_instances"
     ).first<{ n: number }>();
     expect(instances?.n).toBe(0);
+  });
+
+  it("uses the invoice's own org to resolve a tie the load itself created (decision 0317)", async () => {
+    /**
+     * **Proves the ordering, not just the tiebreaker in isolation** —
+     * the operator's own point: "the invoice should know the
+     * receiving entity... the derivation of the supplier should be
+     * aligned with the supplier record for the relevant org." An
+     * invoice already carrying its own org, re-matched after a load
+     * that introduces two suppliers sharing one VAT, resolves to the
+     * one for its own org rather than becoming newly ambiguous.
+     */
+    await env.DB.prepare("INSERT INTO org_units (id, name) VALUES ('acme-fr', 'Acme France')").run();
+    await env.DB.prepare("INSERT INTO org_units (id, name) VALUES ('acme-de', 'Acme Germany')").run();
+    await unmatchedInvoice("inv-1", "GB1", "acme-fr");
+
+    await load("ERP ID,Name,VAT,Org Unit\n1,Northwind FR,GB1,Acme France\n2,Northwind DE,GB1,Acme Germany");
+
+    const row = await env.DB.prepare("SELECT supplier_id FROM invoice_headers WHERE id = 'inv-1'").first<{
+      supplier_id: string | null;
+    }>();
+    expect(row?.supplier_id).toBe("1");
   });
 });
 
@@ -1130,5 +1152,68 @@ describe("what the supplier record says about an invoice (decision 0238)", () =>
 
     const facts = await captureWith(UBL("GB447711223"));
     expect(facts?.onHold).toBe(1);
+  });
+
+  it("derives the org from the document before matching, so the org resolves the tie (decision 0317)", async () => {
+    /**
+     * **The full path, not just the tiebreaker in isolation** — the
+     * operator's own point: "the invoice should know the receiving
+     * entity... due to us... automatically derived during the intake
+     * process. Because of this, the derivation of the supplier should
+     * be aligned with the supplier record for the relevant org." A
+     * source with no default org must derive it from the document
+     * itself (`BT-48`, the buyer's own VAT id) *before* supplier
+     * matching runs, or the tiebreaker built for this has nothing to
+     * work with.
+     */
+    const UBL2 = (sellerVat: string, buyerVat: string) => `<?xml version="1.0" encoding="UTF-8"?>
+<Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"
+         xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
+         xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">
+  <cbc:CustomizationID>urn:cen.eu:en16931:2017#compliant#urn:fdc:peppol.eu:2017:poacc:billing:3.0</cbc:CustomizationID>
+  <cbc:ID>CAP-2</cbc:ID>
+  <cbc:IssueDate>2026-09-11</cbc:IssueDate>
+  <cbc:InvoiceTypeCode>380</cbc:InvoiceTypeCode>
+  <cbc:DocumentCurrencyCode>GBP</cbc:DocumentCurrencyCode>
+  <cac:AccountingSupplierParty><cac:Party>
+    <cac:PartyTaxScheme><cbc:CompanyID>${sellerVat}</cbc:CompanyID>
+      <cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme></cac:PartyTaxScheme>
+  </cac:Party></cac:AccountingSupplierParty>
+  <cac:AccountingCustomerParty><cac:Party>
+    <cac:PartyTaxScheme><cbc:CompanyID>${buyerVat}</cbc:CompanyID>
+      <cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme></cac:PartyTaxScheme>
+  </cac:Party></cac:AccountingCustomerParty>
+</Invoice>`;
+
+    await env.DB.prepare(
+      "INSERT INTO org_units (id, name, kind, vat_id) VALUES ('acme-fr', 'Acme France', 'legal_entity', 'FR1')"
+    ).run();
+    await env.DB.prepare(
+      "INSERT INTO org_units (id, name, kind, vat_id) VALUES ('acme-de', 'Acme Germany', 'legal_entity', 'DE1')"
+    ).run();
+
+    await load("ERP ID,Name,VAT,Org Unit\n1,Northwind FR,GB1,Acme France\n2,Northwind DE,GB1,Acme Germany");
+
+    await handleCreateProcess(env.DB, { id: "ap", name: "AP" });
+    await handleCreateStage(env.DB, "ap", { id: "intake", name: "Intake", sequence: 1 });
+    await env.DB.prepare(
+      "INSERT INTO sources (id, process_id, name, mechanism) VALUES ('s2', 'ap', 'Mailbox', 'email')"
+    ).run();
+
+    const result = await handleCaptureFromSource(
+      env.DB,
+      "s2",
+      new TextEncoder().encode(UBL2("GB1", "FR1")),
+      { extract: async () => ({ ok: false, reason: "not needed" }) } as never,
+      "inv-2"
+    );
+    expect(result.status).toBeLessThan(400);
+
+    const row = await env.DB.prepare(
+      "SELECT org_unit_id, supplier_id FROM invoice_headers WHERE id = 'inv-2'"
+    ).first<{ org_unit_id: string | null; supplier_id: string | null }>();
+
+    expect(row?.org_unit_id).toBe("acme-fr");
+    expect(row?.supplier_id).toBe("1");
   });
 });
