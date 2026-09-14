@@ -1002,12 +1002,24 @@
   }
 
   /*
-    **Permission checkboxes, grouped by category — decision 0326.**
+    **Permission checkboxes, grouped by category — decision 0326.
+    Name and description, two columns, scrollable — decision 0331.**
     The same namespacing the permissions themselves already use
     (`AP.*`, `Admin.*`), so a form offering the closed vocabulary
-    reads the way the vocabulary itself is organised.
+    reads the way the vocabulary itself is organised. Reported live:
+    "the Permissions are sometimes a little difficult to understand
+    what capability is provisioned... listing the Permission next to
+    a short description... a scroll bar on the pop-out would be
+    needed to work down the list."
   */
   .permissiongroups { margin: 10px 0; }
+  .permissiongroups.scrollable {
+    max-height: 320px;
+    overflow-y: auto;
+    border: 0.5px solid var(--border);
+    border-radius: var(--radius);
+    padding: 10px 12px;
+  }
   .permissiongroup { margin: 0 0 12px; }
   .permissiongroup:last-child { margin-bottom: 0; }
   .permissiongroup h4 {
@@ -1017,16 +1029,26 @@
     letter-spacing: 0.04em;
     margin: 0 0 6px;
   }
-  .permissionchecks {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px 16px;
+  .permissionrows { display: flex; flex-direction: column; }
+  .permissionrow {
+    display: grid;
+    grid-template-columns: minmax(150px, 200px) 1fr;
+    gap: 4px 16px;
+    align-items: center;
+    padding: 6px 0;
+    border-bottom: 0.5px solid var(--border);
   }
-  .permissioncheck {
+  .permissionrow:last-child { border-bottom: none; }
+  .permissionname {
     display: flex;
     align-items: center;
     gap: 6px;
     font-size: var(--text-base);
+  }
+  .permissiondesc { line-height: 1.3; }
+
+  @media (max-width: 520px) {
+    .permissionrow { grid-template-columns: 1fr; }
   }
 
   /*

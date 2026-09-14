@@ -1,5 +1,5 @@
 import { isKnownInvoiceProfile, isKnownR2Jurisdiction, R2_JURISDICTIONS } from "./profiles.js";
-import { isKnownPermissionList, PERMISSIONS } from "./permissions.js";
+import { isKnownPermissionList, PERMISSIONS, PERMISSION_DESCRIPTIONS } from "./permissions.js";
 import { generateApiKey, hashApiKey } from "./user-auth.js";
 
 export interface RouteResult {
@@ -306,8 +306,15 @@ export async function handleGetOrgOverview(
        * not the same thing as who holds which, and everyone reaching
        * this screen at all already holds at least one of the two
        * permissions that gate reading it.
+       *
+       * **Each with its own real description, decision 0331** —
+       * reported live: "the Permissions are sometimes a little
+       * difficult to understand what capability is provisioned."
+       * `{ name, description }` rather than a bare string, sourced
+       * from `PERMISSION_DESCRIPTIONS`, the same single source of
+       * truth `PERMISSIONS` itself already is.
        */
-      knownPermissions: PERMISSIONS,
+      knownPermissions: PERMISSIONS.map((name) => ({ name, description: PERMISSION_DESCRIPTIONS[name] })),
       assignments: assignments.results.map((r) => ({
         userId: r.user_id,
         userName: r.user_name,

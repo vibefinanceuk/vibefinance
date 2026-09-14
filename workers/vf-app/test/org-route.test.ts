@@ -13,7 +13,7 @@ import {
   handleSetProfile,
 } from "../src/org-route.js";
 import { authenticateUser, generateApiKey, hashApiKey } from "../src/user-auth.js";
-import { PERMISSIONS } from "../src/permissions.js";
+import { PERMISSIONS, PERMISSION_DESCRIPTIONS } from "../src/permissions.js";
 
 beforeEach(async () => {
   await applyTestSchema();
@@ -475,16 +475,26 @@ describe("handleGetOrgOverview (decision 0319)", () => {
       roles: [],
       assignments: [],
       authorityLimits: [],
-      knownPermissions: PERMISSIONS,
+      knownPermissions: PERMISSIONS.map((name) => ({ name, description: PERMISSION_DESCRIPTIONS[name] })),
     });
   });
 
-  it("returns the real, closed permission vocabulary, decision 0326 — for an edit form to offer, not free text to mistype", async () => {
+  it("returns the real, closed permission vocabulary, each with its own real description — decision 0331", async () => {
     const result = await handleGetOrgOverview(env.DB);
-    const body = result.body as { knownPermissions: string[] };
-    expect(body.knownPermissions).toEqual([...PERMISSIONS]);
-    expect(body.knownPermissions).toContain("Admin.RoleManagement");
-    expect(body.knownPermissions).not.toContain("rules.activate");
+    const body = result.body as { knownPermissions: { name: string; description: string }[] };
+    expect(body.knownPermissions.map((p) => p.name)).toEqual([...PERMISSIONS]);
+    expect(body.knownPermissions).toEqual(
+      PERMISSIONS.map((name) => ({ name, description: PERMISSION_DESCRIPTIONS[name] }))
+    );
+    const roleManagement = body.knownPermissions.find((p) => p.name === "Admin.RoleManagement");
+    expect(roleManagement?.description).toBe("Create and edit what a role itself grants");
+    expect(body.knownPermissions.some((p) => p.name === "rules.activate")).toBe(false);
+    // Every description is a real sentence, never blank or a repeat
+    // of the name itself — the whole point of this field.
+    for (const p of body.knownPermissions) {
+      expect(p.description.length).toBeGreaterThan(0);
+      expect(p.description).not.toBe(p.name);
+    }
   });
 
   it("returns every unit, user, and role", async () => {

@@ -317,7 +317,7 @@ describe("write controls are gated to Admin.RoleManagement — decision 0326", (
 });
 
 describe("creating a role — decision 0326", () => {
-  const KNOWN = ["AP.Approve", "AP.Review", "Admin.RoleManagement"];
+  const KNOWN = ["AP.Approve", "AP.Review", "Admin.RoleManagement"].map((name) => ({ name, description: `${name} description` }));
 
   it("opens a fresh form with every known permission unchecked", async () => {
     await openRolesAs(["Admin.RoleManagement"], { ...EMPTY, knownPermissions: KNOWN });
@@ -337,6 +337,32 @@ describe("creating a role — decision 0326", () => {
 
     const groupHeadings = [...document.querySelectorAll(".permissiongroup h4")].map((h) => h.textContent);
     expect(groupHeadings).toEqual(["AP", "Admin"]);
+  });
+
+  it("shows each permission's own real description beside its name — decision 0331", async () => {
+    const REAL_DESCRIPTIONS = [
+      { name: "AP.Approve", description: "Approve an invoice for payment" },
+      { name: "AP.Review", description: "Review an invoice at the Review stage" },
+      { name: "Admin.RoleManagement", description: "Create and edit what a role itself grants" },
+    ];
+    await openRolesAs(["Admin.RoleManagement"], { ...EMPTY, knownPermissions: REAL_DESCRIPTIONS });
+    const button = [...document.querySelectorAll("button")].find((b) => b.textContent?.includes("New role"));
+    button?.click();
+
+    const rows = [...document.querySelectorAll(".permissionrow")];
+    for (const { name, description } of REAL_DESCRIPTIONS) {
+      const row = rows.find((r) => r.querySelector(".permissionname")?.textContent === name);
+      expect(row).not.toBeUndefined();
+      expect(row?.querySelector(".permissiondesc")?.textContent).toBe(description);
+    }
+  });
+
+  it("the permission list sits in a scrollable container", async () => {
+    await openRolesAs(["Admin.RoleManagement"], { ...EMPTY, knownPermissions: KNOWN });
+    const button = [...document.querySelectorAll("button")].find((b) => b.textContent?.includes("New role"));
+    button?.click();
+
+    expect(document.querySelector(".permissiongroups.scrollable")).not.toBeNull();
   });
 
   it("posts the entered id, name, and checked permissions, then reloads", async () => {
@@ -404,7 +430,7 @@ describe("creating a role — decision 0326", () => {
 
 describe("editing an existing role — decision 0326", () => {
   const EXISTING_ROLE = { id: "r1", name: "AP Manager", permissions: ["AP.Approve"] };
-  const KNOWN = ["AP.Approve", "AP.Review"];
+  const KNOWN = ["AP.Approve", "AP.Review"].map((name) => ({ name, description: `${name} description` }));
 
   function openEditForm() {
     const row = [...document.querySelectorAll("tr")].find((r) => r.textContent?.includes("AP Manager"));

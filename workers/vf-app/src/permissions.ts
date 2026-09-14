@@ -189,6 +189,61 @@ export const PERMISSIONS = [
 
 export type Permission = (typeof PERMISSIONS)[number];
 
+/**
+ * **A short, human description for every permission — decision 0331.**
+ * Reported live: "the Permissions are sometimes a little difficult to
+ * understand what capability is provisioned." Sourced directly from
+ * this file's own comments above, not invented — the same discipline
+ * that keeps `PERMISSIONS` itself a closed vocabulary applies here:
+ * a description drifting from what a permission actually gates would
+ * be worse than no description at all, so this is one more thing kept
+ * beside the single source of truth rather than duplicated into the
+ * frontend by hand.
+ *
+ * A `Record<Permission, string>` rather than a parallel array: the
+ * type system itself refuses a description for a permission that
+ * doesn't exist, and refuses a build missing one for a permission
+ * that does — the same protection `isKnownPermissionList` gives the
+ * vocabulary itself, extended to cover this.
+ */
+export const PERMISSION_DESCRIPTIONS: Record<Permission, string> = {
+  "AP.Validate": "Confirm or correct an invoice's data at the Validation stage",
+  "AP.Match": "Three-way match against a purchase order — not yet built",
+  "AP.Code": "Assign GL/cost-centre coding to an invoice — not yet built",
+  "AP.Approve": "Approve an invoice for payment",
+  "AP.Review": "Review an invoice at the Review stage",
+  "AP.Analysis": "View AP analysis data — no screen shows it yet",
+  "AP.Dashboard": "See the Dashboard screen",
+  "AP.TaskView": "See your own task list",
+  "AP.Supplier": "View and manage suppliers",
+  "AP.Return": "Return an invoice to an earlier stage you already work",
+  "AP.ReturnToSupplier": "Send an invoice back to the supplier",
+  "AP.ReturnAny": "Return any invoice, even one someone else owns",
+  "AP.Discard": "Discard a document that cannot be processed",
+  "AP.TaskManage": "See and release every user's tasks, not just your own",
+
+  "AR.Validate": "Accounts Receivable — not yet built",
+  "AR.Approve": "Accounts Receivable — not yet built",
+  "AR.Issue": "Accounts Receivable — not yet built",
+  "AR.Remind": "Accounts Receivable — not yet built",
+  "AR.Collect": "Accounts Receivable — not yet built",
+  "AR.Analysis": "Accounts Receivable — not yet built",
+
+  "Expense.Submit": "Expense management — not yet built",
+  "Expense.Approve": "Expense management — not yet built",
+  "Expense.Review": "Expense management — not yet built",
+
+  "Admin.Configure": "Configure sources, ledgers, cost centres, and other setup screens",
+  "Admin.UserManagement": "Create people, and assign or revoke their roles",
+  "Admin.ConfigManagement": "Not used by any screen today",
+  "Admin.RuleManagement": "Compile, read, and rename rules",
+  "Admin.RuleActivation": "Activate a compiled rule so it takes effect",
+  "Admin.RoleManagement": "Create and edit what a role itself grants",
+
+  "System.UsagePush": "Not enforced by any route",
+  "System.LicenceRefresh": "Not enforced by any route — a deliberate escape hatch",
+};
+
 export function isKnownPermission(value: unknown): value is Permission {
   return typeof value === "string" && (PERMISSIONS as readonly string[]).includes(value);
 }

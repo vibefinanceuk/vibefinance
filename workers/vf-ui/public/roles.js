@@ -75,47 +75,52 @@ function unitRow(unit) {
 }
 
 /**
- * **Grouped by category, not a flat list of thirty** — the same
+ * **Grouped by category, not a flat list of thirty-one** — the same
  * namespacing the permissions themselves already use (`AP.*`,
  * `Admin.*`, and so on), so a form offering all of them reads the
  * same way the vocabulary itself is organised, rather than inventing
  * a second grouping nobody asked for.
  */
-function permissionCategory(permission) {
-  return permission.split(".")[0];
+function permissionCategory(permissionName) {
+  return permissionName.split(".")[0];
 }
 
 /**
- * A block of checkboxes for the full, closed permission vocabulary,
- * grouped by category, with `selected` pre-checked. Returns the
- * container to render and a `getChecked()` function to read the
- * current selection back at submit time — never trusting DOM state
- * queried after the fact by anything other than the caller that built
- * it, the same discipline `openSupplier`'s own `fields` map already
- * follows for plain text inputs.
+ * **Name and description, two columns, one row per permission —
+ * decision 0331.** Reported live: "the Permissions are sometimes a
+ * little difficult to understand what capability is provisioned...
+ * listing the Permission next to a short description... with two
+ * columns, and each row with a check box." The description is real,
+ * not invented here — `/org/overview` already returns it, sourced
+ * from `PERMISSION_DESCRIPTIONS`, the backend's own single source of
+ * truth for what each permission actually means.
+ *
+ * `selected` is a list of permission *names* (what a role's own
+ * `permissions_json` and `getChecked()` both deal in); `knownPermissions`
+ * itself is now `{ name, description }` objects.
  */
 function permissionCheckboxes(selected) {
   const selectedSet = new Set(selected);
   const boxes = new Map();
 
-  const categories = [...new Set(knownPermissions.map(permissionCategory))];
+  const categories = [...new Set(knownPermissions.map((p) => permissionCategory(p.name)))];
   const groups = categories.map((category) => {
-    const inCategory = knownPermissions.filter((p) => permissionCategory(p) === category);
+    const inCategory = knownPermissions.filter((p) => permissionCategory(p.name) === category);
     return el("div", { class: "permissiongroup" }, [
       el("h4", { text: category }),
       el(
         "div",
-        { class: "permissionchecks" },
+        { class: "permissionrows" },
         inCategory.map((permission) => {
           const box = el("input", {
             type: "checkbox",
-            id: `perm-${permission}`,
-            ...(selectedSet.has(permission) ? { checked: "checked" } : {}),
+            id: `perm-${permission.name}`,
+            ...(selectedSet.has(permission.name) ? { checked: "checked" } : {}),
           });
-          boxes.set(permission, box);
-          return el("label", { class: "permissioncheck" }, [
-            box,
-            el("span", { text: permission }),
+          boxes.set(permission.name, box);
+          return el("div", { class: "permissionrow" }, [
+            el("label", { class: "permissionname" }, [box, el("span", { text: permission.name })]),
+            el("span", { class: "permissiondesc muted sm", text: permission.description }),
           ]);
         })
       ),
@@ -123,7 +128,11 @@ function permissionCheckboxes(selected) {
   });
 
   return {
-    container: el("div", { class: "permissiongroups" }, groups),
+    // Scrollable — decision 0331's own asking: "a scroll bar on the
+    // pop-out would be needed to work down the list." Thirty-one
+    // permissions with a real description each does not fit a
+    // popout otherwise.
+    container: el("div", { class: "permissiongroups scrollable" }, groups),
     getChecked: () => [...boxes.entries()].filter(([, box]) => box.checked).map(([permission]) => permission),
   };
 }
