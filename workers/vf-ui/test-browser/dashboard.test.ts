@@ -1530,3 +1530,28 @@ describe("a panel's own margin does not add to the grid's gap (decision 0261)", 
     expect(rule).toContain("margin-top: auto");
   });
 });
+
+describe("focused on one org, decision 0316", () => {
+  /**
+   * **Extends decisions 0314 and 0315's own treatment of Tasks and
+   * Documents to the dashboard.**
+   */
+  it("sends the chosen org to /api/dashboard", async () => {
+    localStorage.clear();
+    localStorage.setItem("vf-current-org", "fr");
+    const seen: string[] = [];
+    await openDashboard([], seen);
+
+    const call = seen.find((u) => u.startsWith("/api/dashboard"));
+    expect(call).toContain("org=fr");
+  });
+
+  it("sends no org param at all when nothing is chosen", async () => {
+    localStorage.clear();
+    const seen: string[] = [];
+    await openDashboard([], seen);
+
+    const call = seen.find((u) => u.startsWith("/api/dashboard"));
+    expect(call).not.toContain("org=");
+  });
+});

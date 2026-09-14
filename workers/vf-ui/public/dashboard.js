@@ -1,6 +1,7 @@
 import { t } from "/strings.js";
 import { el, frame, topbar, setCurrentScreen, openTasksFiltered, openTaskById } from "/tasks.js";
 import { icon } from "/icons.js";
+import { currentOrgId } from "/orgs.js";
 import { openDocumentsFiltered, openDocumentsAtStage, openDocumentsCompletedByMe } from "/documents.js";
 import { openSuppliersAwaitingErp } from "/suppliers.js";
 /**
@@ -53,7 +54,14 @@ let arranging = false;
 
 async function load() {
   try {
-    const response = await fetch("/api/dashboard");
+    /**
+     * **The chosen org, decision 0316** — extending decisions 0314
+     * and 0315's own treatment of Tasks and Documents to the
+     * dashboard's own cards.
+     */
+    const org = currentOrgId();
+    const query = org ? `?org=${encodeURIComponent(org)}` : "";
+    const response = await fetch(`/api/dashboard${query}`);
     if (!response.ok) return false;
     cards = (await response.json()).cards ?? [];
   } catch {

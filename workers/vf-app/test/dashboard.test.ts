@@ -204,6 +204,47 @@ describe("a count is a disclosure", () => {
   });
 });
 
+describe("focused on one org, extended to the dashboard (decision 0316)", () => {
+  /**
+   * **The same treatment decisions 0314 and 0315 already gave Tasks
+   * and Documents**, applied here through `scopeFor()` — the one
+   * place every card's own query already reads its scope from.
+   */
+  async function cardsFocusedOn(userId: string, currentOrg: string | null) {
+    const result = await handleDashboard(env.DB, userId, currentOrg);
+    return result.body as {
+      cards: { cardType: string; data: unknown; settings: Record<string, unknown> }[];
+      usingDefault: boolean;
+    };
+  }
+
+  it("narrows to the chosen org even when the permission is held everywhere", async () => {
+    await person("alice", ["AP.Review"], null);
+    await work("inv-fr", "acme-fr", { owner: "alice" });
+    await work("inv-de", "acme-de", { owner: "alice" });
+
+    const body = await cardsFocusedOn("alice", "acme-fr");
+    expect(card<{ count: number }>(body, "waiting_for_me").count).toBe(1);
+  });
+
+  it("still counts nothing when the permission is not held in the chosen org at all", async () => {
+    await person("alice", ["AP.Review"], "acme-de");
+    await work("inv-fr", "acme-fr", { owner: "alice" });
+
+    const body = await cardsFocusedOn("alice", "acme-fr");
+    expect(card<{ count: number }>(body, "waiting_for_me").count).toBe(0);
+  });
+
+  it("shows the full, unnarrowed count when nothing is chosen", async () => {
+    await person("alice", ["AP.Review"], null);
+    await work("inv-fr", "acme-fr", { owner: "alice" });
+    await work("inv-de", "acme-de", { owner: "alice" });
+
+    const body = await cardsFocusedOn("alice", null);
+    expect(card<{ count: number }>(body, "waiting_for_me").count).toBe(2);
+  });
+});
+
 describe("on my clock", () => {
   /**
    * **Assigned to me or claimed by me, and not a team queue** —

@@ -1046,7 +1046,12 @@ export default {
         return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
       }
 
-      const result = await handleDashboard(db, auth.user.id);
+      /**
+       * **The chosen org, decision 0316** — extending decisions 0314
+       * and 0315's own treatment of Tasks and Documents to the
+       * dashboard's own cards.
+       */
+      const result = await handleDashboard(db, auth.user.id, url.searchParams.get("org"));
       return json(result.body, result.status);
     }
 

@@ -1,4 +1,4 @@
-import { unitsWherePermitted } from "./enforce.js";
+import { unitsWherePermitted, scopedToChosenOrg } from "./enforce.js";
 import type { RouteResult } from "./org-route.js";
 import { handleListMyTasks } from "./task-list-route.js";
 import { mondayOfThisWeek } from "./dates.js";
@@ -77,16 +77,22 @@ interface Scope {
   units: string[] | null;
 }
 
-async function scopeFor(db: D1Database, userId: string): Promise<Scope> {
+async function scopeFor(db: D1Database, userId: string, currentOrg: string | null = null): Promise<Scope> {
   const held = await unitsWherePermitted(db, userId, "AP.Review");
-  if (held === null) return { units: null };
 
   /**
-   * **Downward**, so a role at Acme UK covers every unit beneath it —
-   * `unitsWherePermitted` already walks down, and this keeps the shape
-   * it returns.
+   * **`held` is already walked downward** — a role at Acme UK covers
+   * every unit beneath it, since `unitsWherePermitted` itself does
+   * that walk before returning.
+   *
+   * **Narrowed further to the chosen org, decision 0316** — the same
+   * treatment decisions 0314 and 0315 already gave Tasks and
+   * Documents, applied here through the one place every card's own
+   * query already reads its scope from, rather than threading a
+   * second parameter through eleven separate functions.
    */
-  return { units: held };
+  const scoped = await scopedToChosenOrg(db, held, currentOrg);
+  return { units: scoped };
 }
 
 /** The `AND` a query adds to stay inside what somebody may see. */
@@ -512,8 +518,12 @@ async function possibleDuplicates(db: D1Database, scope: Scope) {
  * **One route rather than one per card**, so the scope is computed once
  * and a dashboard is one round trip rather than nine.
  */
-export async function handleDashboard(db: D1Database, userId: string): Promise<RouteResult> {
-  const scope = await scopeFor(db, userId);
+export async function handleDashboard(
+  db: D1Database,
+  userId: string,
+  currentOrg: string | null = null
+): Promise<RouteResult> {
+  const scope = await scopeFor(db, userId, currentOrg);
 
   const stored = await db
     .prepare(
