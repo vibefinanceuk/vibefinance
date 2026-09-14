@@ -1,0 +1,15 @@
+-- 0062_admin_rule_activation_permission.sql
+--
+-- **A specific permission for activating a rule** — decision 0325,
+-- reported live: "there should be a specific permission for
+-- activating rules." Replaces `AP.Approve` on the one route that
+-- checked it — that name implied invoice approval, and never gated
+-- that anywhere in this bundle.
+--
+-- No schema change: `process_stages.required_permission` already
+-- accepts any text, checked only by the standing invariant decision
+-- 0200 (migration 0048) established. That invariant is re-checked
+-- forever, including against migrations added long after it — this
+-- one restates it with the vocabulary as it now stands, rather than
+-- editing an already-applied migration in place.
+-- ASSERT ALWAYS: SELECT count(*) FROM process_stages WHERE required_permission IS NOT NULL AND required_permission NOT IN ('AP.Analysis','AP.Approve','AP.Code','AP.Dashboard','AP.Discard','AP.Match','AP.Return','AP.ReturnAny','AP.ReturnToSupplier','AP.Review','AP.Supplier','AP.TaskManage','AP.TaskView','AP.Validate','AR.Analysis','AR.Approve','AR.Collect','AR.Issue','AR.Remind','AR.Validate','Admin.ConfigManagement','Admin.Configure','Admin.RuleActivation','Admin.RuleManagement','Admin.UserManagement','Expense.Approve','Expense.Review','Expense.Submit','System.LicenceRefresh','System.UsagePush') == 0

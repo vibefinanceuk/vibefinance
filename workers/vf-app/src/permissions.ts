@@ -138,6 +138,19 @@ const ADMIN_PERMISSIONS = [
   "Admin.UserManagement",
   "Admin.ConfigManagement",
   "Admin.RuleManagement",
+  /**
+   * **Activating a rule, its own real permission** — decision 0325,
+   * reported live: "there should be a specific permission for
+   * activating rules." Genuinely distinct from `Admin.RuleManagement`
+   * above (compiling, reading, renaming — never activation) and from
+   * what its own former gate's name implied: `AP.Approve` sounds like
+   * approving an invoice, and never gated that anywhere in this
+   * bundle — invoice approval is a task's own `required_permission`,
+   * a separate, data-driven mechanism this never touched. Replaces
+   * `AP.Approve` on the one route that checked it, rather than
+   * sitting alongside it, at the operator's own request.
+   */
+  "Admin.RuleActivation",
 ] as const;
 
 /**

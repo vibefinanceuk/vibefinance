@@ -833,7 +833,13 @@ export default {
       if (isBlocked(licenceState)) {
         return blockedResponse(licenceState, locale);
       }
-      const auth = await requirePermission(db, request, "AP.Approve", sessionContext(env));
+      /**
+       * **`Admin.RuleActivation`, decision 0325** — corrected live:
+       * "there should be a specific permission for activating rules."
+       * `AP.Approve`'s own name implied invoice approval, which this
+       * never gated anywhere in this bundle.
+       */
+      const auth = await requirePermission(db, request, "Admin.RuleActivation", sessionContext(env));
       if (!auth.authorized) {
         return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", locale) }, auth.status);
       }

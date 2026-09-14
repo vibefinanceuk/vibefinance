@@ -658,9 +658,43 @@ describe("worked examples & activation routes, through the real router", () => {
     expect(res.status).toBe(401);
   });
 
-  it("403s activating a rule when authenticated but lacking the AP.Approve permission", async () => {
+  it("403s activating a rule when authenticated but lacking the Admin.RuleActivation permission", async () => {
     const { ruleId } = await seedRuleWithExamples();
     const key = await seedUserWithPermissions(["AP.Review"]); // wrong permission on purpose
+    const res = await SELF.fetch(`https://example.com/rules/${ruleId}/versions/1/activate`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${key}` },
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("succeeds holding only Admin.RuleActivation, decision 0325", async () => {
+    const { ruleId, exampleIds } = await seedRuleWithExamples();
+    const key = await seedUserWithPermissions(["Admin.RuleActivation"]);
+    for (const id of exampleIds) {
+      await SELF.fetch(`https://example.com/rules/examples/${id}/confirm`, {
+        method: "POST",
+        headers: authHeaders(),
+      });
+    }
+
+    const res = await SELF.fetch(`https://example.com/rules/${ruleId}/versions/1/activate`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${key}` },
+    });
+    expect(res.status).toBe(200);
+  });
+
+  it("403s holding only the old AP.Approve permission, decision 0325 — replaced, not layered", async () => {
+    const { ruleId, exampleIds } = await seedRuleWithExamples();
+    const key = await seedUserWithPermissions(["AP.Approve"]);
+    for (const id of exampleIds) {
+      await SELF.fetch(`https://example.com/rules/examples/${id}/confirm`, {
+        method: "POST",
+        headers: authHeaders(),
+      });
+    }
+
     const res = await SELF.fetch(`https://example.com/rules/${ruleId}/versions/1/activate`, {
       method: "POST",
       headers: { Authorization: `Bearer ${key}` },
