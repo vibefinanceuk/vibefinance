@@ -325,6 +325,12 @@ Object.assign(ICONS, {
   // A crescent moon — decision 0286, the mood toggle's own night state.
   moon: '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>',
 
+  // A building — decision 0313, the org switcher's own icon. The
+  // conventional shape for "an organisation" rather than an invented
+  // one, the same reasoning `signout` and `back` already gave theirs.
+  building:
+    '<path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/><path d="M10 6h4"/><path d="M10 10h4"/><path d="M10 14h4"/><path d="M10 18h4"/>',
+
   // A bordered panel with rows inside — decision 0291. Not `documents`
   // (a page with a folded corner, meaning "a document" generally):
   // this specifically means the fields themselves, laid out as rows in

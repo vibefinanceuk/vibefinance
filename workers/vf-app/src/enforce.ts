@@ -226,6 +226,75 @@ export async function permissionsFor(db: D1Database, userId: string): Promise<st
 }
 
 /**
+ * **Which orgs this person is entitled to focus on** — decision 0313,
+ * the first piece of the operator's own request: "expose which orgs a
+ * user belongs to... build the org switcher + current-org plumbing."
+ *
+ * **Not yet a filter.** This is deliberately the smaller, foundational
+ * step — the frontend cannot offer a choice it does not know exists.
+ * What a person's chosen org actually restricts is a separate piece of
+ * work, not built here.
+ *
+ * **Direct assignments, plus every unit if any role is held
+ * everywhere.** A role with `unit_id IS NULL` is decision 0199's own
+ * "held everywhere" — every assignment predating that record, and
+ * still the default for a customer that has never scoped anything.
+ * Offering only the units directly assigned would leave such a person
+ * with nothing to pick from at all; offering every real unit in that
+ * case gives them something meaningful to focus on, consistent with
+ * being entitled to all of it.
+ */
+export async function unitsFor(
+  db: D1Database,
+  userId: string
+): Promise<{ units: { id: string; name: string }[]; holdsEverywhere: boolean }> {
+  const assigned = await db
+    .prepare(
+      `SELECT DISTINCT u.id AS id, u.name AS name
+       FROM org_user_roles ur
+       JOIN org_units u ON u.id = ur.unit_id
+       WHERE ur.user_id = ?
+       ORDER BY u.name`
+    )
+    .bind(userId)
+    .all<{ id: string; name: string }>();
+
+  const holdsEverywhere = await db
+    .prepare(`SELECT 1 FROM org_user_roles WHERE user_id = ? AND unit_id IS NULL LIMIT 1`)
+    .bind(userId)
+    .first();
+
+  if (!holdsEverywhere) {
+    return { units: assigned.results, holdsEverywhere: false };
+  }
+
+  // Held everywhere: every real unit is a meaningful thing to focus
+  // on, not just the ones directly assigned — deduplicated against
+  // `assigned`, since a person can hold both a direct and an
+  // unscoped role at once.
+  const all = await db.prepare(`SELECT id, name FROM org_units ORDER BY name`).all<{
+    id: string;
+    name: string;
+  }>();
+
+  const seen = new Set(assigned.results.map((u) => u.id));
+  // Directly-assigned units come first, in their own alphabetical
+  // order, followed by the rest of the catalogue — a role held
+  // specifically somewhere is more relevant than one held only by
+  // virtue of "everywhere," so it surfaces first rather than being
+  // interleaved into one alphabetical pass.
+  const merged = [...assigned.results];
+  for (const u of all.results) {
+    if (!seen.has(u.id)) {
+      seen.add(u.id);
+      merged.push(u);
+    }
+  }
+
+  return { units: merged, holdsEverywhere: true };
+}
+
+/**
  * Is this instance still being set up — decision 0201.
  *
  * **Decision 0010 left the org endpoints ungated**, and gave a real

@@ -13,6 +13,7 @@
 
 import { t, languagePicker } from "/strings.js";
 import { moodPicker } from "/mood.js";
+import { orgPicker } from "/orgs.js";
 import { icon } from "/icons.js";
 
 const shell = document.getElementById("shell");
@@ -652,6 +653,16 @@ export function topbar(title, subtitle, right = [], extra = []) {
        */
       right.length > 0 ? el("div", { class: "topbardivider" }) : null,
       moodPicker(t),
+      /**
+       * **The org switcher, decision 0313** — reported live: "the
+       * ability for a user to switch between Orgs." `me` is already
+       * populated by the time any screen's own `topbar()` call runs,
+       * since `start()` awaits `/api/whoami` before rendering
+       * anything — the same reasoning that already lets this file's
+       * own render call read `me.name` directly, two lines below this
+       * function.
+       */
+      orgPicker(me?.units ?? [], me?.holdsEverywhere ?? false),
       /**
        * **Language, between Night/Day and Sign out** — decision 0302,
        * reported live: "At the top of the page, between Night / Day,

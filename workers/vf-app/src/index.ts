@@ -35,6 +35,7 @@ import { handleCreateCostCentre } from "./cost-centre-route.js";
 import {
   requirePermission,
   permissionsFor,
+  unitsFor,
   hasPermission,
   unitsWherePermitted,
   isUnclaimed,
@@ -2126,6 +2127,13 @@ export default {
       if (!auth.user) {
         return json({ error: auth.reason }, 401);
       }
+      /**
+       * **Which orgs this person can focus on** — decision 0313. The
+       * org switcher cannot offer a choice the frontend does not know
+       * exists; this is the one place that gap is closed. What the
+       * chosen org actually restricts is separate, later work.
+       */
+      const { units, holdsEverywhere } = await unitsFor(db, auth.user.id);
       return json(
         {
           id: auth.user.id,
@@ -2134,6 +2142,8 @@ export default {
           // Every permission at once, so a screen knows which buttons
           // to render rather than discovering by being refused.
           permissions: await permissionsFor(db, auth.user.id),
+          units,
+          holdsEverywhere,
           // Which credential got them here. Useful when a session works
           // and a key does not, or the reverse.
           authenticatedVia: auth.via,

@@ -2,7 +2,7 @@ import { env } from "cloudflare:test";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { applyTestSchema } from "./setup.js";
 import { authenticateUserOrSession } from "../src/user-auth.js";
-import { permissionsFor } from "../src/enforce.js";
+import { permissionsFor, unitsFor } from "../src/enforce.js";
 import { signSessionToken, SESSION_TTL_SECONDS, type SessionClaims } from "@vibefinance/shared";
 
 const THIS_ENVIRONMENT = "Acme-production";
@@ -135,5 +135,70 @@ describe("the permissions a screen needs", () => {
     await env.DB.prepare("INSERT INTO org_user_roles (user_id, role_id) VALUES ('alice', 'r-bad')").run();
 
     expect(await permissionsFor(env.DB, "alice")).toEqual(["AP.Approve", "AP.Validate"]);
+  });
+});
+
+describe("which orgs a person can focus on (decision 0313)", () => {
+  /**
+   * **The first piece of the operator's own request**: "expose which
+   * orgs a user belongs to... build the org switcher + current-org
+   * plumbing." This tests `unitsFor()` directly, the same way
+   * `permissionsFor()` is tested above it.
+   */
+  beforeEach(async () => {
+    await env.DB.prepare("INSERT INTO org_units (id, name) VALUES ('fr', 'Acme France')").run();
+    await env.DB.prepare("INSERT INTO org_units (id, name) VALUES ('de', 'Acme Germany')").run();
+  });
+
+  it("returns nothing for somebody with no roles at all", async () => {
+    await env.DB.prepare("INSERT INTO org_users (id, email, name) VALUES ('bob', 'bob@acme.com', 'Bob')").run();
+    expect(await unitsFor(env.DB, "bob")).toEqual({ units: [], holdsEverywhere: false });
+  });
+
+  it("returns only the units directly assigned, when nothing is held everywhere", async () => {
+    // Alice's own role from the outer beforeEach is unscoped — remove
+    // it so this test is genuinely about the directly-assigned case,
+    // not the everywhere one.
+    await env.DB.prepare("DELETE FROM org_user_roles WHERE user_id = 'alice'").run();
+    await env.DB.prepare(
+      "INSERT INTO org_user_roles (user_id, role_id, unit_id) VALUES ('alice', 'r-ap', 'fr')"
+    ).run();
+
+    expect(await unitsFor(env.DB, "alice")).toEqual({
+      units: [{ id: "fr", name: "Acme France" }],
+      holdsEverywhere: false,
+    });
+  });
+
+  it("offers every real unit once at least one role is held everywhere", async () => {
+    // The outer beforeEach's own role is already unscoped.
+    expect(await unitsFor(env.DB, "alice")).toEqual({
+      units: [
+        { id: "fr", name: "Acme France" },
+        { id: "de", name: "Acme Germany" },
+      ],
+      holdsEverywhere: true,
+    });
+  });
+
+  it("puts directly-assigned units first, ahead of the rest of the catalogue", async () => {
+    // Held everywhere (outer beforeEach) AND directly at France —
+    // France should lead, not fall wherever alphabetical order puts
+    // it among the rest.
+    await env.DB.prepare(
+      "INSERT INTO org_user_roles (user_id, role_id, unit_id) VALUES ('alice', 'r-ap', 'fr')"
+    ).run();
+
+    const result = await unitsFor(env.DB, "alice");
+    expect(result.units.map((u) => u.id)).toEqual(["fr", "de"]);
+  });
+
+  it("does not list a unit twice when held both directly and via an everywhere role", async () => {
+    await env.DB.prepare(
+      "INSERT INTO org_user_roles (user_id, role_id, unit_id) VALUES ('alice', 'r-ap', 'fr')"
+    ).run();
+
+    const result = await unitsFor(env.DB, "alice");
+    expect(result.units.filter((u) => u.id === "fr")).toHaveLength(1);
   });
 });

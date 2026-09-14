@@ -58,6 +58,9 @@ const STRINGS = {
     "mood.label": "Mood",
     "mood.day": "Day",
     "mood.night": "Night",
+    "org.all": "All organisations",
+    "org.switchheading": "Switch organisation",
+    "action.close": "Close",
   },
 };
 
@@ -784,6 +787,97 @@ describe("the boundary between a page's own controls and every screen's own (dec
     await openList([APPROVAL_TASK]);
 
     expect(document.querySelector(".topbardivider")).toBeNull();
+  });
+});
+
+describe("the org switcher (decision 0313)", () => {
+  /**
+   * **Reported live**: "the ability for a user to switch between
+   * Orgs... let me pick one org to focus on, seeing only that org's
+   * work until I switch." Only the switch control itself and its own
+   * persistence are tested here — nothing downstream filters by the
+   * choice yet, which is deliberate, later work.
+   */
+  async function openWithOrgs(units: { id: string; name: string }[], holdsEverywhere: boolean) {
+    stubFetch({
+      "/api/ui-strings": STRINGS,
+      "/api/whoami": { id: "u-dan", name: "Dan", permissions: ALL_NAV_PERMISSIONS, units, holdsEverywhere },
+      "/api/tasks": { tasks: [], counts: {} },
+    });
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { start } = await import("/tasks.js");
+    await start();
+  }
+
+  it("offers no picker at all with fewer than two orgs to switch between", async () => {
+    await openWithOrgs([{ id: "fr", name: "Acme France" }], false);
+
+    const titles = [...document.querySelectorAll(".topbar .right button")].map((b) => b.title);
+    expect(titles).not.toContain("Acme France");
+    expect(titles).not.toContain("All organisations");
+  });
+
+  it("shows All organisations by default, between the mood toggle and Language", async () => {
+    await openWithOrgs(
+      [
+        { id: "fr", name: "Acme France" },
+        { id: "de", name: "Acme Germany" },
+      ],
+      true
+    );
+
+    const titles = [...document.querySelectorAll(".topbar .right button")].map((b) => b.title);
+    const orgIndex = titles.indexOf("All organisations");
+    const moodIndex = titles.findIndex((t) => t === "Day" || t === "Night");
+    const langIndex = titles.findIndex((t) => t === "English" || t === "Deutsch");
+
+    expect(orgIndex).toBeGreaterThan(-1);
+    expect(orgIndex).toBeGreaterThan(moodIndex);
+    expect(orgIndex).toBeLessThan(langIndex);
+  });
+
+  it("opens a list of every org, picks one, and remembers it", async () => {
+    await openWithOrgs(
+      [
+        { id: "fr", name: "Acme France" },
+        { id: "de", name: "Acme Germany" },
+      ],
+      true
+    );
+
+    const button = [...document.querySelectorAll(".topbar .right button")].find(
+      (b) => b.title === "All organisations"
+    ) as HTMLButtonElement;
+    button.click();
+
+    const row = [...document.querySelectorAll(".searchresult")].find(
+      (b) => b.textContent === "Acme France"
+    ) as HTMLButtonElement;
+    expect(row).not.toBeUndefined();
+    row.click();
+
+    expect(localStorage.getItem("vf-current-org")).toBe("fr");
+    expect(button.title).toBe("Acme France");
+  });
+
+  it("offers All organisations only when a role is genuinely held everywhere", async () => {
+    await openWithOrgs(
+      [
+        { id: "fr", name: "Acme France" },
+        { id: "de", name: "Acme Germany" },
+      ],
+      false
+    );
+
+    const button = [...document.querySelectorAll(".topbar .right button")].find(
+      (b) => b.title === "Acme France"
+    ) as HTMLButtonElement;
+    button.click();
+
+    const results = [...document.querySelectorAll(".searchresult")].map((b) => b.textContent);
+    expect(results).not.toContain("All organisations");
+    expect(results).toEqual(["Acme France", "Acme Germany"]);
   });
 });
 
