@@ -112,6 +112,13 @@ describe("what a load refuses, and says so", () => {
     );
   });
 
+  it("refuses an org unit nobody recognises", async () => {
+    const result = await load("ERP ID,Name,Org Unit\n40118,Northwind,Narnia");
+    expect((result.body as { refused: { reason: string }[] }).refused[0].reason).toContain(
+      "not recognised"
+    );
+  });
+
   it("names the row, because that is what a person can act on", async () => {
     const result = await load(`ERP ID,Name\n40118,Northwind\n,Nobody\n40119,Acme`);
     expect((result.body as { refused: { row: number }[] }).refused[0].row).toBe(3);
@@ -130,6 +137,89 @@ describe("what a load refuses, and says so", () => {
 
     const loads = await env.DB.prepare("SELECT count(*) AS n FROM supplier_loads").first<{ n: number }>();
     expect(loads?.n).toBe(0);
+  });
+});
+
+describe("the org unit a supplier belongs to (decision 0317)", () => {
+  /**
+   * **The hook decision 0208 already left**: "a single table with a
+   * nullable site identifier holds the one-row case exactly." This
+   * fills it, for the org switcher's own narrowing.
+   */
+  beforeEach(async () => {
+    await env.DB.prepare("INSERT INTO org_units (id, name) VALUES ('acme-fr', 'Acme France')").run();
+  });
+
+  it("resolves a recognised org unit by name", async () => {
+    await load("ERP ID,Name,Org Unit\n40118,Northwind,Acme France");
+    const row = await env.DB.prepare("SELECT org_unit_id FROM suppliers WHERE erp_identifier = '40118'").first<{
+      org_unit_id: string;
+    }>();
+    expect(row?.org_unit_id).toBe("acme-fr");
+  });
+
+  it("resolves case-insensitively", async () => {
+    await load("ERP ID,Name,Org Unit\n40118,Northwind,acme france");
+    const row = await env.DB.prepare("SELECT org_unit_id FROM suppliers WHERE erp_identifier = '40118'").first<{
+      org_unit_id: string;
+    }>();
+    expect(row?.org_unit_id).toBe("acme-fr");
+  });
+
+  it("leaves a supplier unassigned when the column is simply absent", async () => {
+    await load("ERP ID,Name\n40118,Northwind");
+    const row = await env.DB.prepare("SELECT org_unit_id FROM suppliers WHERE erp_identifier = '40118'").first<{
+      org_unit_id: string | null;
+    }>();
+    expect(row?.org_unit_id).toBeNull();
+  });
+
+  it("resets to unassigned on a later load that omits it, matching every other field", async () => {
+    await load("ERP ID,Name,Org Unit\n40118,Northwind,Acme France");
+    await load("ERP ID,Name\n40118,Northwind");
+    const row = await env.DB.prepare("SELECT org_unit_id FROM suppliers WHERE erp_identifier = '40118'").first<{
+      org_unit_id: string | null;
+    }>();
+    expect(row?.org_unit_id).toBeNull();
+  });
+});
+
+describe("focused on one org, extended to Suppliers (decision 0317)", () => {
+  /**
+   * **The same treatment decisions 0314 and 0315 already gave Tasks
+   * and Documents**, with one real difference: there is no
+   * permission-based visibility to intersect against first, since
+   * reading the supplier list has never been unit-scoped at all.
+   */
+  beforeEach(async () => {
+    await env.DB.prepare("INSERT INTO org_units (id, name) VALUES ('acme-fr', 'Acme France')").run();
+    await env.DB.prepare("INSERT INTO org_units (id, name) VALUES ('acme-de', 'Acme Germany')").run();
+  });
+
+  async function suppliersFocusedOn(currentOrg: string | null) {
+    const result = await handleListSuppliers(env.DB, currentOrg);
+    return (result.body as { suppliers: { name: string }[] }).suppliers.map((s) => s.name);
+  }
+
+  it("shows only the chosen org's own suppliers", async () => {
+    await load("ERP ID,Name,Org Unit\n1,Northwind FR,Acme France\n2,Northwind DE,Acme Germany");
+
+    expect(await suppliersFocusedOn("acme-fr")).toEqual(["Northwind FR"]);
+  });
+
+  it("still shows an unassigned supplier regardless of which org is chosen", async () => {
+    // Nothing assigns one yet beyond an optional load column nobody
+    // may have used — hiding every unassigned supplier would look
+    // like a broken screen, not an honest "nothing here is assigned."
+    await load("ERP ID,Name,Org Unit\n1,Northwind FR,Acme France\n2,Unassigned Co,");
+
+    expect((await suppliersFocusedOn("acme-fr")).sort()).toEqual(["Northwind FR", "Unassigned Co"]);
+  });
+
+  it("shows every supplier when nothing is chosen", async () => {
+    await load("ERP ID,Name,Org Unit\n1,Northwind FR,Acme France\n2,Northwind DE,Acme Germany");
+
+    expect((await suppliersFocusedOn(null)).sort()).toEqual(["Northwind DE", "Northwind FR"]);
   });
 });
 

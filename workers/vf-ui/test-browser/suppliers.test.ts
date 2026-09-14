@@ -489,3 +489,36 @@ describe("the supplier detail pop-out's own buttons, top right (decision 0306)",
     expect(document.querySelector(".backdrop")).toBeNull();
   });
 });
+
+describe("focused on one org, decision 0317", () => {
+  /**
+   * **Extends the same treatment already given to Tasks, Documents,
+   * and the dashboard.**
+   */
+  it("sends the chosen org to /api/suppliers", async () => {
+    localStorage.clear();
+    localStorage.setItem("vf-current-org", "fr");
+    stubFetch({ suppliers: [], lastLoad: null });
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { open } = await import("/suppliers.js");
+    await open();
+
+    const calls = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls.map((c) => String(c[0]));
+    const call = calls.find((u) => u.startsWith("/api/suppliers?"));
+    expect(call).toContain("org=fr");
+  });
+
+  it("sends no org param at all when nothing is chosen", async () => {
+    localStorage.clear();
+    stubFetch({ suppliers: [], lastLoad: null });
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { open } = await import("/suppliers.js");
+    await open();
+
+    const calls = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls.map((c) => String(c[0]));
+    const call = calls.find((u) => u === "/api/suppliers");
+    expect(call).toBe("/api/suppliers");
+  });
+});

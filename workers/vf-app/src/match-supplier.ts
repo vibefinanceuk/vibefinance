@@ -66,7 +66,20 @@ export interface MatchedSupplier {
 
 export async function matchSupplier(
   db: D1Database,
-  facts: Record<string, unknown>
+  facts: Record<string, unknown>,
+  /**
+   * **A tiebreaker, never a filter** — decision 0317's own follow-on,
+   * reported live: "the supplier might have a different ERP
+   * Identifier per Org." Two rows sharing one VAT number, one per
+   * org, is now an ordinary shape rather than a data fault.
+   *
+   * **Consulted only where a tie already exists.** The invoice's own
+   * org never changes a match that already resolves to one row — the
+   * explicit principle this file already states elsewhere, that
+   * matching is independent of the org, holds for every ordinary
+   * case. This only breaks a tie `is_pay_site` could not.
+   */
+  invoiceOrgUnitId: string | null = null
 ): Promise<MatchedSupplier> {
   const lastLoad = await db
     .prepare("SELECT loaded_at FROM supplier_loads ORDER BY loaded_at DESC LIMIT 1")
@@ -104,13 +117,13 @@ export async function matchSupplier(
      */
     const matches = await db
       .prepare(
-        `SELECT id, erp_identifier, is_pay_site FROM suppliers
+        `SELECT id, erp_identifier, is_pay_site, org_unit_id FROM suppliers
          WHERE status = 'active'
            AND ${identifier.column} IS NOT NULL
            AND upper(replace(${identifier.column}, ' ', '')) = upper(replace(?, ' ', ''))`
       )
       .bind(value)
-      .all<{ id: string; erp_identifier: string; is_pay_site: number }>();
+      .all<{ id: string; erp_identifier: string; is_pay_site: number; org_unit_id: string | null }>();
 
     if (matches.results.length === 0) continue;
 
@@ -132,7 +145,35 @@ export async function matchSupplier(
      * was.
      */
     const paySites = matches.results.filter((m) => m.is_pay_site === 1);
-    const candidates = paySites.length > 0 ? paySites : matches.results;
+    let candidates = paySites.length > 0 ? paySites : matches.results;
+
+    if (candidates.length === 1) {
+      const found = candidates[0];
+      return {
+        supplierId: found.id,
+        erpIdentifier: found.erp_identifier,
+        matchedOn: identifier.fact,
+        reason: null,
+        listLoadedAt,
+      };
+    }
+
+    /**
+     * **The tiebreaker `is_pay_site` could not resolve.** Narrowed to
+     * rows explicitly assigned to the invoice's own org — never to
+     * rows left unassigned, since an unassigned row has not said it
+     * is *not* a match either, and including it would leave the tie
+     * exactly as wide as it already was.
+     *
+     * Falls through to the existing `ambiguous_site` outcome below
+     * whenever this does not resolve to exactly one row: no invoice
+     * org known, no candidate tagged for it, or — a genuine data
+     * fault — more than one candidate tagged for the same org.
+     */
+    if (invoiceOrgUnitId) {
+      const orgMatched = candidates.filter((c) => c.org_unit_id === invoiceOrgUnitId);
+      if (orgMatched.length === 1) candidates = orgMatched;
+    }
 
     if (candidates.length === 1) {
       const found = candidates[0];

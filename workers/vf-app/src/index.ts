@@ -1047,7 +1047,7 @@ export default {
       }
 
       /**
-       * **The chosen org, decision 0316** — extending decisions 0314
+       * **The chosen org, decision 0317** — extending decisions 0314
        * and 0315's own treatment of Tasks and Documents to the
        * dashboard's own cards.
        */
@@ -1072,7 +1072,12 @@ export default {
         return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
       }
 
-      const result = await handleListSuppliers(db);
+      /**
+       * **The chosen org, decision 0317** — extending the same
+       * treatment decisions 0314 and 0315 already gave Tasks and
+       * Documents to Suppliers.
+       */
+      const result = await handleListSuppliers(db, url.searchParams.get("org"));
       return json(
         {
           ...(result.body as Record<string, unknown>),

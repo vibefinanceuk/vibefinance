@@ -326,9 +326,9 @@ export async function handleCaptureFromSource(
    */
   if (invoiceId) {
     const invoiceForSupplier = await db
-      .prepare("SELECT facts_json FROM invoice_headers WHERE id = ?")
+      .prepare("SELECT facts_json, org_unit_id FROM invoice_headers WHERE id = ?")
       .bind(invoiceId)
-      .first<{ facts_json: string }>();
+      .first<{ facts_json: string; org_unit_id: string | null }>();
 
     let supplierFacts: Record<string, unknown> = {};
     try {
@@ -337,7 +337,7 @@ export async function handleCaptureFromSource(
       // A document whose facts will not parse names no supplier.
     }
 
-    const matched = await matchSupplier(db, supplierFacts);
+    const matched = await matchSupplier(db, supplierFacts, invoiceForSupplier?.org_unit_id ?? null);
 
     if (matched.supplierId) {
       await db
@@ -678,9 +678,9 @@ async function captureWithoutFacts(
    */
   if (invoiceId) {
     const invoiceForSupplier = await db
-      .prepare("SELECT facts_json FROM invoice_headers WHERE id = ?")
+      .prepare("SELECT facts_json, org_unit_id FROM invoice_headers WHERE id = ?")
       .bind(invoiceId)
-      .first<{ facts_json: string }>();
+      .first<{ facts_json: string; org_unit_id: string | null }>();
 
     let supplierFacts: Record<string, unknown> = {};
     try {
@@ -689,7 +689,7 @@ async function captureWithoutFacts(
       // A document whose facts will not parse names no supplier.
     }
 
-    const matched = await matchSupplier(db, supplierFacts);
+    const matched = await matchSupplier(db, supplierFacts, invoiceForSupplier?.org_unit_id ?? null);
 
     if (matched.supplierId) {
       await db

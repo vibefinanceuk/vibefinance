@@ -2,6 +2,7 @@ import { t } from "/strings.js";
 import { el, frame, topbar, setCurrentScreen } from "/tasks.js";
 import { actionLink } from "/viewer.js";
 import { donutChart } from "/charts.js";
+import { currentOrgId } from "/orgs.js";
 
 /**
  * The supplier list, and loading one — decision 0213.
@@ -82,7 +83,15 @@ let fedByLoad = false;
 
 async function load() {
   try {
-    const response = await fetch("/api/suppliers");
+    /**
+     * **The chosen org, decision 0317** — extending the same
+     * treatment already given to Tasks, Documents, and the
+     * dashboard. Unlike those three, an unassigned supplier is never
+     * hidden by it — see `handleListSuppliers`'s own reasoning.
+     */
+    const org = currentOrgId();
+    const query = org ? `?org=${encodeURIComponent(org)}` : "";
+    const response = await fetch(`/api/suppliers${query}`);
     if (!response.ok) return false;
     const body = await response.json();
     suppliers = body.suppliers ?? [];

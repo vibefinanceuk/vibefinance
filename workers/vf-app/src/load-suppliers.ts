@@ -1,5 +1,6 @@
 import { matchSupplier } from "./match-supplier.js";
 import type { RouteResult } from "./org-route.js";
+import { unitsBeneath } from "./enforce.js";
 
 /**
  * Loading the customer's supplier master file — decision 0211.
@@ -38,6 +39,20 @@ const COLUMNS: Record<string, string> = {
   quantity_tolerance_pct: "quantity_tolerance_pct",
   erp_site_identifier: "erp_site_identifier",
   site: "erp_site_identifier",
+  /**
+   * **The ERP's own site code, and this system's own org unit, are
+   * two different things** — decision 0317. `site` above is a free
+   * string with no relationship to `org_units`; this names one of
+   * them directly, by the name already shown throughout this app
+   * (`documents.js`'s own unit picker, the org switcher itself), not
+   * by an internal id nobody outside this codebase has ever seen.
+   */
+  org_unit: "org_unit_name",
+  "org unit": "org_unit_name",
+  org: "org_unit_name",
+  organisation: "org_unit_name",
+  organization: "org_unit_name",
+  "legal entity": "org_unit_name",
   // What a site is for, and where it is — decision 0218.
   is_pay_site: "is_pay_site",
   "pay site": "is_pay_site",
@@ -187,6 +202,15 @@ export async function handleLoadSuppliers(
   /** Locally recorded suppliers the ERP has now caught up with. */
   let adoptedCount = 0;
 
+  /**
+   * **Every real org unit, by its own lowercased name** — one query
+   * for the whole load rather than one per row, the same reasoning
+   * decision 0314's own `unitsBeneath` batching already gives.
+   */
+  const unitsByName = new Map<string, string>();
+  const unitRows = await db.prepare("SELECT id, name FROM org_units").all<{ id: string; name: string }>();
+  for (const u of unitRows.results) unitsByName.set(u.name.toLowerCase(), u.id);
+
   for (let i = 1; i < rows.length; i++) {
     const values: Record<string, string> = {};
     header.forEach((column, index) => {
@@ -220,6 +244,23 @@ export async function handleLoadSuppliers(
     if (matchOption && !["two_way", "three_way", "none"].includes(matchOption)) {
       refused.push({ row: i + 1, reason: `match option "${values.match_option}" is not recognised` });
       continue;
+    }
+
+    /**
+     * **A name resolved against real units, not accepted as-is** — a
+     * misspelled or retired org name would otherwise silently leave a
+     * row unassigned rather than telling anybody it tried and failed.
+     * Left blank means genuinely unassigned, the same "not yet
+     * assigned" every other org-scoped column in this system already
+     * allows; named but not found is refused instead.
+     */
+    let orgUnitId: string | null = null;
+    if (values.org_unit_name) {
+      orgUnitId = unitsByName.get(values.org_unit_name.toLowerCase()) ?? null;
+      if (!orgUnitId) {
+        refused.push({ row: i + 1, reason: `org unit "${values.org_unit_name}" is not recognised` });
+        continue;
+      }
     }
 
     /**
@@ -310,8 +351,9 @@ export async function handleLoadSuppliers(
                                 payment_terms, on_hold, hold_reason, match_option,
                                 amount_tolerance_pct, quantity_tolerance_pct,
                                 erp_site_identifier, is_pay_site, is_procurement_site,
-                                address_line, city, postal_code, email, phone, status, loaded_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', datetime('now'))
+                                address_line, city, postal_code, email, phone, status, loaded_at,
+                                org_unit_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', datetime('now'), ?)
          ON CONFLICT(id) DO UPDATE SET
            -- **The retroactive part.** An adopted row had none.
            erp_identifier = excluded.erp_identifier,
@@ -334,7 +376,8 @@ export async function handleLoadSuppliers(
            email = excluded.email,
            phone = excluded.phone,
            status = 'active',
-           loaded_at = datetime('now')`
+           loaded_at = datetime('now'),
+           org_unit_id = excluded.org_unit_id`
       )
       .bind(
         id,
@@ -356,7 +399,8 @@ export async function handleLoadSuppliers(
         values.city || null,
         values.postal_code || null,
         values.email || null,
-        values.phone || null
+        values.phone || null,
+        orgUnitId
       )
       .run();
 
@@ -436,11 +480,11 @@ export async function handleLoadSuppliers(
 export async function rematchUnmatchedInvoices(db: D1Database): Promise<number> {
   const unmatched = await db
     .prepare(
-      `SELECT id, facts_json FROM invoice_headers
+      `SELECT id, facts_json, org_unit_id FROM invoice_headers
        WHERE supplier_id IS NULL
          AND json_extract(facts_json, '$."supplier.matched"') = 0`
     )
-    .all<{ id: string; facts_json: string }>();
+    .all<{ id: string; facts_json: string; org_unit_id: string | null }>();
 
   let rematched = 0;
 
@@ -452,7 +496,7 @@ export async function rematchUnmatchedInvoices(db: D1Database): Promise<number> 
       continue;
     }
 
-    const matched = await matchSupplier(db, facts);
+    const matched = await matchSupplier(db, facts, invoice.org_unit_id);
     if (!matched.supplierId) continue;
 
     await db
@@ -481,15 +525,41 @@ export async function rematchUnmatchedInvoices(db: D1Database): Promise<number> 
  * (decision 0208). Two calls would let a screen show one without the
  * other.
  */
-export async function handleListSuppliers(db: D1Database): Promise<RouteResult> {
+export async function handleListSuppliers(
+  db: D1Database,
+  currentOrg: string | null = null
+): Promise<RouteResult> {
+  /**
+   * **Narrowed to the chosen org, decision 0317** — the same
+   * treatment decisions 0314 and 0315 already gave Tasks and
+   * Documents. Unlike those two, there is no permission-based
+   * `visible` set to intersect against first: reading the supplier
+   * list has never been unit-scoped (decision 0276 gated it on
+   * `AP.Supplier` alone), so this is the first restriction of any
+   * kind, not a further narrowing of an existing one.
+   *
+   * **An unassigned supplier always stays visible**, regardless of
+   * which org is chosen — deliberately, since nothing assigns one yet
+   * beyond an optional column on a load nobody may have used. Hiding
+   * every supplier the moment somebody focused on an org would look
+   * like a broken screen rather than an honest "nothing here is
+   * assigned yet."
+   */
+  const scopedUnits = currentOrg ? await unitsBeneath(db, currentOrg) : null;
+  const placeholders = scopedUnits ? scopedUnits.map(() => "?").join(", ") : "";
+
   const rows = await db
     .prepare(
-      `SELECT id, erp_identifier, erp_site_identifier, name, vat_id, electronic_address,
-              country, payment_terms, on_hold, hold_reason, match_option, status,
-              is_pay_site, is_procurement_site, address_line, city, postal_code, email, phone
-       FROM suppliers
-       ORDER BY status, name`
+      `SELECT s.id, s.erp_identifier, s.erp_site_identifier, s.name, s.vat_id, s.electronic_address,
+              s.country, s.payment_terms, s.on_hold, s.hold_reason, s.match_option, s.status,
+              s.is_pay_site, s.is_procurement_site, s.address_line, s.city, s.postal_code, s.email, s.phone,
+              s.org_unit_id, u.name AS org_unit_name
+       FROM suppliers s
+       LEFT JOIN org_units u ON u.id = s.org_unit_id
+       ${scopedUnits ? `WHERE s.org_unit_id IS NULL OR s.org_unit_id IN (${placeholders})` : ""}
+       ORDER BY s.status, s.name`
     )
+    .bind(...(scopedUnits ?? []))
     .all<{
       id: string;
       erp_identifier: string;
@@ -510,6 +580,8 @@ export async function handleListSuppliers(db: D1Database): Promise<RouteResult> 
       postal_code: string | null;
       email: string | null;
       phone: string | null;
+      org_unit_id: string | null;
+      org_unit_name: string | null;
     }>();
 
   const load = await db
@@ -539,6 +611,8 @@ export async function handleListSuppliers(db: D1Database): Promise<RouteResult> 
         postalCode: r.postal_code,
         email: r.email,
         phone: r.phone,
+        orgUnitId: r.org_unit_id,
+        orgUnitName: r.org_unit_name,
       })),
       /**
        * **Null where nothing was ever loaded**, which a screen must say

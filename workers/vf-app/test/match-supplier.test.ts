@@ -24,12 +24,13 @@ async function supplier(
     status?: string;
     pay?: boolean;
     procurement?: boolean;
+    org?: string | null;
   } = {}
 ) {
   await env.DB.prepare(
     `INSERT INTO suppliers (id, erp_identifier, name, vat_id, electronic_address,
-                            erp_site_identifier, status, is_pay_site, is_procurement_site)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+                            erp_site_identifier, status, is_pay_site, is_procurement_site, org_unit_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   )
     .bind(
       id,
@@ -40,7 +41,8 @@ async function supplier(
       fields.site ?? null,
       fields.status ?? "active",
       fields.pay ? 1 : 0,
-      fields.procurement ? 1 : 0
+      fields.procurement ? 1 : 0,
+      fields.org ?? null
     )
     .run();
 }
@@ -145,6 +147,64 @@ describe("when it cannot say", () => {
     const result = await matchSupplier(env.DB, { "BT-31": "GB1" });
     expect(result.supplierId).toBeNull();
     expect(result.reason).toBe("ambiguous_site");
+  });
+
+  describe("the invoice's own org, as a tiebreaker (decision 0317)", () => {
+    /**
+     * **Reported live**: "the supplier might have a different ERP
+     * Identifier per Org." Two rows sharing one VAT, one per org, is
+     * now ordinary rather than a fault — and where `is_pay_site`
+     * cannot break the tie, the invoice's own org can, without this
+     * ever becoming a *primary* matching signal.
+     */
+    beforeEach(async () => {
+      await env.DB.prepare("INSERT INTO org_units (id, name) VALUES ('acme-fr', 'Acme France')").run();
+      await env.DB.prepare("INSERT INTO org_units (id, name) VALUES ('acme-de', 'Acme Germany')").run();
+    });
+
+    it("resolves the tie using the invoice's own org", async () => {
+      await supplier("northwind-fr", { erp: "1", vat: "GB1", org: "acme-fr" });
+      await supplier("northwind-de", { erp: "2", vat: "GB1", org: "acme-de" });
+
+      const result = await matchSupplier(env.DB, { "BT-31": "GB1" }, "acme-fr");
+      expect(result.supplierId).toBe("northwind-fr");
+      expect(result.reason).toBeNull();
+    });
+
+    it("stays ambiguous when the invoice's own org matches no candidate", async () => {
+      await supplier("northwind-fr", { erp: "1", vat: "GB1", org: "acme-fr" });
+      await supplier("northwind-de", { erp: "2", vat: "GB1", org: "acme-de" });
+
+      await env.DB.prepare("INSERT INTO org_units (id, name) VALUES ('acme-uk', 'Acme UK')").run();
+      const result = await matchSupplier(env.DB, { "BT-31": "GB1" }, "acme-uk");
+      expect(result.supplierId).toBeNull();
+      expect(result.reason).toBe("ambiguous_site");
+    });
+
+    it("stays ambiguous when the invoice's own org is not known at all", async () => {
+      await supplier("northwind-fr", { erp: "1", vat: "GB1", org: "acme-fr" });
+      await supplier("northwind-de", { erp: "2", vat: "GB1", org: "acme-de" });
+
+      const result = await matchSupplier(env.DB, { "BT-31": "GB1" });
+      expect(result.reason).toBe("ambiguous_site");
+    });
+
+    it("does not treat an unassigned candidate as a match for any org", async () => {
+      await supplier("northwind-fr", { erp: "1", vat: "GB1", org: "acme-fr" });
+      await supplier("northwind-unassigned", { erp: "2", vat: "GB1", org: null });
+
+      const result = await matchSupplier(env.DB, { "BT-31": "GB1" }, "acme-fr");
+      expect(result.supplierId).toBe("northwind-fr");
+    });
+
+    it("never needs the org where the match already resolves to one row", async () => {
+      // The principle this file already states: matching is
+      // independent of the org for the ordinary case.
+      await supplier("northwind", { vat: "GB1" });
+
+      const result = await matchSupplier(env.DB, { "BT-31": "GB1" }, "acme-fr");
+      expect(result.supplierId).toBe("northwind");
+    });
   });
 
   it("does not match an inactive supplier", async () => {
