@@ -103,6 +103,15 @@ const PROXIED_TO_INSTANCE: RegExp[] = [
    */
   /^\/org\/roles$/,
   /^\/org\/roles\/[^/]+$/,
+  /**
+   * **Assigning and revoking a role, decision 0327.** `POST
+   * /org/users/:id/roles` (assign) has existed in `vf-app` since
+   * decision 0201 and was never on this list either — a fourth
+   * instance of decision 0212's own gap, found here before a real
+   * request could fail on it. The revoke route is new alongside it.
+   */
+  /^\/org\/users\/[^/]+\/roles$/,
+  /^\/org\/users\/[^/]+\/roles\/[^/]+$/,
   // The task list and the actions the list offers (decisions 0103,
   // 0104). Each added deliberately: the point of a list rather than a
   // prefix is that `/tasks/:id/anything` is not automatically

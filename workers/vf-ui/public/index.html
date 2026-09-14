@@ -1030,6 +1030,27 @@
   }
 
   /*
+    **A person's own assignments, each with its own remove control —
+    decision 0327.** The same list-of-rows shape `.statebuttons`
+    already gives a row of actions, turned sideways: a label on the
+    left, one small action on the right, one row per assignment.
+  */
+  .assignmentlist { margin: 6px 0 10px; }
+  .assignmentrow {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 6px 0;
+    border-bottom: 0.5px solid var(--border);
+  }
+  .assignmentrow:last-child { border-bottom: none; }
+  .assignmentrow button {
+    color: var(--text-muted);
+    font-size: var(--text-sm);
+  }
+
+  /*
     The dashboard — decision 0242.
 
     **Two columns, and cards that choose their own width.** A grid of

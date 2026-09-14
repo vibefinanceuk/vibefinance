@@ -221,6 +221,7 @@ function roleRow(role) {
 function personRow(user) {
   const own = assignments.filter((a) => a.userId === user.id);
   const limits = authorityLimits.filter((l) => l.userId === user.id);
+  const canAssign = hasMyPermission("Admin.UserManagement");
 
   const assignmentText =
     own.length > 0
@@ -230,11 +231,120 @@ function personRow(user) {
   const limitText =
     limits.length > 0 ? limits.map((l) => `${l.currency} ${l.maxAmount}`).join("; ") : t("roles.nolimits");
 
-  return el("tr", {}, [
+  const row = el("tr", canAssign ? { class: "clickable" } : {}, [
     el("td", {}, [el("div", { text: user.name }), el("div", { class: "sm muted", text: user.email })]),
     el("td", { class: "sm", text: assignmentText }),
     el("td", { class: "sm", text: limitText }),
   ]);
+  if (canAssign) row.onclick = () => openAssignmentsForm(user);
+  return row;
+}
+
+/**
+ * **Assigning and revoking a role for one person — decision 0327.**
+ * Both actions in one popout rather than two, since a person looking
+ * at what somebody holds is exactly the moment either action makes
+ * sense. Gated to `Admin.UserManagement`, deliberately delegable
+ * (decision 0201) — unlike `openRoleForm`'s own `Admin.RoleManagement`,
+ * this never checks the caller's own scope client-side: `units` here
+ * is already the caller's own administered scope, since `/org/overview`
+ * itself returns a narrower list to a delegated administrator
+ * (decision 0321). Offering exactly what is already visible, and
+ * letting a refusal the backend still enforces — granting or revoking
+ * "everywhere" — speak through the real error, is simpler and no less
+ * safe than re-deriving the same boundary a second time here.
+ */
+function openAssignmentsForm(user) {
+  const problem = el("div", { class: "warn" });
+  const own = assignments.filter((a) => a.userId === user.id);
+
+  const currentList = el(
+    "div",
+    { class: "assignmentlist" },
+    own.length > 0
+      ? own.map((a) => {
+          const label = el("span", { text: `${a.roleName} — ${a.unitName ?? t("roles.everywhere")}` });
+          const removeBtn = el("button", {
+            text: t("roles.remove"),
+            onclick: async () => {
+              problem.textContent = "";
+              try {
+                const qs = a.unitId ? `?unitId=${encodeURIComponent(a.unitId)}` : "";
+                const response = await fetch(
+                  `/api/org/users/${encodeURIComponent(user.id)}/roles/${encodeURIComponent(a.roleId)}${qs}`,
+                  { method: "DELETE" }
+                );
+                if (!response.ok) {
+                  problem.textContent = (await response.json()).error ?? t("roles.revokefailed");
+                  return;
+                }
+                backdrop.remove();
+                await load();
+                render();
+              } catch {
+                problem.textContent = t("roles.revokefailed");
+              }
+            },
+          });
+          return el("div", { class: "assignmentrow" }, [label, removeBtn]);
+        })
+      : [el("p", { class: "muted", text: t("roles.noassignments") })]
+  );
+
+  const rolePicker = el("select", {}, roles.map((r) => el("option", { value: r.id, text: r.name })));
+  const orgPicker = el("select", {}, [
+    el("option", { value: "", text: t("roles.everywhere") }),
+    ...units.map((u) => el("option", { value: u.id, text: u.name })),
+  ]);
+
+  const newAssignmentForm = el("div", { class: "editgrid" }, [
+    el("label", { text: t("roles.role") }),
+    rolePicker,
+    el("label", { text: t("roles.org") }),
+    orgPicker,
+  ]);
+
+  const backdrop = el("div", { class: "backdrop" }, [
+    el("div", { class: "popout" }, [
+      el("h3", { text: user.name }),
+      el("p", { class: "muted sm", text: t("roles.currentassignments") }),
+      currentList,
+      el("p", { class: "muted sm", text: t("roles.newassignment") }),
+      newAssignmentForm,
+      problem,
+      el("div", { class: "statebuttons" }, [
+        el("button", {
+          class: "primary",
+          text: t("roles.assign"),
+          onclick: async () => {
+            problem.textContent = "";
+            try {
+              const response = await fetch(`/api/org/users/${encodeURIComponent(user.id)}/roles`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ roleId: rolePicker.value, unitId: orgPicker.value || null }),
+              });
+              if (!response.ok) {
+                problem.textContent = (await response.json()).error ?? t("roles.assignfailed");
+                return;
+              }
+              backdrop.remove();
+              await load();
+              render();
+            } catch {
+              problem.textContent = t("roles.assignfailed");
+            }
+          },
+        }),
+        actionLink("close", { onclick: () => backdrop.remove() }),
+      ]),
+    ]),
+  ]);
+
+  backdrop.onclick = (e) => {
+    if (e.target === backdrop) backdrop.remove();
+  };
+  document.body.append(backdrop);
 }
 
 function section(titleKey, emptyKey, headers, rows, headerAction = null) {

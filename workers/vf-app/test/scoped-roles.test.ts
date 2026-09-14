@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { applyTestSchema } from "./setup.js";
 import { hasPermission, unitsWherePermitted, scopedToChosenOrg } from "../src/enforce.js";
 import { handleListDocuments } from "../src/documents-route.js";
-import { handleAssignRole } from "../src/org-route.js";
+import { handleAssignRole, handleRevokeRole } from "../src/org-route.js";
 import { handleListMyTasks } from "../src/task-list-route.js";
 import { generateApiKey, hashApiKey } from "../src/user-auth.js";
 
@@ -347,6 +347,52 @@ describe("delegated administration (decision 0201)", () => {
   it("refuses a unit that does not exist", async () => {
     const result = await handleAssignRole(env.DB, "mo", "ap-clerk", "acme-es", null);
     expect(result.status).toBe(404);
+  });
+
+  /**
+   * **The other half — decision 0327.** Mirrors every case above
+   * exactly, on the revoking side of the same boundary rather than
+   * the granting one.
+   */
+  it("lets a France administrator revoke in France", async () => {
+    await handleAssignRole(env.DB, "mo", "ap-clerk", "acme-fr", null);
+    const result = await handleRevokeRole(env.DB, "mo", "ap-clerk", "acme-fr", ["acme-fr", "ap-fr"]);
+    expect(result.status).toBe(200);
+  });
+
+  it("refuses them revoking in Germany", async () => {
+    await handleAssignRole(env.DB, "mo", "ap-clerk", "acme-de", null);
+    const result = await handleRevokeRole(env.DB, "mo", "ap-clerk", "acme-de", ["acme-fr", "ap-fr"]);
+
+    expect(result.status).toBe(403);
+    expect((result.body as { reason: string }).reason).toBe("outside_administered_units");
+    // Refused, and nothing removed.
+    const row = await env.DB
+      .prepare("SELECT 1 FROM org_user_roles WHERE user_id = 'mo' AND role_id = 'ap-clerk'")
+      .first();
+    expect(row).not.toBeNull();
+  });
+
+  it("refuses them revoking an everywhere assignment", async () => {
+    /**
+     * **The same subtle escalation, in reverse.** A France
+     * administrator revoking an everywhere-held role would touch more
+     * than the administrator's own reach — even though revoking
+     * removes access rather than granting it, the boundary is about
+     * what the administrator may act on, not which direction the
+     * change goes.
+     */
+    await handleAssignRole(env.DB, "mo", "ap-clerk", null, null);
+    const result = await handleRevokeRole(env.DB, "mo", "ap-clerk", null, ["acme-fr"]);
+
+    expect(result.status).toBe(403);
+    expect((result.body as { reason: string }).reason).toBe("cannot_revoke_everywhere");
+  });
+
+  it("lets an unrestricted administrator revoke everywhere", async () => {
+    await handleAssignRole(env.DB, "mo", "ap-clerk", null, null);
+    const result = await handleRevokeRole(env.DB, "mo", "ap-clerk", null, null);
+    expect(result.status).toBe(200);
   });
 });
 

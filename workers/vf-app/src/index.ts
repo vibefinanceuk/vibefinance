@@ -25,6 +25,7 @@ import {
   handleAssignRole,
   handleCreateRole,
   handleUpdateRole,
+  handleRevokeRole,
   handleCreateUnit,
   handleCreateUser,
   handleSetAuthorityLimit,
@@ -1403,6 +1404,41 @@ export default {
         assignRoleMatch[1],
         roleId,
         (body as { unitId?: string | null }).unitId ?? null,
+        granterUnits
+      );
+      return json(result.body, result.status);
+    }
+
+    /**
+     * **Query parameter, not a body — decision 0327, matching
+     * decision 0133's own precedent.** A DELETE body is carried
+     * inconsistently by proxies, and this must not be one of the
+     * things that silently does nothing. `roleId` lives in the path,
+     * where it is always reliably delivered; `unitId` — the only
+     * other thing a revoke needs, to say which of possibly several
+     * scoped assignments of the same role to remove — is exactly the
+     * kind of qualifier `?releaseAddress=true` already solved this
+     * same way.
+     */
+    const revokeRoleMatch = pathname.match(/^\/org\/users\/([^/]+)\/roles\/([^/]+)$/);
+    if (revokeRoleMatch && request.method === "DELETE") {
+      const { db } = resolveTenant(request, env);
+
+      let granterUnits: string[] | null = null;
+      if (!(await isUnclaimed(db))) {
+        const auth = await authenticatePerson(db, request, env);
+        if (!auth.user) return json({ error: auth.reason }, 401);
+        if (!(await hasPermission(db, auth.user.id, "Admin.UserManagement"))) {
+          return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
+        }
+        granterUnits = await unitsWherePermitted(db, auth.user.id, "Admin.UserManagement");
+      }
+
+      const result = await handleRevokeRole(
+        db,
+        revokeRoleMatch[1],
+        revokeRoleMatch[2],
+        url.searchParams.get("unitId"),
         granterUnits
       );
       return json(result.body, result.status);

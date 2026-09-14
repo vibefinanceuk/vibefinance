@@ -45,6 +45,14 @@ const STRINGS = {
     "roles.save": "Save",
     "roles.edit": "Edit role",
     "roles.changefailed": "Could not save the role. Please try again.",
+    "roles.role": "Role",
+    "roles.org": "Organisation",
+    "roles.assign": "Assign",
+    "roles.remove": "Remove",
+    "roles.assignfailed": "Could not assign the role. Please try again.",
+    "roles.revokefailed": "Could not remove the role. Please try again.",
+    "roles.currentassignments": "Current assignments",
+    "roles.newassignment": "New assignment",
     "action.newrole": "New role",
     "action.close": "Close",
     "column.unit": "Unit",
@@ -428,5 +436,198 @@ describe("editing an existing role — decision 0326", () => {
     const putCall = calls.find(([url, init]) => url === "/api/org/roles/r1" && (init as RequestInit)?.method === "PUT");
     const body = JSON.parse((putCall?.[1] as RequestInit).body as string);
     expect(body).toEqual({ name: "AP Manager, Renamed", permissions: ["AP.Approve", "AP.Review"] });
+  });
+});
+
+describe("assigning and revoking a role for one person — decision 0327", () => {
+  const ALICE = { id: "usr1", email: "alice@acme.com", name: "Alice", unitId: null, status: "active" };
+  const ROLES = [
+    { id: "r1", name: "AP Manager", permissions: ["AP.Approve"] },
+    { id: "r2", name: "AP Validator", permissions: ["AP.Validate"] },
+  ];
+  const ONE_UNIT = { id: "acme-fr", name: "Acme France", kind: "legal_entity", parentUnitId: null };
+
+  function baseBody() {
+    return { ...EMPTY, users: [ALICE], roles: ROLES, units: [ONE_UNIT] };
+  }
+
+  it("does not open on click without Admin.UserManagement", async () => {
+    await openRolesAs(["AP.Dashboard"], baseBody());
+    const row = [...document.querySelectorAll("tr")].find((r) => r.textContent?.includes("Alice"));
+    row?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(document.querySelector(".backdrop")).toBeNull();
+  });
+
+  it("opens on click holding Admin.UserManagement, showing the person's own name", async () => {
+    await openRolesAs(["Admin.UserManagement"], baseBody());
+    const row = [...document.querySelectorAll("tr")].find((r) => r.textContent?.includes("Alice"));
+    row?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    expect(document.querySelector(".backdrop")).not.toBeNull();
+    expect(document.querySelector(".popout h3")?.textContent).toBe("Alice");
+  });
+
+  it("offers every known role and every visible org, with Everywhere as an option", async () => {
+    await openRolesAs(["Admin.UserManagement"], baseBody());
+    const row = [...document.querySelectorAll("tr")].find((r) => r.textContent?.includes("Alice"));
+    row?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    const selects = document.querySelectorAll("select");
+    const roleOptions = [...selects[0].querySelectorAll("option")].map((o) => o.textContent);
+    const orgOptions = [...selects[1].querySelectorAll("option")].map((o) => o.textContent);
+    expect(roleOptions).toEqual(["AP Manager", "AP Validator"]);
+    expect(orgOptions).toEqual(["everywhere", "Acme France"]);
+  });
+
+  it("posts the chosen role and org, then reloads", async () => {
+    await openRolesAs(["Admin.UserManagement"], baseBody(), {
+      "POST /api/org/users/usr1/roles": { ok: true, json: async () => ({}) },
+    });
+    const row = [...document.querySelectorAll("tr")].find((r) => r.textContent?.includes("Alice"));
+    row?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    const [roleSelect, orgSelect] = document.querySelectorAll<HTMLSelectElement>("select");
+    roleSelect.value = "r2";
+    orgSelect.value = "acme-fr";
+
+    const submit = [...document.querySelectorAll("button")].find((b) => b.textContent?.includes("Assign"));
+    await submit?.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    const calls = (fetch as unknown as { mock: { calls: unknown[][] } }).mock.calls;
+    const postCall = calls.find(
+      ([url, init]) => url === "/api/org/users/usr1/roles" && (init as RequestInit)?.method === "POST"
+    );
+    const body = JSON.parse((postCall?.[1] as RequestInit).body as string);
+    expect(body).toEqual({ roleId: "r2", unitId: "acme-fr" });
+    expect(document.querySelector(".backdrop")).toBeNull();
+  });
+
+  it("posts a null unitId for Everywhere, left as the default choice", async () => {
+    await openRolesAs(["Admin.UserManagement"], baseBody(), {
+      "POST /api/org/users/usr1/roles": { ok: true, json: async () => ({}) },
+    });
+    const row = [...document.querySelectorAll("tr")].find((r) => r.textContent?.includes("Alice"));
+    row?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    const submit = [...document.querySelectorAll("button")].find((b) => b.textContent?.includes("Assign"));
+    await submit?.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    const calls = (fetch as unknown as { mock: { calls: unknown[][] } }).mock.calls;
+    const postCall = calls.find(
+      ([url, init]) => url === "/api/org/users/usr1/roles" && (init as RequestInit)?.method === "POST"
+    );
+    const body = JSON.parse((postCall?.[1] as RequestInit).body as string);
+    expect(body.unitId).toBeNull();
+  });
+
+  it("shows the real error and leaves the form open when assigning fails", async () => {
+    await openRolesAs(["Admin.UserManagement"], baseBody(), {
+      "POST /api/org/users/usr1/roles": {
+        ok: false,
+        status: 409,
+        json: async () => ({ error: "already has that role" }),
+      },
+    });
+    const row = [...document.querySelectorAll("tr")].find((r) => r.textContent?.includes("Alice"));
+    row?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    const submit = [...document.querySelectorAll("button")].find((b) => b.textContent?.includes("Assign"));
+    await submit?.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(document.querySelector(".backdrop")).not.toBeNull();
+    expect(document.body.textContent).toContain("already has that role");
+  });
+
+  it("lists a person's own current assignments, each with a Remove control", async () => {
+    await openRolesAs(["Admin.UserManagement"], {
+      ...baseBody(),
+      assignments: [
+        { userId: "usr1", userName: "Alice", roleId: "r1", roleName: "AP Manager", unitId: "acme-fr", unitName: "Acme France", grantedAt: "" },
+      ],
+    });
+    const row = [...document.querySelectorAll("tr")].find((r) => r.textContent?.includes("Alice"));
+    row?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    expect(document.querySelector(".assignmentrow")?.textContent).toContain("AP Manager — Acme France");
+    expect(document.querySelector(".assignmentrow")?.textContent).toContain("Remove");
+  });
+
+  it("DELETEs with the assignment's own unitId as a query parameter, never a body", async () => {
+    await openRolesAs(
+      ["Admin.UserManagement"],
+      {
+        ...baseBody(),
+        assignments: [
+          { userId: "usr1", userName: "Alice", roleId: "r1", roleName: "AP Manager", unitId: "acme-fr", unitName: "Acme France", grantedAt: "" },
+        ],
+      },
+      { "DELETE /api/org/users/usr1/roles/r1": { ok: true, json: async () => ({}) } }
+    );
+    const row = [...document.querySelectorAll("tr")].find((r) => r.textContent?.includes("Alice"));
+    row?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    const remove = [...document.querySelectorAll("button")].find((b) => b.textContent === "Remove");
+    await remove?.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    const calls = (fetch as unknown as { mock: { calls: unknown[][] } }).mock.calls;
+    const deleteCall = calls.find(([_url, init]) => (init as RequestInit)?.method === "DELETE");
+    expect(deleteCall?.[0]).toBe("/api/org/users/usr1/roles/r1?unitId=acme-fr");
+    expect((deleteCall?.[1] as RequestInit | undefined)?.body).toBeUndefined();
+    expect(document.querySelector(".backdrop")).toBeNull();
+  });
+
+  it("omits the unitId query param entirely for an everywhere assignment", async () => {
+    await openRolesAs(
+      ["Admin.UserManagement"],
+      {
+        ...baseBody(),
+        assignments: [
+          { userId: "usr1", userName: "Alice", roleId: "r1", roleName: "AP Manager", unitId: null, unitName: null, grantedAt: "" },
+        ],
+      },
+      { "DELETE /api/org/users/usr1/roles/r1": { ok: true, json: async () => ({}) } }
+    );
+    const row = [...document.querySelectorAll("tr")].find((r) => r.textContent?.includes("Alice"));
+    row?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    const remove = [...document.querySelectorAll("button")].find((b) => b.textContent === "Remove");
+    await remove?.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    const calls = (fetch as unknown as { mock: { calls: unknown[][] } }).mock.calls;
+    const deleteCall = calls.find(([_url, init]) => (init as RequestInit)?.method === "DELETE");
+    expect(deleteCall?.[0]).toBe("/api/org/users/usr1/roles/r1");
+  });
+
+  it("shows the real error and keeps the assignment listed when revoking fails", async () => {
+    await openRolesAs(
+      ["Admin.UserManagement"],
+      {
+        ...baseBody(),
+        assignments: [
+          { userId: "usr1", userName: "Alice", roleId: "r1", roleName: "AP Manager", unitId: "acme-fr", unitName: "Acme France", grantedAt: "" },
+        ],
+      },
+      {
+        "DELETE /api/org/users/usr1/roles/r1": {
+          ok: false,
+          status: 403,
+          json: async () => ({ error: "you do not administer acme-fr" }),
+        },
+      }
+    );
+    const row = [...document.querySelectorAll("tr")].find((r) => r.textContent?.includes("Alice"));
+    row?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    const remove = [...document.querySelectorAll("button")].find((b) => b.textContent === "Remove");
+    await remove?.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(document.querySelector(".backdrop")).not.toBeNull();
+    expect(document.body.textContent).toContain("you do not administer acme-fr");
   });
 });

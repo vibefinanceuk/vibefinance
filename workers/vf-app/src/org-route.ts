@@ -590,6 +590,65 @@ export async function handleAssignRole(
   return { status: 201, body: { userId, roleId, unitId } };
 }
 
+/**
+ * **The other half of decision 0201 — decision 0327.** Mirrors
+ * `handleAssignRole`'s own delegation logic exactly rather than
+ * inventing a second rule for the same boundary: a delegated
+ * administrator (`granterUnits` non-null) may revoke only a scoped
+ * assignment at or within a unit they administer, never an
+ * "everywhere" one — the same asymmetry that route already enforces
+ * granting. An instance administrator (`granterUnits` null) may
+ * revoke anything.
+ */
+export async function handleRevokeRole(
+  db: D1Database,
+  userId: string,
+  roleId: string,
+  unitId: string | null = null,
+  granterUnits: string[] | null = null
+): Promise<RouteResult> {
+  if (granterUnits !== null) {
+    if (unitId === null) {
+      return {
+        status: 403,
+        body: {
+          error: "you may only revoke a role within an org you administer",
+          reason: "cannot_revoke_everywhere",
+        },
+      };
+    }
+
+    if (!granterUnits.includes(unitId)) {
+      return {
+        status: 403,
+        body: {
+          error: `you do not administer ${unitId}`,
+          reason: "outside_administered_units",
+        },
+      };
+    }
+  }
+
+  const result = await db
+    .prepare(
+      `DELETE FROM org_user_roles
+       WHERE user_id = ? AND role_id = ?
+         AND ((unit_id IS NULL AND ?3 IS NULL) OR unit_id = ?3)`
+    )
+    .bind(userId, roleId, unitId)
+    .run();
+
+  // **Refused, not a silent no-op** — the same discipline every other
+  // write in this file follows: a revoke that matched nothing is told
+  // so, rather than reporting success for an assignment that was
+  // never there to remove.
+  if (!result.meta.changes) {
+    return { status: 404, body: { error: "that assignment does not exist" } };
+  }
+
+  return { status: 200, body: { userId, roleId, unitId } };
+}
+
 interface SetAuthorityLimitBody {
   currency?: unknown;
   maxAmount?: unknown;

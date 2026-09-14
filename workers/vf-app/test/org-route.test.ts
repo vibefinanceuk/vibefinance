@@ -5,6 +5,7 @@ import {
   handleAssignRole,
   handleCreateRole,
   handleUpdateRole,
+  handleRevokeRole,
   handleCreateUnit,
   handleCreateUser,
   handleGetOrgOverview,
@@ -298,6 +299,63 @@ describe("handleAssignRole", () => {
       .bind("usr1")
       .first();
     expect(count).toEqual({ n: 2 });
+  });
+});
+
+describe("handleRevokeRole — decision 0327", () => {
+  it("removes a real assignment", async () => {
+    await handleCreateUser(env.DB, { id: "usr1", email: "a@b.com", name: "Alice" });
+    await handleCreateRole(env.DB, { id: "r1", name: "Admin" });
+    await handleAssignRole(env.DB, "usr1", "r1");
+
+    const result = await handleRevokeRole(env.DB, "usr1", "r1");
+    expect(result.status).toBe(200);
+    const row = await env.DB.prepare("SELECT 1 FROM org_user_roles WHERE user_id = ? AND role_id = ?")
+      .bind("usr1", "r1")
+      .first();
+    expect(row).toBeNull();
+  });
+
+  it("404s an assignment that never existed, rather than a silent no-op", async () => {
+    const result = await handleRevokeRole(env.DB, "usr1", "r1");
+    expect(result.status).toBe(404);
+  });
+
+  it("targets one specific unit, leaving the same role held at a different one untouched", async () => {
+    // **Alice's own real shape**: AP Manager at both Acme Group and
+    // Finance — a revoke must remove one without touching the other.
+    await handleCreateUser(env.DB, { id: "usr1", email: "a@b.com", name: "Alice" });
+    await handleCreateRole(env.DB, { id: "r1", name: "AP Manager" });
+    await env.DB.prepare("INSERT INTO org_units (id, name) VALUES ('acme-group', 'Acme Group')").run();
+    await env.DB.prepare("INSERT INTO org_units (id, name) VALUES ('finance', 'Finance')").run();
+    await handleAssignRole(env.DB, "usr1", "r1", "acme-group");
+    await handleAssignRole(env.DB, "usr1", "r1", "finance");
+
+    const result = await handleRevokeRole(env.DB, "usr1", "r1", "acme-group");
+    expect(result.status).toBe(200);
+
+    const remaining = await env.DB
+      .prepare("SELECT unit_id FROM org_user_roles WHERE user_id = ? AND role_id = ?")
+      .bind("usr1", "r1")
+      .all<{ unit_id: string }>();
+    expect(remaining.results.map((r: { unit_id: string }) => r.unit_id)).toEqual(["finance"]);
+  });
+
+  it("does not confuse a scoped assignment for the everywhere one it is not", async () => {
+    await handleCreateUser(env.DB, { id: "usr1", email: "a@b.com", name: "Alice" });
+    await handleCreateRole(env.DB, { id: "r1", name: "AP Manager" });
+    await env.DB.prepare("INSERT INTO org_units (id, name) VALUES ('acme-group', 'Acme Group')").run();
+    await handleAssignRole(env.DB, "usr1", "r1", "acme-group");
+
+    // Revoking the everywhere assignment (unitId null) must not touch
+    // the scoped one that actually exists.
+    const result = await handleRevokeRole(env.DB, "usr1", "r1", null);
+    expect(result.status).toBe(404);
+    const row = await env.DB
+      .prepare("SELECT 1 FROM org_user_roles WHERE user_id = ? AND role_id = ? AND unit_id = 'acme-group'")
+      .bind("usr1", "r1")
+      .first();
+    expect(row).not.toBeNull();
   });
 });
 
@@ -708,6 +766,129 @@ describe("POST /org/roles and PUT /org/roles/:id, the real routes — decision 0
       body: JSON.stringify({ name: "New Name" }),
     });
 
+    expect(res.status).toBe(404);
+  });
+});
+
+describe("POST and DELETE /org/users/:id/roles, the real routes — decision 0327", () => {
+  /**
+   * **The existing "assigns a role... through the real router" test**
+   * (further up this file) only ever exercised the 401 bootstrap-ends
+   * case. Neither route had a real, authenticated success test
+   * through the actual HTTP path until this — the same gap decision
+   * 0323 found for `/org/overview`.
+   */
+  async function keyForPermission(permission: string): Promise<string> {
+    const id = crypto.randomUUID();
+    const apiKey = generateApiKey();
+    await env.DB.prepare("INSERT INTO org_users (id, email, name, api_key_hash) VALUES (?, ?, ?, ?)")
+      .bind(id, `${id}@acme.com`, "Test", await hashApiKey(apiKey))
+      .run();
+
+    const roleId = crypto.randomUUID();
+    await env.DB.prepare("INSERT INTO org_roles (id, name, permissions_json) VALUES (?, ?, ?)")
+      .bind(roleId, `Role granting ${permission}`, JSON.stringify([permission]))
+      .run();
+    await env.DB.prepare("INSERT INTO org_user_roles (user_id, role_id) VALUES (?, ?)").bind(id, roleId).run();
+
+    return apiKey;
+  }
+
+  it("POST assigns a role for a real request holding Admin.UserManagement", async () => {
+    const apiKey = await keyForPermission("Admin.UserManagement");
+    await env.DB.prepare("INSERT INTO org_users (id, email, name) VALUES ('usr1', 'a@b.com', 'Alice')").run();
+    await env.DB.prepare("INSERT INTO org_roles (id, name, permissions_json) VALUES ('r1', 'Target', '[]')").run();
+
+    const res = await SELF.fetch("https://example.com/org/users/usr1/roles", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ roleId: "r1" }),
+    });
+
+    expect(res.status).toBe(201);
+    const row = await env.DB.prepare("SELECT 1 FROM org_user_roles WHERE user_id = 'usr1' AND role_id = 'r1'").first();
+    expect(row).not.toBeNull();
+  });
+
+  it("POST 403s a real request lacking Admin.UserManagement", async () => {
+    const apiKey = await keyForPermission("AP.Dashboard");
+    await env.DB.prepare("INSERT INTO org_users (id, email, name) VALUES ('usr1', 'a@b.com', 'Alice')").run();
+    await env.DB.prepare("INSERT INTO org_roles (id, name, permissions_json) VALUES ('r1', 'Target', '[]')").run();
+
+    const res = await SELF.fetch("https://example.com/org/users/usr1/roles", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ roleId: "r1" }),
+    });
+
+    expect(res.status).toBe(403);
+  });
+
+  it("DELETE revokes a real assignment for a real request holding Admin.UserManagement", async () => {
+    const apiKey = await keyForPermission("Admin.UserManagement");
+    await env.DB.prepare("INSERT INTO org_users (id, email, name) VALUES ('usr1', 'a@b.com', 'Alice')").run();
+    await env.DB.prepare("INSERT INTO org_roles (id, name, permissions_json) VALUES ('r1', 'Target', '[]')").run();
+    await env.DB.prepare("INSERT INTO org_user_roles (user_id, role_id) VALUES ('usr1', 'r1')").run();
+
+    const res = await SELF.fetch("https://example.com/org/users/usr1/roles/r1", {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${apiKey}` },
+    });
+
+    expect(res.status).toBe(200);
+    const row = await env.DB.prepare("SELECT 1 FROM org_user_roles WHERE user_id = 'usr1' AND role_id = 'r1'").first();
+    expect(row).toBeNull();
+  });
+
+  it("DELETE with ?unitId targets the right one of two assignments of the same role", async () => {
+    const apiKey = await keyForPermission("Admin.UserManagement");
+    await env.DB.prepare("INSERT INTO org_units (id, name) VALUES ('acme-group', 'Acme Group')").run();
+    await env.DB.prepare("INSERT INTO org_units (id, name) VALUES ('finance', 'Finance')").run();
+    await env.DB.prepare("INSERT INTO org_users (id, email, name) VALUES ('usr1', 'a@b.com', 'Alice')").run();
+    await env.DB.prepare("INSERT INTO org_roles (id, name, permissions_json) VALUES ('r1', 'Target', '[]')").run();
+    await env.DB.prepare(
+      "INSERT INTO org_user_roles (user_id, role_id, unit_id) VALUES ('usr1', 'r1', 'acme-group')"
+    ).run();
+    await env.DB.prepare(
+      "INSERT INTO org_user_roles (user_id, role_id, unit_id) VALUES ('usr1', 'r1', 'finance')"
+    ).run();
+
+    const res = await SELF.fetch("https://example.com/org/users/usr1/roles/r1?unitId=acme-group", {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${apiKey}` },
+    });
+
+    expect(res.status).toBe(200);
+    const remaining = await env.DB
+      .prepare("SELECT unit_id FROM org_user_roles WHERE user_id = 'usr1' AND role_id = 'r1'")
+      .all<{ unit_id: string }>();
+    expect(remaining.results.map((r: { unit_id: string }) => r.unit_id)).toEqual(["finance"]);
+  });
+
+  it("DELETE 401s with no credential at all", async () => {
+    // A real user must exist first to end the bootstrap exception —
+    // otherwise isUnclaimed() skips auth entirely and this would 404
+    // rather than 401, testing the wrong thing.
+    await env.DB.prepare("INSERT INTO org_users (id, email, name) VALUES ('someone-else', 'x@b.com', 'X')").run();
+    const res = await SELF.fetch("https://example.com/org/users/usr1/roles/r1", { method: "DELETE" });
+    expect(res.status).toBe(401);
+  });
+
+  it("DELETE 403s a real request lacking Admin.UserManagement", async () => {
+    const apiKey = await keyForPermission("AP.Dashboard");
+    const res = await SELF.fetch("https://example.com/org/users/usr1/roles/r1", {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${apiKey}` },
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("DELETE 404s an assignment that does not exist, through the real router", async () => {
+    const apiKey = await keyForPermission("Admin.UserManagement");
+    const res = await SELF.fetch("https://example.com/org/users/usr1/roles/r1", {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${apiKey}` },
+    });
     expect(res.status).toBe(404);
   });
 });
