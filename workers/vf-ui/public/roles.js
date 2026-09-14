@@ -1,7 +1,6 @@
 import { t } from "/strings.js";
 import { el, frame, topbar, setCurrentScreen, hasMyPermission } from "/tasks.js";
 import { actionLink } from "/viewer.js";
-import { icon } from "/icons.js";
 
 /**
  * Who can do what, where, and up to how much — decisions 0319, 0326.
@@ -28,35 +27,6 @@ let roles = [];
 let assignments = [];
 let authorityLimits = [];
 let knownPermissions = [];
-
-/**
- * **A popout's own header, icon top-right — decision 0329.** Reported
- * live: relocate the close icon, currently sitting at the bottom
- * beside the primary button, to the top-right corner. The org
- * switcher's own popout (`orgs.js`) already does exactly this —
- * `.cardhead`'s title-left, action-right layout, an icon-only button
- * with no visible label, `title` carrying the tooltip instead. Reused
- * rather than reinvented, so every popout in this app closes the same
- * way.
- */
-function popoutHeader(title, onClose) {
-  return el("div", { class: "cardhead" }, [
-    el("h3", { text: title }),
-    el("button", { class: "actionlink", title: t("action.close"), onclick: onClose }, [icon("close")]),
-  ]);
-}
-
-/**
- * **A primary button with an icon — decision 0329.** `el()`'s own
- * `text` prop sets `textContent`, which would overwrite an icon
- * appended as a child — the same reason `actionLink` builds its own
- * button by hand rather than through `text`. Every primary action in
- * this screen's own popouts (Create, Save, Assign, Done) now follows
- * the same shape.
- */
-function primaryButton(iconName, textKey, onclick) {
-  return el("button", { class: "primary", onclick }, [icon(iconName), el("span", { text: t(textKey) })]);
-}
 
 async function load() {
   try {
@@ -181,42 +151,58 @@ function openRoleForm(existingRole) {
     nameInput,
   ]);
 
+  const close = () => backdrop.remove();
+  const save = actionLink(existingRole ? "save" : "create", {
+    primary: true,
+    onclick: async () => {
+      problem.textContent = "";
+      const name = nameInput.value.trim();
+      const permissions = getChecked();
+      try {
+        const response = existingRole
+          ? await fetch(`/api/org/roles/${encodeURIComponent(existingRole.id)}`, {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ name, permissions }),
+            })
+          : await fetch("/api/org/roles", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ id: idInput.value.trim(), name, permissions }),
+            });
+        if (!response.ok) {
+          problem.textContent = (await response.json()).error ?? t("roles.changefailed");
+          return;
+        }
+        backdrop.remove();
+        await load();
+        render();
+      } catch {
+        problem.textContent = t("roles.changefailed");
+      }
+    },
+  });
+
+  /**
+   * **Save and Close, top right — decision 0329, corrected.** The
+   * operator's own follow-up after a first attempt put Close in the
+   * header but left Save at the bottom: "I wanted the same as the
+   * supplier pop-out." `.cardhead`'s own title-left, action-right
+   * shape, the same `.statebuttons` row decision 0306 already gives
+   * the supplier popout — reused rather than a second version of it.
+   */
+  const stateButtons = el("div", { class: "statebuttons" }, [save, actionLink("close", { onclick: close })]);
+
   const backdrop = el("div", { class: "backdrop" }, [
     el("div", { class: "popout" }, [
-      popoutHeader(existingRole ? t("roles.edit") : t("action.newrole"), () => backdrop.remove()),
+      el("div", { class: "cardhead" }, [
+        el("h3", { text: existingRole ? t("roles.edit") : t("action.newrole") }),
+        stateButtons,
+      ]),
       ...(existingRole ? [] : [el("p", { class: "muted", text: t("roles.roleidhelp") })]),
       form,
       permissionsContainer,
       problem,
-      el("div", { class: "statebuttons" }, [
-        primaryButton(existingRole ? "save" : "complete", existingRole ? "roles.save" : "roles.create", async () => {
-          problem.textContent = "";
-          const name = nameInput.value.trim();
-          const permissions = getChecked();
-          try {
-            const response = existingRole
-              ? await fetch(`/api/org/roles/${encodeURIComponent(existingRole.id)}`, {
-                  method: "PUT",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ name, permissions }),
-                })
-              : await fetch("/api/org/roles", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ id: idInput.value.trim(), name, permissions }),
-                });
-            if (!response.ok) {
-              problem.textContent = (await response.json()).error ?? t("roles.changefailed");
-              return;
-            }
-            backdrop.remove();
-            await load();
-            render();
-          } catch {
-            problem.textContent = t("roles.changefailed");
-          }
-        }),
-      ]),
     ]),
   ]);
 
@@ -283,45 +269,49 @@ function openNewPersonForm() {
     amountInput,
   ]);
 
+  const close = () => backdrop.remove();
+  const create = actionLink("create", {
+    primary: true,
+    onclick: async () => {
+      problem.textContent = "";
+      const name = nameInput.value.trim();
+      const email = emailInput.value.trim();
+      const unitId = orgPicker.value || null;
+      try {
+        const response = await fetch("/api/org/users", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: crypto.randomUUID(), name, email, unitId }),
+        });
+        if (!response.ok) {
+          problem.textContent = (await response.json()).error ?? t("roles.createpersonfailed");
+          return;
+        }
+        const created = await response.json();
+
+        const amount = amountInput.value.trim();
+        const currency = currencyInput.value.trim();
+        if (amount && currency) {
+          await fetch(`/api/org/users/${encodeURIComponent(created.id)}/authority-limits`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ currency, maxAmount: Number(amount) }),
+          });
+        }
+
+        showApiKeyOnce(created.apiKey, backdrop);
+      } catch {
+        problem.textContent = t("roles.createpersonfailed");
+      }
+    },
+  });
+  const stateButtons = el("div", { class: "statebuttons" }, [create, actionLink("close", { onclick: close })]);
+
   const backdrop = el("div", { class: "backdrop" }, [
     el("div", { class: "popout" }, [
-      popoutHeader(t("action.newperson"), () => backdrop.remove()),
+      el("div", { class: "cardhead" }, [el("h3", { text: t("action.newperson") }), stateButtons]),
       form,
       problem,
-      el("div", { class: "statebuttons" }, [
-        primaryButton("complete", "roles.create", async () => {
-          problem.textContent = "";
-          const name = nameInput.value.trim();
-          const email = emailInput.value.trim();
-          const unitId = orgPicker.value || null;
-          try {
-            const response = await fetch("/api/org/users", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ id: crypto.randomUUID(), name, email, unitId }),
-            });
-            if (!response.ok) {
-              problem.textContent = (await response.json()).error ?? t("roles.createpersonfailed");
-              return;
-            }
-            const created = await response.json();
-
-            const amount = amountInput.value.trim();
-            const currency = currencyInput.value.trim();
-            if (amount && currency) {
-              await fetch(`/api/org/users/${encodeURIComponent(created.id)}/authority-limits`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ currency, maxAmount: Number(amount) }),
-              });
-            }
-
-            showApiKeyOnce(created.apiKey, backdrop);
-          } catch {
-            problem.textContent = t("roles.createpersonfailed");
-          }
-        }),
-      ]),
     ]),
   ]);
 
@@ -339,17 +329,18 @@ function openNewPersonForm() {
  */
 function showApiKeyOnce(apiKey, backdrop) {
   const popout = backdrop.querySelector(".popout");
+  const done = actionLink("done", {
+    primary: true,
+    onclick: async () => {
+      backdrop.remove();
+      await load();
+      render();
+    },
+  });
   popout.replaceChildren(
-    el("h3", { text: t("roles.apikey") }),
+    el("div", { class: "cardhead" }, [el("h3", { text: t("roles.apikey") }), el("div", { class: "statebuttons" }, [done])]),
     el("p", { class: "warn", text: t("roles.apikeywarning") }),
-    el("input", { type: "text", value: apiKey, readonly: "readonly", class: "apikeydisplay" }),
-    el("div", { class: "statebuttons" }, [
-      primaryButton("complete", "roles.done", async () => {
-        backdrop.remove();
-        await load();
-        render();
-      }),
-    ])
+    el("input", { type: "text", value: apiKey, readonly: "readonly", class: "apikeydisplay" })
   );
 }
 
@@ -439,35 +430,39 @@ function openAssignmentsForm(user) {
     orgPicker,
   ]);
 
+  const close = () => backdrop.remove();
+  const assign = actionLink("assign", {
+    primary: true,
+    onclick: async () => {
+      problem.textContent = "";
+      try {
+        const response = await fetch(`/api/org/users/${encodeURIComponent(user.id)}/roles`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ roleId: rolePicker.value, unitId: orgPicker.value || null }),
+        });
+        if (!response.ok) {
+          problem.textContent = (await response.json()).error ?? t("roles.assignfailed");
+          return;
+        }
+        backdrop.remove();
+        await load();
+        render();
+      } catch {
+        problem.textContent = t("roles.assignfailed");
+      }
+    },
+  });
+  const stateButtons = el("div", { class: "statebuttons" }, [assign, actionLink("close", { onclick: close })]);
+
   const backdrop = el("div", { class: "backdrop" }, [
     el("div", { class: "popout" }, [
-      popoutHeader(user.name, () => backdrop.remove()),
+      el("div", { class: "cardhead" }, [el("h3", { text: user.name }), stateButtons]),
       el("p", { class: "muted sm", text: t("roles.currentassignments") }),
       currentList,
       el("p", { class: "muted sm", text: t("roles.newassignment") }),
       newAssignmentForm,
       problem,
-      el("div", { class: "statebuttons" }, [
-        primaryButton("complete", "roles.assign", async () => {
-          problem.textContent = "";
-          try {
-            const response = await fetch(`/api/org/users/${encodeURIComponent(user.id)}/roles`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ roleId: rolePicker.value, unitId: orgPicker.value || null }),
-            });
-            if (!response.ok) {
-              problem.textContent = (await response.json()).error ?? t("roles.assignfailed");
-              return;
-            }
-            backdrop.remove();
-            await load();
-            render();
-          } catch {
-            problem.textContent = t("roles.assignfailed");
-          }
-        }),
-      ]),
     ]),
   ]);
 

@@ -189,8 +189,28 @@ export const ICONS = {
   // A down arrow into a tray, as the reference has it.
   save:
     '<path d="M12 3v10m0 0 4-4m-4 4-4-4M4 17v3h16v-3"/>',
+  /**
+   * **The same shape as `save` — decision 0329.** Creating a new
+   * record and saving an edit to an existing one are the same act,
+   * persisting what is on screen; `actionLink` ties one name to both
+   * its icon and its visible label, so "Create" needs its own key
+   * even though the glyph underneath is identical.
+   */
+  create:
+    '<path d="M12 3v10m0 0 4-4m-4 4-4-4M4 17v3h16v-3"/>',
   // A checkmark. Nothing else reads as "done" as immediately.
   complete:
+    '<path d="M4 12.5 9.5 18 20 6"/>',
+  /**
+   * **The same shape as `complete` — decision 0329.** Assigning a
+   * role, and dismissing the one-time key view, are both a person
+   * confirming "this is settled" — the same checkmark `complete`
+   * already gives that meaning, under the two names `actionLink`
+   * needs for their own, different visible labels.
+   */
+  assign:
+    '<path d="M4 12.5 9.5 18 20 6"/>',
+  done:
     '<path d="M4 12.5 9.5 18 20 6"/>',
   // An open padlock: a claim is a lock, so releasing is unlocking.
   release:

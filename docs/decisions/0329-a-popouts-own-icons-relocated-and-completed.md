@@ -1,9 +1,12 @@
 # 0329 — A popout's own icons, relocated and completed
 
-**Status: built.** A design pass across the three write popouts
-decisions 0326–0328 built, reported live: relocate the close icon to
-the top-right of the box, and give the Save and Assign buttons icons
-of their own.
+**Status: built. Superseded in part by decision 0330.** This
+record's own close-icon relocation is correct and current. Its
+choice to leave Save/Create/Assign as a separate, bottom-of-form
+button was wrong — the operator's own follow-up wanted that action
+beside Close, both top right, matching the supplier popout's own
+established shape (decision 0306). Read 0330 for the corrected
+layout.
 
 ---
 

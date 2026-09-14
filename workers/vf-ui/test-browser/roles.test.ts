@@ -54,6 +54,9 @@ const STRINGS = {
     "roles.currentassignments": "Current assignments",
     "roles.newassignment": "New assignment",
     "action.newperson": "New person",
+    "action.create": "Create",
+    "action.assign": "Assign",
+    "action.done": "Done",
     "roles.personname": "Name",
     "roles.personemail": "Email",
     "roles.personorg": "Organisation",
@@ -65,6 +68,7 @@ const STRINGS = {
     "roles.createpersonfailed": "Could not create the person. Please try again.",
     "action.newrole": "New role",
     "action.close": "Close",
+    "action.save": "Save",
     "column.unit": "Unit",
     "column.role": "Role",
     "column.person": "Person",
@@ -390,7 +394,9 @@ describe("creating a role — decision 0326", () => {
     button?.click();
     expect(document.querySelector(".backdrop")).not.toBeNull();
 
-    const close = document.querySelector<HTMLButtonElement>(".popout .cardhead button");
+    const close = [...document.querySelectorAll<HTMLButtonElement>(".popout .cardhead button")].find((b) =>
+      b.textContent?.includes("Close")
+    );
     close?.click();
     expect(document.querySelector(".backdrop")).toBeNull();
   });
@@ -796,35 +802,45 @@ describe("creating a person — decision 0328", () => {
   });
 });
 
-describe("popout icons — decision 0329", () => {
+describe("popout action row — decision 0329, corrected", () => {
+  /**
+   * **Both Save/Create/Assign and Close together, top right** —
+   * corrected after a first attempt put only Close in the header and
+   * left the primary action at the bottom: "I wanted the same as the
+   * supplier pop-out." Every popout's own `.cardhead` now holds the
+   * title and both actions, the same `.statebuttons` shape decision
+   * 0306 already gives the supplier popout.
+   */
   const ONE_ROLE = { id: "r1", name: "AP Manager", permissions: ["AP.Approve"] };
   const ONE_UNIT = { id: "acme-fr", name: "Acme France", kind: "legal_entity", parentUnitId: null };
   const ALICE = { id: "usr1", email: "alice@acme.com", name: "Alice", unitId: null, status: "active" };
 
-  it("the role popout's own close icon sits in the header, not beside the primary button", async () => {
-    await openRolesAs(["Admin.RoleManagement"], { ...EMPTY, knownPermissions: [] });
-    const button = [...document.querySelectorAll("button")].find((b) => b.textContent?.includes("New role"));
-    button?.click();
-
-    // In the header, beside the title.
-    expect(document.querySelector(".popout .cardhead svg")).not.toBeNull();
-    // Not beside the primary button anymore.
-    const stateButtons = document.querySelector(".popout .statebuttons");
-    expect(stateButtons?.querySelectorAll("button")).toHaveLength(1);
-  });
-
-  it("the role popout's own primary button carries an icon", async () => {
+  it("the role popout's own Save and Close sit together in the header, both with an icon", async () => {
     await openRolesAs(["Admin.RoleManagement"], { ...EMPTY, roles: [ONE_ROLE], knownPermissions: [] });
     const row = [...document.querySelectorAll("tr")].find((r) => r.textContent?.includes("AP Manager"));
     row?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
 
-    const submit = [...document.querySelectorAll(".statebuttons button")].find((b) =>
-      b.textContent?.includes("Save")
-    );
-    expect(submit?.querySelector("svg")).not.toBeNull();
+    const stateButtons = document.querySelector(".popout .cardhead .statebuttons");
+    const buttons = [...(stateButtons?.querySelectorAll("button") ?? [])];
+    expect(buttons).toHaveLength(2);
+    expect(buttons.some((b) => b.textContent?.includes("Save"))).toBe(true);
+    expect(buttons.some((b) => b.textContent?.includes("Close"))).toBe(true);
+    expect(buttons.every((b) => b.querySelector("svg"))).toBe(true);
+    // Nothing left at the bottom of the popout, outside the header.
+    expect(document.querySelectorAll(".popout > .statebuttons")).toHaveLength(0);
   });
 
-  it("the assign popout's own close icon sits in the header, and Assign carries an icon", async () => {
+  it("the new-role popout shows Create rather than Save", async () => {
+    await openRolesAs(["Admin.RoleManagement"], { ...EMPTY, knownPermissions: [] });
+    const button = [...document.querySelectorAll("button")].find((b) => b.textContent?.includes("New role"));
+    button?.click();
+
+    const stateButtons = document.querySelector(".popout .cardhead .statebuttons");
+    const buttons = [...(stateButtons?.querySelectorAll("button") ?? [])];
+    expect(buttons.some((b) => b.textContent?.includes("Create"))).toBe(true);
+  });
+
+  it("the assign popout's own Assign and Close sit together in the header, both with an icon", async () => {
     await openRolesAs(["Admin.UserManagement"], {
       ...EMPTY,
       users: [ALICE],
@@ -834,20 +850,43 @@ describe("popout icons — decision 0329", () => {
     const row = [...document.querySelectorAll("tr")].find((r) => r.textContent?.includes("Alice"));
     row?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
 
-    expect(document.querySelector(".popout .cardhead svg")).not.toBeNull();
-    const stateButtons = document.querySelector(".popout .statebuttons");
-    expect(stateButtons?.querySelectorAll("button")).toHaveLength(1);
-    const submit = [...document.querySelectorAll(".statebuttons button")].find((b) =>
-      b.textContent?.includes("Assign")
-    );
-    expect(submit?.querySelector("svg")).not.toBeNull();
+    const stateButtons = document.querySelector(".popout .cardhead .statebuttons");
+    const buttons = [...(stateButtons?.querySelectorAll("button") ?? [])];
+    expect(buttons).toHaveLength(2);
+    expect(buttons.some((b) => b.textContent?.includes("Assign"))).toBe(true);
+    expect(buttons.some((b) => b.textContent?.includes("Close"))).toBe(true);
+    expect(buttons.every((b) => b.querySelector("svg"))).toBe(true);
   });
 
-  it("the new-person popout's own close icon sits in the header", async () => {
+  it("the new-person popout's own Create and Close sit together in the header", async () => {
     await openRolesAs(["Admin.UserManagement"], { ...EMPTY, units: [ONE_UNIT] });
     const button = [...document.querySelectorAll("button")].find((b) => b.textContent?.includes("New person"));
     button?.click();
 
-    expect(document.querySelector(".popout .cardhead svg")).not.toBeNull();
+    const stateButtons = document.querySelector(".popout .cardhead .statebuttons");
+    const buttons = [...(stateButtons?.querySelectorAll("button") ?? [])];
+    expect(buttons).toHaveLength(2);
+    expect(buttons.some((b) => b.textContent?.includes("Create"))).toBe(true);
+    expect(buttons.some((b) => b.textContent?.includes("Close"))).toBe(true);
+  });
+
+  it("the one-time key view's own Done sits in the header, with no Close beside it", async () => {
+    await openRolesAs(["Admin.UserManagement"], { ...EMPTY, units: [ONE_UNIT] }, {
+      "POST /api/org/users": {
+        ok: true,
+        json: async () => ({ id: "usr1", name: "Alice", email: "a@b.com", apiKey: "vf_live_secret123" }),
+      },
+    });
+    const button = [...document.querySelectorAll("button")].find((b) => b.textContent?.includes("New person"));
+    button?.click();
+    const submit = [...document.querySelectorAll("button")].find((b) => b.textContent?.includes("Create"));
+    await submit?.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    const stateButtons = document.querySelector(".popout .cardhead .statebuttons");
+    const buttons = [...(stateButtons?.querySelectorAll("button") ?? [])];
+    expect(buttons).toHaveLength(1);
+    expect(buttons[0].textContent).toContain("Done");
+    expect(buttons[0].querySelector("svg")).not.toBeNull();
   });
 });
