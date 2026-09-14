@@ -159,6 +159,51 @@ describe("handleCreateUser", () => {
     const authenticated = await authenticateUser(env.DB, request);
     expect(authenticated?.id).toBe("usr1");
   });
+
+  /**
+   * **The same boundary decision 0201 already gives granting a
+   * role — decision 0328.** A person created with no org allocation,
+   * or one outside what the granter administers, would not be
+   * visible to that same administrator again afterward (decision
+   * 0321's own scoping).
+   */
+  it("refuses a delegated administrator creating a person with no org at all", async () => {
+    await env.DB.prepare("INSERT INTO org_units (id, name) VALUES ('acme-fr', 'Acme France')").run();
+    const result = await handleCreateUser(env.DB, { id: "usr1", email: "a@b.com", name: "Alice" }, ["acme-fr"]);
+    expect(result.status).toBe(403);
+    expect((result.body as { reason: string }).reason).toBe("cannot_create_without_org");
+    const row = await env.DB.prepare("SELECT 1 FROM org_users WHERE id = 'usr1'").first();
+    expect(row).toBeNull();
+  });
+
+  it("refuses a delegated administrator creating a person outside what they administer", async () => {
+    await env.DB.prepare("INSERT INTO org_units (id, name) VALUES ('acme-fr', 'Acme France')").run();
+    await env.DB.prepare("INSERT INTO org_units (id, name) VALUES ('acme-de', 'Acme Deutschland')").run();
+    const result = await handleCreateUser(
+      env.DB,
+      { id: "usr1", email: "a@b.com", name: "Alice", unitId: "acme-de" },
+      ["acme-fr"]
+    );
+    expect(result.status).toBe(403);
+    expect((result.body as { reason: string }).reason).toBe("outside_administered_units");
+  });
+
+  it("lets a delegated administrator create a person within what they administer", async () => {
+    await env.DB.prepare("INSERT INTO org_units (id, name) VALUES ('acme-fr', 'Acme France')").run();
+    const result = await handleCreateUser(
+      env.DB,
+      { id: "usr1", email: "a@b.com", name: "Alice", unitId: "acme-fr" },
+      ["acme-fr"]
+    );
+    expect(result.status).toBe(201);
+  });
+
+  it("lets an unrestricted administrator create a person with no org at all", async () => {
+    // granterUnits null means unscoped -- the same signal
+    // handleAssignRole and handleRevokeRole already use.
+    const result = await handleCreateUser(env.DB, { id: "usr1", email: "a@b.com", name: "Alice" }, null);
+    expect(result.status).toBe(201);
+  });
 });
 
 describe("handleCreateRole — the closed permission vocabulary", () => {
@@ -958,5 +1003,130 @@ describe("handleSetProfile — r2Jurisdiction (decision 0033)", () => {
   it("422s a plausible-sounding but genuinely unsupported jurisdiction the same way", async () => {
     const result = await handleSetProfile(env.DB, { id: "rj4", ciusProfile: "en16931_base", r2Jurisdiction: "uk" });
     expect(result.status).toBe(422);
+  });
+});
+
+describe("POST /org/users and /org/users/:id/authority-limits, the real routes — decision 0328", () => {
+  async function keyForPermission(permission: string): Promise<string> {
+    const id = crypto.randomUUID();
+    const apiKey = generateApiKey();
+    await env.DB.prepare("INSERT INTO org_users (id, email, name, api_key_hash) VALUES (?, ?, ?, ?)")
+      .bind(id, `${id}@acme.com`, "Test", await hashApiKey(apiKey))
+      .run();
+
+    const roleId = crypto.randomUUID();
+    await env.DB.prepare("INSERT INTO org_roles (id, name, permissions_json) VALUES (?, ?, ?)")
+      .bind(roleId, `Role granting ${permission}`, JSON.stringify([permission]))
+      .run();
+    await env.DB.prepare("INSERT INTO org_user_roles (user_id, role_id) VALUES (?, ?)").bind(id, roleId).run();
+
+    return apiKey;
+  }
+
+  it("POST creates a user for a real request holding Admin.UserManagement", async () => {
+    const apiKey = await keyForPermission("Admin.UserManagement");
+
+    const res = await SELF.fetch("https://example.com/org/users", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ id: "usr1", email: "a@b.com", name: "Alice" }),
+    });
+
+    expect(res.status).toBe(201);
+    const row = await env.DB.prepare("SELECT 1 FROM org_users WHERE id = 'usr1'").first();
+    expect(row).not.toBeNull();
+  });
+
+  it("POST 403s a real request lacking Admin.UserManagement", async () => {
+    const apiKey = await keyForPermission("AP.Dashboard");
+
+    const res = await SELF.fetch("https://example.com/org/users", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ id: "usr1", email: "a@b.com", name: "Alice" }),
+    });
+
+    expect(res.status).toBe(403);
+  });
+
+  it("POST 403s a delegated administrator creating outside what they administer, through the real router", async () => {
+    await env.DB.prepare("INSERT INTO org_units (id, name) VALUES ('acme-fr', 'Acme France')").run();
+    await env.DB.prepare("INSERT INTO org_units (id, name) VALUES ('acme-de', 'Acme Deutschland')").run();
+
+    const id = crypto.randomUUID();
+    const apiKey = generateApiKey();
+    await env.DB.prepare("INSERT INTO org_users (id, email, name, api_key_hash) VALUES (?, ?, ?, ?)")
+      .bind(id, `${id}@acme.com`, "Test", await hashApiKey(apiKey))
+      .run();
+    const roleId = crypto.randomUUID();
+    await env.DB.prepare("INSERT INTO org_roles (id, name, permissions_json) VALUES (?, ?, ?)")
+      .bind(roleId, "Delegated", '["Admin.UserManagement"]')
+      .run();
+    await env.DB.prepare("INSERT INTO org_user_roles (user_id, role_id, unit_id) VALUES (?, ?, 'acme-fr')")
+      .bind(id, roleId)
+      .run();
+
+    const res = await SELF.fetch("https://example.com/org/users", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ id: "usr1", email: "a@b.com", name: "Alice", unitId: "acme-de" }),
+    });
+
+    expect(res.status).toBe(403);
+    const row = await env.DB.prepare("SELECT 1 FROM org_users WHERE id = 'usr1'").first();
+    expect(row).toBeNull();
+  });
+
+  it("POST 401s with no credential at all", async () => {
+    // A real user must exist first to end the bootstrap exception.
+    await env.DB.prepare("INSERT INTO org_users (id, email, name) VALUES ('someone-else', 'x@b.com', 'X')").run();
+    const res = await SELF.fetch("https://example.com/org/users", {
+      method: "POST",
+      body: JSON.stringify({ id: "usr1", email: "a@b.com", name: "Alice" }),
+    });
+    expect(res.status).toBe(401);
+  });
+
+  it("authority-limits POST succeeds for a real request holding Admin.UserManagement", async () => {
+    const apiKey = await keyForPermission("Admin.UserManagement");
+    await env.DB.prepare("INSERT INTO org_users (id, email, name) VALUES ('usr1', 'a@b.com', 'Alice')").run();
+
+    const res = await SELF.fetch("https://example.com/org/users/usr1/authority-limits", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ currency: "EUR", maxAmount: 5000 }),
+    });
+
+    expect(res.status).toBe(200);
+    const row = await env.DB
+      .prepare("SELECT max_amount FROM org_authority_limits WHERE user_id = 'usr1' AND currency = 'EUR'")
+      .first();
+    expect(row).toEqual({ max_amount: 5000 });
+  });
+
+  it("authority-limits POST 401s with no credential at all", async () => {
+    await env.DB.prepare("INSERT INTO org_users (id, email, name) VALUES ('usr1', 'a@b.com', 'Alice')").run();
+    const res = await SELF.fetch("https://example.com/org/users/usr1/authority-limits", {
+      method: "POST",
+      body: JSON.stringify({ currency: "EUR", maxAmount: 5000 }),
+    });
+    expect(res.status).toBe(401);
+  });
+
+  it("authority-limits POST 403s a real request lacking Admin.UserManagement", async () => {
+    const apiKey = await keyForPermission("AP.Dashboard");
+    await env.DB.prepare("INSERT INTO org_users (id, email, name) VALUES ('usr1', 'a@b.com', 'Alice')").run();
+
+    const res = await SELF.fetch("https://example.com/org/users/usr1/authority-limits", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ currency: "EUR", maxAmount: 5000 }),
+    });
+
+    expect(res.status).toBe(403);
+    const row = await env.DB
+      .prepare("SELECT 1 FROM org_authority_limits WHERE user_id = 'usr1'")
+      .first();
+    expect(row).toBeNull();
   });
 });

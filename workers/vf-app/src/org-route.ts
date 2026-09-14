@@ -335,7 +335,18 @@ interface CreateUserBody {
   locale?: unknown;
 }
 
-export async function handleCreateUser(db: D1Database, body: CreateUserBody): Promise<RouteResult> {
+export async function handleCreateUser(
+  db: D1Database,
+  body: CreateUserBody,
+  /**
+   * Which units the person **doing the creating** administers —
+   * decision 0328. `null` means unscoped (an instance administrator,
+   * or every customer not using units); passing a list is how a route
+   * says "this is a delegated administrator," the same signal
+   * `handleAssignRole` and `handleRevokeRole` already use.
+   */
+  granterUnits: string[] | null = null
+): Promise<RouteResult> {
   const { id, email, name, unitId, locale } = body;
   if (typeof id !== "string" || !id || typeof email !== "string" || !email || typeof name !== "string" || !name) {
     return { status: 400, body: { error: "id, email and name (all strings) are required" } };
@@ -345,6 +356,37 @@ export async function handleCreateUser(db: D1Database, body: CreateUserBody): Pr
   }
   if (locale !== undefined && typeof locale !== "string") {
     return { status: 400, body: { error: "locale, if provided, must be a string" } };
+  }
+
+  /**
+   * **A France administrator may not create somebody outside
+   * France** — decision 0328, the same reasoning `handleAssignRole`
+   * already gives granting a role. A person created with no org
+   * allocation, or one outside what the granter administers, would
+   * not be visible to that same administrator again afterward
+   * (decision 0321's own scoping) — invisible the moment they are
+   * created is worse than merely restricted.
+   */
+  if (granterUnits !== null) {
+    if (typeof unitId !== "string" || !unitId) {
+      return {
+        status: 403,
+        body: {
+          error: "you may only create a person within an org you administer",
+          reason: "cannot_create_without_org",
+        },
+      };
+    }
+
+    if (!granterUnits.includes(unitId)) {
+      return {
+        status: 403,
+        body: {
+          error: `you do not administer ${unitId}`,
+          reason: "outside_administered_units",
+        },
+      };
+    }
   }
 
   const existingId = await db.prepare("SELECT id FROM org_users WHERE id = ?").bind(id).first();

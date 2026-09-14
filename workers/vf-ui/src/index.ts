@@ -112,6 +112,19 @@ const PROXIED_TO_INSTANCE: RegExp[] = [
    */
   /^\/org\/users\/[^/]+\/roles$/,
   /^\/org\/users\/[^/]+\/roles\/[^/]+$/,
+  /**
+   * **Creating a person — decision 0328.** `POST /org/users` has
+   * existed in `vf-app` since before this session and was never on
+   * this list either — a fifth instance of decision 0212's own gap.
+   */
+  /^\/org\/users$/,
+  /**
+   * **Setting an authority limit — decision 0328.** Closed alongside
+   * the route's own real security gap: unguarded, and never on this
+   * list either. A sixth instance of decision 0212's own gap, found
+   * here before a real request could fail on it.
+   */
+  /^\/org\/users\/[^/]+\/authority-limits$/,
   // The task list and the actions the list offers (decisions 0103,
   // 0104). Each added deliberately: the point of a list rather than a
   // prefix is that `/tasks/:id/anything` is not automatically

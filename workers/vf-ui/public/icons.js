@@ -144,6 +144,14 @@ export const ICONS = {
     '<path d="M13 20v-1.5a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4V20"/><circle cx="7.5" cy="6.5" r="3.5"/><path d="M18 8v6M15 11h6"/>',
 
   /**
+   * **The same shape as `newsupplier` — decision 0328.** Both mean
+   * exactly the same thing, "add a person," and never appear on the
+   * same screen, so the shared visual is a feature, not drift.
+   */
+  newperson:
+    '<path d="M13 20v-1.5a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4V20"/><circle cx="7.5" cy="6.5" r="3.5"/><path d="M18 8v6M15 11h6"/>',
+
+  /**
    * **A badge with a plus** — decision 0326, for creating a new role.
    *
    * Deliberately not `newsupplier`'s person shape: a role is a badge

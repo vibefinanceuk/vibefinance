@@ -53,6 +53,16 @@ const STRINGS = {
     "roles.revokefailed": "Could not remove the role. Please try again.",
     "roles.currentassignments": "Current assignments",
     "roles.newassignment": "New assignment",
+    "action.newperson": "New person",
+    "roles.personname": "Name",
+    "roles.personemail": "Email",
+    "roles.personorg": "Organisation",
+    "roles.limitcurrency": "Currency",
+    "roles.limitamount": "Approval limit",
+    "roles.apikeywarning": "This key is shown only once. Copy it now — it cannot be recovered later.",
+    "roles.apikey": "API key",
+    "roles.done": "Done",
+    "roles.createpersonfailed": "Could not create the person. Please try again.",
     "action.newrole": "New role",
     "action.close": "Close",
     "column.unit": "Unit",
@@ -69,7 +79,13 @@ function stubFetch(routes: Record<string, unknown>) {
       const key = init?.method && init.method !== "GET" ? `${init.method} ${path}` : path;
       if (key in routes) {
         const value = routes[key];
-        if (value && typeof value === "object" && "status" in (value as object)) {
+        // Already response-shaped — either an explicit status (an
+        // error stub) or an explicit ok (a success stub written the
+        // same way). Checking only "status" missed the second case
+        // and double-wrapped it, so response.json() on a plain
+        // { ok: true, json: async () => body } stub returned the
+        // stub object itself instead of the body it wrapped.
+        if (value && typeof value === "object" && ("status" in (value as object) || "ok" in (value as object))) {
           return value as Response;
         }
         return { ok: true, json: async () => value } as Response;
@@ -629,5 +645,153 @@ describe("assigning and revoking a role for one person — decision 0327", () =>
 
     expect(document.querySelector(".backdrop")).not.toBeNull();
     expect(document.body.textContent).toContain("you do not administer acme-fr");
+  });
+});
+
+describe("creating a person — decision 0328", () => {
+  const ONE_UNIT = { id: "acme-fr", name: "Acme France", kind: "legal_entity", parentUnitId: null };
+
+  function baseBody() {
+    return { ...EMPTY, units: [ONE_UNIT] };
+  }
+
+  it("shows no New person button without Admin.UserManagement", async () => {
+    await openRolesAs(["AP.Dashboard"], baseBody());
+    const shell = document.getElementById("shell");
+    expect([...(shell?.querySelectorAll("button") ?? [])].some((b) => b.textContent?.includes("New person"))).toBe(
+      false
+    );
+  });
+
+  it("shows a New person button when holding Admin.UserManagement", async () => {
+    await openRolesAs(["Admin.UserManagement"], baseBody());
+    const shell = document.getElementById("shell");
+    expect([...(shell?.querySelectorAll("button") ?? [])].some((b) => b.textContent?.includes("New person"))).toBe(
+      true
+    );
+  });
+
+  it("posts the entered name, email, and org, then shows the returned key", async () => {
+    await openRolesAs(["Admin.UserManagement"], baseBody(), {
+      "POST /api/org/users": {
+        ok: true,
+        json: async () => ({ id: "usr1", name: "Alice", email: "alice@acme.com", apiKey: "vf_live_secret123" }),
+      },
+    });
+    const button = [...document.querySelectorAll("button")].find((b) => b.textContent?.includes("New person"));
+    button?.click();
+
+    const inputs = document.querySelectorAll<HTMLInputElement>(".editgrid input");
+    const orgSelect = document.querySelector<HTMLSelectElement>("select") as HTMLSelectElement;
+    inputs[0].value = "Alice";
+    inputs[1].value = "alice@acme.com";
+    orgSelect.value = "acme-fr";
+
+    const submit = [...document.querySelectorAll("button")].find((b) => b.textContent?.includes("Create"));
+    await submit?.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    const calls = (fetch as unknown as { mock: { calls: unknown[][] } }).mock.calls;
+    const postCall = calls.find(([url, init]) => url === "/api/org/users" && (init as RequestInit)?.method === "POST");
+    const body = JSON.parse((postCall?.[1] as RequestInit).body as string);
+    expect(body.name).toBe("Alice");
+    expect(body.email).toBe("alice@acme.com");
+    expect(body.unitId).toBe("acme-fr");
+
+    // The key is shown, not the form fields anymore.
+    const keyInput = document.querySelector<HTMLInputElement>(".apikeydisplay");
+    expect(keyInput?.value).toBe("vf_live_secret123");
+    expect(document.body.textContent).toContain("shown only once");
+    expect(document.querySelectorAll(".editgrid input")).toHaveLength(0);
+  });
+
+  it("sets an authority limit when a currency and amount are given", async () => {
+    await openRolesAs(["Admin.UserManagement"], baseBody(), {
+      "POST /api/org/users": {
+        ok: true,
+        json: async () => ({ id: "usr1", name: "Alice", email: "alice@acme.com", apiKey: "vf_live_secret123" }),
+      },
+      "POST /api/org/users/usr1/authority-limits": { ok: true, json: async () => ({}) },
+    });
+    const button = [...document.querySelectorAll("button")].find((b) => b.textContent?.includes("New person"));
+    button?.click();
+
+    const inputs = document.querySelectorAll<HTMLInputElement>(".editgrid input");
+    inputs[0].value = "Alice";
+    inputs[1].value = "alice@acme.com";
+    inputs[2].value = "EUR";
+    inputs[3].value = "5000";
+
+    const submit = [...document.querySelectorAll("button")].find((b) => b.textContent?.includes("Create"));
+    await submit?.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    const calls = (fetch as unknown as { mock: { calls: unknown[][] } }).mock.calls;
+    const limitCall = calls.find(([url]) => url === "/api/org/users/usr1/authority-limits");
+    const body = JSON.parse((limitCall?.[1] as RequestInit).body as string);
+    expect(body).toEqual({ currency: "EUR", maxAmount: 5000 });
+  });
+
+  it("does not set an authority limit when left blank", async () => {
+    await openRolesAs(["Admin.UserManagement"], baseBody(), {
+      "POST /api/org/users": {
+        ok: true,
+        json: async () => ({ id: "usr1", name: "Alice", email: "alice@acme.com", apiKey: "vf_live_secret123" }),
+      },
+    });
+    const button = [...document.querySelectorAll("button")].find((b) => b.textContent?.includes("New person"));
+    button?.click();
+
+    const inputs = document.querySelectorAll<HTMLInputElement>(".editgrid input");
+    inputs[0].value = "Alice";
+    inputs[1].value = "alice@acme.com";
+
+    const submit = [...document.querySelectorAll("button")].find((b) => b.textContent?.includes("Create"));
+    await submit?.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    const calls = (fetch as unknown as { mock: { calls: unknown[][] } }).mock.calls;
+    const limitCall = calls.find(([url]) => url === "/api/org/users/usr1/authority-limits");
+    expect(limitCall).toBeUndefined();
+  });
+
+  it("shows the real error and leaves the form open when creation fails", async () => {
+    await openRolesAs(["Admin.UserManagement"], baseBody(), {
+      "POST /api/org/users": {
+        ok: false,
+        status: 403,
+        json: async () => ({ error: "you may only create a person within an org you administer" }),
+      },
+    });
+    const button = [...document.querySelectorAll("button")].find((b) => b.textContent?.includes("New person"));
+    button?.click();
+
+    const submit = [...document.querySelectorAll("button")].find((b) => b.textContent?.includes("Create"));
+    await submit?.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(document.querySelector(".backdrop")).not.toBeNull();
+    expect(document.body.textContent).toContain("you may only create a person within an org you administer");
+  });
+
+  it("Done closes the form and reloads", async () => {
+    await openRolesAs(["Admin.UserManagement"], baseBody(), {
+      "POST /api/org/users": {
+        ok: true,
+        json: async () => ({ id: "usr1", name: "Alice", email: "alice@acme.com", apiKey: "vf_live_secret123" }),
+      },
+    });
+    const button = [...document.querySelectorAll("button")].find((b) => b.textContent?.includes("New person"));
+    button?.click();
+
+    const submit = [...document.querySelectorAll("button")].find((b) => b.textContent?.includes("Create"));
+    await submit?.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    const done = [...document.querySelectorAll("button")].find((b) => b.textContent?.includes("Done"));
+    await done?.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(document.querySelector(".backdrop")).toBeNull();
   });
 });

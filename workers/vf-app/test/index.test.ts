@@ -965,6 +965,7 @@ describe("org/authority/profiles routes, through the real router", () => {
   it("creates a user through the real router", async () => {
     const res = await SELF.fetch("https://example.com/org/users", {
       method: "POST",
+      headers: authHeaders(),
       body: JSON.stringify({ id: "usr1", email: "a@b.com", name: "Alice" }),
     });
     expect(res.status).toBe(201);
@@ -1026,10 +1027,12 @@ describe("org/authority/profiles routes, through the real router", () => {
   it("sets an authority limit through the real router", async () => {
     await SELF.fetch("https://example.com/org/users", {
       method: "POST",
+      headers: authHeaders(),
       body: JSON.stringify({ id: "usr1", email: "a@b.com", name: "Alice" }),
     });
     const res = await SELF.fetch("https://example.com/org/users/usr1/authority-limits", {
       method: "POST",
+      headers: authHeaders(),
       body: JSON.stringify({ currency: "EUR", maxAmount: 5000 }),
     });
     expect(res.status).toBe(200);
@@ -1074,6 +1077,7 @@ describe("team routes, through the real router (decision 0016)", () => {
     });
     await SELF.fetch("https://example.com/org/users", {
       method: "POST",
+      headers: authHeaders(),
       body: JSON.stringify({ id: "usr1", email: "a@b.com", name: "Alice" }),
     });
     const res = await SELF.fetch("https://example.com/org/teams/AP%20team/members", {
@@ -1103,6 +1107,7 @@ describe("team routes, through the real router (decision 0016)", () => {
     });
     await SELF.fetch("https://example.com/org/users", {
       method: "POST",
+      headers: authHeaders(),
       body: JSON.stringify({ id: "usr1", email: "a@b.com", name: "Alice" }),
     });
     const res = await SELF.fetch("https://example.com/org/teams/t1/members", {
@@ -1123,6 +1128,7 @@ describe("team routes, through the real router (decision 0016)", () => {
     });
     await SELF.fetch("https://example.com/org/users", {
       method: "POST",
+      headers: authHeaders(),
       body: JSON.stringify({ id: "usr1", email: "a@b.com", name: "Alice" }),
     });
     await SELF.fetch("https://example.com/org/teams/t1/members", {

@@ -218,6 +218,125 @@ function roleRow(role) {
   return row;
 }
 
+/**
+ * **Creating a person — decision 0328.** Gated to `Admin.UserManagement`,
+ * the same delegable permission already used for assigning a role;
+ * a delegated administrator sees only the orgs they themselves
+ * administer, since `units` here is already `/org/overview`'s own
+ * pre-scoped list (decision 0321), the same reasoning
+ * `openAssignmentsForm`'s own org picker already relies on.
+ *
+ * **The returned API key is shown exactly once.** Creating a person
+ * generates a real credential that cannot be recovered after this —
+ * only rotated. The form stays open on success, showing the key with
+ * a clear warning, rather than the usual reload-and-close every other
+ * form on this screen uses; closing early here would be the one
+ * mistake that cannot be undone by opening the form again.
+ */
+function openNewPersonForm() {
+  const problem = el("div", { class: "warn" });
+
+  const nameInput = el("input", { type: "text" });
+  const emailInput = el("input", { type: "email" });
+  const orgPicker = el("select", {}, [
+    el("option", { value: "", text: t("roles.everywhere") }),
+    ...units.map((u) => el("option", { value: u.id, text: u.name })),
+  ]);
+  const currencyInput = el("input", { type: "text", placeholder: "EUR" });
+  const amountInput = el("input", { type: "number", min: "0" });
+
+  const form = el("div", { class: "editgrid" }, [
+    el("label", { text: t("roles.personname") }),
+    nameInput,
+    el("label", { text: t("roles.personemail") }),
+    emailInput,
+    el("label", { text: t("roles.personorg") }),
+    orgPicker,
+    el("label", { text: t("roles.limitcurrency") }),
+    currencyInput,
+    el("label", { text: t("roles.limitamount") }),
+    amountInput,
+  ]);
+
+  const backdrop = el("div", { class: "backdrop" }, [
+    el("div", { class: "popout" }, [
+      el("h3", { text: t("action.newperson") }),
+      form,
+      problem,
+      el("div", { class: "statebuttons" }, [
+        el("button", {
+          class: "primary",
+          text: t("roles.create"),
+          onclick: async () => {
+            problem.textContent = "";
+            const name = nameInput.value.trim();
+            const email = emailInput.value.trim();
+            const unitId = orgPicker.value || null;
+            try {
+              const response = await fetch("/api/org/users", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ id: crypto.randomUUID(), name, email, unitId }),
+              });
+              if (!response.ok) {
+                problem.textContent = (await response.json()).error ?? t("roles.createpersonfailed");
+                return;
+              }
+              const created = await response.json();
+
+              const amount = amountInput.value.trim();
+              const currency = currencyInput.value.trim();
+              if (amount && currency) {
+                await fetch(`/api/org/users/${encodeURIComponent(created.id)}/authority-limits`, {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ currency, maxAmount: Number(amount) }),
+                });
+              }
+
+              showApiKeyOnce(created.apiKey, backdrop);
+            } catch {
+              problem.textContent = t("roles.createpersonfailed");
+            }
+          },
+        }),
+        actionLink("close", { onclick: () => backdrop.remove() }),
+      ]),
+    ]),
+  ]);
+
+  backdrop.onclick = (e) => {
+    if (e.target === backdrop) backdrop.remove();
+  };
+  document.body.append(backdrop);
+  nameInput.focus();
+}
+
+/**
+ * Replaces the form with the one-time key display — never both on
+ * screen together, so there is no lingering "submit again" affordance
+ * once the credential that matters has already been issued.
+ */
+function showApiKeyOnce(apiKey, backdrop) {
+  const popout = backdrop.querySelector(".popout");
+  popout.replaceChildren(
+    el("h3", { text: t("roles.apikey") }),
+    el("p", { class: "warn", text: t("roles.apikeywarning") }),
+    el("input", { type: "text", value: apiKey, readonly: "readonly", class: "apikeydisplay" }),
+    el("div", { class: "statebuttons" }, [
+      el("button", {
+        class: "primary",
+        text: t("roles.done"),
+        onclick: async () => {
+          backdrop.remove();
+          await load();
+          render();
+        },
+      }),
+    ])
+  );
+}
+
 function personRow(user) {
   const own = assignments.filter((a) => a.userId === user.id);
   const limits = authorityLimits.filter((l) => l.userId === user.id);
@@ -369,6 +488,7 @@ function render() {
   if (!shell) return;
 
   const canManage = hasMyPermission("Admin.RoleManagement");
+  const canAssign = hasMyPermission("Admin.UserManagement");
 
   shell.replaceChildren(
     frame(
@@ -386,7 +506,8 @@ function render() {
           "roles.people",
           "roles.nopeople",
           ["column.person", "roles.assignments", "roles.limits"],
-          users.map(personRow)
+          users.map(personRow),
+          canAssign ? actionLink("newperson", { onclick: () => openNewPersonForm() }) : null
         ),
       ])
     )

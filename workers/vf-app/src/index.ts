@@ -1314,13 +1314,34 @@ export default {
 
     if (pathname === "/org/users" && request.method === "POST") {
       const { db } = resolveTenant(request, env);
+
+      /**
+       * **`Admin.UserManagement`, decision 0328, bootstrap-aware —
+       * matching `POST /org/users/:id/roles` exactly.** Creating a
+       * user is the route decision 0010's own exception describes:
+       * nobody can be authenticated to create the first account that
+       * grants authentication. After that first account exists, the
+       * same reasoning decision 0201 gives granting a role applies
+       * here too — a France administrator may create somebody in
+       * France, never unscoped, never outside it.
+       */
+      let granterUnits: string[] | null = null;
+      if (!(await isUnclaimed(db))) {
+        const auth = await authenticatePerson(db, request, env);
+        if (!auth.user) return json({ error: auth.reason }, 401);
+        if (!(await hasPermission(db, auth.user.id, "Admin.UserManagement"))) {
+          return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
+        }
+        granterUnits = await unitsWherePermitted(db, auth.user.id, "Admin.UserManagement");
+      }
+
       let body: unknown;
       try {
         body = await request.json();
       } catch {
         return json({ error: t("invalidJsonBody", resolveLocale(env.LOCALE)) }, 400);
       }
-      const result = await handleCreateUser(db, (body ?? {}) as Record<string, unknown>);
+      const result = await handleCreateUser(db, (body ?? {}) as Record<string, unknown>, granterUnits);
       return json(result.body, result.status);
     }
 
@@ -1447,6 +1468,20 @@ export default {
     const authorityLimitMatch = pathname.match(/^\/org\/users\/([^/]+)\/authority-limits$/);
     if (authorityLimitMatch && request.method === "POST") {
       const { db } = resolveTenant(request, env);
+      /**
+       * **`Admin.UserManagement`, decision 0328.** This route had no
+       * permission check of any kind — flagged as a real, live gap in
+       * decisions 0319 and 0327, closed here rather than building a
+       * UI on top of an unguarded route. Deliberately the simple form
+       * for now: a permission check, not yet the fuller
+       * per-person delegation scoping `handleCreateUser` and
+       * `handleAssignRole` already have — a real simplification worth
+       * naming, not a mistake made in passing.
+       */
+      const auth = await requirePermission(db, request, "Admin.UserManagement", sessionContext(env));
+      if (!auth.authorized) {
+        return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
+      }
       let body: unknown;
       try {
         body = await request.json();
