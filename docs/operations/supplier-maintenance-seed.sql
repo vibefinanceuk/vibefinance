@@ -62,13 +62,14 @@ VALUES (
   (SELECT id FROM org_units WHERE parent_unit_id IS NULL ORDER BY name LIMIT 1)
 );
 
-UPDATE process_stages SET rule_set_id = 'supplier-maintenance-rules'
-WHERE id = 'supplier-maintenance-review';
-
 -- ---------------------------------------------------------------
 -- 4. The rule set and its one rule — vocabulary 'supplier'
 -- (decision 0350), not 'invoice'. first_match, since there is only
 -- ever one rule to consider.
+--
+-- Created BEFORE the stage points at it: process_stages.rule_set_id
+-- carries its own foreign key to rule_sets(id), so the UPDATE below
+-- must come after this INSERT, not before it.
 -- ---------------------------------------------------------------
 INSERT INTO rule_sets (id, name, mode, status, vocabulary)
 VALUES ('supplier-maintenance-rules', 'Supplier Maintenance Rules', 'first_match', 'active', 'supplier');
@@ -95,3 +96,7 @@ VALUES (
   datetime('now'),
   datetime('now')
 );
+
+-- Now safe: 'supplier-maintenance-rules' exists.
+UPDATE process_stages SET rule_set_id = 'supplier-maintenance-rules'
+WHERE id = 'supplier-maintenance-review';
