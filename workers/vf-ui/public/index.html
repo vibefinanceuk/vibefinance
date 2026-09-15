@@ -1165,7 +1165,19 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .memberpickerrow input[type="number"] { flex: 0 0 6em; }
+  /*
+    **The amount field grows, so Set lands at the row's own right
+    edge — decision 0344.** Reported live, from a real screenshot:
+    with the currency field fixed (decision 0343) and the amount
+    field also fixed, neither had any `flex-grow` at all — the row's
+    own leftover width sat empty after Set rather than being filled,
+    so the button landed short of where the fields above it end.
+    `flex: 1` here gives that leftover width somewhere to go, the same
+    "grow to fill" decision 0341 first gave the currency field before
+    0343 corrected it — right this time, since nothing else in this
+    row now competes for the same space.
+  */
+  .memberpickerrow input[type="number"] { flex: 1; min-width: 6em; }
 
   /*
     The dashboard — decision 0242.
