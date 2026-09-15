@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 7 September 2026. A living document: what is built, what
+Last updated 15 September 2026. A living document: what is built, what
 is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -146,6 +146,45 @@ a rule, and left an approval task in a queue.
 - **Customer-defined fields** — the closed vocabulary becomes closed
   *per customer* rather than globally (0041)
 
+### Roles, org narrowing, and the Roles screen — new this arc (0313–0331)
+- **An org switcher** in the topbar: a person holding a role at more
+  than one org picks which one they are looking at, and Tasks,
+  Documents, Dashboard, and Suppliers all narrow to it (0313–0316).
+  Narrowing never grants — choosing an org not held still shows
+  nothing.
+- **Suppliers get an org**, with per-org ERP identifiers and a
+  matching tiebreaker used only when a pay site cannot resolve one on
+  its own (0317, with a real capture-time ordering bug fixed in
+  0318).
+- **A real Roles screen** where every role, org unit, person, role
+  assignment, and approval limit had previously existed only as raw
+  database rows, reachable only by direct SQL (0319). Read-only at
+  first, gated to instance administrators (`Admin.Configure`) with
+  scoped visibility for a delegated `Admin.UserManagement` holder
+  (0320, 0321).
+- **The write side, built as its own, separately-permissioned
+  surface**: creating and editing a role's own definition
+  (`Admin.RoleManagement`, deliberately not delegable — 0326);
+  assigning and revoking a role for a person, mirroring the same
+  delegation boundary granting already has (`Admin.UserManagement`,
+  deliberately delegable — 0327, the other half of decision 0201);
+  creating a person, with the same delegation boundary applied to
+  which org a new person can belong to (0328).
+- **Two real, live security gaps closed while building this, not
+  before**: `handleCreateUser` and `POST /org/users/:id/authority-limits`
+  had no permission check of any kind — both flagged as known gaps in
+  earlier decisions, both closed here rather than a UI being built on
+  top of them (0328).
+- **Two new permissions**, each a real gap a live report surfaced:
+  `Admin.RuleActivation`, replacing `AP.Approve` as the gate for
+  activating a rule — that name implied invoice approval and never
+  gated it (0325); `Admin.RoleManagement`, for editing what a role
+  itself grants (0326).
+- **Every permission's own real description**, shown beside its
+  checkbox on the Roles screen, sourced from `permissions.ts`'s own
+  comments rather than invented, and kept in the same file as the
+  permission it describes so the two can never drift apart (0331).
+
 ---
 
 ## Not built
@@ -178,6 +217,29 @@ bounded above as well as below (0201).
 *"at all"* rather than *"where"*. Claiming, completing, the task list
 and the document list are scoped; keying, approving and returning are
 not.
+
+**Teams have no UI, and their own routes are unauthenticated.**
+Creating a team and adding a member both exist (`team-route.ts`), with
+the same "deliberately no authentication, bootstrap-deadlock class"
+reasoning `/org/units` and the original `/org/roles` had before 0326 —
+and there is no route at all to list teams, remove a member, or
+rename one. Assigning a role to a person is fully built (0327); a team
+is the one remaining piece of "allocating roles to a user, assigning
+users to teams, creating and maintaining teams" not yet started.
+
+**`POST /org/units` still has no permission check of any kind.** Named
+as a known gap in 0319; the same class of gap this arc closed for
+user creation and authority limits (0328) has not been closed here.
+
+**The remaining "user variable" fields do not exist anywhere in the
+schema**: cost-centre allocation for a *person* (a cost centre has one
+special *owner* today — who approves its charges — which is the
+reverse relationship, not "this person works within cost centre X"),
+a picture (no image storage exists for anything user-related), a
+forename/surname split (today a single `name` field), and a business
+title. None declined — deliberately deferred, scoped out of 0328 to
+keep that piece to fields that already existed somewhere in the
+system (0328).
 
 **The operator interface's screen** (0140). The attribution half is
 built — every privileged action recorded, refusals included. The screen
@@ -405,9 +467,19 @@ relying on it.
 It read every field correctly, including an ambiguous date format
 resolved from context. One document is not a sample.
 
-**Two pre-existing test failures** in `shared/licensing/token.test.ts`
-— time-expired JWT keys, unrelated to any recent work, failing on
-`main` since before this session.
+**Three pre-existing test failures in `shared/`**, none related to any
+recent work. Two are time-expired JWT keys in
+`shared/licensing/token.test.ts`, failing on `main` since before this
+session. The third, found while updating this document rather than
+while building anything —
+`shared/migration/table-classes.test.ts`, "names each one exactly
+once" — reports four tables added between migrations 0055 and 0059,
+before this session began, never classified into
+`CONFIGURATION_TABLES` or `NON_MIGRATING_TABLES`:
+`_supplier_links`, `dashboard_cards`, `dashboard_cards_new`,
+`document_comments`. Decision 0118's own standing question — does
+this table hold what a customer configured, or what their instance
+did — was never answered for these four.
 
 **`compiler-model.ts` has a response-reader ordering that was a real
 bug in the extraction path.** It works correctly against
@@ -421,13 +493,13 @@ elsewhere.
 
 | Package | Tests |
 |---|---|
-| `vf-app` | 1428 |
-| `vf-licence` | 318 |
-| `vf-ui` | 49 Worker · 269 browser |
-| `shared` | 252 passing, 2 known pre-existing failures |
+| `vf-app` | 1565 |
+| `vf-licence` | 320 |
+| `vf-ui` | 56 Worker · 461 browser |
+| `shared` | 269 passing, 3 known pre-existing failures |
 
 Both migration chains replay clean with every standing invariant
-holding — 43 migrations for `vf-app`, 42 for `vf-licence`.
+holding — 63 migrations for `vf-app`, 98 for `vf-licence`.
 
 ---
 
@@ -444,7 +516,7 @@ holding — 43 migrations for `vf-app`, 42 for `vf-licence`.
 | `docs/design/mockups/` | Four screens as static HTML | Current |
 | `docs/design/multi-authority-intake.md` | Non-EN-16931 authorities | Design only |
 | `docs/design/text-layer-extraction.md` | Reading a PDF's own text | Design only |
-| `docs/decisions/` | 256 decision records | Current |
+| `docs/decisions/` | 331 decision records | Current |
 | `docs/decisions/SUPERSEDED.md` | Which records supersede which | **Read first** |
 
 Document 4's markdown source is at `docs/documents/`, with
@@ -500,12 +572,41 @@ testing a placeholder key (0097). Every one had tests, all calling the
 handler directly, which says nothing about whether the router protects
 it. **Exercise the real path, not the piece you believe is on it.**
 
+**A route existing in the backend proves nothing about whether a
+browser can reach it.** `vf-ui` forwards `/api/*` to `vf-app` only for
+paths on its own explicit allow-list — a second gate, entirely
+separate from anything `vf-app` itself checks. Found six times in one
+arc (0212, 0324, and four more in 0326–0328): `/org/overview`,
+`/org/roles` (both create and the later update route), `/org/users/:id/roles`
+(both assign and revoke), `/org/users`, and
+`/org/users/:id/authority-limits` had all existed and been tested in
+`vf-app` — some since decision 0201, months earlier — and had simply
+never been reachable from a real browser at all. Decision 0212 built
+a test list (`reachable`, in `vf-ui/test/index.test.ts`) for exactly
+this failure mode after the first two instances; every later instance
+was still found by a live request failing, not by that list, because
+the new route was never added to it either. **Adding a route to the
+backend and adding it to this list are two separate steps, and
+nothing yet ties them together.**
+
 **A standing invariant detects; it does not prevent.** Decision 0092
 claimed one meant a cross-customer grant could not be written. A
 hand-written INSERT then wrote one against the live control plane
 (0093). Where a rule spans tables and matters, carry the discriminator
 and use composite foreign keys — prevention that is visible in the
 schema and survives a rebuild.
+
+**A standing invariant written as a hand-copied SQL literal drifts the
+moment its own source of truth grows.** `permissions.ts`'s own closed
+vocabulary is checked against a SQL migration's hand-written
+enumeration (decision 0200, migration 0048) — and adding a single new
+permission (`Admin.RuleActivation`, 0325; `Admin.RoleManagement`,
+0326) broke this test both times, exactly as designed. The fix is not
+to edit an already-applied migration — a new one restates the same
+invariant with the vocabulary as it now stands, and the test comparing
+the two reads every migration in the chain together. **A closed
+vocabulary checked in two places will drift in exactly the place
+nobody is looking when the first one grows.**
 
 **A survival test cannot catch a broken reference.** Rebuilding a
 referenced table (0084) passed a check that existing rows survived, and

@@ -1,6 +1,6 @@
 # Handover
 
-**Written 4 September 2026, updated 11 September.**
+**Written 4 September 2026, updated 15 September.**
 
 **For a session starting cold.** Where things stand, what needs a
 decision rather than work, what to do next, and the habits this project
@@ -29,18 +29,20 @@ twice.
 
 | | |
 | --- | --- |
-| `origin/main` | `8e27a34` |
+| `origin/main` | `a17d14e` |
 | vf-admin deployed | `8e27a34` · `https://admin.vibefinance-ai.com` · behind Access |
-| vf-app deployed | `8e27a34` |
-| vf-licence deployed | `8e27a34` |
-| vf-ui deployed | `8e27a34` · `https://app.vibefinance-ai.com` |
+| vf-app deployed | `a17d14e` |
+| vf-licence deployed | `a17d14e` |
+| vf-ui deployed | `a17d14e` · `https://app.vibefinance-ai.com` |
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
-| `vf-app-poc` migrations | through `0055` |
-| `vf-licence-poc` migrations | through `0067` |
-| Tests | vf-admin 9 · vf-app 1384 · vf-licence 319 · vf-ui 49 Worker + 237 browser · shared 267 (+2 known pre-existing failures) |
-| Decision records | 237 |
+| `vf-app-poc` migrations | through `0063` |
+| `vf-licence-poc` migrations | through `0098` |
+| Tests | vf-admin 9 · vf-app 1565 · vf-licence 320 · vf-ui 56 Worker + 461 browser · shared 269 (+3 known pre-existing failures) |
+| Decision records | 331 |
 
-**Everything committed is deployed.**
+**Everything committed is deployed.** `vf-admin` untouched this arc —
+its own last commit predates decision 0298, listed as-is rather than
+guessed at.
 
 **There are four Workers now.** `vf-app` per customer, `vf-licence`
 shared, `vf-ui` shared — the customer's interface, its own deployment
@@ -49,9 +51,14 @@ redeploying the component that mints licence tokens for the whole fleet
 (0099) — and `vf-admin`, the operator's, behind Cloudflare Access
 (0186).
 
-The two `shared` failures are time-expired JWT keys in the licensing
-token tests, failing on `main` since before any of this work. Not new,
-not related.
+`shared`'s own three known failures: two are time-expired JWT keys in
+the licensing token tests, failing on `main` since before any of this
+work. The third — `migration/table-classes.test.ts`, "names each one
+exactly once" — is new to this update, not to the codebase: four
+tables added between migrations 0055 and 0059, before this arc began,
+were never classified into `CONFIGURATION_TABLES` or
+`NON_MIGRATING_TABLES`. Found while updating this document, not while
+building anything — worth a real fix, not a re-count.
 
 ---
 
@@ -67,8 +74,23 @@ stages where people key, approve and return it. Every visible word comes
 from the control plane and every colour from a token, so a wording fix
 or a new language is rows rather than a deployment.
 
-**Six screens**: Tasks, Sources, Suppliers, Rules, Documents, and the viewer that
-serves every stage.
+**Seven screens**: Tasks, Sources, Suppliers, Rules, Documents, Roles,
+and the viewer that serves every stage. Roles is new this arc
+(0319–0331) — every org unit, role, person, assignment, and approval
+limit that had previously existed only as raw database rows, reachable
+only by direct SQL, now has a real screen: read for anyone holding
+`Admin.Configure` or a scoped `Admin.UserManagement`, write (creating
+and editing a role, assigning and revoking one, creating a person) for
+the same permissions, kept deliberately separate from each other —
+editing what a role itself grants is instance-wide and never
+delegable, where assigning an existing role to a person already was
+(0201) and stays so.
+
+**An org switcher** sits in the topbar for the first time: a person
+holding a role at more than one org picks which one they are looking
+at, and Tasks, Documents, Dashboard, and Suppliers all narrow to it
+(0313–0316) — narrowing what is shown, never granting anything a
+person could not already reach some other way.
 
 **An invoice bills a company** (decision 0226), matched on its buyer
 VAT id or electronic address. **Which department bears the cost is a
@@ -230,6 +252,34 @@ established which**, and the two readings have different fixes.
 
 ## Suggested next pieces
 
+**New this arc, and the most immediately actionable: teams, and the
+remaining "user variable" fields.** Reported live in one request —
+"a UI for creating Users, allocating user variables, allocating roles
+to user, and assigning users to teams. creating and maintaining
+teams" — and deliberately scoped down to one piece at a time rather
+than built all at once (0328 onward).
+
+**Teams** have real routes today (`handleCreateTeam`,
+`handleAddTeamMember`) with no permission check of any kind — the
+same bootstrap-deadlock class of gap `/org/units` and the original
+`/org/roles` had before 0326 closed it there — and no route at all to
+list a team, remove a member, or rename one. Building a UI here means
+building those three routes first, then gating all five the way 0328
+gated user creation and authority limits.
+
+**The remaining fields are genuinely new schema**, not just a missing
+screen: cost-centre allocation *for a person* (a cost centre has one
+special *owner* today — who approves its charges — the reverse
+relationship, not "this person works within cost centre X"), a
+picture (no image storage exists for anything user-related — the
+real lift here, deliberately not started), a forename/surname split
+(today one `name` field, and splitting it touches every place a
+name is already displayed), and a business title.
+
+**`POST /org/units` still has no permission check of any kind** —
+named as a known gap in 0319, the same class of gap 0328 closed for
+user creation and authority limits, not yet closed here.
+
 **1. Cost object approval** (decisions 0184, 0195) — **the frame is
 built; nothing calls it.**
 
@@ -281,6 +331,14 @@ manager.
 
 **2. Unit-scoped configuration** (decisions 0192, 0196) — **rule sets
 are scoped; nothing else is.**
+
+**Update, this arc (0313–0331): roles now have a real UI, not only a
+scoped assignment.** The Roles screen — read (0319–0323) and write,
+including assignment (0326–0328) — is what closes that gap.
+**Still customer-wide, unchanged**: teams (`team-route.ts`'s own
+routes exist, matching `org-route.ts`'s bootstrap-deadlock precedent,
+decision 0010 — no UI, and no route at all to list a team, remove a
+member, or rename one) and settings.
 
 A unit may override a stage's rule set, resolved by one walk in
 `unit-config.ts`. A process was the wrong grain: France and Germany want
@@ -558,6 +616,7 @@ missing check — a working one, pointed slightly wrong.
 | 0167 | A viewer | A task, never a document nobody is working on |
 | 0170 | Extraction | A model that reads badly, never one confident about it |
 | 0174 | A line save | Every field the screen holds being a field it sends |
+| 0212, 0324–0328 | A proxy allow-list | Six routes, real and tested in `vf-app`, never once added to `vf-ui`'s own list of what it will forward |
 
 **And this table itself.** It was removed by a rewrite of the section
 above it, and three later edits claimed to add rows to a table that was
