@@ -58,6 +58,8 @@ const STRINGS = {
     "action.retire": "Retire",
     "action.rename": "Rename",
     "action.create": "Create",
+    "action.save": "Save",
+    "action.close": "Close",
     "sources.retired": "Retired",
     "outcome.never_used": "Source deleted. Nothing had been received through it.",
     "outcome.address_issued": "Source retired. An email address was issued for it, so the record is kept.",
@@ -355,6 +357,27 @@ describe("retiring and renaming (decision 0130)", () => {
     }
   });
 
+  /**
+   * **A real pop-out, not `window.prompt` — decision 0348.** Reported
+   * live, from a real screenshot: a native browser dialog carries the
+   * page's own origin in its own title bar, which cannot be made to
+   * look like part of this app. Confirmed directly that the native
+   * dialog is never invoked at all, not merely that a pop-out also
+   * happens to appear alongside it.
+   */
+  it("opens a real pop-out to rename, pre-filled with the current name, never calling window.prompt", async () => {
+    const promptSpy = vi.fn();
+    vi.stubGlobal("prompt", promptSpy);
+    await open(LIVE);
+
+    const rename = [...document.querySelectorAll(".rowactions button")].find((b) => b.textContent === "Rename") as HTMLButtonElement;
+    rename.click();
+
+    expect(promptSpy).not.toHaveBeenCalled();
+    expect(document.querySelector(".popout h3")?.textContent).toBe("Rename");
+    expect((document.querySelector(".popout .editgrid input") as HTMLInputElement)?.value).toBe("AP Mailbox");
+  });
+
   it("offers neither on one already retired", async () => {
     await open([{ ...LIVE[0], status: "retired" }]);
     expect(document.querySelectorAll(".rowactions button")).toHaveLength(0);
@@ -406,6 +429,13 @@ describe("what happened, in the reader's language (decision 0132)", () => {
     // appeared, and successes now say nothing — the list is the answer.
     // The claim that survives is about the words: when the screen does
     // speak, they are ours and translated.
+    //
+    // **Triggered through Retire, not Rename, since decision 0348.**
+    // Renaming now surfaces its own errors inline inside its own
+    // pop-out, the same way every other write action in this app
+    // already does. Retire's own `!response.ok` branch still speaks
+    // through the shared `sources-note` banner, translating a reason
+    // code exactly the way this test's own claim is about.
     const posted: string[] = [];
     await open(
       [
@@ -418,20 +448,19 @@ describe("what happened, in the reader's language (decision 0132)", () => {
           status: "active",
         },
       ],
-      { "/api/sources/s-1": { ok: false, outcome: "retired", reason: "address_issued" } },
+      { "/api/sources/s-1": { outcome: "refused", reason: "address_issued", error: "raw english" } },
       posted
     );
 
-    const rename = [...document.querySelectorAll(".rowactions button")].find(
-      (b) => b.textContent === "Rename"
+    const retire = [...document.querySelectorAll(".rowactions button")].find(
+      (b) => b.textContent === "Retire"
     ) as HTMLButtonElement;
-    vi.stubGlobal("prompt", () => "New name");
     vi.stubGlobal("fetch", vi.fn(async () => ({
       ok: false,
-      json: async () => ({ reason: "address_issued", error: "raw english" }),
+      json: async () => ({ outcome: "refused", reason: "address_issued", error: "raw english" }),
     } as Response)));
 
-    rename.click();
+    retire.click();
     await new Promise((r) => setTimeout(r, 0));
 
     expect(document.getElementById("sources-note")?.textContent).toContain("Source retired");
@@ -481,12 +510,6 @@ describe("confirming an address release (decision 0133)", () => {
   it("asks, naming the address", async () => {
     // "An address will be released" is not something a person can
     // check. The address itself is.
-    let asked = "";
-    vi.stubGlobal("confirm", (message: string) => {
-      asked = message;
-      return false;
-    });
-
     await open(WITH_ADDRESS, {
       "/api/sources/s-1": {
         outcome: "confirm_required",
@@ -497,12 +520,33 @@ describe("confirming an address release (decision 0133)", () => {
     clickRetire();
     await new Promise((r) => setTimeout(r, 0));
 
-    expect(asked).toContain("ap-mailbox.acme@vibefinance.com");
+    expect(document.querySelector(".popout")?.textContent).toContain("ap-mailbox.acme@vibefinance.com");
+  });
+
+  /**
+   * **A real pop-out, not `window.confirm` — decision 0348.** The
+   * same reasoning as the rename pop-out's own test: confirmed
+   * directly that the native dialog is never invoked.
+   */
+  it("never calls window.confirm to ask about releasing an address", async () => {
+    const confirmSpy = vi.fn();
+    vi.stubGlobal("confirm", confirmSpy);
+    await open(WITH_ADDRESS, {
+      "/api/sources/s-1": {
+        outcome: "confirm_required",
+        reason: "address_would_be_released",
+        emailAddress: "ap-mailbox.acme@vibefinance.com",
+      },
+    });
+    clickRetire();
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(confirmSpy).not.toHaveBeenCalled();
+    expect(document.querySelector(".popout")).not.toBeNull();
   });
 
   it("does nothing when the answer is no", async () => {
     const posted: string[] = [];
-    vi.stubGlobal("confirm", () => false);
 
     await open(
       WITH_ADDRESS,
@@ -518,6 +562,12 @@ describe("confirming an address release (decision 0133)", () => {
     clickRetire();
     await new Promise((r) => setTimeout(r, 0));
 
+    const close = [...document.querySelectorAll(".popout button")].find((b) => b.textContent?.includes("Close")) as HTMLButtonElement;
+    close.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    // No second, release-confirming request was ever sent.
+    expect(posted.filter((p) => p.includes("releaseAddress"))).toHaveLength(0);
     // The source is still listed.
     expect(document.body.textContent).toContain("AP Mailbox");
   });

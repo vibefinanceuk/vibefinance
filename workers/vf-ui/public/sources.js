@@ -115,11 +115,13 @@ async function retireSource(source, releaseAddress = false) {
    * supplier's ERP, and nothing records that, so the server refuses and
    * asks. The address is named in the question, because *"an address
    * will be released"* is not something anybody can check and this is.
+   *
+   * **A real pop-out, not `window.confirm` — decision 0348.** The same
+   * reasoning as `openRenameSourceForm`: a native browser dialog cannot
+   * be made to look like part of this app.
    */
   if (body.outcome === "confirm_required") {
-    if (window.confirm(`${t("sources.confirmrelease")}\n\n${body.emailAddress}`)) {
-      await retireSource(source, true);
-    }
+    openReleaseAddressConfirm(source, body.emailAddress);
     return;
   }
 
@@ -132,31 +134,93 @@ async function retireSource(source, releaseAddress = false) {
   render();
 }
 
+function openReleaseAddressConfirm(source, emailAddress) {
+  const close = () => backdrop.remove();
+  const confirmRelease = actionLink("retire", {
+    primary: true,
+    onclick: async () => {
+      backdrop.remove();
+      await retireSource(source, true);
+    },
+  });
+  const stateButtons = el("div", { class: "statebuttons" }, [confirmRelease, actionLink("close", { onclick: close })]);
+
+  const backdrop = el("div", { class: "backdrop" }, [
+    el("div", { class: "popout" }, [
+      el("div", { class: "cardhead" }, [el("h3", { text: t("sources.retire") }), stateButtons]),
+      el("p", { text: t("sources.confirmrelease") }),
+      el("p", { class: "muted", text: emailAddress }),
+    ]),
+  ]);
+
+  backdrop.onclick = (e) => {
+    if (e.target === backdrop) backdrop.remove();
+  };
+  document.body.append(backdrop);
+}
+
 /**
  * Rename one.
  *
  * Refused by the server once a name is on a document or an address —
  * and the reason is shown, because *"you cannot rename this"* without
  * one is an instruction to guess.
+ *
+ * **A real pop-out, not `window.prompt` — decision 0348.** Reported
+ * live, from a real screenshot: a native browser prompt carries the
+ * page's own origin in its own title bar and the browser's own
+ * unstyleable chrome around it, neither of which anyone can change to
+ * look like part of this app. The same `.backdrop`/`.popout` shape
+ * every other write action in this app already uses, in its place.
  */
-async function renameSource(source) {
-  const name = window.prompt(t("sources.rename"), source.name);
-  if (name === null || name.trim() === "") return;
+function openRenameSourceForm(source) {
+  const problem = el("div", { class: "warn" });
+  const nameInput = el("input", { type: "text", value: source.name });
 
-  const response = await fetch(`/api/sources/${encodeURIComponent(source.id)}`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name: name.trim() }),
+  const close = () => backdrop.remove();
+  const save = actionLink("save", {
+    primary: true,
+    onclick: async () => {
+      problem.textContent = "";
+      const name = nameInput.value.trim();
+      if (name === "") {
+        problem.textContent = t("sources.needname");
+        return;
+      }
+      try {
+        const response = await fetch(`/api/sources/${encodeURIComponent(source.id)}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name }),
+        });
+        const body = await response.json();
+        if (!response.ok) {
+          problem.textContent = outcome(body.reason) || body.error || t("sources.failed");
+          return;
+        }
+        backdrop.remove();
+        await load();
+        render();
+      } catch {
+        problem.textContent = t("sources.failed");
+      }
+    },
   });
-  const body = await response.json();
+  const stateButtons = el("div", { class: "statebuttons" }, [save, actionLink("close", { onclick: close })]);
 
-  if (!response.ok) {
-    note(outcome(body.reason) || body.error || t("sources.failed"));
-    return;
-  }
+  const backdrop = el("div", { class: "backdrop" }, [
+    el("div", { class: "popout" }, [
+      el("div", { class: "cardhead" }, [el("h3", { text: t("sources.rename") }), stateButtons]),
+      el("div", { class: "editgrid" }, [el("label", { text: t("sources.name") }), nameInput]),
+      problem,
+    ]),
+  ]);
 
-  await load();
-  render();
+  backdrop.onclick = (e) => {
+    if (e.target === backdrop) backdrop.remove();
+  };
+  document.body.append(backdrop);
+  nameInput.focus();
 }
 
 async function createSource() {
@@ -360,7 +424,7 @@ function sourceRow(source) {
   } else {
     cells.push(
       el("td", { class: "rowactions" }, [
-        actionLink("rename", { onclick: () => renameSource(source) }),
+        actionLink("rename", { onclick: () => openRenameSourceForm(source) }),
         actionLink("retire", { onclick: () => retireSource(source) }),
       ])
     );
