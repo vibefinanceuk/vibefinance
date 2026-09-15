@@ -980,6 +980,44 @@ describe("a person's own properties and limits — decision 0334, its own pop-ou
   });
 
   /**
+   * **A closed dropdown, not free text — decision 0339.** Reported
+   * live: "make the currency box... a drop down of CCY values." Both
+   * the approval-limit and spend-limit currency fields offer the
+   * same fixed set, in the same order.
+   */
+  it("offers a closed set of currencies for both approval and spend limits", async () => {
+    await openRolesAs(["Admin.UserManagement"], baseBody());
+    clickPropertiesAction("Alice");
+
+    const rows = [...document.querySelectorAll<HTMLDivElement>(".memberpickerrow")];
+    expect(rows).toHaveLength(2);
+    for (const row of rows) {
+      const currencySelect = row.querySelector<HTMLSelectElement>("select");
+      const options = [...(currencySelect?.querySelectorAll("option") ?? [])].map((o) => o.textContent);
+      expect(options).toEqual(["CHF", "EUR", "GBP", "USD"]);
+    }
+  });
+
+  /**
+   * **The same closed set at creation time — decision 0339.** The
+   * New Person form sets an approval and spend limit at the same
+   * moment it creates the person; a free-text field there would be
+   * the one place a mistyped code could still slip through.
+   */
+  it("offers the same closed set of currencies on the New Person form", async () => {
+    await openRolesAs(["Admin.UserManagement"], baseBody());
+    const button = [...document.querySelectorAll("button")].find((b) => b.textContent?.includes("New person"));
+    button?.click();
+
+    const selects = document.querySelectorAll<HTMLSelectElement>(".editgrid select");
+    // org, manager, cost centre, then approval-limit currency, then spend-limit currency
+    const approvalOptions = [...selects[3].querySelectorAll("option")].map((o) => o.textContent);
+    const spendOptions = [...selects[4].querySelectorAll("option")].map((o) => o.textContent);
+    expect(approvalOptions).toEqual(["CHF", "EUR", "GBP", "USD"]);
+    expect(spendOptions).toEqual(["CHF", "EUR", "GBP", "USD"]);
+  });
+
+  /**
    * **Properties, saved together — decision 0334.** The same
    * "replace, not merge" shape `handleUpdateUser` itself takes.
    */
@@ -1065,9 +1103,10 @@ describe("a person's own properties and limits — decision 0334, its own pop-ou
     const rows = [...document.querySelectorAll<HTMLDivElement>(".memberpickerrow")];
     expect(rows).toHaveLength(2); // approval limit, then spend limit
     const spendRow = rows[1];
-    const spendInputs = spendRow.querySelectorAll<HTMLInputElement>("input");
-    spendInputs[0].value = "GBP";
-    spendInputs[1].value = "500";
+    const currencySelect = spendRow.querySelector<HTMLSelectElement>("select");
+    const amountInput = spendRow.querySelector<HTMLInputElement>("input");
+    currencySelect!.value = "GBP";
+    amountInput!.value = "500";
     const setButton = spendRow.querySelector<HTMLButtonElement>("button");
     await setButton?.click();
     await new Promise((r) => setTimeout(r, 0));
@@ -1149,10 +1188,11 @@ describe("creating a person — decision 0328", () => {
     button?.click();
 
     const inputs = document.querySelectorAll<HTMLInputElement>(".editgrid input");
+    const selects = document.querySelectorAll<HTMLSelectElement>(".editgrid select");
     inputs[0].value = "Alice";
     inputs[1].value = "alice@acme.com";
-    inputs[6].value = "EUR";
-    inputs[7].value = "5000";
+    selects[3].value = "EUR"; // org, manager, cost centre, then approval-limit currency
+    inputs[6].value = "5000";
 
     const submit = [...document.querySelectorAll("button")].find((b) => b.textContent?.includes("Create"));
     await submit?.click();

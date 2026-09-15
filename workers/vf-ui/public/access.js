@@ -384,6 +384,35 @@ function roleRow(role) {
  * form on this screen uses; closing early here would be the one
  * mistake that cannot be undone by opening the form again.
  */
+
+/**
+ * **A closed, common set — decision 0339.** Reported live: "make the
+ * currency box... a drop down of CCY values." Nothing in this
+ * project fixes a currency vocabulary anywhere else — an invoice's
+ * own currency (BT-5) is free text, since a real supplier can arrive
+ * in any real-world currency. An approval or spend limit is a
+ * different case: a person's own administrator is choosing it, not
+ * reading it off an incoming document, so a short, closed list a
+ * mistyped code can never slip through is the safer default here.
+ * EUR, GBP, and USD are already what every worked example, seed row,
+ * and test fixture in this project already uses; CHF added as the
+ * one further major currency a customer already operating across
+ * France, Germany, and the UK is likely to need next. A genuinely
+ * different scope — a fifth currency, or removing one — is its own,
+ * later decision, not a guess made here.
+ */
+const APPROVAL_AND_SPEND_CURRENCIES = ["CHF", "EUR", "GBP", "USD"];
+
+function currencyPicker(selectedValue) {
+  return el(
+    "select",
+    {},
+    APPROVAL_AND_SPEND_CURRENCIES.map((c) =>
+      el("option", { value: c, text: c, ...(c === selectedValue ? { selected: "selected" } : {}) })
+    )
+  );
+}
+
 function openNewPersonForm() {
   const problem = el("div", { class: "warn" });
 
@@ -393,7 +422,7 @@ function openNewPersonForm() {
     el("option", { value: "", text: t("roles.everywhere") }),
     ...units.map((u) => el("option", { value: u.id, text: u.name })),
   ]);
-  const currencyInput = el("input", { type: "text", placeholder: "EUR" });
+  const currencyInput = currencyPicker();
   const amountInput = el("input", { type: "number", min: "0" });
   /**
    * **The new properties, at creation time — decision 0334.** Manager
@@ -413,7 +442,7 @@ function openNewPersonForm() {
   const cityInput = el("input", { type: "text" });
   const postalCodeInput = el("input", { type: "text" });
   const countryInput = el("input", { type: "text" });
-  const spendCurrencyInput = el("input", { type: "text", placeholder: "EUR" });
+  const spendCurrencyInput = currencyPicker();
   const spendAmountInput = el("input", { type: "number", min: "0" });
 
   const form = el("div", { class: "editgrid" }, [
@@ -964,7 +993,7 @@ function openPersonPropertiesForm(user) {
   const limits = authorityLimits.filter((l) => l.userId === user.id);
   const limitText =
     limits.length > 0 ? limits.map((l) => `${l.currency} ${l.maxAmount}`).join("; ") : t("roles.nolimits");
-  const approvalCurrencyInput = el("input", { type: "text", placeholder: "EUR" });
+  const approvalCurrencyInput = currencyPicker();
   const approvalAmountInput = el("input", { type: "number", min: "0" });
   const setApprovalLimit = el("button", {
     text: t("roles.set"),
@@ -994,7 +1023,7 @@ function openPersonPropertiesForm(user) {
 
   const spend = spendLimits.filter((l) => l.userId === user.id);
   const spendText = spend.length > 0 ? spend.map((l) => `${l.currency} ${l.maxAmount}`).join("; ") : t("roles.nolimits");
-  const spendCurrencyInput = el("input", { type: "text", placeholder: "EUR" });
+  const spendCurrencyInput = currencyPicker();
   const spendAmountInput = el("input", { type: "number", min: "0" });
   const setSpendLimit = el("button", {
     text: t("roles.set"),
