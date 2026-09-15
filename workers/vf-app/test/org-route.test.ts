@@ -7,6 +7,7 @@ import {
   handleUpdateRole,
   handleRevokeRole,
   handleCreateUnit,
+  handleUpdateUnit,
   handleCreateUser,
   handleUpdateUser,
   handleGetOrgOverview,
@@ -97,6 +98,158 @@ describe("handleCreateUnit", () => {
     expect(result.status).toBe(409);
     const row = await env.DB.prepare("SELECT name FROM org_units WHERE id = ?").bind("u1").first();
     expect(row).toEqual({ name: "Finance" });
+  });
+});
+
+describe("handleUpdateUnit — decision 0335", () => {
+  it("400s with no name given at all", async () => {
+    await handleCreateUnit(env.DB, { id: "u1", name: "Finance" });
+    const result = await handleUpdateUnit(env.DB, "u1", {});
+    expect(result.status).toBe(400);
+  });
+
+  it("404s a unit that does not exist", async () => {
+    const result = await handleUpdateUnit(env.DB, "ghost", { name: "New Name" });
+    expect(result.status).toBe(404);
+  });
+
+  it("renames a unit and can reassign its own kind, parent, and matching fields", async () => {
+    await handleCreateUnit(env.DB, { id: "eu", name: "EU Division", kind: "legal_entity" });
+    await handleCreateUnit(env.DB, { id: "u1", name: "Finance" });
+
+    const result = await handleUpdateUnit(env.DB, "u1", {
+      name: "Finance Renamed",
+      kind: "operating_unit",
+      parentUnitId: "eu",
+      buyerEndpoint: "111222333",
+      vatId: "FR12345678901",
+      buyerReference: "PO-1",
+    });
+    expect(result.status).toBe(200);
+
+    const row = await env.DB
+      .prepare("SELECT name, parent_unit_id, buyer_endpoint, vat_id, buyer_reference FROM org_units WHERE id = ?")
+      .bind("u1")
+      .first();
+    expect(row).toEqual({
+      name: "Finance Renamed",
+      parent_unit_id: "eu",
+      buyer_endpoint: "111222333",
+      vat_id: "FR12345678901",
+      buyer_reference: "PO-1",
+    });
+  });
+
+  it("400s a unit named as its own parent", async () => {
+    await handleCreateUnit(env.DB, { id: "u1", name: "Finance" });
+    const result = await handleUpdateUnit(env.DB, "u1", { name: "Finance", parentUnitId: "u1" });
+    expect(result.status).toBe(400);
+  });
+
+  it("404s a parentUnitId that does not exist", async () => {
+    await handleCreateUnit(env.DB, { id: "u1", name: "Finance" });
+    const result = await handleUpdateUnit(env.DB, "u1", { name: "Finance", parentUnitId: "ghost" });
+    expect(result.status).toBe(404);
+  });
+
+  it("refuses an operating unit reassigned under another operating unit", async () => {
+    await handleCreateUnit(env.DB, { id: "ou1", name: "Acme UK" });
+    await handleCreateUnit(env.DB, { id: "ou2", name: "Acme UK South" });
+    const result = await handleUpdateUnit(env.DB, "ou2", { name: "Acme UK South", parentUnitId: "ou1" });
+    expect(result.status).toBe(422);
+  });
+
+  it("refuses a kind that is neither", async () => {
+    await handleCreateUnit(env.DB, { id: "u1", name: "Finance" });
+    const result = await handleUpdateUnit(env.DB, "u1", { name: "Finance", kind: "division" });
+    expect(result.status).toBe(422);
+  });
+});
+
+describe("org unit routes, gated for the first time — decision 0335", () => {
+  async function keyForPermission(permission: string): Promise<string> {
+    const id = crypto.randomUUID();
+    const apiKey = generateApiKey();
+    await env.DB.prepare("INSERT INTO org_users (id, email, name, api_key_hash) VALUES (?, ?, ?, ?)")
+      .bind(id, `${id}@acme.com`, "Test", await hashApiKey(apiKey))
+      .run();
+
+    const roleId = crypto.randomUUID();
+    await env.DB.prepare("INSERT INTO org_roles (id, name, permissions_json) VALUES (?, ?, ?)")
+      .bind(roleId, `Role granting ${permission}`, JSON.stringify([permission]))
+      .run();
+    await env.DB.prepare("INSERT INTO org_user_roles (user_id, role_id) VALUES (?, ?)").bind(id, roleId).run();
+
+    return apiKey;
+  }
+
+  it("POST /org/units succeeds for Admin.Configure, through the real router", async () => {
+    const apiKey = await keyForPermission("Admin.Configure");
+    const res = await SELF.fetch("https://example.com/org/units", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ id: "u1", name: "Finance" }),
+    });
+    expect(res.status).toBe(201);
+  });
+
+  it("POST /org/units 403s a real request lacking Admin.Configure", async () => {
+    const apiKey = await keyForPermission("AP.Dashboard");
+    const res = await SELF.fetch("https://example.com/org/units", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ id: "u1", name: "Finance" }),
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("POST /org/units 401s with no credential at all", async () => {
+    const res = await SELF.fetch("https://example.com/org/units", {
+      method: "POST",
+      body: JSON.stringify({ id: "u1", name: "Finance" }),
+    });
+    expect(res.status).toBe(401);
+  });
+
+  it("PUT /org/units/:id succeeds for Admin.Configure, through the real router", async () => {
+    const apiKey = await keyForPermission("Admin.Configure");
+    await SELF.fetch("https://example.com/org/units", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ id: "u1", name: "Finance" }),
+    });
+    const res = await SELF.fetch("https://example.com/org/units/u1", {
+      method: "PUT",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "Finance Renamed" }),
+    });
+    expect(res.status).toBe(200);
+    const row = await env.DB.prepare("SELECT name FROM org_units WHERE id = 'u1'").first();
+    expect(row).toEqual({ name: "Finance Renamed" });
+  });
+
+  it("PUT /org/units/:id 403s a real request lacking Admin.Configure", async () => {
+    const setupKey = await keyForPermission("Admin.Configure");
+    await SELF.fetch("https://example.com/org/units", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${setupKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ id: "u1", name: "Finance" }),
+    });
+    const apiKey = await keyForPermission("AP.Dashboard");
+    const res = await SELF.fetch("https://example.com/org/units/u1", {
+      method: "PUT",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "Finance Renamed" }),
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("PUT /org/units/:id 401s with no credential at all", async () => {
+    const res = await SELF.fetch("https://example.com/org/units/u1", {
+      method: "PUT",
+      body: JSON.stringify({ name: "Finance Renamed" }),
+    });
+    expect(res.status).toBe(401);
   });
 });
 
@@ -752,7 +905,9 @@ describe("handleGetOrgOverview (decision 0319)", () => {
       roles: { id: string; name: string; permissions: string[] }[];
     };
 
-    expect(body.units).toEqual([{ id: "fr", name: "Acme France", kind: "operating_unit", parentUnitId: null }]);
+    expect(body.units).toEqual([
+      { id: "fr", name: "Acme France", kind: "operating_unit", parentUnitId: null, buyerEndpoint: null, vatId: null, buyerReference: null },
+    ]);
     expect(body.users[0]).toMatchObject({ id: "usr1", email: "alice@acme.com", name: "Alice" });
     expect(body.roles[0]).toEqual({ id: "r1", name: "AP Manager", permissions: ["AP.Approve"] });
   });

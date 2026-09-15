@@ -173,6 +173,14 @@ export const ICONS = {
     '<path d="M9 3l6 2.5v4c0 4.5-3 7.5-6 8.5-3-1-6-4-6-8.5v-4z"/><path d="M19 8v6M16 11h6"/>',
 
   /**
+   * **A building, compact, plus a plus — decision 0335.** Narrowed to
+   * leave room for the same offset plus every other "add" icon on
+   * this screen already uses.
+   */
+  neworg:
+    '<rect x="3" y="4" width="10" height="16" rx="1"/><path d="M6 8h1M6 12h1M6 16h1M10 8h1M10 12h1M10 16h1"/><path d="M18 8v6M15 11h6"/>',
+
+  /**
    * **A file going up**, because a load is about the file.
    *
    * The inverse of `save`, whose arrow goes down into a tray — and

@@ -93,6 +93,14 @@ const PROXIED_TO_INSTANCE: RegExp[] = [
    */
   /^\/org\/overview$/,
   /**
+   * **Creating and editing an org unit — decision 0335.** `/org/units`
+   * (create) has existed in `vf-app` since decision 0003, gated for
+   * the first time in this same decision — already on this list
+   * since decision 0193, for a different reason (`GET`, listing units
+   * for a document's own picker). The new update route was not.
+   */
+  /^\/org\/units\/[^/]+$/,
+  /**
    * **Creating and editing a role's own definition — decision 0326.**
    * `/org/roles` (create) has existed in `vf-app` since before this
    * session and was never on this list either — the exact shape

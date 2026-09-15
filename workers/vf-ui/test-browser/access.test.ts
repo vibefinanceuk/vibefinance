@@ -51,6 +51,16 @@ const STRINGS = {
     "roles.set": "Set",
     "roles.propertiessavefailed": "Could not save. Please try again.",
     "roles.limitsavefailed": "Could not save the limit. Please try again.",
+    "action.neworg": "New org",
+    "roles.orgid": "Org ID",
+    "roles.orgname": "Name",
+    "roles.parentorg": "Parent org",
+    "roles.buyerendpoint": "Buyer endpoint",
+    "roles.vatid": "VAT ID",
+    "roles.buyerreference": "Buyer reference",
+    "roles.orgsavefailed": "Could not save. Please try again.",
+    "roles.operatingunit": "Operating unit",
+    "roles.legalentity": "Legal entity",
     "roles.noassignments": "Holds no role.",
     "roles.nolimits": "No limit set.",
     "roles.everywhere": "everywhere",
@@ -254,6 +264,143 @@ describe("org units", () => {
     await openRolesAs(["Admin.Configure"], EMPTY);
     switchTab("Org units");
     expect(document.getElementById("shell")?.textContent).toContain("No org units configured yet.");
+  });
+
+  /**
+   * **Creating and editing an org unit — decision 0335.** Reported
+   * live: "a Create org and manage org button, available only to the
+   * Administrator (Global) role."
+   */
+  it("does not open on click without Admin.Configure", async () => {
+    await openRolesAs(["Admin.UserManagement"], {
+      ...EMPTY,
+      units: [{ id: "u1", name: "Acme Group", kind: "legal_entity", parentUnitId: null }],
+    });
+    // Org units itself is hidden without Admin.Configure (0333); this
+    // confirms the row is inert even if the DOM somehow held one.
+    expect(document.querySelector(".backdrop")).toBeNull();
+  });
+
+  it("shows a New org button holding Admin.Configure", async () => {
+    await openRolesAs(["Admin.Configure"], EMPTY);
+    switchTab("Org units");
+    expect([...document.querySelectorAll("button")].some((b) => b.textContent?.includes("New org"))).toBe(true);
+  });
+
+  it("creates a real org unit, posting the entered fields", async () => {
+    await openRolesAs(["Admin.Configure"], EMPTY, { "POST /api/org/units": { ok: true, json: async () => ({}) } });
+    switchTab("Org units");
+    const button = [...document.querySelectorAll("button")].find((b) => b.textContent?.includes("New org"));
+    button?.click();
+
+    const inputs = document.querySelectorAll<HTMLInputElement>(".editgrid input");
+    inputs[0].value = "acme-fr";
+    inputs[1].value = "Acme France";
+    const submit = [...document.querySelectorAll(".cardhead button")].find((b) => b.textContent?.includes("Create"));
+    await submit?.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    const calls = (fetch as unknown as { mock: { calls: unknown[][] } }).mock.calls;
+    const postCall = calls.find(([url, init]) => url === "/api/org/units" && (init as RequestInit)?.method === "POST");
+    const body = JSON.parse((postCall?.[1] as RequestInit).body as string);
+    expect(body).toEqual({
+      id: "acme-fr",
+      name: "Acme France",
+      kind: "operating_unit",
+      parentUnitId: null,
+      buyerEndpoint: null,
+      vatId: null,
+      buyerReference: null,
+    });
+  });
+
+  it("opens an existing unit with its own values pre-filled, id shown but disabled", async () => {
+    await openRolesAs(["Admin.Configure"], {
+      ...EMPTY,
+      units: [
+        { id: "u1", name: "Acme Group", kind: "legal_entity", parentUnitId: null },
+        { id: "u2", name: "Acme France", kind: "operating_unit", parentUnitId: "u1", buyerEndpoint: "0088:123", vatId: "FR123", buyerReference: "PO-1" },
+      ],
+    });
+    switchTab("Org units");
+    const row = [...document.querySelectorAll("tr")].find((r) => r.textContent?.includes("Acme France"));
+    row?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    const inputs = document.querySelectorAll<HTMLInputElement>(".editgrid input");
+    expect(inputs[0].value).toBe("u2");
+    expect(inputs[0].disabled).toBe(true);
+    expect(inputs[1].value).toBe("Acme France");
+    expect(inputs[2].value).toBe("0088:123");
+    expect(inputs[3].value).toBe("FR123");
+    expect(inputs[4].value).toBe("PO-1");
+
+    const kindSelect = document.querySelector<HTMLSelectElement>("select") as HTMLSelectElement;
+    expect(kindSelect.value).toBe("operating_unit");
+  });
+
+  it("PUTs the edited fields to the unit's own id", async () => {
+    await openRolesAs(
+      ["Admin.Configure"],
+      { ...EMPTY, units: [{ id: "u1", name: "Acme France", kind: "operating_unit", parentUnitId: null }] },
+      { "PUT /api/org/units/u1": { ok: true, json: async () => ({}) } }
+    );
+    switchTab("Org units");
+    const row = [...document.querySelectorAll("tr")].find((r) => r.textContent?.includes("Acme France"));
+    row?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    const inputs = document.querySelectorAll<HTMLInputElement>(".editgrid input");
+    inputs[1].value = "Acme France SAS";
+    const submit = [...document.querySelectorAll(".cardhead button")].find((b) => b.textContent?.includes("Save"));
+    await submit?.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    const calls = (fetch as unknown as { mock: { calls: unknown[][] } }).mock.calls;
+    const putCall = calls.find(([url, init]) => url === "/api/org/units/u1" && (init as RequestInit)?.method === "PUT");
+    const body = JSON.parse((putCall?.[1] as RequestInit).body as string);
+    expect(body).toEqual({
+      name: "Acme France SAS",
+      kind: "operating_unit",
+      parentUnitId: null,
+      buyerEndpoint: null,
+      vatId: null,
+      buyerReference: null,
+    });
+  });
+
+  it("the parent picker never offers the unit as its own parent", async () => {
+    await openRolesAs(["Admin.Configure"], {
+      ...EMPTY,
+      units: [
+        { id: "u1", name: "Acme Group", kind: "legal_entity", parentUnitId: null },
+        { id: "u2", name: "Acme France", kind: "operating_unit", parentUnitId: "u1" },
+      ],
+    });
+    switchTab("Org units");
+    const row = [...document.querySelectorAll("tr")].find((r) => r.textContent?.includes("Acme France"));
+    row?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    const selects = document.querySelectorAll<HTMLSelectElement>("select");
+    const parentOptions = [...selects[1].querySelectorAll("option")].map((o) => o.textContent);
+    expect(parentOptions).not.toContain("Acme France");
+    expect(parentOptions).toContain("Acme Group");
+  });
+
+  it("shows the real error and leaves the form open when creating fails", async () => {
+    await openRolesAs(["Admin.Configure"], EMPTY, {
+      "POST /api/org/units": { ok: false, status: 409, json: async () => ({ error: "unit acme-fr already exists" }) },
+    });
+    switchTab("Org units");
+    const button = [...document.querySelectorAll("button")].find((b) => b.textContent?.includes("New org"));
+    button?.click();
+    const inputs = document.querySelectorAll<HTMLInputElement>(".editgrid input");
+    inputs[0].value = "acme-fr";
+    inputs[1].value = "Acme France";
+    const submit = [...document.querySelectorAll(".cardhead button")].find((b) => b.textContent?.includes("Create"));
+    await submit?.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(document.querySelector(".backdrop")).not.toBeNull();
+    expect(document.body.textContent).toContain("unit acme-fr already exists");
   });
 
   /**

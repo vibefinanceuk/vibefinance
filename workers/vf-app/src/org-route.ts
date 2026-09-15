@@ -130,6 +130,106 @@ export async function handleCreateUnit(db: D1Database, body: CreateUnitBody): Pr
   };
 }
 
+interface UpdateUnitBody {
+  name?: unknown;
+  parentUnitId?: unknown;
+  kind?: unknown;
+  buyerEndpoint?: unknown;
+  vatId?: unknown;
+  buyerReference?: unknown;
+}
+
+/**
+ * **Editing an org unit — decision 0335.** Reported live: "a Create
+ * org and manage org button." `handleCreateUnit` already existed;
+ * nothing let an existing one be changed. The same "replace, not
+ * merge" shape `handleUpdateRole` and `handleUpdateTeam` already
+ * give editing something with several fields, and the same
+ * validation `handleCreateUnit` already runs — a unit's own kind and
+ * hierarchy rules do not relax just because the unit already exists.
+ */
+export async function handleUpdateUnit(db: D1Database, unitId: string, body: UpdateUnitBody): Promise<RouteResult> {
+  const { name, parentUnitId, kind, buyerEndpoint, vatId, buyerReference } = body;
+  if (typeof name !== "string" || !name) {
+    return { status: 400, body: { error: "name (a string) is required" } };
+  }
+  if (parentUnitId !== undefined && parentUnitId !== null && typeof parentUnitId !== "string") {
+    return { status: 400, body: { error: "parentUnitId, if provided, must be a string" } };
+  }
+
+  const existing = await db.prepare("SELECT id FROM org_units WHERE id = ?").bind(unitId).first();
+  if (!existing) {
+    return { status: 404, body: { error: `unit ${unitId} does not exist` } };
+  }
+
+  if (parentUnitId === unitId) {
+    return { status: 400, body: { error: "a unit cannot be its own parent" } };
+  }
+  if (parentUnitId) {
+    const parentExists = await db.prepare("SELECT id FROM org_units WHERE id = ?").bind(parentUnitId).first();
+    if (!parentExists) {
+      return { status: 404, body: { error: `parent unit ${parentUnitId as string} does not exist` } };
+    }
+  }
+
+  const unitKind = kind === undefined ? "operating_unit" : kind;
+  if (unitKind !== "legal_entity" && unitKind !== "operating_unit") {
+    return { status: 422, body: { error: "kind must be 'legal_entity' or 'operating_unit'" } };
+  }
+
+  if (parentUnitId && unitKind === "operating_unit") {
+    const parent = await db.prepare("SELECT kind FROM org_units WHERE id = ?").bind(parentUnitId).first<{
+      kind: string;
+    }>();
+    if (parent && parent.kind !== "legal_entity") {
+      return {
+        status: 422,
+        body: { error: `an operating unit sits under a legal entity, and ${parentUnitId} is ${kindInWords(parent.kind)}` },
+      };
+    }
+  }
+
+  for (const [label, value] of [
+    ["buyerEndpoint", buyerEndpoint],
+    ["vatId", vatId],
+    ["buyerReference", buyerReference],
+  ] as const) {
+    if (value !== undefined && value !== null && (typeof value !== "string" || value.trim() === "")) {
+      return { status: 422, body: { error: `${label}, if provided, must be a non-empty string` } };
+    }
+  }
+
+  await db
+    .prepare(
+      `UPDATE org_units
+       SET name = ?, parent_unit_id = ?, kind = ?, buyer_endpoint = ?, vat_id = ?, buyer_reference = ?
+       WHERE id = ?`
+    )
+    .bind(
+      name,
+      parentUnitId ?? null,
+      unitKind,
+      (buyerEndpoint as string) ?? null,
+      (vatId as string) ?? null,
+      (buyerReference as string) ?? null,
+      unitId
+    )
+    .run();
+
+  return {
+    status: 200,
+    body: {
+      id: unitId,
+      name,
+      parentUnitId: parentUnitId ?? null,
+      kind: unitKind,
+      buyerEndpoint: buyerEndpoint ?? null,
+      vatId: vatId ?? null,
+      buyerReference: buyerReference ?? null,
+    },
+  };
+}
+
 /**
  * Every org unit, with what an invoice can be matched against —
  * decision 0111.
@@ -208,12 +308,20 @@ export async function handleGetOrgOverview(
 
   const units = await db
     .prepare(
-      `SELECT id, name, kind, parent_unit_id FROM org_units
+      `SELECT id, name, kind, parent_unit_id, buyer_endpoint, vat_id, buyer_reference FROM org_units
        ${scopeUnits ? `WHERE id IN (${unitPlaceholders})` : ""}
        ORDER BY kind DESC, name ASC`
     )
     .bind(...(scopeUnits ?? []))
-    .all<{ id: string; name: string; kind: string; parent_unit_id: string | null }>();
+    .all<{
+      id: string;
+      name: string;
+      kind: string;
+      parent_unit_id: string | null;
+      buyer_endpoint: string | null;
+      vat_id: string | null;
+      buyer_reference: string | null;
+    }>();
 
   /**
    * **Cost centres, unscoped — decision 0334.** Like role definitions
@@ -329,7 +437,15 @@ export async function handleGetOrgOverview(
   return {
     status: 200,
     body: {
-      units: units.results.map((r) => ({ id: r.id, name: r.name, kind: r.kind, parentUnitId: r.parent_unit_id })),
+      units: units.results.map((r) => ({
+        id: r.id,
+        name: r.name,
+        kind: r.kind,
+        parentUnitId: r.parent_unit_id,
+        buyerEndpoint: r.buyer_endpoint,
+        vatId: r.vat_id,
+        buyerReference: r.buyer_reference,
+      })),
       costCentres: costCentres.results.map((r) => ({ id: r.id, name: r.name })),
       users: users.results.map((r) => ({
         id: r.id,

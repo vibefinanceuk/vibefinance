@@ -946,6 +946,7 @@ describe("org/authority/profiles routes, through the real router", () => {
   it("creates a unit through the real router", async () => {
     const res = await SELF.fetch("https://example.com/org/units", {
       method: "POST",
+      headers: authHeaders(),
       body: JSON.stringify({ id: "u1", name: "Finance" }),
     });
     expect(res.status).toBe(201);
@@ -957,6 +958,7 @@ describe("org/authority/profiles routes, through the real router", () => {
     await env.DB.prepare("DELETE FROM licence_cache WHERE id = 1").run();
     const res = await SELF.fetch("https://example.com/org/units", {
       method: "POST",
+      headers: authHeaders(),
       body: JSON.stringify({ id: "u1", name: "Finance" }),
     });
     expect(res.status).not.toBe(402);

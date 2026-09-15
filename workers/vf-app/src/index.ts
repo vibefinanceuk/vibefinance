@@ -27,6 +27,7 @@ import {
   handleUpdateRole,
   handleRevokeRole,
   handleCreateUnit,
+  handleUpdateUnit,
   handleCreateUser,
   handleUpdateUser,
   handleSetAuthorityLimit,
@@ -1270,6 +1271,19 @@ export default {
 
     if (pathname === "/org/units" && request.method === "POST") {
       const { db } = resolveTenant(request, env);
+      /**
+       * **Gated for the first time — decision 0335.** Reported live:
+       * "a Create org and manage org button, available only to the
+       * Administrator (Global) role." This route had existed since
+       * decision 0003 with no permission check at all — named as a
+       * known, standing gap in this project's own handover notes
+       * more than once, closed here rather than found the way the
+       * routes it now matches already were.
+       */
+      const auth = await requirePermission(db, request, "Admin.Configure", sessionContext(env));
+      if (!auth.authorized) {
+        return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
+      }
       let body: unknown;
       try {
         body = await request.json();
@@ -1277,6 +1291,23 @@ export default {
         return json({ error: t("invalidJsonBody", resolveLocale(env.LOCALE)) }, 400);
       }
       const result = await handleCreateUnit(db, (body ?? {}) as Record<string, unknown>);
+      return json(result.body, result.status);
+    }
+
+    const updateUnitMatch = pathname.match(/^\/org\/units\/([^/]+)$/);
+    if (updateUnitMatch && request.method === "PUT") {
+      const { db } = resolveTenant(request, env);
+      const auth = await requirePermission(db, request, "Admin.Configure", sessionContext(env));
+      if (!auth.authorized) {
+        return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
+      }
+      let body: unknown;
+      try {
+        body = await request.json();
+      } catch {
+        return json({ error: t("invalidJsonBody", resolveLocale(env.LOCALE)) }, 400);
+      }
+      const result = await handleUpdateUnit(db, updateUnitMatch[1], (body ?? {}) as Record<string, unknown>);
       return json(result.body, result.status);
     }
 

@@ -90,11 +90,119 @@ function unitDepth(unit) {
   return depth;
 }
 
+/**
+ * **Creating and editing an org unit — decision 0335.** Reported
+ * live: "a Create org and manage org button, available only to the
+ * Administrator (Global) role" — `Admin.Configure`, the permission
+ * that already means "unscoped, instance-wide standing" everywhere
+ * else in this app, gating both the row's own click and the New org
+ * action, matching how Org Units and Roles are themselves already
+ * hidden from anyone else on this screen (decision 0333).
+ */
+function openUnitForm(existingUnit) {
+  const problem = el("div", { class: "warn" });
+
+  const idInput = existingUnit
+    ? el("input", { type: "text", value: existingUnit.id, disabled: "disabled" })
+    : el("input", { type: "text" });
+  const nameInput = el("input", { type: "text", value: existingUnit?.name ?? "" });
+  const kindPicker = el("select", {}, [
+    el("option", { value: "operating_unit", text: t("roles.operatingunit"), ...(existingUnit?.kind === "operating_unit" || !existingUnit ? { selected: "selected" } : {}) }),
+    el("option", { value: "legal_entity", text: t("roles.legalentity"), ...(existingUnit?.kind === "legal_entity" ? { selected: "selected" } : {}) }),
+  ]);
+  const parentPicker = el("select", {}, [
+    el("option", { value: "", text: t("roles.none") }),
+    ...units
+      .filter((u) => u.id !== existingUnit?.id)
+      .map((u) => el("option", { value: u.id, text: u.name, ...(u.id === existingUnit?.parentUnitId ? { selected: "selected" } : {}) })),
+  ]);
+  const buyerEndpointInput = el("input", { type: "text", value: existingUnit?.buyerEndpoint ?? "" });
+  const vatIdInput = el("input", { type: "text", value: existingUnit?.vatId ?? "" });
+  const buyerReferenceInput = el("input", { type: "text", value: existingUnit?.buyerReference ?? "" });
+
+  const form = el("div", { class: "editgrid" }, [
+    el("label", { text: t("roles.orgid") }),
+    idInput,
+    el("label", { text: t("roles.orgname") }),
+    nameInput,
+    el("label", { text: t("roles.kind") }),
+    kindPicker,
+    el("label", { text: t("roles.parentorg") }),
+    parentPicker,
+    el("label", { text: t("roles.buyerendpoint") }),
+    buyerEndpointInput,
+    el("label", { text: t("roles.vatid") }),
+    vatIdInput,
+    el("label", { text: t("roles.buyerreference") }),
+    buyerReferenceInput,
+  ]);
+
+  const close = () => backdrop.remove();
+  const save = actionLink(existingUnit ? "save" : "create", {
+    primary: true,
+    onclick: async () => {
+      problem.textContent = "";
+      const name = nameInput.value.trim();
+      const body = {
+        name,
+        kind: kindPicker.value,
+        parentUnitId: parentPicker.value || null,
+        buyerEndpoint: buyerEndpointInput.value.trim() || null,
+        vatId: vatIdInput.value.trim() || null,
+        buyerReference: buyerReferenceInput.value.trim() || null,
+      };
+      try {
+        const response = existingUnit
+          ? await fetch(`/api/org/units/${encodeURIComponent(existingUnit.id)}`, {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(body),
+            })
+          : await fetch("/api/org/units", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ id: idInput.value.trim(), ...body }),
+            });
+        if (!response.ok) {
+          problem.textContent = (await response.json()).error ?? t("roles.orgsavefailed");
+          return;
+        }
+        backdrop.remove();
+        await load();
+        render();
+      } catch {
+        problem.textContent = t("roles.orgsavefailed");
+      }
+    },
+  });
+  const stateButtons = el("div", { class: "statebuttons" }, [save, actionLink("close", { onclick: close })]);
+
+  const backdrop = el("div", { class: "backdrop" }, [
+    el("div", { class: "popout" }, [
+      el("div", { class: "cardhead" }, [
+        el("h3", { text: existingUnit ? existingUnit.name : t("action.neworg") }),
+        stateButtons,
+      ]),
+      form,
+      problem,
+    ]),
+  ]);
+
+  backdrop.onclick = (e) => {
+    if (e.target === backdrop) backdrop.remove();
+  };
+  document.body.append(backdrop);
+  (existingUnit ? nameInput : idInput).focus();
+}
+
 function unitRow(unit) {
-  return el("tr", {}, [
+  const canManageOrgs = hasMyPermission("Admin.Configure");
+  const row = el("tr", canManageOrgs ? { class: "clickable" } : {}, [
     el("td", {}, [el("span", { style: `padding-left: ${unitDepth(unit) * 20}px`, text: unit.name })]),
     el("td", { text: unit.kind }),
   ]);
+  if (canManageOrgs) row.onclick = () => openUnitForm(unit);
+  return row;
 }
 
 /**
@@ -1011,7 +1119,14 @@ function render() {
   if (activeTab === "teams" && !canShowTeams) activeTab = "people";
 
   const activeSection = {
-    units: () => section("roles.units", "roles.nounits", ["column.unit", "roles.kind"], units.map(unitRow)),
+    units: () =>
+      section(
+        "roles.units",
+        "roles.nounits",
+        ["column.unit", "roles.kind"],
+        units.map(unitRow),
+        hasMyPermission("Admin.Configure") ? actionLink("neworg", { onclick: () => openUnitForm(null) }) : null
+      ),
     roles: () =>
       section(
         "roles.roles",

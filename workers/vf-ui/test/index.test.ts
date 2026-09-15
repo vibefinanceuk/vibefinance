@@ -397,6 +397,7 @@ describe("paths the app is allowed to reach (decision 0212)", () => {
     "/suppliers/load",
     "/sources/s1/org",
     "/org/units",
+    "/org/units/u1",
     "/org/overview",
     "/org/roles",
     "/org/roles/test-role",
