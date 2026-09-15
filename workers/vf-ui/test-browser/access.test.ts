@@ -83,6 +83,8 @@ const STRINGS = {
     "action.newperson": "New person",
     "action.create": "Create",
     "action.assign": "Assign",
+    "action.roles": "Roles",
+    "action.properties": "Properties",
     "action.done": "Done",
     "roles.teams": "Teams",
     "roles.noteamsconfigured": "No teams configured yet.",
@@ -736,7 +738,7 @@ describe("editing an existing role — decision 0326", () => {
   });
 });
 
-describe("assigning and revoking a role for one person — decision 0327", () => {
+describe("role allocation for one person — decision 0327, its own pop-out again in 0337", () => {
   const ALICE = { id: "usr1", email: "alice@acme.com", name: "Alice", unitId: null, status: "active" };
   const ROLES = [
     { id: "r1", name: "AP Manager", permissions: ["AP.Approve"] },
@@ -748,30 +750,39 @@ describe("assigning and revoking a role for one person — decision 0327", () =>
     return { ...EMPTY, users: [ALICE], roles: ROLES, units: [ONE_UNIT] };
   }
 
-  it("does not open on click without Admin.UserManagement", async () => {
+  /**
+   * **The Roles icon, not the row itself — decision 0337.** Reported
+   * live: "the current popout is not very user friendly" — role
+   * allocation and property assignment are two separate pop-outs now,
+   * each reached by its own icon rather than a single click on the
+   * row opening everything at once.
+   */
+  function clickRolesAction(name: string) {
+    const row = [...document.querySelectorAll("tr")].find((r) => r.textContent?.includes(name));
+    const button = [...(row?.querySelectorAll("button") ?? [])].find((b) => b.textContent?.includes("Roles"));
+    button?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  }
+
+  it("shows no Roles action without Admin.UserManagement", async () => {
     await openRolesAs(["AP.Dashboard"], baseBody());
-    const row = [...document.querySelectorAll("tr")].find((r) => r.textContent?.includes("Alice"));
-    row?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    expect(document.querySelector(".backdrop")).toBeNull();
+    expect([...document.querySelectorAll("button")].some((b) => b.textContent?.includes("Roles"))).toBe(false);
   });
 
-  it("opens on click holding Admin.UserManagement, showing the person's own name", async () => {
+  it("opens the Roles pop-out when its own action is clicked, showing the person's own name", async () => {
     await openRolesAs(["Admin.UserManagement"], baseBody());
-    const row = [...document.querySelectorAll("tr")].find((r) => r.textContent?.includes("Alice"));
-    row?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    clickRolesAction("Alice");
 
     expect(document.querySelector(".backdrop")).not.toBeNull();
-    expect(document.querySelector(".popout h3")?.textContent).toBe("Alice");
+    expect(document.querySelector(".popout h3")?.textContent).toContain("Alice");
   });
 
   it("offers every known role and every visible org, with Everywhere as an option", async () => {
     await openRolesAs(["Admin.UserManagement"], baseBody());
-    const row = [...document.querySelectorAll("tr")].find((r) => r.textContent?.includes("Alice"));
-    row?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    clickRolesAction("Alice");
 
     const selects = document.querySelectorAll("select");
-    const roleOptions = [...selects[3].querySelectorAll("option")].map((o) => o.textContent);
-    const orgOptions = [...selects[4].querySelectorAll("option")].map((o) => o.textContent);
+    const roleOptions = [...selects[0].querySelectorAll("option")].map((o) => o.textContent);
+    const orgOptions = [...selects[1].querySelectorAll("option")].map((o) => o.textContent);
     expect(roleOptions).toEqual(["AP Manager", "AP Validator"]);
     expect(orgOptions).toEqual(["everywhere", "Acme France"]);
   });
@@ -780,14 +791,11 @@ describe("assigning and revoking a role for one person — decision 0327", () =>
     await openRolesAs(["Admin.UserManagement"], baseBody(), {
       "POST /api/org/users/usr1/roles": { ok: true, json: async () => ({}) },
     });
-    const row = [...document.querySelectorAll("tr")].find((r) => r.textContent?.includes("Alice"));
-    row?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    clickRolesAction("Alice");
 
     const selects = document.querySelectorAll<HTMLSelectElement>("select");
-    const roleSelect = selects[3];
-    const orgSelect = selects[4];
-    roleSelect.value = "r2";
-    orgSelect.value = "acme-fr";
+    selects[0].value = "r2";
+    selects[1].value = "acme-fr";
 
     const submit = [...document.querySelectorAll("button")].find((b) => b.textContent?.includes("Assign"));
     await submit?.click();
@@ -806,8 +814,7 @@ describe("assigning and revoking a role for one person — decision 0327", () =>
     await openRolesAs(["Admin.UserManagement"], baseBody(), {
       "POST /api/org/users/usr1/roles": { ok: true, json: async () => ({}) },
     });
-    const row = [...document.querySelectorAll("tr")].find((r) => r.textContent?.includes("Alice"));
-    row?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    clickRolesAction("Alice");
 
     const submit = [...document.querySelectorAll("button")].find((b) => b.textContent?.includes("Assign"));
     await submit?.click();
@@ -829,8 +836,7 @@ describe("assigning and revoking a role for one person — decision 0327", () =>
         json: async () => ({ error: "already has that role" }),
       },
     });
-    const row = [...document.querySelectorAll("tr")].find((r) => r.textContent?.includes("Alice"));
-    row?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    clickRolesAction("Alice");
 
     const submit = [...document.querySelectorAll("button")].find((b) => b.textContent?.includes("Assign"));
     await submit?.click();
@@ -847,8 +853,7 @@ describe("assigning and revoking a role for one person — decision 0327", () =>
         { userId: "usr1", userName: "Alice", roleId: "r1", roleName: "AP Manager", unitId: "acme-fr", unitName: "Acme France", grantedAt: "" },
       ],
     });
-    const row = [...document.querySelectorAll("tr")].find((r) => r.textContent?.includes("Alice"));
-    row?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    clickRolesAction("Alice");
 
     expect(document.querySelector(".assignmentrow")?.textContent).toContain("AP Manager — Acme France");
     expect(document.querySelector(".assignmentrow")?.textContent).toContain("Remove");
@@ -865,8 +870,7 @@ describe("assigning and revoking a role for one person — decision 0327", () =>
       },
       { "DELETE /api/org/users/usr1/roles/r1": { ok: true, json: async () => ({}) } }
     );
-    const row = [...document.querySelectorAll("tr")].find((r) => r.textContent?.includes("Alice"));
-    row?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    clickRolesAction("Alice");
 
     const remove = [...document.querySelectorAll("button")].find((b) => b.textContent === "Remove");
     await remove?.click();
@@ -890,8 +894,7 @@ describe("assigning and revoking a role for one person — decision 0327", () =>
       },
       { "DELETE /api/org/users/usr1/roles/r1": { ok: true, json: async () => ({}) } }
     );
-    const row = [...document.querySelectorAll("tr")].find((r) => r.textContent?.includes("Alice"));
-    row?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    clickRolesAction("Alice");
 
     const remove = [...document.querySelectorAll("button")].find((b) => b.textContent === "Remove");
     await remove?.click();
@@ -919,8 +922,7 @@ describe("assigning and revoking a role for one person — decision 0327", () =>
         },
       }
     );
-    const row = [...document.querySelectorAll("tr")].find((r) => r.textContent?.includes("Alice"));
-    row?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    clickRolesAction("Alice");
 
     const remove = [...document.querySelectorAll("button")].find((b) => b.textContent === "Remove");
     await remove?.click();
@@ -928,6 +930,38 @@ describe("assigning and revoking a role for one person — decision 0327", () =>
 
     expect(document.querySelector(".backdrop")).not.toBeNull();
     expect(document.body.textContent).toContain("you do not administer acme-fr");
+  });
+});
+
+describe("a person's own properties and limits — decision 0334, its own pop-out again in 0337", () => {
+  const ALICE = { id: "usr1", email: "alice@acme.com", name: "Alice", unitId: null, status: "active" };
+  const ROLES = [
+    { id: "r1", name: "AP Manager", permissions: ["AP.Approve"] },
+    { id: "r2", name: "AP Validator", permissions: ["AP.Validate"] },
+  ];
+  const ONE_UNIT = { id: "acme-fr", name: "Acme France", kind: "legal_entity", parentUnitId: null };
+
+  function baseBody() {
+    return { ...EMPTY, users: [ALICE], roles: ROLES, units: [ONE_UNIT] };
+  }
+
+  function clickPropertiesAction(name: string) {
+    const row = [...document.querySelectorAll("tr")].find((r) => r.textContent?.includes(name));
+    const button = [...(row?.querySelectorAll("button") ?? [])].find((b) => b.textContent?.includes("Properties"));
+    button?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  }
+
+  it("shows no Properties action without Admin.UserManagement", async () => {
+    await openRolesAs(["AP.Dashboard"], baseBody());
+    expect([...document.querySelectorAll("button")].some((b) => b.textContent?.includes("Properties"))).toBe(false);
+  });
+
+  it("opens the Properties pop-out when its own action is clicked, showing the person's own name", async () => {
+    await openRolesAs(["Admin.UserManagement"], baseBody());
+    clickPropertiesAction("Alice");
+
+    expect(document.querySelector(".backdrop")).not.toBeNull();
+    expect(document.querySelector(".popout h3")?.textContent).toContain("Alice");
   });
 
   /**
@@ -941,8 +975,7 @@ describe("assigning and revoking a role for one person — decision 0327", () =>
       { ...EMPTY, users: [ALICE, BOSS], roles: ROLES, units: [ONE_UNIT], costCentres: [{ id: "cc1", name: "Engineering" }] },
       { "PUT /api/org/users/usr1": { ok: true, json: async () => ({}) } }
     );
-    const row = [...document.querySelectorAll("tr")].find((r) => r.textContent?.includes("Alice"));
-    row?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    clickPropertiesAction("Alice");
 
     const inputs = document.querySelectorAll<HTMLInputElement>(".editgrid input");
     const selects = document.querySelectorAll<HTMLSelectElement>("select");
@@ -974,8 +1007,7 @@ describe("assigning and revoking a role for one person — decision 0327", () =>
   it("the manager picker never offers the person as their own manager", async () => {
     const BOB = { id: "bob", email: "bob@acme.com", name: "Bob", unitId: null, status: "active" };
     await openRolesAs(["Admin.UserManagement"], { ...EMPTY, users: [ALICE, BOB], roles: ROLES, units: [ONE_UNIT] });
-    const row = [...document.querySelectorAll("tr")].find((r) => r.textContent?.includes("Alice"));
-    row?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    clickPropertiesAction("Alice");
 
     const managerSelect = document.querySelectorAll<HTMLSelectElement>("select")[1];
     const names = [...managerSelect.querySelectorAll("option")].map((o) => o.textContent);
@@ -993,8 +1025,7 @@ describe("assigning and revoking a role for one person — decision 0327", () =>
       units: [ONE_UNIT],
       costCentres: [{ id: "cc1", name: "Engineering" }],
     });
-    const row = [...document.querySelectorAll("tr")].find((r) => r.textContent?.includes("Alice"));
-    row?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    clickPropertiesAction("Alice");
 
     const selects = document.querySelectorAll<HTMLSelectElement>("select");
     expect(selects[1].value).toBe("boss");
@@ -1004,8 +1035,7 @@ describe("assigning and revoking a role for one person — decision 0327", () =>
   it("shows Budget Holder as Yes or No, never editable", async () => {
     const HOLDER = { ...ALICE, isBudgetHolder: true };
     await openRolesAs(["Admin.UserManagement"], { ...EMPTY, users: [HOLDER], roles: ROLES, units: [ONE_UNIT] });
-    const row = [...document.querySelectorAll("tr")].find((r) => r.textContent?.includes("Alice"));
-    row?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    clickPropertiesAction("Alice");
 
     expect(document.body.textContent).toContain("Yes");
     expect(document.querySelectorAll('input[type="checkbox"]')).toHaveLength(0);
@@ -1015,8 +1045,7 @@ describe("assigning and revoking a role for one person — decision 0327", () =>
     await openRolesAs(["Admin.UserManagement"], baseBody(), {
       "POST /api/org/users/usr1/spend-limit": { ok: true, json: async () => ({}) },
     });
-    const row = [...document.querySelectorAll("tr")].find((r) => r.textContent?.includes("Alice"));
-    row?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    clickPropertiesAction("Alice");
 
     const rows = [...document.querySelectorAll<HTMLDivElement>(".memberpickerrow")];
     expect(rows).toHaveLength(2); // approval limit, then spend limit
@@ -1034,6 +1063,7 @@ describe("assigning and revoking a role for one person — decision 0327", () =>
     expect(body).toEqual({ currency: "GBP", maxAmount: 500 });
   });
 });
+
 
 describe("creating a person — decision 0328", () => {
   const ONE_UNIT = { id: "acme-fr", name: "Acme France", kind: "legal_entity", parentUnitId: null };
@@ -1223,7 +1253,7 @@ describe("popout action row — decision 0329, corrected", () => {
     expect(buttons.some((b) => b.textContent?.includes("Create"))).toBe(true);
   });
 
-  it("the person popout's own Save and Close sit together in the header, both with an icon — decision 0334", async () => {
+  it("the Properties popout's own Save and Close sit together in the header, both with an icon — decision 0334, split in 0337", async () => {
     await openRolesAs(["Admin.UserManagement"], {
       ...EMPTY,
       users: [ALICE],
@@ -1231,7 +1261,8 @@ describe("popout action row — decision 0329, corrected", () => {
       units: [ONE_UNIT],
     });
     const row = [...document.querySelectorAll("tr")].find((r) => r.textContent?.includes("Alice"));
-    row?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    const propertiesButton = [...(row?.querySelectorAll("button") ?? [])].find((b) => b.textContent?.includes("Properties"));
+    propertiesButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
 
     const stateButtons = document.querySelector(".popout .cardhead .statebuttons");
     const buttons = [...(stateButtons?.querySelectorAll("button") ?? [])];

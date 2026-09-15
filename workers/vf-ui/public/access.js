@@ -734,6 +734,15 @@ function openTeamForm(existingTeam) {
   (existingTeam ? nameInput : idInput).focus();
 }
 
+/**
+ * **Two icons, not a whole-row click — decision 0337.** Reported
+ * live: "the current popout is not very user friendly" — role
+ * allocation and property assignment now open their own, separate
+ * pop-outs, each reached by its own action inline in the row rather
+ * than a single click opening everything at once. `actionLink`
+ * itself, the same icon-and-label button every other write action on
+ * this screen already uses, dropped straight into a table cell.
+ */
 function personRow(user) {
   const own = assignments.filter((a) => a.userId === user.id);
   const limits = authorityLimits.filter((l) => l.userId === user.id);
@@ -747,52 +756,147 @@ function personRow(user) {
   const limitText =
     limits.length > 0 ? limits.map((l) => `${l.currency} ${l.maxAmount}`).join("; ") : t("roles.nolimits");
 
-  const row = el("tr", canAssign ? { class: "clickable" } : {}, [
+  return el("tr", {}, [
     el("td", {}, [el("div", { text: user.name }), el("div", { class: "sm muted", text: user.email })]),
-    el("td", { class: "sm", text: assignmentText }),
-    el("td", { class: "sm", text: limitText }),
+    el(
+      "td",
+      { class: "sm" },
+      canAssign
+        ? [el("span", { text: assignmentText }), actionLink("roles", { onclick: () => openPersonRolesForm(user) })]
+        : [assignmentText]
+    ),
+    el(
+      "td",
+      { class: "sm" },
+      canAssign
+        ? [el("span", { text: limitText }), actionLink("properties", { onclick: () => openPersonPropertiesForm(user) })]
+        : [limitText]
+    ),
   ]);
-  if (canAssign) row.onclick = () => openPersonForm(user);
-  return row;
 }
 
 /**
- * **Assigning and revoking a role for one person — decision 0327.**
- * Both actions in one popout rather than two, since a person looking
- * at what somebody holds is exactly the moment either action makes
- * sense. Gated to `Admin.UserManagement`, deliberately delegable
- * (decision 0201) — unlike `openRoleForm`'s own `Admin.RoleManagement`,
- * this never checks the caller's own scope client-side: `units` here
- * is already the caller's own administered scope, since `/org/overview`
- * itself returns a narrower list to a delegated administrator
- * (decision 0321). Offering exactly what is already visible, and
- * letting a refusal the backend still enforces — granting or revoking
- * "everywhere" — speak through the real error, is simpler and no less
- * safe than re-deriving the same boundary a second time here.
+ * **Assigning and revoking a role for one person — decision 0327,
+ * split back into its own pop-out in 0337.** Reported live: "the
+ * current popout is not very user friendly" — role allocation and
+ * property assignment had been one combined pop-out since decision
+ * 0334, and are two again, each reached by its own icon in the row
+ * rather than a single click opening everything at once. Gated to
+ * `Admin.UserManagement`, deliberately delegable (decision 0201) —
+ * unlike `openRoleForm`'s own `Admin.RoleManagement`, this never
+ * checks the caller's own scope client-side: `units` here is already
+ * the caller's own administered scope, since `/org/overview` itself
+ * returns a narrower list to a delegated administrator (decision
+ * 0321). Offering exactly what is already visible, and letting a
+ * refusal the backend still enforces — granting or revoking
+ * "everywhere" — speak through the real error, is simpler and no
+ * less safe than re-deriving the same boundary a second time here.
  */
-/**
- * **Properties, limits, and role assignment — one popout per person,
- * decision 0334.** Extends what was `openAssignmentsForm` (decision
- * 0327) rather than adding a second popout: a person looking at
- * somebody's own roles is exactly the moment editing their manager,
- * cost centre, or spend limit also makes sense, the same reasoning
- * decision 0327 already gave combining assign and revoke. Renamed to
- * match — this is no longer only about assignments.
- *
- * Properties save together, under their own "Save" — the same
- * "replace, not merge" shape the backend's own `handleUpdateUser`
- * takes. Approval Limit and Spend Limit each keep their own,
- * independent "Set" action, matching how role assignment already
- * works here: setting one is a complete action in itself, not a
- * field waiting on some other button. Budget Holder is shown, never
- * offered as a checkbox — derived from owning a cost centre
- * elsewhere, reported live as "one source of truth" rather than a
- * second flag that could disagree with it.
- */
-function openPersonForm(user) {
+function openPersonRolesForm(user) {
   const problem = el("div", { class: "warn" });
   const own = assignments.filter((a) => a.userId === user.id);
-  const canAssign = hasMyPermission("Admin.UserManagement");
+
+  const currentList = el(
+    "div",
+    { class: "assignmentlist" },
+    own.length > 0
+      ? own.map((a) => {
+          const label = el("span", { text: `${a.roleName} — ${a.unitName ?? t("roles.everywhere")}` });
+          const removeBtn = el("button", {
+            text: t("roles.remove"),
+            onclick: async () => {
+              problem.textContent = "";
+              try {
+                const qs = a.unitId ? `?unitId=${encodeURIComponent(a.unitId)}` : "";
+                const response = await fetch(
+                  `/api/org/users/${encodeURIComponent(user.id)}/roles/${encodeURIComponent(a.roleId)}${qs}`,
+                  { method: "DELETE" }
+                );
+                if (!response.ok) {
+                  problem.textContent = (await response.json()).error ?? t("roles.revokefailed");
+                  return;
+                }
+                backdrop.remove();
+                await load();
+                render();
+              } catch {
+                problem.textContent = t("roles.revokefailed");
+              }
+            },
+          });
+          return el("div", { class: "assignmentrow" }, [label, removeBtn]);
+        })
+      : [el("p", { class: "muted", text: t("roles.noassignments") })]
+  );
+
+  const rolePicker = el("select", {}, roles.map((r) => el("option", { value: r.id, text: r.name })));
+  const orgPicker = el("select", {}, [
+    el("option", { value: "", text: t("roles.everywhere") }),
+    ...units.map((u) => el("option", { value: u.id, text: u.name })),
+  ]);
+
+  const newAssignmentForm = el("div", { class: "editgrid" }, [
+    el("label", { text: t("roles.role") }),
+    rolePicker,
+    el("label", { text: t("roles.org") }),
+    orgPicker,
+  ]);
+
+  const close = () => backdrop.remove();
+  const assign = actionLink("assign", {
+    primary: true,
+    onclick: async () => {
+      problem.textContent = "";
+      try {
+        const response = await fetch(`/api/org/users/${encodeURIComponent(user.id)}/roles`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ roleId: rolePicker.value, unitId: orgPicker.value || null }),
+        });
+        if (!response.ok) {
+          problem.textContent = (await response.json()).error ?? t("roles.assignfailed");
+          return;
+        }
+        backdrop.remove();
+        await load();
+        render();
+      } catch {
+        problem.textContent = t("roles.assignfailed");
+      }
+    },
+  });
+  const stateButtons = el("div", { class: "statebuttons" }, [assign, actionLink("close", { onclick: close })]);
+
+  const backdrop = el("div", { class: "backdrop" }, [
+    el("div", { class: "popout" }, [
+      el("div", { class: "cardhead" }, [el("h3", { text: `${user.name} — ${t("action.roles")}` }), stateButtons]),
+      el("p", { class: "muted sm", text: t("roles.assignments") }),
+      currentList,
+      newAssignmentForm,
+      problem,
+    ]),
+  ]);
+
+  backdrop.onclick = (e) => {
+    if (e.target === backdrop) backdrop.remove();
+  };
+  document.body.append(backdrop);
+}
+
+/**
+ * **A person's own properties and both limits — decision 0334,
+ * split back out of role assignment in 0337.** Properties save
+ * together under their own "Save" — the same "replace, not merge"
+ * shape the backend's own `handleUpdateUser` takes. Approval Limit
+ * and Spend Limit each keep their own, independent "Set" action:
+ * setting one is a complete action in itself, not a field waiting on
+ * some other button. Budget Holder is shown, never offered as a
+ * checkbox — derived from owning a cost centre elsewhere, reported
+ * live as "one source of truth" rather than a second flag that could
+ * disagree with it.
+ */
+function openPersonPropertiesForm(user) {
+  const problem = el("div", { class: "warn" });
 
   const nameInput = el("input", { type: "text", value: user.name });
   const orgPicker = el("select", {}, [
@@ -936,89 +1040,13 @@ function openPersonForm(user) {
     el("div", { class: "memberpickerrow" }, [spendCurrencyInput, spendAmountInput, setSpendLimit]),
   ]);
 
-  const currentList = el(
-    "div",
-    { class: "assignmentlist" },
-    own.length > 0
-      ? own.map((a) => {
-          const label = el("span", { text: `${a.roleName} — ${a.unitName ?? t("roles.everywhere")}` });
-          const removeBtn = el("button", {
-            text: t("roles.remove"),
-            onclick: async () => {
-              problem.textContent = "";
-              try {
-                const qs = a.unitId ? `?unitId=${encodeURIComponent(a.unitId)}` : "";
-                const response = await fetch(
-                  `/api/org/users/${encodeURIComponent(user.id)}/roles/${encodeURIComponent(a.roleId)}${qs}`,
-                  { method: "DELETE" }
-                );
-                if (!response.ok) {
-                  problem.textContent = (await response.json()).error ?? t("roles.revokefailed");
-                  return;
-                }
-                backdrop.remove();
-                await load();
-                render();
-              } catch {
-                problem.textContent = t("roles.revokefailed");
-              }
-            },
-          });
-          return el("div", { class: "assignmentrow" }, [label, removeBtn]);
-        })
-      : [el("p", { class: "muted", text: t("roles.noassignments") })]
-  );
-
-  const rolePicker = el("select", {}, roles.map((r) => el("option", { value: r.id, text: r.name })));
-  const assignOrgPicker = el("select", {}, [
-    el("option", { value: "", text: t("roles.everywhere") }),
-    ...units.map((u) => el("option", { value: u.id, text: u.name })),
-  ]);
-
-  const newAssignmentForm = el("div", { class: "editgrid" }, [
-    el("label", { text: t("roles.role") }),
-    rolePicker,
-    el("label", { text: t("roles.org") }),
-    assignOrgPicker,
-  ]);
-
-  const assign = actionLink("assign", {
-    onclick: async () => {
-      problem.textContent = "";
-      try {
-        const response = await fetch(`/api/org/users/${encodeURIComponent(user.id)}/roles`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ roleId: rolePicker.value, unitId: assignOrgPicker.value || null }),
-        });
-        if (!response.ok) {
-          problem.textContent = (await response.json()).error ?? t("roles.assignfailed");
-          return;
-        }
-        backdrop.remove();
-        await load();
-        render();
-      } catch {
-        problem.textContent = t("roles.assignfailed");
-      }
-    },
-  });
-
-  const stateButtons = el(
-    "div",
-    { class: "statebuttons" },
-    canAssign ? [save, actionLink("close", { onclick: close })] : [actionLink("close", { onclick: close })]
-  );
+  const stateButtons = el("div", { class: "statebuttons" }, [save, actionLink("close", { onclick: close })]);
 
   const backdrop = el("div", { class: "backdrop" }, [
     el("div", { class: "popout" }, [
-      el("div", { class: "cardhead" }, [el("h3", { text: user.name }), stateButtons]),
+      el("div", { class: "cardhead" }, [el("h3", { text: `${user.name} — ${t("action.properties")}` }), stateButtons]),
       propertiesForm,
       limitsSection,
-      el("p", { class: "muted sm", text: t("roles.assignments") }),
-      currentList,
-      newAssignmentForm,
-      assign,
       problem,
     ]),
   ]);

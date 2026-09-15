@@ -173,6 +173,23 @@ export const ICONS = {
     '<path d="M9 3l6 2.5v4c0 4.5-3 7.5-6 8.5-3-1-6-4-6-8.5v-4z"/><path d="M19 8v6M16 11h6"/>',
 
   /**
+   * **The same shield, centered, no plus — decision 0337.** Reused
+   * for the per-row "Roles" action rather than a second, unrelated
+   * shape — this icon already means "a role" everywhere else it
+   * appears on this screen.
+   */
+  roles:
+    '<path d="M12 3l6 2.5v4c0 4.5-3 7.5-6 8.5-3-1-6-4-6-8.5v-4z"/>',
+
+  /**
+   * **An ID card, for a person's own properties — decision 0337.** A
+   * small avatar circle beside two lines standing in for the fields
+   * this action edits (org, manager, cost centre, address).
+   */
+  properties:
+    '<rect x="2" y="5" width="20" height="14" rx="2"/><circle cx="8" cy="10" r="2"/><path d="M5 16c0-1.5 1.3-2.5 3-2.5s3 1 3 2.5"/><path d="M14 9h5M14 13h5"/>',
+
+  /**
    * **A building, compact, plus a plus — decision 0335.** Narrowed to
    * leave room for the same offset plus every other "add" icon on
    * this screen already uses.
