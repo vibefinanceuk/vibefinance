@@ -27,6 +27,7 @@ let roles = [];
 let assignments = [];
 let authorityLimits = [];
 let knownPermissions = [];
+let teams = [];
 
 async function load() {
   try {
@@ -43,6 +44,23 @@ async function load() {
     assignments = body.assignments ?? [];
     authorityLimits = body.authorityLimits ?? [];
     knownPermissions = body.knownPermissions ?? [];
+
+    /**
+     * **A separate fetch, deliberately — decision 0332.** `/org/teams`
+     * is gated by `Admin.RoleManagement` or `Admin.UserManagement`,
+     * not the same permission pair `/org/overview` itself checks — an
+     * `Admin.Configure`-only holder could see everything else on this
+     * screen and correctly not see teams. A failure here does not
+     * break the rest of the screen; it only means this one section
+     * has nothing to show.
+     */
+    try {
+      const teamsResponse = await fetch("/api/org/teams");
+      teams = teamsResponse.ok ? ((await teamsResponse.json()).teams ?? []) : [];
+    } catch {
+      teams = [];
+    }
+
     return true;
   } catch (err) {
     console.error("/api/org/overview failed", err);
@@ -353,6 +371,185 @@ function showApiKeyOnce(apiKey, backdrop) {
   );
 }
 
+/**
+ * **Teams — decision 0332.** Two different permissions can touch one
+ * team, and the popout has to hold both possibilities at once: the
+ * name is editable only holding `Admin.RoleManagement` (a team's own
+ * definition is customer-wide, the same reasoning that permission
+ * already gives a role); the member list — adding, removing — only
+ * holding `Admin.UserManagement` (the same permission that already
+ * assigns a role to a person). A person holding neither never sees
+ * this row at all; the row is only ever shown once the section
+ * itself is, which already checks for one of the two.
+ */
+function teamRow(team) {
+  const canManage = hasMyPermission("Admin.RoleManagement");
+  const canAssign = hasMyPermission("Admin.UserManagement");
+  const memberText =
+    team.members.length > 0 ? team.members.map((m) => m.userName).join(", ") : t("roles.noteammembers");
+
+  const row = el("tr", canManage || canAssign ? { class: "clickable" } : {}, [
+    el("td", { text: team.name }),
+    el("td", { class: "sm muted", text: memberText }),
+  ]);
+  if (canManage || canAssign) row.onclick = () => openTeamForm(team);
+  return row;
+}
+
+function openTeamForm(existingTeam) {
+  const canManage = hasMyPermission("Admin.RoleManagement");
+  const canAssign = hasMyPermission("Admin.UserManagement");
+  const problem = el("div", { class: "warn" });
+
+  const idInput = existingTeam
+    ? el("input", { type: "text", value: existingTeam.id, disabled: "disabled" })
+    : el("input", { type: "text" });
+  const nameInput = el("input", {
+    type: "text",
+    value: existingTeam?.name ?? "",
+    ...(existingTeam && !canManage ? { disabled: "disabled" } : {}),
+  });
+
+  const form = el("div", { class: "editgrid" }, [
+    el("label", { text: t("roles.teamid") }),
+    idInput,
+    el("label", { text: t("roles.teamname") }),
+    nameInput,
+  ]);
+
+  const close = () => backdrop.remove();
+  const save = actionLink(existingTeam ? "save" : "create", {
+    primary: true,
+    onclick: async () => {
+      problem.textContent = "";
+      const name = nameInput.value.trim();
+      try {
+        const response = existingTeam
+          ? await fetch(`/api/org/teams/${encodeURIComponent(existingTeam.id)}`, {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ name }),
+            })
+          : await fetch("/api/org/teams", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ id: idInput.value.trim(), name }),
+            });
+        if (!response.ok) {
+          problem.textContent = (await response.json()).error ?? t("roles.teamsavefailed");
+          return;
+        }
+        backdrop.remove();
+        await load();
+        render();
+      } catch {
+        problem.textContent = t("roles.teamsavefailed");
+      }
+    },
+  });
+  const stateButtons = el(
+    "div",
+    { class: "statebuttons" },
+    canManage ? [save, actionLink("close", { onclick: close })] : [actionLink("close", { onclick: close })]
+  );
+
+  const memberSection = existingTeam
+    ? [
+        el("p", { class: "muted sm", text: t("roles.teammembers") }),
+        el(
+          "div",
+          { class: "assignmentlist" },
+          existingTeam.members.length > 0
+            ? existingTeam.members.map((m) => {
+                const label = el("span", { text: m.userName });
+                if (!canAssign) return el("div", { class: "assignmentrow" }, [label]);
+                const removeBtn = el("button", {
+                  text: t("roles.remove"),
+                  onclick: async () => {
+                    problem.textContent = "";
+                    try {
+                      const response = await fetch(
+                        `/api/org/teams/${encodeURIComponent(existingTeam.id)}/members/${encodeURIComponent(m.userId)}`,
+                        { method: "DELETE" }
+                      );
+                      if (!response.ok) {
+                        problem.textContent = (await response.json()).error ?? t("roles.removememberfailed");
+                        return;
+                      }
+                      backdrop.remove();
+                      await load();
+                      render();
+                    } catch {
+                      problem.textContent = t("roles.removememberfailed");
+                    }
+                  },
+                });
+                return el("div", { class: "assignmentrow" }, [label, removeBtn]);
+              })
+            : [el("p", { class: "muted", text: t("roles.noteammembers") })]
+        ),
+      ]
+    : [];
+
+  const memberPicker = canAssign && existingTeam
+    ? [
+        el("div", { class: "editgrid" }, [
+          el("label", { text: t("roles.member") }),
+          (() => {
+            const alreadyIn = new Set(existingTeam.members.map((m) => m.userId));
+            const select = el(
+              "select",
+              {},
+              users.filter((u) => !alreadyIn.has(u.id)).map((u) => el("option", { value: u.id, text: u.name }))
+            );
+            const addBtn = el("button", {
+              text: t("roles.addmember"),
+              onclick: async () => {
+                problem.textContent = "";
+                try {
+                  const response = await fetch(`/api/org/teams/${encodeURIComponent(existingTeam.id)}/members`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ userId: select.value }),
+                  });
+                  if (!response.ok) {
+                    problem.textContent = (await response.json()).error ?? t("roles.addmemberfailed");
+                    return;
+                  }
+                  backdrop.remove();
+                  await load();
+                  render();
+                } catch {
+                  problem.textContent = t("roles.addmemberfailed");
+                }
+              },
+            });
+            return el("div", { class: "memberpickerrow" }, [select, addBtn]);
+          })(),
+        ]),
+      ]
+    : [];
+
+  const backdrop = el("div", { class: "backdrop" }, [
+    el("div", { class: "popout" }, [
+      el("div", { class: "cardhead" }, [
+        el("h3", { text: existingTeam ? existingTeam.name : t("action.newteam") }),
+        stateButtons,
+      ]),
+      form,
+      ...memberSection,
+      ...memberPicker,
+      problem,
+    ]),
+  ]);
+
+  backdrop.onclick = (e) => {
+    if (e.target === backdrop) backdrop.remove();
+  };
+  document.body.append(backdrop);
+  (existingTeam ? nameInput : idInput).focus();
+}
+
 function personRow(user) {
   const own = assignments.filter((a) => a.userId === user.id);
   const limits = authorityLimits.filter((l) => l.userId === user.id);
@@ -524,6 +721,17 @@ function render() {
           users.map(personRow),
           canAssign ? actionLink("newperson", { onclick: () => openNewPersonForm() }) : null
         ),
+        ...(canManage || canAssign
+          ? [
+              section(
+                "roles.teams",
+                "roles.noteamsconfigured",
+                ["column.team", "roles.teammembers"],
+                teams.map(teamRow),
+                canManage ? actionLink("newteam", { onclick: () => openTeamForm(null) }) : null
+              ),
+            ]
+          : []),
       ])
     )
   );

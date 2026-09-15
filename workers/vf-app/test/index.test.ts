@@ -1059,6 +1059,7 @@ describe("team routes, through the real router (decision 0016)", () => {
   it("creates a team through the real router", async () => {
     const res = await SELF.fetch("https://example.com/org/teams", {
       method: "POST",
+      headers: authHeaders(),
       body: JSON.stringify({ id: "t1", name: "AP Team" }),
     });
     expect(res.status).toBe(201);
@@ -1073,6 +1074,7 @@ describe("team routes, through the real router (decision 0016)", () => {
     // compiler-generated team name ("AP team") broke it live.
     await SELF.fetch("https://example.com/org/teams", {
       method: "POST",
+      headers: authHeaders(),
       body: JSON.stringify({ id: "AP team", name: "AP Team" }),
     });
     await SELF.fetch("https://example.com/org/users", {
@@ -1082,6 +1084,7 @@ describe("team routes, through the real router (decision 0016)", () => {
     });
     const res = await SELF.fetch("https://example.com/org/teams/AP%20team/members", {
       method: "POST",
+      headers: authHeaders(),
       body: JSON.stringify({ userId: "usr1" }),
     });
     expect(res.status).toBe(201);
@@ -1095,6 +1098,7 @@ describe("team routes, through the real router (decision 0016)", () => {
     await env.DB.prepare("DELETE FROM licence_cache WHERE id = 1").run();
     const res = await SELF.fetch("https://example.com/org/teams", {
       method: "POST",
+      headers: authHeaders(),
       body: JSON.stringify({ id: "t1", name: "AP Team" }),
     });
     expect(res.status).not.toBe(402);
@@ -1103,6 +1107,7 @@ describe("team routes, through the real router (decision 0016)", () => {
   it("adds a member to a team through the real router", async () => {
     await SELF.fetch("https://example.com/org/teams", {
       method: "POST",
+      headers: authHeaders(),
       body: JSON.stringify({ id: "t1", name: "AP Team" }),
     });
     await SELF.fetch("https://example.com/org/users", {
@@ -1112,6 +1117,7 @@ describe("team routes, through the real router (decision 0016)", () => {
     });
     const res = await SELF.fetch("https://example.com/org/teams/t1/members", {
       method: "POST",
+      headers: authHeaders(),
       body: JSON.stringify({ userId: "usr1" }),
     });
     expect(res.status).toBe(201);
@@ -1124,6 +1130,7 @@ describe("team routes, through the real router (decision 0016)", () => {
   it("409s adding a duplicate member through the real router", async () => {
     await SELF.fetch("https://example.com/org/teams", {
       method: "POST",
+      headers: authHeaders(),
       body: JSON.stringify({ id: "t1", name: "AP Team" }),
     });
     await SELF.fetch("https://example.com/org/users", {
@@ -1133,10 +1140,12 @@ describe("team routes, through the real router (decision 0016)", () => {
     });
     await SELF.fetch("https://example.com/org/teams/t1/members", {
       method: "POST",
+      headers: authHeaders(),
       body: JSON.stringify({ userId: "usr1" }),
     });
     const res = await SELF.fetch("https://example.com/org/teams/t1/members", {
       method: "POST",
+      headers: authHeaders(),
       body: JSON.stringify({ userId: "usr1" }),
     });
     expect(res.status).toBe(409);
@@ -1155,6 +1164,7 @@ describe("task routes, through the real router (decision 0018)", () => {
     });
     await SELF.fetch("https://example.com/org/teams", {
       method: "POST",
+      headers: authHeaders(),
       body: JSON.stringify({ id: "team1", name: "AP Team" }),
     });
     // authHeaders()'s own user, "test-user", holds every permission —
@@ -1163,6 +1173,7 @@ describe("task routes, through the real router (decision 0018)", () => {
     // router path.
     await SELF.fetch("https://example.com/org/teams/team1/members", {
       method: "POST",
+      headers: authHeaders(),
       body: JSON.stringify({ userId: "test-user" }),
     });
     await SELF.fetch("https://example.com/tasks", {
@@ -1366,9 +1377,10 @@ describe("process instances and stage visits, through the real router (decision 
       method: "POST",
       body: JSON.stringify({ id: "s3", name: "Payment-eligible", sequence: 3 }),
     });
-    await SELF.fetch("https://example.com/org/teams", { method: "POST", body: JSON.stringify({ id: "ap-team", name: "AP team" }) });
+    await SELF.fetch("https://example.com/org/teams", { method: "POST", headers: authHeaders(), body: JSON.stringify({ id: "ap-team", name: "AP team" }) });
     await SELF.fetch("https://example.com/org/teams/ap-team/members", {
       method: "POST",
+      headers: authHeaders(),
       body: JSON.stringify({ userId: "test-user" }),
     });
 
@@ -1459,8 +1471,8 @@ describe("per-line evaluation, through the real router (decision 0027)", () => {
       method: "POST",
       body: JSON.stringify({ id: "s1", name: "Line Review", sequence: 1, ruleSetId: "rs-line-live", evaluationScope: "line" }),
     });
-    await SELF.fetch("https://example.com/org/teams", { method: "POST", body: JSON.stringify({ id: "line-team", name: "Line Team" }) });
-    await SELF.fetch("https://example.com/org/teams/line-team/members", { method: "POST", body: JSON.stringify({ userId: "test-user" }) });
+    await SELF.fetch("https://example.com/org/teams", { method: "POST", headers: authHeaders(), body: JSON.stringify({ id: "line-team", name: "Line Team" }) });
+    await SELF.fetch("https://example.com/org/teams/line-team/members", { method: "POST", headers: authHeaders(), body: JSON.stringify({ userId: "test-user" }) });
 
     const created = await SELF.fetch("https://example.com/processes/p-line/instances", {
       method: "POST",
@@ -1755,7 +1767,7 @@ describe("cost centres, through the real router (decision 0031)", () => {
       method: "POST",
       body: JSON.stringify({ id: "review", name: "Review", sequence: 1, ruleSetId, evaluationScope: "line" }),
     });
-    await SELF.fetch("https://example.com/org/teams", { method: "POST", body: JSON.stringify({ id: "cc-team", name: "CC Team" }) });
+    await SELF.fetch("https://example.com/org/teams", { method: "POST", headers: authHeaders(), body: JSON.stringify({ id: "cc-team", name: "CC Team" }) });
     await SELF.fetch("https://example.com/processes/p-cc-live/intake-channels", {
       method: "POST",
       body: JSON.stringify({ id: "ic-cc-live", name: "EDI" }),

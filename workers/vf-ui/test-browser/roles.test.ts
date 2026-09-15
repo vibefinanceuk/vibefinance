@@ -57,6 +57,20 @@ const STRINGS = {
     "action.create": "Create",
     "action.assign": "Assign",
     "action.done": "Done",
+    "roles.teams": "Teams",
+    "roles.noteamsconfigured": "No teams configured yet.",
+    "roles.teammembers": "Members",
+    "action.newteam": "New team",
+    "roles.teamname": "Name",
+    "roles.teamid": "Team ID",
+    "roles.teamidhelp": "A short, permanent identifier. Cannot be changed later.",
+    "roles.addmember": "Add",
+    "roles.member": "Person",
+    "roles.noteammembers": "No members yet.",
+    "roles.teamsavefailed": "Could not save the team. Please try again.",
+    "roles.addmemberfailed": "Could not add that person. Please try again.",
+    "roles.removememberfailed": "Could not remove that person. Please try again.",
+    "column.team": "Team",
     "roles.personname": "Name",
     "roles.personemail": "Email",
     "roles.personorg": "Organisation",
@@ -914,5 +928,171 @@ describe("popout action row — decision 0329, corrected", () => {
     expect(buttons).toHaveLength(1);
     expect(buttons[0].textContent).toContain("Done");
     expect(buttons[0].querySelector("svg")).not.toBeNull();
+  });
+});
+
+describe("teams — decision 0332", () => {
+  const ONE_TEAM = { id: "t1", name: "AP Team", members: [{ userId: "usr1", userName: "Alice", userEmail: "a@b.com" }] };
+  const EMPTY_TEAM = { id: "t2", name: "Expense Team", members: [] };
+  const ALICE = { id: "usr1", email: "a@b.com", name: "Alice", unitId: null, status: "active" };
+  const BOB = { id: "usr2", email: "b@b.com", name: "Bob", unitId: null, status: "active" };
+
+  async function openRolesWithTeams(permissions: string[], teams: unknown[], extraRoutes: Record<string, unknown> = {}) {
+    await openRolesAs(permissions, { ...EMPTY, users: [ALICE, BOB] }, {
+      "/api/org/teams": { teams },
+      ...extraRoutes,
+    });
+  }
+
+  it("shows no Teams section holding neither Admin.RoleManagement nor Admin.UserManagement", async () => {
+    await openRolesWithTeams(["AP.Dashboard"], [ONE_TEAM]);
+    expect(document.body.textContent).not.toContain("AP Team");
+  });
+
+  it("shows the Teams section holding Admin.RoleManagement alone", async () => {
+    await openRolesWithTeams(["Admin.RoleManagement"], [ONE_TEAM]);
+    expect(document.body.textContent).toContain("AP Team");
+  });
+
+  it("shows the Teams section holding Admin.UserManagement alone", async () => {
+    await openRolesWithTeams(["Admin.UserManagement"], [ONE_TEAM]);
+    expect(document.body.textContent).toContain("AP Team");
+  });
+
+  it("shows a real team's own members, and a team with none as empty", async () => {
+    await openRolesWithTeams(["Admin.RoleManagement"], [ONE_TEAM, EMPTY_TEAM]);
+    expect(document.body.textContent).toContain("Alice");
+    expect(document.body.textContent).toContain("No members yet.");
+  });
+
+  it("shows no New team button without Admin.RoleManagement", async () => {
+    await openRolesWithTeams(["Admin.UserManagement"], [ONE_TEAM]);
+    expect([...document.querySelectorAll("button")].some((b) => b.textContent?.includes("New team"))).toBe(false);
+  });
+
+  it("shows a New team button holding Admin.RoleManagement", async () => {
+    await openRolesWithTeams(["Admin.RoleManagement"], [ONE_TEAM]);
+    expect([...document.querySelectorAll("button")].some((b) => b.textContent?.includes("New team"))).toBe(true);
+  });
+
+  it("creates a team, posting the entered id and name", async () => {
+    await openRolesWithTeams(["Admin.RoleManagement"], [], { "POST /api/org/teams": { ok: true, json: async () => ({}) } });
+    const button = [...document.querySelectorAll("button")].find((b) => b.textContent?.includes("New team"));
+    button?.click();
+
+    const inputs = document.querySelectorAll<HTMLInputElement>(".editgrid input");
+    inputs[0].value = "t1";
+    inputs[1].value = "AP Team";
+    const submit = [...document.querySelectorAll("button")].find((b) => b.textContent?.includes("Create"));
+    await submit?.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    const calls = (fetch as unknown as { mock: { calls: unknown[][] } }).mock.calls;
+    const postCall = calls.find(([url, init]) => url === "/api/org/teams" && (init as RequestInit)?.method === "POST");
+    const body = JSON.parse((postCall?.[1] as RequestInit).body as string);
+    expect(body).toEqual({ id: "t1", name: "AP Team" });
+  });
+
+  it("opens an existing team with its own name pre-filled, id shown but disabled", async () => {
+    await openRolesWithTeams(["Admin.RoleManagement"], [ONE_TEAM]);
+    const row = [...document.querySelectorAll("tr")].find((r) => r.textContent?.includes("AP Team"));
+    row?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    const inputs = document.querySelectorAll<HTMLInputElement>(".editgrid input");
+    expect(inputs[0].value).toBe("t1");
+    expect(inputs[0].disabled).toBe(true);
+    expect(inputs[1].value).toBe("AP Team");
+  });
+
+  it("renames a real team, holding Admin.RoleManagement", async () => {
+    await openRolesWithTeams(["Admin.RoleManagement"], [ONE_TEAM], {
+      "PUT /api/org/teams/t1": { ok: true, json: async () => ({}) },
+    });
+    const row = [...document.querySelectorAll("tr")].find((r) => r.textContent?.includes("AP Team"));
+    row?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    const inputs = document.querySelectorAll<HTMLInputElement>(".editgrid input");
+    inputs[1].value = "Accounts Payable Team";
+    const submit = [...document.querySelectorAll("button")].find((b) => b.textContent?.includes("Save"));
+    await submit?.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    const calls = (fetch as unknown as { mock: { calls: unknown[][] } }).mock.calls;
+    const putCall = calls.find(([url, init]) => url === "/api/org/teams/t1" && (init as RequestInit)?.method === "PUT");
+    const body = JSON.parse((putCall?.[1] as RequestInit).body as string);
+    expect(body).toEqual({ name: "Accounts Payable Team" });
+  });
+
+  it("the name field is disabled, and no Save button appears, holding only Admin.UserManagement", async () => {
+    await openRolesWithTeams(["Admin.UserManagement"], [ONE_TEAM]);
+    const row = [...document.querySelectorAll("tr")].find((r) => r.textContent?.includes("AP Team"));
+    row?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    const inputs = document.querySelectorAll<HTMLInputElement>(".editgrid input");
+    expect(inputs[1].disabled).toBe(true);
+    expect([...document.querySelectorAll("button")].some((b) => b.textContent?.includes("Save"))).toBe(false);
+  });
+
+  it("shows no member picker or Remove control holding only Admin.RoleManagement", async () => {
+    await openRolesWithTeams(["Admin.RoleManagement"], [ONE_TEAM]);
+    const row = [...document.querySelectorAll("tr")].find((r) => r.textContent?.includes("AP Team"));
+    row?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    expect(document.querySelector(".memberpickerrow")).toBeNull();
+    expect([...document.querySelectorAll("button")].some((b) => b.textContent === "Remove")).toBe(false);
+  });
+
+  it("adds a member, holding Admin.UserManagement, offering only people not already on the team", async () => {
+    await openRolesWithTeams(["Admin.UserManagement"], [ONE_TEAM], {
+      "POST /api/org/teams/t1/members": { ok: true, json: async () => ({}) },
+    });
+    const row = [...document.querySelectorAll("tr")].find((r) => r.textContent?.includes("AP Team"));
+    row?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    const select = document.querySelector<HTMLSelectElement>(".memberpickerrow select") as HTMLSelectElement;
+    const options = [...select.querySelectorAll("option")].map((o) => o.textContent);
+    expect(options).toEqual(["Bob"]); // Alice is already a member
+
+    select.value = "usr2";
+    const addBtn = [...document.querySelectorAll(".memberpickerrow button")].find((b) => b.textContent === "Add");
+    await addBtn?.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    const calls = (fetch as unknown as { mock: { calls: unknown[][] } }).mock.calls;
+    const postCall = calls.find(([url]) => url === "/api/org/teams/t1/members");
+    const body = JSON.parse((postCall?.[1] as RequestInit).body as string);
+    expect(body).toEqual({ userId: "usr2" });
+  });
+
+  it("removes a member, holding Admin.UserManagement", async () => {
+    await openRolesWithTeams(["Admin.UserManagement"], [ONE_TEAM], {
+      "DELETE /api/org/teams/t1/members/usr1": { ok: true, json: async () => ({}) },
+    });
+    const row = [...document.querySelectorAll("tr")].find((r) => r.textContent?.includes("AP Team"));
+    row?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    const removeBtn = [...document.querySelectorAll("button")].find((b) => b.textContent === "Remove");
+    await removeBtn?.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    const calls = (fetch as unknown as { mock: { calls: unknown[][] } }).mock.calls;
+    const deleteCall = calls.find(([_url, init]) => (init as RequestInit)?.method === "DELETE");
+    expect(deleteCall?.[0]).toBe("/api/org/teams/t1/members/usr1");
+  });
+
+  it("shows the real error and leaves the form open when creating a team fails", async () => {
+    await openRolesWithTeams(["Admin.RoleManagement"], [], {
+      "POST /api/org/teams": { ok: false, status: 409, json: async () => ({ error: "team t1 already exists" }) },
+    });
+    const button = [...document.querySelectorAll("button")].find((b) => b.textContent?.includes("New team"));
+    button?.click();
+    const inputs = document.querySelectorAll<HTMLInputElement>(".editgrid input");
+    inputs[0].value = "t1";
+    const submit = [...document.querySelectorAll("button")].find((b) => b.textContent?.includes("Create"));
+    await submit?.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(document.querySelector(".backdrop")).not.toBeNull();
+    expect(document.body.textContent).toContain("team t1 already exists");
   });
 });

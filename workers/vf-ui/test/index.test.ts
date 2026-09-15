@@ -404,6 +404,10 @@ describe("paths the app is allowed to reach (decision 0212)", () => {
     "/org/users/usr1/roles/r1",
     "/org/users",
     "/org/users/usr1/authority-limits",
+    "/org/teams",
+    "/org/teams/t1",
+    "/org/teams/t1/members",
+    "/org/teams/t1/members/usr1",
     "/field-visibility",
   ];
 

@@ -45,7 +45,13 @@ import {
   isUnclaimed,
   type SessionContext,
 } from "./enforce.js";
-import { handleAddTeamMember, handleCreateTeam } from "./team-route.js";
+import {
+  handleAddTeamMember,
+  handleCreateTeam,
+  handleListTeams,
+  handleRemoveTeamMember,
+  handleUpdateTeam,
+} from "./team-route.js";
 import { handleUpsertInvoice, mergeStructuredInvoiceFacts , handleGetInvoice } from "./invoice-facts-route.js";
 import { handleUpsertExpenseReport } from "./expense-facts-route.js";
 import { handleCreateProcess, handleCreateStage } from "./process-route.js";
@@ -1521,13 +1527,31 @@ export default {
       return json(result.body, result.status);
     }
 
-    // Teams — decisions 0015 (process/workflow engine design) and
-    // 0016 (teams). Deliberately unauthenticated, same reasoning as
-    // every other /org/* route above: administrative/setup activity,
-    // not gated product usage, and gating it would risk the same
-    // bootstrap deadlock avoided everywhere else in this subsystem.
+    // Teams — decisions 0015 (process/workflow engine design), 0016
+    // (teams), and 0332 (gated, listed, renamed, and a member
+    // removable — the write side this screen needed).
+    if (pathname === "/org/teams" && request.method === "GET") {
+      const { db } = resolveTenant(request, env);
+      const auth = await authenticatePerson(db, request, env);
+      if (!auth.user) {
+        return json({ error: auth.reason }, 401);
+      }
+      if (
+        !(await hasPermission(db, auth.user.id, "Admin.RoleManagement")) &&
+        !(await hasPermission(db, auth.user.id, "Admin.UserManagement"))
+      ) {
+        return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
+      }
+      const result = await handleListTeams(db);
+      return json(result.body, result.status);
+    }
+
     if (pathname === "/org/teams" && request.method === "POST") {
       const { db } = resolveTenant(request, env);
+      const auth = await requirePermission(db, request, "Admin.RoleManagement", sessionContext(env));
+      if (!auth.authorized) {
+        return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
+      }
       let body: unknown;
       try {
         body = await request.json();
@@ -1538,9 +1562,30 @@ export default {
       return json(result.body, result.status);
     }
 
+    const updateTeamMatch = pathname.match(/^\/org\/teams\/([^/]+)$/);
+    if (updateTeamMatch && request.method === "PUT") {
+      const { db } = resolveTenant(request, env);
+      const auth = await requirePermission(db, request, "Admin.RoleManagement", sessionContext(env));
+      if (!auth.authorized) {
+        return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
+      }
+      let body: unknown;
+      try {
+        body = await request.json();
+      } catch {
+        return json({ error: t("invalidJsonBody", resolveLocale(env.LOCALE)) }, 400);
+      }
+      const result = await handleUpdateTeam(db, updateTeamMatch[1], (body ?? {}) as Record<string, unknown>);
+      return json(result.body, result.status);
+    }
+
     const addTeamMemberMatch = pathname.match(/^\/org\/teams\/([^/]+)\/members$/);
     if (addTeamMemberMatch && request.method === "POST") {
       const { db } = resolveTenant(request, env);
+      const auth = await requirePermission(db, request, "Admin.UserManagement", sessionContext(env));
+      if (!auth.authorized) {
+        return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
+      }
       let body: unknown;
       try {
         body = await request.json();
@@ -1549,6 +1594,17 @@ export default {
       }
       const userId = (body as Record<string, unknown> | null)?.userId;
       const result = await handleAddTeamMember(db, addTeamMemberMatch[1], userId);
+      return json(result.body, result.status);
+    }
+
+    const removeTeamMemberMatch = pathname.match(/^\/org\/teams\/([^/]+)\/members\/([^/]+)$/);
+    if (removeTeamMemberMatch && request.method === "DELETE") {
+      const { db } = resolveTenant(request, env);
+      const auth = await requirePermission(db, request, "Admin.UserManagement", sessionContext(env));
+      if (!auth.authorized) {
+        return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
+      }
+      const result = await handleRemoveTeamMember(db, removeTeamMemberMatch[1], removeTeamMemberMatch[2]);
       return json(result.body, result.status);
     }
 

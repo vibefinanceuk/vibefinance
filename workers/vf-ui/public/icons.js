@@ -152,6 +152,16 @@ export const ICONS = {
     '<path d="M13 20v-1.5a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4V20"/><circle cx="7.5" cy="6.5" r="3.5"/><path d="M18 8v6M15 11h6"/>',
 
   /**
+   * **Two people, compact, plus a plus — decision 0332.** Not
+   * `users`' own wide, full-width pair (used for the nav item this
+   * screen already sits behind) — narrowed enough here to leave room
+   * for the same offset plus every other "add" icon on this screen
+   * already uses.
+   */
+  newteam:
+    '<circle cx="6" cy="6" r="3"/><path d="M2 15a4 4 0 0 1 8 0"/><circle cx="12" cy="8" r="2.5"/><path d="M9 15a3.5 3.5 0 0 1 6 0"/><path d="M18 8v6M15 11h6"/>',
+
+  /**
    * **A badge with a plus** — decision 0326, for creating a new role.
    *
    * Deliberately not `newsupplier`'s person shape: a role is a badge

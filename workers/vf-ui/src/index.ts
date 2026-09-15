@@ -125,6 +125,18 @@ const PROXIED_TO_INSTANCE: RegExp[] = [
    * here before a real request could fail on it.
    */
   /^\/org\/users\/[^/]+\/authority-limits$/,
+  /**
+   * **Teams, gated for the first time — decision 0332.** Both
+   * existing routes (`/org/teams`, `/org/teams/:id/members`) had
+   * existed since decision 0016, unauthenticated and never on this
+   * list either — closed alongside gating them, rather than left to
+   * be found the same way six earlier instances this arc already
+   * were.
+   */
+  /^\/org\/teams$/,
+  /^\/org\/teams\/[^/]+$/,
+  /^\/org\/teams\/[^/]+\/members$/,
+  /^\/org\/teams\/[^/]+\/members\/[^/]+$/,
   // The task list and the actions the list offers (decisions 0103,
   // 0104). Each added deliberately: the point of a list rather than a
   // prefix is that `/tasks/:id/anything` is not automatically

@@ -1084,6 +1084,18 @@
   }
 
   /*
+    **Picking an existing person to add to a team — decision 0332.**
+    A select and a small button in one row, the same shape a search
+    box beside its own button already takes elsewhere in this app.
+  */
+  .memberpickerrow {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+  .memberpickerrow select { flex: 1; }
+
+  /*
     The dashboard — decision 0242.
 
     **Two columns, and cards that choose their own width.** A grid of
