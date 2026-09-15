@@ -185,6 +185,54 @@ a rule, and left an approval task in a queue.
   comments rather than invented, and kept in the same file as the
   permission it describes so the two can never drift apart (0331).
 
+### Access — the renamed, tabbed screen, teams, and user properties (0332–0348)
+- **Teams are real** (0332): `handleUpdateTeam`, `handleRemoveTeamMember`,
+  and `handleListTeams` added alongside the two routes that already
+  existed, every one gated, and every team belongs to exactly one org
+  now (`unit_id NOT NULL` on `org_teams`, migration 0064).
+- **Roles renamed Access, restructured into tabs** (0333): Org Units,
+  Roles, People, Teams, replacing four sections on one long scroll.
+  Org Units and Roles hidden from a delegated administrator holding
+  only `Admin.UserManagement`, gated on `Admin.Configure` — never a
+  literal role-name check.
+- **User properties** (0334): cost centre, manager, address, and a
+  derived Budget Holder flag (true if the person owns any cost
+  centre, never a stored, independently-settable flag) — plus a real
+  spend limit, genuinely distinct from the existing approval limit by
+  direction of flow, not the same thing under a second name.
+- **Creating and managing an org unit** (0335): `handleCreateUnit`
+  already existed, unauthenticated, since decision 0003 — closed here
+  rather than built around. `handleUpdateUnit` built new; nothing let
+  an existing unit be edited before this.
+- **The org list is a real tree** (0336): `sortUnitsAsTree` — a child
+  immediately beneath its own parent, alphabetical among siblings at
+  every level — replacing a flat `ORDER BY kind DESC, name ASC` that
+  never actually grouped a child beneath its own parent at all,
+  despite the screen's own indentation implying it always had.
+- **Role allocation and property assignment split back into two
+  pop-outs** (0337), each reached by its own icon in the row (0338
+  moved those icons into their own columns, once stacking an icon
+  beneath a cell's own text grew every row too tall) — reported live
+  as *"not very user friendly"* when 0334 first combined them.
+- **The approval and spend limit currency fields are a closed
+  dropdown** (0339), corrected to the real, researched Peppol BIS
+  Billing 3.0 / ISO 4217 list (0340), then filtered to the 156 of
+  those 178 codes a company can actually purchase with — precious
+  metals, bond-market units, and ISO 4217's own "funds" excluded
+  (0342) — with the field's own width fixed twice more along the way
+  (0341, 0343, 0344). A real `<hr>` now sits between a person's own
+  properties and their limits (0345).
+- **The side nav is grouped under three static headings** (0346):
+  Accounts payable, Supplier management, Configuration — distinct
+  from the single, collapsible "Vibe AP" folder decision 0274 built
+  and 0276 reverted; nothing here expands or collapses, and a heading
+  with nothing unlocked beneath it is never shown.
+- **Sources gained icons on Rename, Retire, and a repositioned Create
+  action** (0347), and Rename/Retire's own confirmations are real,
+  in-app pop-outs now rather than native browser dialogs, which could
+  never be made to look like part of this app regardless of styling
+  (0348).
+
 ---
 
 ## Not built
@@ -218,28 +266,21 @@ bounded above as well as below (0201).
 and the document list are scoped; keying, approving and returning are
 not.
 
-**Teams have no UI, and their own routes are unauthenticated.**
-Creating a team and adding a member both exist (`team-route.ts`), with
-the same "deliberately no authentication, bootstrap-deadlock class"
-reasoning `/org/units` and the original `/org/roles` had before 0326 —
-and there is no route at all to list teams, remove a member, or
-rename one. Assigning a role to a person is fully built (0327); a team
-is the one remaining piece of "allocating roles to a user, assigning
-users to teams, creating and maintaining teams" not yet started.
+**Teams have no org-scoping in the task-queue sense.** Every team now
+belongs to exactly one org for administration purposes (`org_teams.unit_id`,
+0332); task assignment still names a team by id directly, with
+nothing narrowing which teams a given screen offers based on the org
+a task or document belongs to.
 
-**`POST /org/units` still has no permission check of any kind.** Named
-as a known gap in 0319; the same class of gap this arc closed for
-user creation and authority limits (0328) has not been closed here.
+**Rules and Sources as further Access tabs** were discussed and
+deliberately scoped out of 0333 — Org Units, Roles, People, and Teams
+are the four tabs today.
 
-**The remaining "user variable" fields do not exist anywhere in the
-schema**: cost-centre allocation for a *person* (a cost centre has one
-special *owner* today — who approves its charges — which is the
-reverse relationship, not "this person works within cost centre X"),
-a picture (no image storage exists for anything user-related), a
-forename/surname split (today a single `name` field), and a business
-title. None declined — deliberately deferred, scoped out of 0328 to
-keep that piece to fields that already existed somewhere in the
-system (0328).
+**The remaining "user variable" fields that are genuinely new
+schema**: a picture (no image storage exists for anything
+user-related), a forename/surname split (today a single `name`
+field), and a business title. Cost-centre allocation *for a person*
+is built now (0334) — the field this note used to name as missing.
 
 **The operator interface's screen** (0140). The attribution half is
 built — every privileged action recorded, refusals included. The screen
@@ -493,13 +534,13 @@ elsewhere.
 
 | Package | Tests |
 |---|---|
-| `vf-app` | 1565 |
+| `vf-app` | 1636 |
 | `vf-licence` | 320 |
-| `vf-ui` | 56 Worker · 461 browser |
+| `vf-ui` | 63 Worker · 506 browser |
 | `shared` | 269 passing, 3 known pre-existing failures |
 
 Both migration chains replay clean with every standing invariant
-holding — 63 migrations for `vf-app`, 98 for `vf-licence`.
+holding — 65 migrations for `vf-app`, 105 for `vf-licence`.
 
 ---
 
@@ -516,7 +557,7 @@ holding — 63 migrations for `vf-app`, 98 for `vf-licence`.
 | `docs/design/mockups/` | Four screens as static HTML | Current |
 | `docs/design/multi-authority-intake.md` | Non-EN-16931 authorities | Design only |
 | `docs/design/text-layer-extraction.md` | Reading a PDF's own text | Design only |
-| `docs/decisions/` | 331 decision records | Current |
+| `docs/decisions/` | 348 decision records | Current |
 | `docs/decisions/SUPERSEDED.md` | Which records supersede which | **Read first** |
 
 Document 4's markdown source is at `docs/documents/`, with

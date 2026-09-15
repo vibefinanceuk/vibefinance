@@ -29,16 +29,16 @@ twice.
 
 | | |
 | --- | --- |
-| `origin/main` | `a17d14e` |
-| vf-admin deployed | `8e27a34` · `https://admin.vibefinance-ai.com` · behind Access |
-| vf-app deployed | `a17d14e` |
-| vf-licence deployed | `a17d14e` |
-| vf-ui deployed | `a17d14e` · `https://app.vibefinance-ai.com` |
+| `origin/main` | `9013467` |
+| vf-admin deployed | `8e27a34` · `https://admin.vibefinance-ai.com` · behind Cloudflare Access |
+| vf-app deployed | `9013467` |
+| vf-licence deployed | `9013467` |
+| vf-ui deployed | `9013467` · `https://app.vibefinance-ai.com` |
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
-| `vf-app-poc` migrations | through `0063` |
-| `vf-licence-poc` migrations | through `0098` |
-| Tests | vf-admin 9 · vf-app 1565 · vf-licence 320 · vf-ui 56 Worker + 461 browser · shared 269 (+3 known pre-existing failures) |
-| Decision records | 331 |
+| `vf-app-poc` migrations | through `0065` |
+| `vf-licence-poc` migrations | through `0105` |
+| Tests | vf-admin 9 · vf-app 1636 · vf-licence 320 · vf-ui 63 Worker + 506 browser · shared 269 (+3 known pre-existing failures) |
+| Decision records | 348 |
 
 **Everything committed is deployed.** `vf-admin` untouched this arc —
 its own last commit predates decision 0298, listed as-is rather than
@@ -74,17 +74,53 @@ stages where people key, approve and return it. Every visible word comes
 from the control plane and every colour from a token, so a wording fix
 or a new language is rows rather than a deployment.
 
-**Seven screens**: Tasks, Sources, Suppliers, Rules, Documents, Roles,
-and the viewer that serves every stage. Roles is new this arc
-(0319–0331) — every org unit, role, person, assignment, and approval
-limit that had previously existed only as raw database rows, reachable
-only by direct SQL, now has a real screen: read for anyone holding
-`Admin.Configure` or a scoped `Admin.UserManagement`, write (creating
-and editing a role, assigning and revoking one, creating a person) for
-the same permissions, kept deliberately separate from each other —
-editing what a role itself grants is instance-wide and never
-delegable, where assigning an existing role to a person already was
-(0201) and stays so.
+**Seven screens**: Tasks, Sources, Suppliers, Rules, Documents, Access,
+and the viewer that serves every stage. **Roles was renamed Access and
+restructured into tabs this arc** (0333) — Org Units, Roles, People,
+Teams, no longer four sections on one long scroll, with Org Units and
+Roles themselves hidden from a delegated administrator holding only
+`Admin.UserManagement`. Roles itself dates to 0319–0331: read for
+anyone holding `Admin.Configure` or a scoped `Admin.UserManagement`,
+write (creating and editing a role, assigning and revoking one,
+creating a person) for the same permissions, kept deliberately
+separate — editing what a role itself grants is instance-wide and
+never delegable, where assigning an existing role to a person already
+was (0201) and stays so. **Teams are real** (0332): the two routes that
+already existed gained the three that did not (list, remove a member,
+rename), every one gated, and every team now belongs to exactly one
+org (`unit_id NOT NULL`, migration 0064) rather than sitting outside
+the scoping every person already has. **A person's own properties are
+real too** (0334): cost centre, manager, address, and a derived Budget
+Holder flag, plus a genuinely new spend limit distinct from the
+existing approval limit. **Creating and editing an org unit is real**
+(0335), closing a real, previously-unauthenticated `POST /org/units`
+gap along the way. **The org list is a real tree, not a flat sort**
+(0336) — a child now sorts immediately beneath its own parent, the
+way the screen's own indentation had always implied it should.
+
+**Role allocation and property assignment are two separate pop-outs
+again** (0337), each reached by its own icon in the row rather than a
+single click on the row itself (0338 moved those icons into their own
+columns once stacking them beneath a cell's own text grew every row
+too tall) — reported live as *"not very user friendly"* when 0334
+first combined them into one. The approval and spend limit currency
+fields are a closed dropdown now, not free text (0339), corrected
+twice more after building: to the real, researched Peppol BIS Billing
+3.0 / ISO 4217 list rather than a stated four-currency guess (0340),
+then filtered to the 156 of those 178 codes a company can actually
+purchase with — precious metals, bond-market units, and ISO 4217's own
+"funds" excluded (0342) — with the field's own width fixed twice more
+along the way (0341, 0343, 0344).
+
+**The side nav is grouped under three static headings** (0346):
+Accounts payable, Supplier management, Configuration — distinct from
+a single, collapsible "Vibe AP" folder decision 0274 built and 0276
+reverted; nothing here expands or collapses, and a heading with
+nothing unlocked beneath it is never shown. **Sources gained icons on
+Rename, Retire, and a repositioned Create action** (0347), and its own
+Rename and Retire confirmations are real, in-app pop-outs now rather
+than native browser dialogs, which could never be made to look like
+part of this app (0348).
 
 **An org switcher** sits in the topbar for the first time: a person
 holding a role at more than one org picks which one they are looking
@@ -252,33 +288,35 @@ established which**, and the two readings have different fixes.
 
 ## Suggested next pieces
 
-**New this arc, and the most immediately actionable: teams, and the
-remaining "user variable" fields.** Reported live in one request —
-"a UI for creating Users, allocating user variables, allocating roles
-to user, and assigning users to teams. creating and maintaining
-teams" — and deliberately scoped down to one piece at a time rather
-than built all at once (0328 onward).
+**Built this arc, closing out most of what was named here before:
+teams, most of the "user variable" fields, creating and managing an
+org, and the org list's own tree ordering.** Reported live in one
+request — "a UI for creating Users, allocating user variables,
+allocating roles to user, and assigning users to teams. creating and
+maintaining teams" — deliberately scoped down to one piece at a time
+rather than built all at once (0328 onward), and each piece landed in
+turn: teams (0332), the Access screen's own tabs (0333), user
+properties (0334), org create/edit (0335), org tree ordering (0336).
 
-**Teams** have real routes today (`handleCreateTeam`,
-`handleAddTeamMember`) with no permission check of any kind — the
-same bootstrap-deadlock class of gap `/org/units` and the original
-`/org/roles` had before 0326 closed it there — and no route at all to
-list a team, remove a member, or rename one. Building a UI here means
-building those three routes first, then gating all five the way 0328
-gated user creation and authority limits.
+**What is still genuinely new schema, not yet built**: a picture (no
+image storage exists for anything user-related — the real lift here,
+deliberately not started), a forename/surname split (today one `name`
+field, and splitting it touches every place a name is already
+displayed), and a business title. Cost-centre allocation *for a
+person* is built (0334) — the field this note used to name as
+missing.
 
-**The remaining fields are genuinely new schema**, not just a missing
-screen: cost-centre allocation *for a person* (a cost centre has one
-special *owner* today — who approves its charges — the reverse
-relationship, not "this person works within cost centre X"), a
-picture (no image storage exists for anything user-related — the
-real lift here, deliberately not started), a forename/surname split
-(today one `name` field, and splitting it touches every place a
-name is already displayed), and a business title.
+**Rules and Sources as further Access tabs** were discussed and
+deliberately scoped out of 0333 — Org Units, Roles, People, and Teams
+are the four tabs today; a fifth and sixth would each need their own
+scoping decision, not an assumption that they belong alongside the
+other four.
 
-**`POST /org/units` still has no permission check of any kind** —
-named as a known gap in 0319, the same class of gap 0328 closed for
-user creation and authority limits, not yet closed here.
+**Teams have no org-scoping in the task-queue sense.** `org_teams.unit_id`
+(0332) scopes who may *administer* a team's own definition and
+membership; task assignment still names a team by id directly, with
+nothing narrowing which teams a given screen offers based on the org
+a task or document belongs to.
 
 **1. Cost object approval** (decisions 0184, 0195) — **the frame is
 built; nothing calls it.**
@@ -334,11 +372,11 @@ are scoped; nothing else is.**
 
 **Update, this arc (0313–0331): roles now have a real UI, not only a
 scoped assignment.** The Roles screen — read (0319–0323) and write,
-including assignment (0326–0328) — is what closes that gap.
-**Still customer-wide, unchanged**: teams (`team-route.ts`'s own
-routes exist, matching `org-route.ts`'s bootstrap-deadlock precedent,
-decision 0010 — no UI, and no route at all to list a team, remove a
-member, or rename one) and settings.
+including assignment (0326–0328) — is what closes that gap. **Teams
+are scoped too now** (0332): every team belongs to exactly one org
+(`unit_id NOT NULL`), with a real UI (0333) reached through the
+Access screen's own Teams tab. **Still customer-wide, unchanged**:
+settings.
 
 A unit may override a stage's rule set, resolved by one walk in
 `unit-config.ts`. A process was the wrong grain: France and Germany want
@@ -617,6 +655,8 @@ missing check — a working one, pointed slightly wrong.
 | 0170 | Extraction | A model that reads badly, never one confident about it |
 | 0174 | A line save | Every field the screen holds being a field it sends |
 | 0212, 0324–0328 | A proxy allow-list | Six routes, real and tested in `vf-app`, never once added to `vf-ui`'s own list of what it will forward |
+| 0337, 0338, 0339, 0346, 0347 | A test file's own strings stub | The new keys a change actually introduced, not the ones the file already had — hit five separate times across one arc, each time cascading into several unrelated-looking failures traced back to the same missing key |
+| 0341 | A `flex: 1` CSS rule | The row shape it was written for (0332's team-member picker), not the different shape a later decision (0334) put in the same class |
 
 **And this table itself.** It was removed by a rewrite of the section
 above it, and three later edits claimed to add rows to a table that was
