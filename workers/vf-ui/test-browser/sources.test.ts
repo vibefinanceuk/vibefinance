@@ -55,6 +55,9 @@ const STRINGS = {
     "sources.toolong": "That name is too long for an email address.",
     "sources.retire": "Retire",
     "sources.rename": "Rename",
+    "action.retire": "Retire",
+    "action.rename": "Rename",
+    "action.create": "Create",
     "sources.retired": "Retired",
     "outcome.never_used": "Source deleted. Nothing had been received through it.",
     "outcome.address_issued": "Source retired. An email address was issued for it, so the record is kept.",
@@ -336,6 +339,22 @@ describe("retiring and renaming (decision 0130)", () => {
     expect(labels).toContain("Rename");
   });
 
+  /**
+   * **Icons on Rename and Retire — decision 0347.** Reported live:
+   * "update the Sources screen to include icons for the Rename and
+   * Retire buttons." `actionLink` itself, the same icon-and-label
+   * button every other write action already uses elsewhere in this
+   * app, replacing a plain, unlabelled-by-icon `<button>`.
+   */
+  it("gives Rename and Retire their own icon each", async () => {
+    await open(LIVE);
+    const buttons = [...document.querySelectorAll(".rowactions button")];
+    expect(buttons).toHaveLength(2);
+    for (const button of buttons) {
+      expect(button.querySelector("svg")).not.toBeNull();
+    }
+  });
+
   it("offers neither on one already retired", async () => {
     await open([{ ...LIVE[0], status: "retired" }]);
     expect(document.querySelectorAll(".rowactions button")).toHaveLength(0);
@@ -354,6 +373,25 @@ describe("retiring and renaming (decision 0130)", () => {
     await open(LIVE);
     expect(document.querySelector(".columns")).not.toBeNull();
     expect(document.querySelector(".newsource.stacked")).not.toBeNull();
+  });
+
+  /**
+   * **Create, in the card's own header, not the bottom of the form —
+   * decision 0347.** Reported live: "update the Create button, to
+   * have an icon and appear in the top right of the 'Add a source'
+   * card." The same `.cardhead` shape every other write action's own
+   * header already uses elsewhere in this app.
+   */
+  it("shows Create in the card's own header, with an icon, beside the heading", async () => {
+    await open([]);
+    const cardhead = [...document.querySelectorAll(".panel .cardhead")].find((c) =>
+      c.textContent?.includes("Add a source")
+    );
+    expect(cardhead).not.toBeUndefined();
+    const button = cardhead?.querySelector("button.primary");
+    expect(button?.textContent).toContain("Create");
+    expect(button?.querySelector("svg")).not.toBeNull();
+    expect(document.querySelector(".newsource button.primary")).toBeNull();
   });
 });
 

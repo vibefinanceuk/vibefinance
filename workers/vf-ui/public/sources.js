@@ -1,5 +1,6 @@
 import { t } from "/strings.js";
 import { el, frame, topbar, setCurrentScreen } from "/tasks.js";
+import { actionLink } from "/viewer.js";
 
 /**
  * Where invoices arrive — decision 0126.
@@ -359,8 +360,8 @@ function sourceRow(source) {
   } else {
     cells.push(
       el("td", { class: "rowactions" }, [
-        el("button", { text: t("sources.rename"), onclick: () => renameSource(source) }),
-        el("button", { text: t("sources.retire"), onclick: () => retireSource(source) }),
+        actionLink("rename", { onclick: () => renameSource(source) }),
+        actionLink("retire", { onclick: () => retireSource(source) }),
       ])
     );
   }
@@ -403,7 +404,10 @@ function newSourcePanel() {
   }
 
   return el("div", { class: "panel" }, [
-    el("h3", { text: t("sources.new") }),
+    el("div", { class: "cardhead" }, [
+      el("h3", { text: t("sources.new") }),
+      actionLink("create", { primary: true, onclick: createSource }),
+    ]),
     el("div", { class: "newsource stacked" }, [
       el("div", { class: "kf" }, [
         el("label", { for: "new-name", text: t("sources.name") }),
@@ -429,7 +433,6 @@ function newSourcePanel() {
         el("label", { for: "new-process", text: t("sources.process") }),
         processPicker,
       ]),
-      el("button", { class: "primary", text: t("sources.create"), onclick: createSource }),
     ]),
   ]);
 }

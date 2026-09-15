@@ -233,6 +233,23 @@ export const ICONS = {
    */
   create:
     '<path d="M12 3v10m0 0 4-4m-4 4-4-4M4 17v3h16v-3"/>',
+  /**
+   * **A pencil, because Rename genuinely edits a value — decision
+   * 0347.** The comment above `changebuyer`/`changeseller` explains
+   * why those two are deliberately not a pencil: they replace one
+   * record with another. Renaming a source changes the name itself,
+   * which is exactly what a pencil already means everywhere else.
+   */
+  rename: '<path d="M15 4l5 5-11 11H4v-5z"/><path d="M13 6l5 5"/>',
+  /**
+   * **An archive box, not the same shape as `close` — decision
+   * 0347.** Retiring a source is not deleting it (section reasoning,
+   * `retireSource`'s own doc comment) and not dismissing something
+   * (`close`'s own meaning elsewhere) — it is put away, kept, no
+   * longer active. A lidded box says that on its own.
+   */
+  retire:
+    '<rect x="3" y="4" width="18" height="5" rx="1"/><path d="M5 9v9a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9"/><path d="M10 13h4"/>',
   // A checkmark. Nothing else reads as "done" as immediately.
   complete:
     '<path d="M4 12.5 9.5 18 20 6"/>',
