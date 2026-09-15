@@ -1045,6 +1045,24 @@ describe("a person's own properties and limits — decision 0334, its own pop-ou
   });
 
   /**
+   * **A fixed, considered width, not a greedy one — decision 0343.**
+   * Reported live, from a real screenshot: `flex: 1` grew the
+   * currency field to fill whatever space the amount field's own
+   * fixed width left behind, leaving a long stretch of empty select
+   * beside a short currency name. `currencypicker`, a class specific
+   * enough to override that rule, is the mechanism the fix depends
+   * on — this locks in that the class is actually applied, not just
+   * that the CSS rule exists somewhere in the stylesheet.
+   */
+  it("gives the currency picker its own class, distinct from the generic memberpickerrow select", async () => {
+    await openRolesAs(["Admin.UserManagement"], baseBody());
+    clickPropertiesAction("Alice");
+
+    const currencySelect = document.querySelector<HTMLSelectElement>(".memberpickerrow select");
+    expect(currencySelect?.className).toBe("currencypicker");
+  });
+
+  /**
    * **The same full list at creation time — decision 0340.** The New
    * Person form sets an approval and spend limit at the same moment
    * it creates the person; a narrower list there would be the one

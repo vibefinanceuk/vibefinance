@@ -1141,6 +1141,30 @@
     the row exactly as before, `min-width` only ever raising a floor.
   */
   .memberpickerrow select { flex: 1; min-width: 12em; }
+  /*
+    **A fixed width, not a greedy one — decision 0343.** Reported
+    live, from a real screenshot: `flex: 1` grows to fill whatever
+    space the amount field's own fixed, narrow width leaves behind —
+    correct for the team-member picker this rule was written for
+    (nothing else in that row competes for space), wrong for the
+    currency picker, where "fill the rest of the row" left a long
+    stretch of empty select for a short currency name. A specific
+    class, specific enough to win over the rule above by specificity
+    alone, replaces "grow to fill" with a fixed, considered width —
+    comfortable for the vast majority of this list's own entries,
+    `text-overflow: ellipsis` rather than wrapping or overflowing for
+    the rare name (Venezuela's own, renamed mid-transition) longer
+    than that.
+  */
+  .memberpickerrow select.currencypicker {
+    flex: 0 0 auto;
+    min-width: 0;
+    width: 20em;
+    max-width: 20em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
   .memberpickerrow input[type="number"] { flex: 0 0 6em; }
 
   /*

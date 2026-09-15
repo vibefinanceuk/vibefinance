@@ -458,7 +458,7 @@ const PURCHASABLE_CURRENCIES = [
 function currencyPicker(selectedValue) {
   return el(
     "select",
-    {},
+    { class: "currencypicker" },
     PURCHASABLE_CURRENCIES.map(([code, name]) =>
       el("option", { value: code, text: `${code} — ${name}`, ...(code === selectedValue ? { selected: "selected" } : {}) })
     )
