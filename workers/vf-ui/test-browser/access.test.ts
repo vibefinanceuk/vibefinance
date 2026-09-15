@@ -1063,6 +1063,27 @@ describe("a person's own properties and limits — decision 0334, its own pop-ou
   });
 
   /**
+   * **A real divider between properties and limits — decision
+   * 0345.** Reported live: "place a horizontal line between the
+   * Budget Holder, and Approval limit fields." A structural check —
+   * the divider genuinely sits between the two sections in the DOM,
+   * not merely present somewhere in the popout.
+   */
+  it("places a divider between the properties grid and the limits section", async () => {
+    await openRolesAs(["Admin.UserManagement"], baseBody());
+    clickPropertiesAction("Alice");
+
+    const popout = document.querySelector(".popout");
+    const children = [...(popout?.children ?? [])];
+    const gridIndex = children.findIndex((c) => c.className === "editgrid");
+    const dividerIndex = children.findIndex((c) => c.tagName === "HR" && c.className === "fielddivider");
+    const limitsIndex = children.findIndex((c) => c.textContent?.includes("Approval limits"));
+    expect(gridIndex).toBeGreaterThanOrEqual(0);
+    expect(dividerIndex).toBeGreaterThan(gridIndex);
+    expect(limitsIndex).toBeGreaterThan(dividerIndex);
+  });
+
+  /**
    * **The same full list at creation time — decision 0340.** The New
    * Person form sets an approval and spend limit at the same moment
    * it creates the person; a narrower list there would be the one

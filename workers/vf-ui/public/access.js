@@ -1116,6 +1116,7 @@ function openPersonPropertiesForm(user) {
     el("div", { class: "popout" }, [
       el("div", { class: "cardhead" }, [el("h3", { text: `${user.name} — ${t("action.properties")}` }), stateButtons]),
       propertiesForm,
+      el("hr", { class: "fielddivider" }),
       limitsSection,
       problem,
     ]),

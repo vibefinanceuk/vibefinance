@@ -1180,6 +1180,20 @@
   .memberpickerrow input[type="number"] { flex: 1; min-width: 6em; }
 
   /*
+    **A real line between properties and limits — decision 0345.**
+    Reported live: "place a horizontal line between the Budget
+    Holder, and Approval limit fields." A genuine `<hr>` rather than
+    a border borrowed from some other element's own edge, styled with
+    the same border colour this app already uses everywhere else a
+    line divides one section from another.
+  */
+  .fielddivider {
+    border: none;
+    border-top: 0.5px solid var(--border);
+    margin: 14px 0;
+  }
+
+  /*
     The dashboard — decision 0242.
 
     **Two columns, and cards that choose their own width.** A grid of
