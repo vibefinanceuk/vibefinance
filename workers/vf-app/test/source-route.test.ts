@@ -4,10 +4,11 @@ import { applyTestSchema } from "./setup.js";
 import {
   handleCreateSource,
   handleListSources,
+  handleListProcesses,
   isKnownSourceMechanism,
   SOURCE_MECHANISMS,
 } from "../src/source-route.js";
-import { handleCreateProcess } from "../src/process-route.js";
+import { handleCreateProcess, handleCreateStage, handleAddDraftStage, handleRemoveDraftStage, handlePublishDraft } from "../src/process-route.js";
 
 beforeEach(async () => {
   await applyTestSchema();
@@ -197,5 +198,43 @@ describe("isKnownSourceMechanism", () => {
     expect(isKnownSourceMechanism("emial")).toBe(false);
     expect(isKnownSourceMechanism("EMAIL")).toBe(false);
     expect(isKnownSourceMechanism(undefined)).toBe(false);
+  });
+});
+
+describe("handleListProcesses — decision 0349", () => {
+  it("returns each process's own live version and version-aware stage count", async () => {
+    await handleCreateStage(env.DB, "p-ap", { id: "s1", name: "Received", sequence: 1 });
+    await handleCreateStage(env.DB, "p-ap", { id: "s2", name: "Approval", sequence: 2 });
+
+    const result = await handleListProcesses(env.DB);
+    const body = result.body as { processes: { id: string; version: number; stageCount: number }[] };
+    const ap = body.processes.find((p) => p.id === "p-ap");
+    expect(ap).toEqual(expect.objectContaining({ version: 1, stageCount: 2 }));
+  });
+
+  it("a process with no stages at all counts zero, not null", async () => {
+    const result = await handleListProcesses(env.DB);
+    const body = result.body as { processes: { id: string; stageCount: number }[] };
+    const ar = body.processes.find((p) => p.id === "p-ar");
+    expect(ar?.stageCount).toBe(0);
+  });
+
+  /**
+   * **The exact gap this decision closed** — one of decision 0150's
+   * own "thirteen reads to route through it." A stage removed by
+   * publishing a draft must stop counting here, not just in the
+   * detail view.
+   */
+  it("does not count a stage published out of the live version", async () => {
+    await handleCreateStage(env.DB, "p-ap", { id: "s1", name: "Received", sequence: 1 });
+    await handleCreateStage(env.DB, "p-ap", { id: "s2", name: "Line Review", sequence: 2 });
+    await handleAddDraftStage(env.DB, "p-ap", { id: "s3", name: "Coding" });
+    await handleRemoveDraftStage(env.DB, "p-ap", "s2");
+    await handlePublishDraft(env.DB, "p-ap");
+
+    const result = await handleListProcesses(env.DB);
+    const body = result.body as { processes: { id: string; version: number; stageCount: number }[] };
+    const ap = body.processes.find((p) => p.id === "p-ap");
+    expect(ap).toEqual(expect.objectContaining({ version: 2, stageCount: 2 }));
   });
 });

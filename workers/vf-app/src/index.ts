@@ -57,7 +57,15 @@ import {
 } from "./team-route.js";
 import { handleUpsertInvoice, mergeStructuredInvoiceFacts , handleGetInvoice } from "./invoice-facts-route.js";
 import { handleUpsertExpenseReport } from "./expense-facts-route.js";
-import { handleCreateProcess, handleCreateStage } from "./process-route.js";
+import {
+  handleCreateProcess,
+  handleCreateStage,
+  handleGetProcess,
+  handleAddDraftStage,
+  handleRemoveDraftStage,
+  handlePublishDraft,
+  handleDiscardDraft,
+} from "./process-route.js";
 import { handleCreateIntakeChannel } from "./intake-channel-route.js";
 import { handleCaptureIntake, handleCaptureUblXml, handleCapturePdf, handleCaptureImage, handleFinalisePendingDocument, handleIntakeStats } from "./intake-capture-route.js";
 import {
@@ -1692,11 +1700,20 @@ export default {
       return json(result.body, result.status);
     }
 
-    // Processes and stages — decisions 0015 and 0018. Deliberately
-    // unauthenticated, same reasoning as teams above: definition-time
-    // setup, not gated product usage.
+    // Processes and stages — decisions 0015 and 0018.
+    /**
+     * **Gated for the first time — decision 0349.** This route had
+     * existed since decision 0018 with no permission check at all —
+     * `GET /processes` already required `Admin.Configure`; the write
+     * side never did, the same class of gap `/org/units` carried
+     * before decision 0335 closed it there.
+     */
     if (pathname === "/processes" && request.method === "POST") {
       const { db } = resolveTenant(request, env);
+      const auth = await requirePermission(db, request, "Admin.Configure", sessionContext(env));
+      if (!auth.authorized) {
+        return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
+      }
       let body: unknown;
       try {
         body = await request.json();
@@ -1704,6 +1721,74 @@ export default {
         return json({ error: t("invalidJsonBody", resolveLocale(env.LOCALE)) }, 400);
       }
       const result = await handleCreateProcess(db, (body ?? {}) as Record<string, unknown>);
+      return json(result.body, result.status);
+    }
+
+    /**
+     * **A process's own detail — decision 0349**: its live stages,
+     * and its own draft if it has one. What a configuration screen
+     * needs, and the wrong shape `handleRuleStages` (decision 0128,
+     * every stage across every process, no `process_id` filter at
+     * all) could never give it.
+     */
+    const getProcessMatch = pathname.match(/^\/processes\/([^/]+)$/);
+    if (getProcessMatch && request.method === "GET") {
+      const { db } = resolveTenant(request, env);
+      const auth = await requirePermission(db, request, "Admin.Configure", sessionContext(env));
+      if (!auth.authorized) {
+        return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
+      }
+      const result = await handleGetProcess(db, getProcessMatch[1]);
+      return json(result.body, result.status);
+    }
+
+    const addDraftStageMatch = pathname.match(/^\/processes\/([^/]+)\/draft\/stages$/);
+    if (addDraftStageMatch && request.method === "POST") {
+      const { db } = resolveTenant(request, env);
+      const auth = await requirePermission(db, request, "Admin.Configure", sessionContext(env));
+      if (!auth.authorized) {
+        return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
+      }
+      let body: unknown;
+      try {
+        body = await request.json();
+      } catch {
+        return json({ error: t("invalidJsonBody", resolveLocale(env.LOCALE)) }, 400);
+      }
+      const result = await handleAddDraftStage(db, addDraftStageMatch[1], (body ?? {}) as Record<string, unknown>);
+      return json(result.body, result.status);
+    }
+
+    const removeDraftStageMatch = pathname.match(/^\/processes\/([^/]+)\/draft\/stages\/([^/]+)$/);
+    if (removeDraftStageMatch && request.method === "DELETE") {
+      const { db } = resolveTenant(request, env);
+      const auth = await requirePermission(db, request, "Admin.Configure", sessionContext(env));
+      if (!auth.authorized) {
+        return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
+      }
+      const result = await handleRemoveDraftStage(db, removeDraftStageMatch[1], removeDraftStageMatch[2]);
+      return json(result.body, result.status);
+    }
+
+    const publishDraftMatch = pathname.match(/^\/processes\/([^/]+)\/publish$/);
+    if (publishDraftMatch && request.method === "POST") {
+      const { db } = resolveTenant(request, env);
+      const auth = await requirePermission(db, request, "Admin.Configure", sessionContext(env));
+      if (!auth.authorized) {
+        return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
+      }
+      const result = await handlePublishDraft(db, publishDraftMatch[1]);
+      return json(result.body, result.status);
+    }
+
+    const discardDraftMatch = pathname.match(/^\/processes\/([^/]+)\/draft$/);
+    if (discardDraftMatch && request.method === "DELETE") {
+      const { db } = resolveTenant(request, env);
+      const auth = await requirePermission(db, request, "Admin.Configure", sessionContext(env));
+      if (!auth.authorized) {
+        return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
+      }
+      const result = await handleDiscardDraft(db, discardDraftMatch[1]);
       return json(result.body, result.status);
     }
 
@@ -2615,6 +2700,10 @@ export default {
     const createStageMatch = pathname.match(/^\/processes\/([^/]+)\/stages$/);
     if (createStageMatch && request.method === "POST") {
       const { db } = resolveTenant(request, env);
+      const auth = await requirePermission(db, request, "Admin.Configure", sessionContext(env));
+      if (!auth.authorized) {
+        return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
+      }
       let body: unknown;
       try {
         body = await request.json();

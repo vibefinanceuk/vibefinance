@@ -452,6 +452,9 @@ async function go(screen) {
   } else if (screen === "access") {
     const { open } = await import("/access.js");
     await open();
+  } else if (screen === "processes") {
+    const { open } = await import("/processes.js");
+    await open();
   } else {
     /**
      * **Rebuild the screen, then fill it** — decision 0191.
@@ -522,6 +525,7 @@ const NAV_PERMISSIONS = {
   suppliers: "AP.Supplier",
   rules: "Admin.RuleManagement",
   documents: "AP.Review",
+  processes: "Admin.Configure",
   /**
    * **Either standing opens it, decision 0321** — extending decision
    * 0320's own `Admin.Configure` correction rather than reverting it:
@@ -600,6 +604,7 @@ export function frame(main) {
         ["access", "users"],
         ["sources", "sources"],
         ["rules", "rules"],
+        ["processes", "processes"],
       ],
     },
   ];

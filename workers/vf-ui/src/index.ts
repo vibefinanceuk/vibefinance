@@ -226,6 +226,24 @@ const PROXIED_TO_INSTANCE: RegExp[] = [
   /^\/inbound-email$/,
   // Listing processes and creating a source (decision 0128).
   /^\/processes$/,
+  /**
+   * **`/processes/:id/stages`, reachable for the first time —
+   * decision 0349.** `handleCreateStage` has existed since decision
+   * 0018, real and tested in `vf-app`, and was never once added to
+   * this list — the same class of gap decision 0212 already
+   * documents, found here rather than by a real request failing.
+   *
+   * **A process's own detail, and its own draft — decision 0349.**
+   * What the new Process Management screen actually calls: reading
+   * one process, adding or removing a stage from its own draft, and
+   * publishing or discarding that draft.
+   */
+  /^\/processes\/[^/]+\/stages$/,
+  /^\/processes\/[^/]+$/,
+  /^\/processes\/[^/]+\/draft$/,
+  /^\/processes\/[^/]+\/draft\/stages$/,
+  /^\/processes\/[^/]+\/draft\/stages\/[^/]+$/,
+  /^\/processes\/[^/]+\/publish$/,
   // Making a stage read-only (decision 0143).
   /^\/processes\/stages\/[^/]+\/read-only$/,
   /^\/processes\/[^/]+\/sources$/,

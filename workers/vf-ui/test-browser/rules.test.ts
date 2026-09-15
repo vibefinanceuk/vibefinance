@@ -47,6 +47,7 @@ const STRINGS = {
     "nav.documents": "Documents",
     "nav.roles": "Roles",
     "nav.access": "Access",
+    "nav.processes": "Processes",
     "nav.group.accountspayable": "Accounts payable",
     "nav.group.suppliermanagement": "Supplier management",
     "nav.group.configuration": "Configuration",
@@ -291,7 +292,7 @@ describe("the navigation", () => {
     // work" (decision 0242) and moved to the front of the list, at
     // the operator's own request — this test caught both changes at
     // once, which is what it is for.
-    expect(nav).toEqual(["Dashboard", "Tasks", "Documents", "Suppliers", "Access", "Sources", "Rules"]);
+    expect(nav).toEqual(["Dashboard", "Tasks", "Documents", "Suppliers", "Access", "Sources", "Rules", "Processes"]);
   });
 
   it("marks which screen you are on", async () => {

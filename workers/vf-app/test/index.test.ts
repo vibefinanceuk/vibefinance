@@ -1165,10 +1165,12 @@ describe("task routes, through the real router (decision 0018)", () => {
     ).run();
     await SELF.fetch("https://example.com/processes", {
       method: "POST",
+      headers: authHeaders(),
       body: JSON.stringify({ id: "p1", name: "AP" }),
     });
     await SELF.fetch("https://example.com/processes/p1/stages", {
       method: "POST",
+      headers: authHeaders(),
       body: JSON.stringify({ id: "s1", name: "Approval", sequence: 1 }),
     });
     await SELF.fetch("https://example.com/org/teams", {
@@ -1243,19 +1245,21 @@ describe("task routes, through the real router (decision 0018)", () => {
 
 describe("intake channels, through the real router (decision 0024)", () => {
   it("creates a channel through the real router", async () => {
-    await SELF.fetch("https://example.com/processes", { method: "POST", body: JSON.stringify({ id: "ap-live", name: "Standard AP" }) });
+    await SELF.fetch("https://example.com/processes", { method: "POST", headers: authHeaders(), body: JSON.stringify({ id: "ap-live", name: "Standard AP" }) });
     const res = await SELF.fetch("https://example.com/processes/ap-live/intake-channels", {
       method: "POST",
+      headers: authHeaders(),
       body: JSON.stringify({ id: "ic1", name: "Email" }),
     });
     expect(res.status).toBe(201);
   });
 
   it("the real point of this feature: adding a genuinely new, previously unanticipated channel is an ordinary successful call, live", async () => {
-    await SELF.fetch("https://example.com/processes", { method: "POST", body: JSON.stringify({ id: "ap-live", name: "Standard AP" }) });
+    await SELF.fetch("https://example.com/processes", { method: "POST", headers: authHeaders(), body: JSON.stringify({ id: "ap-live", name: "Standard AP" }) });
     for (const name of ["Email", "Mailroom", "EDI"]) {
       await SELF.fetch("https://example.com/processes/ap-live/intake-channels", {
         method: "POST",
+        headers: authHeaders(),
         body: JSON.stringify({ id: crypto.randomUUID(), name }),
       });
     }
@@ -1263,6 +1267,7 @@ describe("intake channels, through the real router (decision 0024)", () => {
     // up — no code change, no deployment, just a normal API call.
     const res = await SELF.fetch("https://example.com/processes/ap-live/intake-channels", {
       method: "POST",
+      headers: authHeaders(),
       body: JSON.stringify({ id: crypto.randomUUID(), name: "New Supplier Integration" }),
     });
     expect(res.status).toBe(201);
@@ -1272,9 +1277,10 @@ describe("intake channels, through the real router (decision 0024)", () => {
 
   it("is not blocked by licence status — an administrative action, not gated product usage", async () => {
     await env.DB.prepare("DELETE FROM licence_cache WHERE id = 1").run();
-    await SELF.fetch("https://example.com/processes", { method: "POST", body: JSON.stringify({ id: "p1", name: "AP" }) });
+    await SELF.fetch("https://example.com/processes", { method: "POST", headers: authHeaders(), body: JSON.stringify({ id: "p1", name: "AP" }) });
     const res = await SELF.fetch("https://example.com/processes/p1/intake-channels", {
       method: "POST",
+      headers: authHeaders(),
       body: JSON.stringify({ id: "ic1", name: "Email" }),
     });
     expect(res.status).not.toBe(402);
@@ -1373,17 +1379,20 @@ describe("process instances and stage visits, through the real router (decision 
       conditions: { field: "BT-112", operator: "greater_than", value: 1000 },
       actions: [{ type: "assign_task", params: { team: "ap-team", permission: "AP.Approve" } }],
     });
-    await SELF.fetch("https://example.com/processes", { method: "POST", body: JSON.stringify({ id: "p1", name: "Standard AP" }) });
+    await SELF.fetch("https://example.com/processes", { method: "POST", headers: authHeaders(), body: JSON.stringify({ id: "p1", name: "Standard AP" }) });
     await SELF.fetch("https://example.com/processes/p1/stages", {
       method: "POST",
+      headers: authHeaders(),
       body: JSON.stringify({ id: "s1", name: "Received", sequence: 1 }),
     });
     await SELF.fetch("https://example.com/processes/p1/stages", {
       method: "POST",
+      headers: authHeaders(),
       body: JSON.stringify({ id: "s2", name: "Approval", sequence: 2, ruleSetId: "rs-approval" }),
     });
     await SELF.fetch("https://example.com/processes/p1/stages", {
       method: "POST",
+      headers: authHeaders(),
       body: JSON.stringify({ id: "s3", name: "Payment-eligible", sequence: 3 }),
     });
     await env.DB.prepare(
@@ -1398,6 +1407,7 @@ describe("process instances and stage visits, through the real router (decision 
 
     const createRes = await SELF.fetch("https://example.com/processes/p1/instances", {
       method: "POST",
+      headers: authHeaders(),
       body: JSON.stringify({ subjectType: "invoice", subjectId: "real-inv-1" }),
     });
     expect(createRes.status).toBe(201);
@@ -1431,10 +1441,11 @@ describe("process instances and stage visits, through the real router (decision 
   });
 
   it("401s visiting a stage with no credentials at all", async () => {
-    await SELF.fetch("https://example.com/processes", { method: "POST", body: JSON.stringify({ id: "p1", name: "AP" }) });
-    await SELF.fetch("https://example.com/processes/p1/stages", { method: "POST", body: JSON.stringify({ id: "s1", name: "Received", sequence: 1 }) });
+    await SELF.fetch("https://example.com/processes", { method: "POST", headers: authHeaders(), body: JSON.stringify({ id: "p1", name: "AP" }) });
+    await SELF.fetch("https://example.com/processes/p1/stages", { method: "POST", headers: authHeaders(), body: JSON.stringify({ id: "s1", name: "Received", sequence: 1 }) });
     const created = await SELF.fetch("https://example.com/processes/p1/instances", {
       method: "POST",
+      headers: authHeaders(),
       body: JSON.stringify({ subjectType: "invoice", subjectId: "inv-1" }),
     });
     const instanceId = (await created.json() as { id: string }).id;
@@ -1447,8 +1458,8 @@ describe("process instances and stage visits, through the real router (decision 
 
   it("is blocked when the licence is blocked, matching /rules/evaluate's own gate", async () => {
     await env.DB.prepare("DELETE FROM licence_cache WHERE id = 1").run();
-    await SELF.fetch("https://example.com/processes", { method: "POST", body: JSON.stringify({ id: "p1", name: "AP" }) });
-    await SELF.fetch("https://example.com/processes/p1/stages", { method: "POST", body: JSON.stringify({ id: "s1", name: "Received", sequence: 1 }) });
+    await SELF.fetch("https://example.com/processes", { method: "POST", headers: authHeaders(), body: JSON.stringify({ id: "p1", name: "AP" }) });
+    await SELF.fetch("https://example.com/processes/p1/stages", { method: "POST", headers: authHeaders(), body: JSON.stringify({ id: "s1", name: "Received", sequence: 1 }) });
     const res = await SELF.fetch("https://example.com/process-instances/anything/visit", {
       method: "POST",
       headers: authHeaders(),
@@ -1478,9 +1489,10 @@ describe("per-line evaluation, through the real router (decision 0027)", () => {
       conditions: { field: "BT-131", operator: "greater_than", value: 500 },
       actions: [{ type: "assign_task", params: { team: "line-team", permission: "AP.Approve" } }],
     });
-    await SELF.fetch("https://example.com/processes", { method: "POST", body: JSON.stringify({ id: "p-line", name: "Line AP" }) });
+    await SELF.fetch("https://example.com/processes", { method: "POST", headers: authHeaders(), body: JSON.stringify({ id: "p-line", name: "Line AP" }) });
     await SELF.fetch("https://example.com/processes/p-line/stages", {
       method: "POST",
+      headers: authHeaders(),
       body: JSON.stringify({ id: "s1", name: "Line Review", sequence: 1, ruleSetId: "rs-line-live", evaluationScope: "line" }),
     });
     await env.DB.prepare(
@@ -1491,6 +1503,7 @@ describe("per-line evaluation, through the real router (decision 0027)", () => {
 
     const created = await SELF.fetch("https://example.com/processes/p-line/instances", {
       method: "POST",
+      headers: authHeaders(),
       body: JSON.stringify({ subjectType: "invoice", subjectId: "inv-line-1" }),
     });
     const instanceId = (await created.json() as { id: string }).id;
@@ -1516,13 +1529,15 @@ describe("per-line evaluation, through the real router (decision 0027)", () => {
   });
 
   it("422s when a supplied line is missing a numeric lineNumber", async () => {
-    await SELF.fetch("https://example.com/processes", { method: "POST", body: JSON.stringify({ id: "p-line-2", name: "Line AP" }) });
+    await SELF.fetch("https://example.com/processes", { method: "POST", headers: authHeaders(), body: JSON.stringify({ id: "p-line-2", name: "Line AP" }) });
     await SELF.fetch("https://example.com/processes/p-line-2/stages", {
       method: "POST",
+      headers: authHeaders(),
       body: JSON.stringify({ id: "s1", name: "Received", sequence: 1 }),
     });
     const created = await SELF.fetch("https://example.com/processes/p-line-2/instances", {
       method: "POST",
+      headers: authHeaders(),
       body: JSON.stringify({ subjectType: "invoice", subjectId: "inv-line-2" }),
     });
     const instanceId = (await created.json() as { id: string }).id;
@@ -1538,13 +1553,15 @@ describe("per-line evaluation, through the real router (decision 0027)", () => {
 
 describe("intake capture, through the real router (decision 0029)", () => {
   it("a real capture through a real channel: stores facts, creates an instance, visits it, all in one call — through the actual HTTP route", async () => {
-    await SELF.fetch("https://example.com/processes", { method: "POST", body: JSON.stringify({ id: "p-intake-1", name: "AP Intake" }) });
+    await SELF.fetch("https://example.com/processes", { method: "POST", headers: authHeaders(), body: JSON.stringify({ id: "p-intake-1", name: "AP Intake" }) });
     await SELF.fetch("https://example.com/processes/p-intake-1/stages", {
       method: "POST",
+      headers: authHeaders(),
       body: JSON.stringify({ id: "intake", name: "Intake", sequence: 1 }),
     });
     await SELF.fetch("https://example.com/processes/p-intake-1/intake-channels", {
       method: "POST",
+      headers: authHeaders(),
       body: JSON.stringify({ id: "ic-live-1", name: "Email" }),
     });
 
@@ -1562,13 +1579,15 @@ describe("intake capture, through the real router (decision 0029)", () => {
   });
 
   it("401s a capture with no credentials", async () => {
-    await SELF.fetch("https://example.com/processes", { method: "POST", body: JSON.stringify({ id: "p-intake-2", name: "AP" }) });
+    await SELF.fetch("https://example.com/processes", { method: "POST", headers: authHeaders(), body: JSON.stringify({ id: "p-intake-2", name: "AP" }) });
     await SELF.fetch("https://example.com/processes/p-intake-2/stages", {
       method: "POST",
+      headers: authHeaders(),
       body: JSON.stringify({ id: "s1", name: "Received", sequence: 1 }),
     });
     await SELF.fetch("https://example.com/processes/p-intake-2/intake-channels", {
       method: "POST",
+      headers: authHeaders(),
       body: JSON.stringify({ id: "ic-live-2", name: "Email" }),
     });
     const res = await SELF.fetch("https://example.com/intake-channels/ic-live-2/capture", {
@@ -1589,13 +1608,15 @@ describe("intake capture, through the real router (decision 0029)", () => {
   });
 
   it("GET intake-stats reports real volume through the real router — the first GET endpoint in this system", async () => {
-    await SELF.fetch("https://example.com/processes", { method: "POST", body: JSON.stringify({ id: "p-intake-3", name: "AP" }) });
+    await SELF.fetch("https://example.com/processes", { method: "POST", headers: authHeaders(), body: JSON.stringify({ id: "p-intake-3", name: "AP" }) });
     await SELF.fetch("https://example.com/processes/p-intake-3/stages", {
       method: "POST",
+      headers: authHeaders(),
       body: JSON.stringify({ id: "s1", name: "Received", sequence: 1 }),
     });
     await SELF.fetch("https://example.com/processes/p-intake-3/intake-channels", {
       method: "POST",
+      headers: authHeaders(),
       body: JSON.stringify({ id: "ic-live-3", name: "Email" }),
     });
     await SELF.fetch("https://example.com/intake-channels/ic-live-3/capture", {
@@ -1634,13 +1655,15 @@ describe("real UBL XML capture, through the real router (decision 0030)", () => 
 </Invoice>`;
 
   it("a real raw XML request body is parsed and captured through the real HTTP route", async () => {
-    await SELF.fetch("https://example.com/processes", { method: "POST", body: JSON.stringify({ id: "p-xml-1", name: "AP XML" }) });
+    await SELF.fetch("https://example.com/processes", { method: "POST", headers: authHeaders(), body: JSON.stringify({ id: "p-xml-1", name: "AP XML" }) });
     await SELF.fetch("https://example.com/processes/p-xml-1/stages", {
       method: "POST",
+      headers: authHeaders(),
       body: JSON.stringify({ id: "s1", name: "Received", sequence: 1 }),
     });
     await SELF.fetch("https://example.com/processes/p-xml-1/intake-channels", {
       method: "POST",
+      headers: authHeaders(),
       body: JSON.stringify({ id: "ic-xml-1", name: "EDI" }),
     });
 
@@ -1660,13 +1683,15 @@ describe("real UBL XML capture, through the real router (decision 0030)", () => 
   });
 
   it("an explicit ?id= query parameter overrides the generated id", async () => {
-    await SELF.fetch("https://example.com/processes", { method: "POST", body: JSON.stringify({ id: "p-xml-2", name: "AP XML" }) });
+    await SELF.fetch("https://example.com/processes", { method: "POST", headers: authHeaders(), body: JSON.stringify({ id: "p-xml-2", name: "AP XML" }) });
     await SELF.fetch("https://example.com/processes/p-xml-2/stages", {
       method: "POST",
+      headers: authHeaders(),
       body: JSON.stringify({ id: "s1", name: "Received", sequence: 1 }),
     });
     await SELF.fetch("https://example.com/processes/p-xml-2/intake-channels", {
       method: "POST",
+      headers: authHeaders(),
       body: JSON.stringify({ id: "ic-xml-2", name: "EDI" }),
     });
 
@@ -1680,9 +1705,10 @@ describe("real UBL XML capture, through the real router (decision 0030)", () => 
   });
 
   it("400s when the request body is empty", async () => {
-    await SELF.fetch("https://example.com/processes", { method: "POST", body: JSON.stringify({ id: "p-xml-3", name: "AP" }) });
+    await SELF.fetch("https://example.com/processes", { method: "POST", headers: authHeaders(), body: JSON.stringify({ id: "p-xml-3", name: "AP" }) });
     await SELF.fetch("https://example.com/processes/p-xml-3/intake-channels", {
       method: "POST",
+      headers: authHeaders(),
       body: JSON.stringify({ id: "ic-xml-3", name: "EDI" }),
     });
     const res = await SELF.fetch("https://example.com/intake-channels/ic-xml-3/capture-xml", {
@@ -1694,9 +1720,10 @@ describe("real UBL XML capture, through the real router (decision 0030)", () => 
   });
 
   it("422s malformed XML through the real route, with no instance created", async () => {
-    await SELF.fetch("https://example.com/processes", { method: "POST", body: JSON.stringify({ id: "p-xml-4", name: "AP" }) });
+    await SELF.fetch("https://example.com/processes", { method: "POST", headers: authHeaders(), body: JSON.stringify({ id: "p-xml-4", name: "AP" }) });
     await SELF.fetch("https://example.com/processes/p-xml-4/intake-channels", {
       method: "POST",
+      headers: authHeaders(),
       body: JSON.stringify({ id: "ic-xml-4", name: "EDI" }),
     });
     const res = await SELF.fetch("https://example.com/intake-channels/ic-xml-4/capture-xml", {
@@ -1777,9 +1804,10 @@ describe("cost centres, through the real router (decision 0031)", () => {
         "2026-01-01T00:00:00.000Z"
       )
       .run();
-    await SELF.fetch("https://example.com/processes", { method: "POST", body: JSON.stringify({ id: "p-cc-live", name: "AP CC" }) });
+    await SELF.fetch("https://example.com/processes", { method: "POST", headers: authHeaders(), body: JSON.stringify({ id: "p-cc-live", name: "AP CC" }) });
     await SELF.fetch("https://example.com/processes/p-cc-live/stages", {
       method: "POST",
+      headers: authHeaders(),
       body: JSON.stringify({ id: "review", name: "Review", sequence: 1, ruleSetId, evaluationScope: "line" }),
     });
     await env.DB.prepare(
@@ -1788,6 +1816,7 @@ describe("cost centres, through the real router (decision 0031)", () => {
     await SELF.fetch("https://example.com/org/teams", { method: "POST", headers: authHeaders(), body: JSON.stringify({ id: "cc-team", name: "CC Team", unitId: "u1" }) });
     await SELF.fetch("https://example.com/processes/p-cc-live/intake-channels", {
       method: "POST",
+      headers: authHeaders(),
       body: JSON.stringify({ id: "ic-cc-live", name: "EDI" }),
     });
 

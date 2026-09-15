@@ -396,6 +396,12 @@ describe("paths the app is allowed to reach (decision 0212)", () => {
   const reachable = [
     "/suppliers/load",
     "/sources/s1/org",
+    "/processes/p1",
+    "/processes/p1/stages",
+    "/processes/p1/draft",
+    "/processes/p1/draft/stages",
+    "/processes/p1/draft/stages/s1",
+    "/processes/p1/publish",
     "/org/units",
     "/org/units/u1",
     "/org/overview",

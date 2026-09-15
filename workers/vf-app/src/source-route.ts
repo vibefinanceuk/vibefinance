@@ -381,16 +381,23 @@ export async function handleListAllSources(db: D1Database): Promise<RouteResult>
  * source to a process does not, and offering a free-text box for an id
  * somebody has to remember is not a configuration screen.
  */
+/**
+ * **Version-aware — decision 0349.** One of decision 0150's own
+ * "thirteen reads to route through it": this counted every stage
+ * ever created for a process, not the ones actually in its current,
+ * live version's own membership — a stage removed by publishing a
+ * draft would still have counted here.
+ */
 export async function handleListProcesses(db: D1Database): Promise<RouteResult> {
   const rows = await db
     .prepare(
-      `SELECT p.id, p.name, count(s.id) AS stage_count
+      `SELECT p.id, p.name, p.version, count(v.stage_id) AS stage_count
        FROM processes p
-       LEFT JOIN process_stages s ON s.process_id = p.id
-       GROUP BY p.id, p.name
+       LEFT JOIN process_stage_versions v ON v.process_id = p.id AND v.version = p.version
+       GROUP BY p.id, p.name, p.version
        ORDER BY p.name`
     )
-    .all<{ id: string; name: string; stage_count: number }>();
+    .all<{ id: string; name: string; version: number; stage_count: number }>();
 
   return {
     status: 200,
@@ -398,6 +405,7 @@ export async function handleListProcesses(db: D1Database): Promise<RouteResult> 
       processes: rows.results.map((r) => ({
         id: r.id,
         name: r.name,
+        version: r.version,
         // **A process with no stages accepts documents and does nothing
         // with them.** Worth showing where somebody is about to point a
         // source at one.

@@ -198,6 +198,21 @@ export const ICONS = {
     '<rect x="3" y="4" width="10" height="16" rx="1"/><path d="M6 8h1M6 12h1M6 16h1M10 8h1M10 12h1M10 16h1"/><path d="M18 8v6M15 11h6"/>',
 
   /**
+   * **A single node, plus — decision 0349.** The same solid circle
+   * `processes` itself draws three of in a row, alone here since a
+   * brand-new process starts as one thing before it has a sequence
+   * at all.
+   */
+  newprocess: '<circle cx="7" cy="12" r="4"/><path d="M18 8v6M15 11h6"/>',
+  /**
+   * **The same node, dashed — decision 0349.** Distinguishes "a new
+   * process" from "one more stage on an existing one": a dashed
+   * outline reads as provisional, exactly what a stage is before its
+   * own draft is published.
+   */
+  addstage: '<circle cx="7" cy="12" r="4" stroke-dasharray="3 2"/><path d="M18 8v6M15 11h6"/>',
+
+  /**
    * **A file going up**, because a load is about the file.
    *
    * The inverse of `save`, whose arrow goes down into a tray — and
@@ -280,6 +295,14 @@ export const ICONS = {
   // A closed padlock, the mirror of release.
   claim:
     '<path d="M6 11h12v9H6zM9 11V7a3 3 0 0 1 6 0v4"/>',
+  /**
+   * **Up, out of a tray — decision 0349.** The visual mirror of
+   * `save`/`create`'s own down-arrow-into-a-tray: those persist what
+   * is on screen; this sends a draft out to become the live version,
+   * the opposite direction for a genuinely different act.
+   */
+  publish:
+    '<path d="M12 21V11m0 0-4 4m4-4 4 4M4 7V4h16v3"/>',
 };
 
 export function icon(name) {
@@ -390,6 +413,15 @@ Object.assign(ICONS, {
   // A page with a folded corner — the plainest possible "a document,"
   // deliberately generic since this screen holds every kind at once.
   documents: '<path d="M6 3h9l4 4v14a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/><path d="M15 3v4h4"/><path d="M8 12h8M8 16h5"/>',
+
+  /**
+   * **A straight sequence, not a branch — decision 0349.** `rules`
+   * already draws one condition splitting into two outcomes; a
+   * process is the opposite shape, a fixed order with no branching
+   * at all — three plain nodes in a line say that on their own.
+   */
+  processes:
+    '<circle cx="4" cy="12" r="2.5"/><path d="M6.5 12h5"/><circle cx="12" cy="12" r="2.5"/><path d="M14.5 12h5"/><circle cx="20" cy="12" r="2.5"/>',
 
   // A panel with a chevron — decision 0274's collapse toggle. One
   // icon rather than two: the chevron is flipped with a CSS transform

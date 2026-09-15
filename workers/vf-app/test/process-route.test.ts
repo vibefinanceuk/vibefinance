@@ -1,7 +1,16 @@
-import { env } from "cloudflare:test";
+import { env, SELF } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
 import { applyTestSchema } from "./setup.js";
-import { handleCreateProcess, handleCreateStage } from "../src/process-route.js";
+import {
+  handleCreateProcess,
+  handleCreateStage,
+  handleGetProcess,
+  handleAddDraftStage,
+  handleRemoveDraftStage,
+  handlePublishDraft,
+  handleDiscardDraft,
+} from "../src/process-route.js";
+import { generateApiKey, hashApiKey } from "../src/user-auth.js";
 
 beforeEach(async () => {
   await applyTestSchema();
@@ -89,5 +98,372 @@ describe("handleCreateStage", () => {
     await handleCreateStage(env.DB, "p1", { id: "s1", name: "Received", sequence: 1 });
     const result = await handleCreateStage(env.DB, "p2", { id: "s2", name: "Submitted", sequence: 1 });
     expect(result.status).toBe(201);
+  });
+});
+
+describe("handleGetProcess — decision 0349", () => {
+  it("404s a process that does not exist", async () => {
+    const result = await handleGetProcess(env.DB, "does-not-exist");
+    expect(result.status).toBe(404);
+  });
+
+  it("returns the live stages in sequence order, and no draft when none exists", async () => {
+    await handleCreateProcess(env.DB, { id: "p1", name: "Standard AP" });
+    await handleCreateStage(env.DB, "p1", { id: "s2", name: "Validated", sequence: 2 });
+    await handleCreateStage(env.DB, "p1", { id: "s1", name: "Received", sequence: 1 });
+
+    const result = await handleGetProcess(env.DB, "p1");
+    expect(result.status).toBe(200);
+    const body = result.body as { version: number; stages: { id: string }[]; draft: unknown };
+    expect(body.version).toBe(1);
+    expect(body.stages.map((s) => s.id)).toEqual(["s1", "s2"]);
+    expect(body.draft).toBeNull();
+  });
+
+  it("joins the rule set's own name onto each stage", async () => {
+    await env.DB.prepare("INSERT INTO rule_sets (id, name, mode, status) VALUES (?, ?, ?, ?)")
+      .bind("rs1", "AP Approval Rules", "first_match", "active")
+      .run();
+    await handleCreateProcess(env.DB, { id: "p1", name: "Standard AP" });
+    await handleCreateStage(env.DB, "p1", { id: "s1", name: "Approval", sequence: 1, ruleSetId: "rs1" });
+
+    const result = await handleGetProcess(env.DB, "p1");
+    const body = result.body as { stages: { ruleSetId: string | null; ruleSetName: string | null }[] };
+    expect(body.stages[0]).toEqual(expect.objectContaining({ ruleSetId: "rs1", ruleSetName: "AP Approval Rules" }));
+  });
+
+  it("shows a draft, distinct from the live version, once one exists", async () => {
+    await handleCreateProcess(env.DB, { id: "p1", name: "Standard AP" });
+    await handleCreateStage(env.DB, "p1", { id: "s1", name: "Received", sequence: 1 });
+    await handleAddDraftStage(env.DB, "p1", { id: "s2", name: "Coding" });
+
+    const result = await handleGetProcess(env.DB, "p1");
+    const body = result.body as { version: number; stages: { id: string }[]; draft: { version: number; stages: { id: string }[] } | null };
+    expect(body.version).toBe(1);
+    expect(body.stages.map((s) => s.id)).toEqual(["s1"]);
+    expect(body.draft?.version).toBe(2);
+    expect(body.draft?.stages.map((s) => s.id)).toEqual(["s1", "s2"]);
+  });
+});
+
+describe("handleAddDraftStage — decision 0349", () => {
+  it("400s when id or name is missing", async () => {
+    await handleCreateProcess(env.DB, { id: "p1", name: "Standard AP" });
+    const result = await handleAddDraftStage(env.DB, "p1", { id: "s1" });
+    expect(result.status).toBe(400);
+  });
+
+  it("404s when the process does not exist", async () => {
+    const result = await handleAddDraftStage(env.DB, "does-not-exist", { id: "s1", name: "Coding" });
+    expect(result.status).toBe(404);
+  });
+
+  it("409s a stage id that already exists", async () => {
+    await handleCreateProcess(env.DB, { id: "p1", name: "Standard AP" });
+    await handleCreateStage(env.DB, "p1", { id: "s1", name: "Received", sequence: 1 });
+    const result = await handleAddDraftStage(env.DB, "p1", { id: "s1", name: "Duplicate" });
+    expect(result.status).toBe(409);
+  });
+
+  it("404s a ruleSetId that does not exist", async () => {
+    await handleCreateProcess(env.DB, { id: "p1", name: "Standard AP" });
+    const result = await handleAddDraftStage(env.DB, "p1", { id: "s1", name: "Coding", ruleSetId: "does-not-exist" });
+    expect(result.status).toBe(404);
+  });
+
+  /**
+   * **The exact claim reported live** — a stage already on the live
+   * version is never touched by adding to the draft.
+   */
+  it("never changes the live version's own membership", async () => {
+    await handleCreateProcess(env.DB, { id: "p1", name: "Standard AP" });
+    await handleCreateStage(env.DB, "p1", { id: "s1", name: "Received", sequence: 1 });
+    await handleAddDraftStage(env.DB, "p1", { id: "s2", name: "Coding" });
+
+    const process = await env.DB.prepare("SELECT version FROM processes WHERE id = 'p1'").first<{ version: number }>();
+    expect(process?.version).toBe(1);
+    const liveMembership = await env.DB
+      .prepare("SELECT stage_id FROM process_stage_versions WHERE process_id = 'p1' AND version = 1")
+      .all<{ stage_id: string }>();
+    expect(liveMembership.results.map((r: { stage_id: string }) => r.stage_id)).toEqual(["s1"]);
+  });
+
+  it("creates the draft by copying the live version's own membership forward, on the first edit", async () => {
+    await handleCreateProcess(env.DB, { id: "p1", name: "Standard AP" });
+    await handleCreateStage(env.DB, "p1", { id: "s1", name: "Received", sequence: 1 });
+    await handleCreateStage(env.DB, "p1", { id: "s2", name: "Validation", sequence: 2 });
+
+    await handleAddDraftStage(env.DB, "p1", { id: "s3", name: "Coding" });
+
+    const draftMembership = await env.DB
+      .prepare("SELECT stage_id, sequence FROM process_stage_versions WHERE process_id = 'p1' AND version = 2 ORDER BY sequence")
+      .all<{ stage_id: string; sequence: number }>();
+    expect(draftMembership.results.map((r: { stage_id: string; sequence: number }) => r.stage_id)).toEqual(["s1", "s2", "s3"]);
+  });
+
+  it("appends to the end of the draft's own order, ignoring process_stages.sequence entirely", async () => {
+    await handleCreateProcess(env.DB, { id: "p1", name: "Standard AP" });
+    await handleCreateStage(env.DB, "p1", { id: "s1", name: "Received", sequence: 1 });
+    await handleAddDraftStage(env.DB, "p1", { id: "s2", name: "Coding" });
+    await handleAddDraftStage(env.DB, "p1", { id: "s3", name: "Approval" });
+
+    const draftMembership = await env.DB
+      .prepare("SELECT stage_id, sequence FROM process_stage_versions WHERE process_id = 'p1' AND version = 2 ORDER BY sequence")
+      .all<{ stage_id: string; sequence: number }>();
+    expect(draftMembership.results.map((r: { stage_id: string; sequence: number }) => r.stage_id)).toEqual(["s1", "s2", "s3"]);
+  });
+
+  it("adding twice to the same draft does not re-copy the live version a second time", async () => {
+    await handleCreateProcess(env.DB, { id: "p1", name: "Standard AP" });
+    await handleCreateStage(env.DB, "p1", { id: "s1", name: "Received", sequence: 1 });
+    await handleAddDraftStage(env.DB, "p1", { id: "s2", name: "Coding" });
+    await handleAddDraftStage(env.DB, "p1", { id: "s3", name: "Approval" });
+
+    const draftMembership = await env.DB
+      .prepare("SELECT count(*) AS n FROM process_stage_versions WHERE process_id = 'p1' AND version = 2 AND stage_id = 's1'")
+      .first<{ n: number }>();
+    expect(draftMembership?.n).toBe(1);
+  });
+});
+
+describe("handleRemoveDraftStage — decision 0349", () => {
+  it("404s when the process does not exist", async () => {
+    const result = await handleRemoveDraftStage(env.DB, "does-not-exist", "s1");
+    expect(result.status).toBe(404);
+  });
+
+  it("404s a stage not in the current draft", async () => {
+    await handleCreateProcess(env.DB, { id: "p1", name: "Standard AP" });
+    await handleCreateStage(env.DB, "p1", { id: "s1", name: "Received", sequence: 1 });
+    const result = await handleRemoveDraftStage(env.DB, "p1", "does-not-exist");
+    expect(result.status).toBe(404);
+  });
+
+  /**
+   * **Line Review, the exact case decision 0150 was written for.** A
+   * completed task cites the stage; the stage row is never deleted,
+   * only absent from the new version's own membership.
+   */
+  it("removes a stage from the draft without deleting the stage row itself", async () => {
+    await handleCreateProcess(env.DB, { id: "p1", name: "Standard AP" });
+    await handleCreateStage(env.DB, "p1", { id: "s1", name: "Received", sequence: 1 });
+    await handleCreateStage(env.DB, "p1", { id: "s2", name: "Line Review", sequence: 2 });
+
+    const result = await handleRemoveDraftStage(env.DB, "p1", "s2");
+    expect(result.status).toBe(200);
+
+    const stageRow = await env.DB.prepare("SELECT id FROM process_stages WHERE id = 's2'").first();
+    expect(stageRow).not.toBeNull();
+    const draftMembership = await env.DB
+      .prepare("SELECT stage_id FROM process_stage_versions WHERE process_id = 'p1' AND version = 2")
+      .all<{ stage_id: string }>();
+    expect(draftMembership.results.map((r: { stage_id: string }) => r.stage_id)).toEqual(["s1"]);
+  });
+
+  it("422s removing the last remaining stage from a draft", async () => {
+    await handleCreateProcess(env.DB, { id: "p1", name: "Standard AP" });
+    await handleCreateStage(env.DB, "p1", { id: "s1", name: "Received", sequence: 1 });
+    const result = await handleRemoveDraftStage(env.DB, "p1", "s1");
+    expect(result.status).toBe(422);
+    const draftMembership = await env.DB
+      .prepare("SELECT count(*) AS n FROM process_stage_versions WHERE process_id = 'p1' AND version = 2")
+      .first<{ n: number }>();
+    expect(draftMembership?.n).toBe(1);
+  });
+});
+
+describe("handlePublishDraft — decision 0349", () => {
+  it("404s when the process does not exist", async () => {
+    const result = await handlePublishDraft(env.DB, "does-not-exist");
+    expect(result.status).toBe(404);
+  });
+
+  it("422s when there is no draft to publish", async () => {
+    await handleCreateProcess(env.DB, { id: "p1", name: "Standard AP" });
+    await handleCreateStage(env.DB, "p1", { id: "s1", name: "Received", sequence: 1 });
+    const result = await handlePublishDraft(env.DB, "p1");
+    expect(result.status).toBe(422);
+  });
+
+  it("bumps processes.version to the draft's own version, and nothing else", async () => {
+    await handleCreateProcess(env.DB, { id: "p1", name: "Standard AP" });
+    await handleCreateStage(env.DB, "p1", { id: "s1", name: "Received", sequence: 1 });
+    await handleAddDraftStage(env.DB, "p1", { id: "s2", name: "Coding" });
+
+    const result = await handlePublishDraft(env.DB, "p1");
+    expect(result.status).toBe(200);
+    const process = await env.DB.prepare("SELECT version FROM processes WHERE id = 'p1'").first<{ version: number }>();
+    expect(process?.version).toBe(2);
+  });
+
+  /**
+   * **The exact requirement confirmed live**: "anything already on a
+   * process version would complete that version; only new items
+   * entering the process would follow a new version." An in-flight
+   * instance's own `process_version` is never touched by publishing.
+   */
+  it("never changes an in-flight instance's own process_version", async () => {
+    await handleCreateProcess(env.DB, { id: "p1", name: "Standard AP" });
+    await handleCreateStage(env.DB, "p1", { id: "s1", name: "Received", sequence: 1 });
+    await env.DB
+      .prepare(
+        "INSERT INTO process_instances (id, process_id, subject_type, subject_id, current_stage_id, process_version) VALUES (?, ?, ?, ?, ?, ?)"
+      )
+      .bind("inst1", "p1", "invoice", "inv1", "s1", 1)
+      .run();
+
+    await handleAddDraftStage(env.DB, "p1", { id: "s2", name: "Coding" });
+    await handlePublishDraft(env.DB, "p1");
+
+    const instance = await env.DB.prepare("SELECT process_version FROM process_instances WHERE id = 'inst1'").first<{ process_version: number }>();
+    expect(instance?.process_version).toBe(1);
+  });
+});
+
+describe("handleDiscardDraft — decision 0349", () => {
+  it("404s when the process does not exist", async () => {
+    const result = await handleDiscardDraft(env.DB, "does-not-exist");
+    expect(result.status).toBe(404);
+  });
+
+  it("deletes only the draft's own membership, leaving the live version untouched", async () => {
+    await handleCreateProcess(env.DB, { id: "p1", name: "Standard AP" });
+    await handleCreateStage(env.DB, "p1", { id: "s1", name: "Received", sequence: 1 });
+    await handleAddDraftStage(env.DB, "p1", { id: "s2", name: "Coding" });
+
+    const result = await handleDiscardDraft(env.DB, "p1");
+    expect(result.status).toBe(200);
+
+    const draftMembership = await env.DB
+      .prepare("SELECT count(*) AS n FROM process_stage_versions WHERE process_id = 'p1' AND version = 2")
+      .first<{ n: number }>();
+    expect(draftMembership?.n).toBe(0);
+    const liveMembership = await env.DB
+      .prepare("SELECT count(*) AS n FROM process_stage_versions WHERE process_id = 'p1' AND version = 1")
+      .first<{ n: number }>();
+    expect(liveMembership?.n).toBe(1);
+    const process = await env.DB.prepare("SELECT version FROM processes WHERE id = 'p1'").first<{ version: number }>();
+    expect(process?.version).toBe(1);
+  });
+});
+
+describe("process routes, gated for the first time — decision 0349", () => {
+  async function keyForPermission(permission: string): Promise<string> {
+    const id = crypto.randomUUID();
+    const apiKey = generateApiKey();
+    await env.DB.prepare("INSERT INTO org_users (id, email, name, api_key_hash) VALUES (?, ?, ?, ?)")
+      .bind(id, `${id}@acme.com`, "Test", await hashApiKey(apiKey))
+      .run();
+
+    const roleId = crypto.randomUUID();
+    await env.DB.prepare("INSERT INTO org_roles (id, name, permissions_json) VALUES (?, ?, ?)")
+      .bind(roleId, `Role granting ${permission}`, JSON.stringify([permission]))
+      .run();
+    await env.DB.prepare("INSERT INTO org_user_roles (user_id, role_id) VALUES (?, ?)").bind(id, roleId).run();
+
+    return apiKey;
+  }
+
+  it("POST /processes succeeds for Admin.Configure, through the real router", async () => {
+    const apiKey = await keyForPermission("Admin.Configure");
+    const res = await SELF.fetch("https://example.com/processes", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ id: "p1", name: "Standard AP" }),
+    });
+    expect(res.status).toBe(201);
+  });
+
+  it("POST /processes 403s a real request lacking Admin.Configure", async () => {
+    const apiKey = await keyForPermission("AP.Dashboard");
+    const res = await SELF.fetch("https://example.com/processes", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ id: "p1", name: "Standard AP" }),
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("POST /processes 401s with no credential at all", async () => {
+    const res = await SELF.fetch("https://example.com/processes", {
+      method: "POST",
+      body: JSON.stringify({ id: "p1", name: "Standard AP" }),
+    });
+    expect(res.status).toBe(401);
+  });
+
+  it("POST /processes/:id/stages 403s a real request lacking Admin.Configure", async () => {
+    const setupKey = await keyForPermission("Admin.Configure");
+    await SELF.fetch("https://example.com/processes", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${setupKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ id: "p1", name: "Standard AP" }),
+    });
+    const apiKey = await keyForPermission("AP.Dashboard");
+    const res = await SELF.fetch("https://example.com/processes/p1/stages", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ id: "s1", name: "Received", sequence: 1 }),
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("GET /processes/:id succeeds for Admin.Configure, through the real router", async () => {
+    const apiKey = await keyForPermission("Admin.Configure");
+    await SELF.fetch("https://example.com/processes", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ id: "p1", name: "Standard AP" }),
+    });
+    const res = await SELF.fetch("https://example.com/processes/p1", {
+      headers: { Authorization: `Bearer ${apiKey}` },
+    });
+    expect(res.status).toBe(200);
+  });
+
+  it("GET /processes/:id 401s with no credential at all", async () => {
+    const res = await SELF.fetch("https://example.com/processes/p1");
+    expect(res.status).toBe(401);
+  });
+
+  it("POST /processes/:id/draft/stages 403s a real request lacking Admin.Configure", async () => {
+    const setupKey = await keyForPermission("Admin.Configure");
+    await SELF.fetch("https://example.com/processes", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${setupKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ id: "p1", name: "Standard AP" }),
+    });
+    const apiKey = await keyForPermission("AP.Dashboard");
+    const res = await SELF.fetch("https://example.com/processes/p1/draft/stages", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ id: "s1", name: "Coding" }),
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("DELETE /processes/:id/draft/stages/:stageId 401s with no credential at all", async () => {
+    const res = await SELF.fetch("https://example.com/processes/p1/draft/stages/s1", { method: "DELETE" });
+    expect(res.status).toBe(401);
+  });
+
+  it("POST /processes/:id/publish 403s a real request lacking Admin.Configure", async () => {
+    const setupKey = await keyForPermission("Admin.Configure");
+    await SELF.fetch("https://example.com/processes", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${setupKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ id: "p1", name: "Standard AP" }),
+    });
+    const apiKey = await keyForPermission("AP.Dashboard");
+    const res = await SELF.fetch("https://example.com/processes/p1/publish", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}` },
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("DELETE /processes/:id/draft 401s with no credential at all", async () => {
+    const res = await SELF.fetch("https://example.com/processes/p1/draft", { method: "DELETE" });
+    expect(res.status).toBe(401);
   });
 });
