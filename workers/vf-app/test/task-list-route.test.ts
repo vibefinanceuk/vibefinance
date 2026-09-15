@@ -10,7 +10,8 @@ async function seedPeople() {
       .bind(id, `${id}@acme.com`, name)
       .run();
   }
-  await env.DB.prepare("INSERT INTO org_teams (id, name) VALUES ('ap', 'AP Team')").run();
+  await env.DB.prepare("INSERT INTO org_units (id, name) VALUES ('u1', 'Acme France')").run();
+  await env.DB.prepare("INSERT INTO org_teams (id, name, unit_id) VALUES ('ap', 'AP Team', 'u1')").run();
   for (const user of ["alice", "sarah"]) {
     await env.DB.prepare("INSERT INTO org_team_members (team_id, user_id) VALUES ('ap', ?)")
       .bind(user)

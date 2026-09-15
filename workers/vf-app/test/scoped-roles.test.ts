@@ -534,7 +534,8 @@ describe("work somebody may not do is work they are not shown (decision 0202)", 
   }
 
   beforeEach(async () => {
-    await env.DB.prepare("INSERT INTO org_teams (id, name) VALUES ('ap-team', 'AP team')").run();
+    await env.DB.prepare("INSERT INTO org_units (id, name) VALUES ('team-unit', 'Team Unit') ON CONFLICT(id) DO NOTHING").run();
+    await env.DB.prepare("INSERT INTO org_teams (id, name, unit_id) VALUES ('ap-team', 'AP team', 'team-unit')").run();
     await env.DB.prepare(
       "INSERT INTO org_team_members (team_id, user_id) VALUES ('ap-team', 'alice')"
     ).run();
@@ -634,7 +635,8 @@ describe("focused on one org (decision 0314)", () => {
   }
 
   beforeEach(async () => {
-    await env.DB.prepare("INSERT INTO org_teams (id, name) VALUES ('ap-team', 'AP team')").run();
+    await env.DB.prepare("INSERT INTO org_units (id, name) VALUES ('team-unit', 'Team Unit') ON CONFLICT(id) DO NOTHING").run();
+    await env.DB.prepare("INSERT INTO org_teams (id, name, unit_id) VALUES ('ap-team', 'AP team', 'team-unit')").run();
     await env.DB.prepare(
       "INSERT INTO org_team_members (team_id, user_id) VALUES ('ap-team', 'alice')"
     ).run();
@@ -759,7 +761,8 @@ describe("claiming is bounded by the org too (decision 0203)", () => {
       .bind(id, roleId, unitId)
       .run();
 
-    await env.DB.prepare("INSERT OR IGNORE INTO org_teams (id, name) VALUES ('ap-team', 'AP')").run();
+    await env.DB.prepare("INSERT INTO org_units (id, name) VALUES ('team-unit', 'Team Unit') ON CONFLICT(id) DO NOTHING").run();
+    await env.DB.prepare("INSERT OR IGNORE INTO org_teams (id, name, unit_id) VALUES ('ap-team', 'AP', 'team-unit')").run();
     await env.DB.prepare(
       "INSERT INTO org_team_members (team_id, user_id) VALUES ('ap-team', ?)"
     )
@@ -771,7 +774,8 @@ describe("claiming is bounded by the org too (decision 0203)", () => {
 
   /** A task at Validation, about an invoice in the given unit. */
   async function taskAbout(unitId: string): Promise<string> {
-    await env.DB.prepare("INSERT OR IGNORE INTO org_teams (id, name) VALUES ('ap-team', 'AP')").run();
+    await env.DB.prepare("INSERT INTO org_units (id, name) VALUES ('team-unit', 'Team Unit') ON CONFLICT(id) DO NOTHING").run();
+    await env.DB.prepare("INSERT OR IGNORE INTO org_teams (id, name, unit_id) VALUES ('ap-team', 'AP', 'team-unit')").run();
     await seedInvoice("inv-x", unitId);
     await env.DB.prepare("INSERT OR IGNORE INTO processes (id, name) VALUES ('ap', 'AP')").run();
     await env.DB.prepare(

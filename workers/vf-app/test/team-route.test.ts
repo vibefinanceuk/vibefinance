@@ -7,24 +7,40 @@ import { generateApiKey, hashApiKey } from "../src/user-auth.js";
 
 beforeEach(async () => {
   await applyTestSchema();
+  await env.DB.prepare("INSERT INTO org_units (id, name) VALUES ('fr', 'Acme France')").run();
+  await env.DB.prepare("INSERT INTO org_units (id, name) VALUES ('de', 'Acme Deutschland')").run();
 });
 
 describe("handleCreateTeam", () => {
   it("400s when id or name is missing", async () => {
-    const result = await handleCreateTeam(env.DB, { id: "t1" });
+    const result = await handleCreateTeam(env.DB, { id: "t1", unitId: "fr" });
     expect(result.status).toBe(400);
   });
 
-  it("creates a team", async () => {
+  /**
+   * **Every team belongs to exactly one org — decision 0333.**
+   * Reported live: "There should never be a null-org team."
+   */
+  it("400s when unitId is missing", async () => {
     const result = await handleCreateTeam(env.DB, { id: "t1", name: "AP Team" });
+    expect(result.status).toBe(400);
+  });
+
+  it("404s a unitId that does not exist", async () => {
+    const result = await handleCreateTeam(env.DB, { id: "t1", name: "AP Team", unitId: "does-not-exist" });
+    expect(result.status).toBe(404);
+  });
+
+  it("creates a team, storing its own org", async () => {
+    const result = await handleCreateTeam(env.DB, { id: "t1", name: "AP Team", unitId: "fr" });
     expect(result.status).toBe(201);
-    const row = await env.DB.prepare("SELECT id, name FROM org_teams WHERE id = ?").bind("t1").first();
-    expect(row).toEqual({ id: "t1", name: "AP Team" });
+    const row = await env.DB.prepare("SELECT id, name, unit_id FROM org_teams WHERE id = ?").bind("t1").first();
+    expect(row).toEqual({ id: "t1", name: "AP Team", unit_id: "fr" });
   });
 
   it("409s on a duplicate id rather than silently overwriting", async () => {
-    await handleCreateTeam(env.DB, { id: "t1", name: "AP Team" });
-    const result = await handleCreateTeam(env.DB, { id: "t1", name: "A different name" });
+    await handleCreateTeam(env.DB, { id: "t1", name: "AP Team", unitId: "fr" });
+    const result = await handleCreateTeam(env.DB, { id: "t1", name: "A different name", unitId: "fr" });
     expect(result.status).toBe(409);
     const row = await env.DB.prepare("SELECT name FROM org_teams WHERE id = ?").bind("t1").first();
     expect(row).toEqual({ name: "AP Team" });
@@ -33,7 +49,7 @@ describe("handleCreateTeam", () => {
 
 describe("handleAddTeamMember", () => {
   it("400s when userId is missing", async () => {
-    await handleCreateTeam(env.DB, { id: "t1", name: "AP Team" });
+    await handleCreateTeam(env.DB, { id: "t1", name: "AP Team", unitId: "fr" });
     const result = await handleAddTeamMember(env.DB, "t1", undefined);
     expect(result.status).toBe(400);
   });
@@ -45,13 +61,13 @@ describe("handleAddTeamMember", () => {
   });
 
   it("404s when the user does not exist", async () => {
-    await handleCreateTeam(env.DB, { id: "t1", name: "AP Team" });
+    await handleCreateTeam(env.DB, { id: "t1", name: "AP Team", unitId: "fr" });
     const result = await handleAddTeamMember(env.DB, "t1", "does-not-exist");
     expect(result.status).toBe(404);
   });
 
   it("adds a real member", async () => {
-    await handleCreateTeam(env.DB, { id: "t1", name: "AP Team" });
+    await handleCreateTeam(env.DB, { id: "t1", name: "AP Team", unitId: "fr" });
     await handleCreateUser(env.DB, { id: "usr1", email: "a@b.com", name: "Alice" });
     const result = await handleAddTeamMember(env.DB, "t1", "usr1");
     expect(result.status).toBe(201);
@@ -62,7 +78,7 @@ describe("handleAddTeamMember", () => {
   });
 
   it("409s when the user is already a member, without duplicating the row", async () => {
-    await handleCreateTeam(env.DB, { id: "t1", name: "AP Team" });
+    await handleCreateTeam(env.DB, { id: "t1", name: "AP Team", unitId: "fr" });
     await handleCreateUser(env.DB, { id: "usr1", email: "a@b.com", name: "Alice" });
     await handleAddTeamMember(env.DB, "t1", "usr1");
     const result = await handleAddTeamMember(env.DB, "t1", "usr1");
@@ -72,8 +88,8 @@ describe("handleAddTeamMember", () => {
   });
 
   it("a user can belong to more than one team", async () => {
-    await handleCreateTeam(env.DB, { id: "t1", name: "AP Team" });
-    await handleCreateTeam(env.DB, { id: "t2", name: "Expense Team" });
+    await handleCreateTeam(env.DB, { id: "t1", name: "AP Team", unitId: "fr" });
+    await handleCreateTeam(env.DB, { id: "t2", name: "Expense Team", unitId: "fr" });
     await handleCreateUser(env.DB, { id: "usr1", email: "a@b.com", name: "Alice" });
     await handleAddTeamMember(env.DB, "t1", "usr1");
     const result = await handleAddTeamMember(env.DB, "t2", "usr1");
@@ -85,7 +101,7 @@ describe("handleAddTeamMember", () => {
   });
 
   it("a team can hold more than one member", async () => {
-    await handleCreateTeam(env.DB, { id: "t1", name: "AP Team" });
+    await handleCreateTeam(env.DB, { id: "t1", name: "AP Team", unitId: "fr" });
     await handleCreateUser(env.DB, { id: "usr1", email: "a@b.com", name: "Alice" });
     await handleCreateUser(env.DB, { id: "usr2", email: "b@b.com", name: "Bob" });
     await handleAddTeamMember(env.DB, "t1", "usr1");
@@ -96,32 +112,65 @@ describe("handleAddTeamMember", () => {
       .first();
     expect(count).toEqual({ n: 2 });
   });
+
+  /**
+   * **The scope boundary, checked against the team's own org —
+   * decision 0333.** Mirrors handleAssignRole's own reasoning exactly.
+   */
+  it("403s a delegated administrator adding a member to a team outside their own scope", async () => {
+    await handleCreateTeam(env.DB, { id: "t1", name: "AP Team", unitId: "de" });
+    await handleCreateUser(env.DB, { id: "usr1", email: "a@b.com", name: "Alice" });
+    const result = await handleAddTeamMember(env.DB, "t1", "usr1", ["fr"]);
+    expect(result.status).toBe(403);
+    expect((result.body as { reason: string }).reason).toBe("outside_administered_units");
+    const row = await env.DB.prepare("SELECT 1 FROM org_team_members WHERE team_id = 't1' AND user_id = 'usr1'").first();
+    expect(row).toBeNull();
+  });
+
+  it("lets a delegated administrator add a member to a team within their own scope", async () => {
+    await handleCreateTeam(env.DB, { id: "t1", name: "AP Team", unitId: "fr" });
+    await handleCreateUser(env.DB, { id: "usr1", email: "a@b.com", name: "Alice" });
+    const result = await handleAddTeamMember(env.DB, "t1", "usr1", ["fr"]);
+    expect(result.status).toBe(201);
+  });
 });
 
-describe("handleUpdateTeam — decision 0332", () => {
+describe("handleUpdateTeam — decision 0332, extended in 0333", () => {
   it("400s with no name given at all", async () => {
-    await handleCreateTeam(env.DB, { id: "t1", name: "AP Team" });
-    const result = await handleUpdateTeam(env.DB, "t1", {});
+    await handleCreateTeam(env.DB, { id: "t1", name: "AP Team", unitId: "fr" });
+    const result = await handleUpdateTeam(env.DB, "t1", { unitId: "fr" });
+    expect(result.status).toBe(400);
+  });
+
+  it("400s with no unitId given at all", async () => {
+    await handleCreateTeam(env.DB, { id: "t1", name: "AP Team", unitId: "fr" });
+    const result = await handleUpdateTeam(env.DB, "t1", { name: "New Name" });
     expect(result.status).toBe(400);
   });
 
   it("404s a team that does not exist", async () => {
-    const result = await handleUpdateTeam(env.DB, "does-not-exist", { name: "New Name" });
+    const result = await handleUpdateTeam(env.DB, "does-not-exist", { name: "New Name", unitId: "fr" });
     expect(result.status).toBe(404);
   });
 
-  it("renames a real team", async () => {
-    await handleCreateTeam(env.DB, { id: "t1", name: "AP Team" });
-    const result = await handleUpdateTeam(env.DB, "t1", { name: "Accounts Payable Team" });
+  it("404s a unitId that does not exist", async () => {
+    await handleCreateTeam(env.DB, { id: "t1", name: "AP Team", unitId: "fr" });
+    const result = await handleUpdateTeam(env.DB, "t1", { name: "AP Team", unitId: "does-not-exist" });
+    expect(result.status).toBe(404);
+  });
+
+  it("renames a real team and can reassign its own org", async () => {
+    await handleCreateTeam(env.DB, { id: "t1", name: "AP Team", unitId: "fr" });
+    const result = await handleUpdateTeam(env.DB, "t1", { name: "Accounts Payable Team", unitId: "de" });
     expect(result.status).toBe(200);
-    const row = await env.DB.prepare("SELECT name FROM org_teams WHERE id = ?").bind("t1").first();
-    expect(row).toEqual({ name: "Accounts Payable Team" });
+    const row = await env.DB.prepare("SELECT name, unit_id FROM org_teams WHERE id = ?").bind("t1").first();
+    expect(row).toEqual({ name: "Accounts Payable Team", unit_id: "de" });
   });
 });
 
-describe("handleRemoveTeamMember — decision 0332", () => {
+describe("handleRemoveTeamMember — decision 0332, scoped in 0333", () => {
   it("removes a real membership", async () => {
-    await handleCreateTeam(env.DB, { id: "t1", name: "AP Team" });
+    await handleCreateTeam(env.DB, { id: "t1", name: "AP Team", unitId: "fr" });
     await handleCreateUser(env.DB, { id: "usr1", email: "a@b.com", name: "Alice" });
     await handleAddTeamMember(env.DB, "t1", "usr1");
 
@@ -134,14 +183,14 @@ describe("handleRemoveTeamMember — decision 0332", () => {
   });
 
   it("404s a membership that never existed, rather than a silent no-op", async () => {
-    await handleCreateTeam(env.DB, { id: "t1", name: "AP Team" });
+    await handleCreateTeam(env.DB, { id: "t1", name: "AP Team", unitId: "fr" });
     const result = await handleRemoveTeamMember(env.DB, "t1", "usr1");
     expect(result.status).toBe(404);
   });
 
   it("leaves the other team's own membership of the same user untouched", async () => {
-    await handleCreateTeam(env.DB, { id: "t1", name: "AP Team" });
-    await handleCreateTeam(env.DB, { id: "t2", name: "Expense Team" });
+    await handleCreateTeam(env.DB, { id: "t1", name: "AP Team", unitId: "fr" });
+    await handleCreateTeam(env.DB, { id: "t2", name: "Expense Team", unitId: "fr" });
     await handleCreateUser(env.DB, { id: "usr1", email: "a@b.com", name: "Alice" });
     await handleAddTeamMember(env.DB, "t1", "usr1");
     await handleAddTeamMember(env.DB, "t2", "usr1");
@@ -154,33 +203,68 @@ describe("handleRemoveTeamMember — decision 0332", () => {
       .all<{ team_id: string }>();
     expect(remaining.results.map((r: { team_id: string }) => r.team_id)).toEqual(["t2"]);
   });
+
+  it("403s a delegated administrator removing a member from a team outside their own scope", async () => {
+    await handleCreateTeam(env.DB, { id: "t1", name: "AP Team", unitId: "de" });
+    await handleCreateUser(env.DB, { id: "usr1", email: "a@b.com", name: "Alice" });
+    await handleAddTeamMember(env.DB, "t1", "usr1");
+
+    const result = await handleRemoveTeamMember(env.DB, "t1", "usr1", ["fr"]);
+    expect(result.status).toBe(403);
+    const row = await env.DB.prepare("SELECT 1 FROM org_team_members WHERE team_id = 't1' AND user_id = 'usr1'").first();
+    expect(row).not.toBeNull();
+  });
 });
 
-describe("handleListTeams — decision 0332", () => {
+describe("handleListTeams — decision 0332, scoped in 0333", () => {
   it("returns an empty list for a customer with no teams yet", async () => {
     const result = await handleListTeams(env.DB);
     expect(result.status).toBe(200);
     expect(result.body).toEqual({ teams: [] });
   });
 
-  it("returns every team with its own real members, and an empty one with none", async () => {
-    await handleCreateTeam(env.DB, { id: "t1", name: "AP Team" });
-    await handleCreateTeam(env.DB, { id: "t2", name: "Expense Team" });
+  it("returns every team with its own real members and org, and an empty one with none", async () => {
+    await handleCreateTeam(env.DB, { id: "t1", name: "AP Team", unitId: "fr" });
+    await handleCreateTeam(env.DB, { id: "t2", name: "Expense Team", unitId: "fr" });
     await handleCreateUser(env.DB, { id: "usr1", email: "alice@acme.com", name: "Alice" });
     await handleAddTeamMember(env.DB, "t1", "usr1");
 
     const result = await handleListTeams(env.DB);
-    const body = result.body as { teams: { id: string; name: string; members: unknown[] }[] };
+    const body = result.body as { teams: { id: string; unitName: string; members: unknown[] }[] };
     const apTeam = body.teams.find((t) => t.id === "t1");
     const expenseTeam = body.teams.find((t) => t.id === "t2");
 
+    expect(apTeam?.unitName).toBe("Acme France");
     expect(apTeam?.members).toEqual([{ userId: "usr1", userName: "Alice", userEmail: "alice@acme.com" }]);
     expect(expenseTeam?.members).toEqual([]);
   });
+
+  /**
+   * **Scoped the same way units and people already are — decision
+   * 0333.** An unscoped caller sees every team; a delegated one sees
+   * only teams whose own org they administer.
+   */
+  it("an unscoped caller sees every team, regardless of org", async () => {
+    await handleCreateTeam(env.DB, { id: "t1", name: "AP Team", unitId: "fr" });
+    await handleCreateTeam(env.DB, { id: "t2", name: "Expense Team", unitId: "de" });
+
+    const result = await handleListTeams(env.DB, null);
+    const body = result.body as { teams: { id: string }[] };
+    expect(body.teams.map((t) => t.id).sort()).toEqual(["t1", "t2"]);
+  });
+
+  it("a delegated administrator sees only teams within their own scope", async () => {
+    await handleCreateTeam(env.DB, { id: "t1", name: "AP Team", unitId: "fr" });
+    await handleCreateTeam(env.DB, { id: "t2", name: "Expense Team", unitId: "de" });
+
+    const result = await handleListTeams(env.DB, ["fr"]);
+    const body = result.body as { teams: { id: string }[] };
+    expect(body.teams.map((t) => t.id)).toEqual(["t1"]);
+  });
 });
 
-describe("team routes, gated for the first time — decision 0332", () => {
-  async function keyForPermission(permission: string): Promise<string> {
+describe("team routes, gated for the first time — decision 0332, scoped in 0333", () => {
+  async function keyForPermission(permission: string, unitId: string | null = null): Promise<string> {
     const id = crypto.randomUUID();
     const apiKey = generateApiKey();
     await env.DB.prepare("INSERT INTO org_users (id, email, name, api_key_hash) VALUES (?, ?, ?, ?)")
@@ -191,7 +275,9 @@ describe("team routes, gated for the first time — decision 0332", () => {
     await env.DB.prepare("INSERT INTO org_roles (id, name, permissions_json) VALUES (?, ?, ?)")
       .bind(roleId, `Role granting ${permission}`, JSON.stringify([permission]))
       .run();
-    await env.DB.prepare("INSERT INTO org_user_roles (user_id, role_id) VALUES (?, ?)").bind(id, roleId).run();
+    await env.DB.prepare("INSERT INTO org_user_roles (user_id, role_id, unit_id) VALUES (?, ?, ?)")
+      .bind(id, roleId, unitId)
+      .run();
 
     return apiKey;
   }
@@ -201,7 +287,7 @@ describe("team routes, gated for the first time — decision 0332", () => {
     const res = await SELF.fetch("https://example.com/org/teams", {
       method: "POST",
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ id: "t1", name: "AP Team" }),
+      body: JSON.stringify({ id: "t1", name: "AP Team", unitId: "fr" }),
     });
     expect(res.status).toBe(201);
   });
@@ -211,19 +297,19 @@ describe("team routes, gated for the first time — decision 0332", () => {
     const res = await SELF.fetch("https://example.com/org/teams", {
       method: "POST",
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ id: "t1", name: "AP Team" }),
+      body: JSON.stringify({ id: "t1", name: "AP Team", unitId: "fr" }),
     });
     expect(res.status).toBe(403);
   });
 
   it("PUT /org/teams/:id renames for Admin.RoleManagement, through the real router", async () => {
     const apiKey = await keyForPermission("Admin.RoleManagement");
-    await env.DB.prepare("INSERT INTO org_teams (id, name) VALUES ('t1', 'AP Team')").run();
+    await env.DB.prepare("INSERT INTO org_teams (id, name, unit_id) VALUES ('t1', 'AP Team', 'fr')").run();
 
     const res = await SELF.fetch("https://example.com/org/teams/t1", {
       method: "PUT",
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ name: "Accounts Payable Team" }),
+      body: JSON.stringify({ name: "Accounts Payable Team", unitId: "fr" }),
     });
     expect(res.status).toBe(200);
     const row = await env.DB.prepare("SELECT name FROM org_teams WHERE id = 't1'").first();
@@ -232,18 +318,18 @@ describe("team routes, gated for the first time — decision 0332", () => {
 
   it("PUT /org/teams/:id 403s Admin.UserManagement alone", async () => {
     const apiKey = await keyForPermission("Admin.UserManagement");
-    await env.DB.prepare("INSERT INTO org_teams (id, name) VALUES ('t1', 'AP Team')").run();
+    await env.DB.prepare("INSERT INTO org_teams (id, name, unit_id) VALUES ('t1', 'AP Team', 'fr')").run();
     const res = await SELF.fetch("https://example.com/org/teams/t1", {
       method: "PUT",
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ name: "Renamed" }),
+      body: JSON.stringify({ name: "Renamed", unitId: "fr" }),
     });
     expect(res.status).toBe(403);
   });
 
   it("POST /org/teams/:id/members succeeds for Admin.UserManagement, through the real router", async () => {
     const apiKey = await keyForPermission("Admin.UserManagement");
-    await env.DB.prepare("INSERT INTO org_teams (id, name) VALUES ('t1', 'AP Team')").run();
+    await env.DB.prepare("INSERT INTO org_teams (id, name, unit_id) VALUES ('t1', 'AP Team', 'fr')").run();
     await env.DB.prepare("INSERT INTO org_users (id, email, name) VALUES ('usr1', 'a@b.com', 'Alice')").run();
 
     const res = await SELF.fetch("https://example.com/org/teams/t1/members", {
@@ -256,7 +342,20 @@ describe("team routes, gated for the first time — decision 0332", () => {
 
   it("POST /org/teams/:id/members 403s Admin.RoleManagement alone — deliberately not enough here", async () => {
     const apiKey = await keyForPermission("Admin.RoleManagement");
-    await env.DB.prepare("INSERT INTO org_teams (id, name) VALUES ('t1', 'AP Team')").run();
+    await env.DB.prepare("INSERT INTO org_teams (id, name, unit_id) VALUES ('t1', 'AP Team', 'fr')").run();
+    await env.DB.prepare("INSERT INTO org_users (id, email, name) VALUES ('usr1', 'a@b.com', 'Alice')").run();
+
+    const res = await SELF.fetch("https://example.com/org/teams/t1/members", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ userId: "usr1" }),
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("POST /org/teams/:id/members 403s a delegated administrator outside their own scope, through the real router", async () => {
+    const apiKey = await keyForPermission("Admin.UserManagement", "fr");
+    await env.DB.prepare("INSERT INTO org_teams (id, name, unit_id) VALUES ('t1', 'AP Team', 'de')").run();
     await env.DB.prepare("INSERT INTO org_users (id, email, name) VALUES ('usr1', 'a@b.com', 'Alice')").run();
 
     const res = await SELF.fetch("https://example.com/org/teams/t1/members", {
@@ -269,7 +368,7 @@ describe("team routes, gated for the first time — decision 0332", () => {
 
   it("DELETE /org/teams/:id/members/:userId removes a real membership, through the real router", async () => {
     const apiKey = await keyForPermission("Admin.UserManagement");
-    await env.DB.prepare("INSERT INTO org_teams (id, name) VALUES ('t1', 'AP Team')").run();
+    await env.DB.prepare("INSERT INTO org_teams (id, name, unit_id) VALUES ('t1', 'AP Team', 'fr')").run();
     await env.DB.prepare("INSERT INTO org_users (id, email, name) VALUES ('usr1', 'a@b.com', 'Alice')").run();
     await env.DB.prepare("INSERT INTO org_team_members (team_id, user_id) VALUES ('t1', 'usr1')").run();
 
@@ -291,7 +390,7 @@ describe("team routes, gated for the first time — decision 0332", () => {
   it("GET /org/teams succeeds holding either Admin.RoleManagement or Admin.UserManagement", async () => {
     const roleKey = await keyForPermission("Admin.RoleManagement");
     const userKey = await keyForPermission("Admin.UserManagement");
-    await env.DB.prepare("INSERT INTO org_teams (id, name) VALUES ('t1', 'AP Team')").run();
+    await env.DB.prepare("INSERT INTO org_teams (id, name, unit_id) VALUES ('t1', 'AP Team', 'fr')").run();
 
     const res1 = await SELF.fetch("https://example.com/org/teams", { headers: { Authorization: `Bearer ${roleKey}` } });
     expect(res1.status).toBe(200);
@@ -305,5 +404,15 @@ describe("team routes, gated for the first time — decision 0332", () => {
     const apiKey = await keyForPermission("AP.Dashboard");
     const res = await SELF.fetch("https://example.com/org/teams", { headers: { Authorization: `Bearer ${apiKey}` } });
     expect(res.status).toBe(403);
+  });
+
+  it("GET /org/teams scopes a delegated Admin.UserManagement holder to their own org, through the real router", async () => {
+    const apiKey = await keyForPermission("Admin.UserManagement", "fr");
+    await env.DB.prepare("INSERT INTO org_teams (id, name, unit_id) VALUES ('t1', 'AP Team', 'fr')").run();
+    await env.DB.prepare("INSERT INTO org_teams (id, name, unit_id) VALUES ('t2', 'Expense Team', 'de')").run();
+
+    const res = await SELF.fetch("https://example.com/org/teams", { headers: { Authorization: `Bearer ${apiKey}` } });
+    const body = (await res.json()) as { teams: { id: string }[] };
+    expect(body.teams.map((t) => t.id)).toEqual(["t1"]);
   });
 });

@@ -103,7 +103,8 @@ describe("a rule that disagrees with its stage", () => {
       "UPDATE process_stages SET required_permission = 'AP.Validate' WHERE id = 'validation'"
     ).run();
 
-    await env.DB.prepare("INSERT INTO org_teams (id, name) VALUES ('ap-team', 'AP team')").run();
+    await env.DB.prepare("INSERT INTO org_units (id, name) VALUES ('u1', 'Acme France')").run();
+    await env.DB.prepare("INSERT INTO org_teams (id, name, unit_id) VALUES ('ap-team', 'AP team', 'u1')").run();
   });
 
   async function ruleAsking(permission: string) {

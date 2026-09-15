@@ -139,7 +139,8 @@ describe("visitCurrentStage — real rule evaluation", () => {
 describe("visitCurrentStage — assign_task blocks advancement", () => {
   async function seedBlockingSetup(): Promise<{ instanceId: string }> {
     await handleCreateProcess(env.DB, { id: "p1", name: "AP" });
-    await handleCreateTeam(env.DB, { id: "team1", name: "AP Team" });
+    await env.DB.prepare("INSERT INTO org_units (id, name) VALUES ('u1', 'Acme France') ON CONFLICT(id) DO NOTHING").run();
+    await handleCreateTeam(env.DB, { id: "team1", name: "AP Team", unitId: "u1" });
     await handleCreateUser(env.DB, { id: "usr1", email: "a@b.com", name: "Alice" });
     await handleAddTeamMember(env.DB, "team1", "usr1");
     await seedRuleSet("rs1", {
@@ -185,7 +186,8 @@ describe("visitCurrentStage — assign_task blocks advancement", () => {
 
   it("onTaskCompleted does nothing while other tasks for the same visit remain open", async () => {
     await handleCreateProcess(env.DB, { id: "p1", name: "AP" });
-    await handleCreateTeam(env.DB, { id: "team1", name: "AP Team" });
+    await env.DB.prepare("INSERT INTO org_units (id, name) VALUES ('u1', 'Acme France') ON CONFLICT(id) DO NOTHING").run();
+    await handleCreateTeam(env.DB, { id: "team1", name: "AP Team", unitId: "u1" });
     await handleCreateUser(env.DB, { id: "usr1", email: "a@b.com", name: "Alice" });
     await handleAddTeamMember(env.DB, "team1", "usr1");
     await seedRuleSet("rs1", {
@@ -264,7 +266,8 @@ describe("visitCurrentStage — per-line evaluation (decision 0027)", () => {
     });
     await handleCreateStage(env.DB, "p1", { id: "s1", name: "Line Review", sequence: 1, ruleSetId: "rs-line", evaluationScope: "line" });
     await handleCreateStage(env.DB, "p1", { id: "s2", name: "Payment-eligible", sequence: 2 });
-    await handleCreateTeam(env.DB, { id: "team1", name: "AP Team" });
+    await env.DB.prepare("INSERT INTO org_units (id, name) VALUES ('u1', 'Acme France') ON CONFLICT(id) DO NOTHING").run();
+    await handleCreateTeam(env.DB, { id: "team1", name: "AP Team", unitId: "u1" });
     await handleCreateUser(env.DB, { id: "usr1", email: "a@b.com", name: "Alice" });
     await handleAddTeamMember(env.DB, "team1", "usr1");
     const created = await handleCreateProcessInstance(env.DB, "p1", { subjectType: "invoice", subjectId: "inv-1" });
@@ -335,7 +338,8 @@ describe("visitCurrentStage — per-line evaluation (decision 0027)", () => {
       actions: [{ type: "assign_task", params: { team: "team1", permission: "AP.Approve" } }],
     });
     await handleCreateStage(env.DB, "p1", { id: "s1", name: "Line Review", sequence: 1, ruleSetId: "rs-mixed", evaluationScope: "line" });
-    await handleCreateTeam(env.DB, { id: "team1", name: "AP Team" });
+    await env.DB.prepare("INSERT INTO org_units (id, name) VALUES ('u1', 'Acme France') ON CONFLICT(id) DO NOTHING").run();
+    await handleCreateTeam(env.DB, { id: "team1", name: "AP Team", unitId: "u1" });
     const created = await handleCreateProcessInstance(env.DB, "p1", { subjectType: "invoice", subjectId: "inv-2" });
     const instanceId = (created.body as { id: string }).id;
 
@@ -890,7 +894,8 @@ describe("validation before and after rules (decision 0051)", () => {
 describe("visitCurrentStage refuses to re-visit a stage waiting on people (decision 0072)", () => {
   async function blockedInstance(): Promise<string> {
     await handleCreateProcess(env.DB, { id: "p1", name: "AP" });
-    await handleCreateTeam(env.DB, { id: "team1", name: "AP Team" });
+    await env.DB.prepare("INSERT INTO org_units (id, name) VALUES ('u1', 'Acme France') ON CONFLICT(id) DO NOTHING").run();
+    await handleCreateTeam(env.DB, { id: "team1", name: "AP Team", unitId: "u1" });
     await handleCreateUser(env.DB, { id: "usr1", email: "a@b.com", name: "Alice" });
     await handleAddTeamMember(env.DB, "team1", "usr1");
     await seedRuleSet("rs1", {

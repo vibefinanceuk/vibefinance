@@ -1528,21 +1528,23 @@ export default {
     }
 
     // Teams — decisions 0015 (process/workflow engine design), 0016
-    // (teams), and 0332 (gated, listed, renamed, and a member
-    // removable — the write side this screen needed).
+    // (teams), 0332 (gated, listed, renamed, and a member removable),
+    // and 0333 (every team belongs to exactly one org, scoping both
+    // who sees which teams and who may touch them).
     if (pathname === "/org/teams" && request.method === "GET") {
       const { db } = resolveTenant(request, env);
       const auth = await authenticatePerson(db, request, env);
       if (!auth.user) {
         return json({ error: auth.reason }, 401);
       }
-      if (
-        !(await hasPermission(db, auth.user.id, "Admin.RoleManagement")) &&
-        !(await hasPermission(db, auth.user.id, "Admin.UserManagement"))
-      ) {
-        return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
+      let scopeUnits: string[] | null = null;
+      if (!(await hasPermission(db, auth.user.id, "Admin.RoleManagement"))) {
+        if (!(await hasPermission(db, auth.user.id, "Admin.UserManagement"))) {
+          return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
+        }
+        scopeUnits = await unitsWherePermitted(db, auth.user.id, "Admin.UserManagement");
       }
-      const result = await handleListTeams(db);
+      const result = await handleListTeams(db, scopeUnits);
       return json(result.body, result.status);
     }
 
@@ -1586,6 +1588,7 @@ export default {
       if (!auth.authorized) {
         return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
       }
+      const granterUnits = await unitsWherePermitted(db, auth.user.id, "Admin.UserManagement");
       let body: unknown;
       try {
         body = await request.json();
@@ -1593,7 +1596,7 @@ export default {
         return json({ error: t("invalidJsonBody", resolveLocale(env.LOCALE)) }, 400);
       }
       const userId = (body as Record<string, unknown> | null)?.userId;
-      const result = await handleAddTeamMember(db, addTeamMemberMatch[1], userId);
+      const result = await handleAddTeamMember(db, addTeamMemberMatch[1], userId, granterUnits);
       return json(result.body, result.status);
     }
 
@@ -1604,7 +1607,8 @@ export default {
       if (!auth.authorized) {
         return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
       }
-      const result = await handleRemoveTeamMember(db, removeTeamMemberMatch[1], removeTeamMemberMatch[2]);
+      const granterUnits = await unitsWherePermitted(db, auth.user.id, "Admin.UserManagement");
+      const result = await handleRemoveTeamMember(db, removeTeamMemberMatch[1], removeTeamMemberMatch[2], granterUnits);
       return json(result.body, result.status);
     }
 

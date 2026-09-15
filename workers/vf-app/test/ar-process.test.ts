@@ -64,7 +64,8 @@ describe("Accounts Receivable, through the real workflow engine — the vocabula
     await handleCreateStage(env.DB, "ar-live", { id: "issued", name: "Issued", sequence: 1 });
     await handleCreateStage(env.DB, "ar-live", { id: "awaiting-payment", name: "Awaiting Payment", sequence: 2, ruleSetId: "ar-collections" });
     await handleCreateStage(env.DB, "ar-live", { id: "paid", name: "Paid", sequence: 3 });
-    await handleCreateTeam(env.DB, { id: "AR team", name: "AR Team" });
+    await env.DB.prepare("INSERT INTO org_units (id, name) VALUES ('u1', 'Acme France')").run();
+    await handleCreateTeam(env.DB, { id: "AR team", name: "AR Team", unitId: "u1" });
     await handleCreateUser(env.DB, { id: "carol", email: "carol@acme.com", name: "Carol" });
     await handleAddTeamMember(env.DB, "AR team", "carol");
   }

@@ -47,7 +47,8 @@ async function seed() {
     "INSERT INTO org_roles (id, name, permissions_json) VALUES ('r','AP','[\"AP.Validate\"]')"
   ).run();
   await env.DB.prepare("INSERT INTO org_user_roles (user_id, role_id) VALUES ('alice','r')").run();
-  await env.DB.prepare("INSERT INTO org_teams (id, name) VALUES ('ap','AP')").run();
+  await env.DB.prepare("INSERT INTO org_units (id, name) VALUES ('u1', 'Acme France')").run();
+  await env.DB.prepare("INSERT INTO org_teams (id, name, unit_id) VALUES ('ap','AP','u1')").run();
   await env.DB.prepare("INSERT INTO org_team_members (team_id, user_id) VALUES ('ap','alice')").run();
   await env.DB.prepare("INSERT INTO processes (id, name) VALUES ('p','P')").run();
   await env.DB.prepare(

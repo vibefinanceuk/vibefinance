@@ -161,7 +161,8 @@ describe("what the feed contains, per source (decision 0267)", () => {
     await seedInvoice("inv-1");
     await seedStage("validation", "Validation");
     await seedStage("ap-review", "AP Review", 2);
-    await env.DB.prepare("INSERT INTO org_teams (id, name) VALUES ('team-ap', 'AP Team')").run();
+    await env.DB.prepare("INSERT INTO org_units (id, name) VALUES ('u1', 'Acme France')").run();
+    await env.DB.prepare("INSERT INTO org_teams (id, name, unit_id) VALUES ('team-ap', 'AP Team', 'u1')").run();
     await seedVisit("v-1", "inv-1", "validation", "2026-09-01 10:00:00");
     await fireRule("v-1", "r-1", {
       name: "Spend Threshold",

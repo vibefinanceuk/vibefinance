@@ -34,6 +34,7 @@ const STRINGS = {
     "nav.rules": "Rules",
     "nav.documents": "Documents",
     "nav.roles": "Roles",
+    "nav.access": "Access",
     "nav.vibeap": "Vibe AP",
     "nav.collapse": "Collapse the menu",
     "nav.expand": "Expand the menu",
@@ -341,7 +342,7 @@ describe("the flat nav, permission-filtered (decisions 0274 and 0276)", () => {
     expect(document.querySelector(".navgrouphead")).toBeNull();
 
     const labels = [...document.querySelectorAll(".navitem")].map((a) => a.textContent);
-    expect(labels).toEqual(["Dashboard", "Tasks", "Sources", "Suppliers", "Rules", "Documents", "Roles"]);
+    expect(labels).toEqual(["Dashboard", "Tasks", "Sources", "Suppliers", "Rules", "Documents", "Access"]);
   });
 
   it("gives every real nav item an icon", async () => {
@@ -554,7 +555,7 @@ describe("the flat nav, permission-filtered (decisions 0274 and 0276)", () => {
 
     const labels = [...document.querySelectorAll(".navitem")].map((a) => a.textContent);
     expect(labels).not.toContain("Rules");
-    expect(labels).toEqual(["Dashboard", "Tasks", "Sources", "Suppliers", "Documents", "Roles"]);
+    expect(labels).toEqual(["Dashboard", "Tasks", "Sources", "Suppliers", "Documents", "Access"]);
   });
 
   it("shows nothing but the logo for a person with none of the six permissions", async () => {
@@ -615,10 +616,10 @@ describe("the flat nav, permission-filtered (decisions 0274 and 0276)", () => {
     const { start } = await import("/tasks.js");
     await start();
     const labels = [...document.querySelectorAll(".navitem")].map((a) => a.textContent);
-    expect(labels, "permission Admin.Configure").toEqual(["Sources", "Roles"]);
+    expect(labels, "permission Admin.Configure").toEqual(["Sources", "Access"]);
   });
 
-  it("unlocks Roles for a delegated administrator too, decision 0321", async () => {
+  it("unlocks Access for a delegated administrator too, decision 0321", async () => {
     // Admin.UserManagement alone, no Admin.Configure — the person
     // decision 0201 was written for, still able to see their own
     // scope even without instance-wide standing.
@@ -633,7 +634,7 @@ describe("the flat nav, permission-filtered (decisions 0274 and 0276)", () => {
     await start();
 
     const labels = [...document.querySelectorAll(".navitem")].map((a) => a.textContent);
-    expect(labels).toEqual(["Roles"]);
+    expect(labels).toEqual(["Access"]);
   });
 });
 

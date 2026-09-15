@@ -264,7 +264,8 @@ describe("on my clock", () => {
     // **Available, not mine.** Putting it on somebody's clock would
     // make every member responsible for all of it.
     await person("alice", ["AP.Review"], null);
-    await env.DB.prepare("INSERT INTO org_teams (id, name) VALUES ('ap', 'AP')").run();
+    await env.DB.prepare("INSERT INTO org_units (id, name) VALUES ('u1', 'Acme France') ON CONFLICT(id) DO NOTHING").run();
+    await env.DB.prepare("INSERT INTO org_teams (id, name, unit_id) VALUES ('ap', 'AP', 'u1')").run();
     await env.DB.prepare(
       "INSERT INTO org_team_members (team_id, user_id) VALUES ('ap', 'alice')"
     ).run();
@@ -571,7 +572,8 @@ describe("who holds the work at a stage (decision 0250)", () => {
      */
     await person("alice", ["AP.Review"], null);
     await person("mo", ["AP.Review"], null);
-    await env.DB.prepare("INSERT INTO org_teams (id, name) VALUES ('ap', 'AP')").run();
+    await env.DB.prepare("INSERT INTO org_units (id, name) VALUES ('u1', 'Acme France') ON CONFLICT(id) DO NOTHING").run();
+    await env.DB.prepare("INSERT INTO org_teams (id, name, unit_id) VALUES ('ap', 'AP', 'u1')").run();
     await env.DB.prepare(
       "INSERT INTO org_team_members (team_id, user_id) VALUES ('ap', 'alice')"
     ).run();
@@ -879,7 +881,8 @@ describe("the card counts what its click can show (decision 0253)", () => {
   it("agrees with the task list it opens", async () => {
     await person("alice", ["AP.Review"], null);
     await person("mo", ["AP.Review"], null);
-    await env.DB.prepare("INSERT INTO org_teams (id, name) VALUES ('ap', 'AP')").run();
+    await env.DB.prepare("INSERT INTO org_units (id, name) VALUES ('u1', 'Acme France') ON CONFLICT(id) DO NOTHING").run();
+    await env.DB.prepare("INSERT INTO org_teams (id, name, unit_id) VALUES ('ap', 'AP', 'u1')").run();
 
     await work("mine", null, { owner: "alice" });
     await work("claimed", null, { claimed: "alice" });

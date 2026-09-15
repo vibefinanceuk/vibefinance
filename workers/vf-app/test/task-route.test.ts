@@ -25,7 +25,8 @@ describe("handleCreateTask", () => {
 
   it("400s when BOTH teamId and userId are provided", async () => {
     const stageId = await seedStage();
-    await handleCreateTeam(env.DB, { id: "team1", name: "AP Team" });
+    await env.DB.prepare("INSERT INTO org_units (id, name) VALUES ('u1', 'Acme France') ON CONFLICT(id) DO NOTHING").run();
+    await handleCreateTeam(env.DB, { id: "team1", name: "AP Team", unitId: "u1" });
     await handleCreateUser(env.DB, { id: "usr1", email: "a@b.com", name: "Alice" });
     const result = await handleCreateTask(env.DB, {
       id: "t1",
@@ -39,7 +40,8 @@ describe("handleCreateTask", () => {
 
   it("422s an unknown permission — not in the closed vocabulary", async () => {
     const stageId = await seedStage();
-    await handleCreateTeam(env.DB, { id: "team1", name: "AP Team" });
+    await env.DB.prepare("INSERT INTO org_units (id, name) VALUES ('u1', 'Acme France') ON CONFLICT(id) DO NOTHING").run();
+    await handleCreateTeam(env.DB, { id: "team1", name: "AP Team", unitId: "u1" });
     const result = await handleCreateTask(env.DB, {
       id: "t1",
       stageId,
@@ -50,7 +52,8 @@ describe("handleCreateTask", () => {
   });
 
   it("404s when the stage does not exist", async () => {
-    await handleCreateTeam(env.DB, { id: "team1", name: "AP Team" });
+    await env.DB.prepare("INSERT INTO org_units (id, name) VALUES ('u1', 'Acme France') ON CONFLICT(id) DO NOTHING").run();
+    await handleCreateTeam(env.DB, { id: "team1", name: "AP Team", unitId: "u1" });
     const result = await handleCreateTask(env.DB, {
       id: "t1",
       stageId: "does-not-exist",
@@ -62,7 +65,8 @@ describe("handleCreateTask", () => {
 
   it("creates a team-owned task", async () => {
     const stageId = await seedStage();
-    await handleCreateTeam(env.DB, { id: "team1", name: "AP Team" });
+    await env.DB.prepare("INSERT INTO org_units (id, name) VALUES ('u1', 'Acme France') ON CONFLICT(id) DO NOTHING").run();
+    await handleCreateTeam(env.DB, { id: "team1", name: "AP Team", unitId: "u1" });
     const result = await handleCreateTask(env.DB, {
       id: "t1",
       stageId,
@@ -94,7 +98,8 @@ describe("handleCreateTask", () => {
 describe("handleClaimTask", () => {
   async function seedTeamTask(): Promise<{ stageId: string; taskId: string }> {
     const stageId = await seedStage();
-    await handleCreateTeam(env.DB, { id: "team1", name: "AP Team" });
+    await env.DB.prepare("INSERT INTO org_units (id, name) VALUES ('u1', 'Acme France') ON CONFLICT(id) DO NOTHING").run();
+    await handleCreateTeam(env.DB, { id: "team1", name: "AP Team", unitId: "u1" });
     await handleCreateUser(env.DB, { id: "usr1", email: "a@b.com", name: "Alice" });
     await handleAddTeamMember(env.DB, "team1", "usr1");
     await handleCreateTask(env.DB, { id: "t1", stageId, teamId: "team1", requiredPermission: "AP.Approve" });
@@ -181,7 +186,8 @@ describe("handleCompleteTask", () => {
 
   it("409s completing a team task that was never claimed", async () => {
     const stageId = await seedStage();
-    await handleCreateTeam(env.DB, { id: "team1", name: "AP Team" });
+    await env.DB.prepare("INSERT INTO org_units (id, name) VALUES ('u1', 'Acme France') ON CONFLICT(id) DO NOTHING").run();
+    await handleCreateTeam(env.DB, { id: "team1", name: "AP Team", unitId: "u1" });
     await handleCreateUser(env.DB, { id: "usr1", email: "a@b.com", name: "Alice" });
     await handleAddTeamMember(env.DB, "team1", "usr1");
     await handleCreateTask(env.DB, { id: "t1", stageId, teamId: "team1", requiredPermission: "AP.Approve" });
@@ -191,7 +197,8 @@ describe("handleCompleteTask", () => {
 
   it("403s a team task completed by someone other than the actual claimer", async () => {
     const stageId = await seedStage();
-    await handleCreateTeam(env.DB, { id: "team1", name: "AP Team" });
+    await env.DB.prepare("INSERT INTO org_units (id, name) VALUES ('u1', 'Acme France') ON CONFLICT(id) DO NOTHING").run();
+    await handleCreateTeam(env.DB, { id: "team1", name: "AP Team", unitId: "u1" });
     await handleCreateUser(env.DB, { id: "usr1", email: "a@b.com", name: "Alice" });
     await handleCreateUser(env.DB, { id: "usr2", email: "b@b.com", name: "Bob" });
     await handleAddTeamMember(env.DB, "team1", "usr1");
@@ -204,7 +211,8 @@ describe("handleCompleteTask", () => {
 
   it("the actual claimer completes a team task successfully", async () => {
     const stageId = await seedStage();
-    await handleCreateTeam(env.DB, { id: "team1", name: "AP Team" });
+    await env.DB.prepare("INSERT INTO org_units (id, name) VALUES ('u1', 'Acme France') ON CONFLICT(id) DO NOTHING").run();
+    await handleCreateTeam(env.DB, { id: "team1", name: "AP Team", unitId: "u1" });
     await handleCreateUser(env.DB, { id: "usr1", email: "a@b.com", name: "Alice" });
     await handleAddTeamMember(env.DB, "team1", "usr1");
     await handleCreateTask(env.DB, { id: "t1", stageId, teamId: "team1", requiredPermission: "AP.Approve" });
@@ -235,7 +243,8 @@ describe("releasing a claim (decision 0104)", () => {
     await env.DB.prepare("INSERT INTO org_users (id, email, name) VALUES ('alice','a@x.com','Alice')").run();
     await env.DB.prepare("INSERT INTO org_users (id, email, name) VALUES ('sarah','s@x.com','Sarah')").run();
     await env.DB.prepare("INSERT INTO org_users (id, email, name) VALUES ('mo','m@x.com','Mo')").run();
-    await env.DB.prepare("INSERT INTO org_teams (id, name) VALUES ('ap','AP')").run();
+    await env.DB.prepare("INSERT INTO org_units (id, name) VALUES ('u1', 'Acme France')").run();
+    await env.DB.prepare("INSERT INTO org_teams (id, name, unit_id) VALUES ('ap','AP','u1')").run();
     for (const u of ["alice", "sarah", "mo"]) {
       await env.DB.prepare("INSERT INTO org_team_members (team_id, user_id) VALUES ('ap', ?)").bind(u).run();
     }

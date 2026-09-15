@@ -22,6 +22,7 @@ const STRINGS = {
     "nav.rules": "Rules",
     "nav.documents": "Documents",
     "nav.roles": "Roles",
+    "nav.access": "Access",
     "roles.subtitle": "Who can do what, where, and up to how much",
     "roles.units": "Org units",
     "roles.nounits": "No org units configured yet.",
@@ -129,7 +130,7 @@ async function openRoles(body: unknown) {
   stubFetch({ "/api/ui-strings": STRINGS, "/api/org/overview": body });
   const { loadStrings } = await import("/strings.js");
   await loadStrings();
-  const { open } = await import("/roles.js");
+  const { open } = await import("/access.js");
   await open();
 }
 
@@ -153,14 +154,28 @@ async function openRolesAs(permissions: string[], body: unknown, extraRoutes: Re
   await loadStrings();
   const { start } = await import("/tasks.js");
   await start();
-  const { open } = await import("/roles.js");
+  const { open } = await import("/access.js");
   await open();
+}
+
+/**
+ * **A tab switch, the same way a person clicking through the real UI
+ * would — decision 0333.** Every test that opened this screen before
+ * tabs existed found its own content already on screen; now it sits
+ * behind whichever tab shows it, and nothing renders any of it until
+ * that tab is the active one.
+ */
+function switchTab(label: string) {
+  const button = [...document.querySelectorAll<HTMLButtonElement>(".tabbar button")].find(
+    (b) => b.textContent === label
+  );
+  button?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
 }
 
 describe("the screen opens at all", () => {
   it("renders into the shell", async () => {
     await openRoles(EMPTY);
-    expect(document.getElementById("shell")?.textContent).toContain("Roles");
+    expect(document.getElementById("shell")?.textContent).toContain("Access");
   });
 
   it("shows a real error, and keeps the nav reachable, when the load fails (decision 0322)", async () => {
@@ -182,7 +197,7 @@ describe("the screen opens at all", () => {
 
     const { loadStrings } = await import("/strings.js");
     await loadStrings();
-    const { open } = await import("/roles.js");
+    const { open } = await import("/access.js");
     await open();
 
     const shell = document.getElementById("shell");
@@ -193,7 +208,11 @@ describe("the screen opens at all", () => {
 
 describe("org units", () => {
   it("shows a top-level unit with no indent", async () => {
-    await openRoles({ ...EMPTY, units: [{ id: "u1", name: "Acme Group", kind: "legal_entity", parentUnitId: null }] });
+    await openRolesAs(["Admin.Configure"], {
+      ...EMPTY,
+      units: [{ id: "u1", name: "Acme Group", kind: "legal_entity", parentUnitId: null }],
+    });
+    switchTab("Org units");
 
     const cell = document.querySelector(".panel td span") as HTMLElement;
     expect(cell.style.paddingLeft).toBe("0px");
@@ -201,13 +220,14 @@ describe("org units", () => {
   });
 
   it("indents a child unit beneath its own parent", async () => {
-    await openRoles({
+    await openRolesAs(["Admin.Configure"], {
       ...EMPTY,
       units: [
         { id: "u1", name: "Acme Group", kind: "legal_entity", parentUnitId: null },
         { id: "u2", name: "Acme France", kind: "legal_entity", parentUnitId: "u1" },
       ],
     });
+    switchTab("Org units");
 
     const cells = [...document.querySelectorAll(".panel")[0].querySelectorAll("td span")];
     const france = cells.find((c) => c.textContent === "Acme France") as HTMLElement;
@@ -215,20 +235,60 @@ describe("org units", () => {
   });
 
   it("shows the empty message when no units are configured", async () => {
-    await openRoles(EMPTY);
+    await openRolesAs(["Admin.Configure"], EMPTY);
+    switchTab("Org units");
     expect(document.getElementById("shell")?.textContent).toContain("No org units configured yet.");
+  });
+
+  /**
+   * **Hidden from anyone but a global administrator — decision 0333.**
+   * Reported live: "One could argue that the Org unit and roles tabs
+   * should only be visible to the Administrator (Global) role."
+   * Checked against what the code actually did first: both were
+   * already correctly scoped or non-sensitive for a delegated
+   * administrator — hidden anyway, at the operator's own confirmed
+   * choice. `Admin.Configure` is the permission checked, never a
+   * literal check against the role named "Administrator (Global)"
+   * itself.
+   */
+  it("hides the Org units tab from a delegated administrator holding neither Admin.Configure nor Admin.RoleManagement", async () => {
+    await openRolesAs(["Admin.UserManagement"], { ...EMPTY, units: [{ id: "u1", name: "Acme Group", kind: "legal_entity", parentUnitId: null }] });
+    const tabs = [...document.querySelectorAll(".tabbar button")].map((b) => b.textContent);
+    expect(tabs).not.toContain("Org units");
+  });
+
+  it("shows the Org units tab to Admin.Configure alone, even without Admin.RoleManagement", async () => {
+    await openRolesAs(["Admin.Configure"], EMPTY);
+    const tabs = [...document.querySelectorAll(".tabbar button")].map((b) => b.textContent);
+    expect(tabs).toContain("Org units");
+  });
+});
+
+describe("Roles tab visibility — decision 0333", () => {
+  it("hides the Roles tab from a delegated administrator holding neither Admin.Configure nor Admin.RoleManagement", async () => {
+    await openRolesAs(["Admin.UserManagement"], EMPTY);
+    const tabs = [...document.querySelectorAll(".tabbar button")].map((b) => b.textContent);
+    expect(tabs).not.toContain("Roles");
+  });
+
+  it("shows the Roles tab to Admin.Configure alone, even without Admin.RoleManagement", async () => {
+    await openRolesAs(["Admin.Configure"], EMPTY);
+    const tabs = [...document.querySelectorAll(".tabbar button")].map((b) => b.textContent);
+    expect(tabs).toContain("Roles");
   });
 });
 
 describe("roles and their permissions", () => {
   it("joins a role's own permissions into one readable list", async () => {
-    await openRoles({ ...EMPTY, roles: [{ id: "r1", name: "AP Manager", permissions: ["AP.Approve", "AP.Review"] }] });
+    await openRolesAs(["Admin.Configure"], { ...EMPTY, roles: [{ id: "r1", name: "AP Manager", permissions: ["AP.Approve", "AP.Review"] }] });
+    switchTab("Roles");
 
     expect(document.getElementById("shell")?.textContent).toContain("AP.Approve, AP.Review");
   });
 
   it("shows a role with no permissions distinctly, not as an empty cell", async () => {
-    await openRoles({ ...EMPTY, roles: [{ id: "r1", name: "Empty Role", permissions: [] }] });
+    await openRolesAs(["Admin.Configure"], { ...EMPTY, roles: [{ id: "r1", name: "Empty Role", permissions: [] }] });
+    switchTab("Roles");
 
     expect(document.getElementById("shell")?.textContent).toContain("No permissions granted.");
   });
@@ -314,7 +374,8 @@ describe("write controls are gated to Admin.RoleManagement — decision 0326", (
   });
 
   it("shows a New role button when holding Admin.RoleManagement", async () => {
-    await openRolesAs(["Admin.RoleManagement"], ONE_ROLE);
+    await openRolesAs(["Admin.RoleManagement", "Admin.Configure"], ONE_ROLE);
+    switchTab("Roles");
     const shell = document.getElementById("shell");
     expect([...(shell?.querySelectorAll("button") ?? [])].some((b) => b.textContent?.includes("New role"))).toBe(
       true
@@ -322,7 +383,8 @@ describe("write controls are gated to Admin.RoleManagement — decision 0326", (
   });
 
   it("opens the edit form when clicking a role, holding the permission", async () => {
-    await openRolesAs(["Admin.RoleManagement"], ONE_ROLE);
+    await openRolesAs(["Admin.RoleManagement", "Admin.Configure"], ONE_ROLE);
+    switchTab("Roles");
     const row = [...document.querySelectorAll("tr")].find((r) => r.textContent?.includes("AP Manager"));
     row?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     expect(document.querySelector(".backdrop")).not.toBeNull();
@@ -334,7 +396,8 @@ describe("creating a role — decision 0326", () => {
   const KNOWN = ["AP.Approve", "AP.Review", "Admin.RoleManagement"].map((name) => ({ name, description: `${name} description` }));
 
   it("opens a fresh form with every known permission unchecked", async () => {
-    await openRolesAs(["Admin.RoleManagement"], { ...EMPTY, knownPermissions: KNOWN });
+    await openRolesAs(["Admin.RoleManagement", "Admin.Configure"], { ...EMPTY, knownPermissions: KNOWN });
+    switchTab("Roles");
     const button = [...document.querySelectorAll("button")].find((b) => b.textContent?.includes("New role"));
     button?.click();
 
@@ -345,7 +408,8 @@ describe("creating a role — decision 0326", () => {
   });
 
   it("groups permissions by their own category", async () => {
-    await openRolesAs(["Admin.RoleManagement"], { ...EMPTY, knownPermissions: KNOWN });
+    await openRolesAs(["Admin.RoleManagement", "Admin.Configure"], { ...EMPTY, knownPermissions: KNOWN });
+    switchTab("Roles");
     const button = [...document.querySelectorAll("button")].find((b) => b.textContent?.includes("New role"));
     button?.click();
 
@@ -359,7 +423,8 @@ describe("creating a role — decision 0326", () => {
       { name: "AP.Review", description: "Review an invoice at the Review stage" },
       { name: "Admin.RoleManagement", description: "Create and edit what a role itself grants" },
     ];
-    await openRolesAs(["Admin.RoleManagement"], { ...EMPTY, knownPermissions: REAL_DESCRIPTIONS });
+    await openRolesAs(["Admin.RoleManagement", "Admin.Configure"], { ...EMPTY, knownPermissions: REAL_DESCRIPTIONS });
+    switchTab("Roles");
     const button = [...document.querySelectorAll("button")].find((b) => b.textContent?.includes("New role"));
     button?.click();
 
@@ -372,7 +437,8 @@ describe("creating a role — decision 0326", () => {
   });
 
   it("the permission list sits in a scrollable container", async () => {
-    await openRolesAs(["Admin.RoleManagement"], { ...EMPTY, knownPermissions: KNOWN });
+    await openRolesAs(["Admin.RoleManagement", "Admin.Configure"], { ...EMPTY, knownPermissions: KNOWN });
+    switchTab("Roles");
     const button = [...document.querySelectorAll("button")].find((b) => b.textContent?.includes("New role"));
     button?.click();
 
@@ -380,9 +446,10 @@ describe("creating a role — decision 0326", () => {
   });
 
   it("posts the entered id, name, and checked permissions, then reloads", async () => {
-    await openRolesAs(["Admin.RoleManagement"], { ...EMPTY, knownPermissions: KNOWN }, {
+    await openRolesAs(["Admin.RoleManagement", "Admin.Configure"], { ...EMPTY, knownPermissions: KNOWN }, {
       "POST /api/org/roles": { ok: true, json: async () => ({}) },
     });
+    switchTab("Roles");
 
     const button = [...document.querySelectorAll("button")].find((b) => b.textContent?.includes("New role"));
     button?.click();
@@ -411,9 +478,10 @@ describe("creating a role — decision 0326", () => {
   });
 
   it("shows the real error and leaves the form open when the request fails", async () => {
-    await openRolesAs(["Admin.RoleManagement"], { ...EMPTY, knownPermissions: KNOWN }, {
+    await openRolesAs(["Admin.RoleManagement", "Admin.Configure"], { ...EMPTY, knownPermissions: KNOWN }, {
       "POST /api/org/roles": { ok: false, status: 422, json: async () => ({ error: "not a real permission" }) },
     });
+    switchTab("Roles");
 
     const button = [...document.querySelectorAll("button")].find((b) => b.textContent?.includes("New role"));
     button?.click();
@@ -429,7 +497,8 @@ describe("creating a role — decision 0326", () => {
   });
 
   it("closes without saving anything", async () => {
-    await openRolesAs(["Admin.RoleManagement"], { ...EMPTY, knownPermissions: KNOWN });
+    await openRolesAs(["Admin.RoleManagement", "Admin.Configure"], { ...EMPTY, knownPermissions: KNOWN });
+    switchTab("Roles");
     const button = [...document.querySelectorAll("button")].find((b) => b.textContent?.includes("New role"));
     button?.click();
     expect(document.querySelector(".backdrop")).not.toBeNull();
@@ -452,7 +521,8 @@ describe("editing an existing role — decision 0326", () => {
   }
 
   it("pre-fills the role's own name and checks its own held permissions only", async () => {
-    await openRolesAs(["Admin.RoleManagement"], { ...EMPTY, roles: [EXISTING_ROLE], knownPermissions: KNOWN });
+    await openRolesAs(["Admin.RoleManagement", "Admin.Configure"], { ...EMPTY, roles: [EXISTING_ROLE], knownPermissions: KNOWN });
+    switchTab("Roles");
     openEditForm();
 
     const nameInput = document.querySelectorAll<HTMLInputElement>(".editgrid input")[1];
@@ -469,7 +539,8 @@ describe("editing an existing role — decision 0326", () => {
   });
 
   it("shows the role's own id, disabled — not editable through this form", async () => {
-    await openRolesAs(["Admin.RoleManagement"], { ...EMPTY, roles: [EXISTING_ROLE], knownPermissions: KNOWN });
+    await openRolesAs(["Admin.RoleManagement", "Admin.Configure"], { ...EMPTY, roles: [EXISTING_ROLE], knownPermissions: KNOWN });
+    switchTab("Roles");
     openEditForm();
 
     const idInput = document.querySelector<HTMLInputElement>(".editgrid input") as HTMLInputElement;
@@ -478,9 +549,10 @@ describe("editing an existing role — decision 0326", () => {
   });
 
   it("PUTs the edited name and full replaced permission list to the role's own id", async () => {
-    await openRolesAs(["Admin.RoleManagement"], { ...EMPTY, roles: [EXISTING_ROLE], knownPermissions: KNOWN }, {
+    await openRolesAs(["Admin.RoleManagement", "Admin.Configure"], { ...EMPTY, roles: [EXISTING_ROLE], knownPermissions: KNOWN }, {
       "PUT /api/org/roles/r1": { ok: true, json: async () => ({}) },
     });
+    switchTab("Roles");
     openEditForm();
 
     const nameInput = document.querySelectorAll<HTMLInputElement>(".editgrid input")[1];
@@ -856,7 +928,8 @@ describe("popout action row — decision 0329, corrected", () => {
   const ALICE = { id: "usr1", email: "alice@acme.com", name: "Alice", unitId: null, status: "active" };
 
   it("the role popout's own Save and Close sit together in the header, both with an icon", async () => {
-    await openRolesAs(["Admin.RoleManagement"], { ...EMPTY, roles: [ONE_ROLE], knownPermissions: [] });
+    await openRolesAs(["Admin.RoleManagement", "Admin.Configure"], { ...EMPTY, roles: [ONE_ROLE], knownPermissions: [] });
+    switchTab("Roles");
     const row = [...document.querySelectorAll("tr")].find((r) => r.textContent?.includes("AP Manager"));
     row?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
 
@@ -871,7 +944,8 @@ describe("popout action row — decision 0329, corrected", () => {
   });
 
   it("the new-role popout shows Create rather than Save", async () => {
-    await openRolesAs(["Admin.RoleManagement"], { ...EMPTY, knownPermissions: [] });
+    await openRolesAs(["Admin.RoleManagement", "Admin.Configure"], { ...EMPTY, knownPermissions: [] });
+    switchTab("Roles");
     const button = [...document.querySelectorAll("button")].find((b) => b.textContent?.includes("New role"));
     button?.click();
 
@@ -932,16 +1006,18 @@ describe("popout action row — decision 0329, corrected", () => {
 });
 
 describe("teams — decision 0332", () => {
-  const ONE_TEAM = { id: "t1", name: "AP Team", members: [{ userId: "usr1", userName: "Alice", userEmail: "a@b.com" }] };
-  const EMPTY_TEAM = { id: "t2", name: "Expense Team", members: [] };
+  const ONE_UNIT = { id: "u1", name: "Acme France", kind: "legal_entity", parentUnitId: null };
+  const ONE_TEAM = { id: "t1", name: "AP Team", unitId: "u1", unitName: "Acme France", members: [{ userId: "usr1", userName: "Alice", userEmail: "a@b.com" }] };
+  const EMPTY_TEAM = { id: "t2", name: "Expense Team", unitId: "u1", unitName: "Acme France", members: [] };
   const ALICE = { id: "usr1", email: "a@b.com", name: "Alice", unitId: null, status: "active" };
   const BOB = { id: "usr2", email: "b@b.com", name: "Bob", unitId: null, status: "active" };
 
   async function openRolesWithTeams(permissions: string[], teams: unknown[], extraRoutes: Record<string, unknown> = {}) {
-    await openRolesAs(permissions, { ...EMPTY, users: [ALICE, BOB] }, {
+    await openRolesAs(permissions, { ...EMPTY, units: [ONE_UNIT], users: [ALICE, BOB] }, {
       "/api/org/teams": { teams },
       ...extraRoutes,
     });
+    switchTab("Teams");
   }
 
   it("shows no Teams section holding neither Admin.RoleManagement nor Admin.UserManagement", async () => {
@@ -963,6 +1039,26 @@ describe("teams — decision 0332", () => {
     await openRolesWithTeams(["Admin.RoleManagement"], [ONE_TEAM, EMPTY_TEAM]);
     expect(document.body.textContent).toContain("Alice");
     expect(document.body.textContent).toContain("No members yet.");
+  });
+
+  /**
+   * **The org a team belongs to, shown as its own column — decision
+   * 0333.** Every team belongs to exactly one org now; the list is
+   * the first place that should say so.
+   */
+  it("shows each team's own org name as a column", async () => {
+    await openRolesWithTeams(["Admin.RoleManagement"], [ONE_TEAM]);
+    const row = [...document.querySelectorAll("tr")].find((r) => r.textContent?.includes("AP Team"));
+    expect(row?.textContent).toContain("Acme France");
+  });
+
+  it("the org picker pre-selects an existing team's own org", async () => {
+    await openRolesWithTeams(["Admin.RoleManagement"], [ONE_TEAM]);
+    const row = [...document.querySelectorAll("tr")].find((r) => r.textContent?.includes("AP Team"));
+    row?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    const select = document.querySelector<HTMLSelectElement>(".editgrid select") as HTMLSelectElement;
+    expect(select.value).toBe("u1");
   });
 
   it("shows no New team button without Admin.RoleManagement", async () => {
@@ -990,7 +1086,7 @@ describe("teams — decision 0332", () => {
     const calls = (fetch as unknown as { mock: { calls: unknown[][] } }).mock.calls;
     const postCall = calls.find(([url, init]) => url === "/api/org/teams" && (init as RequestInit)?.method === "POST");
     const body = JSON.parse((postCall?.[1] as RequestInit).body as string);
-    expect(body).toEqual({ id: "t1", name: "AP Team" });
+    expect(body).toEqual({ id: "t1", name: "AP Team", unitId: "u1" });
   });
 
   it("opens an existing team with its own name pre-filled, id shown but disabled", async () => {
@@ -1020,7 +1116,7 @@ describe("teams — decision 0332", () => {
     const calls = (fetch as unknown as { mock: { calls: unknown[][] } }).mock.calls;
     const putCall = calls.find(([url, init]) => url === "/api/org/teams/t1" && (init as RequestInit)?.method === "PUT");
     const body = JSON.parse((putCall?.[1] as RequestInit).body as string);
-    expect(body).toEqual({ name: "Accounts Payable Team" });
+    expect(body).toEqual({ name: "Accounts Payable Team", unitId: "u1" });
   });
 
   it("the name field is disabled, and no Save button appears, holding only Admin.UserManagement", async () => {

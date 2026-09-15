@@ -28,6 +28,7 @@ let assignments = [];
 let authorityLimits = [];
 let knownPermissions = [];
 let teams = [];
+let activeTab = "units";
 
 async function load() {
   try {
@@ -390,6 +391,7 @@ function teamRow(team) {
 
   const row = el("tr", canManage || canAssign ? { class: "clickable" } : {}, [
     el("td", { text: team.name }),
+    el("td", { class: "sm muted", text: team.unitName }),
     el("td", { class: "sm muted", text: memberText }),
   ]);
   if (canManage || canAssign) row.onclick = () => openTeamForm(team);
@@ -409,12 +411,24 @@ function openTeamForm(existingTeam) {
     value: existingTeam?.name ?? "",
     ...(existingTeam && !canManage ? { disabled: "disabled" } : {}),
   });
+  /**
+   * **Required, never "Everywhere" — decision 0333.** Unlike the org
+   * picker on the assignments popout, this one offers no unscoped
+   * option at all: "There should never be a null-org team."
+   */
+  const orgPicker = el(
+    "select",
+    { ...(existingTeam && !canManage ? { disabled: "disabled" } : {}) },
+    units.map((u) => el("option", { value: u.id, text: u.name, ...(u.id === existingTeam?.unitId ? { selected: "selected" } : {}) }))
+  );
 
   const form = el("div", { class: "editgrid" }, [
     el("label", { text: t("roles.teamid") }),
     idInput,
     el("label", { text: t("roles.teamname") }),
     nameInput,
+    el("label", { text: t("roles.personorg") }),
+    orgPicker,
   ]);
 
   const close = () => backdrop.remove();
@@ -423,17 +437,18 @@ function openTeamForm(existingTeam) {
     onclick: async () => {
       problem.textContent = "";
       const name = nameInput.value.trim();
+      const unitId = orgPicker.value;
       try {
         const response = existingTeam
           ? await fetch(`/api/org/teams/${encodeURIComponent(existingTeam.id)}`, {
               method: "PUT",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ name }),
+              body: JSON.stringify({ name, unitId }),
             })
           : await fetch("/api/org/teams", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ id: idInput.value.trim(), name }),
+              body: JSON.stringify({ id: idInput.value.trim(), name, unitId }),
             });
         if (!response.ok) {
           problem.textContent = (await response.json()).error ?? t("roles.teamsavefailed");
@@ -695,43 +710,112 @@ function section(titleKey, emptyKey, headers, rows, headerAction = null) {
   ]);
 }
 
+/**
+ * **Tabs, not a long scroll — decision 0333.** Reported live, after
+ * seeing this screen's own real content: "I wondered if all of these
+ * sections... should have their own configuration? ... I like the
+ * idea of Tabs." Org units, Roles, and People are always offered —
+ * reaching this screen at all already means holding one of the two
+ * permissions `/org/overview` itself requires. Teams is the one
+ * conditional tab, since its own gate (`Admin.RoleManagement` or
+ * `Admin.UserManagement`) is a genuinely different pair from the
+ * screen's own, and an `Admin.Configure`-only holder can correctly
+ * reach every other tab and not this one.
+ */
+/**
+ * **Org Units and Roles, visible only to a global administrator —
+ * decision 0333.** Reported live: "One could argue that the Org unit
+ * and roles tabs should only be visible to the Administrator (Global)
+ * role." Checked against what the code actually does before building
+ * this: both were already correctly scoped or non-sensitive for a
+ * delegated administrator — hidden anyway, at the operator's own
+ * confirmed choice, for a simpler delegated-admin view rather than
+ * because either was unsafe. Gated on `Admin.Configure`, the
+ * permission that already means "unscoped, instance-wide standing"
+ * everywhere else in this app — never a literal check against the
+ * role named "Administrator (Global)" itself, which is just one
+ * bundle of permissions among others that could hold this same one.
+ */
+function tabBar(canShowTeams, canShowGlobalOnly) {
+  const tabs = [
+    ...(canShowGlobalOnly ? [["units", "roles.units"]] : []),
+    ...(canShowGlobalOnly ? [["roles", "roles.roles"]] : []),
+    ["people", "roles.people"],
+    ...(canShowTeams ? [["teams", "roles.teams"]] : []),
+  ];
+
+  return el(
+    "div",
+    { class: "tabbar" },
+    tabs.map(([key, labelKey]) =>
+      el("button", {
+        class: `tab${activeTab === key ? " active" : ""}`,
+        text: t(labelKey),
+        onclick: () => {
+          activeTab = key;
+          render();
+        },
+      })
+    )
+  );
+}
+
 function render() {
   const shell = document.getElementById("shell");
   if (!shell) return;
 
   const canManage = hasMyPermission("Admin.RoleManagement");
   const canAssign = hasMyPermission("Admin.UserManagement");
+  const canShowTeams = canManage || canAssign;
+  const canShowGlobalOnly = hasMyPermission("Admin.Configure");
+
+  /**
+   * **Corrected before the active section is picked, not after —
+   * decision 0333.** `tabBar` used to carry this same redirect, which
+   * ran too late: `activeSection` below is computed in the same
+   * function body, before `tabBar` is ever called, so a stale
+   * `activeTab` locked in the wrong section's content even though the
+   * tab bar itself correctly showed nothing active. Caught by the
+   * simplest possible test — the screen not rendering its own
+   * subtitle at all on a first, permission-less render.
+   */
+  if ((activeTab === "units" || activeTab === "roles") && !canShowGlobalOnly) activeTab = "people";
+  if (activeTab === "teams" && !canShowTeams) activeTab = "people";
+
+  const activeSection = {
+    units: () => section("roles.units", "roles.nounits", ["column.unit", "roles.kind"], units.map(unitRow)),
+    roles: () =>
+      section(
+        "roles.roles",
+        "roles.norolesconfigured",
+        ["column.role", "roles.permissions"],
+        roles.map(roleRow),
+        canManage ? actionLink("newrole", { onclick: () => openRoleForm(null) }) : null
+      ),
+    people: () =>
+      section(
+        "roles.people",
+        "roles.nopeople",
+        ["column.person", "roles.assignments", "roles.limits"],
+        users.map(personRow),
+        canAssign ? actionLink("newperson", { onclick: () => openNewPersonForm() }) : null
+      ),
+    teams: () =>
+      section(
+        "roles.teams",
+        "roles.noteamsconfigured",
+        ["column.team", "roles.personorg", "roles.teammembers"],
+        teams.map(teamRow),
+        canManage ? actionLink("newteam", { onclick: () => openTeamForm(null) }) : null
+      ),
+  }[activeTab]();
 
   shell.replaceChildren(
     frame(
       el("div", {}, [
-        topbar(t("nav.roles"), t("roles.subtitle")),
-        section("roles.units", "roles.nounits", ["column.unit", "roles.kind"], units.map(unitRow)),
-        section(
-          "roles.roles",
-          "roles.norolesconfigured",
-          ["column.role", "roles.permissions"],
-          roles.map(roleRow),
-          canManage ? actionLink("newrole", { onclick: () => openRoleForm(null) }) : null
-        ),
-        section(
-          "roles.people",
-          "roles.nopeople",
-          ["column.person", "roles.assignments", "roles.limits"],
-          users.map(personRow),
-          canAssign ? actionLink("newperson", { onclick: () => openNewPersonForm() }) : null
-        ),
-        ...(canManage || canAssign
-          ? [
-              section(
-                "roles.teams",
-                "roles.noteamsconfigured",
-                ["column.team", "roles.teammembers"],
-                teams.map(teamRow),
-                canManage ? actionLink("newteam", { onclick: () => openTeamForm(null) }) : null
-              ),
-            ]
-          : []),
+        topbar(t("nav.access"), t("roles.subtitle")),
+        tabBar(canShowTeams, canShowGlobalOnly),
+        activeSection,
       ])
     )
   );
@@ -759,7 +843,7 @@ function renderLoadFailed() {
   shell.replaceChildren(
     frame(
       el("div", {}, [
-        topbar(t("nav.roles"), t("roles.subtitle")),
+        topbar(t("nav.access"), t("roles.subtitle")),
         el("p", { class: "problem", role: "status", text: t("roles.loadfailed") }),
       ])
     )
@@ -767,7 +851,7 @@ function renderLoadFailed() {
 }
 
 export async function open() {
-  setCurrentScreen("roles");
+  setCurrentScreen("access");
   if (!(await load())) {
     renderLoadFailed();
     return;

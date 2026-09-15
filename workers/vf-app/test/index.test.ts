@@ -1056,11 +1056,15 @@ describe("org/authority/profiles routes, through the real router", () => {
 });
 
 describe("team routes, through the real router (decision 0016)", () => {
+  beforeEach(async () => {
+    await env.DB.prepare("INSERT INTO org_units (id, name) VALUES ('u1', 'Acme France')").run();
+  });
+
   it("creates a team through the real router", async () => {
     const res = await SELF.fetch("https://example.com/org/teams", {
       method: "POST",
       headers: authHeaders(),
-      body: JSON.stringify({ id: "t1", name: "AP Team" }),
+      body: JSON.stringify({ id: "t1", name: "AP Team", unitId: "u1" }),
     });
     expect(res.status).toBe(201);
     const row = await env.DB.prepare("SELECT name FROM org_teams WHERE id = ?").bind("t1").first();
@@ -1075,7 +1079,7 @@ describe("team routes, through the real router (decision 0016)", () => {
     await SELF.fetch("https://example.com/org/teams", {
       method: "POST",
       headers: authHeaders(),
-      body: JSON.stringify({ id: "AP team", name: "AP Team" }),
+      body: JSON.stringify({ id: "AP team", name: "AP Team", unitId: "u1" }),
     });
     await SELF.fetch("https://example.com/org/users", {
       method: "POST",
@@ -1099,7 +1103,7 @@ describe("team routes, through the real router (decision 0016)", () => {
     const res = await SELF.fetch("https://example.com/org/teams", {
       method: "POST",
       headers: authHeaders(),
-      body: JSON.stringify({ id: "t1", name: "AP Team" }),
+      body: JSON.stringify({ id: "t1", name: "AP Team", unitId: "u1" }),
     });
     expect(res.status).not.toBe(402);
   });
@@ -1108,7 +1112,7 @@ describe("team routes, through the real router (decision 0016)", () => {
     await SELF.fetch("https://example.com/org/teams", {
       method: "POST",
       headers: authHeaders(),
-      body: JSON.stringify({ id: "t1", name: "AP Team" }),
+      body: JSON.stringify({ id: "t1", name: "AP Team", unitId: "u1" }),
     });
     await SELF.fetch("https://example.com/org/users", {
       method: "POST",
@@ -1131,7 +1135,7 @@ describe("team routes, through the real router (decision 0016)", () => {
     await SELF.fetch("https://example.com/org/teams", {
       method: "POST",
       headers: authHeaders(),
-      body: JSON.stringify({ id: "t1", name: "AP Team" }),
+      body: JSON.stringify({ id: "t1", name: "AP Team", unitId: "u1" }),
     });
     await SELF.fetch("https://example.com/org/users", {
       method: "POST",
@@ -1154,6 +1158,9 @@ describe("team routes, through the real router (decision 0016)", () => {
 
 describe("task routes, through the real router (decision 0018)", () => {
   async function seedProcessStageAndTeamTask(): Promise<{ taskId: string }> {
+    await env.DB.prepare(
+      "INSERT INTO org_units (id, name) VALUES ('u1', 'Acme France') ON CONFLICT(id) DO NOTHING"
+    ).run();
     await SELF.fetch("https://example.com/processes", {
       method: "POST",
       body: JSON.stringify({ id: "p1", name: "AP" }),
@@ -1165,7 +1172,7 @@ describe("task routes, through the real router (decision 0018)", () => {
     await SELF.fetch("https://example.com/org/teams", {
       method: "POST",
       headers: authHeaders(),
-      body: JSON.stringify({ id: "team1", name: "AP Team" }),
+      body: JSON.stringify({ id: "team1", name: "AP Team", unitId: "u1" }),
     });
     // authHeaders()'s own user, "test-user", holds every permission —
     // added to the team here specifically so claim/complete can be
@@ -1377,7 +1384,10 @@ describe("process instances and stage visits, through the real router (decision 
       method: "POST",
       body: JSON.stringify({ id: "s3", name: "Payment-eligible", sequence: 3 }),
     });
-    await SELF.fetch("https://example.com/org/teams", { method: "POST", headers: authHeaders(), body: JSON.stringify({ id: "ap-team", name: "AP team" }) });
+    await env.DB.prepare(
+      "INSERT INTO org_units (id, name) VALUES ('u1', 'Acme France') ON CONFLICT(id) DO NOTHING"
+    ).run();
+    await SELF.fetch("https://example.com/org/teams", { method: "POST", headers: authHeaders(), body: JSON.stringify({ id: "ap-team", name: "AP team", unitId: "u1" }) });
     await SELF.fetch("https://example.com/org/teams/ap-team/members", {
       method: "POST",
       headers: authHeaders(),
@@ -1471,7 +1481,10 @@ describe("per-line evaluation, through the real router (decision 0027)", () => {
       method: "POST",
       body: JSON.stringify({ id: "s1", name: "Line Review", sequence: 1, ruleSetId: "rs-line-live", evaluationScope: "line" }),
     });
-    await SELF.fetch("https://example.com/org/teams", { method: "POST", headers: authHeaders(), body: JSON.stringify({ id: "line-team", name: "Line Team" }) });
+    await env.DB.prepare(
+      "INSERT INTO org_units (id, name) VALUES ('u1', 'Acme France') ON CONFLICT(id) DO NOTHING"
+    ).run();
+    await SELF.fetch("https://example.com/org/teams", { method: "POST", headers: authHeaders(), body: JSON.stringify({ id: "line-team", name: "Line Team", unitId: "u1" }) });
     await SELF.fetch("https://example.com/org/teams/line-team/members", { method: "POST", headers: authHeaders(), body: JSON.stringify({ userId: "test-user" }) });
 
     const created = await SELF.fetch("https://example.com/processes/p-line/instances", {
@@ -1767,7 +1780,10 @@ describe("cost centres, through the real router (decision 0031)", () => {
       method: "POST",
       body: JSON.stringify({ id: "review", name: "Review", sequence: 1, ruleSetId, evaluationScope: "line" }),
     });
-    await SELF.fetch("https://example.com/org/teams", { method: "POST", headers: authHeaders(), body: JSON.stringify({ id: "cc-team", name: "CC Team" }) });
+    await env.DB.prepare(
+      "INSERT INTO org_units (id, name) VALUES ('u1', 'Acme France') ON CONFLICT(id) DO NOTHING"
+    ).run();
+    await SELF.fetch("https://example.com/org/teams", { method: "POST", headers: authHeaders(), body: JSON.stringify({ id: "cc-team", name: "CC Team", unitId: "u1" }) });
     await SELF.fetch("https://example.com/processes/p-cc-live/intake-channels", {
       method: "POST",
       body: JSON.stringify({ id: "ic-cc-live", name: "EDI" }),

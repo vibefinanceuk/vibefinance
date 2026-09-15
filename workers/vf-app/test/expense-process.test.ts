@@ -54,7 +54,8 @@ describe("Expense management, through the real workflow engine — the harder vo
     await handleCreateStage(env.DB, "expense-live", { id: "submitted", name: "Submitted", sequence: 1 });
     await handleCreateStage(env.DB, "expense-live", { id: "review", name: "Review", sequence: 2, ruleSetId: "expense-review" });
     await handleCreateStage(env.DB, "expense-live", { id: "reimbursed", name: "Reimbursed", sequence: 3 });
-    await handleCreateTeam(env.DB, { id: "Finance team", name: "Finance Team" });
+    await env.DB.prepare("INSERT INTO org_units (id, name) VALUES ('u1', 'Acme France')").run();
+    await handleCreateTeam(env.DB, { id: "Finance team", name: "Finance Team", unitId: "u1" });
     await handleCreateUser(env.DB, { id: "dana", email: "dana@acme.com", name: "Dana" });
     await handleAddTeamMember(env.DB, "Finance team", "dana");
   }

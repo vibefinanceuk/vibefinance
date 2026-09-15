@@ -449,8 +449,8 @@ async function go(screen) {
   } else if (screen === "documents") {
     const { open } = await import("/documents.js");
     await open();
-  } else if (screen === "roles") {
-    const { open } = await import("/roles.js");
+  } else if (screen === "access") {
+    const { open } = await import("/access.js");
     await open();
   } else {
     /**
@@ -531,8 +531,15 @@ const NAV_PERMISSIONS = {
    * Manager (France)' is a pairing nobody can see listed."* The
    * backend itself decides which; the nav only needs to know at
    * least one of the two is held.
+   *
+   * **Renamed from `roles` to `access` — decision 0333.** Reported
+   * live: "Roles does not seem suitable" once the screen grew to
+   * cover org units, people, and teams alongside role definitions —
+   * the screen's own subtitle already read "who can do what, where,
+   * and up to how much," and the new name says exactly that rather
+   * than naming only one of the four things it now holds.
    */
-  roles: ["Admin.Configure", "Admin.UserManagement"],
+  access: ["Admin.Configure", "Admin.UserManagement"],
 };
 
 /** One nav entry: an icon, a label, and which screen it opens. */
@@ -565,7 +572,7 @@ export function frame(main) {
     ["suppliers", "suppliers"],
     ["rules", "rules"],
     ["documents", "documents"],
-    ["roles", "users"],
+    ["access", "users"],
   ];
   /**
    * **Held, whether one permission or a choice of several** — most

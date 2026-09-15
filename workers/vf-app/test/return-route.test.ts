@@ -77,7 +77,8 @@ beforeEach(async () => {
       .bind(u.id, u.email, u.name)
       .run();
   }
-  await env.DB.prepare("INSERT INTO org_teams (id, name) VALUES ('team-coding', 'Coding')").run();
+  await env.DB.prepare("INSERT INTO org_units (id, name) VALUES ('u1', 'Acme France')").run();
+  await env.DB.prepare("INSERT INTO org_teams (id, name, unit_id) VALUES ('team-coding', 'Coding', 'u1')").run();
 });
 
 describe("returning to an earlier stage", () => {

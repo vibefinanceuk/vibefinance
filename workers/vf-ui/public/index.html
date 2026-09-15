@@ -958,6 +958,32 @@
     margin: -6px -4px 0 0;
   }
 
+  /*
+    **Tabs — decision 0333.** A row of plain buttons, the underline on
+    the active one carrying all the meaning — no pill background, no
+    card wrapper, so it reads as navigation within the page rather
+    than another set of actions competing with the ones inside each
+    section.
+  */
+  .tabbar {
+    display: flex;
+    gap: 4px;
+    border-bottom: 0.5px solid var(--border);
+    margin: 4px 0 16px;
+  }
+  .tabbar .tab {
+    padding: 8px 14px;
+    border-radius: 0;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--text-muted);
+    background: transparent;
+  }
+  .tabbar .tab.active {
+    color: var(--text-accent);
+    border-bottom-color: var(--text-accent);
+  }
+
   /* A supplier row opens one — decision 0230. */
   tr.clickable { cursor: pointer; }
   tr.clickable:hover { background: var(--surface-1); }
