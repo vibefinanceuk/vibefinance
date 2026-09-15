@@ -386,77 +386,80 @@ function roleRow(role) {
  */
 
 /**
- * **The full Peppol BIS Billing 3.0 currency list, not a guess —
- * decision 0340.** Reported live: "we should have a table of valid
- * peppol biz 3.0 currencies," directly correcting this file's own
- * earlier, stated assumption (decision 0339's own four-currency
- * list, explicitly flagged there as "not a researched requirement").
- * Checked directly rather than assumed: Peppol's own specification
- * states plainly that "all currencies in an invoice or credit note
- * shall be the alphabetic code from ISO 4217" — there is no narrower,
- * Peppol-specific subset separate from the full ISO 4217 list itself.
- * Fetched from Peppol's own published code list
- * (docs.peppol.eu/poacc/billing/3.0/codelist/ISO4217/, the same page
- * this project's own EN 16931 field references already point to),
- * not retyped from memory, since a hand-copied list of 180 codes is
- * exactly where a memory error would hide. Each option shows the
- * currency's own name beside its code — most of this list is
- * currencies nobody administering this system has ever had reason to
- * recognize by code alone.
+ * **The full Peppol BIS Billing 3.0 list, filtered to what a company
+ * actually purchases with — decision 0342.** Decision 0340 built the
+ * full, 178-code list Peppol itself references (ISO 4217 in full).
+ * Reported live, from that same list: "some of the currencies... are
+ * strange — such as Bond Markets Unit European... is there a way to
+ * filter out currencies which are not really currencies that
+ * companies purchase with?"
+ *
+ * Checked directly, not guessed: ISO 4217 itself draws this exact
+ * line, in its own published tables — precious metals and "funds"
+ * (indexed or settlement units, never circulating currency) are
+ * listed separately from ordinary currency codes. Excluded here:
+ * the four precious metals (XAU, XAG, XPD, XPT); the four historical
+ * bond-markets units (XBA–XBD); the IMF's own Special Drawing Right
+ * (XDR); the Asian Development Bank's own unit of account (XUA); the
+ * ALBA bloc's own regional settlement unit (XSU); the code reserved
+ * for testing (XTS); the code meaning no currency at all (XXX); and
+ * the nine codes ISO 4217's own "funds" table lists as indexed or
+ * settlement units rather than currency — Chile's UF, Colombia's UVR,
+ * Mexico's UDI, Uruguay's two, Switzerland's WIR pair, Bolivia's
+ * Mvdol, and the next-day US Dollar settlement code. 22 removed, 156
+ * remain — every supranational currency still actually circulated
+ * and spent (CFA francs, the East Caribbean dollar, the CFP franc,
+ * the new Caribbean guilder) stays, since those are real currencies
+ * a real supplier is paid in, not funds or metals wearing a currency
+ * code.
  */
-const PEPPOL_CURRENCIES = [
+const PURCHASABLE_CURRENCIES = [
   ["AED", "UAE Dirham"], ["AFN", "Afghani"], ["ALL", "Lek"], ["AMD", "Armenian Dram"],
   ["AOA", "Kwanza"], ["ARS", "Argentine Peso"], ["AUD", "Australian Dollar"], ["AWG", "Aruban Florin"],
   ["AZN", "Azerbaijan Manat"], ["BAM", "Convertible Mark"], ["BBD", "Barbados Dollar"], ["BDT", "Taka"],
   ["BHD", "Bahraini Dinar"], ["BIF", "Burundi Franc"], ["BMD", "Bermudian Dollar"], ["BND", "Brunei Dollar"],
-  ["BOB", "Boliviano"], ["BOV", "Mvdol"], ["BRL", "Brazilian Real"], ["BSD", "Bahamian Dollar"],
-  ["BTN", "Ngultrum"], ["BWP", "Pula"], ["BYN", "Belarusian Ruble"], ["BZD", "Belize Dollar"],
-  ["CAD", "Canadian Dollar"], ["CDF", "Congolese Franc"], ["CHE", "WIR Euro"], ["CHF", "Swiss Franc"],
-  ["CHW", "WIR Franc"], ["CLF", "Unidad de Fomento"], ["CLP", "Chilean Peso"], ["CNH", "Renminbi (offshore)"],
-  ["CNY", "Yuan Renminbi"], ["COP", "Colombian Peso"], ["COU", "Unidad de Valor Real"], ["CRC", "Costa Rican Colon"],
-  ["CUP", "Cuban Peso"], ["CVE", "Cabo Verde Escudo"], ["CZK", "Czech Koruna"], ["DJF", "Djibouti Franc"],
-  ["DKK", "Danish Krone"], ["DOP", "Dominican Peso"], ["DZD", "Algerian Dinar"], ["EGP", "Egyptian Pound"],
-  ["ERN", "Nakfa"], ["ETB", "Ethiopian Birr"], ["EUR", "Euro"], ["FJD", "Fiji Dollar"],
-  ["FKP", "Falkland Islands Pound"], ["GBP", "Pound Sterling"], ["GEL", "Lari"], ["GHS", "Ghana Cedi"],
-  ["GIP", "Gibraltar Pound"], ["GMD", "Dalasi"], ["GNF", "Guinean Franc"], ["GTQ", "Quetzal"],
-  ["GYD", "Guyana Dollar"], ["HKD", "Hong Kong Dollar"], ["HNL", "Lempira"], ["HTG", "Gourde"],
-  ["HUF", "Forint"], ["IDR", "Rupiah"], ["ILS", "New Israeli Sheqel"], ["INR", "Indian Rupee"],
-  ["IQD", "Iraqi Dinar"], ["IRR", "Iranian Rial"], ["ISK", "Iceland Krona"], ["JMD", "Jamaican Dollar"],
-  ["JOD", "Jordanian Dinar"], ["JPY", "Yen"], ["KES", "Kenyan Shilling"], ["KGS", "Som"],
-  ["KHR", "Riel"], ["KMF", "Comorian Franc"], ["KPW", "North Korean Won"], ["KRW", "Won"],
-  ["KWD", "Kuwaiti Dinar"], ["KYD", "Cayman Islands Dollar"], ["KZT", "Tenge"], ["LAK", "Lao Kip"],
-  ["LBP", "Lebanese Pound"], ["LKR", "Sri Lanka Rupee"], ["LRD", "Liberian Dollar"], ["LSL", "Loti"],
-  ["LYD", "Libyan Dinar"], ["MAD", "Moroccan Dirham"], ["MDL", "Moldovan Leu"], ["MGA", "Malagasy Ariary"],
-  ["MKD", "Denar"], ["MMK", "Kyat"], ["MNT", "Tugrik"], ["MOP", "Pataca"],
-  ["MRU", "Ouguiya"], ["MUR", "Mauritius Rupee"], ["MVR", "Rufiyaa"], ["MWK", "Malawi Kwacha"],
-  ["MXN", "Mexican Peso"], ["MXV", "Mexican Unidad de Inversion (UDI)"], ["MYR", "Malaysian Ringgit"], ["MZN", "Mozambique Metical"],
-  ["NAD", "Namibia Dollar"], ["NGN", "Naira"], ["NIO", "Cordoba Oro"], ["NOK", "Norwegian Krone"],
-  ["NPR", "Nepalese Rupee"], ["NZD", "New Zealand Dollar"], ["OMR", "Rial Omani"], ["PAB", "Balboa"],
-  ["PEN", "Sol"], ["PGK", "Kina"], ["PHP", "Philippine Piso"], ["PKR", "Pakistan Rupee"],
-  ["PLN", "Zloty"], ["PYG", "Guarani"], ["QAR", "Qatari Rial"], ["RON", "Romanian Leu"],
-  ["RSD", "Serbian Dinar"], ["RUB", "Russian Ruble"], ["RWF", "Rwanda Franc"], ["SAR", "Saudi Riyal"],
-  ["SBD", "Solomon Islands Dollar"], ["SCR", "Seychelles Rupee"], ["SDG", "Sudanese Pound"], ["SEK", "Swedish Krona"],
-  ["SGD", "Singapore Dollar"], ["SHP", "Saint Helena Pound"], ["SLE", "Sierra Leone"], ["SOS", "Somali Shilling"],
-  ["SRD", "Surinam Dollar"], ["SSP", "South Sudanese Pound"], ["STN", "Dobra"], ["SVC", "El Salvador Colon"],
-  ["SYP", "Syrian Pound"], ["SZL", "Lilangeni"], ["THB", "Baht"], ["TJS", "Somoni"],
-  ["TMT", "Turkmenistan New Manat"], ["TND", "Tunisian Dinar"], ["TOP", "Pa\u2019anga"], ["TRY", "Turkish Lira"],
-  ["TTD", "Trinidad and Tobago Dollar"], ["TWD", "New Taiwan Dollar"], ["TZS", "Tanzanian Shilling"], ["UAH", "Hryvnia"],
-  ["UGX", "Uganda Shilling"], ["USD", "US Dollar"], ["USN", "US Dollar (Next day)"], ["UYI", "Uruguay Peso en Unidades Indexadas"],
-  ["UYU", "Peso Uruguayo"], ["UYW", "Unidad Previsional"], ["UZS", "Uzbekistan Sum"], ["VED", "Bol\u00edvar Soberano, new valuation"],
-  ["VES", "Bol\u00edvar Soberano"], ["VND", "Dong"], ["VUV", "Vatu"], ["WST", "Tala"],
-  ["XAF", "CFA Franc BEAC"], ["XAG", "Silver"], ["XAU", "Gold"], ["XBA", "Bond Markets Unit European Composite Unit (EURCO)"],
-  ["XBB", "Bond Markets Unit European Monetary Unit (E.M.U.-6)"], ["XBC", "Bond Markets Unit European Unit of Account 9 (E.U.A.-9)"], ["XBD", "Bond Markets Unit European Unit of Account 17 (E.U.A.-17)"], ["XCD", "East Caribbean Dollar"],
-  ["XCG", "Caribbean guilder"], ["XDR", "SDR (Special Drawing Right)"], ["XOF", "CFA Franc BCEAO"], ["XPD", "Palladium"],
-  ["XPF", "CFP Franc"], ["XPT", "Platinum"], ["XSU", "Sucre"], ["XTS", "Codes specifically reserved for testing purposes"],
-  ["XUA", "ADB Unit of Account"], ["XXX", "The codes assigned for transactions where no currency is involved"], ["YER", "Yemeni Rial"], ["ZAR", "Rand"],
-  ["ZMW", "Zambian Kwacha"], ["ZWG", "Zimbabwe Gold"],
+  ["BOB", "Boliviano"], ["BRL", "Brazilian Real"], ["BSD", "Bahamian Dollar"], ["BTN", "Ngultrum"],
+  ["BWP", "Pula"], ["BYN", "Belarusian Ruble"], ["BZD", "Belize Dollar"], ["CAD", "Canadian Dollar"],
+  ["CDF", "Congolese Franc"], ["CHF", "Swiss Franc"], ["CLP", "Chilean Peso"], ["CNH", "Renminbi (offshore)"],
+  ["CNY", "Yuan Renminbi"], ["COP", "Colombian Peso"], ["CRC", "Costa Rican Colon"], ["CUP", "Cuban Peso"],
+  ["CVE", "Cabo Verde Escudo"], ["CZK", "Czech Koruna"], ["DJF", "Djibouti Franc"], ["DKK", "Danish Krone"],
+  ["DOP", "Dominican Peso"], ["DZD", "Algerian Dinar"], ["EGP", "Egyptian Pound"], ["ERN", "Nakfa"],
+  ["ETB", "Ethiopian Birr"], ["EUR", "Euro"], ["FJD", "Fiji Dollar"], ["FKP", "Falkland Islands Pound"],
+  ["GBP", "Pound Sterling"], ["GEL", "Lari"], ["GHS", "Ghana Cedi"], ["GIP", "Gibraltar Pound"],
+  ["GMD", "Dalasi"], ["GNF", "Guinean Franc"], ["GTQ", "Quetzal"], ["GYD", "Guyana Dollar"],
+  ["HKD", "Hong Kong Dollar"], ["HNL", "Lempira"], ["HTG", "Gourde"], ["HUF", "Forint"],
+  ["IDR", "Rupiah"], ["ILS", "New Israeli Sheqel"], ["INR", "Indian Rupee"], ["IQD", "Iraqi Dinar"],
+  ["IRR", "Iranian Rial"], ["ISK", "Iceland Krona"], ["JMD", "Jamaican Dollar"], ["JOD", "Jordanian Dinar"],
+  ["JPY", "Yen"], ["KES", "Kenyan Shilling"], ["KGS", "Som"], ["KHR", "Riel"],
+  ["KMF", "Comorian Franc"], ["KPW", "North Korean Won"], ["KRW", "Won"], ["KWD", "Kuwaiti Dinar"],
+  ["KYD", "Cayman Islands Dollar"], ["KZT", "Tenge"], ["LAK", "Lao Kip"], ["LBP", "Lebanese Pound"],
+  ["LKR", "Sri Lanka Rupee"], ["LRD", "Liberian Dollar"], ["LSL", "Loti"], ["LYD", "Libyan Dinar"],
+  ["MAD", "Moroccan Dirham"], ["MDL", "Moldovan Leu"], ["MGA", "Malagasy Ariary"], ["MKD", "Denar"],
+  ["MMK", "Kyat"], ["MNT", "Tugrik"], ["MOP", "Pataca"], ["MRU", "Ouguiya"],
+  ["MUR", "Mauritius Rupee"], ["MVR", "Rufiyaa"], ["MWK", "Malawi Kwacha"], ["MXN", "Mexican Peso"],
+  ["MYR", "Malaysian Ringgit"], ["MZN", "Mozambique Metical"], ["NAD", "Namibia Dollar"], ["NGN", "Naira"],
+  ["NIO", "Cordoba Oro"], ["NOK", "Norwegian Krone"], ["NPR", "Nepalese Rupee"], ["NZD", "New Zealand Dollar"],
+  ["OMR", "Rial Omani"], ["PAB", "Balboa"], ["PEN", "Sol"], ["PGK", "Kina"],
+  ["PHP", "Philippine Piso"], ["PKR", "Pakistan Rupee"], ["PLN", "Zloty"], ["PYG", "Guarani"],
+  ["QAR", "Qatari Rial"], ["RON", "Romanian Leu"], ["RSD", "Serbian Dinar"], ["RUB", "Russian Ruble"],
+  ["RWF", "Rwanda Franc"], ["SAR", "Saudi Riyal"], ["SBD", "Solomon Islands Dollar"], ["SCR", "Seychelles Rupee"],
+  ["SDG", "Sudanese Pound"], ["SEK", "Swedish Krona"], ["SGD", "Singapore Dollar"], ["SHP", "Saint Helena Pound"],
+  ["SLE", "Sierra Leone"], ["SOS", "Somali Shilling"], ["SRD", "Surinam Dollar"], ["SSP", "South Sudanese Pound"],
+  ["STN", "Dobra"], ["SVC", "El Salvador Colon"], ["SYP", "Syrian Pound"], ["SZL", "Lilangeni"],
+  ["THB", "Baht"], ["TJS", "Somoni"], ["TMT", "Turkmenistan New Manat"], ["TND", "Tunisian Dinar"],
+  ["TOP", "Pa\u2019anga"], ["TRY", "Turkish Lira"], ["TTD", "Trinidad and Tobago Dollar"], ["TWD", "New Taiwan Dollar"],
+  ["TZS", "Tanzanian Shilling"], ["UAH", "Hryvnia"], ["UGX", "Uganda Shilling"], ["USD", "US Dollar"],
+  ["UYU", "Peso Uruguayo"], ["UZS", "Uzbekistan Sum"], ["VED", "Bol\u00edvar Soberano, new valuation"], ["VES", "Bol\u00edvar Soberano"],
+  ["VND", "Dong"], ["VUV", "Vatu"], ["WST", "Tala"], ["XAF", "CFA Franc BEAC"],
+  ["XCD", "East Caribbean Dollar"], ["XCG", "Caribbean guilder"], ["XOF", "CFA Franc BCEAO"], ["XPF", "CFP Franc"],
+  ["YER", "Yemeni Rial"], ["ZAR", "Rand"], ["ZMW", "Zambian Kwacha"], ["ZWG", "Zimbabwe Gold"],
 ];
 
 function currencyPicker(selectedValue) {
   return el(
     "select",
     {},
-    PEPPOL_CURRENCIES.map(([code, name]) =>
+    PURCHASABLE_CURRENCIES.map(([code, name]) =>
       el("option", { value: code, text: `${code} — ${name}`, ...(code === selectedValue ? { selected: "selected" } : {}) })
     )
   );

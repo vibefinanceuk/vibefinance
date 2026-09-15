@@ -80,6 +80,7 @@ against the current system either.
 | **0141** — a domain nobody owned | *itself* | `vibefinance-ai.com` is bound. The record stands; the situation it describes is over. |
 | **0332** — teams remain customer-wide | 0333 | Named as the one thing still customer-wide when Roles got a real UI, and reported live the same session: *"There should never be a null-org team."* `unit_id` is `NOT NULL` on `org_teams` now — every team belongs to exactly one org, scoped the same way people already are. |
 | **0339** — a four-currency guess | 0340 | Written down at the time as *"a real, stated assumption, not a researched requirement"* — the operator's own next message was the researched requirement: the full, 178-code Peppol BIS Billing 3.0 / ISO 4217 currency list, fetched from Peppol's own published code list rather than retyped from memory. |
+| **0340** — the full 178-code list | 0342 | The full list itself was correct; showing all of it was not what was actually needed. Reported live, from that same list: *"some of the currencies... are strange... is there a way to filter out currencies which are not really currencies that companies purchase with?"* 22 precious-metal, bond-market, and ISO 4217 "funds" codes removed; 156 remain. |
 
 ---
 

@@ -993,7 +993,16 @@ describe("a person's own properties and limits — decision 0334, its own pop-ou
    * handful of the ones this project's own examples already use,
    * rather than writing all 178 out a second time in this test.
    */
-  it("offers the full Peppol BIS Billing 3.0 currency list for both approval and spend limits", async () => {
+  /**
+   * **Filtered, not just fetched — decision 0342.** Confirmed live:
+   * "some of the currencies... are strange — such as Bond Markets
+   * Unit European... is there a way to filter out currencies which
+   * are not really currencies that companies purchase with?" 156, not
+   * 178 — checked by count and a handful of the ones this project's
+   * own examples already use, rather than writing all 156 out a
+   * second time in this test.
+   */
+  it("offers the Peppol currency list filtered to what a company actually purchases with, for both approval and spend limits", async () => {
     await openRolesAs(["Admin.UserManagement"], baseBody());
     clickPropertiesAction("Alice");
 
@@ -1002,7 +1011,7 @@ describe("a person's own properties and limits — decision 0334, its own pop-ou
     for (const row of rows) {
       const currencySelect = row.querySelector<HTMLSelectElement>("select");
       const values = [...(currencySelect?.querySelectorAll("option") ?? [])].map((o) => (o as HTMLOptionElement).value);
-      expect(values).toHaveLength(178);
+      expect(values).toHaveLength(156);
       expect(values).toEqual([...values].sort());
       expect(values).toContain("EUR");
       expect(values).toContain("GBP");
@@ -1010,6 +1019,29 @@ describe("a person's own properties and limits — decision 0334, its own pop-ou
       const labels = [...(currencySelect?.querySelectorAll("option") ?? [])].map((o) => o.textContent);
       expect(labels).toContain("EUR — Euro");
     }
+  });
+
+  /**
+   * **The exact case reported live, and what stays despite the
+   * filter — decision 0342.** Precious metals, bond-markets units,
+   * and ISO 4217's own "funds" are gone; a supranational currency
+   * still actually spent — the CFA franc, here — is not one of them,
+   * and stays.
+   */
+  it("excludes precious metals, bond-markets units, and indexed funds, but keeps real supranational currencies", async () => {
+    await openRolesAs(["Admin.UserManagement"], baseBody());
+    clickPropertiesAction("Alice");
+
+    const currencySelect = document.querySelector<HTMLSelectElement>(".memberpickerrow select");
+    const values = [...(currencySelect?.querySelectorAll("option") ?? [])].map((o) => (o as HTMLOptionElement).value);
+    expect(values).not.toContain("XAU"); // gold
+    expect(values).not.toContain("XBA"); // Bond Markets Unit European Composite Unit — the exact example reported live
+    expect(values).not.toContain("XDR"); // IMF Special Drawing Right
+    expect(values).not.toContain("XTS"); // reserved for testing
+    expect(values).not.toContain("XXX"); // no currency involved
+    expect(values).not.toContain("CLF"); // Chile's own indexed unit, not its circulating peso
+    expect(values).toContain("XAF"); // CFA Franc BEAC — a real, circulating supranational currency
+    expect(values).toContain("XCD"); // East Caribbean Dollar — likewise
   });
 
   /**
@@ -1027,8 +1059,8 @@ describe("a person's own properties and limits — decision 0334, its own pop-ou
     // org, manager, cost centre, then approval-limit currency, then spend-limit currency
     const approvalValues = [...selects[3].querySelectorAll("option")].map((o) => (o as HTMLOptionElement).value);
     const spendValues = [...selects[4].querySelectorAll("option")].map((o) => (o as HTMLOptionElement).value);
-    expect(approvalValues).toHaveLength(178);
-    expect(spendValues).toHaveLength(178);
+    expect(approvalValues).toHaveLength(156);
+    expect(spendValues).toHaveLength(156);
     expect(approvalValues).toEqual(spendValues);
   });
 
