@@ -1022,6 +1022,15 @@
     align-self: end;
   }
   .editgrid > input { width: 100%; }
+  /*
+    **Selects, not just inputs — decision 0341.** `orgPicker`,
+    `managerPicker`, `costCentrePicker`, and now the currency dropdown
+    all sit in this same grid; none had an explicit width rule, left
+    to whatever a browser's own intrinsic sizing for a `<select>`
+    happens to be — inconsistent at best, and visibly wrong once an
+    option list runs to 178 entries of varying length.
+  */
+  .editgrid > select { width: 100%; }
 
   @media (max-width: 520px) {
     .editgrid { grid-template-columns: 1fr; }
@@ -1119,7 +1128,20 @@
     gap: 8px;
     align-items: center;
   }
-  .memberpickerrow select { flex: 1; }
+  /*
+    **The currency field, wide enough to read what is selected —
+    decision 0341.** Reported live, from a real screenshot: with an
+    amount field also in this row (the approval/spend limit case,
+    decision 0334, not this row's own original team-member-picker
+    shape), the unstyled amount input took its own natural width first
+    and left the currency select — `flex: 1`, whose own `flex-basis`
+    starts at nothing — squeezed to a sliver. A `min-width` here holds
+    the line regardless of what else shares the row; the team-member
+    picker, with no amount field to compete with, still grows to fill
+    the row exactly as before, `min-width` only ever raising a floor.
+  */
+  .memberpickerrow select { flex: 1; min-width: 12em; }
+  .memberpickerrow input[type="number"] { flex: 0 0 6em; }
 
   /*
     The dashboard — decision 0242.
