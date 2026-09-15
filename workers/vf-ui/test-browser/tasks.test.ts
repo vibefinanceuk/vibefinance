@@ -35,6 +35,9 @@ const STRINGS = {
     "nav.documents": "Documents",
     "nav.roles": "Roles",
     "nav.access": "Access",
+    "nav.group.accountspayable": "Accounts payable",
+    "nav.group.suppliermanagement": "Supplier management",
+    "nav.group.configuration": "Configuration",
     "nav.vibeap": "Vibe AP",
     "nav.collapse": "Collapse the menu",
     "nav.expand": "Expand the menu",
@@ -328,21 +331,49 @@ describe("the flat nav, permission-filtered (decisions 0274 and 0276)", () => {
     return document.querySelector(".frame") as HTMLElement;
   }
 
-  it("lists every screen flat, Dashboard first, when every permission is held", async () => {
+  it("lists every screen grouped under real headings, when every permission is held — decision 0346", async () => {
     /**
-     * **The group is gone, decision 0276** — reported live: "I've
-     * decided that the sub menu, entitled 'Vibe AP' looks bad... I'd
-     * like to revert that change, so that no sub menu exists and the
-     * menu items beneath it are always displayed." No `.navgroup`,
-     * `.navgrouphead`, or `.navgroupchildren` exists anywhere now.
+     * **Headings, not a folder — decision 0346.** Reported live: "on
+     * the side menu... arrange the links... under headings." Distinct
+     * from decision 0274's own "Vibe AP" folder, which decision 0276
+     * reverted at the same operator's own request — nothing here
+     * expands, collapses, or nests; every item is exactly as always
+     * displayed as it was before, only grouped under a static label.
      */
     await openList([APPROVAL_TASK]);
 
-    expect(document.querySelector(".navgroup")).toBeNull();
-    expect(document.querySelector(".navgrouphead")).toBeNull();
+    const headings = [...document.querySelectorAll(".navgroup")].map((h) => h.textContent);
+    expect(headings).toEqual(["Accounts payable", "Supplier management", "Configuration"]);
 
     const labels = [...document.querySelectorAll(".navitem")].map((a) => a.textContent);
-    expect(labels).toEqual(["Dashboard", "Tasks", "Sources", "Suppliers", "Rules", "Documents", "Access"]);
+    expect(labels).toEqual(["Dashboard", "Tasks", "Documents", "Suppliers", "Access", "Sources", "Rules"]);
+  });
+
+  it("never shows a heading with nothing unlocked beneath it — decision 0346", async () => {
+    /**
+     * **The exact edge case grouping creates** — "Supplier
+     * management" holds exactly one screen (`AP.Supplier`). Without
+     * this, anyone lacking it would see the heading with an empty gap
+     * where its only item used to be.
+     */
+    stubFetch({
+      "/api/ui-strings": STRINGS,
+      "/api/whoami": { id: "u-dan", name: "Dan", permissions: ALL_NAV_PERMISSIONS.filter((p) => p !== "AP.Supplier") },
+      "/api/tasks": { tasks: [APPROVAL_TASK], counts: {} },
+      "/api/sources": { sources: [] },
+      "/api/processes": { processes: [] },
+      "/api/rules": { rules: [] },
+      "/api/rules/stages": { stages: [] },
+      "/api/dashboard": { cards: [], usingDefault: true },
+    });
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { start } = await import("/tasks.js");
+    await start();
+
+    const headings = [...document.querySelectorAll(".navgroup")].map((h) => h.textContent);
+    expect(headings).not.toContain("Supplier management");
+    expect([...document.querySelectorAll(".navitem")].map((a) => a.textContent)).not.toContain("Suppliers");
   });
 
   it("gives every real nav item an icon", async () => {
@@ -555,7 +586,7 @@ describe("the flat nav, permission-filtered (decisions 0274 and 0276)", () => {
 
     const labels = [...document.querySelectorAll(".navitem")].map((a) => a.textContent);
     expect(labels).not.toContain("Rules");
-    expect(labels).toEqual(["Dashboard", "Tasks", "Sources", "Suppliers", "Documents", "Access"]);
+    expect(labels).toEqual(["Dashboard", "Tasks", "Documents", "Suppliers", "Access", "Sources"]);
   });
 
   it("shows nothing but the logo for a person with none of the six permissions", async () => {
@@ -616,7 +647,7 @@ describe("the flat nav, permission-filtered (decisions 0274 and 0276)", () => {
     const { start } = await import("/tasks.js");
     await start();
     const labels = [...document.querySelectorAll(".navitem")].map((a) => a.textContent);
-    expect(labels, "permission Admin.Configure").toEqual(["Sources", "Access"]);
+    expect(labels, "permission Admin.Configure").toEqual(["Access", "Sources"]);
   });
 
   it("unlocks Access for a delegated administrator too, decision 0321", async () => {

@@ -353,6 +353,28 @@
   .navlabel { flex: 1 1 auto; min-width: 0; font-size: var(--text-lg); line-height: 1; }
 
   /*
+    **A static heading, not a folder — decision 0346.** Reported live:
+    "arrange the links... under headings." Decision 0274 tried a
+    single, collapsible "Vibe AP" folder wrapping most of the nav, and
+    decision 0276 undid it at the same operator's own request: "no
+    sub menu exists and the menu items beneath it are always
+    displayed." This is that — several static labels, nothing to
+    click, nothing to expand or collapse, every item beneath a
+    heading shown exactly the way a flat `.navitem` always has been.
+  */
+  .nav .navgroup {
+    font-size: var(--text-sm);
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-muted);
+    padding: 0 12px;
+    margin: 16px 0 4px;
+  }
+  .nav .navgroup:first-of-type { margin-top: 0; }
+  .frame.collapsed .navgroup { display: none; }
+
+  /*
     The whole nav folded to icons — decision 0274, the operator's own
     request. `.frame.collapsed` narrows the grid column itself, not
     just the nav's own width, since a narrower `.nav` inside an

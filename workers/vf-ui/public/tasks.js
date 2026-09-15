@@ -565,14 +565,43 @@ export function frame(main) {
    * fold-to-icons toggle it shipped alongside all stayed — only the
    * grouping wrapper is gone.
    */
-  const SCREENS = [
-    ["dashboard", "dashboard"],
-    ["tasks", "tasks"],
-    ["sources", "sources"],
-    ["suppliers", "suppliers"],
-    ["rules", "rules"],
-    ["documents", "documents"],
-    ["access", "users"],
+  /**
+   * **Grouped, not a flat list — decision 0346.** Reported live: "on
+   * the side menu... arrange the links... under headings." Decision
+   * 0274 tried something in this direction once and decision 0276
+   * reverted it at the same operator's own explicit request — but
+   * that was a single, master "Vibe AP" folder wrapping five of the
+   * app's six screens, with an expand/collapse toggle and indented
+   * children, which is not what this is. This is what 0276 itself
+   * asked to keep: several static headings, every item beneath them
+   * always displayed, nothing to expand or collapse.
+   *
+   * A heading with nothing unlocked beneath it is never shown —
+   * "Supplier management" holds exactly one screen (`AP.Supplier`),
+   * so anyone without it would otherwise see an orphaned heading over
+   * an empty gap.
+   */
+  const NAV_GROUPS = [
+    {
+      heading: "accountspayable",
+      screens: [
+        ["dashboard", "dashboard"],
+        ["tasks", "tasks"],
+        ["documents", "documents"],
+      ],
+    },
+    {
+      heading: "suppliermanagement",
+      screens: [["suppliers", "suppliers"]],
+    },
+    {
+      heading: "configuration",
+      screens: [
+        ["access", "users"],
+        ["sources", "sources"],
+        ["rules", "rules"],
+      ],
+    },
   ];
   /**
    * **Held, whether one permission or a choice of several** — most
@@ -586,9 +615,14 @@ export function frame(main) {
     return names.some((p) => me?.permissions?.includes(p));
   }
 
-  const navItems = SCREENS.filter(([screen]) => unlocked(screen)).map(
-    ([screen, iconName]) => navLink(screen, iconName)
-  );
+  const navItems = NAV_GROUPS.flatMap(({ heading, screens }) => {
+    const unlockedScreens = screens.filter(([screen]) => unlocked(screen));
+    if (unlockedScreens.length === 0) return [];
+    return [
+      el("div", { class: "navgroup", text: t(`nav.group.${heading}`) }),
+      ...unlockedScreens.map(([screen, iconName]) => navLink(screen, iconName)),
+    ];
+  });
 
   const navEl = el("nav", { class: navCollapsed() ? "nav collapsed" : "nav" }, [
     /**
