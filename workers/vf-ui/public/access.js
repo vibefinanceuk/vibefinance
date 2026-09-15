@@ -29,6 +29,8 @@ let authorityLimits = [];
 let knownPermissions = [];
 let teams = [];
 let activeTab = "units";
+let costCentres = [];
+let spendLimits = [];
 
 async function load() {
   try {
@@ -45,6 +47,8 @@ async function load() {
     assignments = body.assignments ?? [];
     authorityLimits = body.authorityLimits ?? [];
     knownPermissions = body.knownPermissions ?? [];
+    costCentres = body.costCentres ?? [];
+    spendLimits = body.spendLimits ?? [];
 
     /**
      * **A separate fetch, deliberately — decision 0332.** `/org/teams`
@@ -263,7 +267,7 @@ function roleRow(role) {
  * a delegated administrator sees only the orgs they themselves
  * administer, since `units` here is already `/org/overview`'s own
  * pre-scoped list (decision 0321), the same reasoning
- * `openAssignmentsForm`'s own org picker already relies on.
+ * `openPersonForm`'s own org picker already relies on.
  *
  * **The returned API key is shown exactly once.** Creating a person
  * generates a real credential that cannot be recovered after this —
@@ -283,6 +287,26 @@ function openNewPersonForm() {
   ]);
   const currencyInput = el("input", { type: "text", placeholder: "EUR" });
   const amountInput = el("input", { type: "number", min: "0" });
+  /**
+   * **The new properties, at creation time — decision 0334.** Manager
+   * and cost centre are pickers over real, existing people and cost
+   * centres — never free text a name could be mistyped into. Both
+   * carry a "none" option, since neither is required.
+   */
+  const managerPicker = el("select", {}, [
+    el("option", { value: "", text: t("roles.none") }),
+    ...users.map((u) => el("option", { value: u.id, text: u.name })),
+  ]);
+  const costCentrePicker = el("select", {}, [
+    el("option", { value: "", text: t("roles.none") }),
+    ...costCentres.map((c) => el("option", { value: c.id, text: c.name })),
+  ]);
+  const addressLineInput = el("input", { type: "text" });
+  const cityInput = el("input", { type: "text" });
+  const postalCodeInput = el("input", { type: "text" });
+  const countryInput = el("input", { type: "text" });
+  const spendCurrencyInput = el("input", { type: "text", placeholder: "EUR" });
+  const spendAmountInput = el("input", { type: "number", min: "0" });
 
   const form = el("div", { class: "editgrid" }, [
     el("label", { text: t("roles.personname") }),
@@ -291,10 +315,26 @@ function openNewPersonForm() {
     emailInput,
     el("label", { text: t("roles.personorg") }),
     orgPicker,
+    el("label", { text: t("roles.manager") }),
+    managerPicker,
+    el("label", { text: t("roles.costcentre") }),
+    costCentrePicker,
+    el("label", { text: t("roles.addressline") }),
+    addressLineInput,
+    el("label", { text: t("roles.city") }),
+    cityInput,
+    el("label", { text: t("roles.postalcode") }),
+    postalCodeInput,
+    el("label", { text: t("roles.country") }),
+    countryInput,
     el("label", { text: t("roles.limitcurrency") }),
     currencyInput,
     el("label", { text: t("roles.limitamount") }),
     amountInput,
+    el("label", { text: t("roles.spendlimitcurrency") }),
+    spendCurrencyInput,
+    el("label", { text: t("roles.spendlimitamount") }),
+    spendAmountInput,
   ]);
 
   const close = () => backdrop.remove();
@@ -309,7 +349,18 @@ function openNewPersonForm() {
         const response = await fetch("/api/org/users", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ id: crypto.randomUUID(), name, email, unitId }),
+          body: JSON.stringify({
+            id: crypto.randomUUID(),
+            name,
+            email,
+            unitId,
+            managerId: managerPicker.value || null,
+            costCentreId: costCentrePicker.value || null,
+            addressLine: addressLineInput.value.trim() || null,
+            city: cityInput.value.trim() || null,
+            postalCode: postalCodeInput.value.trim() || null,
+            country: countryInput.value.trim() || null,
+          }),
         });
         if (!response.ok) {
           problem.textContent = (await response.json()).error ?? t("roles.createpersonfailed");
@@ -324,6 +375,16 @@ function openNewPersonForm() {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ currency, maxAmount: Number(amount) }),
+          });
+        }
+
+        const spendAmount = spendAmountInput.value.trim();
+        const spendCurrency = spendCurrencyInput.value.trim();
+        if (spendAmount && spendCurrency) {
+          await fetch(`/api/org/users/${encodeURIComponent(created.id)}/spend-limit`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ currency: spendCurrency, maxAmount: Number(spendAmount) }),
           });
         }
 
@@ -583,7 +644,7 @@ function personRow(user) {
     el("td", { class: "sm", text: assignmentText }),
     el("td", { class: "sm", text: limitText }),
   ]);
-  if (canAssign) row.onclick = () => openAssignmentsForm(user);
+  if (canAssign) row.onclick = () => openPersonForm(user);
   return row;
 }
 
@@ -601,9 +662,171 @@ function personRow(user) {
  * "everywhere" — speak through the real error, is simpler and no less
  * safe than re-deriving the same boundary a second time here.
  */
-function openAssignmentsForm(user) {
+/**
+ * **Properties, limits, and role assignment — one popout per person,
+ * decision 0334.** Extends what was `openAssignmentsForm` (decision
+ * 0327) rather than adding a second popout: a person looking at
+ * somebody's own roles is exactly the moment editing their manager,
+ * cost centre, or spend limit also makes sense, the same reasoning
+ * decision 0327 already gave combining assign and revoke. Renamed to
+ * match — this is no longer only about assignments.
+ *
+ * Properties save together, under their own "Save" — the same
+ * "replace, not merge" shape the backend's own `handleUpdateUser`
+ * takes. Approval Limit and Spend Limit each keep their own,
+ * independent "Set" action, matching how role assignment already
+ * works here: setting one is a complete action in itself, not a
+ * field waiting on some other button. Budget Holder is shown, never
+ * offered as a checkbox — derived from owning a cost centre
+ * elsewhere, reported live as "one source of truth" rather than a
+ * second flag that could disagree with it.
+ */
+function openPersonForm(user) {
   const problem = el("div", { class: "warn" });
   const own = assignments.filter((a) => a.userId === user.id);
+  const canAssign = hasMyPermission("Admin.UserManagement");
+
+  const nameInput = el("input", { type: "text", value: user.name });
+  const orgPicker = el("select", {}, [
+    el("option", { value: "", text: t("roles.everywhere") }),
+    ...units.map((u) => el("option", { value: u.id, text: u.name, ...(u.id === user.unitId ? { selected: "selected" } : {}) })),
+  ]);
+  const managerPicker = el("select", {}, [
+    el("option", { value: "", text: t("roles.none") }),
+    ...users
+      .filter((u) => u.id !== user.id)
+      .map((u) => el("option", { value: u.id, text: u.name, ...(u.id === user.managerId ? { selected: "selected" } : {}) })),
+  ]);
+  const costCentrePicker = el("select", {}, [
+    el("option", { value: "", text: t("roles.none") }),
+    ...costCentres.map((c) => el("option", { value: c.id, text: c.name, ...(c.id === user.costCentreId ? { selected: "selected" } : {}) })),
+  ]);
+  const addressLineInput = el("input", { type: "text", value: user.addressLine ?? "" });
+  const cityInput = el("input", { type: "text", value: user.city ?? "" });
+  const postalCodeInput = el("input", { type: "text", value: user.postalCode ?? "" });
+  const countryInput = el("input", { type: "text", value: user.country ?? "" });
+
+  const propertiesForm = el("div", { class: "editgrid" }, [
+    el("label", { text: t("roles.personname") }),
+    nameInput,
+    el("label", { text: t("roles.personorg") }),
+    orgPicker,
+    el("label", { text: t("roles.manager") }),
+    managerPicker,
+    el("label", { text: t("roles.costcentre") }),
+    costCentrePicker,
+    el("label", { text: t("roles.addressline") }),
+    addressLineInput,
+    el("label", { text: t("roles.city") }),
+    cityInput,
+    el("label", { text: t("roles.postalcode") }),
+    postalCodeInput,
+    el("label", { text: t("roles.country") }),
+    countryInput,
+    el("label", { text: t("roles.budgetholder") }),
+    el("span", { class: "sm muted", text: user.isBudgetHolder ? t("roles.yes") : t("roles.no") }),
+  ]);
+
+  const close = () => backdrop.remove();
+  const save = actionLink("save", {
+    primary: true,
+    onclick: async () => {
+      problem.textContent = "";
+      try {
+        const response = await fetch(`/api/org/users/${encodeURIComponent(user.id)}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: nameInput.value.trim(),
+            unitId: orgPicker.value || null,
+            managerId: managerPicker.value || null,
+            costCentreId: costCentrePicker.value || null,
+            addressLine: addressLineInput.value.trim() || null,
+            city: cityInput.value.trim() || null,
+            postalCode: postalCodeInput.value.trim() || null,
+            country: countryInput.value.trim() || null,
+          }),
+        });
+        if (!response.ok) {
+          problem.textContent = (await response.json()).error ?? t("roles.propertiessavefailed");
+          return;
+        }
+        backdrop.remove();
+        await load();
+        render();
+      } catch {
+        problem.textContent = t("roles.propertiessavefailed");
+      }
+    },
+  });
+
+  const limits = authorityLimits.filter((l) => l.userId === user.id);
+  const limitText =
+    limits.length > 0 ? limits.map((l) => `${l.currency} ${l.maxAmount}`).join("; ") : t("roles.nolimits");
+  const approvalCurrencyInput = el("input", { type: "text", placeholder: "EUR" });
+  const approvalAmountInput = el("input", { type: "number", min: "0" });
+  const setApprovalLimit = el("button", {
+    text: t("roles.set"),
+    onclick: async () => {
+      problem.textContent = "";
+      const currency = approvalCurrencyInput.value.trim();
+      const maxAmount = approvalAmountInput.value.trim();
+      if (!currency || !maxAmount) return;
+      try {
+        const response = await fetch(`/api/org/users/${encodeURIComponent(user.id)}/authority-limits`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ currency, maxAmount: Number(maxAmount) }),
+        });
+        if (!response.ok) {
+          problem.textContent = (await response.json()).error ?? t("roles.limitsavefailed");
+          return;
+        }
+        backdrop.remove();
+        await load();
+        render();
+      } catch {
+        problem.textContent = t("roles.limitsavefailed");
+      }
+    },
+  });
+
+  const spend = spendLimits.filter((l) => l.userId === user.id);
+  const spendText = spend.length > 0 ? spend.map((l) => `${l.currency} ${l.maxAmount}`).join("; ") : t("roles.nolimits");
+  const spendCurrencyInput = el("input", { type: "text", placeholder: "EUR" });
+  const spendAmountInput = el("input", { type: "number", min: "0" });
+  const setSpendLimit = el("button", {
+    text: t("roles.set"),
+    onclick: async () => {
+      problem.textContent = "";
+      const currency = spendCurrencyInput.value.trim();
+      const maxAmount = spendAmountInput.value.trim();
+      if (!currency || !maxAmount) return;
+      try {
+        const response = await fetch(`/api/org/users/${encodeURIComponent(user.id)}/spend-limit`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ currency, maxAmount: Number(maxAmount) }),
+        });
+        if (!response.ok) {
+          problem.textContent = (await response.json()).error ?? t("roles.limitsavefailed");
+          return;
+        }
+        backdrop.remove();
+        await load();
+        render();
+      } catch {
+        problem.textContent = t("roles.limitsavefailed");
+      }
+    },
+  });
+
+  const limitsSection = el("div", {}, [
+    el("p", { class: "muted sm", text: `${t("roles.limits")}: ${limitText}` }),
+    el("div", { class: "memberpickerrow" }, [approvalCurrencyInput, approvalAmountInput, setApprovalLimit]),
+    el("p", { class: "muted sm", text: `${t("roles.spendlimit")}: ${spendText}` }),
+    el("div", { class: "memberpickerrow" }, [spendCurrencyInput, spendAmountInput, setSpendLimit]),
+  ]);
 
   const currentList = el(
     "div",
@@ -639,7 +862,7 @@ function openAssignmentsForm(user) {
   );
 
   const rolePicker = el("select", {}, roles.map((r) => el("option", { value: r.id, text: r.name })));
-  const orgPicker = el("select", {}, [
+  const assignOrgPicker = el("select", {}, [
     el("option", { value: "", text: t("roles.everywhere") }),
     ...units.map((u) => el("option", { value: u.id, text: u.name })),
   ]);
@@ -648,19 +871,17 @@ function openAssignmentsForm(user) {
     el("label", { text: t("roles.role") }),
     rolePicker,
     el("label", { text: t("roles.org") }),
-    orgPicker,
+    assignOrgPicker,
   ]);
 
-  const close = () => backdrop.remove();
   const assign = actionLink("assign", {
-    primary: true,
     onclick: async () => {
       problem.textContent = "";
       try {
         const response = await fetch(`/api/org/users/${encodeURIComponent(user.id)}/roles`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ roleId: rolePicker.value, unitId: orgPicker.value || null }),
+          body: JSON.stringify({ roleId: rolePicker.value, unitId: assignOrgPicker.value || null }),
         });
         if (!response.ok) {
           problem.textContent = (await response.json()).error ?? t("roles.assignfailed");
@@ -674,15 +895,22 @@ function openAssignmentsForm(user) {
       }
     },
   });
-  const stateButtons = el("div", { class: "statebuttons" }, [assign, actionLink("close", { onclick: close })]);
+
+  const stateButtons = el(
+    "div",
+    { class: "statebuttons" },
+    canAssign ? [save, actionLink("close", { onclick: close })] : [actionLink("close", { onclick: close })]
+  );
 
   const backdrop = el("div", { class: "backdrop" }, [
     el("div", { class: "popout" }, [
       el("div", { class: "cardhead" }, [el("h3", { text: user.name }), stateButtons]),
-      el("p", { class: "muted sm", text: t("roles.currentassignments") }),
+      propertiesForm,
+      limitsSection,
+      el("p", { class: "muted sm", text: t("roles.assignments") }),
       currentList,
-      el("p", { class: "muted sm", text: t("roles.newassignment") }),
       newAssignmentForm,
+      assign,
       problem,
     ]),
   ]);

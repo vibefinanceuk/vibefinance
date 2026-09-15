@@ -126,6 +126,15 @@ const PROXIED_TO_INSTANCE: RegExp[] = [
    */
   /^\/org\/users\/[^/]+\/authority-limits$/,
   /**
+   * **User properties — decision 0334.** `PUT /org/users/:id`
+   * (editing an existing person) and `POST
+   * /org/users/:id/spend-limit` are both new alongside the routes
+   * that use them — added here at build time rather than found the
+   * way seven earlier instances of this exact gap already were.
+   */
+  /^\/org\/users\/[^/]+$/,
+  /^\/org\/users\/[^/]+\/spend-limit$/,
+  /**
    * **Teams, gated for the first time — decision 0332.** Both
    * existing routes (`/org/teams`, `/org/teams/:id/members`) had
    * existed since decision 0016, unauthenticated and never on this

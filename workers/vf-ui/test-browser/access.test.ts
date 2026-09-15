@@ -35,6 +35,22 @@ const STRINGS = {
     "roles.nopeople": "No people configured yet.",
     "roles.assignments": "Roles held",
     "roles.limits": "Approval limits",
+    "roles.none": "None",
+    "roles.manager": "Manager",
+    "roles.costcentre": "Cost centre",
+    "roles.addressline": "Address",
+    "roles.city": "City",
+    "roles.postalcode": "Postal code",
+    "roles.country": "Country",
+    "roles.budgetholder": "Budget holder",
+    "roles.yes": "Yes",
+    "roles.no": "No",
+    "roles.spendlimitcurrency": "Spend limit currency",
+    "roles.spendlimitamount": "Spend limit amount",
+    "roles.spendlimit": "Spend limit",
+    "roles.set": "Set",
+    "roles.propertiessavefailed": "Could not save. Please try again.",
+    "roles.limitsavefailed": "Could not save the limit. Please try again.",
     "roles.noassignments": "Holds no role.",
     "roles.nolimits": "No limit set.",
     "roles.everywhere": "everywhere",
@@ -607,8 +623,8 @@ describe("assigning and revoking a role for one person — decision 0327", () =>
     row?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
 
     const selects = document.querySelectorAll("select");
-    const roleOptions = [...selects[0].querySelectorAll("option")].map((o) => o.textContent);
-    const orgOptions = [...selects[1].querySelectorAll("option")].map((o) => o.textContent);
+    const roleOptions = [...selects[3].querySelectorAll("option")].map((o) => o.textContent);
+    const orgOptions = [...selects[4].querySelectorAll("option")].map((o) => o.textContent);
     expect(roleOptions).toEqual(["AP Manager", "AP Validator"]);
     expect(orgOptions).toEqual(["everywhere", "Acme France"]);
   });
@@ -620,7 +636,9 @@ describe("assigning and revoking a role for one person — decision 0327", () =>
     const row = [...document.querySelectorAll("tr")].find((r) => r.textContent?.includes("Alice"));
     row?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
 
-    const [roleSelect, orgSelect] = document.querySelectorAll<HTMLSelectElement>("select");
+    const selects = document.querySelectorAll<HTMLSelectElement>("select");
+    const roleSelect = selects[3];
+    const orgSelect = selects[4];
     roleSelect.value = "r2";
     orgSelect.value = "acme-fr";
 
@@ -764,6 +782,110 @@ describe("assigning and revoking a role for one person — decision 0327", () =>
     expect(document.querySelector(".backdrop")).not.toBeNull();
     expect(document.body.textContent).toContain("you do not administer acme-fr");
   });
+
+  /**
+   * **Properties, saved together — decision 0334.** The same
+   * "replace, not merge" shape `handleUpdateUser` itself takes.
+   */
+  it("saves name, manager, cost centre, and address together, via PUT", async () => {
+    const BOSS = { id: "boss", email: "boss@acme.com", name: "Boss", unitId: null, status: "active" };
+    await openRolesAs(
+      ["Admin.UserManagement"],
+      { ...EMPTY, users: [ALICE, BOSS], roles: ROLES, units: [ONE_UNIT], costCentres: [{ id: "cc1", name: "Engineering" }] },
+      { "PUT /api/org/users/usr1": { ok: true, json: async () => ({}) } }
+    );
+    const row = [...document.querySelectorAll("tr")].find((r) => r.textContent?.includes("Alice"));
+    row?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    const inputs = document.querySelectorAll<HTMLInputElement>(".editgrid input");
+    const selects = document.querySelectorAll<HTMLSelectElement>("select");
+    inputs[0].value = "Alice Smith";
+    selects[1].value = "boss"; // manager picker
+    selects[2].value = "cc1"; // cost centre picker
+    inputs[1].value = "1 Main St";
+    inputs[2].value = "London";
+
+    const submit = [...document.querySelectorAll(".cardhead button")].find((b) => b.textContent?.includes("Save"));
+    await submit?.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    const calls = (fetch as unknown as { mock: { calls: unknown[][] } }).mock.calls;
+    const putCall = calls.find(([url, init]) => url === "/api/org/users/usr1" && (init as RequestInit)?.method === "PUT");
+    const body = JSON.parse((putCall?.[1] as RequestInit).body as string);
+    expect(body).toEqual({
+      name: "Alice Smith",
+      unitId: null,
+      managerId: "boss",
+      costCentreId: "cc1",
+      addressLine: "1 Main St",
+      city: "London",
+      postalCode: null,
+      country: null,
+    });
+  });
+
+  it("the manager picker never offers the person as their own manager", async () => {
+    const BOB = { id: "bob", email: "bob@acme.com", name: "Bob", unitId: null, status: "active" };
+    await openRolesAs(["Admin.UserManagement"], { ...EMPTY, users: [ALICE, BOB], roles: ROLES, units: [ONE_UNIT] });
+    const row = [...document.querySelectorAll("tr")].find((r) => r.textContent?.includes("Alice"));
+    row?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    const managerSelect = document.querySelectorAll<HTMLSelectElement>("select")[1];
+    const names = [...managerSelect.querySelectorAll("option")].map((o) => o.textContent);
+    expect(names).not.toContain("Alice");
+    expect(names).toContain("Bob");
+  });
+
+  it("pre-selects an existing person's own manager and cost centre", async () => {
+    const BOSS = { id: "boss", email: "boss@acme.com", name: "Boss", unitId: null, status: "active" };
+    const ALICE_WITH_PROPS = { ...ALICE, managerId: "boss", costCentreId: "cc1" };
+    await openRolesAs(["Admin.UserManagement"], {
+      ...EMPTY,
+      users: [ALICE_WITH_PROPS, BOSS],
+      roles: ROLES,
+      units: [ONE_UNIT],
+      costCentres: [{ id: "cc1", name: "Engineering" }],
+    });
+    const row = [...document.querySelectorAll("tr")].find((r) => r.textContent?.includes("Alice"));
+    row?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    const selects = document.querySelectorAll<HTMLSelectElement>("select");
+    expect(selects[1].value).toBe("boss");
+    expect(selects[2].value).toBe("cc1");
+  });
+
+  it("shows Budget Holder as Yes or No, never editable", async () => {
+    const HOLDER = { ...ALICE, isBudgetHolder: true };
+    await openRolesAs(["Admin.UserManagement"], { ...EMPTY, users: [HOLDER], roles: ROLES, units: [ONE_UNIT] });
+    const row = [...document.querySelectorAll("tr")].find((r) => r.textContent?.includes("Alice"));
+    row?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    expect(document.body.textContent).toContain("Yes");
+    expect(document.querySelectorAll('input[type="checkbox"]')).toHaveLength(0);
+  });
+
+  it("sets a spend limit, independent of any approval limit action", async () => {
+    await openRolesAs(["Admin.UserManagement"], baseBody(), {
+      "POST /api/org/users/usr1/spend-limit": { ok: true, json: async () => ({}) },
+    });
+    const row = [...document.querySelectorAll("tr")].find((r) => r.textContent?.includes("Alice"));
+    row?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    const rows = [...document.querySelectorAll<HTMLDivElement>(".memberpickerrow")];
+    expect(rows).toHaveLength(2); // approval limit, then spend limit
+    const spendRow = rows[1];
+    const spendInputs = spendRow.querySelectorAll<HTMLInputElement>("input");
+    spendInputs[0].value = "GBP";
+    spendInputs[1].value = "500";
+    const setButton = spendRow.querySelector<HTMLButtonElement>("button");
+    await setButton?.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    const calls = (fetch as unknown as { mock: { calls: unknown[][] } }).mock.calls;
+    const spendCall = calls.find(([url]) => url === "/api/org/users/usr1/spend-limit");
+    const body = JSON.parse((spendCall?.[1] as RequestInit).body as string);
+    expect(body).toEqual({ currency: "GBP", maxAmount: 500 });
+  });
 });
 
 describe("creating a person — decision 0328", () => {
@@ -837,8 +959,8 @@ describe("creating a person — decision 0328", () => {
     const inputs = document.querySelectorAll<HTMLInputElement>(".editgrid input");
     inputs[0].value = "Alice";
     inputs[1].value = "alice@acme.com";
-    inputs[2].value = "EUR";
-    inputs[3].value = "5000";
+    inputs[6].value = "EUR";
+    inputs[7].value = "5000";
 
     const submit = [...document.querySelectorAll("button")].find((b) => b.textContent?.includes("Create"));
     await submit?.click();
@@ -954,7 +1076,7 @@ describe("popout action row — decision 0329, corrected", () => {
     expect(buttons.some((b) => b.textContent?.includes("Create"))).toBe(true);
   });
 
-  it("the assign popout's own Assign and Close sit together in the header, both with an icon", async () => {
+  it("the person popout's own Save and Close sit together in the header, both with an icon — decision 0334", async () => {
     await openRolesAs(["Admin.UserManagement"], {
       ...EMPTY,
       users: [ALICE],
@@ -967,7 +1089,7 @@ describe("popout action row — decision 0329, corrected", () => {
     const stateButtons = document.querySelector(".popout .cardhead .statebuttons");
     const buttons = [...(stateButtons?.querySelectorAll("button") ?? [])];
     expect(buttons).toHaveLength(2);
-    expect(buttons.some((b) => b.textContent?.includes("Assign"))).toBe(true);
+    expect(buttons.some((b) => b.textContent?.includes("Save"))).toBe(true);
     expect(buttons.some((b) => b.textContent?.includes("Close"))).toBe(true);
     expect(buttons.every((b) => b.querySelector("svg"))).toBe(true);
   });

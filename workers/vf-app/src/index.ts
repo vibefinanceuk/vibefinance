@@ -28,7 +28,9 @@ import {
   handleRevokeRole,
   handleCreateUnit,
   handleCreateUser,
+  handleUpdateUser,
   handleSetAuthorityLimit,
+  handleSetSpendLimit,
   handleSetProfile,
   handleListUnits,
   handleGetOrgOverview,
@@ -1499,6 +1501,53 @@ export default {
         authorityLimitMatch[1],
         (body ?? {}) as Record<string, unknown>
       );
+      return json(result.body, result.status);
+    }
+
+    const spendLimitMatch = pathname.match(/^\/org\/users\/([^/]+)\/spend-limit$/);
+    if (spendLimitMatch && request.method === "POST") {
+      const { db } = resolveTenant(request, env);
+      // Same simple form as the authority-limit route above — a
+      // permission check, not yet delegation-scoped.
+      const auth = await requirePermission(db, request, "Admin.UserManagement", sessionContext(env));
+      if (!auth.authorized) {
+        return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
+      }
+      let body: unknown;
+      try {
+        body = await request.json();
+      } catch {
+        return json({ error: t("invalidJsonBody", resolveLocale(env.LOCALE)) }, 400);
+      }
+      const result = await handleSetSpendLimit(db, spendLimitMatch[1], (body ?? {}) as Record<string, unknown>);
+      return json(result.body, result.status);
+    }
+
+    const updateUserMatch = pathname.match(/^\/org\/users\/([^/]+)$/);
+    if (updateUserMatch && request.method === "PUT") {
+      const { db } = resolveTenant(request, env);
+      /**
+       * **`Admin.UserManagement`, delegation-scoped — decision 0334.**
+       * The full form `handleCreateUser` already has, not the simpler
+       * one the two limit routes above still use: `handleUpdateUser`
+       * itself checks whether the person being edited, and any new org
+       * they are being placed within, both sit inside what the caller
+       * administers.
+       */
+      const auth = await requirePermission(db, request, "Admin.UserManagement", sessionContext(env));
+      if (!auth.authorized) {
+        return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
+      }
+      const granterUnits = (await hasPermission(db, auth.user.id, "Admin.Configure"))
+        ? null
+        : await unitsWherePermitted(db, auth.user.id, "Admin.UserManagement");
+      let body: unknown;
+      try {
+        body = await request.json();
+      } catch {
+        return json({ error: t("invalidJsonBody", resolveLocale(env.LOCALE)) }, 400);
+      }
+      const result = await handleUpdateUser(db, updateUserMatch[1], (body ?? {}) as Record<string, unknown>, granterUnits);
       return json(result.body, result.status);
     }
 

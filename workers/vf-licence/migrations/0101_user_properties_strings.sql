@@ -1,0 +1,38 @@
+-- 0101_user_properties_strings.sql
+-- Decision 0334 — Cost Center, Supervisor/Manager, Spend Limit/CCY,
+-- and Office Address Location.
+INSERT INTO ui_strings (key, locale, value) VALUES
+  ('roles.none', 'en', 'None'),
+  ('roles.manager', 'en', 'Manager'),
+  ('roles.costcentre', 'en', 'Cost centre'),
+  ('roles.addressline', 'en', 'Address'),
+  ('roles.city', 'en', 'City'),
+  ('roles.postalcode', 'en', 'Postal code'),
+  ('roles.country', 'en', 'Country'),
+  ('roles.budgetholder', 'en', 'Budget holder'),
+  ('roles.yes', 'en', 'Yes'),
+  ('roles.no', 'en', 'No'),
+  ('roles.spendlimitcurrency', 'en', 'Spend limit currency'),
+  ('roles.spendlimitamount', 'en', 'Spend limit amount'),
+  ('roles.spendlimit', 'en', 'Spend limit'),
+  ('roles.set', 'en', 'Set'),
+  ('roles.propertiessavefailed', 'en', 'Could not save. Please try again.'),
+  ('roles.limitsavefailed', 'en', 'Could not save the limit. Please try again.'),
+  ('roles.none', 'de', 'Keine'),
+  ('roles.manager', 'de', 'Vorgesetzter'),
+  ('roles.costcentre', 'de', 'Kostenstelle'),
+  ('roles.addressline', 'de', 'Adresse'),
+  ('roles.city', 'de', 'Stadt'),
+  ('roles.postalcode', 'de', 'Postleitzahl'),
+  ('roles.country', 'de', 'Land'),
+  ('roles.budgetholder', 'de', 'Budgetverantwortlicher'),
+  ('roles.yes', 'de', 'Ja'),
+  ('roles.no', 'de', 'Nein'),
+  ('roles.spendlimitcurrency', 'de', 'Ausgabenlimit-Währung'),
+  ('roles.spendlimitamount', 'de', 'Ausgabenlimit-Betrag'),
+  ('roles.spendlimit', 'de', 'Ausgabenlimit'),
+  ('roles.set', 'de', 'Festlegen'),
+  ('roles.propertiessavefailed', 'de', 'Konnte nicht gespeichert werden. Bitte versuchen Sie es erneut.'),
+  ('roles.limitsavefailed', 'de', 'Das Limit konnte nicht gespeichert werden. Bitte versuchen Sie es erneut.');
+
+-- ASSERT: SELECT count(*) FROM ui_strings WHERE key IN ('roles.none','roles.manager','roles.costcentre','roles.addressline','roles.city','roles.postalcode','roles.country','roles.budgetholder','roles.yes','roles.no','roles.spendlimitcurrency','roles.spendlimitamount','roles.spendlimit','roles.set','roles.propertiessavefailed','roles.limitsavefailed') AND locale = 'en' == 16

@@ -65,6 +65,7 @@ import ruleNameSql from "../../../migrations/0058_rule_name.sql?raw";
 import documentCommentsSql from "../../../migrations/0059_document_comments.sql?raw";
 import supplierOrgUnitSql from "../../../migrations/0061_supplier_org_unit.sql?raw";
 import teamBelongsToOrgSql from "../../../migrations/0064_a_team_belongs_to_an_org.sql?raw";
+import userPropertiesSql from "../../../migrations/0065_user_properties.sql?raw";
 
 // Another known divergence from production, on top of the one below:
 // D1's exec() splits its input by newline and executes each non-empty
@@ -152,6 +153,7 @@ const TABLES_IN_DROP_ORDER = ["document_comments", "process_stage_versions", "in
   "org_team_members",
   "org_teams",
   "org_authority_limits",
+  "org_spend_limits",
   "org_user_roles",
   "org_profiles",
   "org_roles",
@@ -163,6 +165,24 @@ const TABLES_IN_DROP_ORDER = ["document_comments", "process_stage_versions", "in
 ];
 
 export async function applyTestSchema(): Promise<void> {
+  /**
+   * **A genuine cycle, not an ordering mistake — decision 0334.**
+   * `cost_centres.owner_user_id` already referenced `org_users`
+   * (migration 0044); `org_users.cost_centre_id` now references
+   * `cost_centres` right back. No drop order satisfies both
+   * directions at once. `PRAGMA foreign_keys = OFF` does not help —
+   * `env.DB.exec()` does not carry pragma state between separate
+   * calls in this environment, confirmed directly rather than
+   * assumed. Breaking the cycle's own data instead: null the
+   * columns that create it, on whichever of the two tables already
+   * exists, before the drop loop runs. Wrapped in try/catch because
+   * neither table exists yet on this suite's very first run.
+   */
+  try {
+    await env.DB.exec("UPDATE org_users SET cost_centre_id = NULL;");
+  } catch {
+    // org_users does not exist yet — nothing to break a cycle with.
+  }
   for (const table of TABLES_IN_DROP_ORDER) {
     await env.DB.exec(`DROP TABLE IF EXISTS ${table};`);
   }
@@ -225,6 +245,7 @@ export async function applyTestSchema(): Promise<void> {
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(documentCommentsSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(supplierOrgUnitSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(teamBelongsToOrgSql)));
+  await env.DB.exec(toOneStatementPerLine(stripSqlComments(userPropertiesSql)));
 }
 
 /**

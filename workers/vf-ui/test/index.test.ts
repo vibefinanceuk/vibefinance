@@ -404,6 +404,8 @@ describe("paths the app is allowed to reach (decision 0212)", () => {
     "/org/users/usr1/roles/r1",
     "/org/users",
     "/org/users/usr1/authority-limits",
+    "/org/users/usr1",
+    "/org/users/usr1/spend-limit",
     "/org/teams",
     "/org/teams/t1",
     "/org/teams/t1/members",

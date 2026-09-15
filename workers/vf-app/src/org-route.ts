@@ -215,6 +215,16 @@ export async function handleGetOrgOverview(
     .bind(...(scopeUnits ?? []))
     .all<{ id: string; name: string; kind: string; parent_unit_id: string | null }>();
 
+  /**
+   * **Cost centres, unscoped — decision 0334.** Like role definitions
+   * (0326's own reasoning), a cost centre isn't tied to any org unit
+   * in the schema — every one is offered to anyone reaching this
+   * screen at all, the same "not sensitive by itself" judgement.
+   */
+  const costCentres = await db
+    .prepare(`SELECT id, name FROM cost_centres ORDER BY name ASC`)
+    .all<{ id: string; name: string }>();
+
   const assignments = await db
     .prepare(
       `SELECT ur.user_id, u.name AS user_name, ur.role_id, r.name AS role_name,
@@ -243,20 +253,49 @@ export async function handleGetOrgOverview(
    * administrator naming a colleague nobody has assigned a role to
    * yet is exactly the case a "who is here, unassigned" view exists
    * for.
+   *
+   * **Manager, cost centre, and Budget Holder — decision 0334.**
+   * `manager_name` and `cost_centre_name` are joined here rather than
+   * resolved client-side, the same choice `assignments` already makes
+   * for role and unit names. `is_budget_holder` is derived, not
+   * stored: reported live, "derive it — one source of truth" rather
+   * than a second flag that could drift from `cost_centres.owner_user_id`.
    */
   const users = await db
     .prepare(
-      `SELECT id, email, name, unit_id, status FROM org_users
+      `SELECT u.id, u.email, u.name, u.unit_id, u.status,
+              u.manager_id, m.name AS manager_name,
+              u.cost_centre_id, cc.name AS cost_centre_name,
+              u.address_line, u.city, u.postal_code, u.country,
+              EXISTS (SELECT 1 FROM cost_centres WHERE owner_user_id = u.id) AS is_budget_holder
+       FROM org_users u
+       LEFT JOIN org_users m ON m.id = u.manager_id
+       LEFT JOIN cost_centres cc ON cc.id = u.cost_centre_id
        ${
          scopeUnits
-           ? `WHERE unit_id IN (${unitPlaceholders})
-              OR id IN (SELECT user_id FROM org_user_roles WHERE unit_id IN (${unitPlaceholders}))`
+           ? `WHERE u.unit_id IN (${unitPlaceholders})
+              OR u.id IN (SELECT user_id FROM org_user_roles WHERE unit_id IN (${unitPlaceholders}))`
            : ""
        }
-       ORDER BY name ASC`
+       ORDER BY u.name ASC`
     )
     .bind(...(scopeUnits ?? []), ...(scopeUnits ?? []))
-    .all<{ id: string; email: string; name: string; unit_id: string | null; status: string }>();
+    .all<{
+      id: string;
+      email: string;
+      name: string;
+      unit_id: string | null;
+      status: string;
+      manager_id: string | null;
+      manager_name: string | null;
+      cost_centre_id: string | null;
+      cost_centre_name: string | null;
+      address_line: string | null;
+      city: string | null;
+      postal_code: string | null;
+      country: string | null;
+      is_budget_holder: number;
+    }>();
 
   const roles = await db
     .prepare(`SELECT id, name, permissions_json FROM org_roles ORDER BY name ASC`)
@@ -276,16 +315,37 @@ export async function handleGetOrgOverview(
     .bind(...(scopeUnits ? scopedUserIds : []))
     .all<{ user_id: string; user_name: string; currency: string; max_amount: number }>();
 
+  const spendLimits = await db
+    .prepare(
+      `SELECT sl.user_id, u.name AS user_name, sl.currency, sl.max_amount
+       FROM org_spend_limits sl
+       JOIN org_users u ON u.id = sl.user_id
+       ${scopeUnits ? `WHERE sl.user_id IN (${limitPlaceholders})` : ""}
+       ORDER BY u.name ASC, sl.currency ASC`
+    )
+    .bind(...(scopeUnits ? scopedUserIds : []))
+    .all<{ user_id: string; user_name: string; currency: string; max_amount: number }>();
+
   return {
     status: 200,
     body: {
       units: units.results.map((r) => ({ id: r.id, name: r.name, kind: r.kind, parentUnitId: r.parent_unit_id })),
+      costCentres: costCentres.results.map((r) => ({ id: r.id, name: r.name })),
       users: users.results.map((r) => ({
         id: r.id,
         email: r.email,
         name: r.name,
         unitId: r.unit_id,
         status: r.status,
+        managerId: r.manager_id,
+        managerName: r.manager_name,
+        costCentreId: r.cost_centre_id,
+        costCentreName: r.cost_centre_name,
+        addressLine: r.address_line,
+        city: r.city,
+        postalCode: r.postal_code,
+        country: r.country,
+        isBudgetHolder: Boolean(r.is_budget_holder),
       })),
       roles: roles.results.map((r) => {
         let permissions: string[] = [];
@@ -330,6 +390,12 @@ export async function handleGetOrgOverview(
         currency: r.currency,
         maxAmount: r.max_amount,
       })),
+      spendLimits: spendLimits.results.map((r) => ({
+        userId: r.user_id,
+        userName: r.user_name,
+        currency: r.currency,
+        maxAmount: r.max_amount,
+      })),
     },
   };
 }
@@ -340,6 +406,12 @@ interface CreateUserBody {
   name?: unknown;
   unitId?: unknown;
   locale?: unknown;
+  managerId?: unknown;
+  costCentreId?: unknown;
+  addressLine?: unknown;
+  city?: unknown;
+  postalCode?: unknown;
+  country?: unknown;
 }
 
 export async function handleCreateUser(
@@ -354,7 +426,7 @@ export async function handleCreateUser(
    */
   granterUnits: string[] | null = null
 ): Promise<RouteResult> {
-  const { id, email, name, unitId, locale } = body;
+  const { id, email, name, unitId, locale, managerId, costCentreId, addressLine, city, postalCode, country } = body;
   if (typeof id !== "string" || !id || typeof email !== "string" || !email || typeof name !== "string" || !name) {
     return { status: 400, body: { error: "id, email and name (all strings) are required" } };
   }
@@ -363,6 +435,14 @@ export async function handleCreateUser(
   }
   if (locale !== undefined && typeof locale !== "string") {
     return { status: 400, body: { error: "locale, if provided, must be a string" } };
+  }
+  for (const [key, value] of Object.entries({ managerId, costCentreId, addressLine, city, postalCode, country })) {
+    if (value !== undefined && value !== null && typeof value !== "string") {
+      return { status: 400, body: { error: `${key}, if provided, must be a string` } };
+    }
+  }
+  if (typeof managerId === "string" && managerId === id) {
+    return { status: 400, body: { error: "a person cannot be their own manager" } };
   }
 
   /**
@@ -411,6 +491,18 @@ export async function handleCreateUser(
       return { status: 404, body: { error: `unit ${unitId as string} does not exist` } };
     }
   }
+  if (typeof managerId === "string") {
+    const managerExists = await db.prepare("SELECT id FROM org_users WHERE id = ?").bind(managerId).first();
+    if (!managerExists) {
+      return { status: 404, body: { error: `user ${managerId} does not exist` } };
+    }
+  }
+  if (typeof costCentreId === "string") {
+    const costCentreExists = await db.prepare("SELECT id FROM cost_centres WHERE id = ?").bind(costCentreId).first();
+    if (!costCentreExists) {
+      return { status: 404, body: { error: `cost centre ${costCentreId} does not exist` } };
+    }
+  }
 
   // The plaintext key exists only in this response — only its hash is
   // ever stored, from this point on. Same discipline as
@@ -421,14 +513,168 @@ export async function handleCreateUser(
   const apiKeyHash = await hashApiKey(apiKey);
 
   await db
-    .prepare("INSERT INTO org_users (id, email, name, unit_id, locale, api_key_hash) VALUES (?, ?, ?, ?, ?, ?)")
-    .bind(id, email, name, unitId ?? null, locale ?? null, apiKeyHash)
+    .prepare(
+      `INSERT INTO org_users
+         (id, email, name, unit_id, locale, api_key_hash, manager_id, cost_centre_id, address_line, city, postal_code, country)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+    .bind(
+      id,
+      email,
+      name,
+      unitId ?? null,
+      locale ?? null,
+      apiKeyHash,
+      managerId ?? null,
+      costCentreId ?? null,
+      addressLine ?? null,
+      city ?? null,
+      postalCode ?? null,
+      country ?? null
+    )
     .run();
 
   return {
     status: 201,
-    body: { id, email, name, unitId: unitId ?? null, locale: locale ?? null, status: "active", apiKey },
+    body: {
+      id,
+      email,
+      name,
+      unitId: unitId ?? null,
+      locale: locale ?? null,
+      status: "active",
+      apiKey,
+      managerId: managerId ?? null,
+      costCentreId: costCentreId ?? null,
+      addressLine: addressLine ?? null,
+      city: city ?? null,
+      postalCode: postalCode ?? null,
+      country: country ?? null,
+    },
   };
+}
+
+interface UpdateUserBody {
+  name?: unknown;
+  unitId?: unknown;
+  managerId?: unknown;
+  costCentreId?: unknown;
+  addressLine?: unknown;
+  city?: unknown;
+  postalCode?: unknown;
+  country?: unknown;
+}
+
+/**
+ * **Editing an existing person's own properties — decision 0334.**
+ * Nothing like this existed before: every field a person can hold
+ * (0328's own name/email/unit, and this decision's own manager,
+ * cost centre, and address) was settable only once, at creation.
+ * Reported live, asking for "a way to specify User Properties" —
+ * properties that change (a manager changes, someone moves office)
+ * needed a way to change them, not only a way to set them the first
+ * time.
+ *
+ * The same "replace, not merge" shape `handleUpdateRole` and
+ * `handleUpdateTeam` already give editing something with several
+ * fields: every editable field arrives together, one call, rather
+ * than a separate route per field. `email` and `id` are deliberately
+ * not editable here — an email change is an identity change with its
+ * own real questions (does the API key stay valid, does a pending
+ * invite reference the old address) this decision does not answer.
+ */
+export async function handleUpdateUser(
+  db: D1Database,
+  userId: string,
+  body: UpdateUserBody,
+  granterUnits: string[] | null = null
+): Promise<RouteResult> {
+  const { name, unitId, managerId, costCentreId, addressLine, city, postalCode, country } = body;
+  if (typeof name !== "string" || !name) {
+    return { status: 400, body: { error: "name (a string) is required" } };
+  }
+  if (unitId !== undefined && typeof unitId !== "string") {
+    return { status: 400, body: { error: "unitId, if provided, must be a string" } };
+  }
+  for (const [key, value] of Object.entries({ managerId, costCentreId, addressLine, city, postalCode, country })) {
+    if (value !== undefined && value !== null && typeof value !== "string") {
+      return { status: 400, body: { error: `${key}, if provided, must be a string` } };
+    }
+  }
+  if (typeof managerId === "string" && managerId === userId) {
+    return { status: 400, body: { error: "a person cannot be their own manager" } };
+  }
+
+  const existing = await db.prepare("SELECT id, unit_id FROM org_users WHERE id = ?").bind(userId).first<{
+    id: string;
+    unit_id: string | null;
+  }>();
+  if (!existing) {
+    return { status: 404, body: { error: `user ${userId} does not exist` } };
+  }
+
+  /**
+   * **The same boundary as creating one — decision 0334.** A
+   * delegated administrator may edit only a person already within
+   * their own scope, and may not move them outside it — the same
+   * "invisible afterward is worse than restricted" reasoning 0328
+   * gives creation.
+   */
+  if (granterUnits !== null) {
+    if (!existing.unit_id || !granterUnits.includes(existing.unit_id)) {
+      return {
+        status: 403,
+        body: { error: `you do not administer ${existing.unit_id ?? "this person's own org"}`, reason: "outside_administered_units" },
+      };
+    }
+    const nextUnitId = unitId === undefined ? existing.unit_id : unitId;
+    if (typeof nextUnitId !== "string" || !nextUnitId || !granterUnits.includes(nextUnitId)) {
+      return {
+        status: 403,
+        body: { error: "you may only place a person within an org you administer", reason: "outside_administered_units" },
+      };
+    }
+  }
+
+  if (typeof unitId === "string") {
+    const unitExists = await db.prepare("SELECT id FROM org_units WHERE id = ?").bind(unitId).first();
+    if (!unitExists) {
+      return { status: 404, body: { error: `unit ${unitId} does not exist` } };
+    }
+  }
+  if (typeof managerId === "string") {
+    const managerExists = await db.prepare("SELECT id FROM org_users WHERE id = ?").bind(managerId).first();
+    if (!managerExists) {
+      return { status: 404, body: { error: `user ${managerId} does not exist` } };
+    }
+  }
+  if (typeof costCentreId === "string") {
+    const costCentreExists = await db.prepare("SELECT id FROM cost_centres WHERE id = ?").bind(costCentreId).first();
+    if (!costCentreExists) {
+      return { status: 404, body: { error: `cost centre ${costCentreId} does not exist` } };
+    }
+  }
+
+  await db
+    .prepare(
+      `UPDATE org_users
+       SET name = ?, unit_id = ?, manager_id = ?, cost_centre_id = ?, address_line = ?, city = ?, postal_code = ?, country = ?
+       WHERE id = ?`
+    )
+    .bind(
+      name,
+      unitId === undefined ? existing.unit_id : unitId,
+      managerId ?? null,
+      costCentreId ?? null,
+      addressLine ?? null,
+      city ?? null,
+      postalCode ?? null,
+      country ?? null,
+      userId
+    )
+    .run();
+
+  return { status: 200, body: { id: userId, name } };
 }
 
 interface CreateRoleBody {
@@ -732,6 +978,49 @@ export async function handleSetAuthorityLimit(
   await db
     .prepare(
       `INSERT INTO org_authority_limits (user_id, currency, max_amount) VALUES (?, ?, ?)
+       ON CONFLICT(user_id, currency) DO UPDATE SET max_amount = excluded.max_amount`
+    )
+    .bind(userId, currency, maxAmount)
+    .run();
+
+  return { status: 200, body: { userId, currency, maxAmount } };
+}
+
+interface SetSpendLimitBody {
+  currency?: unknown;
+  maxAmount?: unknown;
+}
+
+/**
+ * **Spend Limit, kept as its own function and its own table —
+ * decision 0334.** Confirmed live, not assumed, as a genuinely
+ * separate concept from `handleSetAuthorityLimit`'s own approval
+ * limit: how much a person may request or spend themselves, not how
+ * much they may approve for others. Same upsert reasoning as its
+ * approval-limit counterpart — the composite key is the identity, so
+ * setting it again is a revision, not a duplicate.
+ */
+export async function handleSetSpendLimit(
+  db: D1Database,
+  userId: string,
+  body: SetSpendLimitBody
+): Promise<RouteResult> {
+  const { currency, maxAmount } = body;
+  if (typeof currency !== "string" || !currency || typeof maxAmount !== "number") {
+    return { status: 400, body: { error: "currency (string) and maxAmount (number) are required" } };
+  }
+  if (maxAmount < 0) {
+    return { status: 400, body: { error: "maxAmount must not be negative" } };
+  }
+
+  const userExists = await db.prepare("SELECT id FROM org_users WHERE id = ?").bind(userId).first();
+  if (!userExists) {
+    return { status: 404, body: { error: `user ${userId} does not exist` } };
+  }
+
+  await db
+    .prepare(
+      `INSERT INTO org_spend_limits (user_id, currency, max_amount) VALUES (?, ?, ?)
        ON CONFLICT(user_id, currency) DO UPDATE SET max_amount = excluded.max_amount`
     )
     .bind(userId, currency, maxAmount)

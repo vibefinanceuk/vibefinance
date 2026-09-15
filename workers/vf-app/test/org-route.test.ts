@@ -8,8 +8,10 @@ import {
   handleRevokeRole,
   handleCreateUnit,
   handleCreateUser,
+  handleUpdateUser,
   handleGetOrgOverview,
   handleSetAuthorityLimit,
+  handleSetSpendLimit,
   handleSetProfile,
 } from "../src/org-route.js";
 import { authenticateUser, generateApiKey, hashApiKey } from "../src/user-auth.js";
@@ -203,6 +205,233 @@ describe("handleCreateUser", () => {
     // handleAssignRole and handleRevokeRole already use.
     const result = await handleCreateUser(env.DB, { id: "usr1", email: "a@b.com", name: "Alice" }, null);
     expect(result.status).toBe(201);
+  });
+
+  /**
+   * **User properties, at creation time — decision 0334.** Manager,
+   * cost centre, and address all stored the same call the rest of a
+   * person's own properties already are.
+   */
+  it("stores manager, cost centre, and address fields together", async () => {
+    await handleCreateUser(env.DB, { id: "boss", email: "boss@b.com", name: "Boss" });
+    await env.DB.prepare("INSERT INTO cost_centres (id, name) VALUES ('cc1', 'Engineering')").run();
+
+    const result = await handleCreateUser(env.DB, {
+      id: "usr1",
+      email: "a@b.com",
+      name: "Alice",
+      managerId: "boss",
+      costCentreId: "cc1",
+      addressLine: "1 Main St",
+      city: "London",
+      postalCode: "SW1A 1AA",
+      country: "UK",
+    });
+    expect(result.status).toBe(201);
+    const row = await env.DB
+      .prepare("SELECT manager_id, cost_centre_id, address_line, city, postal_code, country FROM org_users WHERE id = ?")
+      .bind("usr1")
+      .first();
+    expect(row).toEqual({
+      manager_id: "boss",
+      cost_centre_id: "cc1",
+      address_line: "1 Main St",
+      city: "London",
+      postal_code: "SW1A 1AA",
+      country: "UK",
+    });
+  });
+
+  it("400s a person named as their own manager", async () => {
+    const result = await handleCreateUser(env.DB, { id: "usr1", email: "a@b.com", name: "Alice", managerId: "usr1" });
+    expect(result.status).toBe(400);
+    const row = await env.DB.prepare("SELECT 1 FROM org_users WHERE id = 'usr1'").first();
+    expect(row).toBeNull();
+  });
+
+  it("404s a managerId that does not exist", async () => {
+    const result = await handleCreateUser(env.DB, { id: "usr1", email: "a@b.com", name: "Alice", managerId: "ghost" });
+    expect(result.status).toBe(404);
+  });
+
+  it("404s a costCentreId that does not exist", async () => {
+    const result = await handleCreateUser(env.DB, { id: "usr1", email: "a@b.com", name: "Alice", costCentreId: "ghost" });
+    expect(result.status).toBe(404);
+  });
+});
+
+describe("handleUpdateUser — decision 0334", () => {
+  it("400s with no name given at all", async () => {
+    await handleCreateUser(env.DB, { id: "usr1", email: "a@b.com", name: "Alice" });
+    const result = await handleUpdateUser(env.DB, "usr1", {});
+    expect(result.status).toBe(400);
+  });
+
+  it("404s a person that does not exist", async () => {
+    const result = await handleUpdateUser(env.DB, "ghost", { name: "New Name" });
+    expect(result.status).toBe(404);
+  });
+
+  it("updates name, manager, cost centre, and address together", async () => {
+    await handleCreateUser(env.DB, { id: "usr1", email: "a@b.com", name: "Alice" });
+    await handleCreateUser(env.DB, { id: "boss", email: "boss@b.com", name: "Boss" });
+    await env.DB.prepare("INSERT INTO cost_centres (id, name) VALUES ('cc1', 'Engineering')").run();
+
+    const result = await handleUpdateUser(env.DB, "usr1", {
+      name: "Alice Smith",
+      managerId: "boss",
+      costCentreId: "cc1",
+      addressLine: "1 Main St",
+      city: "London",
+      postalCode: "SW1A 1AA",
+      country: "UK",
+    });
+    expect(result.status).toBe(200);
+
+    const row = await env.DB
+      .prepare("SELECT name, manager_id, cost_centre_id, address_line, city, postal_code, country FROM org_users WHERE id = ?")
+      .bind("usr1")
+      .first();
+    expect(row).toEqual({
+      name: "Alice Smith",
+      manager_id: "boss",
+      cost_centre_id: "cc1",
+      address_line: "1 Main St",
+      city: "London",
+      postal_code: "SW1A 1AA",
+      country: "UK",
+    });
+  });
+
+  it("clears manager and cost centre when neither is given", async () => {
+    await handleCreateUser(env.DB, { id: "boss", email: "boss@b.com", name: "Boss" });
+    await handleCreateUser(env.DB, { id: "usr1", email: "a@b.com", name: "Alice", managerId: "boss" });
+
+    await handleUpdateUser(env.DB, "usr1", { name: "Alice" });
+    const row = await env.DB.prepare("SELECT manager_id FROM org_users WHERE id = ?").bind("usr1").first();
+    expect(row).toEqual({ manager_id: null });
+  });
+
+  it("400s a person named as their own manager", async () => {
+    await handleCreateUser(env.DB, { id: "usr1", email: "a@b.com", name: "Alice" });
+    const result = await handleUpdateUser(env.DB, "usr1", { name: "Alice", managerId: "usr1" });
+    expect(result.status).toBe(400);
+  });
+
+  it("404s a managerId that does not exist", async () => {
+    await handleCreateUser(env.DB, { id: "usr1", email: "a@b.com", name: "Alice" });
+    const result = await handleUpdateUser(env.DB, "usr1", { name: "Alice", managerId: "ghost" });
+    expect(result.status).toBe(404);
+  });
+
+  it("404s a costCentreId that does not exist", async () => {
+    await handleCreateUser(env.DB, { id: "usr1", email: "a@b.com", name: "Alice" });
+    const result = await handleUpdateUser(env.DB, "usr1", { name: "Alice", costCentreId: "ghost" });
+    expect(result.status).toBe(404);
+  });
+
+  it("404s a unitId that does not exist", async () => {
+    await handleCreateUser(env.DB, { id: "usr1", email: "a@b.com", name: "Alice" });
+    const result = await handleUpdateUser(env.DB, "usr1", { name: "Alice", unitId: "ghost" });
+    expect(result.status).toBe(404);
+  });
+
+  /**
+   * **The same delegation boundary as creating one — decision
+   * 0334.** A delegated administrator may edit only a person already
+   * within their own scope.
+   */
+  it("403s a delegated administrator editing a person outside their own scope", async () => {
+    await env.DB.prepare("INSERT INTO org_units (id, name) VALUES ('acme-fr', 'Acme France')").run();
+    await env.DB.prepare("INSERT INTO org_units (id, name) VALUES ('acme-de', 'Acme Deutschland')").run();
+    await handleCreateUser(env.DB, { id: "usr1", email: "a@b.com", name: "Alice", unitId: "acme-de" }, null);
+
+    const result = await handleUpdateUser(env.DB, "usr1", { name: "Alice" }, ["acme-fr"]);
+    expect(result.status).toBe(403);
+  });
+
+  it("403s a delegated administrator moving a person outside their own scope", async () => {
+    await env.DB.prepare("INSERT INTO org_units (id, name) VALUES ('acme-fr', 'Acme France')").run();
+    await env.DB.prepare("INSERT INTO org_units (id, name) VALUES ('acme-de', 'Acme Deutschland')").run();
+    await handleCreateUser(env.DB, { id: "usr1", email: "a@b.com", name: "Alice", unitId: "acme-fr" }, null);
+
+    const result = await handleUpdateUser(env.DB, "usr1", { name: "Alice", unitId: "acme-de" }, ["acme-fr"]);
+    expect(result.status).toBe(403);
+    const row = await env.DB.prepare("SELECT unit_id FROM org_users WHERE id = ?").bind("usr1").first();
+    expect(row).toEqual({ unit_id: "acme-fr" });
+  });
+
+  it("lets a delegated administrator edit a person within their own scope", async () => {
+    await env.DB.prepare("INSERT INTO org_units (id, name) VALUES ('acme-fr', 'Acme France')").run();
+    await handleCreateUser(env.DB, { id: "usr1", email: "a@b.com", name: "Alice", unitId: "acme-fr" }, null);
+
+    const result = await handleUpdateUser(env.DB, "usr1", { name: "Alice Smith" }, ["acme-fr"]);
+    expect(result.status).toBe(200);
+  });
+});
+
+describe("handleSetSpendLimit — decision 0334", () => {
+  it("400s when currency or maxAmount is missing", async () => {
+    await handleCreateUser(env.DB, { id: "usr1", email: "a@b.com", name: "Alice" });
+    const result = await handleSetSpendLimit(env.DB, "usr1", { currency: "GBP" });
+    expect(result.status).toBe(400);
+  });
+
+  it("400s a negative maxAmount", async () => {
+    await handleCreateUser(env.DB, { id: "usr1", email: "a@b.com", name: "Alice" });
+    const result = await handleSetSpendLimit(env.DB, "usr1", { currency: "GBP", maxAmount: -1 });
+    expect(result.status).toBe(400);
+  });
+
+  it("404s a user that does not exist", async () => {
+    const result = await handleSetSpendLimit(env.DB, "ghost", { currency: "GBP", maxAmount: 500 });
+    expect(result.status).toBe(404);
+  });
+
+  it("sets a real spend limit, independent of any approval limit", async () => {
+    await handleCreateUser(env.DB, { id: "usr1", email: "a@b.com", name: "Alice" });
+    await handleSetAuthorityLimit(env.DB, "usr1", { currency: "GBP", maxAmount: 10000 });
+
+    const result = await handleSetSpendLimit(env.DB, "usr1", { currency: "GBP", maxAmount: 500 });
+    expect(result.status).toBe(200);
+
+    const spendRow = await env.DB
+      .prepare("SELECT max_amount FROM org_spend_limits WHERE user_id = ? AND currency = ?")
+      .bind("usr1", "GBP")
+      .first();
+    expect(spendRow).toEqual({ max_amount: 500 });
+
+    // The approval limit set moments earlier is untouched -- two
+    // genuinely separate tables, not one renamed.
+    const approvalRow = await env.DB
+      .prepare("SELECT max_amount FROM org_authority_limits WHERE user_id = ? AND currency = ?")
+      .bind("usr1", "GBP")
+      .first();
+    expect(approvalRow).toEqual({ max_amount: 10000 });
+  });
+
+  it("revises rather than duplicates a limit for the same currency", async () => {
+    await handleCreateUser(env.DB, { id: "usr1", email: "a@b.com", name: "Alice" });
+    await handleSetSpendLimit(env.DB, "usr1", { currency: "GBP", maxAmount: 500 });
+    await handleSetSpendLimit(env.DB, "usr1", { currency: "GBP", maxAmount: 750 });
+
+    const count = await env.DB.prepare("SELECT count(*) AS n FROM org_spend_limits WHERE user_id = 'usr1'").first();
+    expect(count).toEqual({ n: 1 });
+    const row = await env.DB.prepare("SELECT max_amount FROM org_spend_limits WHERE user_id = 'usr1'").first();
+    expect(row).toEqual({ max_amount: 750 });
+  });
+});
+
+describe("Budget Holder — derived, decision 0334", () => {
+  it("is true for a person who owns a cost centre, false otherwise", async () => {
+    await handleCreateUser(env.DB, { id: "usr1", email: "a@b.com", name: "Alice" });
+    await handleCreateUser(env.DB, { id: "usr2", email: "b@b.com", name: "Bob" });
+    await env.DB.prepare("INSERT INTO cost_centres (id, name, owner_user_id) VALUES ('cc1', 'Engineering', 'usr1')").run();
+
+    const result = await handleGetOrgOverview(env.DB);
+    const body = result.body as { users: { id: string; isBudgetHolder: boolean }[] };
+    expect(body.users.find((u) => u.id === "usr1")?.isBudgetHolder).toBe(true);
+    expect(body.users.find((u) => u.id === "usr2")?.isBudgetHolder).toBe(false);
   });
 });
 
@@ -471,12 +700,26 @@ describe("handleGetOrgOverview (decision 0319)", () => {
     expect(result.status).toBe(200);
     expect(result.body).toEqual({
       units: [],
+      costCentres: [],
       users: [],
       roles: [],
       assignments: [],
       authorityLimits: [],
+      spendLimits: [],
       knownPermissions: PERMISSIONS.map((name) => ({ name, description: PERMISSION_DESCRIPTIONS[name] })),
     });
+  });
+
+  it("returns every cost centre, unscoped — decision 0334", async () => {
+    await env.DB.prepare("INSERT INTO cost_centres (id, name) VALUES ('cc1', 'Engineering')").run();
+    await env.DB.prepare("INSERT INTO cost_centres (id, name) VALUES ('cc2', 'Sales')").run();
+
+    const result = await handleGetOrgOverview(env.DB, ["some-scope"]);
+    const body = result.body as { costCentres: { id: string; name: string }[] };
+    expect(body.costCentres).toEqual([
+      { id: "cc1", name: "Engineering" },
+      { id: "cc2", name: "Sales" },
+    ]);
   });
 
   it("returns the real, closed permission vocabulary, each with its own real description — decision 0331", async () => {
