@@ -1,0 +1,13 @@
+-- 0066_supplier_maintenance_permission.sql
+--
+-- **A permission for the Supplier Maintenance team** — decision 0350,
+-- reported live: "a new Supplier Maintenance process... Create a task
+-- for the Supplier Maintenance team, who can validate the changes."
+--
+-- No schema change: process_stages.required_permission already
+-- accepts any text, checked only by the standing invariant decision
+-- 0200 established (migration 0048), already restated by migrations
+-- 0062 and 0063. Restated again here with the vocabulary as it now
+-- stands, rather than editing any earlier, already-applied migration
+-- in place.
+-- ASSERT ALWAYS: SELECT count(*) FROM process_stages WHERE required_permission IS NOT NULL AND required_permission NOT IN ('AP.Analysis','AP.Approve','AP.Code','AP.Dashboard','AP.Discard','AP.Match','AP.Return','AP.ReturnAny','AP.ReturnToSupplier','AP.Review','AP.Supplier','AP.TaskManage','AP.TaskView','AP.Validate','AR.Analysis','AR.Approve','AR.Collect','AR.Issue','AR.Remind','AR.Validate','Admin.ConfigManagement','Admin.Configure','Admin.RoleManagement','Admin.RuleActivation','Admin.RuleManagement','Admin.UserManagement','Expense.Approve','Expense.Review','Expense.Submit','Supplier.Maintain','System.LicenceRefresh','System.UsagePush') == 0

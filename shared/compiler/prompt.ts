@@ -71,6 +71,7 @@ Example output:
 const SYSTEM_DESCRIPTION: Record<VocabularyName, string> = {
   invoice: "an invoice-processing system",
   expense: "an expense-management system",
+  supplier: "a supplier-maintenance system",
 };
 
 export function buildCompilerPrompt(

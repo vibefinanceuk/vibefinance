@@ -248,6 +248,24 @@ export const EXPENSE_DERIVED_FIELDS = [
   "intake.channel",
 ] as const;
 
+/**
+ * **A third vocabulary, for a domain with no invoice or expense
+ * underneath it at all — decision 0350.** Reported live: "a new
+ * Supplier Maintenance process... identify that a new supplier
+ * invoice has been received, or maybe some information has
+ * changed." A process instance here is never about one invoice; it
+ * is about the supplier record itself, at the moment it was created
+ * (`awaitingErp`, decision 0231) or a load found it changed. Kept
+ * deliberately small, the same "illustrative, not comprehensive"
+ * restraint decision 0022 already applied to `EXPENSE_FIELDS`.
+ */
+export const SUPPLIER_FIELDS = [
+  "id",
+  "name",
+  "reason",
+  "changed_fields",
+] as const;
+
 export const OPERATORS = [
   "is",
   "is_not",
@@ -285,6 +303,7 @@ export type InvoiceField = (typeof INVOICE_FIELDS)[number];
 export type DerivedField = (typeof DERIVED_FIELDS)[number];
 export type ExpenseField = (typeof EXPENSE_FIELDS)[number];
 export type ExpenseDerivedField = (typeof EXPENSE_DERIVED_FIELDS)[number];
+export type SupplierField = (typeof SUPPLIER_FIELDS)[number];
 export type Operator = (typeof OPERATORS)[number];
 export type ActionType = (typeof ACTIONS)[number];
 
@@ -416,6 +435,25 @@ export const EXPENSE_DERIVED_FIELD_DESCRIPTIONS: Record<ExpenseDerivedField, str
     "how this expense was submitted — e.g. Manual Entry, iPhone App (a future channel, not yet built), Corporate Card Feed. A free string, not a closed enum.",
 };
 
+export const SUPPLIER_FIELD_DESCRIPTIONS: Record<SupplierField, string> = {
+  id: "the supplier's own id",
+  name: "the supplier's own name",
+  reason: "why this maintenance instance was created — 'new_supplier' or 'changed'",
+  // Comma-separated on purpose, matching intake.attempted's own
+  // established shape (decision 0169) — so the existing `contains`
+  // operator already applies, rather than a new operator invented
+  // for this one field. Blank when reason is 'new_supplier', since
+  // nothing existed before to compare against.
+  changed_fields: "which of the supplier's own fields changed, comma-separated — e.g. \"name,vat_id\". Blank for a new supplier.",
+};
+
+export const SUPPLIER_FIELD_TYPES: Record<string, FieldType> = {
+  id: "text",
+  name: "text",
+  reason: "text",
+  changed_fields: "text",
+};
+
 // Same discipline as FIELD_DESCRIPTIONS above, and for the same
 // reason it turned out to matter in practice: an action with no
 // documented param shape leaves the compiler to invent one on its
@@ -472,6 +510,18 @@ export const VOCABULARIES = {
     fieldDescriptions: EXPENSE_FIELD_DESCRIPTIONS as Record<string, string>,
     derivedFields: EXPENSE_DERIVED_FIELDS as readonly string[],
     derivedFieldDescriptions: EXPENSE_DERIVED_FIELD_DESCRIPTIONS as Record<string, string>,
+  },
+  /**
+   * **A supplier record, not an invoice at all — decision 0350.** No
+   * derived fields: everything here is supplied directly at the
+   * moment a maintenance instance is created, nothing computed from
+   * something else the way `party.first_document` is for invoices.
+   */
+  supplier: {
+    fields: SUPPLIER_FIELDS as readonly string[],
+    fieldDescriptions: SUPPLIER_FIELD_DESCRIPTIONS as Record<string, string>,
+    derivedFields: [] as readonly string[],
+    derivedFieldDescriptions: {} as Record<string, string>,
   },
 } as const;
 
@@ -591,6 +641,20 @@ export interface ResolvedVocabulary {
  */
 export type VocabularyInput = VocabularyName | ResolvedVocabulary;
 
+/**
+ * **A real registry, not a binary ternary — decision 0350.** Found
+ * live while adding a third vocabulary: this read `vocabulary ===
+ * "invoice" ? INVOICE_FIELD_TYPES : EXPENSE_FIELD_TYPES` — a genuine
+ * bug the moment a third name existed, since anything not literally
+ * `"invoice"` fell through to expense's own types regardless. Never
+ * caught before because exactly two vocabularies ever existed.
+ */
+const VOCABULARY_FIELD_TYPES: Record<VocabularyName, Record<string, FieldType>> = {
+  invoice: INVOICE_FIELD_TYPES,
+  expense: EXPENSE_FIELD_TYPES,
+  supplier: SUPPLIER_FIELD_TYPES,
+};
+
 export function resolveVocabulary(
   vocabulary: VocabularyName = "invoice",
   customFields: readonly CustomFieldDefinition[] = []
@@ -599,7 +663,7 @@ export function resolveVocabulary(
   const customKeys = customFields.map((f) => f.key);
   const customDescriptions: Record<string, string> = {};
   const fieldTypes: Record<string, FieldType> = {
-    ...(vocabulary === "invoice" ? INVOICE_FIELD_TYPES : EXPENSE_FIELD_TYPES),
+    ...VOCABULARY_FIELD_TYPES[vocabulary],
   };
   for (const field of customFields) {
     customDescriptions[field.key] = field.description;

@@ -45,3 +45,32 @@ describe("buildVocabularyDoc — types and customer fields (decision 0041)", () 
     expect(buildVocabularyDoc(v)).toContain("not part of any standard");
   });
 });
+
+describe("a third vocabulary, supplier (decision 0350) — proves the headings generalise, not just invoice/expense", () => {
+  it("renders its own heading, not expense's own by fallthrough", () => {
+    const doc = buildVocabularyDoc("supplier");
+    expect(doc).toContain("SUPPLIER FIELDS:");
+    expect(doc).not.toContain("EXPENSE FIELDS:");
+  });
+
+  it("renders its own fields with their declared types", () => {
+    const doc = buildVocabularyDoc("supplier");
+    expect(doc).toContain("reason (text)");
+    expect(doc).toContain("changed_fields (text)");
+  });
+
+  it("renders no empty PLATFORM-DERIVED heading at all, since it has no derived fields", () => {
+    const doc = buildVocabularyDoc("supplier");
+    expect(doc).not.toContain("PLATFORM-DERIVED FIELDS");
+  });
+
+  it("still renders the invoice and expense vocabularies exactly as before — the fix changed nothing for either", () => {
+    const invoiceDoc = buildVocabularyDoc("invoice");
+    expect(invoiceDoc).toContain("INVOICE FIELDS (from the standard):");
+    expect(invoiceDoc).toContain("PLATFORM-DERIVED FIELDS (never invoice data, always platform-computed):");
+
+    const expenseDoc = buildVocabularyDoc("expense");
+    expect(expenseDoc).toContain("EXPENSE FIELDS:");
+    expect(expenseDoc).toContain("PLATFORM-DERIVED FIELDS (never submitted by the employee, always platform-computed):");
+  });
+});

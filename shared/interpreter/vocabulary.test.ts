@@ -10,12 +10,15 @@ import {
   EXPENSE_FIELD_DESCRIPTIONS,
   FIELD_DESCRIPTIONS,
   INVOICE_FIELDS,
+  SUPPLIER_FIELDS,
+  SUPPLIER_FIELD_DESCRIPTIONS,
   VOCABULARIES,
   VOCABULARY_NAMES,
   isKnownAction,
   isKnownField,
   isKnownOperator,
   isKnownVocabulary,
+  resolveVocabulary,
 } from "./vocabulary.js";
 
 describe("closed vocabulary", () => {
@@ -117,5 +120,42 @@ describe("multi-vocabulary support (decision 0022) — the real prerequisite dec
     expect(isKnownVocabulary("expense")).toBe(true);
     expect(isKnownVocabulary("not_a_real_vocabulary")).toBe(false);
     expect(VOCABULARY_NAMES.sort()).toEqual(Object.keys(VOCABULARIES).sort());
+  });
+});
+
+describe("a third vocabulary — supplier (decision 0350)", () => {
+  it("has a description for every supplier field, the same completeness discipline as the other two", () => {
+    for (const field of SUPPLIER_FIELDS) {
+      expect(SUPPLIER_FIELD_DESCRIPTIONS[field], `missing description for ${field}`).toBeTruthy();
+    }
+  });
+
+  it("isKnownVocabulary and VOCABULARY_NAMES both recognise it", () => {
+    expect(isKnownVocabulary("supplier")).toBe(true);
+    expect(VOCABULARY_NAMES).toContain("supplier");
+  });
+
+  it("isKnownField('reason', 'supplier') is true, but isKnownField('reason', 'invoice') is false — real isolation, not fallthrough", () => {
+    expect(isKnownField("reason", "supplier")).toBe(true);
+    expect(isKnownField("reason", "invoice")).toBe(false);
+  });
+
+  /**
+   * **The exact bug this decision found and fixed.**
+   * `resolveVocabulary` used to read `vocabulary === "invoice" ?
+   * INVOICE_FIELD_TYPES : EXPENSE_FIELD_TYPES` — a real bug the
+   * moment a third name existed, since anything not literally
+   * `"invoice"` fell through to expense's own types. Never caught
+   * before because exactly two vocabularies ever existed. Probed
+   * directly: reverting the fix should make this fail.
+   */
+  it("resolveVocabulary('supplier') carries its OWN field types, not expense's own by fallthrough", () => {
+    const v = resolveVocabulary("supplier");
+    expect(v.fieldTypes.reason).toBe("text");
+    expect(v.fieldTypes.category).toBeUndefined(); // an expense-only field
+  });
+
+  it("has no derived fields at all — everything is supplied directly, nothing computed", () => {
+    expect(VOCABULARIES.supplier.derivedFields).toEqual([]);
   });
 });

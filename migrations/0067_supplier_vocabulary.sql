@@ -1,0 +1,17 @@
+-- 0067_supplier_vocabulary.sql
+--
+-- **A third vocabulary — decision 0350.** No schema change:
+-- rule_sets.vocabulary already accepts any text, checked only by the
+-- standing invariant migration 0010 established. Restated here with
+-- the vocabulary as it now stands, rather than editing that
+-- already-applied migration in place — the same discipline
+-- migrations 0062 and 0063 already established for the permission
+-- vocabulary's own standing invariant.
+--
+-- Matters beyond this sandbox's own replay: a future migration
+-- deployed for real replays first against a throwaway copy of the
+-- LIVE database's own current data (apply_migrations.py's own
+-- documented safety step) — so once a real 'supplier' rule_sets row
+-- exists in production, an un-updated invariant here would fail that
+-- replay and block an entirely unrelated migration from deploying.
+-- ASSERT ALWAYS: SELECT count(*) FROM rule_sets WHERE vocabulary NOT IN ('invoice', 'expense', 'supplier') == 0

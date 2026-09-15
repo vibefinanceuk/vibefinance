@@ -73,11 +73,27 @@ export function buildVocabularyDoc(vocabulary: VocabularyInput = "invoice"): str
     (a) => `  ${a} — ${ACTION_DESCRIPTIONS[a]}`
   ).join("\n");
 
-  const fieldsHeading = v.name === "invoice" ? "INVOICE FIELDS (from the standard):" : "EXPENSE FIELDS:";
-  const derivedHeading =
-    v.name === "invoice"
-      ? "PLATFORM-DERIVED FIELDS (never invoice data, always platform-computed):"
-      : "PLATFORM-DERIVED FIELDS (never submitted by the employee, always platform-computed):";
+  /**
+   * **A real lookup, not a binary ternary — decision 0350.** Found
+   * live alongside the same bug in `resolveVocabulary` itself: both
+   * read `v.name === "invoice" ? A : B`, which is only ever correct
+   * while exactly two vocabularies exist. A third vocabulary here
+   * would have rendered "EXPENSE FIELDS:" as its own heading and told
+   * the compiler its platform-derived fields were "never submitted
+   * by the employee" — wrong on both counts for a supplier record.
+   */
+  const FIELDS_HEADING: Record<string, string> = {
+    invoice: "INVOICE FIELDS (from the standard):",
+    expense: "EXPENSE FIELDS:",
+    supplier: "SUPPLIER FIELDS:",
+  };
+  const DERIVED_HEADING: Record<string, string> = {
+    invoice: "PLATFORM-DERIVED FIELDS (never invoice data, always platform-computed):",
+    expense: "PLATFORM-DERIVED FIELDS (never submitted by the employee, always platform-computed):",
+    supplier: "PLATFORM-DERIVED FIELDS:",
+  };
+  const fieldsHeading = FIELDS_HEADING[v.name] ?? "FIELDS:";
+  const derivedHeading = DERIVED_HEADING[v.name] ?? "PLATFORM-DERIVED FIELDS:";
 
   // A customer's own declared fields, kept in a clearly separate,
   // clearly labelled section (decision 0041). The model is told
@@ -94,11 +110,13 @@ FIELDS THIS CUSTOMER HAS DEFINED THEMSELVES (not part of any standard —
 these descriptions are the customer's own, and apply only to them):
 ${v.customFields.map((f) => `  ${f.key} (${f.type}) — ${f.description}`).join("\n")}`;
 
+  // A vocabulary with no derived fields at all — supplier's own,
+  // deliberately — renders no empty heading over nothing.
+  const derivedSection = v.derivedFields.length === 0 ? "" : `\n${derivedHeading}\n${derivedLines}`;
+
   return `${fieldsHeading}
 ${fieldLines}
-
-${derivedHeading}
-${derivedLines}
+${derivedSection}
 ${parameterisedLines}${customSection}
 
 OPERATORS:

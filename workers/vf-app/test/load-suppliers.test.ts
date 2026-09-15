@@ -1217,3 +1217,134 @@ describe("what the supplier record says about an invoice (decision 0238)", () =>
     expect(row?.supplier_id).toBe("1");
   });
 });
+
+describe("Supplier Maintenance triggering — decision 0350", () => {
+  /**
+   * Seeds exactly what docs/operations/supplier-maintenance-seed.sql
+   * does — the process, its stage, the team, and the rule — so these
+   * tests exercise the real integration, not a simplified stand-in.
+   */
+  async function seedSupplierMaintenance() {
+    await env.DB.prepare("INSERT INTO org_units (id, name) VALUES ('u1', 'Acme Group')").run();
+    await env.DB
+      .prepare("INSERT INTO processes (id, name) VALUES ('supplier-maintenance', 'Supplier Maintenance')")
+      .run();
+    await env.DB
+      .prepare(
+        `INSERT INTO process_stages (id, process_id, name, sequence, evaluation_scope, required_permission)
+         VALUES ('supplier-maintenance-review', 'supplier-maintenance', 'Review', 1, 'header', 'Supplier.Maintain')`
+      )
+      .run();
+    await env.DB
+      .prepare(
+        `INSERT INTO process_stage_versions (process_id, version, stage_id, sequence)
+         VALUES ('supplier-maintenance', 1, 'supplier-maintenance-review', 1)`
+      )
+      .run();
+    await env.DB
+      .prepare("INSERT INTO org_teams (id, name, unit_id) VALUES ('supplier-maintenance-team', 'Supplier Maintenance', 'u1')")
+      .run();
+    await env.DB
+      .prepare(
+        `INSERT INTO rule_sets (id, name, mode, status, vocabulary)
+         VALUES ('supplier-maintenance-rules', 'Supplier Maintenance Rules', 'first_match', 'active', 'supplier')`
+      )
+      .run();
+    await env.DB
+      .prepare("UPDATE process_stages SET rule_set_id = 'supplier-maintenance-rules' WHERE id = 'supplier-maintenance-review'")
+      .run();
+    await env.DB
+      .prepare("INSERT INTO rules (id, rule_set_id, sort_order, enabled) VALUES ('r1', 'supplier-maintenance-rules', 1, 1)")
+      .run();
+    await env.DB
+      .prepare(
+        `INSERT INTO rule_versions (rule_id, version, source_text, compiled_json, compiled_by, approved_by, approved_at, effective_from)
+         VALUES ('r1', 1, 'Assign a task to the Supplier Maintenance team requiring Supplier.Maintain.',
+                 '{"conditions":{"all":[{"field":"id","operator":"is_present"}]},"actions":[{"type":"assign_task","params":{"team":"supplier-maintenance-team","permission":"Supplier.Maintain"}}]}',
+                 'test seed', 'operator', datetime('now'), datetime('now'))`
+      )
+      .run();
+  }
+
+  describe("a new supplier", () => {
+    it("spawns a real instance and a real, claimable task", async () => {
+      await seedSupplierMaintenance();
+
+      const result = await handleCreateSupplier(env.DB, { name: "Acme Widgets" }, "alice");
+      expect(result.status).toBe(201);
+      expect(result.body.awaitingErp).toBe(true);
+      const supplierId = result.body.id as string;
+
+      const instance = await env.DB
+        .prepare("SELECT process_id, subject_type, subject_id FROM process_instances WHERE subject_id = ?")
+        .bind(supplierId)
+        .first();
+      expect(instance).toEqual({ process_id: "supplier-maintenance", subject_type: "supplier", subject_id: supplierId });
+
+      const task = await env.DB
+        .prepare("SELECT stage_id, owner_team_id, required_permission FROM tasks WHERE stage_id = 'supplier-maintenance-review'")
+        .first();
+      expect(task).toEqual({ stage_id: "supplier-maintenance-review", owner_team_id: "supplier-maintenance-team", required_permission: "Supplier.Maintain" });
+    });
+
+    it("does not spawn anything for a supplier created WITH an ERP identifier — not a new-supplier case at all", async () => {
+      await seedSupplierMaintenance();
+      await handleCreateSupplier(env.DB, { name: "Acme Widgets", erpIdentifier: "40200" }, "alice");
+
+      const count = await env.DB.prepare("SELECT count(*) AS n FROM process_instances").first<{ n: number }>();
+      expect(count?.n).toBe(0);
+    });
+
+    /**
+     * **Fails soft, proven directly.** A deployment that hasn't
+     * seeded this process yet must still be able to create a
+     * supplier — the whole reason the helper checks for the process
+     * first rather than assuming it exists.
+     */
+    it("still creates the supplier successfully when the process has never been seeded", async () => {
+      const result = await handleCreateSupplier(env.DB, { name: "Acme Widgets" }, "alice");
+      expect(result.status).toBe(201);
+      const count = await env.DB.prepare("SELECT count(*) AS n FROM process_instances").first<{ n: number }>();
+      expect(count?.n).toBe(0);
+    });
+  });
+
+  describe("a changed supplier", () => {
+    async function loadOnce(vatId: string) {
+      return load(`${HEADER}\n40100,Acme Widgets,${vatId},GB,Net 30`);
+    }
+
+    it("spawns an instance naming exactly which fields changed, on a second load with different values", async () => {
+      await seedSupplierMaintenance();
+      await loadOnce("GB123456789");
+      await loadOnce("GB999999999");
+
+      const supplier = await env.DB.prepare("SELECT id FROM suppliers WHERE erp_identifier = '40100'").first<{ id: string }>();
+      const instance = await env.DB
+        .prepare("SELECT process_id FROM process_instances WHERE subject_id = ?")
+        .bind(supplier!.id)
+        .first();
+      expect(instance).toEqual({ process_id: "supplier-maintenance" });
+
+      const task = await env.DB.prepare("SELECT owner_team_id FROM tasks WHERE stage_id = 'supplier-maintenance-review'").first();
+      expect(task).toEqual({ owner_team_id: "supplier-maintenance-team" });
+    });
+
+    it("spawns nothing when a second load repeats exactly the same values", async () => {
+      await seedSupplierMaintenance();
+      await loadOnce("GB123456789");
+      await loadOnce("GB123456789");
+
+      const count = await env.DB.prepare("SELECT count(*) AS n FROM process_instances").first<{ n: number }>();
+      expect(count?.n).toBe(0);
+    });
+
+    it("spawns nothing on the FIRST load of a brand-new, already-ERP-identified supplier — that is the new-supplier half, not this one", async () => {
+      await seedSupplierMaintenance();
+      await loadOnce("GB123456789");
+
+      const count = await env.DB.prepare("SELECT count(*) AS n FROM process_instances").first<{ n: number }>();
+      expect(count?.n).toBe(0);
+    });
+  });
+});

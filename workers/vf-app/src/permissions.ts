@@ -102,6 +102,22 @@ const AP_PERMISSIONS = [
 const AR_PERMISSIONS = ["AR.Validate", "AR.Approve", "AR.Issue", "AR.Remind", "AR.Collect", "AR.Analysis"] as const;
 
 /**
+ * **A real route behind it from the start — decision 0350.** Unlike
+ * AR_PERMISSIONS and EXPENSE_PERMISSIONS above, this is not the
+ * "add now, unused, clearly flagged" placeholder precedent: the
+ * Supplier Maintenance stage's own rule assigns a task requiring
+ * this permission the moment it is seeded, so a person needs to
+ * actually hold it to claim one.
+ *
+ * A separate namespace from `AP.Supplier` ("view and manage
+ * suppliers," the mirror screen itself), matching decision 0333's
+ * own "namespaced by business role, not by route": validating a new
+ * or changed supplier record is its own business function, not AP
+ * work that happened to touch a supplier.
+ */
+const SUPPLIER_MAINTENANCE_PERMISSIONS = ["Supplier.Maintain"] as const;
+
+/**
  * Expense management — added alongside decision 0022's expense field
  * vocabulary, the same "add now, unused, clearly flagged" precedent
  * as AR_PERMISSIONS above. No route in this system approves or
@@ -183,6 +199,7 @@ export const PERMISSIONS = [
   ...AP_PERMISSIONS,
   ...AR_PERMISSIONS,
   ...EXPENSE_PERMISSIONS,
+  ...SUPPLIER_MAINTENANCE_PERMISSIONS,
   ...ADMIN_PERMISSIONS,
   ...SYSTEM_PERMISSIONS,
 ] as const;
@@ -232,6 +249,8 @@ export const PERMISSION_DESCRIPTIONS: Record<Permission, string> = {
   "Expense.Submit": "Expense management — not yet built",
   "Expense.Approve": "Expense management — not yet built",
   "Expense.Review": "Expense management — not yet built",
+
+  "Supplier.Maintain": "Validate a new or changed supplier record",
 
   "Admin.Configure": "Configure sources, ledgers, cost centres, and other setup screens",
   "Admin.UserManagement": "Create people, and assign or revoke their roles",

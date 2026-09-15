@@ -1,6 +1,7 @@
 import { matchSupplier } from "./match-supplier.js";
 import type { RouteResult } from "./org-route.js";
 import { unitsBeneath } from "./enforce.js";
+import { spawnSupplierMaintenanceInstance, detectSupplierChanges } from "./supplier-maintenance.js";
 
 /**
  * Loading the customer's supplier master file — decision 0211.
@@ -284,12 +285,12 @@ export async function handleLoadSuppliers(
      */
     const existing = await db
       .prepare(
-        `SELECT id FROM suppliers
+        `SELECT id, name, vat_id, electronic_address, payment_terms FROM suppliers
          WHERE erp_identifier = ?
            AND ((erp_site_identifier IS NULL AND ?2 IS NULL) OR erp_site_identifier = ?2)`
       )
       .bind(values.erp_identifier, values.erp_site_identifier || null)
-      .first<{ id: string }>();
+      .first<{ id: string; name: string; vat_id: string | null; electronic_address: string | null; payment_terms: string | null }>();
 
     /**
      * **Adopting a supplier somebody recorded before the ERP had one** —
@@ -403,6 +404,25 @@ export async function handleLoadSuppliers(
         orgUnitId
       )
       .run();
+
+    /**
+     * **The "changed" half — decision 0350.** Only for a supplier the
+     * ERP already named (`existing`), never a brand-new or newly-
+     * adopted row: those are the "new supplier" half, already handled
+     * by `handleCreateSupplier`, and comparing a row against itself on
+     * its first-ever load would flag every field as "changed."
+     */
+    if (existing) {
+      const changedFields = detectSupplierChanges(existing, {
+        name: values.name,
+        vat_id: values.vat_id || null,
+        electronic_address: values.electronic_address || null,
+        payment_terms: values.payment_terms || null,
+      });
+      if (changedFields.length > 0) {
+        await spawnSupplierMaintenanceInstance(db, id, values.name, "changed", changedFields);
+      }
+    }
 
     loaded++;
   }
@@ -826,6 +846,17 @@ export async function handleCreateSupplier(
       text(body.paymentTerms)
     )
     .run();
+
+  /**
+   * **The "new supplier" half — decision 0350.** `!erp` is exactly
+   * decision 0231's own `supplier.awaitingErp`: a record made before
+   * the ERP has one. Fails soft by design; a supplier record must
+   * never fail to be created because an optional maintenance process
+   * hasn't been seeded.
+   */
+  if (!erp) {
+    await spawnSupplierMaintenanceInstance(db, id, name, "new_supplier");
+  }
 
   return { status: 201, body: { id, createdBy, awaitingErp: !erp } };
 }
