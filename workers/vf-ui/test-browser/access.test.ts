@@ -985,7 +985,15 @@ describe("a person's own properties and limits — decision 0334, its own pop-ou
    * the approval-limit and spend-limit currency fields offer the
    * same fixed set, in the same order.
    */
-  it("offers a closed set of currencies for both approval and spend limits", async () => {
+  /**
+   * **The full Peppol BIS Billing 3.0 list — decision 0340.**
+   * Confirmed live: "we should have a table of valid peppol biz 3.0
+   * currencies" — replacing this file's own earlier, explicitly
+   * flagged guess (decision 0339). 178 codes, checked by count and a
+   * handful of the ones this project's own examples already use,
+   * rather than writing all 178 out a second time in this test.
+   */
+  it("offers the full Peppol BIS Billing 3.0 currency list for both approval and spend limits", async () => {
     await openRolesAs(["Admin.UserManagement"], baseBody());
     clickPropertiesAction("Alice");
 
@@ -993,28 +1001,35 @@ describe("a person's own properties and limits — decision 0334, its own pop-ou
     expect(rows).toHaveLength(2);
     for (const row of rows) {
       const currencySelect = row.querySelector<HTMLSelectElement>("select");
-      const options = [...(currencySelect?.querySelectorAll("option") ?? [])].map((o) => o.textContent);
-      expect(options).toEqual(["CHF", "EUR", "GBP", "USD"]);
+      const values = [...(currencySelect?.querySelectorAll("option") ?? [])].map((o) => (o as HTMLOptionElement).value);
+      expect(values).toHaveLength(178);
+      expect(values).toEqual([...values].sort());
+      expect(values).toContain("EUR");
+      expect(values).toContain("GBP");
+      expect(values).toContain("USD");
+      const labels = [...(currencySelect?.querySelectorAll("option") ?? [])].map((o) => o.textContent);
+      expect(labels).toContain("EUR — Euro");
     }
   });
 
   /**
-   * **The same closed set at creation time — decision 0339.** The
-   * New Person form sets an approval and spend limit at the same
-   * moment it creates the person; a free-text field there would be
-   * the one place a mistyped code could still slip through.
+   * **The same full list at creation time — decision 0340.** The New
+   * Person form sets an approval and spend limit at the same moment
+   * it creates the person; a narrower list there would be the one
+   * place a legitimate currency could still be refused.
    */
-  it("offers the same closed set of currencies on the New Person form", async () => {
+  it("offers the same full currency list on the New Person form", async () => {
     await openRolesAs(["Admin.UserManagement"], baseBody());
     const button = [...document.querySelectorAll("button")].find((b) => b.textContent?.includes("New person"));
     button?.click();
 
     const selects = document.querySelectorAll<HTMLSelectElement>(".editgrid select");
     // org, manager, cost centre, then approval-limit currency, then spend-limit currency
-    const approvalOptions = [...selects[3].querySelectorAll("option")].map((o) => o.textContent);
-    const spendOptions = [...selects[4].querySelectorAll("option")].map((o) => o.textContent);
-    expect(approvalOptions).toEqual(["CHF", "EUR", "GBP", "USD"]);
-    expect(spendOptions).toEqual(["CHF", "EUR", "GBP", "USD"]);
+    const approvalValues = [...selects[3].querySelectorAll("option")].map((o) => (o as HTMLOptionElement).value);
+    const spendValues = [...selects[4].querySelectorAll("option")].map((o) => (o as HTMLOptionElement).value);
+    expect(approvalValues).toHaveLength(178);
+    expect(spendValues).toHaveLength(178);
+    expect(approvalValues).toEqual(spendValues);
   });
 
   /**

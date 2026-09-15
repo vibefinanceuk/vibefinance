@@ -79,6 +79,7 @@ against the current system either.
 | **0114** — field visibility | 0143, 0144 | Two things. A **stage-wide** restriction replaces listing fields, because a list cannot know about a field added later. And the mechanism was **enforced only by the screen** — the keying route never consulted it, from September until 7 September. |
 | **0141** — a domain nobody owned | *itself* | `vibefinance-ai.com` is bound. The record stands; the situation it describes is over. |
 | **0332** — teams remain customer-wide | 0333 | Named as the one thing still customer-wide when Roles got a real UI, and reported live the same session: *"There should never be a null-org team."* `unit_id` is `NOT NULL` on `org_teams` now — every team belongs to exactly one org, scoped the same way people already are. |
+| **0339** — a four-currency guess | 0340 | Written down at the time as *"a real, stated assumption, not a researched requirement"* — the operator's own next message was the researched requirement: the full, 178-code Peppol BIS Billing 3.0 / ISO 4217 currency list, fetched from Peppol's own published code list rather than retyped from memory. |
 
 ---
 
