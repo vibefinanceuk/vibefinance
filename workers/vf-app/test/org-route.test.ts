@@ -8,6 +8,8 @@ import {
   handleRevokeRole,
   handleCreateUnit,
   handleUpdateUnit,
+  handleListUnits,
+  sortUnitsAsTree,
   handleCreateUser,
   handleUpdateUser,
   handleGetOrgOverview,
@@ -163,6 +165,87 @@ describe("handleUpdateUnit — decision 0335", () => {
     await handleCreateUnit(env.DB, { id: "u1", name: "Finance" });
     const result = await handleUpdateUnit(env.DB, "u1", { name: "Finance", kind: "division" });
     expect(result.status).toBe(422);
+  });
+});
+
+describe("handleListUnits — decision 0336", () => {
+  it("returns units tree-ordered, a child immediately beneath its own parent", async () => {
+    await handleCreateUnit(env.DB, { id: "group", name: "Acme Group", kind: "legal_entity" });
+    await handleCreateUnit(env.DB, { id: "fr", name: "Acme France", parentUnitId: "group" });
+    await handleCreateUnit(env.DB, { id: "de", name: "Acme Deutschland", parentUnitId: "group" });
+
+    const result = await handleListUnits(env.DB);
+    const body = result.body as { units: { id: string }[] };
+    expect(body.units.map((u) => u.id)).toEqual(["group", "de", "fr"]);
+  });
+});
+
+describe("sortUnitsAsTree — decision 0336", () => {
+  type Unit = { id: string; name: string; parentUnitId: string | null };
+
+  it("orders top-level units alphabetically when there is no hierarchy at all", () => {
+    const units: Unit[] = [
+      { id: "b", name: "Bravo", parentUnitId: null },
+      { id: "a", name: "Alpha", parentUnitId: null },
+      { id: "c", name: "Charlie", parentUnitId: null },
+    ];
+    expect(sortUnitsAsTree(units).map((u) => u.id)).toEqual(["a", "b", "c"]);
+  });
+
+  /**
+   * **The exact case reported live** — a child sorts immediately
+   * beneath its own parent, not grouped separately by kind the way
+   * `ORDER BY kind DESC, name ASC` always did.
+   */
+  it("places a child immediately beneath its own parent, not grouped by kind", () => {
+    const units: Unit[] = [
+      { id: "fr", name: "Acme France", parentUnitId: "group" },
+      { id: "group", name: "Acme Group", parentUnitId: null },
+      { id: "de", name: "Acme Deutschland", parentUnitId: "group" },
+    ];
+    expect(sortUnitsAsTree(units).map((u) => u.id)).toEqual(["group", "de", "fr"]);
+  });
+
+  it("recurses to grandchildren, depth-first, alphabetical at every level", () => {
+    const units: Unit[] = [
+      { id: "z", name: "Zulu", parentUnitId: null },
+      { id: "group", name: "Acme Group", parentUnitId: null },
+      { id: "fr", name: "Acme France", parentUnitId: "group" },
+      { id: "paris-south", name: "Paris South", parentUnitId: "fr" },
+      { id: "paris-north", name: "Paris North", parentUnitId: "fr" },
+      { id: "de", name: "Acme Deutschland", parentUnitId: "group" },
+    ];
+    expect(sortUnitsAsTree(units).map((u) => u.id)).toEqual([
+      "group",
+      "de",
+      "fr",
+      "paris-north",
+      "paris-south",
+      "z",
+    ]);
+  });
+
+  it("appends a unit whose own parentUnitId does not exist, rather than dropping it", () => {
+    const units: Unit[] = [
+      { id: "a", name: "Alpha", parentUnitId: null },
+      { id: "orphan", name: "Orphan", parentUnitId: "does-not-exist" },
+    ];
+    const result = sortUnitsAsTree(units);
+    expect(result).toHaveLength(2);
+    expect(result.map((u) => u.id)).toContain("orphan");
+  });
+
+  it("appends units inside a real cycle, rather than dropping them or looping forever", () => {
+    // A cycle should never exist in practice (0335's own self-parent
+    // check on create and update), but a defensive sort does not get
+    // to assume the data it is handed is always well-formed.
+    const units: Unit[] = [
+      { id: "a", name: "Alpha", parentUnitId: "b" },
+      { id: "b", name: "Bravo", parentUnitId: "a" },
+    ];
+    const result = sortUnitsAsTree(units);
+    expect(result).toHaveLength(2);
+    expect(result.map((u) => u.id).sort()).toEqual(["a", "b"]);
   });
 });
 
@@ -861,6 +944,16 @@ describe("handleGetOrgOverview (decision 0319)", () => {
       spendLimits: [],
       knownPermissions: PERMISSIONS.map((name) => ({ name, description: PERMISSION_DESCRIPTIONS[name] })),
     });
+  });
+
+  it("returns units tree-ordered, a child immediately beneath its own parent — decision 0336", async () => {
+    await handleCreateUnit(env.DB, { id: "group", name: "Acme Group", kind: "legal_entity" });
+    await handleCreateUnit(env.DB, { id: "fr", name: "Acme France", parentUnitId: "group" });
+    await handleCreateUnit(env.DB, { id: "de", name: "Acme Deutschland", parentUnitId: "group" });
+
+    const result = await handleGetOrgOverview(env.DB);
+    const body = result.body as { units: { id: string }[] };
+    expect(body.units.map((u) => u.id)).toEqual(["group", "de", "fr"]);
   });
 
   it("returns every cost centre, unscoped — decision 0334", async () => {

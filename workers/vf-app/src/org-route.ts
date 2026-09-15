@@ -238,11 +238,62 @@ export async function handleUpdateUnit(db: D1Database, unitId: string, body: Upd
  * listed, which made a customer writing an `assign_org` rule guess at
  * the id they were naming.
  */
+/**
+ * **A tree, not a flat sort — decision 0336.** Reported live: "order
+ * the list of orgs, each below their parent in alphabetical order."
+ * `ORDER BY kind DESC, name ASC` never grouped a child beneath its
+ * own parent at all — every operating unit sorted before every legal
+ * entity, regardless of any real parent-child relationship, while the
+ * screen's own indentation (`unitDepth`, in `access.js`) already
+ * implied a tree that the row order never actually matched.
+ *
+ * Alphabetical among siblings at every level, each unit immediately
+ * followed by its own children, depth-first — the exact shape
+ * `unitDepth`'s own indentation has always assumed. A unit whose own
+ * `parentUnitId` names something that does not exist, or that sits
+ * inside a real cycle, is appended at the end rather than silently
+ * dropped: this project's own standing discipline is that a real row
+ * is never quietly missing from a list, even one this ordering was
+ * never designed to expect.
+ */
+export function sortUnitsAsTree<T extends { id: string; name: string; parentUnitId: string | null }>(
+  units: T[]
+): T[] {
+  const byParent = new Map<string | null, T[]>();
+  for (const unit of units) {
+    const key = unit.parentUnitId;
+    const siblings = byParent.get(key) ?? [];
+    siblings.push(unit);
+    byParent.set(key, siblings);
+  }
+  for (const siblings of byParent.values()) {
+    siblings.sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  const ordered: T[] = [];
+  const visited = new Set<string>();
+  function visit(parentId: string | null) {
+    for (const unit of byParent.get(parentId) ?? []) {
+      if (visited.has(unit.id)) continue; // a real cycle, not a bug in this function
+      visited.add(unit.id);
+      ordered.push(unit);
+      visit(unit.id);
+    }
+  }
+  visit(null);
+
+  // Anything never reached — an orphaned parentUnitId, or a unit
+  // inside a cycle — appended rather than dropped, alphabetically
+  // among themselves.
+  const leftover = units.filter((u) => !visited.has(u.id)).sort((a, b) => a.name.localeCompare(b.name));
+  return [...ordered, ...leftover];
+}
+
 export async function handleListUnits(db: D1Database): Promise<RouteResult> {
   const rows = await db
     .prepare(
       `SELECT id, name, kind, parent_unit_id, buyer_endpoint, vat_id, buyer_reference
-       FROM org_units ORDER BY kind DESC, name ASC`
+       FROM org_units`
     )
     .all<{
       id: string;
@@ -254,19 +305,21 @@ export async function handleListUnits(db: D1Database): Promise<RouteResult> {
       buyer_reference: string | null;
     }>();
 
+  const units = sortUnitsAsTree(
+    rows.results.map((r) => ({
+      id: r.id,
+      name: r.name,
+      kind: r.kind,
+      parentUnitId: r.parent_unit_id,
+      buyerEndpoint: r.buyer_endpoint,
+      vatId: r.vat_id,
+      buyerReference: r.buyer_reference,
+    }))
+  );
+
   return {
     status: 200,
-    body: {
-      units: rows.results.map((r) => ({
-        id: r.id,
-        name: r.name,
-        kind: r.kind,
-        parentUnitId: r.parent_unit_id,
-        buyerEndpoint: r.buyer_endpoint,
-        vatId: r.vat_id,
-        buyerReference: r.buyer_reference,
-      })),
-    },
+    body: { units },
   };
 }
 
@@ -306,11 +359,10 @@ export async function handleGetOrgOverview(
 ): Promise<RouteResult> {
   const unitPlaceholders = scopeUnits ? scopeUnits.map(() => "?").join(", ") : "";
 
-  const units = await db
+  const unitRows = await db
     .prepare(
       `SELECT id, name, kind, parent_unit_id, buyer_endpoint, vat_id, buyer_reference FROM org_units
-       ${scopeUnits ? `WHERE id IN (${unitPlaceholders})` : ""}
-       ORDER BY kind DESC, name ASC`
+       ${scopeUnits ? `WHERE id IN (${unitPlaceholders})` : ""}`
     )
     .bind(...(scopeUnits ?? []))
     .all<{
@@ -322,6 +374,17 @@ export async function handleGetOrgOverview(
       vat_id: string | null;
       buyer_reference: string | null;
     }>();
+  const units = sortUnitsAsTree(
+    unitRows.results.map((r) => ({
+      id: r.id,
+      name: r.name,
+      kind: r.kind,
+      parentUnitId: r.parent_unit_id,
+      buyerEndpoint: r.buyer_endpoint,
+      vatId: r.vat_id,
+      buyerReference: r.buyer_reference,
+    }))
+  );
 
   /**
    * **Cost centres, unscoped — decision 0334.** Like role definitions
@@ -437,15 +500,7 @@ export async function handleGetOrgOverview(
   return {
     status: 200,
     body: {
-      units: units.results.map((r) => ({
-        id: r.id,
-        name: r.name,
-        kind: r.kind,
-        parentUnitId: r.parent_unit_id,
-        buyerEndpoint: r.buyer_endpoint,
-        vatId: r.vat_id,
-        buyerReference: r.buyer_reference,
-      })),
+      units,
       costCentres: costCentres.results.map((r) => ({ id: r.id, name: r.name })),
       users: users.results.map((r) => ({
         id: r.id,
