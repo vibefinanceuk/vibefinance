@@ -735,13 +735,12 @@ function openTeamForm(existingTeam) {
 }
 
 /**
- * **Two icons, not a whole-row click — decision 0337.** Reported
- * live: "the current popout is not very user friendly" — role
- * allocation and property assignment now open their own, separate
- * pop-outs, each reached by its own action inline in the row rather
- * than a single click opening everything at once. `actionLink`
- * itself, the same icon-and-label button every other write action on
- * this screen already uses, dropped straight into a table cell.
+ * **A separate column for each action, not sharing a cell with its
+ * own text — decision 0338.** Reported live, from a real screenshot:
+ * "the icons can fall into a separate column... else the row height
+ * will get too large." Stacking the icon beneath a cell's own text
+ * (0337's own first attempt) grew every row to fit both; a column of
+ * its own keeps the row the height its own text already needs.
  */
 function personRow(user) {
   const own = assignments.filter((a) => a.userId === user.id);
@@ -758,20 +757,10 @@ function personRow(user) {
 
   return el("tr", {}, [
     el("td", {}, [el("div", { text: user.name }), el("div", { class: "sm muted", text: user.email })]),
-    el(
-      "td",
-      { class: "sm" },
-      canAssign
-        ? [el("span", { text: assignmentText }), actionLink("roles", { onclick: () => openPersonRolesForm(user) })]
-        : [assignmentText]
-    ),
-    el(
-      "td",
-      { class: "sm" },
-      canAssign
-        ? [el("span", { text: limitText }), actionLink("properties", { onclick: () => openPersonPropertiesForm(user) })]
-        : [limitText]
-    ),
+    el("td", { class: "sm", text: assignmentText }),
+    el("td", {}, canAssign ? [actionLink("roles", { onclick: () => openPersonRolesForm(user) })] : []),
+    el("td", { class: "sm", text: limitText }),
+    el("td", {}, canAssign ? [actionLink("properties", { onclick: () => openPersonPropertiesForm(user) })] : []),
   ]);
 }
 
@@ -1167,7 +1156,7 @@ function render() {
       section(
         "roles.people",
         "roles.nopeople",
-        ["column.person", "roles.assignments", "roles.limits"],
+        ["column.person", "roles.assignments", "", "roles.limits", ""],
         users.map(personRow),
         canAssign ? actionLink("newperson", { onclick: () => openNewPersonForm() }) : null
       ),

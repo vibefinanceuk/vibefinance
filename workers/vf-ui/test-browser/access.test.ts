@@ -763,6 +763,21 @@ describe("role allocation for one person — decision 0327, its own pop-out agai
     button?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
   }
 
+  /**
+   * **Its own column, not stacked beneath the text — decision 0338.**
+   * Reported live, from a real screenshot: stacking the icon inside
+   * the same cell as the roles-held text grew every row to fit both.
+   */
+  it("the Roles action sits in its own cell, not sharing one with the roles-held text", async () => {
+    await openRolesAs(["Admin.UserManagement"], baseBody());
+    const row = [...document.querySelectorAll("tr")].find((r) => r.textContent?.includes("Alice"));
+    const cells = [...(row?.querySelectorAll("td") ?? [])];
+    const textCell = cells.find((c) => c.textContent?.includes("Holds no role"));
+    const actionCell = cells.find((c) => c.querySelector("button")?.textContent?.includes("Roles"));
+    expect(textCell).not.toBe(actionCell);
+    expect(textCell?.querySelector("button")).toBeNull();
+  });
+
   it("shows no Roles action without Admin.UserManagement", async () => {
     await openRolesAs(["AP.Dashboard"], baseBody());
     expect([...document.querySelectorAll("button")].some((b) => b.textContent?.includes("Roles"))).toBe(false);
