@@ -800,9 +800,10 @@ describe("arranging it (decision 0243)", () => {
     expect(arrangeIndex).toBeGreaterThan(-1);
     expect(moodIndex).toBeGreaterThan(-1);
     expect(arrangeIndex).toBeLessThan(moodIndex);
-    // No row of its own left beneath the heading — the picker modal's
-    // own .actionrow (a different feature) never opened in this test,
-    // so any match here would be this one, resurfaced.
+    // No row of its own left beneath the heading — decision 0369
+    // removed the picker modal's own .actionrow entirely (moved to
+    // its own .cardhead instead), so any match here would have to be
+    // this one, resurfaced.
     const strayArrange = [...document.querySelectorAll(".actionrow")].some((row) =>
       row.textContent?.includes("Arrange")
     );
@@ -1025,6 +1026,23 @@ describe("arranging it (decision 0243)", () => {
 
     expect(seen.some((r) => r.method === "PUT")).toBe(false);
     expect(document.querySelector(".popout")).toBeNull();
+  });
+
+  it("puts Save changes and Close in the pop-out's own top-right cardhead, not a footer row", async () => {
+    /**
+     * **Reported live** — decision 0369: "please could the 'Save
+     * changes' and 'close' buttons move to the top right of the box,
+     * so consistent with other screens."
+     */
+    await openMover(ONE);
+
+    const cardhead = document.querySelector(".popout .cardhead");
+    expect(cardhead).not.toBeNull();
+    const buttonLabels = [...(cardhead?.querySelectorAll("button") ?? [])].map((b) => b.textContent);
+    expect(buttonLabels).toEqual(["Save changes", "Close"]);
+
+    // No footer row left behind beneath the mover grid.
+    expect(document.querySelector(".popout .actionrow")).toBeNull();
   });
 });
 

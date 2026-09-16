@@ -939,7 +939,34 @@ async function openPicker() {
 
   const backdrop = el("div", { class: "backdrop" }, [
     el("div", { class: "popout moverpopout" }, [
-      el("h3", { text: t("dash.addcard") }),
+      /**
+       * **Save changes and Close, top right — decision 0369.**
+       * Reported live: "please could the 'Save changes' and 'close'
+       * buttons move to the top right of the box, so consistent with
+       * other screens." The same `.statebuttons`-in-a-`.cardhead`
+       * shape decision 0300 already gives Load and New supplier,
+       * "the same title-left, action-right row Change Seller and
+       * Header Fields already use" — not a new pattern invented for
+       * this one pop-out.
+       */
+      el("div", { class: "cardhead" }, [
+        el("h3", { text: t("dash.addcard") }),
+        el("div", { class: "statebuttons" }, [
+          toolButton("donearranging", t("dash.savechanges"), {
+            primary: true,
+            onclick: async () => {
+              cards.length = 0;
+              cards.push(...working);
+              if (!(await save())) {
+                problem.textContent = t("dash.savefailed");
+                return;
+              }
+              backdrop.remove();
+            },
+          }),
+          toolButton("close", t("viewer.supplier.close"), { onclick: () => backdrop.remove() }),
+        ]),
+      ]),
       el("div", { class: "movergrid" }, [
         el("div", {}, [
           el("div", { class: "muted tiny movercollabel", text: t("dash.hiddencards") }),
@@ -953,21 +980,6 @@ async function openPicker() {
       ]),
       stagePick,
       problem,
-      el("div", { class: "actionrow" }, [
-        toolButton("donearranging", t("dash.savechanges"), {
-          primary: true,
-          onclick: async () => {
-            cards.length = 0;
-            cards.push(...working);
-            if (!(await save())) {
-              problem.textContent = t("dash.savefailed");
-              return;
-            }
-            backdrop.remove();
-          },
-        }),
-        toolButton("close", t("viewer.supplier.close"), { onclick: () => backdrop.remove() }),
-      ]),
     ]),
   ]);
 
