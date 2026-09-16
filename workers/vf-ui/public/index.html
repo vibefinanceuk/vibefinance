@@ -1417,20 +1417,33 @@
     question: "the chart cards could potentially fit into the title
     bar, or indeed carry a weight: 'third' to allow three in a row.
     Could we try initially permitting three cards in a row?" The same
-    equal-heights reasoning `.dashgrid` already gives, at three across
-    instead of two.
+    "different heights get their own row" reasoning `.dashgrid`
+    already stands on, applied one band earlier.
   */
   .dashthird {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    display: flex;
+    flex-wrap: wrap;
     gap: var(--dash-gap);
     align-items: stretch;
     margin-bottom: var(--dash-gap);
   }
+  /*
+    **Grows to fill, shrinks to fit, wraps below 280px** — the same
+    reasoning `.dashstrip` already gives its own tiles, applied here
+    because a fixed `repeat(3, 1fr)` grid left a lone card pinned to
+    the first of three tracks with two empty ones beside it — reported
+    live, with a screenshot: "the Waiting for me card now sits
+    isolated. I am unable to add more to that row." A wider minimum
+    than a tile's own 240px: a bar chart's labels crowd sooner than a
+    single figure does.
+  */
+  .dashthird > .panel {
+    flex: 1 1 280px;
+    min-width: 280px;
+  }
 
   @media (max-width: 820px) {
     .dashgrid { grid-template-columns: 1fr; }
-    .dashthird { grid-template-columns: 1fr; }
   }
 
   .bignum {

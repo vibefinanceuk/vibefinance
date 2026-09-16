@@ -1204,12 +1204,37 @@ describe("a card asks for the room it needs (decision 0244)", () => {
     expect(document.querySelector(".dashgrid")).toBeNull();
   });
 
-  it("gives the third band room for three cards across, not two", async () => {
+  it("grows a lone card to fill the row, rather than leaving empty grid tracks beside it", async () => {
+    /**
+     * **Reported live, with a screenshot** — decision 0365: "the
+     * Waiting for me card now sits isolated. I am unable to add more
+     * to that row." A fixed `repeat(3, 1fr)` grid pinned a single
+     * card to the first of three tracks with two empty ones beside
+     * it. Flex, the same mechanism `.dashstrip` already uses for its
+     * own tiles, grows what is there to fill the row instead — still
+     * wrapping to three across once there is enough to fill it.
+     */
     const stylesheets = (await import("virtual:stylesheets")).default;
     const css = stylesheets["index.html"];
 
     const rule = css.slice(css.indexOf(".dashthird {"), css.indexOf(".dashthird {") + 200);
-    expect(rule).toContain("grid-template-columns: repeat(3, 1fr)");
+    expect(rule).toContain("display: flex");
+    expect(rule).toContain("flex-wrap: wrap");
+    expect(rule).not.toContain("grid-template-columns");
+  });
+
+  it("gives each third-band card its own grow-to-share, wrap-below basis, the same shape .dashstrip already gives a tile", async () => {
+    const stylesheets = (await import("virtual:stylesheets")).default;
+    const css = stylesheets["index.html"];
+
+    // Two rules share this exact selector text: one sets display and
+    // margin, the other (this one) sets the flex-basis — searched
+    // from after the band's own `.dashthird {` rule so this finds the
+    // second, not the first.
+    const marker = ".dashthird > .panel {";
+    const from = css.indexOf(marker, css.indexOf(".dashthird {"));
+    const rule = css.slice(from, from + 150);
+    expect(rule).toContain("flex: 1 1 280px");
   });
 
   it("leaves room for the legend beside the ring", async () => {
