@@ -1151,6 +1151,38 @@ describe("a card asks for the room it needs (decision 0244)", () => {
     expect(document.querySelector(".bignum")?.textContent).toBe("5");
   });
 
+  it("says 'across N stages' once, not twice, once charted", async () => {
+    /**
+     * **Reported live**: "the Waiting for me card says 'across 4
+     * stages' twice. please could one be removed." The card's own
+     * subtitle and the figure's own label had been passed the same
+     * string by mistake; the card-level subtitle was removed, so only
+     * the figure's own label — the same one the single-stage case
+     * already shows — says it.
+     */
+    await openDashboard([
+      {
+        id: "f2",
+        cardType: "waiting_for_me",
+        settings: {},
+        position: 0,
+        data: {
+          count: 5,
+          stages: 2,
+          byStage: [
+            { stage_id: "validation", stage_name: "Validation", n: 3 },
+            { stage_id: "approval", stage_name: "Approval", n: 2 },
+          ],
+        },
+      },
+    ]);
+
+    const card = [...document.querySelectorAll(".panel")].find((p) => p.textContent?.includes("Waiting for me"));
+    const occurrences = card?.textContent?.split("across 2 stages").length ?? 1;
+    expect(occurrences - 1).toBe(1);
+    expect(card?.querySelector(".sub")).toBeNull();
+  });
+
   it("stays clickable to the unfiltered mine view once charted, the same as the plain tile", async () => {
     await openDashboard([
       {

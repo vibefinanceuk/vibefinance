@@ -233,10 +233,19 @@ const RENDERERS = {
      * that items exist in." Laid out the same way `done` already
      * combines a total with its own bar chart, rather than inventing
      * a second shape for the same idea.
+     *
+     * **No card-level subtitle, decision 0367** — reported live: "the
+     * Waiting for me card says 'across 4 stages' twice." `done` uses
+     * two different strings for its own subtitle and its own figure's
+     * label; this passed the same `subtitle` to both by mistake.
+     * Removed here rather than given a second string: the figure's
+     * own label already says it, right beside the number it describes
+     * — the same place the single-stage case below says it too, with
+     * nothing above the figure repeating it.
      */
     const card = panel(
       t("dash.waiting_for_me"),
-      subtitle,
+      null,
       { kind: "graphic" },
       el("div", {}, [
         figure(data.count, subtitle),
