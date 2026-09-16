@@ -41,10 +41,23 @@ an AP screen, not a growing transaction log — worth revisiting if
 real volume ever makes that assumption wrong, the same honest
 limitation Suppliers' own screen states rather than hides.
 
-**Newest first.** Ordered by `created_at DESC` rather than
+**Newest first.** Ordered by `created_at DESC, rowid DESC` rather than
 `issue_date`, since the latter is optional and the former never is —
 and because the scenario this most directly serves is "I just loaded a
 file, show me what landed."
+
+> **Addendum, found live from a real screenshot.** `created_at DESC`
+> alone was not enough: a whole CSV load inserts every order within
+> one request, so a batch shares one second-level timestamp, and ties
+> broke in whatever order SQLite's own storage happened to return
+> them — visibly not insertion order, confirmed directly against a
+> real deployment (`PO-30005, PO-30003, PO-30007, PO-30006...`, no
+> discernible pattern). `id` is `TEXT PRIMARY KEY`, not
+> `INTEGER PRIMARY KEY`, so this table still carries SQLite's own
+> implicit, strictly-increasing `rowid` — added as the tiebreaker,
+> proven by a test that reverts the fix first and confirms the exact
+> same shuffled order the screenshot showed, before confirming the fix
+> corrects it.
 
 ---
 
@@ -110,7 +123,8 @@ already covered by the `/purchase-orders` pattern decision 0371 added
 to the allowlist itself, since `mayProxy()` does not distinguish by
 method.
 
-vf-app: 1,756 tests (was 1,751). vf-ui: 72 worker tests (unchanged),
+vf-app: 1,757 tests (was 1,751 before this decision; +1 more for the
+ordering addendum above). vf-ui: 72 worker tests (unchanged),
 575 browser tests (was 564). vf-licence: 320 tests, unchanged — this
 decision's own migration (`0111`) added new keys only, no schema
 change.

@@ -381,6 +381,15 @@ export async function handleLoadPurchaseOrdersCsv(db: D1Database, csv: string): 
  * the full line set is what the existing single-order lookup already
  * returns, and a person clicking through gets it fresh rather than
  * this route duplicating it for every row on every list load.
+ *
+ * **`created_at DESC, rowid DESC`, not `created_at` alone** — found
+ * live, from a real screenshot: a CSV load inserts every order within
+ * one request, so a whole batch shares the same second-level
+ * timestamp, and ties broke in whatever order SQLite's own storage
+ * happened to return them — visibly not insertion order. `id` is
+ * `TEXT PRIMARY KEY`, not `INTEGER PRIMARY KEY`, so this table still
+ * carries SQLite's own implicit, strictly-increasing `rowid` — a
+ * reliable tiebreaker `created_at`'s own precision can't provide.
  */
 export async function handleListPurchaseOrders(db: D1Database): Promise<RouteResult> {
   const rows = await db
@@ -391,7 +400,7 @@ export async function handleListPurchaseOrders(db: D1Database): Promise<RouteRes
        FROM purchase_orders po
        LEFT JOIN purchase_order_lines pol ON pol.purchase_order_id = po.id
        GROUP BY po.id
-       ORDER BY po.created_at DESC`
+       ORDER BY po.created_at DESC, po.rowid DESC`
     )
     .all<Record<string, unknown>>();
 

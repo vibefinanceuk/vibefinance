@@ -230,6 +230,28 @@ PO-9001,2,Gadgets,5,EA,250`
     expect(body.purchaseOrders.map((p) => p.order_number)).toEqual(["PO-NEW", "PO-OLD"]);
   });
 
+  it("still orders correctly within one CSV batch, where every order genuinely shares the same created_at — found live from a real screenshot", async () => {
+    // The bug this guards: created_at has only second-level
+    // precision, and every order in one CSV load lands within the
+    // same request — so without a real tiebreaker, three orders that
+    // share a timestamp came back in whatever order SQLite's storage
+    // happened to return them, not the order they were actually
+    // loaded in.
+    await handleLoadPurchaseOrdersCsv(
+      env.DB,
+      `order_number,line number,item
+PO-BATCH-A,1,Widgets
+PO-BATCH-B,1,Widgets
+PO-BATCH-C,1,Widgets`
+    );
+
+    const result = await handleListPurchaseOrders(env.DB);
+    const body = result.body as { purchaseOrders: Record<string, unknown>[] };
+    // Loaded in A, B, C order — the last one inserted is the most
+    // recent, so it comes out first.
+    expect(body.purchaseOrders.map((p) => p.order_number)).toEqual(["PO-BATCH-C", "PO-BATCH-B", "PO-BATCH-A"]);
+  });
+
   it("counts zero lines honestly for an order that somehow has none, rather than omitting the row", async () => {
     // Not reachable through either real ingestion path today (both
     // refuse a line-less document), but the join itself should never

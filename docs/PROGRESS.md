@@ -561,7 +561,7 @@ elsewhere.
 
 | Package | Tests |
 |---|---|
-| `vf-app` | 1756 |
+| `vf-app` | 1757 |
 | `vf-licence` | 320 |
 | `vf-ui` | 72 Worker · 575 browser |
 | `shared` | 269 passing, 3 known pre-existing failures |
