@@ -136,6 +136,18 @@ async function openList(tasks: unknown[]) {
   await loadStrings();
   const { start } = await import("/tasks.js");
   await start();
+  /**
+   * **Explicit, not assumed — decision 0359.** The Dashboard is now
+   * the default landing screen for anyone who can see one, and this
+   * helper's own fixture grants every permission including
+   * `AP.Dashboard`. `openList` exists specifically to test the Tasks
+   * screen, so it navigates there itself rather than relying on
+   * whatever `start()` happens to land on — the same real-click
+   * navigation decision 0191's own test already established, not a
+   * new pattern invented here.
+   */
+  const tasksLink = [...document.querySelectorAll(".navitem")].find((a) => a.textContent?.includes("Tasks")) as HTMLElement;
+  tasksLink?.click();
   await new Promise((r) => setTimeout(r, 0));
 }
 
@@ -628,6 +640,10 @@ describe("the flat nav, permission-filtered (decisions 0274 and 0276)", () => {
         "/api/ui-strings": STRINGS,
         "/api/whoami": { id: "u-dan", name: "Dan", permissions: [permission] },
         "/api/tasks": { tasks: [], counts: {} },
+        // The AP.Dashboard case now lands directly on the Dashboard
+        // itself (decision 0359) rather than Tasks, so its own fetch
+        // needs a real stub too.
+        "/api/dashboard": { cards: [], usingDefault: true },
       });
       const { loadStrings } = await import("/strings.js");
       await loadStrings();
@@ -752,6 +768,7 @@ describe("sign out is the frame's own, not one screen's (decision 0283)", () => 
           "/api/ui-strings": STRINGS,
           "/api/whoami": { id: "u-dan", name: "Dan", permissions: ALL_NAV_PERMISSIONS },
           "/api/tasks": { tasks: [], counts: {} },
+          "/api/dashboard": { cards: [], usingDefault: true },
           "/api/sign-out": {},
         };
         if (!(path in routes)) throw new Error(`no stub for ${path}`);
@@ -874,6 +891,9 @@ describe("the org switcher (decision 0313)", () => {
       "/api/ui-strings": STRINGS,
       "/api/whoami": { id: "u-dan", name: "Dan", permissions: ALL_NAV_PERMISSIONS, units, holdsEverywhere },
       "/api/tasks": { tasks: [], counts: {} },
+      // ALL_NAV_PERMISSIONS includes AP.Dashboard, so start() now
+      // lands here directly (decision 0359).
+      "/api/dashboard": { cards: [], usingDefault: true },
     });
     const { loadStrings } = await import("/strings.js");
     await loadStrings();
@@ -963,6 +983,12 @@ describe("the org switcher (decision 0313)", () => {
       ],
       true
     );
+    // /api/tasks is only called once the Tasks screen itself is open
+    // — the default landing screen is now the Dashboard (decision
+    // 0359), so this test's own subject needs a real, explicit visit.
+    const tasksLink = [...document.querySelectorAll(".navitem")].find((a) => a.textContent?.includes("Tasks")) as HTMLElement;
+    tasksLink?.click();
+    await new Promise((r) => setTimeout(r, 0));
 
     const calls = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls.map((c) => String(c[0]));
     const tasksCall = calls.find((u) => u.startsWith("/api/tasks?"));
@@ -977,6 +1003,9 @@ describe("the org switcher (decision 0313)", () => {
       ],
       true
     );
+    const tasksLink = [...document.querySelectorAll(".navitem")].find((a) => a.textContent?.includes("Tasks")) as HTMLElement;
+    tasksLink?.click();
+    await new Promise((r) => setTimeout(r, 0));
 
     const calls = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls.map((c) => String(c[0]));
     const tasksCall = calls.find((u) => u.startsWith("/api/tasks?"));
@@ -1168,6 +1197,7 @@ describe("the ownership dropdown shows the filter in force (decision 0256)", () 
       "/api/ui-strings": STRINGS,
       "/api/whoami": { id: "u-dan", name: "Dan", permissions: ALL_NAV_PERMISSIONS },
       "/api/tasks": { tasks: [], counts: {} },
+      "/api/dashboard": { cards: [], usingDefault: true },
     });
 
     mountShell();
@@ -1175,6 +1205,11 @@ describe("the ownership dropdown shows the filter in force (decision 0256)", () 
     await loadStrings();
     const { start } = await import("/tasks.js");
     await start();
+    // The default landing screen is now the Dashboard (decision
+    // 0359); this test's own subject is the Tasks screen specifically.
+    const tasksLink = [...document.querySelectorAll(".navitem")].find((a) => a.textContent?.includes("Tasks")) as HTMLElement;
+    tasksLink?.click();
+    await new Promise((r) => setTimeout(r, 0));
 
     const ownership = document.querySelectorAll(".filters select")[1] as HTMLSelectElement;
     expect(ownership.value).toBe("");

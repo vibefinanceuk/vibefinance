@@ -293,6 +293,27 @@ async function loadTasks() {
   for (const task of tasks) {
     if (task.stageId && task.stageName) knownStages.set(task.stageId, task.stageName);
   }
+  /**
+   * **Both the option and the value, not just the value — decision
+   * 0359's own fix.** `filterBar()` builds the stage `<select>`'s own
+   * `<option>` elements once, from whatever `knownStages` held at
+   * render time, and never revisits them. A stage this screen has
+   * never seen before has no matching `<option>` at that point, so
+   * setting `.value` to it — here or at render time — silently does
+   * nothing until the option itself exists too. Exactly decision
+   * 0254's own bug, for a new reason: `start()` used to always call
+   * this function once before anything else could reach this screen,
+   * so `knownStages` was never genuinely empty by the time a filtered
+   * open ran its own `render()`. Landing on the Dashboard by default
+   * now makes that no longer true.
+   */
+  const stageSelect = document.querySelector(".filters select");
+  if (stageSelect && filters.stage && !stageSelect.querySelector(`option[value="${filters.stage}"]`)) {
+    const name = knownStages.get(filters.stage);
+    if (name) stageSelect.append(el("option", { value: filters.stage, text: name }));
+  }
+  if (stageSelect) stageSelect.value = filters.stage;
+
   const body = document.getElementById("rows");
   body.replaceChildren(
     ...(tasks.length
@@ -824,7 +845,28 @@ export async function start() {
   if (!response.ok) return false;
 
   me = await response.json();
-  render();
-  await loadTasks();
+
+  /**
+   * **The Dashboard, not Tasks, is the default landing screen —
+   * decision 0359.** Reported live: "make the default screen
+   * launched at login, to be the Dashboard." A dynamic import, the
+   * same mechanism `go()` itself already uses to open every other
+   * screen — this file has never imported `dashboard.js` directly,
+   * and starting now would be a circular import the moment
+   * `dashboard.js` imports anything back from here.
+   *
+   * **Falls back to Tasks for anyone who cannot see a dashboard at
+   * all.** Not every permission set holds `AP.Dashboard`, and a
+   * default that lands somebody on a screen refused out from under
+   * them is a worse landing than the one this replaces.
+   */
+  if (hasMyPermission("AP.Dashboard")) {
+    const { open } = await import("/dashboard.js");
+    await open();
+  } else {
+    render();
+    await loadTasks();
+  }
+
   return true;
 }

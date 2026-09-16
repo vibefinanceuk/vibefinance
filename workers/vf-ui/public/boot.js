@@ -6,8 +6,9 @@
  * perfectly authenticated — and until now the page rendered an empty
  * sign-in form regardless, because it never checked.
  *
- * So: ask first, then decide. A signed-in person sees their tasks; a
- * signed-out one sees the form.
+ * So: ask first, then decide. A signed-in person sees their default
+ * landing screen — the Dashboard, or Tasks for anyone who cannot see
+ * one (decision 0359) — a signed-out one sees the form.
  */
 import { start } from "/tasks.js";
 import { loadStrings, applyStrings, t } from "/strings.js";
