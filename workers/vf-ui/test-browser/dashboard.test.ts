@@ -1139,7 +1139,7 @@ describe("a card asks for the room it needs (decision 0244)", () => {
     ]);
 
     const card = [...document.querySelectorAll(".panel")].find((p) => p.textContent?.includes("Waiting for me"));
-    expect(card?.classList.contains("card-half")).toBe(true);
+    expect(card?.classList.contains("card-third")).toBe(true);
 
     const labels = [...(card?.querySelectorAll("svg text") ?? [])].map((n) => n.textContent);
     expect(labels).toContain("Validation");
@@ -1171,6 +1171,45 @@ describe("a card asks for the room it needs (decision 0244)", () => {
 
     const card = [...document.querySelectorAll(".panel")].find((p) => p.textContent?.includes("Waiting for me"));
     expect(card?.classList.contains("clickable")).toBe(true);
+  });
+
+  /**
+   * **A third band, decision 0364.** Reported live: "previously it
+   * sat in a row of three cards at the top, but has now moved to the
+   * bottom. Attempts to move up seem to reject being in its previous
+   * location... the chart cards could potentially fit into the title
+   * bar, or indeed carry a weight: 'third' to allow three in a row."
+   */
+  it("renders in its own band, not the wider .dashgrid, once charted", async () => {
+    await openDashboard([
+      {
+        id: "h",
+        cardType: "waiting_for_me",
+        settings: {},
+        position: 0,
+        data: {
+          count: 5,
+          stages: 2,
+          byStage: [
+            { stage_id: "validation", stage_name: "Validation", n: 3 },
+            { stage_id: "approval", stage_name: "Approval", n: 2 },
+          ],
+        },
+      },
+    ]);
+
+    const third = document.querySelector(".dashthird");
+    expect(third).not.toBeNull();
+    expect(third?.textContent).toContain("Waiting for me");
+    expect(document.querySelector(".dashgrid")).toBeNull();
+  });
+
+  it("gives the third band room for three cards across, not two", async () => {
+    const stylesheets = (await import("virtual:stylesheets")).default;
+    const css = stylesheets["index.html"];
+
+    const rule = css.slice(css.indexOf(".dashthird {"), css.indexOf(".dashthird {") + 200);
+    expect(rule).toContain("grid-template-columns: repeat(3, 1fr)");
   });
 
   it("leaves room for the legend beside the ring", async () => {
@@ -1573,7 +1612,16 @@ describe("a panel's own margin does not add to the grid's gap (decision 0261)", 
     const stylesheets = (await import("virtual:stylesheets")).default;
     const css = stylesheets["index.html"];
 
-    const rule = css.slice(css.indexOf(".dashgrid > .panel {"), css.indexOf(".dashgrid > .panel {") + 700);
+    /**
+     * **Extended to `.dashthird` too, decision 0364** — the same
+     * combined-selector pattern `.dashstrip .sub, .dashgrid .sub`
+     * already uses elsewhere in this file, so the third band gets the
+     * identical margin fix rather than a second, duplicated block of
+     * it.
+     */
+    const marker = ".dashgrid > .panel,";
+    const rule = css.slice(css.indexOf(marker), css.indexOf(marker) + 700);
+    expect(rule).toContain(".dashthird > .panel {");
     expect(rule).toContain("margin: 0");
   });
 
@@ -1592,16 +1640,18 @@ describe("a panel's own margin does not add to the grid's gap (decision 0261)", 
      * somewhere nearby, which is still true even if the selector were
      * renamed to something that targets nothing real — caught by
      * probing it directly, which is why this checks the full selector
-     * string instead.
+     * string instead. Extended to `.dashthird` for the same reason,
+     * decision 0364.
      */
     const stylesheets = (await import("virtual:stylesheets")).default;
     const css = stylesheets["index.html"];
 
-    expect(css).toContain(".dashgrid > .panel > .donutwrap {");
+    expect(css).toContain(".dashgrid > .panel > .donutwrap,");
+    expect(css).toContain(".dashthird > .panel > .donutwrap {");
 
     const rule = css.slice(
-      css.indexOf(".dashgrid > .panel > .donutwrap {"),
-      css.indexOf(".dashgrid > .panel > .donutwrap {") + 60
+      css.indexOf(".dashthird > .panel > .donutwrap {"),
+      css.indexOf(".dashthird > .panel > .donutwrap {") + 60
     );
     expect(rule).toContain("margin-top: auto");
   });

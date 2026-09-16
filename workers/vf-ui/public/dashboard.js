@@ -226,17 +226,18 @@ const RENDERERS = {
     }
 
     /**
-     * **Which queues, and how many in each — decision 0363.**
-     * Reported live: "update the dashboard, specifically the Waiting
-     * for me card, to include a bar chart, indicating which queues,
-     * and queue count that items exist in." Laid out the same way
-     * `done` already combines a total with its own bar chart, rather
-     * than inventing a second shape for the same idea.
+     * **Which queues, and how many in each — decision 0363, now in a
+     * third-width card (decision 0364).** Reported live: "update the
+     * dashboard, specifically the Waiting for me card, to include a
+     * bar chart, indicating which queues, and queue count that items
+     * exist in." Laid out the same way `done` already combines a
+     * total with its own bar chart, rather than inventing a second
+     * shape for the same idea.
      */
     const card = panel(
       t("dash.waiting_for_me"),
       subtitle,
-      { weight: "half" },
+      { weight: "third" },
       el("div", {}, [
         figure(data.count, subtitle),
         barChart(byStage.map((s) => ({ label: s.stage_name, value: s.n }))),
@@ -701,9 +702,23 @@ function render() {
    * what every dashboard worth looking at does, and it is not a style
    * choice: **a figure and a chart are different heights by nature**,
    * and a grid that lets them fight produces holes.
+   *
+   * **A third band, decision 0364** — reported live, trying a real
+   * question rather than a fixed answer: "the chart cards could
+   * potentially fit into the title bar, or indeed carry a weight:
+   * 'third' to allow three in a row. Could we try initially permitting
+   * three cards in a row?" A card small enough to sit three across is
+   * still a different height from a tile's own single figure, so it
+   * gets a row of its own rather than joining `.dashstrip` outright —
+   * between the tiles and the wider, two-across cards, the same
+   * "different heights get their own row" reasoning `.dashgrid`
+   * already stands on.
    */
   const tiles = withHandles.filter((node) => node.classList.contains("card-tile"));
-  const rest = withHandles.filter((node) => !node.classList.contains("card-tile"));
+  const thirds = withHandles.filter((node) => node.classList.contains("card-third"));
+  const rest = withHandles.filter(
+    (node) => !node.classList.contains("card-tile") && !node.classList.contains("card-third")
+  );
 
   shell.replaceChildren(
     frame(
@@ -735,6 +750,7 @@ function render() {
           arrangeButtons()
         ),
         tiles.length > 0 ? el("div", { class: "dashstrip" }, tiles) : null,
+        thirds.length > 0 ? el("div", { class: "dashthird" }, thirds) : null,
         rest.length > 0 ? el("div", { class: "dashgrid" }, rest) : null,
       ].filter(Boolean))
     )
