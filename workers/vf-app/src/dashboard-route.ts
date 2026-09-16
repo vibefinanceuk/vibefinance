@@ -121,24 +121,51 @@ export interface Card {
 async function waitingForMe(db: D1Database, userId: string, scope: Scope) {
   const clause = unitClause(scope, "h.org_unit_id");
 
-  const row = await db
+  /**
+   * **Broken down by stage, decision 0363** — reported live: "update
+   * the dashboard, specifically the Waiting for me card, to include a
+   * bar chart, indicating which queues, and queue count that items
+   * exist in." One query rather than two: the total and the distinct
+   * stage count are both derivable from the same grouped rows, so
+   * there is nothing a second, ungrouped query would answer that this
+   * one does not already carry.
+   *
+   * **`t.stage_id` directly**, the same column `task-list-route.ts`
+   * already joins `process_stages` through — the `stage_visits` /
+   * `process_instances` chain below exists only for the org-unit
+   * scope, which still has to come from the invoice a task's own
+   * stage visit points at.
+   *
+   * **Ordered by the stage's own sequence**, the same convention
+   * `whereThingsAre()` already established for "count by stage," so a
+   * reader sees queues in the order work actually moves through them
+   * rather than alphabetically or by whichever happens to be busiest
+   * today.
+   */
+  const rows = await db
     .prepare(
-      `SELECT count(*) AS n, count(DISTINCT t.stage_id) AS stages
+      `SELECT t.stage_id, COALESCE(s.name, '—') AS stage_name, count(*) AS n
        FROM tasks t
        LEFT JOIN stage_visits v ON v.id = t.stage_visit_id
        LEFT JOIN process_instances pi ON pi.id = v.process_instance_id
        LEFT JOIN invoice_headers h ON pi.subject_type = 'invoice' AND h.id = pi.subject_id
+       LEFT JOIN process_stages s ON s.id = t.stage_id
        WHERE t.status = 'open'
          AND (
            t.owner_user_id = ?1
            OR t.claimed_by = ?1
            OR t.owner_team_id IN (SELECT team_id FROM org_team_members WHERE user_id = ?1)
-         )${clause.sql}`
+         )${clause.sql}
+       GROUP BY t.stage_id
+       ORDER BY s.sequence`
     )
     .bind(userId, ...clause.binds)
-    .first<{ n: number; stages: number }>();
+    .all<{ stage_id: string; stage_name: string; n: number }>();
 
-  return { count: row?.n ?? 0, stages: row?.stages ?? 0 };
+  const byStage = rows.results;
+  const count = byStage.reduce((sum, r) => sum + r.n, 0);
+
+  return { count, stages: byStage.length, byStage };
 }
 
 /**

@@ -50,12 +50,33 @@ async function units() {
 async function work(
   id: string,
   unit: string | null,
-  opts: { owner?: string; claimed?: string; team?: string; days?: number; due?: string; value?: number } = {}
+  opts: {
+    owner?: string;
+    claimed?: string;
+    team?: string;
+    days?: number;
+    due?: string;
+    value?: number;
+    stage?: string;
+  } = {}
 ) {
   await env.DB.prepare("INSERT OR IGNORE INTO processes (id, name) VALUES ('ap', 'AP')").run();
   await env.DB.prepare(
     "INSERT OR IGNORE INTO process_stages (id, process_id, name, sequence) VALUES ('validation', 'ap', 'Validation', 1)"
   ).run();
+  /**
+   * **A second stage, decision 0363** — every existing caller keeps
+   * seeding at `validation` unchanged; a test that wants a real,
+   * per-stage breakdown to check now can, by naming one.
+   */
+  const stage = opts.stage ?? "validation";
+  if (stage !== "validation") {
+    await env.DB.prepare(
+      "INSERT OR IGNORE INTO process_stages (id, process_id, name, sequence) VALUES (?, 'ap', ?, 2)"
+    )
+      .bind(stage, stage)
+      .run();
+  }
 
   await env.DB.prepare(
     `INSERT INTO invoice_headers (id, facts_json, org_unit_id, org_assigned_by, total_with_vat)
@@ -72,24 +93,25 @@ async function work(
    */
   await env.DB.prepare(
     `INSERT INTO process_instances (id, process_id, subject_type, subject_id, current_stage_id, status)
-     VALUES (?, 'ap', 'invoice', ?, 'validation', 'in_progress')`
+     VALUES (?, 'ap', 'invoice', ?, ?, 'in_progress')`
   )
-    .bind(`pi-${id}`, id)
+    .bind(`pi-${id}`, id, stage)
     .run();
   await env.DB.prepare(
-    "INSERT INTO stage_visits (id, process_instance_id, stage_id, outcome) VALUES (?, ?, 'validation', 'matched')"
+    "INSERT INTO stage_visits (id, process_instance_id, stage_id, outcome) VALUES (?, ?, ?, 'matched')"
   )
-    .bind(`v-${id}`, `pi-${id}`)
+    .bind(`v-${id}`, `pi-${id}`, stage)
     .run();
 
   await env.DB.prepare(
     `INSERT INTO tasks (id, stage_id, stage_visit_id, owner_user_id, owner_team_id, claimed_by,
                         required_permission, status, created_at)
-     VALUES (?, 'validation', ?, ?, ?, ?, 'AP.Validate', 'open',
+     VALUES (?, ?, ?, ?, ?, ?, 'AP.Validate', 'open',
              datetime('now', ?))`
   )
     .bind(
       `t-${id}`,
+      stage,
       `v-${id}`,
       opts.owner ?? null,
       opts.team ?? null,
@@ -1264,5 +1286,65 @@ describe("the supplier card, scoped for the first time (decision 0358)", () => {
     await seedSupplier("s-fr", "Northwind FR", "acme-fr");
 
     expect(await awaitingErpCountFor("alice")).toBe(0);
+  });
+});
+
+describe("waiting_for_me, broken down by stage (decision 0363)", () => {
+  /**
+   * **Reported live**: "update the dashboard, specifically the
+   * Waiting for me card, to include a bar chart, indicating which
+   * queues, and queue count that items exist in."
+   */
+  type ByStage = { count: number; stages: number; byStage: { stage_id: string; stage_name: string; n: number }[] };
+
+  it("breaks the total down by stage, ordered by the stage's own sequence", async () => {
+    await person("alice", ["AP.Review"], null);
+    await work("inv-1", null, { owner: "alice", stage: "approval" });
+    await work("inv-2", null, { owner: "alice" });
+    await work("inv-3", null, { owner: "alice" });
+
+    const data = card<ByStage>(await cardsFor("alice"), "waiting_for_me");
+
+    // 'validation' is seeded at sequence 1, 'approval' at 2 — the
+    // same ordering whereThingsAre() already established, so the two
+    // "count by stage" cards on one dashboard read the same way.
+    expect(data.byStage).toEqual([
+      { stage_id: "validation", stage_name: "Validation", n: 2 },
+      { stage_id: "approval", stage_name: "approval", n: 1 },
+    ]);
+  });
+
+  it("derives the total and the stage count from the same breakdown, not a second query", async () => {
+    await person("alice", ["AP.Review"], null);
+    await work("inv-1", null, { owner: "alice", stage: "approval" });
+    await work("inv-2", null, { owner: "alice" });
+    await work("inv-3", null, { owner: "alice" });
+
+    const data = card<ByStage>(await cardsFor("alice"), "waiting_for_me");
+
+    expect(data.count).toBe(data.byStage.reduce((sum, s) => sum + s.n, 0));
+    expect(data.stages).toBe(data.byStage.length);
+    expect(data.count).toBe(3);
+    expect(data.stages).toBe(2);
+  });
+
+  it("is an empty array, not a single zero row, when nothing is waiting", async () => {
+    await person("alice", ["AP.Review"], null);
+
+    const data = card<ByStage>(await cardsFor("alice"), "waiting_for_me");
+
+    expect(data.byStage).toEqual([]);
+    expect(data.count).toBe(0);
+    expect(data.stages).toBe(0);
+  });
+
+  it("scopes the breakdown itself, not only the total — a restricted person sees only their own units' stages", async () => {
+    await person("alice", ["AP.Review"], "acme-fr");
+    await work("inv-fr", "acme-fr", { owner: "alice", stage: "approval" });
+    await work("inv-de", "acme-de", { owner: "alice" });
+
+    const data = card<ByStage>(await cardsFor("alice"), "waiting_for_me");
+
+    expect(data.byStage).toEqual([{ stage_id: "approval", stage_name: "approval", n: 1 }]);
   });
 });

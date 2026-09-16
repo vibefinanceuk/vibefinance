@@ -204,17 +204,47 @@ const RENDERERS = {
      * team I am on, at any stage), so the click asks for exactly that
      * and nothing narrower — an empty stage filter, `ownership: "mine"`.
      */
+    const subtitle = t("dash.acrossstages").replace("{n}", String(data.stages));
+    const byStage = data.byStage ?? [];
+
+    /**
+     * **One stage is a number, not a chart — decision 0244, applied
+     * here too.** The same rule `where_things_are` already follows: a
+     * bar chart of one bar is a rectangle, and the rectangle says
+     * nothing the figure above it does not. Kept as the original
+     * tile, unchanged, for this case.
+     */
+    if (byStage.length <= 1) {
+      const card = panel(t("dash.waiting_for_me"), null, { weight: "tile" }, figure(data.count, subtitle));
+
+      if (data.count > 0) {
+        card.classList.add("clickable");
+        card.onclick = () => openTasksFiltered({ ownership: "mine" });
+      }
+
+      return card;
+    }
+
+    /**
+     * **Which queues, and how many in each — decision 0363.**
+     * Reported live: "update the dashboard, specifically the Waiting
+     * for me card, to include a bar chart, indicating which queues,
+     * and queue count that items exist in." Laid out the same way
+     * `done` already combines a total with its own bar chart, rather
+     * than inventing a second shape for the same idea.
+     */
     const card = panel(
       t("dash.waiting_for_me"),
-      null,
-      { weight: "tile" },
-      figure(data.count, t("dash.acrossstages").replace("{n}", String(data.stages)))
+      subtitle,
+      { weight: "half" },
+      el("div", {}, [
+        figure(data.count, subtitle),
+        barChart(byStage.map((s) => ({ label: s.stage_name, value: s.n }))),
+      ])
     );
 
-    if (data.count > 0) {
-      card.classList.add("clickable");
-      card.onclick = () => openTasksFiltered({ ownership: "mine" });
-    }
+    card.classList.add("clickable");
+    card.onclick = () => openTasksFiltered({ ownership: "mine" });
 
     return card;
   },

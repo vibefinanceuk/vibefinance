@@ -1097,6 +1097,82 @@ describe("a card asks for the room it needs (decision 0244)", () => {
     expect(document.querySelectorAll(".donutwrap svg circle")).toHaveLength(2);
   });
 
+  /**
+   * **`waiting_for_me`, decision 0363.** Reported live: "update the
+   * dashboard, specifically the Waiting for me card, to include a bar
+   * chart, indicating which queues, and queue count that items exist
+   * in." The same tile-or-chart rule `where_things_are` already
+   * follows above, applied to this card's own new `byStage` data.
+   */
+  it("keeps the plain tile for waiting_for_me too, with 0 or 1 queue", async () => {
+    await openDashboard([
+      {
+        id: "e",
+        cardType: "waiting_for_me",
+        settings: {},
+        position: 0,
+        data: { count: 3, stages: 1, byStage: [{ stage_id: "approval", stage_name: "Approval", n: 3 }] },
+      },
+    ]);
+
+    const card = [...document.querySelectorAll(".panel")].find((p) => p.textContent?.includes("Waiting for me"));
+    expect(card?.querySelector("svg")).toBeNull();
+    expect(document.querySelector(".bignum")?.textContent).toBe("3");
+  });
+
+  it("draws a bar chart for waiting_for_me with two or more queues, one bar per queue", async () => {
+    await openDashboard([
+      {
+        id: "f",
+        cardType: "waiting_for_me",
+        settings: {},
+        position: 0,
+        data: {
+          count: 5,
+          stages: 2,
+          byStage: [
+            { stage_id: "validation", stage_name: "Validation", n: 3 },
+            { stage_id: "approval", stage_name: "Approval", n: 2 },
+          ],
+        },
+      },
+    ]);
+
+    const card = [...document.querySelectorAll(".panel")].find((p) => p.textContent?.includes("Waiting for me"));
+    expect(card?.classList.contains("card-half")).toBe(true);
+
+    const labels = [...(card?.querySelectorAll("svg text") ?? [])].map((n) => n.textContent);
+    expect(labels).toContain("Validation");
+    expect(labels).toContain("Approval");
+    expect(labels).toContain("3");
+    expect(labels).toContain("2");
+    // The total figure stays too — a chart of the parts does not
+    // replace the whole, the same layout `done` already uses.
+    expect(document.querySelector(".bignum")?.textContent).toBe("5");
+  });
+
+  it("stays clickable to the unfiltered mine view once charted, the same as the plain tile", async () => {
+    await openDashboard([
+      {
+        id: "g",
+        cardType: "waiting_for_me",
+        settings: {},
+        position: 0,
+        data: {
+          count: 5,
+          stages: 2,
+          byStage: [
+            { stage_id: "validation", stage_name: "Validation", n: 3 },
+            { stage_id: "approval", stage_name: "Approval", n: 2 },
+          ],
+        },
+      },
+    ]);
+
+    const card = [...document.querySelectorAll(".panel")].find((p) => p.textContent?.includes("Waiting for me"));
+    expect(card?.classList.contains("clickable")).toBe(true);
+  });
+
   it("leaves room for the legend beside the ring", async () => {
     /**
      * **A ring has no width to mean anything with** — decision 0248.
