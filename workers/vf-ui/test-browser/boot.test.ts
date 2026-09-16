@@ -59,6 +59,15 @@ const STRINGS = {
 beforeEach(() => {
   mountBootDom();
   vi.resetModules();
+  /**
+   * **`innerHTML` resets `body`'s own children, not `body` itself —
+   * decision 0361.** A real page load never carries a stale
+   * `working` class in from a previous one; this test file's own
+   * shared `document.body`, reused test to test, can. Reset
+   * explicitly so an earlier test's own `classList.add("working")`
+   * cannot leak into a later assertion that the class is absent.
+   */
+  document.body.classList.remove("working");
 });
 
 describe("body's own working class, set once regardless of which screen renders first (decision 0360)", () => {

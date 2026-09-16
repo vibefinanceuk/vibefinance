@@ -36,22 +36,6 @@ async function boot() {
 
   signIn.hidden = signedIn;
   shell.hidden = !signedIn;
-  /**
-   * **Set here, not by whichever screen happens to render first —
-   * decision 0360.** Reported live: "It's initial width is narrow on
-   * the page though. When I click tasks and then dashboard again, it
-   * resizes to full width." `body`'s own default (`display: grid;
-   * place-items: center`) exists to centre the sign-in form; `working`
-   * switches it to the full-width layout the signed-in app itself
-   * needs, and until now the only place that ever added it was
-   * `tasks.js`'s own `render()` — a fact true only because `start()`
-   * used to render Tasks unconditionally, before decision 0359 gave
-   * it a second, equally valid destination that never touched `body`
-   * at all. This is the one place that already knows, for certain,
-   * whether the app is showing regardless of which screen inside it
-   * renders first.
-   */
-  document.body.classList.toggle("working", signedIn);
 
   // The sign-in behaviour is only loaded when it is needed. It attaches
   // listeners to fields that do not otherwise matter.

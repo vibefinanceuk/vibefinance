@@ -136,3 +136,46 @@ describe("when the credentials were refused", () => {
     expect(shown).not.toContain("not your password");
   });
 });
+
+describe("a real, successful sign-in — decision 0361", () => {
+  /**
+   * **The exact gap decision 0360 left, found live**: "If I click
+   * refresh, it launches full screen - however, the initial load is
+   * narrow." Decision 0360 fixed `boot.js`'s own path — a page load,
+   * or a refresh — but never touched this one: `signin.js` calls
+   * `start()` directly on a successful sign-in, without ever going
+   * through `boot.js` at all. Nothing in this file exercised the form
+   * all the way through a real `submit` before now, which is exactly
+   * why this half of the bug went unnoticed the first time.
+   */
+  it("marks body as working once start() succeeds, the same as a page load or refresh", async () => {
+    stubFetch({
+      "/api/ui-strings": { ok: true, status: 200, body: STRINGS },
+      "/api/sign-in": {
+        ok: true,
+        status: 200,
+        body: { expiresAt: "2026-01-01T00:00:00Z", environmentId: "Acme-production" },
+      },
+      "/api/whoami": {
+        ok: true,
+        status: 200,
+        body: { id: "u-dan", name: "Dan", permissions: [], units: [], holdsEverywhere: false },
+      },
+      "/api/tasks": { ok: true, status: 200, body: { tasks: [], counts: {} } },
+    });
+
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    await import("/signin.js");
+
+    expect(document.body.classList.contains("working")).toBe(false);
+
+    document.getElementById("signin")?.dispatchEvent(new Event("submit", { cancelable: true, bubbles: true }));
+    // The form's own 1200ms delay before it acts on a successful
+    // sign-in (decision 0190), plus start()'s own async work.
+    await new Promise((r) => setTimeout(r, 1300));
+
+    expect(document.getElementById("shell")?.hidden).toBe(false);
+    expect(document.body.classList.contains("working")).toBe(true);
+  });
+});

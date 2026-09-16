@@ -874,5 +874,25 @@ export async function start() {
     await loadTasks();
   }
 
+  /**
+   * **Centralised here, not left to each caller — decision 0361.**
+   * Decision 0360 moved this out of this file's own `render()` and
+   * into `boot.js`, reasoning that `boot.js` was "the one place that
+   * already knows, for certain, whether the app is showing." That
+   * was wrong: `signin.js` calls `start()` directly too, on the
+   * "just signed in" path, and never touched `body` at all — so
+   * decision 0360's own fix repaired a page load and a refresh while
+   * leaving the moment right after signing in exactly as broken as
+   * before. Reported live, precisely: "If I click refresh, it
+   * launches full screen - however, the initial load is narrow."
+   *
+   * `start()` itself — not either of its two callers — is the one
+   * place genuinely common to both paths, and the one place that
+   * already knows, unconditionally, that it is about to return
+   * successfully. Setting it here closes the whole class of bug
+   * rather than the one instance of it a second time.
+   */
+  document.body.classList.add("working");
+
   return true;
 }
