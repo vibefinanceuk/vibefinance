@@ -106,7 +106,7 @@ async function load() {
  * 0242's rule that a trend drawn from nothing is a decoration wearing a
  * claim.
  */
-function panel(title, sub, { weight = "half", background = null } = {}, ...children) {
+function panel(title, sub, { kind = "graphic", background = null } = {}, ...children) {
   const foreground = el("div", { class: "tilefg" }, [
     el("div", { class: "cardhead" }, [el("h3", { text: title })]),
     sub ? el("div", { class: "sub", text: sub }) : null,
@@ -115,7 +115,7 @@ function panel(title, sub, { weight = "half", background = null } = {}, ...child
 
   const backgroundLayer = background ? el("div", { class: "tilebg" }, [background]) : null;
 
-  return el("div", { class: `panel card-${weight}` }, [backgroundLayer, foreground].filter(Boolean));
+  return el("div", { class: `panel card-${kind}` }, [backgroundLayer, foreground].filter(Boolean));
 }
 
 /**
@@ -211,11 +211,11 @@ const RENDERERS = {
      * **One stage is a number, not a chart — decision 0244, applied
      * here too.** The same rule `where_things_are` already follows: a
      * bar chart of one bar is a rectangle, and the rectangle says
-     * nothing the figure above it does not. Kept as the original
-     * tile, unchanged, for this case.
+     * nothing the figure above it does not. Kept narrow for this
+     * case, unchanged.
      */
     if (byStage.length <= 1) {
-      const card = panel(t("dash.waiting_for_me"), null, { weight: "tile" }, figure(data.count, subtitle));
+      const card = panel(t("dash.waiting_for_me"), null, { kind: "narrow" }, figure(data.count, subtitle));
 
       if (data.count > 0) {
         card.classList.add("clickable");
@@ -226,18 +226,18 @@ const RENDERERS = {
     }
 
     /**
-     * **Which queues, and how many in each — decision 0363, now in a
-     * third-width card (decision 0364).** Reported live: "update the
-     * dashboard, specifically the Waiting for me card, to include a
-     * bar chart, indicating which queues, and queue count that items
-     * exist in." Laid out the same way `done` already combines a
-     * total with its own bar chart, rather than inventing a second
-     * shape for the same idea.
+     * **Which queues, and how many in each — decision 0363, now a
+     * graphic card among any other (decision 0366).** Reported live:
+     * "update the dashboard, specifically the Waiting for me card, to
+     * include a bar chart, indicating which queues, and queue count
+     * that items exist in." Laid out the same way `done` already
+     * combines a total with its own bar chart, rather than inventing
+     * a second shape for the same idea.
      */
     const card = panel(
       t("dash.waiting_for_me"),
       subtitle,
-      { weight: "third" },
+      { kind: "graphic" },
       el("div", {}, [
         figure(data.count, subtitle),
         barChart(byStage.map((s) => ({ label: s.stage_name, value: s.n }))),
@@ -295,7 +295,17 @@ const RENDERERS = {
       })
     );
 
-    return el("div", { class: "panel" }, [
+    /**
+     * **`card-list`, decision 0366.** The one card this whole file's
+     * own card-kind system deliberately excludes — reported live:
+     * "with the exception of the list card 'on my clock'... The list
+     * card, only 1 in a row." Named directly rather than inferred
+     * from its own `.clocktable`, the way `.dashgrid`'s own
+     * `:has(.clocktable)` selector used to: a class this file writes
+     * itself is one less thing a future reader has to reverse-engineer
+     * from a coincidence of markup.
+     */
+    return el("div", { class: "panel card-list" }, [
       el("div", { class: "cardhead" }, [
         el("h3", { text: t("dash.on_my_clock") }),
         el("div", { class: "chips" }, sorts),
@@ -325,7 +335,7 @@ const RENDERERS = {
      * the figure does not.
      */
     if (stages.length <= 1) {
-      const card = panel(t("dash.where_things_are"), null, { weight: "tile" },
+      const card = panel(t("dash.where_things_are"), null, { kind: "narrow" },
         stages.length === 0
           ? el("div", { class: "muted", text: t("dash.nothinginflight") })
           : figure(stages[0].n, stages[0].stage_name));
@@ -349,7 +359,7 @@ const RENDERERS = {
     return panel(
       t("dash.where_things_are"),
       t("dash.bystage"),
-      { weight: "half" },
+      { kind: "graphic" },
       donutChart(
         stages.map((s) => ({ label: s.stage_name, value: s.n, stageId: s.stage_id })),
         {
@@ -372,7 +382,7 @@ const RENDERERS = {
     if (data.missing) {
       // **A stage that no longer exists says so** rather than showing a
       // zero, which would look like good news.
-      return panel(data.stageName ?? t("dash.astage"), null, { weight: "tile" },
+      return panel(data.stageName ?? t("dash.astage"), null, { kind: "narrow" },
         el("div", { class: "warn", text: t("dash.stagegone") }));
     }
 
@@ -385,10 +395,17 @@ const RENDERERS = {
      * **Unclaimed is the one that grows quietly**, and a stage where
      * every item is somebody else's needs nothing from the reader.
      */
+    /**
+     * **Graphic, not narrow — decision 0366.** The small donut beside
+     * the count is still a chart under the operator's own rule ("A
+     * graphic card, those with graphics"), so this card follows it
+     * even though its own footprint had been a tile's since decision
+     * 0250.
+     */
     const card = panel(
       data.stageName ?? t("dash.astage"),
       null,
-      { weight: "tile" },
+      { kind: "graphic" },
       el("div", { class: "stagesplit" }, [
         figure(data.count, t("dash.waitinghere")),
         donutChart(
@@ -421,7 +438,7 @@ const RENDERERS = {
     return panel(
       t("dash.ageing"),
       t("dash.ageingsub"),
-      { weight: "half" },
+      { kind: "graphic" },
       barChart(
         buckets.map((b, i) => ({
           label: b.label,
@@ -452,7 +469,7 @@ const RENDERERS = {
     const card = panel(
       t("dash.done"),
       t("dash.donesub"),
-      { weight: "half" },
+      { kind: "graphic" },
       el("div", {}, [
         figure(data.total ?? 0, t("dash.thisweek")),
         barChart(days.map((d, i) => ({ label: t(`dash.day.${dayKeys[i]}`), value: d.n }))),
@@ -477,7 +494,7 @@ const RENDERERS = {
     return panel(
       t("dash.received"),
       t("dash.receivedsub"),
-      { weight: "half" },
+      { kind: "graphic" },
       days.length === 0
         ? el("div", { class: "muted", text: t("dash.nonereceived") })
         : barChart(
@@ -493,14 +510,14 @@ const RENDERERS = {
     const suppliers = data.suppliers ?? [];
     if (suppliers.length === 1) {
       // The same argument as above.
-      return panel(t("dash.exceptions_by_supplier"), null, { weight: "tile" },
+      return panel(t("dash.exceptions_by_supplier"), null, { kind: "narrow" },
         figure(suppliers[0].n, suppliers[0].supplier, { warn: true }));
     }
 
     return panel(
       t("dash.exceptions_by_supplier"),
       t("dash.exceptionssub"),
-      { weight: "half" },
+      { kind: "graphic" },
       suppliers.length === 0
         ? el("div", { class: "muted", text: t("dash.noexceptions") })
         : barList(suppliers.map((s) => ({ label: s.supplier, value: s.n, warn: true })))
@@ -525,7 +542,7 @@ const RENDERERS = {
     const card = panel(
       t("dash.unplaced_documents"),
       null,
-      { weight: "tile" },
+      { kind: "narrow" },
       el("div", { class: "stagesplit" }, [
         figure(data.count, t("dash.about.unplaced_documents"), { warn: data.count > 0 }),
         el("div", { class: "tileicon" }, [icon("unplaced")]),
@@ -544,7 +561,7 @@ const RENDERERS = {
     const card = panel(
       t("dash.suppliers_awaiting_erp"),
       null,
-      { weight: "tile" },
+      { kind: "narrow" },
       el("div", { class: "stagesplit" }, [
         figure(data.count, t("dash.about.suppliers_awaiting_erp"), { warn: data.count > 0 }),
         el("div", { class: "tileicon" }, [icon("awaitingerp")]),
@@ -563,7 +580,7 @@ const RENDERERS = {
     const card = panel(
       t("dash.possible_duplicates"),
       null,
-      { weight: "tile" },
+      { kind: "narrow" },
       el("div", { class: "stagesplit" }, [
         figure(data.count, t("dash.about.possible_duplicates"), { warn: data.count > 0 }),
         el("div", { class: "tileicon" }, [icon("duplicate")]),
@@ -692,34 +709,19 @@ function render() {
   });
 
   /**
-   * **Two bands, not one grid** — decision 0246.
-   *
-   * The first version put tiles and charts in the same grid with
-   * `align-items: start`, so every row had a ragged bottom and a short
-   * tile beside a tall chart left a void the height of the chart.
-   *
-   * A strip of figures across the top and the wider cards beneath is
-   * what every dashboard worth looking at does, and it is not a style
-   * choice: **a figure and a chart are different heights by nature**,
-   * and a grid that lets them fight produces holes.
-   *
-   * **A third band, decision 0364** — reported live, trying a real
-   * question rather than a fixed answer: "the chart cards could
-   * potentially fit into the title bar, or indeed carry a weight:
-   * 'third' to allow three in a row. Could we try initially permitting
-   * three cards in a row?" A card small enough to sit three across is
-   * still a different height from a tile's own single figure, so it
-   * gets a row of its own rather than joining `.dashstrip` outright —
-   * between the tiles and the wider, two-across cards, the same
-   * "different heights get their own row" reasoning `.dashgrid`
-   * already stands on.
+   * **One flow, not several bands — decision 0366.** Reported live:
+   * "can we change all cards, with the exception of the list card 'on
+   * my clock', to be the same, so that they can occupy the same line,
+   * if so desired? I want a user to have flexibility to move to the
+   * top, or bottom of the page." Decisions 0246, 0364 and 0365 each
+   * split cards into their own band by size, and a card's stored
+   * order never decided which band it rendered in — which is exactly
+   * why a card that changed size could not be moved back to where it
+   * had been (decision 0364's own report). Rendered in stored order,
+   * with no split at all: the CSS `.card-narrow` / `.card-graphic` /
+   * `.card-list` classes each carry their own minimum width, and
+   * `flex-wrap` alone decides how many share a row.
    */
-  const tiles = withHandles.filter((node) => node.classList.contains("card-tile"));
-  const thirds = withHandles.filter((node) => node.classList.contains("card-third"));
-  const rest = withHandles.filter(
-    (node) => !node.classList.contains("card-tile") && !node.classList.contains("card-third")
-  );
-
   shell.replaceChildren(
     frame(
       el("div", { class: "dashboardpage" }, [
@@ -749,9 +751,7 @@ function render() {
           t("dash.sub").replace("{name}", me?.name ?? ""),
           arrangeButtons()
         ),
-        tiles.length > 0 ? el("div", { class: "dashstrip" }, tiles) : null,
-        thirds.length > 0 ? el("div", { class: "dashthird" }, thirds) : null,
-        rest.length > 0 ? el("div", { class: "dashgrid" }, rest) : null,
+        withHandles.length > 0 ? el("div", { class: "dashflow" }, withHandles) : null,
       ].filter(Boolean))
     )
   );

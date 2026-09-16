@@ -1036,7 +1036,7 @@ describe("a card asks for the room it needs (decision 0244)", () => {
    * me: 3"* sat in a panel the width of a worklist with a void beside
    * it — reported by looking at it.
    */
-  it("makes a count a tile and a chart a half", async () => {
+  it("makes a count narrow and a chart graphic", async () => {
     await openDashboard([
       { id: "a", cardType: "waiting_for_me", settings: {}, position: 0, data: { count: 3, stages: 1 } },
       {
@@ -1048,8 +1048,8 @@ describe("a card asks for the room it needs (decision 0244)", () => {
       },
     ]);
 
-    expect(document.querySelectorAll(".card-tile")).toHaveLength(1);
-    expect(document.querySelectorAll(".card-half")).toHaveLength(1);
+    expect(document.querySelectorAll(".card-narrow")).toHaveLength(1);
+    expect(document.querySelectorAll(".card-graphic")).toHaveLength(1);
   });
 
   it("draws a figure rather than a chart for one stage", async () => {
@@ -1139,7 +1139,7 @@ describe("a card asks for the room it needs (decision 0244)", () => {
     ]);
 
     const card = [...document.querySelectorAll(".panel")].find((p) => p.textContent?.includes("Waiting for me"));
-    expect(card?.classList.contains("card-third")).toBe(true);
+    expect(card?.classList.contains("card-graphic")).toBe(true);
 
     const labels = [...(card?.querySelectorAll("svg text") ?? [])].map((n) => n.textContent);
     expect(labels).toContain("Validation");
@@ -1174,19 +1174,24 @@ describe("a card asks for the room it needs (decision 0244)", () => {
   });
 
   /**
-   * **A third band, decision 0364.** Reported live: "previously it
-   * sat in a row of three cards at the top, but has now moved to the
-   * bottom. Attempts to move up seem to reject being in its previous
-   * location... the chart cards could potentially fit into the title
-   * bar, or indeed carry a weight: 'third' to allow three in a row."
+   * **One flow, not several bands — decision 0366.** Reported live:
+   * "can we change all cards, with the exception of the list card 'on
+   * my clock', to be the same, so that they can occupy the same
+   * line, if so desired? I want a user to have flexibility to move
+   * to the top, or bottom of the page." And: "can the UI figure it
+   * out based on how many cards are on the row?... A narrow card
+   * (those without chart) can support up to 4 on a row. A graphic
+   * card (those with graphics) can support up to three cards in a
+   * row. The list card, only 1 in a row."
    */
-  it("renders in its own band, not the wider .dashgrid, once charted", async () => {
+  it("renders every non-list card in the one .dashflow, in the order they were stored", async () => {
     await openDashboard([
+      { id: "h", cardType: "possible_duplicates", settings: {}, position: 0, data: { count: 2 } },
       {
-        id: "h",
+        id: "i",
         cardType: "waiting_for_me",
         settings: {},
-        position: 0,
+        position: 1,
         data: {
           count: 5,
           stages: 2,
@@ -1198,43 +1203,76 @@ describe("a card asks for the room it needs (decision 0244)", () => {
       },
     ]);
 
-    const third = document.querySelector(".dashthird");
-    expect(third).not.toBeNull();
-    expect(third?.textContent).toContain("Waiting for me");
-    expect(document.querySelector(".dashgrid")).toBeNull();
+    const flow = document.querySelector(".dashflow");
+    expect(flow).not.toBeNull();
+    expect(document.querySelectorAll(".dashflow")).toHaveLength(1);
+
+    // Stored order, not grouped by kind: the narrow card first, the
+    // graphic one second — exactly as placed, a narrow and a graphic
+    // card free to sit beside each other in the one container.
+    const headings = [...(flow?.querySelectorAll(".cardhead h3") ?? [])].map((h) => h.textContent);
+    expect(headings).toEqual(["Possible duplicates", "Waiting for me"]);
   });
 
-  it("grows a lone card to fill the row, rather than leaving empty grid tracks beside it", async () => {
-    /**
-     * **Reported live, with a screenshot** — decision 0365: "the
-     * Waiting for me card now sits isolated. I am unable to add more
-     * to that row." A fixed `repeat(3, 1fr)` grid pinned a single
-     * card to the first of three tracks with two empty ones beside
-     * it. Flex, the same mechanism `.dashstrip` already uses for its
-     * own tiles, grows what is there to fill the row instead — still
-     * wrapping to three across once there is enough to fill it.
-     */
+  it("gives narrow cards a grow-to-share, wrap-below-240px basis — up to four across", async () => {
     const stylesheets = (await import("virtual:stylesheets")).default;
     const css = stylesheets["index.html"];
 
-    const rule = css.slice(css.indexOf(".dashthird {"), css.indexOf(".dashthird {") + 200);
-    expect(rule).toContain("display: flex");
-    expect(rule).toContain("flex-wrap: wrap");
-    expect(rule).not.toContain("grid-template-columns");
+    const marker = ".card-narrow {";
+    const rule = css.slice(css.indexOf(marker), css.indexOf(marker) + 150);
+    expect(rule).toContain("flex: 1 1 240px");
+    expect(rule).toContain("min-width: 240px");
   });
 
-  it("gives each third-band card its own grow-to-share, wrap-below basis, the same shape .dashstrip already gives a tile", async () => {
+  it("gives graphic cards a wider, wrap-below-280px basis — up to three across", async () => {
     const stylesheets = (await import("virtual:stylesheets")).default;
     const css = stylesheets["index.html"];
 
-    // Two rules share this exact selector text: one sets display and
-    // margin, the other (this one) sets the flex-basis — searched
-    // from after the band's own `.dashthird {` rule so this finds the
-    // second, not the first.
-    const marker = ".dashthird > .panel {";
-    const from = css.indexOf(marker, css.indexOf(".dashthird {"));
-    const rule = css.slice(from, from + 150);
+    const marker = ".card-graphic {";
+    const rule = css.slice(css.indexOf(marker), css.indexOf(marker) + 100);
     expect(rule).toContain("flex: 1 1 280px");
+    expect(rule).toContain("min-width: 280px");
+  });
+
+  it("gives the list card the full row's width, one to a row", async () => {
+    /**
+     * **`on_my_clock` is the one exception, named directly**:
+     * "with the exception of the list card 'on my clock'... The list
+     * card, only 1 in a row."
+     */
+    await openDashboard([{ id: "j", cardType: "on_my_clock", settings: {}, position: 0, data: { items: [] } }]);
+
+    const card = [...document.querySelectorAll(".panel")].find((p) => p.textContent?.includes("On my clock"));
+    expect(card?.classList.contains("card-list")).toBe(true);
+
+    const stylesheets = (await import("virtual:stylesheets")).default;
+    const css = stylesheets["index.html"];
+    const marker = ".card-list {";
+    const rule = css.slice(css.indexOf(marker), css.indexOf(marker) + 100);
+    expect(rule).toContain("flex: 1 1 100%");
+    expect(rule).toContain("width: 100%");
+  });
+
+  it("reclassifies items_at_stage as graphic, since its own donut is still a chart", async () => {
+    /**
+     * **The operator's own rule, applied literally** — "A narrow card
+     * (those without chart)... A graphic card (those with graphics)."
+     * This card's own small donut had let it sit in the narrower band
+     * since decision 0250; the rule itself does not carve out an
+     * exception for a small one.
+     */
+    await openDashboard([
+      {
+        id: "k",
+        cardType: "items_at_stage",
+        settings: { stage: "approval" },
+        position: 0,
+        data: { count: 3, stageId: "approval", stageName: "Approval", held: { mine: 1, theirs: 2, unclaimed: 0 } },
+      },
+    ]);
+
+    const card = [...document.querySelectorAll(".panel")].find((p) => p.textContent?.includes("Approval"));
+    expect(card?.classList.contains("card-graphic")).toBe(true);
   });
 
   it("leaves room for the legend beside the ring", async () => {
@@ -1633,20 +1671,18 @@ describe("a panel's own margin does not add to the grid's gap (decision 0261)", 
    * test), since these browser tests do not load real CSS into the
    * DOM.
    */
-  it("zeroes a dashgrid panel's own margin", async () => {
+  it("zeroes every dashflow panel's own margin", async () => {
     const stylesheets = (await import("virtual:stylesheets")).default;
     const css = stylesheets["index.html"];
 
     /**
-     * **Extended to `.dashthird` too, decision 0364** — the same
-     * combined-selector pattern `.dashstrip .sub, .dashgrid .sub`
-     * already uses elsewhere in this file, so the third band gets the
-     * identical margin fix rather than a second, duplicated block of
-     * it.
+     * **One rule for every card now, decision 0366** — since the one
+     * `.dashflow` replaced `.dashstrip`/`.dashthird`/`.dashgrid`, this
+     * fix belongs to a single selector rather than a combined list of
+     * several.
      */
-    const marker = ".dashgrid > .panel,";
-    const rule = css.slice(css.indexOf(marker), css.indexOf(marker) + 700);
-    expect(rule).toContain(".dashthird > .panel {");
+    const marker = ".dashflow > .panel {";
+    const rule = css.slice(css.indexOf(marker), css.indexOf(marker) + 300);
     expect(rule).toContain("margin: 0");
   });
 
@@ -1665,18 +1701,17 @@ describe("a panel's own margin does not add to the grid's gap (decision 0261)", 
      * somewhere nearby, which is still true even if the selector were
      * renamed to something that targets nothing real — caught by
      * probing it directly, which is why this checks the full selector
-     * string instead. Extended to `.dashthird` for the same reason,
-     * decision 0364.
+     * string instead.
      */
     const stylesheets = (await import("virtual:stylesheets")).default;
     const css = stylesheets["index.html"];
 
-    expect(css).toContain(".dashgrid > .panel > .donutwrap,");
-    expect(css).toContain(".dashthird > .panel > .donutwrap {");
+    expect(css).toContain(".dashflow > .panel > svg,");
+    expect(css).toContain(".dashflow > .panel > .donutwrap {");
 
     const rule = css.slice(
-      css.indexOf(".dashthird > .panel > .donutwrap {"),
-      css.indexOf(".dashthird > .panel > .donutwrap {") + 60
+      css.indexOf(".dashflow > .panel > .donutwrap {"),
+      css.indexOf(".dashflow > .panel > .donutwrap {") + 60
     );
     expect(rule).toContain("margin-top: auto");
   });
