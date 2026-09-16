@@ -116,20 +116,40 @@ export async function handleListRules(
 }
 
 /**
- * Every stage, with how many rules run there — decision 0149.
+ * Every stage of one process, with how many rules run there —
+ * decision 0149, scoped to a single process since decision 0351.
  *
  * **A stage with no rules is worth showing**, not hiding. Somebody
  * wondering why nothing happens at Coding needs to see that Coding is
  * empty, which an omitted row cannot tell them.
+ *
+ * **`process_stage_versions`, not `process_stages` directly —
+ * decision 0351.** Reported live: a stage seeded onto a second, real
+ * process showed up on the Rules screen looking like a step in the
+ * *first* process's own sequence, because this had never once
+ * filtered by `process_id` at all — every stage across every process,
+ * ordered only by `process_stages.sequence`, a column the workflow
+ * engine itself stopped reading for ordering purposes back in
+ * decision 0150. Joining through a process's own live version's
+ * membership, the same shape `stagesAtVersion` in process-route.ts
+ * already established, is what actually scopes this correctly.
  */
-export async function handleRuleStages(db: D1Database): Promise<RouteResult> {
+export async function handleRuleStages(db: D1Database, processId: string): Promise<RouteResult> {
+  const process = await db.prepare("SELECT version FROM processes WHERE id = ?").bind(processId).first<{ version: number }>();
+  if (!process) {
+    return { status: 404, body: { error: `process ${processId} does not exist` } };
+  }
+
   const rows = await db
     .prepare(
-      `SELECT s.id, s.name, s.sequence, s.rule_set_id,
+      `SELECT s.id, s.name, v.sequence, s.rule_set_id,
               (SELECT count(*) FROM rules r WHERE r.rule_set_id = s.rule_set_id) AS rule_count
-       FROM process_stages s
-       ORDER BY s.sequence`
+       FROM process_stage_versions v
+       JOIN process_stages s ON s.id = v.stage_id
+       WHERE v.process_id = ? AND v.version = ?
+       ORDER BY v.sequence`
     )
+    .bind(processId, process.version)
     .all<{
       id: string;
       name: string;

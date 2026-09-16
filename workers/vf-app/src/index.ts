@@ -2084,11 +2084,22 @@ export default {
      * a decision of its own.
      */
     // Every process, so a screen can offer them — decision 0128.
+    /**
+     * **Either standing opens it — decision 0351**, matching decision
+     * 0321's own precedent: `Admin.Configure` administers processes
+     * themselves; `Admin.RuleManagement` needs to know which processes
+     * exist to pick one for the Rules screen's own selector. Neither
+     * holder should be blocked from a plain list of names.
+     */
     if (pathname === "/processes" && request.method === "GET") {
       const { db } = resolveTenant(request, env);
-      const auth = await requirePermission(db, request, "Admin.Configure", sessionContext(env));
-      if (!auth.authorized) {
-        return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
+      const auth = await authenticatePerson(db, request, env);
+      if (!auth.user) return json({ error: auth.reason }, 401);
+      if (
+        !(await hasPermission(db, auth.user.id, "Admin.Configure")) &&
+        !(await hasPermission(db, auth.user.id, "Admin.RuleManagement"))
+      ) {
+        return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
       }
 
       const result = await handleListProcesses(db);
@@ -2305,7 +2316,15 @@ export default {
         return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
       }
 
-      const result = await handleRuleStages(db);
+      // Required, not defaulted — decision 0351. A process picked
+      // silently on the caller's behalf is exactly the ambiguity a
+      // process selector exists to remove.
+      const processId = url.searchParams.get("processId");
+      if (!processId) {
+        return json({ error: "processId is required" }, 400);
+      }
+
+      const result = await handleRuleStages(db, processId);
       return json(result.body, result.status);
     }
 

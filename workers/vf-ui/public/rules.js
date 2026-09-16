@@ -18,13 +18,38 @@ import { processRow } from "/process-row.js";
  * total is silently dead.
  */
 
+let processes = [];
+let processId = null;
 let stages = [];
 let rules = [];
 let chosen = null;
 
+/**
+ * **A process selector, reported live — decision 0351.** "I do not
+ * see that stage in the illustration. Are these not feeding from D1
+ * data?" Both screens were: the Rules screen's own list had simply
+ * never been scoped to one process at all, so a second, real
+ * process's own stage looked like a step in the first one's own
+ * sequence. Fetched once, not re-fetched on every `load()` — the same
+ * "only if not already loaded" restraint `chosen` itself already
+ * used below.
+ */
+async function loadProcesses() {
+  const response = await fetch("/api/processes");
+  if (!response.ok) return false;
+  processes = (await response.json()).processes ?? [];
+  if (!processId && processes.length > 0) {
+    processId = processes[0].id;
+  }
+  return true;
+}
+
 async function load() {
+  if (processes.length === 0 && !(await loadProcesses())) return false;
+  if (!processId) return true;
+
   const [stagesResponse, rulesResponse] = await Promise.all([
-    fetch("/api/rules/stages"),
+    fetch(`/api/rules/stages?processId=${encodeURIComponent(processId)}`),
     fetch(`/api/rules${chosen ? `?stage=${encodeURIComponent(chosen)}` : ""}`),
   ]);
 
@@ -41,6 +66,20 @@ async function load() {
   }
 
   return true;
+}
+
+async function selectProcess(id) {
+  processId = id;
+  // A stage chosen under the old process almost certainly does not
+  // exist under the new one — decision 0351.
+  chosen = null;
+  stages = [];
+  rules = [];
+  if (!(await load())) {
+    note(t("rules.failed"));
+    return;
+  }
+  render();
 }
 
 function note(message) {
@@ -167,6 +206,40 @@ function render() {
           ),
         ]),
         el("div", { class: "panel" }, [
+          /**
+           * **The process selector itself — decision 0351.** Only
+           * rendered once more than one process exists: with exactly
+           * one, a picker offering a single, unchangeable option adds
+           * a control that decides nothing.
+           */
+          ...(processes.length > 1
+            ? [
+                el("div", { class: "cardhead" }, [
+                  el("label", { text: t("rules.process"), for: "rules-process-picker" }),
+                  (() => {
+                    /**
+                     * **Not a `selected` prop per option — decision
+                     * 0351.** `el()`'s own `setAttribute` sets the
+                     * attribute even for `selected: false`, since HTML
+                     * boolean attributes are "present = true"
+                     * regardless of the string value: every option
+                     * ends up marked selected, and the browser honours
+                     * only the last one. Set on the select itself
+                     * instead — the same established pattern
+                     * `documents.js`, `sources.js`, and `viewer.js`
+                     * already use.
+                     */
+                    const picker = el(
+                      "select",
+                      { id: "rules-process-picker", onchange: (e) => selectProcess(e.target.value) },
+                      processes.map((p) => el("option", { value: p.id, text: p.name }))
+                    );
+                    picker.value = processId;
+                    return picker;
+                  })(),
+                ]),
+              ]
+            : []),
           processRow(
             // The line beneath each chevron, built here rather than at
             // load: `t()` needs the strings, and a detail computed

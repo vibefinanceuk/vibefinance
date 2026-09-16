@@ -156,7 +156,7 @@ describe("the stages themselves", () => {
     // **Somebody wondering why nothing happens at Coding** needs to see
     // that Coding is empty, which an omitted row cannot tell them.
     await addRule("r-1", "A rule");
-    const body = (await handleRuleStages(env.DB)).body as {
+    const body = (await handleRuleStages(env.DB, "ap")).body as {
       stages: { id: string; ruleCount: number }[];
     };
 
@@ -166,17 +166,48 @@ describe("the stages themselves", () => {
   });
 
   it("returns them in sequence, which is the point", async () => {
-    const body = (await handleRuleStages(env.DB)).body as { stages: { id: string }[] };
+    const body = (await handleRuleStages(env.DB, "ap")).body as { stages: { id: string }[] };
     expect(body.stages.map((s) => s.id)).toEqual(["validation", "coding"]);
   });
 
   it("counts the rules at each", async () => {
     await addRule("r-1", "One");
     await addRule("r-2", "Two");
-    const body = (await handleRuleStages(env.DB)).body as {
+    const body = (await handleRuleStages(env.DB, "ap")).body as {
       stages: { id: string; ruleCount: number }[];
     };
     expect(body.stages.find((s) => s.id === "validation")?.ruleCount).toBe(2);
+  });
+
+  it("404s a process that does not exist", async () => {
+    const result = await handleRuleStages(env.DB, "does-not-exist");
+    expect(result.status).toBe(404);
+  });
+
+  /**
+   * **The exact bug reported live — decision 0351.** A second, real
+   * process's own stage showed up on the Rules screen looking like a
+   * step in the first process's own sequence, because this had never
+   * once filtered by `process_id` — every stage across every process,
+   * ordered only by `process_stages.sequence`. Reproduced directly: a
+   * second process's own stage, seeded with a low `sequence`
+   * deliberately so it would have sorted first in the old, unscoped
+   * query, must never appear in the first process's own list.
+   */
+  it("never returns a stage belonging to a different process, however low its own sequence is", async () => {
+    await env.DB.prepare("INSERT INTO processes (id, name) VALUES ('supplier-maintenance', 'Supplier Maintenance')").run();
+    await env.DB
+      .prepare("INSERT INTO process_stages (id, process_id, name, sequence) VALUES ('review', 'supplier-maintenance', 'Review', 1)")
+      .run();
+    await env.DB
+      .prepare("INSERT INTO process_stage_versions (process_id, version, stage_id, sequence) VALUES ('supplier-maintenance', 1, 'review', 1)")
+      .run();
+
+    const apBody = (await handleRuleStages(env.DB, "ap")).body as { stages: { id: string }[] };
+    expect(apBody.stages.map((s) => s.id)).toEqual(["validation", "coding"]);
+
+    const supplierBody = (await handleRuleStages(env.DB, "supplier-maintenance")).body as { stages: { id: string }[] };
+    expect(supplierBody.stages.map((s) => s.id)).toEqual(["review"]);
   });
 });
 

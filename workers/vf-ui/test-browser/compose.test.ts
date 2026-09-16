@@ -188,6 +188,7 @@ describe("the back button, top right (decision 0305)", () => {
 
   it("returns to the Rules list when clicked", async () => {
     await openCompose({
+      "/api/processes": { processes: [{ id: "ap", name: "AP", version: 1, stageCount: 1 }] },
       "/api/rules/stages": { stages: [{ id: "st-1", name: "Approval", sequence: 1, ruleCount: 1 }] },
       "/api/rules": { rules: [] },
     });

@@ -421,6 +421,31 @@ describe("process routes, gated for the first time — decision 0349", () => {
     expect(res.status).toBe(200);
   });
 
+  describe("GET /processes — either standing opens it, decision 0351", () => {
+    it("succeeds for Admin.Configure", async () => {
+      const apiKey = await keyForPermission("Admin.Configure");
+      const res = await SELF.fetch("https://example.com/processes", { headers: { Authorization: `Bearer ${apiKey}` } });
+      expect(res.status).toBe(200);
+    });
+
+    it("succeeds for Admin.RuleManagement too — needed to populate the Rules screen's own process selector", async () => {
+      const apiKey = await keyForPermission("Admin.RuleManagement");
+      const res = await SELF.fetch("https://example.com/processes", { headers: { Authorization: `Bearer ${apiKey}` } });
+      expect(res.status).toBe(200);
+    });
+
+    it("403s a real request holding neither", async () => {
+      const apiKey = await keyForPermission("AP.Dashboard");
+      const res = await SELF.fetch("https://example.com/processes", { headers: { Authorization: `Bearer ${apiKey}` } });
+      expect(res.status).toBe(403);
+    });
+
+    it("401s with no credential at all", async () => {
+      const res = await SELF.fetch("https://example.com/processes");
+      expect(res.status).toBe(401);
+    });
+  });
+
   it("GET /processes/:id 401s with no credential at all", async () => {
     const res = await SELF.fetch("https://example.com/processes/p1");
     expect(res.status).toBe(401);

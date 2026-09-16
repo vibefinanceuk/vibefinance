@@ -2151,8 +2151,14 @@ describe("the nav's own new permission gates (decision 0276)", () => {
   });
 
   it("GET /rules/stages succeeds with Admin.RuleManagement", async () => {
-    const res = await SELF.fetch("https://example.com/rules/stages", { headers: authHeaders() });
+    await env.DB.prepare("INSERT INTO processes (id, name) VALUES ('ap', 'AP')").run();
+    const res = await SELF.fetch("https://example.com/rules/stages?processId=ap", { headers: authHeaders() });
     expect(res.status).toBe(200);
+  });
+
+  it("GET /rules/stages 400s when processId is missing — decision 0351", async () => {
+    const res = await SELF.fetch("https://example.com/rules/stages", { headers: authHeaders() });
+    expect(res.status).toBe(400);
   });
 
   it("GET /rules/stages 403s with only the old AP.Review permission", async () => {

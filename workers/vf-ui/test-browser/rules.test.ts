@@ -32,6 +32,7 @@ const STRINGS = {
     "nav.suppliers": "Suppliers",
     "nav.rules": "Rules",
     "rules.subtitle": "What should happen to an invoice, in your words",
+    "rules.process": "Process",
     "rules.atstage": "Rules at this stage",
     "rules.order": "These run in order when an invoice reaches this stage.",
     "rules.empty": "No rules run here yet.",
@@ -63,9 +64,12 @@ const STAGES = [
   { id: "coding", name: "Coding", sequence: 3, ruleCount: 0 },
 ];
 
-async function open(rules: unknown[], stages = STAGES) {
+const PROCESSES = [{ id: "ap", name: "AP", version: 1, stageCount: 3 }];
+
+async function open(rules: unknown[], stages = STAGES, processes = PROCESSES) {
   stubFetch({
     "/api/ui-strings": STRINGS,
+    "/api/processes": { processes },
     "/api/rules/stages": { stages },
     "/api/rules": { rules },
     /**
@@ -265,6 +269,7 @@ describe("every word comes from the control plane", () => {
         locale: "de",
         strings: { ...STRINGS.strings, "rulestate.live": "Aktiv", "nav.rules": "Regeln" },
       },
+      "/api/processes": { processes: PROCESSES },
       "/api/rules/stages": { stages: STAGES },
       "/api/rules": { rules: [{ id: "r-1", sourceText: "Eine Regel", state: "live" }] },
     });
@@ -356,5 +361,84 @@ describe("creating the first rule at a stage (decision 0154)", () => {
     ]);
 
     expect(document.querySelectorAll("tbody tr")).toHaveLength(2);
+  });
+});
+
+describe("the process selector — decision 0351", () => {
+  /**
+   * **Reported live**: "in the Processes page - I do not see that
+   * stage in the illustration. Are these not feeding from D1 data?"
+   * Both were; this screen's own stage list had simply never been
+   * scoped to one process at all.
+   */
+  it("shows no selector at all with only one process — nothing for it to decide", async () => {
+    await open([], STAGES, PROCESSES);
+    expect(document.getElementById("rules-process-picker")).toBeNull();
+  });
+
+  it("shows a real selector, naming every process, once more than one exists", async () => {
+    await open([], STAGES, [
+      { id: "ap", name: "AP", version: 1, stageCount: 3 },
+      { id: "supplier-maintenance", name: "Supplier Maintenance", version: 1, stageCount: 1 },
+    ]);
+    const picker = document.getElementById("rules-process-picker") as HTMLSelectElement;
+    expect(picker).not.toBeNull();
+    expect([...picker.options].map((o) => o.text)).toEqual(["AP", "Supplier Maintenance"]);
+    expect(picker.value).toBe("ap");
+  });
+
+  it("switching processes re-fetches stages scoped to the newly-chosen process id, and resets which stage was selected", async () => {
+    const posted: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        const full = String(url);
+        posted.push(full);
+        const path = full.split("?")[0];
+        const routes: Record<string, unknown> = {
+          "/api/ui-strings": STRINGS,
+          "/api/whoami": {
+            id: "u-dan",
+            name: "Dan",
+            permissions: ["AP.Dashboard", "AP.TaskView", "Admin.Configure", "AP.Supplier", "Admin.RuleManagement", "AP.Review"],
+          },
+          "/api/tasks": { tasks: [], counts: {} },
+          "/api/processes": {
+            processes: [
+              { id: "ap", name: "AP", version: 1, stageCount: 3 },
+              { id: "supplier-maintenance", name: "Supplier Maintenance", version: 1, stageCount: 1 },
+            ],
+          },
+          "/api/rules": { rules: [] },
+        };
+        if (path === "/api/rules/stages") {
+          const processId = new URL(full, "https://example.com").searchParams.get("processId");
+          routes["/api/rules/stages"] =
+            processId === "supplier-maintenance" ? { stages: [{ id: "review", name: "Review", sequence: 1, ruleCount: 0 }] } : { stages: STAGES };
+        }
+        if (!(path in routes)) throw new Error(`no stub for ${path}`);
+        return { ok: true, json: async () => routes[path] } as Response;
+      })
+    );
+
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { start } = await import("/tasks.js");
+    await start();
+    const { open: openRules } = await import("/rules.js");
+    await openRules();
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(document.body.textContent).toContain("Received");
+    expect(document.body.textContent).not.toContain("Review");
+
+    const picker = document.getElementById("rules-process-picker") as HTMLSelectElement;
+    picker.value = "supplier-maintenance";
+    picker.dispatchEvent(new Event("change"));
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(posted.some((u) => u.includes("/api/rules/stages?processId=supplier-maintenance"))).toBe(true);
+    expect(document.body.textContent).toContain("Review");
+    expect(document.body.textContent).not.toContain("Received");
   });
 });
