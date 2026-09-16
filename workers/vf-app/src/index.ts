@@ -1105,7 +1105,7 @@ export default {
        * treatment decisions 0314 and 0315 already gave Tasks and
        * Documents to Suppliers.
        */
-      const result = await handleListSuppliers(db, url.searchParams.get("org"));
+      const result = await handleListSuppliers(db, url.searchParams.get("org"), auth.user.id);
       return json(
         {
           ...(result.body as Record<string, unknown>),

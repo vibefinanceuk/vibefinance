@@ -1165,3 +1165,104 @@ describe("what I have acted on this week (decision 0265)", () => {
     expect(data.trend).toBeUndefined();
   });
 });
+
+describe("the supplier card, scoped for the first time (decision 0358)", () => {
+  /**
+   * **Reported live, alongside the suppliers screen itself**: "We
+   * also have a supplier card on the Dashboard, which I think should
+   * be filtered by org." Confirmed as a real, plain gap before this:
+   * this card had never received the scope every other card already
+   * threads through, and had zero test coverage of its own anywhere.
+   *
+   * **Its own permission, not the dashboard's shared one.** Every
+   * other scoped card reads `AP.Review`; this one reads `AP.Supplier`
+   * — the actual permission that governs a supplier's own visibility
+   * (decision 0276) — computed separately so the card's own count
+   * cannot drift from what the Suppliers screen itself would show
+   * the same person.
+   */
+  async function seedSupplier(id: string, name: string, unit: string | null) {
+    await env.DB.prepare(
+      `INSERT INTO suppliers (id, erp_identifier, name, status, org_unit_id)
+       VALUES (?, NULL, ?, 'active', ?)`
+    )
+      .bind(id, name, unit)
+      .run();
+  }
+
+  async function awaitingErpCountFor(userId: string, currentOrg: string | null = null) {
+    const body = await dashboardFor(userId, currentOrg);
+    return card<{ count: number }>(body, "suppliers_awaiting_erp").count;
+  }
+
+  async function dashboardFor(userId: string, currentOrg: string | null = null) {
+    const result = await handleDashboard(env.DB, userId, currentOrg);
+    return result.body as { cards: { cardType: string; data: unknown }[] };
+  }
+
+  async function seedSupplierCard() {
+    await env.DB.prepare(
+      `INSERT INTO dashboard_cards (id, user_id, card_type, settings_json, position)
+       VALUES ('c1', 'alice', 'suppliers_awaiting_erp', '{}', 0)`
+    ).run();
+  }
+
+  it("counts only suppliers within the units AP.Supplier is actually held in", async () => {
+    await person("alice", ["AP.Supplier"], "acme-fr");
+    await seedSupplierCard();
+    await seedSupplier("s-fr", "Northwind FR", "acme-fr");
+    await seedSupplier("s-de", "Northwind DE", "acme-de");
+
+    expect(await awaitingErpCountFor("alice")).toBe(1);
+  });
+
+  it("still counts an unassigned supplier regardless of scope", async () => {
+    await person("alice", ["AP.Supplier"], "acme-fr");
+    await seedSupplierCard();
+    await seedSupplier("s-fr", "Northwind FR", "acme-fr");
+    await seedSupplier("s-none", "Unassigned Co", null);
+
+    expect(await awaitingErpCountFor("alice")).toBe(2);
+  });
+
+  it("counts everything when AP.Supplier is held everywhere", async () => {
+    await person("alice", ["AP.Supplier"], null);
+    await seedSupplierCard();
+    await seedSupplier("s-fr", "Northwind FR", "acme-fr");
+    await seedSupplier("s-de", "Northwind DE", "acme-de");
+
+    expect(await awaitingErpCountFor("alice")).toBe(2);
+  });
+
+  it("counts zero for somebody holding no AP.Supplier grant at all", async () => {
+    await person("alice", ["AP.Review"], null);
+    await seedSupplierCard();
+    await seedSupplier("s-fr", "Northwind FR", "acme-fr");
+
+    expect(await awaitingErpCountFor("alice")).toBe(0);
+  });
+
+  /**
+   * **The exact security case, proven here too.** Held only in
+   * Germany, deliberately focused on France: must count zero, not
+   * France's own awaiting-ERP suppliers.
+   */
+  it("still counts zero when focused on an org AP.Supplier is not held in at all", async () => {
+    await person("alice", ["AP.Supplier"], "acme-de");
+    await seedSupplierCard();
+    await seedSupplier("s-fr", "Northwind FR", "acme-fr");
+
+    expect(await awaitingErpCountFor("alice", "acme-fr")).toBe(0);
+  });
+
+  it("does not use AP.Review's own scope for this card — holding only AP.Review grants nothing here", async () => {
+    // The wrong-permission bug this decision's own build caught
+    // before it shipped, stated as a test: a person scoped under
+    // AP.Review alone must not see supplier counts through it.
+    await person("alice", ["AP.Review"], null);
+    await seedSupplierCard();
+    await seedSupplier("s-fr", "Northwind FR", "acme-fr");
+
+    expect(await awaitingErpCountFor("alice")).toBe(0);
+  });
+});

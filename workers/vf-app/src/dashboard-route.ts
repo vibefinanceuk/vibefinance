@@ -1,4 +1,4 @@
-import { unitsWherePermitted, scopedToChosenOrg } from "./enforce.js";
+import { unitsWherePermitted, scopedToChosenOrg, unitClause, type Scope } from "./enforce.js";
 import type { RouteResult } from "./org-route.js";
 import { handleListMyTasks } from "./task-list-route.js";
 import { mondayOfThisWeek } from "./dates.js";
@@ -65,20 +65,20 @@ export const DEFAULT_CARDS: { cardType: CardType; settings: Record<string, unkno
 ];
 
 /**
- * Which units this person may see work in, as a clause.
- *
- * `null` from `unitsWherePermitted` means **everywhere** — a role held
- * unscoped, and every customer not using units. An **empty array means
- * nowhere**, which is a real answer and a different one (decision
- * 0199).
+ * Which units this person may see work in — moved to `enforce.ts`
+ * (decision 0358), imported at the top of this file. `unitClause`
+ * moved there too: reading suppliers now needs the identical logic,
+ * and duplicating it risked the "unassigned stays visible" exception
+ * drifting apart between two copies over time.
  */
-interface Scope {
-  /** Null where unrestricted. */
-  units: string[] | null;
-}
 
-async function scopeFor(db: D1Database, userId: string, currentOrg: string | null = null): Promise<Scope> {
-  const held = await unitsWherePermitted(db, userId, "AP.Review");
+async function scopeFor(
+  db: D1Database,
+  userId: string,
+  currentOrg: string | null = null,
+  permission: "AP.Review" | "AP.Supplier" = "AP.Review"
+): Promise<Scope> {
+  const held = await unitsWherePermitted(db, userId, permission);
 
   /**
    * **`held` is already walked downward** — a role at Acme UK covers
@@ -90,50 +90,16 @@ async function scopeFor(db: D1Database, userId: string, currentOrg: string | nul
    * Documents, applied here through the one place every card's own
    * query already reads its scope from, rather than threading a
    * second parameter through eleven separate functions.
+   *
+   * **A second permission, decision 0358.** Every other card's own
+   * work is `AP.Review`'s own concern; a supplier's own visibility
+   * has always been a different, separate permission (`AP.Supplier`,
+   * decision 0276), so its own card needs its own scope computed
+   * against the right one — reusing this same function rather than
+   * a second, near-identical copy of it.
    */
   const scoped = await scopedToChosenOrg(db, held, currentOrg);
   return { units: scoped };
-}
-
-/** The `AND` a query adds to stay inside what somebody may see. */
-function unitClause(scope: Scope, column: string): { sql: string; binds: unknown[] } {
-  if (scope.units === null) return { sql: "", binds: [] };
-  if (scope.units.length === 0) {
-    /**
-     * **Nowhere, which is not "no filter"** — the difference decision
-     * 0199 insisted on, and getting it wrong here shows somebody
-     * everything.
-     *
-     * `AND 1 = 0` is belt to a brace: an empty list would produce
-     * `IN ()`, which SQLite already treats as false. **Stated anyway**,
-     * because a reader should not have to know that, and a later change
-     * to how the clause is built could lose it silently.
-     */
-    return { sql: " AND 1 = 0", binds: [] };
-  }
-  const placeholders = scope.units.map(() => "?").join(", ");
-
-  /**
-   * **A document that belongs to no unit is visible to everyone** —
-   * decision 0255, matching the task list.
-   *
-   * The task list has said so since decision 0202: `if (!task.orgUnitId)
-   * return true`. This clause said the opposite — a null unit is not
-   * *in* any list — so a scoped person's card said **three** and the
-   * list it opened showed **four**, the fourth being an unplaced
-   * invoice.
-   *
-   * The task list's answer is the right one. An unplaced document is
-   * exactly the thing somebody needs to notice and fix (decision 0204),
-   * and hiding it from the people who would is hiding the problem
-   * rather than the data. **A count is still a disclosure** — but what
-   * it discloses here is that something is nobody's, and that is not a
-   * secret from anyone.
-   */
-  return {
-    sql: ` AND (${column} IS NULL OR ${column} IN (${placeholders}))`,
-    binds: scope.units,
-  };
 }
 
 export interface Card {
@@ -487,11 +453,25 @@ async function unplacedDocuments(db: D1Database) {
   return { count: row?.n ?? 0 };
 }
 
-async function suppliersAwaitingErp(db: D1Database) {
+/**
+ * **Scoped, decision 0358** — reported live alongside the suppliers
+ * screen itself: "We also have a supplier card on the Dashboard,
+ * which I think should be filtered by org." Every other card already
+ * threads `scope` through; this one and `unplacedDocuments` were the
+ * two that did not. `unplacedDocuments` stays as it is — a document
+ * with no unit at all is unscopable by definition, the whole reason
+ * `unitClause` treats a null unit as visible to everyone. A supplier
+ * is different: it can genuinely have a real `org_unit_id` now, so
+ * counting it without applying scope was a real gap, not a deliberate
+ * design the way the other one is.
+ */
+async function suppliersAwaitingErp(db: D1Database, scope: Scope) {
+  const clause = unitClause(scope, "org_unit_id");
   const row = await db
     .prepare(
-      "SELECT count(*) AS n FROM suppliers WHERE status = 'active' AND erp_identifier IS NULL"
+      `SELECT count(*) AS n FROM suppliers WHERE status = 'active' AND erp_identifier IS NULL ${clause.sql}`
     )
+    .bind(...clause.binds)
     .first<{ n: number }>();
 
   return { count: row?.n ?? 0 };
@@ -524,6 +504,7 @@ export async function handleDashboard(
   currentOrg: string | null = null
 ): Promise<RouteResult> {
   const scope = await scopeFor(db, userId, currentOrg);
+  const supplierScope = await scopeFor(db, userId, currentOrg, "AP.Supplier");
 
   const stored = await db
     .prepare(
@@ -563,7 +544,7 @@ export async function handleDashboard(
      */
     let data: unknown = null;
     try {
-      data = await runCard(db, userId, scope, card.cardType, card.settings);
+      data = await runCard(db, userId, scope, supplierScope, card.cardType, card.settings);
     } catch {
       data = null;
     }
@@ -577,6 +558,7 @@ async function runCard(
   db: D1Database,
   userId: string,
   scope: Scope,
+  supplierScope: Scope,
   type: CardType,
   settings: Record<string, unknown>
 ): Promise<unknown> {
@@ -600,7 +582,7 @@ async function runCard(
     case "unplaced_documents":
       return unplacedDocuments(db);
     case "suppliers_awaiting_erp":
-      return suppliersAwaitingErp(db);
+      return suppliersAwaitingErp(db, supplierScope);
     case "possible_duplicates":
       return possibleDuplicates(db, scope);
   }

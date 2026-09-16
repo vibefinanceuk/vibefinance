@@ -187,9 +187,11 @@ describe("the org unit a supplier belongs to (decision 0317)", () => {
 describe("focused on one org, extended to Suppliers (decision 0317)", () => {
   /**
    * **The same treatment decisions 0314 and 0315 already gave Tasks
-   * and Documents**, with one real difference: there is no
-   * permission-based visibility to intersect against first, since
-   * reading the supplier list has never been unit-scoped at all.
+   * and Documents.** Real, permission-based scoping followed later
+   * (decision 0358, its own describe block below) — these tests all
+   * call `handleListSuppliers` with no `userId` at all, the
+   * unrestricted default, so they exercise org-focus narrowing on its
+   * own, the same way they always have.
    */
   beforeEach(async () => {
     await env.DB.prepare("INSERT INTO org_units (id, name) VALUES ('acme-fr', 'Acme France')").run();
@@ -220,6 +222,96 @@ describe("focused on one org, extended to Suppliers (decision 0317)", () => {
     await load("ERP ID,Name,Org Unit\n1,Northwind FR,Acme France\n2,Northwind DE,Acme Germany");
 
     expect((await suppliersFocusedOn(null)).sort()).toEqual(["Northwind DE", "Northwind FR"]);
+  });
+});
+
+describe("real, permission-based scoping (decision 0358)", () => {
+  /**
+   * **Reported live**: "we recently added the org unit, at supplier
+   * site level. would it be possible to filter the supplier by org
+   * permissions." `AP.Supplier` can now be granted scoped to a unit
+   * the same way `AP.Review` already can; this is the first time
+   * reading the supplier list has ever respected that scope at all.
+   */
+  beforeEach(async () => {
+    await env.DB.prepare("INSERT INTO org_units (id, name) VALUES ('acme-fr', 'Acme France')").run();
+    await env.DB.prepare("INSERT INTO org_units (id, name) VALUES ('acme-de', 'Acme Germany')").run();
+    await env.DB.prepare(
+      `INSERT INTO org_roles (id, name, permissions_json) VALUES ('supplier-viewer', 'Supplier Viewer', '["AP.Supplier"]')`
+    ).run();
+    await env.DB.prepare("INSERT INTO org_users (id, email, name) VALUES ('alice', 'alice@acme.com', 'Alice')").run();
+  });
+
+  async function grantSupplierView(unitId: string | null) {
+    await env.DB.prepare("INSERT INTO org_user_roles (user_id, role_id, unit_id) VALUES ('alice', 'supplier-viewer', ?)")
+      .bind(unitId)
+      .run();
+  }
+
+  async function suppliersVisibleTo(userId: string, currentOrg: string | null = null) {
+    const result = await handleListSuppliers(env.DB, currentOrg, userId);
+    return (result.body as { suppliers: { name: string }[] }).suppliers.map((s) => s.name);
+  }
+
+  it("shows only suppliers within the units AP.Supplier is actually held in, even with no org chosen", async () => {
+    await grantSupplierView("acme-fr");
+    await load("ERP ID,Name,Org Unit\n1,Northwind FR,Acme France\n2,Northwind DE,Acme Germany");
+
+    expect(await suppliersVisibleTo("alice")).toEqual(["Northwind FR"]);
+  });
+
+  it("still shows an unassigned supplier regardless of permission scope", async () => {
+    await grantSupplierView("acme-fr");
+    await load("ERP ID,Name,Org Unit\n1,Northwind FR,Acme France\n2,Unassigned Co,");
+
+    expect((await suppliersVisibleTo("alice")).sort()).toEqual(["Northwind FR", "Unassigned Co"]);
+  });
+
+  it("shows everything when AP.Supplier is held everywhere (an unscoped role)", async () => {
+    await grantSupplierView(null);
+    await load("ERP ID,Name,Org Unit\n1,Northwind FR,Acme France\n2,Northwind DE,Acme Germany");
+
+    expect((await suppliersVisibleTo("alice")).sort()).toEqual(["Northwind DE", "Northwind FR"]);
+  });
+
+  it("shows nothing when the person holds no AP.Supplier grant at all", async () => {
+    // No grantSupplierView call — alice exists but holds nothing.
+    await load("ERP ID,Name,Org Unit\n1,Northwind FR,Acme France");
+
+    // The unassigned exception still applies — nowhere is a real
+    // answer, not "no filter," but an unassigned supplier is nobody's
+    // in particular and stays visible regardless (decision 0255's own
+    // reasoning, unchanged here).
+    expect(await suppliersVisibleTo("alice")).toEqual([]);
+  });
+
+  /**
+   * **The exact security case already proven for Tasks and
+   * Documents, now proven here too.** Held only in Germany,
+   * deliberately focused on France: must show nothing, not France's
+   * own suppliers, the same "intersect, never replace" guarantee
+   * `scopedToChosenOrg` already gives every other screen.
+   */
+  it("still shows nothing when focused on an org AP.Supplier is not held in at all", async () => {
+    await grantSupplierView("acme-de");
+    await load("ERP ID,Name,Org Unit\n1,Northwind FR,Acme France");
+
+    expect(await suppliersVisibleTo("alice", "acme-fr")).toEqual([]);
+  });
+
+  it("narrows further by the chosen org, on top of an unscoped AP.Supplier grant", async () => {
+    await grantSupplierView(null);
+    await load("ERP ID,Name,Org Unit\n1,Northwind FR,Acme France\n2,Northwind DE,Acme Germany");
+
+    expect(await suppliersVisibleTo("alice", "acme-fr")).toEqual(["Northwind FR"]);
+  });
+
+  it("is unrestricted, the same as before this existed, when no userId is given at all", async () => {
+    await load("ERP ID,Name,Org Unit\n1,Northwind FR,Acme France\n2,Northwind DE,Acme Germany");
+
+    const result = await handleListSuppliers(env.DB, null);
+    const names = (result.body as { suppliers: { name: string }[] }).suppliers.map((s) => s.name);
+    expect(names.sort()).toEqual(["Northwind DE", "Northwind FR"]);
   });
 });
 

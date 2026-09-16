@@ -1,6 +1,6 @@
 import { matchSupplier } from "./match-supplier.js";
 import type { RouteResult } from "./org-route.js";
-import { unitsBeneath } from "./enforce.js";
+import { unitsWherePermitted, scopedToChosenOrg, unitClause } from "./enforce.js";
 import { spawnSupplierMaintenanceInstance, detectSupplierChanges } from "./supplier-maintenance.js";
 
 /**
@@ -547,26 +547,39 @@ export async function rematchUnmatchedInvoices(db: D1Database): Promise<number> 
  */
 export async function handleListSuppliers(
   db: D1Database,
-  currentOrg: string | null = null
+  currentOrg: string | null = null,
+  userId?: string
 ): Promise<RouteResult> {
   /**
-   * **Narrowed to the chosen org, decision 0317** — the same
-   * treatment decisions 0314 and 0315 already gave Tasks and
-   * Documents. Unlike those two, there is no permission-based
-   * `visible` set to intersect against first: reading the supplier
-   * list has never been unit-scoped (decision 0276 gated it on
-   * `AP.Supplier` alone), so this is the first restriction of any
-   * kind, not a further narrowing of an existing one.
+   * **Real, permission-based scoping — decision 0358.** Reported
+   * live: "we recently added the org unit, at supplier site level.
+   * would it be possible to filter the supplier by org permissions."
+   * Decision 0317 named this gap directly: reading the supplier list
+   * had never been unit-scoped at all, so the chosen org was the
+   * first restriction of any kind, not a narrowing of an existing
+   * one. `AP.Supplier` can now be granted scoped to a unit the same
+   * way `AP.Review` already can; `visible` is that real scope,
+   * computed from the caller's own role assignments — the chosen org
+   * only ever narrows further within it, the same "intersect, never
+   * replace" shape `scopedToChosenOrg` already guarantees for Tasks,
+   * Documents, and the dashboard.
+   *
+   * `userId` stays optional, defaulting to unrestricted: a caller
+   * with no real person behind it (a scheduled job, a script) gets
+   * every supplier, the same as before this existed, rather than a
+   * parameter every existing caller would otherwise be forced to
+   * thread through immediately.
    *
    * **An unassigned supplier always stays visible**, regardless of
-   * which org is chosen — deliberately, since nothing assigns one yet
-   * beyond an optional column on a load nobody may have used. Hiding
-   * every supplier the moment somebody focused on an org would look
-   * like a broken screen rather than an honest "nothing here is
-   * assigned yet."
+   * scope or which org is chosen — `unitClause` already gives every
+   * other screen this exact exception (decision 0255), and the
+   * reasoning is identical here: an unassigned supplier is exactly
+   * the thing somebody needs to notice and fix, not something hiding
+   * it helps.
    */
-  const scopedUnits = currentOrg ? await unitsBeneath(db, currentOrg) : null;
-  const placeholders = scopedUnits ? scopedUnits.map(() => "?").join(", ") : "";
+  const visible = userId ? await unitsWherePermitted(db, userId, "AP.Supplier") : null;
+  const scopedUnits = await scopedToChosenOrg(db, visible, currentOrg);
+  const clause = unitClause({ units: scopedUnits }, "s.org_unit_id");
 
   const rows = await db
     .prepare(
@@ -576,10 +589,10 @@ export async function handleListSuppliers(
               s.org_unit_id, u.name AS org_unit_name
        FROM suppliers s
        LEFT JOIN org_units u ON u.id = s.org_unit_id
-       ${scopedUnits ? `WHERE s.org_unit_id IS NULL OR s.org_unit_id IN (${placeholders})` : ""}
+       WHERE 1 = 1 ${clause.sql}
        ORDER BY s.status, s.name`
     )
-    .bind(...(scopedUnits ?? []))
+    .bind(...clause.binds)
     .all<{
       id: string;
       erp_identifier: string;

@@ -57,6 +57,7 @@ import supplierPhoneSql from "../../../migrations/0052_supplier_phone.sql?raw";
 import orgContactSql from "../../../migrations/0053_org_unit_contact.sql?raw";
 import awaitingErpSql from "../../../migrations/0055_a_supplier_awaiting_the_erp.sql?raw";
 import dashboardSql from "../../../migrations/0056_dashboard_cards.sql?raw";
+import splitNeedsSomebodySql from "../../../migrations/0057_split_needs_somebody.sql?raw";
 import taskStatesSql from "../../../migrations/0031_task_states_and_returns.sql?raw";
 import orgSettingsSql from "../../../migrations/0032_org_settings_retention.sql?raw";
 import discardedStateSql from "../../../migrations/0033_discarded_task_state.sql?raw";
@@ -237,6 +238,18 @@ export async function applyTestSchema(): Promise<void> {
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(orgContactSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(awaitingErpSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(dashboardSql)));
+  /**
+   * **A real, pre-existing gap in this test schema, found live —
+   * decision 0358.** Never applied here at all: `dashboard_cards`'s
+   * own CHECK constraint stayed frozen at migration 0056's original
+   * list (still `needs_somebody`, missing `suppliers_awaiting_erp`,
+   * `unplaced_documents`, and `possible_duplicates` entirely), so no
+   * test could ever insert one of those three real, live card types
+   * — which is exactly why none of them had any test coverage until
+   * this decision wrote the first one and hit the constraint
+   * directly.
+   */
+  await env.DB.exec(toOneStatementPerLine(stripSqlComments(splitNeedsSomebodySql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(taskStatesSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(orgSettingsSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(discardedStateSql)));

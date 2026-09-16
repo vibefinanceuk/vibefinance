@@ -380,3 +380,61 @@ export async function isUnclaimed(db: D1Database): Promise<boolean> {
   const anybody = await db.prepare("SELECT 1 FROM org_users LIMIT 1").first();
   return anybody === null;
 }
+
+/**
+ * Which units this person may see work in, as a clause — moved here
+ * from `dashboard-route.ts` (decision 0358), the same "one source of
+ * truth" reasoning `scopedToChosenOrg` above already gets: reading
+ * suppliers now needs the identical logic, and duplicating it would
+ * have meant the "unassigned stays visible" exception below drifting
+ * apart between two copies over time.
+ *
+ * `null` from `unitsWherePermitted` means **everywhere** — a role held
+ * unscoped, and every customer not using units. An **empty array means
+ * nowhere**, which is a real answer and a different one (decision
+ * 0199).
+ */
+export interface Scope {
+  units: string[] | null;
+}
+
+/** The `AND` a query adds to stay inside what somebody may see. */
+export function unitClause(scope: Scope, column: string): { sql: string; binds: unknown[] } {
+  if (scope.units === null) return { sql: "", binds: [] };
+  if (scope.units.length === 0) {
+    /**
+     * **Nowhere, which is not "no filter"** — the difference decision
+     * 0199 insisted on, and getting it wrong here shows somebody
+     * everything.
+     *
+     * `AND 1 = 0` is belt to a brace: an empty list would produce
+     * `IN ()`, which SQLite already treats as false. **Stated anyway**,
+     * because a reader should not have to know that, and a later change
+     * to how the clause is built could lose it silently.
+     */
+    return { sql: " AND 1 = 0", binds: [] };
+  }
+  const placeholders = scope.units.map(() => "?").join(", ");
+
+  /**
+   * **A document that belongs to no unit is visible to everyone** —
+   * decision 0255, matching the task list.
+   *
+   * The task list has said so since decision 0202: `if (!task.orgUnitId)
+   * return true`. This clause said the opposite — a null unit is not
+   * *in* any list — so a scoped person's card said **three** and the
+   * list it opened showed **four**, the fourth being an unplaced
+   * invoice.
+   *
+   * The task list's answer is the right one. An unplaced document is
+   * exactly the thing somebody needs to notice and fix (decision 0204),
+   * and hiding it from the people who would is hiding the problem
+   * rather than the data. **A count is still a disclosure** — but what
+   * it discloses here is that something is nobody's, and that is not a
+   * secret from anyone.
+   */
+  return {
+    sql: ` AND (${column} IS NULL OR ${column} IN (${placeholders}))`,
+    binds: scope.units,
+  };
+}
