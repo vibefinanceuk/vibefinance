@@ -214,7 +214,7 @@ function render() {
            */
           ...(processes.length > 1
             ? [
-                el("div", { class: "cardhead" }, [
+                el("div", { class: "cardhead processpicker" }, [
                   el("label", { text: t("rules.process"), for: "rules-process-picker" }),
                   (() => {
                     /**

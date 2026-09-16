@@ -1032,6 +1032,15 @@
   .cardhead .statebuttons { margin: 0; }
 
   /*
+    **The process picker's own spacing, decision 0356** — reported
+    live: more room between the dropdown and the process illustration
+    beneath it. Scoped to this one cardhead, not `.cardhead` itself:
+    every other screen's own cardhead sits directly above a table or
+    a form, where the tighter, current spacing already reads fine.
+  */
+  .cardhead.processpicker { margin-bottom: 14px; }
+
+  /*
     **Label above value**, unlike the read-only party cards. These are
     inputs: a label beside a text box makes the box narrow, and the
     argument for inline labels (decision 0221) was that the values were

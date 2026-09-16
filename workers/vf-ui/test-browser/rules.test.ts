@@ -401,6 +401,22 @@ describe("the process selector — decision 0351", () => {
     expect(picker.value).toBe("ap");
   });
 
+  /**
+   * **Reported live — decision 0356**: more room between the dropdown
+   * and the process illustration beneath it. Scoped to this one
+   * cardhead, not every one on the page: every other screen's own
+   * cardhead keeps its own, tighter spacing unchanged.
+   */
+  it("gives its own cardhead extra spacing, not shared with every other cardhead on the page", async () => {
+    await open([], STAGES, [
+      { id: "ap", name: "AP", version: 1, stageCount: 3 },
+      { id: "supplier-maintenance", name: "Supplier Maintenance", version: 1, stageCount: 1 },
+    ]);
+    const picker = document.getElementById("rules-process-picker") as HTMLSelectElement;
+    const cardhead = picker.closest(".cardhead");
+    expect(cardhead?.classList.contains("processpicker")).toBe(true);
+  });
+
   it("switching processes re-fetches stages scoped to the newly-chosen process id, and resets which stage was selected", async () => {
     const posted: string[] = [];
     vi.stubGlobal(
