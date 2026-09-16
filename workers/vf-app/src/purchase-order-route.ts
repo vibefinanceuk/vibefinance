@@ -360,6 +360,44 @@ export async function handleLoadPurchaseOrdersCsv(db: D1Database, csv: string): 
   return { status: 200, body: { ...body } };
 }
 
+/**
+ * Listing loaded purchase orders — decision 0372.
+ *
+ * `AP.Validate`, not `Admin.Configure` — reusing exactly the permission
+ * `handleGetPurchaseOrder` already settled for reading one back
+ * (decision 0081's own reasoning: "that is who needs to see it").
+ * Loading is configuration; looking at what was loaded is not, and a
+ * second permission for the same kind of read would drift from the
+ * one already established the moment either changed without the
+ * other.
+ *
+ * **No pagination**, deliberately mirroring `handleListSuppliers`'
+ * own choice for the same reason it gave: this is a reference set an
+ * AP screen reads in full, not a growing transaction log. Worth
+ * revisiting if real volume ever makes that assumption wrong, the same
+ * honest limitation Suppliers' own screen states rather than hides.
+ *
+ * **Line count, not the lines themselves** — a list row is a summary;
+ * the full line set is what the existing single-order lookup already
+ * returns, and a person clicking through gets it fresh rather than
+ * this route duplicating it for every row on every list load.
+ */
+export async function handleListPurchaseOrders(db: D1Database): Promise<RouteResult> {
+  const rows = await db
+    .prepare(
+      `SELECT po.id, po.order_number, po.issue_date, po.currency, po.seller_party_id,
+              po.buyer_party_id, po.payable_amount, po.created_at,
+              count(pol.id) AS line_count
+       FROM purchase_orders po
+       LEFT JOIN purchase_order_lines pol ON pol.purchase_order_id = po.id
+       GROUP BY po.id
+       ORDER BY po.created_at DESC`
+    )
+    .all<Record<string, unknown>>();
+
+  return { status: 200, body: { purchaseOrders: rows.results } };
+}
+
 export async function handleGetPurchaseOrder(db: D1Database, orderNumber: string): Promise<RouteResult> {
   const order = await db
     .prepare("SELECT * FROM purchase_orders WHERE order_number = ?")

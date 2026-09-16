@@ -109,7 +109,7 @@ import {
   handleAssignLedger,
   handleUpdateCostCentre,
 } from "./ledger-route.js";
-import { handleIngestPurchaseOrder, handleGetPurchaseOrder, handleLoadPurchaseOrdersCsv } from "./purchase-order-route.js";
+import { handleIngestPurchaseOrder, handleGetPurchaseOrder, handleLoadPurchaseOrdersCsv, handleListPurchaseOrders } from "./purchase-order-route.js";
 import { handleGetRetention, handleSetRetention, handleListBeyondRetention } from "./retention-route.js";
 import { handleCaptureFromSource } from "./source-capture-route.js";
 import { handleInboundEmail, handleListInboundEmail, type EmailMessage } from "./inbound-email.js";
@@ -2745,6 +2745,20 @@ export default {
       }
       const csv = await request.text();
       const result = await handleLoadPurchaseOrdersCsv(db, csv);
+      return json(result.body, result.status);
+    }
+
+    // Listing loaded orders — decision 0372. AP.Validate, the same
+    // permission the single-order lookup just below already settled
+    // on, not Admin.Configure: reading what was loaded is not the
+    // same act as loading it.
+    if (pathname === "/purchase-orders" && request.method === "GET") {
+      const { db } = resolveTenant(request, env);
+      const auth = await requirePermission(db, request, "AP.Validate", sessionContext(env));
+      if (!auth.authorized) {
+        return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
+      }
+      const result = await handleListPurchaseOrders(db);
       return json(result.body, result.status);
     }
 

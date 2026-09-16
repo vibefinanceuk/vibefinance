@@ -361,8 +361,10 @@ describe("the proxy carries every path a screen calls (decision 0131)", () => {
     // The two that were missing.
     ["PATCH", "/api/sources/s-1"],
     ["DELETE", "/api/sources/s-1"],
-    // The purchase order load screen — decision 0371.
+    // The purchase order load screen — decision 0371, and its list —
+    // decision 0372.
     ["POST", "/api/purchase-orders/csv-load"],
+    ["GET", "/api/purchase-orders"],
   ];
 
   it("carries all of them", async () => {

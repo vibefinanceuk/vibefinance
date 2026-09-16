@@ -112,6 +112,7 @@ import rulesProcessSelectorStringsSql from "../migrations/0107_rules_process_sel
 import startDraftStringsSql from "../migrations/0108_start_draft_strings.sql?raw";
 import newDraftWordingSql from "../migrations/0109_new_draft_wording.sql?raw";
 import purchaseOrdersScreenStringsSql from "../migrations/0110_purchase_orders_screen_strings.sql?raw";
+import purchaseOrdersListStringsSql from "../migrations/0111_purchase_orders_list_strings.sql?raw";
 
 function stripSqlComments(sql: string): string {
   return sql
@@ -251,5 +252,6 @@ export async function applyTestSchema(): Promise<void> {
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(startDraftStringsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(newDraftWordingSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(purchaseOrdersScreenStringsSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(purchaseOrdersListStringsSql)));
 
 }

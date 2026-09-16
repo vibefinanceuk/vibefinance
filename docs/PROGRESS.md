@@ -130,12 +130,23 @@ a rule, and left an approval task in a queue.
   fallback when `BT-132` is absent, per EN 16931's own warning that
   correspondence isn't guaranteed even when `BT-13` is present
 - A CSV upload screen (0371), `Admin.Configure`, in Configuration
-  alongside Sources — load-only, no browse/list (there is no endpoint
-  for one); fixed two real, pre-existing gaps found while building it:
-  the proxy allowlist never carried either purchase-order route
-  (decisions 0081, 0370 both unreachable through the UI until now), and
-  `vf-licence`'s own test setup was missing fifteen migrations' worth
-  of UI strings entirely, unrelated to this screen
+  alongside Sources; fixed two real, pre-existing gaps found while
+  building it: the proxy allowlist never carried either purchase-order
+  route (decisions 0081, 0370 both unreachable through the UI until
+  now), and `vf-licence`'s own test setup was missing fifteen
+  migrations' worth of UI strings entirely, unrelated to this screen
+- A list beneath the loader, and a detail pop-out on a clicked row
+  showing every header and line field on file (0372) — `AP.Validate`
+  on the new list route, reusing exactly the permission the
+  single-order lookup already settled on in 0081 rather than a second
+  one for the same kind of read; the detail pop-out needed no new
+  backend route at all, since that same single-order lookup had sat
+  unused by any screen since 0081. Found and fixed the same class of
+  bug decision 0191 first named for Suppliers: `open()` on both this
+  screen and Suppliers' own called `note()` before the element it
+  writes to had ever been rendered, so a failed first load said
+  nothing to anyone on either screen until a real test finally
+  exercised the case
 
 ### Documents
 - R2 storage with jurisdiction support (0013, 0033, 0035)
@@ -550,9 +561,9 @@ elsewhere.
 
 | Package | Tests |
 |---|---|
-| `vf-app` | 1751 |
+| `vf-app` | 1756 |
 | `vf-licence` | 320 |
-| `vf-ui` | 72 Worker · 564 browser |
+| `vf-ui` | 72 Worker · 575 browser |
 | `shared` | 269 passing, 3 known pre-existing failures |
 
 Both migration chains replay clean with every standing invariant
@@ -573,7 +584,7 @@ holding — 65 migrations for `vf-app`, 105 for `vf-licence`.
 | `docs/design/mockups/` | Four screens as static HTML | Current |
 | `docs/design/multi-authority-intake.md` | Non-EN-16931 authorities | Design only |
 | `docs/design/text-layer-extraction.md` | Reading a PDF's own text | Design only |
-| `docs/decisions/` | 371 decision records (recounted directly — the previous figure had drifted) | Current |
+| `docs/decisions/` | 372 decision records | Current |
 | `docs/decisions/SUPERSEDED.md` | Which records supersede which | **Read first** |
 
 Document 4's markdown source is at `docs/documents/`, with

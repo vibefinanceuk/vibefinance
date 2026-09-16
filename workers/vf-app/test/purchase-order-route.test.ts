@@ -1,7 +1,7 @@
 import { env } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
 import { applyTestSchema } from "./setup.js";
-import { handleIngestPurchaseOrder, handleGetPurchaseOrder, handleLoadPurchaseOrdersCsv } from "../src/purchase-order-route.js";
+import { handleIngestPurchaseOrder, handleGetPurchaseOrder, handleLoadPurchaseOrdersCsv, handleListPurchaseOrders } from "../src/purchase-order-route.js";
 
 const ORDER = (number = "PO-34500", lines = `
   <cac:OrderLine><cac:LineItem>
@@ -181,5 +181,65 @@ PO-1,1,Gadgets`;
 
   it("refuses a file with only a header row", async () => {
     expect((await handleLoadPurchaseOrdersCsv(env.DB, "order_number,line number")).status).toBe(400);
+  });
+});
+
+describe("listing loaded purchase orders — decision 0372", () => {
+  it("returns an empty list before anything is loaded", async () => {
+    const result = await handleListPurchaseOrders(env.DB);
+    expect(result.status).toBe(200);
+    expect(result.body).toEqual({ purchaseOrders: [] });
+  });
+
+  it("summarises every loaded order, with a real line count", async () => {
+    await handleIngestPurchaseOrder(env.DB, ORDER()); // 1 line, PO-34500
+    await handleLoadPurchaseOrdersCsv(
+      env.DB,
+      `order_number,line number,item,quantity,unit,amount
+PO-9001,1,Widgets,10,EA,500
+PO-9001,2,Gadgets,5,EA,250`
+    ); // 2 lines, PO-9001
+
+    const result = await handleListPurchaseOrders(env.DB);
+    const body = result.body as { purchaseOrders: Record<string, unknown>[] };
+    expect(body.purchaseOrders).toHaveLength(2);
+
+    const po9001 = body.purchaseOrders.find((p) => p.order_number === "PO-9001");
+    expect(po9001?.line_count).toBe(2);
+    const po34500 = body.purchaseOrders.find((p) => p.order_number === "PO-34500");
+    expect(po34500?.line_count).toBe(1);
+  });
+
+  it("never returns the lines themselves — a list row is a summary, not the detail", async () => {
+    await handleIngestPurchaseOrder(env.DB, ORDER());
+    const result = await handleListPurchaseOrders(env.DB);
+    const body = result.body as { purchaseOrders: Record<string, unknown>[] };
+    expect(body.purchaseOrders[0].lines).toBeUndefined();
+  });
+
+  it("puts the most recently loaded order first", async () => {
+    await handleIngestPurchaseOrder(env.DB, ORDER("PO-OLD"));
+    // Backdated explicitly rather than relying on two real inserts
+    // landing in different seconds — created_at has second-level
+    // precision, and a fast test could otherwise tie.
+    await env.DB.prepare("UPDATE purchase_orders SET created_at = '2020-01-01 00:00:00' WHERE order_number = 'PO-OLD'").run();
+    await handleIngestPurchaseOrder(env.DB, ORDER("PO-NEW"));
+
+    const result = await handleListPurchaseOrders(env.DB);
+    const body = result.body as { purchaseOrders: Record<string, unknown>[] };
+    expect(body.purchaseOrders.map((p) => p.order_number)).toEqual(["PO-NEW", "PO-OLD"]);
+  });
+
+  it("counts zero lines honestly for an order that somehow has none, rather than omitting the row", async () => {
+    // Not reachable through either real ingestion path today (both
+    // refuse a line-less document), but the join itself should never
+    // silently drop a header row for want of a matching line.
+    await env.DB.prepare(
+      "INSERT INTO purchase_orders (id, order_number, payable_amount) VALUES ('po-empty', 'PO-EMPTY', 100)"
+    ).run();
+    const result = await handleListPurchaseOrders(env.DB);
+    const body = result.body as { purchaseOrders: Record<string, unknown>[] };
+    expect(body.purchaseOrders).toHaveLength(1);
+    expect(body.purchaseOrders[0].line_count).toBe(0);
   });
 });

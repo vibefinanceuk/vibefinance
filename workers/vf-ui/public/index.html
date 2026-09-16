@@ -1682,6 +1682,14 @@
     max-height: 80vh;
     overflow: auto;
   }
+  /**
+   * **A wider variant, decision 0372.** The 520px default was sized
+   * for the Suppliers edit form's own single-column layout; a
+   * purchase order line table (nine columns) would be cramped into
+   * near-uselessness at that width even with `.tablewrap`'s own
+   * horizontal scroll doing its job.
+   */
+  .popout.wide { width: min(900px, 100%); }
   .searchbox {
     width: 100%;
     margin: 8px 0;

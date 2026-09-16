@@ -1,11 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
- * The purchase order load screen — decision 0371, and the class of bug
- * decision 0191 already named once for Suppliers: a screen that
- * renders correctly proves nothing if the module cannot be imported,
- * writes to an element that is not there, or was never added to the
- * navigation the person actually clicks.
+ * The purchase order screen — load (decision 0371), then list and
+ * detail pop-out (decision 0372) — and the class of bug decision 0191
+ * already named once for Suppliers: a screen that renders correctly
+ * proves nothing if the module cannot be imported, writes to an
+ * element that is not there, or was never added to the navigation the
+ * person actually clicks.
  */
 
 function mountShell() {
@@ -31,18 +32,107 @@ const STRINGS = {
     "purchaseorders.refusedheading": "Orders which could not be loaded",
     "purchaseorders.refusedorder": "Order {order}: {reason}",
     "purchaseorders.refusedmore": "and {n} more.",
+    "purchaseorders.ordernumber": "Order Number",
+    "purchaseorders.issuedate": "Issue Date",
+    "purchaseorders.seller": "Seller",
+    "purchaseorders.buyer": "Buyer",
+    "purchaseorders.total": "Total",
+    "purchaseorders.lines": "Lines",
+    "purchaseorders.none": "No purchase orders have been loaded yet.",
+    "purchaseorders.failed": "The purchase order list could not be loaded.",
+    "purchaseorders.loading": "Loading...",
+    "purchaseorders.detailfailed": "This purchase order could not be loaded.",
+    "purchaseorders.ordertype": "Order Type",
+    "purchaseorders.currency": "Currency",
+    "purchaseorders.netamount": "Net Amount",
+    "purchaseorders.taxexclusive": "Tax Exclusive",
+    "purchaseorders.taxinclusive": "Tax Inclusive",
+    "purchaseorders.payable": "Payable",
+    "purchaseorders.requisition": "Requisition Reference",
+    "purchaseorders.line": "Line",
+    "purchaseorders.item": "Item",
+    "purchaseorders.description": "Description",
+    "purchaseorders.sku": "Seller's Item ID",
+    "purchaseorders.standardid": "Standard Item ID",
+    "purchaseorders.quantity": "Quantity",
+    "purchaseorders.unit": "Unit",
+    "purchaseorders.price": "Unit Price",
+    "purchaseorders.amount": "Amount",
     "action.load": "Load",
+    "action.close": "Close",
   },
 };
 
-function stubFetch(loadResponse: unknown, ok = true) {
+const EMPTY_LIST = { purchaseOrders: [] };
+
+const ONE_ORDER = {
+  purchaseOrders: [
+    {
+      id: "po-1",
+      order_number: "PO-500",
+      issue_date: "2026-09-01",
+      currency: "EUR",
+      seller_party_id: "GB447711223",
+      buyer_party_id: "GB907856452",
+      payable_amount: 864,
+      line_count: 2,
+    },
+  ],
+};
+
+const PO_500_DETAIL = {
+  order: {
+    id: "po-1",
+    order_number: "PO-500",
+    issue_date: "2026-09-01",
+    order_type_code: "220",
+    currency: "EUR",
+    seller_party_id: "GB447711223",
+    buyer_party_id: "GB907856452",
+    line_extension_amount: 720,
+    tax_exclusive_amount: 720,
+    tax_inclusive_amount: 864,
+    payable_amount: 864,
+    originator_reference: "REQ-100",
+  },
+  lines: [
+    {
+      line_number: 1,
+      quantity: 15,
+      unit_code: "EA",
+      line_extension_amount: 450,
+      item_name: "Pallet handling",
+      item_description: null,
+      sellers_item_id: "NW-PAL-01",
+      standard_item_id: null,
+      price_amount: 30,
+      base_quantity: 1,
+    },
+    {
+      line_number: 2,
+      quantity: 3,
+      unit_code: "MON",
+      line_extension_amount: 270,
+      item_name: "Warehouse storage",
+      item_description: "Monthly pallet storage",
+      sellers_item_id: "NW-STO-02",
+      standard_item_id: null,
+      price_amount: 90,
+      base_quantity: 1,
+    },
+  ],
+};
+
+/** Maps a path to a canned response; `/api/ui-strings` is always included. */
+function stubFetch(routes: Record<string, { ok?: boolean; body: unknown }>) {
   vi.stubGlobal(
     "fetch",
     vi.fn(async (url: string) => {
       const path = String(url).split("?")[0];
       if (path === "/api/ui-strings") return { ok: true, json: async () => STRINGS } as Response;
-      if (path === "/api/purchase-orders/csv-load") {
-        return { ok, json: async () => loadResponse } as Response;
+      if (path in routes) {
+        const { ok = true, body } = routes[path];
+        return { ok, json: async () => body } as Response;
       }
       throw new Error(`no stub for ${path}`);
     })
@@ -82,24 +172,21 @@ afterEach(() => {
 
 describe("the screen opens at all", () => {
   it("renders into the shell", async () => {
-    stubFetch({ loadId: "l1", ordersLoaded: 0, ordersReplaced: 0, linesLoaded: 0, refused: [] });
+    stubFetch({ "/api/purchase-orders": { body: EMPTY_LIST } });
     await openScreen();
 
     expect(document.getElementById("shell")?.textContent).toContain("Purchase Orders");
   });
 
   it("says what loading is for, not just that it exists", async () => {
-    stubFetch({ loadId: "l1", ordersLoaded: 0, ordersReplaced: 0, linesLoaded: 0, refused: [] });
+    stubFetch({ "/api/purchase-orders": { body: EMPTY_LIST } });
     await openScreen();
 
     expect(document.body.textContent).toContain("matched against them");
   });
 
-  it("shows the load control without ever calling a list endpoint", async () => {
-    // No GET /api/purchase-orders stub is registered at all — a call
-    // to one would throw inside stubFetch and fail the test, which is
-    // the proof this screen never asks for a list that does not exist.
-    stubFetch({ loadId: "l1", ordersLoaded: 0, ordersReplaced: 0, linesLoaded: 0, refused: [] });
+  it("shows the load control", async () => {
+    stubFetch({ "/api/purchase-orders": { body: EMPTY_LIST } });
     await openScreen();
 
     expect(document.querySelector("#purchaseorderfile")).not.toBeNull();
@@ -108,7 +195,7 @@ describe("the screen opens at all", () => {
   });
 
   it("puts Load top right of the card, beside its own heading — the same pattern decision 0300 already set", async () => {
-    stubFetch({ loadId: "l1", ordersLoaded: 0, ordersReplaced: 0, linesLoaded: 0, refused: [] });
+    stubFetch({ "/api/purchase-orders": { body: EMPTY_LIST } });
     await openScreen();
 
     const cardhead = [...document.querySelectorAll(".cardhead")].find(
@@ -117,11 +204,152 @@ describe("the screen opens at all", () => {
     expect(cardhead).not.toBeUndefined();
     expect(cardhead?.querySelector(".statebuttons")).not.toBeNull();
   });
+
+  it("reports when the list itself could not be loaded, rather than showing an empty table silently", async () => {
+    stubFetch({ "/api/purchase-orders": { ok: false, body: { error: "nope" } } });
+    await openScreen();
+
+    expect(document.body.textContent).toContain("could not be loaded");
+  });
+});
+
+describe("the list — decision 0372", () => {
+  it("says nothing has been loaded yet, when nothing has", async () => {
+    stubFetch({ "/api/purchase-orders": { body: EMPTY_LIST } });
+    await openScreen();
+
+    expect(document.body.textContent).toContain("No purchase orders have been loaded yet");
+  });
+
+  it("lists a loaded order with its own summary fields", async () => {
+    stubFetch({ "/api/purchase-orders": { body: ONE_ORDER } });
+    await openScreen();
+
+    expect(document.body.textContent).toContain("PO-500");
+    expect(document.body.textContent).toContain("GB447711223");
+    expect(document.body.textContent).toContain("GB907856452");
+    expect(document.body.textContent).toContain("864");
+    // The line count, not the lines themselves — decision 0372's own
+    // "a list row is a summary" reasoning.
+    expect(document.body.textContent).toContain("2");
+  });
+
+  it("marks a row as clickable", async () => {
+    stubFetch({ "/api/purchase-orders": { body: ONE_ORDER } });
+    await openScreen();
+
+    const row = document.querySelector("tbody tr");
+    expect(row?.className).toContain("clickable");
+  });
+});
+
+describe("the detail pop-out — 'all PO and PO Line information'", () => {
+  it("opens on a row click and shows every header field", async () => {
+    stubFetch({
+      "/api/purchase-orders": { body: ONE_ORDER },
+      "/api/purchase-orders/PO-500": { body: PO_500_DETAIL },
+    });
+    await openScreen();
+
+    (document.querySelector("tbody tr") as HTMLElement)?.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    const popout = document.querySelector(".popout");
+    expect(popout).not.toBeNull();
+    expect(popout?.textContent).toContain("PO-500");
+    expect(popout?.textContent).toContain("220"); // order type code
+    expect(popout?.textContent).toContain("EUR");
+    expect(popout?.textContent).toContain("REQ-100"); // originator reference
+    expect(popout?.textContent).toContain("864"); // payable amount
+  });
+
+  it("shows every line, with every field a line carries", async () => {
+    stubFetch({
+      "/api/purchase-orders": { body: ONE_ORDER },
+      "/api/purchase-orders/PO-500": { body: PO_500_DETAIL },
+    });
+    await openScreen();
+
+    (document.querySelector("tbody tr") as HTMLElement)?.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    const popout = document.querySelector(".popout") as HTMLElement;
+    expect(popout.textContent).toContain("Pallet handling");
+    expect(popout.textContent).toContain("NW-PAL-01");
+    expect(popout.textContent).toContain("Warehouse storage");
+    expect(popout.textContent).toContain("Monthly pallet storage");
+    expect(popout.textContent).toContain("NW-STO-02");
+    // Both lines' own quantities and units, not just the first.
+    expect(popout.textContent).toContain("15");
+    expect(popout.textContent).toContain("MON");
+  });
+
+  it("is the wide variant, since the line table needs more room than the default popout width", async () => {
+    stubFetch({
+      "/api/purchase-orders": { body: ONE_ORDER },
+      "/api/purchase-orders/PO-500": { body: PO_500_DETAIL },
+    });
+    await openScreen();
+
+    (document.querySelector("tbody tr") as HTMLElement)?.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(document.querySelector(".popout")?.className).toContain("wide");
+  });
+
+  it("closes on the Close button", async () => {
+    stubFetch({
+      "/api/purchase-orders": { body: ONE_ORDER },
+      "/api/purchase-orders/PO-500": { body: PO_500_DETAIL },
+    });
+    await openScreen();
+
+    (document.querySelector("tbody tr") as HTMLElement)?.click();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(document.querySelector(".popout")).not.toBeNull();
+
+    const close = [...document.querySelectorAll(".popout button")].find((b) => b.textContent === "Close");
+    close?.dispatchEvent(new MouseEvent("click"));
+
+    expect(document.querySelector(".backdrop")).toBeNull();
+  });
+
+  it("closes on a click outside the box, not on a click inside it", async () => {
+    stubFetch({
+      "/api/purchase-orders": { body: ONE_ORDER },
+      "/api/purchase-orders/PO-500": { body: PO_500_DETAIL },
+    });
+    await openScreen();
+
+    (document.querySelector("tbody tr") as HTMLElement)?.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    const backdrop = document.querySelector(".backdrop") as HTMLElement;
+    const popout = document.querySelector(".popout") as HTMLElement;
+    popout.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(document.querySelector(".backdrop")).not.toBeNull();
+
+    backdrop.dispatchEvent(new MouseEvent("click"));
+    expect(document.querySelector(".backdrop")).toBeNull();
+  });
+
+  it("reports a failed detail fetch rather than an empty or stuck pop-out", async () => {
+    stubFetch({
+      "/api/purchase-orders": { body: ONE_ORDER },
+      "/api/purchase-orders/PO-500": { ok: false, body: { error: "nope" } },
+    });
+    await openScreen();
+
+    (document.querySelector("tbody tr") as HTMLElement)?.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(document.body.textContent).toContain("This purchase order could not be loaded");
+  });
 });
 
 describe("loading a file (decision 0216's one-try-per-thing discipline)", () => {
   it("refuses to load with no file chosen", async () => {
-    stubFetch({ loadId: "l1", ordersLoaded: 0, ordersReplaced: 0, linesLoaded: 0, refused: [] });
+    stubFetch({ "/api/purchase-orders": { body: EMPTY_LIST } });
     await openScreen();
 
     const button = [...document.querySelectorAll("button")].find((b) => b.textContent === "Load");
@@ -132,7 +360,10 @@ describe("loading a file (decision 0216's one-try-per-thing discipline)", () => 
   });
 
   it("shows what a load did — orders and lines both", async () => {
-    stubFetch({ loadId: "l1", ordersLoaded: 3, ordersReplaced: 0, linesLoaded: 7, refused: [] });
+    stubFetch({
+      "/api/purchase-orders": { body: EMPTY_LIST },
+      "/api/purchase-orders/csv-load": { body: { loadId: "l1", ordersLoaded: 3, ordersReplaced: 0, linesLoaded: 7, refused: [] } },
+    });
     await openScreen();
     chooseFile("order_number,line number,item\nPO-1,1,Widgets");
 
@@ -145,7 +376,10 @@ describe("loading a file (decision 0216's one-try-per-thing discipline)", () => 
   });
 
   it("mentions replaced orders only when there were any", async () => {
-    stubFetch({ loadId: "l1", ordersLoaded: 2, ordersReplaced: 2, linesLoaded: 4, refused: [] });
+    stubFetch({
+      "/api/purchase-orders": { body: EMPTY_LIST },
+      "/api/purchase-orders/csv-load": { body: { loadId: "l1", ordersLoaded: 2, ordersReplaced: 2, linesLoaded: 4, refused: [] } },
+    });
     await openScreen();
     chooseFile("order_number,line number\nPO-1,1");
 
@@ -158,11 +392,16 @@ describe("loading a file (decision 0216's one-try-per-thing discipline)", () => 
 
   it("shows a refused order with its own reason, not a generic failure", async () => {
     stubFetch({
-      loadId: "l1",
-      ordersLoaded: 1,
-      ordersReplaced: 0,
-      linesLoaded: 2,
-      refused: [{ orderNumber: "PO-9", reason: "line numbers must be unique within one order" }],
+      "/api/purchase-orders": { body: EMPTY_LIST },
+      "/api/purchase-orders/csv-load": {
+        body: {
+          loadId: "l1",
+          ordersLoaded: 1,
+          ordersReplaced: 0,
+          linesLoaded: 2,
+          refused: [{ orderNumber: "PO-9", reason: "line numbers must be unique within one order" }],
+        },
+      },
     });
     await openScreen();
     chooseFile("order_number,line number\nPO-1,1");
@@ -176,7 +415,10 @@ describe("loading a file (decision 0216's one-try-per-thing discipline)", () => 
   });
 
   it("does not blame the network for a refusal — the route's own words, not a generic message", async () => {
-    stubFetch({ error: "the file needs an order number column" }, false);
+    stubFetch({
+      "/api/purchase-orders": { body: EMPTY_LIST },
+      "/api/purchase-orders/csv-load": { ok: false, body: { error: "the file needs an order number column" } },
+    });
     await openScreen();
     chooseFile("line number\n1");
 
@@ -194,6 +436,7 @@ describe("loading a file (decision 0216's one-try-per-thing discipline)", () => 
       vi.fn(async (url: string) => {
         const path = String(url).split("?")[0];
         if (path === "/api/ui-strings") return { ok: true, json: async () => STRINGS } as Response;
+        if (path === "/api/purchase-orders") return { ok: true, json: async () => EMPTY_LIST } as Response;
         if (path === "/api/purchase-orders/csv-load") throw new Error("network down");
         throw new Error(`no stub for ${path}`);
       })
@@ -206,5 +449,37 @@ describe("loading a file (decision 0216's one-try-per-thing discipline)", () => 
     await new Promise((r) => setTimeout(r, 0));
 
     expect(document.body.textContent).toContain("could not reach the service");
+  });
+
+  it("refreshes the list after a successful load, rather than leaving the table showing what it showed before", async () => {
+    let listCalls = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        const path = String(url).split("?")[0];
+        if (path === "/api/ui-strings") return { ok: true, json: async () => STRINGS } as Response;
+        if (path === "/api/purchase-orders") {
+          listCalls++;
+          return { ok: true, json: async () => (listCalls > 1 ? ONE_ORDER : EMPTY_LIST) } as Response;
+        }
+        if (path === "/api/purchase-orders/csv-load") {
+          return {
+            ok: true,
+            json: async () => ({ loadId: "l1", ordersLoaded: 1, ordersReplaced: 0, linesLoaded: 2, refused: [] }),
+          } as Response;
+        }
+        throw new Error(`no stub for ${path}`);
+      })
+    );
+    await openScreen();
+    expect(document.body.textContent).toContain("No purchase orders have been loaded yet");
+
+    chooseFile("order_number,line number\nPO-500,1");
+    const button = [...document.querySelectorAll("button")].find((b) => b.textContent === "Load");
+    button?.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(document.body.textContent).toContain("PO-500");
+    expect(document.body.textContent).not.toContain("No purchase orders have been loaded yet");
   });
 });

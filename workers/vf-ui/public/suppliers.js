@@ -825,11 +825,13 @@ function render() {
 
 export async function open() {
   setCurrentScreen("suppliers");
-  if (!(await load())) {
-    note(t("suppliers.failed"));
-    return;
-  }
+  // render() first, always — decision 0372's own finding, applied
+  // back here: calling note() before this screen has ever rendered
+  // writes to #suppliers-note before that element exists, and a
+  // failed first load has said nothing to anyone since decision 0213.
+  const ok = await load();
   render();
+  if (!ok) note(t("suppliers.failed"));
 }
 
 /**
@@ -839,9 +841,7 @@ export async function open() {
 export async function openSuppliersAwaitingErp() {
   setCurrentScreen("suppliers");
   statusFilter = "awaitingerp";
-  if (!(await load())) {
-    note(t("suppliers.failed"));
-    return;
-  }
+  const ok = await load();
   render();
+  if (!ok) note(t("suppliers.failed"));
 }
