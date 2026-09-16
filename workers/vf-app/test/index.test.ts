@@ -399,6 +399,63 @@ describe("POST /rules/evaluate", () => {
     });
     expect(res.status).toBe(404);
   });
+
+  it("a rule referencing po.matched genuinely sees a real, computed value when loaded by invoiceId — decision 0370", async () => {
+    // The purchase order, loaded first via the real ingestion route —
+    // not a direct D1 insert, so this exercises the same path a
+    // customer's own PO would arrive through.
+    await SELF.fetch("https://example.com/purchase-orders", {
+      method: "POST",
+      headers: authHeaders(),
+      body: `<?xml version="1.0"?>
+<Order xmlns="urn:oasis:names:specification:ubl:schema:xsd:Order-2"
+       xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
+       xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">
+  <cbc:ID>PO-EVAL-1</cbc:ID>
+  <cac:AnticipatedMonetaryTotal><cbc:PayableAmount currencyID="EUR">1000</cbc:PayableAmount></cac:AnticipatedMonetaryTotal>
+  <cac:OrderLine><cac:LineItem><cbc:ID>1</cbc:ID>
+    <cbc:LineExtensionAmount currencyID="EUR">1000</cbc:LineExtensionAmount>
+    <cac:Item><cbc:Name>Widgets</cbc:Name></cac:Item>
+  </cac:LineItem></cac:OrderLine>
+</Order>`,
+    });
+
+    const poMatchedRuleSet: CompiledRuleSet = {
+      id: "rs-po-matched",
+      mode: "first_match",
+      rules: [
+        {
+          id: "matched",
+          version: 1,
+          conditions: { field: "po.matched", operator: "is", value: true },
+          actions: [{ type: "flag" }],
+        },
+      ],
+    };
+    await env.DB.prepare("INSERT INTO rule_sets (id, name, mode, status) VALUES (?, ?, ?, ?)")
+      .bind("rs-po-matched", "po matched test", "first_match", "active")
+      .run();
+
+    // Invoice pointing at that order, with a total that agrees exactly.
+    await SELF.fetch("https://example.com/invoices", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ id: "inv-po-eval", facts: { "BT-13": "PO-EVAL-1", "BT-112": 1000 } }),
+    });
+
+    const res = await SELF.fetch("https://example.com/rules/evaluate", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ ruleSet: poMatchedRuleSet, invoiceId: "inv-po-eval" }), // no inline facts
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { outcome: string };
+    // Only possible if po.matched was genuinely computed against real
+    // stored purchase order data at evaluation time — the field is
+    // never persisted into facts_json, so a stale or missing merge
+    // would report no_match here instead.
+    expect(body.outcome).toBe("matched");
+  });
 });
 
 describe("POST /rules/compile", () => {
@@ -1548,6 +1605,96 @@ describe("per-line evaluation, through the real router (decision 0027)", () => {
       body: JSON.stringify({ facts: {}, lines: [{ amount: 100 }] }),
     });
     expect(res.status).toBe(422);
+  });
+
+  it("re-visiting a later stage genuinely sees po.matched, and every other structured/derived fact — the gap decision 0370 found and closed", async () => {
+    // The purchase order arrives first.
+    await SELF.fetch("https://example.com/purchase-orders", {
+      method: "POST",
+      headers: authHeaders(),
+      body: `<?xml version="1.0"?>
+<Order xmlns="urn:oasis:names:specification:ubl:schema:xsd:Order-2"
+       xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
+       xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">
+  <cbc:ID>PO-VISIT-1</cbc:ID>
+  <cac:AnticipatedMonetaryTotal><cbc:PayableAmount currencyID="EUR">500</cbc:PayableAmount></cac:AnticipatedMonetaryTotal>
+  <cac:OrderLine><cac:LineItem><cbc:ID>1</cbc:ID>
+    <cbc:LineExtensionAmount currencyID="EUR">500</cbc:LineExtensionAmount>
+    <cac:Item><cbc:Name>Widgets</cbc:Name></cac:Item>
+  </cac:LineItem></cac:OrderLine>
+</Order>`,
+    });
+
+    // A real invoice, genuinely stored — this is what the instance's
+    // own subject_id needs to resolve to for the route's new merge to
+    // find anything at all.
+    await SELF.fetch("https://example.com/invoices", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ id: "inv-visit-po", facts: { "BT-13": "PO-VISIT-1", "BT-112": 500 } }),
+    });
+
+    await SELF.fetch("https://example.com/processes", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ id: "p-visit-po", name: "AP" }),
+    });
+    await env.DB.prepare("INSERT INTO rule_sets (id, name, mode, status) VALUES (?, ?, ?, ?)")
+      .bind("rs-visit-po", "po matched", "first_match", "active")
+      .run();
+    await SELF.fetch("https://example.com/processes/p-visit-po/stages", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ id: "matching", name: "Matching", sequence: 1, ruleSetId: "rs-visit-po" }),
+    });
+    await env.DB.prepare("INSERT INTO rules (id, rule_set_id, sort_order, enabled) VALUES (?, ?, 0, 1)")
+      .bind("po-matched-rule", "rs-visit-po")
+      .run();
+    await env.DB.prepare(
+      `INSERT INTO rule_versions (rule_id, version, source_text, compiled_json, compiled_by, approved_by, approved_at, effective_from)
+       VALUES (?, 1, ?, ?, ?, ?, ?, ?)`
+    )
+      .bind(
+        "po-matched-rule",
+        "test",
+        JSON.stringify({
+          conditions: { field: "po.matched", operator: "is", value: true },
+          actions: [{ type: "flag" }],
+        }),
+        "test-model",
+        "alice",
+        "2026-01-01T00:00:00.000Z",
+        "2026-01-01T00:00:00.000Z"
+      )
+      .run();
+
+    const created = await SELF.fetch("https://example.com/processes/p-visit-po/instances", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ subjectType: "invoice", subjectId: "inv-visit-po" }),
+    });
+    const instanceId = (await created.json() as { id: string }).id;
+
+    // Deliberately near-empty facts in the body — no po.matched, no
+    // BT-13 even. The only way this rule can fire is the route's own
+    // merge finding the real invoice by the instance's subject_id and
+    // computing po.matched fresh from there, exactly the gap this
+    // decision closed.
+    const res = await SELF.fetch(`https://example.com/process-instances/${instanceId}/visit`, {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ facts: {} }),
+    });
+    expect(res.status).toBe(200);
+
+    // The rule's own recorded outcome, checked directly — proof the
+    // rule genuinely matched, not just that the instance completed
+    // (which it would have done either way, since `flag` doesn't
+    // block progress).
+    const step = await env.DB.prepare("SELECT matched FROM stage_visit_steps WHERE rule_id = ?")
+      .bind("po-matched-rule")
+      .first<{ matched: number }>();
+    expect(step?.matched).toBe(1);
   });
 });
 

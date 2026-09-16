@@ -1,7 +1,7 @@
 import { env } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
 import { applyTestSchema } from "./setup.js";
-import { handleIngestPurchaseOrder, handleGetPurchaseOrder } from "../src/purchase-order-route.js";
+import { handleIngestPurchaseOrder, handleGetPurchaseOrder, handleLoadPurchaseOrdersCsv } from "../src/purchase-order-route.js";
 
 const ORDER = (number = "PO-34500", lines = `
   <cac:OrderLine><cac:LineItem>
@@ -108,5 +108,78 @@ describe("reading a purchase order back", () => {
 
   it("404s an order that was never loaded", async () => {
     expect((await handleGetPurchaseOrder(env.DB, "PO-NONE")).status).toBe(404);
+  });
+});
+
+describe("loading purchase orders from CSV — decision 0370", () => {
+  const CSV = `order_number,issue_date,seller vat id,order total,line number,item,sku,quantity,unit,amount
+PO-9001,2026-09-10,987654325,864,1,White sauce,SN-33,120,LTR,720
+PO-9001,2026-09-10,987654325,864,2,Brown sauce,SN-34,30,LTR,144
+PO-9002,2026-09-11,987654325,500,1,Widgets,SN-40,10,EA,500`;
+
+  it("stores one order per group and every line", async () => {
+    const result = await handleLoadPurchaseOrdersCsv(env.DB, CSV);
+    expect(result.status).toBe(200);
+    expect(result.body).toMatchObject({ ordersLoaded: 2, ordersReplaced: 0, linesLoaded: 3, refused: [] });
+
+    const orders = await env.DB.prepare("SELECT count(*) AS n FROM purchase_orders").first<{ n: number }>();
+    const lines = await env.DB.prepare("SELECT count(*) AS n FROM purchase_order_lines").first<{ n: number }>();
+    expect(orders?.n).toBe(2);
+    expect(lines?.n).toBe(3);
+
+    const po1 = await env.DB.prepare("SELECT * FROM purchase_orders WHERE order_number = 'PO-9001'").first<
+      Record<string, unknown>
+    >();
+    expect(po1?.payable_amount).toBe(864);
+    expect(po1?.seller_party_id).toBe("987654325");
+
+    const line1 = await env.DB.prepare(
+      "SELECT * FROM purchase_order_lines WHERE purchase_order_id = ? AND line_number = 1"
+    )
+      .bind(po1?.id)
+      .first<Record<string, unknown>>();
+    expect(line1?.item_name).toBe("White sauce");
+    expect(line1?.quantity).toBe(120);
+    expect(line1?.unit_code).toBe("LTR");
+    expect(line1?.line_extension_amount).toBe(720);
+  });
+
+  it("replaces an order re-loaded in a later file, same as the XML path", async () => {
+    await handleLoadPurchaseOrdersCsv(env.DB, CSV);
+    const again = await handleLoadPurchaseOrdersCsv(env.DB, CSV);
+    expect(again.body).toMatchObject({ ordersLoaded: 2, ordersReplaced: 2 });
+
+    const orders = await env.DB.prepare("SELECT count(*) AS n FROM purchase_orders").first<{ n: number }>();
+    expect(orders?.n).toBe(2);
+  });
+
+  it("refuses a line with neither an item name nor an identifier, per order", async () => {
+    const csv = `order_number,line number,item,sku
+PO-1,1,,
+PO-2,1,Widgets,`;
+    const result = await handleLoadPurchaseOrdersCsv(env.DB, csv);
+    expect(result.body).toMatchObject({ ordersLoaded: 1, refused: [{ orderNumber: "PO-1" }] });
+  });
+
+  it("refuses a file with no order number column", async () => {
+    const result = await handleLoadPurchaseOrdersCsv(env.DB, "line number,item\n1,Widgets");
+    expect(result.status).toBe(400);
+  });
+
+  it("refuses a file with no line number column", async () => {
+    const result = await handleLoadPurchaseOrdersCsv(env.DB, "order_number,item\nPO-1,Widgets");
+    expect(result.status).toBe(400);
+  });
+
+  it("refuses duplicate line numbers within one order", async () => {
+    const csv = `order_number,line number,item
+PO-1,1,Widgets
+PO-1,1,Gadgets`;
+    const result = await handleLoadPurchaseOrdersCsv(env.DB, csv);
+    expect(result.body).toMatchObject({ ordersLoaded: 0, refused: [{ orderNumber: "PO-1" }] });
+  });
+
+  it("refuses a file with only a header row", async () => {
+    expect((await handleLoadPurchaseOrdersCsv(env.DB, "order_number,line number")).status).toBe(400);
   });
 });

@@ -5,6 +5,7 @@ import { handleCaptureIntake, handleCaptureUblXml, handleIntakeStats } from "../
 import { handleCreateProcess, handleCreateStage } from "../src/process-route.js";
 import { handleCreateIntakeChannel } from "../src/intake-channel-route.js";
 import { handleCreateTeam } from "../src/team-route.js";
+import { handleIngestPurchaseOrder } from "../src/purchase-order-route.js";
 
 beforeEach(async () => {
   await applyTestSchema();
@@ -267,5 +268,108 @@ describe("handleCaptureUblXml (decision 0030)", () => {
   it("404s when the channel does not exist, without ever attempting to parse the XML", async () => {
     const result = await handleCaptureUblXml(env.DB, "does-not-exist", SAMPLE_UBL_INVOICE);
     expect(result.status).toBe(404);
+  });
+});
+
+describe("po.matched / po.line_matched reach real rule evaluation through capture — decision 0370", () => {
+  // A real AP rule: hold an invoice at Matching for review whenever it
+  // isn't matched, rather than let it sail through silently. This is
+  // the actual proof that matters — not that a value sits in storage
+  // somewhere, but that a rule evaluated at capture time genuinely saw
+  // it, the same "rules over facts, not routing" design decision 0080
+  // already established for this exact stage.
+  async function seedMatchingProcess(processId: string, channelId: string): Promise<void> {
+    await handleCreateProcess(env.DB, { id: processId, name: "AP with matching" });
+    await handleCreateStage(env.DB, processId, { id: `${processId}-intake`, name: "Intake", sequence: 1 });
+    await env.DB.prepare("INSERT INTO rule_sets (id, name, mode, status) VALUES (?, ?, ?, ?)")
+      .bind(`${processId}-rs`, "hold unmatched", "first_match", "active")
+      .run();
+    const ruleId = crypto.randomUUID();
+    await env.DB.prepare("INSERT INTO rules (id, rule_set_id, sort_order, enabled) VALUES (?, ?, 0, 1)")
+      .bind(ruleId, `${processId}-rs`)
+      .run();
+    await env.DB.prepare(
+      `INSERT INTO rule_versions (rule_id, version, source_text, compiled_json, compiled_by, approved_by, approved_at, effective_from)
+       VALUES (?, 1, ?, ?, ?, ?, ?, ?)`
+    )
+      .bind(
+        ruleId,
+        "test",
+        JSON.stringify({
+          conditions: { field: "po.matched", operator: "is", value: false },
+          actions: [{ type: "assign_task", params: { team: "matching-team", permission: "AP.Validate" } }],
+        }),
+        "test-model",
+        "alice",
+        "2026-01-01T00:00:00.000Z",
+        "2026-01-01T00:00:00.000Z"
+      )
+      .run();
+    await handleCreateStage(env.DB, processId, {
+      id: `${processId}-matching`,
+      name: "Matching",
+      sequence: 2,
+      ruleSetId: `${processId}-rs`,
+    });
+    await env.DB.prepare("INSERT INTO org_units (id, name) VALUES ('u1', 'Acme France') ON CONFLICT(id) DO NOTHING").run();
+    await handleCreateTeam(env.DB, { id: "matching-team", name: "Matching Team", unitId: "u1" });
+    await handleCreateIntakeChannel(env.DB, processId, { id: channelId, name: "EDI" });
+  }
+
+  it("an invoice whose purchase order already exists and agrees sails through Matching untouched", async () => {
+    await seedMatchingProcess("ppo1", "icppo1");
+    await handleIngestPurchaseOrder(
+      env.DB,
+      `<?xml version="1.0"?>
+<Order xmlns="urn:oasis:names:specification:ubl:schema:xsd:Order-2"
+       xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
+       xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">
+  <cbc:ID>PO-CAP-1</cbc:ID>
+  <cac:AnticipatedMonetaryTotal><cbc:PayableAmount currencyID="EUR">600</cbc:PayableAmount></cac:AnticipatedMonetaryTotal>
+  <cac:OrderLine><cac:LineItem><cbc:ID>1</cbc:ID>
+    <cbc:Quantity unitCode="EA">10</cbc:Quantity>
+    <cbc:LineExtensionAmount currencyID="EUR">600</cbc:LineExtensionAmount>
+    <cac:Item><cbc:Name>Widgets</cbc:Name></cac:Item>
+  </cac:LineItem></cac:OrderLine>
+</Order>`
+    );
+
+    const result = await handleCaptureIntake(env.DB, "icppo1", {
+      id: "inv-ppo-1",
+      facts: { "BT-13": "PO-CAP-1", "BT-112": 600 },
+      lines: [{ lineNumber: 1, "BT-132": "1", "BT-129": 10, "BT-130": "EA", "BT-131": 600 }],
+    });
+    expect(result.status).toBe(201);
+
+    // po.matched: true meant the "hold when not matched" rule never
+    // fired — the instance completed rather than parking a task at
+    // Matching, which is only possible if the rule genuinely saw a
+    // real, computed po.matched rather than an absent/undefined field.
+    const instance = await env.DB.prepare("SELECT status FROM process_instances WHERE subject_id = ?")
+      .bind("inv-ppo-1")
+      .first<{ status: string }>();
+    expect(instance).toEqual({ status: "completed" });
+    const tasks = await env.DB.prepare("SELECT count(*) AS n FROM tasks").first<{ n: number }>();
+    expect(tasks?.n).toBe(0);
+  });
+
+  it("an invoice captured before its purchase order exists gets held at Matching for review", async () => {
+    await seedMatchingProcess("ppo2", "icppo2");
+    // Deliberately no purchase order loaded at all — PO-NOT-YET-LOADED
+    // never exists in this test, the same "arrived later" scenario
+    // decision 0370's own design is meant to handle honestly.
+    const result = await handleCaptureIntake(env.DB, "icppo2", {
+      id: "inv-ppo-2",
+      facts: { "BT-13": "PO-NOT-YET-LOADED", "BT-112": 600 },
+      lines: [{ lineNumber: 1, "BT-132": "1", "BT-131": 600 }],
+    });
+    expect(result.status).toBe(201);
+
+    const instance = await env.DB.prepare("SELECT status, current_stage_id FROM process_instances WHERE subject_id = ?")
+      .bind("inv-ppo-2")
+      .first<{ status: string; current_stage_id: string }>();
+    expect(instance).toEqual({ status: "in_progress", current_stage_id: "ppo2-matching" });
+    const task = await env.DB.prepare("SELECT owner_team_id FROM tasks").first<{ owner_team_id: string }>();
+    expect(task?.owner_team_id).toBe("matching-team");
   });
 });

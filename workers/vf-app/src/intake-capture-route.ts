@@ -2,6 +2,7 @@ import type { InvoiceFacts } from "@vibefinance/shared";
 import { parseUblInvoice, UblParseError } from "@vibefinance/shared";
 import type { RouteResult } from "./org-route.js";
 import { handleUpsertInvoice, mergeStructuredInvoiceFacts } from "./invoice-facts-route.js";
+import { mergePoMatchFacts } from "./po-matching.js";
 import { handleCreateProcessInstance, visitCurrentStage } from "./workflow-engine.js";
 import { extractEmbeddedInvoiceXml, looksLikePdf, PdfExtractionError } from "./pdf-attachment.js";
 import { extractInvoiceFromImage, extractInvoiceFromImages, mergePageResults, sniffImageType, ExtractionRefusal, type ExtractionModel } from "./extraction.js";
@@ -153,7 +154,7 @@ export async function handleCaptureIntake(db: D1Database, channelId: string, bod
   // stored. Built from what this call already knows, not a second
   // database round-trip.
   const resolvedFacts = (typeof facts === "object" && facts !== null && !Array.isArray(facts) ? facts : {}) as InvoiceFacts;
-  const mergedFacts = mergeStructuredInvoiceFacts(resolvedFacts, {
+  const structuredFacts = mergeStructuredInvoiceFacts(resolvedFacts, {
     supplier_vat_id: (body.supplierVatId as string) ?? null,
     currency: (body.currency as string) ?? null,
     issue_date: (body.issueDate as string) ?? null,
@@ -162,7 +163,13 @@ export async function handleCaptureIntake(db: D1Database, channelId: string, bod
     invoice_number: (body.invoiceNumber as string) ?? null,
     duplicate_confidence: (upsertResult.body as { duplicateConfidence?: number }).duplicateConfidence ?? null,
   });
-  const lines = canonicalLines;
+  // po.matched / po.line_matched — decision 0370. Computed fresh here,
+  // not read from anywhere stored: a purchase order can arrive after
+  // this invoice, and a rule at the Matching stage needs today's
+  // answer, not the one true at capture.
+  const poMerged = await mergePoMatchFacts(db, structuredFacts, canonicalLines ?? []);
+  const mergedFacts = poMerged.headerFacts;
+  const lines = canonicalLines ? poMerged.lines : undefined;
   // The channel's own currency tolerance reaches validation here —
   // decision 0057. Every capture path (XML, hybrid PDF, image,
   // multi-page finalise) converges on this function, so loading it

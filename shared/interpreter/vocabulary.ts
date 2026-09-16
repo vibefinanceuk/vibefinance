@@ -78,6 +78,22 @@ export const DERIVED_FIELDS = [
   "party.first_document",
   "po.matched",
   "po.variance_pct",
+  // Line-level matching, decision 0370. Header-level po.* answers "does
+  // the invoice total agree with the order total"; these answer the
+  // question that actually catches an over-bill — does *this* line
+  // agree with the order line it says it answers. BT-132 is what makes
+  // the correspondence possible at all; absent that reference, these
+  // read false/absent rather than guessed from line position, the same
+  // "refused rather than guessed" standard po.matched already sets at
+  // header level.
+  "po.line_matched",
+  "po.line_variance_pct",
+  // Kept apart from po.line_variance_pct for the same reason
+  // supplier.quantityTolerancePct is kept apart from
+  // supplier.amountTolerancePct: over-delivering and over-charging are
+  // different failures, and collapsing them into one number would lose
+  // which one actually happened.
+  "po.line_quantity_variance_pct",
   "mandate.channel",
   "validation.passed",
   "validation.failures",
@@ -184,6 +200,9 @@ export const INVOICE_FIELD_TYPES: Record<string, FieldType> = {
   "party.first_document": "boolean",
   "po.matched": "boolean",
   "po.variance_pct": "number",
+  "po.line_matched": "boolean",
+  "po.line_variance_pct": "number",
+  "po.line_quantity_variance_pct": "number",
   "mandate.channel": "text",
   "validation.passed": "boolean",
   "validation.failures": "text",
@@ -357,6 +376,12 @@ export const DERIVED_FIELD_DESCRIPTIONS: Record<DerivedField, string> = {
   "party.first_document": "true if this is the first document from this party",
   "po.matched": "true if the invoice matches a purchase order",
   "po.variance_pct": "percentage variance between invoice and PO amount",
+  "po.line_matched":
+    "true if this line's own amount and quantity are within the supplier's agreed tolerance of the purchase order line BT-132 says it answers. False, not absent, when BT-132 is missing or points at a purchase order line that does not exist — a rule should be able to test 'this line could not be matched' directly rather than treat absence and a real mismatch as the same silence.",
+  "po.line_variance_pct":
+    "percentage variance between this line's own amount and the amount on the purchase order line BT-132 references. Absent where no corresponding purchase order line was found, since there is nothing to compare against.",
+  "po.line_quantity_variance_pct":
+    "percentage variance between this line's own quantity and the quantity on the purchase order line BT-132 references. Kept apart from po.line_variance_pct for the same reason supplier.quantityTolerancePct is kept apart from supplier.amountTolerancePct. Absent where no corresponding purchase order line was found, or where either side has no quantity recorded.",
   // Enriched with real example values, per decision 0023's "Intake"
   // convention — a free string, deliberately not a closed enum (see
   // that decision for why enforcement was explicitly declined). The

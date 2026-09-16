@@ -56,6 +56,7 @@ import {
   handleUpdateTeam,
 } from "./team-route.js";
 import { handleUpsertInvoice, mergeStructuredInvoiceFacts , handleGetInvoice } from "./invoice-facts-route.js";
+import { mergePoMatchFacts } from "./po-matching.js";
 import { handleUpsertExpenseReport } from "./expense-facts-route.js";
 import {
   handleCreateProcess,
@@ -108,7 +109,7 @@ import {
   handleAssignLedger,
   handleUpdateCostCentre,
 } from "./ledger-route.js";
-import { handleIngestPurchaseOrder, handleGetPurchaseOrder } from "./purchase-order-route.js";
+import { handleIngestPurchaseOrder, handleGetPurchaseOrder, handleLoadPurchaseOrdersCsv } from "./purchase-order-route.js";
 import { handleGetRetention, handleSetRetention, handleListBeyondRetention } from "./retention-route.js";
 import { handleCaptureFromSource } from "./source-capture-route.js";
 import { handleInboundEmail, handleListInboundEmail, type EmailMessage } from "./inbound-email.js";
@@ -488,6 +489,11 @@ async function handleEvaluate(request: Request, env: Env): Promise<Response> {
     }
     facts = JSON.parse(headerRow.facts_json) as InvoiceFacts;
     facts = mergeStructuredInvoiceFacts(facts, headerRow);
+    // po.matched — decision 0370, computed fresh against whatever
+    // purchase order data exists right now, the same reasoning
+    // intake-capture-route.ts's own call gives. This route evaluates
+    // header facts only, so po.line_matched does not apply here.
+    facts = (await mergePoMatchFacts(db, facts, [])).headerFacts;
   }
 
   let ruleSet: CompiledRuleSet;
@@ -2727,6 +2733,21 @@ export default {
       return json(result.body, result.status);
     }
 
+    // CSV loading — decision 0370. Same permission, same tables, same
+    // storeOrder underneath; a customer's ERP export rather than a
+    // Peppol document, following the exact same reasoning as the
+    // supplier CSV load (POST /suppliers/load).
+    if (pathname === "/purchase-orders/csv-load" && request.method === "POST") {
+      const { db } = resolveTenant(request, env);
+      const auth = await requirePermission(db, request, "Admin.Configure", sessionContext(env));
+      if (!auth.authorized) {
+        return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
+      }
+      const csv = await request.text();
+      const result = await handleLoadPurchaseOrdersCsv(db, csv);
+      return json(result.body, result.status);
+    }
+
     const poMatch = pathname.match(/^\/purchase-orders\/([^/]+)$/);
     if (poMatch && request.method === "GET") {
       const { db } = resolveTenant(request, env);
@@ -3267,12 +3288,59 @@ export default {
       if (lines && !lines.every((l) => typeof l.lineNumber === "number")) {
         return json({ error: "one or more lines is missing a numeric lineNumber" }, 422);
       }
-      const result = await visitCurrentStage(
-        db,
-        visitMatch[1],
-        facts as InvoiceFacts,
-        lines as Array<InvoiceFacts & { lineNumber: number }> | undefined
-      );
+
+      // A real gap, found while building decision 0370: unlike
+      // /rules/evaluate and intake-capture-route.ts, this route never
+      // loaded anything from storage at all — not even facts_json
+      // itself, let alone structured or derived facts on top of it.
+      // BT-13 (what po.matched needs), duplicate_confidence,
+      // supplier.matchOption — all would silently read as absent here
+      // even though genuinely on file, purely because this is the
+      // route a re-evaluation (after a task completes, or once a
+      // purchase order arrives) happens to go through. Only applies
+      // when the instance's own subject is an invoice — the engine is
+      // otherwise deliberately subject-agnostic, and an expense or any
+      // future subject type has no invoice_headers row to merge from.
+      let visitFacts = facts as InvoiceFacts;
+      let visitLines = lines as Array<InvoiceFacts & { lineNumber: number }> | undefined;
+      const instanceRow = await db
+        .prepare("SELECT subject_type, subject_id FROM process_instances WHERE id = ?")
+        .bind(visitMatch[1])
+        .first<{ subject_type: string; subject_id: string }>();
+      if (instanceRow?.subject_type === "invoice") {
+        const headerRow = await db
+          .prepare(
+            `SELECT facts_json, supplier_vat_id, currency, issue_date, total_with_vat,
+                    mandate_channel, invoice_number, duplicate_confidence
+             FROM invoice_headers WHERE id = ?`
+          )
+          .bind(instanceRow.subject_id)
+          .first<{
+            facts_json: string;
+            supplier_vat_id: string | null;
+            currency: string | null;
+            issue_date: string | null;
+            total_with_vat: number | null;
+            mandate_channel: string | null;
+            invoice_number: string | null;
+            duplicate_confidence: number | null;
+          }>();
+        if (headerRow) {
+          // The real document facts (BT-13 among them) live only in
+          // facts_json — there is no structured column for most of
+          // them. Loaded as the base layer, with whatever the caller
+          // supplied inline taking precedence over it, so a caller
+          // testing a "what if" scenario can still override a specific
+          // field without that override being clobbered by storage.
+          visitFacts = { ...(JSON.parse(headerRow.facts_json) as InvoiceFacts), ...visitFacts };
+          visitFacts = mergeStructuredInvoiceFacts(visitFacts, headerRow);
+        }
+        const poMerged = await mergePoMatchFacts(db, visitFacts, visitLines ?? []);
+        visitFacts = poMerged.headerFacts;
+        visitLines = visitLines ? poMerged.lines : undefined;
+      }
+
+      const result = await visitCurrentStage(db, visitMatch[1], visitFacts, visitLines);
       return json(result.body, result.status);
     }
 

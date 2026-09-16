@@ -116,6 +116,20 @@ a rule, and left an approval task in a queue.
 - Tasks, teams, permissions
 - Rule sets bound to stages
 
+### Purchase orders and matching
+- Purchase order storage grounded in Peppol BIS Order Only 3.3, via UBL
+  XML ingestion (0081) and CSV load (0370) — the same tables, the same
+  replace-on-resubmit semantics, either way in
+- `po.matched` / `po.variance_pct` (header) and `po.line_matched` /
+  `po.line_variance_pct` / `po.line_quantity_variance_pct` (line, via
+  `BT-132`), computed live at every evaluation rather than stored, so a
+  purchase order arriving after its invoice is still reflected
+  correctly (0370)
+- Tolerance reuses the existing per-supplier
+  `amountTolerancePct`/`quantityTolerancePct` (0209); no positional
+  fallback when `BT-132` is absent, per EN 16931's own warning that
+  correspondence isn't guaranteed even when `BT-13` is present
+
 ### Documents
 - R2 storage with jurisdiction support (0013, 0033, 0035)
 - One original and one generated rendering per invoice
@@ -335,17 +349,12 @@ need no new machinery — this half remains designed only, and has an
 ordering problem: a condition testing the supplier needs extraction to
 have happened first.
 
-**PO matching.** Purchase orders are stored, parsed and ingested
-(0081), so the data now exists — but `po.matched` and `po.variance_pct`
-are still computed by nothing, so a matching rule compiles and never
-fires. Four design questions first: header or line level, what counts
-as matched, computed when, and which order an invoice belongs to when
-`BT-13` is optional.
-
 **Despatch Advice (T16).** The goods receipt, and the missing third leg
 of three-way matching — `permissions.ts` has always described `AP.Match`
 as a three-way match against PO and goods receipt, and two thirds of
-that data does not exist (0082).
+that data does not exist (0082). Decision 0082 recorded three-way
+matching as the confirmed target, so this — not a bigger two-way
+matcher — is the next piece.
 
 **Document-type detection.** The cascade answers "what structure is
 this", not "what document is this", so the XML branch assumes an
@@ -534,7 +543,7 @@ elsewhere.
 
 | Package | Tests |
 |---|---|
-| `vf-app` | 1636 |
+| `vf-app` | 1751 |
 | `vf-licence` | 320 |
 | `vf-ui` | 63 Worker · 506 browser |
 | `shared` | 269 passing, 3 known pre-existing failures |
@@ -557,7 +566,7 @@ holding — 65 migrations for `vf-app`, 105 for `vf-licence`.
 | `docs/design/mockups/` | Four screens as static HTML | Current |
 | `docs/design/multi-authority-intake.md` | Non-EN-16931 authorities | Design only |
 | `docs/design/text-layer-extraction.md` | Reading a PDF's own text | Design only |
-| `docs/decisions/` | 348 decision records | Current |
+| `docs/decisions/` | 370 decision records (recounted directly — the previous figure had drifted) | Current |
 | `docs/decisions/SUPERSEDED.md` | Which records supersede which | **Read first** |
 
 Document 4's markdown source is at `docs/documents/`, with
