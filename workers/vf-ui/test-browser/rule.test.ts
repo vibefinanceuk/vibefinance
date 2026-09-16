@@ -203,6 +203,29 @@ describe("pausing", () => {
     expect(document.body.textContent).toContain("Paused.");
   });
 
+  /**
+   * **The structural change itself — decision 0357**: "the card be
+   * removed, and the buttons placed in the top right of the card
+   * below, which shows the rule code." Confirmed directly, not just
+   * that the buttons exist somewhere on the page: no separate `.gate`
+   * card holds them any more, and they sit in the version card's own
+   * `.cardhead`, the same shape every other screen's own primary
+   * actions already use.
+   */
+  it("puts Pause and Write a new version in the version card's own .cardhead, not a separate .gate card", async () => {
+    await open();
+    const pauseButton = [...document.querySelectorAll("button")].find((b) => b.textContent?.includes("Pause"));
+    const newVersionButton = [...document.querySelectorAll("button")].find((b) => b.textContent?.includes("Write a new version"));
+
+    expect(pauseButton?.closest(".gate")).toBeNull();
+    expect(newVersionButton?.closest(".gate")).toBeNull();
+
+    const cardhead = pauseButton?.closest(".panel .cardhead");
+    expect(cardhead).not.toBeNull();
+    expect(cardhead?.textContent).toContain("Version 2");
+    expect(newVersionButton?.closest(".panel .cardhead")).toBe(cardhead);
+  });
+
   it("asks the server rather than only changing the label", async () => {
     const calls: string[] = [];
     await open(ruleWith(), calls);

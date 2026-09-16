@@ -160,25 +160,50 @@ function exampleRow(example) {
   ]);
 }
 
-/** One version, with what it says and where it stands. */
+/**
+ * One version, with what it says and where it stands.
+ *
+ * **Pause/resume and "write a new version" live here now, decision
+ * 0357** — reported live: remove the separate card they used to sit
+ * in, and put them in the top right of this one, the card that
+ * actually shows the rule. Only the latest version gets them: an
+ * older version is history, not something to pause or branch from.
+ */
 function versionPanel(version, isLatest) {
+  const statusBadge = version.isLive
+    ? [el("span", { class: "rulestate live" }, [icon("complete"), el("span", { text: t("rulestate.live") })])]
+    : version.approvedAt
+      ? [el("span", { class: "rulestate paused" }, [icon("paused"), el("span", { text: t("rulestate.paused") })])]
+      : [
+          el("span", {
+            class: "rulestate awaiting_confirmation",
+            text:
+              version.examplesTotal > 0
+                ? `${version.examplesTotal - version.examplesConfirmed} ${t("rulestate.awaiting_confirmation").toLowerCase()}`
+                : t("rulestate.draft"),
+          }),
+        ];
+
+  const versionHead = isLatest
+    ? el("div", { class: "cardhead" }, [
+        el("div", { class: "versionhead" }, [el("h3", { text: t("rule.version").replace("{n}", String(version.version)) }), ...statusBadge]),
+        el("div", { class: "statebuttons" }, [
+          el("button", { class: "actionlink", onclick: () => setEnabled(!rule.enabled) }, [
+            icon(rule.enabled ? "paused" : "complete"),
+            el("span", { text: rule.enabled ? t("rule.pause") : t("rule.resume") }),
+          ]),
+          el("button", { class: "actionlink", onclick: newVersion }, [icon("compile"), el("span", { text: t("rule.newversion") })]),
+        ]),
+      ])
+    : el("div", { class: "versionhead" }, [el("h3", { text: t("rule.version").replace("{n}", String(version.version)) }), ...statusBadge]);
+
   const parts = [
-    el("div", { class: "versionhead" }, [
-      el("h3", { text: t("rule.version").replace("{n}", String(version.version)) }),
-      ...(version.isLive
-        ? [el("span", { class: "rulestate live" }, [icon("complete"), el("span", { text: t("rulestate.live") })])]
-        : version.approvedAt
-          ? [el("span", { class: "rulestate paused" }, [icon("paused"), el("span", { text: t("rulestate.paused") })])]
-          : [
-              el("span", {
-                class: "rulestate awaiting_confirmation",
-                text:
-                  version.examplesTotal > 0
-                    ? `${version.examplesTotal - version.examplesConfirmed} ${t("rulestate.awaiting_confirmation").toLowerCase()}`
-                    : t("rulestate.draft"),
-              }),
-            ]),
-    ]),
+    versionHead,
+    // **The consequence, not just the status word** — decision 0357
+    // kept this rather than dropping it with the card it used to sit
+    // in: "Paused" alone does not say an invoice reaching this stage
+    // skips the rule entirely, and that is the part worth knowing.
+    ...(isLatest ? [el("p", { class: "sm muted", text: rule.enabled ? t("rule.running") : t("rule.notrunning") })] : []),
     // The sentence somebody wrote, first — it is what they recognise.
     el("p", { class: "said", text: version.sourceText }),
   ];
@@ -253,25 +278,6 @@ function render() {
             ? el("h2", { class: "rulename", text: rule.name })
             : el("span", { class: "muted", text: t("rule.unnamed") }),
           el("button", { class: "sm", onclick: rename, text: rule.name ? t("rule.rename") : t("rule.namethis") }),
-        ]),
-
-        el("div", { class: "gate" }, [
-          // **The word the list already uses.** "Deactivate" and
-          // "pause" are the same act, and an interface with two names
-          // for one thing is an interface somebody has to learn twice.
-          el(
-            "button",
-            { onclick: () => setEnabled(!rule.enabled) },
-            [
-              icon(rule.enabled ? "paused" : "complete"),
-              el("span", { text: rule.enabled ? t("rule.pause") : t("rule.resume") }),
-            ]
-          ),
-          el("button", { onclick: newVersion }, [
-            icon("compile"),
-            el("span", { text: t("rule.newversion") }),
-          ]),
-          el("span", { class: "why", text: rule.enabled ? t("rule.running") : t("rule.notrunning") }),
         ]),
 
         /**
