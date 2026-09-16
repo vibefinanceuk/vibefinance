@@ -48,24 +48,70 @@ function stageLabel(stage) {
  * for a draft's own stages: a live version is never edited directly,
  * only ever reached by publishing a draft that changed it.
  */
-function stageChevrons(stages, onRemove) {
+// **Which stage a drag started on — decision 0352.** A module-level
+// variable, not `event.dataTransfer`: jsdom's own DataTransfer support
+// is incomplete, and there is no cross-window or cross-origin need
+// here — drag source and drop target are always the same page.
+let draggedStageId = null;
+
+function stageChevrons(stages, onRemove, onReorder) {
   return el(
     "div",
     { class: "process" },
     stages.map((stage) =>
-      el("div", { class: "stage" }, [
-        el("span", { text: stage.name }),
-        el("span", { class: "count", text: stageLabel(stage) }),
-        ...(onRemove
-          ? [
-              el("button", {
-                class: "actionlink",
-                title: t("processes.removestage"),
-                onclick: () => onRemove(stage),
-              }, [icon("close")]),
-            ]
-          : []),
-      ])
+      el(
+        "div",
+        {
+          class: "stage",
+          ...(onReorder
+            ? {
+                draggable: "true",
+                ondragstart: () => {
+                  draggedStageId = stage.id;
+                },
+                // Required for a drop to ever fire at all — a plain
+                // dragover is refused by the browser by default.
+                ondragover: (e) => e.preventDefault(),
+                ondrop: (e) => {
+                  e.preventDefault();
+                  if (!draggedStageId || draggedStageId === stage.id) return;
+                  /**
+                   * **Direction-aware, not always "insert before" —
+                   * decision 0352.** Dropping onto a target should
+                   * read as "move it to about here," which means
+                   * landing just after the target when dragging
+                   * forward (onto the last stage moves it to the
+                   * very end) and just before it when dragging
+                   * backward (onto the first stage moves it to the
+                   * very start). A single fixed rule gets one of
+                   * those two directions wrong.
+                   */
+                  const sourceIndex = stages.findIndex((s) => s.id === draggedStageId);
+                  const targetIndex = stages.findIndex((s) => s.id === stage.id);
+                  const order = stages.map((s) => s.id).filter((id) => id !== draggedStageId);
+                  const filteredTargetIndex = order.indexOf(stage.id);
+                  const insertAt = sourceIndex < targetIndex ? filteredTargetIndex + 1 : filteredTargetIndex;
+                  order.splice(insertAt, 0, draggedStageId);
+                  draggedStageId = null;
+                  onReorder(order);
+                },
+              }
+            : {}),
+        },
+        [
+          el("span", { text: stage.name }),
+          el("span", { class: "count", text: stageLabel(stage) }),
+          ...(onRemove
+            ? [
+                el("button", {
+                  class: "actionlink",
+                  title: t("processes.removestage"),
+                  onclick: () => onRemove(stage),
+                }, [icon("close")]),
+              ]
+            : []),
+        ]
+      )
     )
   );
 }
@@ -203,6 +249,27 @@ async function removeDraftStage(processId, stage) {
   render();
 }
 
+/**
+ * **Drag-to-reorder, reported live — decision 0352.** `PUT`, same
+ * path as adding a stage: the whole draft's own order, named once
+ * each, never a partial move — the exact shape `handleReorderDraft
+ * Stages` itself requires.
+ */
+async function reorderDraftStages(processId, orderedStageIds) {
+  const response = await fetch(`/api/processes/${encodeURIComponent(processId)}/draft/stages`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ orderedStageIds }),
+  });
+  if (!response.ok) {
+    const body = await response.json();
+    window.alert(body.error ?? t("processes.savefailed"));
+    return;
+  }
+  await load();
+  render();
+}
+
 async function publishDraft(processId) {
   const response = await fetch(`/api/processes/${encodeURIComponent(processId)}/publish`, { method: "POST" });
   if (!response.ok) {
@@ -292,7 +359,11 @@ function processDetailPanel(canManage) {
         ].filter(Boolean)
       ),
     ]),
-    stageChevrons(detail.draft.stages, canManage ? (stage) => removeDraftStage(detail.id, stage) : null),
+    stageChevrons(
+      detail.draft.stages,
+      canManage ? (stage) => removeDraftStage(detail.id, stage) : null,
+      canManage ? (order) => reorderDraftStages(detail.id, order) : null
+    ),
     el("p", { class: "muted sm", text: t("processes.draftnote") }),
   ]);
 

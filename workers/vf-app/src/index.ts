@@ -65,6 +65,7 @@ import {
   handleRemoveDraftStage,
   handlePublishDraft,
   handleDiscardDraft,
+  handleReorderDraftStages,
 } from "./process-route.js";
 import { handleCreateIntakeChannel } from "./intake-channel-route.js";
 import { handleCaptureIntake, handleCaptureUblXml, handleCapturePdf, handleCaptureImage, handleFinalisePendingDocument, handleIntakeStats } from "./intake-capture-route.js";
@@ -1756,6 +1757,35 @@ export default {
         return json({ error: t("invalidJsonBody", resolveLocale(env.LOCALE)) }, 400);
       }
       const result = await handleAddDraftStage(db, addDraftStageMatch[1], (body ?? {}) as Record<string, unknown>);
+      return json(result.body, result.status);
+    }
+
+    /**
+     * **`PUT`, same bare path as the `POST` above — decision 0352.**
+     * Deliberately not `/draft/stages/reorder`: that path shape would
+     * also match `removeDraftStageMatch` below (`[^/]+` accepts the
+     * literal string "reorder" as readily as a real stage id), the
+     * same routing-order trap `/rules/stages` already has to avoid
+     * against a rule literally named "stages." Method alone
+     * disambiguates this one instead.
+     */
+    if (addDraftStageMatch && request.method === "PUT") {
+      const { db } = resolveTenant(request, env);
+      const auth = await requirePermission(db, request, "Admin.Configure", sessionContext(env));
+      if (!auth.authorized) {
+        return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
+      }
+      let body: unknown;
+      try {
+        body = await request.json();
+      } catch {
+        return json({ error: t("invalidJsonBody", resolveLocale(env.LOCALE)) }, 400);
+      }
+      const result = await handleReorderDraftStages(
+        db,
+        addDraftStageMatch[1],
+        (body as Record<string, unknown> | null)?.orderedStageIds
+      );
       return json(result.body, result.status);
     }
 

@@ -9,13 +9,19 @@ function mountShell() {
   document.body.innerHTML = `<main id="shell"></main><main id="viewer" hidden></main>`;
 }
 
-function stubFetch(routes: Record<string, unknown>, posted: string[] = [], deleted: string[] = []) {
+function stubFetch(
+  routes: Record<string, unknown>,
+  posted: string[] = [],
+  deleted: string[] = [],
+  puts: { path: string; body: unknown }[] = []
+) {
   vi.stubGlobal(
     "fetch",
     vi.fn(async (url: string, init?: RequestInit) => {
       const path = String(url).split("?")[0];
       if (init?.method === "POST") posted.push(path);
       if (init?.method === "DELETE") deleted.push(path);
+      if (init?.method === "PUT") puts.push({ path, body: init.body ? JSON.parse(String(init.body)) : null });
       if (!(path in routes)) throw new Error(`no stub for ${path}`);
       const value = routes[path];
       if (value && typeof value === "object" && "ok" in (value as Record<string, unknown>)) {
@@ -94,8 +100,14 @@ function baseRoutes(permissions: string[]) {
   };
 }
 
-async function open(extra: Record<string, unknown> = {}, permissions: string[] = ["Admin.Configure"], posted: string[] = [], deleted: string[] = []) {
-  stubFetch({ ...baseRoutes(permissions), ...extra }, posted, deleted);
+async function open(
+  extra: Record<string, unknown> = {},
+  permissions: string[] = ["Admin.Configure"],
+  posted: string[] = [],
+  deleted: string[] = [],
+  puts: { path: string; body: unknown }[] = []
+) {
+  stubFetch({ ...baseRoutes(permissions), ...extra }, posted, deleted, puts);
   const { loadStrings } = await import("/strings.js");
   await loadStrings();
   const { start } = await import("/tasks.js");
@@ -165,8 +177,13 @@ describe("selecting a process, no draft", () => {
 });
 
 describe("selecting a process with a draft", () => {
-  async function openAndSelect(permissions: string[] = ["Admin.Configure"], posted: string[] = [], deleted: string[] = []) {
-    await open({ "/api/processes/p1": DETAIL_WITH_DRAFT }, permissions, posted, deleted);
+  async function openAndSelect(
+    permissions: string[] = ["Admin.Configure"],
+    posted: string[] = [],
+    deleted: string[] = [],
+    puts: { path: string; body: unknown }[] = []
+  ) {
+    await open({ "/api/processes/p1": DETAIL_WITH_DRAFT }, permissions, posted, deleted, puts);
     const row = [...document.querySelectorAll("tr")].find((r) => r.textContent?.includes("Standard AP"));
     row?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     await new Promise((r) => setTimeout(r, 0));
@@ -219,6 +236,82 @@ describe("selecting a process with a draft", () => {
     removeButtons[removeButtons.length - 1].click();
     await new Promise((r) => setTimeout(r, 0));
     expect(deleted).toContain("/api/processes/p1/draft/stages/s3");
+  });
+
+  describe("drag-to-reorder — decision 0352", () => {
+    /**
+     * **Reported live**: "I like the drag to re-order, if that is
+     * possible?" Confirmed as a genuine, working feature, not just a
+     * visual affordance.
+     */
+    function draftStages(): HTMLElement[] {
+      // Two `.process` blocks render: the live version's own, and the
+      // draft's own. The draft is the second.
+      const blocks = [...document.querySelectorAll(".process")];
+      return [...blocks[blocks.length - 1].querySelectorAll(".stage")] as HTMLElement[];
+    }
+
+    it("marks the draft's own stages draggable, and the live version's own not", async () => {
+      await openAndSelect();
+      const blocks = [...document.querySelectorAll(".process")];
+      const liveStages = [...blocks[0].querySelectorAll(".stage")] as HTMLElement[];
+      const draft = draftStages();
+
+      expect(liveStages.every((s) => s.getAttribute("draggable") !== "true")).toBe(true);
+      expect(draft.every((s) => s.getAttribute("draggable") === "true")).toBe(true);
+    });
+
+    it("dropping the first stage onto the last sends the whole new order to the real reorder route", async () => {
+      const puts: { path: string; body: unknown }[] = [];
+      await openAndSelect(["Admin.Configure"], [], [], puts);
+
+      const stages = draftStages();
+      expect(stages).toHaveLength(3); // s1 Received, s2 Approval, s3 Coding
+
+      stages[0].dispatchEvent(new Event("dragstart", { bubbles: true }));
+      stages[2].dispatchEvent(new Event("dragover", { bubbles: true, cancelable: true }));
+      stages[2].dispatchEvent(new Event("drop", { bubbles: true, cancelable: true }));
+      await new Promise((r) => setTimeout(r, 0));
+
+      expect(puts).toHaveLength(1);
+      expect(puts[0].path).toBe("/api/processes/p1/draft/stages");
+      // Forward drag (index 0 -> 2): lands just AFTER the target,
+      // matching "drop it on the last one" reading as "move to the end."
+      expect(puts[0].body).toEqual({ orderedStageIds: ["s2", "s3", "s1"] });
+    });
+
+    it("dropping the last stage onto the first lands it just BEFORE the target — the opposite direction, on purpose", async () => {
+      const puts: { path: string; body: unknown }[] = [];
+      await openAndSelect(["Admin.Configure"], [], [], puts);
+
+      const stages = draftStages();
+      stages[2].dispatchEvent(new Event("dragstart", { bubbles: true }));
+      stages[0].dispatchEvent(new Event("dragover", { bubbles: true, cancelable: true }));
+      stages[0].dispatchEvent(new Event("drop", { bubbles: true, cancelable: true }));
+      await new Promise((r) => setTimeout(r, 0));
+
+      expect(puts).toHaveLength(1);
+      expect(puts[0].body).toEqual({ orderedStageIds: ["s3", "s1", "s2"] });
+    });
+
+    it("dropping a stage on itself is a no-op — no request sent at all", async () => {
+      const puts: { path: string; body: unknown }[] = [];
+      await openAndSelect(["Admin.Configure"], [], [], puts);
+
+      const stages = draftStages();
+      stages[0].dispatchEvent(new Event("dragstart", { bubbles: true }));
+      stages[0].dispatchEvent(new Event("dragover", { bubbles: true, cancelable: true }));
+      stages[0].dispatchEvent(new Event("drop", { bubbles: true, cancelable: true }));
+      await new Promise((r) => setTimeout(r, 0));
+
+      expect(puts).toHaveLength(0);
+    });
+
+    it("without Admin.Configure, the draft's own stages are not draggable at all", async () => {
+      await openAndSelect(["AP.Dashboard"]);
+      const draft = draftStages();
+      expect(draft.every((s) => s.getAttribute("draggable") !== "true")).toBe(true);
+    });
   });
 });
 

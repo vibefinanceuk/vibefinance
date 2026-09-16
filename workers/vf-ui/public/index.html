@@ -476,6 +476,10 @@
     position: relative;
     min-height: 0;
   }
+  /* A draft's own stages, drag-to-reorder — decision 0352. Never
+     applied to the live version's own, read-only display. */
+  .stage[draggable="true"] { cursor: grab; }
+  .stage[draggable="true"]:active { cursor: grabbing; }
 
   .stage:first-child { border-left: 0.5px solid var(--border); border-radius: var(--radius) 0 0 var(--radius); padding-left: 14px; }
   .stage:last-child { border-radius: 0 var(--radius) var(--radius) 0; }

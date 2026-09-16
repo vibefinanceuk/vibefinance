@@ -392,3 +392,65 @@ export async function handleDiscardDraft(db: D1Database, processId: string): Pro
 
   return { status: 200, body: { id: processId } };
 }
+
+/**
+ * **Reorder a draft's own stages — decision 0352**, reported live:
+ * "I like the drag to re-order, if that is possible?" Safe in exactly
+ * the way the draft mechanism already is: `process_stage_versions.
+ * sequence` is scoped to one version, so reordering a draft never
+ * touches the live version's own order, and never touches an
+ * in-flight instance already visiting a stage under it — the same
+ * "anything already on a version completes that version" boundary
+ * decision 0349 already established for adding and removing a stage.
+ *
+ * **The whole set, not a partial move — checked, not assumed.** A
+ * caller names every stage id in the draft, in the new order; anything
+ * missing, extra, or duplicated is refused outright rather than
+ * silently dropping a stage's own membership, the same discipline
+ * `route_to`'s own "more than one distinct target" refusal already
+ * applies elsewhere in this engine.
+ */
+export async function handleReorderDraftStages(
+  db: D1Database,
+  processId: string,
+  orderedStageIds: unknown
+): Promise<RouteResult> {
+  if (!Array.isArray(orderedStageIds) || orderedStageIds.some((id) => typeof id !== "string")) {
+    return { status: 400, body: { error: "orderedStageIds must be an array of stage id strings" } };
+  }
+  const ids = orderedStageIds as string[];
+
+  const process = await db.prepare("SELECT version FROM processes WHERE id = ?").bind(processId).first<{ version: number }>();
+  if (!process) {
+    return { status: 404, body: { error: `process ${processId} does not exist` } };
+  }
+  const draftVersion = process.version + 1;
+
+  const current = await db
+    .prepare("SELECT stage_id FROM process_stage_versions WHERE process_id = ? AND version = ?")
+    .bind(processId, draftVersion)
+    .all<{ stage_id: string }>();
+  if (current.results.length === 0) {
+    return { status: 422, body: { error: "there is no draft to reorder" } };
+  }
+
+  const currentSet = new Set(current.results.map((r) => r.stage_id));
+  const givenSet = new Set(ids);
+  const sameSize = currentSet.size === givenSet.size && ids.length === givenSet.size;
+  const sameMembers = sameSize && ids.every((id) => currentSet.has(id));
+  if (!sameMembers) {
+    return {
+      status: 422,
+      body: { error: "orderedStageIds must name exactly the stages already in the draft, once each — no fewer, no more, no duplicates" },
+    };
+  }
+
+  for (let i = 0; i < ids.length; i++) {
+    await db
+      .prepare("UPDATE process_stage_versions SET sequence = ? WHERE process_id = ? AND version = ? AND stage_id = ?")
+      .bind(i + 1, processId, draftVersion, ids[i])
+      .run();
+  }
+
+  return { status: 200, body: { id: processId, draftVersion, order: ids } };
+}

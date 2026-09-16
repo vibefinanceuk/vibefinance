@@ -9,6 +9,7 @@ import {
   handleRemoveDraftStage,
   handlePublishDraft,
   handleDiscardDraft,
+  handleReorderDraftStages,
 } from "../src/process-route.js";
 import { generateApiKey, hashApiKey } from "../src/user-auth.js";
 
@@ -490,5 +491,170 @@ describe("process routes, gated for the first time — decision 0349", () => {
   it("DELETE /processes/:id/draft 401s with no credential at all", async () => {
     const res = await SELF.fetch("https://example.com/processes/p1/draft", { method: "DELETE" });
     expect(res.status).toBe(401);
+  });
+});
+
+describe("handleReorderDraftStages — decision 0352", () => {
+  it("404s when the process does not exist", async () => {
+    const result = await handleReorderDraftStages(env.DB, "does-not-exist", ["s1"]);
+    expect(result.status).toBe(404);
+  });
+
+  it("400s when orderedStageIds is not an array of strings", async () => {
+    await handleCreateProcess(env.DB, { id: "p1", name: "Standard AP" });
+    const notArray = await handleReorderDraftStages(env.DB, "p1", "s1");
+    expect(notArray.status).toBe(400);
+    const mixedTypes = await handleReorderDraftStages(env.DB, "p1", ["s1", 2]);
+    expect(mixedTypes.status).toBe(400);
+  });
+
+  it("422s when there is no draft to reorder at all", async () => {
+    await handleCreateProcess(env.DB, { id: "p1", name: "Standard AP" });
+    await handleCreateStage(env.DB, "p1", { id: "s1", name: "Received", sequence: 1 });
+    const result = await handleReorderDraftStages(env.DB, "p1", ["s1"]);
+    expect(result.status).toBe(422);
+  });
+
+  it("422s a partial list — missing a stage the draft actually has", async () => {
+    await handleCreateProcess(env.DB, { id: "p1", name: "Standard AP" });
+    await handleCreateStage(env.DB, "p1", { id: "s1", name: "Received", sequence: 1 });
+    await handleAddDraftStage(env.DB, "p1", { id: "s2", name: "Coding" });
+    await handleAddDraftStage(env.DB, "p1", { id: "s3", name: "Approval" });
+
+    const result = await handleReorderDraftStages(env.DB, "p1", ["s1", "s2"]);
+    expect(result.status).toBe(422);
+  });
+
+  it("422s a list naming a stage that isn't in the draft at all", async () => {
+    await handleCreateProcess(env.DB, { id: "p1", name: "Standard AP" });
+    await handleCreateStage(env.DB, "p1", { id: "s1", name: "Received", sequence: 1 });
+    await handleAddDraftStage(env.DB, "p1", { id: "s2", name: "Coding" });
+
+    const result = await handleReorderDraftStages(env.DB, "p1", ["s1", "does-not-exist"]);
+    expect(result.status).toBe(422);
+  });
+
+  it("422s a list with a duplicate entry, even if the set would otherwise match", async () => {
+    await handleCreateProcess(env.DB, { id: "p1", name: "Standard AP" });
+    await handleCreateStage(env.DB, "p1", { id: "s1", name: "Received", sequence: 1 });
+    await handleAddDraftStage(env.DB, "p1", { id: "s2", name: "Coding" });
+
+    const result = await handleReorderDraftStages(env.DB, "p1", ["s1", "s1"]);
+    expect(result.status).toBe(422);
+  });
+
+  it("reorders the draft's own membership to exactly the given order", async () => {
+    await handleCreateProcess(env.DB, { id: "p1", name: "Standard AP" });
+    await handleCreateStage(env.DB, "p1", { id: "s1", name: "Received", sequence: 1 });
+    await handleAddDraftStage(env.DB, "p1", { id: "s2", name: "Coding" });
+    await handleAddDraftStage(env.DB, "p1", { id: "s3", name: "Approval" });
+    // Draft order is currently s1, s2, s3 — reverse it.
+
+    const result = await handleReorderDraftStages(env.DB, "p1", ["s3", "s1", "s2"]);
+    expect(result.status).toBe(200);
+
+    const draft = await env.DB
+      .prepare("SELECT stage_id, sequence FROM process_stage_versions WHERE process_id = 'p1' AND version = 2 ORDER BY sequence")
+      .all<{ stage_id: string; sequence: number }>();
+    expect(draft.results.map((r: { stage_id: string }) => r.stage_id)).toEqual(["s3", "s1", "s2"]);
+    expect(draft.results.map((r: { sequence: number }) => r.sequence)).toEqual([1, 2, 3]);
+  });
+
+  /**
+   * **The exact boundary decision 0349 already established, checked
+   * directly for this new action too.** Reordering a draft must never
+   * touch the live version's own order, and must never touch an
+   * in-flight instance already visiting a stage under it.
+   */
+  it("never changes the live version's own order, or an in-flight instance's own process_version", async () => {
+    await handleCreateProcess(env.DB, { id: "p1", name: "Standard AP" });
+    await handleCreateStage(env.DB, "p1", { id: "s1", name: "Received", sequence: 1 });
+    await handleCreateStage(env.DB, "p1", { id: "s2", name: "Approval", sequence: 2 });
+    await env.DB
+      .prepare(
+        "INSERT INTO process_instances (id, process_id, subject_type, subject_id, current_stage_id, process_version) VALUES (?, ?, ?, ?, ?, ?)"
+      )
+      .bind("inst1", "p1", "invoice", "inv1", "s1", 1)
+      .run();
+
+    await handleAddDraftStage(env.DB, "p1", { id: "s3", name: "Coding" });
+    await handleReorderDraftStages(env.DB, "p1", ["s3", "s1", "s2"]);
+
+    const liveOrder = await env.DB
+      .prepare("SELECT stage_id FROM process_stage_versions WHERE process_id = 'p1' AND version = 1 ORDER BY sequence")
+      .all<{ stage_id: string }>();
+    expect(liveOrder.results.map((r: { stage_id: string }) => r.stage_id)).toEqual(["s1", "s2"]);
+
+    const instance = await env.DB.prepare("SELECT process_version FROM process_instances WHERE id = 'inst1'").first<{ process_version: number }>();
+    expect(instance?.process_version).toBe(1);
+  });
+});
+
+describe("process routes, gated for the first time — decision 0349 — reorder route, decision 0352", () => {
+  async function keyForPermission(permission: string): Promise<string> {
+    const id = crypto.randomUUID();
+    const apiKey = generateApiKey();
+    await env.DB.prepare("INSERT INTO org_users (id, email, name, api_key_hash) VALUES (?, ?, ?, ?)")
+      .bind(id, `${id}@acme.com`, "Test", await hashApiKey(apiKey))
+      .run();
+
+    const roleId = crypto.randomUUID();
+    await env.DB.prepare("INSERT INTO org_roles (id, name, permissions_json) VALUES (?, ?, ?)")
+      .bind(roleId, `Role granting ${permission}`, JSON.stringify([permission]))
+      .run();
+    await env.DB.prepare("INSERT INTO org_user_roles (user_id, role_id) VALUES (?, ?)").bind(id, roleId).run();
+
+    return apiKey;
+  }
+
+  it("PUT /processes/:id/draft/stages 403s a real request lacking Admin.Configure", async () => {
+    const setupKey = await keyForPermission("Admin.Configure");
+    await SELF.fetch("https://example.com/processes", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${setupKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ id: "p1", name: "Standard AP" }),
+    });
+    const apiKey = await keyForPermission("AP.Dashboard");
+    const res = await SELF.fetch("https://example.com/processes/p1/draft/stages", {
+      method: "PUT",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ orderedStageIds: ["s1"] }),
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("PUT /processes/:id/draft/stages 401s with no credential at all", async () => {
+    const res = await SELF.fetch("https://example.com/processes/p1/draft/stages", {
+      method: "PUT",
+      body: JSON.stringify({ orderedStageIds: ["s1"] }),
+    });
+    expect(res.status).toBe(401);
+  });
+
+  it("PUT /processes/:id/draft/stages succeeds for Admin.Configure, through the real router — and never collides with POST on the same path", async () => {
+    const apiKey = await keyForPermission("Admin.Configure");
+    await SELF.fetch("https://example.com/processes", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ id: "p1", name: "Standard AP" }),
+    });
+    await SELF.fetch("https://example.com/processes/p1/stages", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ id: "s1", name: "Received", sequence: 1 }),
+    });
+    const addRes = await SELF.fetch("https://example.com/processes/p1/draft/stages", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ id: "s2", name: "Coding" }),
+    });
+    expect(addRes.status).toBe(201);
+
+    const reorderRes = await SELF.fetch("https://example.com/processes/p1/draft/stages", {
+      method: "PUT",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ orderedStageIds: ["s2", "s1"] }),
+    });
+    expect(reorderRes.status).toBe(200);
   });
 });
