@@ -802,7 +802,13 @@ export function topbar(title, subtitle, right = [], extra = []) {
 }
 
 function render() {
-  document.body.classList.add("working");
+  /**
+   * **No longer set here — decision 0360.** Moved to `boot.js`, the
+   * one place that already knows for certain whether the app is
+   * signed in, regardless of which screen renders first. Leaving it
+   * here too would have suggested this screen owns an app-wide
+   * concern it does not.
+   */
   shell.replaceChildren(
     frame(
       el("div", {}, [
