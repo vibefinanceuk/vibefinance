@@ -260,7 +260,7 @@ export const ICONS = {
    * **The same pencil shape as `rename`, a separate name —
    * decision 0353.** `actionLink` looks up its own icon and its own
    * label by the same string, so a distinct action needing its own
-   * label ("Start draft," not "Rename") needs its own entry here,
+   * label ("New draft," not "Rename") needs its own entry here,
    * even reusing the exact shape: starting a draft is, at heart, the
    * same "begin editing this" gesture a pencil already means.
    */

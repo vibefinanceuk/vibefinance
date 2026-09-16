@@ -60,7 +60,7 @@ const STRINGS = {
     "processes.savefailed": "Could not save. Please try again.",
     "action.newprocess": "New process",
     "action.addstage": "Add stage",
-    "action.startdraft": "Start draft",
+    "action.startdraft": "New draft",
     "action.publish": "Publish",
     "action.discard": "Discard",
     "action.create": "Create",
@@ -182,20 +182,20 @@ describe("selecting a process, no draft", () => {
    * before this; someone who only wants to reorder or remove
    * something had no way in without adding a stage nobody wanted.
    */
-  it("shows a Start draft action too, holding Admin.Configure", async () => {
+  it("shows a New draft action too, holding Admin.Configure", async () => {
     await openAndSelect();
-    expect([...document.querySelectorAll("button")].some((b) => b.textContent?.includes("Start draft"))).toBe(true);
+    expect([...document.querySelectorAll("button")].some((b) => b.textContent?.includes("New draft"))).toBe(true);
   });
 
-  it("hides Start draft without Admin.Configure, the same as Add stage", async () => {
+  it("hides New draft without Admin.Configure, the same as Add stage", async () => {
     await open({ "/api/processes/p1": DETAIL_NO_DRAFT }, ["AP.Dashboard"]);
     const row = [...document.querySelectorAll("tr")].find((r) => r.textContent?.includes("Standard AP"));
     row?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     await new Promise((r) => setTimeout(r, 0));
-    expect([...document.querySelectorAll("button")].some((b) => b.textContent?.includes("Start draft"))).toBe(false);
+    expect([...document.querySelectorAll("button")].some((b) => b.textContent?.includes("New draft"))).toBe(false);
   });
 
-  it("clicking Start draft calls the real start-draft route", async () => {
+  it("clicking New draft calls the real start-draft route", async () => {
     const posted: string[] = [];
     await open(
       { "/api/processes/p1": DETAIL_NO_DRAFT, "/api/processes/p1/draft": { id: "p1", draft: { version: 2, stages: DETAIL_NO_DRAFT.stages } } },
@@ -206,10 +206,30 @@ describe("selecting a process, no draft", () => {
     row?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     await new Promise((r) => setTimeout(r, 0));
 
-    const startButton = [...document.querySelectorAll("button")].find((b) => b.textContent?.includes("Start draft")) as HTMLButtonElement;
+    const startButton = [...document.querySelectorAll("button")].find((b) => b.textContent?.includes("New draft")) as HTMLButtonElement;
     startButton.click();
     await new Promise((r) => setTimeout(r, 0));
     expect(posted).toContain("/api/processes/p1/draft");
+  });
+
+  /**
+   * **The structural half of the same request — decision 0354**:
+   * "please could the New Draft and Add stage button be moved in to
+   * the card above, to be consistent with other screens." Confirmed
+   * directly, not just that the buttons exist somewhere: they sit in
+   * the same `.cardhead` as the panel's own heading, the shape every
+   * other screen's own "New X" action already uses.
+   */
+  it("puts New draft and Add stage in the same .cardhead as the panel's own heading, not a separate row beneath it", async () => {
+    await openAndSelect();
+    // Two .cardhead elements exist now: the process list's own ("New
+    // process") and the detail panel's own — find the right one by
+    // its own heading text, not just the first .cardhead on the page.
+    const cardhead = [...document.querySelectorAll(".panel .cardhead")].find((c) => c.querySelector("h3")?.textContent?.includes("Standard AP"));
+    expect(cardhead).not.toBeUndefined();
+    const buttonTexts = [...(cardhead?.querySelectorAll("button") ?? [])].map((b) => b.textContent);
+    expect(buttonTexts.some((t) => t?.includes("New draft"))).toBe(true);
+    expect(buttonTexts.some((t) => t?.includes("Add stage"))).toBe(true);
   });
 });
 

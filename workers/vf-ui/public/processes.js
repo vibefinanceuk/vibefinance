@@ -344,34 +344,41 @@ function processListPanel(canManage) {
 function processDetailPanel(canManage) {
   if (!detail) return null;
 
-  const liveRow = el("div", { class: "panel" }, [
-    el("h3", { text: `${detail.name} — ${t("processes.v")}${detail.version} ${t("processes.live")}` }),
-    stageChevrons(detail.stages),
-  ]);
+  const liveHeading = `${detail.name} — ${t("processes.v")}${detail.version} ${t("processes.live")}`;
 
   if (!detail.draft) {
-    return el(
-      "div",
-      {},
-      [
-        liveRow,
-        canManage
-          ? el("div", { class: "statebuttons", style: "margin-top: 10px;" }, [
-              /**
-               * **The gap reported live — decision 0353**: "It seems
-               * that I cannot modify an existing process?" Only
-               * adding, or removing, a specific stage had ever
-               * started a draft, with no way in for someone who
-               * only wants to reorder or remove something, without
-               * first typing in a stage nobody actually wants.
-               */
-              actionLink("startdraft", { onclick: () => startDraft(detail.id) }),
-              actionLink("addstage", { onclick: () => openAddStageForm(detail.id) }),
-            ])
-          : null,
-      ].filter(Boolean)
-    );
+    /**
+     * **The buttons live in the card's own head, decision 0354** —
+     * reported live: "please could the New Draft and Add stage
+     * button be moved in to the card above, to be consistent with
+     * other screens." The same `cardhead` shape `processListPanel`'s
+     * own "New process" and the draft panel's own Add stage/Publish/
+     * Discard already use, rather than a second row of buttons
+     * hanging below the panel.
+     */
+    return el("div", { class: "panel" }, [
+      el(
+        "div",
+        { class: "cardhead" },
+        [
+          el("h3", { text: liveHeading }),
+          canManage
+            ? el(
+                "div",
+                { class: "statebuttons" },
+                [
+                  actionLink("startdraft", { onclick: () => startDraft(detail.id) }),
+                  actionLink("addstage", { onclick: () => openAddStageForm(detail.id) }),
+                ].filter(Boolean)
+              )
+            : null,
+        ].filter(Boolean)
+      ),
+      stageChevrons(detail.stages),
+    ]);
   }
+
+  const liveRow = el("div", { class: "panel" }, [el("h3", { text: liveHeading }), stageChevrons(detail.stages)]);
 
   const draftPanel = el("div", { class: "panel" }, [
     el("div", { class: "cardhead" }, [
