@@ -184,7 +184,14 @@ describe("a count is a disclosure", () => {
    * one filter, and these are what say so.
    */
   it("counts only what a person may see", async () => {
-    await person("alice", ["AP.Review"], "acme-fr");
+    /**
+     * **`AP.Validate` too, decision 0368** — `work()`'s own seeded
+     * tasks require it; granting only `AP.Review` (this card's own,
+     * separate dashboard-scope permission before this decision) meant
+     * this test was really exercising the wrong permission's own
+     * scope, not the one the task itself needs.
+     */
+    await person("alice", ["AP.Review", "AP.Validate"], "acme-fr");
     await work("inv-fr", "acme-fr", { owner: "alice" });
     await work("inv-de", "acme-de", { owner: "alice" });
 
@@ -202,17 +209,26 @@ describe("a count is a disclosure", () => {
     expect(card<{ count: number }>(body, "waiting_for_me").count).toBe(2);
   });
 
-  it("counts nothing for somebody permitted nowhere", async () => {
+  it("counts a task the person may actually act on, even without the dashboard's own AP.Review", async () => {
     /**
-     * **Empty is not the same as unrestricted**, and getting it the
-     * wrong way round shows somebody everything. Decision 0199 insisted
-     * on the distinction and this is where it would be lost.
+     * **Reported live** — decision 0368: "the count on the dashboard
+     * does not reflect the count when clicking on the card." This
+     * test's own name and reasoning used to be about a different
+     * question — `unitsWherePermitted()`'s own empty-vs-null
+     * distinction, already covered directly in `scoped-roles.test.ts`
+     * — and its own old expectation (0) was, in fact, the exact bug:
+     * `mo` genuinely owns this task and genuinely holds the
+     * permission it requires, so the real Tasks screen would show it.
+     * A dashboard that said 0 anyway was not being careful; it was
+     * counting through the wrong permission — `AP.Review`, which this
+     * card no longer reads at all — rather than the task's own
+     * `AP.Validate`.
      */
     await person("mo", ["AP.Validate"], null);
     await work("inv-fr", "acme-fr", { owner: "mo" });
 
     const body = await cardsFor("mo");
-    expect(card<{ count: number }>(body, "waiting_for_me").count).toBe(0);
+    expect(card<{ count: number }>(body, "waiting_for_me").count).toBe(1);
   });
 
   it("filters the stage counts too", async () => {
@@ -250,7 +266,7 @@ describe("focused on one org, extended to the dashboard (decision 0316)", () => 
   });
 
   it("still counts nothing when the permission is not held in the chosen org at all", async () => {
-    await person("alice", ["AP.Review"], "acme-de");
+    await person("alice", ["AP.Review", "AP.Validate"], "acme-de");
     await work("inv-fr", "acme-fr", { owner: "alice" });
 
     const body = await cardsFocusedOn("alice", "acme-fr");
@@ -296,8 +312,17 @@ describe("on my clock", () => {
     const body = await cardsFor("alice");
     expect(card<{ items: unknown[] }>(body, "on_my_clock").items).toHaveLength(0);
 
-    // And it still counts as work waiting for her.
-    expect(card<{ count: number }>(body, "waiting_for_me").count).toBe(1);
+    /**
+     * **Not waiting for her either, decision 0368** — reversed from
+     * this test's own original expectation. `waiting_for_me`'s own
+     * click opens `openTasksFiltered({ ownership: "mine" })`, and an
+     * unclaimed team task is `"available"`, not `"mine"` — the same
+     * distinction `on_my_clock` is already proving two lines above.
+     * The card used to count it anyway, through a separate SQL query
+     * that treated team membership alone as enough; matching what the
+     * click itself shows means matching this exclusion too.
+     */
+    expect(card<{ count: number }>(body, "waiting_for_me").count).toBe(0);
   });
 
   it("sorts by how long I have held it", async () => {
@@ -1339,12 +1364,49 @@ describe("waiting_for_me, broken down by stage (decision 0363)", () => {
   });
 
   it("scopes the breakdown itself, not only the total — a restricted person sees only their own units' stages", async () => {
-    await person("alice", ["AP.Review"], "acme-fr");
+    await person("alice", ["AP.Review", "AP.Validate"], "acme-fr");
     await work("inv-fr", "acme-fr", { owner: "alice", stage: "approval" });
     await work("inv-de", "acme-de", { owner: "alice" });
 
     const data = card<ByStage>(await cardsFor("alice"), "waiting_for_me");
 
     expect(data.byStage).toEqual([{ stage_id: "approval", stage_name: "approval", n: 1 }]);
+  });
+});
+
+describe("the card's own count matches its own click, decision 0368", () => {
+  /**
+   * **Reported live**: "the count on the dashboard does not reflect
+   * the count when clicking on the card. Waiting for me, shows 11
+   * items across 4 stages. If I click on the card it shows 5 items
+   * across three stages." The card's own click opens
+   * `openTasksFiltered({ ownership: "mine" })`, which fetches
+   * `handleListMyTasks(db, userId, { ownership: "mine" })` — so this
+   * checks the two directly against each other, rather than only
+   * against a hand-picked expected number.
+   */
+  it("agrees with handleListMyTasks exactly, for a person whose role does not cover the org a task sits in", async () => {
+    /**
+     * **The exact shape of divergence, proven directly.** Alice's own
+     * `AP.Review` — the permission the old, separate SQL query
+     * actually scoped by — is held at `acme-de` only; her own task
+     * sits at `acme-fr`, and she holds `AP.Validate` — what the task
+     * itself actually requires — nowhere at all. The old query's own
+     * `unitClause` narrowing would have excluded it; `maySee()`'s own
+     * "no restriction where nothing is held" rule does not, since she
+     * genuinely, directly owns it. Reverting to the old
+     * implementation and running this same test fails it.
+     */
+    await person("alice", ["AP.Review"], "acme-de");
+    await work("inv-1", "acme-fr", { owner: "alice" });
+
+    const dashboardCount = card<{ count: number }>(await cardsFor("alice"), "waiting_for_me").count;
+    const clickThrough = (await handleListMyTasks(env.DB, "alice", { ownership: "mine" })).body as {
+      counts: { mine: number };
+    };
+
+    expect(dashboardCount).toBe(clickThrough.counts.mine);
+    // Both real numbers, not two zeros agreeing by accident.
+    expect(dashboardCount).toBe(1);
   });
 });

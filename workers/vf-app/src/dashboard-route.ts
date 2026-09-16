@@ -118,54 +118,65 @@ export interface Card {
  * the third being *available* rather than *mine* (decision 0180), which
  * is why `on_my_clock` counts differently.
  */
-async function waitingForMe(db: D1Database, userId: string, scope: Scope) {
-  const clause = unitClause(scope, "h.org_unit_id");
+/**
+ * **Asks the click, decision 0368** — reported live: "the count on
+ * the dashboard does not reflect the count when clicking on the
+ * card. Waiting for me, shows 11 items across 4 stages. If I click on
+ * the card it shows 5 items across three stages."
+ *
+ * `handleListMyTasks()` — the route this card's own click opens —
+ * filters by each task's own required permission, walked up its
+ * document's org-unit lineage (decision 0202), and separately by
+ * whichever org is currently chosen (decision 0314). This card's own,
+ * separate SQL query did neither: it counted every task the person
+ * owned, had claimed, or whose team they were on, with no check at
+ * all for whether they currently held the permission that specific
+ * task actually required — so a person whose role had narrowed since
+ * a task was assigned could see it counted here and correctly hidden
+ * there.
+ *
+ * **The exact class of bug `items_at_stage` already found and fixed
+ * this same way, four times over** (decisions 0252 through 0255),
+ * whose own record already named it directly: "Two queries for one
+ * question will drift, and the only way a card can promise to say
+ * what its click shows is to ask the click."
+ */
+async function waitingForMe(db: D1Database, userId: string, currentOrg: string | null) {
+  const listed = (
+    await handleListMyTasks(db, userId, { ownership: "mine", limit: 1000, currentOrgUnitId: currentOrg })
+  ).body as {
+    tasks: { stageId: string; stageName: string | null }[];
+    counts: { mine: number };
+  };
+
+  const byStageMap = new Map<string, { stage_id: string; stage_name: string; n: number }>();
+  for (const task of listed.tasks) {
+    const existing = byStageMap.get(task.stageId);
+    if (existing) existing.n += 1;
+    else byStageMap.set(task.stageId, { stage_id: task.stageId, stage_name: task.stageName ?? "—", n: 1 });
+  }
 
   /**
-   * **Broken down by stage, decision 0363** — reported live: "update
-   * the dashboard, specifically the Waiting for me card, to include a
-   * bar chart, indicating which queues, and queue count that items
-   * exist in." One query rather than two: the total and the distinct
-   * stage count are both derivable from the same grouped rows, so
-   * there is nothing a second, ungrouped query would answer that this
-   * one does not already carry.
-   *
-   * **`t.stage_id` directly**, the same column `task-list-route.ts`
-   * already joins `process_stages` through — the `stage_visits` /
-   * `process_instances` chain below exists only for the org-unit
-   * scope, which still has to come from the invoice a task's own
-   * stage visit points at.
-   *
    * **Ordered by the stage's own sequence**, the same convention
-   * `whereThingsAre()` already established for "count by stage," so a
-   * reader sees queues in the order work actually moves through them
-   * rather than alphabetically or by whichever happens to be busiest
-   * today.
+   * `whereThingsAre()` already established for "count by stage."
+   * `handleListMyTasks()` orders its own rows by creation time, not
+   * by stage, so the order to display this breakdown in is asked for
+   * separately, against only the handful of stages actually present.
    */
-  const rows = await db
-    .prepare(
-      `SELECT t.stage_id, COALESCE(s.name, '—') AS stage_name, count(*) AS n
-       FROM tasks t
-       LEFT JOIN stage_visits v ON v.id = t.stage_visit_id
-       LEFT JOIN process_instances pi ON pi.id = v.process_instance_id
-       LEFT JOIN invoice_headers h ON pi.subject_type = 'invoice' AND h.id = pi.subject_id
-       LEFT JOIN process_stages s ON s.id = t.stage_id
-       WHERE t.status = 'open'
-         AND (
-           t.owner_user_id = ?1
-           OR t.claimed_by = ?1
-           OR t.owner_team_id IN (SELECT team_id FROM org_team_members WHERE user_id = ?1)
-         )${clause.sql}
-       GROUP BY t.stage_id
-       ORDER BY s.sequence`
-    )
-    .bind(userId, ...clause.binds)
-    .all<{ stage_id: string; stage_name: string; n: number }>();
+  let byStage = [...byStageMap.values()];
+  if (byStage.length > 0) {
+    const placeholders = byStage.map(() => "?").join(", ");
+    const sequences = await db
+      .prepare(`SELECT id, sequence FROM process_stages WHERE id IN (${placeholders})`)
+      .bind(...byStage.map((s) => s.stage_id))
+      .all<{ id: string; sequence: number }>();
+    const sequenceOf = new Map(sequences.results.map((s) => [s.id, s.sequence]));
+    byStage = byStage.sort(
+      (a, b) => (sequenceOf.get(a.stage_id) ?? Infinity) - (sequenceOf.get(b.stage_id) ?? Infinity)
+    );
+  }
 
-  const byStage = rows.results;
-  const count = byStage.reduce((sum, r) => sum + r.n, 0);
-
-  return { count, stages: byStage.length, byStage };
+  return { count: listed.counts.mine, stages: byStage.length, byStage };
 }
 
 /**
@@ -571,7 +582,7 @@ export async function handleDashboard(
      */
     let data: unknown = null;
     try {
-      data = await runCard(db, userId, scope, supplierScope, card.cardType, card.settings);
+      data = await runCard(db, userId, scope, supplierScope, currentOrg, card.cardType, card.settings);
     } catch {
       data = null;
     }
@@ -586,12 +597,13 @@ async function runCard(
   userId: string,
   scope: Scope,
   supplierScope: Scope,
+  currentOrg: string | null,
   type: CardType,
   settings: Record<string, unknown>
 ): Promise<unknown> {
   switch (type) {
     case "waiting_for_me":
-      return waitingForMe(db, userId, scope);
+      return waitingForMe(db, userId, currentOrg);
     case "on_my_clock":
       return onMyClock(db, userId, scope, settings);
     case "where_things_are":
