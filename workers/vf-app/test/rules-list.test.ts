@@ -81,12 +81,36 @@ beforeEach(async () => {
   await seed();
 });
 
+describe("no stage given — decision 0355", () => {
+  /**
+   * **The exact bug reported live**: "When I highlight the AP Line
+   * Review Process, which has no stages - I see many rules." Traced
+   * directly: with no `stageId`, the query used to have no `WHERE`
+   * clause at all — every rule in the entire database. Probed
+   * directly by reverting to that old query shape and confirming
+   * this exact test fails.
+   */
+  it("returns no rules at all, never every rule as a fallback", async () => {
+    await addRule("r-1", "Hold any invoice over 10,000 euros.");
+    const nullResult = (await handleListRules(env.DB, null)).body as { rules: unknown[] };
+    expect(nullResult.rules).toEqual([]);
+
+    const emptyStringResult = (await handleListRules(env.DB, "")).body as { rules: unknown[] };
+    expect(emptyStringResult.rules).toEqual([]);
+  });
+
+  it("still 200s — an absent stage is a real, valid, empty answer, not an error", async () => {
+    const result = await handleListRules(env.DB, null);
+    expect(result.status).toBe(200);
+  });
+});
+
 describe("what the list shows", () => {
   it("shows the sentence somebody wrote, not the compiled rule", async () => {
     // **A person recognises their own words**; nobody recognises
     // `{"field":"BT-112","operator":"greater_than"}`.
     await addRule("r-1", "Hold any invoice over 10,000 euros from a new supplier.");
-    const body = (await handleListRules(env.DB, null)).body as {
+    const body = (await handleListRules(env.DB, "validation")).body as {
       rules: { sourceText: string }[];
     };
 
@@ -99,7 +123,7 @@ describe("what the list shows", () => {
     // The operator's own point: a rule fires at a stage, and what it
     // can test depends on what has happened by then.
     await addRule("r-1", "A rule");
-    const body = (await handleListRules(env.DB, null)).body as {
+    const body = (await handleListRules(env.DB, "validation")).body as {
       rules: { stageName: string }[];
     };
     expect(body.rules[0].stageName).toBe("Validation");
@@ -120,7 +144,7 @@ describe("what state a rule is in", () => {
    */
   it("calls an approved, enabled rule live", async () => {
     await addRule("r-live", "A rule", { approved: true, enabled: 1 });
-    const body = (await handleListRules(env.DB, null)).body as { rules: { state: string }[] };
+    const body = (await handleListRules(env.DB, "validation")).body as { rules: { state: string }[] };
     expect(body.rules[0].state).toBe("live");
   });
 
@@ -128,7 +152,7 @@ describe("what state a rule is in", () => {
     // **One was trusted once and the other never has been**, which is
     // a difference worth a word.
     await addRule("r-paused", "A rule", { approved: true, enabled: 0 });
-    const body = (await handleListRules(env.DB, null)).body as { rules: { state: string }[] };
+    const body = (await handleListRules(env.DB, "validation")).body as { rules: { state: string }[] };
     expect(body.rules[0].state).toBe("paused");
   });
 
@@ -136,7 +160,7 @@ describe("what state a rule is in", () => {
     // So the list can say "2 to confirm" rather than making somebody
     // open the rule to find out.
     await addRule("r-wait", "A rule", { examples: 3, confirmed: 1 });
-    const body = (await handleListRules(env.DB, null)).body as {
+    const body = (await handleListRules(env.DB, "validation")).body as {
       rules: { state: string; awaiting: number }[];
     };
 
@@ -146,7 +170,7 @@ describe("what state a rule is in", () => {
 
   it("calls one with no examples a draft", async () => {
     await addRule("r-draft", "A rule");
-    const body = (await handleListRules(env.DB, null)).body as { rules: { state: string }[] };
+    const body = (await handleListRules(env.DB, "validation")).body as { rules: { state: string }[] };
     expect(body.rules[0].state).toBe("draft");
   });
 });
@@ -267,7 +291,7 @@ describe("pausing a rule (decision 0155)", () => {
     await addRule("r-1", "A rule", { approved: true });
     await handleSetRuleEnabled(env.DB, "r-1", false);
 
-    const body = (await handleListRules(env.DB, null)).body as { rules: { state: string }[] };
+    const body = (await handleListRules(env.DB, "validation")).body as { rules: { state: string }[] };
     expect(body.rules[0].state).toBe("paused");
   });
 
@@ -279,7 +303,7 @@ describe("pausing a rule (decision 0155)", () => {
     await handleSetRuleEnabled(env.DB, "r-1", false);
     await handleSetRuleEnabled(env.DB, "r-1", true);
 
-    const body = (await handleListRules(env.DB, null)).body as { rules: { state: string }[] };
+    const body = (await handleListRules(env.DB, "validation")).body as { rules: { state: string }[] };
     expect(body.rules[0].state).toBe("live");
   });
 
@@ -376,7 +400,7 @@ describe("a rule's own name (decision 0266)", () => {
 
   it("carries a name through to the list", async () => {
     await addRule("r1", "flag anything over 10000", { name: "Spend Threshold" });
-    const result = await handleListRules(env.DB, null);
+    const result = await handleListRules(env.DB, "validation");
     const row = (result.body as { rules: { id: string; name: string | null }[] }).rules.find(
       (r) => r.id === "r1"
     );
@@ -391,7 +415,7 @@ describe("a rule's own name (decision 0266)", () => {
 
   it("carries a null name for a rule that has never been named", async () => {
     await addRule("r1", "flag anything over 10000");
-    const result = await handleListRules(env.DB, null);
+    const result = await handleListRules(env.DB, "validation");
     const row = (result.body as { rules: { id: string; name: string | null }[] }).rules.find(
       (r) => r.id === "r1"
     );

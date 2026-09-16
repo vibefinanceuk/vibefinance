@@ -248,6 +248,20 @@ describe("what a rule row says", () => {
     await open([]);
     expect(document.body.textContent).toContain("No rules run here yet");
   });
+
+  /**
+   * **The exact scenario reported live — decision 0355**: "the AP
+   * Line Review Process, which has no stages." The real fix lives in
+   * the backend (`handleListRules` itself, confirmed and probed
+   * there directly) — this confirms the screen genuinely shows
+   * nothing for a process with zero stages, end to end, rather than
+   * trusting the backend fix alone to imply the whole path works.
+   */
+  it("shows no rules at all for a process with zero stages", async () => {
+    await open([], []);
+    expect(document.body.textContent).toContain("No rules run here yet");
+    expect(document.querySelectorAll("tbody tr")).toHaveLength(0);
+  });
 });
 
 describe("every word comes from the control plane", () => {

@@ -55,10 +55,25 @@ function stateOf(row: RuleRow): "live" | "paused" | "awaiting_confirmation" | "d
   return "draft";
 }
 
+/**
+ * **Required, not optionally filtered — decision 0355.** Reported
+ * live: selecting a process with zero stages still showed "many
+ * rules." Traced directly: with no `stageId`, the query below had no
+ * `WHERE` clause at all — every rule in the entire database, across
+ * every process, the exact silent-wrong-answer shape this codebase
+ * has been careful to avoid everywhere else. A missing stage now
+ * means no rules, never every rule; a genuine "every rule" view, if
+ * one is ever wanted, should be its own explicit request, not the
+ * fallback for an absent filter.
+ */
 export async function handleListRules(
   db: D1Database,
   stageId: string | null
 ): Promise<RouteResult> {
+  if (!stageId) {
+    return { status: 200, body: { rules: [] } };
+  }
+
   /**
    * The latest version of each rule, and how far its examples have got.
    *
@@ -81,10 +96,10 @@ export async function handleListRules(
        LEFT JOIN process_stages s ON s.rule_set_id = rs.id
        LEFT JOIN rule_versions v ON v.rule_id = r.id
          AND v.version = (SELECT MAX(v2.version) FROM rule_versions v2 WHERE v2.rule_id = r.id)
-       ${stageId ? "WHERE s.id = ?" : ""}
+       WHERE s.id = ?
        ORDER BY s.sequence, r.sort_order`
     )
-    .bind(...(stageId ? [stageId] : []))
+    .bind(stageId)
     .all<RuleRow>();
 
   return {
