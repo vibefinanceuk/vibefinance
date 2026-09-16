@@ -12,17 +12,20 @@ import { icon } from "/icons.js";
  * somebody picks. `null` means "All organisations," the same
  * unfiltered default every screen already shows today.
  *
- * **Not yet a filter.** This module stores the choice and offers a
- * way to read it; nothing downstream changes what it shows because
- * of it yet. That is deliberately separate, later work — a screen
- * cannot filter by an org it has no way to name.
+ * **A real filter since decisions 0314 onward** — Dashboard, Tasks,
+ * Documents, and Suppliers each narrow by `currentOrgId()` on their
+ * own fetch. This module still only stores the choice and offers a
+ * way to read it; which screens act on that choice is each screen's
+ * own decision, not this one's.
  *
  * **No import from `tasks.js`.** `tasks.js` already imports
  * `orgPicker` from this file; importing `el` back the other way would
  * be a circular import, the same reasoning `mood.js`'s own
  * `moodPicker` already gives for building its DOM with
  * `document.createElement` directly rather than `tasks.js`'s own
- * helper.
+ * helper. `orgPicker` takes what it needs to act on a choice
+ * (`onChosen`, decision 0362) as a plain callback for the same
+ * reason: this file describes the control, never the app around it.
  */
 const CURRENT_ORG_KEY = "vf-current-org";
 
@@ -76,8 +79,13 @@ let backdrop = null;
  * long, and the same `.backdrop`/`.popout`/`.searchresult` shape the
  * viewer's own supplier search already uses fits a list of any length
  * without inventing a second pattern for it.
+ *
+ * **`onChosen`, decision 0362** — called after the choice is stored,
+ * so whoever built this button decides what "acting on it" means.
+ * `tasks.js` passes `relaunchAfterOrgChange`; nothing in this file
+ * needs to know that name, or that it exists, to remain correct.
  */
-export function orgPicker(units, holdsEverywhere) {
+export function orgPicker(units, holdsEverywhere, onChosen) {
   if (units.length < 2) return null;
 
   const label = node("span");
@@ -99,17 +107,29 @@ export function orgPicker(units, holdsEverywhere) {
     label.textContent = text;
   }
 
-  function choose(id) {
+  async function choose(id) {
     setCurrentOrgId(id);
+    render();
     /**
-     * **A full reload, not a re-render in place** — decision 0314,
-     * the same reasoning decision 0302's own language toggle already
-     * gives: this app has no router and no way, from outside a
-     * screen, to ask whichever one is open to re-fetch itself. A
-     * fresh load is the one place already guaranteed to read the
-     * newly-chosen org before anything renders.
+     * **The pop-out closes itself, decision 0362.** It lives on
+     * `document.body`, outside `#shell`, so relaunching whatever
+     * screen is current — which only ever replaces `#shell`'s own
+     * content — would otherwise leave it sitting open over the top
+     * of a screen it no longer has anything left to say about.
      */
-    location.reload();
+    if (backdrop) backdrop.hidden = true;
+    /**
+     * **Relaunched, not reloaded — decision 0362.** Reported live:
+     * "when changing Org via the button on the page, [...] relaunch
+     * the current page that has focus." Decision 0314's own
+     * `location.reload()` reasoning — no way, from outside a screen,
+     * to ask whichever one is open to re-fetch itself — no longer
+     * held once `onChosen` gave this button that exact way. A full
+     * reload also always landed back on the default screen
+     * regardless of what had been open, which the operator's own
+     * report named directly as no longer the wanted behaviour.
+     */
+    await onChosen?.();
   }
 
   function row(text, onclick) {

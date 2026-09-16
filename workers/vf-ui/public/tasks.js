@@ -778,7 +778,7 @@ export function topbar(title, subtitle, right = [], extra = []) {
        * own render call read `me.name` directly, two lines below this
        * function.
        */
-      orgPicker(me?.units ?? [], me?.holdsEverywhere ?? false),
+      orgPicker(me?.units ?? [], me?.holdsEverywhere ?? false, relaunchAfterOrgChange),
       /**
        * **Language, between Night/Day and Sign out** — decision 0302,
        * reported live: "At the top of the page, between Night / Day,
@@ -846,26 +846,27 @@ function render() {
  * asked — so a reload showed an empty sign-in form while the session
  * was perfectly alive.
  */
-export async function start() {
-  const response = await fetch("/api/whoami");
-  if (!response.ok) return false;
-
-  me = await response.json();
-
-  /**
-   * **The Dashboard, not Tasks, is the default landing screen —
-   * decision 0359.** Reported live: "make the default screen
-   * launched at login, to be the Dashboard." A dynamic import, the
-   * same mechanism `go()` itself already uses to open every other
-   * screen — this file has never imported `dashboard.js` directly,
-   * and starting now would be a circular import the moment
-   * `dashboard.js` imports anything back from here.
-   *
-   * **Falls back to Tasks for anyone who cannot see a dashboard at
-   * all.** Not every permission set holds `AP.Dashboard`, and a
-   * default that lands somebody on a screen refused out from under
-   * them is a worse landing than the one this replaces.
-   */
+/**
+ * The Dashboard, not Tasks, is the default landing screen — decision
+ * 0359. Reported live: "make the default screen launched at login,
+ * to be the Dashboard." A dynamic import, the same mechanism `go()`
+ * itself already uses to open every other screen — this file has
+ * never imported `dashboard.js` directly, and starting now would be
+ * a circular import the moment `dashboard.js` imports anything back
+ * from here.
+ *
+ * **Falls back to Tasks for anyone who cannot see a dashboard at
+ * all.** Not every permission set holds `AP.Dashboard`, and a
+ * default that lands somebody on a screen refused out from under
+ * them is a worse landing than the one this replaces.
+ *
+ * **Named and reused, decision 0362** — `start()`'s own first call
+ * into a signed-in instance, and `relaunchAfterOrgChange()`'s own
+ * fallback for a document or task that belonged to the org being
+ * left. Two callers, one definition, so the two can never quietly
+ * disagree about what "the default screen" actually is.
+ */
+async function openDefaultScreen() {
   if (hasMyPermission("AP.Dashboard")) {
     const { open } = await import("/dashboard.js");
     await open();
@@ -873,6 +874,15 @@ export async function start() {
     render();
     await loadTasks();
   }
+}
+
+export async function start() {
+  const response = await fetch("/api/whoami");
+  if (!response.ok) return false;
+
+  me = await response.json();
+
+  await openDefaultScreen();
 
   /**
    * **Centralised here, not left to each caller — decision 0361.**
@@ -895,4 +905,40 @@ export async function start() {
   document.body.classList.add("working");
 
   return true;
+}
+
+/**
+ * **Relaunch whatever the app is currently showing, focused on the
+ * newly-chosen org — decision 0362.** Reported live: "when changing
+ * Org via the button on the page, [...] relaunch the current page
+ * that has focus. This would refilter the content of the page with
+ * the new org that is selected."
+ *
+ * **One exception, stated directly**: "if a document or task has
+ * focus... that invoice would be specific to the org the user is
+ * navigating away from. In that case, simply revert to the default
+ * page." The viewer's own `hidden` attribute is already the one
+ * signal every screen that can open it (`tasks.js`, `documents.js`)
+ * already sets and clears consistently, so it needs no new state of
+ * its own to read.
+ *
+ * **`go(current)`, not a fresh page load.** Decision 0314's own
+ * reasoning for reloading the whole page — "this app has no router
+ * and no way, from outside a screen, to ask whichever one is open to
+ * re-fetch itself" — is no longer true: `go()` is exactly that way,
+ * already built and already used by every nav click. Reusing it here
+ * means the same screen the person was already looking at re-fetches
+ * with the new org applied, rather than dropping them onto whatever
+ * the default landing screen happens to be.
+ */
+export async function relaunchAfterOrgChange() {
+  const viewer = document.getElementById("viewer");
+  if (viewer && !viewer.hidden) {
+    viewer.hidden = true;
+    shell.hidden = false;
+    await openDefaultScreen();
+    return;
+  }
+
+  await go(current);
 }

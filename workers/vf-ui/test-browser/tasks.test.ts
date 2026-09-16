@@ -882,9 +882,10 @@ describe("the org switcher (decision 0313)", () => {
   /**
    * **Reported live**: "the ability for a user to switch between
    * Orgs... let me pick one org to focus on, seeing only that org's
-   * work until I switch." Only the switch control itself and its own
-   * persistence are tested here — nothing downstream filters by the
-   * choice yet, which is deliberate, later work.
+   * work until I switch." The switch control, its own persistence,
+   * and — since decision 0362 — relaunching whichever screen is
+   * current so it refetches under the new focus, are all covered
+   * here.
    */
   async function openWithOrgs(units: { id: string; name: string }[], holdsEverywhere: boolean) {
     stubFetch({
@@ -946,17 +947,19 @@ describe("the org switcher (decision 0313)", () => {
       (b) => b.textContent === "Acme France"
     ) as HTMLButtonElement;
     expect(row).not.toBeUndefined();
-    /**
-     * **Reloads rather than re-rendering, decision 0314** — the same
-     * reasoning decision 0302's own language toggle already gives, so
-     * the label itself is not expected to update here; only the
-     * choice being remembered is. A separate test below confirms the
-     * label reflects it, the same way decision 0302's own "remembers
-     * a language chosen earlier" test checks it on a fresh load.
-     */
     row.click();
+    await new Promise((r) => setTimeout(r, 0));
 
     expect(localStorage.getItem("vf-current-org")).toBe("fr");
+    /**
+     * **The label updates immediately, decision 0362** — no longer
+     * "not expected to update here," the way decision 0314's own
+     * reload-based version left it. `choose()` re-renders the button
+     * itself synchronously, before the relaunch it triggers even
+     * starts, so this needs no reload to become true.
+     */
+    const titles = [...document.querySelectorAll(".topbar .right button")].map((b) => b.title);
+    expect(titles).toContain("Acme France");
   });
 
   it("shows the previously-chosen org's own name on a fresh load", async () => {
@@ -1029,6 +1032,134 @@ describe("the org switcher (decision 0313)", () => {
     const results = [...document.querySelectorAll(".searchresult")].map((b) => b.textContent);
     expect(results).not.toContain("All organisations");
     expect(results).toEqual(["Acme France", "Acme Germany"]);
+  });
+
+  /**
+   * **Relaunching the current screen, decision 0362.** Reported
+   * live: "when changing Org via the button on the page, [...]
+   * relaunch the current page that has focus. This would refilter
+   * the content of the page with the new org that is selected."
+   */
+  describe("relaunches whatever screen is current, rather than always landing on the default", () => {
+    async function chooseOrg(rowLabel: string) {
+      const button = [...document.querySelectorAll(".topbar .right button")].find(
+        (b) => b.title === "All organisations"
+      ) as HTMLButtonElement;
+      button.click();
+      const row = [...document.querySelectorAll(".searchresult")].find(
+        (b) => b.textContent === rowLabel
+      ) as HTMLButtonElement;
+      row.click();
+      await new Promise((r) => setTimeout(r, 0));
+    }
+
+    it("re-fetches the same screen the person was already on, with the newly-chosen org", async () => {
+      stubFetch({
+        "/api/ui-strings": STRINGS,
+        "/api/whoami": {
+          id: "u-dan",
+          name: "Dan",
+          permissions: ALL_NAV_PERMISSIONS,
+          units: [
+            { id: "fr", name: "Acme France" },
+            { id: "de", name: "Acme Germany" },
+          ],
+          holdsEverywhere: true,
+        },
+        "/api/dashboard": { cards: [], usingDefault: true },
+        "/api/documents": { documents: [], searched: 0 },
+        "/api/field-visibility": { fields: [], derived: {} },
+      });
+      const { loadStrings } = await import("/strings.js");
+      await loadStrings();
+      const { start } = await import("/tasks.js");
+      await start();
+
+      const documentsLink = [...document.querySelectorAll(".navitem")].find((a) =>
+        a.textContent?.includes("Documents")
+      ) as HTMLElement;
+      documentsLink.click();
+      await new Promise((r) => setTimeout(r, 0));
+
+      await chooseOrg("Acme France");
+
+      // Still on Documents, not bounced to the default screen.
+      expect(document.querySelector(".nav a.on")?.textContent).toBe("Documents");
+
+      const calls = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls.map((c) => String(c[0]));
+      const documentsCall = calls.filter((u) => u.startsWith("/api/documents?")).pop();
+      expect(documentsCall).toContain("org=fr");
+    });
+
+    it("reverts to the default screen when a document or task has focus, rather than trying to keep it in view", async () => {
+      stubFetch({
+        "/api/ui-strings": STRINGS,
+        "/api/whoami": {
+          id: "u-dan",
+          name: "Dan",
+          permissions: ALL_NAV_PERMISSIONS,
+          units: [
+            { id: "fr", name: "Acme France" },
+            { id: "de", name: "Acme Germany" },
+          ],
+          holdsEverywhere: true,
+        },
+        "/api/dashboard": { cards: [], usingDefault: true },
+        "/api/tasks": { tasks: [APPROVAL_TASK], counts: {} },
+        "/api/invoices/inv-9/document-url": { url: null },
+        "/api/invoices/inv-9/progress": { inProcess: false, stages: [] },
+        "/api/documents/inv-9/activity": { items: [] },
+        "/api/suppliers": { suppliers: [], lastLoad: null, fedByLoad: false },
+      });
+      const { loadStrings } = await import("/strings.js");
+      await loadStrings();
+      const { start } = await import("/tasks.js");
+      await start();
+
+      const tasksLink = [...document.querySelectorAll(".navitem")].find((a) =>
+        a.textContent?.includes("Tasks")
+      ) as HTMLElement;
+      tasksLink.click();
+      await new Promise((r) => setTimeout(r, 0));
+
+      const row = document.querySelector("tbody tr") as HTMLElement;
+      row.click();
+      await new Promise((r) => setTimeout(r, 0));
+      expect(document.getElementById("viewer")?.hidden).toBe(false);
+
+      await chooseOrg("All organisations");
+
+      expect(document.getElementById("viewer")?.hidden).toBe(true);
+      expect(document.getElementById("shell")?.hidden).toBe(false);
+      // The default screen (Dashboard, decision 0359), not the
+      // invoice-specific one the org switch was made from.
+      const calls = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls.map((c) => String(c[0]));
+      expect(calls).toContain("/api/dashboard");
+    });
+
+    it("closes its own pop-out rather than leaving it open over a relaunched screen", async () => {
+      await openWithOrgs(
+        [
+          { id: "fr", name: "Acme France" },
+          { id: "de", name: "Acme Germany" },
+        ],
+        true
+      );
+
+      const button = [...document.querySelectorAll(".topbar .right button")].find(
+        (b) => b.title === "All organisations"
+      ) as HTMLButtonElement;
+      button.click();
+      expect(document.querySelector(".backdrop") as HTMLElement | null).not.toBeNull();
+
+      const row = [...document.querySelectorAll(".searchresult")].find(
+        (b) => b.textContent === "Acme France"
+      ) as HTMLButtonElement;
+      row.click();
+      await new Promise((r) => setTimeout(r, 0));
+
+      expect((document.querySelector(".backdrop") as HTMLElement)?.hidden).toBe(true);
+    });
   });
 });
 
