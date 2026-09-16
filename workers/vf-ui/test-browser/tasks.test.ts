@@ -29,6 +29,7 @@ const STRINGS = {
   strings: {
     "nav.tasks": "Tasks",
     "nav.sources": "Sources",
+    "nav.purchaseorders": "Purchase Orders",
     "nav.dashboard": "Dashboard",
     "nav.suppliers": "Suppliers",
     "nav.rules": "Rules",
@@ -359,7 +360,17 @@ describe("the flat nav, permission-filtered (decisions 0274 and 0276)", () => {
     expect(headings).toEqual(["Accounts payable", "Supplier management", "Configuration"]);
 
     const labels = [...document.querySelectorAll(".navitem")].map((a) => a.textContent);
-    expect(labels).toEqual(["Dashboard", "Tasks", "Documents", "Suppliers", "Access", "Sources", "Rules", "Processes"]);
+    expect(labels).toEqual([
+      "Dashboard",
+      "Tasks",
+      "Documents",
+      "Suppliers",
+      "Access",
+      "Sources",
+      "Purchase Orders",
+      "Rules",
+      "Processes",
+    ]);
   });
 
   it("never shows a heading with nothing unlocked beneath it — decision 0346", async () => {
@@ -393,7 +404,7 @@ describe("the flat nav, permission-filtered (decisions 0274 and 0276)", () => {
     await openList([APPROVAL_TASK]);
 
     const items = [...document.querySelectorAll(".navitem")];
-    expect(items).toHaveLength(8);
+    expect(items).toHaveLength(9);
     for (const item of items) {
       expect(item.querySelector("svg")).not.toBeNull();
     }
@@ -599,7 +610,7 @@ describe("the flat nav, permission-filtered (decisions 0274 and 0276)", () => {
 
     const labels = [...document.querySelectorAll(".navitem")].map((a) => a.textContent);
     expect(labels).not.toContain("Rules");
-    expect(labels).toEqual(["Dashboard", "Tasks", "Documents", "Suppliers", "Access", "Sources", "Processes"]);
+    expect(labels).toEqual(["Dashboard", "Tasks", "Documents", "Suppliers", "Access", "Sources", "Purchase Orders", "Processes"]);
   });
 
   it("shows nothing but the logo for a person with none of the six permissions", async () => {
@@ -664,7 +675,7 @@ describe("the flat nav, permission-filtered (decisions 0274 and 0276)", () => {
     const { start } = await import("/tasks.js");
     await start();
     const labels = [...document.querySelectorAll(".navitem")].map((a) => a.textContent);
-    expect(labels, "permission Admin.Configure").toEqual(["Access", "Sources", "Processes"]);
+    expect(labels, "permission Admin.Configure").toEqual(["Access", "Sources", "Purchase Orders", "Processes"]);
   });
 
   it("unlocks Access for a delegated administrator too, decision 0321", async () => {

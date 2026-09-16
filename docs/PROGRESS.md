@@ -129,6 +129,13 @@ a rule, and left an approval task in a queue.
   `amountTolerancePct`/`quantityTolerancePct` (0209); no positional
   fallback when `BT-132` is absent, per EN 16931's own warning that
   correspondence isn't guaranteed even when `BT-13` is present
+- A CSV upload screen (0371), `Admin.Configure`, in Configuration
+  alongside Sources — load-only, no browse/list (there is no endpoint
+  for one); fixed two real, pre-existing gaps found while building it:
+  the proxy allowlist never carried either purchase-order route
+  (decisions 0081, 0370 both unreachable through the UI until now), and
+  `vf-licence`'s own test setup was missing fifteen migrations' worth
+  of UI strings entirely, unrelated to this screen
 
 ### Documents
 - R2 storage with jurisdiction support (0013, 0033, 0035)
@@ -545,7 +552,7 @@ elsewhere.
 |---|---|
 | `vf-app` | 1751 |
 | `vf-licence` | 320 |
-| `vf-ui` | 63 Worker · 506 browser |
+| `vf-ui` | 72 Worker · 564 browser |
 | `shared` | 269 passing, 3 known pre-existing failures |
 
 Both migration chains replay clean with every standing invariant
@@ -566,7 +573,7 @@ holding — 65 migrations for `vf-app`, 105 for `vf-licence`.
 | `docs/design/mockups/` | Four screens as static HTML | Current |
 | `docs/design/multi-authority-intake.md` | Non-EN-16931 authorities | Design only |
 | `docs/design/text-layer-extraction.md` | Reading a PDF's own text | Design only |
-| `docs/decisions/` | 370 decision records (recounted directly — the previous figure had drifted) | Current |
+| `docs/decisions/` | 371 decision records (recounted directly — the previous figure had drifted) | Current |
 | `docs/decisions/SUPERSEDED.md` | Which records supersede which | **Read first** |
 
 Document 4's markdown source is at `docs/documents/`, with

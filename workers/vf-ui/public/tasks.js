@@ -467,6 +467,9 @@ async function go(screen) {
   } else if (screen === "suppliers") {
     const { open } = await import("/suppliers.js");
     await open();
+  } else if (screen === "purchaseorders") {
+    const { open } = await import("/purchase-orders.js");
+    await open();
   } else if (screen === "documents") {
     const { open } = await import("/documents.js");
     await open();
@@ -547,6 +550,11 @@ const NAV_PERMISSIONS = {
   rules: "Admin.RuleManagement",
   documents: "AP.Review",
   processes: "Admin.Configure",
+  // The purchase order loader — decision 0371. Same permission and
+  // same reasoning as Sources: loading orders is setting up what
+  // invoices get matched against, matching what the backend route
+  // itself already requires.
+  purchaseorders: "Admin.Configure",
   /**
    * **Either standing opens it, decision 0321** — extending decision
    * 0320's own `Admin.Configure` correction rather than reverting it:
@@ -624,6 +632,7 @@ export function frame(main) {
       screens: [
         ["access", "users"],
         ["sources", "sources"],
+        ["purchaseorders", "purchaseorders"],
         ["rules", "rules"],
         ["processes", "processes"],
       ],

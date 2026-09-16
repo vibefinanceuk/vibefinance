@@ -399,6 +399,12 @@ Object.assign(ICONS, {
   // once it has.
   sources: '<path d="M3 12h5l2 3h4l2-3h5"/><path d="M4 12 5.5 5h13L20 12"/><path d="M3 12v6a1 1 0 0 0 1 1h16a1 1 0 0 0 1-1v-6"/>',
 
+  // A package outline — the silhouette, the seam where a lid meets a
+  // box, and a centre line — decision 0371. Distinct from `documents`
+  // deliberately: a purchase order is reference data, not a document
+  // with work attached to it (decision 0081's own reasoning).
+  purchaseorders: '<path d="M12 3 4 7v10l8 4 8-4V7z"/><path d="M4 7l8 4 8-4"/><path d="M12 11v10"/>',
+
   // A building, not a person — a supplier here is an organisation
   // this app matches invoices to, never an individual it has a name
   // and a face for.

@@ -198,6 +198,17 @@ const PROXIED_TO_INSTANCE: RegExp[] = [
   /^\/suppliers\/search$/,
   // Changing a supplier by hand (decision 0230).
   /^\/suppliers\/[^/]+$/,
+  /**
+   * **Purchase order ingestion and CSV load — decision 0371.**
+   *
+   * Both routes have existed in `vf-app` since decision 0081 (XML) and
+   * decision 0370 (CSV), and neither was ever added here — the exact
+   * gap this file's own comments already name four times over. Found
+   * before a real request could fail on it, this time.
+   */
+  /^\/purchase-orders$/,
+  /^\/purchase-orders\/csv-load$/,
+  /^\/purchase-orders\/[^/]+$/,
   // Finding one of our own units, and re-routing (decision 0224).
   /^\/org\/units\/search$/,
   /^\/invoices\/[^/]+\/org$/,

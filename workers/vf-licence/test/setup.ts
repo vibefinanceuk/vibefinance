@@ -96,6 +96,22 @@ import rulesTableColumnSql from "../migrations/0091_rules_table_column.sql?raw";
 import orgSwitcherStringsSql from "../migrations/0092_org_switcher_strings.sql?raw";
 import roleManagementStringsSql from "../migrations/0093_role_management_strings.sql?raw";
 import roleManagementLoadFailedSql from "../migrations/0094_role_management_load_failed.sql?raw";
+import roleEditingStringsSql from "../migrations/0095_role_editing_strings.sql?raw";
+import roleAssignmentStringsSql from "../migrations/0096_role_assignment_strings.sql?raw";
+import personCreationStringsSql from "../migrations/0097_person_creation_strings.sql?raw";
+import popoutActionRowStringsSql from "../migrations/0098_popout_action_row_strings.sql?raw";
+import teamsStringsSql from "../migrations/0099_teams_strings.sql?raw";
+import accessNavRenameSql from "../migrations/0100_access_nav_rename.sql?raw";
+import userPropertiesStringsSql from "../migrations/0101_user_properties_strings.sql?raw";
+import orgUnitManagementStringsSql from "../migrations/0102_org_unit_management_strings.sql?raw";
+import personRolesPropertiesSplitStringsSql from "../migrations/0103_person_roles_properties_split_strings.sql?raw";
+import navGroupHeadingsStringsSql from "../migrations/0104_nav_group_headings_strings.sql?raw";
+import sourcesActionIconsStringsSql from "../migrations/0105_sources_action_icons_strings.sql?raw";
+import processManagementStringsSql from "../migrations/0106_process_management_strings.sql?raw";
+import rulesProcessSelectorStringsSql from "../migrations/0107_rules_process_selector_strings.sql?raw";
+import startDraftStringsSql from "../migrations/0108_start_draft_strings.sql?raw";
+import newDraftWordingSql from "../migrations/0109_new_draft_wording.sql?raw";
+import purchaseOrdersScreenStringsSql from "../migrations/0110_purchase_orders_screen_strings.sql?raw";
 
 function stripSqlComments(sql: string): string {
   return sql
@@ -219,5 +235,21 @@ export async function applyTestSchema(): Promise<void> {
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(orgSwitcherStringsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(roleManagementStringsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(roleManagementLoadFailedSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(roleEditingStringsSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(roleAssignmentStringsSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(personCreationStringsSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(popoutActionRowStringsSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(teamsStringsSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(accessNavRenameSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(userPropertiesStringsSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(orgUnitManagementStringsSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(personRolesPropertiesSplitStringsSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(navGroupHeadingsStringsSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(sourcesActionIconsStringsSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(processManagementStringsSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(rulesProcessSelectorStringsSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(startDraftStringsSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(newDraftWordingSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(purchaseOrdersScreenStringsSql)));
 
 }

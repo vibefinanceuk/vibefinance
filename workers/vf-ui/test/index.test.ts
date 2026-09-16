@@ -361,6 +361,8 @@ describe("the proxy carries every path a screen calls (decision 0131)", () => {
     // The two that were missing.
     ["PATCH", "/api/sources/s-1"],
     ["DELETE", "/api/sources/s-1"],
+    // The purchase order load screen — decision 0371.
+    ["POST", "/api/purchase-orders/csv-load"],
   ];
 
   it("carries all of them", async () => {
@@ -418,6 +420,15 @@ describe("paths the app is allowed to reach (decision 0212)", () => {
     "/org/teams/t1/members",
     "/org/teams/t1/members/usr1",
     "/field-visibility",
+    /**
+     * Purchase order ingestion and CSV load — decision 0371. Both have
+     * existed in vf-app since decisions 0081 and 0370 and were never
+     * on this list either, the exact gap this describe block already
+     * exists to catch.
+     */
+    "/purchase-orders",
+    "/purchase-orders/csv-load",
+    "/purchase-orders/PO-1",
   ];
 
   for (const path of reachable) {
