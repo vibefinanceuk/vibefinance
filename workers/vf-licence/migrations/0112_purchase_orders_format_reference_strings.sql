@@ -21,7 +21,4 @@ INSERT INTO ui_strings (key, locale, value) VALUES
  ('purchaseorders.linecolumns', 'de', 'Positionsspalten');
 
 -- Point-in-time: every key exists in both seeded languages.
--- ASSERT: SELECT count(*) FROM ui_strings WHERE key IN
---   ('action.download','purchaseorders.viewformat','purchaseorders.fieldname',
---    'purchaseorders.acceptedcolumns','purchaseorders.required',
---    'purchaseorders.headercolumns','purchaseorders.linecolumns') == 14
+-- ASSERT: SELECT count(*) FROM ui_strings WHERE key IN ('action.download','purchaseorders.viewformat','purchaseorders.fieldname','purchaseorders.acceptedcolumns','purchaseorders.required','purchaseorders.headercolumns','purchaseorders.linecolumns') == 14
