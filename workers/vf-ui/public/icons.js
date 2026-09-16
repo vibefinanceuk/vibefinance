@@ -257,6 +257,15 @@ export const ICONS = {
    */
   rename: '<path d="M15 4l5 5-11 11H4v-5z"/><path d="M13 6l5 5"/>',
   /**
+   * **The same pencil shape as `rename`, a separate name —
+   * decision 0353.** `actionLink` looks up its own icon and its own
+   * label by the same string, so a distinct action needing its own
+   * label ("Start draft," not "Rename") needs its own entry here,
+   * even reusing the exact shape: starting a draft is, at heart, the
+   * same "begin editing this" gesture a pencil already means.
+   */
+  startdraft: '<path d="M15 4l5 5-11 11H4v-5z"/><path d="M13 6l5 5"/>',
+  /**
    * **An archive box, not the same shape as `close` — decision
    * 0347.** Retiring a source is not deleting it (section reasoning,
    * `retireSource`'s own doc comment) and not dismissing something

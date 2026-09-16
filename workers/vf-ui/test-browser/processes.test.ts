@@ -60,6 +60,7 @@ const STRINGS = {
     "processes.savefailed": "Could not save. Please try again.",
     "action.newprocess": "New process",
     "action.addstage": "Add stage",
+    "action.startdraft": "Start draft",
     "action.publish": "Publish",
     "action.discard": "Discard",
     "action.create": "Create",
@@ -150,8 +151,8 @@ describe("the process list", () => {
 });
 
 describe("selecting a process, no draft", () => {
-  async function openAndSelect() {
-    await open({ "/api/processes/p1": DETAIL_NO_DRAFT });
+  async function openAndSelect(posted: string[] = []) {
+    await open({ "/api/processes/p1": DETAIL_NO_DRAFT }, ["Admin.Configure"], posted);
     const row = [...document.querySelectorAll("tr")].find((r) => r.textContent?.includes("Standard AP"));
     row?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     await new Promise((r) => setTimeout(r, 0));
@@ -173,6 +174,42 @@ describe("selecting a process, no draft", () => {
   it("shows an Add stage action, holding Admin.Configure", async () => {
     await openAndSelect();
     expect([...document.querySelectorAll("button")].some((b) => b.textContent?.includes("Add stage"))).toBe(true);
+  });
+
+  /**
+   * **The gap reported live — decision 0353**: "It seems that I
+   * cannot modify an existing process?" Only Add stage existed
+   * before this; someone who only wants to reorder or remove
+   * something had no way in without adding a stage nobody wanted.
+   */
+  it("shows a Start draft action too, holding Admin.Configure", async () => {
+    await openAndSelect();
+    expect([...document.querySelectorAll("button")].some((b) => b.textContent?.includes("Start draft"))).toBe(true);
+  });
+
+  it("hides Start draft without Admin.Configure, the same as Add stage", async () => {
+    await open({ "/api/processes/p1": DETAIL_NO_DRAFT }, ["AP.Dashboard"]);
+    const row = [...document.querySelectorAll("tr")].find((r) => r.textContent?.includes("Standard AP"));
+    row?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await new Promise((r) => setTimeout(r, 0));
+    expect([...document.querySelectorAll("button")].some((b) => b.textContent?.includes("Start draft"))).toBe(false);
+  });
+
+  it("clicking Start draft calls the real start-draft route", async () => {
+    const posted: string[] = [];
+    await open(
+      { "/api/processes/p1": DETAIL_NO_DRAFT, "/api/processes/p1/draft": { id: "p1", draft: { version: 2, stages: DETAIL_NO_DRAFT.stages } } },
+      ["Admin.Configure"],
+      posted
+    );
+    const row = [...document.querySelectorAll("tr")].find((r) => r.textContent?.includes("Standard AP"));
+    row?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await new Promise((r) => setTimeout(r, 0));
+
+    const startButton = [...document.querySelectorAll("button")].find((b) => b.textContent?.includes("Start draft")) as HTMLButtonElement;
+    startButton.click();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(posted).toContain("/api/processes/p1/draft");
   });
 });
 

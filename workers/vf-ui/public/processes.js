@@ -255,6 +255,22 @@ async function removeDraftStage(processId, stage) {
  * each, never a partial move — the exact shape `handleReorderDraft
  * Stages` itself requires.
  */
+/**
+ * **Start a draft with nothing new in it yet — decision 0353.**
+ * `POST`, same bare path `DELETE` already uses to discard one:
+ * starting and discarding are the two ends of the same concept.
+ */
+async function startDraft(processId) {
+  const response = await fetch(`/api/processes/${encodeURIComponent(processId)}/draft`, { method: "POST" });
+  if (!response.ok) {
+    const body = await response.json();
+    window.alert(body.error ?? t("processes.savefailed"));
+    return;
+  }
+  await load();
+  render();
+}
+
 async function reorderDraftStages(processId, orderedStageIds) {
   const response = await fetch(`/api/processes/${encodeURIComponent(processId)}/draft/stages`, {
     method: "PUT",
@@ -340,7 +356,18 @@ function processDetailPanel(canManage) {
       [
         liveRow,
         canManage
-          ? el("div", { style: "margin-top: 10px;" }, [actionLink("addstage", { onclick: () => openAddStageForm(detail.id) })])
+          ? el("div", { class: "statebuttons", style: "margin-top: 10px;" }, [
+              /**
+               * **The gap reported live — decision 0353**: "It seems
+               * that I cannot modify an existing process?" Only
+               * adding, or removing, a specific stage had ever
+               * started a draft, with no way in for someone who
+               * only wants to reorder or remove something, without
+               * first typing in a stage nobody actually wants.
+               */
+              actionLink("startdraft", { onclick: () => startDraft(detail.id) }),
+              actionLink("addstage", { onclick: () => openAddStageForm(detail.id) }),
+            ])
           : null,
       ].filter(Boolean)
     );

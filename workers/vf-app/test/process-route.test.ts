@@ -5,6 +5,7 @@ import {
   handleCreateProcess,
   handleCreateStage,
   handleGetProcess,
+  handleStartDraft,
   handleAddDraftStage,
   handleRemoveDraftStage,
   handlePublishDraft,
@@ -144,6 +145,63 @@ describe("handleGetProcess — decision 0349", () => {
     expect(body.stages.map((s) => s.id)).toEqual(["s1"]);
     expect(body.draft?.version).toBe(2);
     expect(body.draft?.stages.map((s) => s.id)).toEqual(["s1", "s2"]);
+  });
+});
+
+describe("handleStartDraft — decision 0353", () => {
+  it("404s a process that does not exist", async () => {
+    const result = await handleStartDraft(env.DB, "does-not-exist");
+    expect(result.status).toBe(404);
+  });
+
+  /**
+   * **The exact gap reported live** — "It seems that I cannot modify
+   * an existing process?" Starting a draft was always possible as a
+   * side effect of adding or removing a stage; there was no way in
+   * for someone who only wants to reorder or remove something,
+   * without first typing in a stage nobody actually wants.
+   */
+  it("starts a draft with nothing new in it, copying the live version's own membership exactly", async () => {
+    await handleCreateProcess(env.DB, { id: "p1", name: "Standard AP" });
+    await handleCreateStage(env.DB, "p1", { id: "s1", name: "Received", sequence: 1 });
+    await handleCreateStage(env.DB, "p1", { id: "s2", name: "Approval", sequence: 2 });
+
+    const result = await handleStartDraft(env.DB, "p1");
+    expect(result.status).toBe(200);
+    const body = result.body as { draft: { version: number; stages: { id: string }[] } };
+    expect(body.draft.version).toBe(2);
+    expect(body.draft.stages.map((s) => s.id)).toEqual(["s1", "s2"]);
+  });
+
+  it("is idempotent — calling it again on a process that already has a draft just returns it, without re-copying", async () => {
+    await handleCreateProcess(env.DB, { id: "p1", name: "Standard AP" });
+    await handleCreateStage(env.DB, "p1", { id: "s1", name: "Received", sequence: 1 });
+    await handleStartDraft(env.DB, "p1");
+    await handleAddDraftStage(env.DB, "p1", { id: "s2", name: "Coding" });
+
+    const result = await handleStartDraft(env.DB, "p1");
+    const body = result.body as { draft: { stages: { id: string }[] } };
+    // Still both — a second start-draft call must not reset the
+    // draft's own membership back to a fresh copy of the live version.
+    expect(body.draft.stages.map((s) => s.id).sort()).toEqual(["s1", "s2"]);
+  });
+
+  it("lets the newly-started draft's own, already-existing stages be removed and reordered directly", async () => {
+    await handleCreateProcess(env.DB, { id: "p1", name: "Standard AP" });
+    await handleCreateStage(env.DB, "p1", { id: "s1", name: "Received", sequence: 1 });
+    await handleCreateStage(env.DB, "p1", { id: "s2", name: "Approval", sequence: 2 });
+
+    await handleStartDraft(env.DB, "p1");
+    // Reordering an existing, previously-live stage — never possible
+    // before this existed, since there was no way to reach a draft
+    // without adding something new first.
+    const reorderResult = await handleReorderDraftStages(env.DB, "p1", ["s2", "s1"]);
+    expect(reorderResult.status).toBe(200);
+
+    const draft = await env.DB
+      .prepare("SELECT stage_id FROM process_stage_versions WHERE process_id = 'p1' AND version = 2 ORDER BY sequence")
+      .all<{ stage_id: string }>();
+    expect(draft.results.map((r: { stage_id: string }) => r.stage_id)).toEqual(["s2", "s1"]);
   });
 });
 
@@ -656,5 +714,53 @@ describe("process routes, gated for the first time — decision 0349 — reorder
       body: JSON.stringify({ orderedStageIds: ["s2", "s1"] }),
     });
     expect(reorderRes.status).toBe(200);
+  });
+
+  it("POST /processes/:id/draft (start a draft) 403s a real request lacking Admin.Configure", async () => {
+    const setupKey = await keyForPermission("Admin.Configure");
+    await SELF.fetch("https://example.com/processes", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${setupKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ id: "p1", name: "Standard AP" }),
+    });
+    const apiKey = await keyForPermission("AP.Dashboard");
+    const res = await SELF.fetch("https://example.com/processes/p1/draft", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}` },
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("POST /processes/:id/draft 401s with no credential at all", async () => {
+    const res = await SELF.fetch("https://example.com/processes/p1/draft", { method: "POST" });
+    expect(res.status).toBe(401);
+  });
+
+  it("POST /processes/:id/draft succeeds for Admin.Configure, and never collides with DELETE on the same path", async () => {
+    const apiKey = await keyForPermission("Admin.Configure");
+    await SELF.fetch("https://example.com/processes", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ id: "p1", name: "Standard AP" }),
+    });
+    await SELF.fetch("https://example.com/processes/p1/stages", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ id: "s1", name: "Received", sequence: 1 }),
+    });
+
+    const startRes = await SELF.fetch("https://example.com/processes/p1/draft", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}` },
+    });
+    expect(startRes.status).toBe(200);
+
+    // The draft this just started is real, and DELETE on the very
+    // same path still discards it rather than clashing with POST.
+    const discardRes = await SELF.fetch("https://example.com/processes/p1/draft", {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${apiKey}` },
+    });
+    expect(discardRes.status).toBe(200);
   });
 });

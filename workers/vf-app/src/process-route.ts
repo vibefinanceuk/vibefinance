@@ -217,6 +217,30 @@ export async function handleGetProcess(db: D1Database, processId: string): Promi
   };
 }
 
+/**
+ * **Start a draft with nothing new in it yet — decision 0353.**
+ * Reported live: "It seems that I cannot modify an existing process?"
+ * `handleAddDraftStage` and `handleRemoveDraftStage` both already call
+ * `ensureDraftExists`, so a draft has always been startable — but only
+ * as a side effect of adding or removing a specific stage. Wanting to
+ * only reorder, or only remove something, without first typing in a
+ * stage nobody actually wants, had no way in at all. Idempotent, the
+ * same as the other two: calling this on a process that already has a
+ * draft just returns it, exactly as `ensureDraftExists` itself already
+ * behaves.
+ */
+export async function handleStartDraft(db: D1Database, processId: string): Promise<RouteResult> {
+  const process = await db.prepare("SELECT version FROM processes WHERE id = ?").bind(processId).first<{ version: number }>();
+  if (!process) {
+    return { status: 404, body: { error: `process ${processId} does not exist` } };
+  }
+
+  const draftVersion = await ensureDraftExists(db, processId, process.version);
+  const draftStages = await stagesAtVersion(db, processId, draftVersion);
+
+  return { status: 200, body: { id: processId, draft: { version: draftVersion, stages: draftStages } } };
+}
+
 interface AddDraftStageBody {
   id?: unknown;
   name?: unknown;

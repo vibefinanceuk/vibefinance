@@ -61,6 +61,7 @@ import {
   handleCreateProcess,
   handleCreateStage,
   handleGetProcess,
+  handleStartDraft,
   handleAddDraftStage,
   handleRemoveDraftStage,
   handlePublishDraft,
@@ -1819,6 +1820,24 @@ export default {
         return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
       }
       const result = await handleDiscardDraft(db, discardDraftMatch[1]);
+      return json(result.body, result.status);
+    }
+
+    /**
+     * **`POST`, same bare path as the `DELETE` above — decision 0353.**
+     * Starting a draft with nothing new in it, and discarding one, are
+     * the two ends of the same concept; sharing the path the way `PUT`
+     * already shares `/draft/stages` with `POST` keeps that visible in
+     * the routing itself rather than inventing a new path shape for
+     * something method already disambiguates cleanly.
+     */
+    if (discardDraftMatch && request.method === "POST") {
+      const { db } = resolveTenant(request, env);
+      const auth = await requirePermission(db, request, "Admin.Configure", sessionContext(env));
+      if (!auth.authorized) {
+        return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
+      }
+      const result = await handleStartDraft(db, discardDraftMatch[1]);
       return json(result.body, result.status);
     }
 
