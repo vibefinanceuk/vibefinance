@@ -58,8 +58,15 @@ const STRINGS = {
     "purchaseorders.unit": "Unit",
     "purchaseorders.price": "Unit Price",
     "purchaseorders.amount": "Amount",
+    "purchaseorders.viewformat": "View accepted columns",
+    "purchaseorders.fieldname": "Field",
+    "purchaseorders.acceptedcolumns": "Accepted column names",
+    "purchaseorders.required": "Required",
+    "purchaseorders.headercolumns": "Header columns",
+    "purchaseorders.linecolumns": "Line columns",
     "action.load": "Load",
     "action.close": "Close",
+    "action.download": "Download",
   },
 };
 
@@ -77,6 +84,17 @@ const ONE_ORDER = {
       payable_amount: 864,
       line_count: 2,
     },
+  ],
+};
+
+const SAMPLE_FORMAT = {
+  header: [
+    { key: "order_number", columns: ["order_number", "order number", "po_number"], required: true, description: "The buyer's own order number." },
+    { key: "issue_date", columns: ["issue_date", "issue date"], required: false, description: "When the order was issued." },
+  ],
+  line: [
+    { key: "line_number", columns: ["line_number", "line number"], required: true, description: "Which line of the order this is." },
+    { key: "quantity", columns: ["quantity", "qty"], required: false, description: "The quantity ordered." },
   ],
 };
 
@@ -481,5 +499,100 @@ describe("loading a file (decision 0216's one-try-per-thing discipline)", () => 
 
     expect(document.body.textContent).toContain("PO-500");
     expect(document.body.textContent).not.toContain("No purchase orders have been loaded yet");
+  });
+});
+
+describe("the CSV format reference — decision 0373", () => {
+  it("does not appear at all when the format could not be fetched", async () => {
+    // No /api/purchase-orders/csv-format stub registered — the
+    // existing 21 tests above already prove this degrades gracefully;
+    // this test names the behaviour directly.
+    stubFetch({ "/api/purchase-orders": { body: EMPTY_LIST } });
+    await openScreen();
+
+    expect(document.querySelector(".poformat")).toBeNull();
+  });
+
+  it("shows the disclosure, collapsed, with every field's own accepted columns inside it", async () => {
+    stubFetch({
+      "/api/purchase-orders": { body: EMPTY_LIST },
+      "/api/purchase-orders/csv-format": { body: SAMPLE_FORMAT },
+    });
+    await openScreen();
+
+    const details = document.querySelector(".poformat") as HTMLDetailsElement;
+    expect(details).not.toBeNull();
+    expect(details.open).toBe(false);
+    expect(details.textContent).toContain("order_number");
+    expect(details.textContent).toContain("po_number");
+    expect(details.textContent).toContain("line_number");
+    expect(details.textContent).toContain("quantity");
+  });
+
+  it("marks required fields as required, and leaves optional ones blank rather than saying 'Optional' redundantly", async () => {
+    stubFetch({
+      "/api/purchase-orders": { body: EMPTY_LIST },
+      "/api/purchase-orders/csv-format": { body: SAMPLE_FORMAT },
+    });
+    await openScreen();
+
+    const rows = [...document.querySelectorAll(".poformat tbody tr")];
+    const orderNumberRow = rows.find((r) => r.textContent?.includes("order_number"));
+    const issueDateRow = rows.find((r) => r.textContent?.includes("issue_date"));
+    expect(orderNumberRow?.textContent).toContain("Required");
+    expect(issueDateRow?.textContent).not.toContain("Required");
+  });
+});
+
+describe("downloading a template — decision 0373", () => {
+  it("builds a CSV from every field's own recommended column, header and line together", async () => {
+    stubFetch({
+      "/api/purchase-orders": { body: EMPTY_LIST },
+      "/api/purchase-orders/csv-format": { body: SAMPLE_FORMAT },
+    });
+    await openScreen();
+
+    let capturedBlob: Blob | undefined;
+    const createSpy = vi.spyOn(URL, "createObjectURL").mockImplementation((blob) => {
+      capturedBlob = blob as Blob;
+      return "blob:mock";
+    });
+    const revokeSpy = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+
+    const downloadButton = [...document.querySelectorAll("button")].find((b) => b.textContent === "Download");
+    downloadButton?.click();
+
+    expect(createSpy).toHaveBeenCalledOnce();
+    expect(clickSpy).toHaveBeenCalledOnce();
+    expect(revokeSpy).toHaveBeenCalledWith("blob:mock");
+
+    const text = await capturedBlob?.text();
+    // The first-listed (recommended) column of every field, header
+    // fields before line fields — not just any accepted alias.
+    expect(text).toBe("order_number,issue_date,line_number,quantity\n");
+
+    createSpy.mockRestore();
+    revokeSpy.mockRestore();
+    clickSpy.mockRestore();
+  });
+
+  it("is disabled when the format itself could not be fetched, rather than downloading an empty or broken file", async () => {
+    stubFetch({ "/api/purchase-orders": { body: EMPTY_LIST } });
+    await openScreen();
+
+    const downloadButton = [...document.querySelectorAll("button")].find((b) => b.textContent === "Download");
+    expect(downloadButton?.disabled).toBe(true);
+  });
+
+  it("is enabled once the format has loaded", async () => {
+    stubFetch({
+      "/api/purchase-orders": { body: EMPTY_LIST },
+      "/api/purchase-orders/csv-format": { body: SAMPLE_FORMAT },
+    });
+    await openScreen();
+
+    const downloadButton = [...document.querySelectorAll("button")].find((b) => b.textContent === "Download");
+    expect(downloadButton?.disabled).toBe(false);
   });
 });

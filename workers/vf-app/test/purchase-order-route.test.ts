@@ -1,7 +1,7 @@
 import { env } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
 import { applyTestSchema } from "./setup.js";
-import { handleIngestPurchaseOrder, handleGetPurchaseOrder, handleLoadPurchaseOrdersCsv, handleListPurchaseOrders } from "../src/purchase-order-route.js";
+import { handleIngestPurchaseOrder, handleGetPurchaseOrder, handleLoadPurchaseOrdersCsv, handleListPurchaseOrders, handleGetPurchaseOrderCsvFormat } from "../src/purchase-order-route.js";
 
 const ORDER = (number = "PO-34500", lines = `
   <cac:OrderLine><cac:LineItem>
@@ -263,5 +263,53 @@ PO-BATCH-C,1,Widgets`
     const body = result.body as { purchaseOrders: Record<string, unknown>[] };
     expect(body.purchaseOrders).toHaveLength(1);
     expect(body.purchaseOrders[0].line_count).toBe(0);
+  });
+});
+
+describe("the CSV format reference — decision 0373", () => {
+  it("lists order_number and line number as the only required columns", async () => {
+    const result = await handleGetPurchaseOrderCsvFormat();
+    const body = result.body as { header: { key: string; required: boolean }[]; line: { key: string; required: boolean }[] };
+    expect(body.header.filter((f) => f.required).map((f) => f.key)).toEqual(["order_number"]);
+    expect(body.line.filter((f) => f.required).map((f) => f.key)).toEqual(["line_number"]);
+  });
+
+  it("every column it advertises is genuinely accepted by the real parser — no drift possible by construction", async () => {
+    // The whole point of deriving HEADER_COLUMNS/LINE_COLUMNS from
+    // these same specs: this test would fail the moment the two ever
+    // disagreed, rather than a person discovering it by trial and
+    // error against their own file.
+    const format = (await handleGetPurchaseOrderCsvFormat()).body as {
+      header: { key: string; columns: string[] }[];
+      line: { key: string; columns: string[] }[];
+    };
+
+    // order_type_code is the one field with a closed set of valid
+    // values (a real DB constraint) — everything else tolerates a
+    // generic placeholder just fine.
+    const valueFor = (key: string) => (key === "order_type_code" ? "220" : "1");
+
+    const headerRow = format.header.map((f) => f.columns[0]);
+    const lineRow = format.line.map((f) => f.columns[0]);
+    const csv = [
+      [...headerRow, ...lineRow].join(","),
+      [...format.header.map((f) => valueFor(f.key)), ...format.line.map((f) => valueFor(f.key))].join(","),
+    ].join("\n");
+
+    const result = await handleLoadPurchaseOrdersCsv(env.DB, csv);
+    expect(result.body).toMatchObject({ ordersLoaded: 1, refused: [] });
+  });
+
+  it("every accepted alias for a field resolves to the same stored value, not just the recommended one", async () => {
+    const format = (await handleGetPurchaseOrderCsvFormat()).body as { header: { key: string; columns: string[] }[] };
+    const orderNumberField = format.header.find((f) => f.key === "order_number")!;
+
+    for (const alias of orderNumberField.columns) {
+      const csv = `${alias},line number,item\nPO-ALIAS-TEST,1,Widgets`;
+      const result = await handleLoadPurchaseOrdersCsv(env.DB, csv);
+      expect(result.body).toMatchObject({ ordersLoaded: 1, refused: [] });
+      const order = await env.DB.prepare("SELECT order_number FROM purchase_orders WHERE order_number = 'PO-ALIAS-TEST'").first();
+      expect(order).not.toBeNull();
+    }
   });
 });

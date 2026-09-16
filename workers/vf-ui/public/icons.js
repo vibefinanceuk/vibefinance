@@ -220,6 +220,10 @@ export const ICONS = {
    * other puts something in.
    */
   load: '<path d="M12 20V10m0 0-4 4m4-4 4 4M4 7V4h16v3"/>',
+  // The load icon's own arrow, mirrored — decision 0373. A person
+  // preparing a file downloads a template before they ever load one,
+  // so the same visual language applies in reverse.
+  download: '<path d="M12 3v12m-5-5 5 5 5-5M5 19h14"/>',
   releasehold: '<path d="M8 6.5 18 12 8 17.5z"/>',
 
   /**

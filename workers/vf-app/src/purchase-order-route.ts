@@ -148,71 +148,169 @@ export async function handleIngestPurchaseOrder(db: D1Database, xml: string): Pr
  * belonging to the same order — the shape an ERP's own PO line export
  * already has, and the same reasoning `handleLoadSuppliers` gives for
  * why a CSV format follows the source rather than the schema.
+ *
+ * **The accepted columns are specified once**, as `HEADER_FIELD_SPECS`
+ * / `LINE_FIELD_SPECS` below, and everything else — the parser's own
+ * lookup maps, and the format reference `GET /purchase-orders/csv-format`
+ * hands to the screen a person prepares a file from — is derived from
+ * that one list. Decision 0373's own finding: hand-maintaining a
+ * second, documentation-facing copy of "what columns are accepted"
+ * would drift from what the parser actually accepts the first time one
+ * was updated without the other, and silently mislead exactly the
+ * person the documentation exists to help.
  */
-const HEADER_COLUMNS: Record<string, string> = {
-  order_number: "order_number",
-  "order number": "order_number",
-  po_number: "order_number",
-  "po number": "order_number",
-  issue_date: "issue_date",
-  "issue date": "issue_date",
-  "order date": "issue_date",
-  order_type_code: "order_type_code",
-  "order type": "order_type_code",
-  currency: "currency",
-  seller_party_id: "seller_party_id",
-  "seller vat": "seller_party_id",
-  "seller vat id": "seller_party_id",
-  "supplier vat": "seller_party_id",
-  "supplier vat id": "seller_party_id",
-  buyer_party_id: "buyer_party_id",
-  "buyer vat": "buyer_party_id",
-  "buyer vat id": "buyer_party_id",
-  order_net_amount: "line_extension_amount",
-  "order net amount": "line_extension_amount",
-  tax_exclusive_amount: "tax_exclusive_amount",
-  "tax exclusive amount": "tax_exclusive_amount",
-  tax_inclusive_amount: "tax_inclusive_amount",
-  "tax inclusive amount": "tax_inclusive_amount",
-  payable_amount: "payable_amount",
-  "payable amount": "payable_amount",
-  "order total": "payable_amount",
-  originator_reference: "originator_reference",
-  requisition: "originator_reference",
-  "requisition number": "originator_reference",
-};
+export interface CsvFieldSpec {
+  /** The internal key the parser and `ParsedOrder` use — never shown to a person. */
+  key: string;
+  /** Every accepted spelling, lower-case, in order — the first is the recommended header for a template. */
+  columns: string[];
+  required: boolean;
+  description: string;
+}
 
-const LINE_COLUMNS: Record<string, string> = {
-  line_number: "line_number",
-  "line number": "line_number",
-  line: "line_number",
-  "po line": "line_number",
-  quantity: "quantity",
-  qty: "quantity",
-  unit_code: "unit_code",
-  unit: "unit_code",
-  uom: "unit_code",
-  amount: "line_amount",
-  line_amount: "line_amount",
-  "line amount": "line_amount",
-  "line total": "line_amount",
-  item_name: "item_name",
-  item: "item_name",
-  description: "item_description",
-  item_description: "item_description",
-  "item description": "item_description",
-  sellers_item_id: "sellers_item_id",
-  "seller item id": "sellers_item_id",
-  "supplier sku": "sellers_item_id",
-  sku: "sellers_item_id",
-  standard_item_id: "standard_item_id",
-  gtin: "standard_item_id",
-  ean: "standard_item_id",
-  price_amount: "price_amount",
-  "unit price": "price_amount",
-  price: "price_amount",
-  base_quantity: "base_quantity",
-};
+export const HEADER_FIELD_SPECS: CsvFieldSpec[] = [
+  {
+    key: "order_number",
+    columns: ["order_number", "order number", "po_number", "po number"],
+    required: true,
+    description: "The buyer's own order number — what an invoice's own purchase order reference points at.",
+  },
+  {
+    key: "issue_date",
+    columns: ["issue_date", "issue date", "order date"],
+    required: false,
+    description: "When the order was issued.",
+  },
+  {
+    key: "order_type_code",
+    columns: ["order_type_code", "order type"],
+    required: false,
+    description: "A UN/CEFACT 1001 order type code, e.g. 220 for a standard order.",
+  },
+  {
+    key: "currency",
+    columns: ["currency"],
+    required: false,
+    description: "The order's own currency code, e.g. EUR, GBP.",
+  },
+  {
+    key: "seller_party_id",
+    columns: ["seller_party_id", "seller vat", "seller vat id", "supplier vat", "supplier vat id"],
+    required: false,
+    description: "The supplier's VAT id — who the order was placed with.",
+  },
+  {
+    key: "buyer_party_id",
+    columns: ["buyer_party_id", "buyer vat", "buyer vat id"],
+    required: false,
+    description: "The buyer's VAT id — who placed the order.",
+  },
+  {
+    key: "line_extension_amount",
+    columns: ["order_net_amount", "order net amount"],
+    required: false,
+    description: "The order's own net total, before tax.",
+  },
+  {
+    key: "tax_exclusive_amount",
+    columns: ["tax_exclusive_amount", "tax exclusive amount"],
+    required: false,
+    description: "The order's own total excluding tax.",
+  },
+  {
+    key: "tax_inclusive_amount",
+    columns: ["tax_inclusive_amount", "tax inclusive amount"],
+    required: false,
+    description: "The order's own total including tax.",
+  },
+  {
+    key: "payable_amount",
+    columns: ["payable_amount", "payable amount", "order total"],
+    required: false,
+    description: "The order's own total amount due — what a matched invoice's own total is compared against.",
+  },
+  {
+    key: "originator_reference",
+    columns: ["originator_reference", "requisition", "requisition number"],
+    required: false,
+    description: "The buyer's own internal requisition reference.",
+  },
+];
+
+export const LINE_FIELD_SPECS: CsvFieldSpec[] = [
+  {
+    key: "line_number",
+    columns: ["line_number", "line number", "line", "po line"],
+    required: true,
+    description: "Which line of the order this is — what an invoice line's own reference points at.",
+  },
+  {
+    key: "quantity",
+    columns: ["quantity", "qty"],
+    required: false,
+    description: "The quantity ordered.",
+  },
+  {
+    key: "unit_code",
+    columns: ["unit_code", "unit", "uom"],
+    required: false,
+    description: "The unit of measure, e.g. EA, KG, HRS.",
+  },
+  {
+    key: "line_amount",
+    columns: ["amount", "line_amount", "line amount", "line total"],
+    required: false,
+    description: "This line's own net amount.",
+  },
+  {
+    key: "item_name",
+    columns: ["item_name", "item"],
+    required: false,
+    description: "The item or service name.",
+  },
+  {
+    key: "item_description",
+    columns: ["description", "item_description", "item description"],
+    required: false,
+    description: "A longer, free-text description of the item.",
+  },
+  {
+    key: "sellers_item_id",
+    columns: ["sellers_item_id", "seller item id", "supplier sku", "sku"],
+    required: false,
+    description: "The supplier's own item code.",
+  },
+  {
+    key: "standard_item_id",
+    columns: ["standard_item_id", "gtin", "ean"],
+    required: false,
+    description: "A standard item identifier, e.g. a GTIN or EAN.",
+  },
+  {
+    key: "price_amount",
+    columns: ["price_amount", "unit price", "price"],
+    required: false,
+    description: "The price per unit.",
+  },
+  {
+    key: "base_quantity",
+    columns: ["base_quantity"],
+    required: false,
+    description: "The quantity the unit price is based on, when not 1.",
+  },
+];
+
+/** Every spec's own columns, lower-cased, mapped to its internal key — what `parseCsv`'s own header row is matched against. */
+function toColumnMap(specs: CsvFieldSpec[]): Record<string, string> {
+  const map: Record<string, string> = {};
+  for (const spec of specs) {
+    for (const column of spec.columns) map[column] = spec.key;
+  }
+  return map;
+}
+
+const HEADER_COLUMNS: Record<string, string> = toColumnMap(HEADER_FIELD_SPECS);
+const LINE_COLUMNS: Record<string, string> = toColumnMap(LINE_FIELD_SPECS);
 
 function num(value: string | undefined): number | undefined {
   if (value === undefined || value.trim() === "") return undefined;
@@ -232,6 +330,16 @@ export interface PurchaseOrderCsvLoadResult {
    * load rather than discover it one invoice at a time.
    */
   refused: { orderNumber: string; reason: string }[];
+}
+
+/**
+ * The CSV format itself, for a person preparing a file — decision
+ * 0373. Returns `HEADER_FIELD_SPECS` / `LINE_FIELD_SPECS` verbatim, so
+ * what a person sees here can never say something the parser above
+ * does not actually accept.
+ */
+export async function handleGetPurchaseOrderCsvFormat(): Promise<RouteResult> {
+  return { status: 200, body: { header: HEADER_FIELD_SPECS, line: LINE_FIELD_SPECS } };
 }
 
 export async function handleLoadPurchaseOrdersCsv(db: D1Database, csv: string): Promise<RouteResult> {

@@ -17,6 +17,7 @@ import { actionLink } from "/viewer.js";
  */
 
 let purchaseOrders = [];
+let csvFormat = null;
 
 async function load() {
   try {
@@ -27,6 +28,25 @@ async function load() {
     return true;
   } catch {
     return false;
+  }
+}
+
+/**
+ * The format reference itself — decision 0373, on the operator's own
+ * observation: without it, a person preparing their own file has
+ * nothing to go on beyond the one-line hint in `loadhelp`. Failure
+ * here is deliberately independent of `load()`'s own — the reference
+ * is a help affordance, not core functionality, so its own absence
+ * degrades gracefully (the disclosure and template link simply do not
+ * appear) rather than blocking the load card or the list either one.
+ */
+async function loadFormat() {
+  try {
+    const response = await fetch("/api/purchase-orders/csv-format");
+    if (!response.ok) return;
+    csvFormat = await response.json();
+  } catch {
+    csvFormat = null;
   }
 }
 
@@ -79,6 +99,69 @@ function outcome(result) {
   }
 
   return el("div", { class: "panel" }, lines);
+}
+
+/**
+ * A ready-to-fill CSV, built purely from the recommended (first-listed)
+ * column of every field `csvFormat` describes — no new backend
+ * capability needed, since the backend already told the screen
+ * everything it needs to build one.
+ */
+function downloadTemplate() {
+  if (!csvFormat) return;
+  const headerRow = csvFormat.header.map((f) => f.columns[0]);
+  const lineRow = csvFormat.line.map((f) => f.columns[0]);
+  const csv = [...headerRow, ...lineRow].join(",") + "\n";
+
+  const blob = new Blob([csv], { type: "text/csv" });
+  const url = URL.createObjectURL(blob);
+  const anchor = el("a", { href: url, download: "purchase-orders-template.csv" });
+  document.body.append(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+}
+
+/** One field's own row in the format reference table. */
+function fieldRow(spec) {
+  return el("tr", {}, [
+    el("td", { text: spec.key }),
+    el("td", { class: "muted", text: spec.columns.join(", ") }),
+    el("td", { text: spec.required ? t("purchaseorders.required") : "—" }),
+  ]);
+}
+
+function fieldTable(heading, specs) {
+  return el("div", {}, [
+    el("h4", { text: heading }),
+    el("div", { class: "tablewrap" }, [
+      el("table", {}, [
+        el("thead", {}, [
+          el("tr", {}, [
+            el("th", { text: t("purchaseorders.fieldname") }),
+            el("th", { text: t("purchaseorders.acceptedcolumns") }),
+            el("th", { text: t("purchaseorders.required") }),
+          ]),
+        ]),
+        el("tbody", {}, specs.map(fieldRow)),
+      ]),
+    ]),
+  ]);
+}
+
+/**
+ * The disclosure itself. `csvFormat` is fetched once, at screen open,
+ * so opening this costs nothing further — no per-expand fetch, no
+ * loading state to design for.
+ */
+function formatReference() {
+  if (!csvFormat) return el("div", {});
+
+  return el("details", { class: "poformat" }, [
+    el("summary", { text: t("purchaseorders.viewformat") }),
+    fieldTable(t("purchaseorders.headercolumns"), csvFormat.header),
+    fieldTable(t("purchaseorders.linecolumns"), csvFormat.line),
+  ]);
 }
 
 function loader() {
@@ -139,13 +222,23 @@ function loader() {
     }
   }
 
+  const templateButton = actionLink("download", {
+    onclick: () => downloadTemplate(),
+  });
+  // csvFormat is already in its final state by the time loader() runs
+  // — open() awaits loadFormat() before ever calling render() — so
+  // this is a one-time check, not something that needs to react to a
+  // later state change.
+  templateButton.disabled = !csvFormat;
+
   return el("div", { class: "panel" }, [
     el("div", { class: "cardhead" }, [
       el("h3", { text: t("purchaseorders.loadheading") }),
-      el("div", { class: "statebuttons" }, [button]),
+      el("div", { class: "statebuttons" }, [templateButton, button]),
     ]),
     el("p", { class: "muted", text: t("purchaseorders.loadhelp") }),
     picker,
+    formatReference(),
   ]);
 }
 
@@ -303,6 +396,10 @@ export async function open() {
   // unfixed until this was built and a test actually exercised a
   // failed first load.
   const ok = await load();
+  // Independent of load()'s own outcome — decision 0373's own format
+  // reference is a help affordance, not core functionality, so its
+  // own failure must never block the list or the load card either one.
+  await loadFormat();
   render();
   if (!ok) note(t("purchaseorders.failed"));
 }

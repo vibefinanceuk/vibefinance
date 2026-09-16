@@ -2316,3 +2316,31 @@ describe("the nav's own new permission gates (decision 0276)", () => {
     expect(res.status).toBe(403);
   });
 });
+
+describe("GET /purchase-orders/csv-format — decision 0373", () => {
+  it("returns the real format reference through the real router", async () => {
+    const res = await SELF.fetch("https://example.com/purchase-orders/csv-format", { headers: authHeaders() });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { header: { key: string }[]; line: { key: string }[] };
+    expect(body.header.map((f) => f.key)).toContain("order_number");
+    expect(body.line.map((f) => f.key)).toContain("line_number");
+  });
+
+  it("401s without a session", async () => {
+    const res = await SELF.fetch("https://example.com/purchase-orders/csv-format");
+    expect(res.status).toBe(401);
+  });
+
+  it("403s for AP.Validate alone — this is Admin.Configure's own gate, matching the load action it helps with, not the read routes beside it", async () => {
+    const key = await seedUserWithPermissions(["AP.Validate"]);
+    const res = await SELF.fetch("https://example.com/purchase-orders/csv-format", {
+      headers: { Authorization: `Bearer ${key}` },
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("is not swallowed by the single-order lookup — a real request for the format never becomes a 404 for an order literally named csv-format", async () => {
+    const res = await SELF.fetch("https://example.com/purchase-orders/csv-format", { headers: authHeaders() });
+    expect(res.status).not.toBe(404);
+  });
+});

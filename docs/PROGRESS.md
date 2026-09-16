@@ -147,6 +147,17 @@ a rule, and left an approval task in a queue.
   writes to had ever been rendered, so a failed first load said
   nothing to anyone on either screen until a real test finally
   exercised the case
+- A CSV format reference and template download (0373), on the
+  operator's own observation that the one-line load hint left a person
+  with no way to discover the other nineteen accepted columns. The
+  parser's own alias lookup maps are now derived from one richer
+  structure (`HEADER_FIELD_SPECS`/`LINE_FIELD_SPECS`) that the new
+  `GET /purchase-orders/csv-format` also reads, so the documented
+  format can never drift from what the parser actually accepts —
+  proven by a test that builds a file from every column the endpoint
+  advertises and confirms the real loader accepts all of them. The
+  template download is the first client-side generated-file download
+  anywhere in this app
 
 ### Documents
 - R2 storage with jurisdiction support (0013, 0033, 0035)
@@ -561,9 +572,9 @@ elsewhere.
 
 | Package | Tests |
 |---|---|
-| `vf-app` | 1757 |
+| `vf-app` | 1764 |
 | `vf-licence` | 320 |
-| `vf-ui` | 72 Worker · 575 browser |
+| `vf-ui` | 72 Worker · 581 browser |
 | `shared` | 269 passing, 3 known pre-existing failures |
 
 Both migration chains replay clean with every standing invariant
@@ -584,7 +595,7 @@ holding — 65 migrations for `vf-app`, 105 for `vf-licence`.
 | `docs/design/mockups/` | Four screens as static HTML | Current |
 | `docs/design/multi-authority-intake.md` | Non-EN-16931 authorities | Design only |
 | `docs/design/text-layer-extraction.md` | Reading a PDF's own text | Design only |
-| `docs/decisions/` | 372 decision records | Current |
+| `docs/decisions/` | 373 decision records | Current |
 | `docs/decisions/SUPERSEDED.md` | Which records supersede which | **Read first** |
 
 Document 4's markdown source is at `docs/documents/`, with

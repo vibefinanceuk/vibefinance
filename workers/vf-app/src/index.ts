@@ -109,7 +109,7 @@ import {
   handleAssignLedger,
   handleUpdateCostCentre,
 } from "./ledger-route.js";
-import { handleIngestPurchaseOrder, handleGetPurchaseOrder, handleLoadPurchaseOrdersCsv, handleListPurchaseOrders } from "./purchase-order-route.js";
+import { handleIngestPurchaseOrder, handleGetPurchaseOrder, handleLoadPurchaseOrdersCsv, handleListPurchaseOrders, handleGetPurchaseOrderCsvFormat } from "./purchase-order-route.js";
 import { handleGetRetention, handleSetRetention, handleListBeyondRetention } from "./retention-route.js";
 import { handleCaptureFromSource } from "./source-capture-route.js";
 import { handleInboundEmail, handleListInboundEmail, type EmailMessage } from "./inbound-email.js";
@@ -2759,6 +2759,23 @@ export default {
         return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
       }
       const result = await handleListPurchaseOrders(db);
+      return json(result.body, result.status);
+    }
+
+    // The CSV format itself — decision 0373. Admin.Configure, matching
+    // the load action this exists to help with, not AP.Validate — a
+    // person who can only read what is on file has no use for "what
+    // columns does a file need," since they cannot load one.
+    // Registered before the single-order GET below, or a real request
+    // for the format would 404 as a lookup for an order literally
+    // named "csv-format".
+    if (pathname === "/purchase-orders/csv-format" && request.method === "GET") {
+      const { db } = resolveTenant(request, env);
+      const auth = await requirePermission(db, request, "Admin.Configure", sessionContext(env));
+      if (!auth.authorized) {
+        return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
+      }
+      const result = await handleGetPurchaseOrderCsvFormat();
       return json(result.body, result.status);
     }
 

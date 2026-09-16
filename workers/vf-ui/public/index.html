@@ -595,6 +595,15 @@
   .example .facts { font-size: var(--text-sm); color: var(--text-secondary); }
   .example .decisive { color: var(--text-primary); font-size: var(--text-base); }
   .example .morefacts { margin-top: 5px; }
+  /**
+   * The purchase order CSV format reference — decision 0373. Same
+   * shape as `.morefacts` above: a native `<details>` disclosure, its
+   * own summary the only thing shown until a person actually wants
+   * the full column reference.
+   */
+  .poformat { margin-top: 14px; }
+  .poformat summary { cursor: pointer; color: var(--text-secondary); font-size: var(--text-sm); }
+  .poformat h4 { margin: 14px 0 6px; font-size: var(--text-sm); color: var(--text-secondary); }
   .example .morefacts summary { cursor: pointer; color: var(--text-muted); font-size: var(--text-sm); }
   .example .morefacts > div { margin-top: 5px; line-height: 1.5; }
   .example .confirmed { color: var(--text-success); font-size: var(--text-sm); font-weight: 600; }
