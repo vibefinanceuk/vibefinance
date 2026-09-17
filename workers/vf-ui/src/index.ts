@@ -174,6 +174,13 @@ const PROXIED_TO_INSTANCE: RegExp[] = [
   /^\/invoices\/[^/]+$/,
   /^\/invoices\/[^/]+\/key$/,
   /^\/invoices\/[^/]+\/document-url$/,
+  // The pages behind a multi-page scan (decision 0381) — the same
+  // shape as document-url immediately above, and the exact gap this
+  // list has already been caught missing six times over (0212,
+  // 0324–0328): a route real and tested in vf-app, added here in the
+  // same commit rather than left to be found live.
+  /^\/invoices\/[^/]+\/pages$/,
+  /^\/invoices\/[^/]+\/pages\/\d+\/document-url$/,
   // The standard's own code lists, so a person picks a currency rather
   // than types one (decision 0113).
   /^\/code-lists$/,

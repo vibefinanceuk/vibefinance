@@ -361,6 +361,18 @@ a rule, and left an approval task in a queue.
 - A stated visual direction rather than accumulated choices (0108)
 - Branding and translations from D1, so a livery or a language needs no
   deployment (0096, 0107)
+- **The retained pages behind a multi-page invoice can be listed and
+  fetched** (0381, phase 1 of `docs/design/document-viewer.md`). Checked
+  directly first: decision 0068's claim that finalising this flow
+  "deletes" the pages is false — nothing in the codebase ever calls
+  `delete` on this storage, and every page is still in R2. What was
+  actually missing was a way to reach them, because
+  `handleFinalisePendingDocument` never links a multi-page-sourced
+  invoice into `invoice_documents`. `GET /invoices/:id/pages`, `POST
+  /invoices/:id/pages/:n/document-url`, and `GET /document-pages/:token`
+  now exist, with their own signed token shape (`mintPageToken` /
+  `verifyPageToken`) alongside decision 0073's document token. Backend
+  only — nothing in the viewer calls these yet; that is phase 2.
 
 ### Customer configuration
 - Org units, teams, roles, users, cost centres
@@ -662,7 +674,7 @@ production environment, and migrating configuration between them.
 Things that are built but not proven, kept separate from things that
 are simply absent.
 
-**One layer disagreeing with another is the recurring bug.** Five
+**One layer disagreeing with another is the recurring bug.** Six
 instances so far: `invoice_lines.cost_centre` was a column with no
 vocabulary entry; `extraction.confidence` was set as a fact and never
 declared, so the rules meant to use it could not be written (0054);
@@ -676,14 +688,19 @@ was derived from half a detection result (0069); a migration
 checksum was written on every apply and compared to nothing, under a
 comment asserting it was verified (0076); a keying screen filled a
 line's convenience *columns* and left its *facts* empty, so a keyed
-line would have been invisible to every line-scoped rule (0109); and
-**four of the six mandatory elements of `cac:InvoiceLine` were missing
-from the closed vocabulary**, including the unit of measure that makes
-a quantity mean anything (0110). **None was found by reading either
-layer alone**, and the last two were found by a question rather than by
-any test. Decision 0067 now makes one of these a standing test: for
-every declared field, either the UBL parser populates it or the check
-file records why not — so a gap has to be *stated* to be allowed.
+line would have been invisible to every line-scoped rule (0109); **four
+of the six mandatory elements of `cac:InvoiceLine` were missing from the
+closed vocabulary**, including the unit of measure that makes a
+quantity mean anything (0110); and, checked while scoping the document
+viewer's next piece of work, decision 0068's own later claim that the
+multi-page flow "deletes on finalise" against a codebase with no
+`delete` call anywhere on that path (0381) — the record was wrong about
+its own subject a second time, in the opposite direction from the first.
+**None was found by reading either layer alone**, and several were
+found by a question rather than by any test. Decision 0067 now makes one
+of these a standing test: for every declared field, either the UBL
+parser populates it or the check file records why not — so a gap has to
+be *stated* to be allowed.
 
 **Declared and implemented nowhere is the second pattern.** `'warned'`,
 `validation.passed`, `extraction.confidence`, `set_field` and
@@ -767,9 +784,9 @@ elsewhere.
 
 | Package | Tests |
 |---|---|
-| `vf-app` | 1893 |
+| `vf-app` | 1912 |
 | `vf-licence` | 320 |
-| `vf-ui` | 72 Worker · 631 browser |
+| `vf-ui` | 74 Worker · 631 browser |
 | `shared` | 278 passing, 3 known pre-existing failures |
 
 Both migration chains replay clean with every standing invariant

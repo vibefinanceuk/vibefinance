@@ -75,6 +75,8 @@ import {
   handleCreatePendingDocument,
   handleUploadPage,
   handleListPendingDocument,
+  listRetainedPages,
+  retainedPage,
   type PendingDocumentStorage,
 } from "./pending-document-route.js";
 import { createWorkersAiExtractionModel } from "./extraction-model.js";
@@ -134,7 +136,7 @@ import {
   handleSetStageReadOnly,
 } from "./field-visibility-route.js";
 import { handlePreflight, withCors } from "@vibefinance/shared";
-import { mintDocumentToken, verifyDocumentToken } from "./document-token.js";
+import { mintDocumentToken, verifyDocumentToken, mintPageToken, verifyPageToken } from "./document-token.js";
 import { retrieveInvoiceDocument, preferredDocumentType, documentTypeInfo, renderXmlForDisplay } from "./document-storage.js";
 import { resolveVocabulary } from "@vibefinance/shared";
 import { getSupplierHistory } from "./invoice-history.js";
@@ -2026,6 +2028,103 @@ export default {
       });
     }
 
+    /**
+     * The pages behind a finalised invoice — decision 0381, phase 1 of
+     * `docs/design/document-viewer.md`.
+     *
+     * **Not gated on the licence being blocked**, matching every other
+     * document read on this invoice: retaining and reading a document
+     * a customer already has is not the kind of usage a block exists
+     * to restrict.
+     *
+     * An empty list is the ordinary answer for an invoice with no
+     * multi-page ancestry — everything captured through
+     * `/sources/:id/capture` rather than the pending-document flow —
+     * not an error, so this returns 200 either way.
+     */
+    const listPagesMatch = pathname.match(/^\/invoices\/([^/]+)\/pages$/);
+    if (listPagesMatch && request.method === "GET") {
+      const { db } = resolveTenant(request, env);
+      const auth = await authenticatePerson(db, request, env);
+      if (!auth.user) {
+        return json({ error: auth.reason }, 401);
+      }
+      if (!(await hasPermission(db, auth.user.id, "AP.Validate"))) {
+        return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
+      }
+      const pages = await listRetainedPages(db, listPagesMatch[1]);
+      return json({ pages }, 200);
+    }
+
+    /**
+     * A signed URL for one page — the exact shape of
+     * `/invoices/:id/document-url` (decision 0073), minting a page
+     * token (decision 0381) rather than a document one. Authenticated
+     * the ordinary way; the URL it returns is not, for the same reason
+     * as the original: a pop-out window cannot send a header.
+     */
+    const pageUrlMatch = pathname.match(/^\/invoices\/([^/]+)\/pages\/(\d+)\/document-url$/);
+    if (pageUrlMatch && request.method === "POST") {
+      const { db } = resolveTenant(request, env);
+      const auth = await authenticatePerson(db, request, env);
+      if (!auth.user) {
+        return json({ error: auth.reason }, 401);
+      }
+      if (!(await hasPermission(db, auth.user.id, "AP.Validate"))) {
+        return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
+      }
+      if (!env.DOCUMENT_URL_SECRET) {
+        return json({ error: "DOCUMENT_URL_SECRET is not configured" }, 500);
+      }
+      const invoiceId = pageUrlMatch[1];
+      const pageNumber = Number(pageUrlMatch[2]);
+      const pages = await listRetainedPages(db, invoiceId);
+      const page = pages.find((p) => p.pageNumber === pageNumber);
+      if (!page) {
+        return json({ error: `invoice ${invoiceId} has no retained page ${pageNumber}` }, 404);
+      }
+      const minted = await mintPageToken(env.DOCUMENT_URL_SECRET, invoiceId, pageNumber);
+      return json({
+        url: `${url.origin}/document-pages/${minted.token}`,
+        expiresAt: new Date(minted.expiresAt * 1000).toISOString(),
+        contentType: page.contentType,
+      }, 200);
+    }
+
+    /**
+     * Fetching a page by token. Deliberately unauthenticated — the
+     * token IS the authority, the same reasoning as `/documents/:token`
+     * immediately above, and deliberately a separate route rather than
+     * a third shape `/documents/:token` has to branch on: that route's
+     * `DocumentType` matches a real `CHECK` constraint on
+     * `invoice_documents`, and a page is a different table entirely.
+     */
+    const pageFetchMatch = pathname.match(/^\/document-pages\/([^/]+)$/);
+    if (pageFetchMatch && request.method === "GET") {
+      const { db, documents } = resolveTenant(request, env);
+      if (!env.DOCUMENT_URL_SECRET) {
+        return json({ error: "document access is not configured" }, 500);
+      }
+      const verified = await verifyPageToken(env.DOCUMENT_URL_SECRET, pageFetchMatch[1]);
+      if (!verified.valid) {
+        return json({ error: `document link ${verified.reason}` }, 403);
+      }
+      if (!documents) {
+        return json({ error: "document storage is not configured" }, 500);
+      }
+      const page = await retainedPage(db, r2Storage(documents), verified.invoiceId, verified.pageNumber);
+      if (!page) {
+        return json({ error: "this page is no longer retained" }, 404);
+      }
+      return new Response(page.bytes.buffer as ArrayBuffer, {
+        status: 200,
+        headers: {
+          "Content-Type": page.contentType,
+          "Content-Disposition": "inline",
+          "Cache-Control": "private, no-store",
+        },
+      });
+    }
 
     // Returning a document — decision 0075. Two endpoints because they
     // are two capabilities: backwards to a stage already visited, or

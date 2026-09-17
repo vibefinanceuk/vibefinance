@@ -431,6 +431,9 @@ describe("paths the app is allowed to reach (decision 0212)", () => {
     "/purchase-orders",
     "/purchase-orders/csv-load",
     "/purchase-orders/PO-1",
+    // The pages behind a multi-page scan — decision 0381.
+    "/invoices/inv-1/pages",
+    "/invoices/inv-1/pages/1/document-url",
   ];
 
   for (const path of reachable) {

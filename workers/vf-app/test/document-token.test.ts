@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { mintDocumentToken, verifyDocumentToken, TOKEN_TTL_SECONDS } from "../src/document-token.js";
+import {
+  mintDocumentToken,
+  verifyDocumentToken,
+  mintPageToken,
+  verifyPageToken,
+  TOKEN_TTL_SECONDS,
+} from "../src/document-token.js";
 
 const SECRET = "a-real-looking-secret-value-for-testing";
 const NOW = 1_760_000_000;
@@ -95,6 +101,92 @@ describe("forgery and tampering", () => {
     for (const bad of ["", "nonsense", "a.b", "a.b.c.d.e", "inv.notatype.123.sig", "inv.original.notanumber.sig"]) {
       const result = await verifyDocumentToken(SECRET, bad, NOW);
       expect(result.valid).toBe(false);
+    }
+  });
+});
+
+describe("minting and verifying a page token (decision 0381)", () => {
+  it("round-trips, yielding the invoice and page number it was minted for", async () => {
+    // A separate token shape from mintDocumentToken's, deliberately —
+    // a page is not a DocumentType. The leading "page" literal is what
+    // tells the two shapes apart at a glance.
+    const { token } = await mintPageToken(SECRET, "inv-1", 2, NOW);
+    expect(token.startsWith("page.")).toBe(true);
+    expect(await verifyPageToken(SECRET, token, NOW)).toEqual({
+      valid: true,
+      invoiceId: "inv-1",
+      pageNumber: 2,
+    });
+  });
+
+  it("expires within minutes, not hours, same as a document token", async () => {
+    const { expiresAt } = await mintPageToken(SECRET, "inv-1", 1, NOW);
+    expect(expiresAt - NOW).toBe(TOKEN_TTL_SECONDS);
+  });
+
+  it("rejects a token past its expiry", async () => {
+    const { token } = await mintPageToken(SECRET, "inv-1", 1, NOW);
+    expect(await verifyPageToken(SECRET, token, NOW + TOKEN_TTL_SECONDS)).toEqual({
+      valid: false,
+      reason: "expired",
+    });
+  });
+
+  it("accepts it one second before", async () => {
+    const { token } = await mintPageToken(SECRET, "inv-1", 1, NOW);
+    const result = await verifyPageToken(SECRET, token, NOW + TOKEN_TTL_SECONDS - 1);
+    expect(result.valid).toBe(true);
+  });
+
+  it("rejects a token signed with a different secret", async () => {
+    const { token } = await mintPageToken("some-other-secret", "inv-1", 1, NOW);
+    expect(await verifyPageToken(SECRET, token, NOW)).toEqual({ valid: false, reason: "bad signature" });
+  });
+
+  it("rejects a token whose invoice was swapped after signing", async () => {
+    const { token } = await mintPageToken(SECRET, "inv-mine", 1, NOW);
+    const [prefix, , pageNumber, expiry, sig] = token.split(".");
+    const forged = `${prefix}.inv-theirs.${pageNumber}.${expiry}.${sig}`;
+    expect(await verifyPageToken(SECRET, forged, NOW)).toEqual({ valid: false, reason: "bad signature" });
+  });
+
+  it("rejects a token whose page number was swapped after signing", async () => {
+    // The attack specific to this token shape: a link to a page you
+    // may see, edited to name one you may not.
+    const { token } = await mintPageToken(SECRET, "inv-1", 1, NOW);
+    const [prefix, invoiceId, , expiry, sig] = token.split(".");
+    const forged = `${prefix}.${invoiceId}.2.${expiry}.${sig}`;
+    expect(await verifyPageToken(SECRET, forged, NOW)).toEqual({ valid: false, reason: "bad signature" });
+  });
+
+  it("rejects a token whose expiry was extended after signing", async () => {
+    const { token } = await mintPageToken(SECRET, "inv-1", 1, NOW);
+    const [prefix, invoiceId, pageNumber, , sig] = token.split(".");
+    const forged = `${prefix}.${invoiceId}.${pageNumber}.${NOW + 999999}.${sig}`;
+    expect(await verifyPageToken(SECRET, forged, NOW)).toEqual({ valid: false, reason: "bad signature" });
+  });
+
+  it("reports a bad signature rather than expiry when both are wrong", async () => {
+    const { token } = await mintPageToken("other-secret", "inv-1", 1, NOW);
+    const result = await verifyPageToken(SECRET, token, NOW + 99999);
+    expect(result).toEqual({ valid: false, reason: "bad signature" });
+  });
+
+  it("rejects malformed input, including a document token presented as a page token", async () => {
+    // A document token has 4 dot-parts and no "page" prefix; a page
+    // token has 5 and one. Neither should be readable as the other.
+    const { token: documentToken } = await mintDocumentToken(SECRET, "inv-1", "original", NOW);
+    for (const bad of [
+      "",
+      "nonsense",
+      "page.a.b",
+      "page.inv-1.notanumber.123.sig",
+      "page.inv-1.0.123.sig",
+      "page.inv-1.-1.123.sig",
+      documentToken,
+    ]) {
+      const result = await verifyPageToken(SECRET, bad, NOW);
+      expect(result.valid, `expected ${JSON.stringify(bad)} to be rejected`).toBe(false);
     }
   });
 });

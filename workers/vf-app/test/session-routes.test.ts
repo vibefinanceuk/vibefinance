@@ -96,6 +96,11 @@ describe("the routes a browser needs accept a session", () => {
     // The keying screen's two (decision 0106).
     ["GET", "/invoices/inv-1/document-url"],
     ["POST", "/invoices/inv-1/key"],
+    // The retained-page read path (decision 0381) — same reachability
+    // question as the two above: a route the viewer's pop-out reaches
+    // must understand a session, not just an API key.
+    ["GET", "/invoices/inv-1/pages"],
+    ["POST", "/invoices/inv-1/pages/1/document-url"],
   ];
 
   for (const [method, path] of browserRoutes) {

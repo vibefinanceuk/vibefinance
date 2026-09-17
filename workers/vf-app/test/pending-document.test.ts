@@ -6,6 +6,8 @@ import {
   handleCreatePendingDocument,
   handleUploadPage,
   handleListPendingDocument,
+  listRetainedPages,
+  retainedPage,
   type PendingDocumentStorage,
 } from "../src/pending-document-route.js";
 import { handleFinalisePendingDocument } from "../src/intake-capture-route.js";
@@ -473,5 +475,90 @@ describe("pages are extracted at upload time (decision 0047)", () => {
     const result = await handleFinalisePendingDocument(env.DB, storage, id, model);
     expect(result.status).toBe(201);
     expect(called).toBe(1);
+  });
+});
+
+describe("the pages behind a finalised invoice stay reachable (decision 0381)", () => {
+  const fakeModel = (response: string) => ({ extract: async () => response });
+
+  async function finalisedInvoice(storage: PendingDocumentStorage): Promise<string> {
+    const id = await newDocument();
+    await handleUploadPage(env.DB, storage, id, 1, PAGE_ONE);
+    await handleUploadPage(env.DB, storage, id, 2, PAGE_TWO);
+    const result = await handleFinalisePendingDocument(env.DB, storage, id, fakeModel(MORRISON));
+    return (result.body as { id: string }).id;
+  }
+
+  it("lists both pages in order, with the content type each was uploaded as", async () => {
+    const storage = memoryStorage();
+    const id = await newDocument();
+    // Uploaded out of order and in mixed formats, same as the
+    // "accepts mixed formats" and "lists pages in order" tests above —
+    // the read path must not depend on either happening to line up.
+    await handleUploadPage(env.DB, storage, id, 2, PNG_PAGE);
+    await handleUploadPage(env.DB, storage, id, 1, PAGE_ONE);
+    const result = await handleFinalisePendingDocument(env.DB, storage, id, fakeModel(MORRISON));
+    const invoiceId = (result.body as { id: string }).id;
+
+    const pages = await listRetainedPages(env.DB, invoiceId);
+    expect(pages).toEqual([
+      { pageNumber: 1, contentType: "image/jpeg" },
+      { pageNumber: 2, contentType: "image/png" },
+    ]);
+  });
+
+  it("returns an empty list for an invoice with no pending-document ancestry", async () => {
+    // Everything captured through /sources/:id/capture rather than the
+    // multi-page flow. An empty list is the honest answer, not a 404 —
+    // this function has no "not found" case, only "found none."
+    const pages = await listRetainedPages(env.DB, "no-such-invoice");
+    expect(pages).toEqual([]);
+  });
+
+  it("reads a retained page's actual bytes back, by invoice and page number", async () => {
+    const storage = memoryStorage();
+    const invoiceId = await finalisedInvoice(storage);
+
+    const page = await retainedPage(env.DB, storage, invoiceId, 2);
+    expect(page).toEqual({ contentType: "image/jpeg", bytes: PAGE_TWO });
+  });
+
+  it("returns null for a page number that does not exist on this invoice", async () => {
+    const storage = memoryStorage();
+    const invoiceId = await finalisedInvoice(storage);
+
+    expect(await retainedPage(env.DB, storage, invoiceId, 3)).toBeNull();
+  });
+
+  it("returns null for an invoice with no retained pages at all", async () => {
+    const storage = memoryStorage();
+    await finalisedInvoice(storage); // exists, just to prove this isn't "any invoice returns null"
+
+    expect(await retainedPage(env.DB, storage, "no-such-invoice", 1)).toBeNull();
+  });
+
+  it("returns null, not a throw, when the row exists but the R2 object behind it is gone", async () => {
+    // The row and the object can disagree — decision 0035's ordering
+    // guarantees the object is written first, not that it survives
+    // forever. Both "never existed" and "existed and vanished" are
+    // "nothing to serve" from here; the caller collapses them to a
+    // single 404 either way.
+    const storage = memoryStorage();
+    const invoiceId = await finalisedInvoice(storage);
+    const broken: PendingDocumentStorage = { put: storage.put, get: async () => null };
+
+    expect(await retainedPage(env.DB, broken, invoiceId, 1)).toBeNull();
+  });
+
+  it("the pages survive finalisation untouched — nothing here deletes them", async () => {
+    // The claim decision 0068 made and decision 0381 found false,
+    // pinned down as a regression test: finalising must not remove
+    // the row or the object a later read depends on.
+    const storage = memoryStorage() as PendingDocumentStorage & { keys(): string[] };
+    const invoiceId = await finalisedInvoice(storage);
+
+    expect(storage.keys()).toEqual(expect.arrayContaining([expect.stringContaining("page-1"), expect.stringContaining("page-2")]));
+    const stillListed = await listRetainedPages(env.DB, invoiceId);
+    expect(stillListed).toHaveLength(2);
   });
 });

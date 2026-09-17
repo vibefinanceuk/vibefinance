@@ -127,4 +127,67 @@ export async function verifyDocumentToken(
   return { valid: true, invoiceId, documentType };
 }
 
+/**
+ * A signed URL for one page of a multi-page scan — decision 0381 (the
+ * first phase of `docs/design/document-viewer.md`).
+ *
+ * **A separate token, not a third `DocumentType`.** `DocumentType` is
+ * `"original" | "generated_rendering"`, matching `invoice_documents`'s
+ * own `CHECK` constraint exactly — a page is neither; it lives in
+ * `pending_document_pages`, a different table, addressed by a page
+ * *number* rather than a fixed type. Widening `DocumentType` to include
+ * it would make that closed vocabulary describe something it does not
+ * gate, for the sake of reusing four lines. A leading `"page"` literal
+ * makes the two token shapes unambiguous at a glance and lets this
+ * function change independently of the one above without either
+ * having to reason about the other's shape.
+ */
+export async function mintPageToken(
+  secret: string,
+  invoiceId: string,
+  pageNumber: number,
+  nowSeconds: number = Math.floor(Date.now() / 1000)
+): Promise<{ token: string; expiresAt: number }> {
+  const expiresAt = nowSeconds + TOKEN_TTL_SECONDS;
+  const payload = `page.${invoiceId}.${pageNumber}.${expiresAt}`;
+  const sig = await hmac(secret, payload);
+  return { token: `${payload}.${base64UrlEncode(sig)}`, expiresAt };
+}
+
+export type PageTokenVerification =
+  | { valid: true; invoiceId: string; pageNumber: number }
+  | { valid: false; reason: "malformed" | "expired" | "bad signature" };
+
+export async function verifyPageToken(
+  secret: string,
+  token: string,
+  nowSeconds: number = Math.floor(Date.now() / 1000)
+): Promise<PageTokenVerification> {
+  const parts = token.split(".");
+  if (parts.length !== 5 || parts[0] !== "page") return { valid: false, reason: "malformed" };
+  const [, invoiceId, pageNumberText, expiryText, providedSig] = parts;
+
+  const pageNumber = Number(pageNumberText);
+  const expiresAt = Number(expiryText);
+  if (!invoiceId || !Number.isInteger(pageNumber) || pageNumber < 1 || !Number.isFinite(expiresAt)) {
+    return { valid: false, reason: "malformed" };
+  }
+
+  // Signature before expiry, deliberately, for the same reason as
+  // above: an attacker's forgery should be told it is wrong, never
+  // told it merely arrived late.
+  const expected = await hmac(secret, `page.${invoiceId}.${pageNumber}.${expiresAt}`);
+  let provided: Uint8Array;
+  try {
+    provided = base64UrlDecode(providedSig);
+  } catch {
+    return { valid: false, reason: "malformed" };
+  }
+  if (!timingSafeEqual(expected, provided)) return { valid: false, reason: "bad signature" };
+
+  if (nowSeconds >= expiresAt) return { valid: false, reason: "expired" };
+
+  return { valid: true, invoiceId, pageNumber };
+}
+
 export { TOKEN_TTL_SECONDS };

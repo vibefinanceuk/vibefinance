@@ -1,6 +1,6 @@
 # Handover
 
-**Written 4 September 2026, updated 17 September.**
+**Written 4 September 2026, updated 17 September (twice).**
 
 **For a session starting cold.** Where things stand, what needs a
 decision rather than work, what to do next, and the habits this project
@@ -37,14 +37,19 @@ twice.
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
 | `vf-app-poc` migrations | through `0069` |
 | `vf-licence-poc` migrations | through `0119` |
-| Tests | vf-admin 9 · vf-app 1893 · vf-licence 320 · vf-ui 72 Worker + 631 browser · shared 278 (+3 known pre-existing failures) |
-| Decision records | 380 |
+| Tests | vf-admin 9 · vf-app 1912 · vf-licence 320 · vf-ui 74 Worker + 631 browser · shared 278 (+3 known pre-existing failures) |
+| Decision records | 381 |
 
-**Everything committed is deployed.** Decision 0380 touched `vf-ui`
-alone, deployed at `23f5938` and confirmed by the operator; vf-app and
-vf-licence stay at `a235713`, which is the same code, since everything
-after it until 0380 was documentation. **vf-app's count reads
-1893, not the 1851 recorded through 0379**, with no `vf-app` change
+**Not everything committed is deployed, for the first time this
+arc.** Decision 0380 touched `vf-ui` alone, deployed at `23f5938` and
+confirmed by the operator; vf-app and vf-licence stay at `a235713`,
+which is the same code, since everything after it until 0380 was
+documentation. **Decision 0381 (phase 1 of the document viewer) is
+committed locally and not yet bundled or pushed** — it touches both
+`vf-app` (the new page-retention read path) and `vf-ui` (two proxy
+allow-list entries), so both will need redeploying once it is. **vf-app's
+count reads 1893 at `23f5938`, then 1912 with 0381**, and separately,
+1893 not the 1851 recorded through 0379, with no `vf-app` change
 since 0378 — the difference is not explained, only measured (0380).
 **And the vf-ui browser suite exits 1 with every test passing** — 136
 unhandled rejections from test fetch stubs refusing requests the viewer
@@ -269,6 +274,28 @@ already had and the table simply never showed (0379); the recorded
 title "VAT ID" reads "Tax Identifier" everywhere, one string read by
 both the table and the form so the two can't drift apart.
 
+**The document viewer's ultimate shape was designed, and its first
+phase built** (`docs/design/document-viewer.md`, decision 0381). The
+operator's own request — one viewer for images, image PDFs and
+structured PDFs, a thumbnail rail, rotate and zoom, and an Expand that
+pops the whole document panel (Timeline/Chat included) into its own
+window for two-screen use — was parked since decision 0123 and picked
+back up straight out of 0380's review. Three decisions came out of that
+conversation: build a real client-side page renderer rather than lean on
+the browser's own PDF viewer (phase 2, the largest single piece), keep
+retaining every page of a multi-page scan rather than reconsidering
+whether to, and have the pop-out carry the whole panel, not just the
+image. **Phase 1, built now, is backend only**: checking decision 0068's
+own claim that the multi-page flow "deletes on finalise" turned up
+nothing that deletes anything, anywhere — every page has been sitting in
+R2 since decision 0045, unreachable rather than gone, because finalising
+never linked a multi-page invoice into `invoice_documents`. Two new
+routes (`GET /invoices/:id/pages`, `POST
+/invoices/:id/pages/:n/document-url`) and one unauthenticated fetch route
+(`GET /document-pages/:token`) now expose what was always there, with
+their own signed token shape alongside decision 0073's. Nothing in the
+viewer calls any of it yet — phases 2 through 5 are still design only.
+
 ## Waiting on you
 
 **Nothing blocks the next piece of work.** Six things worth settling,
@@ -388,6 +415,16 @@ established which**, and the two readings have different fixes.
 ---
 
 ## Suggested next pieces
+
+**The most immediate one: phase 2 of the document viewer**
+(`docs/design/document-viewer.md`, decision 0381 built phase 1). A
+real, client-side page renderer — one thumbnail rail, one zoom, one
+rotate, shared by images and PDFs — replacing the `<img>`/`<iframe>`
+split in the Document tab. Named in the design document as the largest
+single piece of that plan and the one every later phase (structured-PDF
+XML retention, the pop-out window, retiring the old preview) depends
+on. The backend it will call — listing and fetching a multi-page
+invoice's retained pages — already exists and has nothing calling it.
 
 **Built this arc, closing out most of what was named here before:
 teams, most of the "user variable" fields, creating and managing an

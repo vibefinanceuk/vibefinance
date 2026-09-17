@@ -288,6 +288,77 @@ export async function loadPendingPages(
   return { ok: true, result: { pages, channelId: doc.channel_id } };
 }
 
+/**
+ * The pages behind a finalised invoice — decision 0381 (phase 1 of
+ * `docs/design/document-viewer.md`).
+ *
+ * **These have been retained since decision 0045.** Nothing in this
+ * codebase deletes a `pending_document_pages` row or the R2 object it
+ * names — decision 0068's claim that this flow "deletes on finalise"
+ * was checked directly while scoping the viewer's next piece of work
+ * and found false. What was actually missing was this function: a way
+ * to reach pages that were never lost.
+ *
+ * Joined through `pending_documents.invoice_id` rather than kept on the
+ * invoice itself, because that is the one column already carrying this
+ * exact link (set by `markFinalised()`), and a second copy of it on
+ * `invoice_headers` would be a fact that could disagree with the first.
+ *
+ * An invoice with no pending-document ancestry — everything captured
+ * through `/sources/:id/capture` rather than the multi-page flow —
+ * simply has none, and an empty list is the honest answer for it, not
+ * an error.
+ */
+export async function listRetainedPages(
+  db: D1Database,
+  invoiceId: string
+): Promise<{ pageNumber: number; contentType: string }[]> {
+  const rows = await db
+    .prepare(
+      `SELECT p.page_number, p.content_type
+       FROM pending_document_pages p
+       JOIN pending_documents d ON d.id = p.pending_document_id
+       WHERE d.invoice_id = ?
+       ORDER BY p.page_number`
+    )
+    .bind(invoiceId)
+    .all<{ page_number: number; content_type: string }>();
+  return rows.results.map((r) => ({ pageNumber: r.page_number, contentType: r.content_type }));
+}
+
+/**
+ * One retained page's bytes, by invoice and page number — the other
+ * half of `listRetainedPages()`, decision 0381.
+ *
+ * Returns `null` for a page that does not exist (wrong number, or an
+ * invoice with none at all) and, separately, if the row exists but the
+ * R2 object behind it does not — both are "nothing to serve," and the
+ * caller (a 404 on the minting route) does not need to tell them apart
+ * from here.
+ */
+export async function retainedPage(
+  db: D1Database,
+  storage: PendingDocumentStorage,
+  invoiceId: string,
+  pageNumber: number
+): Promise<{ contentType: string; bytes: Uint8Array } | null> {
+  const row = await db
+    .prepare(
+      `SELECT p.content_type, p.r2_key
+       FROM pending_document_pages p
+       JOIN pending_documents d ON d.id = p.pending_document_id
+       WHERE d.invoice_id = ? AND p.page_number = ?`
+    )
+    .bind(invoiceId, pageNumber)
+    .first<{ content_type: string; r2_key: string }>();
+  if (!row) return null;
+
+  const bytes = await storage.get(row.r2_key);
+  if (!bytes) return null;
+
+  return { contentType: row.content_type, bytes };
+}
+
 export async function markFinalised(db: D1Database, documentId: string, invoiceId: string): Promise<void> {
   await db
     .prepare("UPDATE pending_documents SET status = 'finalised', invoice_id = ?, finalised_at = datetime('now') WHERE id = ?")

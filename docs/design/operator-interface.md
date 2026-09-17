@@ -30,8 +30,14 @@ Drawing the screen surfaced four things prose had not.
 
 **`intake-capture-route.ts` has no R2 access at all.** A document
 arriving at `/sources/:id/capture` is read, extracted from or not, and
-discarded. Only the multi-page pending-document flow writes to R2, and
-it deletes on finalise.
+discarded.
+
+*(This paragraph went on to say the multi-page pending-document flow
+"deletes on finalise." Checked directly rather than assumed, while
+scoping `docs/design/document-viewer.md`: nothing does. Its pages sit
+in R2 forever, unreachable by any route — a different and less obvious
+failure than deletion, corrected here since this document, unlike a
+decision record, is meant to stay current.)*
 
 Document 1 records long-term document retention as *"proposed design
 only, no code exists for this yet"*, and that is still accurate for the
