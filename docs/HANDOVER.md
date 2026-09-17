@@ -37,8 +37,8 @@ twice.
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
 | `vf-app-poc` migrations | through `0070` |
 | `vf-licence-poc` migrations | through `0120` |
-| Tests | vf-admin 9 · vf-app 1921 · vf-licence 320 · vf-ui 74 Worker + 653 browser · shared 278 (+3 known pre-existing failures) |
-| Decision records | 383 |
+| Tests | vf-admin 9 · vf-app 1921 · vf-licence 320 · vf-ui 74 Worker + 665 browser · shared 278 (+3 known pre-existing failures) |
+| Decision records | 384 |
 
 **Everything committed is deployed again.** Decision 0383 (phase 3 of
 the document viewer — a hybrid PDF's embedded XML retained as its own
@@ -71,6 +71,22 @@ new XML-tab tests. Unhandled rejections read 137, was 135 at 0382 —
 the same pre-existing class (0380), not investigated further this
 arc.
 `vf-admin` and `vf-licence` untouched this arc.
+
+**Decision 0384 (phase 4 — the pop-out window) is built, committed
+locally, and NOT YET pushed or deployed.** This session has no push
+access to `origin` (confirmed 403 twice, standing since earlier in
+this arc); delivery is a bundle handed to the operator, who runs the
+push and the deploy themselves. Touches `vf-ui` only (`viewer.js`,
+plus three new files — `document-window.html`, `document-window.js`,
+`app.css` — and `index.html` reduced to a `<link>` after its inline
+CSS moved out) and `vf-licence` (migration `0121`, four new
+`ui_strings` keys, no Worker code). `vf-app` and `vf-admin` untouched
+— confirmed via `git status` showing zero files changed in `vf-app`,
+not assumed from the file list alone, and its full 1921-test suite
+was rerun anyway. **Do not mark this row of the table, or the
+migration row below, as live until the operator says the bundle was
+pulled, pushed, migrated and deployed** — the same standard every
+other phase in this arc has been held to.
 
 **There are four Workers now.** `vf-app` per customer, `vf-licence`
 shared, `vf-ui` shared — the customer's interface, its own deployment
@@ -460,9 +476,28 @@ directly at `4d44b59`, `vf-ui`'s deployed `viewer.js` fetched and
 checked for the new logic. `vf-app`'s deploy and migration `0070`
 rest on the operator's own report, per the table above.
 
-**Next up: phase 4, the pop-out window carrying the whole document
-panel** (Timeline/Chat included), then phase 5 (retiring the old
-inline preview and raw-file Expand). Both still design only.
+**Phase 4, the pop-out window carrying the whole document panel, is
+built and committed — NOT yet pushed or deployed** (decision 0384 —
+*"Yes please - lets look at phase 4,"* the operator's own answer when
+phase 3 was confirmed live). Expand now navigates to a real page of
+this app, `document-window.html`, carrying the same tabs and
+Timeline/Chat the embedded card shows, in place of decision 0073's
+raw `window.open(signedUrl)` on a blank tab — 0073's signed-URL
+mechanism itself is untouched, only the chrome around it changed. A
+fixed `window.open` name makes the browser itself refuse a second
+pop-out; opening a different task while one is already up retargets
+that same window, the operator's own explicit answer (*"there should
+not be a situation where the user has multiple pop-out windows
+open"*) to the one question the design document had deliberately left
+open. Required extracting the app's entire inline CSS out of
+`index.html` into a new `app.css`, since a second real page had no
+other way to share the same classes. **Waiting on the operator to
+pull the bundle, push, apply migration `0121` to `vf-licence-poc`, and
+deploy `vf-ui`** before this table says it's live. Next up after
+that: phase 5, whose own scope needs re-checking against the codebase
+as it now stands — both things phase 5 was named for (the old inline
+preview, the raw-file Expand) are already retired by phases 2 and 4,
+so what's actually left is an open question, not a known quantity.
 
 **Built this arc, closing out most of what was named here before:
 teams, most of the "user variable" fields, creating and managing an

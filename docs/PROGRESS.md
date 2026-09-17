@@ -401,6 +401,28 @@ a rule, and left an approval task in a queue.
   from two values to three needed a SQLite table rebuild — `CHECK`
   constraints can't be `ALTER`ed in place — following migration
   0033's exact precedent.
+- **Expand opens a real page of this app, not a raw file** (0384,
+  phase 4 of `docs/design/document-viewer.md`). `document-window.html`
+  carries the whole document panel — the phase 2 renderer, its tabs,
+  Timeline/Chat — reached by ordinary same-origin navigation rather
+  than decision 0073's `window.open(rawSignedUrl)` on a blank tab.
+  0073's signed-URL mechanism itself is unchanged and still mints the
+  link for the *bytes*; only the chrome around them changed. **One
+  window, never a second one**: a fixed `window.open` name is what the
+  browser itself enforces, and opening a different task while a
+  pop-out is already showing something else retargets that same
+  window rather than opening another — the operator's own answer when
+  asked directly (*"there should not be a situation where the user has
+  multiple pop-out windows open"*). The embedded card shows a toggled
+  placeholder, not a rebuild, while a pop-out is open, and detects the
+  pop-out closing by polling `.closed`, since no native close event
+  exists for an opener to hear. Reusing `buildDocTabs()` and a new
+  `initDocumentWindow()`, both from `viewer.js`, meant the pop-out's
+  own page has no second implementation of the panel to drift from the
+  embedded one. Required moving every rule of the app's own CSS out of
+  `index.html`'s inline `<style>` block into a new `app.css`, since a
+  second real page had nowhere else to get the same classes from
+  without a copy that would eventually disagree.
 
 ### Customer configuration
 - Org units, teams, roles, users, cost centres

@@ -305,7 +305,7 @@ describe("the brand mark (decision 0145)", () => {
   it("is small enough not to compete with the entries", async () => {
     // A mark at the head of a column orients; one that fills it
     // announces. 84px against a 190px column.
-    const css = (await import("virtual:stylesheets")).default["index.html"];
+    const css = (await import("virtual:stylesheets")).default["app.css"];
     const rule = css.slice(css.indexOf(".brandmark {"));
     expect(rule).toContain("max-width: 84px");
   });
@@ -485,7 +485,7 @@ describe("the flat nav, permission-filtered (decisions 0274 and 0276)", () => {
     // pattern for a CSS effect these tests do not otherwise render —
     // checking the class is present proves the toggle worked; this
     // proves the toggle actually hides what it claims to.
-    const css = (await import("virtual:stylesheets")).default["index.html"];
+    const css = (await import("virtual:stylesheets")).default["app.css"];
     const rule = css.slice(css.indexOf(".frame.collapsed .navlabel"), css.indexOf(".frame.collapsed .navlabel") + 250);
     expect(rule).toContain("display: none");
 
@@ -511,7 +511,7 @@ describe("the flat nav, permission-filtered (decisions 0274 and 0276)", () => {
      * clearly ahead of `.nav a`'s (0,1,1), not merely tied to it and
      * left to source order.
      */
-    const css = (await import("virtual:stylesheets")).default["index.html"];
+    const css = (await import("virtual:stylesheets")).default["app.css"];
     // The bare, losing selector must be gone, not just superseded —
     // leaving both would tempt a future edit to "simplify" back to it.
     expect(css).not.toContain("\n  .navitem {");
@@ -539,7 +539,7 @@ describe("the flat nav, permission-filtered (decisions 0274 and 0276)", () => {
      * test checks for exactly that — a rule this specific existing,
      * later in the file than the mood rules it has to beat.
      */
-    const css = (await import("virtual:stylesheets")).default["index.html"];
+    const css = (await import("virtual:stylesheets")).default["app.css"];
 
     const dayIndex = css.indexOf(':root[data-mood="day"] .brandmark.dark');
     const nightIndex = css.indexOf(':root[data-mood="night"] .brandmark.light');
@@ -710,7 +710,7 @@ describe("the nav stays pinned to the browser window, not the page (decision 028
    * rather than assert a scroll position no test here can produce.
    */
   it("pins the nav to the viewport with an explicit, non-stretched height", async () => {
-    const css = (await import("virtual:stylesheets")).default["index.html"];
+    const css = (await import("virtual:stylesheets")).default["app.css"];
     const rule = css.slice(css.indexOf(".nav {\n    display: flex;"), css.indexOf(".nav .who { margin-top: auto; }"));
 
     expect(rule).toContain("position: sticky");
@@ -722,7 +722,7 @@ describe("the nav stays pinned to the browser window, not the page (decision 028
   });
 
   it("undoes the sticky sidebar once the nav becomes a horizontal bar on a narrow screen", async () => {
-    const css = (await import("virtual:stylesheets")).default["index.html"];
+    const css = (await import("virtual:stylesheets")).default["app.css"];
     const mediaStart = css.indexOf("@media (max-width: 1100px)");
     const mediaBlock = css.slice(mediaStart, css.indexOf("}", css.indexOf("}", css.indexOf("}", mediaStart) + 1) + 1) + 1);
 

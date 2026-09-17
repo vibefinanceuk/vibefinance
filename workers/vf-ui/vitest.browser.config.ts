@@ -31,7 +31,12 @@ function stylesheetsAsText() {
     resolveId: (id: string) => (id === VIRTUAL ? `\0${VIRTUAL}` : null),
     load(id: string) {
       if (id !== `\0${VIRTUAL}`) return null;
-      const files = ["public/tokens.css", "public/index.html"];
+      // decision 0384 moved every rule out of index.html's own inline
+      // <style> block into app.css (a second real page,
+      // document-window.html, needed the same classes without a
+      // second copy of them) — app.css is what a typography test
+      // means by "the stylesheet" now.
+      const files = ["public/tokens.css", "public/index.html", "public/app.css"];
       const contents = Object.fromEntries(
         files.map((f) => [f.split("/").pop(), readFileSync(resolve(__dirname, f), "utf8")])
       );
@@ -96,6 +101,7 @@ export default defineConfig({
       "/readback.js": resolve(__dirname, "public/readback.js"),
       "/activity.js": resolve(__dirname, "public/activity.js"),
       "/page-renderer.js": resolve(__dirname, "public/page-renderer.js"),
+      "/document-window.js": resolve(__dirname, "public/document-window.js"),
       // Resolved so Vite's static import analysis is satisfied, not so
       // it runs: nothing in this suite calls `loadPdfDocument`, the
       // only function that ever imports it (decision 0382).

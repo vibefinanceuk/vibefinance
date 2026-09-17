@@ -1,7 +1,7 @@
 # Design: The Document Viewer
 
-**Status: phases 1–3 built (decisions 0381, 0382, 0383); phases 4–5 are
-still design only.** Written 17 September 2026, from a conversation
+**Status: phases 1–4 built (decisions 0381, 0382, 0383, 0384); phase 5
+is still design only.** Written 17 September 2026, from a conversation
 about where the viewer's document panel should ultimately go — the
 shape decision 0123 gestured at in September and never returned to.
 
@@ -37,7 +37,7 @@ a bug fix in the existing panel led straight into this conversation.
 | Scanned image PDF | `<iframe>`; Chrome's own PDF viewer supplies scroll, zoom and its own thumbnail rail for a multi-page PDF (0042, 0123: *"the browser renders it, not us,"* a deliberate choice). |
 | Structured PDF with embedded XML (Factur-X, ZUGFeRD) | **As of phase 3 (0383):** the embedded XML is retained as its own `embedded_xml` document alongside the outer PDF's `original`, and gets an XML tab the way a bare-XML invoice already does. Before phase 3, only the outer PDF bytes were retained and the embedded XML was read once for extraction, then discarded. |
 | Multi-page scan uploaded page-by-page (decision 0045) | See section 3. |
-| Expand | `openDocument()` calls `window.open(url, "_blank", "noopener")` on the *raw signed file URL* — a blank tab with no app chrome, no tabs, no Timeline/Chat. |
+| Expand | **As of phase 4 (0384):** `openDocumentWindow()` navigates a fixed-name window to `document-window.html`, a real page of this app carrying the same tabs and Timeline/Chat the embedded card shows, opened or reused via `window.open(url, name)`'s own browser-enforced single-window behaviour. Before phase 4, `openDocument()` called `window.open(url, "_blank", "noopener")` on the *raw signed file URL* — a blank tab with no app chrome, no tabs, no Timeline/Chat. |
 
 ---
 
@@ -130,14 +130,22 @@ it.
    an XML tab the way a bare-XML invoice already does — and it renders
    the same way bare XML already does, since the tab's dispatch was
    always keyed on content type, not document type.
-4. **A second window carrying the whole document panel** — the
-   renderer from phase 2, its tabs, Timeline/Chat — opened by ordinary
-   navigation to a page of our own rather than a raw file, so no
-   signed-URL problem exists for the chrome itself (only for the bytes
-   inside it, exactly as today). The main window's document card gives
-   up its space once a pop-out is open.
-5. **Retire what phases 2 and 4 replace**: the old inline
-   `<iframe>`/`<img>` preview, and the raw-file `window.open` Expand.
+4. **Built (decision 0384).** A second window carrying the whole
+   document panel — the renderer from phase 2, its tabs, Timeline/Chat
+   — opened by ordinary navigation to a page of our own rather than a
+   raw file, so no signed-URL problem exists for the chrome itself
+   (only for the bytes inside it, exactly as today). The main window's
+   document card gives up its space (a toggled placeholder, not a
+   rebuild) once a pop-out is open, and a fixed window name makes the
+   browser itself refuse to ever open a second one — retargeting an
+   already-open pop-out to a newly-opened task is the one piece that
+   primitive doesn't cover on its own, and is handled explicitly.
+5. **Retire what phase 2 replaced and what phase 4 replaced.** The old
+   inline `<iframe>`/`<img>` preview is already gone (phase 2) and the
+   raw-file `window.open` Expand is already gone (phase 4) — what, if
+   anything, is actually left for this phase needs checking against
+   the codebase as it now stands, not assumed from this list's
+   original wording.
 
 Each phase is its own decision record when built, in the order above,
 matching how every other multi-step piece of work in this project has
@@ -152,10 +160,14 @@ found and what broke along the way.
   time.** Asked directly when phase 2 was scoped. A session
   convenience, not data worth a place to store it.
 - **The pop-out and the main window agreeing they're the same
-  document**: `window.open` returns a handle the opener can poll or
-  message (`postMessage`, `BroadcastChannel`); which mechanism, and
-  what happens if the pop-out is closed without the main window
-  noticing, is phase 4's own question.
+  document — settled in decision 0384.** Asked directly when phase 4
+  was scoped; the operator's own answer — *"there should not be a
+  situation where the user has multiple pop-out windows open"* — is
+  built as a fixed `window.open` name (the browser refuses a second
+  window sharing it) plus an explicit retarget on opening a different
+  task while one is already up. A closed pop-out is detected by
+  polling `.closed` every 700ms, since no native close event exists
+  for an opener to subscribe to.
 - **Annotation**, decision 0206's own deferred piece, becomes reachable
   once phase 2 gives every page a known pixel geometry — genuinely a
   sixth phase, not attempted here.

@@ -462,7 +462,7 @@ describe("the status card (decision 0299)", () => {
      * story. jsdom applies no CSS, so this reads the real stylesheet
      * rather than measure a rendered layout.
      */
-    const css = (await import("virtual:stylesheets")).default["index.html"];
+    const css = (await import("virtual:stylesheets")).default["app.css"];
     const headStart = css.indexOf(".supplierhead {");
     expect(headStart, "the .supplierhead rule must exist").toBeGreaterThan(-1);
     const headRule = css.slice(headStart, css.indexOf("}", headStart) + 1);

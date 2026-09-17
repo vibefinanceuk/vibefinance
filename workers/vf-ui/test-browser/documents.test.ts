@@ -250,7 +250,7 @@ describe("which columns to show", () => {
     // And a deliberate size was given back, rather than left to
     // whatever a bare, unstyled checkbox happens to render as on
     // whichever browser opens it.
-    const page = (await import("virtual:stylesheets")).default["index.html"];
+    const page = (await import("virtual:stylesheets")).default["app.css"];
     const sizeRule = page.slice(
       page.indexOf('.columnlist input[type="checkbox"]'),
       page.indexOf('.columnlist input[type="checkbox"]') + 150

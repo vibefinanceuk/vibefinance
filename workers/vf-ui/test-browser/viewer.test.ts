@@ -142,6 +142,10 @@ const STRINGS = {
     "viewer.unreadable": "This document could not be read automatically. Please manually enter the fields in the cells provided.",
     "viewer.xmltab": "XML",
     "viewer.tried": "Tried:",
+    "viewer.popupblocked": "Your browser blocked the pop-up window. Allow pop-ups for this site and try again.",
+    "viewer.openinwindow": "Open in a separate window",
+    "viewer.bringtofront": "Bring to front",
+    "viewer.showhere": "Show here instead",
     "activity.tab": "Activity",
     "activity.title": "Activity",
     "activity.loading": "Loading…",
@@ -487,6 +491,153 @@ describe("the action row (decision 0122)", () => {
     await openWith(["key"]);
     const labels = [...document.querySelectorAll(".actionlink span")].map((n) => n.textContent);
     expect(labels).not.toContain("Key");
+  });
+});
+
+describe("the document pop-out window (decision 0384, phase 4)", () => {
+  const ROUTES = {
+    "/api/code-lists": { fields: {} },
+    "/api/ui-strings": STRINGS,
+    "/api/field-visibility": FIELDS,
+    "/api/invoices/inv-1": {
+      facts: {},
+      lines: [],
+      validation: { passed: true, checked: [], failures: [] },
+    },
+  };
+
+  /** Real enough to stand in for `window.open`'s own return value. */
+  function fakeWindow() {
+    return { closed: false, focus: vi.fn(), close: vi.fn(), location: { href: "" } };
+  }
+
+  async function open(task: typeof TASK = TASK) {
+    stubFetch(ROUTES);
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    await openViewer(task, () => {});
+  }
+
+  function clickExpand() {
+    const doctabsHead = document.querySelector(".doctabs")?.closest(".cardhead");
+    const expand = [...(doctabsHead?.querySelectorAll(".actionlink") ?? [])].find(
+      (n) => n.querySelector("span")?.textContent === "Expand"
+    );
+    (expand as HTMLElement)?.click();
+  }
+
+  it("opens document-window.html with the invoice id, in a fixed-name window — not the raw file (decision 0384, retiring 0073's window.open)", async () => {
+    const handle = fakeWindow();
+    const openSpy = vi.fn(() => handle);
+    vi.stubGlobal("open", openSpy);
+
+    await open();
+    clickExpand();
+
+    expect(openSpy).toHaveBeenCalledTimes(1);
+    const [url, name] = openSpy.mock.calls[0];
+    expect(url).toBe("/document-window.html?task=inv-1");
+    expect(name).toBe("vibefinance-document-window");
+    expect(handle.focus).toHaveBeenCalled();
+  });
+
+  it("brings the same window forward instead of opening a second one, for the same invoice", async () => {
+    /**
+     * The operator's own answer, when this phase was scoped: *"there
+     * should not be a situation where the user has multiple pop-out
+     * windows open."* A fixed window name already makes the browser
+     * enforce that on its own; this is `openDocumentWindow()`'s own
+     * short-circuit doing the same thing without even asking it to.
+     */
+    const handle = fakeWindow();
+    const openSpy = vi.fn(() => handle);
+    vi.stubGlobal("open", openSpy);
+
+    await open();
+    clickExpand();
+    clickExpand();
+
+    expect(openSpy).toHaveBeenCalledTimes(1);
+    expect(handle.focus).toHaveBeenCalledTimes(2);
+  });
+
+  it("shows a placeholder in the embedded card once the pop-out is open, giving up the tabs' own space", async () => {
+    const handle = fakeWindow();
+    vi.stubGlobal("open", vi.fn(() => handle));
+
+    await open();
+    clickExpand();
+
+    const placeholder = document.querySelector(".vpoppedout") as HTMLElement;
+    expect(placeholder.hidden).toBe(false);
+    expect(placeholder.textContent).toContain("Open in a separate window");
+    expect(document.getElementById("vpreview")?.parentElement?.hidden).toBe(true);
+  });
+
+  it("gives the embedded card its space back once the pop-out closes, via its own poll", async () => {
+    vi.useFakeTimers();
+    try {
+      const handle = fakeWindow();
+      vi.stubGlobal("open", vi.fn(() => handle));
+
+      await open();
+      clickExpand();
+
+      // Nothing tells this side when the other window closes —
+      // `.closed` is the only signal, and decision 0384's own comment
+      // says it "only answers when asked." Flipping it here, then
+      // advancing the poll's own interval, is that ask.
+      handle.closed = true;
+      await vi.advanceTimersByTimeAsync(700);
+
+      const placeholder = document.querySelector(".vpoppedout") as HTMLElement;
+      expect(placeholder.hidden).toBe(true);
+      expect(document.getElementById("vpreview")?.parentElement?.hidden).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("retargets the already-open pop-out to a different task, rather than opening a second window — the operator's own answer", async () => {
+    const handle = fakeWindow();
+    vi.stubGlobal("open", vi.fn(() => handle));
+
+    await open();
+    clickExpand();
+
+    const secondTask = { ...TASK, subject: { ...TASK.subject, id: "inv-2" } };
+    stubFetch({ ...ROUTES, "/api/invoices/inv-2": ROUTES["/api/invoices/inv-1"] });
+    const { openViewer } = await import("/viewer.js");
+    await openViewer(secondTask, () => {});
+
+    expect(handle.location.href).toBe("/document-window.html?task=inv-2");
+    expect(window.open).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not retarget a pop-out that is already showing the task being opened — no pointless reload", async () => {
+    const handle = fakeWindow();
+    vi.stubGlobal("open", vi.fn(() => handle));
+
+    await open();
+    clickExpand();
+    handle.location.href = "/document-window.html?task=inv-1";
+
+    const { openViewer } = await import("/viewer.js");
+    await openViewer(TASK, () => {});
+
+    expect(handle.location.href).toBe("/document-window.html?task=inv-1");
+  });
+
+  it("shows a message and does not crash when the browser blocks the pop-up", async () => {
+    vi.stubGlobal("open", vi.fn(() => null));
+
+    await open();
+    clickExpand();
+
+    expect(document.getElementById("viewer-note")?.textContent).toContain(
+      "Your browser blocked the pop-up window"
+    );
   });
 });
 
@@ -1498,7 +1649,7 @@ describe("every variable the page uses exists (decision 0223)", () => {
   it("names no variable that tokens.css does not define", async () => {
     const sheets = (await import("virtual:stylesheets")).default;
     const tokens = sheets["tokens.css"];
-    const page = sheets["index.html"];
+    const page = sheets["app.css"];
 
     const defined = new Set(
       [...tokens.matchAll(/(--[a-z0-9-]+)\s*:/gi), ...page.matchAll(/(--[a-z0-9-]+)\s*:\s*[^;]+;/gi)].map(
@@ -1523,7 +1674,7 @@ describe("every variable the page uses exists (decision 0223)", () => {
      * Ireland* pushed the address straight out through the side of the
      * card. `minmax(0, …)` is what says otherwise.
      */
-    const page = (await import("virtual:stylesheets")).default["index.html"];
+    const page = (await import("virtual:stylesheets")).default["app.css"];
     const rule = page.slice(page.indexOf(".sellergrid {"), page.indexOf(".sellergrid {") + 400);
 
     expect(rule).toContain("minmax(0");
@@ -1533,7 +1684,7 @@ describe("every variable the page uses exists (decision 0223)", () => {
   it("breaks a value that has nowhere natural to break", async () => {
     // A long email or a VAT number written without spaces would widen
     // its row instead of wrapping.
-    const page = (await import("virtual:stylesheets")).default["index.html"];
+    const page = (await import("virtual:stylesheets")).default["app.css"];
     const rule = page.slice(page.indexOf(".sfield {"), page.indexOf(".sfield {") + 500);
 
     expect(rule).toContain("overflow-wrap");
@@ -1546,7 +1697,7 @@ describe("every variable the page uses exists (decision 0223)", () => {
      * appears under the Address title, rather than to the right of
      * it... screen space I would like to make better use of."
      */
-    const page = (await import("virtual:stylesheets")).default["index.html"];
+    const page = (await import("virtual:stylesheets")).default["app.css"];
     const rule = page.slice(page.indexOf(".sfield.address {"), page.indexOf(".sfield.address {") + 100);
 
     expect(rule).toContain("grid-template-columns: 1fr");
@@ -1787,7 +1938,7 @@ describe("each party card carries its own action (decision 0228)", () => {
      * own contexts. jsdom applies no CSS, so this reads the real
      * stylesheet text.
      */
-    const css = (await import("virtual:stylesheets")).default["index.html"];
+    const css = (await import("virtual:stylesheets")).default["app.css"];
     const ruleStart = css.indexOf(".parties .sub {");
     expect(ruleStart, "the .parties .sub override must exist").toBeGreaterThan(-1);
     const rule = css.slice(ruleStart, css.indexOf("}", ruleStart) + 1);
@@ -2304,7 +2455,7 @@ describe("the Invoice header card is a curated summary, with a pop-out for the r
      * the tie — `popoutBackdrop.hidden = true` was setting the
      * attribute correctly; nothing was reading it.
      */
-    const css = (await import("virtual:stylesheets")).default["index.html"];
+    const css = (await import("virtual:stylesheets")).default["app.css"];
     expect(css).toContain(".backdrop[hidden] { display: none; }");
   });
 
@@ -2613,7 +2764,7 @@ describe("the document/timeline tabs (decision 0269)", () => {
      * established pattern (decision 0257's stacking test, 0261's
      * margin test) for exactly this kind of thing.
      */
-    const css = (await import("virtual:stylesheets")).default["index.html"];
+    const css = (await import("virtual:stylesheets")).default["app.css"];
     const rule = css.slice(
       css.indexOf(".activitytabcontent[hidden]"),
       css.indexOf(".activitytabcontent[hidden]") + 120
@@ -2666,7 +2817,7 @@ describe("the document/timeline tabs (decision 0269)", () => {
     // **The operator's own words**: "it does not need to be
     // highlighted in Orange." Checked against the real stylesheet,
     // since jsdom applies no CSS at all.
-    const css = (await import("virtual:stylesheets")).default["index.html"];
+    const css = (await import("virtual:stylesheets")).default["app.css"];
     const rule = css.slice(css.indexOf(".systemalert {"), css.indexOf(".systemalert {") + 300);
     expect(rule).not.toContain("--bg-warning");
     expect(rule).not.toContain("--text-warning");

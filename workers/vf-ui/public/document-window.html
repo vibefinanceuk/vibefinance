@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Document</title>
+
+<!--
+  A second real page — decision 0384, phase 4 of
+  docs/design/document-viewer.md. Same origin as index.html, same
+  session cookie, so /api/* calls made from here carry the same
+  authentication and reach the same customer's vf-app instance
+  (decision 0102's backend-for-frontend) without anything new —
+  what changed is that Expand now navigates here instead of to a raw
+  signed file URL (decision 0073's old behaviour), which opened a
+  blank tab with no chrome at all.
+
+  Same head as index.html, for the same reason index.html has it: the
+  mood has to be set before the first paint (decision 0139) and the
+  tokens/branding stylesheets have to apply before it too (decision
+  0096), or a person who chose Night time sees a flash of the wrong
+  page.
+-->
+<link rel="stylesheet" href="/tokens.css">
+<script>
+  try {
+    var mood = localStorage.getItem("vf-mood");
+    if (!mood) {
+      mood = window.matchMedia("(prefers-color-scheme: dark)").matches ? "night" : "day";
+    }
+    document.documentElement.setAttribute("data-mood", mood);
+  } catch (e) {
+    /* A browser refusing storage still gets the media query's answer. */
+  }
+</script>
+<link rel="stylesheet" id="brand" href="">
+<script src="/config.js"></script>
+
+<link rel="stylesheet" href="/app.css">
+</head>
+
+<body class="docwindowbody">
+<main id="docwindow-root"></main>
+<script type="module" src="/document-window.js"></script>
+</body>
+</html>

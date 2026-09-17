@@ -133,6 +133,12 @@ const KEYS_THE_INTERFACE_USES = [
   "viewer.rotate",
   "viewer.pageof",
   "viewer.thumbnails",
+  // The document pop-out window (decision 0384, phase 4 of
+  // docs/design/document-viewer.md).
+  "viewer.popupblocked",
+  "viewer.openinwindow",
+  "viewer.bringtofront",
+  "viewer.showhere",
   "activity.loading",
   "activity.empty",
   "activity.placeholder",

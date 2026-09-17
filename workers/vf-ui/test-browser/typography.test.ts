@@ -112,7 +112,7 @@ describe("one font, everywhere", () => {
 });
 
 describe("the brand mark is swapped, not recoloured (decision 0145)", () => {
-  const css = stylesheets["index.html"];
+  const css = stylesheets["app.css"];
 
   it("hides the dark mark at night and the light one by day", () => {
     // **Swapped in CSS rather than in script**, so it follows the mood
@@ -165,7 +165,7 @@ describe("a box somebody writes in (decision 0156)", () => {
   it("stops where prose stops being readable", () => {
     // **A sentence is read on one line**, and a rule box at 1600px
     // would put a clause at each end and nothing in the middle.
-    const page = stylesheets["index.html"];
+    const page = stylesheets["app.css"];
     expect(page).toContain("#sentence { max-width: 62ch; }");
   });
 });
@@ -181,7 +181,7 @@ describe("class names mean one thing (decision 0177)", () => {
    * Reported as the process flow touching the seller and buyer boxes.
    */
   // The layout rules live in the page, not in the tokens.
-  const css = stylesheets["index.html"];
+  const css = stylesheets["app.css"];
 
   it("keeps .columns as a grid", async () => {
     const rule = css.slice(css.indexOf(".columns {"));
@@ -210,7 +210,7 @@ describe("panels in a stack do not touch (decision 0178)", () => {
    * Reported twice, as two separate screens, because it looks like a
    * different problem each time.
    */
-  const css = stylesheets["index.html"];
+  const css = stylesheets["app.css"];
 
   it("gives every panel room beneath it", () => {
     const rule = css.slice(css.indexOf(".panel {"));
@@ -234,7 +234,7 @@ describe("a grid spaces its own children (decision 0179)", () => {
    * border under buyer?"*, which is the sort of thing only a person
    * looking at it would ask.
    */
-  const css = stylesheets["index.html"];
+  const css = stylesheets["app.css"];
 
   it("takes the margin off a panel inside the parties grid", () => {
     expect(css).toContain(".parties > .panel { margin-bottom: 0; }");
@@ -262,7 +262,7 @@ describe("the heading's four lines match (decision 0181)", () => {
    * Reported as *"same font, same weight, same size — they look
    * different"*, which they were.
    */
-  const css = stylesheets["index.html"];
+  const css = stylesheets["app.css"];
 
   it("styles the subtitle and the subhead together", () => {
     expect(css).toContain(".topbar .sub,\n  .subhead > div {");
@@ -287,7 +287,7 @@ describe("the viewer's four lines are one list (decision 0182)", () => {
    * `Stage`, `Unique Ref`, `Waiting` and `Owner` answer the same kind
    * of question. They match.
    */
-  const css = stylesheets["index.html"];
+  const css = stylesheets["app.css"];
 
   it("styles the viewer's heading with the rest", () => {
     expect(css).toContain("#viewer .topbar h2,");

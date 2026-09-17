@@ -129,7 +129,7 @@ function shortWhen(when) {
   return when.slice(0, 16).replace(" ", " ");
 }
 
-async function loadInvoice(invoiceId) {
+export async function loadInvoice(invoiceId) {
   stored = { facts: {}, lines: [], document: null };
   exceptions = [];
   try {
@@ -358,25 +358,142 @@ async function documentUrl(invoiceId, type) {
 }
 
 /**
- * Open the retained original in its own window.
+ * Expand into a page of our own, not the raw file — decision 0384,
+ * phase 4 of `docs/design/document-viewer.md`.
  *
- * `window.open` sends no `Authorization` header, which is why decision
- * 0073 exists: a short-lived signed URL the browser can follow on its
- * own. Minted on click rather than up front — a five-minute credential
- * created when the page loads is mostly expired by the time anybody
- * uses it.
+ * **Retires decision 0073's `window.open(rawSignedUrl)`.** That opened
+ * a blank tab with no app chrome at all — no tabs, no Timeline/Chat,
+ * nothing but the bytes. `document-window.html` is a second real page
+ * of this app, same origin, same session cookie, so it fetches and
+ * renders the document exactly as the embedded panel does — the
+ * signed-URL scheme decision 0073 built still does the one job it was
+ * ever for, minting a link for the *bytes*, not for the chrome around
+ * them.
  *
- * (This comment sat above `documentUrl()` instead, orphaned by a
- * second comment written between it and the function it describes —
- * moved back in decision 0380.)
+ * **One window, always, never several.** The operator's own answer
+ * when this phase was scoped: *"The user's attention should only ever
+ * be on one document/task... there should not be a situation where
+ * the user has multiple pop-out windows open."* A fixed name
+ * (`POPOUT_NAME`) makes the browser itself enforce that — `window.
+ * open(url, name)` navigates whichever window already has that name
+ * rather than opening a new one, even if `popoutHandle` below had
+ * somehow been lost.
  */
-async function openDocument(invoiceId) {
-  const url = await documentUrl(invoiceId);
-  if (!url) {
-    note(t("viewer.nodocument"));
+const POPOUT_NAME = "vibefinance-document-window";
+/** The open pop-out's own window handle, or null if none is open. */
+let popoutHandle = null;
+/** Which invoice the pop-out is currently showing, to skip a pointless re-navigation to the page it is already on. */
+let popoutInvoiceId = null;
+/** Set by `documentPanel()` on every render — toggles its own "open elsewhere" placeholder. Module-level because the poll below and `openDocumentWindow()` are not the code that built the panel currently on screen. */
+let popoutStateSetter = null;
+let popoutClosedPoll = null;
+
+function popoutUrl(invoiceId) {
+  return `/document-window.html?task=${encodeURIComponent(invoiceId)}`;
+}
+
+function popoutIsOpen() {
+  return Boolean(popoutHandle && !popoutHandle.closed);
+}
+
+/**
+ * Poll for the pop-out closing.
+ *
+ * `window.open` gives no event for "the other window just closed" —
+ * `.closed` is the only signal there is, and it only answers when
+ * asked. A short interval rather than nothing: the main window's
+ * document card should not go on claiming a window is open once it
+ * plainly is not, whether that window closed by its own Close button,
+ * the operating system's, or the tab simply being shut.
+ */
+function watchPopout() {
+  if (popoutClosedPoll) return;
+  popoutClosedPoll = setInterval(() => {
+    if (!popoutIsOpen()) {
+      clearInterval(popoutClosedPoll);
+      popoutClosedPoll = null;
+      popoutHandle = null;
+      popoutInvoiceId = null;
+      popoutStateSetter?.(false);
+    }
+  }, 700);
+}
+
+/**
+ * The Expand button's own action now — open, or bring forward, the one
+ * document window.
+ */
+function openDocumentWindow(invoiceId) {
+  if (popoutIsOpen() && popoutInvoiceId === invoiceId) {
+    popoutHandle.focus();
     return;
   }
-  window.open(url, "_blank", "noopener");
+  popoutHandle = window.open(popoutUrl(invoiceId), POPOUT_NAME);
+  if (!popoutHandle) {
+    note(t("viewer.popupblocked"));
+    return;
+  }
+  popoutInvoiceId = invoiceId;
+  popoutHandle.focus();
+  popoutStateSetter?.(true);
+  watchPopout();
+}
+
+/**
+ * Retarget an already-open pop-out the moment a different task opens
+ * — the operator's own answer, verbatim: *"if another task is opened
+ * and the document window is popped-out and showing a previous
+ * document, the same window should open the new document for the new
+ * task."* Ordinary navigation, the same as clicking Expand would do;
+ * no `postMessage`, no `BroadcastChannel` — the pop-out is just
+ * another page that reads its invoice id from its own URL on load, so
+ * pointing it at a new URL is the whole mechanism.
+ */
+function retargetPopoutIfOpen(invoiceId) {
+  if (!popoutIsOpen() || popoutInvoiceId === invoiceId) return;
+  popoutInvoiceId = invoiceId;
+  popoutHandle.location.href = popoutUrl(invoiceId);
+}
+
+/**
+ * Mount the whole document panel into a page of its own — decision
+ * 0384, phase 4. `document-window.js` calls this once, after loading
+ * strings the same way `boot.js` loads them for the main shell — this
+ * function assumes `t()` already has words to give it, the same
+ * assumption every other function in this file already makes.
+ *
+ * **The same `buildDocTabs()` the embedded panel uses, not a second
+ * copy of it.** A pop-out that rendered its own idea of the Document/
+ * XML/Timeline-Chat tabs could drift from what Expand promised to
+ * open; this way it cannot, because there is only the one
+ * implementation.
+ *
+ * No placeholder wiring here — that toggle exists to give the
+ * *embedded* card something to show while it has handed its space to
+ * this window; this window has no second window of its own to hand
+ * anything to.
+ */
+export async function initDocumentWindow(invoiceId, root) {
+  await loadInvoice(invoiceId);
+  docPanelTab = "doc";
+
+  const { tabs } = buildDocTabs(invoiceId);
+  const closeButton = actionLink("close", { onclick: () => window.close() });
+
+  root.replaceChildren(
+    el("div", { class: "panel" }, [
+      el("div", { class: "cardhead" }, [
+        el("div", { class: "doctabs" }, tabs.map((entry) => entry.button)),
+        closeButton,
+      ]),
+      ...tabs.map((entry) => entry.pane),
+    ])
+  );
+
+  // Not awaited, matching `openViewer()`'s own reasoning: the tabs are
+  // usable while a slow R2 fetch is still in flight.
+  showPreview(invoiceId, stored.document?.contentType);
+  showXmlPreview(invoiceId);
 }
 
 /**
@@ -786,29 +903,20 @@ function taskActionButtons(task, onClose) {
   ];
 }
 
-function documentPanel(task) {
-  const invoiceId = task.subject?.id ?? null;
-
+/**
+ * Build the Document / XML / Timeline-Chat tabs — decision 0382 (phase
+ * 2), widened by 0383 (phase 3), extracted by 0384 (phase 4).
+ *
+ * **Shared with `document-window.html`, not duplicated.** The pop-out
+ * shows exactly this — the same three tabs, the same panes — and a
+ * second copy of this logic is exactly the kind of drift this project
+ * has caught and fixed elsewhere (SUPERSEDED.md). One function, called
+ * from the embedded panel below and from `initDocumentWindow()`.
+ */
+export function buildDocTabs(invoiceId) {
   const docPane = el("div", { class: "vpreview", id: "vpreview" }, [
     el("div", { class: "vthumb", text: t("viewer.document") }),
   ]);
-  /**
-   * **Top right of the document image, beside its own tabs** —
-   * decision 0298. It used to sit in a row of its own beneath the
-   * image, alongside Save and whatever the task offered; those moved
-   * to the topbar (see `taskActionButtons()`), and Expand moved here
-   * rather than being left to anchor a now much shorter row by
-   * itself.
-   */
-  const expandButton = actionLink("expand", { onclick: () => openDocument(invoiceId) });
-
-  if (!invoiceId) {
-    // Nothing to show a timeline for — the old, un-tabbed panel.
-    return el("div", { class: "panel" }, [
-      el("div", { class: "cardhead" }, [el("h3", { text: t("viewer.document") }), expandButton]),
-      docPane,
-    ]);
-  }
 
   /**
    * **Offered when the original genuinely is XML, or a hybrid PDF
@@ -896,12 +1004,69 @@ function documentPanel(task) {
     entry.pane.hidden = entry.key !== docPanelTab;
   }
 
+  return { tabs };
+}
+
+function documentPanel(task) {
+  const invoiceId = task.subject?.id ?? null;
+
+  const docPane = el("div", { class: "vpreview", id: "vpreview" }, [
+    el("div", { class: "vthumb", text: t("viewer.document") }),
+  ]);
+  /**
+   * **Top right of the document image, beside its own tabs** —
+   * decision 0298. It used to sit in a row of its own beneath the
+   * image, alongside Save and whatever the task offered; those moved
+   * to the topbar (see `taskActionButtons()`), and Expand moved here
+   * rather than being left to anchor a now much shorter row by
+   * itself.
+   *
+   * **Opens a page of our own, not the raw file — decision 0384.**
+   */
+  const expandButton = actionLink("expand", { onclick: () => openDocumentWindow(invoiceId) });
+
+  if (!invoiceId) {
+    // Nothing to show a timeline for — the old, un-tabbed panel.
+    return el("div", { class: "panel" }, [
+      el("div", { class: "cardhead" }, [el("h3", { text: t("viewer.document") }), expandButton]),
+      docPane,
+    ]);
+  }
+
+  const { tabs } = buildDocTabs(invoiceId);
+
+  const normalBody = el("div", {}, tabs.map((entry) => entry.pane));
+  /**
+   * **The card gives up its space once a pop-out is open** — the
+   * design document's own phrase for what decision 0384 built. Two
+   * sibling bodies, toggled by `.hidden` the same way `select()`
+   * above toggles between tabs, rather than torn down and rebuilt:
+   * whichever tab was showing is still exactly as it was the moment
+   * the pop-out closes and `normalBody` reappears.
+   */
+  const placeholderBody = el("div", { class: "vpreview vpoppedout", hidden: true }, [
+    el("div", { class: "vthumb" }, [
+      el("div", { class: "vpoppedouttext", text: t("viewer.openinwindow") }),
+      el("div", { class: "vpoppedoutactions" }, [
+        actionLink("expand", { label: t("viewer.bringtofront"), onclick: () => popoutHandle?.focus() }),
+        actionLink("close", { label: t("viewer.showhere"), onclick: () => popoutHandle?.close() }),
+      ]),
+    ]),
+  ]);
+
+  popoutStateSetter = (open) => {
+    normalBody.hidden = open;
+    placeholderBody.hidden = !open;
+  };
+  popoutStateSetter(popoutIsOpen());
+
   return el("div", { class: "panel" }, [
     el("div", { class: "cardhead" }, [
       el("div", { class: "doctabs" }, tabs.map((entry) => entry.button)),
       expandButton,
     ]),
-    ...tabs.map((entry) => entry.pane),
+    normalBody,
+    placeholderBody,
   ]);
 }
 
@@ -1113,6 +1278,14 @@ function subhead(task) {
 
 export async function openViewer(task, onClose) {
   docPanelTab = "doc";
+
+  /**
+   * **Retarget an already-open pop-out before anything else renders**
+   * — decision 0384. Opening a task is exactly the moment the
+   * operator said the pop-out should follow: done here, once, rather
+   * than leaving every caller of `openViewer()` to remember it.
+   */
+  if (task.subject?.id) retargetPopoutIfOpen(task.subject.id);
 
   // Before rendering, so a field never appears as a text box and then
   // becomes a picker under somebody's hands.

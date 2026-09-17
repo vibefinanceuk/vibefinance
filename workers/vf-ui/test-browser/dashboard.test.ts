@@ -190,7 +190,7 @@ describe("the heading, its subtitle, and its own larger size (decision 0307)", (
      * scoped back down instead. jsdom applies no CSS, so this reads
      * the real stylesheet rather than measure a rendered layout.
      */
-    const css = (await import("virtual:stylesheets")).default["index.html"];
+    const css = (await import("virtual:stylesheets")).default["app.css"];
     const baseStart = css.indexOf(".topbar h2 {");
     expect(baseStart, "the base .topbar h2 rule must exist").toBeGreaterThan(-1);
     const baseRule = css.slice(baseStart, css.indexOf("}", baseStart) + 1);
@@ -1266,7 +1266,7 @@ describe("a card asks for the room it needs (decision 0244)", () => {
 
   it("gives narrow cards a grow-to-share, wrap-below-240px basis — up to four across", async () => {
     const stylesheets = (await import("virtual:stylesheets")).default;
-    const css = stylesheets["index.html"];
+    const css = stylesheets["app.css"];
 
     const marker = ".card-narrow {";
     const rule = css.slice(css.indexOf(marker), css.indexOf(marker) + 150);
@@ -1276,7 +1276,7 @@ describe("a card asks for the room it needs (decision 0244)", () => {
 
   it("gives graphic cards a wider, wrap-below-280px basis — up to three across", async () => {
     const stylesheets = (await import("virtual:stylesheets")).default;
-    const css = stylesheets["index.html"];
+    const css = stylesheets["app.css"];
 
     const marker = ".card-graphic {";
     const rule = css.slice(css.indexOf(marker), css.indexOf(marker) + 100);
@@ -1296,7 +1296,7 @@ describe("a card asks for the room it needs (decision 0244)", () => {
     expect(card?.classList.contains("card-list")).toBe(true);
 
     const stylesheets = (await import("virtual:stylesheets")).default;
-    const css = stylesheets["index.html"];
+    const css = stylesheets["app.css"];
     const marker = ".card-list {";
     const rule = css.slice(css.indexOf(marker), css.indexOf(marker) + 100);
     expect(rule).toContain("flex: 1 1 100%");
@@ -1696,7 +1696,7 @@ describe("what I acted on this week, by day (decision 0265)", () => {
      * plainly, and the rule itself is still real, still shipped CSS.
      */
     const stylesheets = (await import("virtual:stylesheets")).default;
-    const css = stylesheets["index.html"];
+    const css = stylesheets["app.css"];
 
     const bgRule = css.slice(css.indexOf(".tilebg {"), css.indexOf(".tilebg {") + 300);
     const fgRule = css.slice(css.indexOf(".tilefg {"), css.indexOf(".tilefg {") + 300);
@@ -1723,7 +1723,7 @@ describe("a panel's own margin does not add to the grid's gap (decision 0261)", 
    */
   it("zeroes every dashflow panel's own margin", async () => {
     const stylesheets = (await import("virtual:stylesheets")).default;
-    const css = stylesheets["index.html"];
+    const css = stylesheets["app.css"];
 
     /**
      * **One rule for every card now, decision 0366** — since the one
@@ -1754,7 +1754,7 @@ describe("a panel's own margin does not add to the grid's gap (decision 0261)", 
      * string instead.
      */
     const stylesheets = (await import("virtual:stylesheets")).default;
-    const css = stylesheets["index.html"];
+    const css = stylesheets["app.css"];
 
     expect(css).toContain(".dashflow > .panel > svg,");
     expect(css).toContain(".dashflow > .panel > .donutwrap {");
