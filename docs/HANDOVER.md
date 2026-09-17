@@ -1,6 +1,6 @@
 # Handover
 
-**Written 4 September 2026, updated 17 September (five times).**
+**Written 4 September 2026, updated 17 September (six times).**
 
 **For a session starting cold.** Where things stand, what needs a
 decision rather than work, what to do next, and the habits this project
@@ -29,7 +29,7 @@ twice.
 
 | | |
 | --- | --- |
-| `origin/main` | `8278aeb` |
+| `origin/main` | `4f8fb89` |
 | vf-admin deployed | `8e27a34` · `https://admin.vibefinance-ai.com` · behind Cloudflare Access |
 | vf-app deployed | `4d44b59` |
 | vf-licence deployed | `a235713` |
@@ -38,11 +38,14 @@ twice.
 | `vf-app-poc` migrations | through `0070` |
 | `vf-licence-poc` migrations | through `0121` |
 | Tests | vf-admin 9 · vf-app 1921 · vf-licence 320 · vf-ui 74 Worker + 665 browser · shared 278 (+3 known pre-existing failures) |
-| Decision records | 387 |
+| Decision records | 388 |
 
-**Everything committed is deployed again.** Decision 0387 (the
-Seller/Buyer cards) was reported pushed and deployed, and checked
-rather than taken on that report alone: `origin/main` fetched
+**Not true right now — decision 0388 is committed and not yet
+deployed**, this session having no push access to `origin/main`; it
+is delivered as a bundle for the operator's own pull/push/deploy
+sequence instead. Everything before it is still deployed. Decision
+0387 (the Seller/Buyer cards) was reported pushed and deployed, and
+checked rather than taken on that report alone: `origin/main` fetched
 directly reads `8278aeb`, matching this session's own `main` exactly;
 the live `viewer.js`, fetched cache-busted, calls `pair()` for Name
 and VAT only and no longer for endpoint/email/phone, and
@@ -596,6 +599,45 @@ fetched directly and reads `8278aeb`, matching this session's own
 `main` exactly; `vf-ui`'s deployed `viewer.js` and `app.css`, both
 fetched cache-busted, carry every change described above and no
 `.sfield.address` rule or endpoint/email/phone `pair()` call anywhere.
+
+**Decision 0388 (the process row and Document card join the grid) is
+built, not yet pushed or deployed.** Two asks, each mocked up in a
+headless Chromium and sent as a screenshot before being built, and
+each approved before the next line of production code changed for it.
+First: the process chevrons moved from a full-width panel above
+`.columns` into the left column's own grid area, so their width
+matches the Seller/Buyer cards by construction. Second: `#viewer
+.columns` gained named `grid-template-areas` so the Document card's
+own area spans exactly the process+parties+header rows — pixel-
+measured, its bottom and the header card's bottom both land at
+768.33px — and Lines now runs full width under both columns instead of
+being confined to the left one, filled with the same flex chain
+decision 0386 built for the pop-out rather than a second guessed
+height. The Exceptions card is hidden, the operator's own words,
+"without removing the code, just the visibility" — one CSS rule,
+`.exceptions { display: none; }`, and deleting it is the entire way
+back. **The shared `.columns` class was the real hazard here**:
+`sources.js` uses the same class name for an unrelated two-panel
+layout (decision 0177), and a bare `.columns` override would have
+reached it too, pushing its real content down by four newly-implicit,
+empty, gapped rows. Every new rule is scoped under `#viewer` or a
+class unique to this screen — checked, not assumed, by rendering both
+screens' own use of `.columns` side by side in a synthetic page and
+reading `getComputedStyle` back: `#shell .columns` (Sources' own
+scope) still reads `grid-template-areas: none; align-items: start`,
+untouched. Decision 0281's own nav test slices this stylesheet by
+counting closing braces from the first `@media (max-width: 1100px)`
+occurrence; every rule this decision would have added ahead of `.nav`
+in that same block pushed the test's own target text out of the
+window it slices — watched fail, then fixed by giving this decision's
+rules a second block of their own placed after the one that test
+depends on, not before it. Touches `vf-ui` only (`viewer.js`,
+`app.css`), no migration, no other Worker. No test needed changing —
+none asserted on `.columns`'s previous plain-stack shape in a way this
+decision's own checks (above) didn't already cover by other means.
+Full suites: vf-ui 74 Worker + 665 browser, both passing; `eslint`
+clean. **This session has no push access to `origin/main`** — delivered
+as a bundle for the operator's own pull/push/deploy sequence.
 
 **Built this arc, closing out most of what was named here before:
 teams, most of the "user variable" fields, creating and managing an

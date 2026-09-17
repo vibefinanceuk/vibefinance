@@ -1810,6 +1810,17 @@
     A mockup rendered at 1536px never shows what three columns do at
     1280 -- an ordinary laptop -- so the panels reflow rather than
     shrink (decision 0108).
+
+    **Shared with the Sources screen, decision 0177** — this rule
+    itself stays exactly what it was: a plain two-track grid, no named
+    areas, `.panel`/`.parties` free to sit however many of them like
+    inside either side. The viewer's own reshaping (decision 0388,
+    below) lives entirely under `#viewer .columns`, more specific than
+    this rule without needing to touch it, because a bare `.columns`
+    override here would reach `sources.js`'s own use of the same class
+    too — decision 0177's whole point was one name meaning one thing,
+    and diverging what the name *does* between two screens would undo
+    that as surely as the duplicate rule it was written to fix.
   */
   .columns {
     display: grid;
@@ -1818,8 +1829,81 @@
     align-items: start;
   }
 
+  /*
+    **Named areas, not two independent stacks** — decision 0388, asked
+    directly: "the bottom of the Document image card should align with
+    the bottom of the invoice header card... this will allow the
+    invoice line item card to extend full width." Two plain flow
+    columns can only ever end where their own content ends; getting
+    the Document card's bottom to land on a *specific row* on the
+    other side, and getting Lines to run under both columns rather
+    than being confined to one, both need the grid to know about rows,
+    not just two side-by-side blocks. `document` is named in three
+    rows so it spans exactly as far as `process` + `parties` + `header`
+    do; `lines` and `note` name the same area across both column
+    tracks, which is what lets them run full width.
+
+    `#viewer` scopes every rule below to this one screen — `.c-process`
+    and friends only ever exist here, but `.columns` itself does not,
+    so the selector needs to say so rather than assume it.
+  */
+  #viewer .columns {
+    grid-template-areas:
+      "process  document"
+      "parties  document"
+      "header   document"
+      "lines    lines"
+      "note     note";
+    /* The Document card needs to stretch to fill the area the grid
+       gives it (below); the base rule's own `align-items: start` was
+       right for two independent stacks and wrong for a card meant to
+       reach a specific row on the other side. */
+    align-items: stretch;
+  }
+  .c-process { grid-area: process; }
+  .c-parties { grid-area: parties; }
+  .c-header { grid-area: header; }
+  .c-lines { grid-area: lines; }
+  .c-note { grid-area: note; }
+  .c-document { grid-area: document; min-height: 0; }
+
+  /*
+    **The Document card fills exactly the area the grid gives it**,
+    the same flex chain decision 0386 built for the pop-out rather
+    than a second guessed height: `.vpreview`'s own `calc(100vh -
+    300px)` was measured against this app's own topbar and tabs on the
+    assumption of a full page below them, which stopped being true the
+    moment this card's own height became "as tall as three rows on the
+    other side of the grid" instead. `:not(.exceptions)` matters here
+    specifically — `exceptionPanel()` still shares this grid cell and
+    still carries the base `.panel` class, and without the exclusion
+    this rule's own specificity would beat the `.exceptions { display:
+    none }` rule below and undo the hide.
+  */
+  .c-document > .panel:not(.exceptions) {
+    height: 100%;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  .c-document > .panel:not(.exceptions) > *:not(.cardhead) { flex: 1; min-height: 0; }
+  .c-document .vpreview { height: auto; }
+
+  /*
+    Each of these is now the only thing in its own named row, spaced
+    by `.columns`'s own `gap` (16px) rather than by the margins
+    decision 0178/0179 gave a panel for sitting in a plain stack —
+    without this, a panel's own bottom margin would double up on top
+    of the grid gap that already spaces it from the next row.
+  */
+  .c-parties > .parties,
+  .c-header > .panel,
+  .c-lines > .panel {
+    margin-bottom: 0;
+  }
+
   @media (max-width: 1100px) {
-    .columns { grid-template-columns: minmax(0, 1fr); }
     .frame { grid-template-columns: 1fr; }
     .nav {
       display: flex;
@@ -1838,6 +1922,41 @@
       height: auto;
     }
     .nav .mark, .nav .who { display: none; }
+  }
+
+  /*
+    Its own media query, deliberately not folded into the shell's own
+    one just above — that one is sliced by a test counting closing
+    braces from its own start (decision 0281's own test, "undoes the
+    sticky sidebar..."), and any rule landing inside that same block
+    ahead of `.nav` would push what it's actually checking out of the
+    window it slices. Two blocks sharing the same breakpoint is
+    ordinary CSS; keeping each near what it belongs to, and after the
+    block a fragile test already depends on rather than inside it, is
+    worth more than merging them.
+  */
+  @media (max-width: 1100px) {
+    /* `#viewer` again — the bare `.columns { grid-template-columns:
+       minmax(0, 1fr); }` a few lines up already collapses the
+       Sources screen to one column at this width too, and needs no
+       change; this only needs to win the areas as well, for the
+       viewer specifically, which the ID does regardless of order. */
+    #viewer .columns {
+      grid-template-columns: minmax(0, 1fr);
+      grid-template-areas:
+        "process"
+        "document"
+        "parties"
+        "header"
+        "lines"
+        "note";
+    }
+    /* Back to a plain stack at this width, so the Document card gets
+       its own honest height again rather than "as tall as three rows
+       stacked above it," which is a fine rule on a wide screen and a
+       strange one once everything is single-column already. */
+    .c-document > .panel:not(.exceptions) { height: auto; }
+    .c-document .vpreview { height: calc(100vh - 300px); }
   }
 
   /*
@@ -2027,6 +2146,17 @@
   /*
     The validation panel — decision 0119.
 
+    **Hidden for now, not removed** — the operator's own words, asked
+    while reworking the space around the Document card: "can we hide
+    the Exceptions card, but without removing the code, just the
+    visibility." `exceptionPanel()` still builds it and `renderExceptions()`
+    still fills `#exlist` on every load; nothing downstream of either
+    knows this rule exists. Deleting this one line is the whole way
+    back.
+  */
+  .exceptions { display: none; }
+
+  /*
     **Fixed height and scrolling.** A document with fourteen exceptions
     must not push the fields it is complaining about off the screen: the
     panel is a companion to the form, not a thing that displaces it.

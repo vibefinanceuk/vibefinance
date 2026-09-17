@@ -2195,24 +2195,26 @@ export async function openViewer(task, onClose) {
           [subhead(task)]
         ),
 
-        // Fields beside actions, rather than fields above a footer.
-        // Actions collected in one place (decision 0108).
-        // Above the columns, because it is context for everything
-        // below it rather than one panel among them.
-        progressRow(),
+        // Named grid areas (decision 0388) — the Document card spans
+        // exactly the process+parties+header rows, its bottom landing
+        // on the header card's own bottom, with Lines full width
+        // beneath both rather than confined to this column.
         el("div", { class: "columns" }, [
-          el("div", {}, [
-            // Seller and buyer side by side, in the space the four
-            // status panels were using (decision 0115).
-            el("div", { class: "parties" }, [sellerPanel(), buyerPanel()].filter(Boolean)),
-            headerSummary(),
-            linePanel(),
-            el("div", { class: "problem", id: "viewer-note", role: "status" }),
-          ]),
-          el("div", {}, [
+          el("div", { class: "c-process" }, [progressRow()].filter(Boolean)),
+          el("div", { class: "c-document" }, [
             documentPanel(task),
             exceptionPanel(),
           ].filter(Boolean)),
+          el("div", { class: "c-parties" }, [
+            // Seller and buyer side by side, in the space the four
+            // status panels were using (decision 0115).
+            el("div", { class: "parties" }, [sellerPanel(), buyerPanel()].filter(Boolean)),
+          ]),
+          el("div", { class: "c-header" }, [headerSummary()].filter(Boolean)),
+          el("div", { class: "c-lines" }, [linePanel()].filter(Boolean)),
+          el("div", { class: "c-note" }, [
+            el("div", { class: "problem", id: "viewer-note", role: "status" }),
+          ]),
         ].filter(Boolean)),
       ].filter(Boolean))
     )

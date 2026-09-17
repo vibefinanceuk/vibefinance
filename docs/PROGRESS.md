@@ -454,6 +454,27 @@ a rule, and left an approval task in a queue.
   from beneath its own label back to beside it, superseding decision
   0280 (whose reason — a half-width column — no longer holds once
   `.sellergrid` is one column, full width).
+- **The process row and Document card join the grid** (0388). Two
+  asks, each mocked up with a real headless-Chromium render before
+  being built. First: the process chevrons moved from a full-width
+  panel above `.columns` into the left column's own grid area, so
+  their width matches the Seller/Buyer cards by construction rather
+  than by a rule to keep in sync. Second: `#viewer .columns` gained
+  named `grid-template-areas` so the Document card's own grid area
+  spans exactly the process+parties+header rows — its bottom lands on
+  the header card's bottom, pixel-measured at 768.33px for both — and
+  Lines now runs full width beneath both columns instead of being
+  confined to the left one. The Document card fills its area with the
+  same flex chain decision 0386 built for the pop-out, rather than a
+  second guessed height. `.columns` itself stays exactly what it was
+  for the Sources screen, which shares the class name (decision 0177)
+  with an unrelated two-panel layout; every new rule is scoped under
+  `#viewer` or a class that exists only on this screen, checked by
+  rendering both screens' own use of `.columns` side by side and
+  reading `getComputedStyle` back, not assumed safe. The Exceptions
+  card is hidden — `.exceptions { display: none; }`, the operator's
+  own words, "without removing the code, just the visibility" —
+  `exceptionPanel()` and `renderExceptions()` are untouched.
 
 ### Customer configuration
 - Org units, teams, roles, users, cost centres
