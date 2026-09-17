@@ -29,11 +29,11 @@ twice.
 
 | | |
 | --- | --- |
-| `origin/main` | `9e77954` |
+| `origin/main` | `3ecfbc5` |
 | vf-admin deployed | `8e27a34` · `https://admin.vibefinance-ai.com` · behind Cloudflare Access |
 | vf-app deployed | `4d44b59` |
 | vf-licence deployed | `a235713` |
-| vf-ui deployed | `9e77954` · `https://app.vibefinance-ai.com` |
+| vf-ui deployed | `3ecfbc5` · `https://app.vibefinance-ai.com` |
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
 | `vf-app-poc` migrations | through `0070` |
 | `vf-licence-poc` migrations | through `0121` |
@@ -529,24 +529,28 @@ exactly; `vf-ui`'s deployed `app.css`, fetched cache-busted, no longer
 contains the `.vimage` selector — only the explanatory comment
 mentions the name.
 
-**Decision 0386 (the pop-out fills the window) is built, committed
-locally, and NOT YET pushed or deployed.** Reported live from a
-screenshot after phase 5 shipped: the pop-out's card sat centred with
-a 1100px width cap nothing else in `app.css` has, and no rule stretched
-it to fill the window's height either. Both replaced with a flex
-chain — `body.docwindowbody`/`#docwindow-root`/`.panel` each `flex:
-1`, `.vpreview`'s own height reset to `auto` inside this page rather
-than given a second guessed constant. Measured in a headless Chromium
-at two window sizes rather than reasoned about on paper: the panel's
-own box tracked the viewport exactly at both (860px and 610px tall
-against 900px and 650px viewports, minus this page's own padding).
-Touches `vf-ui` only (`app.css`), no migration, no other Worker.
-**Waiting on the operator to pull the bundle, push, and deploy
-`vf-ui`** before this table says it's live. One thing noticed and
-left open rather than fixed here: the Timeline / Chat tab, once
-stretched the same way, leaves visible empty space below its own
-feed and input box — worth a decision from the operator, since
-tightening it touches CSS the embedded card also uses.
+**Decision 0386 (the pop-out fills the window) is built, pushed, and
+deployed.** Reported live from a screenshot after phase 5 shipped: the
+pop-out's card sat centred with a 1100px width cap nothing else in
+`app.css` has, and no rule stretched it to fill the window's height
+either. Both replaced with a flex chain — `body.docwindowbody`/
+`#docwindow-root`/`.panel` each `flex: 1`, `.vpreview`'s own height
+reset to `auto` inside this page rather than given a second guessed
+constant. Measured in a headless Chromium at two window sizes rather
+than reasoned about on paper: the panel's own box tracked the viewport
+exactly at both (860px and 610px tall against 900px and 650px
+viewports, minus this page's own padding). Touches `vf-ui` only
+(`app.css`), no migration, no other Worker.
+**Confirmed against the live origin and the live deployment**:
+`origin/main` fetched directly and reads `3ecfbc5`, matching this
+session's own `main` exactly; `vf-ui`'s deployed `app.css`, fetched
+cache-busted, no longer contains the `max-width: 1100px; margin: 0
+auto` rule and does contain the new `body.docwindowbody { display:
+flex; ... }`. One thing noticed and left open rather than fixed here:
+the Timeline / Chat tab, once stretched the same way, leaves visible
+empty space below its own feed and input box — worth a decision from
+the operator, since tightening it touches CSS the embedded card also
+uses.
 
 **Built this arc, closing out most of what was named here before:
 teams, most of the "user variable" fields, creating and managing an
