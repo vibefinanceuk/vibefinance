@@ -4,6 +4,7 @@ import type { RouteResult } from "./org-route.js";
 import { CODE_LISTS } from "./peppol-render-data.js";
 import { unitLineage } from "./unit-config.js";
 import { findSimilarInvoices } from "./invoice-history.js";
+import { preferredDocumentType, documentTypeInfo } from "./document-storage.js";
 
 /**
  * Persists invoice header and line facts — see docs/decisions/
@@ -368,12 +369,26 @@ export async function handleGetInvoice(db: D1Database, invoiceId: string): Promi
     }
   }
 
-  const document = await db
-    .prepare(
-      "SELECT content_type, document_type FROM invoice_documents WHERE invoice_id = ? ORDER BY uploaded_at DESC LIMIT 1"
-    )
-    .bind(invoiceId)
-    .first<{ content_type: string; document_type: string }>();
+  /**
+   * **`preferredDocumentType`, not a second, independent `ORDER BY`**
+   * — decision 0383 replaced this route's own ad-hoc
+   * `ORDER BY uploaded_at DESC LIMIT 1` with the one real choice
+   * `document-url` and `/documents/:token` already make.
+   *
+   * The two queries used to agree by coincidence rather than by
+   * construction: a `generated_rendering` row is always inserted
+   * *after* the `original` it renders, so "most recently uploaded"
+   * happened to match "preferred" for every document this system could
+   * retain — right up until `embedded_xml` (decision 0383) was
+   * inserted after `original` too, and is never preferred over it. The
+   * old query would have started reporting the embedded XML as "what
+   * the preview shows" for a hybrid invoice, the exact class of
+   * disagreement decision 0273's own comment already named as the
+   * thing to avoid: *"two copies of the same `ORDER BY` would
+   * eventually not [agree]."* There is only one implementation of the
+   * choice now.
+   */
+  const document = await preferredDocumentType(db, invoiceId);
 
   /**
    * **The original specifically, not whichever was uploaded most
@@ -387,6 +402,15 @@ export async function handleGetInvoice(db: D1Database, invoiceId: string): Promi
     .prepare("SELECT content_type FROM invoice_documents WHERE invoice_id = ? AND document_type = 'original'")
     .bind(invoiceId)
     .first<{ content_type: string }>();
+
+  /**
+   * **The embedded XML, if this invoice retained one** — decision
+   * 0383, for the XML tab on a hybrid PDF (Factur-X, ZUGFeRD). Asked
+   * for by name via `documentTypeInfo`, the same way `originalDocument`
+   * already is — not `preferredDocumentType`, which would never
+   * return this type on its own (it's ranked last, deliberately).
+   */
+  const embeddedXmlDocument = await documentTypeInfo(db, invoiceId, "embedded_xml");
 
   const lineRows = await db
     .prepare(
@@ -510,14 +534,17 @@ export async function handleGetInvoice(db: D1Database, invoiceId: string): Promi
           }
         : null,
       orgAssignedBy: invoice.org_assigned_by,
-      document: document
-        ? { contentType: document.content_type, documentType: document.document_type }
-        : null,
+      document: document ? { contentType: document.contentType, documentType: document.documentType } : null,
       // **Only the original, only when it is genuinely there** —
       // decision 0273. `null` for the (usual) case of a PDF or image
       // that never had a separate rendering generated from it, same as
       // for an invoice with no document retained at all.
       originalDocument: originalDocument ? { contentType: originalDocument.content_type } : null,
+      // **The embedded XML, only when this invoice retained one** —
+      // decision 0383. `null` for every ordinary PDF, image, or
+      // bare-XML invoice; present only for a hybrid PDF whose embedded
+      // invoice was kept as its own artifact.
+      embeddedXmlDocument: embeddedXmlDocument ? { contentType: embeddedXmlDocument.contentType } : null,
       /**
        * Whether this document could be read at all — decision 0161.
        *

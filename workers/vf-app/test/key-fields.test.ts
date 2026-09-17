@@ -557,6 +557,55 @@ describe("reading an invoice back (decision 0120)", () => {
     });
   });
 
+  describe("the embedded XML, reported separately from the outer PDF (decision 0383)", () => {
+    /**
+     * **For a hybrid PDF's own XML tab.** Same shape as
+     * `originalDocument` above, and for the same reason: a caller that
+     * wants specifically the embedded invoice, regardless of what the
+     * preview shows, needs a fact that doesn't depend on preference
+     * order.
+     */
+    async function storeDocument(invoiceId: string, documentType: string, contentType: string) {
+      await env.DB.prepare(
+        `INSERT INTO invoice_documents (id, invoice_id, r2_key, document_type, content_type)
+         VALUES (?, ?, ?, ?, ?)`
+      )
+        .bind(crypto.randomUUID(), invoiceId, `k-${documentType}`, documentType, contentType)
+        .run();
+    }
+
+    it("reports the embedded XML without disturbing what the preview shows — the outer PDF", async () => {
+      await seedInvoice("inv-hybrid", {});
+      await storeDocument("inv-hybrid", "original", "application/pdf");
+      await storeDocument("inv-hybrid", "embedded_xml", "application/xml");
+
+      const { handleGetInvoice } = await import("../src/invoice-facts-route.js");
+      const body = (await handleGetInvoice(env.DB, "inv-hybrid")).body as {
+        document: { documentType: string; contentType: string } | null;
+        embeddedXmlDocument: { contentType: string } | null;
+      };
+
+      // The regression decision 0383 fixed on the way in: `document`
+      // used to be "whichever row was uploaded most recently," which
+      // for a hybrid invoice is the embedded XML — inserted after the
+      // outer PDF it came from. The Document tab would have shown XML
+      // for an invoice whose actual preferred document is the PDF.
+      expect(body.document).toEqual({ documentType: "original", contentType: "application/pdf" });
+      expect(body.embeddedXmlDocument).toEqual({ contentType: "application/xml" });
+    });
+
+    it("reports null for every ordinary invoice that never retained one", async () => {
+      await seedInvoice("inv-plain-pdf", {});
+      await storeDocument("inv-plain-pdf", "original", "application/pdf");
+
+      const { handleGetInvoice } = await import("../src/invoice-facts-route.js");
+      const body = (await handleGetInvoice(env.DB, "inv-plain-pdf")).body as {
+        embeddedXmlDocument: { contentType: string } | null;
+      };
+      expect(body.embeddedXmlDocument).toBeNull();
+    });
+  });
+
   it("survives an invoice whose facts cannot be parsed", async () => {
     // A row that cannot be read still has an identity and lines.
     // Returning nothing would hide a document somebody needs to look

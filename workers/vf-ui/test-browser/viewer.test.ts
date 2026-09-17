@@ -2736,7 +2736,7 @@ describe("the document/timeline tabs (decision 0269)", () => {
   });
 });
 
-describe("the XML tab, offered only when it exists (decision 0273)", () => {
+describe("the XML tab, offered only when it exists (decision 0273, widened by 0383)", () => {
   const BASE_ROUTES = {
     "/api/code-lists": { fields: {} },
     "/api/ui-strings": STRINGS,
@@ -2827,6 +2827,62 @@ describe("the XML tab, offered only when it exists (decision 0273)", () => {
     // **Asked for the original specifically**, not whatever is
     // preferred for the main preview — decision 0273's own point.
     expect(seen.some((u) => u.includes("/document-url") && u.includes("type=original"))).toBe(true);
+  });
+
+  it("offers the XML tab for a hybrid PDF that retained its embedded invoice — decision 0383", async () => {
+    // The original here is the outer PDF, not XML — this is exactly
+    // the case `hasXml`'s content-type check alone would miss, which
+    // is why `embeddedXmlDocument` is checked too.
+    stubFetch({
+      ...BASE_ROUTES,
+      "/api/invoices/inv-1": {
+        facts: {},
+        lines: [],
+        validation: { passed: true, checked: [], failures: [] },
+        originalDocument: { contentType: "application/pdf" },
+        embeddedXmlDocument: { contentType: "application/xml" },
+      },
+    });
+
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    await openViewer(TASK, () => {});
+
+    expect(xmlTabButton()).not.toBeUndefined();
+  });
+
+  it("asks for the embedded XML specifically, not the outer PDF, for a hybrid invoice", async () => {
+    const seen: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        seen.push(String(url));
+        const path = String(url).split("?")[0];
+        const routes: Record<string, unknown> = {
+          ...BASE_ROUTES,
+          "/api/invoices/inv-1": {
+            facts: {},
+            lines: [],
+            validation: { passed: true, checked: [], failures: [] },
+            originalDocument: { contentType: "application/pdf" },
+            embeddedXmlDocument: { contentType: "application/xml" },
+          },
+          "/api/invoices/inv-1/document-url": { url: "https://files.example/inv-1-embedded.xml" },
+        };
+        if (!(path in routes)) throw new Error(`no stub for ${path}`);
+        return { ok: true, json: async () => routes[path] } as Response;
+      })
+    );
+
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    await openViewer(TASK, () => {});
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(seen.some((u) => u.includes("/document-url") && u.includes("type=embedded_xml"))).toBe(true);
+    expect(seen.some((u) => u.includes("/document-url") && u.includes("type=original"))).toBe(false);
   });
 
   it("switches to the XML tab and shows the fetched document, without disturbing the Document tab", async () => {

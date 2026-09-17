@@ -2,7 +2,7 @@ import type { RouteResult } from "./org-route.js";
 import { computeDocumentKey, storeInvoiceDocument, retrieveInvoiceDocument, type DocumentType } from "./document-storage.js";
 
 function isDocumentType(value: string | null): value is DocumentType {
-  return value === "original" || value === "generated_rendering";
+  return value === "original" || value === "generated_rendering" || value === "embedded_xml";
 }
 
 function extFromContentType(contentType: string): string {
@@ -38,7 +38,7 @@ export async function handleUploadDocument(
   }
   const documentType = documentTypeParam ?? "original";
   if (!isDocumentType(documentType)) {
-    return { status: 400, body: { error: `documentType must be 'original' or 'generated_rendering', got '${documentType}'` } };
+    return { status: 400, body: { error: `documentType must be 'original', 'generated_rendering', or 'embedded_xml', got '${documentType}'` } };
   }
   if (!contentType) {
     return { status: 400, body: { error: "content-type header is required" } };
@@ -87,7 +87,7 @@ export async function handleRetrieveDocument(
   }
   const documentType = documentTypeParam ?? "original";
   if (!isDocumentType(documentType)) {
-    return { status: 400, errorBody: { error: `documentType must be 'original' or 'generated_rendering', got '${documentType}'` } };
+    return { status: 400, errorBody: { error: `documentType must be 'original', 'generated_rendering', or 'embedded_xml', got '${documentType}'` } };
   }
 
   const doc = await retrieveInvoiceDocument(bucket, db, invoiceId, documentType);

@@ -137,7 +137,13 @@ import {
 } from "./field-visibility-route.js";
 import { handlePreflight, withCors } from "@vibefinance/shared";
 import { mintDocumentToken, verifyDocumentToken, mintPageToken, verifyPageToken } from "./document-token.js";
-import { retrieveInvoiceDocument, preferredDocumentType, documentTypeInfo, renderXmlForDisplay } from "./document-storage.js";
+import {
+  retrieveInvoiceDocument,
+  preferredDocumentType,
+  documentTypeInfo,
+  renderXmlForDisplay,
+  type DocumentType,
+} from "./document-storage.js";
 import { resolveVocabulary } from "@vibefinance/shared";
 import { getSupplierHistory } from "./invoice-history.js";
 import { handleCreateCustomField, handleListCustomFields, loadCustomFields } from "./custom-field-route.js";
@@ -1934,22 +1940,25 @@ export default {
         return json({ error: "DOCUMENT_URL_SECRET is not configured" }, 500);
       }
       /**
-       * **Which document, chosen once and only once** — decision 0273.
-       * A caller may ask for a specific type (`?type=original`, for
-       * the XML tab); otherwise `preferredDocumentType` picks as it
-       * always has. Whichever is chosen travels inside the signed
-       * token itself now, so `/documents/:token` never re-derives it
-       * and cannot disagree with the choice made here.
+       * **Which document, chosen once and only once** — decision 0273,
+       * widened by decision 0383 to a second explicit type.
+       * A caller may ask for a specific type (`?type=original` or
+       * `?type=embedded_xml`, both for the XML tab depending on which
+       * kind of document this invoice has); otherwise
+       * `preferredDocumentType` picks as it always has. Whichever is
+       * chosen travels inside the signed token itself now, so
+       * `/documents/:token` never re-derives it and cannot disagree
+       * with the choice made here.
        */
       const requestedType = url.searchParams.get("type");
-      let documentType: "original" | "generated_rendering";
+      let documentType: DocumentType;
       let contentType: string;
-      if (requestedType === "original") {
-        const info = await documentTypeInfo(db, docUrlMatch[1], "original");
+      if (requestedType === "original" || requestedType === "embedded_xml") {
+        const info = await documentTypeInfo(db, docUrlMatch[1], requestedType);
         if (!info) {
-          return json({ error: `no original document is retained for invoice ${docUrlMatch[1]}` }, 404);
+          return json({ error: `no ${requestedType} document is retained for invoice ${docUrlMatch[1]}` }, 404);
         }
-        documentType = "original";
+        documentType = requestedType;
         contentType = info.contentType;
       } else {
         const stored = await preferredDocumentType(db, docUrlMatch[1]);

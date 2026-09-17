@@ -33,6 +33,15 @@ describe("minting and verifying a document token", () => {
     });
   });
 
+  it("round-trips the third document type too — decision 0383", async () => {
+    const { token } = await mintDocumentToken(SECRET, "inv-1", "embedded_xml", NOW);
+    expect(await verifyDocumentToken(SECRET, token, NOW)).toEqual({
+      valid: true,
+      invoiceId: "inv-1",
+      documentType: "embedded_xml",
+    });
+  });
+
   it("expires within minutes, not hours", async () => {
     // A window left open across a split screen is the use case; a token
     // that outlives the task is a credential sitting in a URL bar.

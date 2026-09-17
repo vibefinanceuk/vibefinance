@@ -187,7 +187,8 @@ describe("retaining the original document (decision 0068)", () => {
   });
 
   it("stores a hybrid PDF as application/pdf, not as its embedded XML", async () => {
-    // What is retained is what arrived. The embedded invoice is derived.
+    // What is retained as the ORIGINAL is what arrived. The embedded
+    // invoice is retained too, but separately — decision 0383, below.
     const { puts, bucket } = recordingBucket();
     await handleCaptureFromSource(
       env.DB,
@@ -200,6 +201,68 @@ describe("retaining the original document (decision 0068)", () => {
     );
     expect(puts[0].contentType).toBe("application/pdf");
     expect(puts[0].key).toMatch(/\.pdf$/);
+  });
+
+  it("also retains the embedded XML as its own artifact — decision 0383", async () => {
+    // Phase 3 of docs/design/document-viewer.md: a hybrid invoice gets
+    // an XML tab the way a bare-XML invoice already does, which needs
+    // the embedded XML kept somewhere rather than read once and
+    // discarded (decision 0018's own premise, corrected).
+    const { puts, bucket } = recordingBucket();
+    const result = await handleCaptureFromSource(
+      env.DB,
+      "src-mail",
+      fromBase64(FACTURX_PLAIN_B64),
+      fakeModel("{}"),
+      undefined,
+      bucket,
+      "acme"
+    );
+
+    expect(puts).toHaveLength(2);
+    expect(puts[1].contentType).toBe("application/xml");
+    expect(puts[1].key).toMatch(/^acme\/\d{4}\/[0-9a-f-]+\.xml$/);
+
+    const row = await env.DB.prepare(
+      "SELECT document_type, content_type FROM invoice_documents WHERE invoice_id = ? AND document_type = 'embedded_xml'"
+    )
+      .bind((result.body as { id: string }).id)
+      .first<{ document_type: string; content_type: string }>();
+    expect(row).toEqual({ document_type: "embedded_xml", content_type: "application/xml" });
+  });
+
+  it("keeps the outer PDF's own key distinct from the embedded XML's — no key collision", async () => {
+    // Both use computeDocumentKey with the same invoice id; only the
+    // extension differs (.pdf vs .xml), and this proves it rather than
+    // assuming R2's key namespace forgives a near-miss.
+    const { puts, bucket } = recordingBucket();
+    await handleCaptureFromSource(
+      env.DB,
+      "src-mail",
+      fromBase64(FACTURX_PLAIN_B64),
+      fakeModel("{}"),
+      undefined,
+      bucket,
+      "acme"
+    );
+    expect(puts).toHaveLength(2);
+    expect(puts[0].key).not.toBe(puts[1].key);
+    expect(puts[0].key.replace(/\.pdf$/, "")).toBe(puts[1].key.replace(/\.xml$/, ""));
+  });
+
+  it("does not retain an embedded XML artifact for an ordinary UBL invoice", async () => {
+    // structured_xml never sets detection.embeddedXml — only the
+    // structured_pdfa branch does. This is the negative case: nothing
+    // about widening DocumentType should make a bare-XML invoice grow
+    // a second, redundant document.
+    const { puts, bucket } = recordingBucket();
+    const result = await handleCaptureFromSource(env.DB, "src-mail", UBL, fakeModel("{}"), undefined, bucket, "acme");
+
+    expect(puts).toHaveLength(1);
+    const rows = await env.DB.prepare("SELECT document_type FROM invoice_documents WHERE invoice_id = ?")
+      .bind((result.body as { id: string }).id)
+      .all<{ document_type: string }>();
+    expect(rows.results.map((r: { document_type: string }) => r.document_type)).toEqual(["original"]);
   });
 
   it("retains a document nothing could read — where it matters most", async () => {

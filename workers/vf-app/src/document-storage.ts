@@ -10,7 +10,20 @@
  * live Cloudflare credentials are needed just to exercise this.
  */
 
-export type DocumentType = "original" | "generated_rendering";
+/**
+ * **Widened to three — decision 0383**, phase 3 of
+ * `docs/design/document-viewer.md`. `original` is exactly what
+ * arrived; `generated_rendering` is something this system computed
+ * for readability (an XML invoice has nothing a person can look at,
+ * decision 0018); `embedded_xml` is neither — it is the authoritative
+ * invoice a hybrid PDF (Factur-X, ZUGFeRD) already carried inside
+ * itself, retained on its own so it can get the same XML tab a
+ * bare-XML invoice's own `original` already gets. Migration 0018's
+ * own comment said a hybrid needs *"one 'original' row only... no
+ * separate rendering needed"* — true of extraction, and it undersold
+ * what a person wants to see.
+ */
+export type DocumentType = "original" | "generated_rendering" | "embedded_xml";
 
 /**
  * The real key structure decision 0013 specified:
@@ -196,6 +209,15 @@ export async function retrieveInvoiceDocument(
  * `/documents/:token` serves bytes. The token names an *invoice*, not a
  * document — so the two must agree, and two copies of the same `ORDER
  * BY` would eventually not.
+ *
+ * **`embedded_xml` is ranked explicitly last, decision 0383** — not
+ * left to fall through the `CASE`'s missing `ELSE`. A `CASE` with no
+ * matching branch evaluates to `NULL`, and SQLite sorts `NULL` before
+ * every real value in ascending order: an unranked third type would
+ * have silently *won* the Document tab over the outer PDF it came
+ * from, the opposite of what a person expects to see there. Caught by
+ * writing the test first and watching it fail this way, not by
+ * reasoning about `ORDER BY` from memory.
  */
 export async function preferredDocumentType(
   db: D1Database,
@@ -208,6 +230,7 @@ export async function preferredDocumentType(
        ORDER BY CASE document_type
                   WHEN 'generated_rendering' THEN 0
                   WHEN 'original' THEN 1
+                  WHEN 'embedded_xml' THEN 2
                 END
        LIMIT 1`
     )

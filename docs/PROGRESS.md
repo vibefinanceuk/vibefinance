@@ -388,6 +388,19 @@ a rule, and left an approval task in a queue.
   already drawn, so nothing reloads it and nothing can ask an expired
   token again. Rotate and zoom reset on every open — asked directly,
   decided as a session convenience rather than data worth storing.
+- **A hybrid invoice's embedded XML is now its own retained artifact**
+  (0383, phase 3 of `docs/design/document-viewer.md`). Migration
+  0018's own comment said a Factur-X/ZUGFeRD PDF needs "one 'original'
+  row only... no separate rendering needed" — true of what was stored,
+  and it meant the embedded XML `pdf-attachment.ts` reads for
+  extraction was read once and thrown away. It is retained now as
+  `document_type = 'embedded_xml'`, and a hybrid invoice gets an XML
+  tab the way a bare-XML invoice already does, rendered the same way
+  (0279) because the tab's dispatch was always keyed on content type,
+  not document type. Widening the closed `document_type` vocabulary
+  from two values to three needed a SQLite table rebuild — `CHECK`
+  constraints can't be `ALTER`ed in place — following migration
+  0033's exact precedent.
 
 ### Customer configuration
 - Org units, teams, roles, users, cost centres
@@ -710,7 +723,13 @@ quantity mean anything (0110); and, checked while scoping the document
 viewer's next piece of work, decision 0068's own later claim that the
 multi-page flow "deletes on finalise" against a codebase with no
 `delete` call anywhere on that path (0381) — the record was wrong about
-its own subject a second time, in the opposite direction from the first.
+its own subject a second time, in the opposite direction from the first;
+and, widening the same table's `document_type` to a third value,
+`invoice-facts-route.ts`'s own ad-hoc `ORDER BY uploaded_at DESC LIMIT
+1` query disagreed with `preferredDocumentType()`'s real ranking the
+moment a row of that type existed (0383) — the two had only ever agreed
+by coincidence, because every type inserted after `'original'` happened,
+until then, to also be the preferred one.
 **None was found by reading either layer alone**, and several were
 found by a question rather than by any test. Decision 0067 now makes one
 of these a standing test: for every declared field, either the UBL

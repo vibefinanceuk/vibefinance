@@ -443,13 +443,24 @@ established which**, and the two readings have different fixes.
 
 ## Suggested next pieces
 
-**The most immediate one: phase 3 of the document viewer**
-(`docs/design/document-viewer.md`, decisions 0381–0382 built phases 1
-and 2). The embedded XML in a structured PDF (Factur-X, ZUGFeRD)
-becomes its own retained artifact, so those invoices get an XML tab
-the way a bare-XML invoice already does. Phases 4 (the pop-out window)
-and 5 (retiring the old preview and raw-file Expand) both wait on this
-one.
+**Phase 3 of the document viewer is built** (decision 0383 —
+*"Lets do the order written, so phase 3 next,"* the operator's own
+answer when phase 2 closed). The embedded XML in a structured PDF
+(Factur-X, ZUGFeRD) is now its own retained artifact, so those invoices
+get an XML tab the way a bare-XML invoice already does, rendered the
+same way. A real regression was caught before it shipped:
+`invoice-facts-route.ts` computed "which document the preview shows"
+with its own ad-hoc query rather than calling `preferredDocumentType()`
+— the two had only ever agreed by coincidence, and widening
+`document_type` to a third value broke it. **Written to the working
+tree and tested; not yet committed, pushed, or deployed** — the next
+bundle carries it, with the full pull/push/migrate/deploy sequence, and
+this page's deploy-status table and test counts above stay as they are
+until that is confirmed.
+
+**Next up: phase 4, the pop-out window carrying the whole document
+panel** (Timeline/Chat included), then phase 5 (retiring the old
+inline preview and raw-file Expand). Both still design only.
 
 **Built this arc, closing out most of what was named here before:
 teams, most of the "user variable" fields, creating and managing an

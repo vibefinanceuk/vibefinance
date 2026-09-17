@@ -88,7 +88,15 @@ async function retainOriginal(
   bytes: Uint8Array,
   // The whole detection result, not just the structure — a PDF carrying
   // no embedded invoice has no structure and is still a PDF (0069).
-  detection: { structure: DetectedStructure | null; attempted: readonly { test: string; outcome: string }[] },
+  // `embeddedXml` (decision 0383) is present only on the
+  // `structured_pdfa` branch — the XML detection already extracted
+  // and handed to the invoice parser, in hand here rather than
+  // re-read from the PDF a second time.
+  detection: {
+    structure: DetectedStructure | null;
+    attempted: readonly { test: string; outcome: string }[];
+    embeddedXml?: string;
+  },
   issueDate?: string
 ): Promise<RetentionOutcome> {
   if (!bucket) return { retained: false, reason: "no R2 bucket is bound" };
@@ -150,6 +158,44 @@ async function retainOriginal(
       } catch {
         // A rendering that throws leaves the original retained and the
         // invoice usable, which is the whole point of doing it after.
+      }
+    }
+
+    /**
+     * **And the embedded XML, retained on its own — decision 0383**,
+     * phase 3 of `docs/design/document-viewer.md`.
+     *
+     * `original` above is the outer PDF, unchanged from what arrived.
+     * A hybrid PDF (Factur-X, ZUGFeRD) carries a complete, authoritative
+     * invoice inside it — decision 0042's whole reason for existing —
+     * and until now that XML was read once by `extractEmbeddedInvoiceXml`
+     * to produce facts and then discarded. Nothing kept it, so nothing
+     * could show a hybrid invoice the XML tab a bare-XML invoice already
+     * gets.
+     *
+     * Not a rendering: nothing is computed here. The bytes are exactly
+     * what `pdf-attachment.ts` already extracted, stored as their own
+     * artifact the same way an `original` XML document already is one.
+     *
+     * A failure here is not a failure of retention, same reasoning as
+     * the rendering branch above: the outer PDF is already stored, and
+     * a hybrid invoice that cannot retain its embedded XML a second time
+     * is one a person reads via the outer PDF rather than one that was
+     * lost.
+     */
+    if (detection.structure === "structured_pdfa" && detection.embeddedXml) {
+      try {
+        await storeInvoiceDocument(bucket, db, {
+          invoiceId,
+          documentType: "embedded_xml",
+          contentType: "application/xml",
+          key: computeDocumentKey(customerId, invoiceId, "xml", issueDate),
+          bytes: new TextEncoder().encode(detection.embeddedXml).buffer as ArrayBuffer,
+        });
+      } catch {
+        // Same reasoning as the rendering branch: UNIQUE(invoice_id,
+        // document_type) or a transient R2 failure here leaves the
+        // outer PDF retained and the invoice usable either way.
       }
     }
 

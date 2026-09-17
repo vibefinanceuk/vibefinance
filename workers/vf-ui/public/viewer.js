@@ -142,6 +142,11 @@ async function loadInvoice(invoiceId) {
       document: body.document ?? null,
       // The original specifically, for the XML tab — decision 0273.
       originalDocument: body.originalDocument ?? null,
+      // The embedded XML of a hybrid PDF, for the same tab — decision
+      // 0383. Present only for a Factur-X/ZUGFeRD invoice; null for
+      // everything else, same as originalDocument above for a PDF or
+      // image original.
+      embeddedXmlDocument: body.embeddedXmlDocument ?? null,
       // Whether the document could be read at all — decision 0161.
       intake: body.intake ?? null,
       // Who we matched this invoice to — decision 0219.
@@ -453,26 +458,34 @@ function documentFrame(firstUrl, mint, attributes) {
 }
 
 /**
- * The XML tab's own content — decision 0273.
+ * The XML tab's own content — decision 0273, widened by decision 0383.
  *
  * **Always an iframe, never an image.** Unlike `showPreview()`, there
- * is no image case to branch on: the original document this asks for
- * is only ever fetched when its own content type is XML-like in the
- * first place (checked in `documentPanel()`, before this tab is even
- * offered).
+ * is no image case to branch on: the document this asks for is only
+ * ever fetched when `documentPanel()` has already checked, before this
+ * tab is even offered, that one of the two XML-shaped types below
+ * genuinely exists.
+ *
+ * **Which type, decided once, here — not guessed from content type.**
+ * A bare-XML invoice's own `original` is the XML; a hybrid PDF's
+ * `original` is the outer PDF, and its XML is the separate
+ * `embedded_xml` artifact decision 0383 added. `stored.embeddedXmlDocument`
+ * says which invoice this is, the same fact `documentPanel()` already
+ * read to decide whether to offer this tab at all.
  */
 async function showXmlPreview(invoiceId) {
   const holder = document.getElementById("vxml");
   if (!holder) return;
 
-  const url = await documentUrl(invoiceId, "original");
+  const type = stored.embeddedXmlDocument ? "embedded_xml" : "original";
+  const url = await documentUrl(invoiceId, type);
   if (!url) {
     holder.replaceChildren(el("div", { class: "vthumb", text: t("viewer.nodocument") }));
     return;
   }
 
   holder.replaceChildren(
-    documentFrame(url, () => documentUrl(invoiceId, "original"), { class: "vframe", title: t("viewer.xmltab") })
+    documentFrame(url, () => documentUrl(invoiceId, type), { class: "vframe", title: t("viewer.xmltab") })
   );
 }
 
@@ -798,13 +811,14 @@ function documentPanel(task) {
   }
 
   /**
-   * **Offered only when the original genuinely is XML** — decision
-   * 0273's "if it exists." Most invoices arrive as a PDF or an image;
-   * their own original is not a second, different thing worth a tab
-   * of its own the way an XML original is next to its generated
-   * rendering.
+   * **Offered when the original genuinely is XML, or a hybrid PDF
+   * retained one inside it** — decision 0273's "if it exists," widened
+   * by decision 0383. Most invoices arrive as a PDF or an image; their
+   * own original is not a second, different thing worth a tab of its
+   * own the way a bare-XML original is next to its generated rendering
+   * — or the way a Factur-X/ZUGFeRD PDF's embedded invoice now is.
    */
-  const hasXml = /xml/i.test(stored.originalDocument?.contentType ?? "");
+  const hasXml = /xml/i.test(stored.originalDocument?.contentType ?? "") || Boolean(stored.embeddedXmlDocument);
   const xmlContent = hasXml
     ? el("div", { class: "vpreview", id: "vxml" }, [el("div", { class: "vthumb", text: t("viewer.document") })])
     : null;

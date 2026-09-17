@@ -248,6 +248,27 @@ describe("the choice both routes make (decision 0205)", () => {
     const chosen = await preferredDocumentType(env.DB, "inv-1");
     expect(chosen?.documentType).toBe("generated_rendering");
   });
+
+  it("never prefers the embedded XML over the outer PDF it came from — decision 0383", async () => {
+    // The Document tab should keep showing the PDF a hybrid invoice
+    // actually arrived as; the embedded XML is what the new XML tab
+    // asks for by name (documentTypeInfo), never what this function
+    // picks on its own.
+    await store("embedded_xml", "application/xml");
+    await store("original", "application/pdf");
+
+    const chosen = await preferredDocumentType(env.DB, "inv-1");
+    expect(chosen?.documentType).toBe("original");
+  });
+
+  it("still prefers a generated rendering over the embedded XML too", async () => {
+    await store("embedded_xml", "application/xml");
+    await store("original", "application/pdf");
+    await store("generated_rendering", "text/html; charset=utf-8");
+
+    const chosen = await preferredDocumentType(env.DB, "inv-1");
+    expect(chosen?.documentType).toBe("generated_rendering");
+  });
 });
 
 describe("documentTypeInfo — one specific type, not a choice between them (decision 0273)", () => {

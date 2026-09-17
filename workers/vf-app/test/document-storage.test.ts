@@ -97,6 +97,28 @@ describe("storeInvoiceDocument — real R2, real D1, both genuinely exercised", 
     expect(count?.n).toBe(2);
   });
 
+  it("allows a real third document type — the embedded XML of a hybrid PDF (decision 0383)", async () => {
+    await seedInvoice("inv-1");
+    await storeInvoiceDocument(env.DOCUMENTS, env.DB, {
+      invoiceId: "inv-1",
+      documentType: "original",
+      contentType: "application/pdf",
+      key: "acme/2026/inv-1.pdf",
+      bytes: new TextEncoder().encode("the outer PDF").buffer,
+    });
+    const result = await storeInvoiceDocument(env.DOCUMENTS, env.DB, {
+      invoiceId: "inv-1",
+      documentType: "embedded_xml",
+      contentType: "application/xml",
+      key: "acme/2026/inv-1.xml",
+      bytes: new TextEncoder().encode("<Invoice/>").buffer,
+    });
+    expect(result.documentType).toBe("embedded_xml");
+
+    const count = await env.DB.prepare("SELECT count(*) AS n FROM invoice_documents WHERE invoice_id = ?").bind("inv-1").first<{ n: number }>();
+    expect(count?.n).toBe(2);
+  });
+
   it("refuses a second document of the same type for the same invoice — the real UNIQUE constraint, not silently overwritten", async () => {
     await seedInvoice("inv-1");
     await storeInvoiceDocument(env.DOCUMENTS, env.DB, {

@@ -1,6 +1,6 @@
 # Design: The Document Viewer
 
-**Status: phases 1 and 2 built (decisions 0381, 0382); phases 3–5 are
+**Status: phases 1–3 built (decisions 0381, 0382, 0383); phases 4–5 are
 still design only.** Written 17 September 2026, from a conversation
 about where the viewer's document panel should ultimately go — the
 shape decision 0123 gestured at in September and never returned to.
@@ -35,7 +35,7 @@ a bug fix in the existing panel led straight into this conversation.
 | --- | --- |
 | jpg / png | `<img>`, inline. No rotate. Zoom is whatever the browser gives an image. |
 | Scanned image PDF | `<iframe>`; Chrome's own PDF viewer supplies scroll, zoom and its own thumbnail rail for a multi-page PDF (0042, 0123: *"the browser renders it, not us,"* a deliberate choice). |
-| Structured PDF with embedded XML (Factur-X, ZUGFeRD) | Only the outer PDF bytes are retained (`retainOriginal()`, `source-capture-route.ts`). The embedded XML is read once for extraction and never stored as its own artifact — there is no XML tab for these, unlike a document that arrived as bare XML. |
+| Structured PDF with embedded XML (Factur-X, ZUGFeRD) | **As of phase 3 (0383):** the embedded XML is retained as its own `embedded_xml` document alongside the outer PDF's `original`, and gets an XML tab the way a bare-XML invoice already does. Before phase 3, only the outer PDF bytes were retained and the embedded XML was read once for extraction, then discarded. |
 | Multi-page scan uploaded page-by-page (decision 0045) | See section 3. |
 | Expand | `openDocument()` calls `window.open(url, "_blank", "noopener")` on the *raw signed file URL* — a blank tab with no app chrome, no tabs, no Timeline/Chat. |
 
@@ -125,9 +125,11 @@ it.
    effect nobody planned for separately, retires decision 0380's whole
    class of bug: a canvas is pixels already drawn, so nothing reloads
    it and nothing can ask a stale link again.
-3. **The embedded XML in a structured PDF becomes a real, retained
-   artifact**, so Factur-X/ZUGFeRD invoices get an XML tab the way a
-   bare-XML invoice already does.
+3. **Built (decision 0383).** The embedded XML in a structured PDF
+   becomes a real, retained artifact, so Factur-X/ZUGFeRD invoices get
+   an XML tab the way a bare-XML invoice already does — and it renders
+   the same way bare XML already does, since the tab's dispatch was
+   always keyed on content type, not document type.
 4. **A second window carrying the whole document panel** — the
    renderer from phase 2, its tabs, Timeline/Chat — opened by ordinary
    navigation to a page of our own rather than a raw file, so no
@@ -157,7 +159,10 @@ found and what broke along the way.
 - **Annotation**, decision 0206's own deferred piece, becomes reachable
   once phase 2 gives every page a known pixel geometry — genuinely a
   sixth phase, not attempted here.
-- **Whether a structured PDF's embedded XML, once retained (phase 3),
-  should also get a *rendered* view** the way bare XML does (decision
-  0205), or only the raw-XML tab bare-XML invoices get today. Phase 3's
-  own question.
+- **Whether a structured PDF's embedded XML, once retained, should
+  also get a *rendered* view — settled in decision 0383: it already
+  does.** `/documents/:token`'s dispatch was never keyed on document
+  type, only on content type (`doc.contentType.includes("xml")`), so
+  an `embedded_xml` document reaches decision 0279's rendered view
+  through the same path a bare-XML `'original'` document already
+  does, with no change needed.

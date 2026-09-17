@@ -105,7 +105,11 @@ export async function verifyDocumentToken(
 
   const expiresAt = Number(expiryText);
   if (!Number.isFinite(expiresAt) || !invoiceId) return { valid: false, reason: "malformed" };
-  if (documentTypeText !== "original" && documentTypeText !== "generated_rendering") {
+  if (
+    documentTypeText !== "original" &&
+    documentTypeText !== "generated_rendering" &&
+    documentTypeText !== "embedded_xml"
+  ) {
     return { valid: false, reason: "malformed" };
   }
   const documentType = documentTypeText;
@@ -131,13 +135,15 @@ export async function verifyDocumentToken(
  * A signed URL for one page of a multi-page scan — decision 0381 (the
  * first phase of `docs/design/document-viewer.md`).
  *
- * **A separate token, not a third `DocumentType`.** `DocumentType` is
- * `"original" | "generated_rendering"`, matching `invoice_documents`'s
- * own `CHECK` constraint exactly — a page is neither; it lives in
- * `pending_document_pages`, a different table, addressed by a page
- * *number* rather than a fixed type. Widening `DocumentType` to include
- * it would make that closed vocabulary describe something it does not
- * gate, for the sake of reusing four lines. A leading `"page"` literal
+ * **A separate token, not another `DocumentType`.** `DocumentType` is
+ * `"original" | "generated_rendering" | "embedded_xml"` (the third
+ * added by decision 0383, after this was written) — matching
+ * `invoice_documents`'s own `CHECK` constraint exactly. A page is none
+ * of those; it lives in `pending_document_pages`, a different table,
+ * addressed by a page *number* rather than a fixed type. Widening
+ * `DocumentType` to include it would make that closed vocabulary
+ * describe something it does not gate, for the sake of reusing four
+ * lines. A leading `"page"` literal
  * makes the two token shapes unambiguous at a glance and lets this
  * function change independently of the one above without either
  * having to reason about the other's shape.
