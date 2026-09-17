@@ -45,7 +45,7 @@ const STRINGS = {
     "purchaseorders.nextpage": "Next page",
     "purchaseorders.lastpage": "Last page",
     "purchaseorders.nomatches": "No purchase orders match your search.",
-    "purchaseorders.statusheading": "Status",
+    "purchaseorders.statusheading": "Purchase Order Status",
     "purchaseorders.statuslabel": "Status",
     "purchaseorders.status.active": "Active",
     "purchaseorders.status.onhold": "On Hold",
@@ -1023,5 +1023,56 @@ describe("Hold, Release Hold, Close on the detail pop-out — decision 0377", ()
     await new Promise((r) => setTimeout(r, 0));
 
     expect(patchSent).toBe(false);
+  });
+});
+
+describe("currency formatting — the operator's own follow-up", () => {
+  it("titles the chart 'Purchase Order Status', not just 'Status'", async () => {
+    stubFetch({ "/api/purchase-orders": { body: EMPTY_LIST } });
+    await openScreen();
+
+    expect(document.body.textContent).toContain("Purchase Order Status");
+  });
+
+  it("shows the list's own Total column as a real currency amount, two decimal places", async () => {
+    stubFetch({ "/api/purchase-orders": { body: ONE_ORDER } });
+    await openScreen();
+
+    expect(document.body.textContent).toContain("€864.00");
+  });
+
+  it("shows every monetary field in the pop-out formatted the same way", async () => {
+    stubFetch({
+      "/api/purchase-orders": { body: ONE_ORDER },
+      "/api/purchase-orders/PO-500": { body: PO_500_DETAIL },
+    });
+    await openScreen();
+    document.querySelector("tbody tr")?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await new Promise((r) => setTimeout(r, 0));
+
+    // Net amount and tax-exclusive both 720; tax-inclusive and payable both 864.
+    expect(document.body.textContent).toContain("€720.00");
+    expect(document.body.textContent).toContain("€864.00");
+    // The first line's own unit price (30) and line amount (450).
+    expect(document.body.textContent).toContain("€30.00");
+    expect(document.body.textContent).toContain("€450.00");
+  });
+
+  it("formats a different currency correctly, using the order's own code rather than a fixed one", async () => {
+    const gbpOrder = { purchaseOrders: [{ ...ONE_ORDER.purchaseOrders[0], currency: "GBP", payable_amount: 1080 }], total: 1, page: 1, pageSize: 50 };
+    stubFetch({ "/api/purchase-orders": { body: gbpOrder } });
+    await openScreen();
+
+    expect(document.body.textContent).toContain("£1,080.00");
+  });
+
+  it("shows a dash rather than a broken currency string for a missing amount", async () => {
+    const noPayable = { purchaseOrders: [{ ...ONE_ORDER.purchaseOrders[0], payable_amount: null }], total: 1, page: 1, pageSize: 50 };
+    stubFetch({ "/api/purchase-orders": { body: noPayable } });
+    await openScreen();
+
+    const row = document.querySelector("tbody tr");
+    expect(row?.textContent).toContain("—");
+    expect(row?.textContent).not.toContain("NaN");
   });
 });

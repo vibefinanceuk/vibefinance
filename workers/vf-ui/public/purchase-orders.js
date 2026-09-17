@@ -350,6 +350,35 @@ function loader() {
 }
 
 /** One label:value pair in a read-only grid — .editgrid's own two-column layout, without an input. */
+/**
+ * Currency formatting — the operator's own follow-up: the Total
+ * column and every monetary field in the pop-out were plain numbers.
+ * `Intl.NumberFormat` with the order's own currency code, not the
+ * viewer's own browser locale — a GBP order should read the same way
+ * regardless of whose machine is looking at it. `en-GB` as the fixed
+ * base locale (comma thousands, period decimal), since the currency
+ * symbol itself already carries the meaning a locale would otherwise
+ * be doing.
+ */
+function formatCurrency(amount, currency) {
+  if (amount === null || amount === undefined || amount === "") return "—";
+  const n = Number(amount);
+  if (Number.isNaN(n)) return "—";
+  if (!currency) return n.toFixed(2);
+  try {
+    return new Intl.NumberFormat("en-GB", {
+      style: "currency",
+      currency,
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(n);
+  } catch {
+    // An unrecognised or malformed currency code — still a real
+    // number, just without a symbol Intl itself refused to guess at.
+    return n.toFixed(2);
+  }
+}
+
 /** The same five labels the chart's own segments use, for a single order's own detail — decision 0377. */
 function statusLabel(effectiveStatus) {
   const labels = {
@@ -399,10 +428,10 @@ async function openPurchaseOrder(summary) {
     ...fact(t("purchaseorders.buyer"), order.buyer_party_id),
     ...fact(t("purchaseorders.org"), order.org_unit_name),
     ...fact(t("purchaseorders.statuslabel"), statusLabel(order.effective_status)),
-    ...fact(t("purchaseorders.netamount"), order.line_extension_amount),
-    ...fact(t("purchaseorders.taxexclusive"), order.tax_exclusive_amount),
-    ...fact(t("purchaseorders.taxinclusive"), order.tax_inclusive_amount),
-    ...fact(t("purchaseorders.payable"), order.payable_amount),
+    ...fact(t("purchaseorders.netamount"), formatCurrency(order.line_extension_amount, order.currency)),
+    ...fact(t("purchaseorders.taxexclusive"), formatCurrency(order.tax_exclusive_amount, order.currency)),
+    ...fact(t("purchaseorders.taxinclusive"), formatCurrency(order.tax_inclusive_amount, order.currency)),
+    ...fact(t("purchaseorders.payable"), formatCurrency(order.payable_amount, order.currency)),
     ...fact(t("purchaseorders.requisition"), order.originator_reference),
   ]);
 
@@ -415,8 +444,8 @@ async function openPurchaseOrder(summary) {
       el("td", { class: "muted", text: l.standard_item_id ?? "—" }),
       el("td", { text: l.quantity ?? "—" }),
       el("td", { class: "muted", text: l.unit_code ?? "—" }),
-      el("td", { text: l.price_amount ?? "—" }),
-      el("td", { text: l.line_extension_amount ?? "—" }),
+      el("td", { text: formatCurrency(l.price_amount, order.currency) }),
+      el("td", { text: formatCurrency(l.line_extension_amount, order.currency) }),
     ])
   );
   const linesTable = el("div", { class: "tablewrap" }, [
@@ -637,7 +666,7 @@ function purchaseOrderRows() {
       el("td", { class: "muted", text: po.seller_party_id ?? "—" }),
       el("td", { class: "muted", text: po.buyer_party_id ?? "—" }),
       el("td", { text: po.org_unit_name ?? "—" }),
-      el("td", { text: po.payable_amount ?? "—" }),
+      el("td", { text: formatCurrency(po.payable_amount, po.currency) }),
       el("td", { class: "muted", text: String(po.line_count) }),
     ]);
     // The whole row, not a button in it — the same reasoning

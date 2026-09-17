@@ -150,3 +150,39 @@ confirmation before anything is sent.
 vf-app: 1,827 tests (was 1,804). vf-ui: 72 worker tests (unchanged),
 603 browser tests (was 595). vf-licence: 320 tests, unchanged — the
 new migration (`0116`) is new keys only.
+
+---
+
+## Addendum — a clearer chart title, and real currency formatting
+
+**"Purchase Order Status," not just "Status."** The operator's own
+follow-up — easy to misread as a property of the whole screen rather
+than the order in front of it. A new migration (`0117`) updates the
+existing key's value rather than editing `0116` in place, which is
+already applied — an applied migration is not edited without saying
+so, and this is the saying so.
+
+**Every monetary field, in both the list and the pop-out, now formats
+as a real currency amount** — the Total column, net amount, both tax
+figures, the payable amount, and each line's own unit price and line
+amount. `Intl.NumberFormat`, using the order's *own* currency code
+rather than a fixed one, so a GBP order reads `£1,080.00` and a EUR
+order reads `€864.00` regardless of which order happens to be open.
+Lines carry no currency of their own, so each line borrows its own
+order's header currency — the only sensible source, since UBL Order
+Only has never given a line a separate one. A fixed `en-GB` base
+locale for the surrounding digit grouping (comma thousands, period
+decimal) — the currency symbol itself already carries the meaning a
+UI-language-dependent locale would otherwise be doing, so the app's own
+EN/DE toggle was left out of this specifically. An unrecognised or
+missing currency code falls back to a plain two-decimal number rather
+than a thrown error or a raw, unformatted integer.
+
+5 new browser tests: the new chart title, the list's own Total column,
+every pop-out field at once, a second currency's own real symbol and
+digit grouping (not a hardcoded one), and a missing amount showing a
+dash rather than a broken `NaN`.
+
+vf-ui: 72 worker tests (unchanged), 608 browser tests (was 603).
+vf-licence: 320 tests, unchanged — migration `0117` updates an
+existing value, adding nothing new to assert on.
