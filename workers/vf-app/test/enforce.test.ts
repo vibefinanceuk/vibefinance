@@ -2,7 +2,7 @@ import { env } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
 import { applyTestSchema } from "./setup.js";
 import { hashApiKey } from "../src/user-auth.js";
-import { hasPermission, requirePermission } from "../src/enforce.js";
+import { hasPermission, requirePermission, isWithinScope } from "../src/enforce.js";
 
 async function seedUser(id: string, apiKey: string): Promise<void> {
   const hash = await hashApiKey(apiKey);
@@ -95,5 +95,29 @@ describe("requirePermission — the combined check", () => {
 
     const resultB = await requirePermission(env.DB, requestWithBearer("key-b"), "AP.Approve");
     expect(resultB).toEqual({ authorized: false, status: 403 });
+  });
+});
+
+describe("isWithinScope — the same unitClause visibility rule, for a single already-fetched value — decision 0375", () => {
+  it("everything is within scope when unrestricted", () => {
+    expect(isWithinScope({ units: null }, "acme-uk")).toBe(true);
+    expect(isWithinScope({ units: null }, null)).toBe(true);
+  });
+
+  it("an unassigned value is always within scope, even for a real, narrow restriction", () => {
+    expect(isWithinScope({ units: ["acme-uk"] }, null)).toBe(true);
+  });
+
+  it("a value inside the permitted set is within scope", () => {
+    expect(isWithinScope({ units: ["acme-uk", "acme-fr"] }, "acme-uk")).toBe(true);
+  });
+
+  it("a value outside the permitted set is not within scope", () => {
+    expect(isWithinScope({ units: ["acme-uk"] }, "acme-fr")).toBe(false);
+  });
+
+  it("nothing but an unassigned value is within scope when the permitted set is empty", () => {
+    expect(isWithinScope({ units: [] }, "acme-uk")).toBe(false);
+    expect(isWithinScope({ units: [] }, null)).toBe(true);
   });
 });

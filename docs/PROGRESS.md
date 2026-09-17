@@ -167,6 +167,17 @@ a rule, and left an approval task in a queue.
   system to itself rather than a document a third party could
   misaddress. The list is scoped by the chosen org through the same
   mechanism Tasks, Documents, and Suppliers already use
+- Real, permission-scoped access control, not just the org switcher's
+  own browsing convenience (0375). `AP.Validate` now computes a real
+  scope via `unitsWherePermitted`, the same mechanism `AP.Supplier`
+  already uses for Suppliers (0358) — the chosen org narrows further
+  within it but can never widen past what a role actually permits. The
+  detail route gained the identical real scope, deliberately without
+  also intersecting the chosen org, since the switcher is a personal
+  view preference, not a second lock; a new `isWithinScope` helper in
+  `enforce.ts` gives a single already-fetched row the same "unassigned
+  is always visible" rule `unitClause` already builds into a list
+  query's own `WHERE` clause
 
 ### Documents
 - R2 storage with jurisdiction support (0013, 0033, 0035)
@@ -581,7 +592,7 @@ elsewhere.
 
 | Package | Tests |
 |---|---|
-| `vf-app` | 1775 |
+| `vf-app` | 1786 |
 | `vf-licence` | 320 |
 | `vf-ui` | 72 Worker · 584 browser |
 | `shared` | 269 passing, 3 known pre-existing failures |
@@ -604,7 +615,7 @@ holding — 65 migrations for `vf-app`, 105 for `vf-licence`.
 | `docs/design/mockups/` | Four screens as static HTML | Current |
 | `docs/design/multi-authority-intake.md` | Non-EN-16931 authorities | Design only |
 | `docs/design/text-layer-extraction.md` | Reading a PDF's own text | Design only |
-| `docs/decisions/` | 374 decision records | Current |
+| `docs/decisions/` | 375 decision records | Current |
 | `docs/decisions/SUPERSEDED.md` | Which records supersede which | **Read first** |
 
 Document 4's markdown source is at `docs/documents/`, with

@@ -398,6 +398,21 @@ export interface Scope {
   units: string[] | null;
 }
 
+/**
+ * The same visibility rule `unitClause` builds into SQL, for a single,
+ * already-fetched value — decision 0375. A list query can express "is
+ * null or is in (...)" as a `WHERE`; a single-record lookup has
+ * already read the row and just needs the same three-way answer:
+ * unrestricted, nowhere, or a real set with the identical "unassigned
+ * is visible to everyone" exception unitClause already gives every
+ * scoped list.
+ */
+export function isWithinScope(scope: Scope, value: string | null): boolean {
+  if (scope.units === null) return true;
+  if (value === null) return true;
+  return scope.units.includes(value);
+}
+
 /** The `AND` a query adds to stay inside what somebody may see. */
 export function unitClause(scope: Scope, column: string): { sql: string; binds: unknown[] } {
   if (scope.units === null) return { sql: "", binds: [] };

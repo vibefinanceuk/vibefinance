@@ -2760,8 +2760,10 @@ export default {
       }
       // The chosen org — decision 0374, extending the same treatment
       // decisions 0314, 0315, and 0317 already gave Tasks, Documents,
-      // and Suppliers.
-      const result = await handleListPurchaseOrders(db, url.searchParams.get("org"));
+      // and Suppliers. auth.user.id — decision 0375 — is what turns
+      // that into real, permission-based scoping rather than a
+      // convenience filter alone.
+      const result = await handleListPurchaseOrders(db, url.searchParams.get("org"), auth.user.id);
       return json(result.body, result.status);
     }
 
@@ -2789,7 +2791,7 @@ export default {
       if (!auth.authorized) {
         return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
       }
-      const result = await handleGetPurchaseOrder(db, decodeURIComponent(poMatch[1]));
+      const result = await handleGetPurchaseOrder(db, decodeURIComponent(poMatch[1]), auth.user.id);
       return json(result.body, result.status);
     }
 

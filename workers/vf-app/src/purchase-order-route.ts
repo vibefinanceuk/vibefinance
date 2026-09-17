@@ -2,7 +2,7 @@ import type { RouteResult } from "./org-route.js";
 import { parseUblOrder, UblOrderParseError, type ParsedOrder } from "@vibefinance/shared";
 import { parseCsv } from "./load-suppliers.js";
 import { matchLegalEntity } from "./derive-org.js";
-import { scopedToChosenOrg, unitClause } from "./enforce.js";
+import { scopedToChosenOrg, unitClause, unitsWherePermitted, isWithinScope } from "./enforce.js";
 
 /**
  * Purchase order ingestion — decision 0081.
@@ -552,16 +552,23 @@ export async function handleLoadPurchaseOrdersCsv(db: D1Database, csv: string): 
  * reliable tiebreaker `created_at`'s own precision can't provide.
  */
 /**
- * The chosen org narrows the list — decision 0374, the same
- * `scopedToChosenOrg` / `unitClause` mechanism Tasks, Documents, the
- * Dashboard, and Suppliers already use. No permission-scoped
- * visibility layer on top of it (`AP.Validate` is not, today, grantable
- * scoped to a single unit the way `AP.Supplier` is) — `visible` is
- * always `null` here, so the chosen org is the only restriction,
- * exactly what was asked for.
+ * The chosen org narrows the list — decisions 0374 and 0375. `userId`
+ * now computes a real, permission-based scope from `AP.Validate` —
+ * walked down through the org tree the same way `AP.Supplier` already
+ * is for Suppliers (decision 0358) — and the chosen org only ever
+ * narrows *further* within it, never replaces it: "intersect, never
+ * replace," the same shape Tasks, Documents, and Suppliers already
+ * guarantee. `userId` stays optional, defaulting to unrestricted, so
+ * a caller with no real person behind it (a scheduled job, a script)
+ * is unaffected, the same as every other screen that gained this.
  */
-export async function handleListPurchaseOrders(db: D1Database, currentOrg: string | null = null): Promise<RouteResult> {
-  const scopedUnits = await scopedToChosenOrg(db, null, currentOrg);
+export async function handleListPurchaseOrders(
+  db: D1Database,
+  currentOrg: string | null = null,
+  userId?: string
+): Promise<RouteResult> {
+  const visible = userId ? await unitsWherePermitted(db, userId, "AP.Validate") : null;
+  const scopedUnits = await scopedToChosenOrg(db, visible, currentOrg);
   const clause = unitClause({ units: scopedUnits }, "po.org_unit_id");
 
   const rows = await db
@@ -583,7 +590,29 @@ export async function handleListPurchaseOrders(db: D1Database, currentOrg: strin
   return { status: 200, body: { purchaseOrders: rows.results } };
 }
 
-export async function handleGetPurchaseOrder(db: D1Database, orderNumber: string): Promise<RouteResult> {
+/**
+ * Reading one order back — decision 0375 adds the same real scope the
+ * list now has. Without it, the list could hide an order from someone
+ * while this route still handed over its full detail to anyone who
+ * knew or guessed its order number — a restriction that only worked
+ * as long as nobody tried the direct route.
+ *
+ * **Only the real, permission-based scope — deliberately not also the
+ * chosen org.** The org switcher is a personal view preference for
+ * the list, not a second access boundary: someone permitted to see
+ * every legal entity, who has simply narrowed their own current view
+ * to Acme UK, must still be able to open an Acme France order they
+ * were sent a real, direct link to. Intersecting with the chosen org
+ * here as well would silently turn a browsing convenience into a
+ * second lock nobody asked for.
+ *
+ * **A 404, not a 403, when the order is real but out of scope** — the
+ * same reasoning any access check that can distinguish "does not
+ * exist" from "exists, but not for you" should apply: the second is a
+ * disclosure the first is not, so it reads identically to genuinely
+ * nothing on file.
+ */
+export async function handleGetPurchaseOrder(db: D1Database, orderNumber: string, userId?: string): Promise<RouteResult> {
   const order = await db
     .prepare(
       `SELECT po.*, u.name AS org_unit_name
@@ -594,6 +623,14 @@ export async function handleGetPurchaseOrder(db: D1Database, orderNumber: string
     .bind(orderNumber)
     .first<Record<string, unknown>>();
   if (!order) {
+    return { status: 404, body: { error: `no purchase order ${orderNumber}` } };
+  }
+
+  const visible = userId ? await unitsWherePermitted(db, userId, "AP.Validate") : null;
+  if (!isWithinScope({ units: visible }, (order.org_unit_id as string | null) ?? null)) {
+    // Identical to the not-found response above — an order somebody
+    // is not permitted to see must not be distinguishable from one
+    // that never existed.
     return { status: 404, body: { error: `no purchase order ${orderNumber}` } };
   }
 

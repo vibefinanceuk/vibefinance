@@ -463,3 +463,107 @@ describe("the org's own name reaches the detail view — decision 0374", () => {
     expect(body.order.org_unit_name).toBe("Acme UK");
   });
 });
+
+describe("real access control, not just a browsing convenience — decision 0375", () => {
+  async function seedGroupHierarchy() {
+    // Acme UK and Acme France both beneath a parent, Acme Group — the
+    // exact structure the operator's own live deployment showed.
+    // Acme France created here, with its parent set from the start —
+    // acme-uk already exists (this file's own shared beforeEach), but
+    // acme-fr does not yet, and an UPDATE naming a row that does not
+    // exist yet is a silent no-op, not an error, so this was found by
+    // checking the actual result rather than assuming the SQL ran.
+    await env.DB.prepare("INSERT INTO org_units (id, name, kind) VALUES ('acme-group', 'Acme Group', 'legal_entity')").run();
+    await env.DB.prepare(
+      "INSERT INTO org_units (id, name, kind, vat_id, parent_unit_id) VALUES ('acme-fr', 'Acme France', 'legal_entity', 'FR12345678901', 'acme-group') ON CONFLICT(id) DO UPDATE SET parent_unit_id = 'acme-group'"
+    ).run();
+    await env.DB.prepare("UPDATE org_units SET parent_unit_id = 'acme-group' WHERE id = 'acme-uk'").run();
+    await env.DB.prepare(
+      `INSERT INTO org_roles (id, name, permissions_json) VALUES ('validator', 'AP Validator', '["AP.Validate"]')`
+    ).run();
+  }
+
+  async function scopeAliceTo(unitId: string | null) {
+    // org_user_roles.user_id is a real foreign key — a role means
+    // nothing assigned to a person who does not exist.
+    await env.DB.prepare("INSERT INTO org_users (id, email, name) VALUES ('alice', 'alice@acme.com', 'Alice')").run();
+    await env.DB.prepare("INSERT INTO org_user_roles (user_id, role_id, unit_id) VALUES ('alice', 'validator', ?)")
+      .bind(unitId)
+      .run();
+  }
+
+  it("narrows to only the units a role permits, regardless of what is chosen in the switcher", async () => {
+    await seedGroupHierarchy();
+    await scopeAliceTo("acme-uk");
+    await handleLoadPurchaseOrdersCsv(env.DB, "order_number,line number,item,buyer vat id\nPO-UK,1,Widgets,GB907856452");
+    await handleLoadPurchaseOrdersCsv(env.DB, "order_number,line number,item,buyer vat id\nPO-FR,1,Widgets,FR12345678901");
+
+    // Selecting the parent, which a real permission scope would
+    // otherwise let her see all of — the role is what actually
+    // decides, not the switcher.
+    const result = await handleListPurchaseOrders(env.DB, "acme-group", "alice");
+    const body = result.body as { purchaseOrders: Record<string, unknown>[] };
+    expect(body.purchaseOrders.map((p) => p.order_number)).toEqual(["PO-UK"]);
+  });
+
+  it("still narrows further by the chosen org, within what the role already permits", async () => {
+    await seedGroupHierarchy();
+    // Held at the group level — covers both subsidiaries.
+    await scopeAliceTo("acme-group");
+    await handleLoadPurchaseOrdersCsv(env.DB, "order_number,line number,item,buyer vat id\nPO-UK,1,Widgets,GB907856452");
+    await handleLoadPurchaseOrdersCsv(env.DB, "order_number,line number,item,buyer vat id\nPO-FR,1,Widgets,FR12345678901");
+
+    const result = await handleListPurchaseOrders(env.DB, "acme-uk", "alice");
+    const body = result.body as { purchaseOrders: Record<string, unknown>[] };
+    expect(body.purchaseOrders.map((p) => p.order_number)).toEqual(["PO-UK"]);
+  });
+
+  it("refuses the detail of an order outside the caller's own permitted scope, as if it did not exist", async () => {
+    await seedGroupHierarchy();
+    await scopeAliceTo("acme-uk");
+    await handleLoadPurchaseOrdersCsv(env.DB, "order_number,line number,item,buyer vat id\nPO-FR,1,Widgets,FR12345678901");
+
+    const result = await handleGetPurchaseOrder(env.DB, "PO-FR", "alice");
+    expect(result.status).toBe(404);
+    // Identical to a genuinely nonexistent order — never a 403 that
+    // would confirm the order is real.
+    expect((result.body as { error: string }).error).toBe("no purchase order PO-FR");
+  });
+
+  it("returns the detail of an order the caller's own scope actually covers", async () => {
+    await seedGroupHierarchy();
+    await scopeAliceTo("acme-uk");
+    await handleLoadPurchaseOrdersCsv(env.DB, "order_number,line number,item,buyer vat id\nPO-UK,1,Widgets,GB907856452");
+
+    const result = await handleGetPurchaseOrder(env.DB, "PO-UK", "alice");
+    expect(result.status).toBe(200);
+  });
+
+  it("keeps a pre-existing, unassigned order visible in both list and detail, regardless of a scoped caller's own role", async () => {
+    await seedGroupHierarchy();
+    await scopeAliceTo("acme-uk");
+    await env.DB.prepare(
+      "INSERT INTO purchase_orders (id, order_number, payable_amount) VALUES ('po-legacy', 'PO-LEGACY', 100)"
+    ).run();
+
+    const list = await handleListPurchaseOrders(env.DB, null, "alice");
+    const listBody = list.body as { purchaseOrders: Record<string, unknown>[] };
+    expect(listBody.purchaseOrders.map((p) => p.order_number)).toEqual(["PO-LEGACY"]);
+
+    const detail = await handleGetPurchaseOrder(env.DB, "PO-LEGACY", "alice");
+    expect(detail.status).toBe(200);
+  });
+
+  it("sees and can fetch everything when the role holds no unit restriction at all", async () => {
+    await seedGroupHierarchy();
+    await scopeAliceTo(null);
+    await handleLoadPurchaseOrdersCsv(env.DB, "order_number,line number,item,buyer vat id\nPO-UK,1,Widgets,GB907856452");
+    await handleLoadPurchaseOrdersCsv(env.DB, "order_number,line number,item,buyer vat id\nPO-FR,1,Widgets,FR12345678901");
+
+    const list = await handleListPurchaseOrders(env.DB, null, "alice");
+    const listBody = list.body as { purchaseOrders: Record<string, unknown>[] };
+    expect(listBody.purchaseOrders.map((p) => p.order_number).sort()).toEqual(["PO-FR", "PO-UK"]);
+
+    expect((await handleGetPurchaseOrder(env.DB, "PO-FR", "alice")).status).toBe(200);
+  });
+});
