@@ -29,21 +29,21 @@ twice.
 
 | | |
 | --- | --- |
-| `origin/main` | `46c1da2` |
-| Committed, not yet pushed or deployed | `0380` — `vf-ui` only, no migration |
+| `origin/main` | `23f5938` |
 | vf-admin deployed | `8e27a34` · `https://admin.vibefinance-ai.com` · behind Cloudflare Access |
 | vf-app deployed | `a235713` |
 | vf-licence deployed | `a235713` |
-| vf-ui deployed | `a235713` · `https://app.vibefinance-ai.com` |
+| vf-ui deployed | `23f5938` · `https://app.vibefinance-ai.com` |
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
 | `vf-app-poc` migrations | through `0069` |
 | `vf-licence-poc` migrations | through `0119` |
 | Tests | vf-admin 9 · vf-app 1893 · vf-licence 320 · vf-ui 72 Worker + 631 browser · shared 278 (+3 known pre-existing failures) |
 | Decision records | 380 |
 
-**Everything committed is deployed except decision 0380**, which
-touches `vf-ui` alone and waits on a deploy. `46c1da2` changed docs
-only, so the Workers at `a235713` are that code. **vf-app's count reads
+**Everything committed is deployed.** Decision 0380 touched `vf-ui`
+alone, deployed at `23f5938` and confirmed by the operator; vf-app and
+vf-licence stay at `a235713`, which is the same code, since everything
+after it until 0380 was documentation. **vf-app's count reads
 1893, not the 1851 recorded through 0379**, with no `vf-app` change
 since 0378 — the difference is not explained, only measured (0380).
 **And the vf-ui browser suite exits 1 with every test passing** — 136
