@@ -338,6 +338,14 @@ a rule, and left an approval task in a queue.
   (0342) — with the field's own width fixed twice more along the way
   (0341, 0343, 0344). A real `<hr>` now sits between a person's own
   properties and their limits (0345).
+- **Parent Org and Tax Identifier, now shown in the Org Units table
+  itself** (0379), not only inside the edit form that already read
+  both. The parent shown by its own name, looked up the same way
+  `unitDepth()` already walks one link of the same chain for
+  indentation — a dash, not a raw id or a blank cell, for a unit with
+  no parent. The recorded title "VAT ID" renamed to "Tax Identifier"
+  throughout, one string read by both the table's new column and the
+  form's own label.
 - **The side nav is grouped under three static headings** (0346):
   Accounts payable, Supplier management, Configuration — distinct
   from the single, collapsible "Vibe AP" folder decision 0274 built
@@ -647,7 +655,7 @@ elsewhere.
 |---|---|
 | `vf-app` | 1851 |
 | `vf-licence` | 320 |
-| `vf-ui` | 72 Worker · 621 browser |
+| `vf-ui` | 72 Worker · 626 browser |
 | `shared` | 269 passing, 3 known pre-existing failures |
 
 Both migration chains replay clean with every standing invariant
@@ -668,7 +676,7 @@ holding — 65 migrations for `vf-app`, 105 for `vf-licence`.
 | `docs/design/mockups/` | Four screens as static HTML | Current |
 | `docs/design/multi-authority-intake.md` | Non-EN-16931 authorities | Design only |
 | `docs/design/text-layer-extraction.md` | Reading a PDF's own text | Design only |
-| `docs/decisions/` | 378 decision records | Current |
+| `docs/decisions/` | 379 decision records | Current |
 | `docs/decisions/SUPERSEDED.md` | Which records supersede which | **Read first** |
 
 Document 4's markdown source is at `docs/documents/`, with

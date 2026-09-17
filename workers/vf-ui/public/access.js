@@ -197,9 +197,19 @@ function openUnitForm(existingUnit) {
 
 function unitRow(unit) {
   const canManageOrgs = hasMyPermission("Admin.Configure");
+  /**
+   * **The parent's own name, not its raw id** — decision 0379, the
+   * operator's own request to show Parent Org in the table itself
+   * rather than only inside the edit form. The same lookup
+   * `unitDepth()` already walks against the module-level `units`
+   * array, just one step rather than the whole chain.
+   */
+  const parentName = unit.parentUnitId ? units.find((u) => u.id === unit.parentUnitId)?.name ?? "—" : "—";
   const row = el("tr", canManageOrgs ? { class: "clickable" } : {}, [
     el("td", {}, [el("span", { style: `padding-left: ${unitDepth(unit) * 20}px`, text: unit.name })]),
     el("td", { text: unit.kind }),
+    el("td", { class: "muted", text: parentName }),
+    el("td", { class: "muted", text: unit.vatId ?? "—" }),
   ]);
   if (canManageOrgs) row.onclick = () => openUnitForm(unit);
   return row;
@@ -1222,7 +1232,7 @@ function render() {
       section(
         "roles.units",
         "roles.nounits",
-        ["column.unit", "roles.kind"],
+        ["column.unit", "roles.kind", "roles.parentorg", "roles.vatid"],
         units.map(unitRow),
         hasMyPermission("Admin.Configure") ? actionLink("neworg", { onclick: () => openUnitForm(null) }) : null
       ),

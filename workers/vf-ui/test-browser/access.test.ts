@@ -56,7 +56,7 @@ const STRINGS = {
     "roles.orgname": "Name",
     "roles.parentorg": "Parent org",
     "roles.buyerendpoint": "Buyer endpoint",
-    "roles.vatid": "VAT ID",
+    "roles.vatid": "Tax Identifier",
     "roles.buyerreference": "Buyer reference",
     "roles.orgsavefailed": "Could not save. Please try again.",
     "roles.operatingunit": "Operating unit",
@@ -266,6 +266,77 @@ describe("org units", () => {
     await openRolesAs(["Admin.Configure"], EMPTY);
     switchTab("Org units");
     expect(document.getElementById("shell")?.textContent).toContain("No org units configured yet.");
+  });
+
+  /**
+   * **Parent Org and Tax Identifier, in the table itself — decision
+   * 0379.** Reported live: "include the Parent Org, and Tax Identifier
+   * in the Org unit table" — both already lived on every unit object
+   * (the edit form already reads `parentUnitId` and `vatId` from it),
+   * so this is the table finally showing what it already had.
+   */
+  it("shows column headers for Parent org and Tax Identifier", async () => {
+    await openRolesAs(["Admin.Configure"], {
+      ...EMPTY,
+      units: [{ id: "u1", name: "Acme Group", kind: "legal_entity", parentUnitId: null, vatId: null }],
+    });
+    switchTab("Org units");
+    const headers = [...document.querySelectorAll(".panel th")].map((h) => h.textContent);
+    expect(headers).toContain("Parent org");
+    expect(headers).toContain("Tax Identifier");
+  });
+
+  it("shows the parent's own name, not its raw id, for a child unit", async () => {
+    await openRolesAs(["Admin.Configure"], {
+      ...EMPTY,
+      units: [
+        { id: "u1", name: "Acme Group", kind: "legal_entity", parentUnitId: null, vatId: null },
+        { id: "u2", name: "Acme France", kind: "legal_entity", parentUnitId: "u1", vatId: "FR12345678901" },
+      ],
+    });
+    switchTab("Org units");
+
+    const rows = [...document.querySelectorAll(".panel tbody tr")];
+    const franceRow = rows.find((r) => r.textContent?.includes("Acme France"));
+    expect(franceRow?.textContent).toContain("Acme Group");
+    expect(franceRow?.textContent).not.toContain("u1");
+  });
+
+  it("shows a dash for a top-level unit's own parent column", async () => {
+    await openRolesAs(["Admin.Configure"], {
+      ...EMPTY,
+      units: [{ id: "u1", name: "Acme Group", kind: "legal_entity", parentUnitId: null, vatId: null }],
+    });
+    switchTab("Org units");
+
+    const row = document.querySelector(".panel tbody tr");
+    const cells = [...(row?.querySelectorAll("td") ?? [])].map((c) => c.textContent);
+    // name, kind, parent, tax identifier — the last two both dashes.
+    expect(cells[2]).toBe("—");
+    expect(cells[3]).toBe("—");
+  });
+
+  it("shows the tax identifier when the unit has one on file", async () => {
+    await openRolesAs(["Admin.Configure"], {
+      ...EMPTY,
+      units: [{ id: "u1", name: "Acme France", kind: "legal_entity", parentUnitId: null, vatId: "FR12345678901" }],
+    });
+    switchTab("Org units");
+
+    expect(document.querySelector(".panel tbody tr")?.textContent).toContain("FR12345678901");
+  });
+
+  it("labels the field Tax Identifier in the edit form too, not just the table", async () => {
+    await openRolesAs(["Admin.Configure"], {
+      ...EMPTY,
+      units: [{ id: "u1", name: "Acme Group", kind: "legal_entity", parentUnitId: null, vatId: null }],
+    });
+    switchTab("Org units");
+    (document.querySelector(".panel tbody tr") as HTMLElement)?.click();
+
+    const labels = [...document.querySelectorAll(".editgrid label")].map((l) => l.textContent);
+    expect(labels).toContain("Tax Identifier");
+    expect(labels).not.toContain("VAT ID");
   });
 
   /**
