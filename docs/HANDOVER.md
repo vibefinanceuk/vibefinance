@@ -29,28 +29,25 @@ twice.
 
 | | |
 | --- | --- |
-| `origin/main` | `23f5938` |
+| `origin/main` | `d0f2b65` |
 | vf-admin deployed | `8e27a34` · `https://admin.vibefinance-ai.com` · behind Cloudflare Access |
-| vf-app deployed | `a235713` |
+| vf-app deployed | `d0f2b65` |
 | vf-licence deployed | `a235713` |
-| vf-ui deployed | `23f5938` · `https://app.vibefinance-ai.com` |
+| vf-ui deployed | `d0f2b65` · `https://app.vibefinance-ai.com` |
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
 | `vf-app-poc` migrations | through `0069` |
 | `vf-licence-poc` migrations | through `0119` |
 | Tests | vf-admin 9 · vf-app 1912 · vf-licence 320 · vf-ui 74 Worker + 631 browser · shared 278 (+3 known pre-existing failures) |
 | Decision records | 381 |
 
-**Not everything committed is deployed, for the first time this
-arc.** Decision 0380 touched `vf-ui` alone, deployed at `23f5938` and
-confirmed by the operator; vf-app and vf-licence stay at `a235713`,
-which is the same code, since everything after it until 0380 was
-documentation. **Decision 0381 (phase 1 of the document viewer) is
-committed locally and not yet bundled or pushed** — it touches both
-`vf-app` (the new page-retention read path) and `vf-ui` (two proxy
-allow-list entries), so both will need redeploying once it is. **vf-app's
-count reads 1893 at `23f5938`, then 1912 with 0381**, and separately,
-1893 not the 1851 recorded through 0379, with no `vf-app` change
-since 0378 — the difference is not explained, only measured (0380).
+**Everything committed is deployed again.** Decision 0381 (phase 1 of
+the document viewer) touched both `vf-app` (the new page-retention read
+path) and `vf-ui` (two proxy allow-list entries); both are now deployed
+at `d0f2b65` and confirmed by the operator. `vf-licence` stays at
+`a235713`, untouched since 0379. **vf-app's count reads 1893 at
+`23f5938`, then 1912 with 0381**, and separately, 1893 not the 1851
+recorded through 0379, with no `vf-app` change since 0378 — the
+difference is not explained, only measured (0380).
 **And the vf-ui browser suite exits 1 with every test passing** — 136
 unhandled rejections from test fetch stubs refusing requests the viewer
 makes without awaiting them, identical before and after 0380 and
