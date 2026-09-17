@@ -423,6 +423,13 @@ a rule, and left an approval task in a queue.
   `index.html`'s inline `<style>` block into a new `app.css`, since a
   second real page had nowhere else to get the same classes from
   without a copy that would eventually disagree.
+- **The document viewer's five-phase plan is complete** (0385, phase
+  5 of `docs/design/document-viewer.md`). Checked directly rather than
+  assumed that phases 2 and 4 had left anything behind to retire:
+  neither had, in behaviour — the old raw-file Expand and the old
+  `<img>`/`<iframe>` split have no surviving call site anywhere. One
+  real leftover, in the CSS rather than the JS: `.vimage`, styling an
+  `<img>` decision 0382 had already stopped creating, removed.
 
 ### Customer configuration
 - Org units, teams, roles, users, cost centres

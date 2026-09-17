@@ -1,9 +1,9 @@
 # Design: The Document Viewer
 
-**Status: phases 1–4 built (decisions 0381, 0382, 0383, 0384); phase 5
-is still design only.** Written 17 September 2026, from a conversation
-about where the viewer's document panel should ultimately go — the
-shape decision 0123 gestured at in September and never returned to.
+**Status: all five phases built (decisions 0381, 0382, 0383, 0384,
+0385).** Written 17 September 2026, from a conversation about where
+the viewer's document panel should ultimately go — the shape decision
+0123 gestured at in September and never returned to.
 
 Read `docs/decisions/0380-…` first if you want the immediate context:
 a bug fix in the existing panel led straight into this conversation.
@@ -140,12 +140,13 @@ it.
    browser itself refuse to ever open a second one — retargeting an
    already-open pop-out to a newly-opened task is the one piece that
    primitive doesn't cover on its own, and is handled explicitly.
-5. **Retire what phase 2 replaced and what phase 4 replaced.** The old
-   inline `<iframe>`/`<img>` preview is already gone (phase 2) and the
-   raw-file `window.open` Expand is already gone (phase 4) — what, if
-   anything, is actually left for this phase needs checking against
-   the codebase as it now stands, not assumed from this list's
-   original wording.
+5. **Built (decision 0385).** Checked directly rather than assumed:
+   both behaviours this phase names were already gone — no surviving
+   call site for the old raw-file Expand, no surviving `<img>`/`<iframe>`
+   split on the Document tab. One real leftover, found by checking the
+   CSS the same way rather than trusting it had followed the JS:
+   `.vimage`, styling an `<img>` decision 0382 had already stopped
+   creating, removed.
 
 Each phase is its own decision record when built, in the order above,
 matching how every other multi-step piece of work in this project has

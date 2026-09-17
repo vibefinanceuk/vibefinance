@@ -2107,8 +2107,17 @@
     background: var(--surface-1);
   }
 
-  .vframe, .vimage { width: 100%; height: 100%; border: none; display: block; }
-  .vimage { object-fit: contain; background: var(--surface-0); }
+  /**
+   * `.vframe` is still live — the XML tab's own `<iframe>` (decision
+   * 0380/0382). `.vimage` styled the Document tab's `<img>` from
+   * decision 0123's original split; decision 0382 (phase 2 of
+   * docs/design/document-viewer.md) replaced that element with
+   * page-renderer.js's canvas, and nothing has created anything of
+   * this class since — removed rather than left to describe a tag
+   * nothing draws (decision 0385, phase 5 of the same design
+   * document).
+   */
+  .vframe { width: 100%; height: 100%; border: none; display: block; }
 
   /*
     The page renderer — decision 0382, phase 2 of

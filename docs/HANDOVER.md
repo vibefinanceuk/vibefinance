@@ -38,7 +38,7 @@ twice.
 | `vf-app-poc` migrations | through `0070` |
 | `vf-licence-poc` migrations | through `0121` |
 | Tests | vf-admin 9 · vf-app 1921 · vf-licence 320 · vf-ui 74 Worker + 665 browser · shared 278 (+3 known pre-existing failures) |
-| Decision records | 384 |
+| Decision records | 385 |
 
 **Everything committed is deployed again.** Decision 0383 (phase 3 of
 the document viewer — a hybrid PDF's embedded XML retained as its own
@@ -511,12 +511,20 @@ real deployed file). Migration `0121`'s application to the live
 session has no D1 credentials to query it directly, same as `vf-app`'s
 migration `0070` at decision 0383.
 
-**Next up: phase 5**, whose own scope needs re-checking against the
-codebase as it now stands rather than assumed from the design
-document's original five-phase list — both things phase 5 was named
-for (the old inline preview, the raw-file Expand) are already retired
-by phases 2 and 4, so what's actually left is an open question, worth
-settling explicitly before starting it.
+**Phase 5 is built, committed locally, and NOT YET pushed or
+deployed** (decision 0385 — the operator asked directly whether phase
+5 was genuinely a no-op or had something real left in it). Checked
+rather than assumed: both behaviours phase 5 was named for really are
+already gone — no surviving call site for the old raw-file Expand, no
+surviving `<img>`/`<iframe>` split. One real leftover, in the CSS
+rather than the JS: `app.css` still carried `.vimage`, styling an
+`<img>` decision 0382 had already stopped creating; removed, with a
+comment explaining why the neighbouring `.vframe` rule (the XML tab's
+own, still-live frame) stays. This closes
+`docs/design/document-viewer.md`'s five-phase plan in full. Touches
+`vf-ui` only (`app.css`), no migration, no other Worker. **Waiting on
+the operator to pull the bundle, push, and deploy `vf-ui`** before
+this table says it's live.
 
 **Built this arc, closing out most of what was named here before:
 teams, most of the "user variable" fields, creating and managing an
