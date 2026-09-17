@@ -1580,8 +1580,13 @@ describe("one Seller card, not two (decision 0220)", () => {
 
     // Our record, with the address a person checks against the image.
     expect(text).toContain("Acme Payments");
-    expect(text).toContain("payments@acme.example");
+    expect(text).toContain("GB112233445");
     expect(text).toContain("PO Box 44");
+
+    // **E-mail is no longer one of the card's rows** — decision 0387
+    // dropped it, along with E-address and Phone, so a value present
+    // in the fetched record still must not reach the screen.
+    expect(text).not.toContain("payments@acme.example");
 
     // **And the site, which is why this record and not a sibling** —
     // decision 0218 matches on a pay-site flag that is nowhere on the
@@ -1690,22 +1695,23 @@ describe("every variable the page uses exists (decision 0223)", () => {
     expect(rule).toContain("overflow-wrap");
   });
 
-  it("stacks the address under its own label rather than beside it (decision 0280)", async () => {
+  it("no longer gives the address its own stacked grid (decision 0387, superseding 0280)", async () => {
     /**
-     * **Reported live, from a marked-up screenshot**: "move the
-     * position of the Seller and Buyer address, so that the address
-     * appears under the Address title, rather than to the right of
-     * it... screen space I would like to make better use of."
+     * **0280 stacked the address under its own label because the
+     * card's own address column was half the card's width then.**
+     * `.sellergrid` is one full-width column now, so the address is
+     * back to the shared 88px-label layout every other field on the
+     * card already uses — `.sfield.address` has nothing left to do.
+     * A rule nothing selects is worth catching before it comes back.
      */
     const page = (await import("virtual:stylesheets")).default["app.css"];
-    const rule = page.slice(page.indexOf(".sfield.address {"), page.indexOf(".sfield.address {") + 100);
 
-    expect(rule).toContain("grid-template-columns: 1fr");
+    expect(page).not.toContain(".sfield.address {");
   });
 });
 
-describe("the address block itself carries the stacked class (decision 0280)", () => {
-  it("puts the address value beneath its label on both the Seller and Buyer cards", async () => {
+describe("the address sits beside its label, not beneath it (decision 0387, superseding 0280)", () => {
+  it("puts the address value to the right of its label on both the Seller and Buyer cards", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async (url: string) => {
@@ -1753,10 +1759,17 @@ describe("the address block itself carries the stacked class (decision 0280)", (
     const { openViewer } = await import("/viewer.js");
     await openViewer(TASK, () => {});
 
-    const addressFields = [...document.querySelectorAll(".sfield.address")];
-    expect(addressFields).toHaveLength(2);
-    for (const field of addressFields) {
-      expect(field.textContent).toContain("United Kingdom of Great Britain and Northern Ireland");
+    // No element carries the now-dead stacked-address modifier class.
+    expect(document.querySelectorAll(".sfield.address")).toHaveLength(0);
+
+    // Both cards still render the address, as a plain `.sfield` whose
+    // label ("Address") sits beside the value rather than above it.
+    const labels = [...document.querySelectorAll(".slabel")].filter((l) => l.textContent === "Address");
+    expect(labels).toHaveLength(2);
+    for (const label of labels) {
+      expect(label.parentElement?.textContent).toContain(
+        "United Kingdom of Great Britain and Northern Ireland"
+      );
     }
   });
 });

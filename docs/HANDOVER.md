@@ -1,6 +1,6 @@
 # Handover
 
-**Written 4 September 2026, updated 17 September (four times).**
+**Written 4 September 2026, updated 17 September (five times).**
 
 **For a session starting cold.** Where things stand, what needs a
 decision rather than work, what to do next, and the habits this project
@@ -29,7 +29,7 @@ twice.
 
 | | |
 | --- | --- |
-| `origin/main` | `3ecfbc5` |
+| `origin/main` | `eadafef` |
 | vf-admin deployed | `8e27a34` · `https://admin.vibefinance-ai.com` · behind Cloudflare Access |
 | vf-app deployed | `4d44b59` |
 | vf-licence deployed | `a235713` |
@@ -38,9 +38,18 @@ twice.
 | `vf-app-poc` migrations | through `0070` |
 | `vf-licence-poc` migrations | through `0121` |
 | Tests | vf-admin 9 · vf-app 1921 · vf-licence 320 · vf-ui 74 Worker + 665 browser · shared 278 (+3 known pre-existing failures) |
-| Decision records | 386 |
+| Decision records | 387 |
 
-**Everything committed is deployed again.** Decision 0383 (phase 3 of
+**Not true right now — decision 0387 is committed and not yet
+deployed**, this session having no push access to `origin/main`
+(confirmed earlier this arc); it is delivered as a bundle for the
+operator's own pull/push/deploy sequence instead, same as every
+change before it that reached this point. Everything before it is
+still deployed — including `eadafef`, the previous bundle (0553): a
+fresh clone of the real `origin/main`, made while verifying this one,
+found it already at `eadafef`, settling in the operator's favour a
+question this handover had left open (whether that one genuinely
+reached the remote). Decision 0383 (phase 3 of
 the document viewer — a hybrid PDF's embedded XML retained as its own
 artifact) touched `vf-app` (migration `0070`, plus
 `document-storage.ts`, `document-token.ts`, `document-route.ts`,
@@ -551,6 +560,37 @@ the Timeline / Chat tab, once stretched the same way, leaves visible
 empty space below its own feed and input box — worth a decision from
 the operator, since tightening it touches CSS the embedded card also
 uses.
+
+**Decision 0387 (the Seller/Buyer cards give up a column) is built,
+not yet pushed or deployed.** Asked directly for screen real estate:
+E-address, E-mail and Phone dropped from both cards; `.sellergrid`'s
+two parallel columns (Name/VAT beside Address) became one, vertical,
+in the order Name → VAT no → Address. The hedge in "make the card
+height smaller if possible" was checked rather than assumed away —
+two parallel columns becoming one sequential stack could plausibly
+have made the card *taller* once the three removed rows' own height
+stopped hiding behind whichever column was already tallest. Measured
+in a headless Chromium against a realistic fixture (a long supplier
+name, a long country name) before and after the edit rather than
+reasoned about on paper: **421px before, 263px after** — the wrapping
+two half-width columns were causing cost more height than the extra
+stacked rows ever gave back. A second, smaller change landed the same
+arc, reported live once the wider card was in front of the operator:
+the address itself moved from beneath its own label back to beside
+it, superseding decision 0280 (whose reasoning was specific to a
+column half the card's own width, which no longer exists once
+`.sellergrid` is one full-width column). Touches `vf-ui` only
+(`viewer.js`, `app.css`, `test-browser/viewer.test.ts`), no migration,
+no other Worker. Three tests changed — one that asserted an email
+address rendered (now asserts the opposite), two decision-0280 tests
+that read a CSS rule and a DOM class that no longer exist (replaced
+with their decision-0387 equivalents) — each watched fail against the
+pre-edit code before being trusted. Full suites: vf-ui 74 Worker + 665
+browser, both passing; `eslint` clean. **This session has no push
+access to `origin/main`**, confirmed earlier this same arc — delivered
+as a bundle for the operator's own `git pull` / `git push` /
+`wrangler deploy` sequence, the same as every other change this
+session has made.
 
 **Built this arc, closing out most of what was named here before:
 teams, most of the "user variable" fields, creating and managing an

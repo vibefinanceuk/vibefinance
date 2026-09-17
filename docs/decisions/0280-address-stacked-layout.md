@@ -1,6 +1,10 @@
 # 0280 — The address, stacked under its own label
 
-**Status: built.**
+**Status: built. Superseded in part by 0387.** The reasoning below held
+for a card whose address sat in a column half the card's own width.
+Once decision 0387 made `.sellergrid` a single, full-width column, the
+same trade no longer applied, and the operator asked for the address
+back beside its label rather than beneath it.
 
 ---
 

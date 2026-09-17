@@ -890,21 +890,21 @@
     **Label and value on one line**, because these are short, read-only
     and being scanned against a document. The keying form stacks them
     and should: its values are inputs.
+
+    **One column, not two** — decision 0387. Two columns ran Name/VAT
+    beside Address in parallel, half the card's width each; a single
+    column runs Name, VAT, Address in that vertical order, each row
+    getting the full width instead. That's what actually stopped the
+    wrapping this reported live as the reason for asking: halving the
+    width was making a value wrap that the full width didn't need to.
   */
   .sellergrid {
     display: grid;
-    /*
-      **`minmax(0, …)`, not `auto`** — decision 0223.
-
-      `auto` sizes a column to its content and **refuses to shrink
-      below it**, so a country like *United Kingdom of Great Britain and
-      Northern Ireland* pushed the address straight out through the
-      side of the card. A grid track's default minimum is its content,
-      and `minmax(0, …)` is what says otherwise.
-    */
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    gap: 4px 20px;
-    align-items: start;
+    /* Still `minmax(0, …)`, not a bare `1fr` — decision 0223, same
+       problem on one track as on two: a country name with nowhere to
+       break refuses to shrink below its own content width otherwise. */
+    grid-template-columns: minmax(0, 1fr);
+    gap: 4px;
   }
   .sfield {
     display: grid;
@@ -919,31 +919,25 @@
     overflow-wrap: anywhere;
   }
   /*
-    **The address, stacked rather than beside its label** — decision
-    0280, the operator's own marked-up screenshot: "move the position
-    of the Seller and Buyer address, so that the address appears under
-    the Address title, rather than to the right of it... screen space
-    I would like to make better use of."
+    **`.sfield.address` is gone — decision 0387, superseding 0280.**
 
-    A single grid column rather than the shared 88px-label layout: the
-    address lines no longer share their row with a label column, so a
-    country name that wrapped across five narrow lines gets the full
-    width of the card's own second column instead.
+    0280 stacked the address under its own label because the card was
+    two columns then, and the address's own column was only half the
+    card's width — stacking gave it the full width of that half rather
+    than sharing it with an 88px label. `.sellergrid` is one column
+    now, full card width, so the address is back to the same
+    label-left layout every other field on the card already uses:
+    `addressBlock()` renders a plain `.sfield`, with the address's own
+    lines stacked as `<div>`s inside its value column rather than
+    beneath the label. Reported live, once the wider card was in front
+    of the operator: "now the address can sit to the right of the
+    address title, rather than beneath it."
   */
-  .sfield.address {
-    grid-template-columns: 1fr;
-    row-gap: 2px;
-  }
   .slabel {
     color: var(--text-muted);
     /* **A label that wraps pushes its value down** and the column stops
        lining up, which is the whole reason for a fixed width. */
     white-space: nowrap;
-  }
-
-  @media (max-width: 520px) {
-    /* Two columns at this width means an address of one word per line. */
-    .sellergrid { grid-template-columns: 1fr; }
   }
 
   /*

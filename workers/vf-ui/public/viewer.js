@@ -1793,7 +1793,7 @@ export async function openViewer(task, onClose) {
       party.postalCode,
     ].filter(Boolean);
 
-    return el("div", { class: "sfield address" }, [
+    return el("div", { class: "sfield" }, [
       el("span", { class: "slabel", text: label }),
       lines.length > 0
         ? el("span", {}, lines.map((line) => el("div", { text: line })))
@@ -1848,13 +1848,8 @@ export async function openViewer(task, onClose) {
        * the card.
        */
       el("div", { class: "sellergrid" }, [
-        el("div", {}, [
-          pair(t("viewer.supplier.name"), b.entityName),
-          pair(t("viewer.supplier.vat"), b.vatId),
-          pair(t("viewer.supplier.endpoint"), b.electronicAddress),
-          pair(t("viewer.supplier.email"), b.email),
-          pair(t("viewer.supplier.phone"), b.phone),
-        ]),
+        pair(t("viewer.supplier.name"), b.entityName),
+        pair(t("viewer.supplier.vat"), b.vatId),
         addressBlock(b, t("viewer.supplier.street")),
       ]),
     ]);
@@ -1938,13 +1933,8 @@ export async function openViewer(task, onClose) {
         ? el("div", { class: "warn", text: `${t("viewer.supplier.onhold")} ${s.holdReason ?? ""}` })
         : null,
       el("div", { class: "sellergrid" }, [
-        el("div", {}, [
-          pair(t("viewer.supplier.name"), s.name),
-          pair(t("viewer.supplier.vat"), s.vatId),
-          pair(t("viewer.supplier.endpoint"), s.electronicAddress),
-          pair(t("viewer.supplier.email"), s.email),
-          pair(t("viewer.supplier.phone"), s.phone),
-        ]),
+        pair(t("viewer.supplier.name"), s.name),
+        pair(t("viewer.supplier.vat"), s.vatId),
         addressBlock(s, t("viewer.supplier.street")),
       ]),
       /**

@@ -440,6 +440,20 @@ a rule, and left an approval task in a queue.
   constant here would repeat exactly the mistake decision 0380 warned
   against. Measured in a headless Chromium at two window sizes, not
   just reasoned about, to confirm it actually tracks the window.
+- **The Seller and Buyer cards give up three fields and a column**
+  (0387). Asked directly for screen real estate: E-address, E-mail and
+  Phone are gone from both cards, and `.sellergrid`'s two parallel
+  columns (Name/VAT beside Address) became one, in the vertical order
+  Name, VAT no, Address. The card got **shorter**, not taller, measured
+  in a headless Chromium against the same fixture before and after —
+  421px to 263px, because the wrapping the two half-width columns were
+  causing (a supplier name across four lines, an email across four
+  more) cost more height than stacking three rows ever added back.
+  Reported live once the wider card was in front of the operator, a
+  second, smaller change to the same record: the address itself moved
+  from beneath its own label back to beside it, superseding decision
+  0280 (whose reason — a half-width column — no longer holds once
+  `.sellergrid` is one column, full width).
 
 ### Customer configuration
 - Org units, teams, roles, users, cost centres
