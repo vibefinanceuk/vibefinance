@@ -430,6 +430,16 @@ a rule, and left an approval task in a queue.
   `<img>`/`<iframe>` split have no surviving call site anywhere. One
   real leftover, in the CSS rather than the JS: `.vimage`, styling an
   `<img>` decision 0382 had already stopped creating, removed.
+- **The pop-out fills the window rather than floating in it** (0386,
+  a follow-on fix to decision 0384). Reported live from a screenshot:
+  the card sat centred with a 1100px cap nothing else in this
+  stylesheet has, and no height rule stretched it to the window at
+  all. Both replaced with a flex chain rather than a second guessed
+  height — `.vpreview`'s own `calc(100vh - 300px)` was measured
+  against chrome this page doesn't have, and typing a different
+  constant here would repeat exactly the mistake decision 0380 warned
+  against. Measured in a headless Chromium at two window sizes, not
+  just reasoned about, to confirm it actually tracks the window.
 
 ### Customer configuration
 - Org units, teams, roles, users, cost centres

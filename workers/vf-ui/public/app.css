@@ -2386,11 +2386,55 @@
     `#shell`/`#viewer` override the same way, just above.
   */
   body.docwindowbody {
-    display: block;
+    display: flex;
     place-items: initial;
+    min-height: 100vh;
     background: var(--surface-0);
   }
-  #docwindow-root { width: auto; padding: 22px 26px 60px; max-width: 1100px; margin: 0 auto; }
+  #docwindow-root {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    width: auto;
+    max-width: none;
+    margin: 0;
+    padding: 20px 24px;
+    box-sizing: border-box;
+  }
+
+  /*
+    **The panel fills the window rather than floating in it** —
+    reported live, from a screenshot: "the card appears to float in
+    centre screen rather than filling the page... have it use all
+    available space, and resize as needed." The `max-width: 1100px;
+    margin: 0 auto` this replaces was this page's own invention —
+    `#viewer`/`.columns` (above) go edge to edge everywhere else in
+    this stylesheet; nothing here caps a page's width, and this page
+    should not have been the one exception.
+
+    A flex chain rather than a second fixed height to guess at.
+    `.vpreview`'s own `height: calc(100vh - 300px)` was measured
+    against the *main app's* topbar, tabs and action row sitting above
+    it (decision 0271's own comment says as much) — a page with none
+    of that chrome has no honest way to reuse that number, and typing
+    a different constant here would be the exact second guess decision
+    0380 already warned against. `flex: 1` on the panel's own body
+    lets it take whatever the window actually has left, and resize
+    with it, rather than encoding an assumption about how tall this
+    page's chrome is.
+  */
+  .docwindowbody .panel {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+  }
+  .docwindowbody .panel > *:not(.cardhead) {
+    flex: 1;
+    min-height: 0;
+  }
+  .docwindowbody .vpreview { height: auto; }
 
   /*
     The card that gives its space to the pop-out, once one is open —

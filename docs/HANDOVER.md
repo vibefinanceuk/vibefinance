@@ -38,7 +38,7 @@ twice.
 | `vf-app-poc` migrations | through `0070` |
 | `vf-licence-poc` migrations | through `0121` |
 | Tests | vf-admin 9 · vf-app 1921 · vf-licence 320 · vf-ui 74 Worker + 665 browser · shared 278 (+3 known pre-existing failures) |
-| Decision records | 385 |
+| Decision records | 386 |
 
 **Everything committed is deployed again.** Decision 0383 (phase 3 of
 the document viewer — a hybrid PDF's embedded XML retained as its own
@@ -528,6 +528,25 @@ directly and reads `9e77954`, matching this session's own `main`
 exactly; `vf-ui`'s deployed `app.css`, fetched cache-busted, no longer
 contains the `.vimage` selector — only the explanatory comment
 mentions the name.
+
+**Decision 0386 (the pop-out fills the window) is built, committed
+locally, and NOT YET pushed or deployed.** Reported live from a
+screenshot after phase 5 shipped: the pop-out's card sat centred with
+a 1100px width cap nothing else in `app.css` has, and no rule stretched
+it to fill the window's height either. Both replaced with a flex
+chain — `body.docwindowbody`/`#docwindow-root`/`.panel` each `flex:
+1`, `.vpreview`'s own height reset to `auto` inside this page rather
+than given a second guessed constant. Measured in a headless Chromium
+at two window sizes rather than reasoned about on paper: the panel's
+own box tracked the viewport exactly at both (860px and 610px tall
+against 900px and 650px viewports, minus this page's own padding).
+Touches `vf-ui` only (`app.css`), no migration, no other Worker.
+**Waiting on the operator to pull the bundle, push, and deploy
+`vf-ui`** before this table says it's live. One thing noticed and
+left open rather than fixed here: the Timeline / Chat tab, once
+stretched the same way, leaves visible empty space below its own
+feed and input box — worth a decision from the operator, since
+tightening it touches CSS the embedded card also uses.
 
 **Built this arc, closing out most of what was named here before:
 teams, most of the "user variable" fields, creating and managing an
