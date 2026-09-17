@@ -627,15 +627,22 @@ async function runAction(name, task, onClose) {
  * A second copy would drift — and the first thing to drift would be the
  * `title`, which is the part that makes the icon legible.
  */
-export function actionLink(name, { onclick, primary } = {}) {
+export function actionLink(name, { onclick, primary, label } = {}) {
+  // label lets a caller override the shared action.<name> text while
+  // still reusing that name's own icon and button styling — decision
+  // 0374's own need: Purchase Orders wants "Load CSV" and "CSV
+  // Template" rather than the generic "Load"/"Download" every other
+  // screen shares, without renaming the shared strings out from under
+  // Suppliers, which still wants the generic ones.
+  const text = label ?? t(`action.${name}`);
   const node = el("button", {
     class: primary ? "actionlink primary" : "actionlink",
     // A label a person can read, because an icon alone is a guess. The
     // reference this came from labels every one of its three.
-    title: t(`action.${name}`),
+    title: text,
     ...(onclick ? { onclick } : { disabled: "disabled" }),
   });
-  node.append(icon(name), el("span", { text: t(`action.${name}`) }));
+  node.append(icon(name), el("span", { text }));
   return node;
 }
 

@@ -67,6 +67,8 @@ const STRINGS = {
     "action.load": "Load",
     "action.close": "Close",
     "action.download": "Download",
+    "purchaseorders.loadbutton": "Load CSV",
+    "purchaseorders.templatebutton": "CSV Template",
   },
 };
 
@@ -209,7 +211,7 @@ describe("the screen opens at all", () => {
 
     expect(document.querySelector("#purchaseorderfile")).not.toBeNull();
     const buttons = [...document.querySelectorAll("button")].map((b) => b.textContent);
-    expect(buttons).toContain("Load");
+    expect(buttons).toContain("Load CSV");
   });
 
   it("puts Load top right of the card, beside its own heading — the same pattern decision 0300 already set", async () => {
@@ -370,7 +372,7 @@ describe("loading a file (decision 0216's one-try-per-thing discipline)", () => 
     stubFetch({ "/api/purchase-orders": { body: EMPTY_LIST } });
     await openScreen();
 
-    const button = [...document.querySelectorAll("button")].find((b) => b.textContent === "Load");
+    const button = [...document.querySelectorAll("button")].find((b) => b.textContent === "Load CSV");
     button?.click();
     await new Promise((r) => setTimeout(r, 0));
 
@@ -385,7 +387,7 @@ describe("loading a file (decision 0216's one-try-per-thing discipline)", () => 
     await openScreen();
     chooseFile("order_number,line number,item\nPO-1,1,Widgets");
 
-    const button = [...document.querySelectorAll("button")].find((b) => b.textContent === "Load");
+    const button = [...document.querySelectorAll("button")].find((b) => b.textContent === "Load CSV");
     button?.click();
     await new Promise((r) => setTimeout(r, 0));
 
@@ -401,7 +403,7 @@ describe("loading a file (decision 0216's one-try-per-thing discipline)", () => 
     await openScreen();
     chooseFile("order_number,line number\nPO-1,1");
 
-    const button = [...document.querySelectorAll("button")].find((b) => b.textContent === "Load");
+    const button = [...document.querySelectorAll("button")].find((b) => b.textContent === "Load CSV");
     button?.click();
     await new Promise((r) => setTimeout(r, 0));
 
@@ -424,7 +426,7 @@ describe("loading a file (decision 0216's one-try-per-thing discipline)", () => 
     await openScreen();
     chooseFile("order_number,line number\nPO-1,1");
 
-    const button = [...document.querySelectorAll("button")].find((b) => b.textContent === "Load");
+    const button = [...document.querySelectorAll("button")].find((b) => b.textContent === "Load CSV");
     button?.click();
     await new Promise((r) => setTimeout(r, 0));
 
@@ -440,7 +442,7 @@ describe("loading a file (decision 0216's one-try-per-thing discipline)", () => 
     await openScreen();
     chooseFile("line number\n1");
 
-    const button = [...document.querySelectorAll("button")].find((b) => b.textContent === "Load");
+    const button = [...document.querySelectorAll("button")].find((b) => b.textContent === "Load CSV");
     button?.click();
     await new Promise((r) => setTimeout(r, 0));
 
@@ -462,7 +464,7 @@ describe("loading a file (decision 0216's one-try-per-thing discipline)", () => 
     await openScreen();
     chooseFile("order_number,line number\nPO-1,1");
 
-    const button = [...document.querySelectorAll("button")].find((b) => b.textContent === "Load");
+    const button = [...document.querySelectorAll("button")].find((b) => b.textContent === "Load CSV");
     button?.click();
     await new Promise((r) => setTimeout(r, 0));
 
@@ -493,7 +495,7 @@ describe("loading a file (decision 0216's one-try-per-thing discipline)", () => 
     expect(document.body.textContent).toContain("No purchase orders have been loaded yet");
 
     chooseFile("order_number,line number\nPO-500,1");
-    const button = [...document.querySelectorAll("button")].find((b) => b.textContent === "Load");
+    const button = [...document.querySelectorAll("button")].find((b) => b.textContent === "Load CSV");
     button?.click();
     await new Promise((r) => setTimeout(r, 0));
 
@@ -560,7 +562,7 @@ describe("downloading a template — decision 0373", () => {
     const revokeSpy = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
     const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
 
-    const downloadButton = [...document.querySelectorAll("button")].find((b) => b.textContent === "Download");
+    const downloadButton = [...document.querySelectorAll("button")].find((b) => b.textContent === "CSV Template");
     downloadButton?.click();
 
     expect(createSpy).toHaveBeenCalledOnce();
@@ -581,7 +583,7 @@ describe("downloading a template — decision 0373", () => {
     stubFetch({ "/api/purchase-orders": { body: EMPTY_LIST } });
     await openScreen();
 
-    const downloadButton = [...document.querySelectorAll("button")].find((b) => b.textContent === "Download");
+    const downloadButton = [...document.querySelectorAll("button")].find((b) => b.textContent === "CSV Template");
     expect(downloadButton?.disabled).toBe(true);
   });
 
@@ -592,7 +594,7 @@ describe("downloading a template — decision 0373", () => {
     });
     await openScreen();
 
-    const downloadButton = [...document.querySelectorAll("button")].find((b) => b.textContent === "Download");
+    const downloadButton = [...document.querySelectorAll("button")].find((b) => b.textContent === "CSV Template");
     expect(downloadButton?.disabled).toBe(false);
   });
 });

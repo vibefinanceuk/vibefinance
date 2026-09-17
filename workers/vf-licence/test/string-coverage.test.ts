@@ -276,6 +276,9 @@ const KEYS_THE_INTERFACE_USES = [
   "purchaseorders.required",
   "purchaseorders.headercolumns",
   "purchaseorders.linecolumns",
+  // Screen-specific button labels — decision 0373 addendum.
+  "purchaseorders.loadbutton",
+  "purchaseorders.templatebutton",
   "viewer.supplier",
   "viewer.supplier.name",
   "viewer.supplier.vat",

@@ -169,7 +169,7 @@ function loader() {
   // The handler goes in at construction — actionLink disables a button
   // with no onclick (decision 0161), and assigning it afterwards
   // leaves the button disabled and looking fine.
-  const button = actionLink("load", { primary: true, onclick: () => runLoad() });
+  const button = actionLink("load", { primary: true, onclick: () => runLoad(), label: t("purchaseorders.loadbutton") });
 
   async function runLoad() {
     const file = picker.files?.[0];
@@ -224,6 +224,7 @@ function loader() {
 
   const templateButton = actionLink("download", {
     onclick: () => downloadTemplate(),
+    label: t("purchaseorders.templatebutton"),
   });
   // csvFormat is already in its final state by the time loader() runs
   // — open() awaits loadFormat() before ever calling render() — so

@@ -119,3 +119,35 @@ rather than only asserting the click handler ran.
 vf-app: 1,764 tests (was 1,757). vf-ui: 72 worker tests (unchanged),
 581 browser tests (was 575). vf-licence: 320 tests, unchanged — the new
 migration (`0112`) is new keys only.
+
+---
+
+## Addendum — "Load CSV" and "CSV Template", not the shared generic labels
+
+The operator's own follow-up: the two buttons should read "Load CSV"
+and "CSV Template" rather than the generic "Load" / "Download" every
+screen sharing `actionLink`'s own `action.load` / `action.download`
+gets by default.
+
+**Not done by editing those shared strings.** `action.load` also
+labels Suppliers' own load button, and that screen still wants the
+plain generic word — changing the shared string would have silently
+renamed a button on a screen nobody was looking at. `action.download`
+was, as it happened, only used here so far, but the key's own name
+promises a generic, reusable label to whatever next screen reaches for
+it; putting Purchase-Orders-specific text under a generic-sounding key
+would have been a trap for that future caller, not a fix.
+
+`actionLink` gained one small, additive, backward-compatible parameter
+instead: an optional `label` that overrides the shared `action.<name>`
+text while still using that name's own icon and button styling. Every
+existing call site, on every screen, is unaffected — the full 581-test
+browser suite re-run afterward confirms it. Purchase Orders' own two
+buttons now pass `label` explicitly, backed by two new strings
+(`purchaseorders.loadbutton`, `purchaseorders.templatebutton`,
+migration `0113`) that belong to this screen alone.
+
+vf-ui: 581 browser tests, unchanged in count — the 13 existing
+assertions that named the old button text by string were updated to
+match, not replaced with new ones. vf-licence: 320 tests, unchanged —
+migration `0113` is two new keys.
