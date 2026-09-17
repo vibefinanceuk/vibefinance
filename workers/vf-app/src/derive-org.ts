@@ -38,6 +38,35 @@ const IDENTIFIERS: readonly { fact: string; column: string }[] = [
   { fact: "BT-10", column: "buyer_reference" },
 ];
 
+/**
+ * The one comparison every identifier match in this file, and now
+ * purchase orders too, comes down to — extracted, decision 0374, so
+ * the normalization rule (compared without case or spacing) lives in
+ * exactly one place rather than two call sites that could quietly
+ * diverge on what "the same VAT number" means.
+ *
+ * **Compared without case or spacing**, because a VAT number written
+ * `GB 907 856 199` on a document and `GB907856199` in configuration is
+ * the same number, and a person typing either should not have to know
+ * which the other used.
+ */
+export async function matchLegalEntity(
+  db: D1Database,
+  column: "buyer_endpoint" | "vat_id" | "buyer_reference",
+  value: string
+): Promise<string | null> {
+  const entity = await db
+    .prepare(
+      `SELECT id FROM org_units
+       WHERE kind = 'legal_entity'
+         AND ${column} IS NOT NULL
+         AND upper(replace(${column}, ' ', '')) = upper(replace(?, ' ', ''))`
+    )
+    .bind(value)
+    .first<{ id: string }>();
+  return entity?.id ?? null;
+}
+
 export interface DerivedOrg {
   /**
    * The company this invoice bills — decision 0226.
@@ -90,24 +119,9 @@ export async function deriveOrgUnit(
 
   for (const identifier of present) {
     const value = (facts[identifier.fact] as string).trim();
+    const matchedId = await matchLegalEntity(db, identifier.column as "buyer_endpoint" | "vat_id" | "buyer_reference", value);
 
-    /**
-     * **Compared without case or spacing**, because a VAT number
-     * written `GB 907 856 199` on a document and `GB907856199` in
-     * configuration is the same number, and a person typing either
-     * should not have to know which the other used.
-     */
-    const entity = await db
-      .prepare(
-        `SELECT id FROM org_units
-         WHERE kind = 'legal_entity'
-           AND ${identifier.column} IS NOT NULL
-           AND upper(replace(${identifier.column}, ' ', '')) = upper(replace(?, ' ', ''))`
-      )
-      .bind(value)
-      .first<{ id: string }>();
-
-    if (!entity) continue;
+    if (!matchedId) continue;
 
     /**
      * **The company is the answer** — decision 0226.
@@ -122,8 +136,8 @@ export async function deriveOrgUnit(
      * migration 0007.
      */
     return {
-      unitId: entity.id,
-      entityId: entity.id,
+      unitId: matchedId,
+      entityId: matchedId,
       matchedOn: identifier.fact,
       reason: null,
     };

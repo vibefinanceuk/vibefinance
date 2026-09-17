@@ -158,6 +158,15 @@ a rule, and left an approval task in a queue.
   advertises and confirms the real loader accepts all of them. The
   template download is the first client-side generated-file download
   anywhere in this app
+- Which legal entity a purchase order belongs to (0374), derived from
+  the buyer tax reference rather than a second, explicit field —
+  reusing invoices' own VAT-matching logic (0111, 0226) via a newly
+  shared `matchLegalEntity()`, not a second copy of it. Unlike
+  invoices, missing or unmatched is refused outright rather than stored
+  with a null org, since a purchase order describes the buyer's own
+  system to itself rather than a document a third party could
+  misaddress. The list is scoped by the chosen org through the same
+  mechanism Tasks, Documents, and Suppliers already use
 
 ### Documents
 - R2 storage with jurisdiction support (0013, 0033, 0035)
@@ -572,9 +581,9 @@ elsewhere.
 
 | Package | Tests |
 |---|---|
-| `vf-app` | 1764 |
+| `vf-app` | 1775 |
 | `vf-licence` | 320 |
-| `vf-ui` | 72 Worker · 581 browser |
+| `vf-ui` | 72 Worker · 584 browser |
 | `shared` | 269 passing, 3 known pre-existing failures |
 
 Both migration chains replay clean with every standing invariant
@@ -595,7 +604,7 @@ holding — 65 migrations for `vf-app`, 105 for `vf-licence`.
 | `docs/design/mockups/` | Four screens as static HTML | Current |
 | `docs/design/multi-authority-intake.md` | Non-EN-16931 authorities | Design only |
 | `docs/design/text-layer-extraction.md` | Reading a PDF's own text | Design only |
-| `docs/decisions/` | 373 decision records | Current |
+| `docs/decisions/` | 374 decision records | Current |
 | `docs/decisions/SUPERSEDED.md` | Which records supersede which | **Read first** |
 
 Document 4's markdown source is at `docs/documents/`, with

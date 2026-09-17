@@ -1,6 +1,7 @@
 import { t } from "/strings.js";
 import { el, frame, topbar, setCurrentScreen } from "/tasks.js";
 import { actionLink } from "/viewer.js";
+import { currentOrgId } from "/orgs.js";
 
 /**
  * Loading, and now browsing, purchase orders — decisions 0371 and 0372.
@@ -21,7 +22,14 @@ let csvFormat = null;
 
 async function load() {
   try {
-    const response = await fetch("/api/purchase-orders");
+    // The chosen org — decision 0374, the same treatment Suppliers'
+    // own load() already gives it (decision 0317), and why this
+    // screen needs no explicit wiring into relaunchAfterOrgChange:
+    // switching orgs re-dispatches to whatever screen is current
+    // (tasks.js's own go(current)), which calls this open() again.
+    const org = currentOrgId();
+    const query = org ? `?org=${encodeURIComponent(org)}` : "";
+    const response = await fetch(`/api/purchase-orders${query}`);
     if (!response.ok) return false;
     const body = await response.json();
     purchaseOrders = body.purchaseOrders ?? [];
@@ -279,6 +287,7 @@ async function openPurchaseOrder(summary) {
     ...fact(t("purchaseorders.currency"), order.currency),
     ...fact(t("purchaseorders.seller"), order.seller_party_id),
     ...fact(t("purchaseorders.buyer"), order.buyer_party_id),
+    ...fact(t("purchaseorders.org"), order.org_unit_name),
     ...fact(t("purchaseorders.netamount"), order.line_extension_amount),
     ...fact(t("purchaseorders.taxexclusive"), order.tax_exclusive_amount),
     ...fact(t("purchaseorders.taxinclusive"), order.tax_inclusive_amount),
@@ -341,6 +350,7 @@ function purchaseOrderRows() {
       el("td", { class: "muted", text: po.issue_date ?? "—" }),
       el("td", { class: "muted", text: po.seller_party_id ?? "—" }),
       el("td", { class: "muted", text: po.buyer_party_id ?? "—" }),
+      el("td", { text: po.org_unit_name ?? "—" }),
       el("td", { text: po.payable_amount ?? "—" }),
       el("td", { class: "muted", text: String(po.line_count) }),
     ]);
@@ -359,6 +369,7 @@ function purchaseOrderRows() {
           el("th", { text: t("purchaseorders.issuedate") }),
           el("th", { text: t("purchaseorders.seller") }),
           el("th", { text: t("purchaseorders.buyer") }),
+          el("th", { text: t("purchaseorders.org") }),
           el("th", { text: t("purchaseorders.total") }),
           el("th", { text: t("purchaseorders.lines") }),
         ]),

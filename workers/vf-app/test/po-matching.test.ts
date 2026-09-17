@@ -9,6 +9,7 @@ const ORDER = `<?xml version="1.0" encoding="UTF-8"?>
        xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
        xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">
   <cbc:ID>PO-500</cbc:ID>
+  <cac:BuyerCustomerParty><cac:Party><cac:PartyIdentification><cbc:ID>GB123456789</cbc:ID></cac:PartyIdentification></cac:Party></cac:BuyerCustomerParty>
   <cac:AnticipatedMonetaryTotal>
     <cbc:PayableAmount currencyID="EUR">1000</cbc:PayableAmount>
   </cac:AnticipatedMonetaryTotal>
@@ -28,6 +29,11 @@ const ORDER = `<?xml version="1.0" encoding="UTF-8"?>
 
 beforeEach(async () => {
   await applyTestSchema();
+  // Decision 0374 — every order now needs a real, matching legal
+  // entity or it is refused at ingestion. This fixture's own buyer tax
+  // reference (GB123456789) is otherwise arbitrary, chosen only to be
+  // distinct from any other test file's own.
+  await env.DB.prepare("INSERT INTO org_units (id, name, kind, vat_id) VALUES ('acme-po', 'Acme', 'legal_entity', 'GB123456789')").run();
   await handleIngestPurchaseOrder(env.DB, ORDER);
 });
 

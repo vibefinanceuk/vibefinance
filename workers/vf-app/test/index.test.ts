@@ -404,6 +404,11 @@ describe("POST /rules/evaluate", () => {
     // The purchase order, loaded first via the real ingestion route —
     // not a direct D1 insert, so this exercises the same path a
     // customer's own PO would arrive through.
+    // Decision 0374 — every order now needs a real, matching legal
+    // entity or it is refused at ingestion.
+    await env.DB.prepare(
+      "INSERT INTO org_units (id, name, kind, vat_id) VALUES ('acme-eval', 'Acme', 'legal_entity', 'GB123456789')"
+    ).run();
     await SELF.fetch("https://example.com/purchase-orders", {
       method: "POST",
       headers: authHeaders(),
@@ -412,6 +417,7 @@ describe("POST /rules/evaluate", () => {
        xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
        xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">
   <cbc:ID>PO-EVAL-1</cbc:ID>
+  <cac:BuyerCustomerParty><cac:Party><cac:PartyIdentification><cbc:ID>GB123456789</cbc:ID></cac:PartyIdentification></cac:Party></cac:BuyerCustomerParty>
   <cac:AnticipatedMonetaryTotal><cbc:PayableAmount currencyID="EUR">1000</cbc:PayableAmount></cac:AnticipatedMonetaryTotal>
   <cac:OrderLine><cac:LineItem><cbc:ID>1</cbc:ID>
     <cbc:LineExtensionAmount currencyID="EUR">1000</cbc:LineExtensionAmount>
@@ -1609,6 +1615,11 @@ describe("per-line evaluation, through the real router (decision 0027)", () => {
 
   it("re-visiting a later stage genuinely sees po.matched, and every other structured/derived fact — the gap decision 0370 found and closed", async () => {
     // The purchase order arrives first.
+    // Decision 0374 — every order now needs a real, matching legal
+    // entity or it is refused at ingestion.
+    await env.DB.prepare(
+      "INSERT INTO org_units (id, name, kind, vat_id) VALUES ('acme-visit', 'Acme', 'legal_entity', 'GB123456789')"
+    ).run();
     await SELF.fetch("https://example.com/purchase-orders", {
       method: "POST",
       headers: authHeaders(),
@@ -1617,6 +1628,7 @@ describe("per-line evaluation, through the real router (decision 0027)", () => {
        xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
        xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">
   <cbc:ID>PO-VISIT-1</cbc:ID>
+  <cac:BuyerCustomerParty><cac:Party><cac:PartyIdentification><cbc:ID>GB123456789</cbc:ID></cac:PartyIdentification></cac:Party></cac:BuyerCustomerParty>
   <cac:AnticipatedMonetaryTotal><cbc:PayableAmount currencyID="EUR">500</cbc:PayableAmount></cac:AnticipatedMonetaryTotal>
   <cac:OrderLine><cac:LineItem><cbc:ID>1</cbc:ID>
     <cbc:LineExtensionAmount currencyID="EUR">500</cbc:LineExtensionAmount>

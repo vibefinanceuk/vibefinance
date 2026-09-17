@@ -36,6 +36,7 @@ const STRINGS = {
     "purchaseorders.issuedate": "Issue Date",
     "purchaseorders.seller": "Seller",
     "purchaseorders.buyer": "Buyer",
+    "purchaseorders.org": "Org",
     "purchaseorders.total": "Total",
     "purchaseorders.lines": "Lines",
     "purchaseorders.none": "No purchase orders have been loaded yet.",
@@ -83,6 +84,8 @@ const ONE_ORDER = {
       currency: "EUR",
       seller_party_id: "GB447711223",
       buyer_party_id: "GB907856452",
+      org_unit_id: "acme-uk",
+      org_unit_name: "Acme UK",
       payable_amount: 864,
       line_count: 2,
     },
@@ -109,6 +112,8 @@ const PO_500_DETAIL = {
     currency: "EUR",
     seller_party_id: "GB447711223",
     buyer_party_id: "GB907856452",
+    org_unit_id: "acme-uk",
+    org_unit_name: "Acme UK",
     line_extension_amount: 720,
     tax_exclusive_amount: 720,
     tax_inclusive_amount: 864,
@@ -178,6 +183,9 @@ function chooseFile(text: string) {
 beforeEach(() => {
   mountShell();
   vi.unstubAllGlobals();
+  // No chosen org bleeding in from a previous test — decision 0374's
+  // own load() reads this directly via currentOrgId().
+  localStorage.removeItem("vf-current-org");
 });
 
 /**
@@ -261,6 +269,54 @@ describe("the list — decision 0372", () => {
     const row = document.querySelector("tbody tr");
     expect(row?.className).toContain("clickable");
   });
+
+  it("shows the resolved legal entity's own name, not just the raw buyer VAT — decision 0374", async () => {
+    stubFetch({ "/api/purchase-orders": { body: ONE_ORDER } });
+    await openScreen();
+
+    expect(document.body.textContent).toContain("Acme UK");
+  });
+});
+
+describe("the chosen org narrows the list — decision 0374", () => {
+  it("appends the chosen org as a query param when one is chosen", async () => {
+    localStorage.setItem("vf-current-org", "acme-uk");
+    let requestedUrl = "";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        const path = String(url).split("?")[0];
+        if (path === "/api/ui-strings") return { ok: true, json: async () => STRINGS } as Response;
+        if (path === "/api/purchase-orders") {
+          requestedUrl = String(url);
+          return { ok: true, json: async () => EMPTY_LIST } as Response;
+        }
+        throw new Error(`no stub for ${path}`);
+      })
+    );
+    await openScreen();
+
+    expect(requestedUrl).toBe("/api/purchase-orders?org=acme-uk");
+  });
+
+  it("asks for every org's own orders when none is chosen", async () => {
+    let requestedUrl = "";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        const path = String(url).split("?")[0];
+        if (path === "/api/ui-strings") return { ok: true, json: async () => STRINGS } as Response;
+        if (path === "/api/purchase-orders") {
+          requestedUrl = String(url);
+          return { ok: true, json: async () => EMPTY_LIST } as Response;
+        }
+        throw new Error(`no stub for ${path}`);
+      })
+    );
+    await openScreen();
+
+    expect(requestedUrl).toBe("/api/purchase-orders");
+  });
 });
 
 describe("the detail pop-out — 'all PO and PO Line information'", () => {
@@ -281,6 +337,7 @@ describe("the detail pop-out — 'all PO and PO Line information'", () => {
     expect(popout?.textContent).toContain("EUR");
     expect(popout?.textContent).toContain("REQ-100"); // originator reference
     expect(popout?.textContent).toContain("864"); // payable amount
+    expect(popout?.textContent).toContain("Acme UK"); // resolved legal entity
   });
 
   it("shows every line, with every field a line carries", async () => {

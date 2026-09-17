@@ -279,6 +279,7 @@ const KEYS_THE_INTERFACE_USES = [
   // Screen-specific button labels — decision 0373 addendum.
   "purchaseorders.loadbutton",
   "purchaseorders.templatebutton",
+  "purchaseorders.org",
   "viewer.supplier",
   "viewer.supplier.name",
   "viewer.supplier.vat",

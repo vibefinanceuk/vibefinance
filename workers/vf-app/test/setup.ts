@@ -64,9 +64,11 @@ import discardedStateSql from "../../../migrations/0033_discarded_task_state.sql
 import purchaseOrdersSql from "../../../migrations/0034_purchase_orders.sql?raw";
 import ruleNameSql from "../../../migrations/0058_rule_name.sql?raw";
 import documentCommentsSql from "../../../migrations/0059_document_comments.sql?raw";
+import grandfatherNavPermissionsSql from "../../../migrations/0060_grandfather_the_new_nav_permissions.sql?raw";
 import supplierOrgUnitSql from "../../../migrations/0061_supplier_org_unit.sql?raw";
 import teamBelongsToOrgSql from "../../../migrations/0064_a_team_belongs_to_an_org.sql?raw";
 import userPropertiesSql from "../../../migrations/0065_user_properties.sql?raw";
+import purchaseOrderOrgSql from "../../../migrations/0068_purchase_order_org.sql?raw";
 
 // Another known divergence from production, on top of the one below:
 // D1's exec() splits its input by newline and executes each non-empty
@@ -236,6 +238,14 @@ export async function applyTestSchema(): Promise<void> {
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(supplierEmailSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(supplierPhoneSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(orgContactSql)));
+  // 0054 is a documentation-only correction with no real SQL body — it
+  // exists in the real chain purely for its own commentary and
+  // assertions, and apply_migrations.py's own bookkeeping INSERT is
+  // what keeps a genuinely empty exec() from ever happening there.
+  // This test harness calls exec() directly with no such padding, so
+  // it is skipped here rather than sent as an empty statement. The
+  // same is true of 0062, 0063, 0066, and 0067 below — each real,
+  // each already in the deployed chain, none with anything to execute.
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(awaitingErpSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(dashboardSql)));
   /**
@@ -256,9 +266,11 @@ export async function applyTestSchema(): Promise<void> {
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(purchaseOrdersSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(ruleNameSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(documentCommentsSql)));
+  await env.DB.exec(toOneStatementPerLine(stripSqlComments(grandfatherNavPermissionsSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(supplierOrgUnitSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(teamBelongsToOrgSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(userPropertiesSql)));
+  await env.DB.exec(toOneStatementPerLine(stripSqlComments(purchaseOrderOrgSql)));
 }
 
 /**

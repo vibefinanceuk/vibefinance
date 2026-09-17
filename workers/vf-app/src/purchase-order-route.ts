@@ -1,6 +1,8 @@
 import type { RouteResult } from "./org-route.js";
 import { parseUblOrder, UblOrderParseError, type ParsedOrder } from "@vibefinance/shared";
 import { parseCsv } from "./load-suppliers.js";
+import { matchLegalEntity } from "./derive-org.js";
+import { scopedToChosenOrg, unitClause } from "./enforce.js";
 
 /**
  * Purchase order ingestion — decision 0081.
@@ -23,7 +25,39 @@ export interface StoredOrderResult {
   replaced: boolean;
 }
 
-async function storeOrder(db: D1Database, parsed: ParsedOrder): Promise<StoredOrderResult> {
+/**
+ * Which legal entity a purchase order belongs to — decision 0374.
+ *
+ * **Refused, never stored unassigned.** Unlike invoices
+ * (`deriveOrgUnit`), an unmatched or missing buyer tax reference is not
+ * left as a null for a person to notice later — the operator's own
+ * words were "this should always be known," since a purchase order
+ * describes the buyer's own purchasing system to itself, not a
+ * document a third party could genuinely misaddress. So this returns
+ * a refusal reason instead of a nullable result, and neither caller
+ * below ever calls `storeOrder` without a real, matched org unit id.
+ */
+async function deriveOrgForOrder(
+  db: D1Database,
+  buyerPartyId: string | undefined
+): Promise<{ orgUnitId: string } | { refusalReason: string }> {
+  const value = buyerPartyId?.trim();
+  if (!value) {
+    return {
+      refusalReason:
+        "no buyer tax reference — the legal entity this order belongs to cannot be determined",
+    };
+  }
+
+  const orgUnitId = await matchLegalEntity(db, "vat_id", value);
+  if (!orgUnitId) {
+    return { refusalReason: `buyer tax reference ${value} does not match any known legal entity` };
+  }
+
+  return { orgUnitId };
+}
+
+async function storeOrder(db: D1Database, parsed: ParsedOrder, orgUnitId: string): Promise<StoredOrderResult> {
   const existing = await db
     .prepare("SELECT id FROM purchase_orders WHERE order_number = ?")
     .bind(parsed.orderNumber)
@@ -45,8 +79,8 @@ async function storeOrder(db: D1Database, parsed: ParsedOrder): Promise<StoredOr
       `INSERT INTO purchase_orders
          (id, order_number, issue_date, order_type_code, currency, seller_party_id, buyer_party_id,
           line_extension_amount, tax_exclusive_amount, tax_inclusive_amount, payable_amount,
-          originator_reference)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          originator_reference, org_unit_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .bind(
       id,
@@ -60,7 +94,8 @@ async function storeOrder(db: D1Database, parsed: ParsedOrder): Promise<StoredOr
       parsed.taxExclusiveAmount ?? null,
       parsed.taxInclusiveAmount ?? null,
       parsed.payableAmount ?? null,
-      parsed.originatorReference ?? null
+      parsed.originatorReference ?? null,
+      orgUnitId
     )
     .run();
 
@@ -128,8 +163,13 @@ export async function handleIngestPurchaseOrder(db: D1Database, xml: string): Pr
     };
   }
 
-  const result = await storeOrder(db, parsed);
-  return { status: result.replaced ? 200 : 201, body: { ...result } };
+  const result = await deriveOrgForOrder(db, parsed.buyerPartyId);
+  if ("refusalReason" in result) {
+    return { status: 422, body: { error: result.refusalReason } };
+  }
+
+  const stored = await storeOrder(db, parsed, result.orgUnitId);
+  return { status: stored.replaced ? 200 : 201, body: { ...stored } };
 }
 
 /**
@@ -202,8 +242,9 @@ export const HEADER_FIELD_SPECS: CsvFieldSpec[] = [
   {
     key: "buyer_party_id",
     columns: ["buyer_party_id", "buyer vat", "buyer vat id"],
-    required: false,
-    description: "The buyer's VAT id — who placed the order.",
+    required: true,
+    description:
+      "The buyer's VAT id — which legal entity placed this order. Must match an org unit already configured with this VAT id, or the order is refused.",
   },
   {
     key: "line_extension_amount",
@@ -458,7 +499,18 @@ export async function handleLoadPurchaseOrdersCsv(db: D1Database, csv: string): 
       lines,
     };
 
-    const result = await storeOrder(db, parsed);
+    // Refused per order, not the whole file — decision 0374. Every
+    // other order in the same CSV still loads; only the ones whose
+    // buyer tax reference is missing or unmatched are skipped, each
+    // with its own reason in the same refused[] a person already sees
+    // for a missing line number or a duplicate one.
+    const orgResult = await deriveOrgForOrder(db, parsed.buyerPartyId);
+    if ("refusalReason" in orgResult) {
+      refused.push({ orderNumber, reason: orgResult.refusalReason });
+      continue;
+    }
+
+    const result = await storeOrder(db, parsed, orgResult.orgUnitId);
     ordersLoaded++;
     linesLoaded += result.lines;
     if (result.replaced) ordersReplaced++;
@@ -499,17 +551,33 @@ export async function handleLoadPurchaseOrdersCsv(db: D1Database, csv: string): 
  * carries SQLite's own implicit, strictly-increasing `rowid` — a
  * reliable tiebreaker `created_at`'s own precision can't provide.
  */
-export async function handleListPurchaseOrders(db: D1Database): Promise<RouteResult> {
+/**
+ * The chosen org narrows the list — decision 0374, the same
+ * `scopedToChosenOrg` / `unitClause` mechanism Tasks, Documents, the
+ * Dashboard, and Suppliers already use. No permission-scoped
+ * visibility layer on top of it (`AP.Validate` is not, today, grantable
+ * scoped to a single unit the way `AP.Supplier` is) — `visible` is
+ * always `null` here, so the chosen org is the only restriction,
+ * exactly what was asked for.
+ */
+export async function handleListPurchaseOrders(db: D1Database, currentOrg: string | null = null): Promise<RouteResult> {
+  const scopedUnits = await scopedToChosenOrg(db, null, currentOrg);
+  const clause = unitClause({ units: scopedUnits }, "po.org_unit_id");
+
   const rows = await db
     .prepare(
       `SELECT po.id, po.order_number, po.issue_date, po.currency, po.seller_party_id,
               po.buyer_party_id, po.payable_amount, po.created_at,
+              po.org_unit_id, u.name AS org_unit_name,
               count(pol.id) AS line_count
        FROM purchase_orders po
        LEFT JOIN purchase_order_lines pol ON pol.purchase_order_id = po.id
+       LEFT JOIN org_units u ON u.id = po.org_unit_id
+       WHERE 1 = 1 ${clause.sql}
        GROUP BY po.id
        ORDER BY po.created_at DESC, po.rowid DESC`
     )
+    .bind(...clause.binds)
     .all<Record<string, unknown>>();
 
   return { status: 200, body: { purchaseOrders: rows.results } };
@@ -517,7 +585,12 @@ export async function handleListPurchaseOrders(db: D1Database): Promise<RouteRes
 
 export async function handleGetPurchaseOrder(db: D1Database, orderNumber: string): Promise<RouteResult> {
   const order = await db
-    .prepare("SELECT * FROM purchase_orders WHERE order_number = ?")
+    .prepare(
+      `SELECT po.*, u.name AS org_unit_name
+       FROM purchase_orders po
+       LEFT JOIN org_units u ON u.id = po.org_unit_id
+       WHERE po.order_number = ?`
+    )
     .bind(orderNumber)
     .first<Record<string, unknown>>();
   if (!order) {

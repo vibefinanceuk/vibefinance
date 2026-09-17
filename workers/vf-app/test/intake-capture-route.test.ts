@@ -318,6 +318,9 @@ describe("po.matched / po.line_matched reach real rule evaluation through captur
 
   it("an invoice whose purchase order already exists and agrees sails through Matching untouched", async () => {
     await seedMatchingProcess("ppo1", "icppo1");
+    // Decision 0374 — every order now needs a real, matching legal
+    // entity or it is refused at ingestion.
+    await env.DB.prepare("INSERT INTO org_units (id, name, kind, vat_id) VALUES ('acme-ppo', 'Acme', 'legal_entity', 'GB123456789')").run();
     await handleIngestPurchaseOrder(
       env.DB,
       `<?xml version="1.0"?>
@@ -325,6 +328,7 @@ describe("po.matched / po.line_matched reach real rule evaluation through captur
        xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
        xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">
   <cbc:ID>PO-CAP-1</cbc:ID>
+  <cac:BuyerCustomerParty><cac:Party><cac:PartyIdentification><cbc:ID>GB123456789</cbc:ID></cac:PartyIdentification></cac:Party></cac:BuyerCustomerParty>
   <cac:AnticipatedMonetaryTotal><cbc:PayableAmount currencyID="EUR">600</cbc:PayableAmount></cac:AnticipatedMonetaryTotal>
   <cac:OrderLine><cac:LineItem><cbc:ID>1</cbc:ID>
     <cbc:Quantity unitCode="EA">10</cbc:Quantity>
