@@ -94,6 +94,7 @@ import { handleSetSourceOrg } from "./source-route.js";
 import {
   handleLoadSuppliers,
   handleListSuppliers,
+  handleGetSupplierStatusCounts,
   handleSearchSuppliers,
   handleSetInvoiceSupplier,
   handleCreateSupplier,
@@ -1013,6 +1014,25 @@ export default {
       return json(result.body, result.status);
     }
 
+    /**
+     * The status ring's own counts — decision 0378, mirroring
+     * decision 0377's own Purchase Order route exactly. Placed beside
+     * `/suppliers/search` and before the plain `/suppliers` GET below,
+     * the same "the more specific path first" discipline that route
+     * ordering already follows throughout this file.
+     */
+    if (pathname === "/suppliers/status-counts" && request.method === "GET") {
+      const { db } = resolveTenant(request, env);
+      const auth = await authenticatePerson(db, request, env);
+      if (!auth.user) return json({ error: auth.reason }, 401);
+      if (!(await hasPermission(db, auth.user.id, "AP.Supplier"))) {
+        return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
+      }
+
+      const result = await handleGetSupplierStatusCounts(db, url.searchParams.get("org"), auth.user.id);
+      return json(result.body, result.status);
+    }
+
     {
       const match = pathname.match(/^\/invoices\/([^/]+)\/supplier$/);
       if (match && request.method === "PUT") {
@@ -1117,9 +1137,19 @@ export default {
       /**
        * **The chosen org, decision 0317** — extending the same
        * treatment decisions 0314 and 0315 already gave Tasks and
-       * Documents to Suppliers.
+       * Documents to Suppliers. search / page / pageSize / status —
+       * mirroring decision 0376/0377's own treatment for Purchase
+       * Orders, on the operator's own request for the same card here.
        */
-      const result = await handleListSuppliers(db, url.searchParams.get("org"), auth.user.id);
+      const result = await handleListSuppliers(
+        db,
+        url.searchParams.get("org"),
+        auth.user.id,
+        url.searchParams.get("search"),
+        url.searchParams.get("page"),
+        url.searchParams.get("pageSize"),
+        url.searchParams.get("status")
+      );
       return json(
         {
           ...(result.body as Record<string, unknown>),

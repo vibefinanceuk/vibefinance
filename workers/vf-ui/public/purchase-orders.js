@@ -52,7 +52,13 @@ async function loadStatusCounts() {
     const org = currentOrgId();
     const query = org ? `?org=${encodeURIComponent(org)}` : "";
     const response = await fetch(`/api/purchase-orders/status-counts${query}`);
-    if (!response.ok) return;
+    // A failed fetch clears stale data rather than leaving whatever
+    // the last successful load happened to show — see suppliers.js's
+    // own identical fix (decision 0378) for the real bug this was.
+    if (!response.ok) {
+      statusCounts = null;
+      return;
+    }
     const body = await response.json();
     statusCounts = body.counts ?? null;
   } catch {

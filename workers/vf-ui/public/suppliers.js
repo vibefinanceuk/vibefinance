@@ -3,6 +3,7 @@ import { el, frame, topbar, setCurrentScreen } from "/tasks.js";
 import { actionLink } from "/viewer.js";
 import { donutChart } from "/charts.js";
 import { currentOrgId } from "/orgs.js";
+import { icon } from "/icons.js";
 
 /**
  * The supplier list, and loading one — decision 0213.
@@ -25,13 +26,17 @@ let lastLoad = null;
  * card — decision 0259, generalised to any of the Supplier status
  * card's own four buckets since decision 0299.
  *
- * **Client-side, unlike the documents filters.** `/api/suppliers`
- * already returns the whole list with no pagination (decision 0213 —
- * one customer's supplier master, not a growing transaction log), so
- * there is a full array in memory to filter the moment it is asked for.
- * Adding a server-side filter for a dataset that is already entirely on
- * the client would be a second way to do the same narrowing, and decision
- * 0236's whole finding was that two names for one thing drift.
+ * **Server-side, since decision 0378** — `/api/suppliers` used to
+ * return the whole list at once (decision 0213: one customer's
+ * supplier master, not a growing transaction log), so this filtered a
+ * fully-loaded array in the browser. Real, server-side pagination
+ * (decision 0378, mirroring 0376 for Purchase Orders) means that array
+ * is now only ever one page, so the filter is a `status` query
+ * parameter the server applies instead — the same "the ring's own
+ * count and the list's own filter must never disagree" reasoning
+ * decision 0299 already established, just enforced by one shared SQL
+ * expression on the server now rather than one shared function in the
+ * browser.
  *
  * **One of `"active"`, `"inactive"`, `"onhold"`, `"awaitingerp"`, or
  * `null`** for every supplier — not a boolean any more, now that the
@@ -40,32 +45,32 @@ let lastLoad = null;
  */
 let statusFilter = null;
 
+let searchTerm = "";
+let page = 1;
+let pageSize = 50;
+let total = 0;
+
 /**
- * **Which one bucket a supplier counts in** — decision 0299. A
- * supplier is not one dimension: `status` is active or inactive,
- * `onHold` is a separate flag, and having no `erpIdentifier` at all is
- * a third, independent fact — a supplier can genuinely be active,
- * on hold, and missing its own ERP identifier all at once. A ring
- * needs each supplier counted exactly once, so this gives one
- * priority order to both the chart's own counts and the list's own
- * filter, the same order applied everywhere it matters rather than
- * two places that could disagree.
- *
- * **Awaiting ERP first.** Nothing else about a supplier with no
- * `erpIdentifier` is really settled yet — decision 0209 made the
- * identifier the thing an invoice is actually matched against, so a
- * supplier without one is "not really set up here" before it is
- * anything else.
- *
- * **On hold second.** The one state decision 0208's own column
- * already treats as the reason an invoice routes differently, ahead
- * of the plain active/inactive split.
+ * The status ring's own counts — decision 0378. Fetched independently
+ * of `load()`, from `/api/suppliers/status-counts`, the same
+ * "org-wide and permission-scoped, but never page-limited" treatment
+ * decision 0377 already gave the Purchase Orders chart — needed for
+ * the identical reason: `suppliers` is now only ever one page, and a
+ * ring built from it would show whichever suppliers happened to land
+ * on the current page, not the true, full count.
  */
-function supplierBucket(s) {
-  if (!s.erpIdentifier) return "awaitingerp";
-  if (s.onHold) return "onhold";
-  return s.status === "inactive" ? "inactive" : "active";
-}
+let statusCounts = null;
+
+const PAGE_SIZES = [25, 50, 100, 200];
+
+/**
+ * **The same priority order `SUPPLIER_STATUS_CASE` now applies in
+ * SQL** — decision 0378. This browser-side version moved with the
+ * bucketing logic itself once real pagination meant the ring's own
+ * counts and the list's own filter both had to be computed on the
+ * server; `awaitingerp` still checked first, `onhold` second, exactly
+ * as decision 0299 originally established.
+ */
 
 /**
  * **Whether an ERP is the master here** — decision 0230.
@@ -88,19 +93,61 @@ async function load() {
      * treatment already given to Tasks, Documents, and the
      * dashboard. Unlike those three, an unassigned supplier is never
      * hidden by it — see `handleListSuppliers`'s own reasoning.
+     *
+     * search / page / pageSize / status — decision 0378, mirroring
+     * decision 0376/0377's own treatment for Purchase Orders exactly.
      */
     const org = currentOrgId();
-    const query = org ? `?org=${encodeURIComponent(org)}` : "";
-    const response = await fetch(`/api/suppliers${query}`);
+    const params = new URLSearchParams();
+    if (org) params.set("org", org);
+    if (searchTerm) params.set("search", searchTerm);
+    params.set("page", String(page));
+    params.set("pageSize", String(pageSize));
+    if (statusFilter) params.set("status", statusFilter);
+
+    const response = await fetch(`/api/suppliers?${params.toString()}`);
     if (!response.ok) return false;
     const body = await response.json();
     suppliers = body.suppliers ?? [];
     lastLoad = body.lastLoad ?? null;
     fedByLoad = body.fedByLoad === true;
+    total = body.total ?? 0;
+    page = body.page ?? 1;
+    pageSize = body.pageSize ?? 50;
     return true;
   } catch {
     return false;
   }
+}
+
+async function loadStatusCounts() {
+  try {
+    const org = currentOrgId();
+    const query = org ? `?org=${encodeURIComponent(org)}` : "";
+    const response = await fetch(`/api/suppliers/status-counts${query}`);
+    // A failed fetch clears stale data rather than leaving whatever
+    // the last successful load happened to show — a real bug, found
+    // once a test actually exercised a failure after a prior success:
+    // the early return used to skip past resetting `statusCounts` at
+    // all, so a chart that had once loaded real counts kept showing
+    // them, silently wrong, even after the org's own counts changed
+    // or a later fetch genuinely failed.
+    if (!response.ok) {
+      statusCounts = null;
+      return;
+    }
+    const body = await response.json();
+    statusCounts = body.counts ?? null;
+  } catch {
+    statusCounts = null;
+  }
+}
+
+async function reload(focusId) {
+  await load();
+  await loadStatusCounts();
+  render();
+  if (focusId) document.getElementById(focusId)?.focus();
 }
 
 /**
@@ -485,6 +532,9 @@ function openSupplier(s) {
   const reload = async () => {
     close();
     await load();
+    // Refreshes the ring too, decision 0378 — a Hold, Release, Activate
+    // or Deactivate here changes which bucket this supplier counts in.
+    await loadStatusCounts();
     render();
   };
 
@@ -617,32 +667,111 @@ function openSupplier(s) {
   document.body.append(backdrop);
 }
 
+/**
+ * The search box and pagination controls, in one row above the list —
+ * decision 0378, mirroring decision 0376's own row for Purchase
+ * Orders exactly, on the operator's own request for the same card
+ * here: "below the Load a supplier file card, above the list of
+ * suppliers." Both push to the database rather than filtering or
+ * paging a fully-loaded list in the browser, replacing the "the whole
+ * list fits in memory" assumption decision 0213 made when this screen
+ * was first built.
+ */
+function searchAndPaginationRow() {
+  const search = el("input", {
+    type: "search",
+    id: "supplierssearch",
+    placeholder: t("suppliers.searchplaceholder"),
+  });
+  search.value = searchTerm;
+  // onchange, not oninput — fires once the person is done typing
+  // (blur or Enter), not on every keystroke, the same choice
+  // documents.js's own search box and Purchase Orders' own row
+  // already made.
+  search.onchange = async () => {
+    searchTerm = search.value;
+    page = 1;
+    await reload("supplierssearch");
+  };
+
+  const sizePicker = el(
+    "select",
+    { id: "suppliersrowsize" },
+    PAGE_SIZES.map((size) => el("option", { value: String(size), text: String(size) }))
+  );
+  sizePicker.value = String(pageSize);
+  sizePicker.onchange = async () => {
+    pageSize = Number(sizePicker.value);
+    page = 1;
+    await reload("suppliersrowsize");
+  };
+
+  const totalPages = total === 0 ? 0 : Math.ceil(total / pageSize);
+  const atFirst = page <= 1;
+  const atLast = total === 0 || page >= totalPages;
+
+  function navButton(name, label, disabled, onclick) {
+    const button = el("button", { class: "iconbutton", "aria-label": label, title: label });
+    button.append(icon(name));
+    button.disabled = disabled;
+    button.onclick = onclick;
+    return button;
+  }
+
+  const rangeStart = total === 0 ? 0 : (page - 1) * pageSize + 1;
+  const rangeEnd = Math.min(page * pageSize, total);
+
+  return el("div", { class: "searchrow" }, [
+    search,
+    el("label", { class: "sm muted", text: t("suppliers.rows") }),
+    sizePicker,
+    navButton("chevronsleft", t("suppliers.firstpage"), atFirst, async () => {
+      page = 1;
+      await reload();
+    }),
+    navButton("chevronleft", t("suppliers.previouspage"), atFirst, async () => {
+      page = Math.max(1, page - 1);
+      await reload();
+    }),
+    el("span", {
+      class: "sm muted",
+      text: t("suppliers.rangeof").replace("{start}", String(rangeStart)).replace("{end}", String(rangeEnd)).replace("{total}", String(total)),
+    }),
+    navButton("chevronright", t("suppliers.nextpage"), atLast, async () => {
+      page = Math.min(totalPages, page + 1);
+      await reload();
+    }),
+    navButton("chevronsright", t("suppliers.lastpage"), atLast, async () => {
+      page = totalPages;
+      await reload();
+    }),
+  ]);
+}
+
 function supplierRows() {
   /**
-   * **Filtered here, in one place**, rather than at every call site
-   * that reads `suppliers` — this function is the only reader of the
-   * raw list, so the narrowing and the "nothing matches" message live
-   * together.
-   *
-   * **The same `supplierBucket()` the ring counts against.** A person
-   * clicking "Active" on the chart has to see exactly the suppliers
-   * that were counted into that slice — a second, independently
-   * written filter here could disagree with the ring's own count the
-   * moment either one changed without the other.
+   * **Filtered on the server now, decision 0378** — `suppliers` is
+   * already exactly the rows this page, this search, and this status
+   * filter select; this function renders it rather than narrowing it
+   * again, the same change decision 0376 made to Purchase Orders' own
+   * list for the identical reason.
    */
-  const shown = statusFilter ? suppliers.filter((s) => supplierBucket(s) === statusFilter) : suppliers;
+  const shown = suppliers;
 
   if (shown.length === 0) {
     /**
      * **A different message for a different absence.** "No suppliers
-     * have been loaded yet" is false the moment a filter is why the
-     * list is empty — the mirror is not empty, the question just has no
-     * answer today.
+     * have been loaded yet" is false the moment a search or a status
+     * filter is why the list is empty — the mirror is not empty, the
+     * question just has no answer today. A search and a status filter
+     * get their own distinct messages too, the same "nomatches" vs
+     * "nonefiltered" split decision 0376 established for Purchase
+     * Orders, since the two questions ("does this search term exist
+     * anywhere" vs "is any supplier in this bucket") are different
+     * enough to deserve saying so.
      */
-    return el("div", {
-      class: "muted",
-      text: statusFilter ? t("suppliers.nonefiltered") : t("suppliers.none"),
-    });
+    const message = searchTerm ? t("suppliers.nomatches") : statusFilter ? t("suppliers.nonefiltered") : t("suppliers.none");
+    return el("div", { class: "muted", text: message });
   }
 
   /**
@@ -731,26 +860,26 @@ function note(message) {
  * Two ways to the same place is one more than a person has to learn.
  */
 function supplierStatusCard() {
-  const counts = { active: 0, inactive: 0, onhold: 0, awaitingerp: 0 };
-  for (const s of suppliers) counts[supplierBucket(s)]++;
+  const segments = statusCounts
+    ? [
+        { key: "active", label: t("suppliers.status.active"), value: statusCounts.active ?? 0 },
+        { key: "onhold", label: t("suppliers.status.onhold"), value: statusCounts.onhold ?? 0 },
+        { key: "inactive", label: t("suppliers.status.inactive"), value: statusCounts.inactive ?? 0 },
+        { key: "awaitingerp", label: t("suppliers.status.awaitingerp"), value: statusCounts.awaitingerp ?? 0 },
+      ].filter((seg) => seg.value > 0)
+    : [];
 
-  const segments = [
-    { key: "active", label: t("suppliers.status.active"), value: counts.active },
-    { key: "onhold", label: t("suppliers.status.onhold"), value: counts.onhold },
-    { key: "inactive", label: t("suppliers.status.inactive"), value: counts.inactive },
-    { key: "awaitingerp", label: t("suppliers.status.awaitingerp"), value: counts.awaitingerp },
-  ].filter((seg) => seg.value > 0);
-
-  function select(key) {
+  async function select(key) {
     statusFilter = key;
-    render();
+    page = 1;
+    await reload();
   }
 
   return el("div", { class: "panel" }, [
     el("h3", { text: t("suppliers.statusheading") }),
     segments.length > 0
       ? donutChart(segments, { onSelect: (segment) => select(segment.key) })
-      : el("div", { class: "muted", text: t("suppliers.none") }),
+      : el("div", { class: "muted", text: t("suppliers.nostatusdata") }),
   ]);
 }
 
@@ -810,13 +939,15 @@ function render() {
               el("button", {
                 class: "chip",
                 text: t("documents.clearfilter"),
-                onclick: () => {
+                onclick: async () => {
                   statusFilter = null;
-                  render();
+                  page = 1;
+                  await reload();
                 },
               }),
             ])
           : null,
+        el("div", { class: "panel" }, [searchAndPaginationRow()]),
         el("div", { class: "panel" }, [supplierRows()]),
       ].filter(Boolean))
     )
@@ -825,6 +956,12 @@ function render() {
 
 export async function open() {
   setCurrentScreen("suppliers");
+  // Search and pagination reset to their defaults on every fresh open
+  // — decision 0378, the same "a clean view each time" choice decision
+  // 0376 already made for Purchase Orders.
+  searchTerm = "";
+  page = 1;
+  statusFilter = null;
   // render() first, always — decision 0372's own finding, applied
   // back here: calling note() before this screen has ever rendered
   // writes to #suppliers-note before that element exists, and a
@@ -832,6 +969,10 @@ export async function open() {
   const ok = await load();
   render();
   if (!ok) note(t("suppliers.failed"));
+  // Independent of load()'s own outcome, the same treatment decision
+  // 0377 already gives the identical chart for Purchase Orders.
+  await loadStatusCounts();
+  render();
 }
 
 /**
@@ -840,8 +981,12 @@ export async function open() {
  */
 export async function openSuppliersAwaitingErp() {
   setCurrentScreen("suppliers");
+  searchTerm = "";
+  page = 1;
   statusFilter = "awaitingerp";
   const ok = await load();
   render();
   if (!ok) note(t("suppliers.failed"));
+  await loadStatusCounts();
+  render();
 }

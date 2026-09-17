@@ -545,10 +545,120 @@ export async function rematchUnmatchedInvoices(db: D1Database): Promise<number> 
  * (decision 0208). Two calls would let a screen show one without the
  * other.
  */
-export async function handleListSuppliers(
+/** Page sizes offered in the UI dropdown — anything else is rejected back to the default, the same discipline decision 0376 established for Purchase Orders. */
+const SUPPLIER_PAGE_SIZES = [25, 50, 100, 200] as const;
+const SUPPLIER_DEFAULT_PAGE_SIZE = 50;
+
+function normalizeSupplierPageSize(requested: string | null): number {
+  const n = requested ? Number(requested) : NaN;
+  return (SUPPLIER_PAGE_SIZES as readonly number[]).includes(n) ? n : SUPPLIER_DEFAULT_PAGE_SIZE;
+}
+
+function normalizeSupplierPage(requested: string | null): number {
+  const n = requested ? Number(requested) : NaN;
+  return Number.isInteger(n) && n >= 1 ? n : 1;
+}
+
+/**
+ * The search clause — the same broad, "one box, not a form" field set
+ * decision 0222's own `handleSearchSuppliers` already searches
+ * ("somebody looking at an invoice has a name, or a VAT number, or an
+ * address on the page"), reused here rather than a narrower set
+ * invented fresh for the list. Deliberately without that function's
+ * own `status = 'active'` restriction or `LIMIT 25` — this is the
+ * full list a person browses, not a quick picker.
+ */
+function supplierSearchClause(search: string | null): { sql: string; binds: unknown[] } {
+  const term = search?.trim();
+  if (!term) return { sql: "", binds: [] };
+
+  const pattern = `%${term.replace(/[\\%_]/g, "\\$&")}%`;
+  return {
+    sql: ` AND (
+      s.name LIKE ? ESCAPE '\\'
+      OR s.erp_identifier LIKE ? ESCAPE '\\'
+      OR s.vat_id LIKE ? ESCAPE '\\'
+      OR s.electronic_address LIKE ? ESCAPE '\\'
+      OR s.email LIKE ? ESCAPE '\\'
+      OR s.address_line LIKE ? ESCAPE '\\'
+      OR s.city LIKE ? ESCAPE '\\'
+      OR s.postal_code LIKE ? ESCAPE '\\'
+    )`,
+    binds: [pattern, pattern, pattern, pattern, pattern, pattern, pattern, pattern],
+  };
+}
+
+/**
+ * The same four-bucket status the donut chart and its own
+ * `supplierBucket()` already compute client-side — mirrored here in
+ * SQL so the list can filter by it directly. Needed the moment real
+ * pagination arrived: `supplierBucket()`'s own filter ran over the
+ * fully-loaded array, which real pagination silently breaks — a
+ * "held" filter would only ever see whichever held suppliers happened
+ * to land on the current page, not the true, full set. `awaitingerp`
+ * checked first, matching `supplierBucket()`'s own priority exactly.
+ */
+const SUPPLIER_STATUS_CASE = `
+  CASE
+    WHEN s.erp_identifier IS NULL OR s.erp_identifier = '' THEN 'awaitingerp'
+    WHEN s.on_hold = 1 THEN 'onhold'
+    WHEN s.status = 'inactive' THEN 'inactive'
+    ELSE 'active'
+  END
+`;
+const SUPPLIER_STATUSES = ["active", "onhold", "inactive", "awaitingerp"] as const;
+
+function supplierStatusClause(status: string | null): { sql: string; binds: unknown[] } {
+  if (!status) return { sql: "", binds: [] };
+  if (!(SUPPLIER_STATUSES as readonly string[]).includes(status)) return { sql: " AND 1 = 0", binds: [] };
+  return { sql: ` AND (${SUPPLIER_STATUS_CASE}) = ?`, binds: [status] };
+}
+
+/**
+ * The status ring's own counts, org-wide and permission-scoped but
+ * never page-limited — decision 0378, mirroring
+ * `handleGetPurchaseOrderStatusCounts` exactly (decision 0377).
+ *
+ * **Needed the moment real pagination arrived**, for the same reason
+ * the list's own status filter did: `supplierStatusCard()`'s own ring
+ * used to count the fully-loaded `suppliers` array in the browser,
+ * which real, server-side pagination breaks the same way — a ring
+ * built from whichever 50 suppliers happen to be on the current page
+ * is not the true, full count.
+ */
+export async function handleGetSupplierStatusCounts(
   db: D1Database,
   currentOrg: string | null = null,
   userId?: string
+): Promise<RouteResult> {
+  const visible = userId ? await unitsWherePermitted(db, userId, "AP.Supplier") : null;
+  const scopedUnits = await scopedToChosenOrg(db, visible, currentOrg);
+  const clause = unitClause({ units: scopedUnits }, "s.org_unit_id");
+
+  const rows = await db
+    .prepare(
+      `SELECT (${SUPPLIER_STATUS_CASE}) AS status, count(*) AS n
+       FROM suppliers s
+       WHERE 1 = 1 ${clause.sql}
+       GROUP BY (${SUPPLIER_STATUS_CASE})`
+    )
+    .bind(...clause.binds)
+    .all<{ status: string; n: number }>();
+
+  const counts: Record<string, number> = { active: 0, onhold: 0, inactive: 0, awaitingerp: 0 };
+  for (const row of rows.results) counts[row.status] = row.n;
+
+  return { status: 200, body: { counts } };
+}
+
+export async function handleListSuppliers(
+  db: D1Database,
+  currentOrg: string | null = null,
+  userId?: string,
+  search: string | null = null,
+  pageParam: string | null = null,
+  pageSizeParam: string | null = null,
+  statusParam: string | null = null
 ): Promise<RouteResult> {
   /**
    * **Real, permission-based scoping — decision 0358.** Reported
@@ -580,6 +690,16 @@ export async function handleListSuppliers(
   const visible = userId ? await unitsWherePermitted(db, userId, "AP.Supplier") : null;
   const scopedUnits = await scopedToChosenOrg(db, visible, currentOrg);
   const clause = unitClause({ units: scopedUnits }, "s.org_unit_id");
+  const search_ = supplierSearchClause(search);
+  const status_ = supplierStatusClause(statusParam);
+  const page = normalizeSupplierPage(pageParam);
+  const pageSize = normalizeSupplierPageSize(pageSizeParam);
+  const offset = (page - 1) * pageSize;
+
+  const totalRow = await db
+    .prepare(`SELECT count(*) AS n FROM suppliers s WHERE 1 = 1 ${clause.sql} ${search_.sql} ${status_.sql}`)
+    .bind(...clause.binds, ...search_.binds, ...status_.binds)
+    .first<{ n: number }>();
 
   const rows = await db
     .prepare(
@@ -589,10 +709,11 @@ export async function handleListSuppliers(
               s.org_unit_id, u.name AS org_unit_name
        FROM suppliers s
        LEFT JOIN org_units u ON u.id = s.org_unit_id
-       WHERE 1 = 1 ${clause.sql}
-       ORDER BY s.status, s.name`
+       WHERE 1 = 1 ${clause.sql} ${search_.sql} ${status_.sql}
+       ORDER BY s.status, s.name
+       LIMIT ? OFFSET ?`
     )
-    .bind(...clause.binds)
+    .bind(...clause.binds, ...search_.binds, ...status_.binds, pageSize, offset)
     .all<{
       id: string;
       erp_identifier: string;
@@ -660,6 +781,9 @@ export async function handleListSuppliers(
             refusedCount: load.refused_count,
           }
         : null,
+      total: totalRow?.n ?? 0,
+      page,
+      pageSize,
     },
   };
 }

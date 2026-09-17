@@ -4,6 +4,7 @@ import { applyTestSchema } from "./setup.js";
 import {
   handleLoadSuppliers,
   handleListSuppliers,
+  handleGetSupplierStatusCounts,
   handleSearchSuppliers,
   handleSetInvoiceSupplier,
   handleCreateSupplier,
@@ -1438,5 +1439,241 @@ describe("Supplier Maintenance triggering — decision 0350", () => {
       const count = await env.DB.prepare("SELECT count(*) AS n FROM process_instances").first<{ n: number }>();
       expect(count?.n).toBe(0);
     });
+  });
+});
+
+describe("searching the supplier list — mirroring decision 0376 for Purchase Orders", () => {
+  it("matches on name", async () => {
+    await load("ERP ID,Name\n1,Northwind Logistics\n2,Bishopsgate Supplies");
+    const result = await handleListSuppliers(env.DB, null, undefined, "Northwind");
+    const body = result.body as { suppliers: { name: string }[] };
+    expect(body.suppliers.map((s) => s.name)).toEqual(["Northwind Logistics"]);
+  });
+
+  it("matches on the ERP identifier", async () => {
+    await load("ERP ID,Name\n40118,Northwind\n50221,Bishopsgate");
+    const result = await handleListSuppliers(env.DB, null, undefined, "40118");
+    const body = result.body as { suppliers: { name: string }[] };
+    expect(body.suppliers.map((s) => s.name)).toEqual(["Northwind"]);
+  });
+
+  it("matches on the VAT id", async () => {
+    await load("ERP ID,Name,VAT\n1,Northwind,GB907856452\n2,Bishopsgate,GB447711223");
+    const result = await handleListSuppliers(env.DB, null, undefined, "GB907856452");
+    const body = result.body as { suppliers: { name: string }[] };
+    expect(body.suppliers.map((s) => s.name)).toEqual(["Northwind"]);
+  });
+
+  it("matches on city and postal code too, the same broad field set decision 0222's own search already uses", async () => {
+    await env.DB.prepare(
+      "INSERT INTO suppliers (id, erp_identifier, name, city, postal_code) VALUES ('s1', '1', 'Acme', 'Shoreditch', 'EC2A 1AA')"
+    ).run();
+    await env.DB.prepare("INSERT INTO suppliers (id, erp_identifier, name, city) VALUES ('s2', '2', 'Beta', 'Croydon')").run();
+
+    const byCity = await handleListSuppliers(env.DB, null, undefined, "Shoreditch");
+    expect((byCity.body as { suppliers: { name: string }[] }).suppliers.map((s) => s.name)).toEqual(["Acme"]);
+
+    const byPostcode = await handleListSuppliers(env.DB, null, undefined, "EC2A");
+    expect((byPostcode.body as { suppliers: { name: string }[] }).suppliers.map((s) => s.name)).toEqual(["Acme"]);
+  });
+
+  it("is case-insensitive", async () => {
+    await load("ERP ID,Name\n1,Northwind Logistics");
+    const result = await handleListSuppliers(env.DB, null, undefined, "northwind");
+    expect((result.body as { suppliers: unknown[] }).suppliers).toHaveLength(1);
+  });
+
+  it("treats a literal percent or underscore in the term as itself, not a SQL wildcard", async () => {
+    await load("ERP ID,Name\n1,50% Holdings\n2,Something Else");
+    const result = await handleListSuppliers(env.DB, null, undefined, "50%");
+    expect((result.body as { suppliers: unknown[] }).suppliers).toHaveLength(1);
+  });
+
+  it("returns an empty list, not an error, when nothing matches", async () => {
+    await load("ERP ID,Name\n1,Northwind");
+    const result = await handleListSuppliers(env.DB, null, undefined, "no such thing anywhere");
+    const body = result.body as { suppliers: unknown[]; total: number };
+    expect(body.suppliers).toEqual([]);
+    expect(body.total).toBe(0);
+  });
+});
+
+describe("real, server-side pagination for suppliers — mirroring decision 0376", () => {
+  async function seedManySuppliers(count: number) {
+    // A direct batch insert, not the CSV loader — handleLoadSuppliers'
+    // own "which suppliers were not in this load, and so should be
+    // deactivated" query builds one bound placeholder per row it saw,
+    // and hits SQLite's own variable ceiling well before 120 rows in
+    // one call. These tests need many rows in the table, not to
+    // exercise the loader itself.
+    await env.DB.batch(
+      Array.from({ length: count }, (_, i) =>
+        env.DB
+          .prepare("INSERT INTO suppliers (id, erp_identifier, name) VALUES (?, ?, ?)")
+          .bind(`s${1000 + i}`, String(1000 + i), `Supplier ${i}`)
+      )
+    );
+  }
+
+  it("returns only pageSize rows, defaulting to 50", async () => {
+    await seedManySuppliers(120);
+    const result = await handleListSuppliers(env.DB);
+    const body = result.body as { suppliers: unknown[]; total: number; page: number; pageSize: number };
+    expect(body.suppliers).toHaveLength(50);
+    expect(body.total).toBe(120);
+    expect(body.page).toBe(1);
+    expect(body.pageSize).toBe(50);
+  });
+
+  it("returns the next slice on page 2, with no overlap and no gap", async () => {
+    await seedManySuppliers(120);
+    const page1 = await handleListSuppliers(env.DB, null, undefined, null, "1", "50");
+    const page2 = await handleListSuppliers(env.DB, null, undefined, null, "2", "50");
+    const names1 = (page1.body as { suppliers: { name: string }[] }).suppliers.map((s) => s.name);
+    const names2 = (page2.body as { suppliers: { name: string }[] }).suppliers.map((s) => s.name);
+    expect(names1).toHaveLength(50);
+    expect(names2).toHaveLength(50);
+    expect(new Set([...names1, ...names2]).size).toBe(100);
+  });
+
+  it("returns a real, partial last page rather than padding or erroring", async () => {
+    await seedManySuppliers(120);
+    const result = await handleListSuppliers(env.DB, null, undefined, null, "3", "50");
+    expect((result.body as { suppliers: unknown[] }).suppliers).toHaveLength(20);
+  });
+
+  it("falls back to page 1 for anything not a real positive integer", async () => {
+    await seedManySuppliers(5);
+    for (const bad of ["0", "-1", "abc", null]) {
+      const result = await handleListSuppliers(env.DB, null, undefined, null, bad);
+      expect((result.body as { page: number }).page).toBe(1);
+    }
+  });
+
+  it("falls back to the default page size for anything outside the allowed set", async () => {
+    await seedManySuppliers(5);
+    for (const bad of ["10", "9999", "abc", null]) {
+      const result = await handleListSuppliers(env.DB, null, undefined, null, null, bad);
+      expect((result.body as { pageSize: number }).pageSize).toBe(50);
+    }
+  });
+
+  it("total reflects every matching row, not just the page returned", async () => {
+    await seedManySuppliers(120);
+    const result = await handleListSuppliers(env.DB, null, undefined, null, "1", "25");
+    const body = result.body as { suppliers: unknown[]; total: number };
+    expect(body.suppliers).toHaveLength(25);
+    expect(body.total).toBe(120);
+  });
+});
+
+describe("filtering the list by status — the same four buckets the donut chart's own supplierBucket() computes", () => {
+  it("shows only Active suppliers", async () => {
+    // Both in one load — handleLoadSuppliers treats each call as the
+    // complete ERP snapshot, and a second call not mentioning "Active
+    // Co" would deactivate it, not merely leave it alone.
+    await load("ERP ID,Name,Hold,hold_reason\n1,Active Co,,\n2,Held Co,true,dispute");
+    const result = await handleListSuppliers(env.DB, null, undefined, null, null, null, "active");
+    const body = result.body as { suppliers: { name: string }[] };
+    expect(body.suppliers.map((s) => s.name)).toEqual(["Active Co"]);
+  });
+
+  it("shows only On Hold suppliers", async () => {
+    await load("ERP ID,Name,Hold,hold_reason\n1,Active Co,,\n2,Held Co,true,dispute");
+    const result = await handleListSuppliers(env.DB, null, undefined, null, null, null, "onhold");
+    const body = result.body as { suppliers: { name: string }[] };
+    expect(body.suppliers.map((s) => s.name)).toEqual(["Held Co"]);
+  });
+
+  it("shows only Inactive suppliers", async () => {
+    await load("ERP ID,Name\n1,Active Co\n2,Inactive Co");
+    await env.DB.prepare("UPDATE suppliers SET status = 'inactive' WHERE name = 'Inactive Co'").run();
+    const result = await handleListSuppliers(env.DB, null, undefined, null, null, null, "inactive");
+    const body = result.body as { suppliers: { name: string }[] };
+    expect(body.suppliers.map((s) => s.name)).toEqual(["Inactive Co"]);
+  });
+
+  it("shows only suppliers Awaiting the ERP — no erp_identifier at all, added here by hand", async () => {
+    await load("ERP ID,Name\n1,Active Co");
+    await env.DB.prepare("INSERT INTO suppliers (id, erp_identifier, name) VALUES ('manual', '', 'Manual Co')").run();
+    const result = await handleListSuppliers(env.DB, null, undefined, null, null, null, "awaitingerp");
+    const body = result.body as { suppliers: { name: string }[] };
+    expect(body.suppliers.map((s) => s.name)).toEqual(["Manual Co"]);
+  });
+
+  it("Awaiting the ERP takes priority over On Hold, matching supplierBucket()'s own priority order exactly", async () => {
+    await env.DB.prepare(
+      "INSERT INTO suppliers (id, erp_identifier, name, on_hold, hold_reason) VALUES ('manual', '', 'Manual Held Co', 1, 'dispute')"
+    ).run();
+
+    const onHold = await handleListSuppliers(env.DB, null, undefined, null, null, null, "onhold");
+    expect((onHold.body as { suppliers: unknown[] }).suppliers).toEqual([]);
+
+    const awaiting = await handleListSuppliers(env.DB, null, undefined, null, null, null, "awaitingerp");
+    expect((awaiting.body as { suppliers: { name: string }[] }).suppliers.map((s) => s.name)).toEqual(["Manual Held Co"]);
+  });
+
+  it("shows everything when no status filter is given", async () => {
+    await load("ERP ID,Name,Hold,hold_reason\n1,Active Co,,\n2,Held Co,true,dispute");
+    const result = await handleListSuppliers(env.DB, null, undefined, null, null, null, null);
+    expect((result.body as { total: number }).total).toBe(2);
+  });
+
+  it("combines correctly with the real permission scope", async () => {
+    await env.DB.prepare("INSERT INTO org_units (id, name) VALUES ('acme-fr', 'Acme France')").run();
+    await env.DB.prepare(
+      `INSERT INTO org_roles (id, name, permissions_json) VALUES ('supplier-viewer', 'Supplier Viewer', '["AP.Supplier"]')`
+    ).run();
+    await env.DB.prepare("INSERT INTO org_users (id, email, name) VALUES ('alice', 'alice@acme.com', 'Alice')").run();
+    await env.DB.prepare("INSERT INTO org_user_roles (user_id, role_id, unit_id) VALUES ('alice', 'supplier-viewer', 'acme-fr')").run();
+
+    await load("ERP ID,Name,Org Unit,Hold,hold_reason\n1,Held FR,Acme France,true,dispute");
+    await env.DB.prepare("INSERT INTO org_units (id, name) VALUES ('acme-de', 'Acme Germany')").run();
+    await env.DB.prepare(
+      "INSERT INTO suppliers (id, erp_identifier, name, on_hold, hold_reason, org_unit_id) VALUES ('held-de', '2', 'Held DE', 1, 'dispute', 'acme-de')"
+    ).run();
+
+    const result = await handleListSuppliers(env.DB, null, "alice", null, null, null, "onhold");
+    const body = result.body as { suppliers: { name: string }[] };
+    expect(body.suppliers.map((s) => s.name)).toEqual(["Held FR"]);
+  });
+});
+
+describe("the status ring's own counts — decision 0378, mirroring decision 0377 for Purchase Orders", () => {
+  it("counts every real bucket correctly", async () => {
+    await load(
+      "ERP ID,Name,Hold,hold_reason\n1,Active Co,,\n2,Held Co,true,dispute\n3,Also Active,,"
+    );
+    await env.DB.prepare("UPDATE suppliers SET status = 'inactive' WHERE name = 'Also Active'").run();
+    await env.DB.prepare("INSERT INTO suppliers (id, erp_identifier, name) VALUES ('manual', '', 'Manual Co')").run();
+
+    const result = await handleGetSupplierStatusCounts(env.DB);
+    expect(result.body).toEqual({ counts: { active: 1, onhold: 1, inactive: 1, awaitingerp: 1 } });
+  });
+
+  it("respects the chosen org", async () => {
+    await env.DB.prepare("INSERT INTO org_units (id, name) VALUES ('acme-fr', 'Acme France')").run();
+    await env.DB.prepare("INSERT INTO org_units (id, name) VALUES ('acme-de', 'Acme Germany')").run();
+    await load("ERP ID,Name,Org Unit\n1,Northwind FR,Acme France\n2,Northwind DE,Acme Germany");
+    const result = await handleGetSupplierStatusCounts(env.DB, "acme-fr");
+    expect(result.body).toEqual({ counts: { active: 1, onhold: 0, inactive: 0, awaitingerp: 0 } });
+  });
+
+  it("respects the real, permission-based scope", async () => {
+    await env.DB.prepare("INSERT INTO org_units (id, name) VALUES ('acme-fr', 'Acme France')").run();
+    await env.DB.prepare(
+      `INSERT INTO org_roles (id, name, permissions_json) VALUES ('supplier-viewer', 'Supplier Viewer', '["AP.Supplier"]')`
+    ).run();
+    await env.DB.prepare("INSERT INTO org_users (id, email, name) VALUES ('alice', 'alice@acme.com', 'Alice')").run();
+    await env.DB.prepare("INSERT INTO org_user_roles (user_id, role_id, unit_id) VALUES ('alice', 'supplier-viewer', 'acme-fr')").run();
+    await load("ERP ID,Name,Org Unit\n1,Northwind FR,Acme France\n2,Northwind DE,Acme Germany");
+
+    const result = await handleGetSupplierStatusCounts(env.DB, null, "alice");
+    expect(result.body).toEqual({ counts: { active: 1, onhold: 0, inactive: 0, awaitingerp: 0 } });
+  });
+
+  it("counts zero for every bucket when nothing has been loaded", async () => {
+    const result = await handleGetSupplierStatusCounts(env.DB);
+    expect(result.body).toEqual({ counts: { active: 0, onhold: 0, inactive: 0, awaitingerp: 0 } });
   });
 });

@@ -65,17 +65,63 @@ const STRINGS = {
     "suppliers.showing.onhold": "Showing suppliers on hold only",
     "suppliers.showing.awaitingerp": "Showing suppliers awaiting the ERP only",
     "suppliers.nonefiltered": "No suppliers match this filter.",
+    "suppliers.nostatusdata": "No status data to show yet.",
+    "suppliers.searchplaceholder": "Search suppliers",
+    "suppliers.rows": "Rows",
+    "suppliers.rangeof": "{start}\u2013{end} of {total}",
+    "suppliers.firstpage": "First page",
+    "suppliers.previouspage": "Previous page",
+    "suppliers.nextpage": "Next page",
+    "suppliers.lastpage": "Last page",
+    "suppliers.nomatches": "No suppliers match your search.",
     "documents.clearfilter": "Clear filter",
   },
 };
 
+/** The same priority order SUPPLIER_STATUS_CASE applies in SQL now — mirrored here only so the stub can derive status-counts and honour a status filter, matching what the real backend now does. */
+function bucketOf(s: { erpIdentifier?: string | null; onHold?: boolean; status?: string }) {
+  if (!s.erpIdentifier) return "awaitingerp";
+  if (s.onHold) return "onhold";
+  return s.status === "inactive" ? "inactive" : "active";
+}
+
 function stubFetch(body: unknown) {
+  const allSuppliers = ((body as { suppliers?: unknown[] })?.suppliers ?? []) as {
+    name?: string;
+    erpIdentifier?: string | null;
+    onHold?: boolean;
+    status?: string;
+  }[];
+  const counts = { active: 0, onhold: 0, inactive: 0, awaitingerp: 0 };
+  for (const s of allSuppliers) counts[bucketOf(s)]++;
+
   vi.stubGlobal(
     "fetch",
     vi.fn(async (url: string) => {
-      const path = String(url).split("?")[0];
+      const [path, qs] = String(url).split("?");
+      const params = new URLSearchParams(qs ?? "");
       if (path === "/api/ui-strings") return { ok: true, json: async () => STRINGS } as Response;
-      if (path === "/api/suppliers") return { ok: true, json: async () => body } as Response;
+      if (path === "/api/suppliers/status-counts") return { ok: true, json: async () => ({ counts }) } as Response;
+      if (path === "/api/suppliers") {
+        // A real, query-aware filter — decision 0378 made the status
+        // filter a server-side param, so a stub returning the same,
+        // unfiltered list regardless of the query would no longer
+        // exercise what a click-to-filter test needs to prove.
+        const status = params.get("status");
+        const search = params.get("search")?.toLowerCase();
+        let matching = allSuppliers;
+        if (status) matching = matching.filter((s) => bucketOf(s) === status);
+        if (search) matching = matching.filter((s) => s.name?.toLowerCase().includes(search));
+
+        const page = Number(params.get("page") ?? "1");
+        const pageSize = Number(params.get("pageSize") ?? "50");
+        const page_ = matching.slice((page - 1) * pageSize, page * pageSize);
+
+        return {
+          ok: true,
+          json: async () => ({ ...body, suppliers: page_, total: matching.length, page, pageSize }),
+        } as Response;
+      }
       throw new Error(`no stub for ${path}`);
     })
   );
@@ -517,8 +563,251 @@ describe("focused on one org, decision 0317", () => {
     const { open } = await import("/suppliers.js");
     await open();
 
+    // page/pageSize are always sent now (decision 0378, matching
+    // decision 0376's own Purchase Orders row) — what this test
+    // actually checks is that no org param rides along uninvited.
     const calls = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls.map((c) => String(c[0]));
-    const call = calls.find((u) => u === "/api/suppliers");
-    expect(call).toBe("/api/suppliers");
+    const call = calls.find((u) => u.startsWith("/api/suppliers?"));
+    expect(call).toBeDefined();
+    expect(call).not.toContain("org=");
+  });
+});
+
+function manySuppliers(count: number) {
+  return Array.from({ length: count }, (_, i) => ({
+    id: `s${i}`,
+    name: `Supplier ${i}`,
+    erpIdentifier: `E${i}`,
+    status: "active",
+    onHold: false,
+  }));
+}
+
+describe("searching the list — mirroring decision 0376 for Purchase Orders", () => {
+  it("shows the search box with its own placeholder", async () => {
+    stubFetch({ suppliers: [], lastLoad: null });
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { open } = await import("/suppliers.js");
+    await open();
+
+    const search = document.getElementById("supplierssearch") as HTMLInputElement;
+    expect(search).not.toBeNull();
+    expect(search.placeholder).toBe("Search suppliers");
+  });
+
+  it("re-fetches with the search term once typing is done, and resets to page 1", async () => {
+    stubFetch({ suppliers: manySuppliers(5), lastLoad: null });
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { open } = await import("/suppliers.js");
+    await open();
+
+    const search = document.getElementById("supplierssearch") as HTMLInputElement;
+    search.value = "Supplier 2";
+    search.dispatchEvent(new Event("change"));
+    await new Promise((r) => setTimeout(r, 0));
+
+    const calls = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls.map((c) => String(c[0]));
+    const last = [...calls].reverse().find((u) => u.startsWith("/api/suppliers?"));
+    expect(last).toContain("search=Supplier+2");
+    expect(last).toContain("page=1");
+  });
+
+  it("keeps focus on the search box after a search reloads the screen", async () => {
+    stubFetch({ suppliers: manySuppliers(5), lastLoad: null });
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { open } = await import("/suppliers.js");
+    await open();
+
+    const search = document.getElementById("supplierssearch") as HTMLInputElement;
+    search.value = "Supplier 2";
+    search.dispatchEvent(new Event("change"));
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(document.activeElement?.id).toBe("supplierssearch");
+  });
+
+  it("shows a message distinct from 'nothing loaded yet' when a search matches nothing", async () => {
+    stubFetch({ suppliers: [], lastLoad: { loadedAt: "2026-09-01T00:00:00Z", loadedBy: "x", rowCount: 1, refusedCount: 0 } });
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { open } = await import("/suppliers.js");
+    await open();
+
+    const search = document.getElementById("supplierssearch") as HTMLInputElement;
+    search.value = "no such supplier anywhere";
+    search.dispatchEvent(new Event("change"));
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(document.body.textContent).toContain("No suppliers match your search.");
+    expect(document.body.textContent).not.toContain("No suppliers have been loaded yet.");
+  });
+});
+
+describe("real, server-side pagination for suppliers — mirroring decision 0376", () => {
+  it("shows every page size actually offered", async () => {
+    stubFetch({ suppliers: manySuppliers(5), lastLoad: null });
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { open } = await import("/suppliers.js");
+    await open();
+
+    const sizePicker = document.getElementById("suppliersrowsize") as HTMLSelectElement;
+    const values = [...sizePicker.options].map((o) => o.value);
+    expect(values).toEqual(["25", "50", "100", "200"]);
+  });
+
+  it("changing the page size re-fetches with the new size and resets to page 1", async () => {
+    stubFetch({ suppliers: manySuppliers(120), lastLoad: null });
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { open } = await import("/suppliers.js");
+    await open();
+
+    const sizePicker = document.getElementById("suppliersrowsize") as HTMLSelectElement;
+    sizePicker.value = "25";
+    sizePicker.dispatchEvent(new Event("change"));
+    await new Promise((r) => setTimeout(r, 0));
+
+    const calls = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls.map((c) => String(c[0]));
+    const last = [...calls].reverse().find((u) => u.startsWith("/api/suppliers?"));
+    expect(last).toContain("pageSize=25");
+    expect(last).toContain("page=1");
+  });
+
+  it("disables first and previous on the first page", async () => {
+    stubFetch({ suppliers: manySuppliers(120), lastLoad: null });
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { open } = await import("/suppliers.js");
+    await open();
+
+    const buttons = [...document.querySelectorAll(".iconbutton")] as HTMLButtonElement[];
+    const first = buttons.find((b) => b.title === "First page");
+    const prev = buttons.find((b) => b.title === "Previous page");
+    expect(first?.disabled).toBe(true);
+    expect(prev?.disabled).toBe(true);
+  });
+
+  it("disables next and last on the last page", async () => {
+    // 3, not 30 — small enough to be the only page regardless of
+    // whichever page size a previous test left selected (page size is
+    // a remembered preference across opens, the same as Purchase
+    // Orders' own row, and deliberately not reset by open()).
+    stubFetch({ suppliers: manySuppliers(3), lastLoad: null });
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { open } = await import("/suppliers.js");
+    await open();
+
+    const buttons = [...document.querySelectorAll(".iconbutton")] as HTMLButtonElement[];
+    const next = buttons.find((b) => b.title === "Next page");
+    const last = buttons.find((b) => b.title === "Last page");
+    expect(next?.disabled).toBe(true);
+    expect(last?.disabled).toBe(true);
+  });
+
+  it("enables every button in the middle of a multi-page result", async () => {
+    stubFetch({ suppliers: manySuppliers(120), lastLoad: null });
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { open } = await import("/suppliers.js");
+    await open();
+
+    const nextButton = [...document.querySelectorAll(".iconbutton")].find(
+      (b) => (b as HTMLButtonElement).title === "Next page"
+    ) as HTMLButtonElement;
+    nextButton.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    const buttons = [...document.querySelectorAll(".iconbutton")] as HTMLButtonElement[];
+    for (const label of ["First page", "Previous page", "Next page", "Last page"]) {
+      expect(buttons.find((b) => b.title === label)?.disabled).toBe(false);
+    }
+  });
+
+  it("shows the range as text", async () => {
+    stubFetch({ suppliers: manySuppliers(120), lastLoad: null });
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { open } = await import("/suppliers.js");
+    await open();
+
+    // Set the page size explicitly rather than assume the default —
+    // it is a remembered preference across opens (not reset by
+    // open()), so a previous test may have left it at something else.
+    const sizePicker = document.getElementById("suppliersrowsize") as HTMLSelectElement;
+    sizePicker.value = "50";
+    sizePicker.dispatchEvent(new Event("change"));
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(document.body.textContent).toContain("1\u201350 of 120");
+  });
+
+  it("clicking next advances the page while keeping the same search term", async () => {
+    stubFetch({ suppliers: manySuppliers(120), lastLoad: null });
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { open } = await import("/suppliers.js");
+    await open();
+
+    const search = document.getElementById("supplierssearch") as HTMLInputElement;
+    search.value = "Supplier";
+    search.dispatchEvent(new Event("change"));
+    await new Promise((r) => setTimeout(r, 0));
+
+    const nextButton = [...document.querySelectorAll(".iconbutton")].find(
+      (b) => (b as HTMLButtonElement).title === "Next page"
+    ) as HTMLButtonElement;
+    nextButton.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    const calls = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls.map((c) => String(c[0]));
+    const last = [...calls].reverse().find((u) => u.startsWith("/api/suppliers?"));
+    expect(last).toContain("page=2");
+    expect(last).toContain("search=Supplier");
+  });
+});
+
+describe("the status ring stays independent of pagination — decision 0378", () => {
+  it("keeps the same segment counts across pages, since it is fetched from its own endpoint", async () => {
+    stubFetch({ suppliers: manySuppliers(120), lastLoad: null });
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { open } = await import("/suppliers.js");
+    await open();
+
+    const before = [...document.querySelectorAll(".donutkey")].find((r) => r.textContent?.includes("Active"))?.textContent;
+
+    const nextButton = [...document.querySelectorAll(".iconbutton")].find(
+      (b) => (b as HTMLButtonElement).title === "Next page"
+    ) as HTMLButtonElement;
+    nextButton.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    const after = [...document.querySelectorAll(".donutkey")].find((r) => r.textContent?.includes("Active"))?.textContent;
+    expect(after).toBe(before);
+    expect(after).toContain("120");
+  });
+
+  it("shows a message rather than an empty ring when there is no status data yet", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        const path = String(url).split("?")[0];
+        if (path === "/api/ui-strings") return { ok: true, json: async () => STRINGS } as Response;
+        if (path === "/api/suppliers/status-counts") return { ok: false } as Response;
+        if (path === "/api/suppliers") return { ok: true, json: async () => ({ suppliers: [], lastLoad: null }) } as Response;
+        throw new Error(`no stub for ${path}`);
+      })
+    );
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { open } = await import("/suppliers.js");
+    await open();
+
+    expect(document.body.textContent).toContain("No status data to show yet.");
   });
 });

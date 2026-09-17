@@ -205,6 +205,33 @@ a rule, and left an approval task in a queue.
   segment click reuses decision 0376's own list filter rather than a
   new mechanism
 
+### Suppliers — search and pagination, and what it forced the status ring to become (0378)
+- Search and real, server-side pagination for Suppliers (0378), in the
+  same location as Purchase Orders' own row (0376): below the Load
+  card, above the list. Reversed decision 0213's own founding
+  assumption that one customer's supplier master always fits in memory
+  at once — `handleListSuppliers` now takes `search`/`page`/`pageSize`/
+  `status`, with a search clause across the same broad field set
+  decision 0222's own supplier picker already searches
+- **Forced a fix to two things built on that assumption.** Decision
+  0299's own status ring computed its counts by looping over the
+  fully-loaded array in the browser, and decision 0259's own
+  click-to-filter did the same — both would have silently gone wrong
+  the moment the array in memory became only one page. A new,
+  dedicated `GET /suppliers/status-counts` endpoint (mirroring decision
+  0377's own Purchase Order one) is org-scoped and permission-scoped
+  but never page-limited; the list's own status filter moved
+  server-side too, using a SQL `CASE` expression that mirrors
+  `supplierBucket()`'s own priority order exactly — awaiting the ERP
+  first, on hold second — and that now-dead browser function was
+  removed rather than left behind as a second copy nothing calls
+- **A real bug, found only because a test exercised failure after
+  success.** `loadStatusCounts()`, on both this screen and Purchase
+  Orders' own (one was written by copying the other), returned early
+  on a failed fetch without ever resetting its own counts to `null` —
+  a chart that had once loaded real data kept showing it, silently
+  stale, after a later, genuine failure. Fixed in both files
+
 ### Documents
 - R2 storage with jurisdiction support (0013, 0033, 0035)
 - One original and one generated rendering per invoice
@@ -618,9 +645,9 @@ elsewhere.
 
 | Package | Tests |
 |---|---|
-| `vf-app` | 1827 |
+| `vf-app` | 1851 |
 | `vf-licence` | 320 |
-| `vf-ui` | 72 Worker · 608 browser |
+| `vf-ui` | 72 Worker · 621 browser |
 | `shared` | 269 passing, 3 known pre-existing failures |
 
 Both migration chains replay clean with every standing invariant
@@ -641,7 +668,7 @@ holding — 65 migrations for `vf-app`, 105 for `vf-licence`.
 | `docs/design/mockups/` | Four screens as static HTML | Current |
 | `docs/design/multi-authority-intake.md` | Non-EN-16931 authorities | Design only |
 | `docs/design/text-layer-extraction.md` | Reading a PDF's own text | Design only |
-| `docs/decisions/` | 377 decision records | Current |
+| `docs/decisions/` | 378 decision records | Current |
 | `docs/decisions/SUPERSEDED.md` | Which records supersede which | **Read first** |
 
 Document 4's markdown source is at `docs/documents/`, with
