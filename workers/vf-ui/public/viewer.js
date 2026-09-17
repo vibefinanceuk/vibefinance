@@ -15,6 +15,7 @@ import { el, frame, topbar } from "/tasks.js";
 import { icon } from "/icons.js";
 import { processRow } from "/process-row.js";
 import { buildActivityTab } from "/activity.js";
+import { pageViewer } from "/page-renderer.js";
 
 let current = null;
 /** The line table's working state — decision 0109. */
@@ -374,44 +375,28 @@ async function openDocument(invoiceId) {
 }
 
 /**
- * The document, in the panel — decision 0123.
+ * The document, in the panel — decision 0382, phase 2 of
+ * `docs/design/document-viewer.md`, replacing the `<img>`/`<iframe>`
+ * split decision 0123 built.
  *
- * **The browser renders it, not us.** A PDF in an `<iframe>` gets the
- * browser's own viewer, with scrolling and zoom already working; an
- * image goes in an `<img>`. Decision 0042 records that a *Worker*
- * cannot render a PDF, which was read for longer than it should have
- * been as "this cannot be previewed".
+ * **We render it now, not the browser.** `pageViewer()`
+ * (`page-renderer.js`) draws every page — a multi-page pending-document
+ * invoice's own retained pages (decision 0381), or a single retained
+ * document, image or PDF — into a canvas with our own thumbnail rail,
+ * zoom and rotate, the same controls regardless of which kind of
+ * document this is.
  *
- * **The URL expires in five minutes** (decision 0073). A frame does not
- * go blank because time passes — measured in decision 0380, it goes
- * wrong only when it *loads again* after the expiry, and then shows
- * `vf-app`'s own `{"error":"document link expired"}` rather than the
- * document. `documentFrame()` answers exactly that. An image is not
- * given the same treatment: nothing in that measurement ever made an
- * `<img>` ask for its URL a second time.
- *
- * (This comment used to say the frame was "refreshed when somebody
- * returns to the tab". Nothing ever did that — decision 0123 listed it
- * as not built, and this sentence claimed otherwise.)
+ * **This also retires decision 0380's whole problem, rather than
+ * fixing it again here.** That frame's five-minute link could go stale
+ * while a person sat looking at it, because an `<iframe>` is a live
+ * connection to a URL. A canvas is pixels already drawn — nothing
+ * reloads it, so nothing can ask a token that has since expired. The
+ * link is used once, at load, and never held open.
  */
 async function showPreview(invoiceId, type) {
   const holder = document.getElementById("vpreview");
   if (!holder) return;
-
-  const url = await documentUrl(invoiceId);
-  if (!url) {
-    // A document nothing retained is a real state, not a failure: an
-    // invoice can exist with no original at all.
-    holder.replaceChildren(el("div", { class: "vthumb", text: t("viewer.nodocument") }));
-    return;
-  }
-
-  const isImage = String(type ?? "").startsWith("image/");
-  holder.replaceChildren(
-    isImage
-      ? el("img", { src: url, alt: t("viewer.document"), class: "vimage" })
-      : documentFrame(url, () => documentUrl(invoiceId), { class: "vframe", title: t("viewer.document") })
-  );
+  holder.replaceChildren(pageViewer(invoiceId, type));
 }
 
 /**

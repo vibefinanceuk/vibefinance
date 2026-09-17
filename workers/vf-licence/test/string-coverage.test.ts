@@ -126,6 +126,13 @@ const KEYS_THE_INTERFACE_USES = [
   "activity.timelinetab",
   "activity.systemalert",
   "viewer.xmltab",
+  // The page renderer (decision 0382, phase 2 of
+  // docs/design/document-viewer.md).
+  "viewer.zoomin",
+  "viewer.zoomout",
+  "viewer.rotate",
+  "viewer.pageof",
+  "viewer.thumbnails",
   "activity.loading",
   "activity.empty",
   "activity.placeholder",

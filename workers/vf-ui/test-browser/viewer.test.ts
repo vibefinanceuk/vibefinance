@@ -25,6 +25,16 @@ function mountShell() {
  * `fetch` is stubbed per URL rather than globally, so a test that
  * forgets an endpoint fails loudly instead of receiving an empty object
  * and quietly proving nothing.
+ *
+ * **One default, not zero.** `GET /invoices/:id/pages` (decision 0381)
+ * is now asked by every open document, through `pageViewer()`
+ * (decision 0382) — a question almost none of these tests are actually
+ * about (they are about the fields, the exceptions, the timeline).
+ * Defaulting it to "no retained pages" here is the same call
+ * `purchase-orders.test.ts`'s own `stubFetch` already made for
+ * `/api/ui-strings`: infrastructure every screen needs, not the thing
+ * under test. A `routes` entry for the same path still overrides it,
+ * for the tests that are genuinely about multi-page documents.
  */
 function stubFetch(routes: Record<string, unknown>, posted: string[] = []) {
   vi.stubGlobal(
@@ -35,13 +45,13 @@ function stubFetch(routes: Record<string, unknown>, posted: string[] = []) {
       // not — so a test passing an array got it back empty and read
       // that as "nothing was called". The code was right throughout.
       if (init?.method === "POST") posted.push(path);
-      if (!(path in routes)) {
-        throw new Error(`no stub for ${path} — add one, or the test proves nothing`);
+      if (path in routes) {
+        return { ok: true, json: async () => routes[path] } as Response;
       }
-      return {
-        ok: true,
-        json: async () => routes[path],
-      } as Response;
+      if (/^\/api\/invoices\/[^/]+\/pages$/.test(path)) {
+        return { ok: true, json: async () => ({ pages: [] }) } as Response;
+      }
+      throw new Error(`no stub for ${path} — add one, or the test proves nothing`);
     })
   );
 }
@@ -524,6 +534,15 @@ describe("the icons say what the actions do (decision 0122)", () => {
   });
 });
 
+/**
+ * **Four of this block's five tests retired alongside decision 0382,
+ * not carried forward.** They drove `#vpreview iframe`'s own `load`
+ * event by hand — exactly the frame `pageViewer()` (decision 0382)
+ * replaced with a canvas that is never held open against a URL that
+ * can go stale. There is no reload to watch, so there is nothing left
+ * for those four to assert; the fifth, the XML tab's own frame, is
+ * still real (`showXmlPreview()` was not touched) and stays.
+ */
 describe("a frame asks for a fresh link only when it loads again (decision 0380)", () => {
   /**
    * The five-minute signed URL (decision 0073). Measured in a real
@@ -582,66 +601,11 @@ describe("a frame asks for a fresh link only when it loads again (decision 0380)
     return minted;
   }
 
-  const previewFrame = () => document.querySelector("#vpreview iframe") as HTMLIFrameElement;
   /** The browser finishing a load of whatever the frame points at. */
   const loaded = async (frame: HTMLIFrameElement) => {
     frame.dispatchEvent(new Event("load"));
     await settle();
   };
-
-  it("asks for nothing more while the frame simply sits there", async () => {
-    // The first load is the one the viewer asked for.
-    const minted = await open();
-    await loaded(previewFrame());
-
-    // The shape this file's comment once claimed — refreshing when
-    // somebody comes back to the tab — would reload a working frame
-    // and lose their place in it.
-    document.dispatchEvent(new Event("visibilitychange"));
-    window.dispatchEvent(new Event("focus"));
-    await settle();
-
-    expect(minted).toHaveLength(1);
-    expect(previewFrame().getAttribute("src")).toBe("https://files.example/signed-1");
-  });
-
-  it("points the frame at a fresh link when it loads again on its own", async () => {
-    const minted = await open();
-    await loaded(previewFrame()); // the viewer's own load
-
-    await loaded(previewFrame()); // a reload nobody here asked for
-
-    expect(minted).toHaveLength(2);
-    expect(previewFrame().getAttribute("src")).toBe("https://files.example/signed-2");
-  });
-
-  it("does not loop: the fresh link's own load is expected", async () => {
-    const minted = await open();
-    await loaded(previewFrame());
-    await loaded(previewFrame()); // unprompted → second mint
-    await loaded(previewFrame()); // the second link arriving — expected
-
-    expect(minted).toHaveLength(2);
-
-    // And a later reload is still answered, so the protection is not a
-    // one-shot.
-    await loaded(previewFrame());
-    expect(minted).toHaveLength(3);
-    expect(previewFrame().getAttribute("src")).toBe("https://files.example/signed-3");
-  });
-
-  it("leaves the frame alone when no fresh link can be had", async () => {
-    const minted = await open({ secondMint: null });
-    await loaded(previewFrame());
-    await loaded(previewFrame());
-
-    expect(minted).toHaveLength(2);
-    expect(previewFrame().getAttribute("src")).toBe("https://files.example/signed-1");
-
-    // Not retried on its own either — nothing is loading.
-    await settle();
-    expect(minted).toHaveLength(2);
-  });
 
   it("gives the XML tab's frame the same, asking for the original again", async () => {
     const minted = await open({ xml: true });
@@ -658,11 +622,20 @@ describe("a frame asks for a fresh link only when it loads again (decision 0380)
   });
 });
 
-describe("the document preview (decision 0123)", () => {
+/**
+ * **Two of this block's tests replaced, not carried forward, by
+ * decision 0382.** They asserted `#vpreview iframe`/`#vpreview img`
+ * directly — the split `pageViewer()` (`page-renderer.js`) replaced
+ * with one canvas, image or PDF alike. The replacements below assert
+ * the new shape; `page-renderer.test.ts` covers `pageViewer()` itself
+ * in isolation (rotate, zoom, the thumbnail rail, which of the two
+ * document shapes gets resolved), which this file does not repeat.
+ */
+describe("the document preview (decision 0123, canvas since 0382)", () => {
   /**
-   * **The browser renders it, not us.** Decision 0042 records that a
-   * *Worker* cannot render a PDF, which was read for longer than it
-   * should have been as "this cannot be previewed".
+   * **We render it now, not the browser.** Decision 0042 records that
+   * a *Worker* cannot render a PDF; decision 0382 is what stopped
+   * relying on the browser's own viewer to do it client-side either.
    */
   function withDocument(contentType: string | null) {
     return {
@@ -690,17 +663,20 @@ describe("the document preview (decision 0123)", () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
   }
 
-  it("puts a PDF in a frame, where the browser's own viewer scrolls it", async () => {
+  it("puts a PDF through the page renderer, not the browser's own viewer", async () => {
     await open("application/pdf");
-    const frame = document.querySelector("#vpreview iframe") as HTMLIFrameElement;
-    expect(frame).not.toBeNull();
-    expect(frame.src).toBe("https://example.com/signed.pdf");
+    expect(document.querySelector("#vpreview .vpagesroot")).not.toBeNull();
+    expect(document.querySelector("#vpreview canvas.vcanvas")).not.toBeNull();
+    expect(document.querySelector("#vpreview iframe")).toBeNull();
   });
 
-  it("puts an image in an image, not a frame", async () => {
-    // Getting this the wrong way round shows nothing.
+  it("puts an image through the same page renderer — one shape for both kinds now", async () => {
+    // The whole point of decision 0382: an image is not a second,
+    // differently-behaved case any more.
     await open("image/jpeg");
-    expect(document.querySelector("#vpreview img")).not.toBeNull();
+    expect(document.querySelector("#vpreview .vpagesroot")).not.toBeNull();
+    expect(document.querySelector("#vpreview canvas.vcanvas")).not.toBeNull();
+    expect(document.querySelector("#vpreview img")).toBeNull();
     expect(document.querySelector("#vpreview iframe")).toBeNull();
   });
 

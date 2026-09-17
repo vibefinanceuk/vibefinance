@@ -13,7 +13,13 @@ export default [
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
-    ignores: ["**/dist/**", "**/node_modules/**", "**/*.d.ts"],
+    // `workers/vf-ui/public/vendor/` is third-party code copied in
+    // unmodified (decision 0382's pdf.js, `VENDORED.md` in each such
+    // directory says where from) — the same reasoning `node_modules`
+    // is excluded, and for the same practical reason: linting a
+    // minified single-line file either hangs or reports thousands of
+    // "errors" in code this project does not own and will not edit.
+    ignores: ["**/dist/**", "**/node_modules/**", "**/*.d.ts", "**/public/vendor/**"],
   },
   {
     files: ["**/*.ts"],

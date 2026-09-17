@@ -121,6 +121,7 @@ import purchaseOrdersStatusStringsSql from "../migrations/0116_purchase_orders_s
 import purchaseOrdersStatusHeadingWordingSql from "../migrations/0117_purchase_orders_status_heading_wording.sql?raw";
 import suppliersSearchAndPaginationStringsSql from "../migrations/0118_suppliers_search_and_pagination_strings.sql?raw";
 import orgUnitVatidRenamedTaxIdentifierSql from "../migrations/0119_org_unit_vatid_renamed_tax_identifier.sql?raw";
+import documentViewerPageRendererStringsSql from "../migrations/0120_document_viewer_page_renderer_strings.sql?raw";
 
 function stripSqlComments(sql: string): string {
   return sql
@@ -269,5 +270,6 @@ export async function applyTestSchema(): Promise<void> {
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(purchaseOrdersStatusHeadingWordingSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(suppliersSearchAndPaginationStringsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(orgUnitVatidRenamedTaxIdentifierSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(documentViewerPageRendererStringsSql)));
 
 }

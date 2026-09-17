@@ -1,10 +1,9 @@
 # Design: The Document Viewer
 
-**Status: design only for phases 2–5; phase 1 (page retention) is the
-first thing built against this document.** Written 17 September 2026,
-from a conversation about where the viewer's document panel should
-ultimately go — the shape decision 0123 gestured at in September and
-never returned to.
+**Status: phases 1 and 2 built (decisions 0381, 0382); phases 3–5 are
+still design only.** Written 17 September 2026, from a conversation
+about where the viewer's document panel should ultimately go — the
+shape decision 0123 gestured at in September and never returned to.
 
 Read `docs/decisions/0380-…` first if you want the immediate context:
 a bug fix in the existing panel led straight into this conversation.
@@ -120,10 +119,12 @@ it.
    finalised invoice's pages, a route that mints a signed URL for one
    of them, and the token type to carry it. No UI change yet — nothing
    today has anywhere to put a thumbnail strip.
-2. **A client-side page renderer**, shared by images and PDFs: one
-   thumbnail rail, one zoom, one rotate. Replaces the `<iframe>`/`<img>`
-   split in the Document tab. The biggest phase, and the one every
-   later phase depends on.
+2. **Built (decision 0382).** A client-side page renderer, shared by
+   images and PDFs: one thumbnail rail, one zoom, one rotate. Replaces
+   the `<iframe>`/`<img>` split in the Document tab — and, as a side
+   effect nobody planned for separately, retires decision 0380's whole
+   class of bug: a canvas is pixels already drawn, so nothing reloads
+   it and nothing can ask a stale link again.
 3. **The embedded XML in a structured PDF becomes a real, retained
    artifact**, so Factur-X/ZUGFeRD invoices get an XML tab the way a
    bare-XML invoice already does.
@@ -145,9 +146,9 @@ found and what broke along the way.
 
 ## 6. Open questions, deliberately not settled here
 
-- **Rotate and zoom state**: reset per document on open, or remembered?
-  Leaning toward reset — a session convenience, not data — but not
-  decided.
+- **Rotate and zoom state — settled in decision 0382: reset every
+  time.** Asked directly when phase 2 was scoped. A session
+  convenience, not data worth a place to store it.
 - **The pop-out and the main window agreeing they're the same
   document**: `window.open` returns a handle the opener can poll or
   message (`postMessage`, `BroadcastChannel`); which mechanism, and

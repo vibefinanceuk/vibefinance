@@ -1,6 +1,6 @@
 # Handover
 
-**Written 4 September 2026, updated 17 September (twice).**
+**Written 4 September 2026, updated 17 September (three times).**
 
 **For a session starting cold.** Where things stand, what needs a
 decision rather than work, what to do next, and the habits this project
@@ -37,22 +37,30 @@ twice.
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
 | `vf-app-poc` migrations | through `0069` |
 | `vf-licence-poc` migrations | through `0119` |
-| Tests | vf-admin 9 · vf-app 1912 · vf-licence 320 · vf-ui 74 Worker + 631 browser · shared 278 (+3 known pre-existing failures) |
-| Decision records | 381 |
+| Tests | vf-admin 9 · vf-app 1912 · vf-licence 320 · vf-ui 74 Worker + 651 browser · shared 278 (+3 known pre-existing failures) |
+| Decision records | 382 |
 
-**Everything committed is deployed again.** Decision 0381 (phase 1 of
-the document viewer) touched both `vf-app` (the new page-retention read
-path) and `vf-ui` (two proxy allow-list entries); both are now deployed
-at `d0f2b65` and confirmed by the operator. `vf-licence` stays at
-`a235713`, untouched since 0379. **vf-app's count reads 1893 at
-`23f5938`, then 1912 with 0381**, and separately, 1893 not the 1851
-recorded through 0379, with no `vf-app` change since 0378 — the
-difference is not explained, only measured (0380).
-**And the vf-ui browser suite exits 1 with every test passing** — 136
-unhandled rejections from test fetch stubs refusing requests the viewer
-makes without awaiting them, identical before and after 0380 and
-present at `46c1da2`. Counts in this table are tests passing, not clean
-runs. Worth fixing on its own; see 0380.
+**Not everything committed is deployed.** Decision 0382 (phase 2 of
+the document viewer — the client-side page renderer) touches `vf-ui`
+(the renderer itself, its icons and CSS, and a vendored copy of
+pdf.js) and `vf-licence` (one migration seeding five new UI strings).
+It is committed locally and not yet bundled or pushed — both Workers
+will need redeploying once it is. Everything through decision 0381 is
+still deployed and confirmed: `vf-app` and `vf-ui` at `d0f2b65`,
+`vf-licence` at `a235713`, untouched since 0379.
+**vf-app's count reads 1893 at `23f5938`, then 1912 with 0381**, and
+separately, 1893 not the 1851 recorded through 0379, with no `vf-app`
+change since 0378 — the difference is not explained, only measured
+(0380). **vf-ui's browser count reads 651, up from 631** — the new
+page-renderer widget's own 24 tests, plus four retired and two
+rewritten where decision 0382 removed the `<iframe>`/`<img>` split
+they asserted against.
+**And the vf-ui browser suite exits 1 with every test passing** — 135
+unhandled rejections now, was 136 at `46c1da2` (decision 0380) —
+mostly a test's own per-URL fetch stub refusing a request the test
+never stubbed, thrown inside work the viewer deliberately does not
+await. Counts in this table are tests passing, not clean runs. Worth
+fixing on its own; see 0380.
 `vf-admin` untouched this arc —
 its own last commit predates decision 0298, listed as-is rather than
 guessed at.
@@ -291,7 +299,24 @@ routes (`GET /invoices/:id/pages`, `POST
 /invoices/:id/pages/:n/document-url`) and one unauthenticated fetch route
 (`GET /document-pages/:token`) now expose what was always there, with
 their own signed token shape alongside decision 0073's. Nothing in the
-viewer calls any of it yet — phases 2 through 5 are still design only.
+viewer called any of it yet — phase 2 is what calls it.
+
+**Phase 2, the client-side page renderer, built the same day** (0382).
+One thumbnail rail, one zoom, one rotate, shared by images and PDFs —
+`page-renderer.js` replaces the `<img>`/`<iframe>` split the Document
+tab used since decision 0123. The one open question the design
+document left — reset rotate/zoom on open, or remember it — was asked
+directly and decided: reset, a session convenience rather than data.
+pdf.js is vendored locally (`workers/vf-ui/public/vendor/pdfjs/`), not
+loaded from a CDN, the same reasoning decision 0124 gave the font.
+**Nobody planned this separately, but phase 2 retires decision 0380's
+whole problem**: that bug could only happen because an `<iframe>` is a
+live connection that can reload with a link gone stale; a canvas is
+pixels already drawn, so nothing reloads it and nothing can ask an
+expired token again. A real bug was caught by the new test suite's own
+completeness check before it ever shipped — `REAL_DEPS` was missing
+the `resolvePages` key `pageViewer()` actually calls, watched to fail
+and fixed. Phases 3 through 5 are still design only.
 
 ## Waiting on you
 
@@ -413,15 +438,13 @@ established which**, and the two readings have different fixes.
 
 ## Suggested next pieces
 
-**The most immediate one: phase 2 of the document viewer**
-(`docs/design/document-viewer.md`, decision 0381 built phase 1). A
-real, client-side page renderer — one thumbnail rail, one zoom, one
-rotate, shared by images and PDFs — replacing the `<img>`/`<iframe>`
-split in the Document tab. Named in the design document as the largest
-single piece of that plan and the one every later phase (structured-PDF
-XML retention, the pop-out window, retiring the old preview) depends
-on. The backend it will call — listing and fetching a multi-page
-invoice's retained pages — already exists and has nothing calling it.
+**The most immediate one: phase 3 of the document viewer**
+(`docs/design/document-viewer.md`, decisions 0381–0382 built phases 1
+and 2). The embedded XML in a structured PDF (Factur-X, ZUGFeRD)
+becomes its own retained artifact, so those invoices get an XML tab
+the way a bare-XML invoice already does. Phases 4 (the pop-out window)
+and 5 (retiring the old preview and raw-file Expand) both wait on this
+one.
 
 **Built this arc, closing out most of what was named here before:
 teams, most of the "user variable" fields, creating and managing an

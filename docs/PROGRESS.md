@@ -371,8 +371,23 @@ a rule, and left an approval task in a queue.
   invoice into `invoice_documents`. `GET /invoices/:id/pages`, `POST
   /invoices/:id/pages/:n/document-url`, and `GET /document-pages/:token`
   now exist, with their own signed token shape (`mintPageToken` /
-  `verifyPageToken`) alongside decision 0073's document token. Backend
-  only — nothing in the viewer calls these yet; that is phase 2.
+  `verifyPageToken`) alongside decision 0073's document token.
+- **A real, client-side page renderer draws every document now**
+  (0382, phase 2 of `docs/design/document-viewer.md`, the phase the
+  design document itself named as the biggest and the one every later
+  phase depends on). One thumbnail rail, one zoom, one rotate, shared
+  by images and PDFs, replacing the `<img>`/`<iframe>` split the
+  Document tab used since decision 0123. `resolvePages()` tells the
+  two page shapes apart by asking, not guessing: a multi-page invoice's
+  own retained pages (0381) if it has any, otherwise a PDF rasterised
+  page by page through a locally vendored pdf.js (no CDN, the same
+  choice decision 0124 made for the font) or a single image. **A side
+  effect nobody planned separately: this retires decision 0380's whole
+  problem.** That frame's stale-link bug could only happen because an
+  `<iframe>` is a live connection that reloads; a canvas is pixels
+  already drawn, so nothing reloads it and nothing can ask an expired
+  token again. Rotate and zoom reset on every open — asked directly,
+  decided as a session convenience rather than data worth storing.
 
 ### Customer configuration
 - Org units, teams, roles, users, cost centres

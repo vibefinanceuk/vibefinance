@@ -95,6 +95,11 @@ export default defineConfig({
       "/access.js": resolve(__dirname, "public/access.js"),
       "/readback.js": resolve(__dirname, "public/readback.js"),
       "/activity.js": resolve(__dirname, "public/activity.js"),
+      "/page-renderer.js": resolve(__dirname, "public/page-renderer.js"),
+      // Resolved so Vite's static import analysis is satisfied, not so
+      // it runs: nothing in this suite calls `loadPdfDocument`, the
+      // only function that ever imports it (decision 0382).
+      "/vendor/pdfjs/pdf.min.mjs": resolve(__dirname, "public/vendor/pdfjs/pdf.min.mjs"),
     },
   },
 });

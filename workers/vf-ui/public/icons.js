@@ -491,3 +491,16 @@ Object.assign(ICONS, {
   // a panel, matching what the pop-out it opens actually contains.
   headerfields: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9h10M7 13h10M7 17h6"/>',
 });
+
+/**
+ * The page renderer's own controls — decision 0382, phase 2 of
+ * `docs/design/document-viewer.md`. Conventional shapes, the same
+ * reasoning `building` and `users` already gave theirs: a magnifying
+ * glass with a plus or minus for zoom, an arrow curving a quarter turn
+ * for rotate.
+ */
+Object.assign(ICONS, {
+  zoomin: '<circle cx="10.5" cy="10.5" r="6.5"/><path d="M10.5 8v5M8 10.5h5"/><path d="M15.5 15.5 21 21"/>',
+  zoomout: '<circle cx="10.5" cy="10.5" r="6.5"/><path d="M8 10.5h5"/><path d="M15.5 15.5 21 21"/>',
+  rotate: '<path d="M4 12a8 8 0 1 1 2.5 5.8"/><path d="M4 17v-4h4"/>',
+});

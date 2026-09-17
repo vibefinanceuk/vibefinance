@@ -11,13 +11,22 @@ function mountShell() {
   document.body.innerHTML = `<main id="shell"></main><main id="viewer" hidden></main>`;
 }
 
+/**
+ * **Defaults `/invoices/:id/pages` to "no retained pages"** (decision
+ * 0381), asked by every open document through `pageViewer()` (decision
+ * 0382) — a question this file's own tests are not about. Same call
+ * `viewer.test.ts`'s own `stubFetch` makes, for the same reason.
+ */
 function stubFetch(routes: Record<string, unknown>) {
   vi.stubGlobal(
     "fetch",
     vi.fn(async (url: string) => {
       const path = String(url).split("?")[0];
-      if (!(path in routes)) throw new Error(`no stub for ${path}`);
-      return { ok: true, json: async () => routes[path] } as Response;
+      if (path in routes) return { ok: true, json: async () => routes[path] } as Response;
+      if (/^\/api\/invoices\/[^/]+\/pages$/.test(path)) {
+        return { ok: true, json: async () => ({ pages: [] }) } as Response;
+      }
+      throw new Error(`no stub for ${path}`);
     })
   );
 }
