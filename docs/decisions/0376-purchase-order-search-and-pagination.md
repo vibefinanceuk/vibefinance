@@ -129,3 +129,29 @@ search term rather than clearing it.
 vf-app: 1,804 tests (was 1,786). vf-ui: 72 worker tests (unchanged),
 595 browser tests (was 584). vf-licence: 320 tests, unchanged — the
 new migration (`0115`) is new keys only.
+
+---
+
+## Addendum — two live layout fixes, found from a real screenshot
+
+**The page-size picker was eating almost the whole row.** A pre-existing
+global rule — `input, select { width: 100% }`, meant for a standalone
+field filling its own container — had nothing to be 100% *of* inside a
+flex row, so an unconstrained `<select>` took the lion's share of the
+row's width and left the search box a sliver on the left. The search
+input already had its own override (`flex: 1; max-width: 460px`); the
+select never did. Fixed the same way `.filters select` already handles
+this elsewhere in the app: a real width instead of the inherited one,
+scoped to `.searchrow select` specifically so nothing outside this row
+is affected.
+
+**The row now sits in its own full-width card, above the results —**
+the operator's own follow-up, separating what had been one shared
+panel (controls and table together) into two: `searchAndPaginationRow()`
+in its own `.panel`, `purchaseOrderRows()` in another, immediately
+below.
+
+No new tests — both are layout/CSS corrections to existing, already-
+tested behavior, confirmed by re-running the full existing suite
+(41 tests on this screen, 595 across the whole browser suite)
+rather than by adding new assertions for a visual arrangement.

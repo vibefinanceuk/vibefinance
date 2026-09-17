@@ -519,7 +519,8 @@ function render() {
         topbar(t("purchaseorders.heading"), t("purchaseorders.subtitle")),
         el("div", { id: "purchaseorders-note", class: "warn" }),
         loader(),
-        el("div", { class: "panel" }, [searchAndPaginationRow(), purchaseOrderRows()]),
+        el("div", { class: "panel" }, [searchAndPaginationRow()]),
+        el("div", { class: "panel" }, [purchaseOrderRows()]),
       ])
     )
   );
