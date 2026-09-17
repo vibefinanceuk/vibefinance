@@ -336,15 +336,6 @@ function field(spec, existing, options = {}) {
 }
 
 /**
- * Open the retained original in its own window.
- *
- * `window.open` sends no `Authorization` header, which is why decision
- * 0073 exists: a short-lived signed URL the browser can follow on its
- * own. Minted on click rather than up front — a five-minute credential
- * created when the page loads is mostly expired by the time anybody
- * uses it.
- */
-/**
  * A signed URL for the retained original — decision 0073.
  *
  * Minted on demand rather than held, because it expires in five minutes
@@ -360,6 +351,19 @@ async function documentUrl(invoiceId, type) {
   return (await response.json()).url ?? null;
 }
 
+/**
+ * Open the retained original in its own window.
+ *
+ * `window.open` sends no `Authorization` header, which is why decision
+ * 0073 exists: a short-lived signed URL the browser can follow on its
+ * own. Minted on click rather than up front — a five-minute credential
+ * created when the page loads is mostly expired by the time anybody
+ * uses it.
+ *
+ * (This comment sat above `documentUrl()` instead, orphaned by a
+ * second comment written between it and the function it describes —
+ * moved back in decision 0380.)
+ */
 async function openDocument(invoiceId) {
   const url = await documentUrl(invoiceId);
   if (!url) {
@@ -378,9 +382,17 @@ async function openDocument(invoiceId) {
  * cannot render a PDF, which was read for longer than it should have
  * been as "this cannot be previewed".
  *
- * **The URL expires in five minutes** (decision 0073), so a frame left
- * open through a long keying session goes blank. Refreshed when
- * somebody returns to the tab, which is when they would notice.
+ * **The URL expires in five minutes** (decision 0073). A frame does not
+ * go blank because time passes — measured in decision 0380, it goes
+ * wrong only when it *loads again* after the expiry, and then shows
+ * `vf-app`'s own `{"error":"document link expired"}` rather than the
+ * document. `documentFrame()` answers exactly that. An image is not
+ * given the same treatment: nothing in that measurement ever made an
+ * `<img>` ask for its URL a second time.
+ *
+ * (This comment used to say the frame was "refreshed when somebody
+ * returns to the tab". Nothing ever did that — decision 0123 listed it
+ * as not built, and this sentence claimed otherwise.)
  */
 async function showPreview(invoiceId, type) {
   const holder = document.getElementById("vpreview");
@@ -398,8 +410,61 @@ async function showPreview(invoiceId, type) {
   holder.replaceChildren(
     isImage
       ? el("img", { src: url, alt: t("viewer.document"), class: "vimage" })
-      : el("iframe", { src: url, class: "vframe", title: t("viewer.document") })
+      : documentFrame(url, () => documentUrl(invoiceId), { class: "vframe", title: t("viewer.document") })
   );
+}
+
+/**
+ * A frame that asks for a fresh signed URL whenever it loads again —
+ * decision 0380.
+ *
+ * **The signal is the frame's own `load` event, not a timer and not
+ * the tab becoming visible.** Measured in a real Chromium against a
+ * server refusing expired links the way `vf-app` does: hiding and
+ * showing the pane, scrolling the PDF, resizing, CSS zoom, printing
+ * and switching tabs away and back requested nothing at all — the
+ * frame kept showing the document long after its URL had expired. Only
+ * a frame that loaded again (moved in the page, or reloaded from its
+ * own context menu) asked the server a second time, and got the error.
+ *
+ * So refreshing on a timer, or on returning to the tab as this file's
+ * comment once claimed, would **reload a frame that was working** —
+ * throwing away where somebody had scrolled to and how far they had
+ * zoomed, every time they came back from another window — to fix
+ * nothing.
+ *
+ * **Any load the viewer did not cause gets a fresh URL.** No expiry
+ * arithmetic, so no clock on this machine to disagree with the one
+ * that signed the token and no second copy of `TOKEN_TTL_SECONDS` to
+ * drift from the first. A frame that reloads while its link is still
+ * valid gets minted one it did not strictly need — one extra request,
+ * on an event that measurement found rare.
+ *
+ * **It cannot loop.** The replacement URL is set by the viewer, so its
+ * own load is expected and ignored — even if that load fails too. And
+ * a mint that comes back empty (the document gone, the session gone)
+ * leaves the frame as it is rather than retrying.
+ */
+function documentFrame(firstUrl, mint, attributes) {
+  const frame = el("iframe", attributes);
+  let expectingLoad = false;
+
+  const point = (url) => {
+    expectingLoad = true;
+    frame.src = url;
+  };
+
+  frame.addEventListener("load", async () => {
+    if (expectingLoad) {
+      expectingLoad = false;
+      return;
+    }
+    const url = await mint();
+    if (url) point(url);
+  });
+
+  point(firstUrl);
+  return frame;
 }
 
 /**
@@ -421,7 +486,9 @@ async function showXmlPreview(invoiceId) {
     return;
   }
 
-  holder.replaceChildren(el("iframe", { src: url, class: "vframe", title: t("viewer.xmltab") }));
+  holder.replaceChildren(
+    documentFrame(url, () => documentUrl(invoiceId, "original"), { class: "vframe", title: t("viewer.xmltab") })
+  );
 }
 
 function note(message) {
@@ -1709,10 +1776,12 @@ export async function openViewer(task, onClose) {
         addressBlock(s, t("viewer.supplier.street")),
       ]),
       /**
-       * **Bottom right, like the document's own actions** — decision
-       * 0228. The operator asked for it in the same shape as *Expand*,
-       * *Complete*, *Release* and *Return*, and a person who has
-       * learned where an action lives should not have to learn twice.
+       * **Change Seller is not here** — it lives top right, in
+       * `cardHead()`. Decision 0228 first placed it bottom right, "like
+       * the document's own actions", and moved it on the operator's
+       * own reasoning: "It might extend the card size if we place at
+       * the bottom right." This comment went on saying bottom right
+       * after the button had left; corrected in decision 0380.
        */
     ].filter(Boolean));
   };

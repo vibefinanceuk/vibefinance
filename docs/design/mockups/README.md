@@ -4,6 +4,13 @@ Static HTML, openable directly in a browser. **Nothing here is built, and
 nothing here is code the product uses.** These exist so the design work
 survives the conversation that produced it.
 
+*Written before any of it was built.* **Much of it has been since** —
+the keying screen from decision 0106 onward, the activity panel as
+decisions 0267–0269 — and these files were not updated to match. The
+decision records say what was built and where it departed from the
+mock-up; treat these as the starting picture, not the current one.
+*(Note added in decision 0380.)*
+
 The reasoning behind each is in `../operator-interface.md`; these files
 carry only the decisions that are easier to see than to describe, as
 comments in the markup.

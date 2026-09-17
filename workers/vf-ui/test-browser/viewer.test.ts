@@ -524,6 +524,140 @@ describe("the icons say what the actions do (decision 0122)", () => {
   });
 });
 
+describe("a frame asks for a fresh link only when it loads again (decision 0380)", () => {
+  /**
+   * The five-minute signed URL (decision 0073). Measured in a real
+   * Chromium, a frame whose link has expired goes on showing the
+   * document through scrolling, zooming, hiding and switching tabs —
+   * and shows `{"error":"document link expired"}` only when it loads a
+   * second time. So the load event is the signal, and every test here
+   * drives that event by hand, the way the browser would.
+   *
+   * **A custom fetch mock, not `stubFetch`**: each mint has to hand out
+   * a different URL, and the query string (`type=original`) has to
+   * survive being recorded.
+   */
+  function stubMinting(options: { xml?: boolean; secondMint?: string | null } = {}) {
+    const minted: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        const path = String(url).split("?")[0];
+        if (path === "/api/invoices/inv-1/document-url") {
+          minted.push(String(url));
+          const n = minted.length;
+          const value = n === 2 && "secondMint" in options ? options.secondMint : `https://files.example/signed-${n}`;
+          return { ok: true, json: async () => ({ url: value }) } as Response;
+        }
+        const routes: Record<string, unknown> = {
+          "/api/code-lists": { fields: {} },
+          "/api/ui-strings": STRINGS,
+          "/api/field-visibility": FIELDS,
+          "/api/invoices/inv-1": {
+            facts: {},
+            lines: [],
+            document: { contentType: "application/pdf", documentType: "generated_rendering" },
+            ...(options.xml ? { originalDocument: { contentType: "application/xml" } } : {}),
+            validation: { passed: true, checked: [], failures: [] },
+          },
+          "/api/invoices/inv-1/progress": { visits: [] },
+          "/api/documents/inv-1/activity": { items: [] },
+        };
+        if (!(path in routes)) throw new Error(`no stub for ${path} — add one, or the test proves nothing`);
+        return { ok: true, json: async () => routes[path] } as Response;
+      })
+    );
+    return minted;
+  }
+
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+  async function open(options: Parameters<typeof stubMinting>[0] = {}) {
+    const minted = stubMinting(options);
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    await openViewer(TASK, () => {});
+    await settle();
+    return minted;
+  }
+
+  const previewFrame = () => document.querySelector("#vpreview iframe") as HTMLIFrameElement;
+  /** The browser finishing a load of whatever the frame points at. */
+  const loaded = async (frame: HTMLIFrameElement) => {
+    frame.dispatchEvent(new Event("load"));
+    await settle();
+  };
+
+  it("asks for nothing more while the frame simply sits there", async () => {
+    // The first load is the one the viewer asked for.
+    const minted = await open();
+    await loaded(previewFrame());
+
+    // The shape this file's comment once claimed — refreshing when
+    // somebody comes back to the tab — would reload a working frame
+    // and lose their place in it.
+    document.dispatchEvent(new Event("visibilitychange"));
+    window.dispatchEvent(new Event("focus"));
+    await settle();
+
+    expect(minted).toHaveLength(1);
+    expect(previewFrame().getAttribute("src")).toBe("https://files.example/signed-1");
+  });
+
+  it("points the frame at a fresh link when it loads again on its own", async () => {
+    const minted = await open();
+    await loaded(previewFrame()); // the viewer's own load
+
+    await loaded(previewFrame()); // a reload nobody here asked for
+
+    expect(minted).toHaveLength(2);
+    expect(previewFrame().getAttribute("src")).toBe("https://files.example/signed-2");
+  });
+
+  it("does not loop: the fresh link's own load is expected", async () => {
+    const minted = await open();
+    await loaded(previewFrame());
+    await loaded(previewFrame()); // unprompted → second mint
+    await loaded(previewFrame()); // the second link arriving — expected
+
+    expect(minted).toHaveLength(2);
+
+    // And a later reload is still answered, so the protection is not a
+    // one-shot.
+    await loaded(previewFrame());
+    expect(minted).toHaveLength(3);
+    expect(previewFrame().getAttribute("src")).toBe("https://files.example/signed-3");
+  });
+
+  it("leaves the frame alone when no fresh link can be had", async () => {
+    const minted = await open({ secondMint: null });
+    await loaded(previewFrame());
+    await loaded(previewFrame());
+
+    expect(minted).toHaveLength(2);
+    expect(previewFrame().getAttribute("src")).toBe("https://files.example/signed-1");
+
+    // Not retried on its own either — nothing is loading.
+    await settle();
+    expect(minted).toHaveLength(2);
+  });
+
+  it("gives the XML tab's frame the same, asking for the original again", async () => {
+    const minted = await open({ xml: true });
+    const xmlFrame = document.querySelector("#vxml iframe") as HTMLIFrameElement;
+    expect(xmlFrame).not.toBeNull();
+    await loaded(xmlFrame);
+    const before = minted.length;
+
+    await loaded(xmlFrame);
+
+    expect(minted).toHaveLength(before + 1);
+    expect(minted[minted.length - 1]).toContain("type=original");
+    expect(xmlFrame.getAttribute("src")).toBe(`https://files.example/signed-${before + 1}`);
+  });
+});
+
 describe("the document preview (decision 0123)", () => {
   /**
    * **The browser renders it, not us.** Decision 0042 records that a

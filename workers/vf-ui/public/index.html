@@ -2113,6 +2113,13 @@
      * live page. `min-height` is the floor this box had before this
      * change, so a very short window or a page with more chrome above
      * it never gets an image smaller than the original fixed size.
+     *
+     * **The action row it counted is gone** — decision 0298 moved
+     * Save and the task's actions to the topbar and Expand beside the
+     * tabs, and this estimate was not revisited, so it now likely
+     * reserves more than the page needs. Noted rather than changed in
+     * decision 0380: the value is a visual judgement for somebody
+     * looking at a live page, not one to guess at from here.
      */
     height: calc(100vh - 300px);
     min-height: 320px;

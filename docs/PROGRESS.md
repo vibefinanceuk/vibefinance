@@ -347,6 +347,17 @@ a rule, and left an approval task in a queue.
   actions the server decides (0103, 0104, 0105)
 - Validation viewer: the retained original beside the fields it should
   have yielded, with an editable line table (0106, 0109)
+- **A document frame that recovers when it loads again** (0380). The
+  five-minute signed URL (0073) was recorded in 0123 as making a frame
+  "go blank", and a later comment in `viewer.js` claimed a refresh on
+  returning to the tab that nothing performed. Measured in Chromium
+  before fixing: time passing, scrolling, zooming, hiding and switching
+  tabs request nothing; only a frame that *loads again* asks with its
+  expired link — and shows `vf-app`'s JSON error. The frame's own `load`
+  event is the signal now: any load the viewer did not cause gets a
+  fresh URL, for both the Document and XML tabs. A timer or a
+  return-to-tab refresh was rejected because it would reload a working
+  frame and lose the reader's place in it
 - A stated visual direction rather than accumulated choices (0108)
 - Branding and translations from D1, so a livery or a language needs no
   deployment (0096, 0107)
@@ -505,11 +516,10 @@ is built now (0334) — the field this note used to name as missing.
 built — every privileged action recorded, refusals included. The screen
 is unblocked and unwritten.
 
-**Publishing a process version** (0150, 0160). Every read of a
-process's stages goes through a version's membership, and **nothing
-creates a second version**: no route adds a stage, removes one, or
-reorders them. The foundation runs; the feature is half a feature, and
-the record says so.
+**~~Publishing a process version~~ Built** (0349). Decisions 0150 and
+0160 built the foundation and said *"nothing creates a v2"*; decision
+0349 finished it, and this entry went on listing it as half a feature
+until decision 0380 noticed.
 
 **Per-line VAT extraction.** `BT-151` and `BT-152` are in the
 vocabulary and nothing fills them, so the derived VAT and total columns
@@ -737,6 +747,14 @@ classified either. Decision 0118's own standing question — does this
 table hold what a customer configured, or what their instance did —
 was never answered for any of the six. A real fix, still not done.
 
+**The `vf-ui` browser suite exits 1 while every test passes** (found
+in 0380). `vitest` catches 136 unhandled rejections — the same number
+before and after that change — and fails the run. Nearly all are test
+fetch stubs refusing an unstubbed request made by work the viewer does
+not await: the activity feed (decision 0326 saw one that "occasionally
+surfaces"; it surfaces every run) and the document preview. The counts
+below are tests passing, not a clean exit. A real fix, not done.
+
 **`compiler-model.ts` has a response-reader ordering that was a real
 bug in the extraction path.** It works correctly against
 `gpt-oss-120b` and has all session. Left alone deliberately: changing
@@ -749,13 +767,18 @@ elsewhere.
 
 | Package | Tests |
 |---|---|
-| `vf-app` | 1851 |
+| `vf-app` | 1893 |
 | `vf-licence` | 320 |
-| `vf-ui` | 72 Worker · 626 browser |
+| `vf-ui` | 72 Worker · 631 browser |
 | `shared` | 278 passing, 3 known pre-existing failures |
 
 Both migration chains replay clean with every standing invariant
 holding — 69 migrations for `vf-app`, 119 for `vf-licence`.
+
+**`vf-app`'s count was recorded as 1851 through decision 0379**; a clean
+run at `46c1da2`, with no `vf-app` change since decision 0378 recorded
+1851, counts 1893. Why the two differ is not established — recorded as
+measured (0380) rather than explained after the fact.
 
 ---
 
@@ -772,7 +795,7 @@ holding — 69 migrations for `vf-app`, 119 for `vf-licence`.
 | `docs/design/mockups/` | Four screens as static HTML | Current |
 | `docs/design/multi-authority-intake.md` | Non-EN-16931 authorities | Design only |
 | `docs/design/text-layer-extraction.md` | Reading a PDF's own text | Design only |
-| `docs/decisions/` | 379 decision records | Current |
+| `docs/decisions/` | 380 decision records | Current |
 | `docs/decisions/SUPERSEDED.md` | Which records supersede which | **Read first** |
 
 Document 4's markdown source is at `docs/documents/`, with
@@ -901,6 +924,14 @@ addressability; an admin route proves nothing about effect; a field
 declared in a vocabulary proves nothing about a parser populating it.
 The test has to cross the boundary — a unit test that hands a
 dependency to the unit proves the unit, never the wiring.
+
+**Measure the premise before building the fix.** Decision 0123 wrote
+that a frame with an expired link "goes blank", and a later comment
+claimed a refresh on returning to the tab. Neither had been watched.
+Measured, time alone broke nothing, and the fix both implied — reload on
+return — would have thrown away somebody's place in a document that was
+still showing (0380). **A comment claiming a fix is not a fix, and a
+record describing a failure is not a measurement of one.**
 
 **Draw the interface earlier than feels necessary.** Mocking up screens
 that nobody had asked to be built found a hard blocker — captured

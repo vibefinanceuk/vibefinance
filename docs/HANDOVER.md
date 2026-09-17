@@ -29,7 +29,8 @@ twice.
 
 | | |
 | --- | --- |
-| `origin/main` | `a235713` |
+| `origin/main` | `46c1da2` |
+| Committed, not yet pushed or deployed | `0380` — `vf-ui` only, no migration |
 | vf-admin deployed | `8e27a34` · `https://admin.vibefinance-ai.com` · behind Cloudflare Access |
 | vf-app deployed | `a235713` |
 | vf-licence deployed | `a235713` |
@@ -37,10 +38,20 @@ twice.
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
 | `vf-app-poc` migrations | through `0069` |
 | `vf-licence-poc` migrations | through `0119` |
-| Tests | vf-admin 9 · vf-app 1851 · vf-licence 320 · vf-ui 72 Worker + 626 browser · shared 278 (+3 known pre-existing failures) |
-| Decision records | 379 |
+| Tests | vf-admin 9 · vf-app 1893 · vf-licence 320 · vf-ui 72 Worker + 631 browser · shared 278 (+3 known pre-existing failures) |
+| Decision records | 380 |
 
-**Everything committed is deployed.** `vf-admin` untouched this arc —
+**Everything committed is deployed except decision 0380**, which
+touches `vf-ui` alone and waits on a deploy. `46c1da2` changed docs
+only, so the Workers at `a235713` are that code. **vf-app's count reads
+1893, not the 1851 recorded through 0379**, with no `vf-app` change
+since 0378 — the difference is not explained, only measured (0380).
+**And the vf-ui browser suite exits 1 with every test passing** — 136
+unhandled rejections from test fetch stubs refusing requests the viewer
+makes without awaiting them, identical before and after 0380 and
+present at `46c1da2`. Counts in this table are tests passing, not clean
+runs. Worth fixing on its own; see 0380.
+`vf-admin` untouched this arc —
 its own last commit predates decision 0298, listed as-is rather than
 guessed at.
 
@@ -75,8 +86,12 @@ stages where people key, approve and return it. Every visible word comes
 from the control plane and every colour from a token, so a wording fix
 or a new language is rows rather than a deployment.
 
-**Seven screens**: Tasks, Sources, Suppliers, Rules, Documents, Access,
-and the viewer that serves every stage. **Roles was renamed Access and
+**Ten screens**, grouped in the side nav (0346): Dashboard, Tasks and
+Documents under Accounts payable; Suppliers under Supplier management;
+Access, Sources, Purchase Orders, Rules and Processes under
+Configuration — and the viewer that serves every stage. *(This line
+read "Seven screens" until decision 0380, from before the Dashboard,
+Purchase Orders and Processes existed.)* **Roles was renamed Access and
 restructured into tabs this arc** (0333) — Org Units, Roles, People,
 Teams, no longer four sections on one long scroll, with Org Units and
 Roles themselves hidden from a delegated administrator holding only
@@ -183,7 +198,7 @@ screen, and left to be keyed.
 
 ---
 
-## Since 15 September (0349–0379)
+## Since 15 September (0349–0380)
 
 **Three genuinely separate arcs**, each closing a gap this document
 itself used to name as open, plus smaller fixes along the way.
@@ -235,6 +250,18 @@ copying the other's), returned early on a failed fetch without ever
 resetting its own counts to `null` — a chart that had once loaded real
 data kept showing it, silently stale, after a later, genuine failure.
 Fixed in both files the same day it was found.
+
+**The viewer's document frame, and a premise measured before fixing
+it** (0380). A review of every past discussion of the viewer found a
+comment claiming the preview was "refreshed when somebody returns to
+the tab" — nothing did. Measured in Chromium before building that: an
+expired link breaks nothing while a frame sits, scrolls, zooms, hides
+or the tab changes; it breaks only when the frame *loads again*, and
+then shows `vf-app`'s JSON error rather than going blank. So the fix is
+the frame's own `load` event, not a timer — a return-to-tab refresh
+would have reloaded a working PDF and lost the reader's place. The same
+review corrected three stale comments, four missing `SUPERSEDED.md`
+rows and one misattributed one, and the screen and test counts above. **Safari and Firefox were not measured.**
 
 **Smaller, on-request fixes**: the Org Units table now shows Parent
 Org and Tax Identifier as real columns, both data the edit form
