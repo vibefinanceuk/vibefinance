@@ -189,6 +189,21 @@ a rule, and left an approval task in a queue.
   frontend reused `documents.js`'s own established search-box pattern
   (`onchange`, full re-render, explicit re-focus) rather than
   inventing a debounced alternative
+- A real status lifecycle (0377), reversing what decision 0372
+  deliberately left out ("no Change, no hold, no status") on the
+  operator's own request. Active/On-Hold/Closed is a real, assignable
+  column — Hold/Release Hold/Close on the pop-out mirror Suppliers'
+  own hold mechanism exactly (decision 0230), and an explicit status
+  on a CSV re-upload overrides even a closed order, deliberately the
+  opposite of Suppliers' own "the flag survives its next load"
+  precedent, since the operator's own words were that the ERP is the
+  system of truth here. Invoiced (Part)/(Full) are not stored at all —
+  derived live via the same `json_extract` pattern the dashboard
+  already uses against `facts_json`, no new column on the invoice
+  side. The status chart reuses `donutChart()` directly, laid out
+  beside the Load card exactly like Suppliers' own status ring, and a
+  segment click reuses decision 0376's own list filter rather than a
+  new mechanism
 
 ### Documents
 - R2 storage with jurisdiction support (0013, 0033, 0035)
@@ -603,9 +618,9 @@ elsewhere.
 
 | Package | Tests |
 |---|---|
-| `vf-app` | 1804 |
+| `vf-app` | 1827 |
 | `vf-licence` | 320 |
-| `vf-ui` | 72 Worker · 595 browser |
+| `vf-ui` | 72 Worker · 603 browser |
 | `shared` | 269 passing, 3 known pre-existing failures |
 
 Both migration chains replay clean with every standing invariant
@@ -626,7 +641,7 @@ holding — 65 migrations for `vf-app`, 105 for `vf-licence`.
 | `docs/design/mockups/` | Four screens as static HTML | Current |
 | `docs/design/multi-authority-intake.md` | Non-EN-16931 authorities | Design only |
 | `docs/design/text-layer-extraction.md` | Reading a PDF's own text | Design only |
-| `docs/decisions/` | 376 decision records | Current |
+| `docs/decisions/` | 377 decision records | Current |
 | `docs/decisions/SUPERSEDED.md` | Which records supersede which | **Read first** |
 
 Document 4's markdown source is at `docs/documents/`, with

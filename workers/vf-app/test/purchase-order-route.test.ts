@@ -1,7 +1,15 @@
 import { env } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
 import { applyTestSchema } from "./setup.js";
-import { handleIngestPurchaseOrder, handleGetPurchaseOrder, handleLoadPurchaseOrdersCsv, handleListPurchaseOrders, handleGetPurchaseOrderCsvFormat } from "../src/purchase-order-route.js";
+import {
+  handleIngestPurchaseOrder,
+  handleGetPurchaseOrder,
+  handleLoadPurchaseOrdersCsv,
+  handleListPurchaseOrders,
+  handleGetPurchaseOrderCsvFormat,
+  handleGetPurchaseOrderStatusCounts,
+  handleSetPurchaseOrderStatus,
+} from "../src/purchase-order-route.js";
 
 const ORDER = (number = "PO-34500", lines = `
   <cac:OrderLine><cac:LineItem>
@@ -327,11 +335,13 @@ describe("the CSV format reference — decision 0373", () => {
 
     // order_type_code is the one field with a closed set of valid
     // values (a real DB constraint); buyer_party_id must be a real,
-    // seeded legal entity's own VAT or the whole order is refused —
-    // everything else tolerates a generic placeholder just fine.
+    // seeded legal entity's own VAT or the whole order is refused;
+    // status must be one of the three real lifecycle values — everything
+    // else tolerates a generic placeholder just fine.
     const valueFor = (key: string) => {
       if (key === "order_type_code") return "220";
       if (key === "buyer_party_id") return "GB907856452";
+      if (key === "status") return "active";
       return "1";
     };
 
@@ -745,5 +755,265 @@ describe("real, server-side pagination — decision 0376", () => {
     const result = await handleListPurchaseOrders(env.DB, null, undefined, "rare");
     const body = result.body as { purchaseOrders: unknown[]; total: number };
     expect(body.total).toBe(1);
+  });
+});
+
+describe("Hold, Release Hold, Close — decision 0377", () => {
+  it("refuses to place a hold with no reason", async () => {
+    await handleIngestPurchaseOrder(env.DB, ORDER());
+    const result = await handleSetPurchaseOrderStatus(env.DB, "PO-34500", { status: "on_hold" });
+    expect(result.status).toBe(400);
+  });
+
+  it("places a hold with a real reason, and it reaches the record", async () => {
+    await handleIngestPurchaseOrder(env.DB, ORDER());
+    const result = await handleSetPurchaseOrderStatus(env.DB, "PO-34500", {
+      status: "on_hold",
+      holdReason: "supplier dispute",
+    });
+    expect(result.status).toBe(200);
+
+    const row = await env.DB.prepare("SELECT status, hold_reason FROM purchase_orders WHERE order_number = 'PO-34500'").first<{
+      status: string;
+      hold_reason: string;
+    }>();
+    expect(row?.status).toBe("on_hold");
+    expect(row?.hold_reason).toBe("supplier dispute");
+  });
+
+  it("releasing a hold clears the reason", async () => {
+    await handleIngestPurchaseOrder(env.DB, ORDER());
+    await handleSetPurchaseOrderStatus(env.DB, "PO-34500", { status: "on_hold", holdReason: "dispute" });
+    await handleSetPurchaseOrderStatus(env.DB, "PO-34500", { status: "active" });
+
+    const row = await env.DB.prepare("SELECT status, hold_reason FROM purchase_orders WHERE order_number = 'PO-34500'").first<{
+      status: string;
+      hold_reason: string | null;
+    }>();
+    expect(row?.status).toBe("active");
+    expect(row?.hold_reason).toBeNull();
+  });
+
+  it("closing is terminal — no further hand-driven status change is accepted", async () => {
+    await handleIngestPurchaseOrder(env.DB, ORDER());
+    await handleSetPurchaseOrderStatus(env.DB, "PO-34500", { status: "closed" });
+
+    const again = await handleSetPurchaseOrderStatus(env.DB, "PO-34500", { status: "active" });
+    expect(again.status).toBe(422);
+
+    const row = await env.DB.prepare("SELECT status FROM purchase_orders WHERE order_number = 'PO-34500'").first<{
+      status: string;
+    }>();
+    expect(row?.status).toBe("closed");
+  });
+
+  it("404s for an order that does not exist", async () => {
+    const result = await handleSetPurchaseOrderStatus(env.DB, "PO-NOPE", { status: "closed" });
+    expect(result.status).toBe(404);
+  });
+
+  it("400s an unrecognised status value", async () => {
+    await handleIngestPurchaseOrder(env.DB, ORDER());
+    const result = await handleSetPurchaseOrderStatus(env.DB, "PO-34500", { status: "cancelled" });
+    expect(result.status).toBe(400);
+  });
+});
+
+describe("the CSV status column — decision 0377", () => {
+  it("a new order with no status column defaults to Active", async () => {
+    await handleLoadPurchaseOrdersCsv(env.DB, "order_number,line number,item,buyer vat id\nPO-1,1,Widgets,GB907856452");
+    const row = await env.DB.prepare("SELECT status FROM purchase_orders WHERE order_number = 'PO-1'").first<{ status: string }>();
+    expect(row?.status).toBe("active");
+  });
+
+  it("a new order with an explicit status column uses it", async () => {
+    await handleLoadPurchaseOrdersCsv(
+      env.DB,
+      "order_number,line number,item,buyer vat id,status\nPO-1,1,Widgets,GB907856452,closed"
+    );
+    const row = await env.DB.prepare("SELECT status FROM purchase_orders WHERE order_number = 'PO-1'").first<{ status: string }>();
+    expect(row?.status).toBe("closed");
+  });
+
+  it("the ERP wins — an explicit status on re-upload overrides even a closed order", async () => {
+    await handleLoadPurchaseOrdersCsv(env.DB, "order_number,line number,item,buyer vat id\nPO-1,1,Widgets,GB907856452");
+    await handleSetPurchaseOrderStatus(env.DB, "PO-1", { status: "closed" });
+
+    await handleLoadPurchaseOrdersCsv(
+      env.DB,
+      "order_number,line number,item,buyer vat id,status\nPO-1,1,Widgets,GB907856452,active"
+    );
+
+    const row = await env.DB.prepare("SELECT status FROM purchase_orders WHERE order_number = 'PO-1'").first<{ status: string }>();
+    expect(row?.status).toBe("active");
+  });
+
+  it("re-uploading with the status column absent preserves the existing status, rather than resetting to Active", async () => {
+    await handleLoadPurchaseOrdersCsv(
+      env.DB,
+      "order_number,line number,item,buyer vat id,status,hold_reason\nPO-1,1,Widgets,GB907856452,on_hold,dispute"
+    );
+    await handleLoadPurchaseOrdersCsv(env.DB, "order_number,line number,item,buyer vat id\nPO-1,1,Widgets,GB907856452");
+
+    const row = await env.DB.prepare("SELECT status, hold_reason FROM purchase_orders WHERE order_number = 'PO-1'").first<{
+      status: string;
+      hold_reason: string;
+    }>();
+    expect(row?.status).toBe("on_hold");
+    expect(row?.hold_reason).toBe("dispute");
+  });
+
+  it("refuses a row with an unrecognised status, while a sibling order still loads", async () => {
+    const csv = `order_number,line number,item,buyer vat id,status
+PO-GOOD,1,Widgets,GB907856452,active
+PO-BAD,1,Widgets,GB907856452,cancelled`;
+    const result = await handleLoadPurchaseOrdersCsv(env.DB, csv);
+    expect(result.body).toMatchObject({
+      ordersLoaded: 1,
+      refused: [{ orderNumber: "PO-BAD", reason: expect.stringContaining("not recognised") }],
+    });
+  });
+
+  it("accepts the human-friendly aliases", async () => {
+    for (const [alias, expected] of [
+      ["Open", "active"],
+      ["On Hold", "on_hold"],
+      ["Hold", "on_hold"],
+      ["Close", "closed"],
+    ]) {
+      const csv = `order_number,line number,item,buyer vat id,status\nPO-${expected}-${alias},1,Widgets,GB907856452,${alias}`;
+      await handleLoadPurchaseOrdersCsv(env.DB, csv);
+      const row = await env.DB.prepare("SELECT status FROM purchase_orders WHERE order_number = ?")
+        .bind(`PO-${expected}-${alias}`)
+        .first<{ status: string }>();
+      expect(row?.status).toBe(expected);
+    }
+  });
+});
+
+describe("Invoiced (Part) / Invoiced (Full), derived from real invoices — decision 0377", () => {
+  async function seedInvoice(id: string, orderNumber: string, totalWithVat: number) {
+    await env.DB.prepare("INSERT INTO invoice_headers (id, facts_json) VALUES (?, ?)")
+      .bind(id, JSON.stringify({ "BT-13": orderNumber, "BT-112": totalWithVat }))
+      .run();
+  }
+
+  it("an order with no matching invoices at all is Active", async () => {
+    await handleIngestPurchaseOrder(env.DB, ORDER()); // payable_amount 864
+    const result = await handleGetPurchaseOrder(env.DB, "PO-34500");
+    expect((result.body as { order: { effective_status: string } }).order.effective_status).toBe("active");
+  });
+
+  it("an order with some, but not all, of its own amount invoiced is Invoiced (Part)", async () => {
+    await handleIngestPurchaseOrder(env.DB, ORDER()); // payable_amount 864
+    await seedInvoice("inv-1", "PO-34500", 400);
+    const result = await handleGetPurchaseOrder(env.DB, "PO-34500");
+    expect((result.body as { order: { effective_status: string } }).order.effective_status).toBe("invoiced_part");
+  });
+
+  it("an order whose matching invoices reach its own total is Invoiced (Full)", async () => {
+    await handleIngestPurchaseOrder(env.DB, ORDER()); // payable_amount 864
+    await seedInvoice("inv-1", "PO-34500", 500);
+    await seedInvoice("inv-2", "PO-34500", 400); // 900 total, over the 864 payable amount
+    const result = await handleGetPurchaseOrder(env.DB, "PO-34500");
+    expect((result.body as { order: { effective_status: string } }).order.effective_status).toBe("invoiced_full");
+  });
+
+  it("On Hold still wins over full invoicing — the lifecycle status, not the invoicing progress", async () => {
+    await handleIngestPurchaseOrder(env.DB, ORDER());
+    await seedInvoice("inv-1", "PO-34500", 900);
+    await handleSetPurchaseOrderStatus(env.DB, "PO-34500", { status: "on_hold", holdReason: "dispute" });
+
+    const result = await handleGetPurchaseOrder(env.DB, "PO-34500");
+    expect((result.body as { order: { effective_status: string } }).order.effective_status).toBe("on_hold");
+  });
+
+  it("Closed still wins even with no invoices at all", async () => {
+    await handleIngestPurchaseOrder(env.DB, ORDER());
+    await handleSetPurchaseOrderStatus(env.DB, "PO-34500", { status: "closed" });
+
+    const result = await handleGetPurchaseOrder(env.DB, "PO-34500");
+    expect((result.body as { order: { effective_status: string } }).order.effective_status).toBe("closed");
+  });
+});
+
+describe("the status chart's own aggregate — decision 0377", () => {
+  async function seedInvoice(id: string, orderNumber: string, totalWithVat: number) {
+    await env.DB.prepare("INSERT INTO invoice_headers (id, facts_json) VALUES (?, ?)")
+      .bind(id, JSON.stringify({ "BT-13": orderNumber, "BT-112": totalWithVat }))
+      .run();
+  }
+
+  it("counts every real bucket correctly", async () => {
+    await handleLoadPurchaseOrdersCsv(env.DB, "order_number,line number,item,buyer vat id\nPO-ACTIVE,1,Widgets,GB907856452");
+    await handleLoadPurchaseOrdersCsv(
+      env.DB,
+      "order_number,line number,item,buyer vat id,status,hold_reason\nPO-HOLD,1,Widgets,GB907856452,on_hold,dispute"
+    );
+    await handleLoadPurchaseOrdersCsv(
+      env.DB,
+      "order_number,line number,item,buyer vat id,status\nPO-CLOSED,1,Widgets,GB907856452,closed"
+    );
+    await handleLoadPurchaseOrdersCsv(env.DB, "order_number,line number,item,buyer vat id,order total\nPO-PART,1,Widgets,GB907856452,1000");
+    await seedInvoice("inv-part", "PO-PART", 400);
+    await handleLoadPurchaseOrdersCsv(env.DB, "order_number,line number,item,buyer vat id,order total\nPO-FULL,1,Widgets,GB907856452,1000");
+    await seedInvoice("inv-full", "PO-FULL", 1000);
+
+    const result = await handleGetPurchaseOrderStatusCounts(env.DB);
+    expect(result.body).toEqual({
+      counts: { active: 1, on_hold: 1, closed: 1, invoiced_part: 1, invoiced_full: 1 },
+    });
+  });
+
+  it("respects the chosen org", async () => {
+    await seedGroupHierarchy();
+    await handleLoadPurchaseOrdersCsv(env.DB, "order_number,line number,item,buyer vat id\nPO-UK,1,Widgets,GB907856452");
+    await handleLoadPurchaseOrdersCsv(env.DB, "order_number,line number,item,buyer vat id\nPO-FR,1,Widgets,FR12345678901");
+
+    const result = await handleGetPurchaseOrderStatusCounts(env.DB, "acme-uk");
+    expect((result.body as { counts: Record<string, number> }).counts.active).toBe(1);
+  });
+
+  it("respects the real, permission-based scope", async () => {
+    await seedGroupHierarchy();
+    await scopeAliceTo("acme-uk");
+    await handleLoadPurchaseOrdersCsv(env.DB, "order_number,line number,item,buyer vat id\nPO-UK,1,Widgets,GB907856452");
+    await handleLoadPurchaseOrdersCsv(env.DB, "order_number,line number,item,buyer vat id\nPO-FR,1,Widgets,FR12345678901");
+
+    const result = await handleGetPurchaseOrderStatusCounts(env.DB, null, "alice");
+    expect((result.body as { counts: Record<string, number> }).counts.active).toBe(1);
+  });
+});
+
+describe("filtering the list by status — decision 0377", () => {
+  it("shows only orders in the requested bucket", async () => {
+    await handleLoadPurchaseOrdersCsv(env.DB, "order_number,line number,item,buyer vat id\nPO-ACTIVE,1,Widgets,GB907856452");
+    await handleLoadPurchaseOrdersCsv(
+      env.DB,
+      "order_number,line number,item,buyer vat id,status,hold_reason\nPO-HOLD,1,Widgets,GB907856452,on_hold,dispute"
+    );
+
+    const result = await handleListPurchaseOrders(env.DB, null, undefined, null, null, null, "on_hold");
+    const body = result.body as { purchaseOrders: { order_number: string }[]; total: number };
+    expect(body.purchaseOrders.map((p) => p.order_number)).toEqual(["PO-HOLD"]);
+    expect(body.total).toBe(1);
+  });
+
+  it("filters by a derived status too, not just the stored one", async () => {
+    await handleLoadPurchaseOrdersCsv(env.DB, "order_number,line number,item,buyer vat id,order total\nPO-FULL,1,Widgets,GB907856452,1000");
+    await env.DB.prepare("INSERT INTO invoice_headers (id, facts_json) VALUES ('inv-1', ?)")
+      .bind(JSON.stringify({ "BT-13": "PO-FULL", "BT-112": 1000 }))
+      .run();
+    await handleLoadPurchaseOrdersCsv(env.DB, "order_number,line number,item,buyer vat id\nPO-ACTIVE,1,Widgets,GB907856452");
+
+    const result = await handleListPurchaseOrders(env.DB, null, undefined, null, null, null, "invoiced_full");
+    const body = result.body as { purchaseOrders: { order_number: string }[] };
+    expect(body.purchaseOrders.map((p) => p.order_number)).toEqual(["PO-FULL"]);
+  });
+
+  it("shows everything when no status filter is given", async () => {
+    await handleLoadPurchaseOrdersCsv(env.DB, "order_number,line number,item,buyer vat id\nPO-1,1,Widgets,GB907856452");
+    const result = await handleListPurchaseOrders(env.DB, null, undefined, null, null, null, null);
+    expect((result.body as { total: number }).total).toBe(1);
   });
 });

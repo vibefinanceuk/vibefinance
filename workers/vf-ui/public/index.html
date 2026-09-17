@@ -1798,6 +1798,24 @@
     .supplierhead { grid-template-columns: 1fr; }
     .supplierhead > .panel { height: auto; }
   }
+
+  /**
+   * The same load-card-plus-status-chart split Suppliers already
+   * uses, renamed for this screen rather than reusing a class that
+   * says "supplier" — decision 0377, the operator's own request:
+   * "to the right of the Load purchase orders card."
+   */
+  .poloadhead {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(260px, 380px);
+    gap: 16px;
+    margin-bottom: 16px;
+  }
+  .poloadhead > .panel { height: 100%; box-sizing: border-box; }
+  @media (max-width: 900px) {
+    .poloadhead { grid-template-columns: 1fr; }
+    .poloadhead > .panel { height: auto; }
+  }
   /*
     **The Seller card's own sub-line, decision 0290** — reported live:
     "The fields beneath the word Seller appear to be aligned to the

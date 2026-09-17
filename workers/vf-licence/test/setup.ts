@@ -117,6 +117,7 @@ import purchaseOrdersFormatReferenceStringsSql from "../migrations/0112_purchase
 import purchaseOrdersButtonLabelsSql from "../migrations/0113_purchase_orders_button_labels.sql?raw";
 import purchaseOrdersOrgLabelSql from "../migrations/0114_purchase_orders_org_label.sql?raw";
 import purchaseOrdersSearchAndPaginationStringsSql from "../migrations/0115_purchase_orders_search_and_pagination_strings.sql?raw";
+import purchaseOrdersStatusStringsSql from "../migrations/0116_purchase_orders_status_strings.sql?raw";
 
 function stripSqlComments(sql: string): string {
   return sql
@@ -261,5 +262,6 @@ export async function applyTestSchema(): Promise<void> {
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(purchaseOrdersButtonLabelsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(purchaseOrdersOrgLabelSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(purchaseOrdersSearchAndPaginationStringsSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(purchaseOrdersStatusStringsSql)));
 
 }

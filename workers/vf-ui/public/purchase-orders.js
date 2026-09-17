@@ -3,6 +3,7 @@ import { el, frame, topbar, setCurrentScreen } from "/tasks.js";
 import { actionLink } from "/viewer.js";
 import { icon } from "/icons.js";
 import { currentOrgId } from "/orgs.js";
+import { donutChart } from "/charts.js";
 
 /**
  * Loading, and now browsing, purchase orders — decisions 0371 and 0372.
@@ -33,7 +34,31 @@ let page = 1;
 let pageSize = 50;
 let total = 0;
 
+/**
+ * The status chart's own state — decision 0377. `statusCounts` is
+ * fetched independently of `load()`, the same "a help affordance's own
+ * failure must never block the rest of the screen" treatment
+ * `loadFormat()` already gets — an org-wide overview, deliberately
+ * never affected by the search term the list itself is currently
+ * filtered by.
+ */
+let statusCounts = null;
+let statusFilter = null;
+
 const PAGE_SIZES = [25, 50, 100, 200];
+
+async function loadStatusCounts() {
+  try {
+    const org = currentOrgId();
+    const query = org ? `?org=${encodeURIComponent(org)}` : "";
+    const response = await fetch(`/api/purchase-orders/status-counts${query}`);
+    if (!response.ok) return;
+    const body = await response.json();
+    statusCounts = body.counts ?? null;
+  } catch {
+    statusCounts = null;
+  }
+}
 
 async function load() {
   try {
@@ -48,6 +73,7 @@ async function load() {
     if (searchTerm) params.set("search", searchTerm);
     params.set("page", String(page));
     params.set("pageSize", String(pageSize));
+    if (statusFilter) params.set("status", statusFilter);
     const response = await fetch(`/api/purchase-orders?${params}`);
     if (!response.ok) return false;
     const body = await response.json();
@@ -198,6 +224,49 @@ function formatReference() {
   ]);
 }
 
+/**
+ * The status chart — decision 0377, the operator's own request:
+ * mirroring `supplierStatusCard()` directly, reusing `donutChart()`,
+ * the legend, the palette, and `onSelect` as the one component Tasks,
+ * the Dashboard, and Suppliers already share, not a second chart built
+ * to look similar.
+ *
+ * **Org-wide, not search-narrowed** — `statusCounts` comes from its
+ * own, independent fetch (`loadStatusCounts()`), never filtered by
+ * whatever is currently typed into the search box beside it, on the
+ * operator's own words: "The chart should show Org wide values."
+ *
+ * **Clicking a segment loads the paginated list through it** — sets
+ * the same `status` this list already knows how to filter by (decision
+ * 0376's own mechanism), resets to page 1, and reloads — "upon
+ * clicking the results, the paginated values should be loaded into the
+ * list to scroll through."
+ */
+function statusCard() {
+  const segments = statusCounts
+    ? [
+        { key: "active", label: t("purchaseorders.status.active"), value: statusCounts.active ?? 0 },
+        { key: "on_hold", label: t("purchaseorders.status.onhold"), value: statusCounts.on_hold ?? 0 },
+        { key: "closed", label: t("purchaseorders.status.closed"), value: statusCounts.closed ?? 0 },
+        { key: "invoiced_part", label: t("purchaseorders.status.invoicedpart"), value: statusCounts.invoiced_part ?? 0 },
+        { key: "invoiced_full", label: t("purchaseorders.status.invoicedfull"), value: statusCounts.invoiced_full ?? 0 },
+      ].filter((seg) => seg.value > 0)
+    : [];
+
+  async function select(key) {
+    statusFilter = key;
+    page = 1;
+    await reload();
+  }
+
+  return el("div", { class: "panel" }, [
+    el("h3", { text: t("purchaseorders.statusheading") }),
+    segments.length > 0
+      ? donutChart(segments, { onSelect: (segment) => select(segment.key) })
+      : el("div", { class: "muted", text: t("purchaseorders.nostatusdata") }),
+  ]);
+}
+
 function loader() {
   const picker = el("input", { type: "file", accept: ".csv,text/csv", id: "purchaseorderfile" });
   // The handler goes in at construction — actionLink disables a button
@@ -281,6 +350,18 @@ function loader() {
 }
 
 /** One label:value pair in a read-only grid — .editgrid's own two-column layout, without an input. */
+/** The same five labels the chart's own segments use, for a single order's own detail — decision 0377. */
+function statusLabel(effectiveStatus) {
+  const labels = {
+    active: t("purchaseorders.status.active"),
+    on_hold: t("purchaseorders.status.onhold"),
+    closed: t("purchaseorders.status.closed"),
+    invoiced_part: t("purchaseorders.status.invoicedpart"),
+    invoiced_full: t("purchaseorders.status.invoicedfull"),
+  };
+  return labels[effectiveStatus] ?? "—";
+}
+
 function fact(label, value) {
   return [el("div", { class: "muted", text: label }), el("div", { text: value ?? "—" })];
 }
@@ -317,6 +398,7 @@ async function openPurchaseOrder(summary) {
     ...fact(t("purchaseorders.seller"), order.seller_party_id),
     ...fact(t("purchaseorders.buyer"), order.buyer_party_id),
     ...fact(t("purchaseorders.org"), order.org_unit_name),
+    ...fact(t("purchaseorders.statuslabel"), statusLabel(order.effective_status)),
     ...fact(t("purchaseorders.netamount"), order.line_extension_amount),
     ...fact(t("purchaseorders.taxexclusive"), order.tax_exclusive_amount),
     ...fact(t("purchaseorders.taxinclusive"), order.tax_inclusive_amount),
@@ -356,12 +438,90 @@ async function openPurchaseOrder(summary) {
     ]),
   ]);
 
+  const reload = async () => {
+    close();
+    await load();
+    await loadStatusCounts();
+    render();
+  };
+
+  async function setStatus(body) {
+    let response;
+    try {
+      response = await fetch(`/api/purchase-orders/${encodeURIComponent(order.order_number)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+    } catch {
+      note(t("purchaseorders.statuschangefailed"));
+      return;
+    }
+    if (!response.ok) {
+      const problem = await response.json().catch(() => ({}));
+      note(problem.error ?? t("purchaseorders.statuschangefailed"));
+      return;
+    }
+    await reload();
+  }
+
+  /**
+   * **Terminal, unlike Hold/Release** — decision 0377's own rule:
+   * once Closed, nothing on this pop-out may change it again, so the
+   * only buttons a closed order shows at all are none.
+   *
+   * **A hold needs a reason**, the exact prompt suppliers.js's own
+   * hold action already uses — asking here is better than refusing
+   * after, the same reasoning that pattern was built on.
+   */
+  const stateButtons = [];
+  if (order.status !== "closed") {
+    if (order.status === "on_hold") {
+      stateButtons.push(actionLink("releasehold", { onclick: () => setStatus({ status: "active" }) }));
+    } else {
+      stateButtons.push(
+        actionLink("hold", {
+          onclick: () => {
+            const reason = el("input", {
+              type: "text",
+              class: "searchbox",
+              placeholder: t("purchaseorders.holdreasonhint"),
+            });
+            const holdPanel = el("div", { class: "panel" }, [
+              el("div", { text: t("purchaseorders.holdreason") }),
+              reason,
+              el("button", {
+                class: "primary",
+                text: t("purchaseorders.holdconfirm"),
+                onclick: () => setStatus({ status: "on_hold", holdReason: reason.value }),
+              }),
+            ]);
+            backdrop.querySelector(".popout")?.append(holdPanel);
+            reason.focus();
+          },
+        })
+      );
+    }
+    // A different label from the popout's own dismiss button beside
+    // it — "Close" already means "close this pop-out" throughout the
+    // app; this closes the order itself, permanently.
+    stateButtons.push(
+      actionLink("close", {
+        label: t("purchaseorders.closeorder"),
+        onclick: () => {
+          if (window.confirm(t("purchaseorders.closeconfirm"))) setStatus({ status: "closed" });
+        },
+      })
+    );
+  }
+
   backdrop.replaceChildren(
     el("div", { class: "popout wide" }, [
       el("div", { class: "cardhead" }, [
         el("h3", { text: order.order_number }),
-        actionLink("close", { onclick: close }),
+        el("div", { class: "statebuttons" }, [...stateButtons, actionLink("close", { onclick: close })]),
       ]),
+      order.status === "on_hold" ? el("div", { class: "warn", text: `${t("purchaseorders.hold")}: ${order.hold_reason}` }) : null,
       header,
       linesTable,
     ])
@@ -518,7 +678,7 @@ function render() {
       el("div", {}, [
         topbar(t("purchaseorders.heading"), t("purchaseorders.subtitle")),
         el("div", { id: "purchaseorders-note", class: "warn" }),
-        loader(),
+        el("div", { class: "poloadhead" }, [loader(), statusCard()]),
         el("div", { class: "panel" }, [searchAndPaginationRow()]),
         el("div", { class: "panel" }, [purchaseOrderRows()]),
       ])
@@ -536,6 +696,7 @@ export async function open() {
   // the new one anyway.
   searchTerm = "";
   page = 1;
+  statusFilter = null;
   // render() first, always — decision 0372's own finding: calling
   // note() before the screen has ever rendered writes to an element
   // (#purchaseorders-note) that does not exist yet, and the message
@@ -547,6 +708,9 @@ export async function open() {
   // reference is a help affordance, not core functionality, so its
   // own failure must never block the list or the load card either one.
   await loadFormat();
+  // Same treatment — decision 0377's own chart is a help affordance
+  // beside the list, not core to it.
+  await loadStatusCounts();
   render();
   if (!ok) note(t("purchaseorders.failed"));
 }

@@ -57,13 +57,64 @@ async function deriveOrgForOrder(
   return { orgUnitId };
 }
 
-async function storeOrder(db: D1Database, parsed: ParsedOrder, orgUnitId: string): Promise<StoredOrderResult> {
+/**
+ * A CSV's own "status" column, normalised — decision 0377. Generous
+ * aliasing on purpose: this is a spreadsheet an ERP exports, not a
+ * closed vocabulary a customer is expected to already know the exact
+ * spelling of.
+ */
+const STATUS_ALIASES: Record<string, "active" | "on_hold" | "closed"> = {
+  active: "active",
+  open: "active",
+  on_hold: "on_hold",
+  "on hold": "on_hold",
+  hold: "on_hold",
+  held: "on_hold",
+  closed: "closed",
+  close: "closed",
+};
+
+function normalizeStatus(raw: string | undefined): { status: "active" | "on_hold" | "closed" } | { refusalReason: string } | null {
+  const value = raw?.trim();
+  if (!value) return null; // Absent — storeOrder() preserves whatever the order already had.
+  const normalized = STATUS_ALIASES[value.toLowerCase()];
+  if (!normalized) {
+    return { refusalReason: `status "${value}" is not recognised — use Active, On Hold, or Closed` };
+  }
+  return { status: normalized };
+}
+
+async function storeOrder(
+  db: D1Database,
+  parsed: ParsedOrder,
+  orgUnitId: string,
+  statusOverride?: { status: "active" | "on_hold" | "closed"; holdReason: string | null }
+): Promise<StoredOrderResult> {
   const existing = await db
-    .prepare("SELECT id FROM purchase_orders WHERE order_number = ?")
+    .prepare("SELECT id, status, hold_reason FROM purchase_orders WHERE order_number = ?")
     .bind(parsed.orderNumber)
-    .first<{ id: string }>();
+    .first<{ id: string; status: string; hold_reason: string | null }>();
 
   const id = existing?.id ?? crypto.randomUUID();
+
+  /**
+   * **The ERP wins, deliberately unlike Suppliers.** Suppliers' own
+   * `on_hold` flag survives its next load — only a `PUT`'s own fields
+   * are overwritten (decision 0230). The operator's own words for
+   * purchase orders were the opposite: "I would expect these status
+   * to be overridden by uploading a spreadsheet from the ERP, as the
+   * ERP is the system of truth." So an explicit status in this load
+   * replaces whatever was there, even a closed order — "terminal" is
+   * a rule for the manual Hold/Release/Close actions below, not a
+   * rule this load path is bound by. Absent from this load entirely,
+   * the existing status is preserved rather than silently reset to
+   * Active just because a re-upload happened to say nothing about it.
+   */
+  const status = statusOverride?.status ?? (existing?.status as "active" | "on_hold" | "closed" | undefined) ?? "active";
+  const rawHoldReason = statusOverride ? statusOverride.holdReason : (existing?.hold_reason ?? null);
+  // The standing invariant migration 0069 declares: a hold reason
+  // exists only while genuinely on hold.
+  const holdReason = status === "on_hold" ? rawHoldReason : null;
 
   if (existing) {
     // Replaced, not appended. An order number is unique by construction
@@ -79,8 +130,8 @@ async function storeOrder(db: D1Database, parsed: ParsedOrder, orgUnitId: string
       `INSERT INTO purchase_orders
          (id, order_number, issue_date, order_type_code, currency, seller_party_id, buyer_party_id,
           line_extension_amount, tax_exclusive_amount, tax_inclusive_amount, payable_amount,
-          originator_reference, org_unit_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          originator_reference, org_unit_id, status, hold_reason)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .bind(
       id,
@@ -95,7 +146,9 @@ async function storeOrder(db: D1Database, parsed: ParsedOrder, orgUnitId: string
       parsed.taxInclusiveAmount ?? null,
       parsed.payableAmount ?? null,
       parsed.originatorReference ?? null,
-      orgUnitId
+      orgUnitId,
+      status,
+      holdReason
     )
     .run();
 
@@ -275,6 +328,19 @@ export const HEADER_FIELD_SPECS: CsvFieldSpec[] = [
     columns: ["originator_reference", "requisition", "requisition number"],
     required: false,
     description: "The buyer's own internal requisition reference.",
+  },
+  {
+    key: "status",
+    columns: ["status", "po status"],
+    required: false,
+    description:
+      "Active, On Hold, or Closed. Overrides whatever status this order already has, since the ERP is the system of truth — left blank on a re-upload, the existing status is kept rather than reset.",
+  },
+  {
+    key: "hold_reason",
+    columns: ["hold_reason", "hold reason"],
+    required: false,
+    description: "Why the order is on hold, when status is On Hold.",
   },
 ];
 
@@ -510,7 +576,22 @@ export async function handleLoadPurchaseOrdersCsv(db: D1Database, csv: string): 
       continue;
     }
 
-    const result = await storeOrder(db, parsed, orgResult.orgUnitId);
+    // Decision 0377 — an unrecognised status refuses the order, the
+    // same discipline as every other CSV validation failure; absent
+    // entirely, storeOrder() itself decides (preserve on a replace,
+    // Active on a new order).
+    const statusResult = normalizeStatus(first.status);
+    if (statusResult && "refusalReason" in statusResult) {
+      refused.push({ orderNumber, reason: statusResult.refusalReason });
+      continue;
+    }
+
+    const result = await storeOrder(
+      db,
+      parsed,
+      orgResult.orgUnitId,
+      statusResult ? { status: statusResult.status, holdReason: first.hold_reason || null } : undefined
+    );
     ordersLoaded++;
     linesLoaded += result.lines;
     if (result.replaced) ordersReplaced++;
@@ -518,6 +599,147 @@ export async function handleLoadPurchaseOrdersCsv(db: D1Database, csv: string): 
 
   const body: PurchaseOrderCsvLoadResult = { loadId, ordersLoaded, ordersReplaced, linesLoaded, refused };
   return { status: 200, body: { ...body } };
+}
+
+/**
+ * How much has actually been invoiced against a given order, and the
+ * five-value status a person actually sees on top of it — decision
+ * 0377. A single, shared derived table and `CASE` expression, reused
+ * identically by the list's own optional status filter and the
+ * status-counts chart, so the two can never disagree about what
+ * "Invoiced (Part)" means.
+ *
+ * **`json_extract` against `facts_json`, not a new column on
+ * `invoice_headers`.** The same, already-proven pattern
+ * `dashboard-route.ts` and `documents-route.ts` already use for BT-1,
+ * BT-9, and BT-27 — BT-13 (an invoice's own purchase order reference)
+ * has never been a structured column either, and did not need to
+ * become one just for this.
+ *
+ * **A derived table, joined once, not the same subquery repeated in
+ * every branch of the `CASE`** — computed a single time per order,
+ * not three times per row.
+ *
+ * **Only `active` orders are refined into Invoiced (Part)/(Full).**
+ * `on_hold` and `closed` are the real, assignable lifecycle the
+ * operator asked for; invoicing progress is a fact about an *active*
+ * order specifically; an order already on hold or closed keeps that
+ * status regardless of how much of it has been invoiced.
+ */
+const INVOICED_AMOUNTS_JOIN = `
+  LEFT JOIN (
+    SELECT json_extract(facts_json, '$."BT-13"') AS order_number,
+           SUM(CAST(json_extract(facts_json, '$."BT-112"') AS REAL)) AS invoiced_amount
+    FROM invoice_headers
+    WHERE json_extract(facts_json, '$."BT-13"') IS NOT NULL
+    GROUP BY json_extract(facts_json, '$."BT-13"')
+  ) inv ON inv.order_number = po.order_number
+`;
+
+const EFFECTIVE_STATUS_CASE = `
+  CASE
+    WHEN po.status = 'closed' THEN 'closed'
+    WHEN po.status = 'on_hold' THEN 'on_hold'
+    WHEN po.payable_amount IS NOT NULL AND COALESCE(inv.invoiced_amount, 0) >= po.payable_amount AND COALESCE(inv.invoiced_amount, 0) > 0 THEN 'invoiced_full'
+    WHEN COALESCE(inv.invoiced_amount, 0) > 0 THEN 'invoiced_part'
+    ELSE 'active'
+  END
+`;
+
+const EFFECTIVE_STATUSES = ["active", "on_hold", "closed", "invoiced_part", "invoiced_full"] as const;
+
+/** The chart's own click-to-filter, and the list's optional `?status=` — the same five values either way. */
+function statusClause(status: string | null): { sql: string; binds: unknown[] } {
+  if (!status) return { sql: "", binds: [] };
+  if (!(EFFECTIVE_STATUSES as readonly string[]).includes(status)) return { sql: " AND 1 = 0", binds: [] };
+  return { sql: ` AND (${EFFECTIVE_STATUS_CASE}) = ?`, binds: [status] };
+}
+
+/**
+ * The chart itself — decision 0377. Org-wide, deliberately independent
+ * of the list's own search term: the operator's own words were "the
+ * chart should show Org wide values," a fixed overview a person can
+ * click into, not a count that shifts under them every time they type
+ * in the search box beside it. Still respects the chosen org and the
+ * real permission scope, both genuine visibility boundaries rather
+ * than a filter the person applied themselves.
+ */
+export async function handleGetPurchaseOrderStatusCounts(
+  db: D1Database,
+  currentOrg: string | null = null,
+  userId?: string
+): Promise<RouteResult> {
+  const visible = userId ? await unitsWherePermitted(db, userId, "AP.Validate") : null;
+  const scopedUnits = await scopedToChosenOrg(db, visible, currentOrg);
+  const orgClause = unitClause({ units: scopedUnits }, "po.org_unit_id");
+
+  const rows = await db
+    .prepare(
+      `SELECT (${EFFECTIVE_STATUS_CASE}) AS status, count(*) AS n
+       FROM purchase_orders po
+       ${INVOICED_AMOUNTS_JOIN}
+       WHERE 1 = 1 ${orgClause.sql}
+       GROUP BY (${EFFECTIVE_STATUS_CASE})`
+    )
+    .bind(...orgClause.binds)
+    .all<{ status: string; n: number }>();
+
+  const counts = Object.fromEntries(EFFECTIVE_STATUSES.map((s) => [s, 0]));
+  for (const row of rows.results) counts[row.status] = row.n;
+
+  return { status: 200, body: { counts } };
+}
+
+/**
+ * Hold, Release Hold, Close — decision 0377, mirroring Suppliers' own
+ * hold mechanism (decision 0230) on the operator's own request: "a
+ * Hold and Release Hold button on the pop-out, similar to viewing
+ * supplier records." `Admin.Configure`, the same permission that
+ * mechanism uses — "changing a record by hand."
+ *
+ * **Closed is terminal — through this route.** Once closed, no
+ * further call here may change it; the ERP re-upload path is the one
+ * exception, on the operator's own reasoning that the ERP is the
+ * system of truth and terminal is a rule for a person clicking a
+ * button, not a rule the source of record is bound by.
+ *
+ * **A hold needs a reason, the same requirement migration 0049
+ * already placed on a supplier's own hold** — mirrored, not
+ * reinvented. Release and Close carry no reason of their own; a
+ * reason explains why something is being held, not why it stopped
+ * being held or was closed out.
+ */
+export async function handleSetPurchaseOrderStatus(
+  db: D1Database,
+  orderNumber: string,
+  body: { status?: unknown; holdReason?: unknown }
+): Promise<RouteResult> {
+  const requested = typeof body.status === "string" ? body.status : "";
+  if (!["active", "on_hold", "closed"].includes(requested)) {
+    return { status: 400, body: { error: "status must be active, on_hold, or closed" } };
+  }
+  if (requested === "on_hold" && !(typeof body.holdReason === "string" && body.holdReason.trim() !== "")) {
+    return { status: 400, body: { error: "a reason is required to place an order on hold" } };
+  }
+
+  const existing = await db
+    .prepare("SELECT id, status FROM purchase_orders WHERE order_number = ?")
+    .bind(orderNumber)
+    .first<{ id: string; status: string }>();
+  if (!existing) {
+    return { status: 404, body: { error: `no purchase order ${orderNumber}` } };
+  }
+  if (existing.status === "closed") {
+    return { status: 422, body: { error: `${orderNumber} is closed, which is permanent — it cannot be changed by hand` } };
+  }
+
+  const holdReason = requested === "on_hold" ? (body.holdReason as string).trim() : null;
+  await db
+    .prepare("UPDATE purchase_orders SET status = ?, hold_reason = ? WHERE id = ?")
+    .bind(requested, holdReason, existing.id)
+    .run();
+
+  return { status: 200, body: { orderNumber, status: requested, holdReason } };
 }
 
 /**
@@ -622,36 +844,44 @@ export async function handleListPurchaseOrders(
   userId?: string,
   search: string | null = null,
   pageParam: string | null = null,
-  pageSizeParam: string | null = null
+  pageSizeParam: string | null = null,
+  statusParam: string | null = null
 ): Promise<RouteResult> {
   const visible = userId ? await unitsWherePermitted(db, userId, "AP.Validate") : null;
   const scopedUnits = await scopedToChosenOrg(db, visible, currentOrg);
   const orgClause = unitClause({ units: scopedUnits }, "po.org_unit_id");
   const search_ = searchClause(search);
+  const status_ = statusClause(statusParam);
   const page = normalizePage(pageParam);
   const pageSize = normalizePageSize(pageSizeParam);
   const offset = (page - 1) * pageSize;
 
   const totalRow = await db
-    .prepare(`SELECT count(*) AS n FROM purchase_orders po WHERE 1 = 1 ${orgClause.sql} ${search_.sql}`)
-    .bind(...orgClause.binds, ...search_.binds)
+    .prepare(
+      `SELECT count(*) AS n FROM purchase_orders po
+       ${INVOICED_AMOUNTS_JOIN}
+       WHERE 1 = 1 ${orgClause.sql} ${search_.sql} ${status_.sql}`
+    )
+    .bind(...orgClause.binds, ...search_.binds, ...status_.binds)
     .first<{ n: number }>();
 
   const rows = await db
     .prepare(
       `SELECT po.id, po.order_number, po.issue_date, po.currency, po.seller_party_id,
               po.buyer_party_id, po.payable_amount, po.created_at,
-              po.org_unit_id, u.name AS org_unit_name,
+              po.org_unit_id, u.name AS org_unit_name, po.status, po.hold_reason,
+              (${EFFECTIVE_STATUS_CASE}) AS effective_status,
               count(pol.id) AS line_count
        FROM purchase_orders po
        LEFT JOIN purchase_order_lines pol ON pol.purchase_order_id = po.id
        LEFT JOIN org_units u ON u.id = po.org_unit_id
-       WHERE 1 = 1 ${orgClause.sql} ${search_.sql}
+       ${INVOICED_AMOUNTS_JOIN}
+       WHERE 1 = 1 ${orgClause.sql} ${search_.sql} ${status_.sql}
        GROUP BY po.id
        ORDER BY po.created_at DESC, po.rowid DESC
        LIMIT ? OFFSET ?`
     )
-    .bind(...orgClause.binds, ...search_.binds, pageSize, offset)
+    .bind(...orgClause.binds, ...search_.binds, ...status_.binds, pageSize, offset)
     .all<Record<string, unknown>>();
 
   return {
@@ -685,9 +915,10 @@ export async function handleListPurchaseOrders(
 export async function handleGetPurchaseOrder(db: D1Database, orderNumber: string, userId?: string): Promise<RouteResult> {
   const order = await db
     .prepare(
-      `SELECT po.*, u.name AS org_unit_name
+      `SELECT po.*, u.name AS org_unit_name, (${EFFECTIVE_STATUS_CASE}) AS effective_status
        FROM purchase_orders po
        LEFT JOIN org_units u ON u.id = po.org_unit_id
+       ${INVOICED_AMOUNTS_JOIN}
        WHERE po.order_number = ?`
     )
     .bind(orderNumber)

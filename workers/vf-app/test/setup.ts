@@ -69,6 +69,7 @@ import supplierOrgUnitSql from "../../../migrations/0061_supplier_org_unit.sql?r
 import teamBelongsToOrgSql from "../../../migrations/0064_a_team_belongs_to_an_org.sql?raw";
 import userPropertiesSql from "../../../migrations/0065_user_properties.sql?raw";
 import purchaseOrderOrgSql from "../../../migrations/0068_purchase_order_org.sql?raw";
+import purchaseOrderStatusSql from "../../../migrations/0069_purchase_order_status.sql?raw";
 
 // Another known divergence from production, on top of the one below:
 // D1's exec() splits its input by newline and executes each non-empty
@@ -271,6 +272,7 @@ export async function applyTestSchema(): Promise<void> {
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(teamBelongsToOrgSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(userPropertiesSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(purchaseOrderOrgSql)));
+  await env.DB.exec(toOneStatementPerLine(stripSqlComments(purchaseOrderStatusSql)));
 }
 
 /**

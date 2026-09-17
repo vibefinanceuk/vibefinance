@@ -45,6 +45,23 @@ const STRINGS = {
     "purchaseorders.nextpage": "Next page",
     "purchaseorders.lastpage": "Last page",
     "purchaseorders.nomatches": "No purchase orders match your search.",
+    "purchaseorders.statusheading": "Status",
+    "purchaseorders.statuslabel": "Status",
+    "purchaseorders.status.active": "Active",
+    "purchaseorders.status.onhold": "On Hold",
+    "purchaseorders.status.closed": "Closed",
+    "purchaseorders.status.invoicedpart": "Invoiced (Part)",
+    "purchaseorders.status.invoicedfull": "Invoiced (Full)",
+    "purchaseorders.hold": "Hold",
+    "purchaseorders.holdreason": "Why is this order on hold?",
+    "purchaseorders.holdreasonhint": "Reason for the hold",
+    "purchaseorders.holdconfirm": "Confirm hold",
+    "purchaseorders.closeorder": "Close Order",
+    "purchaseorders.closeconfirm": "Close this order permanently? This cannot be undone.",
+    "purchaseorders.statuschangefailed": "Could not change the order's status.",
+    "purchaseorders.nostatusdata": "No status data to show yet.",
+    "action.hold": "Hold",
+    "action.releasehold": "Release hold",
     "purchaseorders.total": "Total",
     "purchaseorders.lines": "Lines",
     "purchaseorders.none": "No purchase orders have been loaded yet.",
@@ -130,6 +147,9 @@ const PO_500_DETAIL = {
     tax_inclusive_amount: 864,
     payable_amount: 864,
     originator_reference: "REQ-100",
+    status: "active",
+    hold_reason: null,
+    effective_status: "active",
   },
   lines: [
     {
@@ -837,5 +857,171 @@ describe("pagination controls — decision 0376", () => {
 
     expect(requestedUrl).toContain("page=2");
     expect(requestedUrl).toContain("search=widgets");
+  });
+});
+
+const STATUS_COUNTS = {
+  counts: { active: 3, on_hold: 1, closed: 1, invoiced_part: 2, invoiced_full: 1 },
+};
+
+describe("the status chart — decision 0377", () => {
+  it("shows a segment for every real, non-zero bucket", async () => {
+    stubFetch({
+      "/api/purchase-orders": { body: EMPTY_LIST },
+      "/api/purchase-orders/status-counts": { body: STATUS_COUNTS },
+    });
+    await openScreen();
+
+    expect(document.body.textContent).toContain("Active");
+    expect(document.body.textContent).toContain("On Hold");
+    expect(document.body.textContent).toContain("Closed");
+    expect(document.body.textContent).toContain("Invoiced (Part)");
+    expect(document.body.textContent).toContain("Invoiced (Full)");
+  });
+
+  it("shows a message rather than an empty ring when there is no status data yet", async () => {
+    stubFetch({ "/api/purchase-orders": { body: EMPTY_LIST } });
+    await openScreen();
+
+    expect(document.body.textContent).toContain("No status data to show yet.");
+  });
+
+  it("clicking a segment filters the paginated list by that status", async () => {
+    let requestedUrl = "";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url) => {
+        const path = String(url).split("?")[0];
+        if (path === "/api/ui-strings") return { ok: true, json: async () => STRINGS };
+        if (path === "/api/purchase-orders/status-counts") return { ok: true, json: async () => STATUS_COUNTS };
+        if (path === "/api/purchase-orders") {
+          requestedUrl = String(url);
+          return { ok: true, json: async () => EMPTY_LIST };
+        }
+        throw new Error(`no stub for ${path}`);
+      })
+    );
+    await openScreen();
+
+    const onHoldRow = [...document.querySelectorAll(".donutkey")].find((row) => row.textContent?.includes("On Hold"));
+    onHoldRow?.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(requestedUrl).toContain("status=on_hold");
+    expect(requestedUrl).toContain("page=1");
+  });
+});
+
+describe("Hold, Release Hold, Close on the detail pop-out — decision 0377", () => {
+  it("shows Hold and Close Order for an active order", async () => {
+    stubFetch({
+      "/api/purchase-orders": { body: ONE_ORDER },
+      "/api/purchase-orders/PO-500": { body: PO_500_DETAIL },
+    });
+    await openScreen();
+    document.querySelector("tbody tr")?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(document.body.textContent).toContain("Hold");
+    expect(document.body.textContent).toContain("Close Order");
+    expect(document.body.textContent).not.toContain("Release hold");
+  });
+
+  it("shows Release Hold, and the hold reason, for an order on hold", async () => {
+    const onHoldDetail = {
+      order: { ...PO_500_DETAIL.order, status: "on_hold", hold_reason: "supplier dispute", effective_status: "on_hold" },
+      lines: PO_500_DETAIL.lines,
+    };
+    stubFetch({
+      "/api/purchase-orders": { body: ONE_ORDER },
+      "/api/purchase-orders/PO-500": { body: onHoldDetail },
+    });
+    await openScreen();
+    document.querySelector("tbody tr")?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(document.body.textContent).toContain("Release hold");
+    expect(document.body.textContent).toContain("supplier dispute");
+    expect(document.body.textContent).not.toContain(">Hold<");
+  });
+
+  it("shows no lifecycle action at all for a closed order — terminal", async () => {
+    const closedDetail = {
+      order: { ...PO_500_DETAIL.order, status: "closed", effective_status: "closed" },
+      lines: PO_500_DETAIL.lines,
+    };
+    stubFetch({
+      "/api/purchase-orders": { body: ONE_ORDER },
+      "/api/purchase-orders/PO-500": { body: closedDetail },
+    });
+    await openScreen();
+    document.querySelector("tbody tr")?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(document.body.textContent).not.toContain("Release hold");
+    expect(document.body.textContent).not.toContain("Close Order");
+  });
+
+  it("placing a hold sends the real reason typed into the prompt", async () => {
+    let patchBody = null;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url, init) => {
+        const path = String(url).split("?")[0];
+        if (path === "/api/ui-strings") return { ok: true, json: async () => STRINGS };
+        if (path === "/api/purchase-orders/status-counts") return { ok: true, json: async () => STATUS_COUNTS };
+        if (path === "/api/purchase-orders/PO-500" && init?.method === "PATCH") {
+          patchBody = JSON.parse(init.body);
+          return { ok: true, json: async () => ({}) };
+        }
+        if (path === "/api/purchase-orders/PO-500") return { ok: true, json: async () => PO_500_DETAIL };
+        if (path === "/api/purchase-orders") return { ok: true, json: async () => ONE_ORDER };
+        throw new Error(`no stub for ${path}`);
+      })
+    );
+    await openScreen();
+    document.querySelector("tbody tr")?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await new Promise((r) => setTimeout(r, 0));
+
+    const holdButton = [...document.querySelectorAll("button")].find((b) => b.textContent === "Hold");
+    holdButton?.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    const reasonInput = document.querySelector('input[placeholder="Reason for the hold"]');
+    reasonInput.value = "supplier dispute";
+    const confirmButton = [...document.querySelectorAll("button")].find((b) => b.textContent === "Confirm hold");
+    confirmButton?.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(patchBody).toEqual({ status: "on_hold", holdReason: "supplier dispute" });
+  });
+
+  it("closing asks for confirmation before sending the request", async () => {
+    let patchSent = false;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url, init) => {
+        const path = String(url).split("?")[0];
+        if (path === "/api/ui-strings") return { ok: true, json: async () => STRINGS };
+        if (path === "/api/purchase-orders/status-counts") return { ok: true, json: async () => STATUS_COUNTS };
+        if (path === "/api/purchase-orders/PO-500" && init?.method === "PATCH") {
+          patchSent = true;
+          return { ok: true, json: async () => ({}) };
+        }
+        if (path === "/api/purchase-orders/PO-500") return { ok: true, json: async () => PO_500_DETAIL };
+        if (path === "/api/purchase-orders") return { ok: true, json: async () => ONE_ORDER };
+        throw new Error(`no stub for ${path}`);
+      })
+    );
+    vi.stubGlobal("confirm", vi.fn(() => false));
+    await openScreen();
+    document.querySelector("tbody tr")?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await new Promise((r) => setTimeout(r, 0));
+
+    const closeOrderButton = [...document.querySelectorAll("button")].find((b) => b.textContent === "Close Order");
+    closeOrderButton?.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(patchSent).toBe(false);
   });
 });

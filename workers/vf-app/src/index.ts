@@ -109,7 +109,15 @@ import {
   handleAssignLedger,
   handleUpdateCostCentre,
 } from "./ledger-route.js";
-import { handleIngestPurchaseOrder, handleGetPurchaseOrder, handleLoadPurchaseOrdersCsv, handleListPurchaseOrders, handleGetPurchaseOrderCsvFormat } from "./purchase-order-route.js";
+import {
+  handleIngestPurchaseOrder,
+  handleGetPurchaseOrder,
+  handleLoadPurchaseOrdersCsv,
+  handleListPurchaseOrders,
+  handleGetPurchaseOrderCsvFormat,
+  handleGetPurchaseOrderStatusCounts,
+  handleSetPurchaseOrderStatus,
+} from "./purchase-order-route.js";
 import { handleGetRetention, handleSetRetention, handleListBeyondRetention } from "./retention-route.js";
 import { handleCaptureFromSource } from "./source-capture-route.js";
 import { handleInboundEmail, handleListInboundEmail, type EmailMessage } from "./inbound-email.js";
@@ -2772,8 +2780,23 @@ export default {
         auth.user.id,
         url.searchParams.get("search"),
         url.searchParams.get("page"),
-        url.searchParams.get("pageSize")
+        url.searchParams.get("pageSize"),
+        url.searchParams.get("status")
       );
+      return json(result.body, result.status);
+    }
+
+    // The status chart — decision 0377. Registered before the
+    // single-order GET below, or a real request for the counts would
+    // 404 as a lookup for an order literally named "status-counts",
+    // the same reasoning the CSV format route already follows.
+    if (pathname === "/purchase-orders/status-counts" && request.method === "GET") {
+      const { db } = resolveTenant(request, env);
+      const auth = await requirePermission(db, request, "AP.Validate", sessionContext(env));
+      if (!auth.authorized) {
+        return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
+      }
+      const result = await handleGetPurchaseOrderStatusCounts(db, url.searchParams.get("org"), auth.user.id);
       return json(result.body, result.status);
     }
 
@@ -2802,6 +2825,20 @@ export default {
         return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
       }
       const result = await handleGetPurchaseOrder(db, decodeURIComponent(poMatch[1]), auth.user.id);
+      return json(result.body, result.status);
+    }
+
+    // Hold, Release Hold, Close — decision 0377. Admin.Configure, the
+    // same permission Suppliers' own hold mechanism uses (decision
+    // 0230) — "changing a record by hand."
+    if (poMatch && request.method === "PATCH") {
+      const { db } = resolveTenant(request, env);
+      const auth = await requirePermission(db, request, "Admin.Configure", sessionContext(env));
+      if (!auth.authorized) {
+        return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
+      }
+      const body = (await request.json()) as Record<string, unknown>;
+      const result = await handleSetPurchaseOrderStatus(db, decodeURIComponent(poMatch[1]), body);
       return json(result.body, result.status);
     }
 
