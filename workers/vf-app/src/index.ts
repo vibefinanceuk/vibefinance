@@ -2762,8 +2762,18 @@ export default {
       // decisions 0314, 0315, and 0317 already gave Tasks, Documents,
       // and Suppliers. auth.user.id — decision 0375 — is what turns
       // that into real, permission-based scoping rather than a
-      // convenience filter alone.
-      const result = await handleListPurchaseOrders(db, url.searchParams.get("org"), auth.user.id);
+      // convenience filter alone. search / page / pageSize — decision
+      // 0376 — push filtering and paging to the database itself,
+      // rather than loading everything and narrowing it in the
+      // browser, once a real customer's own count reaches thousands.
+      const result = await handleListPurchaseOrders(
+        db,
+        url.searchParams.get("org"),
+        auth.user.id,
+        url.searchParams.get("search"),
+        url.searchParams.get("page"),
+        url.searchParams.get("pageSize")
+      );
       return json(result.body, result.status);
     }
 

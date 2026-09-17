@@ -37,6 +37,39 @@ beforeEach(async () => {
   await env.DB.prepare("INSERT INTO org_units (id, name, kind, vat_id) VALUES ('acme-uk', 'Acme UK', 'legal_entity', 'GB907856452')").run();
 });
 
+/**
+ * Acme UK and Acme France both beneath a parent, Acme Group — the
+ * exact structure the operator's own live deployment showed. Module
+ * scope, not local to one describe block — decision 0376's own
+ * search and pagination tests need the same real hierarchy and
+ * role-scoped user decision 0375's tests already set up.
+ *
+ * Acme France created here, with its parent set from the start —
+ * acme-uk already exists (this file's own shared beforeEach), but
+ * acme-fr does not yet, and an UPDATE naming a row that does not
+ * exist yet is a silent no-op, not an error, so this was found by
+ * checking the actual result rather than assuming the SQL ran.
+ */
+async function seedGroupHierarchy() {
+  await env.DB.prepare("INSERT INTO org_units (id, name, kind) VALUES ('acme-group', 'Acme Group', 'legal_entity')").run();
+  await env.DB.prepare(
+    "INSERT INTO org_units (id, name, kind, vat_id, parent_unit_id) VALUES ('acme-fr', 'Acme France', 'legal_entity', 'FR12345678901', 'acme-group') ON CONFLICT(id) DO UPDATE SET parent_unit_id = 'acme-group'"
+  ).run();
+  await env.DB.prepare("UPDATE org_units SET parent_unit_id = 'acme-group' WHERE id = 'acme-uk'").run();
+  await env.DB.prepare(
+    `INSERT INTO org_roles (id, name, permissions_json) VALUES ('validator', 'AP Validator', '["AP.Validate"]')`
+  ).run();
+}
+
+async function scopeAliceTo(unitId: string | null) {
+  // org_user_roles.user_id is a real foreign key — a role means
+  // nothing assigned to a person who does not exist.
+  await env.DB.prepare("INSERT INTO org_users (id, email, name) VALUES ('alice', 'alice@acme.com', 'Alice')").run();
+  await env.DB.prepare("INSERT INTO org_user_roles (user_id, role_id, unit_id) VALUES ('alice', 'validator', ?)")
+    .bind(unitId)
+    .run();
+}
+
 describe("ingesting a purchase order", () => {
   it("stores the order and its lines", async () => {
     const result = await handleIngestPurchaseOrder(env.DB, ORDER());
@@ -194,7 +227,7 @@ describe("listing loaded purchase orders — decision 0372", () => {
   it("returns an empty list before anything is loaded", async () => {
     const result = await handleListPurchaseOrders(env.DB);
     expect(result.status).toBe(200);
-    expect(result.body).toEqual({ purchaseOrders: [] });
+    expect(result.body).toEqual({ purchaseOrders: [], total: 0, page: 1, pageSize: 50 });
   });
 
   it("summarises every loaded order, with a real line count", async () => {
@@ -465,33 +498,6 @@ describe("the org's own name reaches the detail view — decision 0374", () => {
 });
 
 describe("real access control, not just a browsing convenience — decision 0375", () => {
-  async function seedGroupHierarchy() {
-    // Acme UK and Acme France both beneath a parent, Acme Group — the
-    // exact structure the operator's own live deployment showed.
-    // Acme France created here, with its parent set from the start —
-    // acme-uk already exists (this file's own shared beforeEach), but
-    // acme-fr does not yet, and an UPDATE naming a row that does not
-    // exist yet is a silent no-op, not an error, so this was found by
-    // checking the actual result rather than assuming the SQL ran.
-    await env.DB.prepare("INSERT INTO org_units (id, name, kind) VALUES ('acme-group', 'Acme Group', 'legal_entity')").run();
-    await env.DB.prepare(
-      "INSERT INTO org_units (id, name, kind, vat_id, parent_unit_id) VALUES ('acme-fr', 'Acme France', 'legal_entity', 'FR12345678901', 'acme-group') ON CONFLICT(id) DO UPDATE SET parent_unit_id = 'acme-group'"
-    ).run();
-    await env.DB.prepare("UPDATE org_units SET parent_unit_id = 'acme-group' WHERE id = 'acme-uk'").run();
-    await env.DB.prepare(
-      `INSERT INTO org_roles (id, name, permissions_json) VALUES ('validator', 'AP Validator', '["AP.Validate"]')`
-    ).run();
-  }
-
-  async function scopeAliceTo(unitId: string | null) {
-    // org_user_roles.user_id is a real foreign key — a role means
-    // nothing assigned to a person who does not exist.
-    await env.DB.prepare("INSERT INTO org_users (id, email, name) VALUES ('alice', 'alice@acme.com', 'Alice')").run();
-    await env.DB.prepare("INSERT INTO org_user_roles (user_id, role_id, unit_id) VALUES ('alice', 'validator', ?)")
-      .bind(unitId)
-      .run();
-  }
-
   it("narrows to only the units a role permits, regardless of what is chosen in the switcher", async () => {
     await seedGroupHierarchy();
     await scopeAliceTo("acme-uk");
@@ -565,5 +571,179 @@ describe("real access control, not just a browsing convenience — decision 0375
     expect(listBody.purchaseOrders.map((p) => p.order_number).sort()).toEqual(["PO-FR", "PO-UK"]);
 
     expect((await handleGetPurchaseOrder(env.DB, "PO-FR", "alice")).status).toBe(200);
+  });
+});
+
+describe("searching the list — decision 0376", () => {
+  it("matches on order number", async () => {
+    await handleLoadPurchaseOrdersCsv(
+      env.DB,
+      "order_number,line number,item,buyer vat id\nPO-ALPHA,1,Widgets,GB907856452\nPO-BETA,1,Widgets,GB907856452"
+    );
+    const result = await handleListPurchaseOrders(env.DB, null, undefined, "ALPHA");
+    const body = result.body as { purchaseOrders: Record<string, unknown>[] };
+    expect(body.purchaseOrders.map((p) => p.order_number)).toEqual(["PO-ALPHA"]);
+  });
+
+  it("matches on the seller's own VAT id, a header field", async () => {
+    await handleLoadPurchaseOrdersCsv(
+      env.DB,
+      "order_number,line number,item,seller vat id,buyer vat id\nPO-1,1,Widgets,GB223344556,GB907856452\nPO-2,1,Widgets,GB998877665,GB907856452"
+    );
+    const result = await handleListPurchaseOrders(env.DB, null, undefined, "GB223344556");
+    const body = result.body as { purchaseOrders: Record<string, unknown>[] };
+    expect(body.purchaseOrders.map((p) => p.order_number)).toEqual(["PO-1"]);
+  });
+
+  it("matches on a line's own item name", async () => {
+    await handleLoadPurchaseOrdersCsv(
+      env.DB,
+      "order_number,line number,item,buyer vat id\nPO-1,1,Ergonomic office chairs,GB907856452\nPO-2,1,Pallet handling,GB907856452"
+    );
+    const result = await handleListPurchaseOrders(env.DB, null, undefined, "chairs");
+    const body = result.body as { purchaseOrders: Record<string, unknown>[] };
+    expect(body.purchaseOrders.map((p) => p.order_number)).toEqual(["PO-1"]);
+  });
+
+  it("matches on a line's own item description, independent of its name", async () => {
+    const csv = `order_number,line number,item,description,buyer vat id\nPO-1,1,Widgets,a genuinely long free-text description,GB907856452`;
+    await handleLoadPurchaseOrdersCsv(env.DB, csv);
+    const result = await handleListPurchaseOrders(env.DB, null, undefined, "free-text");
+    const body = result.body as { purchaseOrders: Record<string, unknown>[] };
+    expect(body.purchaseOrders.map((p) => p.order_number)).toEqual(["PO-1"]);
+  });
+
+  it("is case-insensitive", async () => {
+    await handleLoadPurchaseOrdersCsv(env.DB, "order_number,line number,item,buyer vat id\nPO-1,1,Widgets,GB907856452");
+    const result = await handleListPurchaseOrders(env.DB, null, undefined, "widgets");
+    const body = result.body as { purchaseOrders: Record<string, unknown>[] };
+    expect(body.purchaseOrders.map((p) => p.order_number)).toEqual(["PO-1"]);
+  });
+
+  it("never returns the same order twice when more than one of its own lines match, and its line count stays honest", async () => {
+    const csv = `order_number,line number,item,buyer vat id
+PO-1,1,Widget A,GB907856452
+PO-1,2,Widget B,GB907856452
+PO-1,3,Gadget,GB907856452`;
+    await handleLoadPurchaseOrdersCsv(env.DB, csv);
+    const result = await handleListPurchaseOrders(env.DB, null, undefined, "Widget");
+    const body = result.body as { purchaseOrders: Record<string, unknown>[] };
+    expect(body.purchaseOrders).toHaveLength(1);
+    // Every line of the matched order, not just the ones the search
+    // itself matched — the EXISTS subquery only decides whether the
+    // header appears at all.
+    expect(body.purchaseOrders[0].line_count).toBe(3);
+  });
+
+  it("treats a literal percent or underscore in the term as itself, not a SQL wildcard", async () => {
+    await handleLoadPurchaseOrdersCsv(env.DB, "order_number,line number,item,buyer vat id\nPO_1,1,50% off widgets,GB907856452");
+    await handleLoadPurchaseOrdersCsv(env.DB, "order_number,line number,item,buyer vat id\nPOX1,1,Something else,GB907856452");
+
+    const percentResult = await handleListPurchaseOrders(env.DB, null, undefined, "50%");
+    expect((percentResult.body as { purchaseOrders: unknown[] }).purchaseOrders).toHaveLength(1);
+
+    // "PO_1" must not match "POX1" — a literal underscore, not "any
+    // single character."
+    const underscoreResult = await handleListPurchaseOrders(env.DB, null, undefined, "PO_1");
+    const body = underscoreResult.body as { purchaseOrders: Record<string, unknown>[] };
+    expect(body.purchaseOrders.map((p) => p.order_number)).toEqual(["PO_1"]);
+  });
+
+  it("returns everything, unfiltered, when no search term is given", async () => {
+    await handleLoadPurchaseOrdersCsv(env.DB, "order_number,line number,item,buyer vat id\nPO-1,1,Widgets,GB907856452");
+    const result = await handleListPurchaseOrders(env.DB, null, undefined, "");
+    expect((result.body as { purchaseOrders: unknown[] }).purchaseOrders).toHaveLength(1);
+  });
+
+  it("returns an empty list, not an error, when nothing matches", async () => {
+    await handleLoadPurchaseOrdersCsv(env.DB, "order_number,line number,item,buyer vat id\nPO-1,1,Widgets,GB907856452");
+    const result = await handleListPurchaseOrders(env.DB, null, undefined, "no such thing anywhere");
+    const body = result.body as { purchaseOrders: unknown[]; total: number };
+    expect(body.purchaseOrders).toEqual([]);
+    expect(body.total).toBe(0);
+  });
+
+  it("combines with the real permission scope — a match outside the caller's own scope never appears", async () => {
+    await seedGroupHierarchy();
+    await scopeAliceTo("acme-uk");
+    await handleLoadPurchaseOrdersCsv(env.DB, "order_number,line number,item,buyer vat id\nPO-FR,1,Widgets,FR12345678901");
+
+    const result = await handleListPurchaseOrders(env.DB, null, "alice", "Widgets");
+    expect((result.body as { purchaseOrders: unknown[] }).purchaseOrders).toEqual([]);
+  });
+});
+
+describe("real, server-side pagination — decision 0376", () => {
+  async function seedManyOrders(count: number) {
+    const rows = Array.from({ length: count }, (_, i) => `PO-${1000 + i},1,Widgets,GB907856452`);
+    const csv = ["order_number,line number,item,buyer vat id", ...rows].join("\n");
+    await handleLoadPurchaseOrdersCsv(env.DB, csv);
+  }
+
+  it("returns only pageSize rows, defaulting to 50", async () => {
+    await seedManyOrders(120);
+    const result = await handleListPurchaseOrders(env.DB);
+    const body = result.body as { purchaseOrders: unknown[]; total: number; page: number; pageSize: number };
+    expect(body.purchaseOrders).toHaveLength(50);
+    expect(body.total).toBe(120);
+    expect(body.page).toBe(1);
+    expect(body.pageSize).toBe(50);
+  });
+
+  it("returns the next slice on page 2, with no overlap and no gap", async () => {
+    await seedManyOrders(120);
+    const page1 = await handleListPurchaseOrders(env.DB, null, undefined, null, "1", "50");
+    const page2 = await handleListPurchaseOrders(env.DB, null, undefined, null, "2", "50");
+    const ids1 = (page1.body as { purchaseOrders: { order_number: string }[] }).purchaseOrders.map((p) => p.order_number);
+    const ids2 = (page2.body as { purchaseOrders: { order_number: string }[] }).purchaseOrders.map((p) => p.order_number);
+    expect(ids1).toHaveLength(50);
+    expect(ids2).toHaveLength(50);
+    expect(new Set([...ids1, ...ids2]).size).toBe(100);
+  });
+
+  it("returns a real, partial last page rather than padding or erroring", async () => {
+    await seedManyOrders(120);
+    const result = await handleListPurchaseOrders(env.DB, null, undefined, null, "3", "50");
+    expect((result.body as { purchaseOrders: unknown[] }).purchaseOrders).toHaveLength(20);
+  });
+
+  it("falls back to page 1 for anything not a real positive integer", async () => {
+    await seedManyOrders(5);
+    for (const bad of ["0", "-1", "abc", null]) {
+      const result = await handleListPurchaseOrders(env.DB, null, undefined, null, bad);
+      expect((result.body as { page: number }).page).toBe(1);
+    }
+  });
+
+  it("falls back to the default page size for anything outside the allowed set", async () => {
+    await seedManyOrders(5);
+    for (const bad of ["10", "9999", "abc", null]) {
+      const result = await handleListPurchaseOrders(env.DB, null, undefined, null, null, bad);
+      expect((result.body as { pageSize: number }).pageSize).toBe(50);
+    }
+  });
+
+  it("accepts every page size actually offered in the UI", async () => {
+    await seedManyOrders(5);
+    for (const allowed of ["25", "50", "100", "200"]) {
+      const result = await handleListPurchaseOrders(env.DB, null, undefined, null, null, allowed);
+      expect((result.body as { pageSize: number }).pageSize).toBe(Number(allowed));
+    }
+  });
+
+  it("total reflects every matching row, not just the page returned", async () => {
+    await seedManyOrders(120);
+    const result = await handleListPurchaseOrders(env.DB, null, undefined, null, "1", "25");
+    const body = result.body as { purchaseOrders: unknown[]; total: number };
+    expect(body.purchaseOrders).toHaveLength(25);
+    expect(body.total).toBe(120);
+  });
+
+  it("total narrows with search, not just the page's own row count", async () => {
+    await seedManyOrders(120);
+    await handleLoadPurchaseOrdersCsv(env.DB, "order_number,line number,item,buyer vat id\nPO-SPECIAL,1,A rare item,GB907856452");
+    const result = await handleListPurchaseOrders(env.DB, null, undefined, "rare");
+    const body = result.body as { purchaseOrders: unknown[]; total: number };
+    expect(body.total).toBe(1);
   });
 });

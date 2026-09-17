@@ -224,6 +224,12 @@ export const ICONS = {
   // preparing a file downloads a template before they ever load one,
   // so the same visual language applies in reverse.
   download: '<path d="M12 3v12m-5-5 5 5 5-5M5 19h14"/>',
+  // Pagination — decision 0376. Single and double chevrons, the
+  // standard shape for "one step" versus "all the way."
+  chevronleft: '<path d="M15 6 9 12l6 6"/>',
+  chevronright: '<path d="M9 6l6 6-6 6"/>',
+  chevronsleft: '<path d="M18 6l-6 6 6 6M12 6l-6 6 6 6"/>',
+  chevronsright: '<path d="M6 6l6 6-6 6M12 6l6 6-6 6"/>',
   releasehold: '<path d="M8 6.5 18 12 8 17.5z"/>',
 
   /**

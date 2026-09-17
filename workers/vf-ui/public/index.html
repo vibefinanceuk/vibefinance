@@ -2145,6 +2145,29 @@
 
   .actionlink:disabled { opacity: 0.4; }
 
+  /**
+   * A small, inline icon-only button — decision 0376's own pagination
+   * arrows. `.actionlink`'s own icon-above-text stack is built for a
+   * cardhead action and is far wider than four arrows sitting in one
+   * row alongside a search box need to be.
+   */
+  .iconbutton {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    min-height: 0;
+    min-width: 0;
+    border-color: transparent;
+    background: transparent;
+    color: var(--text-secondary);
+  }
+  .iconbutton svg { width: 16px; height: 16px; }
+  .iconbutton:hover:not(:disabled) { background: var(--surface-2); color: var(--text-primary); }
+  .iconbutton:disabled { opacity: 0.4; }
+
   /* One action per line, in one place — decision 0108. */
   .actions button { display: block; }
   button.wide { width: 100%; margin: 0 0 8px; min-height: 32px; }

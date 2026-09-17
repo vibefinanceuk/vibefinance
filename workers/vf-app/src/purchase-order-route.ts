@@ -551,6 +551,53 @@ export async function handleLoadPurchaseOrdersCsv(db: D1Database, csv: string): 
  * carries SQLite's own implicit, strictly-increasing `rowid` — a
  * reliable tiebreaker `created_at`'s own precision can't provide.
  */
+/** Page sizes offered in the UI dropdown — anything else is rejected back to the default. */
+const ALLOWED_PAGE_SIZES = [25, 50, 100, 200] as const;
+const DEFAULT_PAGE_SIZE = 50;
+
+function normalizePageSize(requested: string | null): number {
+  const n = requested ? Number(requested) : NaN;
+  return (ALLOWED_PAGE_SIZES as readonly number[]).includes(n) ? n : DEFAULT_PAGE_SIZE;
+}
+
+function normalizePage(requested: string | null): number {
+  const n = requested ? Number(requested) : NaN;
+  return Number.isInteger(n) && n >= 1 ? n : 1;
+}
+
+/**
+ * The search clause — decision 0376. Order number and seller VAT are
+ * header fields; item name and description are line fields, so a
+ * plain `WHERE` on them would need the header/line join `line_count`
+ * already depends on, and would double-count a header whose several
+ * lines all matched. An `EXISTS` subquery instead: "does at least one
+ * line match," entirely independent of the header join and its own
+ * `GROUP BY`.
+ *
+ * **`%`, `_`, and `\` in the term itself are escaped**, not treated as
+ * SQL wildcards — a search for an order number containing a real
+ * underscore should match that underscore literally, not "any single
+ * character."
+ */
+function searchClause(search: string | null): { sql: string; binds: unknown[] } {
+  const term = search?.trim();
+  if (!term) return { sql: "", binds: [] };
+
+  const pattern = `%${term.replace(/[\\%_]/g, "\\$&")}%`;
+  return {
+    sql: ` AND (
+      po.order_number LIKE ? ESCAPE '\\'
+      OR po.seller_party_id LIKE ? ESCAPE '\\'
+      OR EXISTS (
+        SELECT 1 FROM purchase_order_lines l
+        WHERE l.purchase_order_id = po.id
+          AND (l.item_name LIKE ? ESCAPE '\\' OR l.item_description LIKE ? ESCAPE '\\')
+      )
+    )`,
+    binds: [pattern, pattern, pattern, pattern],
+  };
+}
+
 /**
  * The chosen org narrows the list — decisions 0374 and 0375. `userId`
  * now computes a real, permission-based scope from `AP.Validate` —
@@ -561,15 +608,34 @@ export async function handleLoadPurchaseOrdersCsv(db: D1Database, csv: string): 
  * guarantee. `userId` stays optional, defaulting to unrestricted, so
  * a caller with no real person behind it (a scheduled job, a script)
  * is unaffected, the same as every other screen that gained this.
+ *
+ * **Search and real pagination — decision 0376.** Loading everything
+ * and filtering or paging client-side was never viable once a real
+ * customer's own count reaches the thousands the operator described —
+ * both are pushed to the database itself. `total` is a second, real
+ * count query rather than derived from the page returned, since a
+ * page of 50 rows says nothing about how many exist in total.
  */
 export async function handleListPurchaseOrders(
   db: D1Database,
   currentOrg: string | null = null,
-  userId?: string
+  userId?: string,
+  search: string | null = null,
+  pageParam: string | null = null,
+  pageSizeParam: string | null = null
 ): Promise<RouteResult> {
   const visible = userId ? await unitsWherePermitted(db, userId, "AP.Validate") : null;
   const scopedUnits = await scopedToChosenOrg(db, visible, currentOrg);
-  const clause = unitClause({ units: scopedUnits }, "po.org_unit_id");
+  const orgClause = unitClause({ units: scopedUnits }, "po.org_unit_id");
+  const search_ = searchClause(search);
+  const page = normalizePage(pageParam);
+  const pageSize = normalizePageSize(pageSizeParam);
+  const offset = (page - 1) * pageSize;
+
+  const totalRow = await db
+    .prepare(`SELECT count(*) AS n FROM purchase_orders po WHERE 1 = 1 ${orgClause.sql} ${search_.sql}`)
+    .bind(...orgClause.binds, ...search_.binds)
+    .first<{ n: number }>();
 
   const rows = await db
     .prepare(
@@ -580,14 +646,18 @@ export async function handleListPurchaseOrders(
        FROM purchase_orders po
        LEFT JOIN purchase_order_lines pol ON pol.purchase_order_id = po.id
        LEFT JOIN org_units u ON u.id = po.org_unit_id
-       WHERE 1 = 1 ${clause.sql}
+       WHERE 1 = 1 ${orgClause.sql} ${search_.sql}
        GROUP BY po.id
-       ORDER BY po.created_at DESC, po.rowid DESC`
+       ORDER BY po.created_at DESC, po.rowid DESC
+       LIMIT ? OFFSET ?`
     )
-    .bind(...clause.binds)
+    .bind(...orgClause.binds, ...search_.binds, pageSize, offset)
     .all<Record<string, unknown>>();
 
-  return { status: 200, body: { purchaseOrders: rows.results } };
+  return {
+    status: 200,
+    body: { purchaseOrders: rows.results, total: totalRow?.n ?? 0, page, pageSize },
+  };
 }
 
 /**

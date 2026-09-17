@@ -37,6 +37,14 @@ const STRINGS = {
     "purchaseorders.seller": "Seller",
     "purchaseorders.buyer": "Buyer",
     "purchaseorders.org": "Org",
+    "purchaseorders.searchplaceholder": "Search order number, seller, item...",
+    "purchaseorders.rows": "Rows",
+    "purchaseorders.rangeof": "{start}–{end} of {total}",
+    "purchaseorders.firstpage": "First page",
+    "purchaseorders.previouspage": "Previous page",
+    "purchaseorders.nextpage": "Next page",
+    "purchaseorders.lastpage": "Last page",
+    "purchaseorders.nomatches": "No purchase orders match your search.",
     "purchaseorders.total": "Total",
     "purchaseorders.lines": "Lines",
     "purchaseorders.none": "No purchase orders have been loaded yet.",
@@ -73,7 +81,7 @@ const STRINGS = {
   },
 };
 
-const EMPTY_LIST = { purchaseOrders: [] };
+const EMPTY_LIST = { purchaseOrders: [], total: 0, page: 1, pageSize: 50 };
 
 const ONE_ORDER = {
   purchaseOrders: [
@@ -90,6 +98,9 @@ const ONE_ORDER = {
       line_count: 2,
     },
   ],
+  total: 1,
+  page: 1,
+  pageSize: 50,
 };
 
 const SAMPLE_FORMAT = {
@@ -296,7 +307,7 @@ describe("the chosen org narrows the list — decision 0374", () => {
     );
     await openScreen();
 
-    expect(requestedUrl).toBe("/api/purchase-orders?org=acme-uk");
+    expect(requestedUrl).toBe("/api/purchase-orders?org=acme-uk&page=1&pageSize=50");
   });
 
   it("asks for every org's own orders when none is chosen", async () => {
@@ -315,7 +326,7 @@ describe("the chosen org narrows the list — decision 0374", () => {
     );
     await openScreen();
 
-    expect(requestedUrl).toBe("/api/purchase-orders");
+    expect(requestedUrl).toBe("/api/purchase-orders?page=1&pageSize=50");
   });
 });
 
@@ -653,5 +664,178 @@ describe("downloading a template — decision 0373", () => {
 
     const downloadButton = [...document.querySelectorAll("button")].find((b) => b.textContent === "CSV Template");
     expect(downloadButton?.disabled).toBe(false);
+  });
+});
+
+/** A page of `count` orders out of `total`, for pagination-display tests — decision 0376. */
+function pageOf(count, total, page, pageSize) {
+  return {
+    purchaseOrders: Array.from({ length: count }, (_, i) => ({
+      id: `po-${i}`,
+      order_number: `PO-${i}`,
+      line_count: 1,
+    })),
+    total,
+    page,
+    pageSize,
+  };
+}
+
+describe("searching the list — decision 0376", () => {
+  it("shows the search box with its own placeholder", async () => {
+    stubFetch({ "/api/purchase-orders": { body: EMPTY_LIST } });
+    await openScreen();
+
+    const search = document.getElementById("posearch");
+    expect(search?.getAttribute("placeholder")).toBe("Search order number, seller, item...");
+  });
+
+  it("re-fetches with the search term once typing is done, and resets to page 1", async () => {
+    let requestedUrl = "";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url) => {
+        const path = String(url).split("?")[0];
+        if (path === "/api/ui-strings") return { ok: true, json: async () => STRINGS };
+        if (path === "/api/purchase-orders") {
+          requestedUrl = String(url);
+          return { ok: true, json: async () => pageOf(1, 1, 1, 50) };
+        }
+        throw new Error(`no stub for ${path}`);
+      })
+    );
+    await openScreen();
+
+    const search = document.getElementById("posearch");
+    search.value = "widgets";
+    search.dispatchEvent(new Event("change"));
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(requestedUrl).toContain("search=widgets");
+    expect(requestedUrl).toContain("page=1");
+  });
+
+  it("keeps focus on the search box after a search reloads the screen", async () => {
+    stubFetch({ "/api/purchase-orders": { body: EMPTY_LIST } });
+    await openScreen();
+
+    const search = document.getElementById("posearch");
+    search.value = "widgets";
+    search.dispatchEvent(new Event("change"));
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(document.activeElement?.id).toBe("posearch");
+  });
+
+  it("shows a message distinct from 'nothing loaded yet' when a search matches nothing", async () => {
+    stubFetch({ "/api/purchase-orders": { body: { purchaseOrders: [], total: 0, page: 1, pageSize: 50 } } });
+    await openScreen();
+
+    const search = document.getElementById("posearch");
+    search.value = "no such thing";
+    search.dispatchEvent(new Event("change"));
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(document.body.textContent).toContain("No purchase orders match your search.");
+    expect(document.body.textContent).not.toContain("No purchase orders have been loaded yet");
+  });
+});
+
+describe("pagination controls — decision 0376", () => {
+  it("shows every page size actually offered", async () => {
+    stubFetch({ "/api/purchase-orders": { body: EMPTY_LIST } });
+    await openScreen();
+
+    const options = [...document.querySelectorAll("#porowsize option")].map((o) => o.value);
+    expect(options).toEqual(["25", "50", "100", "200"]);
+  });
+
+  it("changing the page size re-fetches with the new size and resets to page 1", async () => {
+    let requestedUrl = "";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url) => {
+        const path = String(url).split("?")[0];
+        if (path === "/api/ui-strings") return { ok: true, json: async () => STRINGS };
+        if (path === "/api/purchase-orders") {
+          requestedUrl = String(url);
+          return { ok: true, json: async () => pageOf(25, 120, 1, 25) };
+        }
+        throw new Error(`no stub for ${path}`);
+      })
+    );
+    await openScreen();
+
+    const sizePicker = document.getElementById("porowsize");
+    sizePicker.value = "25";
+    sizePicker.dispatchEvent(new Event("change"));
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(requestedUrl).toContain("pageSize=25");
+    expect(requestedUrl).toContain("page=1");
+  });
+
+  it("disables first and previous on the first page", async () => {
+    stubFetch({ "/api/purchase-orders": { body: pageOf(50, 120, 1, 50) } });
+    await openScreen();
+
+    expect(document.querySelector('[aria-label="First page"]')?.disabled).toBe(true);
+    expect(document.querySelector('[aria-label="Previous page"]')?.disabled).toBe(true);
+    expect(document.querySelector('[aria-label="Next page"]')?.disabled).toBe(false);
+    expect(document.querySelector('[aria-label="Last page"]')?.disabled).toBe(false);
+  });
+
+  it("disables next and last on the last page", async () => {
+    stubFetch({ "/api/purchase-orders": { body: pageOf(20, 120, 3, 50) } });
+    await openScreen();
+
+    expect(document.querySelector('[aria-label="Next page"]')?.disabled).toBe(true);
+    expect(document.querySelector('[aria-label="Last page"]')?.disabled).toBe(true);
+    expect(document.querySelector('[aria-label="First page"]')?.disabled).toBe(false);
+    expect(document.querySelector('[aria-label="Previous page"]')?.disabled).toBe(false);
+  });
+
+  it("enables every button in the middle of a multi-page result", async () => {
+    stubFetch({ "/api/purchase-orders": { body: pageOf(50, 120, 2, 50) } });
+    await openScreen();
+
+    for (const label of ["First page", "Previous page", "Next page", "Last page"]) {
+      expect(document.querySelector(`[aria-label="${label}"]`)?.disabled).toBe(false);
+    }
+  });
+
+  it("shows the range as text", async () => {
+    stubFetch({ "/api/purchase-orders": { body: pageOf(50, 120, 2, 50) } });
+    await openScreen();
+
+    expect(document.body.textContent).toContain("51–100 of 120");
+  });
+
+  it("clicking next advances the page while keeping the same search term", async () => {
+    let requestedUrl = "";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url) => {
+        const path = String(url).split("?")[0];
+        if (path === "/api/ui-strings") return { ok: true, json: async () => STRINGS };
+        if (path === "/api/purchase-orders") {
+          requestedUrl = String(url);
+          return { ok: true, json: async () => pageOf(50, 120, 1, 50) };
+        }
+        throw new Error(`no stub for ${path}`);
+      })
+    );
+    await openScreen();
+
+    const search = document.getElementById("posearch");
+    search.value = "widgets";
+    search.dispatchEvent(new Event("change"));
+    await new Promise((r) => setTimeout(r, 0));
+
+    document.querySelector('[aria-label="Next page"]')?.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(requestedUrl).toContain("page=2");
+    expect(requestedUrl).toContain("search=widgets");
   });
 });

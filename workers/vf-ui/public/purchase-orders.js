@@ -1,6 +1,7 @@
 import { t } from "/strings.js";
 import { el, frame, topbar, setCurrentScreen } from "/tasks.js";
 import { actionLink } from "/viewer.js";
+import { icon } from "/icons.js";
 import { currentOrgId } from "/orgs.js";
 
 /**
@@ -20,6 +21,20 @@ import { currentOrgId } from "/orgs.js";
 let purchaseOrders = [];
 let csvFormat = null;
 
+/**
+ * Search and pagination state — decision 0376. Module-level, reset to
+ * defaults every time the screen opens (`open()` below) rather than
+ * carried across navigations — a fresh view each time, the same
+ * choice this screen already made for its own results before search
+ * or pagination existed at all.
+ */
+let searchTerm = "";
+let page = 1;
+let pageSize = 50;
+let total = 0;
+
+const PAGE_SIZES = [25, 50, 100, 200];
+
 async function load() {
   try {
     // The chosen org — decision 0374, the same treatment Suppliers'
@@ -28,11 +43,22 @@ async function load() {
     // switching orgs re-dispatches to whatever screen is current
     // (tasks.js's own go(current)), which calls this open() again.
     const org = currentOrgId();
-    const query = org ? `?org=${encodeURIComponent(org)}` : "";
-    const response = await fetch(`/api/purchase-orders${query}`);
+    const params = new URLSearchParams();
+    if (org) params.set("org", org);
+    if (searchTerm) params.set("search", searchTerm);
+    params.set("page", String(page));
+    params.set("pageSize", String(pageSize));
+    const response = await fetch(`/api/purchase-orders?${params}`);
     if (!response.ok) return false;
     const body = await response.json();
     purchaseOrders = body.purchaseOrders ?? [];
+    // Read back from the response, not assumed from what was sent —
+    // the route itself clamps an out-of-range page or an unlisted
+    // page size to a real default, and the controls must reflect
+    // what the server actually used, not what was merely requested.
+    total = body.total ?? 0;
+    page = body.page ?? page;
+    pageSize = body.pageSize ?? pageSize;
     return true;
   } catch {
     return false;
@@ -219,6 +245,9 @@ function loader() {
       // reload-then-redraw suppliers.js already does after its own
       // load — otherwise a person watches the outcome say "8 loaded"
       // above a table that still shows what it showed a moment ago.
+      // Back to page 1 — decision 0376 — since a newly-loaded order
+      // sorts to the top and a person left on page 3 would not see it.
+      page = 1;
       await load();
       render();
       const panel = document.getElementById("purchaseorders-note");
@@ -339,9 +368,106 @@ async function openPurchaseOrder(summary) {
   );
 }
 
+/**
+ * Reload after any control changes state, then redraw the whole
+ * screen — the same "full render, then restore focus" shape
+ * documents.js's own search box already established, rather than a
+ * partial DOM patch. `focusId`, when given, is re-focused afterward,
+ * since `render()` rebuilds the whole screen and would otherwise drop
+ * focus out of whatever control the person was just using.
+ */
+async function reload(focusId) {
+  await load();
+  render();
+  if (focusId) document.getElementById(focusId)?.focus();
+}
+
+/**
+ * The search box and pagination controls, in one row above the list —
+ * decision 0376, the operator's own layout: "in the same row as the
+ * search I wondered if we could paginate the results." Both push to
+ * the database rather than filtering or paging a fully-loaded list in
+ * the browser, since the request that shaped this was a customer with
+ * thousands of orders on file.
+ */
+function searchAndPaginationRow() {
+  const search = el("input", {
+    type: "search",
+    id: "posearch",
+    placeholder: t("purchaseorders.searchplaceholder"),
+  });
+  search.value = searchTerm;
+  // onchange, not oninput — fires once the person is done typing
+  // (blur or Enter), not on every keystroke, the same choice
+  // documents.js's own search box already made.
+  search.onchange = async () => {
+    searchTerm = search.value;
+    page = 1;
+    await reload("posearch");
+  };
+
+  const sizePicker = el(
+    "select",
+    { id: "porowsize" },
+    PAGE_SIZES.map((size) => el("option", { value: String(size), text: String(size) }))
+  );
+  sizePicker.value = String(pageSize);
+  sizePicker.onchange = async () => {
+    pageSize = Number(sizePicker.value);
+    page = 1;
+    await reload("porowsize");
+  };
+
+  const totalPages = total === 0 ? 0 : Math.ceil(total / pageSize);
+  const atFirst = page <= 1;
+  const atLast = total === 0 || page >= totalPages;
+
+  function navButton(name, label, disabled, onclick) {
+    const button = el("button", { class: "iconbutton", "aria-label": label, title: label });
+    button.append(icon(name));
+    button.disabled = disabled;
+    button.onclick = onclick;
+    return button;
+  }
+
+  const rangeStart = total === 0 ? 0 : (page - 1) * pageSize + 1;
+  const rangeEnd = Math.min(page * pageSize, total);
+
+  return el("div", { class: "searchrow" }, [
+    search,
+    el("label", { class: "sm muted", text: t("purchaseorders.rows") }),
+    sizePicker,
+    navButton("chevronsleft", t("purchaseorders.firstpage"), atFirst, async () => {
+      page = 1;
+      await reload();
+    }),
+    navButton("chevronleft", t("purchaseorders.previouspage"), atFirst, async () => {
+      page = Math.max(1, page - 1);
+      await reload();
+    }),
+    el("span", {
+      class: "sm muted",
+      text: t("purchaseorders.rangeof").replace("{start}", String(rangeStart)).replace("{end}", String(rangeEnd)).replace("{total}", String(total)),
+    }),
+    navButton("chevronright", t("purchaseorders.nextpage"), atLast, async () => {
+      page = Math.min(totalPages, page + 1);
+      await reload();
+    }),
+    navButton("chevronsright", t("purchaseorders.lastpage"), atLast, async () => {
+      page = totalPages;
+      await reload();
+    }),
+  ]);
+}
+
 function purchaseOrderRows() {
   if (purchaseOrders.length === 0) {
-    return el("div", { class: "muted", text: t("purchaseorders.none") });
+    // Distinct from "nothing has ever been loaded" — a search or the
+    // chosen org narrowing to nothing is a different fact from an
+    // empty warehouse, and worth saying so rather than reusing the
+    // same line for both.
+    const message = searchTerm ? t("purchaseorders.nomatches") : t("purchaseorders.none");
+    return el("div", { class: "muted", text: message });
   }
 
   const rows = purchaseOrders.map((po) => {
@@ -393,7 +519,7 @@ function render() {
         topbar(t("purchaseorders.heading"), t("purchaseorders.subtitle")),
         el("div", { id: "purchaseorders-note", class: "warn" }),
         loader(),
-        el("div", { class: "panel" }, [purchaseOrderRows()]),
+        el("div", { class: "panel" }, [searchAndPaginationRow(), purchaseOrderRows()]),
       ])
     )
   );
@@ -401,6 +527,14 @@ function render() {
 
 export async function open() {
   setCurrentScreen("purchaseorders");
+  // Search and pagination reset to their defaults on every fresh
+  // open — decision 0376, the same "a clean view each time" choice
+  // this screen already makes for the org switcher itself: switching
+  // orgs re-dispatches here through the same open(), and a page 3
+  // search left over from a different org would not mean anything in
+  // the new one anyway.
+  searchTerm = "";
+  page = 1;
   // render() first, always — decision 0372's own finding: calling
   // note() before the screen has ever rendered writes to an element
   // (#purchaseorders-note) that does not exist yet, and the message

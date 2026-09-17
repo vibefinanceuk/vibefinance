@@ -178,6 +178,17 @@ a rule, and left an approval task in a queue.
   `enforce.ts` gives a single already-fetched row the same "unassigned
   is always visible" rule `unitClause` already builds into a list
   query's own `WHERE` clause
+- Search and real, server-side pagination (0376), on the operator's
+  own observation that a real customer's own count reaches the
+  thousands — loading everything and narrowing it in the browser was
+  never viable at that scale. Search covers order number, seller VAT,
+  and both line-item fields (`item_name` and `item_description`,
+  since most real files only ever populate the first); a genuinely new
+  seller-name field was identified as missing entirely and deferred by
+  the operator's own choice rather than built speculatively. The
+  frontend reused `documents.js`'s own established search-box pattern
+  (`onchange`, full re-render, explicit re-focus) rather than
+  inventing a debounced alternative
 
 ### Documents
 - R2 storage with jurisdiction support (0013, 0033, 0035)
@@ -592,9 +603,9 @@ elsewhere.
 
 | Package | Tests |
 |---|---|
-| `vf-app` | 1786 |
+| `vf-app` | 1804 |
 | `vf-licence` | 320 |
-| `vf-ui` | 72 Worker · 584 browser |
+| `vf-ui` | 72 Worker · 595 browser |
 | `shared` | 269 passing, 3 known pre-existing failures |
 
 Both migration chains replay clean with every standing invariant
@@ -615,7 +626,7 @@ holding — 65 migrations for `vf-app`, 105 for `vf-licence`.
 | `docs/design/mockups/` | Four screens as static HTML | Current |
 | `docs/design/multi-authority-intake.md` | Non-EN-16931 authorities | Design only |
 | `docs/design/text-layer-extraction.md` | Reading a PDF's own text | Design only |
-| `docs/decisions/` | 375 decision records | Current |
+| `docs/decisions/` | 376 decision records | Current |
 | `docs/decisions/SUPERSEDED.md` | Which records supersede which | **Read first** |
 
 Document 4's markdown source is at `docs/documents/`, with
