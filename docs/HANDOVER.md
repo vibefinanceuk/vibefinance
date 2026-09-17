@@ -29,27 +29,31 @@ twice.
 
 | | |
 | --- | --- |
-| `origin/main` | `eadafef` |
+| `origin/main` | `8278aeb` |
 | vf-admin deployed | `8e27a34` · `https://admin.vibefinance-ai.com` · behind Cloudflare Access |
 | vf-app deployed | `4d44b59` |
 | vf-licence deployed | `a235713` |
-| vf-ui deployed | `3ecfbc5` · `https://app.vibefinance-ai.com` |
+| vf-ui deployed | `8278aeb` · `https://app.vibefinance-ai.com` |
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
 | `vf-app-poc` migrations | through `0070` |
 | `vf-licence-poc` migrations | through `0121` |
 | Tests | vf-admin 9 · vf-app 1921 · vf-licence 320 · vf-ui 74 Worker + 665 browser · shared 278 (+3 known pre-existing failures) |
 | Decision records | 387 |
 
-**Not true right now — decision 0387 is committed and not yet
-deployed**, this session having no push access to `origin/main`
-(confirmed earlier this arc); it is delivered as a bundle for the
-operator's own pull/push/deploy sequence instead, same as every
-change before it that reached this point. Everything before it is
-still deployed — including `eadafef`, the previous bundle (0553): a
-fresh clone of the real `origin/main`, made while verifying this one,
-found it already at `eadafef`, settling in the operator's favour a
-question this handover had left open (whether that one genuinely
-reached the remote). Decision 0383 (phase 3 of
+**Everything committed is deployed again.** Decision 0387 (the
+Seller/Buyer cards) was reported pushed and deployed, and checked
+rather than taken on that report alone: `origin/main` fetched
+directly reads `8278aeb`, matching this session's own `main` exactly;
+the live `viewer.js`, fetched cache-busted, calls `pair()` for Name
+and VAT only and no longer for endpoint/email/phone, and
+`addressBlock()` returns a plain `.sfield`; the live `app.css`,
+fetched the same way, has `.sellergrid { grid-template-columns:
+minmax(0, 1fr); ... }` and no `.sfield.address` rule anywhere. Bundle
+0553, the previous one, is confirmed live too — a fresh clone of the
+real `origin/main`, made while verifying this one, found it already
+at `eadafef`, settling in the operator's favour a question this
+handover had left open (whether that one genuinely reached the
+remote). Decision 0383 (phase 3 of
 the document viewer — a hybrid PDF's embedded XML retained as its own
 artifact) touched `vf-app` (migration `0070`, plus
 `document-storage.ts`, `document-token.ts`, `document-route.ts`,
@@ -562,7 +566,7 @@ the operator, since tightening it touches CSS the embedded card also
 uses.
 
 **Decision 0387 (the Seller/Buyer cards give up a column) is built,
-not yet pushed or deployed.** Asked directly for screen real estate:
+pushed, and deployed.** Asked directly for screen real estate:
 E-address, E-mail and Phone dropped from both cards; `.sellergrid`'s
 two parallel columns (Name/VAT beside Address) became one, vertical,
 in the order Name → VAT no → Address. The hedge in "make the card
@@ -586,11 +590,12 @@ address rendered (now asserts the opposite), two decision-0280 tests
 that read a CSS rule and a DOM class that no longer exist (replaced
 with their decision-0387 equivalents) — each watched fail against the
 pre-edit code before being trusted. Full suites: vf-ui 74 Worker + 665
-browser, both passing; `eslint` clean. **This session has no push
-access to `origin/main`**, confirmed earlier this same arc — delivered
-as a bundle for the operator's own `git pull` / `git push` /
-`wrangler deploy` sequence, the same as every other change this
-session has made.
+browser, both passing; `eslint` clean. **Confirmed against the live
+origin and the live deployment, not just reported**: `origin/main`
+fetched directly and reads `8278aeb`, matching this session's own
+`main` exactly; `vf-ui`'s deployed `viewer.js` and `app.css`, both
+fetched cache-busted, carry every change described above and no
+`.sfield.address` rule or endpoint/email/phone `pair()` call anywhere.
 
 **Built this arc, closing out most of what was named here before:
 teams, most of the "user variable" fields, creating and managing an
