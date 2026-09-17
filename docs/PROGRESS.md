@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 15 September 2026. A living document: what is built, what
+Last updated 17 September 2026. A living document: what is built, what
 is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -115,6 +115,101 @@ a rule, and left an approval task in a queue.
 - Processes, stages, instances, stage visits
 - Tasks, teams, permissions
 - Rule sets bound to stages
+- **Real version control for a process** (0349), finishing what
+  decisions 0150 and 0160 designed and built the foundation for but
+  left with "nothing creates a v2." A draft is not new schema — it is
+  the rows already sitting at `processes.version + 1`, real the
+  moment the first edit is made and gone entirely if discarded;
+  publishing moves nothing but `processes.version` to point at rows
+  already there. `ensureDraftExists` copies the live version's own
+  membership forward on the first edit, so every later edit changes
+  something that already exists rather than a blank slate. Drag-to-
+  reorder for a draft's own stages (0352); a real entry point into
+  modifying an existing process, since none existed before (0353); "New
+  draft" wording with both its own action and Add stage moved into the
+  card's own head, consistent with the rest of the app (0354). Two
+  more real, previously-unauthenticated write routes closed alongside
+  this (`POST /processes` and `POST /processes/:id/stages`), plus a
+  separate, fourth gap in the same arc: the second of those two routes
+  has existed since decision 0018, real and tested in `vf-app`, and had
+  never once been added to `vf-ui`'s own proxy allow-list — the exact
+  pattern decision 0212 already documents.
+- **A real bug in the Rules screen's own stage list, found live**
+  (0351): `handleRuleStages` read every stage from every process in
+  one flat list, `WHERE process_id = ?` never applied at all — fixed
+  with a real process selector rather than a client-side filter over
+  data that was already wrong. **A missing filter is not "show
+  everything"** (0355): a process with no stages showed every rule in
+  the system rather than none, the same class of bug in the opposite
+  direction. Spacing (0356) and button placement — Pause and Write a
+  new version moved into the rule card's own head (0357) — round out
+  this arc.
+- **Supplier Maintenance, a real, separate workflow** (0350), not a
+  stage bolted onto the existing AP process — the operator's own
+  reasoning: "a separate process flow would be more efficient for
+  monitoring and reporting." Closes a gap named years earlier and left
+  open on purpose: decision 0231 built `supplier.awaitingErp`
+  specifically so a rule could route on it, and decision 0233 said
+  plainly that building the trigger then would have meant guessing at
+  which team and which stage — this is that rule, written once a real
+  team and stage existed to write it against.
+
+### Real, permission-based access — extended to Suppliers (0358)
+- **Reading the supplier list had never been unit-scoped at all** —
+  `AP.Supplier` gated it alone, with no permission-based visible set to
+  intersect against, unlike `AP.Review`, which Documents, Tasks, and
+  the dashboard already narrow correctly. `Scope` and `unitClause`
+  moved out of `dashboard-route.ts` into `enforce.ts`, the shared home
+  `unitsWherePermitted` and `scopedToChosenOrg` already live in, rather
+  than a second copy of the same "an unassigned unit stays visible"
+  exception drifting apart over time.
+- **The dashboard's own supplier card scoped correctly, not by
+  reusing the wrong permission.** Its shared `scope` is computed from
+  `AP.Review` — using it as-is for a supplier card would have made the
+  card's own count silently disagree with what the Suppliers screen
+  itself shows the same person. `scopeFor` was generalised to take the
+  permission as a parameter, with a second, `AP.Supplier`-based scope
+  computed specifically for this card. Purchase Orders' own access
+  control (decision 0375) and the search/pagination work built on top
+  of both screens (0376, 0378) reuse this exact mechanism rather than
+  building a third copy.
+
+### The Dashboard — default landing, layout, and "Waiting for me" (0359–0369)
+- **The Dashboard, not Tasks, is the default screen at login** (0359).
+- **Two real width bugs, in the one place each fix didn't look**
+  (0360, 0361): `body`'s own "working" class, which controls full-
+  width layout, was being set in more than one place and inconsistently
+  on first load versus a later navigation — fixed once, in one place,
+  after the first fix (0360, the Dashboard/Tasks toggle) missed the
+  identical gap on the sign-in screen itself (0361).
+- **The org switcher relaunches whatever screen is open, rather than
+  reloading the whole page to the default one** (0362) — replacing
+  `location.reload()` (decision 0314's own choice, reasoned at the time
+  as the only option) with `go()`, built later for nav clicks and
+  reused here rather than duplicated. One exception, exactly as asked:
+  a document or task with real focus falls back to the default screen
+  instead, since that specific record belongs to the org being
+  navigated away from.
+- **A bar chart for Waiting for Me, broken down by queue** (0363), and
+  two real, live-reported bugs fixed in its own wake: the count on
+  the card disagreeing with the count after actually clicking it
+  (0368 — the card asked the wrong question of the same data), and a
+  subtitle rendered twice over (0367).
+- **Card layout, arrived at after three attempts, not one.** A third
+  band for cards that fit three across (0364, "as a first try");
+  `.dashthird` made to grow and fill rather than leave empty tracks
+  once a card moved elsewhere (0365); then the bands themselves
+  removed entirely (0366), once each earlier fix made the same
+  underlying problem smaller without ever closing it — a card's own
+  stored order and the band sorting it into disagreeing, so a card
+  that changed weight moved to a different band regardless of how many
+  times it had been moved up. One flow now (`.dashflow`, `flex-wrap:
+  wrap`), rendering every card in exactly the order it is stored in;
+  a card's own width is read from what it structurally is (whether it
+  draws a chart) rather than a setting somebody has to keep in sync.
+- **Save changes and Close, top right, in the add-a-card pop-out**
+  (0369), the same consistency pass every other pop-out has already
+  had.
 
 ### Purchase orders and matching
 - Purchase order storage grounded in Peppol BIS Order Only 3.3, via UBL
@@ -630,16 +725,17 @@ resolved from context. One document is not a sample.
 **Three pre-existing test failures in `shared/`**, none related to any
 recent work. Two are time-expired JWT keys in
 `shared/licensing/token.test.ts`, failing on `main` since before this
-session. The third, found while updating this document rather than
-while building anything —
+session. The third,
 `shared/migration/table-classes.test.ts`, "names each one exactly
-once" — reports four tables added between migrations 0055 and 0059,
-before this session began, never classified into
-`CONFIGURATION_TABLES` or `NON_MIGRATING_TABLES`:
-`_supplier_links`, `dashboard_cards`, `dashboard_cards_new`,
-`document_comments`. Decision 0118's own standing question — does
-this table hold what a customer configured, or what their instance
-did — was never answered for these four.
+once" — reports six tables, not the four first found on 15 September,
+never classified into `CONFIGURATION_TABLES` or
+`NON_MIGRATING_TABLES`: `_supplier_links`, `dashboard_cards`,
+`dashboard_cards_new`, `document_comments`, `org_spend_limits`,
+`org_teams_new`. The last two are new to this count — added by
+decisions 0334 and 0333 respectively, before this session, and never
+classified either. Decision 0118's own standing question — does this
+table hold what a customer configured, or what their instance did —
+was never answered for any of the six. A real fix, still not done.
 
 **`compiler-model.ts` has a response-reader ordering that was a real
 bug in the extraction path.** It works correctly against
@@ -656,10 +752,10 @@ elsewhere.
 | `vf-app` | 1851 |
 | `vf-licence` | 320 |
 | `vf-ui` | 72 Worker · 626 browser |
-| `shared` | 269 passing, 3 known pre-existing failures |
+| `shared` | 278 passing, 3 known pre-existing failures |
 
 Both migration chains replay clean with every standing invariant
-holding — 65 migrations for `vf-app`, 105 for `vf-licence`.
+holding — 69 migrations for `vf-app`, 119 for `vf-licence`.
 
 ---
 

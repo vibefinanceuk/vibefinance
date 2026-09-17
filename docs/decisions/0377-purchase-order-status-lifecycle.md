@@ -1,6 +1,7 @@
 # 0377 — A real status lifecycle, reversing what decision 0372 deliberately left out
 
-**Status: built.** The operator's own request: a donut chart beside the
+**Status: built. Supersedes part of decision 0372.** The operator's own
+request: a donut chart beside the
 Load card, reporting Active, Closed, On-Hold, Invoiced (Part), and
 Invoiced (Full). The harder finding, surfaced before any code was
 written: purchase order status did not exist anywhere. Decision 0372's

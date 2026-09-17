@@ -1,6 +1,6 @@
 # Handover
 
-**Written 4 September 2026, updated 15 September.**
+**Written 4 September 2026, updated 17 September.**
 
 **For a session starting cold.** Where things stand, what needs a
 decision rather than work, what to do next, and the habits this project
@@ -29,16 +29,16 @@ twice.
 
 | | |
 | --- | --- |
-| `origin/main` | `9013467` |
+| `origin/main` | `a235713` |
 | vf-admin deployed | `8e27a34` · `https://admin.vibefinance-ai.com` · behind Cloudflare Access |
-| vf-app deployed | `9013467` |
-| vf-licence deployed | `9013467` |
-| vf-ui deployed | `9013467` · `https://app.vibefinance-ai.com` |
+| vf-app deployed | `a235713` |
+| vf-licence deployed | `a235713` |
+| vf-ui deployed | `a235713` · `https://app.vibefinance-ai.com` |
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
-| `vf-app-poc` migrations | through `0065` |
-| `vf-licence-poc` migrations | through `0105` |
-| Tests | vf-admin 9 · vf-app 1636 · vf-licence 320 · vf-ui 63 Worker + 506 browser · shared 269 (+3 known pre-existing failures) |
-| Decision records | 348 |
+| `vf-app-poc` migrations | through `0069` |
+| `vf-licence-poc` migrations | through `0119` |
+| Tests | vf-admin 9 · vf-app 1851 · vf-licence 320 · vf-ui 72 Worker + 626 browser · shared 278 (+3 known pre-existing failures) |
+| Decision records | 379 |
 
 **Everything committed is deployed.** `vf-admin` untouched this arc —
 its own last commit predates decision 0298, listed as-is rather than
@@ -54,11 +54,12 @@ redeploying the component that mints licence tokens for the whole fleet
 `shared`'s own three known failures: two are time-expired JWT keys in
 the licensing token tests, failing on `main` since before any of this
 work. The third — `migration/table-classes.test.ts`, "names each one
-exactly once" — is new to this update, not to the codebase: four
-tables added between migrations 0055 and 0059, before this arc began,
-were never classified into `CONFIGURATION_TABLES` or
-`NON_MIGRATING_TABLES`. Found while updating this document, not while
-building anything — worth a real fix, not a re-count.
+exactly once" — reports six unclassified tables, not the four first
+found on 15 September: `_supplier_links`, `dashboard_cards`,
+`dashboard_cards_new`, `document_comments`, `org_spend_limits`, and
+`org_teams_new`. The last two were added by decisions 0334 and 0333
+respectively, before this update, and never classified either — worth
+a real fix, still not done.
 
 ---
 
@@ -149,15 +150,25 @@ and no process consults them.
 0231). `erp_identifier` is nullable, `supplier.awaitingErp` is a fact a
 rule can test, and **the next load adopts that row** and fills the
 identifier in — which is decision 0233, and the whole sequence the
-operator described. **Nothing triggers the process**: the rule that
-routes an awaiting supplier to a setup team is a sentence a customer
-writes, with their team and their stage.
+operator described. **The trigger now exists** (0350): Supplier
+Maintenance is a real, separate workflow, not a stage on the existing
+AP process, closing a gap decisions 0231 and 0233 both named and
+deliberately left open until there was a real team and stage to write
+the routing rule against.
 
 **The Suppliers screen is complete as a piece** (decisions 0230, 0234,
 0236, 0237): load a file or record one, click a row to hold, release,
 activate, deactivate or edit — with a warning on save that the ERP is
 the master and the next load overwrites this. **`supplier.onHold` is
-testable and no rule reads it**, which is the same shape.
+testable and no rule reads it**, which is the same shape. **Real,
+permission-based scoping arrived later** (0358): reading the list had
+never been unit-scoped at all, and the dashboard's own supplier card
+was silently using the wrong permission's visible set. **Search and
+real, server-side pagination followed** (0378, mirroring 0376's own
+work for Purchase Orders below) — which forced a fix to the status
+ring and its click-to-filter, both of which had computed themselves
+over the fully-loaded array in the browser and would have silently
+gone wrong the moment that array became only one page.
 
 **A UBL invoice is rendered as a document** (decisions 0205, 0206), at
 capture and stored beside the original — A4 portrait, using OpenPEPPOL's
@@ -171,6 +182,65 @@ touching it, and one the model could not read was retained, explained on
 screen, and left to be keyed.
 
 ---
+
+## Since 15 September (0349–0379)
+
+**Three genuinely separate arcs**, each closing a gap this document
+itself used to name as open, plus smaller fixes along the way.
+Supplier Maintenance (0350) and Suppliers' own search, pagination, and
+permission scoping (0358, 0378) are covered above, in context.
+
+**Process version control, finally wired up** (0349, 0352–0354).
+Decisions 0150 and 0160 designed and built the foundation and said
+plainly what was missing — "nothing creates a v2." A draft is not new
+schema: it is the rows already sitting at `processes.version + 1`,
+real the moment the first edit is made, gone entirely if discarded.
+Along the way, three more real, previously-unauthenticated or
+unreachable write routes were closed, the same class of gap this
+project keeps finding rather than a new kind. Two real bugs in the
+Rules screen itself, both found live and both the same shape in
+opposite directions (0351, 0355): a stage list with no `WHERE
+process_id = ?` at all, and a rule list that showed everything rather
+than nothing when a process had no stages.
+
+**Purchase orders, built end to end** (0370–0377) — the largest single
+piece of work in this window. Line-level matching against a real
+Peppol BIS Order Only 3.3 vocabulary, CSV load alongside XML
+ingestion, org derivation and real, permission-based access control
+matching what Suppliers already had, then search, pagination, and a
+full status lifecycle (Active/On-Hold/Closed, with Invoiced
+Part/Full derived live rather than stored) mirroring Suppliers' own
+mechanisms rather than inventing new ones. **A real SQL bug was found
+and fixed by testing, not by inspection**: `GROUP BY status` silently
+grouped by the real, underlying column rather than the computed
+expression sharing its name, since SQL resolves an unqualified
+identifier against a real column before a `SELECT`-list alias —
+collapsing rows with genuinely different statuses into one group.
+
+**The Dashboard reshaped, mostly in direct response to live reports**
+(0359–0369): the default screen at login, two real width bugs found
+one at a time because the first fix didn't look at the sign-in screen
+too, the org switcher relaunching whatever is open instead of
+reloading to the default, a bar chart for Waiting for Me with two of
+its own bugs fixed after shipping, and card layout arrived at only
+after two earlier attempts (0364, 0365) each made the same underlying
+problem smaller without closing it — a card's own stored order and
+the band sorting it into disagreeing — until the bands themselves were
+removed entirely (0366).
+
+**One bug, in two files, found only because a test exercised failure
+after success**: `loadStatusCounts()`, on both Purchase Orders' and
+Suppliers' own status charts (one screen's own version was written by
+copying the other's), returned early on a failed fetch without ever
+resetting its own counts to `null` — a chart that had once loaded real
+data kept showing it, silently stale, after a later, genuine failure.
+Fixed in both files the same day it was found.
+
+**Smaller, on-request fixes**: the Org Units table now shows Parent
+Org and Tax Identifier as real columns, both data the edit form
+already had and the table simply never showed (0379); the recorded
+title "VAT ID" reads "Tax Identifier" everywhere, one string read by
+both the table and the form so the two can't drift apart.
 
 ## Waiting on you
 
@@ -228,10 +298,14 @@ UPDATE process_stages SET name = 'Intake' WHERE id = 'received';
 UPDATE process_stages SET name = 'AP Review' WHERE id = 'review';
 ```
 
-**Removing Line Review is not**, and decision 0150 is why. It has a
-completed task against it, so deleting the row would fail on a foreign
-key or orphan history. Versioning the membership removes it properly;
-until then it stays.
+**Removing Line Review used to need decision 0150's own versioning,
+which now exists** (0349). It has a completed task against it, so
+deleting the row directly would still fail on a foreign key or orphan
+history — but a draft of the AP process can now genuinely drop it from
+a new version's own membership, with existing instances finishing on
+whichever version they started, exactly the mechanism decision 0150
+designed. Nobody has actually done this yet; the mechanism blocking it
+is what's gone.
 
 
 Decision 0134 removed every success message from it: a retired source
@@ -392,7 +466,12 @@ other — decision 0143's trap, one layer along.
 fourteen permission checks exist and one is unit-aware, so a person
 restricted to France cannot see German documents in the document
 manager and can reach one by other routes. **That is not a boundary
-yet**, and 0199 says so.
+yet**, and 0199 says so. **The count is stale as of this update**:
+Suppliers (0358) and Purchase Orders (0375) have each since gained
+real, permission-based scoping through the same `unitsWherePermitted`/
+`scopedToChosenOrg` mechanism — more of the fourteen are unit-aware
+now than when this was written, though nobody has re-counted the
+full set since.
 
 **And a stage may declare its permission** (decision 0200) — the
 vocabulary was already right, since 0010 named permissions after
@@ -419,7 +498,8 @@ validator is no longer shown French work, which was 0199's largest
 recorded gap. **Claiming and completing are too** (decision 0203) — the last place the
 boundary was a screen rather than a route. **Twelve of fourteen
 permission checks still ignore the unit**, and those two are the ones
-that matter most.
+that matter most — the same stale count noted above; Suppliers and
+Purchase Orders have each since joined the unit-aware side.
 
 **Still customer-wide**: teams, settings.
 
@@ -524,25 +604,13 @@ three-way, visit Matching"*. **What is missing is a customer writing
 one**, and the match option in particular still decides nothing — the
 stages an invoice visits come from a process definition.
 
-**6. Process configuration, versioned** (decision 0150). Adding and
-removing stages through a screen, with a version number an invoice
-carries — so it is always apparent which shape of the process an item
-ran under.
-
-The detail that decides it: **version the membership, not the stages.**
-A version on `processes` alone would be a label with nothing behind it,
-because editing `process_stages` in place shows a v1 instance v2's
-stages. `process_stage_versions (process_id, version, stage_id,
-sequence)` leaves all six foreign keys untouched and makes removing a
-stage *"not in this version"* rather than a deletion that orphans
-history.
-
-**An invoice finishes on the version it started**, and rules resolve on
-arrival rather than on entry — which is already what
-`rule-set-loader.ts` does. The asymmetry is deliberate: the path is
-frozen because changing it mid-flight is incoherent, and the rules are
-current because a threshold tightened this morning should apply to
-invoices reaching Approval this afternoon.
+**6. Process configuration, versioned — built** (0349). Real version
+control landed as described: `process_stage_versions (process_id,
+version, stage_id, sequence)`, leaving all six foreign keys untouched
+and making removing a stage "not in this version" rather than a
+deletion that orphans history. An invoice finishes on the version it
+started; rules still resolve on arrival. A draft is not new schema —
+it is the rows already sitting at `processes.version + 1`.
 
 **7. Email sending**, which decision 0125 evaluates. "Email" means three
 different things — supplier contacts *out to strangers*, user
@@ -573,16 +641,25 @@ flat facts model cannot hold a repeating group (0112). A design
 question, not an omission, and *"one of the most common causes of
 validation errors"*.
 
-**10. Despatch Advice (T16).** The goods receipt, and the missing third
-leg of three-way matching — **before the matcher, not after** (0082).
-BT-132 now exists, which is what lets matching compare a line to an
-order line.
+**10. Despatch Advice (T16) — the two-way matcher is now built, and
+this is what's left.** `po.matched`/`po.variance_pct`, and now real
+line-level matching too (`po.line_matched` and the two line variance
+fields), are computed live rather than declared and left uncomputed
+(0370) — the gap this item used to name as blocking the matcher
+itself is closed. What remains is exactly the goods receipt, the
+missing third leg of three-way matching. BT-132 now exists, which is
+what lets matching compare a line to an order line.
 
 **11. Acting on `cbc:CustomizationID` beyond rendering.** Decision 0205
 reads it to decide whether a document is Peppol BIS 3.0 and refuses the
 rendering otherwise — which is the first thing to use it. **Nothing
 routes or validates on it**, so a document from another profile is
-processed as though it were this one.
+processed as though it were this one. **Purchase orders now have their
+own, separate ingestion path** (`POST /purchase-orders`, decision 0370)
+rather than being detected automatically within `/sources/:id/capture`
+itself — a real Order is matched against, but the underlying gap this
+item names is still there: the capture pipeline itself still cannot
+tell a Peppol Order from an Invoice by its own `cbc:CustomizationID`.
 
 *The original note:* Reading `cbc:CustomizationID`. BT-24 is now read into the facts
 (0112), so the discriminator is available; detection still does not use

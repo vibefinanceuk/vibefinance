@@ -1,6 +1,7 @@
 # 0378 — Search and pagination for Suppliers, and what it forced the status ring to become
 
-**Status: built.** The operator's own request: a search-and-paginate
+**Status: built. Supersedes part of decision 0213.** The operator's own
+request: a search-and-paginate
 card in the same place decision 0376 put one for Purchase Orders —
 below the Load card, above the list. Building it surfaced two things
 decision 0213's own original design had assumed would never need to
