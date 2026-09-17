@@ -29,7 +29,7 @@ twice.
 
 | | |
 | --- | --- |
-| `origin/main` | `d0f2b65` |
+| `origin/main` | `45ab351` |
 | vf-admin deployed | `8e27a34` · `https://admin.vibefinance-ai.com` · behind Cloudflare Access |
 | vf-app deployed | `d0f2b65` |
 | vf-licence deployed | `a235713` |
@@ -40,14 +40,16 @@ twice.
 | Tests | vf-admin 9 · vf-app 1912 · vf-licence 320 · vf-ui 74 Worker + 651 browser · shared 278 (+3 known pre-existing failures) |
 | Decision records | 382 |
 
-**Not everything committed is deployed.** Decision 0382 (phase 2 of
-the document viewer — the client-side page renderer) touches `vf-ui`
-(the renderer itself, its icons and CSS, and a vendored copy of
-pdf.js) and `vf-licence` (one migration seeding five new UI strings).
-It is committed locally and not yet bundled or pushed — both Workers
-will need redeploying once it is. Everything through decision 0381 is
-still deployed and confirmed: `vf-app` and `vf-ui` at `d0f2b65`,
-`vf-licence` at `a235713`, untouched since 0379.
+**Pushed, not yet deployed.** Decision 0382 (phase 2 of the document
+viewer — the client-side page renderer) touches `vf-ui` (the renderer
+itself, its icons and CSS, and a vendored copy of pdf.js) and
+`vf-licence` (one migration seeding five new UI strings). The operator
+has confirmed it pushed — `origin/main` is `45ab351`, past `vf-app`
+and `vf-ui`'s own deployed commit — but not yet confirmed deployed,
+so the two deployed-commit rows above still read `d0f2b65` /
+`a235713` until that word comes. Everything through decision 0381 is
+deployed and confirmed: `vf-app` and `vf-ui` at `d0f2b65`, `vf-licence`
+at `a235713`, untouched since 0379.
 **vf-app's count reads 1893 at `23f5938`, then 1912 with 0381**, and
 separately, 1893 not the 1851 recorded through 0379, with no `vf-app`
 change since 0378 — the difference is not explained, only measured
