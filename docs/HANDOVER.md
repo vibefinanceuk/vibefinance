@@ -29,11 +29,11 @@ twice.
 
 | | |
 | --- | --- |
-| `origin/main` | `abb300e` |
+| `origin/main` | `9e77954` |
 | vf-admin deployed | `8e27a34` · `https://admin.vibefinance-ai.com` · behind Cloudflare Access |
 | vf-app deployed | `4d44b59` |
 | vf-licence deployed | `a235713` |
-| vf-ui deployed | `abb300e` · `https://app.vibefinance-ai.com` |
+| vf-ui deployed | `9e77954` · `https://app.vibefinance-ai.com` |
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
 | `vf-app-poc` migrations | through `0070` |
 | `vf-licence-poc` migrations | through `0121` |
@@ -511,20 +511,23 @@ real deployed file). Migration `0121`'s application to the live
 session has no D1 credentials to query it directly, same as `vf-app`'s
 migration `0070` at decision 0383.
 
-**Phase 5 is built, committed locally, and NOT YET pushed or
-deployed** (decision 0385 — the operator asked directly whether phase
-5 was genuinely a no-op or had something real left in it). Checked
-rather than assumed: both behaviours phase 5 was named for really are
-already gone — no surviving call site for the old raw-file Expand, no
-surviving `<img>`/`<iframe>` split. One real leftover, in the CSS
-rather than the JS: `app.css` still carried `.vimage`, styling an
-`<img>` decision 0382 had already stopped creating; removed, with a
-comment explaining why the neighbouring `.vframe` rule (the XML tab's
-own, still-live frame) stays. This closes
-`docs/design/document-viewer.md`'s five-phase plan in full. Touches
-`vf-ui` only (`app.css`), no migration, no other Worker. **Waiting on
-the operator to pull the bundle, push, and deploy `vf-ui`** before
-this table says it's live.
+**Phase 5 is built, pushed, and deployed** (decision 0385 — the
+operator asked directly whether phase 5 was genuinely a no-op or had
+something real left in it). Checked rather than assumed: both
+behaviours phase 5 was named for really are already gone — no
+surviving call site for the old raw-file Expand, no surviving
+`<img>`/`<iframe>` split. One real leftover, in the CSS rather than
+the JS: `app.css` still carried `.vimage`, styling an `<img>` decision
+0382 had already stopped creating; removed, with a comment explaining
+why the neighbouring `.vframe` rule (the XML tab's own, still-live
+frame) stays. This closes `docs/design/document-viewer.md`'s
+five-phase plan in full. Touched `vf-ui` only (`app.css`), no
+migration, no other Worker. **Confirmed against the live origin and
+the live deployment, not just reported**: `origin/main` fetched
+directly and reads `9e77954`, matching this session's own `main`
+exactly; `vf-ui`'s deployed `app.css`, fetched cache-busted, no longer
+contains the `.vimage` selector — only the explanatory comment
+mentions the name.
 
 **Built this arc, closing out most of what was named here before:
 teams, most of the "user variable" fields, creating and managing an
