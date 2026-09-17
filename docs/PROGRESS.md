@@ -818,13 +818,13 @@ elsewhere.
 
 | Package | Tests |
 |---|---|
-| `vf-app` | 1912 |
+| `vf-app` | 1921 |
 | `vf-licence` | 320 |
-| `vf-ui` | 74 Worker · 631 browser |
+| `vf-ui` | 74 Worker · 653 browser |
 | `shared` | 278 passing, 3 known pre-existing failures |
 
 Both migration chains replay clean with every standing invariant
-holding — 69 migrations for `vf-app`, 119 for `vf-licence`.
+holding — 70 migrations for `vf-app`, 119 for `vf-licence`.
 
 **`vf-app`'s count was recorded as 1851 through decision 0379**; a clean
 run at `46c1da2`, with no `vf-app` change since decision 0378 recorded
@@ -846,7 +846,7 @@ measured (0380) rather than explained after the fact.
 | `docs/design/mockups/` | Four screens as static HTML | Current |
 | `docs/design/multi-authority-intake.md` | Non-EN-16931 authorities | Design only |
 | `docs/design/text-layer-extraction.md` | Reading a PDF's own text | Design only |
-| `docs/decisions/` | 380 decision records | Current |
+| `docs/decisions/` | 383 decision records | Current |
 | `docs/decisions/SUPERSEDED.md` | Which records supersede which | **Read first** |
 
 Document 4's markdown source is at `docs/documents/`, with

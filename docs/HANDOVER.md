@@ -1,6 +1,6 @@
 # Handover
 
-**Written 4 September 2026, updated 17 September (three times).**
+**Written 4 September 2026, updated 17 September (four times).**
 
 **For a session starting cold.** Where things stand, what needs a
 decision rather than work, what to do next, and the habits this project
@@ -29,46 +29,48 @@ twice.
 
 | | |
 | --- | --- |
-| `origin/main` | `a16b155` |
+| `origin/main` | `4d44b59` |
 | vf-admin deployed | `8e27a34` · `https://admin.vibefinance-ai.com` · behind Cloudflare Access |
-| vf-app deployed | `d0f2b65` |
+| vf-app deployed | `4d44b59` |
 | vf-licence deployed | `a235713` |
-| vf-ui deployed | `45ab351` · `https://app.vibefinance-ai.com` |
+| vf-ui deployed | `4d44b59` · `https://app.vibefinance-ai.com` |
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
-| `vf-app-poc` migrations | through `0069` |
+| `vf-app-poc` migrations | through `0070` |
 | `vf-licence-poc` migrations | through `0120` |
-| Tests | vf-admin 9 · vf-app 1912 · vf-licence 320 · vf-ui 74 Worker + 651 browser · shared 278 (+3 known pre-existing failures) |
-| Decision records | 382 |
+| Tests | vf-admin 9 · vf-app 1921 · vf-licence 320 · vf-ui 74 Worker + 653 browser · shared 278 (+3 known pre-existing failures) |
+| Decision records | 383 |
 
-**Everything committed is deployed again.** Decision 0382 (phase 2 of
-the document viewer — the client-side page renderer) touched `vf-ui`
-(the renderer itself, its icons and CSS, and a vendored copy of
-pdf.js) and, via one migration, `vf-licence-poc`'s data (five new UI
-strings) — no `vf-licence` code changed, so that Worker itself did not
-need redeploying, only the migration running against its database.
-**Confirmed against the live origin, not just reported**: `vf-ui` is
-now deployed at `45ab351` — `/page-renderer.js` and
-`/vendor/pdfjs/pdf.min.mjs` both `200` where neither existed before —
-and migration `0120` is applied against `vf-licence-poc` —
-`/api/ui-strings?locale=en` now returns `"viewer.zoomin":"Zoom in"`.
-`vf-app` stays at `d0f2b65`, untouched by this phase. Everything
-through decision 0381 was already deployed and confirmed there.
-**vf-app's count reads 1893 at `23f5938`, then 1912 with 0381**, and
-separately, 1893 not the 1851 recorded through 0379, with no `vf-app`
-change since 0378 — the difference is not explained, only measured
-(0380). **vf-ui's browser count reads 651, up from 631** — the new
-page-renderer widget's own 24 tests, plus four retired and two
-rewritten where decision 0382 removed the `<iframe>`/`<img>` split
-they asserted against.
-**And the vf-ui browser suite exits 1 with every test passing** — 135
-unhandled rejections now, was 136 at `46c1da2` (decision 0380) —
-mostly a test's own per-URL fetch stub refusing a request the test
-never stubbed, thrown inside work the viewer deliberately does not
-await. Counts in this table are tests passing, not clean runs. Worth
-fixing on its own; see 0380.
-`vf-admin` untouched this arc —
-its own last commit predates decision 0298, listed as-is rather than
-guessed at.
+**Everything committed is deployed again.** Decision 0383 (phase 3 of
+the document viewer — a hybrid PDF's embedded XML retained as its own
+artifact) touched `vf-app` (migration `0070`, plus
+`document-storage.ts`, `document-token.ts`, `document-route.ts`,
+`index.ts`, `invoice-facts-route.ts`, `source-capture-route.ts`) and
+`vf-ui` (`viewer.js`) — no `vf-licence` or `vf-admin` file changed, so
+neither Worker needed redeploying.
+**Confirmed against the live origin, not just reported, as far as this
+session can reach**: `origin/main` was fetched directly and reads
+`4d44b59`, not taken on the operator's word alone. `vf-ui`'s deployed
+`/viewer.js` was fetched and does contain `showXmlPreview`'s
+`stored.embeddedXmlDocument` check. **`vf-app`'s own deploy and
+migration `0070`'s application to `vf-app-poc` could not be checked
+the same way from here** — every route that would show the third
+document type sits behind session auth, and this session has no D1
+credentials to query the remote schema directly — so those two rest on
+the operator's own report of "pushed and deployed," the same standard
+`git push` itself rested on before this session could fetch and check
+it.
+**vf-app's count reads 1921, up from 1912** — the third document
+type's own tests, plus two real bugs caught before shipping:
+`preferredDocumentType`'s `ORDER BY CASE` had no `ELSE`, so the new
+type would have silently outranked both existing ones (SQLite sorts
+`NULL` first, ascending); and `invoice-facts-route.ts` computed "which
+document the preview shows" with its own ad-hoc query that had only
+ever agreed with `preferredDocumentType()` by coincidence (0383).
+**vf-ui's browser count reads 653, up from 651** — this phase's two
+new XML-tab tests. Unhandled rejections read 137, was 135 at 0382 —
+the same pre-existing class (0380), not investigated further this
+arc.
+`vf-admin` and `vf-licence` untouched this arc.
 
 **There are four Workers now.** `vf-app` per customer, `vf-licence`
 shared, `vf-ui` shared — the customer's interface, its own deployment
@@ -443,20 +445,20 @@ established which**, and the two readings have different fixes.
 
 ## Suggested next pieces
 
-**Phase 3 of the document viewer is built** (decision 0383 —
-*"Lets do the order written, so phase 3 next,"* the operator's own
-answer when phase 2 closed). The embedded XML in a structured PDF
-(Factur-X, ZUGFeRD) is now its own retained artifact, so those invoices
-get an XML tab the way a bare-XML invoice already does, rendered the
-same way. A real regression was caught before it shipped:
-`invoice-facts-route.ts` computed "which document the preview shows"
-with its own ad-hoc query rather than calling `preferredDocumentType()`
-— the two had only ever agreed by coincidence, and widening
-`document_type` to a third value broke it. **Written to the working
-tree and tested; not yet committed, pushed, or deployed** — the next
-bundle carries it, with the full pull/push/migrate/deploy sequence, and
-this page's deploy-status table and test counts above stay as they are
-until that is confirmed.
+**Phase 3 of the document viewer is built, pushed, and deployed**
+(decision 0383 — *"Lets do the order written, so phase 3 next,"* the
+operator's own answer when phase 2 closed). The embedded XML in a
+structured PDF (Factur-X, ZUGFeRD) is now its own retained artifact,
+so those invoices get an XML tab the way a bare-XML invoice already
+does, rendered the same way. A real regression was caught before it
+shipped: `invoice-facts-route.ts` computed "which document the
+preview shows" with its own ad-hoc query rather than calling
+`preferredDocumentType()` — the two had only ever agreed by
+coincidence, and widening `document_type` to a third value broke it.
+Confirmed live where this session could reach: `origin/main` fetched
+directly at `4d44b59`, `vf-ui`'s deployed `viewer.js` fetched and
+checked for the new logic. `vf-app`'s deploy and migration `0070`
+rest on the operator's own report, per the table above.
 
 **Next up: phase 4, the pop-out window carrying the whole document
 panel** (Timeline/Chat included), then phase 5 (retiring the old
