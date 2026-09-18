@@ -71,10 +71,11 @@ afterEach(() => {
 });
 
 describe("initDocumentWindow — the same panel the embedded card shows, mounted alone", () => {
-  it("mounts the Document/Timeline tabs and a Close button that closes the window", async () => {
+  it("mounts the Document tab (not Timeline / Chat, which is no longer a tab here) and a Close button that closes the window", async () => {
     stubFetch({
       "/api/ui-strings": STRINGS,
       "/api/invoices/inv-1": { facts: {}, lines: [], validation: { passed: true, checked: [], failures: [] } },
+      "/api/documents/inv-1/activity": { items: [] },
     });
     const { loadStrings } = await import("/strings.js");
     await loadStrings();
@@ -83,9 +84,16 @@ describe("initDocumentWindow — the same panel the embedded card shows, mounted
     const root = document.getElementById("docwindow-root") as HTMLElement;
     await initDocumentWindow("inv-1", root);
 
+    /**
+     * **Decision 0394**: Timeline / Chat became a standing right-hand
+     * column here, not a third tab — asked for directly: *"the
+     * timeline / chat should appear on the right of the invoice
+     * image... when expanded in the separate window only."* Document
+     * is still the one (and, without a hybrid PDF, only) tab.
+     */
     const labels = [...root.querySelectorAll(".doctab span")].map((n) => n.textContent);
     expect(labels).toContain("Document");
-    expect(labels).toContain("Timeline / Chat");
+    expect(labels).not.toContain("Timeline / Chat");
 
     const closeSpy = vi.fn();
     vi.stubGlobal("close", closeSpy);
@@ -107,6 +115,7 @@ describe("initDocumentWindow — the same panel the embedded card shows, mounted
         originalDocument: { contentType: "application/pdf" },
         embeddedXmlDocument: { contentType: "application/xml" },
       },
+      "/api/documents/inv-1/activity": { items: [] },
     });
     const { loadStrings } = await import("/strings.js");
     await loadStrings();
@@ -119,10 +128,72 @@ describe("initDocumentWindow — the same panel the embedded card shows, mounted
     expect(labels).toContain("XML");
   });
 
+  /**
+   * **Decision 0394** — the split itself: Document (and XML, when
+   * offered) on the left, Timeline / Chat standing on the right,
+   * always visible rather than switched to.
+   */
+  it("lays out Document/XML on the left and Timeline / Chat on the right, both present at once", async () => {
+    stubFetch({
+      "/api/ui-strings": STRINGS,
+      "/api/invoices/inv-1": { facts: {}, lines: [], validation: { passed: true, checked: [], failures: [] } },
+      "/api/documents/inv-1/activity": { items: [] },
+    });
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { initDocumentWindow } = await import("/viewer.js");
+
+    const root = document.getElementById("docwindow-root") as HTMLElement;
+    await initDocumentWindow("inv-1", root);
+
+    const left = root.querySelector(".docwindowsplitleft");
+    const right = root.querySelector(".docwindowsplitright");
+    expect(left).not.toBeNull();
+    expect(right).not.toBeNull();
+    expect(left?.querySelector("#vpreview")).not.toBeNull();
+    const timeline = right?.querySelector(".docwindowtimeline") as HTMLElement | null | undefined;
+    expect(timeline).not.toBeNull();
+    expect(timeline?.hidden).toBe(false);
+  });
+
+  /**
+   * **The bug the shared `select()` closure would otherwise cause**:
+   * it loops over every entry `buildDocTabs()` built, timeline
+   * included, hiding whatever key was not just clicked — so clicking
+   * Document or XML would re-hide the standing timeline column unless
+   * something puts it back. This is that something, checked directly.
+   */
+  it("keeps the Timeline / Chat column visible after switching to the XML tab", async () => {
+    stubFetch({
+      "/api/ui-strings": STRINGS,
+      "/api/invoices/inv-1": {
+        facts: {},
+        lines: [],
+        validation: { passed: true, checked: [], failures: [] },
+        originalDocument: { contentType: "application/pdf" },
+        embeddedXmlDocument: { contentType: "application/xml" },
+      },
+      "/api/documents/inv-1/activity": { items: [] },
+    });
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { initDocumentWindow } = await import("/viewer.js");
+
+    const root = document.getElementById("docwindow-root") as HTMLElement;
+    await initDocumentWindow("inv-1", root);
+
+    const xmlTabButton = [...root.querySelectorAll(".doctab")].find((b) => b.textContent?.includes("XML")) as HTMLElement;
+    xmlTabButton.click();
+
+    const timeline = root.querySelector(".docwindowtimeline") as HTMLElement;
+    expect(timeline.hidden).toBe(false);
+  });
+
   it("has no expand button and no pop-out placeholder — there is nowhere further out to go", async () => {
     stubFetch({
       "/api/ui-strings": STRINGS,
       "/api/invoices/inv-1": { facts: {}, lines: [], validation: { passed: true, checked: [], failures: [] } },
+      "/api/documents/inv-1/activity": { items: [] },
     });
     const { loadStrings } = await import("/strings.js");
     await loadStrings();
@@ -151,6 +222,7 @@ describe("document-window.js's own bootstrap", () => {
     stubFetch({
       "/api/ui-strings": STRINGS,
       "/api/invoices/inv-7": { facts: {}, lines: [], validation: { passed: true, checked: [], failures: [] } },
+      "/api/documents/inv-7/activity": { items: [] },
     });
 
     await import("/document-window.js");

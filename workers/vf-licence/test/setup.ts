@@ -124,6 +124,7 @@ import orgUnitVatidRenamedTaxIdentifierSql from "../migrations/0119_org_unit_vat
 import documentViewerPageRendererStringsSql from "../migrations/0120_document_viewer_page_renderer_strings.sql?raw";
 import documentWindowPopoutStringsSql from "../migrations/0121_document_window_popout_strings.sql?raw";
 import documentPlaceholderWordingSql from "../migrations/0122_document_placeholder_wording.sql?raw";
+import documentPageCyclingAndHighlightStringsSql from "../migrations/0123_document_page_cycling_and_highlight_strings.sql?raw";
 
 function stripSqlComments(sql: string): string {
   return sql
@@ -275,5 +276,6 @@ export async function applyTestSchema(): Promise<void> {
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(documentViewerPageRendererStringsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(documentWindowPopoutStringsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(documentPlaceholderWordingSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(documentPageCyclingAndHighlightStringsSql)));
 
 }

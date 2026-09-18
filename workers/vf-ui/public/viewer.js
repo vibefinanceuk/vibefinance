@@ -472,6 +472,20 @@ function retargetPopoutIfOpen(invoiceId) {
  * *embedded* card something to show while it has handed its space to
  * this window; this window has no second window of its own to hand
  * anything to.
+ *
+ * **Timeline / Chat is a standing right-hand column here, not a third
+ * tab** — decision 0394, asked for directly: *"the timeline / chat
+ * should appear on the right of the invoice image... when expanded in
+ * the separate window only."* Still built from `buildDocTabs()`'s own
+ * unmodified `tabs` array — the pop-out pulls the `timeline` entry out
+ * of the tab row and always shows its pane, rather than
+ * `buildDocTabs()` growing a second layout mode the embedded card
+ * would have to ignore. The shared `select()` closure (inside
+ * `buildDocTabs()`) still loops over *every* entry when Document or
+ * XML is clicked, timeline included, hiding whatever is not the
+ * clicked key — so each remaining button's own handler re-shows the
+ * timeline pane immediately after, the one place this function reaches
+ * back into what `select()` did rather than around it.
  */
 export async function initDocumentWindow(invoiceId, root) {
   await loadInvoice(invoiceId);
@@ -480,13 +494,43 @@ export async function initDocumentWindow(invoiceId, root) {
   const { tabs } = buildDocTabs(invoiceId);
   const closeButton = actionLink("close", { onclick: () => window.close() });
 
+  const timelineEntry = tabs.find((entry) => entry.key === "timeline");
+  const otherEntries = tabs.filter((entry) => entry.key !== "timeline");
+
+  if (timelineEntry) {
+    timelineEntry.pane.hidden = false;
+    timelineEntry.pane.classList.add("docwindowtimeline");
+    for (const entry of otherEntries) {
+      const selectThisTab = entry.button.onclick;
+      entry.button.onclick = () => {
+        selectThisTab();
+        timelineEntry.pane.hidden = false;
+      };
+    }
+  }
+
+  const splitRow = timelineEntry
+    ? el("div", { class: "docwindowsplit" }, [
+        el(
+          "div",
+          { class: "docwindowsplitleft" },
+          otherEntries.map((entry) => entry.pane)
+        ),
+        el("div", { class: "docwindowsplitright" }, [timelineEntry.pane]),
+      ])
+    : null;
+
   root.replaceChildren(
     el("div", { class: "panel" }, [
       el("div", { class: "cardhead" }, [
-        el("div", { class: "doctabs" }, tabs.map((entry) => entry.button)),
+        el("div", { class: "doctabs" }, otherEntries.map((entry) => entry.button)),
         closeButton,
       ]),
-      ...tabs.map((entry) => entry.pane),
+      // Falls back to the plain, un-split layout `tabs.map()` always
+      // built when there is no timeline entry to split out — not
+      // expected in practice (every document has a Timeline / Chat
+      // pane), but this function should not assume it.
+      ...(splitRow ? [splitRow] : tabs.map((entry) => entry.pane)),
     ])
   );
 

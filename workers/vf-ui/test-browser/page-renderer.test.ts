@@ -129,6 +129,9 @@ describe("pageViewer — the widget", () => {
       "viewer.rotate": "Rotate",
       "viewer.zoomin": "Zoom in",
       "viewer.zoomout": "Zoom out",
+      "viewer.previouspage": "Previous page",
+      "viewer.nextpage": "Next page",
+      "viewer.highlight": "Highlight",
     },
   };
 
@@ -373,5 +376,224 @@ describe("pageViewer — the widget", () => {
       zoom: ZOOM_STEPS[DEFAULT_ZOOM_INDEX],
       rotation: 0,
     });
+  });
+
+  /**
+   * **Previous/next page cycling — decision 0394**, asked for
+   * directly: *"next / previous page cycling on the top of the
+   * document image viewer to the right of the rotate icon."* Calls
+   * the same `selectPage()` the thumbnail rail already uses (proven
+   * by the rail's own selection moving too, not just the main view
+   * redrawing), so there is one "current page" mechanism, reached two
+   * ways.
+   */
+  it("previous/next move through the pages, moving the rail's own selection too, and disable at each end", async () => {
+    const pages = [1, 2, 3].map((n) => ({ pageNumber: n, kind: "image", load: vi.fn(async () => ({ page: n })) }));
+    const deps = baseDeps({ resolvePages: vi.fn(async () => pages) });
+    const root = pageViewer("inv-1", null, deps) as HTMLElement;
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const prevBtn = root.querySelector('[aria-label="Previous page"]') as HTMLButtonElement;
+    const nextBtn = root.querySelector('[aria-label="Next page"]') as HTMLButtonElement;
+    const thumbs = mountedRail(root) as HTMLButtonElement[];
+
+    expect(prevBtn.disabled).toBe(true);
+    expect(nextBtn.disabled).toBe(false);
+
+    nextBtn.click();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(thumbs[1].className).toContain("on");
+    expect(deps.drawImage).toHaveBeenLastCalledWith({ page: 2 }, expect.anything(), expect.anything());
+    expect(prevBtn.disabled).toBe(false);
+    expect(nextBtn.disabled).toBe(false);
+
+    nextBtn.click();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(thumbs[2].className).toContain("on");
+    expect(nextBtn.disabled).toBe(true);
+
+    prevBtn.click();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(thumbs[1].className).toContain("on");
+    expect(deps.drawImage).toHaveBeenLastCalledWith({ page: 2 }, expect.anything(), expect.anything());
+    expect(prevBtn.disabled).toBe(false);
+  });
+
+  it("hides the vrail affordance the same way for a single page, but previous/next still exist, both disabled", async () => {
+    const single = { pageNumber: 1, kind: "image", load: vi.fn(async () => ({})) };
+    const deps = baseDeps({ resolvePages: vi.fn(async () => [single]) });
+    const root = pageViewer("inv-1", "image/jpeg", deps) as HTMLElement;
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const prevBtn = root.querySelector('[aria-label="Previous page"]') as HTMLButtonElement;
+    const nextBtn = root.querySelector('[aria-label="Next page"]') as HTMLButtonElement;
+    expect(prevBtn.disabled).toBe(true);
+    expect(nextBtn.disabled).toBe(true);
+  });
+
+  /**
+   * **The highlight tool — decision 0394, a small first cut.** These
+   * tests stub `canvas.getBoundingClientRect()` directly: jsdom
+   * (decision 0121) always reports a zero-size box for it, same as it
+   * has no working canvas 2D context, and the highlight math needs a
+   * real box to divide by. The pixel-for-pixel positioning this
+   * produces on screen is a Playwright concern, the same split the
+   * rest of this file already draws — what is checked here is the
+   * orchestration: mode toggling, which drag becomes a highlight,
+   * which becomes a removal, and when the set clears.
+   */
+  function stubCanvasBox(root: HTMLElement, box = { left: 0, top: 0, width: 200, height: 100 }) {
+    const canvas = root.querySelector(".vcanvas") as HTMLElement;
+    canvas.getBoundingClientRect = () => ({ ...box, right: box.left + box.width, bottom: box.top + box.height, x: box.left, y: box.top, toJSON() {} });
+    return canvas;
+  }
+
+  it("the highlight tool toggles on and off, marking the button and switching the holder's cursor", async () => {
+    const page = { pageNumber: 1, kind: "image", load: vi.fn(async () => ({})) };
+    const deps = baseDeps({ resolvePages: vi.fn(async () => [page]) });
+    const root = pageViewer("inv-1", null, deps) as HTMLElement;
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const highlightBtn = root.querySelector('[aria-label="Highlight"]') as HTMLButtonElement;
+    const holder = root.querySelector(".vcanvasholder") as HTMLElement;
+
+    // `classList.contains`, not a substring check: "iconbutton" itself
+    // contains the letters "on", which a `className.toContain("on")`
+    // check (fine for "vrailthumb"/"doctab", used elsewhere in this
+    // file) would wrongly match before the toggle ever ran.
+    expect(highlightBtn.classList.contains("on")).toBe(false);
+    expect(holder.className).not.toContain("highlighting");
+
+    highlightBtn.click();
+    expect(highlightBtn.classList.contains("on")).toBe(true);
+    expect(holder.className).toContain("highlighting");
+
+    highlightBtn.click();
+    expect(highlightBtn.classList.contains("on")).toBe(false);
+    expect(holder.className).not.toContain("highlighting");
+  });
+
+  it("dragging with the highlight tool on draws a highlight box, sized as a fraction of the canvas", async () => {
+    const page = { pageNumber: 1, kind: "image", load: vi.fn(async () => ({})) };
+    const deps = baseDeps({ resolvePages: vi.fn(async () => [page]) });
+    const root = pageViewer("inv-1", null, deps) as HTMLElement;
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    stubCanvasBox(root);
+    const holder = root.querySelector(".vcanvasholder") as HTMLElement;
+    (root.querySelector('[aria-label="Highlight"]') as HTMLButtonElement).click();
+
+    // A 100×20 drag inside a 200×100 box is 50% wide, 20% tall.
+    holder.dispatchEvent(new MouseEvent("pointerdown", { clientX: 20, clientY: 20 }));
+    holder.dispatchEvent(new MouseEvent("pointermove", { clientX: 120, clientY: 40 }));
+    holder.dispatchEvent(new MouseEvent("pointerup", { clientX: 120, clientY: 40 }));
+
+    const boxes = root.querySelectorAll(".vhighlight:not(.vhighlightdraft)");
+    expect(boxes).toHaveLength(1);
+    const style = (boxes[0] as HTMLElement).getAttribute("style") ?? "";
+    expect(style).toContain("left:10%");
+    expect(style).toContain("top:20%");
+    expect(style).toContain("width:50%");
+    expect(style).toContain("height:20%");
+  });
+
+  it("a plain click (no real drag) with the highlight tool on removes the highlight under it, instead of adding a zero-size one", async () => {
+    const page = { pageNumber: 1, kind: "image", load: vi.fn(async () => ({})) };
+    const deps = baseDeps({ resolvePages: vi.fn(async () => [page]) });
+    const root = pageViewer("inv-1", null, deps) as HTMLElement;
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    stubCanvasBox(root);
+    const holder = root.querySelector(".vcanvasholder") as HTMLElement;
+    (root.querySelector('[aria-label="Highlight"]') as HTMLButtonElement).click();
+
+    holder.dispatchEvent(new MouseEvent("pointerdown", { clientX: 20, clientY: 20 }));
+    holder.dispatchEvent(new MouseEvent("pointermove", { clientX: 120, clientY: 40 }));
+    holder.dispatchEvent(new MouseEvent("pointerup", { clientX: 120, clientY: 40 }));
+    expect(root.querySelectorAll(".vhighlight")).toHaveLength(1);
+
+    // A click inside that same box: down and up in (almost) the same
+    // spot, well under the drag threshold.
+    holder.dispatchEvent(new MouseEvent("pointerdown", { clientX: 60, clientY: 30 }));
+    holder.dispatchEvent(new MouseEvent("pointerup", { clientX: 61, clientY: 30 }));
+    expect(root.querySelectorAll(".vhighlight")).toHaveLength(0);
+  });
+
+  it("rotating clears any highlights — a box fraction stops meaning the same place once the page turns", async () => {
+    const page = { pageNumber: 1, kind: "image", load: vi.fn(async () => ({})) };
+    const deps = baseDeps({ resolvePages: vi.fn(async () => [page]) });
+    const root = pageViewer("inv-1", null, deps) as HTMLElement;
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    stubCanvasBox(root);
+    const holder = root.querySelector(".vcanvasholder") as HTMLElement;
+    (root.querySelector('[aria-label="Highlight"]') as HTMLButtonElement).click();
+    holder.dispatchEvent(new MouseEvent("pointerdown", { clientX: 20, clientY: 20 }));
+    holder.dispatchEvent(new MouseEvent("pointermove", { clientX: 120, clientY: 40 }));
+    holder.dispatchEvent(new MouseEvent("pointerup", { clientX: 120, clientY: 40 }));
+    expect(root.querySelectorAll(".vhighlight")).toHaveLength(1);
+
+    (root.querySelector('[aria-label="Rotate"]') as HTMLButtonElement).click();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(root.querySelectorAll(".vhighlight")).toHaveLength(0);
+  });
+
+  it("switching page clears any highlights — a box belongs to the page it was drawn on", async () => {
+    const pages = [1, 2].map((n) => ({ pageNumber: n, kind: "image", load: vi.fn(async () => ({ page: n })) }));
+    const deps = baseDeps({ resolvePages: vi.fn(async () => pages) });
+    const root = pageViewer("inv-1", null, deps) as HTMLElement;
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    stubCanvasBox(root);
+    const holder = root.querySelector(".vcanvasholder") as HTMLElement;
+    (root.querySelector('[aria-label="Highlight"]') as HTMLButtonElement).click();
+    holder.dispatchEvent(new MouseEvent("pointerdown", { clientX: 20, clientY: 20 }));
+    holder.dispatchEvent(new MouseEvent("pointermove", { clientX: 120, clientY: 40 }));
+    holder.dispatchEvent(new MouseEvent("pointerup", { clientX: 120, clientY: 40 }));
+    expect(root.querySelectorAll(".vhighlight")).toHaveLength(1);
+
+    (root.querySelector('[aria-label="Next page"]') as HTMLButtonElement).click();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(root.querySelectorAll(".vhighlight")).toHaveLength(0);
+  });
+
+  it("with the highlight tool off, a drag still pans as before, not draws", async () => {
+    const page = { pageNumber: 1, kind: "image", load: vi.fn(async () => ({})) };
+    const deps = baseDeps({ resolvePages: vi.fn(async () => [page]) });
+    const root = pageViewer("inv-1", null, deps) as HTMLElement;
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    stubCanvasBox(root);
+    const holder = root.querySelector(".vcanvasholder") as HTMLElement;
+    holder.scrollLeft = 0;
+    holder.scrollTop = 0;
+
+    holder.dispatchEvent(new MouseEvent("pointerdown", { clientX: 200, clientY: 150 }));
+    holder.dispatchEvent(new MouseEvent("pointermove", { clientX: 140, clientY: 100 }));
+    expect(holder.scrollLeft).toBe(60);
+    holder.dispatchEvent(new MouseEvent("pointerup"));
+
+    expect(root.querySelectorAll(".vhighlight")).toHaveLength(0);
   });
 });

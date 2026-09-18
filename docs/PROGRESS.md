@@ -596,6 +596,31 @@ a rule, and left an approval task in a queue.
   wordings share, since asserting the exact new text is the newer
   test's job). Full suites: vf-ui 74 Worker + 674 browser (669
   pre-existing + 5 new); vf-licence 320/320, both passing.
+- **A column, two arrows, and a marker** (0394). An evaluation request
+  — Timeline / Chat as a right-hand column, next/previous page
+  cycling, and highlight annotations — mocked up before anything was
+  built, then scoped by the operator's own choices against the
+  mockups. Timeline / Chat moves to a standing `.docwindowsplitright`
+  column at 25% width, pop-out only, built entirely in
+  `initDocumentWindow()`'s own layout code so the embedded card (which
+  shares `buildDocTabs()`, decision 0384) is untouched; the one real
+  trap was `buildDocTabs()`'s shared `select()` closure re-hiding the
+  timeline pane as a side effect of switching to Document or XML,
+  caught and worked around by re-showing it after each remaining
+  button's own handler runs. Previous/next page buttons reuse the
+  thumbnail rail's existing `selectPage()` — nothing new tracks
+  "which page" — and land in the shared control row, so they appear
+  in both the pop-out and, by the operator's own choice, the embedded
+  card too. The highlight tool is a deliberate "small first cut" of
+  annotations rather than the full feature: session-only rectangle
+  highlights, recorded as a fraction of the canvas's own rendered box
+  (valid across zoom, since `drawRotated()` never letterboxes), and
+  cleared on rotation or page change rather than mis-projected. Ten
+  new tests, all watched to fail against the pre-fix code first;
+  `canvas.getBoundingClientRect()` stubbed directly in the highlight
+  tests since jsdom always reports a zero-size box for it. Full
+  suites: vf-ui 74 Worker + 684 browser (674 pre-existing + 10 new);
+  vf-licence 320/320, both passing.
 
 ### Customer configuration
 - Org units, teams, roles, users, cost centres

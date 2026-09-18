@@ -504,3 +504,18 @@ Object.assign(ICONS, {
   zoomout: '<circle cx="10.5" cy="10.5" r="6.5"/><path d="M8 10.5h5"/><path d="M15.5 15.5 21 21"/>',
   rotate: '<path d="M4 12a8 8 0 1 1 2.5 5.8"/><path d="M4 17v-4h4"/>',
 });
+
+/**
+ * The highlight tool — decision 0394. Previous/next page cycling
+ * (same control row) reuses the existing `chevronleft`/`chevronright`
+ * shapes decision 0376 already drew for Purchase Orders' and
+ * Suppliers' own pagination rather than a new pair of arrows — one
+ * shape for "go back/forward a page" everywhere it appears.
+ *
+ * `highlight` is new: a marker's own angled nib and the stroke it
+ * leaves, conventional enough to read as "mark this up" without a
+ * caption.
+ */
+Object.assign(ICONS, {
+  highlight: '<path d="M6 16l9-9 3 3-9 9H6z"/><path d="M4 20h16"/>',
+});

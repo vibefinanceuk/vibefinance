@@ -2552,6 +2552,7 @@
   .vpagestatus { margin-left: auto; font-size: var(--text-sm); color: var(--text-secondary); }
 
   .vcanvasholder {
+    position: relative;
     flex: 1;
     overflow: auto;
     display: grid;
@@ -2582,6 +2583,34 @@
    */
   .vcanvasholder.pannable { cursor: grab; }
   .vcanvasholder.pannable.dragging { cursor: grabbing; }
+
+  /**
+   * The highlight tool — decision 0394. `.vhighlightlayer` is
+   * repositioned in script (`renderHighlights()`, page-renderer.js) to
+   * sit exactly over the canvas's own rendered box, on `.vcanvasholder`
+   * itself becoming `position: relative` above so that positioning is
+   * relative to this box and not some further ancestor. `pointer-events:
+   * none` on the layer keeps drags on the crosshair cursor reaching the
+   * canvas underneath rather than the (otherwise invisible) overlay
+   * `<div>` sitting on top of it.
+   */
+  .vhighlightlayer { position: absolute; pointer-events: none; }
+  .vcanvasholder.highlighting { cursor: crosshair; }
+  .vhighlight {
+    position: absolute;
+    background: rgba(255, 213, 79, 0.35);
+    border: 1.5px solid rgba(230, 160, 0, 0.85);
+    border-radius: 2px;
+  }
+  .vhighlightdraft { background: rgba(255, 213, 79, 0.22); border-style: dashed; }
+
+  /**
+   * A toggled tool, not a one-shot action — the same `.on` shape
+   * `.doctab` and `.vrailthumb` already give a currently-active choice,
+   * reused here rather than inventing a second "this is active" look
+   * for a third kind of control.
+   */
+  .iconbutton.on { background: var(--bg-accent); color: var(--text-accent); }
 
   .actionlink {
     display: flex;
@@ -2841,6 +2870,61 @@
     min-height: 0;
   }
   .docwindowbody .vpreview { height: auto; }
+
+  /**
+   * **Timeline / Chat as a standing right-hand column, pop-out only**
+   * — decision 0394, asked for directly: *"the timeline / chat should
+   * appear on the right of the invoice image... when expanded in the
+   * separate window only."* Built entirely in `initDocumentWindow()`'s
+   * own layout code (`viewer.js`), never in `buildDocTabs()` — the
+   * embedded validation-screen card calls that same shared function
+   * (decision 0384's own reasoning for why it is shared at all) and
+   * must go on tabbing between Document/XML/Timeline exactly as
+   * before; nothing here is reachable from there.
+   *
+   * `.docwindowsplitleft` is the only thing `.panel > *:not(.cardhead)`
+   * used to reach directly (the doc/xml panes) — now one level deeper,
+   * so `.vpreview` needs its own `flex: 1; min-height: 0` restated
+   * for this new parent rather than inherited from that rule.
+   * `.docwindowsplitright` gets its own scroll rather than growing the
+   * whole window: a long comment thread should not push the document
+   * off screen.
+   */
+  .docwindowsplit { display: flex; flex: 1; min-height: 0; gap: 20px; }
+  .docwindowsplitleft { flex: 1 1 75%; min-width: 0; display: flex; flex-direction: column; min-height: 0; }
+  .docwindowsplitleft > .vpreview { flex: 1; min-height: 0; }
+  .docwindowsplitright {
+    flex: 0 0 25%;
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    border-left: 0.5px solid var(--border);
+    padding-left: 20px;
+    overflow-y: auto;
+  }
+  .docwindowtimeline { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+  .docwindowtimeline .activitytabcontent { flex: 1; min-height: 0; }
+
+  /**
+   * **Stacks below the document rather than squeezing to a sliver** —
+   * the same 900px width this stylesheet already treats as "too
+   * narrow for a side-by-side layout" elsewhere (`.supplierhead`,
+   * `.poloadhead`). A pop-out this narrow has already lost most of the
+   * benefit of a side column; reading top-to-bottom beats a 25%-wide
+   * strip nobody can read.
+   */
+  @media (max-width: 900px) {
+    .docwindowsplit { flex-direction: column; }
+    .docwindowsplitright {
+      flex: 0 0 auto;
+      max-height: 40vh;
+      border-left: none;
+      border-top: 0.5px solid var(--border);
+      padding-left: 0;
+      padding-top: 16px;
+    }
+  }
 
   /*
     The card that gives its space to the pop-out, once one is open —

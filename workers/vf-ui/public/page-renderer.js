@@ -224,11 +224,75 @@ export function pageViewer(invoiceId, contentType, deps = REAL_DEPS) {
   });
   const rotateBtn = iconButton("rotate", t("viewer.rotate"), () => {
     rotation = ROTATIONS[(ROTATIONS.indexOf(rotation) + 1) % ROTATIONS.length];
+    // **Highlights do not survive a rotation** — decision 0394. Each
+    // one is recorded as a fraction of the canvas's own rendered box
+    // (below), which stays a valid description of "where on the page"
+    // only while that box keeps the same orientation. Rotating swaps
+    // the box's own width and height, so a fraction that meant
+    // "top-left corner" a moment ago would land somewhere unrelated
+    // once the page turns — clearing is the honest choice, not a
+    // silent misplacement.
+    highlights = [];
     draw();
   });
+  /**
+   * **Previous/next, beside Rotate** — decision 0394, asked for
+   * directly: *"next / previous page cycling on the top of the
+   * document image viewer to the right of the rotate icon."* Calls
+   * the same `selectPage()` the thumbnail rail already uses, so the
+   * rail's own highlight and `draw()` stay the single source of truth
+   * for "which page is current" — this is a second way to reach it,
+   * not a second copy of it.
+   */
+  const prevBtn = iconButton("chevronleft", t("viewer.previouspage"), () => {
+    if (current > 0) selectPage(current - 1);
+  });
+  const nextBtn = iconButton("chevronright", t("viewer.nextpage"), () => {
+    if (current < pages.length - 1) selectPage(current + 1);
+  });
 
-  const controls = el("div", { class: "vcontrols" }, [zoomOutBtn, zoomInBtn, rotateBtn, status]);
+  /**
+   * **The highlight tool — decision 0394, a small first cut.** Session
+   * only: nothing here is sent anywhere or outlives this window being
+   * closed. Scoped down deliberately from "annotations" to one shape
+   * (a dragged rectangle) so it could be built, measured and shipped
+   * rather than designed indefinitely — see the decision record for
+   * what this does not yet do (persistence, other shapes, showing up
+   * in the Timeline).
+   *
+   * **Recorded as a fraction of the canvas's own rendered box**
+   * (`canvas.offsetLeft/Top/Width/Height`, relative to `canvasHolder`,
+   * its positioned ancestor — stable under scroll, unlike
+   * `getBoundingClientRect()`), not of the underlying page image.
+   * `drawRotated()` always resizes the canvas bitmap to exactly the
+   * scaled, rotated image with no letterboxing, so that box *is* the
+   * image at every zoom step — a fraction of it stays correct across
+   * zoom precisely because zoom only ever scales that box, never
+   * reshapes it. Rotation reshapes it, which is why the handler above
+   * clears on rotate rather than trying to re-project.
+   */
+  let highlights = [];
+  let highlightMode = false;
+  let dragBox = null;
+
+  const highlightBtn = iconButton("highlight", t("viewer.highlight"), () => {
+    highlightMode = !highlightMode;
+    highlightBtn.classList.toggle("on", highlightMode);
+    canvasHolder.classList.toggle("highlighting", highlightMode);
+  });
+
+  const controls = el("div", { class: "vcontrols" }, [
+    zoomOutBtn,
+    zoomInBtn,
+    rotateBtn,
+    prevBtn,
+    nextBtn,
+    highlightBtn,
+    status,
+  ]);
   const canvasHolder = el("div", { class: "vcanvasholder" }, [canvas]);
+  const highlightLayer = el("div", { class: "vhighlightlayer" });
+  canvasHolder.append(highlightLayer);
   const main = el("div", { class: "vmain" }, [controls, canvasHolder]);
   const root = el("div", { class: "vpagesroot" }, [rail, main]);
 
@@ -249,7 +313,48 @@ export function pageViewer(invoiceId, contentType, deps = REAL_DEPS) {
   let dragStartY = 0;
   let dragStartLeft = 0;
   let dragStartTop = 0;
+
+  /**
+   * **A drag under the highlight tool draws instead of pans** — the
+   * same pointer-capture gesture decision 0392 built for panning, but
+   * `highlightMode` sends it to a different outcome rather than
+   * duplicating the capture/release plumbing. `dragBox` is the
+   * in-progress rectangle, in the same box-fraction coordinates
+   * `highlights` itself uses, redrawn live as the pointer moves.
+   * `MIN_DRAG` throws out anything that was really a click — the same
+   * gesture used to remove an existing highlight, below.
+   */
+  const MIN_DRAG = 4;
+  let dragOriginXFrac = 0;
+  let dragOriginYFrac = 0;
+
+  function pointToFraction(e) {
+    const box = canvas.getBoundingClientRect();
+    if (box.width === 0 || box.height === 0) return { x: 0, y: 0 };
+    return {
+      x: Math.min(1, Math.max(0, (e.clientX - box.left) / box.width)),
+      y: Math.min(1, Math.max(0, (e.clientY - box.top) / box.height)),
+    };
+  }
+
+  function removeHighlightAt(frac) {
+    const hit = [...highlights]
+      .reverse()
+      .find((h) => frac.x >= h.x && frac.x <= h.x + h.w && frac.y >= h.y && frac.y <= h.y + h.h);
+    if (!hit) return false;
+    highlights = highlights.filter((h) => h !== hit);
+    return true;
+  }
+
   canvasHolder.addEventListener("pointerdown", (e) => {
+    if (highlightMode) {
+      const frac = pointToFraction(e);
+      dragOriginXFrac = frac.x;
+      dragOriginYFrac = frac.y;
+      dragBox = { x: frac.x, y: frac.y, w: 0, h: 0 };
+      canvasHolder.setPointerCapture?.(e.pointerId);
+      return;
+    }
     dragging = true;
     dragStartX = e.clientX;
     dragStartY = e.clientY;
@@ -261,16 +366,75 @@ export function pageViewer(invoiceId, contentType, deps = REAL_DEPS) {
     canvasHolder.setPointerCapture?.(e.pointerId);
   });
   canvasHolder.addEventListener("pointermove", (e) => {
+    if (highlightMode) {
+      if (!dragBox) return;
+      const frac = pointToFraction(e);
+      dragBox = {
+        x: Math.min(dragOriginXFrac, frac.x),
+        y: Math.min(dragOriginYFrac, frac.y),
+        w: Math.abs(frac.x - dragOriginXFrac),
+        h: Math.abs(frac.y - dragOriginYFrac),
+      };
+      renderHighlights();
+      return;
+    }
     if (!dragging) return;
     canvasHolder.scrollLeft = dragStartLeft - (e.clientX - dragStartX);
     canvasHolder.scrollTop = dragStartTop - (e.clientY - dragStartY);
   });
+  function stopHighlightDrag(e) {
+    if (!dragBox) return;
+    const box = canvas.getBoundingClientRect();
+    const movedPixels = Math.max(dragBox.w * box.width, dragBox.h * box.height);
+    if (movedPixels < MIN_DRAG) {
+      // A click, not a drag: remove whatever highlight is under it
+      // instead of adding a zero-size one nobody could see or select
+      // again.
+      removeHighlightAt(pointToFraction(e));
+    } else {
+      highlights = [...highlights, dragBox];
+    }
+    dragBox = null;
+    renderHighlights();
+  }
   const stopDragging = () => {
     dragging = false;
     canvasHolder.classList.remove("dragging");
   };
-  canvasHolder.addEventListener("pointerup", stopDragging);
-  canvasHolder.addEventListener("pointercancel", stopDragging);
+  canvasHolder.addEventListener("pointerup", (e) => {
+    if (highlightMode) return stopHighlightDrag(e);
+    stopDragging();
+  });
+  canvasHolder.addEventListener("pointercancel", () => {
+    if (highlightMode) {
+      dragBox = null;
+      renderHighlights();
+      return;
+    }
+    stopDragging();
+  });
+
+  function highlightStyle(box) {
+    return `left:${box.x * 100}%; top:${box.y * 100}%; width:${box.w * 100}%; height:${box.h * 100}%;`;
+  }
+
+  /**
+   * Repositions the overlay to sit exactly over the canvas's own
+   * rendered box, then draws every highlight (plus the in-progress
+   * drag, if any) as a percentage of that box — see the field
+   * declarations above for why a percentage of *this* box is the
+   * right unit to store and draw in.
+   */
+  function renderHighlights() {
+    highlightLayer.style.left = `${canvas.offsetLeft}px`;
+    highlightLayer.style.top = `${canvas.offsetTop}px`;
+    highlightLayer.style.width = `${canvas.offsetWidth}px`;
+    highlightLayer.style.height = `${canvas.offsetHeight}px`;
+    highlightLayer.replaceChildren(
+      ...highlights.map((box) => el("div", { class: "vhighlight", style: highlightStyle(box) })),
+      ...(dragBox ? [el("div", { class: "vhighlight vhighlightdraft", style: highlightStyle(dragBox) })] : [])
+    );
+  }
 
   function pageLabel(pageNumber, total) {
     return t("viewer.pageof").replace("{n}", String(pageNumber)).replace("{total}", String(total));
@@ -281,6 +445,8 @@ export function pageViewer(invoiceId, contentType, deps = REAL_DEPS) {
     if (!source) return;
     zoomOutBtn.disabled = zoomIndex === 0;
     zoomInBtn.disabled = zoomIndex === ZOOM_STEPS.length - 1;
+    prevBtn.disabled = current === 0;
+    nextBtn.disabled = current === pages.length - 1;
     status.textContent = pageLabel(current + 1, pages.length);
     /**
      * **Escapes `.vcanvas`'s own width clamp once zoomed in past the
@@ -299,11 +465,17 @@ export function pageViewer(invoiceId, contentType, deps = REAL_DEPS) {
     canvas.classList.toggle("zoomedin", zoomedIn);
     canvasHolder.classList.toggle("pannable", zoomedIn);
     await renderPage(source, canvas, { zoom: ZOOM_STEPS[zoomIndex], rotation }, deps);
+    renderHighlights();
   }
 
   function selectPage(index) {
     current = index;
     for (const [i, btn] of railButtons.entries()) btn.className = i === index ? "vrailthumb on" : "vrailthumb";
+    // A highlight is drawn against one page's own content — carrying
+    // it over to whichever page happens to occupy the same box
+    // fraction on arrival would be showing it over the wrong thing,
+    // the same reasoning the rotation handler above already follows.
+    highlights = [];
     draw();
   }
 

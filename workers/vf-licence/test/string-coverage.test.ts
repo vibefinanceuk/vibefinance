@@ -133,6 +133,11 @@ const KEYS_THE_INTERFACE_USES = [
   "viewer.rotate",
   "viewer.pageof",
   "viewer.thumbnails",
+  // Page cycling and the highlight tool, added to the same control
+  // row (decision 0394).
+  "viewer.previouspage",
+  "viewer.nextpage",
+  "viewer.highlight",
   // The document pop-out window (decision 0384, phase 4 of
   // docs/design/document-viewer.md).
   "viewer.popupblocked",
