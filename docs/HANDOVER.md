@@ -30,40 +30,53 @@ twice.
 
 | | |
 | --- | --- |
-| `origin/main` | `0125d52` |
+| `origin/main` | `80a43b0` |
 | vf-admin deployed | `8e27a34` · `https://admin.vibefinance-ai.com` · behind Cloudflare Access |
 | vf-app deployed | `4d44b59` |
 | vf-licence deployed | `a235713` |
-| vf-ui deployed | `0125d52` · `https://app.vibefinance-ai.com` |
+| vf-ui deployed | `0125d52` · `https://app.vibefinance-ai.com` · **behind `origin/main` — 0394 pushed, not yet deployed (see below)** |
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
 | `vf-app-poc` migrations | through `0070` |
 | `vf-licence-poc` migrations | through `0121` applied · **`0122` and `0123` committed, neither yet applied to the remote D1** |
 | Tests | vf-admin 9 · vf-app 1921 · vf-licence 320 · vf-ui 74 Worker + 684 browser · shared 278 (+3 known pre-existing failures) |
 | Decision records | 394 |
 
-**Decision 0394 (a column, two arrows, and a marker) is built and
-committed locally (`fe40c60`), not yet pushed.** An evaluation request
-— Timeline / Chat as a pop-out-only right-hand column at 25% width,
-next/previous page cycling in the shared control row, and a
-session-only rectangle highlight tool as a deliberate first cut of
-"annotations" — mocked up with Playwright before anything was built,
-then scoped by three explicit choices (25% over 20%; page cycling in
-both the pop-out and the embedded card, since the control row is
-shared; build a small first cut of annotations now rather than scope
-the full feature first). Touches `vf-ui` (`app.css`, `icons.js`,
-`page-renderer.js`, `viewer.js`) and `vf-licence` (migration `0123`,
-`test/setup.ts`, `test/string-coverage.test.ts`) — no `vf-app` or
-`vf-admin` change. Ten new tests, full suites vf-ui 74 Worker + 684
-browser, vf-licence 320/320, all passing; `eslint` and
-`scripts/check-citations.py` both clean. **Not yet confirmed pushed or
-deployed** — this session has no push access; delivered as a bundle,
-waiting on the operator's own `git pull`/`push`/`wrangler deploy`
-sequence, same as every prior decision. Once pushed, `vf-licence`'s
-migration `0123` has the same gap decision 0393 already found for
-`0122`: a `wrangler deploy` of `vf-ui` does not touch `ui_strings` in
-the `vf-licence-poc` D1, and this session still does not know how that
-database's own migrations reach production (see the paragraph below
-and "Waiting on you" — unanswered as of this update).
+**Decision 0394 (a column, two arrows, and a marker) is pushed, not
+yet deployed.** An evaluation request — Timeline / Chat as a
+pop-out-only right-hand column at 25% width, next/previous page
+cycling in the shared control row, and a session-only rectangle
+highlight tool as a deliberate first cut of "annotations" — mocked up
+with Playwright before anything was built, then scoped by three
+explicit choices (25% over 20%; page cycling in both the pop-out and
+the embedded card, since the control row is shared; build a small
+first cut of annotations now rather than scope the full feature
+first). Touches `vf-ui` (`app.css`, `icons.js`, `page-renderer.js`,
+`viewer.js`) and `vf-licence` (migration `0123`, `test/setup.ts`,
+`test/string-coverage.test.ts`) — no `vf-app` or `vf-admin` change.
+Ten new tests, full suites vf-ui 74 Worker + 684 browser, vf-licence
+320/320, all passing; `eslint` and `scripts/check-citations.py` both
+clean.
+
+**Checked rather than taken on the operator's report of "pushed and
+deployed."** `origin/main` fetched directly reads `80a43b0`, matching
+this session's own `main` exactly — the push is real. The deploy is
+not: `viewer.js`, `page-renderer.js` and `app.css` were each fetched
+from the live site with a fresh, never-before-used cache-busting query
+string, and none contain any trace of this decision (`docwindowsplit`,
+`previouspage`/`nextpage`/`highlight`, `vhighlightlayer` — all absent).
+This is not a stale check: the same fetch, on the same site, found
+decision 0393's own CSS (`.c-process > .panel { height: 100%; ...
+}`) present and correct — the live `vf-ui` is current through 0393 and
+stops there. Most likely `wrangler deploy` was not run after the pull,
+or ran before it landed. The operator has been asked to run `cd
+workers/vf-ui && npx wrangler deploy` and confirm.
+
+Once actually deployed, `vf-licence`'s migration `0123` has the same
+gap decision 0393 already found for `0122`: a `wrangler deploy` of
+`vf-ui` does not touch `ui_strings` in the `vf-licence-poc` D1, and
+this session still does not know how that database's own migrations
+reach production (see the paragraph below and "Waiting on you" —
+unanswered as of this update).
 
 **Decision 0393 (filling the row, and a number to ring) is pushed and
 deployed, with one part still outstanding**: every `vf-ui` change
