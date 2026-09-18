@@ -30,22 +30,24 @@ twice.
 
 | | |
 | --- | --- |
-| `origin/main` | `7d9a63b` |
+| `origin/main` | `0125d52` |
 | vf-admin deployed | `8e27a34` · `https://admin.vibefinance-ai.com` · behind Cloudflare Access |
 | vf-app deployed | `4d44b59` |
 | vf-licence deployed | `a235713` |
-| vf-ui deployed | `7d9a63b` · `https://app.vibefinance-ai.com` |
+| vf-ui deployed | `0125d52` · `https://app.vibefinance-ai.com` |
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
 | `vf-app-poc` migrations | through `0070` |
-| `vf-licence-poc` migrations | through `0121` |
+| `vf-licence-poc` migrations | through `0121` applied · **`0122` committed, not yet applied to the remote D1** |
 | Tests | vf-admin 9 · vf-app 1921 · vf-licence 320 · vf-ui 74 Worker + 674 browser · shared 278 (+3 known pre-existing failures) |
 | Decision records | 393 |
 
-**Decision 0393 (filling the row, and a number to ring) is built and
-committed, not yet pushed or deployed** — this session has no push
-access to `origin/main`, delivered as a bundle for the operator's own
-pull/push/deploy sequence, as usual. Everything before it is deployed
-and confirmed. Decision 0392 (more room
+**Decision 0393 (filling the row, and a number to ring) is pushed and
+deployed, with one part still outstanding**: every `vf-ui` change
+(`app.css`, `viewer.js`) is confirmed live — the wording change is
+data, not code, and needs the `vf-licence-poc` remote D1 migrated
+separately from a `wrangler deploy`; that has not happened yet (see
+"Where things stand" and the paragraph below). Everything else is
+deployed and confirmed. Decision 0392 (more room
 in every direction) was reported pushed and deployed, and checked
 rather than taken on that report alone: `origin/main` fetched directly
 reads `7d9a63b`, matching this session's own `main` exactly; the live
@@ -910,8 +912,8 @@ header sharing one row at the built 25/25/50 widths, and the pop-out
 placeholder sitting compactly in the Process row's own line rather than
 filling a tall card.
 
-**Decision 0393 (filling the row, and a number to ring) is built and
-committed, not yet pushed.** Asked against a screenshot of the
+**Decision 0393 (filling the row, and a number to ring) is pushed and
+deployed, with one part outstanding.** Asked against a screenshot of the
 deployed 0392 layout: the placeholder sat visibly shorter than Process
 beside it, and Seller/Buyer ended well above Header's own bottom —
 both measured real (44px vs Process's 90px; 244px vs Header's 421px),
@@ -963,11 +965,40 @@ asserting the same fact twice for two different reasons. Touches
 `vf-ui` (`app.css`, `viewer.js`) and `vf-licence` (migration 0122 +
 `test/setup.ts`) only — no change to `vf-app` or `vf-admin`. Full
 suites: vf-ui 74 Worker + 674 browser (669 pre-existing + 5 new);
-vf-licence 320/320, both passing. `eslint` clean. **This session has
-no push access to `origin/main`** — delivered as a bundle for the
-operator's own pull/push/deploy sequence. Not yet confirmed live; that
-confirmation, and the update to this paragraph recording it, is still
-to come.
+vf-licence 320/320, both passing. `eslint` clean. **This session had
+no push access to `origin/main`** — delivered as bundle 0566 for the
+operator's own pull/push/deploy sequence, which is how it reached the
+remote. **Confirmed against the live origin and the live deployment,
+not just reported — with one genuine gap found, not assumed clean**:
+`origin/main` fetched directly reads `0125d52`, matching this
+session's own `main` exactly; the live `app.css`, fetched cache-busted,
+has `#viewer .columns.docpoppedout .c-process > .panel`'s `height:
+100%; box-sizing: border-box;`, no `.vpoppedoutactions .actionlink {`
+anywhere, `.vpreview.vpoppedout .vthumb`'s `flex-direction: row;
+justify-content: space-between;`, and `.c-parties > .parties`'s
+`height: 100%` — all exactly as built; the live `viewer.js`, fetched
+cache-busted, has `addressBlock()`'s `cityCountry` join and both
+`pair(t("viewer.supplier.phone"), …)` calls. **The wording change did
+not reach production with the rest of it** — `GET
+/api/ui-strings?locale=en` on the live deployment still answers
+`viewer.openinwindow` with the old "Open in a separate window", not
+migration 0122's "Document open in a separate window", checked
+directly rather than assumed alongside everything else that did land.
+The cause, once traced rather than guessed at: `ui_strings` is data in
+the `vf-licence-poc` D1 database, not code `wrangler deploy` touches,
+and `migrations/apply_migrations.py` at the repo root — the only
+migration runner in this repo with a documented `--remote` mode — is
+wired to a different chain entirely (`vf-app-poc`'s own schema,
+through migration `0070`; confirmed by running it with
+`--replay-only`, the one mode this session can run itself, which
+replayed all 70 of *that* chain's migrations and none of
+`vf-licence`'s). How migration `0121`'s own strings ("Bring to front",
+"Show here instead") reached this same live deployment earlier is not
+documented anywhere this session found — so the operator's own
+process for applying a `vf-licence` migration to the remote is not
+yet known here, and is worth asking them directly rather than guessing
+at a `wrangler d1 migrations apply vf-licence-poc --remote` command
+this repo gives no evidence either confirms or rules out.
 
 **Built this arc, closing out most of what was named here before:
 teams, most of the "user variable" fields, creating and managing an

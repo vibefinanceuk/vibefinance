@@ -1,9 +1,11 @@
 # 0393 — Filling the row, and a number to ring
 
-**Status: built, not yet pushed.** Corrects two real bugs in decision
-0392's own work, and reverses part of decision 0387. This session has
-no push access to `origin/main`; delivered as a bundle for the
-operator's own pull/push/deploy sequence.
+**Status: built.** Corrects two real bugs in decision 0392's own
+work, and reverses part of decision 0387. `docs/HANDOVER.md` carries
+this decision's own deploy status — pushed and deployed, except the
+`ui_strings` wording change (migration 0122), which needs the remote
+`vf-licence-poc` D1 migrated separately from a `wrangler deploy` and
+had not been, as of last check.
 
 ---
 
