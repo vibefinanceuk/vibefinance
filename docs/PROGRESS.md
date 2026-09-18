@@ -504,6 +504,39 @@ a rule, and left an approval task in a queue.
   rail's 92px for the canvas automatically, via `.vmain`'s existing
   `flex: 1`. No test needed changing; the fragile decision-0281 nav
   test and the full suite were both rerun to confirm, not assumed.
+- **The Document card stops borrowing space** (0391, superseding part
+  of 0390's own reasoning). Zooming an invoice image grew the Document
+  card itself, pushing large blank gaps into the process/parties/
+  header column beside it — reproduced first with a genuinely tall
+  test image, which measured `.c-process`, `.c-parties` and
+  `.c-header` all inflating, not just the Document card. The cause:
+  CSS Grid's own "increase sizes to accommodate spanning items" step,
+  which runs for `auto`, `min-content` *and* `max-content` tracks
+  alike (checked by trying `min-content` explicitly and watching the
+  same inflation happen) — there is no track-sizing keyword that lets
+  a spanning item's content need more room without its spanned tracks
+  growing to give it that room. `position: absolute` on `.c-document`
+  is the one technique that actually works: it removes the item from
+  the sizing algorithm entirely while its resolved `grid-area` still
+  becomes its containing block (`#viewer .columns` gained `position:
+  relative` for this to anchor to), so the card is now capped to
+  exactly what process+parties+header naturally add up to, every
+  time, not just when nothing large enough was drawn to notice. Doing
+  that surfaced a second, real regression, found by re-measuring
+  rather than assumed clean: decision 0390's own `.vpreview { height:
+  100%; }` now resolves against a genuinely shorter parent on some
+  invoices, and the base rule's leftover `min-height: 320px` (decision
+  0271) then won, growing the preview past its own card's bottom —
+  fixed with `min-height: 0` for the docked case specifically. The
+  scrolling this implied — `.vcanvasholder { overflow: auto; }`,
+  already there since decision 0382 — turned out to need no new code
+  at all once the box itself stopped growing to swallow the overflow;
+  measured directly (`scrollHeight` exceeds `clientHeight`, `scrollTop`
+  actually moves). The narrow, single-column screen broke the same way
+  the wide fix was built — `document` has nothing else in its own row
+  there to size itself by once taken out of the algorithm, measured
+  collapsing to `0` — reset with `.c-document { position: static; }`
+  inside that width's own, pre-existing media query.
 
 ### Customer configuration
 - Org units, teams, roles, users, cost centres

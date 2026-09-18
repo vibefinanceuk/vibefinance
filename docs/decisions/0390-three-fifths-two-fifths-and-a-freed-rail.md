@@ -2,6 +2,13 @@
 
 **Status: built.**
 
+**Superseded in part by decision 0391**, on one specific point: the
+"What was built" section below calls `.vpreview`'s leftover
+`min-height: 320px` "still the floor for a card genuinely given less
+than that." Once the Document card was actually capped below 320px on
+some invoices, that floor did what a floor does and pushed the
+preview past its own card's bottom. Everything else here stands.
+
 ---
 
 ## What was asked

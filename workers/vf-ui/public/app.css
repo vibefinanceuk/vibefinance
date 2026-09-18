@@ -1848,6 +1848,7 @@
     so the selector needs to say so rather than assume it.
   */
   #viewer .columns {
+    position: relative;
     grid-template-areas:
       "process  document"
       "parties  document"
@@ -1878,7 +1879,7 @@
   .c-header { grid-area: header; }
   .c-lines { grid-area: lines; }
   .c-note { grid-area: note; }
-  .c-document { grid-area: document; min-height: 0; }
+  .c-document { grid-area: document; min-height: 0; position: absolute; inset: 0; }
 
   /*
     **The Document card fills exactly the area the grid gives it**,
@@ -1913,10 +1914,23 @@
    * against something definite instead of cascading `auto` down
    * through `.vthumb`'s own pre-existing `height: 100%` (decision
    * 0271) and leaving it, too, sized by nothing but that same floor.
-   * `min-height: 320px` itself is untouched — still the floor for a
-   * card genuinely given less than that.
+   *
+   * **`min-height: 0`, not the base rule's `320px` — decision 0391.**
+   * 0390 left that floor in place, reasoned as harmless — "still the
+   * floor for a card genuinely given less than that." Measured while
+   * building 0391's fix and found wrong: once the Document card is
+   * genuinely capped to whatever process+parties+header add up to
+   * (0391, immediately below), a card given less than 320px hits this
+   * floor and grows past its own container's bottom — `.vpreview`'s
+   * `overflow: hidden` clips its own children, not itself, so the
+   * element simply overflowed `normalBody` and every ancestor above it
+   * that doesn't clip either, reproducing visually as the Document
+   * card spilling into the Lines panel below it. Zero, not a smaller
+   * floor: the whole point of 0391 is a card that is exactly as tall
+   * as the rest of the row, never taller, however little that leaves
+   * the preview.
    */
-  .c-document .vpreview { height: 100%; }
+  .c-document .vpreview { height: 100%; min-height: 0; }
 
   /*
     Each of these is now the only thing in its own named row, spaced
@@ -1985,6 +1999,17 @@
        strange one once everything is single-column already. */
     .c-document > .panel:not(.exceptions) { height: auto; }
     .c-document .vpreview { height: calc(100vh - 300px); }
+    /**
+     * **`position: static` again — decision 0391.** The wide layout's
+     * `position: absolute` (below) only works because "document"
+     * shares its three rows with process/parties/header, which have
+     * real content of their own to size those rows by even once
+     * "document" stops contributing. At this width "document" is back
+     * to occupying a row of its own, with nothing else in it — taking
+     * it out of flow here left that row with nothing to size itself
+     * by at all, measured collapsing to 0 before this reset was added.
+     */
+    .c-document { position: static; }
   }
 
   /*
