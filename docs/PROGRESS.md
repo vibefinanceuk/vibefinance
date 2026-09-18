@@ -475,6 +475,17 @@ a rule, and left an approval task in a queue.
   card is hidden — `.exceptions { display: none; }`, the operator's
   own words, "without removing the code, just the visibility" —
   `exceptionPanel()` and `renderExceptions()` are untouched.
+- **The country stays a code** (0389, superseding 0221 in part). 0221
+  chose the Peppol long name on purpose — "say what the image says" —
+  and `GB` expanding to "United Kingdom of Great Britain and Northern
+  Ireland" is not what an invoice actually says either, which the
+  operator caught directly and asked to revert. `addressBlock()`, the
+  one function both the Seller and Buyer cards call, now reads
+  `party.country` alone rather than `party.countryName ?? party.country`
+  — one fix reaches both cards. `countryName` is still computed and
+  sent by `invoice-facts-route.ts`, checked as read nowhere else, and
+  left in place as unused rather than removed, the same call decision
+  0387 made for the fields it dropped.
 
 ### Customer configuration
 - Org units, teams, roles, users, cost centres

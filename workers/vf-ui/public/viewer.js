@@ -1784,12 +1784,23 @@ export async function openViewer(task, onClose) {
    * **The address as a block, under one label.** Four labelled rows is
    * four labels for one thing, and an invoice prints an address as
    * lines.
+   *
+   * **The short country code, not the expanded Peppol name** —
+   * decision 0389, superseding 0221's own reasoning ("an invoice
+   * prints *United Kingdom*; our record holds `GB`. A card that
+   * exists to be compared against an image should say what the image
+   * says"). Asked directly, with "GB" becoming "United Kingdom of
+   * Great Britain and Northern Ireland" as the example: "I think in
+   * all cases, we can stick with the short form country code."
+   * `party.countryName` is left unread here rather than deleted from
+   * the response `invoice-facts-route.ts` still sends it in — nothing
+   * else in this file, or checked elsewhere, reads it either.
    */
   const addressBlock = (party, label) => {
     const lines = [
       party.addressLine,
       party.city,
-      party.countryName ?? party.country,
+      party.country,
       party.postalCode,
     ].filter(Boolean);
 

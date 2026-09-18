@@ -1731,7 +1731,7 @@ describe("the address sits beside its label, not beneath it (decision 0387, supe
               phone: null,
               addressLine: null,
               city: null,
-              countryName: "United Kingdom of Great Britain and Northern Ireland",
+              country: "GB",
               postalCode: null,
             },
             buyer: {
@@ -1741,7 +1741,7 @@ describe("the address sits beside its label, not beneath it (decision 0387, supe
               vatId: "GB123456789",
               addressLine: "1 Handover Street",
               city: "London",
-              countryName: "United Kingdom of Great Britain and Northern Ireland",
+              country: "GB",
               postalCode: "EC1A 1AA",
             },
             validation: { passed: true, checked: [], failures: [] },
@@ -1767,10 +1767,74 @@ describe("the address sits beside its label, not beneath it (decision 0387, supe
     const labels = [...document.querySelectorAll(".slabel")].filter((l) => l.textContent === "Address");
     expect(labels).toHaveLength(2);
     for (const label of labels) {
-      expect(label.parentElement?.textContent).toContain(
-        "United Kingdom of Great Britain and Northern Ireland"
-      );
+      expect(label.parentElement?.textContent).toContain("GB");
     }
+  });
+});
+
+describe("the country stays the short code (decision 0389, superseding 0221)", () => {
+  /**
+   * **0221's own reasoning was "say what the image says"** — an
+   * invoice prints *United Kingdom*, so the card should too. Asked
+   * directly to reverse it, with `GB` becoming "United Kingdom of
+   * Great Britain and Northern Ireland" as the example: "I think in
+   * all cases, we can stick with the short form country code."
+   *
+   * `invoice-facts-route.ts` still sends `countryName` alongside
+   * `country` — this asserts the card reads only the latter, so a
+   * value genuinely present in the fetched record still must not
+   * reach the screen (the same shape decision 0387 used for E-mail).
+   */
+  it("shows the short country code and not the expanded Peppol name, on both cards", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        const path = String(url).split("?")[0];
+        const bodies: Record<string, unknown> = {
+          "/api/ui-strings": STRINGS,
+          "/api/code-lists": { fields: {} },
+          "/api/field-visibility": FIELDS,
+          "/api/invoices/inv-1": {
+            facts: {},
+            lines: [],
+            supplier: {
+              name: "Northwind Logistics Ltd",
+              vatId: null,
+              addressLine: "1 Dock Road",
+              city: "Southampton",
+              country: "GB",
+              countryName: "United Kingdom of Great Britain and Northern Ireland",
+              postalCode: "SO14 3XY",
+            },
+            buyer: {
+              unitId: "acme-uk",
+              unitName: "Acme UK Limited",
+              entityName: "Acme UK Limited",
+              vatId: "GB123456789",
+              addressLine: "1 Handover Street",
+              city: "London",
+              country: "GB",
+              countryName: "United Kingdom of Great Britain and Northern Ireland",
+              postalCode: "EC1A 1AA",
+            },
+            validation: { passed: true, checked: [], failures: [] },
+          },
+          "/api/invoices/inv-1/progress": { visits: [] },
+          "/api/documents/inv-1/activity": { items: [] },
+        };
+        if (!(path in bodies)) throw new Error(`no stub for ${path}`);
+        return { ok: true, json: async () => bodies[path] } as Response;
+      })
+    );
+
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    await openViewer(TASK, () => {});
+
+    const text = document.body.textContent ?? "";
+    expect(text).toContain("GB");
+    expect(text).not.toContain("United Kingdom of Great Britain and Northern Ireland");
   });
 });
 
@@ -1802,7 +1866,7 @@ describe("the Buyer card says a name once (decision 0227)", () => {
               vatId: "GB123456789",
               addressLine: "1 Handover Street",
               city: "London",
-              countryName: "United Kingdom",
+              country: "GB",
               postalCode: "EC1A 1AA",
             },
             validation: { passed: true, checked: [], failures: [] },

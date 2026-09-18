@@ -1,6 +1,7 @@
 # Handover
 
-**Written 4 September 2026, updated 17 September (six times).**
+**Written 4 September 2026, updated 17 September (six times), updated
+18 September.**
 
 **For a session starting cold.** Where things stand, what needs a
 decision rather than work, what to do next, and the habits this project
@@ -29,7 +30,7 @@ twice.
 
 | | |
 | --- | --- |
-| `origin/main` | `6de0573` |
+| `origin/main` | `3094160` |
 | vf-admin deployed | `8e27a34` · `https://admin.vibefinance-ai.com` · behind Cloudflare Access |
 | vf-app deployed | `4d44b59` |
 | vf-licence deployed | `a235713` |
@@ -37,14 +38,17 @@ twice.
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
 | `vf-app-poc` migrations | through `0070` |
 | `vf-licence-poc` migrations | through `0121` |
-| Tests | vf-admin 9 · vf-app 1921 · vf-licence 320 · vf-ui 74 Worker + 665 browser · shared 278 (+3 known pre-existing failures) |
-| Decision records | 388 |
+| Tests | vf-admin 9 · vf-app 1921 · vf-licence 320 · vf-ui 74 Worker + 666 browser · shared 278 (+3 known pre-existing failures) |
+| Decision records | 389 |
 
-**Everything committed is deployed again.** Decision 0388 (the process
-row and Document card) was reported pushed and deployed, and checked
-rather than taken on that report alone: `origin/main` fetched directly
-reads `6de0573`, matching this session's own `main` exactly; the live
-`app.css`, fetched cache-busted, has `#viewer .columns`'s
+**Not true right now — decision 0389 is committed and not yet
+deployed**, this session having no push access to `origin/main`; it is
+delivered as a bundle for the operator's own pull/push/deploy sequence
+instead. Everything before it is still deployed. Decision 0388 (the
+process row and Document card) was reported pushed and deployed, and
+checked rather than taken on that report alone: `origin/main` fetched
+directly reads `6de0573`, matching this session's own `main` exactly;
+the live `app.css`, fetched cache-busted, has `#viewer .columns`'s
 `grid-template-areas` exactly as built, `.exceptions { display: none;
 }`, and the plain `.columns` rule Sources uses still reads
 `align-items: start` with no named areas of its own. Decision 0387
@@ -646,6 +650,32 @@ not just reported**: `origin/main` fetched directly and reads
 `app.css`, fetched cache-busted, carries `#viewer .columns`'s named
 areas, `.exceptions { display: none; }`, and a still-untouched plain
 `.columns` rule for Sources.
+
+**Decision 0389 (the country stays a code, superseding decision 0221
+in part) is built, not yet pushed or deployed.** Asked directly,
+GB-expanding-to-"United Kingdom of Great Britain and Northern
+Ireland" as the example: "I think in all cases, we can stick with the
+short form country code." 0221 chose the expanded Peppol name on
+purpose — "say what the image says" — and that reasoning does not
+survive a long form the invoice itself never prints either.
+`addressBlock()`, the one function both `sellerPanel()` and
+`buyerPanel()` call, now reads `party.country` alone rather than
+`party.countryName ?? party.country` — one fix reaches both cards, as
+asked. Checked rather than assumed: `countryName` is derived from
+`country` (`CODE_LISTS.iso3166?.[code]?.en ?? code` in
+`invoice-facts-route.ts`), so there is no case where the name is
+present and the code is not, and it is left computed and sent but
+unread — the same call decision 0387 made for the fields it dropped
+from these cards. Touches `vf-ui` only (`viewer.js`,
+`test-browser/viewer.test.ts`), no migration, no other Worker. Two
+existing fixtures changed from a long country name to `country: "GB"`,
+and one new dedicated test stubs an invoice carrying **both**
+`country` and `countryName` (the real backend's own shape) and asserts
+the rendered cards show the code and not the name — watched fail
+against the pre-edit code first. Full suites: vf-ui 74 Worker + 666
+browser, both passing (663 unchanged, 2 changed, 1 new); `eslint`
+clean. **This session has no push access to `origin/main`** — delivered
+as a bundle for the operator's own pull/push/deploy sequence.
 
 **Built this arc, closing out most of what was named here before:
 teams, most of the "user variable" fields, creating and managing an

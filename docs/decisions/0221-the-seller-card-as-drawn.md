@@ -3,6 +3,10 @@
 **Status: built.** Inline labels, an address block, a phone number, and
 the country as a person reads it.
 
+**Superseded in part by decision 0389**, which stands: the country line
+went back to the short code (`GB`), not the long name this record
+chose (see below).
+
 ---
 
 ## The operator drew it
