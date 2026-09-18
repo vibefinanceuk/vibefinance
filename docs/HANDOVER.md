@@ -38,10 +38,14 @@ twice.
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
 | `vf-app-poc` migrations | through `0070` |
 | `vf-licence-poc` migrations | through `0121` |
-| Tests | vf-admin 9 · vf-app 1921 · vf-licence 320 · vf-ui 74 Worker + 669 browser · shared 278 (+3 known pre-existing failures) |
-| Decision records | 392 |
+| Tests | vf-admin 9 · vf-app 1921 · vf-licence 320 · vf-ui 74 Worker + 674 browser · shared 278 (+3 known pre-existing failures) |
+| Decision records | 393 |
 
-**Everything committed is deployed again.** Decision 0392 (more room
+**Decision 0393 (filling the row, and a number to ring) is built and
+committed, not yet pushed or deployed** — this session has no push
+access to `origin/main`, delivered as a bundle for the operator's own
+pull/push/deploy sequence, as usual. Everything before it is deployed
+and confirmed. Decision 0392 (more room
 in every direction) was reported pushed and deployed, and checked
 rather than taken on that report alone: `origin/main` fetched directly
 reads `7d9a63b`, matching this session's own `main` exactly; the live
@@ -905,6 +909,65 @@ the deployed UI confirms it visually too: Seller, Buyer, and Invoice
 header sharing one row at the built 25/25/50 widths, and the pop-out
 placeholder sitting compactly in the Process row's own line rather than
 filling a tall card.
+
+**Decision 0393 (filling the row, and a number to ring) is built and
+committed, not yet pushed.** Asked against a screenshot of the
+deployed 0392 layout: the placeholder sat visibly shorter than Process
+beside it, and Seller/Buyer ended well above Header's own bottom —
+both measured real (44px vs Process's 90px; 244px vs Header's 421px),
+not assumed from the screenshot alone. Both traced to the identical
+shape: `align-items: stretch` (0388) was already stretching the
+*outer* grid item to match its row — checked directly, and it was —
+but nothing told the *visible panel inside it* to fill that box, since
+0392's own override (`height: auto; display: block;` on
+`.c-document > .panel:not(.exceptions)`, reasoned at the time as
+needing "neither... a height matched to anything else") had turned
+off the general rule that would otherwise have done exactly that.
+Deleting that override — rather than adding a second, competing one —
+let the *existing* `.c-document > .panel:not(.exceptions)` rule (its
+own `height: 100%` plus `flex: 1` on non-`.cardhead` children, written
+for the docked, three-row case) apply here too. Fixing Document's own
+side surfaced a **third instance of the identical bug, found only by
+re-measuring after the first fix rather than assumed clean**: with a
+realistic placeholder (badge text plus two buttons), the row can now
+be *taller* than Process's own natural content, which left Process's
+panel short instead — the same gap, moved to the other card. Process's
+own panel needed the identical `height: 100%` fix. `.c-parties >
+.parties` got the same one-line fix for the Seller/Buyer side — its
+own internal grid (decision 0179's own comment: "its panels stretch to
+the same row height") then stretches Seller and Buyer to fill it with
+no further rule needed. All three are scoped to `.docpoppedout` alone,
+and asked for directly for the Seller/Buyer case: "when the document
+image is expanded only." Separately, the placeholder's actions changed
+from decision 0392's row-format override back to the plain,
+unmodified `.actionlink` square — deleted outright, not replaced, so
+"Bring to front" and "Show here instead" now look like "Header Fields"
+the same way every other cardhead action already does — and its text
+moved left and reads "Document open in a separate window" (`en`)
+rather than "Open in a separate window", a wording change carried by
+`ui_strings` (migration 0122 in `vf-licence`, wired into
+`test/setup.ts`'s own migration chain the same as every migration
+before it) rather than decided in `viewer.js` or `app.css`. Two more
+changes, independent of the layout fix: `addressBlock()` now joins
+city and country onto one line ("Felixstowe, GB") rather than each
+keeping its own; and Phone — dropped by decision 0387 along with
+E-address and E-mail to give the card back a column — is reintroduced
+alone, beneath the address, since `s.phone`/`b.phone` never stopped
+being fetched onto `stored.supplier`/`stored.buyer`, only stopped
+being read. Five new tests, all watched to fail against the pre-fix
+code first, plus one existing test (decision 0384's own placeholder
+test) corrected for the wording change — narrowed from an exact string
+to the substring both wordings share, since checking the exact new
+text is the newer test's job and one test asserting both would be
+asserting the same fact twice for two different reasons. Touches
+`vf-ui` (`app.css`, `viewer.js`) and `vf-licence` (migration 0122 +
+`test/setup.ts`) only — no change to `vf-app` or `vf-admin`. Full
+suites: vf-ui 74 Worker + 674 browser (669 pre-existing + 5 new);
+vf-licence 320/320, both passing. `eslint` clean. **This session has
+no push access to `origin/main`** — delivered as a bundle for the
+operator's own pull/push/deploy sequence. Not yet confirmed live; that
+confirmation, and the update to this paragraph recording it, is still
+to come.
 
 **Built this arc, closing out most of what was named here before:
 teams, most of the "user variable" fields, creating and managing an

@@ -567,6 +567,35 @@ a rule, and left an approval task in a queue.
   layout on close. Three new tests, each watched to fail against the
   pre-fix code first. Full suites: vf-ui 74 Worker + 669 browser
   (666 pre-existing + 3 new), both passing.
+- **Filling the row, and a number to ring** (0393, correcting two real
+  bugs in 0392's own work and reversing part of 0387). Asked against a
+  screenshot of the deployed 0392 layout: the popped-out placeholder
+  sat visibly shorter than Process beside it, and Seller/Buyer ended
+  well above Header's own bottom. Measured, both were real — 44px vs
+  Process's 90px; 244px vs Header's 421px — and traced to the same
+  shape twice: `align-items: stretch` was already stretching the
+  *outer* grid item to match its row, but nothing told the *visible
+  panel inside it* to fill that box. Fixing Document's own side
+  surfaced a third instance of the identical bug on Process's side,
+  found only by re-measuring after the first fix: once Document's
+  badge could be taller than Process's own content, Process needed
+  the identical `height: 100%` treatment too, or the gap just moved to
+  the other card. The placeholder's actions changed from a row-format
+  override back to the plain, unmodified `.actionlink` square —
+  deleted outright rather than replaced, so "Bring to front" and "Show
+  here instead" now look like "Header Fields" the same way every other
+  cardhead action already does — and its text moved left and reads
+  "Document open in a separate window" (`ui_strings`, migration 0122).
+  Separately: `addressBlock()` now joins city and country onto one
+  line ("Felixstowe, GB"), and Phone — dropped by decision 0387 along
+  with E-address and E-mail to give the card back a column — is back
+  beneath the address alone, since `s.phone`/`b.phone` never stopped
+  being fetched, only read. Five new tests, all watched to fail
+  against the pre-fix code first, plus one existing test corrected for
+  a wording change (widened from an exact string to the substring both
+  wordings share, since asserting the exact new text is the newer
+  test's job). Full suites: vf-ui 74 Worker + 674 browser (669
+  pre-existing + 5 new); vf-licence 320/320, both passing.
 
 ### Customer configuration
 - Org units, teams, roles, users, cost centres

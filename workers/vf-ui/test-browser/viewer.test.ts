@@ -89,6 +89,7 @@ const STRINGS = {
     "viewer.supplier.endpoint": "Electronic address",
     "viewer.supplier.email": "Email",
     "viewer.supplier.street": "Address",
+    "viewer.supplier.phone": "Phone",
     "viewer.supplier.city": "City",
     "viewer.supplier.postcode": "Postcode",
     "viewer.supplier.country": "Country",
@@ -143,7 +144,7 @@ const STRINGS = {
     "viewer.xmltab": "XML",
     "viewer.tried": "Tried:",
     "viewer.popupblocked": "Your browser blocked the pop-up window. Allow pop-ups for this site and try again.",
-    "viewer.openinwindow": "Open in a separate window",
+    "viewer.openinwindow": "Document open in a separate window",
     "viewer.bringtofront": "Bring to front",
     "viewer.showhere": "Show here instead",
     "activity.tab": "Activity",
@@ -571,7 +572,13 @@ describe("the document pop-out window (decision 0384, phase 4)", () => {
 
     const placeholder = document.querySelector(".vpoppedout") as HTMLElement;
     expect(placeholder.hidden).toBe(false);
-    expect(placeholder.textContent).toContain("Open in a separate window");
+    // Decision 0393 reworded this from "Open in a separate window" to
+    // "Document open in a separate window" — the substring below is
+    // what both wordings share, so this test still checks what it
+    // always checked (some rendering of the placeholder's own text)
+    // without also asserting the exact wording, which is the newer,
+    // more specific test's job (decision 0393, below).
+    expect(placeholder.textContent).toContain("open in a separate window");
     expect(document.getElementById("vpreview")?.parentElement?.hidden).toBe(true);
   });
 
@@ -1799,6 +1806,186 @@ describe("the address sits beside its label, not beneath it (decision 0387, supe
     for (const label of labels) {
       expect(label.parentElement?.textContent).toContain("GB");
     }
+  });
+});
+
+describe("more room, and a phone number back (decision 0393)", () => {
+  /**
+   * **The country sits beside the city, not beneath it.** Asked for
+   * directly: "the 2 digit country code appears next to the City, on
+   * the same line." `addressBlock()` now joins them with `", "`
+   * before either reaches a `<div>` of its own, rather than each
+   * keeping its own line — checked here as one line's own text, not
+   * as two lines that happen to be adjacent.
+   */
+  it("joins the city and country onto the same line, with the postal code still its own line below", async () => {
+    stubFetch({
+      "/api/code-lists": { fields: {} },
+      "/api/ui-strings": STRINGS,
+      "/api/field-visibility": FIELDS,
+      "/api/invoices/inv-1": {
+        facts: {},
+        lines: [],
+        supplier: {
+          name: "Northwind Logistics Ltd",
+          vatId: null,
+          addressLine: "Trinity Wharf",
+          city: "Felixstowe",
+          country: "GB",
+          postalCode: "IP11 3SL",
+          phone: "+44 1394 555 123",
+        },
+        validation: { passed: true, checked: [], failures: [] },
+      },
+    });
+
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    await openViewer(TASK, () => {});
+    await new Promise((r) => setTimeout(r, 0));
+
+    const addressLabel = [...document.querySelectorAll(".slabel")].find((l) => l.textContent === "Address");
+    const addressLines = [...(addressLabel?.parentElement?.querySelectorAll("div") ?? [])].map(
+      (d) => d.textContent
+    );
+    expect(addressLines).toEqual(["Trinity Wharf", "Felixstowe, GB", "IP11 3SL"]);
+  });
+
+  /**
+   * **Phone, back beneath the address.** Decision 0387 dropped it
+   * along with E-address and E-mail to give the card back a column;
+   * asked to reintroduce this one alone. `s.phone`/`b.phone` were
+   * never stopped being fetched (0387's own note), so this is a
+   * rendering change only.
+   */
+  it("shows Phone beneath the address, on both the Seller and Buyer cards", async () => {
+    stubFetch({
+      "/api/code-lists": { fields: {} },
+      "/api/ui-strings": STRINGS,
+      "/api/field-visibility": FIELDS,
+      "/api/invoices/inv-1": {
+        facts: {},
+        lines: [],
+        supplier: {
+          name: "Northwind Logistics Ltd",
+          vatId: null,
+          addressLine: "Trinity Wharf",
+          city: "Felixstowe",
+          country: "GB",
+          postalCode: null,
+          phone: "+44 1394 555 123",
+        },
+        buyer: {
+          unitId: "acme-uk",
+          unitName: "Acme UK Limited",
+          entityName: "Acme UK Limited",
+          vatId: "GB123456789",
+          addressLine: "1 Handover Street",
+          city: "London",
+          country: "GB",
+          postalCode: "EC1A 1AA",
+          phone: "+44 20 7946 0958",
+        },
+        validation: { passed: true, checked: [], failures: [] },
+      },
+    });
+
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    await openViewer(TASK, () => {});
+    await new Promise((r) => setTimeout(r, 0));
+
+    const phoneLabels = [...document.querySelectorAll(".slabel")].filter((l) => l.textContent === "Phone");
+    expect(phoneLabels).toHaveLength(2);
+    expect(phoneLabels[0].parentElement?.textContent).toContain("+44 1394 555 123");
+    expect(phoneLabels[1].parentElement?.textContent).toContain("+44 20 7946 0958");
+  });
+
+  it("still shows a muted dash for Phone when the record has none, rather than omitting the row", async () => {
+    // The same rule Name and VAT already follow (`pair()` always
+    // renders) — Phone joining them as a third always-rendered row is
+    // not a special case, and a test that only ever supplies a phone
+    // number would not catch a regression here.
+    stubFetch({
+      "/api/code-lists": { fields: {} },
+      "/api/ui-strings": STRINGS,
+      "/api/field-visibility": FIELDS,
+      "/api/invoices/inv-1": {
+        facts: {},
+        lines: [],
+        supplier: {
+          name: "Northwind Logistics Ltd",
+          vatId: null,
+          addressLine: null,
+          city: null,
+          country: "GB",
+          postalCode: null,
+          phone: null,
+        },
+        validation: { passed: true, checked: [], failures: [] },
+      },
+    });
+
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    await openViewer(TASK, () => {});
+    await new Promise((r) => setTimeout(r, 0));
+
+    const phoneLabel = [...document.querySelectorAll(".slabel")].find((l) => l.textContent === "Phone");
+    expect(phoneLabel?.parentElement?.textContent).toContain("—");
+  });
+
+  /**
+   * **The row-format placeholder actions are gone, not just
+   * overridden again.** Decision 0392 gave `.vpoppedoutactions
+   * .actionlink` its own row-format rule; decision 0393 deletes it
+   * outright so the shared `.actionlink` rule — the same one "Header
+   * Fields" uses — is the only one left to apply. Grid layout itself
+   * is untestable in jsdom (decision 0392's own note, still true), so
+   * this checks the stylesheet text directly, the same way decision
+   * 0387's "no longer gives the address its own stacked grid" test
+   * checked for an absent selector rather than a computed style.
+   */
+  it("no longer overrides the pop-out actions into a row (decision 0393, superseding part of 0392)", async () => {
+    const page = (await import("virtual:stylesheets")).default["app.css"];
+    expect(page).not.toContain(".vpoppedoutactions .actionlink {");
+  });
+
+  /**
+   * **The wording itself is data (`ui_strings`, migration 0122), not
+   * something this file decides** — `t("viewer.openinwindow")` reads
+   * whatever the fixture's `STRINGS` supplies, the same as production
+   * reads whatever the database holds. This asserts the new wording
+   * reaches the screen once the fixture (and, in production, the
+   * migration) supplies it; the older test above intentionally only
+   * checks the shared substring, since exactness is this test's job.
+   */
+  it("reads the placeholder's new wording from the same string the older, looser test only substring-matches", async () => {
+    stubFetch({
+      "/api/code-lists": { fields: {} },
+      "/api/ui-strings": STRINGS,
+      "/api/field-visibility": FIELDS,
+      "/api/invoices/inv-1": { facts: {}, lines: [], validation: { passed: true, checked: [], failures: [] } },
+    });
+    vi.stubGlobal("open", vi.fn(() => ({ closed: false, focus: vi.fn(), close: vi.fn(), location: { href: "" } })));
+
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    await openViewer(TASK, () => {});
+
+    const doctabsHead = document.querySelector(".doctabs")?.closest(".cardhead");
+    const expand = [...(doctabsHead?.querySelectorAll(".actionlink") ?? [])].find(
+      (n) => n.querySelector("span")?.textContent === "Expand"
+    );
+    (expand as HTMLElement)?.click();
+
+    expect(document.querySelector(".vpoppedouttext")?.textContent).toBe(
+      "Document open in a separate window"
+    );
   });
 });
 

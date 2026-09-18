@@ -1802,14 +1802,17 @@ export async function openViewer(task, onClose) {
    * `party.countryName` is left unread here rather than deleted from
    * the response `invoice-facts-route.ts` still sends it in — nothing
    * else in this file, or checked elsewhere, reads it either.
+   *
+   * **The country sits beside the city, not beneath it — decision
+   * 0393.** Asked for directly: "the 2 digit country code appears
+   * next to the City, on the same line." The two are joined with
+   * `", "` into one line rather than each keeping its own `<div>`;
+   * `postalCode` stays a separate line, which was not part of the
+   * ask.
    */
   const addressBlock = (party, label) => {
-    const lines = [
-      party.addressLine,
-      party.city,
-      party.country,
-      party.postalCode,
-    ].filter(Boolean);
+    const cityCountry = [party.city, party.country].filter(Boolean).join(", ");
+    const lines = [party.addressLine, cityCountry, party.postalCode].filter(Boolean);
 
     return el("div", { class: "sfield" }, [
       el("span", { class: "slabel", text: label }),
@@ -1869,6 +1872,15 @@ export async function openViewer(task, onClose) {
         pair(t("viewer.supplier.name"), b.entityName),
         pair(t("viewer.supplier.vat"), b.vatId),
         addressBlock(b, t("viewer.supplier.street")),
+        /**
+         * **Phone, back beneath the address — decision 0393.** Decision
+         * 0387 dropped it along with E-address and E-mail to give the
+         * card back a column; asked to reintroduce this one alone, in
+         * the vertical order it was asked for. `b.phone` is still
+         * fetched onto `stored.buyer` — 0387 stopped reading it, it
+         * never stopped arriving.
+         */
+        pair(t("viewer.supplier.phone"), b.phone),
       ]),
     ]);
   };
@@ -1954,6 +1966,10 @@ export async function openViewer(task, onClose) {
         pair(t("viewer.supplier.name"), s.name),
         pair(t("viewer.supplier.vat"), s.vatId),
         addressBlock(s, t("viewer.supplier.street")),
+        // Phone, back beneath the address — decision 0393. See the
+        // matching comment in buyerPanel(), the same call for the
+        // same reason.
+        pair(t("viewer.supplier.phone"), s.phone),
       ]),
       /**
        * **Change Seller is not here** — it lives top right, in

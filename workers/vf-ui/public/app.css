@@ -1916,10 +1916,12 @@
   }
   /**
    * **Document no longer spans three rows — it shares one with
-   * nothing else in its own column**, so it needs neither the
-   * absolute positioning decision 0391 gave it to escape the grid's
-   * own sizing algorithm (there is only one row to size here) nor a
-   * height matched to anything else. The tabs and Expand button
+   * Process instead**, so it needs neither the absolute positioning
+   * decision 0391 gave it to escape the grid's own sizing algorithm
+   * (there is only one row to size here) nor, `position: static`
+   * aside, any override of its own — `.c-document` is still a grid
+   * item in that row, and `#viewer .columns`'s own `align-items:
+   * stretch` already reaches it. The tabs and Expand button
    * (`.cardhead`) are hidden rather than shrunk to fit: `normalBody`
    * is already hidden the whole time this class is present (`
    * popoutStateSetter`, viewer.js), so every tab they would switch to
@@ -1928,47 +1930,86 @@
    */
   #viewer .columns.docpoppedout .c-document {
     position: static;
-    height: auto;
   }
   #viewer .columns.docpoppedout .c-document .cardhead { display: none; }
-  #viewer .columns.docpoppedout .c-document > .panel:not(.exceptions) {
-    height: auto;
-    display: block;
+  /**
+   * **Both cards in the row fill it, not just the stretched grid
+   * item around them — decision 0393.** Asked for directly, against
+   * a screenshot of the deployed card sitting visibly shorter than
+   * Process beside it: "evaluate the panel height, so that the
+   * height matches the height of the Process card."
+   *
+   * **Two bugs, not one, once actually measured.** `.c-document`'s
+   * own outer box was already the row's full height — decision
+   * 0392's own override (`height: auto; display: block;` on
+   * `.c-document > .panel:not(.exceptions)`) was what stopped its
+   * *visible* panel from filling that box, reasoned at the time as
+   * needing "neither... a height matched to anything else," which a
+   * real render shows was wrong. Deleting that override (rather than
+   * adding a second, competing one) lets the general
+   * `.c-document > .panel:not(.exceptions)` rule, above, do exactly
+   * what it already does for the three-row case: `height: 100%` on
+   * the panel, `flex: 1` on `.vpreview.vpoppedout`, its one visible
+   * non-`.cardhead` child once popped out.
+   *
+   * **The second bug was Process's own, and only visible once
+   * Document's real content — not an absolutely-positioned box
+   * outside the flow — started sharing its row.** Before 0392,
+   * `.c-document` was unconditionally `position: absolute` (0391),
+   * so it never contributed to this row's own height at all; Process
+   * was always the only real content in it, and its own panel was
+   * always exactly the row's height, nothing to stretch. Once
+   * Document became a genuine, `position: static` participant, the
+   * row's height became whichever card's content is taller — and
+   * measured directly, that is now sometimes Document's badge, not
+   * Process's chevrons. Process's own panel needed the identical
+   * `height: 100%` this rule gives Document's, so the shorter side
+   * fills the row exactly the same way regardless of which side that
+   * turns out to be.
+   */
+  #viewer .columns.docpoppedout .c-process > .panel {
+    height: 100%;
+    box-sizing: border-box;
   }
   /**
    * **The notice itself, shrunk from a box built to fill the whole
-   * card down to a small corner note** — asked for directly: "could
-   * occupy a much smaller card in the same space." Right-aligned
-   * against Process's own chevrons rather than centred in a box of
-   * its own, since there is no separate box left to centre it in.
+   * card down to a small corner note** — decision 0392, asked for
+   * directly: "could occupy a much smaller card in the same space."
+   *
+   * **Text on the left, actions square and right-aligned — decision
+   * 0393.** Reported live, against the deployed card: the text should
+   * move left and read "Document open in a separate window" (the
+   * string itself changes in `ui_strings`, migration 0122 — nothing
+   * here decides wording), and the two actions should look like
+   * "Header Fields" — the plain, unmodified `.actionlink` square,
+   * icon above label — rather than the row-format, icon-beside-label
+   * variant 0392 built. That row-format override is deleted outright
+   * rather than kept dormant: `.vpoppedoutactions .actionlink` now
+   * simply falls through to the shared `.actionlink` rule every other
+   * cardhead action already uses. `justify-content: space-between`
+   * on the flex row is what actually right-aligns the actions and
+   * left-aligns the text — two children in a row, not one child told
+   * to hug an edge.
    */
   #viewer .columns.docpoppedout .vpreview.vpoppedout {
-    height: auto;
     min-height: 0;
     border: none;
     background: none;
   }
   #viewer .columns.docpoppedout .vpreview.vpoppedout .vthumb {
-    height: auto;
+    height: 100%;
     display: flex;
-    flex-direction: column;
-    align-items: flex-end;
-    justify-content: center;
-    gap: 2px;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
     padding: 0;
     background: none;
     color: var(--text-secondary);
     font-size: var(--text-sm);
-    text-align: right;
+    text-align: left;
   }
   #viewer .columns.docpoppedout .vpoppedouttext { margin-bottom: 0; }
-  #viewer .columns.docpoppedout .vpoppedoutactions { gap: 12px; justify-content: flex-end; }
-  #viewer .columns.docpoppedout .vpoppedoutactions .actionlink {
-    flex-direction: row;
-    min-width: 0;
-    padding: 0;
-    gap: 4px;
-  }
 
   /*
     **The Document card fills exactly the area the grid gives it**,
@@ -2032,6 +2073,40 @@
   .c-header > .panel,
   .c-lines > .panel {
     margin-bottom: 0;
+  }
+
+  /**
+   * **Seller and Buyer stretch to Header's own bottom edge — decision
+   * 0393, and only while popped out.** Reported live, against a
+   * screenshot of the deployed row: Seller/Buyer ended well above
+   * Header's own bottom, a visible gap neither card's border
+   * explained. The cause: `#viewer .columns`'s own `align-items:
+   * stretch` already stretches `.c-parties` itself (the grid item) to
+   * the row's full height whenever Header's content makes that row
+   * taller — checked directly, and it does — but nothing told
+   * `.parties`, `.c-parties`'s own child and the thing that actually
+   * draws Seller and Buyer's borders, to fill that stretched box; a
+   * block element's `auto` height is content-based regardless of how
+   * tall its parent has become. `height: 100%` here is the same fix
+   * already used for `.c-document .vpreview` (decisions 0390/0391):
+   * during row sizing this percentage is treated as `auto` (so it
+   * cannot inflate the row it also depends on), and only resolves to
+   * the real, settled row height once stretch applies afterwards.
+   * `.parties`'s own internal grid then does the rest on its own —
+   * its default `align-items: stretch` (decision 0179's own comment:
+   * "its panels stretch to the same row height") already stretches
+   * Seller and Buyer to whatever height `.parties` itself now has.
+   *
+   * **Only in this state** — asked for directly, "when the document
+   * image is expanded only." Docked, `parties` and `header` are not
+   * even in the same row (three separate rows, `#viewer .columns`'s
+   * base areas), so there is no shared row height to stretch to and
+   * this would do nothing there regardless; scoped under
+   * `.docpoppedout` anyway, for the same reason nothing else in this
+   * block reaches beyond it.
+   */
+  #viewer .columns.docpoppedout .c-parties > .parties {
+    height: 100%;
   }
 
   @media (max-width: 1100px) {
