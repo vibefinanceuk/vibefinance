@@ -486,6 +486,24 @@ a rule, and left an approval task in a queue.
   sent by `invoice-facts-route.ts`, checked as read nowhere else, and
   left in place as unused rather than removed, the same call decision
   0387 made for the fields it dropped.
+- **Three fifths, two fifths, and a freed rail** (0390). Asked
+  directly against two mocked-up, measured options: `#viewer .columns`
+  moved from `2fr 1fr` (each of Seller, Buyer, Document roughly a
+  third) to `3fr 2fr` (Seller/Buyer share three fifths, Document two
+  fifths) — 660px/440px on the render measured, not approximated.
+  Measuring the *current* Document card before touching anything found
+  `.vpreview` sitting at exactly its own `min-height: 320px` floor — a
+  rule written for the pre-0388 layout (decision 0271) — because
+  `height: auto` (0388's own override) sizes to content on a plain
+  block element, and an empty preview has none; changed to `height:
+  100%`, which now fills whatever the card is actually given. The
+  thumbnail rail is hidden while docked regardless of page count —
+  `#viewer .vrail { display: none; }`, a second, independent reason
+  alongside `page-renderer.js`'s own single-page `.hidden` logic, which
+  stays untouched and still governs the pop-out window — freeing the
+  rail's 92px for the canvas automatically, via `.vmain`'s existing
+  `flex: 1`. No test needed changing; the fragile decision-0281 nav
+  test and the full suite were both rerun to confirm, not assumed.
 
 ### Customer configuration
 - Org units, teams, roles, users, cost centres

@@ -1859,6 +1859,19 @@
        right for two independent stacks and wrong for a card meant to
        reach a specific row on the other side. */
     align-items: stretch;
+    /**
+     * **3:2, not the base rule's 2:1** — decision 0390, asked directly
+     * against a mock-up of both: "I like this balance." The base
+     * `.columns` rule's `minmax(0, 2fr) minmax(0, 1fr)` gave the
+     * Document card a third of the row (Seller and Buyer splitting the
+     * other two thirds between them); this narrows the left track and
+     * widens the right one, so the Document card gets two fifths and
+     * Seller/Buyer keep three fifths between them — overridden here
+     * rather than in the base rule for the same reason the areas above
+     * are: a bare `.columns` change would reach the Sources screen too
+     * (decision 0177).
+     */
+    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
   }
   .c-process { grid-area: process; }
   .c-parties { grid-area: parties; }
@@ -1888,7 +1901,22 @@
     min-height: 0;
   }
   .c-document > .panel:not(.exceptions) > *:not(.cardhead) { flex: 1; min-height: 0; }
-  .c-document .vpreview { height: auto; }
+  /**
+   * **`100%`, not `auto` — decision 0390.** `auto` was measured (while
+   * scoping the same decision's width change) to leave `.vpreview`
+   * sitting at its own `min-height: 320px` floor regardless of how
+   * much taller the card actually was: a block element's `auto`
+   * height is content-based, not "fill the parent," and nothing inside
+   * an empty or not-yet-drawn preview has any content to size to. Its
+   * direct parent — the rule just above, matched by `> *:not(.cardhead)`
+   * — already has a real, flex-computed height, so `100%` now resolves
+   * against something definite instead of cascading `auto` down
+   * through `.vthumb`'s own pre-existing `height: 100%` (decision
+   * 0271) and leaving it, too, sized by nothing but that same floor.
+   * `min-height: 320px` itself is untouched — still the floor for a
+   * card genuinely given less than that.
+   */
+  .c-document .vpreview { height: 100%; }
 
   /*
     Each of these is now the only thing in its own named row, spaced
@@ -2264,6 +2292,20 @@
     border-right: 0.5px solid var(--border);
     background: var(--surface-1);
   }
+  /**
+   * **Docked, the rail stays hidden even for a multi-page document —
+   * decision 0390**, the operator's own words: "the document image
+   * thumbnail can be hidden when the card is docked in the validation
+   * page. Should the user wish to view thumbnails then they can Expand
+   * the card into a separate window." `pageViewer()`'s own
+   * `rail.hidden` logic (page-renderer.js) is untouched and still runs
+   * here — a single-page document still gets `hidden` set `true` the
+   * same way it always has — this rule only adds a second, independent
+   * reason the rail does not show, scoped to `#viewer` so the pop-out
+   * window (`#docwindow-root`, decision 0384) is unaffected and still
+   * shows it exactly as before, `.hidden` alone deciding it there.
+   */
+  #viewer .vrail { display: none; }
 
   .vrailthumb {
     width: 76px;

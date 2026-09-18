@@ -30,7 +30,7 @@ twice.
 
 | | |
 | --- | --- |
-| `origin/main` | `310b5fd` |
+| `origin/main` | `b050534` |
 | vf-admin deployed | `8e27a34` · `https://admin.vibefinance-ai.com` · behind Cloudflare Access |
 | vf-app deployed | `4d44b59` |
 | vf-licence deployed | `a235713` |
@@ -39,12 +39,15 @@ twice.
 | `vf-app-poc` migrations | through `0070` |
 | `vf-licence-poc` migrations | through `0121` |
 | Tests | vf-admin 9 · vf-app 1921 · vf-licence 320 · vf-ui 74 Worker + 666 browser · shared 278 (+3 known pre-existing failures) |
-| Decision records | 389 |
+| Decision records | 390 |
 
-**Everything committed is deployed again.** Decision 0389 (the country
-stays a code) was reported pushed and deployed, and checked rather
-than taken on that report alone: `origin/main` fetched directly reads
-`310b5fd`, matching this session's own `main` exactly; the live
+**Not true right now — decision 0390 is committed and not yet
+deployed**, this session having no push access to `origin/main`; it is
+delivered as a bundle for the operator's own pull/push/deploy sequence
+instead. Everything before it is still deployed. Decision 0389 (the
+country stays a code) was reported pushed and deployed, and checked
+rather than taken on that report alone: `origin/main` fetched directly
+reads `310b5fd`, matching this session's own `main` exactly; the live
 `viewer.js`, fetched cache-busted, has `addressBlock()` reading
 `party.country` alone, with no `party.countryName` anywhere in its
 `lines` array. Decision 0388 (the
@@ -683,6 +686,40 @@ not just reported**: `origin/main` fetched directly and reads
 `viewer.js`, fetched cache-busted, has `addressBlock()` reading
 `party.country` alone — no `party.countryName` anywhere in its `lines`
 array.
+
+**Decision 0390 (three fifths, two fifths, and a freed rail) is built,
+not yet pushed or deployed.** Asked directly against two mocked-up,
+measured options: `#viewer .columns` moved from `2fr 1fr` (Seller,
+Buyer and Document each roughly a third) to `3fr 2fr` (Seller/Buyer
+share three fifths, Document two fifths) — approved as "I like this
+balance." Measuring the Document card *before* touching anything,
+`.vpreview` sat at exactly its own `min-height: 320px` floor — a rule
+written for the pre-0388 layout (decision 0271), never revisited once
+0388 made the card's height a function of the grid; the reason,
+checked rather than assumed, is that 0388's own `height: auto`
+override sizes to content on a plain block element whose real,
+flex-computed height lives one level up, and an empty preview has no
+content to size to. Changed to `height: 100%`, confirmed by measuring
+`.vpreview`/`.vpagesroot`/`.vmain`/`.vcanvasholder` before and after:
+all four now report a real, filled height rather than a fixed 320px
+regardless of what the card was actually given. The thumbnail rail is
+hidden while docked regardless of page count — `#viewer .vrail {
+display: none; }`, the operator's own words, "the document image
+thumbnail can be hidden when the card is docked... should the user
+wish to view thumbnails then they can Expand" — a second, independent
+reason alongside `page-renderer.js`'s own single-page `.hidden` logic,
+which is untouched and still governs the pop-out window
+(`#docwindow-root`) exactly as before. `.vmain`'s existing `flex: 1`
+picks up the freed 92px automatically. Touches `vf-ui` only
+(`app.css`), no migration, no other Worker. No test needed changing —
+nothing asserted on `.columns`'s column-width value, `.vpreview`'s
+computed height, or `.vrail`'s CSS `display`, checked by rerunning the
+full suite rather than assumed; decision 0281's own fragile
+brace-counting nav test still passes, since these rules landed in the
+viewer's own, later `@media` block rather than the shared one it
+slices. Full suites: vf-ui 74 Worker + 666 browser, both passing.
+**This session has no push access to `origin/main`** — delivered as a
+bundle for the operator's own pull/push/deploy sequence.
 
 **Built this arc, closing out most of what was named here before:
 teams, most of the "user variable" fields, creating and managing an
