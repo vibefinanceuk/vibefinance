@@ -599,6 +599,36 @@ describe("the document pop-out window (decision 0384, phase 4)", () => {
     }
   });
 
+  /**
+   * **Seller, Buyer and Header reflow into one row — decision 0392.**
+   * `#viewer .columns.docpoppedout` in `app.css` carries the actual
+   * layout (untestable here — jsdom computes no grid), so what this
+   * checks is the one thing `viewer.js` itself is responsible for:
+   * the class that selects it appears and disappears with the same
+   * open/close cycle the tests above already exercise, and disappears
+   * again once the pop-out closes rather than getting stuck on.
+   */
+  it("toggles the reflow class on .columns with the same open/close cycle as the placeholder", async () => {
+    vi.useFakeTimers();
+    try {
+      const handle = fakeWindow();
+      vi.stubGlobal("open", vi.fn(() => handle));
+
+      await open();
+      const columns = document.querySelector(".columns") as HTMLElement;
+      expect(columns.className).not.toContain("docpoppedout");
+
+      clickExpand();
+      expect(columns.className).toContain("docpoppedout");
+
+      handle.closed = true;
+      await vi.advanceTimersByTimeAsync(700);
+      expect(columns.className).not.toContain("docpoppedout");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("retargets the already-open pop-out to a different task, rather than opening a second window — the operator's own answer", async () => {
     const handle = fakeWindow();
     vi.stubGlobal("open", vi.fn(() => handle));

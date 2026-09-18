@@ -38,10 +38,14 @@ twice.
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
 | `vf-app-poc` migrations | through `0070` |
 | `vf-licence-poc` migrations | through `0121` |
-| Tests | vf-admin 9 · vf-app 1921 · vf-licence 320 · vf-ui 74 Worker + 666 browser · shared 278 (+3 known pre-existing failures) |
-| Decision records | 391 |
+| Tests | vf-admin 9 · vf-app 1921 · vf-licence 320 · vf-ui 74 Worker + 669 browser · shared 278 (+3 known pre-existing failures) |
+| Decision records | 392 |
 
-**Everything committed is deployed again.** Decision 0391 (the
+**Decision 0392 (more room in every direction) is built and committed,
+not yet pushed or deployed — this session has no push access to
+`origin/main`, so it is delivered as a bundle for the operator's own
+pull/push/deploy sequence, as usual.** Everything before it is deployed
+and confirmed. Decision 0391 (the
 Document card stops borrowing space) was reported pushed and
 deployed, and checked rather than taken on that report alone:
 `origin/main` fetched directly reads `bb818bb`, matching this
@@ -793,6 +797,87 @@ reads `bb818bb`, matching this session's own `main` exactly; the live
 absolute; inset: 0`, `.c-document .vpreview`'s `min-height: 0`
 alongside `height: 100%`, and `.c-document { position: static; }`
 inside the narrow media query.
+
+**Decision 0392 (more room in every direction) is built and committed,
+not yet pushed.** Asked directly, in four parts: whether zoom can go
+past its own frame; whether the Document card's now-unused row (freed
+by 0391) can be reclaimed once popped out, with Seller/Buyer/Header
+sharing one row; whether the Lines card can grow into the space that
+frees; and whether the pop-out placeholder can shrink to help free it.
+The zoom control was never actually stuck — the canvas genuinely
+redraws at a higher pixel resolution on every click, measured
+1000→1250→1500→2000→3000px across five clicks — only `.vcanvas {
+max-width: 100%; }` clamping the *display* width regardless of that,
+and most invoices are already wider than their card even unzoomed, so
+further clicks bought resolution the screen never showed more of.
+Fixed by lifting the clamp only once zoomed in past the default step
+(`zoomIndex > DEFAULT_ZOOM_INDEX`, a `.zoomedin` class toggled in
+`draw()`), with drag-to-pan added on top via `pointerdown`/
+`pointermove`/`pointerup`/`pointercancel` and `setPointerCapture` —
+chosen over `window`-level mouse listeners specifically because
+`pageViewer()` is called fresh per opened document with no teardown
+hook (decision 0382's own design), so a `window` listener pair would
+leak one more copy every time a document is opened; pointer capture
+self-releases and never touches `window`, guarded with `?.` for jsdom
+(decision 0121), which has no such method. For the reclaimed row, two
+more complex approaches were mocked up, measured, and rejected first:
+an equal-thirds split with the placeholder given its own dedicated
+row (saved ~62px from the merge, cost ~50px back for the new row,
+netting almost nothing — Lines in one case landed *worse*, 738px vs a
+718px baseline), and moving Header's own DOM node into the Parties
+container via JavaScript (worked, matched the eventual numbers almost
+exactly at 521px vs 520px, but was more code for the same result).
+What shipped moves nothing: `.c-header` stays exactly where it has
+always lived, and a `docpoppedout` class toggled on `.columns` (by
+`viewer.js`, via the same `popoutStateSetter` the placeholder already
+uses) changes only `grid-template-areas`, so `parties` spans two of
+three column tracks and its own pre-existing internal grid splits
+Seller from Buyer automatically. The width ratio — 25%/25%/50% against
+30%/30%/40% — was measured both ways before asking: 30/30/40 leaves
+Header too narrow for its own natural layout, so it grows *taller*
+instead of using the width (350px vs 258px), landing Lines at 613px
+against 25/25/50's 520px, the opposite of the point of widening it.
+Presented both, and the operator chose 25/25/50 directly. **A CSS
+specificity bug caught and fixed before it shipped, not after**:
+`#viewer .columns.docpoppedout` (ID + 2 classes) outranks the plain
+narrow-screen `#viewer .columns` rule (ID + 1 class) regardless of
+which `@media` block either is declared in, so an unscoped wide-mode
+`.docpoppedout` rule would have kept winning even inside the existing
+narrow `@media (max-width: 1100px)` block — reproduced deliberately
+(a mockup run without the reset, showing the narrow columns cramped to
+424px) before writing an equally-specific reset inside that same media
+query. The placeholder itself shrinks from a box that filled the whole
+card to a slim, right-aligned flex row sharing the Process row's own
+line, costing no additional row height — the same trick that made the
+equal-thirds attempt fail is exactly what this version avoids. A
+temporal-dead-zone risk in the original single-expression construction
+of `.columns` (`documentPanel()` calls its own `popoutStateSetter`
+synchronously, during construction, which would reference `columnsEl`
+before it existed if built inside the same expression) was avoided by
+building `columnsEl` empty first and `.append()`-ing its children in a
+later statement. Verified against the real production code, not
+mockups alone — clicking the actual `Expand` button, stubbing
+`window.open` the way the real test suite's `fakeWindow()` does — at
+both 1400px and 900px viewports and through a full open → reflow →
+close cycle, restoring the exact pre-Expand layout on close (process
+72px/679px, document 562px/453px, lines at 718px, matching precisely).
+The first pass at that last check used a fake `window.open` handle
+whose `close()` was a no-op, so `handle.closed` never became `true`
+and the real 700ms `watchPopout()` poll never fired — a bug in the
+verification script, fixed by making the fake `close()` actually set
+`closed = true`, matching a real browser window. Three new tests, each
+watched to fail against the pre-fix code first (`git stash` on the
+three production files, test edits kept, rerun to confirm clear
+assertion failures, `git stash pop`). Touches `vf-ui` only (`app.css`,
+`page-renderer.js`, `viewer.js`), no migration, no other Worker. Full
+suites: vf-ui 74 Worker + 669 browser (666 pre-existing + 3 new), both
+passing — 153 unhandled-rejection console errors (152 pre-existing +
+1 new instance of the same known, tolerated "no stub for
+/api/documents/inv-1/activity" class, not a regression). **This session
+has no push access to `origin/main`** — delivered as bundle 0564 for
+the operator's own pull/push/deploy sequence. Not yet confirmed live;
+that confirmation, and the update to this paragraph recording it, is
+still to come.
 
 **Built this arc, closing out most of what was named here before:
 teams, most of the "user variable" fields, creating and managing an

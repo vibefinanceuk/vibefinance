@@ -268,6 +268,84 @@ describe("pageViewer — the widget", () => {
     expect(zoomIn.disabled).toBe(true);
   });
 
+  /**
+   * **Escapes `.vcanvas`'s own width clamp only past the default step
+   * — decision 0392.** Asked for directly: *"the user will want to
+   * zoom into the image detail past max width."* Below and at the
+   * default, `app.css`'s `max-width: 100%` is what makes the initial
+   * view fit the card — most scanned invoices already exceed it —
+   * so this must not lift unconditionally, only once a zoom-in click
+   * has gone past `DEFAULT_ZOOM_INDEX`, and must return the moment it
+   * comes back down to it.
+   */
+  it("marks the canvas zoomedin (and the holder pannable) only once zoomed in past the default step", async () => {
+    const page = { pageNumber: 1, kind: "image", load: vi.fn(async () => ({})) };
+    const deps = baseDeps({ resolvePages: vi.fn(async () => [page]) });
+    const root = pageViewer("inv-1", null, deps) as HTMLElement;
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const canvas = root.querySelector(".vcanvas") as HTMLElement;
+    const holder = root.querySelector(".vcanvasholder") as HTMLElement;
+    const zoomOut = root.querySelector('[aria-label="Zoom out"]') as HTMLButtonElement;
+    const zoomIn = root.querySelector('[aria-label="Zoom in"]') as HTMLButtonElement;
+
+    expect(canvas.className).not.toContain("zoomedin");
+    expect(holder.className).not.toContain("pannable");
+
+    zoomIn.click();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(canvas.className).toContain("zoomedin");
+    expect(holder.className).toContain("pannable");
+
+    zoomOut.click();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(canvas.className).not.toContain("zoomedin");
+    expect(holder.className).not.toContain("pannable");
+  });
+
+  /**
+   * **Drag to pan, once there is somewhere to pan to — decision
+   * 0392**, the other half of the same request: *"use the mouse
+   * pointer to drag around the page."* Pointer capture (`.
+   * setPointerCapture`) is what keeps a real drag tracking once the
+   * cursor leaves the holder — jsdom (decision 0121) has no such
+   * method, so the handler's own optional chaining is what is really
+   * being checked here: that calling it through an element without
+   * one does not throw, the same way it would not in a browser too
+   * old to support it.
+   */
+  it("drags the holder's own scroll position by exactly the pointer's own delta", async () => {
+    const page = { pageNumber: 1, kind: "image", load: vi.fn(async () => ({})) };
+    const deps = baseDeps({ resolvePages: vi.fn(async () => [page]) });
+    const root = pageViewer("inv-1", null, deps) as HTMLElement;
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const holder = root.querySelector(".vcanvasholder") as HTMLElement;
+    holder.scrollLeft = 0;
+    holder.scrollTop = 0;
+
+    holder.dispatchEvent(new MouseEvent("pointerdown", { clientX: 200, clientY: 150 }));
+    expect(holder.className).toContain("dragging");
+
+    holder.dispatchEvent(new MouseEvent("pointermove", { clientX: 140, clientY: 100 }));
+    expect(holder.scrollLeft).toBe(60);
+    expect(holder.scrollTop).toBe(50);
+
+    holder.dispatchEvent(new MouseEvent("pointerup"));
+    expect(holder.className).not.toContain("dragging");
+
+    // A move after release is not still a drag.
+    holder.dispatchEvent(new MouseEvent("pointermove", { clientX: 0, clientY: 0 }));
+    expect(holder.scrollLeft).toBe(60);
+    expect(holder.scrollTop).toBe(50);
+  });
+
   it("reopening the widget starts fresh — no rotation or zoom carried over from the last document", async () => {
     // Decided in conversation: reset every time, a session convenience
     // rather than data worth a place to store it. Nothing in

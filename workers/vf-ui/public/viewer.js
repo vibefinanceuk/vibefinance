@@ -1007,7 +1007,7 @@ export function buildDocTabs(invoiceId) {
   return { tabs };
 }
 
-function documentPanel(task) {
+function documentPanel(task, onPoppedOutChange) {
   const invoiceId = task.subject?.id ?? null;
 
   const docPane = el("div", { class: "vpreview", id: "vpreview" }, [
@@ -1057,6 +1057,13 @@ function documentPanel(task) {
   popoutStateSetter = (open) => {
     normalBody.hidden = open;
     placeholderBody.hidden = !open;
+    // **The rest of the row reflows too** — decision 0392. Everything
+    // the Document card no longer needs (Seller, Buyer and Header's
+    // own three separate rows) is a CSS concern the caller owns, not
+    // this function's — `onPoppedOutChange` is the only seam it needs
+    // to reach it, the same way `popoutStateSetter` itself already
+    // reaches into `documentPanel()` from outside.
+    onPoppedOutChange?.(open);
   };
   popoutStateSetter(popoutIsOpen());
 
@@ -2143,6 +2150,63 @@ export async function openViewer(task, onClose) {
    * which is what somebody opening an invoice actually looks at.
    */
 
+  /**
+   * **Built in two steps, not inline** — decision 0392. `columnsEl`
+   * has to already exist, not still be mid-construction, the moment
+   * `documentPanel()` calls `setDocPoppedOut` for its own first,
+   * synchronous read of whether a pop-out is already open (line ~1061
+   * above): `popoutStateSetter(popoutIsOpen())` runs before
+   * `documentPanel()` even returns, let alone before the surrounding
+   * `el("div", { class: "columns" }, [...])` call that would
+   * otherwise still be evaluating its own children array — a `const`
+   * assigned from that same expression is not initialized until the
+   * whole expression finishes, so a callback reaching for it that
+   * early would find only the temporal dead zone.
+   */
+  const columnsEl = el("div", { class: "columns" });
+  /**
+   * **Seller, Buyer and Header share the row the Document card no
+   * longer needs — decision 0392**, asked for directly: *"When
+   * expanded, the original window still shows a card for the invoice
+   * image, but this space is no longer used... the Seller card, buyer
+   * card and Invoice Header card can all occupy the same row."*
+   * `#viewer .columns.docpoppedout` in `app.css` carries the actual
+   * reflow — a different `grid-template-areas` and column widths, at
+   * 25%/25%/50% (Header, at 50%, keeps its own field grid's natural
+   * width rather than being squeezed into wrapping — measured against
+   * both this and a 30/30/40 split before choosing it, the operator's
+   * own choice between the two). This function only toggles the class
+   * that selects it; nothing here moves a single DOM node between
+   * containers — Header stays exactly where it always sat, as
+   * `.c-parties`'s own sibling, and the CSS alone decides whether that
+   * sibling gets its own row or shares one.
+   */
+  function setDocPoppedOut(open) {
+    columnsEl.classList.toggle("docpoppedout", open);
+  }
+  // Named grid areas (decision 0388) — the Document card spans
+  // exactly the process+parties+header rows, its bottom landing
+  // on the header card's own bottom, with Lines full width
+  // beneath both rather than confined to this column. (Decision
+  // 0392 above changes what those areas are once popped out.)
+  columnsEl.append(
+    el("div", { class: "c-process" }, [progressRow()].filter(Boolean)),
+    el("div", { class: "c-document" }, [
+      documentPanel(task, setDocPoppedOut),
+      exceptionPanel(),
+    ].filter(Boolean)),
+    el("div", { class: "c-parties" }, [
+      // Seller and buyer side by side, in the space the four
+      // status panels were using (decision 0115).
+      el("div", { class: "parties" }, [sellerPanel(), buyerPanel()].filter(Boolean)),
+    ]),
+    el("div", { class: "c-header" }, [headerSummary()].filter(Boolean)),
+    el("div", { class: "c-lines" }, [linePanel()].filter(Boolean)),
+    el("div", { class: "c-note" }, [
+      el("div", { class: "problem", id: "viewer-note", role: "status" }),
+    ])
+  );
+
   shell.replaceChildren(
     frame(
       el("div", {}, [
@@ -2206,27 +2270,7 @@ export async function openViewer(task, onClose) {
           [subhead(task)]
         ),
 
-        // Named grid areas (decision 0388) — the Document card spans
-        // exactly the process+parties+header rows, its bottom landing
-        // on the header card's own bottom, with Lines full width
-        // beneath both rather than confined to this column.
-        el("div", { class: "columns" }, [
-          el("div", { class: "c-process" }, [progressRow()].filter(Boolean)),
-          el("div", { class: "c-document" }, [
-            documentPanel(task),
-            exceptionPanel(),
-          ].filter(Boolean)),
-          el("div", { class: "c-parties" }, [
-            // Seller and buyer side by side, in the space the four
-            // status panels were using (decision 0115).
-            el("div", { class: "parties" }, [sellerPanel(), buyerPanel()].filter(Boolean)),
-          ]),
-          el("div", { class: "c-header" }, [headerSummary()].filter(Boolean)),
-          el("div", { class: "c-lines" }, [linePanel()].filter(Boolean)),
-          el("div", { class: "c-note" }, [
-            el("div", { class: "problem", id: "viewer-note", role: "status" }),
-          ]),
-        ].filter(Boolean)),
+        columnsEl,
       ].filter(Boolean))
     )
   );

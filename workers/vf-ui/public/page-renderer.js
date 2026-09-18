@@ -232,6 +232,46 @@ export function pageViewer(invoiceId, contentType, deps = REAL_DEPS) {
   const main = el("div", { class: "vmain" }, [controls, canvasHolder]);
   const root = el("div", { class: "vpagesroot" }, [rail, main]);
 
+  /**
+   * **Drag to pan, once zoomed in past fit** — decision 0392, asked
+   * for directly: *"use the mouse pointer to drag around the page."*
+   * Pointer capture, not a `mousemove`/`mouseup` pair on `window` —
+   * the usual way to keep a drag tracking once the cursor leaves the
+   * element it started in. A `window` listener would work the same
+   * way but would need removing again the moment this widget is torn
+   * down, and nothing here ever tears one down explicitly (a fresh
+   * `pageViewer()` call per document, per decision 0382's own design);
+   * capture avoids the leak by never attaching to `window` at all —
+   * `pointerup`/`pointercancel` release it automatically.
+   */
+  let dragging = false;
+  let dragStartX = 0;
+  let dragStartY = 0;
+  let dragStartLeft = 0;
+  let dragStartTop = 0;
+  canvasHolder.addEventListener("pointerdown", (e) => {
+    dragging = true;
+    dragStartX = e.clientX;
+    dragStartY = e.clientY;
+    dragStartLeft = canvasHolder.scrollLeft;
+    dragStartTop = canvasHolder.scrollTop;
+    canvasHolder.classList.add("dragging");
+    // Optional chaining: jsdom (decision 0121) has no such method, and
+    // this must stay a harmless no-op there rather than throw.
+    canvasHolder.setPointerCapture?.(e.pointerId);
+  });
+  canvasHolder.addEventListener("pointermove", (e) => {
+    if (!dragging) return;
+    canvasHolder.scrollLeft = dragStartLeft - (e.clientX - dragStartX);
+    canvasHolder.scrollTop = dragStartTop - (e.clientY - dragStartY);
+  });
+  const stopDragging = () => {
+    dragging = false;
+    canvasHolder.classList.remove("dragging");
+  };
+  canvasHolder.addEventListener("pointerup", stopDragging);
+  canvasHolder.addEventListener("pointercancel", stopDragging);
+
   function pageLabel(pageNumber, total) {
     return t("viewer.pageof").replace("{n}", String(pageNumber)).replace("{total}", String(total));
   }
@@ -242,6 +282,22 @@ export function pageViewer(invoiceId, contentType, deps = REAL_DEPS) {
     zoomOutBtn.disabled = zoomIndex === 0;
     zoomInBtn.disabled = zoomIndex === ZOOM_STEPS.length - 1;
     status.textContent = pageLabel(current + 1, pages.length);
+    /**
+     * **Escapes `.vcanvas`'s own width clamp once zoomed in past the
+     * default** — decision 0392, the other half of the same request:
+     * *"the user will want to zoom into the image detail past max
+     * width."* Below and at the default step the clamp is what makes
+     * the initial view fit the card at all (most scanned invoices are
+     * already wider than it); past that step it only ever suppressed
+     * the zoom the person just asked for, drawing at a higher
+     * resolution behind the same fixed box rather than actually
+     * showing more of it. `canvasHolder`'s own `overflow: auto`
+     * (decision 0382) is what turns the lifted clamp into a
+     * scrollable, panned view rather than an overflowing mess.
+     */
+    const zoomedIn = zoomIndex > DEFAULT_ZOOM_INDEX;
+    canvas.classList.toggle("zoomedin", zoomedIn);
+    canvasHolder.classList.toggle("pannable", zoomedIn);
     await renderPage(source, canvas, { zoom: ZOOM_STEPS[zoomIndex], rotation }, deps);
   }
 

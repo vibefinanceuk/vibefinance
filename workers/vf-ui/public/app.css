@@ -1881,6 +1881,95 @@
   .c-note { grid-area: note; }
   .c-document { grid-area: document; min-height: 0; position: absolute; inset: 0; }
 
+  /**
+   * **Seller, Buyer and Header share the row Document no longer needs
+   * — decision 0392.** Asked for directly, once a pop-out leaves the
+   * Document card with nothing in it but a small notice: *"the Seller
+   * card, buyer card and Invoice Header card can all occupy the same
+   * row."* `viewer.js`'s `setDocPoppedOut()` is the only JS this
+   * needed — it toggles this one class on `.columns` and moves
+   * nothing: `.c-header` stays exactly where it always sat, as
+   * `.c-parties`'s own sibling, and only the grid's own areas and
+   * column widths change which row it lands in.
+   *
+   * **1:1:2, not 3:3:4** — the operator's own choice, "25%/25%/50%"
+   * over "30%/30%/40%", after both were mocked up and measured
+   * against real content rather than guessed at: at 30/30/40,
+   * Header's own `.headersummary` grid no longer has room for its
+   * natural columns and drops to fewer of them, growing *taller* than
+   * the row this was meant to shrink; at 25/25/50 it keeps its own
+   * width and the row stays as short as Seller/Buyer's content, not
+   * Header's. `parties` spans the first two of the three tracks (not
+   * a dedicated one of its own) — `.parties`'s existing `auto-fit`
+   * grid (decision 0115) splits whatever width that gives it between
+   * Seller and Buyer on its own, the same as it always has; the
+   * combined width merely happens to be half the row now instead of
+   * the whole thing.
+   */
+  #viewer .columns.docpoppedout {
+    grid-template-areas:
+      "process   process   document"
+      "parties   parties   header"
+      "lines     lines     lines"
+      "note      note      note";
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 2fr);
+  }
+  /**
+   * **Document no longer spans three rows — it shares one with
+   * nothing else in its own column**, so it needs neither the
+   * absolute positioning decision 0391 gave it to escape the grid's
+   * own sizing algorithm (there is only one row to size here) nor a
+   * height matched to anything else. The tabs and Expand button
+   * (`.cardhead`) are hidden rather than shrunk to fit: `normalBody`
+   * is already hidden the whole time this class is present (`
+   * popoutStateSetter`, viewer.js), so every tab they would switch to
+   * is hidden too, and a row of now-nonfunctional buttons is not
+   * worth the room in a badge this size.
+   */
+  #viewer .columns.docpoppedout .c-document {
+    position: static;
+    height: auto;
+  }
+  #viewer .columns.docpoppedout .c-document .cardhead { display: none; }
+  #viewer .columns.docpoppedout .c-document > .panel:not(.exceptions) {
+    height: auto;
+    display: block;
+  }
+  /**
+   * **The notice itself, shrunk from a box built to fill the whole
+   * card down to a small corner note** — asked for directly: "could
+   * occupy a much smaller card in the same space." Right-aligned
+   * against Process's own chevrons rather than centred in a box of
+   * its own, since there is no separate box left to centre it in.
+   */
+  #viewer .columns.docpoppedout .vpreview.vpoppedout {
+    height: auto;
+    min-height: 0;
+    border: none;
+    background: none;
+  }
+  #viewer .columns.docpoppedout .vpreview.vpoppedout .vthumb {
+    height: auto;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    justify-content: center;
+    gap: 2px;
+    padding: 0;
+    background: none;
+    color: var(--text-secondary);
+    font-size: var(--text-sm);
+    text-align: right;
+  }
+  #viewer .columns.docpoppedout .vpoppedouttext { margin-bottom: 0; }
+  #viewer .columns.docpoppedout .vpoppedoutactions { gap: 12px; justify-content: flex-end; }
+  #viewer .columns.docpoppedout .vpoppedoutactions .actionlink {
+    flex-direction: row;
+    min-width: 0;
+    padding: 0;
+    gap: 4px;
+  }
+
   /*
     **The Document card fills exactly the area the grid gives it**,
     the same flex chain decision 0386 built for the pop-out rather
@@ -2010,6 +2099,34 @@
      * by at all, measured collapsing to 0 before this reset was added.
      */
     .c-document { position: static; }
+    /**
+     * **The Seller/Buyer/Header reflow does not survive down here —
+     * decision 0392.** `#viewer .columns.docpoppedout` (above, outside
+     * any media query) has higher specificity than the plain `#viewer
+     * .columns` rule just above in this same block (two classes beat
+     * one), so without this it would keep winning even at this width
+     * — squeezed the same three-across row into whatever this
+     * viewport has, rather than the single honest column every other
+     * state here already falls back to. Watched happen before adding
+     * this: Process narrowed to hold a badge beside it that this
+     * width has no real room for, and Header split into two
+     * over-narrow field columns rather than staying with Seller and
+     * Buyer's own single-column stack. This simply repeats the plain
+     * narrow layout, popped out or not — the badge's own shrunk CSS
+     * above still applies (it is not scoped to any width), only the
+     * three-column reflow around it does not.
+     */
+    #viewer .columns.docpoppedout {
+      grid-template-areas:
+        "process"
+        "document"
+        "parties"
+        "header"
+        "lines"
+        "note";
+      grid-template-columns: minmax(0, 1fr);
+    }
+    #viewer .columns.docpoppedout .c-document { position: static; }
   }
 
   /*
@@ -2367,6 +2484,29 @@
     background: var(--surface-0);
   }
   .vcanvas { max-width: 100%; }
+  /**
+   * **Lifted once zoomed in past the default step** — decision 0392.
+   * `page-renderer.js`'s `draw()` toggles this the moment `zoomIndex`
+   * passes `DEFAULT_ZOOM_INDEX`, not on every zoom level: below and at
+   * the default, `max-width: 100%` above is what makes the initial
+   * view fit the card (most scanned invoices are already wider than
+   * it), and removing it unconditionally would have made *every*
+   * document open already overflowing. Past that step, the same
+   * clamp only ever hid the zoom a person had just asked for —
+   * drawing at a higher resolution behind the same fixed box — so it
+   * lifts, and `.vcanvasholder`'s own `overflow: auto` above (decision
+   * 0382) is what turns the now-larger canvas into something
+   * scrollable rather than something that overflows silently.
+   */
+  .vcanvas.zoomedin { max-width: none; }
+  /**
+   * **A grab cursor only while there is somewhere to drag to** —
+   * `pannable` is the same condition as `.vcanvas.zoomedin` above,
+   * toggled by the same line in `draw()`. `dragging` is set for the
+   * duration of one pointer-down-to-up gesture.
+   */
+  .vcanvasholder.pannable { cursor: grab; }
+  .vcanvasholder.pannable.dragging { cursor: grabbing; }
 
   .actionlink {
     display: flex;

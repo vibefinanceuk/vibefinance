@@ -537,6 +537,36 @@ a rule, and left an approval task in a queue.
   there to size itself by once taken out of the algorithm, measured
   collapsing to `0` — reset with `.c-document { position: static; }`
   inside that width's own, pre-existing media query.
+- **More room in every direction** (0392). Asked directly: whether
+  zoom can go past its own frame, whether the Document card's row can
+  be reclaimed once popped out (Seller/Buyer/Header sharing one row),
+  and whether the pop-out placeholder can shrink to free that space.
+  The zoom control was never actually stuck — the canvas genuinely
+  redraws at higher resolution each click (measured 1000→3000px across
+  five clicks) — only `.vcanvas { max-width: 100% }` clamping the
+  *display* width regardless; fixed by lifting the clamp only once
+  zoomed in past the default step (`.zoomedin`), with drag-to-pan
+  added via pointer capture rather than `window`-level listeners (no
+  teardown hook exists to remove those, per decision 0382's design).
+  For the reclaimed row: two more complex approaches — an equal-thirds
+  split with a dedicated placeholder row, and moving Header's DOM node
+  into Parties via JavaScript — were mocked up, measured, and rejected
+  in favour of a zero-DOM-move version: `.c-header` stays exactly
+  where it's always been, and a `docpoppedout` class on `.columns`
+  changes only `grid-template-areas`, letting `.parties`'s own
+  pre-existing internal grid split Seller from Buyer automatically.
+  25%/25%/50% was chosen over 30%/30%/40% after both were measured —
+  30/30/40 leaves Header too narrow for its own natural layout, so it
+  grows *taller* instead (350px vs 258px), landing Lines at 613px
+  against 25/25/50's 520px. A CSS specificity bug — the extra class on
+  `.docpoppedout` outranking the plain narrow-screen `.columns` rule
+  regardless of media query — was reproduced deliberately and fixed
+  before shipping, not after. Verified against the real production
+  code, not mockups alone, through a full open→reflow→close cycle at
+  both wide and narrow viewports, restoring the exact pre-Expand
+  layout on close. Three new tests, each watched to fail against the
+  pre-fix code first. Full suites: vf-ui 74 Worker + 669 browser
+  (666 pre-existing + 3 new), both passing.
 
 ### Customer configuration
 - Org units, teams, roles, users, cost centres
