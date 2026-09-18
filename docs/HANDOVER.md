@@ -29,22 +29,26 @@ twice.
 
 | | |
 | --- | --- |
-| `origin/main` | `4f8fb89` |
+| `origin/main` | `6de0573` |
 | vf-admin deployed | `8e27a34` · `https://admin.vibefinance-ai.com` · behind Cloudflare Access |
 | vf-app deployed | `4d44b59` |
 | vf-licence deployed | `a235713` |
-| vf-ui deployed | `8278aeb` · `https://app.vibefinance-ai.com` |
+| vf-ui deployed | `6de0573` · `https://app.vibefinance-ai.com` |
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
 | `vf-app-poc` migrations | through `0070` |
 | `vf-licence-poc` migrations | through `0121` |
 | Tests | vf-admin 9 · vf-app 1921 · vf-licence 320 · vf-ui 74 Worker + 665 browser · shared 278 (+3 known pre-existing failures) |
 | Decision records | 388 |
 
-**Not true right now — decision 0388 is committed and not yet
-deployed**, this session having no push access to `origin/main`; it
-is delivered as a bundle for the operator's own pull/push/deploy
-sequence instead. Everything before it is still deployed. Decision
-0387 (the Seller/Buyer cards) was reported pushed and deployed, and
+**Everything committed is deployed again.** Decision 0388 (the process
+row and Document card) was reported pushed and deployed, and checked
+rather than taken on that report alone: `origin/main` fetched directly
+reads `6de0573`, matching this session's own `main` exactly; the live
+`app.css`, fetched cache-busted, has `#viewer .columns`'s
+`grid-template-areas` exactly as built, `.exceptions { display: none;
+}`, and the plain `.columns` rule Sources uses still reads
+`align-items: start` with no named areas of its own. Decision 0387
+(the Seller/Buyer cards) was reported pushed and deployed, and
 checked rather than taken on that report alone: `origin/main` fetched
 directly reads `8278aeb`, matching this session's own `main` exactly;
 the live `viewer.js`, fetched cache-busted, calls `pair()` for Name
@@ -601,7 +605,7 @@ fetched cache-busted, carry every change described above and no
 `.sfield.address` rule or endpoint/email/phone `pair()` call anywhere.
 
 **Decision 0388 (the process row and Document card join the grid) is
-built, not yet pushed or deployed.** Two asks, each mocked up in a
+built, pushed, and deployed.** Two asks, each mocked up in a
 headless Chromium and sent as a screenshot before being built, and
 each approved before the next line of production code changed for it.
 First: the process chevrons moved from a full-width panel above
@@ -636,8 +640,12 @@ depends on, not before it. Touches `vf-ui` only (`viewer.js`,
 none asserted on `.columns`'s previous plain-stack shape in a way this
 decision's own checks (above) didn't already cover by other means.
 Full suites: vf-ui 74 Worker + 665 browser, both passing; `eslint`
-clean. **This session has no push access to `origin/main`** — delivered
-as a bundle for the operator's own pull/push/deploy sequence.
+clean. **Confirmed against the live origin and the live deployment,
+not just reported**: `origin/main` fetched directly and reads
+`6de0573`, matching this session's own `main` exactly; the live
+`app.css`, fetched cache-busted, carries `#viewer .columns`'s named
+areas, `.exceptions { display: none; }`, and a still-untouched plain
+`.columns` rule for Sources.
 
 **Built this arc, closing out most of what was named here before:
 teams, most of the "user variable" fields, creating and managing an
