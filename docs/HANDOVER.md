@@ -30,21 +30,24 @@ twice.
 
 | | |
 | --- | --- |
-| `origin/main` | `3094160` |
+| `origin/main` | `310b5fd` |
 | vf-admin deployed | `8e27a34` · `https://admin.vibefinance-ai.com` · behind Cloudflare Access |
 | vf-app deployed | `4d44b59` |
 | vf-licence deployed | `a235713` |
-| vf-ui deployed | `6de0573` · `https://app.vibefinance-ai.com` |
+| vf-ui deployed | `310b5fd` · `https://app.vibefinance-ai.com` |
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
 | `vf-app-poc` migrations | through `0070` |
 | `vf-licence-poc` migrations | through `0121` |
 | Tests | vf-admin 9 · vf-app 1921 · vf-licence 320 · vf-ui 74 Worker + 666 browser · shared 278 (+3 known pre-existing failures) |
 | Decision records | 389 |
 
-**Not true right now — decision 0389 is committed and not yet
-deployed**, this session having no push access to `origin/main`; it is
-delivered as a bundle for the operator's own pull/push/deploy sequence
-instead. Everything before it is still deployed. Decision 0388 (the
+**Everything committed is deployed again.** Decision 0389 (the country
+stays a code) was reported pushed and deployed, and checked rather
+than taken on that report alone: `origin/main` fetched directly reads
+`310b5fd`, matching this session's own `main` exactly; the live
+`viewer.js`, fetched cache-busted, has `addressBlock()` reading
+`party.country` alone, with no `party.countryName` anywhere in its
+`lines` array. Decision 0388 (the
 process row and Document card) was reported pushed and deployed, and
 checked rather than taken on that report alone: `origin/main` fetched
 directly reads `6de0573`, matching this session's own `main` exactly;
@@ -652,7 +655,7 @@ areas, `.exceptions { display: none; }`, and a still-untouched plain
 `.columns` rule for Sources.
 
 **Decision 0389 (the country stays a code, superseding decision 0221
-in part) is built, not yet pushed or deployed.** Asked directly,
+in part) is built, pushed, and deployed.** Asked directly,
 GB-expanding-to-"United Kingdom of Great Britain and Northern
 Ireland" as the example: "I think in all cases, we can stick with the
 short form country code." 0221 chose the expanded Peppol name on
@@ -674,8 +677,12 @@ and one new dedicated test stubs an invoice carrying **both**
 the rendered cards show the code and not the name — watched fail
 against the pre-edit code first. Full suites: vf-ui 74 Worker + 666
 browser, both passing (663 unchanged, 2 changed, 1 new); `eslint`
-clean. **This session has no push access to `origin/main`** — delivered
-as a bundle for the operator's own pull/push/deploy sequence.
+clean. **Confirmed against the live origin and the live deployment,
+not just reported**: `origin/main` fetched directly and reads
+`310b5fd`, matching this session's own `main` exactly; the live
+`viewer.js`, fetched cache-busted, has `addressBlock()` reading
+`party.country` alone — no `party.countryName` anywhere in its `lines`
+array.
 
 **Built this arc, closing out most of what was named here before:
 teams, most of the "user variable" fields, creating and managing an
