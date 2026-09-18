@@ -1,7 +1,7 @@
 # Handover
 
 **Written 4 September 2026, updated 17 September (six times), updated
-18 September (twice).**
+18 September (three times).**
 
 **For a session starting cold.** Where things stand, what needs a
 decision rather than work, what to do next, and the habits this project
@@ -37,9 +37,33 @@ twice.
 | vf-ui deployed | `0125d52` · `https://app.vibefinance-ai.com` |
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
 | `vf-app-poc` migrations | through `0070` |
-| `vf-licence-poc` migrations | through `0121` applied · **`0122` committed, not yet applied to the remote D1** |
-| Tests | vf-admin 9 · vf-app 1921 · vf-licence 320 · vf-ui 74 Worker + 674 browser · shared 278 (+3 known pre-existing failures) |
-| Decision records | 393 |
+| `vf-licence-poc` migrations | through `0121` applied · **`0122` and `0123` committed, neither yet applied to the remote D1** |
+| Tests | vf-admin 9 · vf-app 1921 · vf-licence 320 · vf-ui 74 Worker + 684 browser · shared 278 (+3 known pre-existing failures) |
+| Decision records | 394 |
+
+**Decision 0394 (a column, two arrows, and a marker) is built and
+committed locally (`fe40c60`), not yet pushed.** An evaluation request
+— Timeline / Chat as a pop-out-only right-hand column at 25% width,
+next/previous page cycling in the shared control row, and a
+session-only rectangle highlight tool as a deliberate first cut of
+"annotations" — mocked up with Playwright before anything was built,
+then scoped by three explicit choices (25% over 20%; page cycling in
+both the pop-out and the embedded card, since the control row is
+shared; build a small first cut of annotations now rather than scope
+the full feature first). Touches `vf-ui` (`app.css`, `icons.js`,
+`page-renderer.js`, `viewer.js`) and `vf-licence` (migration `0123`,
+`test/setup.ts`, `test/string-coverage.test.ts`) — no `vf-app` or
+`vf-admin` change. Ten new tests, full suites vf-ui 74 Worker + 684
+browser, vf-licence 320/320, all passing; `eslint` and
+`scripts/check-citations.py` both clean. **Not yet confirmed pushed or
+deployed** — this session has no push access; delivered as a bundle,
+waiting on the operator's own `git pull`/`push`/`wrangler deploy`
+sequence, same as every prior decision. Once pushed, `vf-licence`'s
+migration `0123` has the same gap decision 0393 already found for
+`0122`: a `wrangler deploy` of `vf-ui` does not touch `ui_strings` in
+the `vf-licence-poc` D1, and this session still does not know how that
+database's own migrations reach production (see the paragraph below
+and "Waiting on you" — unanswered as of this update).
 
 **Decision 0393 (filling the row, and a number to ring) is pushed and
 deployed, with one part still outstanding**: every `vf-ui` change
