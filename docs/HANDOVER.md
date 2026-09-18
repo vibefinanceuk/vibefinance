@@ -30,22 +30,33 @@ twice.
 
 | | |
 | --- | --- |
-| `origin/main` | `bb818bb` |
+| `origin/main` | `7d9a63b` |
 | vf-admin deployed | `8e27a34` · `https://admin.vibefinance-ai.com` · behind Cloudflare Access |
 | vf-app deployed | `4d44b59` |
 | vf-licence deployed | `a235713` |
-| vf-ui deployed | `bb818bb` · `https://app.vibefinance-ai.com` |
+| vf-ui deployed | `7d9a63b` · `https://app.vibefinance-ai.com` |
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
 | `vf-app-poc` migrations | through `0070` |
 | `vf-licence-poc` migrations | through `0121` |
 | Tests | vf-admin 9 · vf-app 1921 · vf-licence 320 · vf-ui 74 Worker + 669 browser · shared 278 (+3 known pre-existing failures) |
 | Decision records | 392 |
 
-**Decision 0392 (more room in every direction) is built and committed,
-not yet pushed or deployed — this session has no push access to
-`origin/main`, so it is delivered as a bundle for the operator's own
-pull/push/deploy sequence, as usual.** Everything before it is deployed
-and confirmed. Decision 0391 (the
+**Everything committed is deployed again.** Decision 0392 (more room
+in every direction) was reported pushed and deployed, and checked
+rather than taken on that report alone: `origin/main` fetched directly
+reads `7d9a63b`, matching this session's own `main` exactly; the live
+`app.css`, fetched cache-busted, has `#viewer .columns.docpoppedout`'s
+`grid-template-areas` with `"parties parties header"`, `.vcanvas.zoomedin
+{ max-width: none; }`, `.vcanvasholder.pannable { cursor: grab; }`, and,
+inside the narrow `@media (max-width: 1100px)` block, the single-column
+reset for `#viewer .columns.docpoppedout` — all exactly as built; the
+live `viewer.js`, fetched cache-busted, has `setDocPoppedOut` toggling
+`docpoppedout` via `classList.toggle`, and `documentPanel`'s second
+`onPoppedOutChange` parameter called after toggling
+`normalBody.hidden`/`placeholderBody.hidden`; the live
+`page-renderer.js`, fetched cache-busted, has the `zoomedIn` toggle on
+`.zoomedin`/`.pannable` and the `pointerdown`/`pointermove`/`pointerup`
+drag handlers with `setPointerCapture`. Decision 0391 (the
 Document card stops borrowing space) was reported pushed and
 deployed, and checked rather than taken on that report alone:
 `origin/main` fetched directly reads `bb818bb`, matching this
@@ -798,8 +809,8 @@ absolute; inset: 0`, `.c-document .vpreview`'s `min-height: 0`
 alongside `height: 100%`, and `.c-document { position: static; }`
 inside the narrow media query.
 
-**Decision 0392 (more room in every direction) is built and committed,
-not yet pushed.** Asked directly, in four parts: whether zoom can go
+**Decision 0392 (more room in every direction) is built, pushed, and
+deployed.** Asked directly, in four parts: whether zoom can go
 past its own frame; whether the Document card's now-unused row (freed
 by 0391) can be reclaimed once popped out, with Seller/Buyer/Header
 sharing one row; whether the Lines card can grow into the space that
@@ -874,10 +885,26 @@ suites: vf-ui 74 Worker + 669 browser (666 pre-existing + 3 new), both
 passing — 153 unhandled-rejection console errors (152 pre-existing +
 1 new instance of the same known, tolerated "no stub for
 /api/documents/inv-1/activity" class, not a regression). **This session
-has no push access to `origin/main`** — delivered as bundle 0564 for
-the operator's own pull/push/deploy sequence. Not yet confirmed live;
-that confirmation, and the update to this paragraph recording it, is
-still to come.
+had no push access to `origin/main`** — delivered as bundle 0564 for
+the operator's own pull/push/deploy sequence, which is how it reached
+the remote. **Confirmed against the live origin and the live
+deployment, not just reported**: `origin/main` fetched directly reads
+`7d9a63b`, matching this session's own `main` exactly; the live
+`app.css`, fetched cache-busted, has `#viewer .columns.docpoppedout`'s
+`grid-template-areas` with `"parties parties header"`, `.vcanvas.zoomedin
+{ max-width: none; }`, `.vcanvasholder.pannable { cursor: grab; }`, and
+the narrow-media-query reset back to a single-column stack, all exactly
+as built; the live `viewer.js`, fetched cache-busted, has
+`setDocPoppedOut` toggling `docpoppedout` via `classList.toggle`, and
+`documentPanel`'s second `onPoppedOutChange` parameter called after
+toggling `normalBody.hidden`/`placeholderBody.hidden`; the live
+`page-renderer.js`, fetched cache-busted, has the `zoomedIn` toggle on
+`.zoomedin`/`.pannable` and the `pointerdown`/`pointermove`/`pointerup`
+drag handlers with `setPointerCapture`. The operator's own screenshot of
+the deployed UI confirms it visually too: Seller, Buyer, and Invoice
+header sharing one row at the built 25/25/50 widths, and the pop-out
+placeholder sitting compactly in the Process row's own line rather than
+filling a tall card.
 
 **Built this arc, closing out most of what was named here before:
 teams, most of the "user variable" fields, creating and managing an
