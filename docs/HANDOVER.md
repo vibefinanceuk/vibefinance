@@ -1,7 +1,7 @@
 # Handover
 
 **Written 4 September 2026, updated 17 September (six times), updated
-18 September.**
+18 September (twice).**
 
 **For a session starting cold.** Where things stand, what needs a
 decision rather than work, what to do next, and the habits this project
@@ -30,21 +30,27 @@ twice.
 
 | | |
 | --- | --- |
-| `origin/main` | `a9af7bb` |
+| `origin/main` | `bb818bb` |
 | vf-admin deployed | `8e27a34` · `https://admin.vibefinance-ai.com` · behind Cloudflare Access |
 | vf-app deployed | `4d44b59` |
 | vf-licence deployed | `a235713` |
-| vf-ui deployed | `a9af7bb` · `https://app.vibefinance-ai.com` |
+| vf-ui deployed | `bb818bb` · `https://app.vibefinance-ai.com` |
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
 | `vf-app-poc` migrations | through `0070` |
 | `vf-licence-poc` migrations | through `0121` |
 | Tests | vf-admin 9 · vf-app 1921 · vf-licence 320 · vf-ui 74 Worker + 666 browser · shared 278 (+3 known pre-existing failures) |
 | Decision records | 391 |
 
-**Not true right now — decision 0391 is committed and not yet
-deployed**, this session having no push access to `origin/main`; it is
-delivered as a bundle for the operator's own pull/push/deploy sequence
-instead. Everything before it is still deployed. Decision 0390 (three
+**Everything committed is deployed again.** Decision 0391 (the
+Document card stops borrowing space) was reported pushed and
+deployed, and checked rather than taken on that report alone:
+`origin/main` fetched directly reads `bb818bb`, matching this
+session's own `main` exactly; the live `app.css`, fetched cache-busted,
+has `#viewer .columns`'s `position: relative`, `.c-document { ...
+position: absolute; inset: 0; }`, `.c-document .vpreview { height:
+100%; min-height: 0; }`, and, inside the narrow `@media (max-width:
+1100px)` block, `.c-document { position: static; }` — all exactly as
+built. Decision 0390 (three
 fifths, two fifths, and a freed rail) was reported pushed and
 deployed, and checked rather than taken on that report alone:
 `origin/main` fetched directly reads `a9af7bb`, matching this
@@ -733,7 +739,7 @@ minmax(0, 3fr) minmax(0, 2fr)`, `#viewer .vrail { display: none; }`,
 and `.c-document .vpreview { height: 100%; }` all exactly as built.
 
 **Decision 0391 (the Document card stops borrowing space, superseding
-part of 0390's own reasoning) is built, not yet pushed or deployed.**
+part of 0390's own reasoning) is built, pushed, and deployed.**
 Zooming an invoice grew the Document card itself, pushing large blank
 gaps into the process/parties/header column beside it — reproduced
 first, not assumed, with a genuinely tall test image, which measured
@@ -772,9 +778,21 @@ asserted on `.c-document`'s `position`, on `.vpreview`'s `min-height`,
 or on any pixel height in this chain; the full suite and decision
 0281's own fragile nav test were both rerun after every step above,
 not assumed clean at the end. Full suites: vf-ui 74 Worker + 666
-browser, both passing. **This session has no push access to
-`origin/main`** — delivered as a bundle for the operator's own
-pull/push/deploy sequence.
+browser, both passing — including a pre-existing class of 152
+unhandled-rejection console errors in the browser suite (none of them
+test failures), reproduced identically on a fresh clone of the
+pre-0391 commit to confirm this decision did not introduce them.
+Touches `vf-ui` only (`app.css`), no migration, no other Worker. **This
+session had no push access to `origin/main`** — delivered as bundle
+0562 for the operator's own pull/push/deploy sequence, which is how it
+reached the remote. **Confirmed against the live origin and the live
+deployment, not just reported**: `origin/main` fetched directly and
+reads `bb818bb`, matching this session's own `main` exactly; the live
+`app.css`, fetched cache-busted, carries every rule described above —
+`#viewer .columns`'s `position: relative`, `.c-document`'s `position:
+absolute; inset: 0`, `.c-document .vpreview`'s `min-height: 0`
+alongside `height: 100%`, and `.c-document { position: static; }`
+inside the narrow media query.
 
 **Built this arc, closing out most of what was named here before:
 teams, most of the "user variable" fields, creating and managing an
