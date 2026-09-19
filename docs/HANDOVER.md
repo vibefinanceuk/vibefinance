@@ -1,7 +1,7 @@
 # Handover
 
 **Written 4 September 2026, updated 17 September (six times), updated
-18 September (four times), updated 19 September (twice).**
+18 September (four times), updated 19 September (three times).**
 
 **For a session starting cold.** Where things stand, what needs a
 decision rather than work, what to do next, and the habits this project
@@ -30,7 +30,7 @@ twice.
 
 | | |
 | --- | --- |
-| `origin/main` | `80a43b0` |
+| `origin/main` | `d974e34` |
 | vf-admin deployed | `8e27a34` · `https://admin.vibefinance-ai.com` · behind Cloudflare Access |
 | vf-app deployed | `4d44b59` |
 | vf-licence deployed | `a235713` |
@@ -58,11 +58,12 @@ the full feature first). Touches `vf-ui` (`app.css`, `icons.js`,
 browser, vf-licence 320/320, all passing; `eslint` and
 `scripts/check-citations.py` both clean.
 
-**Decision 0395 (a fourth state, and a borrowed accent) is built, not
-yet pushed — this session has no push access to `origin/main`.** First
-of four decisions building out a look the operator liked from another
-product this team built (e-invoicingcompliancecorner.com), narrowed
-down through a mockup canvas (built and iterated directly with the
+**Decision 0395 (a fourth state, and a borrowed accent) is pushed —
+confirmed via `git fetch`, `origin/main` at `d974e34` matching this
+session's own `main` exactly — but not yet deployed.** First of four
+decisions building out a look the operator liked from another product
+this team built (e-invoicingcompliancecorner.com), narrowed down
+through a mockup canvas (built and iterated directly with the
 operator, outside this repository) to four pieces, with an explicit
 fifth requirement running across all of them — Day and Night both, not
 Day alone. Agreed build order: tokens first (this one, purely
@@ -74,7 +75,27 @@ independent; then red/amber/green severity on the validation screen
 last, since that one still needs an answer to whether "mismatch" and
 "needs review" already exist as separate claims anywhere upstream, or
 whether the distinction has to be added there first — not yet
-investigated. This decision only adds `--heading-accent` and a
+investigated.
+
+**The push/deploy status is worth recording precisely, because it
+is the opposite of this morning's gap.** The operator first reported
+"deployed and pushed"; a live check of `/tokens.css` came back showing
+only the pre-0395 properties; and — given today's earlier history of
+that exact check being wrong against this exact site — this session
+asked the operator to verify directly rather than trust its own fetch
+again. **This time the fetch was right**: the operator confirmed vf-ui
+has not actually been deployed yet. Same check, same site, and this
+time correct — so the lesson from earlier today ("trust the operator
+over this session's own fetch when they disagree") still holds; it was
+never "the fetch tool is always wrong here," only that it had been
+wrong more than once and so was not to be trusted *unquestioned*
+either way. A `wrangler deploy` of vf-ui is still needed before
+`--heading-accent`/`--bg-danger`/`--text-danger`/`--border-danger` are
+live — low stakes on its own, since nothing consumes them yet, but
+worth doing before the next decision (the heading + rule change)
+builds visibly on top of them.
+
+This decision only adds `--heading-accent` and a
 `--bg-danger`/`--text-danger`/`--border-danger` trio to `tokens.css`,
 Day and Night, `--heading-accent` reusing `--text-warning`'s own
 proven pair rather than the reference site's raw orange (which read
