@@ -69,7 +69,7 @@ async function completeTask(
 async function fireRule(
   visitId: string,
   ruleId: string,
-  opts: { name?: string; sourceText: string; actions: unknown[] }
+  opts: { name?: string; sourceText: string; actions: unknown[]; lineNumber?: number | null }
 ) {
   await env.DB.prepare("INSERT INTO rule_sets (id, name, mode) VALUES ('rs-1', 'rs', 'all_matches')").run();
   await env.DB.prepare(
@@ -84,9 +84,9 @@ async function fireRule(
     .bind(ruleId, opts.sourceText, JSON.stringify({ conditions: {}, actions: opts.actions }))
     .run();
   await env.DB.prepare(
-    "INSERT INTO stage_visit_steps (stage_visit_id, seq, rule_id, rule_version, matched) VALUES (?, 0, ?, 1, 1)"
+    "INSERT INTO stage_visit_steps (stage_visit_id, seq, rule_id, rule_version, matched, line_number) VALUES (?, 0, ?, 1, 1, ?)"
   )
-    .bind(visitId, ruleId)
+    .bind(visitId, ruleId, opts.lineNumber ?? null)
     .run();
 }
 
@@ -231,6 +231,57 @@ describe("what the feed contains, per source (decision 0267)", () => {
       "sent a notification to finance@acme.com",
       "will escalate after 2d",
     ]);
+  });
+
+  /**
+   * **A line-scoped rule set (decision 0027) evaluates once per
+   * invoice line** — `evaluateRuleSet` runs against each line in
+   * turn, and every matched evaluation gets its own `stage_visit_steps`
+   * row, `line_number` included. A rule that matches on several lines
+   * of the same invoice, at the same stage visit, produced one
+   * identical, same-timestamp `rule_fired` entry per line — nothing
+   * told them apart. This collapses them into one entry per (visit,
+   * rule), carrying which lines it fired on rather than discarding
+   * that and just deduplicating blindly.
+   */
+  it("collapses a line-scoped rule's own firings into one entry, not one per line", async () => {
+    await seedInvoice("inv-1");
+    await seedStage("validation", "Validation");
+    await seedVisit("v-1", "inv-1", "validation", "2026-09-01 10:00:00");
+    await fireRule("v-1", "r-1", {
+      name: "Line Threshold",
+      sourceText: "flag any line over 5000",
+      actions: [{ type: "flag" }],
+      lineNumber: 5,
+    });
+    // The same rule, matched again for two more lines at the same
+    // visit — the real shape decision 0027's per-line evaluation
+    // produces, not a hypothetical one.
+    await env.DB.prepare(
+      "INSERT INTO stage_visit_steps (stage_visit_id, seq, rule_id, rule_version, matched, line_number) VALUES ('v-1', 1, 'r-1', 1, 1, 2)"
+    ).run();
+    await env.DB.prepare(
+      "INSERT INTO stage_visit_steps (stage_visit_id, seq, rule_id, rule_version, matched, line_number) VALUES ('v-1', 2, 'r-1', 1, 1, 7)"
+    ).run();
+
+    const result = await handleGetActivity(env.DB, "inv-1");
+    const items = (result.body as { items: Record<string, unknown>[] }).items;
+    const fired = items.filter((i) => i.kind === "rule_fired");
+
+    expect(fired).toHaveLength(1);
+    // Sorted, not insertion order — line 5 fired first here.
+    expect(fired[0].lines).toEqual([2, 5, 7]);
+  });
+
+  it("carries no lines at all for an ordinary header-scoped firing", async () => {
+    await seedInvoice("inv-1");
+    await seedStage("validation", "Validation");
+    await seedVisit("v-1", "inv-1", "validation", "2026-09-01 10:00:00");
+    await fireRule("v-1", "r-1", { sourceText: "flag it", actions: [{ type: "flag" }] });
+
+    const result = await handleGetActivity(env.DB, "inv-1");
+    const items = (result.body as { items: Record<string, unknown>[] }).items;
+    expect(items.find((i) => i.kind === "rule_fired")?.lines).toEqual([]);
   });
 
   it("carries a comment, with the commenter's name", async () => {

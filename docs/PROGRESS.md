@@ -369,6 +369,14 @@ a rule, and left an approval task in a queue.
 - Usage telemetry, per environment, aggregate-only
 
 ### The interface
+- **A line-scoped rule's own firings collapse into one Timeline/Chat
+  entry, not one per line it matched** (0409). A rule set scoped to
+  evaluate per line (0027) runs once per invoice line, and the
+  activity feed (0267) used to turn a rule matching on eight of twelve
+  lines into eight identical, same-timestamp entries. Grouped
+  server-side by the visit and rule that fired, carrying which lines
+  matched rather than discarding that — *"...fired: flagged it (lines
+  2, 5, 7)"*, not the same line three times over
 - **The nav works from inside an open task, not only from the task
   list** (0408). `openViewer()` renders its own copy of the nav into
   `#viewer`, a sibling `#shell` hides/shows on the way in and out — but

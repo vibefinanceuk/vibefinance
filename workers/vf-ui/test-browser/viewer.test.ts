@@ -3197,6 +3197,97 @@ describe("the document/timeline tabs (decision 0269)", () => {
     );
   });
 
+  /**
+   * **Decision 0409** \u2014 `activity-route.ts` now collapses a
+   * line-scoped rule's own repeated firings into one entry per
+   * (visit, rule), carrying which lines it matched rather than
+   * discarding that. This is the display half: naming the lines
+   * instead of silently dropping them.
+   */
+  it("names which lines a line-scoped rule fired on", async () => {
+    stubFetch({
+      ...BASE_ROUTES,
+      "/api/documents/inv-1/activity": {
+        items: [
+          {
+            kind: "rule_fired",
+            at: "2026-09-01 09:16:00",
+            ruleName: "Line Threshold",
+            actionDescriptions: ["flagged it"],
+            lines: [2, 5, 7],
+          },
+        ],
+      },
+    });
+
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    await openViewer(TASK, () => {});
+    await new Promise((r) => setTimeout(r, 0));
+
+    (timelineTabButton() as HTMLButtonElement).click();
+
+    expect(document.body.textContent).toContain(
+      "Business rule \u2018Line Threshold\u2019 fired: flagged it (lines 2, 5, 7)"
+    );
+  });
+
+  it("says 'line', singular, for a rule that fired on exactly one", async () => {
+    stubFetch({
+      ...BASE_ROUTES,
+      "/api/documents/inv-1/activity": {
+        items: [
+          {
+            kind: "rule_fired",
+            at: "2026-09-01 09:16:00",
+            ruleName: "Line Threshold",
+            actionDescriptions: ["flagged it"],
+            lines: [4],
+          },
+        ],
+      },
+    });
+
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    await openViewer(TASK, () => {});
+    await new Promise((r) => setTimeout(r, 0));
+
+    (timelineTabButton() as HTMLButtonElement).click();
+
+    expect(document.body.textContent).toContain("Business rule \u2018Line Threshold\u2019 fired: flagged it (line 4)");
+  });
+
+  it("adds nothing at all for an ordinary header-scoped firing", async () => {
+    stubFetch({
+      ...BASE_ROUTES,
+      "/api/documents/inv-1/activity": {
+        items: [
+          {
+            kind: "rule_fired",
+            at: "2026-09-01 09:16:00",
+            ruleName: "Spend Threshold",
+            actionDescriptions: ["routed to AP Review"],
+            lines: [],
+          },
+        ],
+      },
+    });
+
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    await openViewer(TASK, () => {});
+    await new Promise((r) => setTimeout(r, 0));
+
+    (timelineTabButton() as HTMLButtonElement).click();
+
+    expect(document.body.textContent).toContain("Business rule \u2018Spend Threshold\u2019 fired: routed to AP Review");
+    expect(document.body.textContent).not.toContain("(line");
+  });
+
   it("shows a comment with an avatar, not as a system line", async () => {
     stubFetch({
       ...BASE_ROUTES,

@@ -1,7 +1,7 @@
 # Handover
 
 **Written 4 September 2026, updated 17 September (six times), updated
-18 September (four times), updated 19 September (twenty-eight times).**
+18 September (four times), updated 19 September (twenty-nine times).**
 
 **For a session starting cold.** Where things stand, what needs a
 decision rather than work, what to do next, and the habits this project
@@ -38,8 +38,28 @@ twice.
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
 | `vf-app-poc` migrations | through `0070` |
 | `vf-licence-poc` migrations | through `0125` applied, all confirmed live — checksums `9e4d534bcef6…` (`0122`), `79ff9f930fdb…` (`0123`), `408f61e5b11a…` (`0124`); `0125` applied by the operator (no checksum reported this time), confirmed live via `/api/ui-strings` returning all six new title values — run via `apply_migrations.py --remote --migrations-dir workers/vf-licence/migrations --database vf-licence-poc` |
-| Tests | vf-admin 9 · vf-app 1950 · vf-licence 320 · vf-ui 74 Worker + 712 browser · shared 287 (+3 known pre-existing failures) |
-| Decision records | 408 |
+| Tests | vf-admin 9 · vf-app 1952 · vf-licence 320 · vf-ui 74 Worker + 715 browser · shared 287 (+3 known pre-existing failures) |
+| Decision records | 409 |
+
+**Decision 0409 (one firing, not one per line) — code built and
+tested, not yet pushed.** Discussing whether the existing Timeline/
+Chat audit trail (decision 0267) would get long if triggered rules
+logged to it — it already does log rule firings, and mostly stays
+short: an automatic stage writes nothing, and only a matched rule
+shows up, never one merely evaluated. Found one real gap by reading
+the code: a line-scoped rule set (decision 0027) evaluates once per
+invoice line, and `ruleFiredEvents()` had no grouping and never even
+selected the line number back out — so a rule matching on eight of
+twelve lines produced eight identical, same-timestamp entries with no
+way to tell them apart. Fixed: grouped by `(stage_visit_id, rule_id,
+rule_version)` server-side, carrying which lines matched (`lines:
+number[]`, empty for an ordinary header-scoped firing) rather than
+discarding that; the Timeline shows *"...fired: flagged it (lines 2,
+5, 7)"* instead of the same line three times over. Five new tests
+(two server, three browser), each fail-first verified; full `vf-app`
+suite 1952/1952 (1950 + 2 new), full `vf-ui` suite 74 Worker + 715
+browser (712 + 3 new). Full detail in
+`docs/decisions/0409-one-firing-not-one-per-line.md`.
 
 **Decision 0408 (the nav that only worked once) is pushed and
 deployed** — `origin/main` is `da312fa`, confirmed by direct `git

@@ -129,7 +129,8 @@ async function stageCompletedEvents(db: D1Database, invoiceId: string): Promise<
 async function ruleFiredEvents(db: D1Database, invoiceId: string): Promise<ActivityItem[]> {
   const rows = await db
     .prepare(
-      `SELECT vs.created_at AS at, r.name AS rule_name, rv.source_text, rv.compiled_json
+      `SELECT vs.id AS visit_id, vs.created_at AS at, st.rule_id, st.rule_version, st.line_number,
+              r.name AS rule_name, rv.source_text, rv.compiled_json
        FROM stage_visit_steps st
        JOIN stage_visits vs ON vs.id = st.stage_visit_id
        JOIN process_instances pi ON pi.id = vs.process_instance_id
@@ -139,13 +140,49 @@ async function ruleFiredEvents(db: D1Database, invoiceId: string): Promise<Activ
        ORDER BY st.id`
     )
     .bind(invoiceId)
-    .all<{ at: string; rule_name: string | null; source_text: string; compiled_json: string }>();
+    .all<{
+      visit_id: string;
+      at: string;
+      rule_id: string;
+      rule_version: number;
+      line_number: number | null;
+      rule_name: string | null;
+      source_text: string;
+      compiled_json: string;
+    }>();
 
   if (rows.results.length === 0) return [];
 
-  const parsed = rows.results.map((r) => ({
-    ...r,
-    actions: (JSON.parse(r.compiled_json) as { actions: RuleAction[] }).actions ?? [],
+  /**
+   * **One entry per firing, not one per line it fired on** — decision
+   * 0409. A line-scoped rule set (decision 0027) evaluates once per
+   * invoice line, so a rule matching on eight of twelve lines wrote
+   * eight `stage_visit_steps` rows at the same visit, and this used to
+   * turn that into eight identical, same-timestamp entries with
+   * nothing telling them apart. Grouped by the visit and rule that
+   * actually fired — same rule, same `stage_visit_id`, is one firing
+   * — with which lines it matched kept rather than discarded, so
+   * collapsing the duplicates doesn't also throw away the one thing
+   * an auditor would actually ask next ("which lines?").
+   */
+  const groups = new Map<
+    string,
+    { at: string; ruleName: string | null; sourceText: string; compiledJson: string; lines: number[] }
+  >();
+  for (const row of rows.results) {
+    const key = `${row.visit_id}:${row.rule_id}:${row.rule_version}`;
+    let group = groups.get(key);
+    if (!group) {
+      group = { at: row.at, ruleName: row.rule_name, sourceText: row.source_text, compiledJson: row.compiled_json, lines: [] };
+      groups.set(key, group);
+    }
+    if (row.line_number !== null) group.lines.push(row.line_number);
+  }
+
+  const parsed = [...groups.values()].map((g) => ({
+    ...g,
+    lines: g.lines.slice().sort((a, b) => a - b),
+    actions: (JSON.parse(g.compiledJson) as { actions: RuleAction[] }).actions ?? [],
   }));
 
   // One batch of lookups for every id any firing referenced, rather
@@ -179,8 +216,10 @@ async function ruleFiredEvents(db: D1Database, invoiceId: string): Promise<Activ
     at: row.at,
     // **Named where a name exists, the sentence otherwise** — decision
     // 0266 built exactly this fallback for exactly this reason.
-    ruleName: row.rule_name ?? row.source_text,
+    ruleName: row.ruleName ?? row.sourceText,
     actionDescriptions: row.actions.map((a) => describeAction(a, names)),
+    // Empty for a header-scoped firing, which only ever fires once.
+    lines: row.lines,
   }));
 }
 

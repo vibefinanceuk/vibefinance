@@ -81,12 +81,31 @@ async function post(invoiceId, content, countBadge) {
 }
 
 /**
+ * **Which lines, when a rule fired once per line rather than once for
+ * the whole document — decision 0409.** `activity-route.ts` now
+ * collapses one entry per (visit, rule) instead of one per line, so
+ * this is what keeps "which lines?" answerable rather than silently
+ * lost. Plain, unlocalized text, matching `describeAction()`'s own
+ * action descriptions — the sentence this appends to is already only
+ * partly localized (the frame comes from `activity.rulefired`; the
+ * actions inside it never have been), so this does not introduce a
+ * new gap, only sits in the one that already exists.
+ */
+function lineSuffix(lines) {
+  if (!lines || lines.length === 0) return "";
+  const word = lines.length === 1 ? "line" : "lines";
+  return ` (${word} ${lines.join(", ")})`;
+}
+
+/**
  * One fired rule, in words — the same closed-vocabulary phrasing
  * `activity-route.ts` builds server-side, simply joined for reading.
  */
 function ruleFiredLine(item) {
   const actions = (item.actionDescriptions ?? []).join(" and ");
-  return t("activity.rulefired").replace("{rule}", item.ruleName).replace("{actions}", actions);
+  return (
+    t("activity.rulefired").replace("{rule}", item.ruleName).replace("{actions}", actions) + lineSuffix(item.lines)
+  );
 }
 
 function systemMessage(item) {
