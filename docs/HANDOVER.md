@@ -1,7 +1,7 @@
 # Handover
 
 **Written 4 September 2026, updated 17 September (six times), updated
-18 September (four times), updated 19 September (twenty-nine times).**
+18 September (four times), updated 19 September (thirty times).**
 
 **For a session starting cold.** Where things stand, what needs a
 decision rather than work, what to do next, and the habits this project
@@ -30,20 +30,22 @@ twice.
 
 | | |
 | --- | --- |
-| `origin/main` | `da312fa` |
+| `origin/main` | `2815b5d` |
 | vf-admin deployed | `8e27a34` · `https://admin.vibefinance-ai.com` · behind Cloudflare Access |
-| vf-app deployed | `cab33c1` (operator's report — API sits behind auth, not independently checkable from here) |
+| vf-app deployed | `2815b5d` (operator's report — API sits behind auth, not independently checkable from here) |
 | vf-licence deployed | `04072df` (operator's own `wrangler deploy` output, version `39c2f745…`) |
-| vf-ui deployed | `da312fa` · `https://app.vibefinance-ai.com` — operator confirmed deployed |
+| vf-ui deployed | `2815b5d` · `https://app.vibefinance-ai.com` — operator confirmed deployed |
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
 | `vf-app-poc` migrations | through `0070` |
 | `vf-licence-poc` migrations | through `0125` applied, all confirmed live — checksums `9e4d534bcef6…` (`0122`), `79ff9f930fdb…` (`0123`), `408f61e5b11a…` (`0124`); `0125` applied by the operator (no checksum reported this time), confirmed live via `/api/ui-strings` returning all six new title values — run via `apply_migrations.py --remote --migrations-dir workers/vf-licence/migrations --database vf-licence-poc` |
 | Tests | vf-admin 9 · vf-app 1952 · vf-licence 320 · vf-ui 74 Worker + 715 browser · shared 287 (+3 known pre-existing failures) |
 | Decision records | 409 |
 
-**Decision 0409 (one firing, not one per line) — code built and
-tested, not yet pushed.** Discussing whether the existing Timeline/
-Chat audit trail (decision 0267) would get long if triggered rules
+**Decision 0409 (one firing, not one per line) is pushed and
+deployed** — `origin/main` is `2815b5d`, confirmed by direct `git
+fetch`; the operator confirmed both `vf-app` and `vf-ui` deployed.
+Discussing whether the existing Timeline/Chat audit trail (decision
+0267) would get long if triggered rules
 logged to it — it already does log rule firings, and mostly stays
 short: an automatic stage writes nothing, and only a matched rule
 shows up, never one merely evaluated. Found one real gap by reading
