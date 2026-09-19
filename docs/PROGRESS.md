@@ -352,6 +352,13 @@ a rule, and left an approval task in a queue.
   image branch and failed to decode silently. The very first invoice
   0405 ever actually rendered surfaced this immediately; routed to the
   same signed-URL iframe the XML tab already uses instead
+- **The original plan (0013, 0035) was always a PDF, not HTML — found
+  written down, investigated, deliberately not built yet** (0407). Two
+  real paths exist (Cloudflare Browser Rendering printing the existing
+  HTML, which would inherit 0206's already-built pagination CSS for
+  free; or a pure-JS layout library, fully local-testable but a second,
+  separately-maintained rendering); operator's call is to stop here for
+  now and keep 0406's iframe fix as the working answer
 
 ### The control plane
 - Signed ECDSA licence tokens, fail-open cache, bootstrap exception

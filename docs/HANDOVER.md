@@ -1,7 +1,7 @@
 # Handover
 
 **Written 4 September 2026, updated 17 September (six times), updated
-18 September (four times), updated 19 September (twenty-five times).**
+18 September (four times), updated 19 September (twenty-six times).**
 
 **For a session starting cold.** Where things stand, what needs a
 decision rather than work, what to do next, and the habits this project
@@ -39,7 +39,29 @@ twice.
 | `vf-app-poc` migrations | through `0070` |
 | `vf-licence-poc` migrations | through `0125` applied, all confirmed live — checksums `9e4d534bcef6…` (`0122`), `79ff9f930fdb…` (`0123`), `408f61e5b11a…` (`0124`); `0125` applied by the operator (no checksum reported this time), confirmed live via `/api/ui-strings` returning all six new title values — run via `apply_migrations.py --remote --migrations-dir workers/vf-licence/migrations --database vf-licence-poc` |
 | Tests | vf-admin 9 · vf-app 1950 · vf-licence 320 · vf-ui 74 Worker + 711 browser · shared 287 (+3 known pre-existing failures) |
-| Decision records | 406 |
+| Decision records | 407 |
+
+**Decision 0407 (the plan that was already written down) — docs-only,
+code built and tested N/A, not yet pushed.** Right after 0406 shipped,
+the operator recalled a different, earlier plan: *"we had previously
+discussed rendering invoices as a document, rather than HTML, so that
+they can be treated like other images."* Not lost conversation — found
+written down twice, before decision 0205 ever built anything: decision
+0013's addendum (31 August) designed `generated_rendering` as a PDF
+from the start; decision 0035 (2 September) built `invoice_documents`
+around that shape and left "who generates the PDF" explicitly open.
+0205 built HTML instead for a real reason — SaxonJS throws in
+`workerd` — but never said on the page that it was deviating from the
+original PDF plan. Also found: decision 0206 already built correct
+print pagination (`@page`, `break-inside: avoid`) for this HTML,
+unused because nothing has ever printed or PDF'd it. Two real paths to
+an actual PDF were laid out — Cloudflare Browser Rendering (reuses all
+existing rendering, needs a live binding this session can't provision
+or test) vs. a pure-JS layout library (fully local-testable, but a
+second, separately-maintained layout). Asked directly: **the operator's
+call is to stop here for now** — decision 0406's iframe fix stands as
+the real answer for the moment. No code changed. Full detail in
+`docs/decisions/0407-the-plan-that-was-already-written-down.md`.
 
 **Decision 0406 (a page that is not a picture) is pushed and deployed**
 — `origin/main` is `b7e749f`, confirmed by direct `git fetch`; the
