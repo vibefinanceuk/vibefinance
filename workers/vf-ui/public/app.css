@@ -2455,7 +2455,18 @@
 
   /* The line table — decision 0109. */
   .linetable { width: 100%; table-layout: fixed; margin-bottom: 10px; }
-  .linetable th { padding: 0 6px 6px; }
+  /*
+    Matches the Tasks/Documents column-header style — decision 0404. A
+    plain `<th>` renders bold by default, and inherits whatever text
+    color is around it; nothing here ever set either, so it fell back to
+    browser-default bold and `.panel`'s own `--text-primary` — a colour
+    that reads as near-white at Night (`#e8eef7`), which is what the
+    operator saw. `#shell th` is the rule actually governing the Tasks
+    and Documents tables (an id selector, so it wins there over
+    `.tablewrap th`'s own, lower-specificity, never-actually-applied
+    weight/colour) — copied here rather than invented.
+  */
+  .linetable th { padding: 0 6px 6px; font-weight: 500; font-size: var(--text-sm); color: var(--text-secondary); }
   .linetable td { padding: 3px 6px; border: none; }
   .linetable input { min-height: 30px; font-size: var(--text-base); }
 

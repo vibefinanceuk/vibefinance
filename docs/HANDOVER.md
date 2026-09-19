@@ -1,7 +1,7 @@
 # Handover
 
 **Written 4 September 2026, updated 17 September (six times), updated
-18 September (four times), updated 19 September (nineteen times).**
+18 September (four times), updated 19 September (twenty times).**
 
 **For a session starting cold.** Where things stand, what needs a
 decision rather than work, what to do next, and the habits this project
@@ -39,7 +39,28 @@ twice.
 | `vf-app-poc` migrations | through `0070` |
 | `vf-licence-poc` migrations | through `0125` applied, all confirmed live — checksums `9e4d534bcef6…` (`0122`), `79ff9f930fdb…` (`0123`), `408f61e5b11a…` (`0124`); `0125` applied by the operator (no checksum reported this time), confirmed live via `/api/ui-strings` returning all six new title values — run via `apply_migrations.py --remote --migrations-dir workers/vf-licence/migrations --database vf-licence-poc` |
 | Tests | vf-admin 9 · vf-app 1947 · vf-licence 320 · vf-ui 74 Worker + 710 browser · shared 287 (+3 known pre-existing failures) |
-| Decision records | 403 |
+| Decision records | 404 |
+
+**Decision 0404 (a header nothing ever styled) — code built and tested,
+not yet pushed.** The operator's own report: the Invoice Lines table's
+column headers render bold and white, and should match the Tasks/
+Documents header style instead. `.linetable th` had never set its own
+`font-weight`, `color`, or `font-size` at all — left unstyled, a `<th>`
+is bold by the browser's own default, and its colour inherits from
+`.panel`'s `--text-primary`, which is `#e8eef7` (near-white) at Night.
+Bold-and-white was never a rule; it was the default nobody overrode,
+surfaced by the dark theme. The Tasks/Documents style itself comes from
+`#shell th` (`font-weight: 500`, `color: var(--text-secondary)`,
+`font-size: var(--text-sm)`) — a second rule, `.tablewrap th`, declares
+a *different* weight/colour for the Documents table specifically, but
+since both tables render inside `#shell` and an id selector always
+outranks a class one, `#shell th` is what has actually been rendering
+on both screens all along; `.tablewrap th`'s own values are dead CSS,
+noted but deliberately left alone (a different, unreported issue).
+`.linetable th` copied `#shell th`'s three properties directly. CSS-only,
+no new test (nothing asserts on computed style); full `vf-ui` browser
+suite re-run as a regression check, 710/710 unchanged. Full detail in
+`docs/decisions/0404-a-header-nothing-ever-styled.md`.
 
 **Decision 0403 (the check the line table never got) is pushed and
 deployed** — `origin/main` is `04072df`, confirmed by direct `git fetch`;

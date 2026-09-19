@@ -365,6 +365,15 @@ a rule, and left an approval task in a queue.
   rounded input boxes — not a radius mismatch. `.readonly` now shares
   the app's rounded-corner shape (a subtle fill, no border, so it still
   does not read as clickable)
+- **The Invoice Lines table's column headers match the Tasks/Documents
+  header style** (0404). `.linetable th` had never set its own font
+  weight or colour, so it fell back to a `<th>`'s browser-default bold
+  plus whatever text colour was around it — `--text-primary`, which
+  reads as near-white at Night. Copied `#shell th`'s actual values
+  (weight 500, `--text-secondary`, `--text-sm`) — the rule that
+  genuinely governs both those screens' headers today, not
+  `.tablewrap th`'s own declaration, which a same-page id selector has
+  always outranked
 - **A document frame that recovers when it loads again** (0380). The
   five-minute signed URL (0073) was recorded in 0123 as making a frame
   "go blank", and a later comment in `viewer.js` claimed a refresh on
