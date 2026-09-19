@@ -1,7 +1,7 @@
 # Handover
 
 **Written 4 September 2026, updated 17 September (six times), updated
-18 September (four times), updated 19 September (twenty times).**
+18 September (four times), updated 19 September (twenty-one times).**
 
 **For a session starting cold.** Where things stand, what needs a
 decision rather than work, what to do next, and the habits this project
@@ -30,19 +30,21 @@ twice.
 
 | | |
 | --- | --- |
-| `origin/main` | `04072df` |
+| `origin/main` | `fec65ef` |
 | vf-admin deployed | `8e27a34` · `https://admin.vibefinance-ai.com` · behind Cloudflare Access |
 | vf-app deployed | `04072df` (operator's own `wrangler deploy` output, version `ff037b8d…` — API sits behind auth, not independently checkable from here) |
 | vf-licence deployed | `04072df` (operator's own `wrangler deploy` output, version `39c2f745…`) |
-| vf-ui deployed | `04072df` · `https://app.vibefinance-ai.com` — the deploy log itself named the only two files decision 0403 touched (`/viewer.js`, `/app.css`) as the assets it uploaded, which is closer to independent confirmation than the usual operator's-report-alone |
+| vf-ui deployed | `fec65ef` · `https://app.vibefinance-ai.com` — operator confirmed deployed and tested directly (the Lines header font) |
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
 | `vf-app-poc` migrations | through `0070` |
 | `vf-licence-poc` migrations | through `0125` applied, all confirmed live — checksums `9e4d534bcef6…` (`0122`), `79ff9f930fdb…` (`0123`), `408f61e5b11a…` (`0124`); `0125` applied by the operator (no checksum reported this time), confirmed live via `/api/ui-strings` returning all six new title values — run via `apply_migrations.py --remote --migrations-dir workers/vf-licence/migrations --database vf-licence-poc` |
 | Tests | vf-admin 9 · vf-app 1947 · vf-licence 320 · vf-ui 74 Worker + 710 browser · shared 287 (+3 known pre-existing failures) |
 | Decision records | 404 |
 
-**Decision 0404 (a header nothing ever styled) — code built and tested,
-not yet pushed.** The operator's own report: the Invoice Lines table's
+**Decision 0404 (a header nothing ever styled) is pushed and deployed**
+— `origin/main` is `fec65ef`, confirmed by direct `git fetch`; the
+operator confirmed `vf-ui` deployed and tested directly, headers now
+matching. The operator's own report: the Invoice Lines table's
 column headers render bold and white, and should match the Tasks/
 Documents header style instead. `.linetable th` had never set its own
 `font-weight`, `color`, or `font-size` at all — left unstyled, a `<th>`
