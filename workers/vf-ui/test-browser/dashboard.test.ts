@@ -17,11 +17,10 @@ const STRINGS = {
   strings: {
     "dash.heading": "Dashboard",
     "dash.sub": "Items pending for my user - {name}",
-    "dash.waiting_for_me": "Waiting for me",
+    "dash.waiting_for_me": "My Tasks by Stage",
     "dash.waitingsub": "Mine, and work my teams own",
     "dash.acrossstages": "across {n} stages",
-    "dash.on_my_clock": "On my clock",
-    "dash.myclocksub": "Assigned to me or claimed by me",
+    "dash.on_my_clock": "My Priority Tasks",
     "dash.nothingmine": "Nothing is assigned to you or claimed by you.",
     "dash.supplier": "Supplier",
     "dash.held": "Held",
@@ -40,15 +39,15 @@ const STRINGS = {
     "dash.sort.held": "Longest held",
     "dash.sort.due": "Soonest due",
     "dash.sort.value": "Highest value",
-    "dash.where_things_are": "Where things are",
+    "dash.where_things_are": "All Open Tasks by Stage",
     "dash.bystage": "Count by stage",
     "dash.nothinginflight": "Nothing is in progress.",
     "dash.astage": "A stage",
     "dash.stagegone": "This stage no longer exists.",
     "dash.waitinghere": "waiting here",
-    "dash.ageing": "How long they have waited",
+    "dash.ageing": "Task Aging Report",
     "dash.ageingsub": "All open work",
-    "dash.done": "Done",
+    "dash.done": "Tasks Completed This Week",
     "dash.donesub": "What I have acted on, by day",
     "dash.thisweek": "this week",
     "dash.day.mon": "M",
@@ -62,7 +61,7 @@ const STRINGS = {
     "dash.needssomebodysub": "Nothing else surfaces these",
     "dash.unplaced_documents": "Unplaced documents",
     "dash.about.unplaced_documents": "No business unit could be assigned",
-    "dash.suppliers_awaiting_erp": "Suppliers awaiting the ERP",
+    "dash.suppliers_awaiting_erp": "Supplier Setup Required",
     "dash.about.suppliers_awaiting_erp": "No identifier from the system of record",
     "dash.possible_duplicates": "Possible duplicates",
     "dash.about.possible_duplicates": "Invoices that may already be on file",
@@ -275,7 +274,7 @@ describe("the cards render what the route returned", () => {
     await open();
 
     const card = [...document.querySelectorAll(".panel.clickable")].find((p) =>
-      p.textContent?.includes("Waiting for me")
+      p.textContent?.includes("My Tasks by Stage")
     ) as HTMLElement;
     expect(card).toBeDefined();
     card.click();
@@ -449,7 +448,7 @@ describe("the cards render what the route returned", () => {
     ]);
 
     expect(document.body.textContent).toContain("Unplaced documents");
-    expect(document.body.textContent).toContain("Suppliers awaiting the ERP");
+    expect(document.body.textContent).toContain("Supplier Setup Required");
     expect(document.body.textContent).toContain("Possible duplicates");
     expect(document.querySelectorAll(".panel.clickable")).toHaveLength(0);
   });
@@ -912,8 +911,8 @@ describe("arranging it (decision 0243)", () => {
   it("puts an already-displayed card in the right column, not the left", async () => {
     await openMover(ONE);
 
-    expect(columnRows("Hidden cards").some((r) => r.textContent?.includes("Waiting for me"))).toBe(false);
-    expect(columnRows("Displayed cards").some((r) => r.textContent?.includes("Waiting for me"))).toBe(true);
+    expect(columnRows("Hidden cards").some((r) => r.textContent?.includes("My Tasks by Stage"))).toBe(false);
+    expect(columnRows("Displayed cards").some((r) => r.textContent?.includes("My Tasks by Stage"))).toBe(true);
   });
 
   it("keeps the add arrow disabled until something hidden is selected", async () => {
@@ -922,7 +921,7 @@ describe("arranging it (decision 0243)", () => {
     const add = document.querySelectorAll(".moverarrow")[0] as HTMLButtonElement;
     expect(add.disabled).toBe(true);
 
-    const hidden = columnRows("Hidden cards").find((r) => r.textContent?.includes("How long they have waited"));
+    const hidden = columnRows("Hidden cards").find((r) => r.textContent?.includes("Task Aging Report"));
     (hidden as HTMLButtonElement)?.click();
 
     expect(add.disabled).toBe(false);
@@ -940,12 +939,12 @@ describe("arranging it (decision 0243)", () => {
 
     const before = seen.filter((r) => r.method === "PUT").length;
 
-    const hidden = columnRows("Hidden cards").find((r) => r.textContent?.includes("How long they have waited")) as HTMLButtonElement;
+    const hidden = columnRows("Hidden cards").find((r) => r.textContent?.includes("Task Aging Report")) as HTMLButtonElement;
     hidden.click();
     (document.querySelectorAll(".moverarrow")[0] as HTMLButtonElement).click();
 
-    expect(columnRows("Displayed cards").some((r) => r.textContent?.includes("How long they have waited"))).toBe(true);
-    expect(columnRows("Hidden cards").some((r) => r.textContent?.includes("How long they have waited"))).toBe(false);
+    expect(columnRows("Displayed cards").some((r) => r.textContent?.includes("Task Aging Report"))).toBe(true);
+    expect(columnRows("Hidden cards").some((r) => r.textContent?.includes("Task Aging Report"))).toBe(false);
     expect(seen.filter((r) => r.method === "PUT").length).toBe(before);
   });
 
@@ -961,16 +960,16 @@ describe("arranging it (decision 0243)", () => {
     await openMover(AGEING_DISPLAYED);
 
     const displayed = columnRows("Displayed cards").find((r) =>
-      r.textContent?.includes("How long they have waited")
+      r.textContent?.includes("Task Aging Report")
     ) as HTMLButtonElement;
     displayed.click();
     (document.querySelectorAll(".moverarrow")[1] as HTMLButtonElement).click();
 
-    expect(columnRows("Hidden cards").some((r) => r.textContent?.includes("How long they have waited"))).toBe(
+    expect(columnRows("Hidden cards").some((r) => r.textContent?.includes("Task Aging Report"))).toBe(
       true
     );
     expect(
-      columnRows("Displayed cards").some((r) => r.textContent?.includes("How long they have waited"))
+      columnRows("Displayed cards").some((r) => r.textContent?.includes("Task Aging Report"))
     ).toBe(false);
   });
 
@@ -997,7 +996,7 @@ describe("arranging it (decision 0243)", () => {
     const seen: { url: string; method?: string; body?: string }[] = [];
     await openMover(ONE, seen);
 
-    const hidden = columnRows("Hidden cards").find((r) => r.textContent?.includes("How long they have waited")) as HTMLButtonElement;
+    const hidden = columnRows("Hidden cards").find((r) => r.textContent?.includes("Task Aging Report")) as HTMLButtonElement;
     hidden.click();
     (document.querySelectorAll(".moverarrow")[0] as HTMLButtonElement).click();
 
@@ -1017,7 +1016,7 @@ describe("arranging it (decision 0243)", () => {
     const seen: { url: string; method?: string; body?: string }[] = [];
     await openMover(ONE, seen);
 
-    const hidden = columnRows("Hidden cards").find((r) => r.textContent?.includes("How long they have waited")) as HTMLButtonElement;
+    const hidden = columnRows("Hidden cards").find((r) => r.textContent?.includes("Task Aging Report")) as HTMLButtonElement;
     hidden.click();
     (document.querySelectorAll(".moverarrow")[0] as HTMLButtonElement).click();
 
@@ -1133,7 +1132,7 @@ describe("a card asks for the room it needs (decision 0244)", () => {
       },
     ]);
 
-    const card = [...document.querySelectorAll(".panel")].find((p) => p.textContent?.includes("Waiting for me"));
+    const card = [...document.querySelectorAll(".panel")].find((p) => p.textContent?.includes("My Tasks by Stage"));
     expect(card?.querySelector("svg")).toBeNull();
     expect(document.querySelector(".bignum")?.textContent).toBe("3");
   });
@@ -1156,7 +1155,7 @@ describe("a card asks for the room it needs (decision 0244)", () => {
       },
     ]);
 
-    const card = [...document.querySelectorAll(".panel")].find((p) => p.textContent?.includes("Waiting for me"));
+    const card = [...document.querySelectorAll(".panel")].find((p) => p.textContent?.includes("My Tasks by Stage"));
     expect(card?.classList.contains("card-graphic")).toBe(true);
 
     const labels = [...(card?.querySelectorAll("svg text") ?? [])].map((n) => n.textContent);
@@ -1195,7 +1194,7 @@ describe("a card asks for the room it needs (decision 0244)", () => {
       },
     ]);
 
-    const card = [...document.querySelectorAll(".panel")].find((p) => p.textContent?.includes("Waiting for me"));
+    const card = [...document.querySelectorAll(".panel")].find((p) => p.textContent?.includes("My Tasks by Stage"));
     const occurrences = card?.textContent?.split("across 2 stages").length ?? 1;
     expect(occurrences - 1).toBe(1);
     expect(card?.querySelector(".sub")).toBeNull();
@@ -1219,7 +1218,7 @@ describe("a card asks for the room it needs (decision 0244)", () => {
       },
     ]);
 
-    const card = [...document.querySelectorAll(".panel")].find((p) => p.textContent?.includes("Waiting for me"));
+    const card = [...document.querySelectorAll(".panel")].find((p) => p.textContent?.includes("My Tasks by Stage"));
     expect(card?.classList.contains("clickable")).toBe(true);
   });
 
@@ -1261,7 +1260,7 @@ describe("a card asks for the room it needs (decision 0244)", () => {
     // graphic one second — exactly as placed, a narrow and a graphic
     // card free to sit beside each other in the one container.
     const headings = [...(flow?.querySelectorAll(".cardhead h3") ?? [])].map((h) => h.textContent);
-    expect(headings).toEqual(["Possible duplicates", "Waiting for me"]);
+    expect(headings).toEqual(["Possible duplicates", "My Tasks by Stage"]);
   });
 
   it("gives narrow cards a grow-to-share, wrap-below-240px basis — up to four across", async () => {
@@ -1292,7 +1291,7 @@ describe("a card asks for the room it needs (decision 0244)", () => {
      */
     await openDashboard([{ id: "j", cardType: "on_my_clock", settings: {}, position: 0, data: { items: [] } }]);
 
-    const card = [...document.querySelectorAll(".panel")].find((p) => p.textContent?.includes("On my clock"));
+    const card = [...document.querySelectorAll(".panel")].find((p) => p.textContent?.includes("My Priority Tasks"));
     expect(card?.classList.contains("card-list")).toBe(true);
 
     const stylesheets = (await import("virtual:stylesheets")).default;
@@ -1622,7 +1621,7 @@ describe("what I acted on this week, by day (decision 0265)", () => {
     expect(document.querySelectorAll(".panel svg rect")).toHaveLength(7);
   });
 
-  it("draws no background line on Waiting for me", async () => {
+  it("draws no background line on My Tasks by Stage", async () => {
     /**
      * **The absence is deliberate, not an oversight.** A line here
      * would have to be invented, since nothing records what this count
@@ -1633,7 +1632,7 @@ describe("what I acted on this week, by day (decision 0265)", () => {
     ]);
 
     const tile = [...document.querySelectorAll(".panel")].find((p) =>
-      p.textContent?.includes("Waiting for me")
+      p.textContent?.includes("My Tasks by Stage")
     );
     expect(tile?.querySelector(".tilebg")).toBeNull();
   });
@@ -1663,7 +1662,7 @@ describe("what I acted on this week, by day (decision 0265)", () => {
     await open();
 
     const card = [...document.querySelectorAll(".panel.clickable")].find((p) =>
-      p.textContent?.includes("Done")
+      p.textContent?.includes("Tasks Completed This Week")
     ) as HTMLElement;
     expect(card).toBeDefined();
     card.click();
@@ -1677,7 +1676,9 @@ describe("what I acted on this week, by day (decision 0265)", () => {
       { id: "d", cardType: "done", settings: {}, position: 0, data: { total: 0, days: [] } },
     ]);
 
-    const card = [...document.querySelectorAll(".panel")].find((p) => p.textContent?.includes("Done"));
+    const card = [...document.querySelectorAll(".panel")].find((p) =>
+      p.textContent?.includes("Tasks Completed This Week")
+    );
     expect(card?.classList.contains("clickable")).toBe(false);
   });
 

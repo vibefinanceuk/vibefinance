@@ -314,12 +314,16 @@ const RENDERERS = {
      * itself is one less thing a future reader has to reverse-engineer
      * from a coincidence of markup.
      */
+    // No subtitle here since decision 0401 — the operator's own
+    // request to remove "Assigned to me or claimed by me — not a
+    // team queue" outright, not reword it. `dash.myclocksub` itself
+    // stays seeded (migrations never delete a row); it is simply
+    // never read again.
     return el("div", { class: "panel card-list" }, [
       el("div", { class: "cardhead" }, [
         el("h3", { text: t("dash.on_my_clock") }),
         el("div", { class: "chips" }, sorts),
       ]),
-      el("div", { class: "sub", text: t("dash.myclocksub") }),
       rows.length === 0
         ? el("div", { class: "muted", text: t("dash.nothingmine") })
         : el("div", { class: "clockscroll" }, [el("table", { class: "clocktable" }, [

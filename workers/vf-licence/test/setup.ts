@@ -126,6 +126,7 @@ import documentWindowPopoutStringsSql from "../migrations/0121_document_window_p
 import documentPlaceholderWordingSql from "../migrations/0122_document_placeholder_wording.sql?raw";
 import documentPageCyclingAndHighlightStringsSql from "../migrations/0123_document_page_cycling_and_highlight_strings.sql?raw";
 import poMismatchCheckLabelSql from "../migrations/0124_po_mismatch_check_label.sql?raw";
+import dashboardCardTitlesRewordedSql from "../migrations/0125_dashboard_card_titles_reworded.sql?raw";
 
 function stripSqlComments(sql: string): string {
   return sql
@@ -279,5 +280,6 @@ export async function applyTestSchema(): Promise<void> {
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(documentPlaceholderWordingSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(documentPageCyclingAndHighlightStringsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(poMismatchCheckLabelSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(dashboardCardTitlesRewordedSql)));
 
 }

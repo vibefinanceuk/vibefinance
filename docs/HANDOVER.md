@@ -1,7 +1,7 @@
 # Handover
 
 **Written 4 September 2026, updated 17 September (six times), updated
-18 September (four times), updated 19 September (fourteen times).**
+18 September (four times), updated 19 September (fifteen times).**
 
 **For a session starting cold.** Where things stand, what needs a
 decision rather than work, what to do next, and the habits this project
@@ -39,7 +39,7 @@ twice.
 | `vf-app-poc` migrations | through `0070` |
 | `vf-licence-poc` migrations | through `0124` applied, all confirmed live — checksums `9e4d534bcef6…` (`0122`), `79ff9f930fdb…` (`0123`), and `408f61e5b11a…` (`0124`), run by the operator via `apply_migrations.py --remote --migrations-dir workers/vf-licence/migrations --database vf-licence-poc` |
 | Tests | vf-admin 9 · vf-app 1939 · vf-licence 320 · vf-ui 74 Worker + 709 browser · shared 278 (+3 known pre-existing failures) |
-| Decision records | 400 |
+| Decision records | 401 |
 
 **Decision 0394 (a column, two arrows, and a marker) is pushed and
 deployed, confirmed directly by the operator opening the pop-out
@@ -394,6 +394,35 @@ decision 0400's own record rather than taking a new number. Sits on
 top of `e4da3a2` as its own commit, delivered the same way as every
 other unpushed commit here (bundle, not a direct push — this session
 has no push access to `vibefinanceuk/vibefinance`).
+
+**Decision 0401 (six titles, and a subtitle gone) is built and
+tested — not yet pushed.** A direct wording request: six Dashboard
+card titles reworded ("Waiting for me" → "My Tasks by Stage", "Where
+things are" → "All Open Tasks by Stage", "How long they have waited"
+→ "Task Aging Report", "On my clock" → "My Priority Tasks", "Suppliers
+awaiting the ERP" → "Supplier Setup Required", "Done" → "Tasks
+Completed This Week"), and "On my clock"'s own subtitle ("Assigned to
+me or claimed by me — not a team queue") removed outright, not
+reworded. The six titles are `ui_strings` values updated in place
+(migration `0125`, English and German both, the same UPDATE-in-place
+pattern decision 0307/`0090` used) — their keys are untouched, so
+nothing else reading them needs to change. The subtitle's own
+`dashboard.js` line is deleted outright; its `ui_strings` row stays
+seeded (migrations here never delete a row) and comes out of
+`string-coverage.test.ts`'s used-keys list instead. `dashboard.test.ts`
+updated at roughly twenty call sites to the new wording, with two
+verbatim historical quotes deliberately left unchanged (decision
+0363's own "the Waiting for me card..." report, and the "across 4
+stages" report) since rewriting a direct quote to the new name would
+misquote what was actually said at the time; "Done" needed care rather
+than a blind replace, since it also appears inside the unrelated "Done
+arranging" string. Full suites: vf-licence 320/320, vf-ui 74 Worker +
+709 browser (same counts — a rename, not an added or removed test),
+`eslint` clean, `scripts/check-citations.py` clean (401 records).
+Touches `vf-ui` (`public/dashboard.js`,
+`test-browser/dashboard.test.ts`) and `vf-licence` (migration `0125`,
+`test/setup.ts`, `test/string-coverage.test.ts`) only — `vf-app` and
+`vf-admin` need no redeploy for this one.
 
 **A real gap in this session's own verification, worth recording
 plainly.** `origin/main` fetched directly read the right commit at

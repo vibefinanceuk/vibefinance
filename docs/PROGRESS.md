@@ -730,6 +730,25 @@ a rule, and left an approval task in a queue.
   header-level `po_mismatch` only — its line facts are a pre-existing,
   unparsed shape this decision does not reach into; documented at the
   call site rather than silently left or silently expanded in scope.
+- **Six titles, and a subtitle gone** (0401, a direct wording request
+  against six Dashboard card titles). "Waiting for me" → "My Tasks by
+  Stage", "Where things are" → "All Open Tasks by Stage", "How long
+  they have waited" → "Task Aging Report", "On my clock" → "My
+  Priority Tasks", "Suppliers awaiting the ERP" → "Supplier Setup
+  Required", "Done" → "Tasks Completed This Week" — all six are
+  `ui_strings` values reworded in place (migration `0125`, English and
+  German both), the keys themselves untouched. "On my clock"'s own
+  subtitle ("Assigned to me or claimed by me — not a team queue") is
+  removed outright rather than reworded — the `dashboard.js` line that
+  rendered it is deleted; its `ui_strings` row stays seeded, migrations
+  here never deleting a row, and comes out of
+  `string-coverage.test.ts`'s used-keys list instead. Roughly twenty
+  test call sites in `dashboard.test.ts` updated to the new wording,
+  with two verbatim historical quotes ("the Waiting for me card...")
+  deliberately left unchanged, and "Done" handled carefully rather than
+  blind-replaced since it also appears inside the unrelated "Done
+  arranging" string. Full suites: vf-licence 320/320, vf-ui 74 Worker +
+  709 browser (same count — a rename, not an added or removed test).
 
 ### Customer configuration
 - Org units, teams, roles, users, cost centres
@@ -1153,7 +1172,7 @@ elsewhere.
 | `shared` | 278 passing, 3 known pre-existing failures |
 
 Both migration chains replay clean with every standing invariant
-holding — 70 migrations for `vf-app`, 124 for `vf-licence`.
+holding — 70 migrations for `vf-app`, 125 for `vf-licence`.
 
 **`vf-app`'s count was recorded as 1851 through decision 0379**; a clean
 run at `46c1da2`, with no `vf-app` change since decision 0378 recorded
@@ -1175,7 +1194,7 @@ measured (0380) rather than explained after the fact.
 | `docs/design/mockups/` | Four screens as static HTML | Current |
 | `docs/design/multi-authority-intake.md` | Non-EN-16931 authorities | Design only |
 | `docs/design/text-layer-extraction.md` | Reading a PDF's own text | Design only |
-| `docs/decisions/` | 400 decision records | Current |
+| `docs/decisions/` | 401 decision records | Current |
 | `docs/decisions/SUPERSEDED.md` | Which records supersede which | **Read first** |
 
 Document 4's markdown source is at `docs/documents/`, with
