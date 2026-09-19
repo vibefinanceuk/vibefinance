@@ -634,6 +634,111 @@ describe("reading an invoice back (decision 0120)", () => {
   });
 });
 
+describe("the PO three-way-match reaches the exceptions list on read-back (decision 0400)", () => {
+  /**
+   * `validation.ts`'s own `po_mismatch` check is unit-tested against
+   * already-merged facts (`test/validation.test.ts`), and
+   * `computePoMatch` is unit-tested against the database directly
+   * (`test/po-matching.test.ts`) — but nothing before this exercised
+   * the actual wiring: a real invoice, keyed against a real purchase
+   * order already in storage, read back through `handleGetInvoice`
+   * (the "on arrival" path `invoice-facts-route.ts` owns), and the
+   * result checked for `po_mismatch` exactly where a screen would look
+   * for it — `validation.checked`/`failures`/`involves`/`confirms`.
+   */
+  const ORDER = `<?xml version="1.0" encoding="UTF-8"?>
+<Order xmlns="urn:oasis:names:specification:ubl:schema:xsd:Order-2"
+       xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
+       xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">
+  <cbc:ID>PO-KF-1</cbc:ID>
+  <cac:BuyerCustomerParty><cac:Party><cac:PartyIdentification><cbc:ID>GB700000000</cbc:ID></cac:PartyIdentification></cac:Party></cac:BuyerCustomerParty>
+  <cac:AnticipatedMonetaryTotal>
+    <cbc:PayableAmount currencyID="EUR">1000</cbc:PayableAmount>
+  </cac:AnticipatedMonetaryTotal>
+  <cac:OrderLine><cac:LineItem>
+    <cbc:ID>1</cbc:ID>
+    <cbc:Quantity unitCode="EA">100</cbc:Quantity>
+    <cbc:LineExtensionAmount currencyID="EUR">1000</cbc:LineExtensionAmount>
+    <cac:Item><cbc:Name>Widgets</cbc:Name></cac:Item>
+  </cac:LineItem></cac:OrderLine>
+</Order>`;
+
+  beforeEach(async () => {
+    // Decision 0374 — an order needs a real, matching legal entity to
+    // ingest at all; this fixture's own buyer tax reference is
+    // otherwise arbitrary, chosen only to be distinct from
+    // `po-matching.test.ts`'s own (GB123456789).
+    await env.DB.prepare(
+      "INSERT INTO org_units (id, name, kind, vat_id) VALUES ('acme-po-kf', 'Acme', 'legal_entity', 'GB700000000')"
+    ).run();
+    const { handleIngestPurchaseOrder } = await import("../src/purchase-order-route.js");
+    const ingested = await handleIngestPurchaseOrder(env.DB, ORDER);
+    expect(ingested.status).toBe(201);
+  });
+
+  it("marks the header danger when the keyed total genuinely disagrees with its linked PO", async () => {
+    await seedInvoice("inv-po-danger", {});
+    await handleKeyInvoiceFields(
+      env.DB,
+      "inv-po-danger",
+      { facts: { "BT-13": "PO-KF-1", "BT-112": 1300 } }, // PO totals 1000, no tolerance agreed
+      "u-dan"
+    );
+
+    const { handleGetInvoice } = await import("../src/invoice-facts-route.js");
+    const body = (await handleGetInvoice(env.DB, "inv-po-danger")).body as {
+      validation: {
+        checked: string[];
+        failures: string[];
+        involves: { check: string; fields: string[]; severity?: string }[];
+      };
+    };
+
+    expect(body.validation.checked).toContain("po_mismatch");
+    expect(body.validation.failures).toContain("po_mismatch");
+    const entry = body.validation.involves.find((f) => f.check === "po_mismatch");
+    expect(entry?.severity).toBe("danger");
+    expect(entry?.fields).toContain("BT-112");
+  });
+
+  it("confirms the header when the keyed total genuinely agrees with its linked PO", async () => {
+    await seedInvoice("inv-po-ok", {});
+    await handleKeyInvoiceFields(
+      env.DB,
+      "inv-po-ok",
+      { facts: { "BT-13": "PO-KF-1", "BT-112": 1000 } }, // exactly the PO's own total
+      "u-dan"
+    );
+
+    const { handleGetInvoice } = await import("../src/invoice-facts-route.js");
+    const body = (await handleGetInvoice(env.DB, "inv-po-ok")).body as {
+      validation: { checked: string[]; failures: string[]; confirms?: { check: string; fields: string[] }[] };
+    };
+
+    expect(body.validation.checked).toContain("po_mismatch");
+    expect(body.validation.failures).not.toContain("po_mismatch");
+    expect(body.validation.confirms?.some((c) => c.check === "po_mismatch" && c.fields.includes("BT-112"))).toBe(
+      true
+    );
+  });
+
+  it("does not check po_mismatch at all when the invoice names no purchase order", async () => {
+    // po.matched === false here means "nothing to compare against",
+    // not "this disagrees" — decision 0400's own reasoning for gating
+    // on a real comparison having happened, not on po.matched alone.
+    await seedInvoice("inv-po-none", {});
+    await handleKeyInvoiceFields(env.DB, "inv-po-none", { facts: { "BT-112": 1300 } }, "u-dan");
+
+    const { handleGetInvoice } = await import("../src/invoice-facts-route.js");
+    const body = (await handleGetInvoice(env.DB, "inv-po-none")).body as {
+      validation: { checked: string[]; failures: string[] };
+    };
+
+    expect(body.validation.checked).not.toContain("po_mismatch");
+    expect(body.validation.failures).not.toContain("po_mismatch");
+  });
+});
+
 describe("what keying reports back about validation (decision 0119)", () => {
   /**
    * **The route assembles this block field by field**, so a validator
