@@ -1,7 +1,7 @@
 # Handover
 
 **Written 4 September 2026, updated 17 September (six times), updated
-18 September (four times), updated 19 September (sixteen times).**
+18 September (four times), updated 19 September (seventeen times).**
 
 **For a session starting cold.** Where things stand, what needs a
 decision rather than work, what to do next, and the habits this project
@@ -38,8 +38,44 @@ twice.
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
 | `vf-app-poc` migrations | through `0070` |
 | `vf-licence-poc` migrations | through `0125` applied, all confirmed live — checksums `9e4d534bcef6…` (`0122`), `79ff9f930fdb…` (`0123`), `408f61e5b11a…` (`0124`); `0125` applied by the operator (no checksum reported this time), confirmed live via `/api/ui-strings` returning all six new title values — run via `apply_migrations.py --remote --migrations-dir workers/vf-licence/migrations --database vf-licence-poc` |
-| Tests | vf-admin 9 · vf-app 1939 · vf-licence 320 · vf-ui 74 Worker + 709 browser · shared 278 (+3 known pre-existing failures) |
-| Decision records | 401 |
+| Tests | vf-admin 9 · vf-app 1947 · vf-licence 320 · vf-ui 74 Worker + 709 browser · shared 287 (+3 known pre-existing failures) |
+| Decision records | 402 |
+
+**Decision 0402 (echoing the sentence back) — code built and tested,
+not yet pushed; live rule data already patched directly, ahead of the
+code deploy.** Investigating the operator's report of a stuck invoice
+("Stage Validation, In progress, but no task in Tasks") traced through
+`stage_visits`/`stage_visit_steps` ground truth to a genuine, systemic,
+pre-existing bug: the rule compiler's own prompt
+(`shared/compiler/prompt.ts`) taught the model, via its worked
+example, to write the literal phrase `"team": "AP team"` in a compiled
+`assign_task` action instead of the real `org_teams.id` (`"ap-team"`)
+— and never gave the compiler the real team list to resolve against
+at all. `task-route.ts` 404s on the unresolved id, and
+`workflow-engine.ts` turns that into a silently swallowed 500 — the
+invoice just looks stuck, nothing in the UI says why. A system-wide
+query (`loadActiveRuleSet`'s own activation criteria) found **6** of
+**8** currently-active `assign_task` rules broken this way. Reviewing
+those 6 surfaced two more bugs from the same root cause (no real data
+for the compiler to resolve a sentence's reference against): one rule
+(`88f6e5ef`) had the identical problem in `route_to`'s `stage` param
+(a display name stored instead of the real `process_stages.id`); one
+(`94e1d9db`) had a different, bigger problem — the compiler picked the
+wrong action type (`assign_org` instead of `assign_task`) for a
+sentence with no real org-unit match at all. Fixed: the compiler
+prompt now injects real `org_teams`/`process_stages` data and
+instructs the model to resolve by meaning, never copy the sentence's
+words (`shared/compiler/prompt.ts`/`compile.ts`,
+`workers/vf-app/src/compile-route.ts`); all 7 broken live rules
+patched directly as new `rule_versions` rows, following this project's
+own never-edit-in-place discipline. Full detail, including the
+`compiled_by`/`approved_by` values used and the one real inference
+made (a permission `94e1d9db`'s sentence never named), in
+`docs/decisions/0402-echoing-the-sentence-back.md`. Tests: 1947/1947
+`vf-app`, fail-first verified; `eslint`/`check-citations.py` clean.
+**Not yet pushed** — the code fix is committed to nothing yet, still
+sitting as a local diff; the live data patch, by its nature, could not
+wait for that.
 
 **Decision 0394 (a column, two arrows, and a marker) is pushed and
 deployed, confirmed directly by the operator opening the pop-out
@@ -644,11 +680,13 @@ redeploying the component that mints licence tokens for the whole fleet
 `shared`'s own three known failures: two are time-expired JWT keys in
 the licensing token tests, failing on `main` since before any of this
 work. The third — `migration/table-classes.test.ts`, "names each one
-exactly once" — reports six unclassified tables, not the four first
-found on 15 September: `_supplier_links`, `dashboard_cards`,
-`dashboard_cards_new`, `document_comments`, `org_spend_limits`, and
-`org_teams_new`. The last two were added by decisions 0334 and 0333
-respectively, before this update, and never classified either — worth
+exactly once" — reports **seven** unclassified tables as of 0402's own
+test run, not the six last recorded here: `_supplier_links`,
+`dashboard_cards`, `dashboard_cards_new`, `document_comments`,
+`invoice_documents_new`, `org_spend_limits`, and `org_teams_new`.
+`invoice_documents_new` (migration `0070`, already applied before this
+update — not introduced by 0402) was simply missed the last time this
+paragraph was written; the other six's own history is unchanged. Worth
 a real fix, still not done.
 
 ---

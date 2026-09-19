@@ -98,6 +98,13 @@ a rule, and left an approval task in a queue.
   check run at all
 - Multi-page capture: pages accumulate separately, then extract
   together in one model call (0045)
+- `assign_task`'s `"team"` and `route_to`'s `"stage"` now resolve
+  against the real `org_teams`/`process_stages` list injected into
+  every compile — the compiler used to have nothing to check a
+  sentence's team or stage mention against, and both its own worked
+  example and, without real data, the model itself would echo the
+  sentence's words back rather than resolve them, which
+  `task-route.ts`/`workflow-engine.ts` then failed on invisibly (0402)
 
 ### Sources and intake
 - Sources as their own thing: transport instances bound to a process (0060)
@@ -1166,10 +1173,10 @@ elsewhere.
 
 | Package | Tests |
 |---|---|
-| `vf-app` | 1936 |
+| `vf-app` | 1947 |
 | `vf-licence` | 320 |
 | `vf-ui` | 74 Worker · 709 browser |
-| `shared` | 278 passing, 3 known pre-existing failures |
+| `shared` | 287 passing, 3 known pre-existing failures |
 
 Both migration chains replay clean with every standing invariant
 holding — 70 migrations for `vf-app`, 125 for `vf-licence`.

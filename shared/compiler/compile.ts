@@ -23,9 +23,22 @@ export async function compileRule(
    * What the stage this rule belongs to requires — decision 0210.
    * Null where it declares nothing, which is every stage today.
    */
-  stagePermission: string | null = null
+  stagePermission: string | null = null,
+  /**
+   * The real `org_teams` rows an `assign_task` action's "team" must
+   * resolve to. Empty where the caller has none to offer — every call
+   * site written before this parameter existed continues compiling
+   * exactly as before, just without the team-resolution guidance.
+   */
+  teams: { id: string; name: string }[] = [],
+  /**
+   * The real `process_stages` rows a `route_to` action's "stage" must
+   * resolve to. Empty where the caller has none to offer, same as
+   * `teams`.
+   */
+  stages: { id: string; name: string }[] = []
 ): Promise<CompileOutcome> {
-  const prompt = buildCompilerPrompt(sourceText, vocabulary, stagePermission);
+  const prompt = buildCompilerPrompt(sourceText, vocabulary, stagePermission, teams, stages);
   const raw = await model.compile(prompt);
   return parseModelOutput(raw, vocabulary);
 }

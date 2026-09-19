@@ -42,8 +42,12 @@ Example output:
       { "field": "BT-40", "operator": "not_in", "value": ["DE", "FR", "NL", "IE", "ES", "IT"] }
     ]
   },
-  "actions": [ { "type": "assign_task", "params": { "team": "AP team", "permission": "AP.Approve" } } ]
+  "actions": [ { "type": "assign_task", "params": { "team": "ap-team", "permission": "AP.Approve" } } ]
 }
+Note "ap-team" in the output above, not the words "AP team" from the
+sentence: "team" is always a real team's id, resolved from the list
+below if one is given — never a phrase copied out of the sentence,
+however close it reads to a name.
 
 A second example, showing route_to (advancing a process to a named
 stage — never a team or queue, that meaning was retired):
@@ -65,8 +69,12 @@ Example output:
       { "field": "receipt_attached", "operator": "is", "value": false }
     ]
   },
-  "actions": [ { "type": "assign_task", "params": { "team": "finance team", "permission": "Expense.Review" } } ]
-}`;
+  "actions": [ { "type": "assign_task", "params": { "team": "finance-team", "permission": "Expense.Review" } } ]
+}
+Note "finance-team" in the output above, not the words "finance team"
+from the sentence: "team" is always a real team's id, resolved from
+the list below if one is given — never a phrase copied out of the
+sentence, however close it reads to a name.`;
 
 const SYSTEM_DESCRIPTION: Record<VocabularyName, string> = {
   invoice: "an invoice-processing system",
@@ -92,7 +100,39 @@ export function buildCompilerPrompt(
    *
    * Null where the stage declares nothing, which is every stage today.
    */
-  stagePermission: string | null = null
+  stagePermission: string | null = null,
+  /**
+   * The real `org_teams` rows a compiled `assign_task`'s `"team"` must
+   * resolve to — the other half of the bug this parameter was added to
+   * fix (see the note appended to WORKED_EXAMPLE/EXPENSE_WORKED_EXAMPLE
+   * above). Before this, the model was never shown the real team ids at
+   * all, so even a well-behaved model had nothing to resolve a sentence
+   * like "the AP team" against and would echo the sentence's own words
+   * instead — which is exactly what task-route.ts's `org_teams` lookup
+   * then 404s on, silently dropping task creation (workflow-engine.ts
+   * turns that into a swallowed 500).
+   *
+   * Empty where no teams are known to the caller — compile-route.ts
+   * always fetches the real list, but keeping this optional keeps every
+   * existing call site (and every existing test) valid.
+   */
+  teams: { id: string; name: string }[] = [],
+  /**
+   * The real `process_stages` rows a compiled `route_to`'s `"stage"`
+   * must resolve to — the same bug as `teams` above, found independently
+   * in a live rule ("route the invoice to AP Review" compiled to
+   * `"stage": "AP Review"`, the stage's *name*, not its id `"review"`).
+   * Unlike the assign_task/team bug, this one wasn't taught by a bad
+   * worked example — WORKED_EXAMPLE already showed a real id
+   * ("payment-eligible") — but the compiler still had no real stage
+   * list to check a sentence's stage mention against, so it guessed.
+   * `workflow-engine.ts` 422s a `route_to` naming an unknown stage
+   * rather than silently dropping it, but that's still a rule that can
+   * never actually route once it fires.
+   *
+   * Empty where no stages are known to the caller, same as `teams`.
+   */
+  stages: { id: string; name: string }[] = []
 ): string {
   const workedExample = vocabulary === "expense" ? EXPENSE_WORKED_EXAMPLE : WORKED_EXAMPLE;
   return `You are compiling a business rule for ${SYSTEM_DESCRIPTION[asResolved(vocabulary).name]}. A customer has described a rule in their own words. Your job is to translate it into a strict, closed vocabulary — never to write general-purpose code, and never to approximate something the vocabulary can't express.
@@ -104,6 +144,35 @@ ${
 THIS STAGE'S OWN PERMISSION: ${stagePermission}
 
 Every task raised here requires it, and a rule may not ask for a different one — so if the sentence does not name a permission, use "${stagePermission}". If the sentence names a different one, that is a contradiction the author should be told about rather than a value to override.`
+    : ""
+}
+${
+  teams.length > 0
+    ? `
+REAL TEAMS (the only valid values for an assign_task action's "team"):
+${teams.map((t) => `- "${t.id}" — ${t.name}`).join("\n")}
+
+When the sentence names a team, resolve it to the matching id above by
+meaning, not by copying its words — "the AP team" means the team named
+"AP Team" in the list, so its id ("ap-team" here) is what belongs in
+"team", never the literal phrase "AP team". If nothing in the list
+plausibly matches what the sentence names, refuse rather than invent an
+id: the actions vocabulary requires "team" to be one of the ids above.`
+    : ""
+}
+${
+  stages.length > 0
+    ? `
+REAL STAGES (the only valid values for a route_to action's "stage"):
+${stages.map((s) => `- "${s.id}" — ${s.name}`).join("\n")}
+
+When the sentence names a stage, resolve it to the matching id above by
+meaning, not by copying its words — "route to AP Review" means the
+stage named "AP Review" in the list, so its id (whatever that list
+shows, not necessarily a lowercased version of the name) is what
+belongs in "stage", never the display name itself. If nothing in the
+list plausibly matches what the sentence names, refuse rather than invent
+an id: route_to's "stage" must be one of the ids above.`
     : ""
 }
 

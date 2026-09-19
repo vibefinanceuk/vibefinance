@@ -127,15 +127,58 @@ export async function handleCompileRequest(
    * stage today.
    */
   const stage = await db
-    .prepare("SELECT required_permission FROM process_stages WHERE rule_set_id = ? LIMIT 1")
+    .prepare("SELECT process_id, required_permission FROM process_stages WHERE rule_set_id = ? LIMIT 1")
     .bind(ruleSetId)
-    .first<{ required_permission: string | null }>();
+    .first<{ process_id: string; required_permission: string | null }>();
+
+  /**
+   * **The real teams an `assign_task` action's "team" must resolve to.**
+   *
+   * Without this, the compiler had no data to check a sentence like
+   * "assign a task to the AP team" against, so it could only ever echo
+   * back words from the sentence itself ("AP team") rather than a real
+   * `org_teams.id` ("ap-team") — and task-route.ts's `handleCreateTask`
+   * 404s on anything that isn't a real id, which workflow-engine.ts
+   * then turns into a silently-dropped 500. See the note on
+   * buildCompilerPrompt's `teams` parameter for the other half of this
+   * fix (the worked example was independently teaching the same wrong
+   * behaviour).
+   */
+  const teamsResult = await db.prepare("SELECT id, name FROM org_teams").all<{ id: string; name: string }>();
+  const teams = teamsResult.results;
+
+  /**
+   * **The real stages a `route_to` action's "stage" must resolve to.**
+   *
+   * Found alongside the teams bug, same shape: a live rule compiled
+   * "route the invoice to AP Review" to `"stage": "AP Review"` — the
+   * stage's *name*, not its real id (`"review"`) — because nothing had
+   * ever given the compiler the real stage list to check against.
+   * `workflow-engine.ts` 422s a `route_to` naming an unknown stage
+   * (louder than the team bug's swallowed 500, but still a rule that
+   * can never do what it says).
+   *
+   * Scoped to this rule set's own process — route_to can only ever
+   * target a stage in the same process (workflow-engine.ts's own
+   * `WHERE id = ? AND process_id = ?` check), so a rule set with no
+   * stage using it yet (`stage` is null) gets an empty list, same as
+   * having no teams.
+   */
+  const stagesResult = stage
+    ? await db
+        .prepare("SELECT id, name FROM process_stages WHERE process_id = ?")
+        .bind(stage.process_id)
+        .all<{ id: string; name: string }>()
+    : null;
+  const stages = stagesResult?.results ?? [];
 
   const outcome = await compileRule(
     model,
     sourceText,
     vocabulary,
-    stage?.required_permission ?? null
+    stage?.required_permission ?? null,
+    teams,
+    stages
   );
 
   // Refusal as a first-class output (Blueprint, "Subsystem one"): a

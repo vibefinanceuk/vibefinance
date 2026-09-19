@@ -584,3 +584,234 @@ describe("handleCompileRequest — a rule's own name (decision 0266)", () => {
     expect(model.compile).not.toHaveBeenCalled();
   });
 });
+
+describe("handleCompileRequest — real teams for assign_task (the team-id bug)", () => {
+  /**
+   * **The bug this fetch exists to close.** Task creation had silently
+   * never worked for any rule whose sentence named a team by phrase
+   * ("the AP team") rather than a real `org_teams.id` ("ap-team"):
+   * task-route.ts's `handleCreateTask` 404s on an unknown teamId, and
+   * workflow-engine.ts turns that 404 into a swallowed 500 — the
+   * invoice just looks stuck, with no visible error. This route now
+   * fetches the real team list, the same way it already fetches the
+   * stage's required_permission, and hands it to compileRule so the
+   * model has something real to resolve against.
+   */
+  it("fetches org_teams and includes them in the prompt sent to the model", async () => {
+    await seedRuleSet("rs1");
+    await env.DB.prepare("INSERT INTO org_units (id, name) VALUES ('fr', 'Acme France')").run();
+    await env.DB.prepare("INSERT INTO org_teams (id, name, unit_id) VALUES ('ap-team', 'AP Team', 'fr')").run();
+
+    const model = fakeModel(
+      JSON.stringify({
+        status: "compiled",
+        conditions: { field: "BT-48", operator: "is_empty" },
+        actions: [{ type: "assign_task", params: { team: "ap-team", permission: "AP.Validate" } }],
+      })
+    );
+
+    await handleCompileRequest(model, "test-model@v1", env.DB, {
+      ruleSetId: "rs1",
+      sourceText: "assign a task to the AP team",
+    });
+
+    const promptSent = (model.compile as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+    expect(promptSent).toContain("REAL TEAMS");
+    expect(promptSent).toContain('"ap-team"');
+    expect(promptSent).toContain("AP Team");
+  });
+
+  it("says nothing about teams when none exist yet — an empty org_teams table, not an error", async () => {
+    await seedRuleSet("rs1");
+    const model = fakeModel(
+      JSON.stringify({
+        status: "compiled",
+        conditions: { field: "BT-3", operator: "is_present" },
+        actions: [{ type: "flag" }],
+      })
+    );
+
+    const result = await handleCompileRequest(model, "test-model@v1", env.DB, {
+      ruleSetId: "rs1",
+      sourceText: "flag anything missing a type code",
+    });
+
+    expect(result.status).toBe(201);
+    const promptSent = (model.compile as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+    expect(promptSent).not.toContain("REAL TEAMS");
+  });
+
+  it("compiles cleanly when the model correctly resolves a phrase to a real team id", async () => {
+    await seedRuleSet("rs1");
+    await env.DB.prepare("INSERT INTO org_units (id, name) VALUES ('fr', 'Acme France')").run();
+    await env.DB.prepare("INSERT INTO org_teams (id, name, unit_id) VALUES ('ap-team', 'AP Team', 'fr')").run();
+
+    const model = fakeModel(
+      JSON.stringify({
+        status: "compiled",
+        conditions: { field: "BT-48", operator: "is_empty" },
+        actions: [{ type: "assign_task", params: { team: "ap-team", permission: "AP.Validate" } }],
+      })
+    );
+
+    const result = await handleCompileRequest(model, "test-model@v1", env.DB, {
+      ruleSetId: "rs1",
+      sourceText: "assign a task to the AP team requiring AP.Validate",
+    });
+
+    expect(result.status).toBe(201);
+    const versionRow = await env.DB.prepare(
+      "SELECT compiled_json FROM rule_versions WHERE rule_id = ? AND version = 1"
+    )
+      .bind((result.body as { ruleId: string }).ruleId)
+      .first<{ compiled_json: string }>();
+    const compiled = JSON.parse(versionRow!.compiled_json);
+    // The load-bearing assertion: a real org_teams.id, never the raw
+    // sentence phrase "AP team".
+    expect(compiled.actions[0].params.team).toBe("ap-team");
+  });
+
+  it("includes every team when more than one exists, not just the first", async () => {
+    await seedRuleSet("rs1");
+    await env.DB.prepare("INSERT INTO org_units (id, name) VALUES ('fr', 'Acme France')").run();
+    await env.DB.prepare("INSERT INTO org_teams (id, name, unit_id) VALUES ('ap-team', 'AP Team', 'fr')").run();
+    await env.DB.prepare(
+      "INSERT INTO org_teams (id, name, unit_id) VALUES ('ap-review', 'AP Review', 'fr')"
+    ).run();
+
+    const model = fakeModel(
+      JSON.stringify({
+        status: "compiled",
+        conditions: { field: "BT-3", operator: "is_present" },
+        actions: [{ type: "flag" }],
+      })
+    );
+
+    await handleCompileRequest(model, "test-model@v1", env.DB, {
+      ruleSetId: "rs1",
+      sourceText: "flag anything missing a type code",
+    });
+
+    const promptSent = (model.compile as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+    expect(promptSent).toContain('"ap-team"');
+    expect(promptSent).toContain('"ap-review"');
+  });
+});
+
+describe("handleCompileRequest — real stages for route_to (the sibling stage-id bug)", () => {
+  /**
+   * **Found alongside the team-id bug, same shape.** A live rule
+   * compiled "route the invoice to AP Review" to `"stage": "AP Review"`
+   * — the stage's *name*, not its real id `"review"` — because the
+   * compiler had no real stage list to resolve against. This route now
+   * fetches `process_stages` for the rule set's own process, the same
+   * way it fetches `org_teams`.
+   */
+  async function seedProcessWithStage(processId: string, stageId: string, stageName: string, ruleSetId: string) {
+    await env.DB.prepare("INSERT INTO processes (id, name) VALUES (?, ?)").bind(processId, processId).run();
+    await env.DB.prepare(
+      "INSERT INTO process_stages (id, process_id, name, sequence, rule_set_id) VALUES (?, ?, ?, 1, ?)"
+    )
+      .bind(stageId, processId, stageName, ruleSetId)
+      .run();
+  }
+
+  it("fetches process_stages for the rule set's process and includes them in the prompt", async () => {
+    await seedRuleSet("rs1");
+    await seedProcessWithStage("ap-live", "review", "AP Review", "rs1");
+
+    const model = fakeModel(
+      JSON.stringify({
+        status: "compiled",
+        conditions: { field: "supplier.matched", operator: "is", value: false },
+        actions: [{ type: "route_to", params: { stage: "review" } }],
+      })
+    );
+
+    await handleCompileRequest(model, "test-model@v1", env.DB, {
+      ruleSetId: "rs1",
+      sourceText: "route the invoice to AP Review",
+    });
+
+    const promptSent = (model.compile as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+    expect(promptSent).toContain("REAL STAGES");
+    expect(promptSent).toContain('"review"');
+    expect(promptSent).toContain("AP Review");
+  });
+
+  it("says nothing about stages when the rule set belongs to no stage yet", async () => {
+    await seedRuleSet("rs1");
+    const model = fakeModel(
+      JSON.stringify({
+        status: "compiled",
+        conditions: { field: "BT-3", operator: "is_present" },
+        actions: [{ type: "flag" }],
+      })
+    );
+
+    const result = await handleCompileRequest(model, "test-model@v1", env.DB, {
+      ruleSetId: "rs1",
+      sourceText: "flag anything missing a type code",
+    });
+
+    expect(result.status).toBe(201);
+    const promptSent = (model.compile as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+    expect(promptSent).not.toContain("REAL STAGES");
+  });
+
+  it("compiles cleanly when the model correctly resolves a display name to a real stage id", async () => {
+    await seedRuleSet("rs1");
+    await seedProcessWithStage("ap-live", "review", "AP Review", "rs1");
+
+    const model = fakeModel(
+      JSON.stringify({
+        status: "compiled",
+        conditions: { field: "supplier.matched", operator: "is", value: false },
+        actions: [{ type: "route_to", params: { stage: "review" } }],
+      })
+    );
+
+    const result = await handleCompileRequest(model, "test-model@v1", env.DB, {
+      ruleSetId: "rs1",
+      sourceText: "if the supplier is not matched, route to AP Review",
+    });
+
+    expect(result.status).toBe(201);
+    const versionRow = await env.DB.prepare(
+      "SELECT compiled_json FROM rule_versions WHERE rule_id = ? AND version = 1"
+    )
+      .bind((result.body as { ruleId: string }).ruleId)
+      .first<{ compiled_json: string }>();
+    const compiled = JSON.parse(versionRow!.compiled_json);
+    // The load-bearing assertion: a real process_stages.id, never the
+    // display name "AP Review".
+    expect(compiled.actions[0].params.stage).toBe("review");
+  });
+
+  it("only offers stages from the same process, not every stage system-wide", async () => {
+    await seedRuleSet("rs1");
+    await seedProcessWithStage("ap-live", "review", "AP Review", "rs1");
+    // A second, unrelated process's stage — must not leak into rs1's prompt.
+    await env.DB.prepare("INSERT INTO processes (id, name) VALUES ('other-process', 'Other')").run();
+    await env.DB.prepare(
+      "INSERT INTO process_stages (id, process_id, name, sequence) VALUES ('archive', 'other-process', 'Archive', 1)"
+    ).run();
+
+    const model = fakeModel(
+      JSON.stringify({
+        status: "compiled",
+        conditions: { field: "BT-3", operator: "is_present" },
+        actions: [{ type: "flag" }],
+      })
+    );
+
+    await handleCompileRequest(model, "test-model@v1", env.DB, {
+      ruleSetId: "rs1",
+      sourceText: "flag anything missing a type code",
+    });
+
+    const promptSent = (model.compile as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+    expect(promptSent).toContain('"review"');
+    expect(promptSent).not.toContain('"archive"');
+  });
+});

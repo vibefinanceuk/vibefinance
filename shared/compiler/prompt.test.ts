@@ -98,3 +98,124 @@ describe("what the stage requires (decision 0210)", () => {
     expect(prompt).toContain("may be omitted where the stage declares its own");
   });
 });
+
+describe("real teams to resolve against — the compiler's own team-id bug", () => {
+  /**
+   * **The bug this parameter exists to fix.** WORKED_EXAMPLE taught the
+   * model, by example, to write `"team": "AP team"` — the sentence's own
+   * words — instead of a real `org_teams.id` like `"ap-team"`. Worse,
+   * the compiler was never given the real team list at all, so even a
+   * model that ignored the bad example had nothing to resolve against.
+   * task-route.ts's `handleCreateTask` 404s on anything that isn't a
+   * real id, and workflow-engine.ts turns that 404 into a silently
+   * swallowed 500 — meaning task creation had never worked for any rule
+   * whose sentence named a team by a phrase rather than its id.
+   */
+  const TEAMS = [
+    { id: "ap-team", name: "AP Team" },
+    { id: "ap-review", name: "AP Review" },
+  ];
+
+  it("lists each real team's id and name when teams are given", () => {
+    const prompt = buildCompilerPrompt("assign a task to the AP team", "invoice", null, TEAMS);
+    expect(prompt).toContain('"ap-team"');
+    expect(prompt).toContain("AP Team");
+    expect(prompt).toContain('"ap-review"');
+    expect(prompt).toContain("AP Review");
+  });
+
+  it("instructs the model to resolve by meaning, never by copying the sentence's words", () => {
+    const prompt = buildCompilerPrompt("assign a task to the AP team", "invoice", null, TEAMS);
+    expect(prompt).toMatch(/not by copying its words/);
+    expect(prompt).toContain('never the literal phrase "AP team"');
+  });
+
+  it("tells the model to refuse rather than invent an id when nothing matches", () => {
+    const prompt = buildCompilerPrompt("assign a task to the AP team", "invoice", null, TEAMS);
+    expect(prompt.toLowerCase()).toContain("refuse rather than invent");
+  });
+
+  it("says nothing where no teams are given, which is every call site before this fix", () => {
+    const prompt = buildCompilerPrompt("assign a task to the AP team");
+    expect(prompt).not.toContain("REAL TEAMS");
+  });
+
+  it("says nothing for an explicitly empty team list", () => {
+    const prompt = buildCompilerPrompt("assign a task to the AP team", "invoice", null, []);
+    expect(prompt).not.toContain("REAL TEAMS");
+  });
+
+  it("the worked example itself resolves to a real id, not the sentence's words", () => {
+    // This is the other half of the original bug: the few-shot example
+    // shown to the model on every single compile, independent of
+    // whether a live teams list is passed at all.
+    const prompt = buildCompilerPrompt("test");
+    expect(prompt).toContain('"team": "ap-team"');
+    expect(prompt).not.toContain('"team": "AP team"');
+  });
+
+  it("the expense worked example resolves to a real id too", () => {
+    const prompt = buildCompilerPrompt("test", "expense");
+    expect(prompt).toContain('"team": "finance-team"');
+    expect(prompt).not.toContain('"team": "finance team"');
+  });
+});
+
+describe("real stages to resolve against — the same bug, found in route_to", () => {
+  /**
+   * **Found independently of the teams bug**, in a live rule: "route
+   * the invoice to AP Review" compiled to `"stage": "AP Review"` — the
+   * stage's *name*, not its real id `"review"`. Unlike the teams bug,
+   * WORKED_EXAMPLE's own route_to example already used a real id
+   * ("payment-eligible"), so this wasn't taught by a bad example — the
+   * compiler simply had no real stage list to resolve a sentence's
+   * stage mention against, so it guessed from the words themselves.
+   * workflow-engine.ts 422s a route_to naming an unknown stage, so
+   * this failure is loud rather than silent, but still means the rule
+   * can never do what it says.
+   */
+  const STAGES = [
+    { id: "review", name: "AP Review" },
+    { id: "payment-eligible", name: "Payment-eligible" },
+  ];
+
+  it("lists each real stage's id and name when stages are given", () => {
+    const prompt = buildCompilerPrompt("route to AP Review", "invoice", null, [], STAGES);
+    expect(prompt).toContain('"review"');
+    expect(prompt).toContain("AP Review");
+    expect(prompt).toContain('"payment-eligible"');
+  });
+
+  it("instructs the model to resolve by meaning, never by copying the sentence's words", () => {
+    const prompt = buildCompilerPrompt("route to AP Review", "invoice", null, [], STAGES);
+    expect(prompt).toMatch(/not by copying its words/);
+    expect(prompt).toContain("never the display name itself");
+  });
+
+  it("tells the model to refuse rather than invent an id when nothing matches", () => {
+    const prompt = buildCompilerPrompt("route to AP Review", "invoice", null, [], STAGES);
+    expect(prompt.toLowerCase()).toContain("refuse rather than invent");
+  });
+
+  it("says nothing where no stages are given, which is every call site before this fix", () => {
+    const prompt = buildCompilerPrompt("route to AP Review");
+    expect(prompt).not.toContain("REAL STAGES");
+  });
+
+  it("says nothing for an explicitly empty stage list", () => {
+    const prompt = buildCompilerPrompt("route to AP Review", "invoice", null, [], []);
+    expect(prompt).not.toContain("REAL STAGES");
+  });
+
+  it("the REAL TEAMS and REAL STAGES sections coexist without interfering", () => {
+    const prompt = buildCompilerPrompt(
+      "route to AP Review and assign a task to the AP team",
+      "invoice",
+      null,
+      [{ id: "ap-team", name: "AP Team" }],
+      STAGES
+    );
+    expect(prompt).toContain("REAL TEAMS");
+    expect(prompt).toContain("REAL STAGES");
+  });
+});
