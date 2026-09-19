@@ -346,6 +346,12 @@ a rule, and left an approval task in a queue.
   regardless of any formal declaration, so an invoice that names no
   profile at all now renders too; one that names a genuinely different
   profile still does not
+- **A generated rendering (HTML) shows in the viewer's Document tab
+  now, not just in R2** (0406). `pageViewer()` (0382) only knows PDF
+  and "everything else is an image" — an HTML rendering fell into the
+  image branch and failed to decode silently. The very first invoice
+  0405 ever actually rendered surfaced this immediately; routed to the
+  same signed-URL iframe the XML tab already uses instead
 
 ### The control plane
 - Signed ECDSA licence tokens, fail-open cache, bootstrap exception
@@ -1204,7 +1210,7 @@ elsewhere.
 |---|---|
 | `vf-app` | 1950 |
 | `vf-licence` | 320 |
-| `vf-ui` | 74 Worker · 710 browser |
+| `vf-ui` | 74 Worker · 711 browser |
 | `shared` | 287 passing, 3 known pre-existing failures |
 
 Both migration chains replay clean with every standing invariant

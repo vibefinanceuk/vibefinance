@@ -1,7 +1,7 @@
 # Handover
 
 **Written 4 September 2026, updated 17 September (six times), updated
-18 September (four times), updated 19 September (twenty-three times).**
+18 September (four times), updated 19 September (twenty-four times).**
 
 **For a session starting cold.** Where things stand, what needs a
 decision rather than work, what to do next, and the habits this project
@@ -38,8 +38,27 @@ twice.
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
 | `vf-app-poc` migrations | through `0070` |
 | `vf-licence-poc` migrations | through `0125` applied, all confirmed live — checksums `9e4d534bcef6…` (`0122`), `79ff9f930fdb…` (`0123`), `408f61e5b11a…` (`0124`); `0125` applied by the operator (no checksum reported this time), confirmed live via `/api/ui-strings` returning all six new title values — run via `apply_migrations.py --remote --migrations-dir workers/vf-licence/migrations --database vf-licence-poc` |
-| Tests | vf-admin 9 · vf-app 1950 · vf-licence 320 · vf-ui 74 Worker + 710 browser · shared 287 (+3 known pre-existing failures) |
-| Decision records | 405 |
+| Tests | vf-admin 9 · vf-app 1950 · vf-licence 320 · vf-ui 74 Worker + 711 browser · shared 287 (+3 known pre-existing failures) |
+| Decision records | 406 |
+
+**Decision 0406 (a page that is not a picture) — code built and
+tested, not yet pushed.** The very first invoice ever rendered
+successfully under decision 0405 immediately surfaced a second gap:
+confirmed via the diagnostic that the `generated_rendering` document
+genuinely existed in `vf-app-poc`, yet the operator couldn't see it.
+`showPreview()` (`viewer.js`) hands every document's content type
+straight to `pageViewer()` (decision 0382), which only recognises PDF
+and "everything else is an image" — a `generated_rendering`'s
+`text/html` content type falls into the image branch, gets handed to
+`new Image().src`, and fails silently; the document was never missing,
+it was being asked to render as a photograph. Never caught while
+0380–0382 were built, because per 0405 nothing had ever rendered
+successfully before, so this path had never actually run. Fixed:
+`showPreview()` now routes HTML through `documentFrame()`, the same
+signed-URL-refresh iframe the XML tab already uses, instead of the
+canvas page renderer built for scanned images and PDFs. One new test,
+fail-first verified; full `vf-ui` browser suite 711/711 (710 + 1 new).
+Full detail in `docs/decisions/0406-a-page-that-is-not-a-picture.md`.
 
 **Decision 0405 (a declaration nobody made) is pushed and deployed** —
 `origin/main` is `cab33c1`, confirmed by direct `git fetch`; the

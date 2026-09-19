@@ -571,10 +571,37 @@ export async function initDocumentWindow(invoiceId, root) {
  * connection to a URL. A canvas is pixels already drawn — nothing
  * reloads it, so nothing can ask a token that has since expired. The
  * link is used once, at load, and never held open.
+ *
+ * **A generated rendering is neither** — decision 0406. `resolvePages()`
+ * only knows `pdf` and "everything else is an image": a UBL invoice's
+ * `generated_rendering` (decision 0205, `text/html`) has no page count
+ * pdf.js can read and cannot be decoded as an image either, so it fell
+ * into the plain-image branch, tried to load HTML through `new
+ * Image().src`, and failed silently — a document that genuinely existed
+ * in R2 and simply never appeared. Nobody had ever seen this case
+ * before today: rendering itself never once succeeded until decision
+ * 0405, so this gap was invisible the whole time 0380–0382 were built.
+ * Routed to `documentFrame()` instead — the same signed-URL-refresh
+ * iframe `showXmlPreview()` already uses below, since an HTML page is
+ * exactly what an iframe is for and nothing about it benefits from a
+ * thumbnail rail, zoom or rotation built for a scanned photograph.
  */
 async function showPreview(invoiceId, type) {
   const holder = document.getElementById("vpreview");
   if (!holder) return;
+
+  if (/html/i.test(type ?? "")) {
+    const url = await documentUrl(invoiceId);
+    if (!url) {
+      holder.replaceChildren(el("div", { class: "vthumb", text: t("viewer.nodocument") }));
+      return;
+    }
+    holder.replaceChildren(
+      documentFrame(url, () => documentUrl(invoiceId), { class: "vframe", title: t("viewer.document") })
+    );
+    return;
+  }
+
   holder.replaceChildren(pageViewer(invoiceId, type));
 }
 

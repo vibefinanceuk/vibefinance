@@ -1053,6 +1053,20 @@ describe("the document preview (decision 0123, canvas since 0382)", () => {
     expect(document.querySelector("#vpreview iframe")).toBeNull();
   });
 
+  it("puts a generated rendering through an iframe, not the page renderer (decision 0406)", async () => {
+    /**
+     * **The gap decision 0405 uncovered.** `resolvePages()` only knows
+     * `pdf` and "everything else is an image" — a `text/html`
+     * `generated_rendering` fell into the image branch, tried to
+     * decode HTML as a picture, and failed silently. Routed to the
+     * same iframe `showXmlPreview()` already uses below instead.
+     */
+    await open("text/html; charset=utf-8");
+    expect(document.querySelector("#vpreview iframe")).not.toBeNull();
+    expect(document.querySelector("#vpreview .vpagesroot")).toBeNull();
+    expect(document.querySelector("#vpreview canvas.vcanvas")).toBeNull();
+  });
+
   it("says so when nothing was retained", async () => {
     // An invoice with no original is a real state, not a failure.
     stubFetch({
