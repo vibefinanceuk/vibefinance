@@ -340,7 +340,7 @@ describe("a card's own title, and a rule beneath it (decision 0396)", () => {
   });
 
   it("gives every panel title the same treatment", () => {
-    const rule = app.slice(app.indexOf(".panel > h3,\n  .panel > .cardhead > h3 {"));
+    const rule = app.slice(app.indexOf(".panel > h3,\n  .panel > .cardhead > h3,"));
     const body = rule.slice(0, rule.indexOf("}"));
     expect(body).toContain("font-family: var(--font-heading);");
     expect(body).toContain("color: var(--heading-accent);");
@@ -348,7 +348,7 @@ describe("a card's own title, and a rule beneath it (decision 0396)", () => {
   });
 
   it("draws the rule in the same colour in both moods, via --border-strong", () => {
-    const rule = app.slice(app.indexOf(".panel > h3,\n  .panel > .cardhead {"));
+    const rule = app.slice(app.indexOf(".panel > h3,\n  .panel > .cardhead,"));
     const body = rule.slice(0, rule.indexOf("}"));
     expect(body).toContain("border-bottom: 1px solid var(--border-strong);");
   });
@@ -365,5 +365,70 @@ describe("a card's own title, and a rule beneath it (decision 0396)", () => {
     expect(body).toContain("display: flex");
     expect(body).not.toContain("--heading-accent");
     expect(body).not.toContain("--font-heading");
+  });
+});
+
+describe("the title sits on the line, whatever the action beside it (decision 0397)", () => {
+  /**
+   * Reported live once decision 0396 shipped: a card whose action is
+   * `actionLink()`'s icon-above-label shape (decision 0122) — Purchase
+   * Orders' own CSV Template/Load CSV, wrapped in `.statebuttons` and
+   * so outside `.cardhead > .actionlink`'s existing `-6px` pull — made
+   * the whole heading row as tall as the action, with the title
+   * pinned to the top by `.cardhead`'s own `align-items: flex-start`
+   * and a bare gap opening beneath it, above 0396's new rule.
+   */
+  const app = stylesheets["app.css"];
+
+  it("bottom-aligns a card's own heading row", () => {
+    const rule = app.slice(app.indexOf(".panel > .cardhead {"));
+    const body = rule.slice(0, rule.indexOf("}"));
+    expect(body).toContain("align-items: flex-end;");
+  });
+
+  it("compacts a card's own corner action, not .actionlink everywhere", () => {
+    const rule = app.slice(app.indexOf(".panel > .cardhead > .actionlink,"));
+    const body = rule.slice(0, rule.indexOf("}"));
+    expect(body).toContain("padding: 4px 6px;");
+    // The base `.actionlink` rule — the control row, the pagination
+    // arrows' own row — must keep its own, larger padding. Matched by
+    // the full declaration, not a bare `.actionlink {` substring,
+    // which `.cardhead > .actionlink {` (earlier in the file) also
+    // contains.
+    const base = app.slice(app.indexOf("\n  .actionlink {"));
+    expect(base.slice(0, base.indexOf("}"))).toContain("padding: 9px 6px;");
+  });
+});
+
+describe("the dashboard's own tiles get the same line (decision 0397)", () => {
+  /**
+   * Shown live against the rest of the dashboard, alongside two other
+   * ways to resolve the inconsistency: chosen directly, over keeping
+   * every tile quiet or reverting "On my clock" to match them.
+   */
+  const app = stylesheets["app.css"];
+
+  it("reaches through .tilefg to the tile's own title", () => {
+    const rule = app.slice(app.indexOf(".panel > h3,\n  .panel > .cardhead > h3,"));
+    const body = rule.slice(0, rule.indexOf("}"));
+    expect(body).toContain(".panel > .tilefg > .cardhead > h3");
+  });
+
+  it("draws the same rule beneath a tile's own title", () => {
+    const rule = app.slice(app.indexOf(".panel > h3,\n  .panel > .cardhead,"));
+    const body = rule.slice(0, rule.indexOf("}"));
+    expect(body).toContain(".panel > .tilefg > .cardhead");
+    expect(body).toContain("border-bottom: 1px solid var(--border-strong);");
+  });
+
+  it("leaves no styling behind for the quiet title decision 0396 gave these on the way in", () => {
+    // Dead CSS outlives what it styled, and reads as a thing that
+    // exists — decision 0179's own reasoning. This selector never
+    // actually matched anything (`.tilefg` sits between `.card-narrow`
+    // and `.cardhead`), so nothing renders differently for it being
+    // gone; it is removed because it now also contradicts this file's
+    // own tests, once dead code disagreeing with a real rule would
+    // otherwise sit beside it unremarked.
+    expect(app).not.toContain(".card-narrow > .cardhead > h3");
   });
 });

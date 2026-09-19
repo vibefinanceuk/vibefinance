@@ -1341,12 +1341,6 @@
     position: relative;
     overflow: hidden;
   }
-  .card-narrow > .cardhead > h3 {
-    font-size: var(--text-sm);
-    color: var(--text-muted);
-    font-weight: 400;
-    margin-bottom: 0;
-  }
 
   /*
     **A chart behind the text, not beside it** — decision 0257.
@@ -1720,15 +1714,22 @@
     sources.js, suppliers.js, processes.js, purchase-orders.js all
     build a "Save"/"Close" pop-out head with it — and a dialog is not
     a card. `.panel > .cardhead` is what keeps the rule off every one
-    of those. The same reasoning keeps it off the dashboard's own KPI
-    tiles without an exclusion needing to name them: `card-narrow`'s
-    `cardhead` sits inside `.tilefg`, not as a direct child of
-    `.panel`, so it never matches this selector — which happens to be
-    exactly the quieter treatment decision 0242 already gave those
-    tiles on purpose.
+    of those.
+
+    **The dashboard's own tiles get it too, decision 0397** —
+    `.panel > .tilefg > .cardhead > h3` is that same title one level
+    deeper, the shape every `card-narrow`/`card-graphic` tile builds
+    through dashboard.js's own `panel()` helper. Decision 0396 first
+    read `.tilefg`'s extra nesting as reason enough to leave those
+    quiet, matching 0242's own "no verdict" treatment for a bare
+    count. Shown side by side with the rest of the dashboard, live,
+    the read was the opposite: a title that stops looking like every
+    other card's is not "no verdict," it is a different card. Chosen
+    directly, offered against two other ways to resolve it.
   */
   .panel > h3,
-  .panel > .cardhead > h3 {
+  .panel > .cardhead > h3,
+  .panel > .tilefg > .cardhead > h3 {
     margin: 0;
     font-family: var(--font-heading);
     font-size: var(--text-lg);
@@ -1738,12 +1739,49 @@
     color: var(--heading-accent);
   }
   .panel > h3,
-  .panel > .cardhead {
+  .panel > .cardhead,
+  .panel > .tilefg > .cardhead {
     padding-bottom: 10px;
     margin-bottom: 12px;
     border-bottom: 1px solid var(--border-strong);
   }
 
+  /*
+    **The title sits on the line, not floating above a tall action** —
+    reported live once decision 0396 shipped: a card whose action is
+    `actionLink()`'s icon-above-label shape (decision 0122) — Purchase
+    Orders' own CSV Template/Load CSV, wrapped in `.statebuttons` and
+    so outside `.cardhead > .actionlink`'s existing `-6px` pull — made
+    the whole row as tall as the action, with the title left pinned to
+    `flex-start` at the top and a bare gap opening beneath it, above
+    the new rule.
+
+    `align-items: flex-end` puts every title on the row's own bottom
+    edge regardless of what the action beside it is shaped like, which
+    is what "just above the horizontal line" asked for directly.
+  */
+  .panel > .cardhead {
+    align-items: flex-end;
+  }
+
+  /*
+    **The action itself, compacted** — the other half of the same
+    report: a corner control does not need the same generous padding
+    `.actionlink` gives a control sitting in a row of its own (the
+    control row, the pagination arrows' own row). Scoped to a card's
+    own heading, not `.actionlink` itself, so nothing outside a
+    `.panel`'s `.cardhead` changes size.
+  */
+  .panel > .cardhead > .actionlink,
+  .panel > .cardhead .statebuttons .actionlink {
+    padding: 4px 6px;
+    gap: 3px;
+  }
+  .panel > .cardhead > .actionlink svg,
+  .panel > .cardhead .statebuttons .actionlink svg {
+    width: 18px;
+    height: 18px;
+  }
 
   .stat .label { font-size: var(--text-sm); color: var(--text-secondary); }
   .stat .value { font-size: var(--text-xl); font-weight: 600; margin-top: 3px; }

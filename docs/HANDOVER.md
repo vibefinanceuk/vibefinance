@@ -1,7 +1,7 @@
 # Handover
 
 **Written 4 September 2026, updated 17 September (six times), updated
-18 September (four times), updated 19 September (six times).**
+18 September (four times), updated 19 September (seven times).**
 
 **For a session starting cold.** Where things stand, what needs a
 decision rather than work, what to do next, and the habits this project
@@ -30,7 +30,7 @@ twice.
 
 | | |
 | --- | --- |
-| `origin/main` | `7ba798f` |
+| `origin/main` | `1b9b8e8` |
 | vf-admin deployed | `8e27a34` · `https://admin.vibefinance-ai.com` · behind Cloudflare Access |
 | vf-app deployed | `4d44b59` |
 | vf-licence deployed | `a235713` |
@@ -38,8 +38,8 @@ twice.
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
 | `vf-app-poc` migrations | through `0070` |
 | `vf-licence-poc` migrations | through `0123` applied, all confirmed live — checksums `9e4d534bcef6…` (`0122`) and `79ff9f930fdb…` (`0123`), run by the operator via `apply_migrations.py --remote --migrations-dir workers/vf-licence/migrations --database vf-licence-poc` |
-| Tests | vf-admin 9 · vf-app 1921 · vf-licence 320 · vf-ui 74 Worker + 691 browser · shared 278 (+3 known pre-existing failures) |
-| Decision records | 396 |
+| Tests | vf-admin 9 · vf-app 1921 · vf-licence 320 · vf-ui 74 Worker + 696 browser · shared 278 (+3 known pre-existing failures) |
+| Decision records | 397 |
 
 **Decision 0394 (a column, two arrows, and a marker) is pushed and
 deployed, confirmed directly by the operator opening the pop-out
@@ -144,6 +144,46 @@ design, and that regression pass has not been done as part of this
 change. Next: the Document tab row (piece three, narrow and
 independent), then red/amber/green severity (piece four, still needs
 the upstream data-model question answered first).
+
+**Decision 0397 (the first live look back at 0396) is built, not yet
+pushed.** The operator's own first look at 0396 live, not the
+mock-up, produced two corrections. First: a card whose action is
+`actionLink()`'s icon-above-label shape (decision 0122) — Purchase
+Orders' own CSV Template/Load CSV, wrapped in `.statebuttons` and so
+outside `.cardhead > .actionlink`'s existing `-6px` pull, decision
+0300 — made the whole heading row as tall as the action, with the
+title pinned to the top by `flex-start` and a bare gap opening above
+the new rule rather than the title sitting on it. Fixed with `.panel >
+.cardhead { align-items: flex-end; }` plus a compacted, card-scoped
+`.actionlink` override (smaller padding/gap/icon, only inside a card's
+own heading — the control row and the pagination arrows keep the base
+rule's own size). Second: the Dashboard's own KPI tiles
+(`card-narrow`/`card-graphic`) had been deliberately left quiet by
+0396's own scoping, reasoning they already had decision 0242's "no
+verdict" treatment — but live, next to "On my clock" (which had picked
+up 0396's rule on its own, since its `cardhead` sits a level shallower
+than the other tiles'), the quiet tiles read as unfinished rather than
+intentional. Three ways to resolve it were rendered against the real
+stylesheet and shown side by side; **the operator chose directly**:
+extend the heading and the rule to every tile. `.panel > .tilefg >
+.cardhead > h3`/`.panel > .tilefg > .cardhead` reaches through the one
+extra layer `dashboard.js`'s `panel()` helper adds, and the dead
+`.card-narrow > .cardhead > h3` override — which never actually
+matched, the same `.tilefg` nesting being why — is removed rather than
+left contradicting a live rule beside it.
+
+Both fixes were rendered against the real, unmodified stylesheet with
+Playwright before being called done (Day and Night both, a card with
+no action at all to confirm nothing untouched moved). Nine new tests
+in `test-browser/typography.test.ts` (two existing 0396 tests updated
+for the selector's new third line), watched to fail first (7 of 35
+failed — 5 new assertions plus the two whose selector text had
+changed). Full suites: vf-ui 74 Worker + 696 browser (691 pre-existing
++ 5 new), both passing — `dashboard.test.ts`'s own unhandled-rejection
+noise confirmed pre-existing, not introduced here. `eslint` clean;
+`scripts/check-citations.py` clean (397 records). Touches `vf-ui`
+(`public/app.css`, `test-browser/typography.test.ts`) only — no new
+token, no `tokens.css` change.
 
 **A real gap in this session's own verification, worth recording
 plainly.** `origin/main` fetched directly read the right commit at

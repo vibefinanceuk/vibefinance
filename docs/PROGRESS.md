@@ -650,6 +650,23 @@ a rule, and left an approval task in a queue.
   691 browser (686 pre-existing + 5 new), both passing. Not yet
   reviewed screen by screen — the widest-blast-radius piece of the
   four by design.
+- **The first live look back at 0396** (0397, two corrections from
+  the operator's own first look at the deployed app rather than the
+  mock-up). A card whose action is taller than its title (Purchase
+  Orders' CSV Template/Load CSV, wrapped in `.statebuttons` and so
+  outside `.cardhead > .actionlink`'s existing `-6px` pull) left the
+  title pinned to the top of the row with a gap above the new rule;
+  `.panel > .cardhead { align-items: flex-end; }` plus a compacted,
+  card-scoped `.actionlink` fixes it, checked with Playwright against
+  the real stylesheet before and after. The Dashboard's own KPI tiles,
+  deliberately left quiet by 0396's own scoping, read as unfinished
+  once "On my clock" picked up the new heading on its own — three ways
+  to resolve it rendered and shown side by side, the operator chose
+  directly to extend the heading and the rule to every tile via
+  `.panel > .tilefg > .cardhead`, removing a `.card-narrow` override
+  that had never actually matched anything. Nine new tests, watched to
+  fail first (7 of 35 failed). Full suites: vf-ui 74 Worker + 696
+  browser (691 pre-existing + 5 new), both passing.
 
 ### Customer configuration
 - Org units, teams, roles, users, cost centres
@@ -1069,7 +1086,7 @@ elsewhere.
 |---|---|
 | `vf-app` | 1921 |
 | `vf-licence` | 320 |
-| `vf-ui` | 74 Worker · 691 browser |
+| `vf-ui` | 74 Worker · 696 browser |
 | `shared` | 278 passing, 3 known pre-existing failures |
 
 Both migration chains replay clean with every standing invariant
@@ -1095,7 +1112,7 @@ measured (0380) rather than explained after the fact.
 | `docs/design/mockups/` | Four screens as static HTML | Current |
 | `docs/design/multi-authority-intake.md` | Non-EN-16931 authorities | Design only |
 | `docs/design/text-layer-extraction.md` | Reading a PDF's own text | Design only |
-| `docs/decisions/` | 396 decision records | Current |
+| `docs/decisions/` | 397 decision records | Current |
 | `docs/decisions/SUPERSEDED.md` | Which records supersede which | **Read first** |
 
 Document 4's markdown source is at `docs/documents/`, with
