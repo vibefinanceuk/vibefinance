@@ -314,16 +314,26 @@ const RENDERERS = {
      * itself is one less thing a future reader has to reverse-engineer
      * from a coincidence of markup.
      */
-    // No subtitle here since decision 0401 — the operator's own
-    // request to remove "Assigned to me or claimed by me — not a
-    // team queue" outright, not reword it. `dash.myclocksub` itself
-    // stays seeded (migrations never delete a row); it is simply
-    // never read again.
+    /**
+     * **The subtitle is back — decision 0410.** Decision 0401 removed
+     * it outright at the operator's own request, at the same moment
+     * this card's own title changed from "On my clock" to "My
+     * Priority Tasks" — a title that, on its own, now reads as if it
+     * ought to include a team's queue. It does not: this card is still
+     * exactly "assigned to me or claimed by me — not a team queue"
+     * (decision 0180), unchanged. Reported live as two empty cards,
+     * traced to two unrelated causes; for this one, the data and the
+     * scope were both already correct — only the explanation was
+     * missing. `dash.myclocksub`'s row was never deleted (migrations
+     * here never delete one), so this reads it again rather than
+     * reseeding anything.
+     */
     return el("div", { class: "panel card-list" }, [
       el("div", { class: "cardhead" }, [
         el("h3", { text: t("dash.on_my_clock") }),
         el("div", { class: "chips" }, sorts),
       ]),
+      el("div", { class: "sub", text: t("dash.myclocksub") }),
       rows.length === 0
         ? el("div", { class: "muted", text: t("dash.nothingmine") })
         : el("div", { class: "clockscroll" }, [el("table", { class: "clocktable" }, [

@@ -1,7 +1,7 @@
 # Handover
 
 **Written 4 September 2026, updated 17 September (six times), updated
-18 September (four times), updated 19 September (thirty times).**
+18 September (four times), updated 19 September (thirty-one times).**
 
 **For a session starting cold.** Where things stand, what needs a
 decision rather than work, what to do next, and the habits this project
@@ -38,8 +38,36 @@ twice.
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
 | `vf-app-poc` migrations | through `0070` |
 | `vf-licence-poc` migrations | through `0125` applied, all confirmed live — checksums `9e4d534bcef6…` (`0122`), `79ff9f930fdb…` (`0123`), `408f61e5b11a…` (`0124`); `0125` applied by the operator (no checksum reported this time), confirmed live via `/api/ui-strings` returning all six new title values — run via `apply_migrations.py --remote --migrations-dir workers/vf-licence/migrations --database vf-licence-poc` |
-| Tests | vf-admin 9 · vf-app 1952 · vf-licence 320 · vf-ui 74 Worker + 715 browser · shared 287 (+3 known pre-existing failures) |
-| Decision records | 409 |
+| Tests | vf-admin 9 · vf-app 1955 · vf-licence 320 · vf-ui 74 Worker + 716 browser · shared 287 (+3 known pre-existing failures) |
+| Decision records | 410 |
+
+**Decision 0410 (two empty cards, two different answers) — code built
+and tested, not yet pushed.** Reported live: *"My Priority Tasks is
+empty, even though I have 3 tasks for my user"* and *"Possible
+Duplicates is empty, even though I have emailed in the same invoice
+about 4 times."* Both traced against the real remote database before
+any code changed. **Possible Duplicates was a real bug**:
+`possibleDuplicates()` counted `json_extract(facts_json,
+'$."invoice.duplicate_confidence"')`, a key the stored `facts_json`
+never actually carries — it's synthesised only in memory, at read
+time, by a different route; the score itself lives only in the
+`duplicate_confidence` column. Confirmed directly against the
+operator's own data (two genuine resubmissions scored `1` in the
+column, with no such key in their own stored `facts_json`), then
+fixed to read the column. **My Priority Tasks was not a bug** — all
+the operator's open tasks were owned by their team, unclaimed by
+anyone, and `on_my_clock` has always deliberately excluded a team
+queue (decision 0180). What broke was the explanation: decision 0401
+renamed the card to "My Priority Tasks" and deleted its own subtitle
+in the same change. Put to the operator as a design question — keep
+the personal-only scope and restore the explanation, or widen the
+card to include the team queue — they chose to restore the
+explanation; `dash.myclocksub` reads again, unchanged in the
+database the whole time. Four new tests (three server, one browser),
+each fail-first verified; full `vf-app` suite 1955/1955 (1952 + 3
+new), full `vf-ui` suite 74 Worker + 716 browser (715 + 1 new), full
+`vf-licence` suite 320/320. Full detail in
+`docs/decisions/0410-two-empty-cards-two-different-answers.md`.
 
 **Decision 0409 (one firing, not one per line) is pushed and
 deployed** — `origin/main` is `2815b5d`, confirmed by direct `git

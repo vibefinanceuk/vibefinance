@@ -357,6 +357,7 @@ const KEYS_THE_INTERFACE_USES = [
   "dash.waitingsub",
   "dash.acrossstages",
   "dash.myclock",
+  "dash.myclocksub",
   "dash.nothingmine",
   "dash.supplier",
   "dash.held",

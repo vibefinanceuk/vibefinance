@@ -1410,3 +1410,51 @@ describe("the card's own count matches its own click, decision 0368", () => {
     expect(dashboardCount).toBe(1);
   });
 });
+
+describe("possible duplicates reads the score that's actually stored (decision 0410)", () => {
+  /**
+   * **Reported live**: "The Possible Duplicates is empty, even though
+   * I have emailed in the same invoice about 4 times." The card's own
+   * query read `json_extract(facts_json, '$."invoice.duplicate_confidence"')`
+   * — a key `mergeStructuredInvoiceFacts()` only ever adds in memory, at
+   * read time, for other routes (`index.ts`). `handleUpsertInvoice()`
+   * (`invoice-facts-route.ts`) stores the score in its own dedicated
+   * `duplicate_confidence` column and writes `facts_json` from the
+   * caller's own facts alone — that key is never in the stored JSON, so
+   * the card's own `CAST(... AS REAL) >= 0.5` always read NULL and
+   * always counted zero, for every user, regardless of scope or of how
+   * real the duplicate actually was.
+   */
+  it("counts a row scored a duplicate in its own column, even though facts_json never carries the score", async () => {
+    await person("alice", ["AP.Review"], null);
+    await env.DB.prepare(
+      `INSERT INTO invoice_headers (id, facts_json, duplicate_confidence, org_unit_id)
+       VALUES ('dup-1', '{}', 1, NULL)`
+    ).run();
+
+    const body = await cardsFor("alice");
+    expect(card<{ count: number }>(body, "possible_duplicates").count).toBe(1);
+  });
+
+  it("leaves out a row scored below the threshold", async () => {
+    await person("alice", ["AP.Review"], null);
+    await env.DB.prepare(
+      `INSERT INTO invoice_headers (id, facts_json, duplicate_confidence, org_unit_id)
+       VALUES ('not-dup', '{}', 0.25, NULL)`
+    ).run();
+
+    const body = await cardsFor("alice");
+    expect(card<{ count: number }>(body, "possible_duplicates").count).toBe(0);
+  });
+
+  it("leaves out a row with no score computed at all", async () => {
+    await person("alice", ["AP.Review"], null);
+    await env.DB.prepare(
+      `INSERT INTO invoice_headers (id, facts_json, org_unit_id)
+       VALUES ('unscored', '{}', NULL)`
+    ).run();
+
+    const body = await cardsFor("alice");
+    expect(card<{ count: number }>(body, "possible_duplicates").count).toBe(0);
+  });
+});

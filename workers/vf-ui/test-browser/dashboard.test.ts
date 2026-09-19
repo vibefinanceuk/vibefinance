@@ -21,6 +21,7 @@ const STRINGS = {
     "dash.waitingsub": "Mine, and work my teams own",
     "dash.acrossstages": "across {n} stages",
     "dash.on_my_clock": "My Priority Tasks",
+    "dash.myclocksub": "Assigned to me or claimed by me — not a team queue",
     "dash.nothingmine": "Nothing is assigned to you or claimed by you.",
     "dash.supplier": "Supplier",
     "dash.held": "Held",
@@ -595,6 +596,23 @@ describe("both clocks, side by side", () => {
     expect(text).toContain("31d");
     expect(text).toContain("6d overdue");
     expect(text).toContain("Northwind Logistics");
+  });
+
+  it("explains why it's not the team queue (decision 0410)", async () => {
+    /**
+     * Decision 0401 renamed this card "My Priority Tasks" and deleted
+     * its subtitle in the same change — reported live: "My Priority
+     * Tasks is empty, even though I have 3 tasks for my user," which
+     * traced back to those 3 tasks sitting unclaimed in a team's
+     * queue, exactly what this card was always scoped to leave out
+     * (decision 0180). The behavior was already correct; only the
+     * explanation was gone.
+     */
+    await openDashboard([
+      { id: "e2", cardType: "on_my_clock", settings: { sort: "held" }, position: 0, data: { items: [ITEM] } },
+    ]);
+
+    expect(document.body.textContent ?? "").toContain("Assigned to me or claimed by me — not a team queue");
   });
 
   it("marks an overdue invoice and not one due later", async () => {

@@ -518,10 +518,21 @@ async function suppliersAwaitingErp(db: D1Database, scope: Scope) {
 async function possibleDuplicates(db: D1Database, scope: Scope) {
   const clause = unitClause(scope, "h.org_unit_id");
 
+  /**
+   * **Read the column, not a `facts_json` key nothing ever writes** —
+   * decision 0410. `mergeStructuredInvoiceFacts()` (`invoice-facts-
+   * route.ts`) synthesises `"invoice.duplicate_confidence"` from this
+   * same column, but only in memory, for other routes to read
+   * (`index.ts`) — it is never merged back into the stored `facts_json`
+   * itself. This query used to read that never-written key via
+   * `json_extract`, so it read NULL and counted zero for every
+   * invoice, regardless of what its own `duplicate_confidence` column
+   * actually held.
+   */
   const row = await db
     .prepare(
       `SELECT count(*) AS n FROM invoice_headers h
-       WHERE CAST(json_extract(h.facts_json, '$."invoice.duplicate_confidence"') AS REAL) >= 0.5
+       WHERE h.duplicate_confidence >= 0.5
          ${clause.sql}`
     )
     .bind(...clause.binds)

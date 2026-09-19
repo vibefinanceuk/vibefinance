@@ -182,6 +182,16 @@ a rule, and left an approval task in a queue.
   building a third copy.
 
 ### The Dashboard — default landing, layout, and "Waiting for me" (0359–0369)
+- **Two empty cards, two different root causes** (0410). Possible
+  Duplicates counted a `facts_json` key that's never actually stored
+  — the score lives only in its own column, and the key existed only
+  in memory, synthesised for a different route — so the card always
+  read zero regardless of real, correctly-scored duplicates; fixed to
+  read the column. My Priority Tasks was not a bug: it has always
+  deliberately excluded a team's unclaimed queue (0180), but 0401's
+  rename to that title, in the same change that deleted its own
+  clarifying subtitle, left nothing on screen to say so; the operator
+  chose to restore the subtitle rather than change the scope.
 - **The Dashboard, not Tasks, is the default screen at login** (0359).
 - **Two real width bugs, in the one place each fix didn't look**
   (0360, 0361): `body`'s own "working" class, which controls full-
