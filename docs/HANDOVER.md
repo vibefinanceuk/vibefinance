@@ -1,7 +1,7 @@
 # Handover
 
 **Written 4 September 2026, updated 17 September (six times), updated
-18 September (four times), updated 19 September (twenty-seven times).**
+18 September (four times), updated 19 September (twenty-eight times).**
 
 **For a session starting cold.** Where things stand, what needs a
 decision rather than work, what to do next, and the habits this project
@@ -30,21 +30,22 @@ twice.
 
 | | |
 | --- | --- |
-| `origin/main` | `b7e749f` |
+| `origin/main` | `da312fa` |
 | vf-admin deployed | `8e27a34` · `https://admin.vibefinance-ai.com` · behind Cloudflare Access |
 | vf-app deployed | `cab33c1` (operator's report — API sits behind auth, not independently checkable from here) |
 | vf-licence deployed | `04072df` (operator's own `wrangler deploy` output, version `39c2f745…`) |
-| vf-ui deployed | `b7e749f` · `https://app.vibefinance-ai.com` — operator confirmed deployed |
+| vf-ui deployed | `da312fa` · `https://app.vibefinance-ai.com` — operator confirmed deployed |
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
 | `vf-app-poc` migrations | through `0070` |
 | `vf-licence-poc` migrations | through `0125` applied, all confirmed live — checksums `9e4d534bcef6…` (`0122`), `79ff9f930fdb…` (`0123`), `408f61e5b11a…` (`0124`); `0125` applied by the operator (no checksum reported this time), confirmed live via `/api/ui-strings` returning all six new title values — run via `apply_migrations.py --remote --migrations-dir workers/vf-licence/migrations --database vf-licence-poc` |
 | Tests | vf-admin 9 · vf-app 1950 · vf-licence 320 · vf-ui 74 Worker + 712 browser · shared 287 (+3 known pre-existing failures) |
 | Decision records | 408 |
 
-**Decision 0408 (the nav that only worked once) — code built and
-tested, not yet pushed.** Reported live: "When in the Validation
-window, none of the menu links on the left work." Traced to `go()`
-(`tasks.js`), the one function behind every nav link everywhere:
+**Decision 0408 (the nav that only worked once) is pushed and
+deployed** — `origin/main` is `da312fa`, confirmed by direct `git
+fetch`; the operator confirmed `vf-ui` deployed. Reported live: "When
+in the Validation window, none of the menu links on the left work."
+Traced to `go()` (`tasks.js`), the one function behind every nav link everywhere:
 `openViewer()` renders its own copy of the nav into `#viewer`, a
 sibling of `#shell` that every entry point hides/shows on the way in
 and out — but `go()`'s own branches all wrote into `#shell`
@@ -60,8 +61,9 @@ nav click actually starts. One new test, fail-first verified against
 the reported bug; full `vf-ui` browser suite 712/712 (711 + 1 new).
 Full detail in `docs/decisions/0408-the-nav-that-only-worked-once.md`.
 
-**Decision 0407 (the plan that was already written down) — docs-only,
-code built and tested N/A, not yet pushed.** Right after 0406 shipped,
+**Decision 0407 (the plan that was already written down) is pushed** —
+`origin/main` is `da312fa`, confirmed by direct `git fetch`; docs-only,
+so there is nothing to deploy. Right after 0406 shipped,
 the operator recalled a different, earlier plan: *"we had previously
 discussed rendering invoices as a document, rather than HTML, so that
 they can be treated like other images."* Not lost conversation — found
