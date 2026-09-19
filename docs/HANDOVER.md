@@ -1,7 +1,7 @@
 # Handover
 
 **Written 4 September 2026, updated 17 September (six times), updated
-18 September (four times), updated 19 September (nine times).**
+18 September (four times), updated 19 September (ten times).**
 
 **For a session starting cold.** Where things stand, what needs a
 decision rather than work, what to do next, and the habits this project
@@ -30,11 +30,11 @@ twice.
 
 | | |
 | --- | --- |
-| `origin/main` | `6613e3d` |
+| `origin/main` | `6b470c8` |
 | vf-admin deployed | `8e27a34` · `https://admin.vibefinance-ai.com` · behind Cloudflare Access |
 | vf-app deployed | `4d44b59` |
 | vf-licence deployed | `a235713` |
-| vf-ui deployed | `6613e3d` · `https://app.vibefinance-ai.com` |
+| vf-ui deployed | `6b470c8` · `https://app.vibefinance-ai.com` |
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
 | `vf-app-poc` migrations | through `0070` |
 | `vf-licence-poc` migrations | through `0123` applied, all confirmed live — checksums `9e4d534bcef6…` (`0122`) and `79ff9f930fdb…` (`0123`), run by the operator via `apply_migrations.py --remote --migrations-dir workers/vf-licence/migrations --database vf-licence-poc` |
@@ -195,8 +195,20 @@ noise confirmed pre-existing, not introduced here. `eslint` clean;
 (`public/app.css`, `test-browser/typography.test.ts`) only — no new
 token, no `tokens.css` change.
 
-**Decision 0398 (a toggle for the document tabs) is built, not yet
-pushed.** Third of the four pieces from 0395's own sequence — the
+**Decision 0398 (a toggle for the document tabs) is pushed and
+deployed** — confirmed both directly, not taken on the operator's
+report alone: `git fetch` puts `origin/main` at `6b470c8`, matching
+this session's own `main` exactly; two cache-busted fetches of
+`/app.css` and `/tokens.css` from `https://app.vibefinance-ai.com`
+return the new `.doctabs`/`.doctab`/`.doctab.on`/`.activitycount`
+rules word for word — the pill background and `border-radius: 999px`,
+the active tab's `box-shadow: var(--tab-active-shadow)`, the badge's
+`--bg-accent`/`--text-accent` — and `--tab-active-shadow` itself in
+all three places it should be: `0 1px 2px rgba(18, 26, 38, 0.12)` in
+the plain `:root` (Day), `none` in both the
+`@media (prefers-color-scheme: dark)` block and
+`:root[data-mood="night"]`. Third of the four pieces from 0395's own
+sequence — the
 Document/XML/Timeline & Chat tab row, narrow and independent, as
 agreed. Styling only, no JS file touched: `buildDocTabs()` in
 `viewer.js` already builds `.doctabs`/`.doctab`/`.doctab.on`/
