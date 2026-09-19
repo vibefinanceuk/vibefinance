@@ -37,7 +37,7 @@ twice.
 | vf-ui deployed | `5a09466` · `https://app.vibefinance-ai.com` |
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
 | `vf-app-poc` migrations | through `0070` |
-| `vf-licence-poc` migrations | through `0121` applied · **`0122` and `0123` committed, neither yet applied to the remote D1** |
+| `vf-licence-poc` migrations | through `0121` applied · **`0122` and `0123` committed, neither yet applied to the remote D1** — apply via `apply_migrations.py --remote --migrations-dir workers/vf-licence/migrations --database vf-licence-poc` |
 | Tests | vf-admin 9 · vf-app 1921 · vf-licence 320 · vf-ui 74 Worker + 684 browser · shared 278 (+3 known pre-existing failures) |
 | Decision records | 394 |
 
@@ -90,13 +90,14 @@ or a cache purge on the strength of this session's own fetch alone
 without saying plainly that the fetch tool itself may be the thing
 that is wrong.
 
-`vf-licence`'s migration `0123` still has the same gap decision 0393
-already found for `0122`: a `wrangler deploy` of `vf-ui` does not
-touch `ui_strings` in the `vf-licence-poc` D1, and this session still
-does not know how that database's own migrations reach production
-(see the paragraph below and "Waiting on you" — unanswered as of this
-update). Unconfirmed either way as of this update — not part of what
-the operator just verified, which was the pop-out's layout, not its
+`vf-licence`'s migrations `0122` and `0123` still need applying to the
+remote — a `wrangler deploy` of `vf-ui` does not touch `ui_strings` in
+the `vf-licence-poc` D1 — via `python3 migrations/apply_migrations.py
+--remote --migrations-dir workers/vf-licence/migrations --database
+vf-licence-poc` (see the correction below the decision-0393 paragraph:
+this session had first wrongly reported no such process existed).
+Unconfirmed either way as of this update — not part of what the
+operator just verified, which was the pop-out's layout, not its
 wording.
 
 **Decision 0393 (filling the row, and a number to ring) is pushed and
@@ -1043,20 +1044,39 @@ not reach production with the rest of it** — `GET
 migration 0122's "Document open in a separate window", checked
 directly rather than assumed alongside everything else that did land.
 The cause, once traced rather than guessed at: `ui_strings` is data in
-the `vf-licence-poc` D1 database, not code `wrangler deploy` touches,
-and `migrations/apply_migrations.py` at the repo root — the only
-migration runner in this repo with a documented `--remote` mode — is
-wired to a different chain entirely (`vf-app-poc`'s own schema,
-through migration `0070`; confirmed by running it with
-`--replay-only`, the one mode this session can run itself, which
-replayed all 70 of *that* chain's migrations and none of
-`vf-licence`'s). How migration `0121`'s own strings ("Bring to front",
-"Show here instead") reached this same live deployment earlier is not
-documented anywhere this session found — so the operator's own
-process for applying a `vf-licence` migration to the remote is not
-yet known here, and is worth asking them directly rather than guessing
-at a `wrangler d1 migrations apply vf-licence-poc --remote` command
-this repo gives no evidence either confirms or rules out.
+the `vf-licence-poc` D1 database, not code `wrangler deploy` touches.
+
+**Correction, made after the operator pointed it out directly —
+recorded plainly rather than quietly fixed.** This session first ran
+`migrations/apply_migrations.py --replay-only` with no further flags,
+watched it replay `vf-app-poc`'s own 70-migration chain, and wrongly
+concluded from that single, default-argument run that the script "is
+wired to a different chain entirely" and that no process for applying
+a `vf-licence` migration was documented anywhere. Both were wrong, and
+both were readable in the repo the whole time: the script's own
+`--migrations-dir` flag exists specifically for this (its own help
+text gives `--migrations-dir workers/vf-licence/migrations --database
+vf-licence-poc` as the example), and `docs/change-and-promotion-
+model.md`'s own "what changed → what deploys" table already lists
+`workers/vf-licence/migrations/*.sql` against exactly that same
+invocation. Re-run pointed at the right chain
+(`--replay-only --migrations-dir workers/vf-licence/migrations
+--database vf-licence-poc`), the full 123-migration `vf-licence` chain
+replays cleanly with every assertion held, migrations `0122` and
+`0123` included. The command the operator needs, for the mode this
+session cannot run itself (no Cloudflare credentials):
+
+```
+python3 migrations/apply_migrations.py --remote \
+  --migrations-dir workers/vf-licence/migrations \
+  --database vf-licence-poc
+```
+
+How migration `0121`'s own strings ("Bring to front", "Show here
+instead") reached the live deployment earlier is now explained by this
+same command, not a mystery — the operator most likely already runs
+it, or something equivalent, and this session simply hadn't found it
+yet when it first asked.
 
 **Built this arc, closing out most of what was named here before:
 teams, most of the "user variable" fields, creating and managing an
