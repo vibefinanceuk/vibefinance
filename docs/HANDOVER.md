@@ -1,7 +1,7 @@
 # Handover
 
 **Written 4 September 2026, updated 17 September (six times), updated
-18 September (four times), updated 19 September (four times).**
+18 September (four times), updated 19 September (five times).**
 
 **For a session starting cold.** Where things stand, what needs a
 decision rather than work, what to do next, and the habits this project
@@ -30,7 +30,7 @@ twice.
 
 | | |
 | --- | --- |
-| `origin/main` | `d974e34` |
+| `origin/main` | `7ba798f` |
 | vf-admin deployed | `8e27a34` · `https://admin.vibefinance-ai.com` · behind Cloudflare Access |
 | vf-app deployed | `4d44b59` |
 | vf-licence deployed | `a235713` |
@@ -110,7 +110,15 @@ itself). Touches `vf-ui` (`public/tokens.css`,
 `test-browser/mood.test.ts`) only.
 
 **Decision 0396 (a title in its own face, and a line beneath it) is
-built, not yet pushed.** Second of the four — the two global pieces
+pushed — confirmed via `git fetch`, `origin/main` at `7ba798f` matching
+this session's own `main` exactly — but not yet deployed**, for the
+same reason 0395 still wasn't as of this file's last update: nothing
+has gone out with `wrangler deploy` since decision 0394, so the live
+site is two decisions behind what is now on `origin/main`. One deploy
+will bring 0395's tokens and 0396's use of them live together — the
+tokens alone were invisible on their own, so nothing will visibly
+change until that deploy happens. Second of the four — the two global
+pieces
 together, as agreed: every panel title now takes a self-hosted Big
 Shoulders Display (one weight, 800, shipped the way Carlito was —
 decision 0124), uppercase, in `--heading-accent`, at `--text-lg`
