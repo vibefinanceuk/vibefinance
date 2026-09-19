@@ -44,6 +44,27 @@
 }
 
 /*
+  Big Shoulders Display, shipped the same way Carlito was — decision
+  0396, the second of the four pieces borrowed from
+  e-invoicingcompliancecorner.com and agreed with the operator: "the
+  title fonts, orange bold heading." A named font in a stack is a font
+  somebody has to already own; naming it and shipping nothing would
+  repeat decision 0124's own mistake, reported back that time as "no
+  changes" when it was actually a silent fallback.
+
+  One face, one weight: the mockup used exactly `wght@800`, and nothing
+  in this interface asks for any other weight of it, so only 800 is
+  shipped. Openly licensed, SIL OFL, the same terms as Carlito.
+*/
+@font-face {
+  font-family: "Big Shoulders Display";
+  src: url("/fonts/big-shoulders-display-latin-800-normal.woff2") format("woff2");
+  font-weight: 800;
+  font-style: normal;
+  font-display: swap;
+}
+
+/*
  * Design tokens for vf-ui — decision 0099.
  *
  * Carried across from docs/design/mockups/tokens.css, where the split
@@ -176,6 +197,17 @@
     before the file arrives.
   */
   --font-sans: Calibri, Carlito, "Segoe UI", -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
+
+  /*
+    A second face, for card titles only — decision 0396. Not a
+    replacement for `--font-sans`: the body of the app stays Calibri/
+    Carlito, and this is a condensed display face reserved for the
+    one place it was asked for. Falls through to `--font-sans` itself
+    if the file is ever slow to arrive, rather than to a bare
+    `sans-serif` that would pick a different weight and width per
+    machine.
+  */
+  --font-heading: "Big Shoulders Display", var(--font-sans);
 
   /*
     One type scale — decision 0124.

@@ -1,7 +1,7 @@
 # Handover
 
 **Written 4 September 2026, updated 17 September (six times), updated
-18 September (four times), updated 19 September (three times).**
+18 September (four times), updated 19 September (four times).**
 
 **For a session starting cold.** Where things stand, what needs a
 decision rather than work, what to do next, and the habits this project
@@ -38,8 +38,8 @@ twice.
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
 | `vf-app-poc` migrations | through `0070` |
 | `vf-licence-poc` migrations | through `0123` applied, all confirmed live — checksums `9e4d534bcef6…` (`0122`) and `79ff9f930fdb…` (`0123`), run by the operator via `apply_migrations.py --remote --migrations-dir workers/vf-licence/migrations --database vf-licence-poc` |
-| Tests | vf-admin 9 · vf-app 1921 · vf-licence 320 · vf-ui 74 Worker + 686 browser · shared 278 (+3 known pre-existing failures) |
-| Decision records | 395 |
+| Tests | vf-admin 9 · vf-app 1921 · vf-licence 320 · vf-ui 74 Worker + 691 browser · shared 278 (+3 known pre-existing failures) |
+| Decision records | 396 |
 
 **Decision 0394 (a column, two arrows, and a marker) is pushed and
 deployed, confirmed directly by the operator opening the pop-out
@@ -108,6 +108,34 @@ checker does not scan `.css` files at all — its own `SUFFIXES` list is
 citation in `mood.test.ts`, not for anything inside `tokens.css`
 itself). Touches `vf-ui` (`public/tokens.css`,
 `test-browser/mood.test.ts`) only.
+
+**Decision 0396 (a title in its own face, and a line beneath it) is
+built, not yet pushed.** Second of the four — the two global pieces
+together, as agreed: every panel title now takes a self-hosted Big
+Shoulders Display (one weight, 800, shipped the way Carlito was —
+decision 0124), uppercase, in `--heading-accent`, at `--text-lg`
+rather than `--text-base`; and a `border-bottom: 1px solid
+var(--border-strong)` runs beneath every card title's own row.
+CSS-only — no JS file touched, since every card already had exactly
+one heading element to extend. Scoped deliberately to `.panel >
+h3`/`.panel > .cardhead > h3` (not bare `.cardhead`), which keeps it
+off every modal dialog's own title (access.js, sources.js,
+suppliers.js, processes.js, purchase-orders.js all share `.cardhead`
+for those) and off the dashboard's KPI tiles (`card-narrow` nests its
+`cardhead` inside `.tilefg`, never a direct child of `.panel`) without
+either exclusion needing to be written by name. Five new tests in
+`test-browser/typography.test.ts`, watched to fail against the
+pre-change files first (4 of 30 failed, exactly the new assertions).
+Full suites: vf-ui 74 Worker + 691 browser (686 pre-existing + 5 new),
+both passing; `eslint` clean; `scripts/check-citations.py` clean (396
+records). Touches `vf-ui` (`public/app.css`, `public/tokens.css`,
+`public/fonts/big-shoulders-display-latin-800-normal.woff2`,
+`test-browser/typography.test.ts`) only. Not yet visually reviewed
+across every screen — the widest-blast-radius piece of the four by
+design, and that regression pass has not been done as part of this
+change. Next: the Document tab row (piece three, narrow and
+independent), then red/amber/green severity (piece four, still needs
+the upstream data-model question answered first).
 
 **A real gap in this session's own verification, worth recording
 plainly.** `origin/main` fetched directly read the right commit at

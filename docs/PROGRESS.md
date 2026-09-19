@@ -634,6 +634,22 @@ a rule, and left an approval task in a queue.
   in `mood.test.ts`, watched to fail against the pre-change file first
   (2 of 14 failed, exactly the new assertions). Full suites: vf-ui 74
   Worker + 686 browser (684 pre-existing + 2 new), both passing.
+- **A title in its own face, and a line beneath it** (0396, second of
+  the four — the two global pieces, together). Every panel title now
+  sets a self-hosted Big Shoulders Display (one weight, 800, shipped
+  the way Carlito was, 0124), uppercase, in `--heading-accent`, at
+  `--text-lg`; a `border-bottom` in `--border-strong` runs beneath
+  every card title's own row. CSS-only, no JS touched — every card
+  already had one heading element to extend. Scoped to `.panel > h3`/
+  `.panel > .cardhead > h3`, deliberately not bare `.cardhead`, which
+  keeps it off every modal dialog's title and off the dashboard's KPI
+  tiles (nested inside `.tilefg`, never a direct child of `.panel`)
+  without either exclusion needing to be written by name. Five new
+  tests in `typography.test.ts`, watched to fail first (4 of 30
+  failed, exactly the new assertions). Full suites: vf-ui 74 Worker +
+  691 browser (686 pre-existing + 5 new), both passing. Not yet
+  reviewed screen by screen — the widest-blast-radius piece of the
+  four by design.
 
 ### Customer configuration
 - Org units, teams, roles, users, cost centres
@@ -1053,7 +1069,7 @@ elsewhere.
 |---|---|
 | `vf-app` | 1921 |
 | `vf-licence` | 320 |
-| `vf-ui` | 74 Worker · 686 browser |
+| `vf-ui` | 74 Worker · 691 browser |
 | `shared` | 278 passing, 3 known pre-existing failures |
 
 Both migration chains replay clean with every standing invariant
@@ -1079,7 +1095,7 @@ measured (0380) rather than explained after the fact.
 | `docs/design/mockups/` | Four screens as static HTML | Current |
 | `docs/design/multi-authority-intake.md` | Non-EN-16931 authorities | Design only |
 | `docs/design/text-layer-extraction.md` | Reading a PDF's own text | Design only |
-| `docs/decisions/` | 395 decision records | Current |
+| `docs/decisions/` | 396 decision records | Current |
 | `docs/decisions/SUPERSEDED.md` | Which records supersede which | **Read first** |
 
 Document 4's markdown source is at `docs/documents/`, with

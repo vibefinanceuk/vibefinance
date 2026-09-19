@@ -1701,11 +1701,47 @@
   /* `--bg-hover` was invented too. */
   .searchresult:hover { background: var(--surface-1); }
 
-  .panel > h3 {
-    margin: 0 0 12px;
-    font-size: var(--text-base);
-    font-weight: 600;
-    color: var(--text-secondary);
+  /*
+    **Every card's own title, and a rule beneath it** — decision 0396,
+    the second of the four pieces borrowed from
+    e-invoicingcompliancecorner.com and agreed with the operator: the
+    bold condensed heading, and "a horizontal line running the width
+    of each card beneath the card title." `--heading-accent` and
+    `--border-strong` both already carry Day and Night, so this needed
+    no mood-specific rule of its own — decision 0139's usual discipline
+    is what makes that true.
+
+    `--text-lg` rather than `--text-base`: its own comment in
+    tokens.css has called it "Panel headings" since decision 0124, and
+    nothing used it for that until now.
+
+    **Scoped to `.panel`'s own direct children, not bare `.cardhead`.**
+    `.cardhead` is shared with every modal dialog — access.js,
+    sources.js, suppliers.js, processes.js, purchase-orders.js all
+    build a "Save"/"Close" pop-out head with it — and a dialog is not
+    a card. `.panel > .cardhead` is what keeps the rule off every one
+    of those. The same reasoning keeps it off the dashboard's own KPI
+    tiles without an exclusion needing to name them: `card-narrow`'s
+    `cardhead` sits inside `.tilefg`, not as a direct child of
+    `.panel`, so it never matches this selector — which happens to be
+    exactly the quieter treatment decision 0242 already gave those
+    tiles on purpose.
+  */
+  .panel > h3,
+  .panel > .cardhead > h3 {
+    margin: 0;
+    font-family: var(--font-heading);
+    font-size: var(--text-lg);
+    font-weight: 800;
+    letter-spacing: 0.2px;
+    text-transform: uppercase;
+    color: var(--heading-accent);
+  }
+  .panel > h3,
+  .panel > .cardhead {
+    padding-bottom: 10px;
+    margin-bottom: 12px;
+    border-bottom: 1px solid var(--border-strong);
   }
 
 

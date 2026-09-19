@@ -316,3 +316,54 @@ describe("the viewer's four lines are one list (decision 0182)", () => {
     expect(css).toContain(".topbar h2 { margin: 0; font-size: var(--text-xl); font-weight: 600; }");
   });
 });
+
+describe("a card's own title, and a rule beneath it (decision 0396)", () => {
+  /**
+   * The second of the four pieces borrowed from
+   * e-invoicingcompliancecorner.com and agreed with the operator: a
+   * bold condensed heading in a single accent colour, and a full-width
+   * rule beneath every card title.
+   */
+  const app = stylesheets["app.css"];
+  const tokens = stylesheets["tokens.css"];
+
+  it("ships Big Shoulders Display rather than hoping for it", () => {
+    expect(tokens).toContain('font-family: "Big Shoulders Display";');
+    expect(tokens).toContain("big-shoulders-display-latin-800-normal.woff2");
+  });
+
+  it("reserves the second face for headings, not the whole app", () => {
+    // `--font-sans` is still what decides the body's own face; this is
+    // additive, not a second opinion about it — the "one font,
+    // everywhere" tests above are what protect that.
+    expect(tokens).toContain('--font-heading: "Big Shoulders Display", var(--font-sans);');
+  });
+
+  it("gives every panel title the same treatment", () => {
+    const rule = app.slice(app.indexOf(".panel > h3,\n  .panel > .cardhead > h3 {"));
+    const body = rule.slice(0, rule.indexOf("}"));
+    expect(body).toContain("font-family: var(--font-heading);");
+    expect(body).toContain("color: var(--heading-accent);");
+    expect(body).toContain("text-transform: uppercase;");
+  });
+
+  it("draws the rule in the same colour in both moods, via --border-strong", () => {
+    const rule = app.slice(app.indexOf(".panel > h3,\n  .panel > .cardhead {"));
+    const body = rule.slice(0, rule.indexOf("}"));
+    expect(body).toContain("border-bottom: 1px solid var(--border-strong);");
+  });
+
+  it("stays off every modal dialog's own title", () => {
+    // `.cardhead` on its own is shared with every "Save"/"Close"
+    // pop-out (access.js, sources.js, suppliers.js, processes.js,
+    // purchase-orders.js); only `.panel > .cardhead` gets the
+    // treatment. The bare rule — `.cardhead { display: flex; ... }`,
+    // the layout every one of those pop-out heads relies on too —
+    // must not itself carry the accent or the second face.
+    const rule = app.slice(app.indexOf(".cardhead {"));
+    const body = rule.slice(0, rule.indexOf("}"));
+    expect(body).toContain("display: flex");
+    expect(body).not.toContain("--heading-accent");
+    expect(body).not.toContain("--font-heading");
+  });
+});
