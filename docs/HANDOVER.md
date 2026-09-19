@@ -1,7 +1,7 @@
 # Handover
 
 **Written 4 September 2026, updated 17 September (six times), updated
-18 September (four times), updated 19 September.**
+18 September (four times), updated 19 September (twice).**
 
 **For a session starting cold.** Where things stand, what needs a
 decision rather than work, what to do next, and the habits this project
@@ -38,8 +38,8 @@ twice.
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
 | `vf-app-poc` migrations | through `0070` |
 | `vf-licence-poc` migrations | through `0123` applied, all confirmed live — checksums `9e4d534bcef6…` (`0122`) and `79ff9f930fdb…` (`0123`), run by the operator via `apply_migrations.py --remote --migrations-dir workers/vf-licence/migrations --database vf-licence-poc` |
-| Tests | vf-admin 9 · vf-app 1921 · vf-licence 320 · vf-ui 74 Worker + 684 browser · shared 278 (+3 known pre-existing failures) |
-| Decision records | 394 |
+| Tests | vf-admin 9 · vf-app 1921 · vf-licence 320 · vf-ui 74 Worker + 686 browser · shared 278 (+3 known pre-existing failures) |
+| Decision records | 395 |
 
 **Decision 0394 (a column, two arrows, and a marker) is pushed and
 deployed, confirmed directly by the operator opening the pop-out
@@ -57,6 +57,36 @@ the full feature first). Touches `vf-ui` (`app.css`, `icons.js`,
 `vf-admin` change. Ten new tests, full suites vf-ui 74 Worker + 684
 browser, vf-licence 320/320, all passing; `eslint` and
 `scripts/check-citations.py` both clean.
+
+**Decision 0395 (a fourth state, and a borrowed accent) is built, not
+yet pushed — this session has no push access to `origin/main`.** First
+of four decisions building out a look the operator liked from another
+product this team built (e-invoicingcompliancecorner.com), narrowed
+down through a mockup canvas (built and iterated directly with the
+operator, outside this repository) to four pieces, with an explicit
+fifth requirement running across all of them — Day and Night both, not
+Day alone. Agreed build order: tokens first (this one, purely
+additive, nothing visible changes); then the two global pieces — a
+bold heading treatment and a rule beneath every card title — together,
+since both touch every screen and need the widest regression check;
+then the Document tab row restyled as a segmented pill, narrow and
+independent; then red/amber/green severity on the validation screen
+last, since that one still needs an answer to whether "mismatch" and
+"needs review" already exist as separate claims anywhere upstream, or
+whether the distinction has to be added there first — not yet
+investigated. This decision only adds `--heading-accent` and a
+`--bg-danger`/`--text-danger`/`--border-danger` trio to `tokens.css`,
+Day and Night, `--heading-accent` reusing `--text-warning`'s own
+proven pair rather than the reference site's raw orange (which read
+under 3:1 against `--surface-2`). Two new tests in `mood.test.ts`,
+watched to fail against the pre-change file first. Full suites: vf-ui
+74 Worker + 686 browser (684 pre-existing + 2 new), both passing;
+`eslint` and `scripts/check-citations.py` both clean (the citation
+checker does not scan `.css` files at all — its own `SUFFIXES` list is
+`.ts`/`.js`/`.sql`/`.md`/`.py` — so the record exists for the one
+citation in `mood.test.ts`, not for anything inside `tokens.css`
+itself). Touches `vf-ui` (`public/tokens.css`,
+`test-browser/mood.test.ts`) only.
 
 **A real gap in this session's own verification, worth recording
 plainly.** `origin/main` fetched directly read the right commit at

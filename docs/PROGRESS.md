@@ -621,6 +621,19 @@ a rule, and left an approval task in a queue.
   tests since jsdom always reports a zero-size box for it. Full
   suites: vf-ui 74 Worker + 684 browser (674 pre-existing + 10 new);
   vf-licence 320/320, both passing.
+- **A fourth state, and a borrowed accent** (0395, tokens only — first
+  of four decisions building out a look borrowed, piece by piece, from
+  another product this team built). Four new `tokens.css` tokens, Day
+  and Night both: `--heading-accent` (reusing `--text-warning`'s own
+  proven pair rather than the reference site's raw orange, which read
+  under 3:1 on `--surface-2`); `--bg-danger`/`--text-danger`, a fourth
+  semantic state splitting "this is wrong" off from `--bg-warning`'s
+  "look at this," which had been carrying both; `--border-danger`,
+  Day-only like `--border-warning`/`--border-success` already are.
+  Nothing consumes any of them yet — no visual change. Two new tests
+  in `mood.test.ts`, watched to fail against the pre-change file first
+  (2 of 14 failed, exactly the new assertions). Full suites: vf-ui 74
+  Worker + 686 browser (684 pre-existing + 2 new), both passing.
 
 ### Customer configuration
 - Org units, teams, roles, users, cost centres
@@ -1040,11 +1053,11 @@ elsewhere.
 |---|---|
 | `vf-app` | 1921 |
 | `vf-licence` | 320 |
-| `vf-ui` | 74 Worker · 653 browser |
+| `vf-ui` | 74 Worker · 686 browser |
 | `shared` | 278 passing, 3 known pre-existing failures |
 
 Both migration chains replay clean with every standing invariant
-holding — 70 migrations for `vf-app`, 119 for `vf-licence`.
+holding — 70 migrations for `vf-app`, 123 for `vf-licence`.
 
 **`vf-app`'s count was recorded as 1851 through decision 0379**; a clean
 run at `46c1da2`, with no `vf-app` change since decision 0378 recorded
@@ -1066,7 +1079,7 @@ measured (0380) rather than explained after the fact.
 | `docs/design/mockups/` | Four screens as static HTML | Current |
 | `docs/design/multi-authority-intake.md` | Non-EN-16931 authorities | Design only |
 | `docs/design/text-layer-extraction.md` | Reading a PDF's own text | Design only |
-| `docs/decisions/` | 383 decision records | Current |
+| `docs/decisions/` | 395 decision records | Current |
 | `docs/decisions/SUPERSEDED.md` | Which records supersede which | **Read first** |
 
 Document 4's markdown source is at `docs/documents/`, with

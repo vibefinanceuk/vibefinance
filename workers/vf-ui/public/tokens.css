@@ -90,8 +90,37 @@
   --text-warning: #854f0b;
   --border-warning: #ef9f27;
 
+  /*
+    **A heading accent, not a new warning** — decision 0395, evaluating
+    a look from another product this team built
+    (e-invoicingcompliancecorner.com): a bold condensed title face in a
+    single accent colour, for panel titles across the app.
+
+    The same two amber values `--text-warning` already carries in both
+    moods, reused under their own name rather than aliased with
+    `var(--text-warning)`: a heading and a warning are different
+    concerns, and aliasing would let a future retuning of warning's own
+    meaning silently retint every panel title in the app. Picked over
+    the reference site's own raw `#c98a3a` because that value reads
+    under 3:1 against `--surface-2` in Day time — this pair is already
+    proven at 3:1+ in both moods, since the app ships it today.
+  */
+  --heading-accent: #854f0b;
+
   --bg-success: #eaf3de;
   --text-success: #3b6d11;
+
+  /*
+    **A fourth state, decision 0395.** `--bg-warning` has been carrying
+    two different claims on the validation screen's key fields:
+    *look at this* and *this is wrong*. A field that mismatches a
+    linked purchase order is not the same claim as one whose format
+    merely could not be confirmed, and colouring both amber meant a
+    hard failure read no differently from a note to double-check.
+    This is the *stop* tier; `--bg-warning` keeps *look at this*.
+  */
+  --bg-danger: #fbe4e1;
+  --text-danger: #9c2b1f;
 
   /*
     **A chart palette** — decision 0242.
@@ -123,6 +152,15 @@
   --chart-5: #3d7a96;
 
   --border-success: #639922;
+  /*
+    Not redefined below, decision 0395 — the same choice this file
+    already made for `--border-warning`/`--border-success`: a single
+    value doing double duty in both moods, rather than every semantic
+    colour needing a Night pairing. A border is a thin line, not a
+    fill or a body of text, so this file has not so far treated it as
+    contrast-critical the way `--bg-*`/`--text-*` are.
+  */
+  --border-danger: #d64a36;
 
   --radius: 8px;
   /*
@@ -209,8 +247,11 @@
     --text-accent: #9fc9f2;
     --bg-warning: #4a3208;
     --text-warning: #f0c477;
+    --heading-accent: #f0c477;
     --bg-success: #1f4310;
     --text-success: #a8cf85;
+    --bg-danger: #3d140f;
+    --text-danger: #f2a99a;
 
     /* And the chart palette, for the same reason (decisions 0242, 0247). */
     --chart-1: #4da3f0;
@@ -258,8 +299,11 @@
   --text-accent: #9fc9f2;
   --bg-warning: #4a3208;
   --text-warning: #f0c477;
+  --heading-accent: #f0c477;
   --bg-success: #1f4310;
   --text-success: #a8cf85;
+  --bg-danger: #3d140f;
+  --text-danger: #f2a99a;
 }
 
 body {

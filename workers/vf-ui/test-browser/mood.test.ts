@@ -137,7 +137,19 @@ describe("the palettes", () => {
     const media = css.slice(css.indexOf("@media (prefers-color-scheme: dark)"));
     const chosen = css.slice(css.indexOf(':root[data-mood="night"]'));
 
-    for (const token of ["--surface-0", "--surface-1", "--text-primary", "--border"]) {
+    for (const token of [
+      "--surface-0",
+      "--surface-1",
+      "--text-primary",
+      "--border",
+      // Decision 0395 — the heading accent and the danger trio's bg/text
+      // pair get the same duplication discipline as warning/success;
+      // --border-danger is deliberately excluded, the same as
+      // --border-warning/--border-success above it.
+      "--heading-accent",
+      "--bg-danger",
+      "--text-danger",
+    ]) {
       const inMedia = media.match(new RegExp(`${token}: ([^;]+);`))?.[1];
       const inChosen = chosen.match(new RegExp(`${token}: ([^;]+);`))?.[1];
       expect(inChosen, token).toBe(inMedia);
@@ -154,6 +166,27 @@ describe("the palettes", () => {
     // Asked for by name: lighter blues by day, midnight blues at night.
     expect(css).toContain("#f2f6fb");
     expect(css).toContain("#0d1626");
+  });
+
+  it("gives danger its own colours, decision 0395 — not a copy of warning", () => {
+    // The whole point of adding a fourth state: a mismatch reads
+    // differently from "needs review," in both moods.
+    const day = css.slice(0, css.indexOf("@media (prefers-color-scheme: dark)"));
+    expect(day).toContain("--bg-danger: #fbe4e1;");
+    expect(day).toContain("--text-danger: #9c2b1f;");
+    expect(day).not.toContain("--bg-danger: #faeeda;"); // --bg-warning's value
+    const media = css.slice(css.indexOf("@media (prefers-color-scheme: dark)"));
+    expect(media).toContain("--bg-danger: #3d140f;");
+    expect(media).toContain("--text-danger: #f2a99a;");
+  });
+
+  it("keeps the heading accent inside the app's own proven contrast, decision 0395", () => {
+    // Reused from --text-warning's own pair rather than the reference
+    // site's raw #c98a3a, which reads under 3:1 against --surface-2 in
+    // Day time.
+    const day = css.slice(0, css.indexOf("@media (prefers-color-scheme: dark)"));
+    expect(day).toContain("--heading-accent: #854f0b;");
+    expect(day).not.toContain("--heading-accent: #c98a3a;");
   });
 
   it("does not use a true black at night", () => {
