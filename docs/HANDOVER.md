@@ -1,7 +1,7 @@
 # Handover
 
 **Written 4 September 2026, updated 17 September (six times), updated
-18 September (four times), updated 19 September (twenty-two times).**
+18 September (four times), updated 19 September (twenty-three times).**
 
 **For a session starting cold.** Where things stand, what needs a
 decision rather than work, what to do next, and the habits this project
@@ -30,9 +30,9 @@ twice.
 
 | | |
 | --- | --- |
-| `origin/main` | `fec65ef` |
+| `origin/main` | `cab33c1` |
 | vf-admin deployed | `8e27a34` · `https://admin.vibefinance-ai.com` · behind Cloudflare Access |
-| vf-app deployed | `04072df` (operator's own `wrangler deploy` output, version `ff037b8d…` — API sits behind auth, not independently checkable from here) |
+| vf-app deployed | `cab33c1` (operator's report — API sits behind auth, not independently checkable from here) |
 | vf-licence deployed | `04072df` (operator's own `wrangler deploy` output, version `39c2f745…`) |
 | vf-ui deployed | `fec65ef` · `https://app.vibefinance-ai.com` — operator confirmed deployed and tested directly (the Lines header font) |
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
@@ -41,8 +41,9 @@ twice.
 | Tests | vf-admin 9 · vf-app 1950 · vf-licence 320 · vf-ui 74 Worker + 710 browser · shared 287 (+3 known pre-existing failures) |
 | Decision records | 405 |
 
-**Decision 0405 (a declaration nobody made) — code built and tested,
-not yet pushed.** The operator's own report: XML submitted by email is
+**Decision 0405 (a declaration nobody made) is pushed and deployed** —
+`origin/main` is `cab33c1`, confirmed by direct `git fetch`; the
+operator reported `vf-app` deployed. The operator's own report: XML submitted by email is
 captured fine, but the "physical invoice" rendering feature they
 remembered building isn't showing up. Traced the whole capture-to-render
 path first — `inbound-email.ts` → `handleCaptureFromSource` →
