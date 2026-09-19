@@ -472,14 +472,40 @@ describe("the document tabs, restyled as a segmented pill (decision 0398)", () =
     expect(body).toContain("color: var(--text-accent);");
   });
 
-  it("leaves .tabbar underline-only, decision 0333 — a different row for a different job", () => {
-    // The Access screen's own Organizations/Roles/Teams/People
-    // switcher is sections of one page, not views of one thing; the
-    // two keep different shapes on purpose, so a pill background or
-    // card wrapper here would be the wrong kind of drift for either.
+});
+
+describe("the Access screen's own tabs, matched to the same pill (decision 0399)", () => {
+  /**
+   * Asked directly, after 0398 shipped: "the most recent tab select
+   * update to pill box, also... applied to the tabs in the Access
+   * screen." Org Units, Roles, People, Teams — `.tabbar`/`.tab`/
+   * `.tab.active`, the same class names `tabBar()` (`access.js`)
+   * already builds, restyled to `.doctabs`/`.doctab`/`.doctab.on`'s
+   * own shape rather than a second, parallel pill invented for the
+   * same job. No JS file changed, this is styling only.
+   */
+  const app = stylesheets["app.css"];
+  const tokens = stylesheets["tokens.css"];
+
+  it("gives the row itself the pill: a filled, fully rounded background", () => {
     const rule = app.slice(app.indexOf(".tabbar {"));
     const body = rule.slice(0, rule.indexOf("}"));
-    expect(body).not.toContain("border-radius");
-    expect(body).not.toContain("background");
+    expect(body).toContain("background: var(--surface-1);");
+    expect(body).toContain("border-radius: 999px;");
+  });
+
+  it("lifts the active tab off the pill", () => {
+    const rule = app.slice(app.indexOf(".tabbar .tab.active {"));
+    const body = rule.slice(0, rule.indexOf("}"));
+    expect(body).toContain("background: var(--surface-2);");
+    expect(body).toContain("box-shadow: var(--tab-active-shadow);");
+    expect(body).toContain("color: var(--text-primary);");
+  });
+
+  it("reuses 0398's own shadow token rather than a second one", () => {
+    // Already shipped, Day and Night both (0398) — this decision adds
+    // no new token, just a second consumer of the existing one.
+    expect(tokens).toContain("--tab-active-shadow: 0 1px 2px rgba(18, 26, 38, 0.12);");
+    expect(tokens).toContain("--tab-active-shadow: none;");
   });
 });

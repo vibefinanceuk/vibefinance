@@ -976,29 +976,43 @@
   }
 
   /*
-    **Tabs — decision 0333.** A row of plain buttons, the underline on
-    the active one carrying all the meaning — no pill background, no
-    card wrapper, so it reads as navigation within the page rather
-    than another set of actions competing with the ones inside each
-    section.
+    **Tabs — decision 0333, restyled as a segmented pill, decision
+    0399.** Built underline-only, the same reasoning `.doctabs` itself
+    quoted at 0398 — "no pill background, no card wrapper, so it reads
+    as navigation within the page." Asked directly to match the
+    Document tabs' own pill instead: "the most recent tab select
+    update to pill box, also... applied to the tabs in the Access
+    screen." Same shape as `.doctabs`/`.doctab`/`.doctab.on` — filled
+    surface, fully rounded, the active tab lifted onto `--surface-2`
+    with `--tab-active-shadow` (0398's own token, reused rather than a
+    second one invented for the same job) — under the class names this
+    screen already had (`.tabbar`, `.tab`, `.tab.active`), since
+    `access.js` is the only caller and a rename would be a JS change
+    for no visible reason.
   */
   .tabbar {
     display: flex;
-    gap: 4px;
-    border-bottom: 0.5px solid var(--border);
+    align-items: center;
+    gap: 2px;
+    background: var(--surface-1);
+    border: 0.5px solid var(--border);
+    border-radius: 999px;
+    padding: 3px;
     margin: 4px 0 16px;
   }
   .tabbar .tab {
-    padding: 8px 14px;
-    border-radius: 0;
-    border: none;
-    border-bottom: 2px solid transparent;
+    background: none;
+    border: 0.5px solid transparent;
+    border-radius: 999px;
+    padding: 6px 14px;
     color: var(--text-muted);
-    background: transparent;
   }
   .tabbar .tab.active {
-    color: var(--text-accent);
-    border-bottom-color: var(--text-accent);
+    background: var(--surface-2);
+    border-color: var(--border-strong);
+    box-shadow: var(--tab-active-shadow);
+    color: var(--text-primary);
+    font-weight: 600;
   }
 
   /* A supplier row opens one — decision 0230. */
@@ -2286,17 +2300,19 @@
 
     **Restyled as a segmented pill, decision 0398** — the third of the
     four pieces from e-invoicingcompliancecorner.com, the shape of
-    that site's own "Arrivals board / List view" toggle. A separate
-    component from `.tabbar`/`.tab` (decision 0333, used only by the
-    Access screen's own Organizations/Roles/Teams/People switcher):
-    that decision's own case for underline-only — "no pill background,
-    no card wrapper, so it reads as navigation within the page" — was
-    made for a row of *sections*, each a different piece of one
-    screen. Document/XML/Timeline & Chat are not sections of a page;
-    they are views of one thing, closer to the reference site's own
-    toggle than to `.tabbar`'s job, so the two keep different shapes
-    on purpose rather than one being an oversight of the other. Same
-    class names throughout (`.doctabs`, `.doctab`, `.doctab.on`,
+    that site's own "Arrivals board / List view" toggle. Built as a
+    separate component from `.tabbar`/`.tab` (decision 0333, the
+    Access screen's own Organizations/Roles/Teams/People switcher),
+    reasoning that a row of *sections* wanted underline-only where
+    Document/XML/Timeline & Chat, views of one thing, wanted the
+    reference site's own toggle instead. **That separation lasted one
+    decision**: 0399 asked for the Access screen's own tabs to match
+    this pill too, so `.tabbar`/`.tab` now shares this exact shape
+    (and this same `--tab-active-shadow` token) under its own class
+    names — see 0399 and `SUPERSEDED.md` for why the reasoning above
+    no longer holds, kept here rather than deleted since it explains
+    why the two were ever built apart in the first place. Same class
+    names throughout (`.doctabs`, `.doctab`, `.doctab.on`,
     `.activitycount`) — no JS file changed, this is styling only.
   */
   .doctabs {

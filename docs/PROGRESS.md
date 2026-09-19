@@ -683,6 +683,18 @@ a rule, and left an approval task in a queue.
   watched to fail first (5 of 55 combined failed). Full suites: vf-ui
   74 Worker + 702 browser (696 pre-existing + 6 new), both passing.
   Not yet reviewed live — the narrowest of the four by design.
+- **One pill for every tab** (0399, a direct follow-on to 0398, asked
+  the same day: apply the same pill treatment to the Access screen's
+  own Org Units/Roles/People/Teams switcher). Reverses part of 0333's
+  and 0398's own stated reasoning for keeping `.tabbar` underline-only
+  and separate — on purpose, per the operator's own request, recorded
+  in `SUPERSEDED.md`. Styling only, no JS touched — `.tabbar`/`.tab`/
+  `.tab.active`, the same three class names `tabBar()` already built.
+  `.tabbar` takes `.doctabs`'s own exact shape and reuses its
+  `--tab-active-shadow` token rather than a second one invented for
+  the same job. Checked with Playwright against the real stylesheet,
+  Day and Night both. Full suites: vf-ui 74 Worker (unchanged) + 704
+  browser (702 pre-existing, net +2), both passing.
 
 ### Customer configuration
 - Org units, teams, roles, users, cost centres
@@ -1102,7 +1114,7 @@ elsewhere.
 |---|---|
 | `vf-app` | 1921 |
 | `vf-licence` | 320 |
-| `vf-ui` | 74 Worker · 702 browser |
+| `vf-ui` | 74 Worker · 704 browser |
 | `shared` | 278 passing, 3 known pre-existing failures |
 
 Both migration chains replay clean with every standing invariant
@@ -1128,7 +1140,7 @@ measured (0380) rather than explained after the fact.
 | `docs/design/mockups/` | Four screens as static HTML | Current |
 | `docs/design/multi-authority-intake.md` | Non-EN-16931 authorities | Design only |
 | `docs/design/text-layer-extraction.md` | Reading a PDF's own text | Design only |
-| `docs/decisions/` | 398 decision records | Current |
+| `docs/decisions/` | 399 decision records | Current |
 | `docs/decisions/SUPERSEDED.md` | Which records supersede which | **Read first** |
 
 Document 4's markdown source is at `docs/documents/`, with

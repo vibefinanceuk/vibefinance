@@ -1,7 +1,7 @@
 # Handover
 
 **Written 4 September 2026, updated 17 September (six times), updated
-18 September (four times), updated 19 September (ten times).**
+18 September (four times), updated 19 September (eleven times).**
 
 **For a session starting cold.** Where things stand, what needs a
 decision rather than work, what to do next, and the habits this project
@@ -30,7 +30,7 @@ twice.
 
 | | |
 | --- | --- |
-| `origin/main` | `6b470c8` |
+| `origin/main` | `d6cd7e0` |
 | vf-admin deployed | `8e27a34` · `https://admin.vibefinance-ai.com` · behind Cloudflare Access |
 | vf-app deployed | `4d44b59` |
 | vf-licence deployed | `a235713` |
@@ -38,8 +38,8 @@ twice.
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
 | `vf-app-poc` migrations | through `0070` |
 | `vf-licence-poc` migrations | through `0123` applied, all confirmed live — checksums `9e4d534bcef6…` (`0122`) and `79ff9f930fdb…` (`0123`), run by the operator via `apply_migrations.py --remote --migrations-dir workers/vf-licence/migrations --database vf-licence-poc` |
-| Tests | vf-admin 9 · vf-app 1921 · vf-licence 320 · vf-ui 74 Worker + 702 browser · shared 278 (+3 known pre-existing failures) |
-| Decision records | 398 |
+| Tests | vf-admin 9 · vf-app 1921 · vf-licence 320 · vf-ui 74 Worker + 704 browser · shared 278 (+3 known pre-existing failures) |
+| Decision records | 399 |
 
 **Decision 0394 (a column, two arrows, and a marker) is pushed and
 deployed, confirmed directly by the operator opening the pop-out
@@ -251,6 +251,37 @@ expected the same way it happened for 0396, any correction recorded
 the way 0397 was. Next: red/amber/green severity (piece four, still
 needs the upstream data-model question answered first — not yet
 investigated).
+
+**Decision 0399 (one pill for every tab) is built, not yet pushed.**
+The correction 0398's own write-up half-expected, though not from a
+live review this time — asked directly, the same day 0398 shipped:
+*"the most recent tab select update to pill box, also... applied to
+the tabs in the Access screen. There are tabs for Org Units, Roles,
+People and Teams."* This reverses 0333's and 0398's own stated
+reasoning for keeping `.tabbar`/`.tab` underline-only and separate
+from `.doctabs` — on purpose, per the operator's own direct request,
+not an oversight of it; recorded in `SUPERSEDED.md` rather than
+quietly edited away. Styling only, no JS touched: `tabBar()` in
+`access.js` already builds `.tabbar`/`.tab`/`.tab.active`, the same
+three class names before and after. `.tabbar` now takes `.doctabs`'s
+own exact shape — filled `--surface-1` background, `border-radius:
+999px`, `0.5px` border, `3px` padding; `.tab.active` lifts onto
+`--surface-2` and reuses 0398's own `--tab-active-shadow` token rather
+than a second one invented for the same job, since the same case for
+"real shadow in Day, `none` at Night" applies here exactly as it did
+there. Rendered against the real, unmodified stylesheet with
+Playwright before being called done, Day and Night both. The old test
+guarding `.tabbar` as underline-only (added at 0398) is replaced with
+one mirroring the Document-tabs tests — pill background/radius, the
+active tab's lift, the same shadow token reused rather than a new one
+— watched to fail first (2 of 3 new assertions failed against the
+pre-change file; the shadow-token check passed vacuously, since 0398
+already shipped that token). Full suites: vf-ui 74 Worker (unchanged)
++ 704 browser (702 pre-existing, net +2 — one old test replaced by
+three new ones), both passing; `eslint` clean;
+`scripts/check-citations.py` clean (399 records). Touches `vf-ui`
+(`public/app.css`, `test-browser/typography.test.ts`) only — no
+`tokens.css` change, no JS file, no other Worker.
 
 **A real gap in this session's own verification, worth recording
 plainly.** `origin/main` fetched directly read the right commit at
