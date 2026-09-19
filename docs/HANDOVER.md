@@ -1,7 +1,7 @@
 # Handover
 
 **Written 4 September 2026, updated 17 September (six times), updated
-18 September (four times), updated 19 September (twenty-four times).**
+18 September (four times), updated 19 September (twenty-five times).**
 
 **For a session starting cold.** Where things stand, what needs a
 decision rather than work, what to do next, and the habits this project
@@ -30,19 +30,20 @@ twice.
 
 | | |
 | --- | --- |
-| `origin/main` | `cab33c1` |
+| `origin/main` | `b7e749f` |
 | vf-admin deployed | `8e27a34` · `https://admin.vibefinance-ai.com` · behind Cloudflare Access |
 | vf-app deployed | `cab33c1` (operator's report — API sits behind auth, not independently checkable from here) |
 | vf-licence deployed | `04072df` (operator's own `wrangler deploy` output, version `39c2f745…`) |
-| vf-ui deployed | `fec65ef` · `https://app.vibefinance-ai.com` — operator confirmed deployed and tested directly (the Lines header font) |
+| vf-ui deployed | `b7e749f` · `https://app.vibefinance-ai.com` — operator confirmed deployed |
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
 | `vf-app-poc` migrations | through `0070` |
 | `vf-licence-poc` migrations | through `0125` applied, all confirmed live — checksums `9e4d534bcef6…` (`0122`), `79ff9f930fdb…` (`0123`), `408f61e5b11a…` (`0124`); `0125` applied by the operator (no checksum reported this time), confirmed live via `/api/ui-strings` returning all six new title values — run via `apply_migrations.py --remote --migrations-dir workers/vf-licence/migrations --database vf-licence-poc` |
 | Tests | vf-admin 9 · vf-app 1950 · vf-licence 320 · vf-ui 74 Worker + 711 browser · shared 287 (+3 known pre-existing failures) |
 | Decision records | 406 |
 
-**Decision 0406 (a page that is not a picture) — code built and
-tested, not yet pushed.** The very first invoice ever rendered
+**Decision 0406 (a page that is not a picture) is pushed and deployed**
+— `origin/main` is `b7e749f`, confirmed by direct `git fetch`; the
+operator confirmed `vf-ui` deployed. The very first invoice ever rendered
 successfully under decision 0405 immediately surfaced a second gap:
 confirmed via the diagnostic that the `generated_rendering` document
 genuinely existed in `vf-app-poc`, yet the operator couldn't see it.
