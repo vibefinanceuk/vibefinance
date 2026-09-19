@@ -1350,6 +1350,35 @@ describe("the same screen serves review (decision 0142)", () => {
     expect(document.querySelector("#f-BT-112 input")).toBeNull();
   });
 
+  it("keeps line items read-only for an unclaimed task too (decision 0402)", async () => {
+    /**
+     * **The gap the operator's own report surfaced.** The test above
+     * already covers the header; this is the line table's own
+     * regression test. `cell()` (in `lineRow()`) checked only the
+     * field's own visibility and never `canEditAnything`, so an
+     * unclaimed task rendered its header correctly as read-only text
+     * while its line items stayed real, editable inputs — a Save
+     * button was gone, but a line amount could still be typed into.
+     */
+    stubFetch({
+      ...OPEN,
+      "/api/field-visibility": FIELDS,
+      "/api/invoices/inv-1": {
+        facts: { "BT-112": 1200 },
+        lines: [{ lineNumber: 1, facts: { "BT-131": 60 } }],
+        validation: { passed: true, checked: [], failures: [] },
+      },
+    });
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    await openViewer({ ...TASK, ownership: "available", actions: ["claim"] }, () => {});
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(document.querySelector(".linetable input")).toBeNull();
+    expect(document.querySelector(".linetable .readonly")).not.toBeNull();
+  });
+
   it("stays read-only for a task someone else has already claimed", async () => {
     stubFetch({ ...OPEN, "/api/field-visibility": FIELDS });
     const { loadStrings } = await import("/strings.js");

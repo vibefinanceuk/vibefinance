@@ -697,7 +697,18 @@ function updateTotals() {
 
 function lineRow(line, index) {
   const cell = (spec) => {
-    if (spec.visibility === "read") {
+    /**
+     * **`canEditAnything` joins the field's own visibility here too** —
+     * decision 0402's follow-up. `field()` (the header) already checks
+     * it (decision 0142/0288: a document must be claimed to be edited,
+     * not just opened); this line-table cell only ever checked the
+     * field's own visibility, so an unclaimed document's line items
+     * stayed editable — and saveable — while its header correctly went
+     * read-only. Same shape as the bug `read-only-stage.test.ts`
+     * documents for a stage's own read-only flag: a check added to the
+     * header and never carried to the line table.
+     */
+    if (spec.visibility === "read" || !canEditAnything) {
       return el("td", {}, [el("div", { class: "readonly", text: line[spec.field] ?? "—" })]);
     }
 

@@ -2463,13 +2463,25 @@
     A read-only field is text, not a disabled input (decision 0114). A
     greyed-out box invites clicking and reads as broken; plain text says
     the value is information rather than something to change.
+
+    It still gets the same rounded corners as an editable field — decision
+    0402's UI follow-up: a locked Invoice Header field and an editable
+    Invoice Line field were rendering with a visibly different shape (no
+    box at all vs. a bordered, rounded one), which read as a rendering
+    bug rather than the intended editable/locked distinction. `--surface-0`
+    (a step more muted than an input's own `--surface-1`) and no border
+    keep it reading as a flatter, non-interactive fill rather than
+    something to click into, while still sharing `var(--radius)` so the
+    two field types share one visual language.
   */
   .readonly {
     min-height: 32px;
-    padding: 8px 0;
+    padding: 8px 11px;
     font-size: var(--text-base);
     color: var(--text-secondary);
     font-variant-numeric: tabular-nums;
+    background: var(--surface-0);
+    border-radius: var(--radius);
   }
 
   .linetable .readonly { padding: 3px 6px; min-height: 30px; }

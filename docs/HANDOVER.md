@@ -1,7 +1,7 @@
 # Handover
 
 **Written 4 September 2026, updated 17 September (six times), updated
-18 September (four times), updated 19 September (seventeen times).**
+18 September (four times), updated 19 September (eighteen times).**
 
 **For a session starting cold.** Where things stand, what needs a
 decision rather than work, what to do next, and the habits this project
@@ -30,7 +30,7 @@ twice.
 
 | | |
 | --- | --- |
-| `origin/main` | `86ed836` |
+| `origin/main` | `ab68d69` |
 | vf-admin deployed | `8e27a34` · `https://admin.vibefinance-ai.com` · behind Cloudflare Access |
 | vf-app deployed | `e4da3a2` (operator's report — API sits behind auth, not independently checkable from here) |
 | vf-licence deployed | `86ed836` |
@@ -38,12 +38,42 @@ twice.
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
 | `vf-app-poc` migrations | through `0070` |
 | `vf-licence-poc` migrations | through `0125` applied, all confirmed live — checksums `9e4d534bcef6…` (`0122`), `79ff9f930fdb…` (`0123`), `408f61e5b11a…` (`0124`); `0125` applied by the operator (no checksum reported this time), confirmed live via `/api/ui-strings` returning all six new title values — run via `apply_migrations.py --remote --migrations-dir workers/vf-licence/migrations --database vf-licence-poc` |
-| Tests | vf-admin 9 · vf-app 1947 · vf-licence 320 · vf-ui 74 Worker + 709 browser · shared 287 (+3 known pre-existing failures) |
-| Decision records | 402 |
+| Tests | vf-admin 9 · vf-app 1947 · vf-licence 320 · vf-ui 74 Worker + 710 browser · shared 287 (+3 known pre-existing failures) |
+| Decision records | 403 |
 
-**Decision 0402 (echoing the sentence back) — code built and tested,
-not yet pushed; live rule data already patched directly, ahead of the
-code deploy.** Investigating the operator's report of a stuck invoice
+**Decision 0403 (the check the line table never got) — code built and
+tested, not yet pushed.** The operator's UI-styling report ("Header
+fields look square, Lines look rounder") turned out to have nothing to
+do with CSS: locked fields render as plain text with no box at all
+(decision 0114) while editable fields render a real, rounded `<input>`
+— so "square vs. round" was flat text beside a genuine box, not two
+boxes with different corners. Chasing *why* the Header was locked, on a
+Validation-stage document the operator expected to correct, led
+somewhere more consequential: a read-only diagnostic against
+`process_stages`/`stage_field_visibility`/`field_visibility` came back
+empty on every row that would explain a lock, so the Header's fields
+are all configured `edit` — the lock is actually decision 0288's own
+claim gate (`task.ownership === "mine"`), correctly applied. **The real
+finding: that gate was never applied to the line table at all.**
+`lineRow()`'s `cell()` in `viewer.js` checked only a field's own
+visibility, never `canEditAnything` — so an unclaimed document rendered
+its Header correctly read-only and its Lines as real, editable,
+saveable-looking inputs, the same failure shape `read-only-stage.test.ts`
+already documents once for a different gate (a stage's own read-only
+flag, once missed line fields too). Fixed: `cell()` now checks
+`canEditAnything` alongside the field's own visibility, matching
+`field()`; `.readonly` also gained the app's shared `border-radius` and
+a subtle `--surface-0` fill (the operator's own choice among three
+options), so a locked field now shares its rounded-corner shape with
+every editable one without looking clickable. One new regression test,
+fail-first verified; full `vf-ui` browser suite 710/710 (709 on `main`
+before this). Full detail in
+`docs/decisions/0403-the-check-the-line-table-never-got.md`.
+
+**Decision 0402 (echoing the sentence back) is pushed —** `origin/main`
+is `ab68d69`, confirmed by direct `git fetch` rather than taken on the
+operator's report alone. Live rule data was already patched directly,
+ahead of the code deploy. Investigating the operator's report of a stuck invoice
 ("Stage Validation, In progress, but no task in Tasks") traced through
 `stage_visits`/`stage_visit_steps` ground truth to a genuine, systemic,
 pre-existing bug: the rule compiler's own prompt
@@ -73,9 +103,6 @@ own never-edit-in-place discipline. Full detail, including the
 made (a permission `94e1d9db`'s sentence never named), in
 `docs/decisions/0402-echoing-the-sentence-back.md`. Tests: 1947/1947
 `vf-app`, fail-first verified; `eslint`/`check-citations.py` clean.
-**Not yet pushed** — the code fix is committed to nothing yet, still
-sitting as a local diff; the live data patch, by its nature, could not
-wait for that.
 
 **Decision 0394 (a column, two arrows, and a marker) is pushed and
 deployed, confirmed directly by the operator opening the pop-out

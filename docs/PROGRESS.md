@@ -354,6 +354,17 @@ a rule, and left an approval task in a queue.
   actions the server decides (0103, 0104, 0105)
 - Validation viewer: the retained original beside the fields it should
   have yielded, with an editable line table (0106, 0109)
+- **The claim gate (0288: a document must be claimed to be edited, not
+  just opened) now actually covers the line table too** (0403). It was
+  only ever checked for header fields; an unclaimed or someone-else's
+  document rendered its header correctly as read-only text and its line
+  items as real, editable inputs regardless — traced from what first
+  looked like a purely visual report ("Header fields look square, Lines
+  look rounder"), which turned out to be locked fields rendering as
+  plain text with no box at all (0114) beside editable fields' real,
+  rounded input boxes — not a radius mismatch. `.readonly` now shares
+  the app's rounded-corner shape (a subtle fill, no border, so it still
+  does not read as clickable)
 - **A document frame that recovers when it loads again** (0380). The
   five-minute signed URL (0073) was recorded in 0123 as making a frame
   "go blank", and a later comment in `viewer.js` claimed a refresh on
@@ -1175,7 +1186,7 @@ elsewhere.
 |---|---|
 | `vf-app` | 1947 |
 | `vf-licence` | 320 |
-| `vf-ui` | 74 Worker · 709 browser |
+| `vf-ui` | 74 Worker · 710 browser |
 | `shared` | 287 passing, 3 known pre-existing failures |
 
 Both migration chains replay clean with every standing invariant
