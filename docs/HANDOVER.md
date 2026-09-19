@@ -1,7 +1,7 @@
 # Handover
 
 **Written 4 September 2026, updated 17 September (six times), updated
-18 September (four times), updated 19 September (five times).**
+18 September (four times), updated 19 September (six times).**
 
 **For a session starting cold.** Where things stand, what needs a
 decision rather than work, what to do next, and the habits this project
@@ -34,7 +34,7 @@ twice.
 | vf-admin deployed | `8e27a34` · `https://admin.vibefinance-ai.com` · behind Cloudflare Access |
 | vf-app deployed | `4d44b59` |
 | vf-licence deployed | `a235713` |
-| vf-ui deployed | `5a09466` · `https://app.vibefinance-ai.com` |
+| vf-ui deployed | `7ba798f` · `https://app.vibefinance-ai.com` |
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
 | `vf-app-poc` migrations | through `0070` |
 | `vf-licence-poc` migrations | through `0123` applied, all confirmed live — checksums `9e4d534bcef6…` (`0122`) and `79ff9f930fdb…` (`0123`), run by the operator via `apply_migrations.py --remote --migrations-dir workers/vf-licence/migrations --database vf-licence-poc` |
@@ -58,9 +58,11 @@ the full feature first). Touches `vf-ui` (`app.css`, `icons.js`,
 browser, vf-licence 320/320, all passing; `eslint` and
 `scripts/check-citations.py` both clean.
 
-**Decision 0395 (a fourth state, and a borrowed accent) is pushed —
-confirmed via `git fetch`, `origin/main` at `d974e34` matching this
-session's own `main` exactly — but not yet deployed.** First of four
+**Decision 0395 (a fourth state, and a borrowed accent) is pushed and
+now deployed** — confirmed live: a fetch of `/tokens.css` from
+`https://app.vibefinance-ai.com` (cache-busted) returns
+`--heading-accent: #854f0b;` and `--font-heading: "Big Shoulders
+Display", var(--font-sans);`. First of four
 decisions building out a look the operator liked from another product
 this team built (e-invoicingcompliancecorner.com), narrowed down
 through a mockup canvas (built and iterated directly with the
@@ -89,11 +91,8 @@ time correct — so the lesson from earlier today ("trust the operator
 over this session's own fetch when they disagree") still holds; it was
 never "the fetch tool is always wrong here," only that it had been
 wrong more than once and so was not to be trusted *unquestioned*
-either way. A `wrangler deploy` of vf-ui is still needed before
-`--heading-accent`/`--bg-danger`/`--text-danger`/`--border-danger` are
-live — low stakes on its own, since nothing consumes them yet, but
-worth doing before the next decision (the heading + rule change)
-builds visibly on top of them.
+either way. That deploy has since happened, alongside 0396's own —
+see the confirmation above, and 0396's own paragraph below.
 
 This decision only adds `--heading-accent` and a
 `--bg-danger`/`--text-danger`/`--border-danger` trio to `tokens.css`,
@@ -110,15 +109,16 @@ itself). Touches `vf-ui` (`public/tokens.css`,
 `test-browser/mood.test.ts`) only.
 
 **Decision 0396 (a title in its own face, and a line beneath it) is
-pushed — confirmed via `git fetch`, `origin/main` at `7ba798f` matching
-this session's own `main` exactly — but not yet deployed**, for the
-same reason 0395 still wasn't as of this file's last update: nothing
-has gone out with `wrangler deploy` since decision 0394, so the live
-site is two decisions behind what is now on `origin/main`. One deploy
-will bring 0395's tokens and 0396's use of them live together — the
-tokens alone were invisible on their own, so nothing will visibly
-change until that deploy happens. Second of the four — the two global
-pieces
+pushed and deployed too** — confirmed live the same way: a fetch of
+`/app.css` from `https://app.vibefinance-ai.com` (cache-busted) returns
+the exact `.panel > h3, .panel > .cardhead > h3` rule below, word for
+word, including the `border-bottom: 1px solid var(--border-strong)`
+line. The operator reported "deployed and pushed" together this time,
+and both checked out directly — `git fetch` for the push (`origin/main`
+at `0cd8c6d`, a docs-only commit on top of 0396's own `7ba798f`,
+matching this session's `main` exactly) and the two live fetches above
+for the deploy. Unlike this morning, no correction was needed. Second
+of the four — the two global pieces
 together, as agreed: every panel title now takes a self-hosted Big
 Shoulders Display (one weight, 800, shipped the way Carlito was —
 decision 0124), uppercase, in `--heading-accent`, at `--text-lg`
