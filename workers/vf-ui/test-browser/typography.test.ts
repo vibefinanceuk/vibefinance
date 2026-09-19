@@ -432,3 +432,54 @@ describe("the dashboard's own tiles get the same line (decision 0397)", () => {
     expect(app).not.toContain(".card-narrow > .cardhead > h3");
   });
 });
+
+describe("the document tabs, restyled as a segmented pill (decision 0398)", () => {
+  /**
+   * The third of the four pieces from e-invoicingcompliancecorner.com,
+   * agreed with the operator: the Document/XML/Timeline & Chat tab
+   * row, in the shape of the reference site's own "Arrivals board /
+   * List view" toggle. Styling only — `.doctabs`, `.doctab`,
+   * `.doctab.on` and `.activitycount` are the same class names
+   * `buildDocTabs()` (`viewer.js`) already builds; no JS file changes.
+   */
+  const app = stylesheets["app.css"];
+  const tokens = stylesheets["tokens.css"];
+
+  it("gives the row itself the pill: a filled, fully rounded background", () => {
+    const rule = app.slice(app.indexOf(".doctabs {"));
+    const body = rule.slice(0, rule.indexOf("}"));
+    expect(body).toContain("background: var(--surface-1);");
+    expect(body).toContain("border-radius: 999px;");
+  });
+
+  it("lifts the active tab off the pill", () => {
+    const rule = app.slice(app.indexOf(".doctab.on {"));
+    const body = rule.slice(0, rule.indexOf("}"));
+    expect(body).toContain("background: var(--surface-2);");
+    expect(body).toContain("box-shadow: var(--tab-active-shadow);");
+    expect(body).toContain("color: var(--text-primary);");
+  });
+
+  it("ships the shadow token the active tab uses, Day and Night both", () => {
+    expect(tokens).toContain("--tab-active-shadow: 0 1px 2px rgba(18, 26, 38, 0.12);");
+    expect(tokens).toContain("--tab-active-shadow: none;");
+  });
+
+  it("gives the timeline's own count badge the accent colour, not a neutral grey", () => {
+    const rule = app.slice(app.indexOf(".activitycount {"));
+    const body = rule.slice(0, rule.indexOf("}"));
+    expect(body).toContain("background: var(--bg-accent);");
+    expect(body).toContain("color: var(--text-accent);");
+  });
+
+  it("leaves .tabbar underline-only, decision 0333 — a different row for a different job", () => {
+    // The Access screen's own Organizations/Roles/Teams/People
+    // switcher is sections of one page, not views of one thing; the
+    // two keep different shapes on purpose, so a pill background or
+    // card wrapper here would be the wrong kind of drift for either.
+    const rule = app.slice(app.indexOf(".tabbar {"));
+    const body = rule.slice(0, rule.indexOf("}"));
+    expect(body).not.toContain("border-radius");
+    expect(body).not.toContain("background");
+  });
+});

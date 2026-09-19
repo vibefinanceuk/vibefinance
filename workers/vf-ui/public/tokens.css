@@ -183,6 +183,21 @@
   */
   --border-danger: #d64a36;
 
+  /*
+    **An active tab lifts off the pill, in Day only** — decision 0398,
+    the third of the four pieces from e-invoicingcompliancecorner.com:
+    the Document/XML/Timeline & Chat tabs restyled as a segmented pill,
+    the reference site's own "Arrivals board / List view" toggle. A
+    shadow reads as depth against a light surface; against Night's own
+    dark surfaces the same shadow is either invisible or reads as a
+    smear, so it is `none` there rather than a value nobody would see
+    — the same reasoning `--border-danger`, just above, already gave a
+    value that does not need a Night pairing, applied in the other
+    direction: here Night's right answer is no shadow at all, not a
+    different one.
+  */
+  --tab-active-shadow: 0 1px 2px rgba(18, 26, 38, 0.12);
+
   --radius: 8px;
   /*
     Calibri, asked for by name — decision 0124.
@@ -284,6 +299,7 @@
     --text-success: #a8cf85;
     --bg-danger: #3d140f;
     --text-danger: #f2a99a;
+    --tab-active-shadow: none;
 
     /* And the chart palette, for the same reason (decisions 0242, 0247). */
     --chart-1: #4da3f0;
@@ -336,6 +352,7 @@
   --text-success: #a8cf85;
   --bg-danger: #3d140f;
   --text-danger: #f2a99a;
+  --tab-active-shadow: none;
 }
 
 body {

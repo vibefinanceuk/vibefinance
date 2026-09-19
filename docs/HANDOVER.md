@@ -1,7 +1,7 @@
 # Handover
 
 **Written 4 September 2026, updated 17 September (six times), updated
-18 September (four times), updated 19 September (eight times).**
+18 September (four times), updated 19 September (nine times).**
 
 **For a session starting cold.** Where things stand, what needs a
 decision rather than work, what to do next, and the habits this project
@@ -38,8 +38,8 @@ twice.
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
 | `vf-app-poc` migrations | through `0070` |
 | `vf-licence-poc` migrations | through `0123` applied, all confirmed live — checksums `9e4d534bcef6…` (`0122`) and `79ff9f930fdb…` (`0123`), run by the operator via `apply_migrations.py --remote --migrations-dir workers/vf-licence/migrations --database vf-licence-poc` |
-| Tests | vf-admin 9 · vf-app 1921 · vf-licence 320 · vf-ui 74 Worker + 696 browser · shared 278 (+3 known pre-existing failures) |
-| Decision records | 397 |
+| Tests | vf-admin 9 · vf-app 1921 · vf-licence 320 · vf-ui 74 Worker + 702 browser · shared 278 (+3 known pre-existing failures) |
+| Decision records | 398 |
 
 **Decision 0394 (a column, two arrows, and a marker) is pushed and
 deployed, confirmed directly by the operator opening the pop-out
@@ -194,6 +194,51 @@ noise confirmed pre-existing, not introduced here. `eslint` clean;
 `scripts/check-citations.py` clean (397 records). Touches `vf-ui`
 (`public/app.css`, `test-browser/typography.test.ts`) only — no new
 token, no `tokens.css` change.
+
+**Decision 0398 (a toggle for the document tabs) is built, not yet
+pushed.** Third of the four pieces from 0395's own sequence — the
+Document/XML/Timeline & Chat tab row, narrow and independent, as
+agreed. Styling only, no JS file touched: `buildDocTabs()` in
+`viewer.js` already builds `.doctabs`/`.doctab`/`.doctab.on`/
+`.activitycount`, the same four class names before and after, and
+`document-window.js`'s own pop-out picks up the same restyle with no
+change of its own since it calls the same function. `.doctabs` becomes
+a filled, fully rounded pill (`background: var(--surface-1)`,
+`border-radius: 999px`, `padding: 3px`, tabs spaced 2px apart rather
+than the old 18px margin); `.doctab` drops its underline entirely for
+a transparent border ready to be filled; `.doctab.on` fills that
+border, lifts onto `--surface-2`, and picks up a new
+`--tab-active-shadow` token — a real shadow in Day, `none` in Night,
+since the same value that reads as depth on a light surface is either
+invisible or a smear on a dark one. `.activitycount`, the timeline's
+own unread badge, moves from a neutral grey to `--bg-accent`/
+`--text-accent`. Deliberately kept separate from `.tabbar`/`.tab`
+(decision 0333, the Access screen's own Organizations/Roles/Teams/
+People switcher) — that decision's own case for underline-only was
+made for a row of *sections*, and Document/XML/Timeline & Chat are
+views of one thing instead, closer to the reference site's own toggle
+— with a test now guarding `.tabbar` stays exactly as 0333 left it.
+Rendered against the real, unmodified stylesheet with Playwright
+before being called done, Day and Night both — the actual markup
+`buildDocTabs()` builds, inside `.cardhead` exactly as
+`documentPanel()` returns it; this card's own `.cardhead` has no
+`<h3>` at all when tabs are showing (the tab row *is* the card's own
+head), and 0396/0397's own `align-items: flex-end`/compacted-
+`.actionlink` rules already reached it correctly with no further
+change needed. Five new tests in `test-browser/typography.test.ts`,
+one new test plus a list entry in `test-browser/mood.test.ts`, watched
+to fail first (5 of 55 combined failed, exactly the new assertions).
+Full suites: vf-ui 74 Worker + 702 browser (696 pre-existing + 6 new),
+both passing; `eslint` clean; `scripts/check-citations.py` clean (398
+records). Touches `vf-ui` (`public/app.css`, `public/tokens.css`,
+`test-browser/typography.test.ts`, `test-browser/mood.test.ts`) only.
+Not yet reviewed live — the narrowest of the four pieces by design, so
+unlike 0396 it did not get its own dedicated round of "look at it live
+across several screens" before this write-up; that first look is
+expected the same way it happened for 0396, any correction recorded
+the way 0397 was. Next: red/amber/green severity (piece four, still
+needs the upstream data-model question answered first — not yet
+investigated).
 
 **A real gap in this session's own verification, worth recording
 plainly.** `origin/main` fetched directly read the right commit at

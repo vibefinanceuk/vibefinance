@@ -667,6 +667,22 @@ a rule, and left an approval task in a queue.
   that had never actually matched anything. Nine new tests, watched to
   fail first (7 of 35 failed). Full suites: vf-ui 74 Worker + 696
   browser (691 pre-existing + 5 new), both passing.
+- **A toggle for the document tabs** (0398, third of the four —
+  narrow and independent). Styling only, no JS touched — the same
+  four class names `buildDocTabs()` already built, before and after.
+  `.doctabs` becomes a filled, fully rounded pill; `.doctab` drops its
+  underline for a transparent border; `.doctab.on` fills that border
+  and picks up a new `--tab-active-shadow` token, a real shadow by Day
+  and `none` at Night; `.activitycount` moves to the accent colour.
+  Deliberately kept separate from `.tabbar` (0333's own Access-screen
+  switcher, underline-only for a row of sections rather than views of
+  one thing), with a test guarding that distinction going forward.
+  Checked with Playwright against the real, unmodified stylesheet
+  before being called done, Day and Night both. Five new tests in
+  `typography.test.ts`, one plus a list entry in `mood.test.ts`,
+  watched to fail first (5 of 55 combined failed). Full suites: vf-ui
+  74 Worker + 702 browser (696 pre-existing + 6 new), both passing.
+  Not yet reviewed live — the narrowest of the four by design.
 
 ### Customer configuration
 - Org units, teams, roles, users, cost centres
@@ -1086,7 +1102,7 @@ elsewhere.
 |---|---|
 | `vf-app` | 1921 |
 | `vf-licence` | 320 |
-| `vf-ui` | 74 Worker · 696 browser |
+| `vf-ui` | 74 Worker · 702 browser |
 | `shared` | 278 passing, 3 known pre-existing failures |
 
 Both migration chains replay clean with every standing invariant
@@ -1112,7 +1128,7 @@ measured (0380) rather than explained after the fact.
 | `docs/design/mockups/` | Four screens as static HTML | Current |
 | `docs/design/multi-authority-intake.md` | Non-EN-16931 authorities | Design only |
 | `docs/design/text-layer-extraction.md` | Reading a PDF's own text | Design only |
-| `docs/decisions/` | 397 decision records | Current |
+| `docs/decisions/` | 398 decision records | Current |
 | `docs/decisions/SUPERSEDED.md` | Which records supersede which | **Read first** |
 
 Document 4's markdown source is at `docs/documents/`, with

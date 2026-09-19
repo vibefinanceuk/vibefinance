@@ -149,6 +149,10 @@ describe("the palettes", () => {
       "--heading-accent",
       "--bg-danger",
       "--text-danger",
+      // Decision 0398 — said twice deliberately, unlike --border-danger
+      // above: here it is Night's own value ("none") that needs
+      // stating, not just Day's.
+      "--tab-active-shadow",
     ]) {
       const inMedia = media.match(new RegExp(`${token}: ([^;]+);`))?.[1];
       const inChosen = chosen.match(new RegExp(`${token}: ([^;]+);`))?.[1];
@@ -187,6 +191,17 @@ describe("the palettes", () => {
     const day = css.slice(0, css.indexOf("@media (prefers-color-scheme: dark)"));
     expect(day).toContain("--heading-accent: #854f0b;");
     expect(day).not.toContain("--heading-accent: #c98a3a;");
+  });
+
+  it("drops the active tab's shadow at night, decision 0398", () => {
+    // A shadow reads as depth against Day's light surfaces; against
+    // Night's own dark ones the same value is either invisible or a
+    // smear, so Night's own right answer is none at all, not a
+    // different shadow.
+    const day = css.slice(0, css.indexOf("@media (prefers-color-scheme: dark)"));
+    expect(day).toContain("--tab-active-shadow: 0 1px 2px rgba(18, 26, 38, 0.12);");
+    const media = css.slice(css.indexOf("@media (prefers-color-scheme: dark)"));
+    expect(media).toContain("--tab-active-shadow: none;");
   });
 
   it("does not use a true black at night", () => {

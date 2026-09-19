@@ -2283,17 +2283,43 @@
     0267's drawer. The document preview and the activity feed share
     the same panel the preview has always occupied, switched between
     with tabs rather than the feed opening in a strip below it.
+
+    **Restyled as a segmented pill, decision 0398** — the third of the
+    four pieces from e-invoicingcompliancecorner.com, the shape of
+    that site's own "Arrivals board / List view" toggle. A separate
+    component from `.tabbar`/`.tab` (decision 0333, used only by the
+    Access screen's own Organizations/Roles/Teams/People switcher):
+    that decision's own case for underline-only — "no pill background,
+    no card wrapper, so it reads as navigation within the page" — was
+    made for a row of *sections*, each a different piece of one
+    screen. Document/XML/Timeline & Chat are not sections of a page;
+    they are views of one thing, closer to the reference site's own
+    toggle than to `.tabbar`'s job, so the two keep different shapes
+    on purpose rather than one being an oversight of the other. Same
+    class names throughout (`.doctabs`, `.doctab`, `.doctab.on`,
+    `.activitycount`) — no JS file changed, this is styling only.
   */
-  .doctabs { display: flex; gap: 2px; margin-bottom: 10px; }
+  .doctabs {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    background: var(--surface-1);
+    border: 0.5px solid var(--border);
+    border-radius: 999px;
+    padding: 3px;
+  }
   .doctab {
-    background: none; border: none; border-bottom: 2px solid transparent;
-    padding: 8px 2px; margin-right: 18px; color: var(--text-secondary);
+    background: none; border: 0.5px solid transparent; border-radius: 999px;
+    padding: 6px 14px; color: var(--text-muted);
     font-size: var(--text-sm); cursor: pointer; display: flex; align-items: center; gap: 6px;
   }
-  .doctab.on { color: var(--text-primary); border-color: var(--text-accent); font-weight: 600; }
+  .doctab.on {
+    background: var(--surface-2); border-color: var(--border-strong);
+    box-shadow: var(--tab-active-shadow); color: var(--text-primary); font-weight: 600;
+  }
   .activitycount {
-    background: var(--surface-1); border-radius: 999px; font-size: var(--text-sm);
-    padding: 1px 7px; color: var(--text-secondary); font-weight: 400;
+    background: var(--bg-accent); border-radius: 999px; font-size: var(--text-sm);
+    padding: 1px 7px; color: var(--text-accent); font-weight: 600;
   }
   .activitytabcontent { display: flex; flex-direction: column; }
   /*
