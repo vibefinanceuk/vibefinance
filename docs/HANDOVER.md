@@ -1,7 +1,7 @@
 # Handover
 
 **Written 4 September 2026, updated 17 September (six times), updated
-18 September (four times).**
+18 September (four times), updated 19 September.**
 
 **For a session starting cold.** Where things stand, what needs a
 decision rather than work, what to do next, and the habits this project
@@ -37,7 +37,7 @@ twice.
 | vf-ui deployed | `5a09466` · `https://app.vibefinance-ai.com` |
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
 | `vf-app-poc` migrations | through `0070` |
-| `vf-licence-poc` migrations | through `0121` applied · **`0122` and `0123` committed, neither yet applied to the remote D1** — apply via `apply_migrations.py --remote --migrations-dir workers/vf-licence/migrations --database vf-licence-poc` |
+| `vf-licence-poc` migrations | through `0123` applied, all confirmed live — checksums `9e4d534bcef6…` (`0122`) and `79ff9f930fdb…` (`0123`), run by the operator via `apply_migrations.py --remote --migrations-dir workers/vf-licence/migrations --database vf-licence-poc` |
 | Tests | vf-admin 9 · vf-app 1921 · vf-licence 320 · vf-ui 74 Worker + 684 browser · shared 278 (+3 known pre-existing failures) |
 | Decision records | 394 |
 
@@ -90,15 +90,41 @@ or a cache purge on the strength of this session's own fetch alone
 without saying plainly that the fetch tool itself may be the thing
 that is wrong.
 
-`vf-licence`'s migrations `0122` and `0123` still need applying to the
-remote — a `wrangler deploy` of `vf-ui` does not touch `ui_strings` in
-the `vf-licence-poc` D1 — via `python3 migrations/apply_migrations.py
---remote --migrations-dir workers/vf-licence/migrations --database
-vf-licence-poc` (see the correction below the decision-0393 paragraph:
-this session had first wrongly reported no such process existed).
-Unconfirmed either way as of this update — not part of what the
-operator just verified, which was the pop-out's layout, not its
-wording.
+`vf-licence`'s migrations `0122` and `0123` have since been applied to
+the remote by the operator, directly — `python3
+migrations/apply_migrations.py --remote --migrations-dir
+workers/vf-licence/migrations --database vf-licence-poc`, both
+migrations landing with checksums and no errors (see the correction
+below the decision-0393 paragraph: this session had first wrongly
+reported no such process existed).
+
+**A third instance of the same false negative, same session, same
+endpoint — recorded rather than acted on again.** After the operator
+ran the migration, this session checked `GET
+/api/ui-strings?locale=en` on the live deployment and got a
+part-right, part-wrong-looking result: `viewer.previouspage` and
+`viewer.nextpage` showed the new wording, but `viewer.openinwindow`
+still showed the old "Open in a separate window" and `viewer.highlight`
+did not appear at all — reproduced identically across two independent,
+freshly cache-busted fetches. Given the gap already documented above
+(this exact fetch, against this exact site, giving a confident wrong
+answer more than once today), this session declined to report it as a
+confirmed bug and instead asked the operator to check two things
+directly in their own browser rather than trust the fetch again: the
+pop-out placeholder text, and the Highlight button's tooltip. **Both
+came back correct** — the placeholder reads "Document open in a
+separate window" (`0122`) and the Highlight button's hover text reads
+"Highlight", not the raw key (`0123`). So `0122` and `0123` are both
+fully live, and this session's own `/api/ui-strings` check was wrong a
+third time, on partial data this time rather than a flat stale read —
+worth noting as a *different* wrong shape from the first two instances
+(entirely-stale content, twice, versus a plausible-looking mix of old
+and new this time), which argues against a single simple explanation
+like a slow-to-invalidate cache and for treating this session's fetch
+tool against `app.vibefinance-ai.com` as unreliable in general, not
+just slow. Restating the lesson already recorded above because it held
+again: **when this session's own fetch disagrees with what the
+operator sees directly, the operator is right.**
 
 **Decision 0393 (filling the row, and a number to ring) is pushed and
 deployed, with one part still outstanding**: every `vf-ui` change
