@@ -1174,6 +1174,70 @@ describe("the org switcher (decision 0313)", () => {
   });
 });
 
+describe("the nav inside an open task (decision 0408)", () => {
+  /**
+   * **Reported live**: "When in the Validation window, none of the
+   * menu links on the left work." `openViewer()` renders its own
+   * `frame()` — nav included — into `#viewer`, a sibling of `#shell`
+   * that every entry point (`openTaskById`, `documents.js`'s own
+   * `expand()`) hides/shows on the way in and out. But `go()`, the one
+   * function every `.navitem` click calls, always writes into `#shell`
+   * and never checks which of the two is actually showing — so a nav
+   * click from inside the viewer silently rebuilt the hidden `#shell`
+   * while `#viewer` stayed on screen, unchanged. Every destination was
+   * affected equally, since every screen module reaches `#shell` the
+   * same way.
+   *
+   * Decision 0362 already solved this exact problem once, for the org
+   * switcher's own relaunch — `relaunchAfterOrgChange()` checks
+   * `#viewer`'s own `hidden` state before deciding where to go. This
+   * puts the same check inside `go()` itself, so every caller gets it
+   * for free rather than each needing to remember it.
+   */
+  it("actually switches screens when a nav link is clicked while a task is open", async () => {
+    stubFetch({
+      "/api/ui-strings": STRINGS,
+      "/api/whoami": { id: "u-dan", name: "Dan", permissions: ALL_NAV_PERMISSIONS },
+      "/api/dashboard": { cards: [], usingDefault: true },
+      "/api/tasks": { tasks: [APPROVAL_TASK], counts: {} },
+      "/api/invoices/inv-9/document-url": { url: null },
+      "/api/invoices/inv-9/pages": { pages: [] },
+      "/api/invoices/inv-9/progress": { inProcess: false, stages: [] },
+      "/api/documents/inv-9/activity": { items: [] },
+      "/api/suppliers": { suppliers: [], lastLoad: null, fedByLoad: false },
+      "/api/documents": { documents: [], searched: 0 },
+    });
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { start } = await import("/tasks.js");
+    await start();
+
+    const tasksLink = [...document.querySelectorAll(".navitem")].find((a) =>
+      a.textContent?.includes("Tasks")
+    ) as HTMLElement;
+    tasksLink.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    const row = document.querySelector("tbody tr") as HTMLElement;
+    row.click();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(document.getElementById("viewer")?.hidden).toBe(false);
+
+    // Click Documents from the nav rendered inside the open task itself
+    // — not the one on the task list, which this never reaches.
+    const documentsLink = [...document.querySelectorAll(".navitem")].find((a) =>
+      a.textContent?.includes("Documents")
+    ) as HTMLElement;
+    documentsLink.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(document.getElementById("viewer")?.hidden).toBe(true);
+    expect(document.getElementById("shell")?.hidden).toBe(false);
+    const calls = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls.map((c) => String(c[0]));
+    expect(calls.some((u) => u.startsWith("/api/documents"))).toBe(true);
+  });
+});
+
 describe("a task about one line (decision 0183)", () => {
   /**
    * A stage scoped `per_line` raises one task per invoice line, so an

@@ -369,6 +369,15 @@ a rule, and left an approval task in a queue.
 - Usage telemetry, per environment, aggregate-only
 
 ### The interface
+- **The nav works from inside an open task, not only from the task
+  list** (0408). `openViewer()` renders its own copy of the nav into
+  `#viewer`, a sibling `#shell` hides/shows on the way in and out — but
+  `go()`, the one function behind every nav link, wrote into `#shell`
+  unconditionally with no check for which of the two was on screen. A
+  nav click from inside an open task silently rebuilt the hidden
+  `#shell`; nothing visibly changed. Decision 0362 had already solved
+  this once for the org switcher's own relaunch; the same check now
+  lives in `go()` itself
 - `vf-ui`, one shared deployment for every customer (0099)
 - Sign-in, with the session in an `HttpOnly` cookie the JavaScript
   never sees (0102)

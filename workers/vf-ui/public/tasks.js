@@ -455,6 +455,26 @@ export async function openTaskById(task) {
 
 async function go(screen) {
   current = screen;
+  /**
+   * **Leave the viewer first, decision 0408.** `openViewer()` renders
+   * its own `frame()` — nav included — into `#viewer`, a sibling of
+   * `#shell` that every entry point (`openTaskById` above,
+   * `documents.js`'s own `expand()`) hides and shows on the way in and
+   * out. Every branch below writes into `#shell` unconditionally, so a
+   * `.navitem` click from inside an open task silently rebuilt the
+   * hidden `#shell` while `#viewer` stayed on screen, unchanged —
+   * reported live: "When in the Validation window, none of the menu
+   * links on the left work." Decision 0362 already solved this once,
+   * for the org switcher's own relaunch (`relaunchAfterOrgChange()`
+   * below); this puts the same check where every nav click actually
+   * starts, so it covers every destination without each one needing
+   * to remember it.
+   */
+  const viewer = document.getElementById("viewer");
+  if (viewer && !viewer.hidden) {
+    viewer.hidden = true;
+    shell.hidden = false;
+  }
   if (screen === "sources") {
     const { openSources } = await import("/sources.js");
     await openSources();

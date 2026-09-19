@@ -1,7 +1,7 @@
 # Handover
 
 **Written 4 September 2026, updated 17 September (six times), updated
-18 September (four times), updated 19 September (twenty-six times).**
+18 September (four times), updated 19 September (twenty-seven times).**
 
 **For a session starting cold.** Where things stand, what needs a
 decision rather than work, what to do next, and the habits this project
@@ -38,8 +38,27 @@ twice.
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
 | `vf-app-poc` migrations | through `0070` |
 | `vf-licence-poc` migrations | through `0125` applied, all confirmed live — checksums `9e4d534bcef6…` (`0122`), `79ff9f930fdb…` (`0123`), `408f61e5b11a…` (`0124`); `0125` applied by the operator (no checksum reported this time), confirmed live via `/api/ui-strings` returning all six new title values — run via `apply_migrations.py --remote --migrations-dir workers/vf-licence/migrations --database vf-licence-poc` |
-| Tests | vf-admin 9 · vf-app 1950 · vf-licence 320 · vf-ui 74 Worker + 711 browser · shared 287 (+3 known pre-existing failures) |
-| Decision records | 407 |
+| Tests | vf-admin 9 · vf-app 1950 · vf-licence 320 · vf-ui 74 Worker + 712 browser · shared 287 (+3 known pre-existing failures) |
+| Decision records | 408 |
+
+**Decision 0408 (the nav that only worked once) — code built and
+tested, not yet pushed.** Reported live: "When in the Validation
+window, none of the menu links on the left work." Traced to `go()`
+(`tasks.js`), the one function behind every nav link everywhere:
+`openViewer()` renders its own copy of the nav into `#viewer`, a
+sibling of `#shell` that every entry point hides/shows on the way in
+and out — but `go()`'s own branches all wrote into `#shell`
+unconditionally, with no check for which of the two was actually on
+screen. A nav click from inside an open task silently rebuilt the
+hidden `#shell`; `#viewer` never moved. Every destination was affected
+equally, since every screen module reaches `#shell` the same way —
+matching "none... work" exactly, and not a regression from anything
+built this week (`go()`/`frame()`/the `#shell`/`#viewer` split all
+predate 0405/0406). Decision 0362 had already solved this once, for
+the org switcher's own relaunch; this puts the same check where every
+nav click actually starts. One new test, fail-first verified against
+the reported bug; full `vf-ui` browser suite 712/712 (711 + 1 new).
+Full detail in `docs/decisions/0408-the-nav-that-only-worked-once.md`.
 
 **Decision 0407 (the plan that was already written down) — docs-only,
 code built and tested N/A, not yet pushed.** Right after 0406 shipped,
