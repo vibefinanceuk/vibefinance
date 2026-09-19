@@ -5,6 +5,7 @@ import { CODE_LISTS } from "./peppol-render-data.js";
 import { unitLineage } from "./unit-config.js";
 import { findSimilarInvoices } from "./invoice-history.js";
 import { preferredDocumentType, documentTypeInfo } from "./document-storage.js";
+import { mergePoMatchFacts } from "./po-matching.js";
 
 /**
  * Persists invoice header and line facts — see docs/decisions/
@@ -455,11 +456,22 @@ export async function handleGetInvoice(db: D1Database, invoiceId: string): Promi
    * Computed rather than stored, and **advisory**, exactly as keying's
    * verdict is (decision 0072): re-running validation is not
    * re-evaluating rules, and nothing here moves the process.
+   *
+   * **po.matched/po.variance_pct reach this on arrival too — decision
+   * 0400.** Computed fresh here, scoped to this local variable only:
+   * `body.facts`/`body.lines` above stay exactly what is stored, so
+   * `po.*` never leaks onto the form as if it were a real, editable
+   * fact. This mirrors every other stage-visit call site
+   * (`intake-capture-route.ts`, the revisit route in `index.ts`),
+   * which already merge these in before validating — the screen was
+   * the one place that did not.
    */
-  const verdict = validateInvoiceFacts(
+  const poMerged = await mergePoMatchFacts(
+    db,
     facts as InvoiceFacts,
-    lines.map((line) => line.facts as Record<string, unknown>)
+    lines.map((line) => ({ ...(line.facts as InvoiceFacts), lineNumber: line.lineNumber }))
   );
+  const verdict = validateInvoiceFacts(poMerged.headerFacts, poMerged.lines);
 
   return {
     status: 200,
@@ -572,6 +584,10 @@ export async function handleGetInvoice(db: D1Database, invoiceId: string): Promi
         failures: verdict.failures,
         ...(verdict.involves ? { involves: verdict.involves } : {}),
         ...(verdict.invalidCodes ? { invalidCodes: verdict.invalidCodes } : {}),
+        // decision 0400 — the green tier's own data, named explicitly
+        // rather than spread, the same discipline `involves` already
+        // follows just above.
+        ...(verdict.confirms ? { confirms: verdict.confirms } : {}),
         advisory: true,
       },
     },

@@ -20,6 +20,11 @@ import type { InvoiceFacts } from "@vibefinance/shared";
  * about, which is the entire point of doing it here rather than
  * asking a model to be careful.
  *
+ * **`severity` distinguishes two different claims — decision 0400.**
+ * "These numbers disagree" (`warning`, every check but one) is not the
+ * same claim as "this disagrees with an external source of truth"
+ * (`danger`, `po_mismatch` alone, so far) — see `ValidationSeverity`.
+ *
  * A fact-producing agent in decision 0015's sense: it runs before a
  * stage's rules evaluate, contributes facts, and finishes. Rules then
  * decide what a failure means — this module never blocks, holds, or
@@ -69,8 +74,33 @@ export const VALIDATION_CHECKS = [
   // "these numbers disagree" but "this is not a code the specification
   // recognises".
   "code_list",
+  // Decision 0400 — a field that genuinely disagrees with a linked
+  // purchase order. Reads po.matched/po.variance_pct (header) and
+  // po.line_matched/po.line_variance_pct/po.line_quantity_variance_pct
+  // (per line) off the facts this module is given; it never computes
+  // them itself (no DB access here) — the caller merges them in via
+  // po-matching.ts's mergePoMatchFacts before calling this function,
+  // the same way every other fact this module reads is already on
+  // `facts`/`lines` by the time it runs.
+  "po_mismatch",
 ] as const;
 export type ValidationCheck = (typeof VALIDATION_CHECKS)[number];
+
+/**
+ * How urgent a failure is — decision 0400.
+ *
+ * Added when `--bg-danger`/`--text-danger`/`--border-danger` (decision
+ * 0395) were still unconsumed and every check here read alike, "though
+ * a missing total and an unfamiliar code are not equally urgent"
+ * (decision 0119's own "What is not built"). `danger` is reserved for
+ * a claim checked against an external source of truth — today, only a
+ * purchase order — and found to disagree. Every other check here is
+ * `warning`: arithmetic or presence over the document's own numbers,
+ * worth a human's attention but not proof that anything is wrong
+ * (`amount_due_mismatch`'s own long-standing comment already said this
+ * of itself before severity existed to name it).
+ */
+export type ValidationSeverity = "danger" | "warning";
 
 /**
  * A failure, with enough for a screen to act on — decision 0119.
@@ -86,6 +116,25 @@ export interface ValidationFailure {
   line?: number;
   /** The offending value, where there is one: `"EURO"`. */
   value?: string;
+  /** decision 0400 — see `ValidationSeverity`. */
+  severity: ValidationSeverity;
+}
+
+/**
+ * The positive twin of `ValidationFailure` — decision 0400.
+ *
+ * A check that ran and found nothing wrong for these fields. Kept
+ * deliberately separate from `ValidationFailure` rather than a
+ * `passed: boolean` on the same shape: `severity` only means something
+ * for a failure, and a field this document never carried was never
+ * "confirmed" anything — it was skipped, the same distinction `checked`
+ * already draws for the check as a whole. No `value`, for the same
+ * reason: there is no offending value to show.
+ */
+export interface ValidationConfirmation {
+  check: ValidationCheck;
+  fields: string[];
+  line?: number;
 }
 
 export interface ValidationResult {
@@ -112,6 +161,19 @@ export interface ValidationResult {
    * compared.
    */
   involves?: ValidationFailure[];
+  /**
+   * Which **fields** a check ran against and found to agree — decision
+   * 0400. The green tier needs the same "reported by the check itself"
+   * discipline `involves` already has: a field is only ever marked
+   * confirmed because the specific check that examined it said so, not
+   * because nothing happened to flag it. Deliberately narrower than
+   * `checked`: `total_missing` runs on every document and belongs in
+   * `checked` the moment a total exists, but presence alone confirms
+   * nothing about whether the value is *right* — so it produces no
+   * confirmation, only the checks that compare a value against
+   * something (another field, a code list, a linked purchase order) do.
+   */
+  confirms?: ValidationConfirmation[];
   /** Every check that was genuinely evaluated. A check skipped for
    *  want of data is neither a pass nor a failure, and conflating
    *  "we checked and it was fine" with "we could not check" would
@@ -126,7 +188,7 @@ export type LineForValidation = InvoiceFacts;
 
 /**
  * Every coded field carrying a value the standard does not know —
- * decision 0116.
+ * decision 0116 — **plus the good ones**, decision 0400.
  *
  * **Only closed lists.** `isClosedList` distinguishes the standard in
  * full from a working subset (decision 0113): UN/ECE Recommendation 20
@@ -136,43 +198,20 @@ export type LineForValidation = InvoiceFacts;
  * unit nobody anticipated.
  *
  * A field the document did not supply is not checked at all — absence
- * is a different failure, and `total_missing` already has it.
+ * is a different failure, and `total_missing` already has it. One
+ * entry per field rather than one for the check as a whole, so a
+ * screen can highlight the right box and — new at decision 0400 — a
+ * closed-list field present and valid is a genuine, per-field
+ * confirmation: this check, unlike the arithmetic ones, examines every
+ * coded field individually, so the green tier can be exactly as
+ * precise as the warning one already is.
  */
-function badCodes(facts: InvoiceFacts, lines?: readonly LineForValidation[]): string[] {
-  const bad: string[] = [];
-
-  const check = (source: Record<string, unknown>, where: string) => {
-    for (const field of Object.keys(FIELD_CODE_LISTS)) {
-      if (!isClosedList(field)) continue;
-      const value = source[field];
-      if (value === undefined || value === null || value === "") continue;
-      if (!isValidCode(field, value)) bad.push(`${where}${field}=${String(value)}`);
-    }
-  };
-
-  check(facts as Record<string, unknown>, "");
-  for (const [index, line] of (lines ?? []).entries()) {
-    // Named by line, because "one of your lines has a bad VAT category"
-    // is not something a person can act on.
-    check(line as Record<string, unknown>, `line ${index + 1}: `);
-  }
-
-  return bad;
-}
-
-/**
- * The same bad codes as `badCodes`, structured for a screen —
- * decision 0119.
- *
- * `badCodes` produces `"line 2: BT-151=NONSENSE"` for a person reading
- * a sentence; this produces the field, the line and the value
- * separately, so a screen can highlight the right box.
- */
-function badCodeDetails(
+function codeCheckDetails(
   facts: InvoiceFacts,
   lines?: readonly LineForValidation[]
-): ValidationFailure[] {
-  const found: ValidationFailure[] = [];
+): { bad: ValidationFailure[]; good: ValidationConfirmation[] } {
+  const bad: ValidationFailure[] = [];
+  const good: ValidationConfirmation[] = [];
 
   const check = (source: Record<string, unknown>, line?: number) => {
     for (const field of Object.keys(FIELD_CODE_LISTS)) {
@@ -180,7 +219,9 @@ function badCodeDetails(
       const value = source[field];
       if (value === undefined || value === null || value === "") continue;
       if (!isValidCode(field, value)) {
-        found.push({ check: "code_list", fields: [field], value: String(value), ...(line ? { line } : {}) });
+        bad.push({ check: "code_list", fields: [field], value: String(value), severity: "warning", ...(line ? { line } : {}) });
+      } else {
+        good.push({ check: "code_list", fields: [field], ...(line ? { line } : {}) });
       }
     }
   };
@@ -189,7 +230,7 @@ function badCodeDetails(
   for (const [index, line] of (lines ?? []).entries()) {
     check(line as Record<string, unknown>, index + 1);
   }
-  return found;
+  return { bad, good };
 }
 
 function num(value: unknown): number | null {
@@ -230,9 +271,19 @@ export function validateInvoiceFacts(
    * disagree about what was looked at.
    */
   const involves: ValidationFailure[] = [];
-  const fail = (check: ValidationCheck, fields: string[], extra: Partial<ValidationFailure> = {}) => {
+  /** The positive twin, decision 0400 — see `ValidationConfirmation`. */
+  const confirms: ValidationConfirmation[] = [];
+  const fail = (
+    check: ValidationCheck,
+    fields: string[],
+    severity: ValidationSeverity,
+    extra: Partial<Omit<ValidationFailure, "check" | "fields" | "severity">> = {}
+  ) => {
     failures.push(check);
-    involves.push({ check, fields, ...extra });
+    involves.push({ check, fields, severity, ...extra });
+  };
+  const confirm = (check: ValidationCheck, fields: string[], extra: Partial<Omit<ValidationConfirmation, "check" | "fields">> = {}) => {
+    confirms.push({ check, fields, ...extra });
   };
 
   const net = num(facts["BT-106"]);
@@ -249,8 +300,11 @@ export function validateInvoiceFacts(
   if (total === null) {
     // The total is the field that is absent; the amount due is the one
     // somebody might supply instead.
-    fail("total_missing", ["BT-112", "BT-115"]);
+    fail("total_missing", ["BT-112", "BT-115"], "warning");
   }
+  // No confirm() on pass — presence is not agreement. This check never
+  // compares BT-112 against anything else, so a total being there says
+  // nothing about whether it is *right*, only that it is not absent.
 
   // net + VAT should equal the total. Skipped unless all three are
   // present, since two of three proves nothing.
@@ -258,7 +312,8 @@ export function validateInvoiceFacts(
     checked.push("vat_arithmetic");
     // All three, because any one of them could be the wrong one and
     // the check cannot know which.
-    if (!close(net + vat, total, tol)) fail("vat_arithmetic", ["BT-106", "BT-110", "BT-112"]);
+    if (!close(net + vat, total, tol)) fail("vat_arithmetic", ["BT-106", "BT-110", "BT-112"], "warning");
+    else confirm("vat_arithmetic", ["BT-106", "BT-110", "BT-112"]);
   }
 
   // The amount due normally equals the total. A legitimate part
@@ -268,7 +323,12 @@ export function validateInvoiceFacts(
   // decides.
   if (due !== null && total !== null) {
     checked.push("amount_due_mismatch");
-    if (!close(due, total, tol)) fail("amount_due_mismatch", ["BT-115", "BT-112"]);
+    if (!close(due, total, tol)) fail("amount_due_mismatch", ["BT-115", "BT-112"], "warning");
+    // A pass here is a genuine agreement between the two numbers,
+    // whatever the caveat above says about what a *failure* proves —
+    // that caveat is about the false-positive risk of a legitimate
+    // part payment, not about whether two equal numbers really agree.
+    else confirm("amount_due_mismatch", ["BT-115", "BT-112"]);
   }
 
   // An issue date after its own due date is always wrong.
@@ -276,7 +336,8 @@ export function validateInvoiceFacts(
   const dueDate = typeof facts["BT-9"] === "string" ? Date.parse(facts["BT-9"]) : NaN;
   if (!Number.isNaN(issued) && !Number.isNaN(dueDate)) {
     checked.push("date_order");
-    if (issued > dueDate) fail("date_order", ["BT-2", "BT-9"]);
+    if (issued > dueDate) fail("date_order", ["BT-2", "BT-9"], "warning");
+    else confirm("date_order", ["BT-2", "BT-9"]);
   }
 
   // The lines should sum to the stated net. Only runs when lines were
@@ -293,13 +354,16 @@ export function validateInvoiceFacts(
         // The header total the lines disagree with, and the line
         // amounts themselves — highlighted on every line, since any of
         // them could be wrong.
-        if (!close(sum, against, tol)) fail("line_sum", [net !== null ? "BT-106" : "BT-112", "BT-131"]);
+        const sumFields = [net !== null ? "BT-106" : "BT-112", "BT-131"];
+        if (!close(sum, against, tol)) fail("line_sum", sumFields, "warning");
+        else confirm("line_sum", sumFields);
       }
     }
   }
 
   /**
-   * The coded fields — decision 0116.
+   * The coded fields — decision 0116, plus the confirmed ones,
+   * decision 0400.
    *
    * **Always checked**, unlike the arithmetic: those need data the
    * document may not carry, and this one runs whether or not a coded
@@ -307,14 +371,76 @@ export function validateInvoiceFacts(
    * honestly, having genuinely been checked.
    */
   checked.push("code_list");
-  const invalidCodes = badCodes(facts, lines);
-  if (invalidCodes.length > 0) {
+  const { bad: badCodeEntries, good: goodCodeEntries } = codeCheckDetails(facts, lines);
+  if (badCodeEntries.length > 0) {
     failures.push("code_list");
     // One entry per bad code rather than one for the check, so a
     // document with two of them highlights two fields and explains
     // each — "code_list" once would point at neither.
-    for (const bad of badCodeDetails(facts, lines)) involves.push(bad);
+    for (const bad of badCodeEntries) involves.push(bad);
   }
+  for (const good of goodCodeEntries) confirms.push(good);
+  const invalidCodes = badCodeEntries.map((entry) => {
+    const where = entry.line ? `line ${entry.line}: ` : "";
+    return `${where}${entry.fields[0]}=${entry.value}`;
+  });
+
+  /**
+   * A field that disagrees with a linked purchase order — decision
+   * 0400. Reads po.matched/po.variance_pct (header) and
+   * po.line_matched/po.line_variance_pct/po.line_quantity_variance_pct
+   * (per line) off what this function was given; both are already
+   * computed and merged in by the caller (`mergePoMatchFacts`) before
+   * this runs, the same way `supplier.amountTolerancePct` already is
+   * by the time po-matching.ts reads it.
+   *
+   * **Checked only when a real order was actually compared against.**
+   * `po.matched` is `false` for "no order was ever named" exactly as
+   * much as for "a named order genuinely disagrees" (po-matching.ts's
+   * own deliberate choice) — treating every `po.matched === false` as
+   * a failure would flag almost every invoice, since most carry no
+   * purchase order at all. `po.variance_pct` is only ever set once a
+   * real order was found and a real number compared, so its presence
+   * is what distinguishes "nothing to check" from "checked and
+   * disagreed" — the same shape every other check here already skips
+   * on when its own data is missing.
+   */
+  const poFailures: ValidationFailure[] = [];
+  const poConfirms: ValidationConfirmation[] = [];
+  let poChecked = false;
+
+  const headerVariance = num(facts["po.variance_pct"]);
+  if (headerVariance !== null && typeof facts["po.matched"] === "boolean") {
+    poChecked = true;
+    const fields = ["BT-13", "BT-112"];
+    const value = `${headerVariance.toFixed(2)}%`;
+    if (!facts["po.matched"]) poFailures.push({ check: "po_mismatch", fields, value, severity: "danger" });
+    else poConfirms.push({ check: "po_mismatch", fields });
+  }
+
+  for (const [index, line] of (lines ?? []).entries()) {
+    const lineVariance = num(line["po.line_variance_pct"]);
+    if (lineVariance === null || typeof line["po.line_matched"] !== "boolean") continue;
+    poChecked = true;
+    // Both fields, when quantity was genuinely part of the comparison
+    // — either could be the one that disagreed, the same "any of them
+    // could be wrong" reasoning vat_arithmetic already uses for its
+    // own three fields.
+    const fields = num(line["po.line_quantity_variance_pct"]) !== null ? ["BT-131", "BT-129"] : ["BT-131"];
+    const lineNumber = index + 1;
+    if (!line["po.line_matched"]) {
+      poFailures.push({ check: "po_mismatch", fields, line: lineNumber, value: `${lineVariance.toFixed(2)}%`, severity: "danger" });
+    } else {
+      poConfirms.push({ check: "po_mismatch", fields, line: lineNumber });
+    }
+  }
+
+  if (poChecked) checked.push("po_mismatch");
+  if (poFailures.length > 0) {
+    failures.push("po_mismatch");
+    for (const entry of poFailures) involves.push(entry);
+  }
+  for (const entry of poConfirms) confirms.push(entry);
 
   return {
     passed: failures.length === 0,
@@ -324,6 +450,7 @@ export function validateInvoiceFacts(
     // something to read in it.
     ...(invalidCodes.length > 0 ? { invalidCodes } : {}),
     ...(involves.length > 0 ? { involves } : {}),
+    ...(confirms.length > 0 ? { confirms } : {}),
   };
 }
 

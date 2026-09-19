@@ -198,6 +198,35 @@
   */
   --tab-active-shadow: 0 1px 2px rgba(18, 26, 38, 0.12);
 
+  /*
+    **The severity fill stays pale in both moods, decision 0400** —
+    reported live, comparing the two against a real mockup: *"can you
+    use the paler 'day' colours for the night scheme also?"* The
+    key-field highlighting these back (red/amber/green, decision 0395's
+    own `--bg-danger`/`--text-danger` finally consumed, alongside
+    `--bg-warning`/`--text-warning`/`--bg-success`/`--text-success`)
+    gets its own dedicated tokens rather than reusing those directly,
+    because `--bg-warning`/`--text-warning`/`--bg-success`/
+    `--text-success` already carry a real Night pairing used
+    elsewhere in the app — status labels, stat tiles, rule state — and
+    darkening those globally to satisfy one screen's own request would
+    have changed every one of those, unasked. `--severity-value-text`
+    is the fourth: the fill stays fixed, so the value text inside it
+    has to as well — `--text-primary` itself flips light at Night and
+    would go invisible on a background that no longer flips with it.
+    None of the four is redefined below, the same "single value doing
+    double duty" choice `--border-danger`/`--border-warning`/
+    `--border-success` already made, just extended from borders to
+    fills for this one purpose.
+  */
+  --severity-danger-bg: #fbe4e1;
+  --severity-danger-text: #9c2b1f;
+  --severity-warning-bg: #faeeda;
+  --severity-warning-text: #854f0b;
+  --severity-ok-bg: #eaf3de;
+  --severity-ok-text: #3b6d11;
+  --severity-value-text: #121a26;
+
   --radius: 8px;
   /*
     Calibri, asked for by name — decision 0124.

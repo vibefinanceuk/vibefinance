@@ -1,7 +1,7 @@
 # Handover
 
 **Written 4 September 2026, updated 17 September (six times), updated
-18 September (four times), updated 19 September (twelve times).**
+18 September (four times), updated 19 September (thirteen times).**
 
 **For a session starting cold.** Where things stand, what needs a
 decision rather than work, what to do next, and the habits this project
@@ -38,8 +38,8 @@ twice.
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
 | `vf-app-poc` migrations | through `0070` |
 | `vf-licence-poc` migrations | through `0123` applied, all confirmed live — checksums `9e4d534bcef6…` (`0122`) and `79ff9f930fdb…` (`0123`), run by the operator via `apply_migrations.py --remote --migrations-dir workers/vf-licence/migrations --database vf-licence-poc` |
-| Tests | vf-admin 9 · vf-app 1921 · vf-licence 320 · vf-ui 74 Worker + 704 browser · shared 278 (+3 known pre-existing failures) |
-| Decision records | 399 |
+| Tests | vf-admin 9 · vf-app 1936 · vf-licence 320 · vf-ui 74 Worker + 709 browser · shared 278 (+3 known pre-existing failures) |
+| Decision records | 400 |
 
 **Decision 0394 (a column, two arrows, and a marker) is pushed and
 deployed, confirmed directly by the operator opening the pop-out
@@ -307,6 +307,55 @@ three new ones), both passing; `eslint` clean;
 `scripts/check-citations.py` clean (399 records). Touches `vf-ui`
 (`public/app.css`, `test-browser/typography.test.ts`) only — no
 `tokens.css` change, no JS file, no other Worker.
+
+**Decision 0400 (three tiers for the fourth piece) is built, tested,
+and visually verified — not yet pushed.** Closes the four-piece
+sequence 0395 opened: red, amber, and green on the validation screen's
+key fields and exceptions list. Investigated first, per the deferral
+0395/0396/0397/0398 all left for it — no upstream distinction between
+"mismatch" and "needs review" existed to repurpose — then three scope
+questions went to the operator directly: wire the existing PO
+three-way-match into the exceptions pipeline (**yes**), bring back the
+hidden exceptions panel (**no**, left hidden), and the green state's
+own definition (**Claude's judgement**). Backend: a new `po_mismatch`
+check in `validation.ts`, gated on a real comparison having happened
+(`po.variance_pct !== undefined`) rather than on `po.matched` alone,
+since that field alone conflates "no PO referenced" with "PO
+referenced but disagrees"; a required `severity` on every failure
+("danger" for `po_mismatch` only — checked against a linked purchase
+order, not the document's own numbers; "warning" for the original
+six); and `confirms`, the deliberate positive twin of
+`ValidationFailure`, withheld from `total_missing` on a pass since
+presence is not agreement. Frontend: four new mood-invariant severity
+tokens, pale in both Day and Night per the operator's own correction
+to the first mock-up (*"can you use the paler 'day' colours for the
+night scheme also?"*) rather than redarkening the general
+warning/success tokens used in roughly fifteen other places; a
+three-pass deterministic paint order in `markFields()` so a danger
+always wins a field over a warning or an ok, never dependent on which
+entry the backend happened to list first. Found and fixed, along the
+way, a genuine pre-existing off-by-one in the line-cell marking logic
+(`row.children[index + 1]` read the wrong cell — the field *after* the
+named one, or the remove button's own cell for the last field — should
+have been `index`; present since before this decision, caught only by
+screenshotting a real line cell for the first time, which nothing
+before this change had done). Visually verified against the real
+integrated markup with Playwright — not just the standalone mock-up
+already shown and approved — in both Day and Night. 20 new tests
+across `vf-app` (15) and `vf-ui` (5), plus two existing `vf-ui` tests
+rewritten in place for the new tiers, all fail-first verified. Full
+suites: vf-app 1936/1936, vf-licence 320/320, vf-ui 74 Worker + 709
+browser, all passing; `eslint` clean; `scripts/check-citations.py`
+clean (400 records). Touches `vf-app` (`validation.ts`,
+`invoice-facts-route.ts`, `key-fields-route.ts`), `vf-ui`
+(`tokens.css`, `app.css`, `viewer.js`), and `vf-licence` (migration
+`0124`, `test/setup.ts`, `test/string-coverage.test.ts`) — no
+`vf-admin` change. `key-fields-route.ts` wires header-level
+`po_mismatch` only, documented at the call site: its `lines.results`
+is a pre-existing, unparsed line-facts shape this decision does not
+reach into. Not yet pushed — waiting on the operator, same as every
+other decision here before its own "pushed and deployed" line is
+written and independently confirmed.
 
 **A real gap in this session's own verification, worth recording
 plainly.** `origin/main` fetched directly read the right commit at

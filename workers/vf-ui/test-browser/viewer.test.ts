@@ -81,6 +81,7 @@ const STRINGS = {
   strings: {
     "viewer.back": "Back",
     "check.vat_arithmetic": "Net plus VAT does not equal the total",
+    "check.po_mismatch": "Does not match the purchase order",
     "viewer.exceptions": "Exceptions",
     "viewer.seller": "Seller",
     "viewer.buyer": "Buyer",
@@ -104,6 +105,7 @@ const STRINGS = {
     "field.bt-112": "Total with VAT",
     "field.bt-27": "Seller name",
     "field.bt-131": "Line net amount",
+    "field.bt-129": "Invoiced quantity",
     "field.bt-1": "Invoice number",
     "field.bt-5": "Currency",
     "field.bt-2": "Issue date",
@@ -252,7 +254,9 @@ describe("the exceptions panel (decision 0119)", () => {
         passed: false,
         checked: ["vat_arithmetic"],
         failures: ["vat_arithmetic"],
-        involves: [{ check: "vat_arithmetic", fields: ["BT-106", "BT-110", "BT-112"] }],
+        involves: [
+          { check: "vat_arithmetic", fields: ["BT-106", "BT-110", "BT-112"], severity: "warning" },
+        ],
       },
     },
   };
@@ -282,7 +286,9 @@ describe("the exceptions panel (decision 0119)", () => {
     expect(list?.textContent).toContain("Total with VAT");
   });
 
-  it("highlights every field the failure involves", async () => {
+  it("highlights every field the failure involves, at its severity tier", async () => {
+    // decision 0400: vat_arithmetic is a "warning" (the document's own
+    // numbers disagree with each other, not a linked source of truth).
     stubFetch(FAILING);
     const { loadStrings } = await import("/strings.js");
     await loadStrings();
@@ -291,7 +297,8 @@ describe("the exceptions panel (decision 0119)", () => {
 
     for (const code of ["BT-106", "BT-110", "BT-112"]) {
       const box = document.getElementById(`f-${code}`)?.closest(".kf");
-      expect(box?.classList.contains("failing"), code).toBe(true);
+      expect(box?.classList.contains("warning"), code).toBe(true);
+      expect(box?.classList.contains("danger"), code).toBe(false);
     }
   });
 
@@ -316,7 +323,9 @@ describe("the exceptions panel (decision 0119)", () => {
     await openViewer(TASK, () => {});
 
     const box = document.getElementById("f-BT-27")?.closest(".kf");
-    expect(box?.classList.contains("failing")).toBe(false);
+    expect(box?.classList.contains("warning")).toBe(false);
+    expect(box?.classList.contains("danger")).toBe(false);
+    expect(box?.classList.contains("ok")).toBe(false);
   });
 
   it("says so plainly when there is nothing wrong", async () => {
@@ -337,6 +346,182 @@ describe("the exceptions panel (decision 0119)", () => {
     await openViewer(TASK, () => {});
 
     expect(document.getElementById("exlist")?.textContent).toContain("Nothing to resolve");
+  });
+});
+
+describe("three-tier severity on key fields (decision 0400)", () => {
+  /**
+   * Danger — a linked purchase order genuinely disagrees (checked
+   * against a source of truth outside the document). Warning — the
+   * document's own numbers disagree with each other. Ok — a check ran
+   * against this field and it agreed. Precedence between them (a
+   * `danger` always wins the field) is its own test below, since a
+   * field only ever carries one tier at a time here.
+   */
+  const RESPONSE = (validation: Record<string, unknown>) => ({
+    "/api/code-lists": { fields: {} },
+    "/api/ui-strings": STRINGS,
+    "/api/field-visibility": FIELDS,
+    "/api/invoices/inv-1": {
+      facts: { "BT-106": 100, "BT-110": 20, "BT-112": 120, "BT-13": "PO-1" },
+      lines: [],
+      validation,
+    },
+  });
+
+  it("marks a po_mismatch failure as danger, not warning", async () => {
+    stubFetch(
+      RESPONSE({
+        passed: false,
+        checked: ["po_mismatch"],
+        failures: ["po_mismatch"],
+        involves: [{ check: "po_mismatch", fields: ["BT-13", "BT-112"], severity: "danger" }],
+      })
+    );
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    await openViewer(TASK, () => {});
+
+    const box = document.getElementById("f-BT-112")?.closest(".kf");
+    expect(box?.classList.contains("danger")).toBe(true);
+    expect(box?.classList.contains("warning")).toBe(false);
+    expect((box as HTMLElement).title).toBe("Does not match the purchase order");
+  });
+
+  it("marks a confirmed field ok, and adds a dot beside its label", async () => {
+    stubFetch(
+      RESPONSE({
+        passed: true,
+        checked: ["vat_arithmetic"],
+        failures: [],
+        confirms: [{ check: "vat_arithmetic", fields: ["BT-106", "BT-110", "BT-112"] }],
+      })
+    );
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    await openViewer(TASK, () => {});
+
+    const box = document.getElementById("f-BT-112")?.closest(".kf") as HTMLElement;
+    expect(box.classList.contains("ok")).toBe(true);
+    expect(box.querySelector(".kf-dot")).not.toBeNull();
+  });
+
+  it("lets a danger failure win a field over a warning confirmation elsewhere on it", async () => {
+    // BT-112 both fails po_mismatch (danger) and is merely confirmed
+    // by vat_arithmetic (ok) — the field must end up danger, not ok,
+    // regardless of which array the backend happened to list first.
+    stubFetch(
+      RESPONSE({
+        passed: false,
+        checked: ["vat_arithmetic", "po_mismatch"],
+        failures: ["po_mismatch"],
+        involves: [{ check: "po_mismatch", fields: ["BT-112"], severity: "danger" }],
+        confirms: [{ check: "vat_arithmetic", fields: ["BT-106", "BT-110", "BT-112"] }],
+      })
+    );
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    await openViewer(TASK, () => {});
+
+    const box = document.getElementById("f-BT-112")?.closest(".kf");
+    expect(box?.classList.contains("danger")).toBe(true);
+    expect(box?.classList.contains("ok")).toBe(false);
+  });
+
+  it("marks the named line field's own cell, not its neighbour", async () => {
+    // A regression test for a pre-existing off-by-one in `markOne()`,
+    // found while screenshotting this decision's own line-cell
+    // highlighting: `lineRow()` lays a row out as
+    // `[...lineFields.map(cell), removeButtonTd]` — no leading row-
+    // counter column — so a field at `lineFields` position `index`
+    // sits at `row.children[index]`. The prior code read
+    // `row.children[index + 1]`, which mismarked the field after the
+    // named one (or, for the last line field, the remove button's own
+    // cell — invisible in CSS, since nothing targets it, but it did
+    // hijack the button's tooltip).
+    const twoLineFields = {
+      fields: [
+        ...FIELDS.fields,
+        { field: "BT-129", visibility: "edit", type: "number", line: true, description: "quantity" },
+      ],
+    };
+    stubFetch({
+      "/api/code-lists": { fields: {} },
+      "/api/ui-strings": STRINGS,
+      "/api/field-visibility": twoLineFields,
+      "/api/invoices/inv-1": {
+        facts: {},
+        lines: [{ lineNumber: 1, facts: { "BT-131": 60, "BT-129": 3 } }],
+        validation: {
+          passed: false,
+          checked: ["line_sum"],
+          failures: ["line_sum"],
+          involves: [{ check: "line_sum", fields: ["BT-131"], line: 1, severity: "warning" }],
+        },
+      },
+    });
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    await openViewer(TASK, () => {});
+
+    const row = document.querySelector("#lines tr") as HTMLElement;
+    // BT-131 is lineFields position 0 — its own cell, not BT-129's.
+    expect(row.children[0]?.classList.contains("warning")).toBe(true);
+    expect(row.children[1]?.classList.contains("warning")).toBe(false);
+    // And not the trailing remove-button cell.
+    expect(row.children[2]?.querySelector(".rm")).not.toBeNull();
+    expect(row.children[2]?.classList.contains("warning")).toBe(false);
+  });
+
+  it("re-reads confirms after a save, not only on first load", async () => {
+    // The post-save handler has its own `confirms = ...` assignment,
+    // separate from loadInvoice()'s — a field that just started
+    // passing should not stay unmarked until the document is reopened.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        const path = String(url).split("?")[0];
+        const bodies: Record<string, unknown> = {
+          "/api/ui-strings": STRINGS,
+          "/api/code-lists": { fields: {} },
+          "/api/field-visibility": FIELDS,
+          "/api/invoices/inv-1": {
+            facts: { "BT-106": 100, "BT-110": 20, "BT-112": 120 },
+            lines: [],
+            validation: { passed: true, checked: ["vat_arithmetic"], failures: [] },
+          },
+          "/api/invoices/inv-1/key": {
+            facts: { "BT-106": 100, "BT-110": 20, "BT-112": 120 },
+            lines: [],
+            validation: {
+              passed: true,
+              checked: ["vat_arithmetic"],
+              failures: [],
+              confirms: [{ check: "vat_arithmetic", fields: ["BT-106", "BT-110", "BT-112"] }],
+            },
+          },
+        };
+        if (!(path in bodies)) throw new Error(`no stub for ${path} — add one, or the test proves nothing`);
+        return { ok: true, json: async () => bodies[path] } as Response;
+      })
+    );
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    await openViewer(TASK, () => {});
+
+    const saveButton = [...document.querySelectorAll(".actionlink")].find(
+      (a) => a.querySelector("span")?.textContent === "Save"
+    ) as HTMLButtonElement;
+    saveButton.click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const box = document.getElementById("f-BT-112")?.closest(".kf") as HTMLElement;
+    expect(box.classList.contains("ok")).toBe(true);
   });
 });
 

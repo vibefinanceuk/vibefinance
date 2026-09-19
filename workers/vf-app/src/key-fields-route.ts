@@ -3,6 +3,7 @@ import { isKnownField, type InvoiceFacts } from "@vibefinance/shared";
 import { handleUpsertInvoice } from "./invoice-facts-route.js";
 import { validateInvoiceFacts } from "./validation.js";
 import { resolveFieldVisibility } from "./field-visibility-route.js";
+import { mergePoMatchFacts } from "./po-matching.js";
 
 /**
  * Keying — a person producing facts extraction could not.
@@ -424,8 +425,16 @@ export async function handleKeyInvoiceFields(
     .prepare("SELECT * FROM invoice_lines WHERE invoice_id = ? ORDER BY line_number")
     .bind(invoiceId)
     .all<Record<string, unknown>>();
+  // po.matched/po.variance_pct reach this advisory too — decision 0400.
+  // **Header only.** `lines.results` here is the raw invoice_lines row
+  // shape (facts_json still a string, never parsed) rather than real
+  // per-line facts — a pre-existing gap this change does not reach
+  // into, so line-level po_mismatch is not wired in on this path; it
+  // already is on the read-on-arrival path (invoice-facts-route.ts)
+  // and every real stage visit, both of which hold genuine line facts.
+  const poMerged = await mergePoMatchFacts(db, merged as InvoiceFacts, []);
   const verdict = validateInvoiceFacts(
-    merged as InvoiceFacts,
+    poMerged.headerFacts,
     lines.results as never,
     // The platform tolerance, not the channel's. Keying knows the
     // invoice and not the channel it arrived through, and this verdict
@@ -463,6 +472,9 @@ export async function handleKeyInvoiceFields(
         // has no business seeing.
         ...(verdict.involves ? { involves: verdict.involves } : {}),
         ...(verdict.invalidCodes ? { invalidCodes: verdict.invalidCodes } : {}),
+        // decision 0400's green tier, named explicitly for the same
+        // reason involves/invalidCodes are just above.
+        ...(verdict.confirms ? { confirms: verdict.confirms } : {}),
         // Said plainly rather than left to be assumed: this is a report
         // on the facts as they now stand, not a verdict recorded against
         // the process instance.

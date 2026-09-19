@@ -570,6 +570,7 @@ const KEYS_THE_INTERFACE_USES = [
   "check.date_order",
   "check.line_sum",
   "check.code_list",
+  "check.po_mismatch", // decision 0400 — PO three-way-match, tagged severity "danger".
   "viewer.lines",
   "viewer.description",
   "viewer.addline",

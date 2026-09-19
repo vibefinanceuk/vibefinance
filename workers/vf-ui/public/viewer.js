@@ -30,6 +30,16 @@ let lines = [];
  */
 let exceptions = [];
 
+/**
+ * The current confirmations — decision 0400, the positive twin of
+ * `exceptions`. No panel reads this (the exceptions panel is about
+ * exceptions); it exists only so `markFields()` can mark a field green
+ * from the same kind of source-of-truth `exceptions` already is,
+ * rather than inferring "confirmed" from "not flagged" — which would
+ * be true of a field no check ever looked at, not just one that passed.
+ */
+let confirms = [];
+
 /** Set on open, from what the stage permits (decision 0142). */
 let canEditAnything = true;
 
@@ -132,6 +142,7 @@ function shortWhen(when) {
 export async function loadInvoice(invoiceId) {
   stored = { facts: {}, lines: [], document: null };
   exceptions = [];
+  confirms = [];
   try {
     const response = await fetch(`/api/invoices/${encodeURIComponent(invoiceId)}`);
     if (!response.ok) return;
@@ -166,6 +177,8 @@ export async function loadInvoice(invoiceId) {
     // opening a document with three failures should be told, rather
     // than having to change something first (decision 0119).
     exceptions = body.validation?.involves ?? [];
+    // decision 0400's own green tier, the same "on arrival" reasoning.
+    confirms = body.validation?.confirms ?? [];
   } catch {
     // An empty form is wrong, and a form showing another invoice's
     // values would be worse.
@@ -1125,8 +1138,11 @@ function documentPanel(task, onPoppedOutChange) {
 function exceptionRow(failure) {
   const where = failure.line ? ` · ${t("viewer.online")} ${failure.line}` : "";
   const value = failure.value ? ` · ${failure.value}` : "";
+  // Danger-severity failures get a class so the (currently hidden) panel's
+  // `.exrow.danger .extext` rule can pick them out, same as the key fields.
+  const rowClass = failure.severity === "danger" ? "exrow danger" : "exrow";
 
-  return el("div", { class: "exrow" }, [
+  return el("div", { class: rowClass }, [
     el("div", { class: "extext", text: t(`check.${failure.check}`) }),
     el("div", {
       class: "exwhere",
@@ -1144,37 +1160,92 @@ function exceptionRow(failure) {
  * explain itself makes somebody hunt through a list to find out which
  * of fourteen exceptions is theirs.
  */
+/**
+ * The three tiers a field can carry — decision 0400. Applied by
+ * `markFields()` below; kept as one place so a `.kf` box and a
+ * `.linetable` cell are marked identically.
+ *
+ * **A dot only on `.kf`, never the line table.** The mock-up's own
+ * small marker sits beside a field's label; a table cell has no label
+ * to sit beside, and a dot in every cell of a wide row would compete
+ * with the numbers themselves rather than read as a field-level cue.
+ */
+function setSeverity(node, severity, reason) {
+  // Remove any tier a still-earlier pass left, so a field a failure
+  // later claims never keeps an "ok" from a confirmation for the same
+  // field alongside it — one tier wins, not all of them at once.
+  node.classList.remove("danger", "warning", "ok");
+  node.classList.add(severity);
+  node.title = reason;
+  if (!node.classList.contains("kf")) return;
+  const label = node.querySelector("label");
+  if (label && !label.querySelector(".kf-dot")) {
+    label.prepend(el("span", { class: "kf-dot" }));
+  }
+}
+
 function markFields() {
-  for (const node of document.querySelectorAll(".kf.failing, .linetable td.failing")) {
-    node.classList.remove("failing");
+  for (const node of document.querySelectorAll(
+    ".kf.danger, .kf.warning, .kf.ok, .linetable td.danger, .linetable td.warning, .linetable td.ok"
+  )) {
+    node.classList.remove("danger", "warning", "ok");
     node.removeAttribute("title");
   }
+  for (const dot of document.querySelectorAll(".kf-dot")) dot.remove();
 
-  for (const failure of exceptions) {
-    const reason = t(`check.${failure.check}`);
-    for (const code of failure.fields) {
-      const control = document.getElementById(`f-${code}`);
-      // A field this stage does not show cannot be highlighted, and
-      // that is not an error: the exception still appears in the panel.
-      if (control?.closest(".kf")) {
-        const box = control.closest(".kf");
-        box.classList.add("failing");
-        box.title = reason;
-      }
+  /**
+   * **Least urgent first, most urgent last — explicitly, not by
+   * whatever order the API happened to list things in.** Two different
+   * checks can disagree about the same field (`vat_arithmetic`
+   * confirming BT-112 does not mean a linked purchase order's own
+   * `po_mismatch` agrees), and painting in this fixed order means a
+   * `danger` always wins the field over a `warning` or an `ok`, and a
+   * `warning` always wins over an `ok` — never the reverse, and never
+   * dependent on which entry `validateInvoiceFacts` happened to push
+   * first.
+   */
+  for (const confirmed of confirms) markOne(confirmed, "ok", t(`check.${confirmed.check}`));
+  for (const failure of exceptions.filter((f) => f.severity === "warning")) {
+    markOne(failure, "warning", t(`check.${failure.check}`));
+  }
+  for (const failure of exceptions.filter((f) => f.severity === "danger")) {
+    markOne(failure, "danger", t(`check.${failure.check}`));
+  }
+}
 
-      // Line fields, on the row the failure names — or every row, when
-      // it names none, because `line_sum` is about all of them.
-      const rows = document.querySelectorAll("#lines tr");
-      const index = lineFields.findIndex((f) => f.field === code);
-      if (index >= 0) {
-        for (const [n, row] of rows.entries()) {
-          if (failure.line && failure.line !== n + 1) continue;
-          const cell = row.children[index + 1];
-          if (cell) {
-            cell.classList.add("failing");
-            cell.title = reason;
-          }
-        }
+/** Marks every field (and line-table cell) one `involves`/`confirms`
+ *  entry names, with the given tier and tooltip. */
+function markOne(entry, severity, reason) {
+  for (const code of entry.fields) {
+    const control = document.getElementById(`f-${code}`);
+    // A field this stage does not show cannot be marked, and that is
+    // not an error: the exception still appears in the panel (a
+    // confirmation has no panel to appear in at all).
+    if (control?.closest(".kf")) {
+      setSeverity(control.closest(".kf"), severity, reason);
+    }
+
+    // Line fields, on the row the entry names — or every row, when it
+    // names none, because line_sum (and a header-level po_mismatch)
+    // are about all of them.
+    //
+    // **A pre-existing off-by-one, found and fixed here** (decision
+    // 0400): `lineRow()` builds each row as exactly `lineFields.map(cell)`
+    // followed by one trailing remove-button `<td>` — no leading row-
+    // counter column (decision 0173 removed the last one). So a field
+    // at `lineFields` position `index` sits at `row.children[index]`,
+    // not `index + 1`. The `+ 1` silently marked the wrong cell (or,
+    // for the last line field, the remove button itself — visible here
+    // only as a hijacked tooltip, since no CSS rule targets it) under
+    // the old single-tier `.failing` class too; it went unnoticed
+    // because nothing before this change screenshotted a line cell.
+    const rows = document.querySelectorAll("#lines tr");
+    const index = lineFields.findIndex((f) => f.field === code);
+    if (index >= 0) {
+      for (const [n, row] of rows.entries()) {
+        if (entry.line && entry.line !== n + 1) continue;
+        const cell = row.children[index];
+        if (cell) setSeverity(cell, severity, reason);
       }
     }
   }
@@ -1268,6 +1339,9 @@ async function save(close) {
    * is the thing decision 0107 exists to prevent.
    */
   exceptions = body.validation?.involves ?? [];
+  // Same as loadInvoice(): the green tier is re-read here too, or a
+  // field that just started passing would stay unmarked until reload.
+  confirms = body.validation?.confirms ?? [];
   renderExceptions();
   note(t("viewer.saved"));
 

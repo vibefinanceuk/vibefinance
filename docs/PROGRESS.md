@@ -695,6 +695,41 @@ a rule, and left an approval task in a queue.
   the same job. Checked with Playwright against the real stylesheet,
   Day and Night both. Full suites: vf-ui 74 Worker (unchanged) + 704
   browser (702 pre-existing, net +2), both passing.
+- **Three tiers for the fourth piece** (0400, closing the sequence
+  0395 opened — red, amber, green on the validation screen's key
+  fields and exceptions list). Investigated first: no upstream
+  distinction between "mismatch" and "needs review" existed to
+  repurpose, so three scope choices went to the operator directly —
+  wire the existing PO three-way-match into the exceptions pipeline
+  (yes), bring back the hidden exceptions panel (no, left hidden), and
+  the green state's own definition (Claude's judgement). Backend: a
+  new `po_mismatch` check (`validation.ts`), a required `severity`
+  ("danger" for `po_mismatch`, checked against a linked purchase
+  order; "warning" for the original six, the document's own numbers
+  disagreeing with themselves) on every failure, and `confirms` —
+  `ValidationFailure`'s own positive twin, deliberately not given to
+  `total_missing` on a pass, since presence is not agreement. Frontend:
+  four new mood-invariant severity tokens (pale in both Day and Night,
+  per the operator's own correction to the first mock-up — *"can you
+  use the paler 'day' colours for the night scheme also?"* — rather
+  than redarkening the general warning/success tokens used in ~15
+  other places), a three-pass deterministic paint order in
+  `markFields()` (danger always wins a field over warning or ok, never
+  dependent on array order), and a small dot beside a `.kf` field's
+  label. Found and fixed, along the way, a genuine pre-existing
+  off-by-one in the line-cell marking logic (`row.children[index + 1]`
+  should have read `index`) — present since before this decision,
+  caught only by screenshotting a real line cell for the first time.
+  Visually verified against the real integrated markup with Playwright,
+  Day and Night both, not just the standalone mock-up. 20 new tests
+  across `vf-app` (15) and `vf-ui` (5), plus two existing `vf-ui`
+  tests rewritten in place for the new tiers, all fail-first verified.
+  Full suites: vf-app 1936/1936, vf-licence 320/320, vf-ui
+  74 Worker + 709 browser (704 pre-existing, net +5 — two existing
+  tests rewritten in place for the new tiers, five added). `key-fields-route.ts` wires
+  header-level `po_mismatch` only — its line facts are a pre-existing,
+  unparsed shape this decision does not reach into; documented at the
+  call site rather than silently left or silently expanded in scope.
 
 ### Customer configuration
 - Org units, teams, roles, users, cost centres
@@ -1112,13 +1147,13 @@ elsewhere.
 
 | Package | Tests |
 |---|---|
-| `vf-app` | 1921 |
+| `vf-app` | 1936 |
 | `vf-licence` | 320 |
-| `vf-ui` | 74 Worker · 704 browser |
+| `vf-ui` | 74 Worker · 709 browser |
 | `shared` | 278 passing, 3 known pre-existing failures |
 
 Both migration chains replay clean with every standing invariant
-holding — 70 migrations for `vf-app`, 123 for `vf-licence`.
+holding — 70 migrations for `vf-app`, 124 for `vf-licence`.
 
 **`vf-app`'s count was recorded as 1851 through decision 0379**; a clean
 run at `46c1da2`, with no `vf-app` change since decision 0378 recorded
@@ -1140,7 +1175,7 @@ measured (0380) rather than explained after the fact.
 | `docs/design/mockups/` | Four screens as static HTML | Current |
 | `docs/design/multi-authority-intake.md` | Non-EN-16931 authorities | Design only |
 | `docs/design/text-layer-extraction.md` | Reading a PDF's own text | Design only |
-| `docs/decisions/` | 399 decision records | Current |
+| `docs/decisions/` | 400 decision records | Current |
 | `docs/decisions/SUPERSEDED.md` | Which records supersede which | **Read first** |
 
 Document 4's markdown source is at `docs/documents/`, with

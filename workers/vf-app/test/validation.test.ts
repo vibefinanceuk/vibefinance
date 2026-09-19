@@ -383,3 +383,158 @@ describe("which fields a failure involves (decision 0119)", () => {
     expect(failure?.fields).toContain("BT-131");
   });
 });
+
+describe("severity — decision 0400", () => {
+  /**
+   * `danger` is reserved for a claim checked against an external
+   * source of truth, found to disagree. Every check but `po_mismatch`
+   * compares the document's own numbers against each other or against
+   * a closed list — worth attention, never proof of an error — and so
+   * stays `warning`.
+   */
+  it("tags every existing check's failures as warning", () => {
+    const result = validateInvoiceFacts(
+      { "BT-106": 100, "BT-110": 20, "BT-112": 999, "BT-115": 1, "BT-2": "2026-09-01", "BT-9": "2026-08-01", "BT-5": "EURO" },
+      [{ "BT-131": 30 }]
+    );
+    expect(result.involves?.length).toBeGreaterThan(0);
+    for (const failure of result.involves ?? []) {
+      expect(failure.severity, failure.check).toBe("warning");
+    }
+  });
+
+  it("tags a purchase-order mismatch as danger", () => {
+    const result = validateInvoiceFacts({
+      "BT-112": 100,
+      "BT-13": "PO-1",
+      "po.matched": false,
+      "po.variance_pct": 12.5,
+    });
+    expect(result.involves?.find((f) => f.check === "po_mismatch")?.severity).toBe("danger");
+  });
+});
+
+describe("confirms — decision 0400, the positive twin of involves", () => {
+  /**
+   * A check running and finding nothing wrong is not the same claim as
+   * a field merely being present (decision 0119's own `checked` vs.
+   * `failures` distinction, extended). `total_missing` is presence-only
+   * and produces no confirmation — it never compares BT-112 against
+   * anything, so passing it says nothing about whether the value is
+   * right.
+   */
+  it("does not confirm total_missing on pass — presence is not agreement", () => {
+    const result = validateInvoiceFacts({ "BT-112": 100 });
+    expect(result.confirms?.some((c) => c.check === "total_missing")).toBeFalsy();
+  });
+
+  it("confirms VAT arithmetic when it genuinely agrees", () => {
+    const result = validateInvoiceFacts({ "BT-106": 2099, "BT-110": 419.8, "BT-112": 2518.8 });
+    const confirmed = result.confirms?.find((c) => c.check === "vat_arithmetic");
+    expect(confirmed?.fields).toEqual(["BT-106", "BT-110", "BT-112"]);
+  });
+
+  it("confirms amount due, date order and line sum the same way", () => {
+    const result = validateInvoiceFacts(
+      { "BT-106": 100, "BT-112": 100, "BT-115": 100, "BT-2": "2026-07-01", "BT-9": "2026-08-01" },
+      [{ "BT-131": 100 }]
+    );
+    expect(result.confirms?.some((c) => c.check === "amount_due_mismatch")).toBe(true);
+    expect(result.confirms?.some((c) => c.check === "date_order")).toBe(true);
+    expect(result.confirms?.some((c) => c.check === "line_sum")).toBe(true);
+  });
+
+  it("confirms a valid code, per field — as precise as a bad one already is", () => {
+    const result = validateInvoiceFacts({ "BT-112": 100, "BT-5": "EUR" });
+    expect(result.confirms?.find((c) => c.check === "code_list")?.fields).toEqual(["BT-5"]);
+  });
+
+  it("never confirms a field that failed the same check", () => {
+    const result = validateInvoiceFacts({ "BT-106": 100, "BT-110": 20, "BT-112": 999 });
+    expect(result.confirms?.some((c) => c.check === "vat_arithmetic")).toBeFalsy();
+  });
+
+  it("says nothing when nothing was confirmed", () => {
+    expect(validateInvoiceFacts({}).confirms).toBeUndefined();
+  });
+});
+
+describe("po_mismatch — decision 0400", () => {
+  /**
+   * po-matching.ts computes po.matched/po.variance_pct (header) and
+   * po.line_matched/po.line_variance_pct/po.line_quantity_variance_pct
+   * (per line) against real purchase-order rows; this module has no DB
+   * access and never recomputes them — it only reads what the caller
+   * already merged onto facts/lines, exactly as it already does for
+   * supplier.amountTolerancePct and every other derived fact it reads.
+   * These tests set po.* directly rather than going through
+   * po-matching.ts, the same way every other test in this file sets
+   * BT-* facts directly rather than parsing a real document first.
+   */
+  it("is not checked at all when no purchase order was ever compared", () => {
+    // The ordinary case — most invoices carry no PO reference, and
+    // po.matched reads false for that exactly as it does for a real
+    // disagreement (po-matching.ts's own deliberate choice). Only
+    // po.variance_pct's presence says a real comparison happened.
+    const result = validateInvoiceFacts({ "BT-112": 100, "po.matched": false });
+    expect(result.checked).not.toContain("po_mismatch");
+    expect(result.failures).not.toContain("po_mismatch");
+  });
+
+  it("fails when a linked purchase order genuinely disagrees", () => {
+    const result = validateInvoiceFacts({
+      "BT-112": 812,
+      "BT-13": "PO-42",
+      "po.matched": false,
+      "po.variance_pct": 8.3,
+    });
+    expect(result.checked).toContain("po_mismatch");
+    expect(result.failures).toContain("po_mismatch");
+    const failure = result.involves?.find((f) => f.check === "po_mismatch");
+    expect(failure?.fields).toEqual(["BT-13", "BT-112"]);
+    expect(failure?.value).toBe("8.30%");
+  });
+
+  it("confirms when a linked purchase order genuinely agrees", () => {
+    const result = validateInvoiceFacts({
+      "BT-112": 812,
+      "BT-13": "PO-42",
+      "po.matched": true,
+      "po.variance_pct": 0.1,
+    });
+    expect(result.checked).toContain("po_mismatch");
+    expect(result.failures).not.toContain("po_mismatch");
+    expect(result.confirms?.find((c) => c.check === "po_mismatch")?.fields).toEqual(["BT-13", "BT-112"]);
+  });
+
+  it("checks and reports per line, naming the line", () => {
+    const result = validateInvoiceFacts({ "BT-112": 100 }, [
+      { "BT-131": 100, "po.line_matched": true, "po.line_variance_pct": 0 },
+      { "BT-131": 40, "po.line_matched": false, "po.line_variance_pct": 33.3 },
+    ]);
+    expect(result.checked).toContain("po_mismatch");
+    const lineFailure = result.involves?.find((f) => f.check === "po_mismatch" && f.line === 2);
+    expect(lineFailure?.fields).toEqual(["BT-131"]);
+    const lineConfirm = result.confirms?.find((c) => c.check === "po_mismatch" && c.line === 1);
+    expect(lineConfirm).toBeTruthy();
+  });
+
+  it("names the quantity field too when quantity was genuinely part of the comparison", () => {
+    const result = validateInvoiceFacts({ "BT-112": 100 }, [
+      { "BT-131": 100, "po.line_matched": false, "po.line_variance_pct": 5, "po.line_quantity_variance_pct": 20 },
+    ]);
+    const failure = result.involves?.find((f) => f.check === "po_mismatch");
+    expect(failure?.fields).toEqual(["BT-131", "BT-129"]);
+  });
+
+  it("a line with no purchase order data is silently skipped, not failed", () => {
+    const result = validateInvoiceFacts({ "BT-112": 100 }, [{ "BT-131": 100 }]);
+    expect(result.involves?.some((f) => f.check === "po_mismatch")).toBeFalsy();
+  });
+
+  it("reaches the facts a rule can test, the same way every other check does", () => {
+    const result = validateInvoiceFacts({ "BT-112": 100, "po.matched": false, "po.variance_pct": 50 });
+    const merged = mergeValidationFacts({ "BT-112": 100 }, result);
+    expect(String(merged["validation.failures"])).toContain("po_mismatch");
+  });
+});

@@ -2536,24 +2536,81 @@
   }
 
   .exrow:last-child { border-bottom: none; }
-  .extext { color: var(--text-warning); }
+  .extext { color: var(--severity-warning-text); }
   .exwhere { color: var(--text-muted); font-size: var(--text-sm); margin-top: 2px; }
   .exrow.muted .extext { color: var(--text-muted); }
+  /* decision 0400 — a purchase-order mismatch reads as the stop tier
+     here too, matching the field it highlights. */
+  .exrow.danger .extext { color: var(--severity-danger-text); }
 
   /*
-    A failing field carries its reason as a tooltip, so somebody does
-    not have to hunt through the panel to find which of fourteen
-    exceptions is theirs.
-  */
-  .kf.failing input,
-  .kf.failing select,
-  .kf.failing .readonly,
-  .linetable td.failing input {
-    border-color: var(--border-warning);
-    background: var(--bg-warning);
-  }
+    **Red, amber and green on the key fields — decision 0400**, the
+    fourth and last of the pieces from e-invoicingcompliancecorner.com
+    (decision 0395). `.kf.warning` replaces `.kf.failing` one for one
+    — same job, renamed because there are now three tiers rather than
+    one: `.kf.danger` for a field that disagrees with a linked
+    purchase order (decision 0400's own `po_mismatch` check, the first
+    thing to actually consume `--bg-danger`/`--text-danger` since they
+    shipped unused at 0395), `.kf.warning` for any of the other checks
+    failing exactly as before, and `.kf.ok` for a field a check ran
+    against and found to agree — new, since nothing before this
+    confirmed a field rather than merely not flagging it (validation.ts's
+    own `confirms`, alongside `involves`).
 
-  .kf.failing label { color: var(--text-warning); }
+    **A dot beside the label, not just the field's own tint** — the
+    mock-up's own small coloured markers, one small enough to sit next
+    to a line-table header too, where a tinted cell would compete with
+    a numeric total. Reuses `--border-danger`/`--border-warning`/
+    `--border-success` directly, exactly as decision 0395's own
+    write-up anticipated before this piece existed: "those can reuse
+    [them] directly when that piece is built."
+
+    A field still carries its reason as a tooltip either way, so
+    somebody does not have to hunt through a hidden panel to find which
+    of fourteen exceptions is theirs.
+  */
+  .kf-dot {
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    border-radius: 999px;
+    margin-right: 6px;
+    vertical-align: middle;
+    flex: none;
+  }
+  .kf.danger .kf-dot { background: var(--border-danger); }
+  .kf.warning .kf-dot { background: var(--border-warning); }
+  .kf.ok .kf-dot { background: var(--border-success); }
+
+  .kf.danger input,
+  .kf.danger select,
+  .kf.danger .readonly,
+  .linetable td.danger input {
+    border-color: var(--border-danger);
+    background: var(--severity-danger-bg);
+    color: var(--severity-value-text);
+  }
+  .kf.danger label { color: var(--severity-danger-text); }
+
+  .kf.warning input,
+  .kf.warning select,
+  .kf.warning .readonly,
+  .linetable td.warning input {
+    border-color: var(--border-warning);
+    background: var(--severity-warning-bg);
+    color: var(--severity-value-text);
+  }
+  .kf.warning label { color: var(--severity-warning-text); }
+
+  .kf.ok input,
+  .kf.ok select,
+  .kf.ok .readonly,
+  .linetable td.ok input {
+    border-color: var(--border-success);
+    background: var(--severity-ok-bg);
+    color: var(--severity-value-text);
+  }
+  .kf.ok label { color: var(--severity-ok-text); }
 
   /*
     The document itself, in the panel — decision 0123.
