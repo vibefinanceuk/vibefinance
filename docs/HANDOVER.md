@@ -1,7 +1,7 @@
 # Handover
 
 **Written 4 September 2026, updated 17 September (six times), updated
-18 September (four times), updated 19 September (eleven times).**
+18 September (four times), updated 19 September (twelve times).**
 
 **For a session starting cold.** Where things stand, what needs a
 decision rather than work, what to do next, and the habits this project
@@ -30,11 +30,11 @@ twice.
 
 | | |
 | --- | --- |
-| `origin/main` | `d6cd7e0` |
+| `origin/main` | `f862d37` |
 | vf-admin deployed | `8e27a34` · `https://admin.vibefinance-ai.com` · behind Cloudflare Access |
 | vf-app deployed | `4d44b59` |
 | vf-licence deployed | `a235713` |
-| vf-ui deployed | `6b470c8` · `https://app.vibefinance-ai.com` |
+| vf-ui deployed | `f862d37` · `https://app.vibefinance-ai.com` |
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
 | `vf-app-poc` migrations | through `0070` |
 | `vf-licence-poc` migrations | through `0123` applied, all confirmed live — checksums `9e4d534bcef6…` (`0122`) and `79ff9f930fdb…` (`0123`), run by the operator via `apply_migrations.py --remote --migrations-dir workers/vf-licence/migrations --database vf-licence-poc` |
@@ -252,7 +252,32 @@ the way 0397 was. Next: red/amber/green severity (piece four, still
 needs the upstream data-model question answered first — not yet
 investigated).
 
-**Decision 0399 (one pill for every tab) is built, not yet pushed.**
+**Decision 0399 (one pill for every tab) is pushed and deployed** —
+confirmed both directly, not taken on the operator's report alone:
+`git fetch` puts `origin/main` at `f862d37`, matching this session's
+own `main` exactly. The live-deploy check needed more care than usual:
+a first cache-busted fetch of `/app.css` asked to quote `.tabbar
+.tab`'s rule body came back with `font-size`/`cursor`/`display`/
+`align-items`/`gap` properties this decision never gave it — a fourth
+instance of this exact fetch tool's documented unreliability against
+this exact site, this time not a stale read but the summarization
+model merging `.tabbar .tab` with the structurally similar, nearby
+`.doctab` rule (confirmed by a follow-up fetch that had it name
+`.tabbar .tab.on` — which exists nowhere in the file — as the
+selector immediately following `.tabbar .tab`'s own closing brace,
+plainly `.doctab.on` bleeding into the wrong answer). A third fetch,
+asked explicitly to distinguish the two rules and count each one's
+declarations separately, gave `.tabbar .tab` exactly five — background,
+border, border-radius, padding, color — matching the source file
+exactly, with `cursor`/`gap` correctly placed in `.doctab`'s own count
+of ten instead. `.tabbar` itself and `.tabbar .tab.active` read
+correctly on the very first fetch: `border-radius: 999px`/`background:
+var(--surface-1)` on the container, `background: var(--surface-2)`/
+`box-shadow: var(--tab-active-shadow)` on the active tab. Lesson
+restated once more because it held again: **when this fetch tool's
+own answer looks structurally too similar to a neighbouring rule, ask
+it to distinguish the two by name and count rather than trusting a
+single quote.**
 The correction 0398's own write-up half-expected, though not from a
 live review this time — asked directly, the same day 0398 shipped:
 *"the most recent tab select update to pill box, also... applied to
