@@ -179,7 +179,10 @@ describe("retaining the original document (decision 0068)", () => {
     const result = await handleCaptureFromSource(env.DB, "src-mail", UBL, fakeModel("{}"), undefined, bucket, "acme");
 
     expect((result.body as { document: { retained: boolean } }).document.retained).toBe(true);
-    expect(puts).toHaveLength(1);
+    // The original, plus a generated_rendering (decision 0405) — the
+    // original is always put() first, in retainOriginal()'s own order,
+    // so puts[0] is still the one this test is actually about.
+    expect(puts).toHaveLength(2);
     expect(puts[0].contentType).toBe("application/xml");
     // {customer}/{year}/{invoice}.{ext} — the year from the invoice's own
     // issue date, not from when this happened to run.
@@ -254,15 +257,19 @@ describe("retaining the original document (decision 0068)", () => {
     // structured_xml never sets detection.embeddedXml — only the
     // structured_pdfa branch does. This is the negative case: nothing
     // about widening DocumentType should make a bare-XML invoice grow
-    // a second, redundant document.
+    // an embedded_xml document, whatever else it does or does not
+    // grow. `original` plus `generated_rendering` (decision 0405: a
+    // plain UBL invoice like this one, with no Peppol CustomizationID,
+    // now renders) is expected here; `embedded_xml` never is.
     const { puts, bucket } = recordingBucket();
     const result = await handleCaptureFromSource(env.DB, "src-mail", UBL, fakeModel("{}"), undefined, bucket, "acme");
 
-    expect(puts).toHaveLength(1);
+    expect(puts).toHaveLength(2);
     const rows = await env.DB.prepare("SELECT document_type FROM invoice_documents WHERE invoice_id = ?")
       .bind((result.body as { id: string }).id)
       .all<{ document_type: string }>();
-    expect(rows.results.map((r: { document_type: string }) => r.document_type)).toEqual(["original"]);
+    const types = rows.results.map((r: { document_type: string }) => r.document_type).sort();
+    expect(types).toEqual(["generated_rendering", "original"]);
   });
 
   it("retains a document nothing could read — where it matters most", async () => {
@@ -309,8 +316,12 @@ describe("retaining the original document (decision 0068)", () => {
   it("records a D1 reference alongside the R2 object", async () => {
     const { bucket } = recordingBucket();
     const result = await handleCaptureFromSource(env.DB, "src-mail", UBL, fakeModel("{}"), undefined, bucket, "acme");
+    // Filtered to `original` specifically — decision 0405 means this
+    // plain UBL fixture also gets a `generated_rendering` row now, and
+    // an unfiltered `.first()` no longer reliably names which of the
+    // two comes back.
     const row = await env.DB.prepare(
-      "SELECT document_type, content_type FROM invoice_documents WHERE invoice_id = ?"
+      "SELECT document_type, content_type FROM invoice_documents WHERE invoice_id = ? AND document_type = 'original'"
     )
       .bind((result.body as { id: string }).id)
       .first<{ document_type: string; content_type: string }>();

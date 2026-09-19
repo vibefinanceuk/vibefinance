@@ -228,14 +228,31 @@ export function renderPeppolDocument(xml: string, lang: PeppolLanguage = "en"): 
   }
 
   /**
-   * **The same guard the official stylesheet applies.** It matches on a
+   * **Refuses a declared foreign profile, not an undeclared one** —
+   * decision 0405, narrowing decision 0205's original guard.
+   *
+   * The original guard matched the official stylesheet's own — a
    * `CustomizationID` beginning with the Peppol BIS Billing 3.0 URN, and
-   * a document without one is not what this renders — an EN 16931
-   * invoice from another profile would lay out wrongly rather than
-   * usefully.
+   * anything else refused, on the reasoning that *"an EN 16931 invoice
+   * from another profile would lay out wrongly rather than usefully."*
+   * True for a document that names a *different* profile: this markup
+   * would misrepresent whatever that other profile's own fields mean.
+   * **Not true for a document that names no profile at all** — every
+   * invoice this system has actually captured, in production and in
+   * testing, is plain UBL with the same shape this renderer already
+   * reads (`AccountingSupplierParty`, `InvoiceLine`, `LegalMonetaryTotal`
+   * and the rest), just without a formal Peppol BIS declaration. The old
+   * guard refused every one of them; nothing was ever mis-rendered, and
+   * nothing was ever rendered either.
+   *
+   * So: an explicit customization that is not EN 16931 still refuses —
+   * that is a real, different profile, and the risk the original guard
+   * named still applies. An absent one no longer does; the traversal
+   * below reads standard UBL invoice/credit-note structure regardless of
+   * what, if anything, `CustomizationID` says.
    */
   const customization = value(root, "CustomizationID") ?? "";
-  if (!customization.includes("urn:cen.eu:en16931:2017")) {
+  if (customization && !customization.includes("urn:cen.eu:en16931:2017")) {
     return { html: null, reason: "not_peppol" };
   }
 

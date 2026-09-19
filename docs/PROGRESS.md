@@ -337,6 +337,15 @@ a rule, and left an approval task in a queue.
 ### Documents
 - R2 storage with jurisdiction support (0013, 0033, 0035)
 - One original and one generated rendering per invoice
+- **The rendering guard now refuses a declared foreign profile, not an
+  undeclared one** (0405). It had required a `CustomizationID` naming
+  Peppol BIS Billing 3.0 since it was built (0205) — which every
+  invoice this system has ever actually captured, in production and in
+  every test fixture, has lacked; rendering had never once succeeded
+  for a real document. The traversal itself reads plain UBL structure
+  regardless of any formal declaration, so an invoice that names no
+  profile at all now renders too; one that names a genuinely different
+  profile still does not
 
 ### The control plane
 - Signed ECDSA licence tokens, fail-open cache, bootstrap exception
@@ -1193,7 +1202,7 @@ elsewhere.
 
 | Package | Tests |
 |---|---|
-| `vf-app` | 1947 |
+| `vf-app` | 1950 |
 | `vf-licence` | 320 |
 | `vf-ui` | 74 Worker · 710 browser |
 | `shared` | 287 passing, 3 known pre-existing failures |

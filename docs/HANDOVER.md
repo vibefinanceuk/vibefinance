@@ -1,7 +1,7 @@
 # Handover
 
 **Written 4 September 2026, updated 17 September (six times), updated
-18 September (four times), updated 19 September (twenty-one times).**
+18 September (four times), updated 19 September (twenty-two times).**
 
 **For a session starting cold.** Where things stand, what needs a
 decision rather than work, what to do next, and the habits this project
@@ -38,8 +38,35 @@ twice.
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
 | `vf-app-poc` migrations | through `0070` |
 | `vf-licence-poc` migrations | through `0125` applied, all confirmed live — checksums `9e4d534bcef6…` (`0122`), `79ff9f930fdb…` (`0123`), `408f61e5b11a…` (`0124`); `0125` applied by the operator (no checksum reported this time), confirmed live via `/api/ui-strings` returning all six new title values — run via `apply_migrations.py --remote --migrations-dir workers/vf-licence/migrations --database vf-licence-poc` |
-| Tests | vf-admin 9 · vf-app 1947 · vf-licence 320 · vf-ui 74 Worker + 710 browser · shared 287 (+3 known pre-existing failures) |
-| Decision records | 404 |
+| Tests | vf-admin 9 · vf-app 1950 · vf-licence 320 · vf-ui 74 Worker + 710 browser · shared 287 (+3 known pre-existing failures) |
+| Decision records | 405 |
+
+**Decision 0405 (a declaration nobody made) — code built and tested,
+not yet pushed.** The operator's own report: XML submitted by email is
+captured fine, but the "physical invoice" rendering feature they
+remembered building isn't showing up. Traced the whole capture-to-render
+path first — `inbound-email.ts` → `handleCaptureFromSource` →
+`retainOriginal` → `renderPeppolDocument` — and found it fully intact,
+nothing disconnected. A read-only diagnostic against `vf-app-poc` told
+the real story instead: **every invoice this system has ever captured,
+today and historically, has had rendering refused** with reason
+`not_peppol` — this was never a regression, it never once worked.
+`renderPeppolDocument` requires a `CustomizationID` declaring Peppol BIS
+Billing 3.0 before it will render anything (the same guard OpenPEPPOL's
+own stylesheet applies); every invoice XML this system actually
+receives — checked directly against one of today's own test fixtures —
+is valid, EN 16931-shaped UBL that simply never declares that formally.
+Put to the operator as the product call it is (keep strict and treat it
+as a sender/data problem, or render plain UBL too): **loosen it**. The
+guard now refuses only a *declared* foreign profile; an *undeclared*
+one renders, since the traversal itself never depended on the
+declaration anyway. Three existing `source-capture.test.ts` tests had
+the old refused-rendering behaviour baked into their expectations
+(document counts) rather than their actual point, and were updated
+accordingly. Full `vf-app` suite: 1950/1950 (1947 + 3 new). Full detail
+in `docs/decisions/0405-a-declaration-nobody-made.md`. **Not built:**
+no retroactive rendering of today's four already-refused invoices —
+worth a follow-up if wanted.
 
 **Decision 0404 (a header nothing ever styled) is pushed and deployed**
 — `origin/main` is `fec65ef`, confirmed by direct `git fetch`; the

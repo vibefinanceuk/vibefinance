@@ -127,6 +127,41 @@ describe("what it renders", () => {
   });
 });
 
+describe("plain UBL, with no Peppol declaration at all (decision 0405)", () => {
+  /**
+   * **Every invoice this system has actually captured** — in
+   * production and in every test fixture used elsewhere in this repo
+   * — is exactly this shape: valid UBL, EN 16931 in substance, with no
+   * `CustomizationID` at all. The original guard (decision 0205)
+   * refused all of them, on the same reasoning that refuses a
+   * genuinely different declared profile below — but nothing here was
+   * ever at risk of being mis-rendered as something it is not; there
+   * was simply no declaration to read.
+   */
+  const NO_CUSTOMIZATION = INVOICE.replace(
+    /<cbc:CustomizationID>.*<\/cbc:CustomizationID>\s*/,
+    ""
+  );
+
+  it("renders anyway", () => {
+    const result = renderPeppolDocument(NO_CUSTOMIZATION);
+    expect(result.html).not.toBeNull();
+    expect(result.reason).toBeNull();
+  });
+
+  it("still shows the real content — parties, lines, totals", () => {
+    const { html } = renderPeppolDocument(NO_CUSTOMIZATION);
+    expect(html).toContain("Northwind Logistics Ltd");
+    expect(html).toContain("Acme UK Limited");
+    expect(html).toContain("Pallet handling");
+  });
+
+  it("leaves the footer's customization line blank rather than guessing one", () => {
+    const { html } = renderPeppolDocument(NO_CUSTOMIZATION);
+    expect(html).not.toContain("urn:cen.eu:en16931:2017");
+  });
+});
+
 describe("what it refuses", () => {
   /**
    * **A refusal is a first-class output** (decision 0033), and a blank
