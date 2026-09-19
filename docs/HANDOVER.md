@@ -1,7 +1,7 @@
 # Handover
 
 **Written 4 September 2026, updated 17 September (six times), updated
-18 September (four times), updated 19 September (fifteen times).**
+18 September (four times), updated 19 September (sixteen times).**
 
 **For a session starting cold.** Where things stand, what needs a
 decision rather than work, what to do next, and the habits this project
@@ -30,14 +30,14 @@ twice.
 
 | | |
 | --- | --- |
-| `origin/main` | `e4da3a2` |
+| `origin/main` | `86ed836` |
 | vf-admin deployed | `8e27a34` · `https://admin.vibefinance-ai.com` · behind Cloudflare Access |
 | vf-app deployed | `e4da3a2` (operator's report — API sits behind auth, not independently checkable from here) |
-| vf-licence deployed | `e4da3a2` |
-| vf-ui deployed | `e4da3a2` · `https://app.vibefinance-ai.com` |
+| vf-licence deployed | `86ed836` |
+| vf-ui deployed | `86ed836` · `https://app.vibefinance-ai.com` |
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
 | `vf-app-poc` migrations | through `0070` |
-| `vf-licence-poc` migrations | through `0124` applied, all confirmed live — checksums `9e4d534bcef6…` (`0122`), `79ff9f930fdb…` (`0123`), and `408f61e5b11a…` (`0124`), run by the operator via `apply_migrations.py --remote --migrations-dir workers/vf-licence/migrations --database vf-licence-poc` |
+| `vf-licence-poc` migrations | through `0125` applied, all confirmed live — checksums `9e4d534bcef6…` (`0122`), `79ff9f930fdb…` (`0123`), `408f61e5b11a…` (`0124`); `0125` applied by the operator (no checksum reported this time), confirmed live via `/api/ui-strings` returning all six new title values — run via `apply_migrations.py --remote --migrations-dir workers/vf-licence/migrations --database vf-licence-poc` |
 | Tests | vf-admin 9 · vf-app 1939 · vf-licence 320 · vf-ui 74 Worker + 709 browser · shared 278 (+3 known pre-existing failures) |
 | Decision records | 401 |
 
@@ -395,8 +395,9 @@ top of `e4da3a2` as its own commit, delivered the same way as every
 other unpushed commit here (bundle, not a direct push — this session
 has no push access to `vibefinanceuk/vibefinance`).
 
-**Decision 0401 (six titles, and a subtitle gone) is built and
-tested — not yet pushed.** A direct wording request: six Dashboard
+**Decision 0401 (six titles, and a subtitle gone) is pushed and
+deployed, confirmed directly rather than taken on the report alone.**
+A direct wording request: six Dashboard
 card titles reworded ("Waiting for me" → "My Tasks by Stage", "Where
 things are" → "All Open Tasks by Stage", "How long they have waited"
 → "Task Aging Report", "On my clock" → "My Priority Tasks", "Suppliers
@@ -423,6 +424,26 @@ Touches `vf-ui` (`public/dashboard.js`,
 `test-browser/dashboard.test.ts`) and `vf-licence` (migration `0125`,
 `test/setup.ts`, `test/string-coverage.test.ts`) only — `vf-app` and
 `vf-admin` need no redeploy for this one.
+
+**Push and deploy, checked rather than taken on the report alone.**
+`origin/main` fetched directly reads `86ed836`, matching this
+session's own `main` exactly. `vf-ui`: the live `dashboard.js`, fetched
+cache-busted, has no `dash.myclocksub` reference left — the subtitle
+line is gone from the served file, not just the source. `vf-licence`:
+`GET /api/ui-strings?locale=en` on the live deployment returns all six
+new values (`dash.waiting_for_me` → "My Tasks by Stage",
+`dash.where_things_are` → "All Open Tasks by Stage", `dash.ageing` →
+"Task Aging Report", `dash.on_my_clock` → "My Priority Tasks",
+`dash.suppliers_awaiting_erp` → "Supplier Setup Required", `dash.done`
+→ "Tasks Completed This Week") — a clean positive, since that only
+reads correctly if migration `0125` and the worker redeploy both
+landed. The operator's first "deployed and pushed" report showed
+`git push`, `vf-ui deploy`, and `vf-licence deploy` but no
+`apply_migrations.py` step; this session's own `/api/ui-strings` check
+came back with the old titles still live, so the gap was flagged
+rather than assumed covered. The operator then ran the migration and
+reported it; this session's own re-check, not the report, is what
+confirmed it.
 
 **A real gap in this session's own verification, worth recording
 plainly.** `origin/main` fetched directly read the right commit at
