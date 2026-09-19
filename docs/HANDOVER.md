@@ -1,7 +1,7 @@
 # Handover
 
 **Written 4 September 2026, updated 17 September (six times), updated
-18 September (four times), updated 19 September (thirteen times).**
+18 September (four times), updated 19 September (fourteen times).**
 
 **For a session starting cold.** Where things stand, what needs a
 decision rather than work, what to do next, and the habits this project
@@ -30,15 +30,15 @@ twice.
 
 | | |
 | --- | --- |
-| `origin/main` | `f862d37` |
+| `origin/main` | `e4da3a2` |
 | vf-admin deployed | `8e27a34` · `https://admin.vibefinance-ai.com` · behind Cloudflare Access |
-| vf-app deployed | `4d44b59` |
-| vf-licence deployed | `a235713` |
-| vf-ui deployed | `f862d37` · `https://app.vibefinance-ai.com` |
+| vf-app deployed | `e4da3a2` (operator's report — API sits behind auth, not independently checkable from here) |
+| vf-licence deployed | `e4da3a2` |
+| vf-ui deployed | `e4da3a2` · `https://app.vibefinance-ai.com` |
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
 | `vf-app-poc` migrations | through `0070` |
-| `vf-licence-poc` migrations | through `0123` applied, all confirmed live — checksums `9e4d534bcef6…` (`0122`) and `79ff9f930fdb…` (`0123`), run by the operator via `apply_migrations.py --remote --migrations-dir workers/vf-licence/migrations --database vf-licence-poc` |
-| Tests | vf-admin 9 · vf-app 1936 · vf-licence 320 · vf-ui 74 Worker + 709 browser · shared 278 (+3 known pre-existing failures) |
+| `vf-licence-poc` migrations | through `0124` applied, all confirmed live — checksums `9e4d534bcef6…` (`0122`), `79ff9f930fdb…` (`0123`), and `408f61e5b11a…` (`0124`), run by the operator via `apply_migrations.py --remote --migrations-dir workers/vf-licence/migrations --database vf-licence-poc` |
+| Tests | vf-admin 9 · vf-app 1939 · vf-licence 320 · vf-ui 74 Worker + 709 browser · shared 278 (+3 known pre-existing failures) |
 | Decision records | 400 |
 
 **Decision 0394 (a column, two arrows, and a marker) is pushed and
@@ -308,8 +308,9 @@ three new ones), both passing; `eslint` clean;
 (`public/app.css`, `test-browser/typography.test.ts`) only — no
 `tokens.css` change, no JS file, no other Worker.
 
-**Decision 0400 (three tiers for the fourth piece) is built, tested,
-and visually verified — not yet pushed.** Closes the four-piece
+**Decision 0400 (three tiers for the fourth piece) is pushed and
+deployed**, confirmed directly rather than taken on the operator's
+report alone. Closes the four-piece
 sequence 0395 opened: red, amber, and green on the validation screen's
 key fields and exceptions list. Investigated first, per the deferral
 0395/0396/0397/0398 all left for it — no upstream distinction between
@@ -353,9 +354,46 @@ clean (400 records). Touches `vf-app` (`validation.ts`,
 `vf-admin` change. `key-fields-route.ts` wires header-level
 `po_mismatch` only, documented at the call site: its `lines.results`
 is a pre-existing, unparsed line-facts shape this decision does not
-reach into. Not yet pushed — waiting on the operator, same as every
-other decision here before its own "pushed and deployed" line is
-written and independently confirmed.
+reach into.
+
+**Push and deploy, checked rather than taken on the report alone.**
+`origin/main` fetched directly reads `e4da3a2`, matching this
+session's own `main` exactly. `vf-licence`: `GET
+/api/ui-strings?locale=en` on the live deployment returns
+`"check.po_mismatch": "Does not match the purchase order"` — a clean
+positive, since that only reads correctly if migration `0124` and the
+worker redeploy both landed. `vf-ui`: the live `viewer.js`, fetched
+cache-busted, has `row.children[index]` (the off-by-one fix) with zero
+occurrences of the old `row.children[index + 1]`; the live
+`tokens.css` has all seven new `--severity-*` custom properties with
+their exact committed hex values. The live `app.css` could not be
+checked either way — same known truncation this exact fetch tool has
+against this exact site's larger files, recorded below and in earlier
+entries; not treated as a signal. `vf-app`'s own deploy rests on the
+operator's report, same as every prior decision whose API sits behind
+auth (0383's own entry below is the precedent) — `git push` itself
+rested on the same standard before this session could fetch and check
+it.
+
+**A small follow-up on top of the pushed commit, in its own commit,
+not yet pushed.** A request after 0400 shipped asked for a test
+covering "the last matching changes" — the PO three-way-match's own
+route-level wiring had unit tests (`validation.test.ts`,
+`po-matching.test.ts`) but nothing exercising the real path end to
+end: a keyed invoice, a real PO already in storage, read back through
+`handleGetInvoice`. Three tests added to
+`workers/vf-app/test/key-fields.test.ts` — a genuine mismatch marked
+danger, a genuine match confirmed, and no PO referenced at all
+correctly skipping the check — fail-first verified (temporarily
+removed the PO-merge call in `invoice-facts-route.ts`; 2 of 3 failed
+for the right reason, the third passed vacuously as expected), full
+`vf-app` suite 1939/1939 with them in place, `eslint` clean. Confirmed
+with the operator before committing; the Test count above already
+includes them. Test-only — no behaviour change, so it stayed inside
+decision 0400's own record rather than taking a new number. Sits on
+top of `e4da3a2` as its own commit, delivered the same way as every
+other unpushed commit here (bundle, not a direct push — this session
+has no push access to `vibefinanceuk/vibefinance`).
 
 **A real gap in this session's own verification, worth recording
 plainly.** `origin/main` fetched directly read the right commit at
