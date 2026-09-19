@@ -1,7 +1,7 @@
 # Handover
 
 **Written 4 September 2026, updated 17 September (six times), updated
-18 September (four times), updated 19 September (seven times).**
+18 September (four times), updated 19 September (eight times).**
 
 **For a session starting cold.** Where things stand, what needs a
 decision rather than work, what to do next, and the habits this project
@@ -30,11 +30,11 @@ twice.
 
 | | |
 | --- | --- |
-| `origin/main` | `1b9b8e8` |
+| `origin/main` | `6613e3d` |
 | vf-admin deployed | `8e27a34` · `https://admin.vibefinance-ai.com` · behind Cloudflare Access |
 | vf-app deployed | `4d44b59` |
 | vf-licence deployed | `a235713` |
-| vf-ui deployed | `7ba798f` · `https://app.vibefinance-ai.com` |
+| vf-ui deployed | `6613e3d` · `https://app.vibefinance-ai.com` |
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
 | `vf-app-poc` migrations | through `0070` |
 | `vf-licence-poc` migrations | through `0123` applied, all confirmed live — checksums `9e4d534bcef6…` (`0122`) and `79ff9f930fdb…` (`0123`), run by the operator via `apply_migrations.py --remote --migrations-dir workers/vf-licence/migrations --database vf-licence-poc` |
@@ -145,9 +145,19 @@ change. Next: the Document tab row (piece three, narrow and
 independent), then red/amber/green severity (piece four, still needs
 the upstream data-model question answered first).
 
-**Decision 0397 (the first live look back at 0396) is built, not yet
-pushed.** The operator's own first look at 0396 live, not the
-mock-up, produced two corrections. First: a card whose action is
+**Decision 0397 (the first live look back at 0396) is pushed and
+deployed** — confirmed both directly, not taken on the operator's
+report alone: `git fetch` puts `origin/main` at `6613e3d`, matching
+this session's own `main` exactly; and two cache-busted fetches of
+`/app.css` from `https://app.vibefinance-ai.com` return the new
+`.panel > .cardhead { align-items: flex-end; }` and
+`.panel > .cardhead > .actionlink { padding: 4px 6px; gap: 3px; }`
+rules, the new `.panel > .tilefg > .cardhead > h3` selector reaching
+the dashboard's tiles, and confirm the old
+`.card-narrow > .cardhead > h3` text is genuinely gone rather than a
+stale response happening to omit it. The operator's own first look at
+0396 live, not the mock-up, produced two corrections. First: a card
+whose action is
 `actionLink()`'s icon-above-label shape (decision 0122) — Purchase
 Orders' own CSV Template/Load CSV, wrapped in `.statebuttons` and so
 outside `.cardhead > .actionlink`'s existing `-6px` pull, decision
