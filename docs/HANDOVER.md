@@ -31,20 +31,24 @@ twice.
 
 | | |
 | --- | --- |
-| `origin/main` | `0eb8903` — fetched directly by this session after decision 0416 shipped, confirmed matching; decision 0417 below is committed locally only, not yet pushed |
+| `origin/main` | `299b316` — fetched directly by this session after decision 0417 shipped, confirmed matching local `main` exactly |
 | vf-admin deployed | `8e27a34` · `https://admin.vibefinance-ai.com` · behind Cloudflare Access |
-| vf-app deployed | `0eb8903` (operator's own "deployed and pushed" report, confirmed indirectly — `GET /suppliers/spend` live and returning real ranked spend is only possible with decision 0416's own route deployed) |
-| vf-licence deployed | `0eb8903` (operator's own report; migration `0128` below is now applied — the live Supplier Performance card renders its own real strings, not raw keys) |
-| vf-ui deployed | `0eb8903` · `https://app.vibefinance-ai.com` — operator's own report: "deployed and pushed - I can see the supplier performance link now" / "Yes, I see spend by supplier" |
+| vf-app deployed | `299b316` (operator's own "deployed and pushed" report — API sits behind auth, not independently checkable from here) |
+| vf-licence deployed | `299b316` (operator's own report; migration `0129` below is now applied) |
+| vf-ui deployed | `299b316` · `https://app.vibefinance-ai.com` — operator's own report: "deployed and pushed" |
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
-| `vf-app-poc` migrations | through `0071` (`0071` committed locally as part of decision 0417, not yet applied remotely) |
-| `vf-licence-poc` migrations | through `0128` applied and confirmed live; `0129` (decision 0417's own AP Analytics strings) committed locally, not yet applied remotely |
+| `vf-app-poc` migrations | through `0071` applied and confirmed live |
+| `vf-licence-poc` migrations | through `0129` applied and confirmed live |
 | Tests | vf-admin 9 · vf-app 1998 · vf-licence 320 · vf-ui 74 Worker + 762 browser · shared 287 (+3 known pre-existing failures) |
 | Decision records | 417 |
 
-**Decision 0417 (AP Analytics, tabbed and permission-gated) is built
-and committed locally — not yet pushed or deployed.** Before another
-Management Dashboard screen was built, the operator asked to align on
+**Decision 0417 (AP Analytics, tabbed and permission-gated) is pushed
+and deployed, confirmed directly.** `origin/main` fetched directly
+reads `299b316`, matching this session's own commit exactly; the
+operator's own report — "deployed and pushed" / "I have the new AP
+Analytics dash now" — confirms the live screen itself, not just the
+served code. Before another Management Dashboard screen was built, the
+operator asked to align on
 navigation first: "I was hoping to have an AP Analytics link, with
 all dashboard available via tabs. Using similar pill-box tabs seen in
 the Access screen. The tabs can be for Operational Performance,
