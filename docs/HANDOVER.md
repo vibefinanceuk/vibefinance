@@ -2,7 +2,7 @@
 
 **Written 4 September 2026, updated 17 September (six times), updated
 18 September (four times), updated 19 September (thirty-two times),
-updated 20 September (twenty-one times).**
+updated 20 September (twenty-two times).**
 
 **For a session starting cold.** Where things stand, what needs a
 decision rather than work, what to do next, and the habits this project
@@ -31,16 +31,47 @@ twice.
 
 | | |
 | --- | --- |
-| `origin/main` | `30d6e10` — fetched directly by this session after decision 0422 shipped, confirmed matching local `main` exactly |
+| `origin/main` | `e262666` — fetched directly by this session after decision 0423 shipped, confirmed matching local `main` exactly |
 | vf-admin deployed | `8e27a34` · `https://admin.vibefinance-ai.com` · behind Cloudflare Access |
-| vf-app deployed | `30d6e10` (operator's own "pushed and deployed" report — API sits behind auth, not independently checkable from here) |
-| vf-licence deployed | `30d6e10` (operator's own report; migration `0134` below is now applied) |
-| vf-ui deployed | `30d6e10` · `https://app.vibefinance-ai.com` — operator's own report |
+| vf-app deployed | `e262666` (operator's own "deployed and pushed - tested successfully" report, confirming the live screen itself) |
+| vf-licence deployed | `e262666` (operator's own report; migration `0135` below is now applied) |
+| vf-ui deployed | `e262666` · `https://app.vibefinance-ai.com` — operator's own report |
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
-| `vf-app-poc` migrations | through `0071` applied and confirmed live (decision 0422 added no new one) |
-| `vf-licence-poc` migrations | through `0134` applied and confirmed live |
-| Tests | vf-admin 9 · vf-app 2126 · vf-licence 320 · vf-ui 74 Worker + 828 browser · shared 287 (+3 known pre-existing failures) |
-| Decision records | 422 |
+| `vf-app-poc` migrations | through `0071` applied and confirmed live (decision 0423 added no new one) |
+| `vf-licence-poc` migrations | through `0135` applied and confirmed live |
+| Tests | vf-admin 9 · vf-app 2151 · vf-licence 320 · vf-ui 74 Worker + 837 browser · shared 287 (+3 known pre-existing failures) |
+| Decision records | 423 |
+
+**Decision 0423 (exceptions by type, by user, by supplier, trended —
+Fraud Prevention's third real metric) is pushed and deployed, tested
+successfully, confirmed directly.** `origin/main` fetched directly
+reads `e262666`, matching this session's own commit exactly; the
+operator confirmed with "deployed and pushed - tested successfully - I
+can see exceptions by type, by user, and by supplier" — the live
+screen itself, not just the served code. Asked "what would you
+suggest next?" once decision 0422 shipped; offered four candidates,
+the operator chose this one. Investigated first: a genuinely new
+metric, not a re-listing of decision 0421's own supplier-exceptions
+card — that one lives on Supplier Performance with one aggregate rate
+per supplier over 90 days, this one lives on Fraud Prevention
+(`AP.FraudReview`, scoped by the invoice's own org unit, decision
+0420's own rule) and trends three breakdowns weekly over eight
+calendar weeks, adding a "by user" breakdown 0421 never attempted.
+Trended as weekly counts rather than rates — a rate on one week's own
+small denominator would mislead, and the design's own words ask only
+that a rise be *visible*, which a sparkline already shows. `charts.js`'s
+own `sparkline()`, built by decisions 0242/0265 and left deliberately
+unused since, gets its first real caller. "By user" credits completed
+review tasks via the same `tasks.stage_visit_id` join
+`workload-route.ts`'s own throughput already uses, not exceptions
+directly — a visit that spawns one task per line can credit several
+people once each, a real, tested asymmetry against the supplier/type
+breakdowns, not a double-count bug. Full local test suites all clean:
+`vf-app` 2126 → 2151, `vf-ui` browser 828 → 837 (both worker and
+browser-known-rejection counts otherwise unchanged), `vf-licence` 320
+(migration `0135`, no new test file). `eslint .` clean across all
+three packages. See decision 0423's own doc for the full reasoning,
+and `docs/PROGRESS.md` for the durable record.
 
 **Decision 0422 (unapproved-supplier invoices, Fraud Prevention's
 second real metric) is pushed and deployed, confirmed directly.**

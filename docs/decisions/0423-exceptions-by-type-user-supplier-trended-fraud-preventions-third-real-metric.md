@@ -1,9 +1,14 @@
 # 0423 — Exceptions by type, by user, by supplier, trended — Fraud Prevention's third real metric
 
-**Status: built, committed locally — not yet pushed or deployed.** This
-session has no push access to `vibefinanceuk/vibefinance`; delivered
-as a git bundle for the operator's own pull/push/deploy sequence, the
-same path decisions 0391, 0415–0422, 0562 and 0566 already used.
+**Status: pushed and deployed, tested successfully, confirmed
+directly.** `origin/main` fetched directly reads `e262666`, matching
+this session's own commit exactly; the operator confirmed with
+"deployed and pushed - tested successfully - I can see exceptions by
+type, by user, and by supplier" — the live screen itself, not just the
+served code. This session still has no push access to
+`vibefinanceuk/vibefinance`; delivered as a git bundle for the
+operator's own pull/push/deploy sequence, the same path decisions
+0391, 0415–0422, 0562 and 0566 already used.
 
 ---
 
