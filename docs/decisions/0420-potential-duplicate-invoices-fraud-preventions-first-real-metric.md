@@ -1,10 +1,13 @@
 # 0420 — Potential duplicate invoices, Fraud Prevention's first real metric
 
-**Status: built, committed locally — not yet pushed or deployed.**
-This session still has no push access to `vibefinanceuk/vibefinance`;
-delivered as a git bundle for the operator's own pull/push/deploy
-sequence, the same path decisions 0391, 0415–0419, 0562 and 0566
-already used.
+**Status: pushed and deployed, confirmed directly.** `origin/main`
+fetched directly reads `1ebb957`, matching this session's own commit
+exactly; the operator confirmed the live screen itself: "deployed and
+pushed. I can see the potential duplicate in the UI under Fraud
+Prevention." This session still has no push access to
+`vibefinanceuk/vibefinance`; delivered as a git bundle for the
+operator's own pull/push/deploy sequence, the same path decisions
+0391, 0415–0419, 0562 and 0566 already used.
 
 ---
 

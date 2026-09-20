@@ -2,7 +2,7 @@
 
 **Written 4 September 2026, updated 17 September (six times), updated
 18 September (four times), updated 19 September (thirty-two times),
-updated 20 September (seventeen times).**
+updated 20 September (eighteen times).**
 
 **For a session starting cold.** Where things stand, what needs a
 decision rather than work, what to do next, and the habits this project
@@ -31,20 +31,24 @@ twice.
 
 | | |
 | --- | --- |
-| `origin/main` | `d71f011` — deployed rows below describe this commit, the last the operator confirmed live; decision 0420 below is a newer local commit, not yet pushed |
+| `origin/main` | `1ebb957` — fetched directly by this session after decision 0420 shipped, confirmed matching local `main` exactly |
 | vf-admin deployed | `8e27a34` · `https://admin.vibefinance-ai.com` · behind Cloudflare Access |
-| vf-app deployed | `28aaf9c` (operator's own "pushed and deployed" report — API sits behind auth, not independently checkable from here) |
-| vf-licence deployed | `28aaf9c` (operator's own report; migration `0131` below is now applied) |
-| vf-ui deployed | `28aaf9c` · `https://app.vibefinance-ai.com` — operator's own report: "pushed and deployed" |
+| vf-app deployed | `1ebb957` (operator's own "deployed and pushed - I can see the potential duplicate in the UI under Fraud Prevention" report — API sits behind auth, not independently checkable from here) |
+| vf-licence deployed | `1ebb957` (operator's own report; migration `0132` below is now applied) |
+| vf-ui deployed | `1ebb957` · `https://app.vibefinance-ai.com` — operator's own report, confirming the live screen itself: "I can see the potential duplicate in the UI under Fraud Prevention" |
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
-| `vf-app-poc` migrations | through `0071` applied and confirmed live (decision 0420 below added no new one) |
-| `vf-licence-poc` migrations | through `0131` applied and confirmed live; `0132` (decision 0420's own duplicate-invoices strings) committed locally, not yet applied remotely |
+| `vf-app-poc` migrations | through `0071` applied and confirmed live (decision 0420 added no new one) |
+| `vf-licence-poc` migrations | through `0132` applied and confirmed live |
 | Tests | vf-admin 9 · vf-app 2048 · vf-licence 320 · vf-ui 74 Worker + 790 browser · shared 287 (+3 known pre-existing failures) |
 | Decision records | 420 |
 
 **Decision 0420 (potential duplicate invoices, Fraud Prevention's
-first real metric) is built and committed locally — not yet pushed or
-deployed.** Recommending early-payment/discount eligibility as the
+first real metric) is pushed and deployed, confirmed directly.**
+`origin/main` fetched directly reads `1ebb957`, matching this
+session's own commit exactly; the operator's own report — "deployed
+and pushed. I can see the potential duplicate in the UI under Fraud
+Prevention" — confirms the live screen itself, not just the served
+code. Recommending early-payment/discount eligibility as the
 next slice, investigated it first and found it genuinely blocked — no
 structured discount-rate/window field anywhere, on the invoice
 (`BT-20`, free text) or the supplier record (`suppliers.payment_terms`,
