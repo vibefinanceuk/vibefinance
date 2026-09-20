@@ -17,9 +17,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
  * once, `supplier-status.js`, `supplier-performance.js`,
  * `supplier-cycle-time.js`, `supplier-exceptions.js`,
  * `supplier-po-variance.js` and `supplier-payment-terms.js` (decision
- * 0421); Fraud Prevention delegates to two modules at once,
- * `fraud-duplicates.js` (decision 0420) and
- * `fraud-unapproved-suppliers.js` (decision 0422). Each is already
+ * 0421); Fraud Prevention delegates to three modules at once,
+ * `fraud-duplicates.js` (decision 0420),
+ * `fraud-unapproved-suppliers.js` (decision 0422), and
+ * `fraud-exception-trends.js` (decision 0423). Each is already
  * covered by its own test file for chart/table correctness, currency
  * splitting and so on. This file only proves the wiring — that the
  * right module's `load()`/`renderCard()` land behind the right tab —
@@ -153,6 +154,18 @@ const STRINGS = {
     "fraudprevention.reason": "Reason",
     "fraudprevention.reasonnotonfile": "Not on file",
     "fraudprevention.reasononhold": "On hold",
+    // The Fraud Prevention tab's third real card — decision 0423.
+    "fraudprevention.exceptiontrends": "Exceptions by type, by user, by supplier",
+    "fraudprevention.exceptiontrendssub": "Trended over the last 8 weeks",
+    "fraudprevention.noexceptiontrends": "No exceptions in the last 8 weeks",
+    "fraudprevention.exceptioncount": "Exceptions",
+    "fraudprevention.trend": "Trend",
+    "fraudprevention.bysupplier": "By supplier",
+    "fraudprevention.byuser": "By user",
+    "fraudprevention.bytype": "By type",
+    "fraudprevention.user": "User",
+    "fraudprevention.type": "Type",
+    "fraudprevention.nosupplier": "No matched supplier",
   },
 };
 
@@ -185,10 +198,11 @@ function stubFetch(routes: Record<string, unknown>) {
  *
  * `/api/workload/throughput`, `/api/accruals`,
  * `/api/spend/under-management`, `/api/suppliers/spend`,
- * `/api/fraud/duplicates`, and `/api/fraud/unapproved-suppliers` are
- * stubbed empty by default on every call, whether or not the test's
- * own permission set makes any given tab reachable — harmless when
- * unused, and one less thing each individual test has to remember.
+ * `/api/fraud/duplicates`, `/api/fraud/unapproved-suppliers`, and
+ * `/api/fraud/exception-trends` are stubbed empty by default on every
+ * call, whether or not the test's own permission set makes any given
+ * tab reachable — harmless when unused, and one less thing each
+ * individual test has to remember.
  */
 async function openApAnalytics(
   permissions: string[],
@@ -210,6 +224,7 @@ async function openApAnalytics(
     "/api/suppliers/payment-terms": { suppliers: [] },
     "/api/fraud/duplicates": { invoices: [] },
     "/api/fraud/unapproved-suppliers": { invoices: [] },
+    "/api/fraud/exception-trends": { weekStartDates: [], bySupplier: [], byUser: [], byType: [] },
     ...extraRoutes,
   });
   const { loadStrings } = await import("/strings.js");
@@ -394,22 +409,28 @@ describe("real tabs wire to the already-tested module behind them, placeholders 
     expect(document.body.textContent).toContain("Not built yet");
   });
 
-  it("Fraud Prevention renders both of its own cards, decision 0422 — two real cards, not one", async () => {
+  it("Fraud Prevention renders all three of its own cards, decision 0423 — three real cards, not one", async () => {
     await openApAnalytics(["AP.FraudReview"]);
 
     expect(document.querySelector(".tab.active")?.textContent).toBe("Fraud Prevention");
     const headings = [...document.querySelectorAll(".cardhead h3")].map((h) => h.textContent);
-    expect(headings).toEqual(["Potential duplicate invoices", "Unapproved-supplier invoices"]);
+    expect(headings).toEqual([
+      "Potential duplicate invoices",
+      "Unapproved-supplier invoices",
+      "Exceptions by type, by user, by supplier",
+    ]);
     expect(document.body.textContent).toContain("No potential duplicates right now");
     expect(document.body.textContent).toContain("No unapproved-supplier invoices right now");
+    expect(document.body.textContent).toContain("No exceptions in the last 8 weeks");
   });
 
-  it("Fraud Prevention's two cards fail independently — one's own load failure never hides the other's real content", async () => {
+  it("Fraud Prevention's three cards fail independently — one's own load failure never hides the others' real content", async () => {
     await openApAnalytics(["AP.FraudReview"], {}, { "/api/fraud/duplicates": { ok: false, status: 500 } });
 
     expect(document.body.textContent).toContain("Could not load this tab right now");
     const headings = [...document.querySelectorAll(".cardhead h3")].map((h) => h.textContent);
     expect(headings).toContain("Unapproved-supplier invoices");
+    expect(headings).toContain("Exceptions by type, by user, by supplier");
     expect(headings).not.toContain("Potential duplicate invoices");
   });
 

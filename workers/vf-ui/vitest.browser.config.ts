@@ -94,6 +94,7 @@ export default defineConfig({
       "/spend-under-management.js": resolve(__dirname, "public/spend-under-management.js"),
       "/fraud-duplicates.js": resolve(__dirname, "public/fraud-duplicates.js"),
       "/fraud-unapproved-suppliers.js": resolve(__dirname, "public/fraud-unapproved-suppliers.js"),
+      "/fraud-exception-trends.js": resolve(__dirname, "public/fraud-exception-trends.js"),
       "/supplier-status.js": resolve(__dirname, "public/supplier-status.js"),
       "/supplier-cycle-time.js": resolve(__dirname, "public/supplier-cycle-time.js"),
       "/supplier-exceptions.js": resolve(__dirname, "public/supplier-exceptions.js"),

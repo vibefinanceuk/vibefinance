@@ -534,6 +534,44 @@ a rule, and left an approval task in a queue.
   the existing `/^\/suppliers\/[^/]+$/` wildcard, confirmed with a real
   fetch rather than assumed.
 
+### Exceptions by type, by user, by supplier, trended — Fraud Prevention's third real metric (0423)
+- **A genuinely new metric, not a re-listing of decision 0421's own
+  supplier-exceptions card.** That one lives on Supplier Performance
+  (`AP.Supplier`, scoped by the supplier's own org unit) and reports
+  one aggregate rate per supplier over 90 days. This one lives on
+  Fraud Prevention (`AP.FraudReview`, scoped by the invoice's own org
+  unit, the same rule decision 0420 already established — the only
+  one available here, since an unmatched invoice has no
+  `supplier_id`), and adds a breakdown 0421 never attempted (by user),
+  trended weekly rather than reported as one static number.
+- **Trended as weekly counts, not weekly rates**, over eight
+  Monday-anchored calendar weeks — a rate on a single week's small
+  denominator would be noisy enough to mislead, and the design's own
+  words ask only that a rise be *visible*, which a rising sparkline
+  already shows without this route deciding for the viewer what counts
+  as "rising."
+- **`charts.js`'s own `sparkline()`, its first real caller.** Built by
+  decisions 0242/0265 and left deliberately unused since — this is the
+  card that comment was waiting for.
+- **By supplier and by type count the exception itself, once per
+  visit; by user counts completed review tasks, not exceptions.** A
+  failing visit can spawn more than one task, one per matching line
+  (`workflow-engine.ts`'s own documented behaviour), and each completed
+  task credits whoever finished it — the identical unit
+  `workload-route.ts`'s own throughput already counts by. A visit with
+  three line-level tasks finished by three different people credits
+  each of them once, so `byUser`'s own totals can legitimately exceed
+  the exception count a supplier or type breakdown shows for the same
+  window — a real, documented difference in what each breakdown
+  measures, not a double-count bug. An exception whose task nobody has
+  completed yet carries no user credit at all.
+- **The unmatched-supplier bucket stays one shared entry**, never one
+  per printed name — the same reasoning decision 0420 already gives for
+  treating a printed name as a raw fallback, not a stable identity to
+  group or trend by.
+- The proxy allow-list checked directly again: `/fraud/exception-trends`
+  matched no existing wildcard either, its own new entry added.
+
 ### Purchase orders and matching
 - Purchase order storage grounded in Peppol BIS Order Only 3.3, via UBL
   XML ingestion (0081) and CSV load (0370) — the same tables, the same
@@ -1438,17 +1476,18 @@ invoice number"* (0058). The machinery exists; what is missing is the
 vocabulary's EN 16931 reference fields and supplier groups.
 
 **One of the Management Dashboard's five designed screens, four of
-Liabilities & Accruals' own six key metrics, four of Fraud & Risk
+Liabilities & Accruals' own six key metrics, three of Fraud & Risk
 Detection's own six, and two of Supplier Performance's own eight.**
-Decisions 0415, 0416, 0418, 0419, 0420, 0421, and 0422 each built one
-or more vertical slices for real — Workload's "Throughput by user,
-stacked by stage," Financial Performance's "Accruals report" and
+Decisions 0415, 0416, 0418, 0419, 0420, 0421, 0422, and 0423 each
+built one or more vertical slices for real — Workload's "Throughput by
+user, stacked by stage," Financial Performance's "Accruals report" and
 "Spend under management (with PO)," Fraud Prevention's "Potential
-duplicate invoices" and "Unapproved-supplier invoices," and Supplier
-Performance's own "Spend by supplier," active supplier count by
-status, average cycle time, exception rate and type mix, PO variance,
-and payment terms held vs. negotiated. Decision 0417 gave all five
-design screens their own tab inside the new AP Analytics screen;
+duplicate invoices," "Unapproved-supplier invoices," and "Exceptions
+by type, by user, by supplier, trended," and Supplier Performance's
+own "Spend by supplier," active supplier count by status, average
+cycle time, exception rate and type mix, PO variance, and payment
+terms held vs. negotiated. Decision 0417 gave all five design screens
+their own tab inside the new AP Analytics screen;
 only the Multi-Enterprise CFO View (Executive IQ) still has no route
 or real UI behind its own tab — it renders a permission-gated "not
 built yet" placeholder rather than a Claude Docs design document and
@@ -1461,13 +1500,13 @@ metrics** — early-payment/discount eligibility, cash-flow forecast,
 payment terms held vs. actual, and DPO — stay unbuilt; three of them
 need payment-execution data (when and on what terms an invoice was
 actually paid) this codebase does not capture anywhere.
-**Fraud & Risk Detection's own other four metrics** — statistical
+**Fraud & Risk Detection's own other three metrics** — statistical
 outliers, vendor banking-detail-change alerts (the design's own words:
 "not currently captured by VibeFinance... noted as a real gap, not
-assumed solvable"), exceptions by type/user/supplier trended, and
-segregation-of-duties flags — stay unbuilt on the one screen that does
-now partly exist. Decision 0422 built the second of the six,
-unapproved-supplier invoices.
+assumed solvable"), and segregation-of-duties flags — stay unbuilt on
+the one screen that does now partly exist. Decision 0422 built the
+second of the six, unapproved-supplier invoices; decision 0423 built
+the third, exceptions by type, by user, by supplier, trended.
 
 **Early-payment/discount eligibility, specifically, is parked rather
 than ruled out — it needs more thought, at the operator's own
@@ -1658,13 +1697,13 @@ elsewhere.
 
 | Package | Tests |
 |---|---|
-| `vf-app` | 2126 |
+| `vf-app` | 2151 |
 | `vf-licence` | 320 |
-| `vf-ui` | 74 Worker · 828 browser |
+| `vf-ui` | 74 Worker · 837 browser |
 | `shared` | 287 passing, 3 known pre-existing failures |
 
 Both migration chains replay clean with every standing invariant
-holding — 71 migrations for `vf-app`, 134 for `vf-licence`.
+holding — 71 migrations for `vf-app`, 135 for `vf-licence`.
 
 **`vf-app`'s count was recorded as 1851 through decision 0379**; a clean
 run at `46c1da2`, with no `vf-app` change since decision 0378 recorded

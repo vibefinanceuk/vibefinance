@@ -421,6 +421,13 @@ describe("the proxy carries every path a screen calls (decision 0131)", () => {
      * whole block keeps finding — checked directly, not assumed.
      */
     ["GET", "/api/fraud/unapproved-suppliers"],
+    /**
+     * The Fraud Prevention tab's own third real metric, exceptions by
+     * type/user/supplier trended — decision 0423.
+     * `/fraud/exception-trends` matched no existing wildcard either,
+     * the same recurring gap this whole block keeps finding.
+     */
+    ["GET", "/api/fraud/exception-trends"],
   ];
 
   it("carries all of them", async () => {

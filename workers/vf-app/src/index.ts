@@ -11,6 +11,7 @@ import { handleAccruals } from "./accruals-route.js";
 import { handleSpendUnderManagement } from "./spend-under-management-route.js";
 import { handlePossibleDuplicates } from "./fraud-duplicates-route.js";
 import { handleUnapprovedSuppliers } from "./fraud-unapproved-suppliers-route.js";
+import { handleFraudExceptionTrends } from "./fraud-exception-trends-route.js";
 import { handleSupplierSpend } from "./supplier-performance-route.js";
 import { handleSupplierCycleTime } from "./supplier-cycle-time-route.js";
 import { handleSupplierExceptions } from "./supplier-exceptions-route.js";
@@ -1305,6 +1306,25 @@ export default {
       }
 
       const result = await handleUnapprovedSuppliers(db, url.searchParams.get("org"), auth.user.id);
+      return json(result.body, result.status);
+    }
+
+    /**
+     * **Exceptions by type, by user, by supplier — trended — decision
+     * 0423.** The Fraud Prevention tab's third real metric. Same gate,
+     * same scoping column as `/fraud/duplicates` and
+     * `/fraud/unapproved-suppliers` — see
+     * `fraud-exception-trends-route.ts` for the full reasoning.
+     */
+    if (pathname === "/fraud/exception-trends" && request.method === "GET") {
+      const { db } = resolveTenant(request, env);
+      const auth = await authenticatePerson(db, request, env);
+      if (!auth.user) return json({ error: auth.reason }, 401);
+      if (!(await hasPermission(db, auth.user.id, "AP.FraudReview"))) {
+        return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
+      }
+
+      const result = await handleFraudExceptionTrends(db, url.searchParams.get("org"), auth.user.id);
       return json(result.body, result.status);
     }
 
