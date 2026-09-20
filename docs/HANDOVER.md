@@ -2,7 +2,7 @@
 
 **Written 4 September 2026, updated 17 September (six times), updated
 18 September (four times), updated 19 September (thirty-two times),
-updated 20 September (thirteen times).**
+updated 20 September (fourteen times).**
 
 **For a session starting cold.** Where things stand, what needs a
 decision rather than work, what to do next, and the habits this project
@@ -31,20 +31,23 @@ twice.
 
 | | |
 | --- | --- |
-| `origin/main` | `299b316` — fetched directly by this session after decision 0417 shipped, confirmed matching local `main` exactly |
+| `origin/main` | `ea47035` — fetched directly by this session after decision 0418 shipped, confirmed matching local `main` exactly |
 | vf-admin deployed | `8e27a34` · `https://admin.vibefinance-ai.com` · behind Cloudflare Access |
-| vf-app deployed | `299b316` (operator's own "deployed and pushed" report — API sits behind auth, not independently checkable from here) |
-| vf-licence deployed | `299b316` (operator's own report; migration `0129` below is now applied) |
-| vf-ui deployed | `299b316` · `https://app.vibefinance-ai.com` — operator's own report: "deployed and pushed" |
+| vf-app deployed | `ea47035` (operator's own "deployed and pushed - I see the accruals now" report — API sits behind auth, not independently checkable from here) |
+| vf-licence deployed | `ea47035` (operator's own report; migration `0130` below is now applied) |
+| vf-ui deployed | `ea47035` · `https://app.vibefinance-ai.com` — operator's own report: "deployed and pushed - I see the accruals now" |
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
-| `vf-app-poc` migrations | through `0071` applied and confirmed live (decision 0418 below adds no new one) |
-| `vf-licence-poc` migrations | through `0129` applied and confirmed live; `0130` (decision 0418's own accruals strings) committed locally, not yet applied remotely |
+| `vf-app-poc` migrations | through `0071` applied and confirmed live (decision 0418 added no new one) |
+| `vf-licence-poc` migrations | through `0130` applied and confirmed live |
 | Tests | vf-admin 9 · vf-app 2016 · vf-licence 320 · vf-ui 74 Worker + 772 browser · shared 287 (+3 known pre-existing failures) |
 | Decision records | 418 |
 
 **Decision 0418 (the accruals report, Financial Performance's first
-real metric) is built and committed locally — not yet pushed or
-deployed.** With decision 0417 confirmed live, asked directly which of
+real metric) is pushed and deployed, confirmed directly.**
+`origin/main` fetched directly reads `ea47035`, matching this session's
+own commit exactly; the operator's own report — "deployed and pushed -
+I see the accruals now" — confirms the live screen itself, not just
+the served code. With decision 0417 confirmed live, asked directly which of
 the three remaining vertical slices to build next — Financial
 Performance, Fraud Prevention, Executive IQ, or Supplier Performance's
 own other six metrics instead — the operator chose Financial
