@@ -11,6 +11,10 @@ import { handleAccruals } from "./accruals-route.js";
 import { handleSpendUnderManagement } from "./spend-under-management-route.js";
 import { handlePossibleDuplicates } from "./fraud-duplicates-route.js";
 import { handleSupplierSpend } from "./supplier-performance-route.js";
+import { handleSupplierCycleTime } from "./supplier-cycle-time-route.js";
+import { handleSupplierExceptions } from "./supplier-exceptions-route.js";
+import { handleSupplierPoVariance } from "./supplier-po-variance-route.js";
+import { handleSupplierPaymentTerms } from "./supplier-payment-terms-route.js";
 import { evaluateRuleSet, validateRule } from "@vibefinance/shared";
 import type { CompiledRuleSet, InvoiceFacts } from "@vibefinance/shared";
 import { COMPILER_MODEL_ID, createWorkersAiCompilerModel } from "./compiler-model.js";
@@ -1064,6 +1068,61 @@ export default {
       }
 
       const result = await handleSupplierSpend(db, url.searchParams.get("org"), auth.user.id);
+      return json(result.body, result.status);
+    }
+
+    /**
+     * **The remaining four Supplier Performance metrics — decision
+     * 0421.** Each gated on `AP.Supplier`, scoped the same way
+     * `/suppliers/spend` already is, placed together immediately
+     * after it — the same "one scoping rule for the whole screen"
+     * discipline decision 0416 established.
+     */
+    if (pathname === "/suppliers/cycle-time" && request.method === "GET") {
+      const { db } = resolveTenant(request, env);
+      const auth = await authenticatePerson(db, request, env);
+      if (!auth.user) return json({ error: auth.reason }, 401);
+      if (!(await hasPermission(db, auth.user.id, "AP.Supplier"))) {
+        return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
+      }
+
+      const result = await handleSupplierCycleTime(db, url.searchParams.get("org"), auth.user.id);
+      return json(result.body, result.status);
+    }
+
+    if (pathname === "/suppliers/exceptions" && request.method === "GET") {
+      const { db } = resolveTenant(request, env);
+      const auth = await authenticatePerson(db, request, env);
+      if (!auth.user) return json({ error: auth.reason }, 401);
+      if (!(await hasPermission(db, auth.user.id, "AP.Supplier"))) {
+        return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
+      }
+
+      const result = await handleSupplierExceptions(db, url.searchParams.get("org"), auth.user.id);
+      return json(result.body, result.status);
+    }
+
+    if (pathname === "/suppliers/po-variance" && request.method === "GET") {
+      const { db } = resolveTenant(request, env);
+      const auth = await authenticatePerson(db, request, env);
+      if (!auth.user) return json({ error: auth.reason }, 401);
+      if (!(await hasPermission(db, auth.user.id, "AP.Supplier"))) {
+        return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
+      }
+
+      const result = await handleSupplierPoVariance(db, url.searchParams.get("org"), auth.user.id);
+      return json(result.body, result.status);
+    }
+
+    if (pathname === "/suppliers/payment-terms" && request.method === "GET") {
+      const { db } = resolveTenant(request, env);
+      const auth = await authenticatePerson(db, request, env);
+      if (!auth.user) return json({ error: auth.reason }, 401);
+      if (!(await hasPermission(db, auth.user.id, "AP.Supplier"))) {
+        return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
+      }
+
+      const result = await handleSupplierPaymentTerms(db, url.searchParams.get("org"), auth.user.id);
       return json(result.body, result.status);
     }
 

@@ -5,6 +5,11 @@ import { load as loadSupplierSpend, renderCard as supplierSpendCard } from "/sup
 import { load as loadAccruals, renderCard as accrualsCard } from "/accruals.js";
 import { load as loadSpendUnderManagement, renderCard as spendUnderManagementCard } from "/spend-under-management.js";
 import { load as loadDuplicates, renderCard as duplicatesCard } from "/fraud-duplicates.js";
+import { load as loadSupplierStatus, renderCard as supplierStatusCard } from "/supplier-status.js";
+import { load as loadSupplierCycleTime, renderCard as supplierCycleTimeCard } from "/supplier-cycle-time.js";
+import { load as loadSupplierExceptions, renderCard as supplierExceptionsCard } from "/supplier-exceptions.js";
+import { load as loadSupplierPoVariance, renderCard as supplierPoVarianceCard } from "/supplier-po-variance.js";
+import { load as loadSupplierPaymentTerms, renderCard as supplierPaymentTermsCard } from "/supplier-payment-terms.js";
 
 /**
  * AP Analytics — decision 0417, the single tabbed home for every
@@ -50,6 +55,18 @@ import { load as loadDuplicates, renderCard as duplicatesCard } from "/fraud-dup
  * branch loads both and returns an array of cards rather than a
  * single element; `renderActive()` spreads whichever shape it gets,
  * so every other single-card tab is unaffected.
+ *
+ * **Supplier Performance shows six real cards, not one** — decision
+ * 0421, the same "an array of cards, each failing independently"
+ * shape `financial` already established, extended from two to six:
+ * active supplier count by status (decision 0378's own route,
+ * reused), spend by supplier (0416), average cycle time, exception
+ * rate and type mix, PO variance, and payment terms held vs.
+ * negotiated with on-time rate. Of the design's own eight key metrics
+ * for this screen, only early-payment/discount capture (parked,
+ * decision 0420 — no structured discount data exists anywhere) and
+ * hold history (parked, decision 0421 — no history table exists,
+ * only current `on_hold` state) stay unbuilt.
  *
  * **The permission each tab actually checks matches its own route's
  * own gate, not the design document's own original proposal.**
@@ -116,7 +133,28 @@ async function tabContent(key) {
     const [accrualsOk, spendOk] = await Promise.all([loadAccruals(), loadSpendUnderManagement()]);
     return [accrualsOk ? accrualsCard() : loadErrorCard(), spendOk ? spendUnderManagementCard() : loadErrorCard()];
   }
-  if (key === "supplier") return (await loadSupplierSpend()) ? supplierSpendCard() : loadErrorCard();
+  if (key === "supplier") {
+    // Six independent cards, decision 0421's own follow-on to 0416 —
+    // the same "one screen's own fetch failing never hides another's
+    // real data" discipline "financial" already established, extended
+    // from two cards to six.
+    const [statusOk, spendOk, cycleOk, exceptionsOk, varianceOk, termsOk] = await Promise.all([
+      loadSupplierStatus(),
+      loadSupplierSpend(),
+      loadSupplierCycleTime(),
+      loadSupplierExceptions(),
+      loadSupplierPoVariance(),
+      loadSupplierPaymentTerms(),
+    ]);
+    return [
+      statusOk ? supplierStatusCard() : loadErrorCard(),
+      spendOk ? supplierSpendCard() : loadErrorCard(),
+      cycleOk ? supplierCycleTimeCard() : loadErrorCard(),
+      exceptionsOk ? supplierExceptionsCard() : loadErrorCard(),
+      varianceOk ? supplierPoVarianceCard() : loadErrorCard(),
+      termsOk ? supplierPaymentTermsCard() : loadErrorCard(),
+    ];
+  }
   if (key === "fraud") return (await loadDuplicates()) ? duplicatesCard() : loadErrorCard();
   return placeholderCard(tab);
 }

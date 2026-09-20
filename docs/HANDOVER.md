@@ -2,7 +2,7 @@
 
 **Written 4 September 2026, updated 17 September (six times), updated
 18 September (four times), updated 19 September (thirty-two times),
-updated 20 September (eighteen times).**
+updated 20 September (nineteen times).**
 
 **For a session starting cold.** Where things stand, what needs a
 decision rather than work, what to do next, and the habits this project
@@ -39,8 +39,34 @@ twice.
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
 | `vf-app-poc` migrations | through `0071` applied and confirmed live (decision 0420 added no new one) |
 | `vf-licence-poc` migrations | through `0132` applied and confirmed live |
-| Tests | vf-admin 9 · vf-app 2048 · vf-licence 320 · vf-ui 74 Worker + 790 browser · shared 287 (+3 known pre-existing failures) |
-| Decision records | 420 |
+| Tests | vf-admin 9 · vf-app 2110 · vf-licence 320 · vf-ui 74 Worker + 818 browser · shared 287 (+3 known pre-existing failures) |
+| Decision records | 421 |
+
+**Decision 0421 (Supplier Performance, the remaining six metrics) is
+built, committed locally — not yet pushed or deployed.** Asked
+directly to "build out all of the supplier performance metrics."
+Investigated first, the same discipline every decision in this arc
+follows: the design document, read fresh, now lists eight key metrics
+for this screen, not the seven decision 0416 recorded — the extra one,
+"Active supplier count, by status," turned out to already exist
+elsewhere (`/api/suppliers/status-counts`, decision 0378), just never
+wired into this tab. Built four genuinely new routes (average cycle
+time, exception rate + type mix, PO variance, payment terms held vs.
+negotiated with an on-time rate), each reusing an honesty pattern an
+earlier decision already established rather than inventing a new one
+— decision 0418's "payment-eligible = readiness to pay," decision
+0419's "recompute PO facts directly, never trust the ephemeral ones,"
+decision 0021's own persisted validation verdict. Six of the screen's
+eight metrics are now real; early-payment/discount capture stays
+parked exactly as decision 0420 left it, and hold history is newly
+found blocked for a different, permanent reason — no audit/history
+table exists anywhere in this codebase for any supplier field, only
+current state. Full local test suites all clean: `vf-app` 2048 → 2110,
+`vf-ui` browser 790 → 818 (both worker and browser-known-rejection
+counts otherwise unchanged), `vf-licence` 320 (migration `0133`, no
+new test file). `eslint .` clean across all three packages. See
+decision 0421's own doc for the full reasoning, and `docs/PROGRESS.md`
+for the durable record.
 
 **Decision 0420 (potential duplicate invoices, Fraud Prevention's
 first real metric) is pushed and deployed, confirmed directly.**

@@ -455,6 +455,48 @@ a rule, and left an approval task in a queue.
   checked directly again: `/fraud/duplicates` matched no existing
   wildcard either.
 
+### Supplier Performance, the remaining six metrics (0421)
+- **The design document, read fresh, lists eight key metrics for this
+  screen, not the seven decision 0416 recorded.** The extra one,
+  "Active supplier count, by status," turned out to already exist
+  elsewhere in this product — `/api/suppliers/status-counts` (decision
+  0378), already gated on `AP.Supplier` and already rendered as a ring
+  on the standalone Suppliers screen. A new thin wrapper module,
+  `workers/vf-ui/public/supplier-status.js`, reuses that route and
+  `charts.js`'s existing `donutChart()` for this tab rather than
+  building a second backend metric.
+- **Four genuinely new routes**, each gated on `AP.Supplier` and scoped
+  on the supplier's own org unit like the rest of this screen: average
+  cycle time (receipt to payment-eligible, reusing decision 0418's own
+  final-stage definition), exception rate and type mix (reusing
+  `stage_visits.validation_passed`/`validation_failures`, decision
+  0021's own persisted verdict — the same definition
+  `dashboard-route.ts`'s own `exceptionsBySupplier` card already
+  uses), invoice variance to order value (recomputed directly from
+  `invoice_headers` joined to `purchase_orders`, the same "never trust
+  the ephemeral `po.variance_pct` fact" reasoning decision 0419 already
+  established for spend under management), and payment terms held vs.
+  negotiated with an on-time rate (negotiated days parsed narrowly from
+  `suppliers.payment_terms`'s free text — only the `"Net N"` pattern
+  this project's own data actually uses, excluding what doesn't parse
+  rather than guessing; "on time" reuses decision 0418's own
+  "payment-eligible = readiness to pay" definition rather than
+  claiming knowledge of actual ERP payment execution this system does
+  not have).
+- **Six cards, not one, failing independently** — `ap-analytics.js`'s
+  `tabContent()` "supplier" branch extends the same array-of-cards
+  shape the `financial` branch established at two cards (decision
+  0419) to six.
+- **Hold history is newly found blocked, for a different reason than
+  early-payment/discount.** No audit or history table exists anywhere
+  in this codebase for any field on the supplier record, not only
+  `on_hold` — only current state is stored, overwritten in place. See
+  "Not built."
+- The proxy allow-list checked directly again, the same discipline
+  every decision in this arc keeps: all four new paths already matched
+  the existing `/^\/suppliers\/[^/]+$/` wildcard, confirmed with a real
+  fetch rather than assumed.
+
 ### Purchase orders and matching
 - Purchase order storage grounded in Peppol BIS Order Only 3.3, via UBL
   XML ingestion (0081) and CSV load (0370) — the same tables, the same
@@ -1360,13 +1402,16 @@ vocabulary's EN 16931 reference fields and supplier groups.
 
 **One of the Management Dashboard's five designed screens, four of
 Liabilities & Accruals' own six key metrics, five of Fraud & Risk
-Detection's own six, and six of Supplier Performance's own seven.**
-Decisions 0415, 0416, 0418, 0419, and 0420 each built one vertical
-slice for real — Workload's "Throughput by user, stacked by stage,"
-Supplier Performance's "Spend by supplier," Financial Performance's
-"Accruals report" and "Spend under management (with PO)," and Fraud
-Prevention's "Potential duplicate invoices." Decision 0417 gave all
-five design screens their own tab inside the new AP Analytics screen;
+Detection's own six, and two of Supplier Performance's own eight.**
+Decisions 0415, 0416, 0418, 0419, 0420, and 0421 each built one or more
+vertical slices for real — Workload's "Throughput by user, stacked by
+stage," Financial Performance's "Accruals report" and "Spend under
+management (with PO)," Fraud Prevention's "Potential duplicate
+invoices," and Supplier Performance's own "Spend by supplier," active
+supplier count by status, average cycle time, exception rate and type
+mix, PO variance, and payment terms held vs. negotiated. Decision 0417
+gave all five design screens their own tab inside the new AP Analytics
+screen;
 only the Multi-Enterprise CFO View (Executive IQ) still has no route
 or real UI behind its own tab — it renders a permission-gated "not
 built yet" placeholder rather than a Claude Docs design document and
@@ -1411,13 +1456,19 @@ itself unblock this metric: parsing a discount schedule out of free
 text reliably, or giving suppliers a real structured discount-terms
 field, is its own decision, not yet made. Parked here rather than
 built around dishonestly.
-**Supplier Performance's own other six metrics** — active supplier
-count by status, average cycle time, exception rate, PO-variance
-ranking, payment terms held vs. negotiated, early-payment capture
-rate, and hold history — stay unbuilt on the one screen that does now
-partly exist; none of them share spend's own currency question, and
-each would need its own look at what it actually means before it gets
-a route.
+**Supplier Performance's own remaining two metrics — both parked, for
+two different reasons.** Early-payment/discount capture rate is the
+metric described just above. **Hold history — how often and for how
+long a supplier has been placed on hold, and why — is a different
+shape of gap.** `suppliers.on_hold` and `suppliers.hold_reason`
+(migration 0049) are current state only: a plain `UPDATE` overwrites
+them, and nothing in this codebase — checked directly, no
+`audit_log`, `supplier_history`, `hold_history` or `status_history`
+table exists anywhere — records when a hold started, ended, or what it
+replaced. Not a parsing or schema-field decision like early-payment;
+it needs a genuinely new capability, an audit trail on supplier field
+changes, which does not exist for any field on this record today.
+Decision 0421 built the other six of this screen's eight key metrics.
 
 **Line-level extraction.** Extracted from images since 0044's addendum;
 still absent from the UBL parser's allowance and charge groups.
@@ -1570,13 +1621,13 @@ elsewhere.
 
 | Package | Tests |
 |---|---|
-| `vf-app` | 2048 |
+| `vf-app` | 2110 |
 | `vf-licence` | 320 |
-| `vf-ui` | 74 Worker · 790 browser |
+| `vf-ui` | 74 Worker · 818 browser |
 | `shared` | 287 passing, 3 known pre-existing failures |
 
 Both migration chains replay clean with every standing invariant
-holding — 71 migrations for `vf-app`, 132 for `vf-licence`.
+holding — 71 migrations for `vf-app`, 133 for `vf-licence`.
 
 **`vf-app`'s count was recorded as 1851 through decision 0379**; a clean
 run at `46c1da2`, with no `vf-app` change since decision 0378 recorded

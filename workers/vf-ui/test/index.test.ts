@@ -403,6 +403,17 @@ describe("the proxy carries every path a screen calls (decision 0131)", () => {
      * existing wildcard either.
      */
     ["GET", "/api/fraud/duplicates"],
+    /**
+     * The Supplier Performance tab's own remaining four metrics —
+     * decision 0421. Each matches the same `/^\/suppliers\/[^/]+$/`
+     * wildcard `/suppliers/spend` already does — confirmed directly
+     * with a real fetch rather than assumed from the pattern alone,
+     * the same discipline every entry in this block already follows.
+     */
+    ["GET", "/api/suppliers/cycle-time"],
+    ["GET", "/api/suppliers/exceptions"],
+    ["GET", "/api/suppliers/po-variance"],
+    ["GET", "/api/suppliers/payment-terms"],
   ];
 
   it("carries all of them", async () => {

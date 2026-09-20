@@ -11,15 +11,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
  * user permissions."
  *
  * **What this file does not re-prove.** The Operational Performance
- * and Supplier Performance tabs delegate to `workload.js` and
- * `supplier-performance.js` respectively; Financial Performance
- * delegates to two modules at once, `accruals.js` and
- * `spend-under-management.js` (decision 0419); Fraud Prevention
- * delegates to `fraud-duplicates.js` (decision 0420). Each is already
- * covered by its own test file for chart/table correctness, currency
- * splitting and so on. This file only proves the wiring — that the
- * right module's `load()`/`renderCard()` land behind the right tab —
- * not that module's own content in detail.
+ * tab delegates to `workload.js`; Financial Performance delegates to
+ * two modules at once, `accruals.js` and `spend-under-management.js`
+ * (decision 0419); Supplier Performance delegates to six modules at
+ * once, `supplier-status.js`, `supplier-performance.js`,
+ * `supplier-cycle-time.js`, `supplier-exceptions.js`,
+ * `supplier-po-variance.js` and `supplier-payment-terms.js` (decision
+ * 0421); Fraud Prevention delegates to `fraud-duplicates.js` (decision
+ * 0420). Each is already covered by its own test file for chart/table
+ * correctness, currency splitting and so on. This file only proves the
+ * wiring — that the right module's `load()`/`renderCard()` land behind
+ * the right tab — not that module's own content in detail.
  */
 
 function mountShell() {
@@ -105,6 +107,34 @@ const STRINGS = {
     "supplierperformance.spendsub": "Ranked by total invoiced amount, by currency",
     "supplierperformance.nospend": "No priced invoices yet",
     "supplierperformance.invoicecount": "{n} invoices",
+    // Supplier Performance's five remaining real cards — decision 0421.
+    "suppliers.statusheading": "Suppliers by status",
+    "suppliers.nostatusdata": "No status data yet",
+    "suppliers.status.active": "Active",
+    "suppliers.status.onhold": "On hold",
+    "suppliers.status.inactive": "Inactive",
+    "suppliers.status.awaitingerp": "Awaiting the ERP",
+    "supplierperformance.supplier": "Supplier",
+    "supplierperformance.dayscount": "{n} days",
+    "supplierperformance.cycletime": "Average cycle time",
+    "supplierperformance.cycletimesub": "Receipt to payment-eligible, by supplier",
+    "supplierperformance.nocycletime": "No completed invoices yet",
+    "supplierperformance.exceptions": "Exception rate",
+    "supplierperformance.exceptionssub": "Suppliers with the most validation exceptions, last 90 days",
+    "supplierperformance.noexceptions": "No exceptions recorded",
+    "supplierperformance.exceptioncount": "Exceptions",
+    "supplierperformance.visitcount": "Checked",
+    "supplierperformance.exceptionrate": "Rate",
+    "supplierperformance.typemix": "Most common",
+    "supplierperformance.povariance": "Invoice variance to order value",
+    "supplierperformance.povariancesub": "Average variance from the matched purchase order, by supplier",
+    "supplierperformance.nopovariance": "No PO-matched invoices yet",
+    "supplierperformance.paymentterms": "Payment terms held vs. negotiated",
+    "supplierperformance.paymenttermssub": "What was agreed, what was invoiced, and how often it was on time",
+    "supplierperformance.nopaymentterms": "No comparable payment terms yet",
+    "supplierperformance.negotiatedterms": "Negotiated",
+    "supplierperformance.heldterms": "Invoiced",
+    "supplierperformance.ontimerate": "On time",
     // The Fraud Prevention tab's real content — decision 0420.
     "fraudprevention.duplicates": "Potential duplicate invoices",
     "fraudprevention.duplicatessub": "Same supplier, amount and date — sorted by confidence",
@@ -164,6 +194,11 @@ async function openApAnalytics(
     "/api/accruals": { currencies: [] },
     "/api/spend/under-management": { currencies: [] },
     "/api/suppliers/spend": { currencies: [] },
+    "/api/suppliers/status-counts": { counts: null },
+    "/api/suppliers/cycle-time": { suppliers: [] },
+    "/api/suppliers/exceptions": { suppliers: [], typeMix: [] },
+    "/api/suppliers/po-variance": { suppliers: [] },
+    "/api/suppliers/payment-terms": { suppliers: [] },
     "/api/fraud/duplicates": { invoices: [] },
     ...extraRoutes,
   });
@@ -287,7 +322,7 @@ describe("the default tab, when only some permissions are held", () => {
     await openApAnalytics(["AP.FraudReview", "AP.Supplier"]);
 
     expect(document.querySelector(".tab.active")?.textContent).toBe("Supplier Performance");
-    expect(document.querySelector(".cardhead h3")?.textContent).toBe("Spend by supplier");
+    expect(document.querySelector(".cardhead h3")?.textContent).toBe("Suppliers by status");
   });
 });
 
@@ -317,12 +352,29 @@ describe("real tabs wire to the already-tested module behind them, placeholders 
     expect(document.body.textContent).toContain("No spend recorded yet");
   });
 
-  it("Supplier Performance renders supplier-performance.js's own card", async () => {
+  it("Supplier Performance renders all six of its own cards, decision 0421", async () => {
     await openApAnalytics(["AP.Supplier"]);
 
     expect(document.querySelector(".tab.active")?.textContent).toBe("Supplier Performance");
-    expect(document.querySelector(".cardhead h3")?.textContent).toBe("Spend by supplier");
+    const headings = [...document.querySelectorAll(".cardhead h3")].map((h) => h.textContent);
+    expect(headings).toEqual([
+      "Suppliers by status",
+      "Spend by supplier",
+      "Average cycle time",
+      "Exception rate",
+      "Invoice variance to order value",
+      "Payment terms held vs. negotiated",
+    ]);
     expect(document.body.textContent).toContain("No priced invoices yet");
+  });
+
+  it("Supplier Performance's six cards fail independently — one's own load failure never hides the others' real content", async () => {
+    await openApAnalytics(["AP.Supplier"], {}, { "/api/suppliers/spend": { ok: false, status: 500 } });
+
+    expect(document.body.textContent).toContain("Could not load this tab right now");
+    const headings = [...document.querySelectorAll(".cardhead h3")].map((h) => h.textContent);
+    expect(headings).toContain("Average cycle time");
+    expect(headings).not.toContain("Spend by supplier");
   });
 
   it("Executive IQ says not built yet, gated on its own real permission", async () => {
@@ -379,7 +431,7 @@ describe("switching tabs", () => {
     await switchTab("Supplier Performance");
     expect(document.querySelectorAll(".tab.active")).toHaveLength(1);
     expect(document.querySelector(".tab.active")?.textContent).toBe("Supplier Performance");
-    expect(document.querySelector(".cardhead h3")?.textContent).toBe("Spend by supplier");
+    expect(document.querySelector(".cardhead h3")?.textContent).toBe("Suppliers by status");
 
     await switchTab("Fraud Prevention");
     expect(document.querySelectorAll(".tab.active")).toHaveLength(1);
