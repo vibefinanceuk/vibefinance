@@ -2,7 +2,7 @@
 
 **Written 4 September 2026, updated 17 September (six times), updated
 18 September (four times), updated 19 September (thirty-two times),
-updated 20 September (nine times).**
+updated 20 September (ten times).**
 
 **For a session starting cold.** Where things stand, what needs a
 decision rather than work, what to do next, and the habits this project
@@ -31,11 +31,11 @@ twice.
 
 | | |
 | --- | --- |
-| `origin/main` | `26f8c86` — fetched directly by this session, confirmed |
+| `origin/main` | `f680c78` (operator's report of pulling and pushing bundle 0613; this session cannot fetch to confirm — no push access) |
 | vf-admin deployed | `8e27a34` · `https://admin.vibefinance-ai.com` · behind Cloudflare Access |
-| vf-app deployed | `26f8c86` (operator's report — API sits behind auth, not independently checkable from here) |
+| vf-app deployed | `26f8c86` (operator's report — API sits behind auth, not independently checkable from here; unchanged since 0415's own proxy-allow-list fix touched only `vf-ui`) |
 | vf-licence deployed | `26f8c86` (operator's own `wrangler deploy` output; live `/api/ui-strings` confirmed serving decision 0415's own new keys, so the redeploy genuinely landed) |
-| vf-ui deployed | `26f8c86` · `https://app.vibefinance-ai.com` — confirmed directly: the live `workload.js` is served and contains the real code (`stackedBarChart`, `chartLegend`, the `/api/workload/throughput` fetch), not a stale build |
+| vf-ui deployed | `f680c78` · `https://app.vibefinance-ai.com` — confirmed by the operator's own screenshot of the live Workload screen rendering real data (Alice McDonald, 2 completed, coloured bucket and matching legend dot), the strongest confirmation yet: the whole path working, not just served code |
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
 | `vf-app-poc` migrations | through `0070` |
 | `vf-licence-poc` migrations | through `0127` applied — `0125` confirmed live via `/api/ui-strings` returning all six new title values (checksums `9e4d534bcef6…` (`0122`), `79ff9f930fdb…` (`0123`), `408f61e5b11a…` (`0124`)); `0126` and `0127` applied together in the operator's own `apply_migrations.py --remote` run (no checksums reported), `0127` confirmed live the same way — `/api/ui-strings?locale=en` returning `nav.workload`, `workload.heading`, `workload.sub`, `workload.throughput`, `workload.throughputsub`, `workload.nothroughput`; `0126` not independently re-checked but applied in the same run and nothing since has reported it missing — run via `apply_migrations.py --remote --migrations-dir workers/vf-licence/migrations --database vf-licence-poc` |
@@ -103,8 +103,8 @@ detail in `docs/decisions/0415-ap-analysis-reads-something-at-last.md`.
 see that decision's own "What is not built."
 
 **A second bug in decision 0415, found live after that first deploy
-was confirmed, is fixed and committed — not yet pushed or deployed.**
-Reported from the screen: *"I see the Workload menu option as my user,
+was confirmed, is fixed, pushed, deployed, and confirmed live by
+screenshot.** Reported from the screen: *"I see the Workload menu option as my user,
 but I cannot click it"* — the cursor still changed to a pointer, and
 redeploying `vf-app` on the working theory that it had not picked up
 the new route changed nothing. The real cause was never `vf-app`:
@@ -130,9 +130,15 @@ suite unaffected: 739/739, same 160 known pre-existing unhandled
 rejections. `eslint .` clean. Full detail, including why `vf-app`'s
 redeploy could never have fixed this, now lives in
 `docs/decisions/0415-ap-analysis-reads-something-at-last.md`'s own
-new "A second bug, found live" section. **Only `vf-ui` needs
-redeploying for this fix** — `vf-app` and `vf-licence` are untouched
-by it and do not need redeploying again.
+new "A second bug, found live" section. **Only `vf-ui` needed
+redeploying for this fix** — `vf-app` and `vf-licence` were untouched
+by it. After the operator pulled bundle 0613, pushed, and redeployed
+`vf-ui`, a screenshot of the live screen showed the whole path working
+end to end: a real user's real throughput (Alice McDonald, 2
+completed, one Validation segment in its own bucket colour, the
+legend dot matching it exactly) — confirmation by rendered output with
+real data, not just served code, which is what the first deploy's own
+confirmation had to settle for.
 
 **Decision 0414 (claiming does not finish anything) is pushed and
 deployed** — `origin/main` is `5d771aa`, confirmed by direct `git

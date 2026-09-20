@@ -1,21 +1,26 @@
 # 0415 — `AP.Analysis` reads something at last
 
-**Status: built, pushed, and deployed — with one bug found live and
-fixed after that first deploy.** This session had no push access to
-`vibefinanceuk/vibefinance` and delivered the commit as bundle 0611
-for the operator's own pull/push/deploy sequence. Confirmed directly
-rather than taken on the report alone: `origin/main` fetched directly
-reads `26f8c86`, matching this session's own commit; `GET
-/api/ui-strings?locale=en` on the live `vf-licence` deployment returns
-all six new `workload.*`/`nav.workload` values, which only reads
-correctly if migrations `0126`/`0127` and the worker redeploy both
-landed; the live `workload.js` on `vf-ui`, fetched directly, is the
-real code (`stackedBarChart`, `chartLegend`, the
-`/api/workload/throughput` fetch), not a stale build. `vf-app`'s own
-deploy rested on the operator's report at that point, same as every
-prior decision whose API sits behind auth — and that trust turned out
-to be misplaced in the other direction: `vf-app` was never the
-problem. See "A second bug, found live" below.
+**Status: built, pushed, and deployed — including a second bug, found
+live and fixed after the first deploy, itself now confirmed live.**
+This session had no push access to `vibefinanceuk/vibefinance` and
+delivered both commits as bundles (0611, then 0613 for the fix) for
+the operator's own pull/push/deploy sequence. Confirmed directly
+rather than taken on the report alone, in two stages: the first deploy
+via `origin/main` fetched directly reading `26f8c86`, `GET
+/api/ui-strings?locale=en` on live `vf-licence` returning all six new
+`workload.*`/`nav.workload` values, and the live `workload.js`,
+fetched directly, being the real code — not a stale build. The
+proxy-allow-list fix is confirmed a different way: a screenshot from
+the operator of the live screen after redeploying `vf-ui`, showing a
+real user's real throughput (Alice McDonald, 2 completed, the
+Validation bucket in its own colour with a matching legend dot) —
+direct visual evidence that the whole path now works end to end:
+auth, the permission gate, the scoped query, the proxy, and the chart
+render together. `vf-app`'s own deploy rested on the operator's report
+at both stages — the API sits behind auth, not independently checkable
+from here — and for the first deploy that trust turned out to be
+misplaced in the other direction: `vf-app` was never the problem. See
+"A second bug, found live" below.
 
 ---
 
@@ -204,9 +209,16 @@ first deploy had it been added when the route was.
 Only `vf-ui` needed redeploying for this fix — the bug never reached
 `vf-app`, and `vf-app`'s own route and tests are unchanged by it.
 
----
+**Confirmed live, by screenshot rather than by report.** After the
+operator pulled bundle 0613, pushed, and redeployed `vf-ui` only, the
+Workload screen rendered the real thing: one bar for Alice McDonald,
+total 2, a single Validation segment in its own bucket colour, and a
+legend dot in the same colour with a matching count — the nav click
+that previously did nothing now runs the whole path end to end. This
+is stronger evidence than the first deploy's own confirmation (fetched
+strings and served JS, not a rendered screen with real data flowing
+through auth, the permission gate, and the scoped query all at once).
 
-## Tests
 
 **`workers/vf-app/test/workload.test.ts`, new — 14 tests.**
 
