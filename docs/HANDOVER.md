@@ -31,7 +31,7 @@ twice.
 
 | | |
 | --- | --- |
-| `origin/main` | `ea47035` — fetched directly by this session after decision 0418 shipped, confirmed matching local `main` exactly |
+| `origin/main` | `8ed82a3` — fetched directly by this session, confirmed matching local `main` exactly; docs-only (the decision-0418 HANDOVER confirmation itself), deployed rows below still describe `ea47035` |
 | vf-admin deployed | `8e27a34` · `https://admin.vibefinance-ai.com` · behind Cloudflare Access |
 | vf-app deployed | `ea47035` (operator's own "deployed and pushed - I see the accruals now" report — API sits behind auth, not independently checkable from here) |
 | vf-licence deployed | `ea47035` (operator's own report; migration `0130` below is now applied) |
