@@ -3,6 +3,7 @@ import { el, frame, topbar, setCurrentScreen, hasMyPermission, holdsEverywhere }
 import { load as loadOperational, renderCard as operationalCard } from "/workload.js";
 import { load as loadSupplierSpend, renderCard as supplierSpendCard } from "/supplier-performance.js";
 import { load as loadAccruals, renderCard as accrualsCard } from "/accruals.js";
+import { load as loadSpendUnderManagement, renderCard as spendUnderManagementCard } from "/spend-under-management.js";
 
 /**
  * AP Analytics — decision 0417, the single tabbed home for every
@@ -33,12 +34,19 @@ import { load as loadAccruals, renderCard as accrualsCard } from "/accruals.js";
  * | Executive IQ | Multi-Enterprise CFO View | `AP.Analysis` + `holdsEverywhere` |
  * | Fraud Prevention | Fraud & Risk Detection | `AP.FraudReview` |
  *
- * Operational, Financial (its own first real metric, the accruals
- * report), and Supplier Performance are real, reusing the routes and
- * screens decisions 0415, 0417, and 0416 respectively already built
- * and tested. The other two render a plain "not built yet"
- * placeholder — still gated on their own real permission, so who can
- * even see a tab exists is correct today, ahead of what is behind it.
+ * Operational, Financial, and Supplier Performance are real, reusing
+ * the routes and screens decisions 0415–0419 already built and
+ * tested. The other two render a plain "not built yet" placeholder —
+ * still gated on their own real permission, so who can even see a tab
+ * exists is correct today, ahead of what is behind it.
+ *
+ * **Financial Performance shows two real cards, not one** — decision
+ * 0419's own follow-on to 0417's accruals report: spend under
+ * management (with PO) vs. total spend, the design's own fifth
+ * Liabilities & Accruals bullet. `tabContent()`'s own `financial`
+ * branch loads both and returns an array of cards rather than a
+ * single element; `renderActive()` spreads whichever shape it gets,
+ * so every other single-card tab is unaffected.
  *
  * **The permission each tab actually checks matches its own route's
  * own gate, not the design document's own original proposal.**
@@ -99,7 +107,12 @@ function loadErrorCard() {
 async function tabContent(key) {
   const tab = TABS.find((candidate) => candidate.key === key);
   if (key === "operational") return (await loadOperational()) ? operationalCard() : loadErrorCard();
-  if (key === "financial") return (await loadAccruals()) ? accrualsCard() : loadErrorCard();
+  if (key === "financial") {
+    // Two independent cards, two independent failures — one screen's
+    // own fetch failing never hides the other's real data.
+    const [accrualsOk, spendOk] = await Promise.all([loadAccruals(), loadSpendUnderManagement()]);
+    return [accrualsOk ? accrualsCard() : loadErrorCard(), spendOk ? spendUnderManagementCard() : loadErrorCard()];
+  }
   if (key === "supplier") return (await loadSupplierSpend()) ? supplierSpendCard() : loadErrorCard();
   return placeholderCard(tab);
 }
@@ -116,13 +129,14 @@ async function renderActive() {
   const body = activeTab
     ? await tabContent(activeTab)
     : el("div", { class: "panel card-graphic" }, [el("div", { class: "muted", text: t("apanalytics.none") })]);
+  const bodyCards = Array.isArray(body) ? body : [body];
 
   shell.replaceChildren(
     frame(
       el("div", { class: "dashboardpage" }, [
         topbar(t("apanalytics.heading"), t("apanalytics.sub")),
         tabBar(available),
-        el("div", { class: "dashflow" }, [body]),
+        el("div", { class: "dashflow" }, bodyCards),
       ])
     )
   );

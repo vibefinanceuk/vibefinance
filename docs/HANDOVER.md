@@ -2,7 +2,7 @@
 
 **Written 4 September 2026, updated 17 September (six times), updated
 18 September (four times), updated 19 September (thirty-two times),
-updated 20 September (fourteen times).**
+updated 20 September (fifteen times).**
 
 **For a session starting cold.** Where things stand, what needs a
 decision rather than work, what to do next, and the habits this project
@@ -31,16 +31,64 @@ twice.
 
 | | |
 | --- | --- |
-| `origin/main` | `8ed82a3` — fetched directly by this session, confirmed matching local `main` exactly; docs-only (the decision-0418 HANDOVER confirmation itself), deployed rows below still describe `ea47035` |
+| `origin/main` | `dcfea73` — fetched directly by this session, confirmed matching local `main` exactly; deployed rows below still describe `ea47035`, the last commit the operator confirmed live |
 | vf-admin deployed | `8e27a34` · `https://admin.vibefinance-ai.com` · behind Cloudflare Access |
 | vf-app deployed | `ea47035` (operator's own "deployed and pushed - I see the accruals now" report — API sits behind auth, not independently checkable from here) |
 | vf-licence deployed | `ea47035` (operator's own report; migration `0130` below is now applied) |
 | vf-ui deployed | `ea47035` · `https://app.vibefinance-ai.com` — operator's own report: "deployed and pushed - I see the accruals now" |
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
-| `vf-app-poc` migrations | through `0071` applied and confirmed live (decision 0418 added no new one) |
-| `vf-licence-poc` migrations | through `0130` applied and confirmed live |
-| Tests | vf-admin 9 · vf-app 2016 · vf-licence 320 · vf-ui 74 Worker + 772 browser · shared 287 (+3 known pre-existing failures) |
-| Decision records | 418 |
+| `vf-app-poc` migrations | through `0071` applied and confirmed live (decision 0419 below added no new one) |
+| `vf-licence-poc` migrations | through `0130` applied and confirmed live; `0131` (decision 0419's own spend-under-management strings) committed locally, not yet applied remotely |
+| Tests | vf-admin 9 · vf-app 2032 · vf-licence 320 · vf-ui 74 Worker + 782 browser · shared 287 (+3 known pre-existing failures) |
+| Decision records | 419 |
+
+**Decision 0419 (spend under management, Financial Performance's
+second real metric) is built and committed locally — not yet pushed or
+deployed.** With decision 0418 confirmed live, asked directly which of
+the remaining vertical slices to build next — another Liabilities &
+Accruals metric, Fraud Prevention, Executive IQ, or Supplier
+Performance's own other six metrics — the operator chose "Spend under
+management (Recommended)": no new scoping concept, needing only a
+first look at how PO matching's own fields identify a matched invoice.
+New route (`GET /spend/under-management`,
+`workers/vf-app/src/spend-under-management-route.ts`, gated on
+`AP.Analysis` like the rest of the tab): "with PO" means the invoice's
+own BT-13 resolves to a real `purchase_orders` row — deliberately not
+`po.matched`, which is a price/quantity-tolerance verdict rather than
+a procurement-governance one — with an order named but never stored
+here correctly not counted, the same "nothing to check against yet"
+reasoning `po-matching.ts` already gives for a different question.
+Though the design's own catalog lists this report's *primary* screen
+as the not-yet-built Executive IQ (Multi-Enterprise CFO View), the
+design is explicit that such cross-listing is deliberate — this was
+built on Screen 4's own listing instead, the same "one real vertical
+slice" discipline every Financial Performance metric has followed.
+**Never summed across currencies**, the same discipline every
+Financial Performance metric so far has kept. New screen
+(`spend-under-management.js`, built straight as
+`load()`/`renderCard()`), reusing `charts.js`'s own single-proportion
+`donut()` — previously exported but unused — since the design's own
+suggested visualization here ("Stat tile, % of total spend") is a
+genuinely different shape from Accruals' own "stat tile + table."
+Financial Performance now shows **two real cards**, not one;
+`ap-analytics.js`'s own `tabContent()` loads both and the two fail
+independently, proven directly. **Checked the proxy allow-list
+immediately again**: `/spend/under-management` matched no existing
+wildcard, so it got a real new entry alongside the route itself.
+Tests: 16 new in `workers/vf-app/test/spend-under-management.test.ts`
+(permission gate, what-counts-as-with-PO including the
+never-arrived-order exclusion, never-summed-across-currencies,
+scoping), 8 new in
+`workers/vf-ui/test-browser/spend-under-management.test.ts`, 2 new in
+`workers/vf-ui/test-browser/ap-analytics.test.ts` (both real cards
+render; the two fail independently). Full suites: vf-app 2032/2032
+(2016 + 16 new), vf-licence 320/320 (migration-only; full suite
+re-run clean), vf-ui 74 Worker + 782 browser (772 + 10 net new), known
+pre-existing unhandled-rejection count unchanged (160). `eslint .`
+clean across `vf-app`, `vf-ui`, and `vf-licence`. Full detail in
+`docs/decisions/0419-spend-under-management-with-po-vs-total-spend.md`.
+**Four of Liabilities & Accruals' own six metrics stay unbuilt** — see
+that decision's own "What is not built."
 
 **Decision 0418 (the accruals report, Financial Performance's first
 real metric) is pushed and deployed, confirmed directly.**

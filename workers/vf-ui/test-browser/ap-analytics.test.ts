@@ -10,13 +10,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
  * proving: "Access to tabs, and visibility of tabs controlled through
  * user permissions."
  *
- * **What this file does not re-prove.** The Operational Performance,
- * Financial Performance, and Supplier Performance tabs delegate to
- * `workload.js`, `accruals.js`, and `supplier-performance.js`
- * respectively, each already covered by its own test file for chart
- * correctness, currency splitting and so on. This file only proves
- * the wiring — that the right module's `load()`/`renderCard()` land
- * behind the right tab — not that module's own content in detail.
+ * **What this file does not re-prove.** The Operational Performance
+ * and Supplier Performance tabs delegate to `workload.js` and
+ * `supplier-performance.js` respectively; Financial Performance
+ * delegates to two modules at once, `accruals.js` and
+ * `spend-under-management.js` (decision 0419). Each is already
+ * covered by its own test file for chart correctness, currency
+ * splitting and so on. This file only proves the wiring — that the
+ * right module's `load()`/`renderCard()` land behind the right tab —
+ * not that module's own content in detail.
  */
 
 function mountShell() {
@@ -90,6 +92,13 @@ const STRINGS = {
     "financialperformance.noaccruals": "No open liabilities right now",
     "financialperformance.accrued": "{amount} accrued",
     "financialperformance.invoicecount": "{n} invoices",
+    // Financial Performance's second real card — decision 0419.
+    "financialperformance.spendundermanagement": "Spend under management",
+    "financialperformance.spendundermanagementsub": "Share of spend backed by a purchase order",
+    "financialperformance.nospend": "No spend recorded yet",
+    "financialperformance.totalspend": "{amount} total spend",
+    "financialperformance.withpospend": "{amount} with a PO",
+    "financialperformance.invoiceswithpo": "{withpo} of {total} invoices with a PO",
     // The Supplier Performance tab's real content — decision 0416.
     "supplierperformance.spend": "Spend by supplier",
     "supplierperformance.spendsub": "Ranked by total invoiced amount, by currency",
@@ -125,11 +134,11 @@ function stubFetch(routes: Record<string, unknown>) {
  * and every permission check this screen makes — its own tab gate,
  * `holdsEverywhere` for Executive IQ — reads `me` directly.
  *
- * `/api/workload/throughput`, `/api/accruals`, and
- * `/api/suppliers/spend` are stubbed empty by default on every call,
- * whether or not the test's own permission set makes any given tab
- * reachable — harmless when unused, and one less thing each
- * individual test has to remember.
+ * `/api/workload/throughput`, `/api/accruals`,
+ * `/api/spend/under-management`, and `/api/suppliers/spend` are
+ * stubbed empty by default on every call, whether or not the test's
+ * own permission set makes any given tab reachable — harmless when
+ * unused, and one less thing each individual test has to remember.
  */
 async function openApAnalytics(
   permissions: string[],
@@ -142,6 +151,7 @@ async function openApAnalytics(
     "/api/tasks": { tasks: [], counts: {} },
     "/api/workload/throughput": { users: [], legend: [] },
     "/api/accruals": { currencies: [] },
+    "/api/spend/under-management": { currencies: [] },
     "/api/suppliers/spend": { currencies: [] },
     ...extraRoutes,
   });
@@ -286,6 +296,15 @@ describe("real tabs wire to the already-tested module behind them, placeholders 
     expect(document.body.textContent).toContain("No open liabilities right now");
   });
 
+  it("Financial Performance also renders spend-under-management.js's own card, decision 0419 — two real cards, not one", async () => {
+    await openApAnalytics(["AP.Analysis"]);
+
+    await switchTab("Financial Performance");
+    const headings = [...document.querySelectorAll(".cardhead h3")].map((h) => h.textContent);
+    expect(headings).toEqual(["Accruals report", "Spend under management"]);
+    expect(document.body.textContent).toContain("No spend recorded yet");
+  });
+
   it("Supplier Performance renders supplier-performance.js's own card", async () => {
     await openApAnalytics(["AP.Supplier"]);
 
@@ -315,6 +334,15 @@ describe("real tabs wire to the already-tested module behind them, placeholders 
 
     await switchTab("Financial Performance");
     expect(document.body.textContent).toContain("Could not load this tab right now");
+  });
+
+  it("Financial Performance's two cards fail independently — one's own load failure never hides the other's real content", async () => {
+    await openApAnalytics(["AP.Analysis"], {}, { "/api/accruals": { ok: false, status: 500 } });
+
+    await switchTab("Financial Performance");
+    expect(document.body.textContent).toContain("Could not load this tab right now");
+    expect(document.querySelector(".cardhead h3")?.textContent).toBe("Spend under management");
+    expect(document.body.textContent).toContain("No spend recorded yet");
   });
 });
 

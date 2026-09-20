@@ -8,6 +8,7 @@ import {
 } from "./dashboard-route.js";
 import { handleWorkloadThroughput } from "./workload-route.js";
 import { handleAccruals } from "./accruals-route.js";
+import { handleSpendUnderManagement } from "./spend-under-management-route.js";
 import { handleSupplierSpend } from "./supplier-performance-route.js";
 import { evaluateRuleSet, validateRule } from "@vibefinance/shared";
 import type { CompiledRuleSet, InvoiceFacts } from "@vibefinance/shared";
@@ -1184,6 +1185,25 @@ export default {
       }
 
       const result = await handleAccruals(db, url.searchParams.get("org"), auth.user.id);
+      return json(result.body, result.status);
+    }
+
+    /**
+     * **Spend under management (with PO) vs. total spend — decision
+     * 0419.** Financial Performance's second real metric, gated on
+     * `AP.Analysis` like Accruals above it — the design's own choice
+     * for this screen (also cross-listed under the not-yet-built
+     * Executive IQ tab, see the route's own comment).
+     */
+    if (pathname === "/spend/under-management" && request.method === "GET") {
+      const { db } = resolveTenant(request, env);
+      const auth = await authenticatePerson(db, request, env);
+      if (!auth.user) return json({ error: auth.reason }, 401);
+      if (!(await hasPermission(db, auth.user.id, "AP.Analysis"))) {
+        return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
+      }
+
+      const result = await handleSpendUnderManagement(db, url.searchParams.get("org"), auth.user.id);
       return json(result.body, result.status);
     }
 

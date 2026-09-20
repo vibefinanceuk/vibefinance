@@ -1636,6 +1636,19 @@
   }
 
   /*
+    One currency's own spend-under-management ring — decision 0419.
+    Same spacing rhythm as `.spendcurrency`/`.accrualcurrency`, a
+    separate class because this one wraps a `.donutwrap` rather than a
+    `barList`: nesting it inside `.spendundermanagementtile` (rather
+    than a bare `.donutwrap` sitting directly under `.panel`) opts each
+    currency's own ring out of `.dashflow > .panel > .donutwrap`'s own
+    pin-to-bottom rule above, which assumes a card has only the one
+    ring `donutChart()` ever gives it.
+  */
+  .spendundermanagementtile { margin-top: 14px; }
+  .spendundermanagementtile:first-of-type { margin-top: 0; }
+
+  /*
     **The worklist scrolls rather than growing** — decision 0250.
 
     Twenty-five rows is a card taller than the screen, and everything

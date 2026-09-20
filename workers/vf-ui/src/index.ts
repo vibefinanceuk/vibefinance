@@ -216,6 +216,13 @@ const PROXIED_TO_INSTANCE: RegExp[] = [
    * left once.
    */
   /^\/accruals$/,
+  /**
+   * **Spend under management — decision 0419.** Checked directly
+   * again, the same discipline decision 0418 already established for
+   * this exact recurring gap: `/spend/under-management` matches no
+   * existing wildcard on this list either.
+   */
+  /^\/spend\/under-management$/,
   /^\/suppliers$/,
   /^\/suppliers\/load$/,
   // Finding and choosing a supplier by hand (decision 0222).

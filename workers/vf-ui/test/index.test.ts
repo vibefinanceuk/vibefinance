@@ -387,6 +387,14 @@ describe("the proxy carries every path a screen calls (decision 0131)", () => {
      * added and assumed correct.
      */
     ["GET", "/api/accruals"],
+    /**
+     * The Financial Performance tab's own second real metric, spend
+     * under management — decision 0419. Checked directly again, the
+     * same discipline decision 0418 already established for this exact
+     * recurring gap: `/spend/under-management` matched no existing
+     * wildcard either.
+     */
+    ["GET", "/api/spend/under-management"],
   ];
 
   it("carries all of them", async () => {

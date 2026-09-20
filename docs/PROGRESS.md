@@ -323,13 +323,13 @@ a rule, and left an approval task in a queue.
   what assembled a full page around each one did.
 - **All five of the design's own screens have a tab now, three of them
   real.** Operational Performance (Workload), Financial Performance
-  (its own first real metric, decision 0418's accruals report), and
-  Supplier Performance reuse the real, tested routes 0415, 0418, and
-  0416 built respectively. Executive IQ (the Multi-Enterprise CFO
-  View) and Fraud Prevention (Fraud & Risk Detection) each still
-  render a plain "not built yet" placeholder — still gated on their
-  own real permission, so who can even see a tab exists is correct
-  today, ahead of what is behind it.
+  (two real metrics now — decision 0418's accruals report and decision
+  0419's spend under management), and Supplier Performance reuse the
+  real, tested routes 0415–0419 built respectively. Executive IQ (the
+  Multi-Enterprise CFO View) and Fraud Prevention (Fraud & Risk
+  Detection) each still render a plain "not built yet" placeholder —
+  still gated on their own real permission, so who can even see a tab
+  exists is correct today, ahead of what is behind it.
 - **A tab's own permission always matches its own route's own gate,
   not the design document's original two-permission-per-screen
   proposal.** Gating a tab more strictly than the data behind it would
@@ -368,12 +368,12 @@ a rule, and left an approval task in a queue.
   own bucketing already reads for a different reason), never assumed
   from `ap-live`'s own 7-stage shape.
 - **One metric of six.** The design's own first bullet under
-  Liabilities & Accruals — the other five (early-payment/discount
-  eligibility, cash-flow forecast, spend under management vs. total,
-  payment terms held vs. actual, and DPO) stay unbuilt; three of them
-  need payment-execution data (when and on what terms an invoice was
-  actually paid) this codebase does not capture anywhere — see "Not
-  built."
+  Liabilities & Accruals — see "Spend under management" below for the
+  second. The remaining four (early-payment/discount eligibility,
+  cash-flow forecast, payment terms held vs. actual, and DPO) stay
+  unbuilt; three of them need payment-execution data (when and on what
+  terms an invoice was actually paid) this codebase does not capture
+  anywhere — see "Not built."
 - **Never summed across currencies, broken out by stage in process
   order.** Grouped by `(currency, stage)`, the same currency-safety
   discipline decision 0416 established — but ordered earliest-stage-
@@ -389,6 +389,40 @@ a rule, and left an approval task in a queue.
   so it got a real new entry on `vf-ui`'s `PROXIED_TO_INSTANCE`
   alongside the route itself, proven reachable by a regression test in
   the same change.
+
+### Spend under management (with PO) vs. total spend — Financial Performance's second real metric (0419)
+- **"With PO" means the invoice's own BT-13 resolves to a real
+  purchase order — not `po.matched`.** `po.matched` (`po-matching.ts`)
+  is a price/quantity-tolerance verdict; "spend under management" is a
+  procurement-governance question instead — did the invoice go through
+  the controlled PO process at all. `workers/vf-app/src/spend-under-
+  management-route.ts` (`GET /spend/under-management`) left-joins
+  `invoice_headers` to `purchase_orders` on `json_extract(facts_json,
+  '$."BT-13"')`, the same field-without-a-column pattern
+  `purchase-order-route.ts`'s own `INVOICED_AMOUNTS_JOIN` already
+  established. An order named but never stored here does not count —
+  the same "nothing to check against yet" reasoning `po-matching.ts`'s
+  own header-level match already gives for a different question.
+- **Not this metric's own listed primary screen.** The design's own
+  catalog lists the Multi-Enterprise CFO View (Executive IQ) as the
+  primary screen for this report; the design is explicit that such
+  cross-listing is deliberate. Executive IQ does not exist yet (needs
+  a real multi-org scoping concept), so this was built on Screen 4's
+  own listing instead — the same "one real vertical slice" discipline
+  every Financial Performance metric has followed. When Executive IQ
+  is eventually built, this metric likely belongs there too.
+- **A different visualization shape from Accruals, honestly.** The
+  design's own suggestion here is "Stat tile, % of total spend" — a
+  genuinely different shape from Accruals' "stat tile + table broken
+  out by stage" — so the UI reuses `charts.js`'s own `donut()`, the
+  single-proportion ring, previously exported but unused anywhere.
+  Financial Performance now renders two real cards, not one;
+  `ap-analytics.js`'s own `tabContent()` loads both and the two fail
+  independently, so one's own load error never hides the other's real
+  content.
+- **The proxy allow-list checked directly again**: `/spend/under-
+  management` matched no existing wildcard either, so it got a real
+  new entry, the same discipline decision 0418 already established.
 
 ### Purchase orders and matching
 - Purchase order storage grounded in Peppol BIS Order Only 3.3, via UBL
@@ -1293,26 +1327,29 @@ value lands in which field — *"use the transport reference as the
 invoice number"* (0058). The machinery exists; what is missing is the
 vocabulary's EN 16931 reference fields and supplier groups.
 
-**Two of the Management Dashboard's five designed screens, five of
+**Two of the Management Dashboard's five designed screens, four of
 Liabilities & Accruals' own six key metrics, and six of Supplier
-Performance's own seven.** Decisions 0415, 0416, and 0418 each built
-one vertical slice for real — Workload's "Throughput by user, stacked
-by stage," Supplier Performance's "Spend by supplier," and Financial
-Performance's "Accruals report." Decision 0417 gave all five design
-screens their own tab inside the new AP Analytics screen; Fraud & Risk
-Detection and the Multi-Enterprise CFO View still have no route or
-real UI behind their own tab — each renders a permission-gated "not
-built yet" placeholder rather than a Claude Docs design document and
-Design-canvas mock-ups being the only place they exist. The CFO view
-in particular needs a real multi-org scoping concept that does not
-exist yet; Fraud Prevention needs its own routes and its own look at
-what "fraud/risk data" means in this schema, the way 0415, 0416, and
-0418 each worked theirs out. `AP.FraudReview`, the permission Fraud
-Prevention's own tab is gated on, is itself reserved — granted by no
-migration, enforced by no route, the same standing `AP.Analysis` held
-until 0415 gave it something real to gate. **Liabilities & Accruals'
-own other five metrics** — early-payment/discount eligibility,
-cash-flow forecast, spend under management vs. total, payment terms
+Performance's own seven.** Decisions 0415, 0416, 0418, and 0419 each
+built one vertical slice for real — Workload's "Throughput by user,
+stacked by stage," Supplier Performance's "Spend by supplier," and
+Financial Performance's "Accruals report" and "Spend under management
+(with PO)." Decision 0417 gave all five design screens their own tab
+inside the new AP Analytics screen; Fraud & Risk Detection and the
+Multi-Enterprise CFO View still have no route or real UI behind their
+own tab — each renders a permission-gated "not built yet" placeholder
+rather than a Claude Docs design document and Design-canvas mock-ups
+being the only place they exist. The CFO view in particular needs a
+real multi-org scoping concept that does not exist yet — and is spend
+under management's own *listed primary* screen too, per the design's
+own deliberate cross-referencing (0419), so this metric likely belongs
+there as well once it exists; Fraud Prevention needs its own routes
+and its own look at what "fraud/risk data" means in this schema, the
+way 0415, 0416, 0418, and 0419 each worked theirs out. `AP.FraudReview`,
+the permission Fraud Prevention's own tab is gated on, is itself
+reserved — granted by no migration, enforced by no route, the same
+standing `AP.Analysis` held until 0415 gave it something real to gate.
+**Liabilities & Accruals' own other four metrics** —
+early-payment/discount eligibility, cash-flow forecast, payment terms
 held vs. actual, and DPO — stay unbuilt; three of them need
 payment-execution data (when and on what terms an invoice was actually
 paid) this codebase does not capture anywhere.
@@ -1475,13 +1512,13 @@ elsewhere.
 
 | Package | Tests |
 |---|---|
-| `vf-app` | 2016 |
+| `vf-app` | 2032 |
 | `vf-licence` | 320 |
-| `vf-ui` | 74 Worker · 772 browser |
+| `vf-ui` | 74 Worker · 782 browser |
 | `shared` | 287 passing, 3 known pre-existing failures |
 
 Both migration chains replay clean with every standing invariant
-holding — 71 migrations for `vf-app`, 130 for `vf-licence`.
+holding — 71 migrations for `vf-app`, 131 for `vf-licence`.
 
 **`vf-app`'s count was recorded as 1851 through decision 0379**; a clean
 run at `46c1da2`, with no `vf-app` change since decision 0378 recorded
