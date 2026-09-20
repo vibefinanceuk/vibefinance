@@ -229,7 +229,7 @@ export const PERMISSION_DESCRIPTIONS: Record<Permission, string> = {
   "AP.Code": "Assign GL/cost-centre coding to an invoice — not yet built",
   "AP.Approve": "Approve an invoice for payment",
   "AP.Review": "Review an invoice at the Review stage",
-  "AP.Analysis": "View AP analysis data — no screen shows it yet",
+  "AP.Analysis": "See the Workload screen's team throughput",
   "AP.Dashboard": "See the Dashboard screen",
   "AP.TaskView": "See your own task list",
   "AP.Supplier": "View and manage suppliers",

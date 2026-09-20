@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 17 September 2026. A living document: what is built, what
+Last updated 20 September 2026. A living document: what is built, what
 is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -243,6 +243,39 @@ a rule, and left an approval task in a queue.
 - **Save changes and Close, top right, in the add-a-card pop-out**
   (0369), the same consistency pass every other pop-out has already
   had.
+
+### The Workload screen — team throughput, the first real slice of the Management Dashboard design (0415)
+- **`AP.Analysis` reads something for the first time.** Reserved in
+  `permissions.ts` since before this arc, described until now as "no
+  screen shows it yet" — a real, gated route
+  (`workers/vf-app/src/workload-route.ts`, `GET
+  /workload/throughput`) and a real screen
+  (`workers/vf-ui/public/workload.js`) both exist now, scoped the same
+  way every other analysis card already is.
+- **One chart, not the whole five-screen design.** The Management
+  Dashboard research/design deliverable (a Claude Docs document and
+  Design-canvas mock-ups, not this repo) sketched five screens —
+  Supplier Performance, User & Team Workload, Fraud & Risk Detection,
+  Liabilities & Accruals, Multi-Enterprise CFO View. This is the one
+  vertical slice built for real: "Throughput by user, stacked by
+  stage," chosen because it needed no new permission and no new
+  scoping concept. The other four stay design-only — see "Not built."
+- **A real stage count, folded onto a fixed chart budget, without
+  hardcoding either number.** `tokens.css` caps categorical chart
+  colours at 5; the real seeded `ap-live` process has 7 stages;
+  `process_stages` is customer-configurable data (0008), so neither
+  count can be assumed. A stage's own `sequence` maps positionally
+  onto one of 5 buckets (`bucketOf()`), reproducing the operator's own
+  chosen merge (Matching+Coding, Review+Payment-eligible) for
+  `ap-live` specifically, while staying correct for any other
+  customer's own stage count.
+- **`charts.js` gains its first multi-series chart** (`stackedBarChart`)
+  and a standalone legend (`chartLegend`), colour-per-segment rather
+  than colour-by-array-position — two rows with different subsets of
+  the same 5 buckets would otherwise draw the same bucket in two
+  different colours. See decision 0415 for the real ordering bug this
+  caught along the way (a legend label built from SQL row order rather
+  than process sequence).
 
 ### Purchase orders and matching
 - Purchase order storage grounded in Peppol BIS Order Only 3.3, via UBL
@@ -1147,6 +1180,16 @@ value lands in which field — *"use the transport reference as the
 invoice number"* (0058). The machinery exists; what is missing is the
 vocabulary's EN 16931 reference fields and supplier groups.
 
+**Four of the Management Dashboard's five designed screens.** Decision
+0415 built the one vertical slice — the Workload screen's own
+"Throughput by user, stacked by stage" — for real. Supplier
+Performance, Fraud & Risk Detection, Liabilities & Accruals, and
+Multi-Enterprise CFO View remain a Claude Docs design document and
+Design-canvas mock-ups only, not routes or UI in this repo. The CFO
+view in particular needs a real multi-org scoping concept that does
+not exist yet; the other three need their own routes and their own
+scoping decisions worked out, the way 0415 worked out Workload's.
+
 **Line-level extraction.** Extracted from images since 0044's addendum;
 still absent from the UBL parser's allowance and charge groups.
 
@@ -1298,13 +1341,13 @@ elsewhere.
 
 | Package | Tests |
 |---|---|
-| `vf-app` | 1950 |
+| `vf-app` | 1984 |
 | `vf-licence` | 320 |
-| `vf-ui` | 74 Worker · 711 browser |
+| `vf-ui` | 74 Worker · 739 browser |
 | `shared` | 287 passing, 3 known pre-existing failures |
 
 Both migration chains replay clean with every standing invariant
-holding — 70 migrations for `vf-app`, 125 for `vf-licence`.
+holding — 70 migrations for `vf-app`, 127 for `vf-licence`.
 
 **`vf-app`'s count was recorded as 1851 through decision 0379**; a clean
 run at `46c1da2`, with no `vf-app` change since decision 0378 recorded

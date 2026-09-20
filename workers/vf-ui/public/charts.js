@@ -503,3 +503,132 @@ export function donutChart(segments, { size = 150, legend = true, onSelect = nul
   wrap.append(node, keys);
   return wrap;
 }
+
+/**
+ * Several series, stacked in one bar per row — decision 0415, the
+ * Workload screen's "throughput by user" chart.
+ *
+ * **Colour is given, not computed from position.** `donutChart` above
+ * can assign `chart-${i % 5}` because every ring draws its own full
+ * segment list; here two rows can hold different subsets of the same
+ * categories (one user touched every stage this week, another only
+ * three of them), so a segment's colour has to travel with what it
+ * *is* — decision 0415's own stage bucket — never with where it lands
+ * in one particular row's own filtered array. Color follows the
+ * entity, never its rank.
+ *
+ * @param rows `[{ label, total, segments: [{ value, colour }] }]` —
+ * `segments` already bottom-to-top: index 0 sits on the baseline. A
+ * segment with no value is skipped rather than drawn as a sliver.
+ */
+export function stackedBarChart(rows, { height = 132 } = {}) {
+  const width = 560;
+  const node = svg(width, height);
+  if (rows.length === 0) return node;
+
+  const hi = Math.max(...rows.map((r) => r.total), 1);
+  const slot = width / rows.length;
+  const barWidth = Math.min(slot * 0.55, 54);
+  const plot = height - 34;
+
+  for (let i = 1; i <= 4; i++) {
+    const y = height - 22 - (plot * i) / 4;
+    node.append(
+      el("line", {
+        x1: 0,
+        x2: width,
+        y1: y.toFixed(1),
+        y2: y.toFixed(1),
+        stroke: "var(--border)",
+        "stroke-width": 0.5,
+        opacity: 0.55,
+      })
+    );
+  }
+
+  rows.forEach((row, i) => {
+    const x = i * slot + (slot - barWidth) / 2;
+    let cursorY = height - 22;
+
+    row.segments.forEach((seg) => {
+      if (!seg.value) return;
+      const segHeight = Math.max((seg.value / hi) * plot, 1);
+      const y = cursorY - segHeight;
+      node.append(
+        el("rect", {
+          x: x.toFixed(1),
+          y: y.toFixed(1),
+          width: barWidth.toFixed(1),
+          height: segHeight.toFixed(1),
+          rx: 2,
+          fill: seg.colour,
+        })
+      );
+      // A 2px surface gap between stacked segments — the same
+      // separation an adjacent pair of bars already gets.
+      cursorY = y - 2;
+    });
+
+    node.append(
+      el(
+        "text",
+        {
+          x: (x + barWidth / 2).toFixed(1),
+          y: (cursorY - 2).toFixed(1),
+          "text-anchor": "middle",
+          "font-size": 10,
+          fill: "var(--text-secondary)",
+        },
+        row.total
+      ),
+      el(
+        "text",
+        {
+          x: (x + barWidth / 2).toFixed(1),
+          y: height - 8,
+          "text-anchor": "middle",
+          "font-size": 9,
+          fill: "var(--text-muted)",
+        },
+        row.label
+      )
+    );
+  });
+
+  return node;
+}
+
+/**
+ * A key row for a chart whose colour needs naming, standing alone
+ * rather than beside a ring — decision 0415. `donutChart`'s own
+ * legend lives inside its ring's flex row and reads top to bottom;
+ * `stackedBarChart` above has no ring to sit beside, so this wraps
+ * left to right under a chart of any width instead.
+ *
+ * @param items `[{ label, value, colour }]`
+ */
+export function chartLegend(items) {
+  const wrap = document.createElement("div");
+  wrap.className = "chartlegend";
+
+  for (const item of items) {
+    const row = document.createElement("div");
+    row.className = "chartkey";
+
+    const dot = document.createElement("span");
+    dot.className = "chartdot";
+    dot.style.background = item.colour;
+
+    const name = document.createElement("span");
+    name.textContent = item.label;
+
+    const value = document.createElement("span");
+    value.className = "muted";
+    value.textContent = String(item.value);
+
+    row.append(dot, name, value);
+    wrap.append(row);
+  }
+
+  return wrap;
+}

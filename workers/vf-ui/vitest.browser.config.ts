@@ -88,6 +88,7 @@ export default defineConfig({
       "/suppliers.js": resolve(__dirname, "public/suppliers.js"),
       "/purchase-orders.js": resolve(__dirname, "public/purchase-orders.js"),
       "/dashboard.js": resolve(__dirname, "public/dashboard.js"),
+      "/workload.js": resolve(__dirname, "public/workload.js"),
       "/charts.js": resolve(__dirname, "public/charts.js"),
       "/mood.js": resolve(__dirname, "public/mood.js"),
       "/orgs.js": resolve(__dirname, "public/orgs.js"),

@@ -2,7 +2,7 @@
 
 **Written 4 September 2026, updated 17 September (six times), updated
 18 September (four times), updated 19 September (thirty-two times),
-updated 20 September (six times).**
+updated 20 September (seven times).**
 
 **For a session starting cold.** Where things stand, what needs a
 decision rather than work, what to do next, and the habits this project
@@ -39,8 +39,58 @@ twice.
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
 | `vf-app-poc` migrations | through `0070` |
 | `vf-licence-poc` migrations | through `0125` applied, all confirmed live — checksums `9e4d534bcef6…` (`0122`), `79ff9f930fdb…` (`0123`), `408f61e5b11a…` (`0124`); `0125` applied by the operator (no checksum reported this time), confirmed live via `/api/ui-strings` returning all six new title values — run via `apply_migrations.py --remote --migrations-dir workers/vf-licence/migrations --database vf-licence-poc` |
-| Tests | vf-admin 9 · vf-app 1970 · vf-licence 320 · vf-ui 74 Worker + 732 browser · shared 287 (+3 known pre-existing failures) |
-| Decision records | 414 |
+| Tests | vf-admin 9 · vf-app 1984 · vf-licence 320 · vf-ui 74 Worker + 739 browser · shared 287 (+3 known pre-existing failures) |
+| Decision records | 415 |
+
+**Decision 0415 (`AP.Analysis` reads something at last) is built,
+committed locally on top of `1eb33d6`, and not yet pushed** — this
+session has no push access to `vibefinanceuk/vibefinance`, delivered
+as bundle 0611 for the operator's own pull/push/deploy sequence. Asked
+mid-edit to a Workload mock-up: *"In order to make this a reality -
+what would you start with?"*, answered with one vertical slice —
+"Throughput by user, stacked by stage" — because it needed no new
+permission (`AP.Analysis`, reserved since before this arc, its own
+description literally read "no screen shows it yet") and no new
+scoping concept. *"lets go!"* A real conflict surfaced along the way
+rather than decided silently: the design's own 7 AP stages against
+`tokens.css`'s deliberate 5-chart-colour cap; asked directly, the
+operator chose "Merge to 5 buckets." Built as a positional bucketing
+formula (`bucketOf()`, `workload-route.ts`) rather than a hardcoded
+merge, since `process_stages` is customer-configurable data (0008) —
+reproduces the operator's own approved merge for the real 7-stage
+`ap-live` process (Matching+Coding, Review+Payment-eligible) while
+staying correct for any other customer's own stage count, verified by
+test rather than assumed. New route (`GET /workload/throughput`,
+gated on `AP.Analysis`, the `/dashboard` GET route's own template),
+new screen (`workload.js`), two new chart primitives
+(`stackedBarChart`, `chartLegend` in `charts.js`, colour-per-segment
+rather than colour-by-position — two users with different subsets of
+the same 5 buckets would otherwise draw one bucket in two different
+colours), nav entry, icon, and a new `ui_strings` migration (`0127`,
+en/de). `AP.Analysis`'s own stale description corrected alongside it.
+**A real bug, caught by the test that was checking for something
+else**: the first version built each bucket's legend label from a
+`Set`'s own insertion order, which was really SQL row order
+(`GROUP BY ... s.id`, alphabetical) rather than the stage's own
+sequence — read "Coding & Matching" instead of "Matching & Coding"
+for the real process. Fixed to sort by sequence explicitly. Tests:
+14 new in `workers/vf-app/test/workload.test.ts` (permission gate,
+bucketing — including the caught bug and a non-`ap-live` process
+proving the bucketing is genuinely positional — scoping, the 7-day
+window, ranking and `limit`), 7 new in
+`workers/vf-ui/test-browser/workload.test.ts` (including one proving
+a segment's colour is read off its own bucket, not its position in
+one user's own row). `vitest.browser.config.ts` needed one new alias
+line (`/workload.js`) — every screen module is resolved there by
+hand, and this one was not yet listed. Full suites: vf-app 1984/1984
+(1970 + 14 new), vf-licence 320/320 (migration-only; both the full
+suite and a `--replay-only` of the root D1 chain re-run clean),
+vf-ui 74 Worker + 739 browser (732 + 7 new), known pre-existing
+unhandled-rejection count unchanged (160, re-confirmed against a
+clean stashed tree). `eslint .` clean across the whole repo. Full
+detail in `docs/decisions/0415-ap-analysis-reads-something-at-last.md`.
+**The other four Management Dashboard screens remain design-only** —
+see that decision's own "What is not built."
 
 **Decision 0414 (claiming does not finish anything) is pushed and
 deployed** — `origin/main` is `5d771aa`, confirmed by direct `git

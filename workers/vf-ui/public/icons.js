@@ -405,6 +405,13 @@ Object.assign(ICONS, {
   dashboard:
     '<rect x="3" y="3" width="8" height="8" rx="1.5"/><rect x="13" y="3" width="8" height="5" rx="1.5"/><rect x="13" y="10" width="8" height="11" rx="1.5"/><rect x="3" y="13" width="8" height="8" rx="1.5"/>',
 
+  // A person and the two behind them — a team, not an individual
+  // (`suppliers`' own building draws an organisation; this draws
+  // people). Decision 0415, the same path already used for this
+  // screen's own icon in the approved design mock-up.
+  workload:
+    '<circle cx="9" cy="8" r="3"/><path d="M2 21v-1a6 6 0 0 1 12 0v1M16 3.2a3 3 0 0 1 0 5.6M21 21v-1a5.5 5.5 0 0 0-4-5.3"/>',
+
   // An inbox tray — where a document arrives from, not what it says
   // once it has.
   sources: '<path d="M3 12h5l2 3h4l2-3h5"/><path d="M4 12 5.5 5h13L20 12"/><path d="M3 12v6a1 1 0 0 0 1 1h16a1 1 0 0 0 1-1v-6"/>',

@@ -509,6 +509,9 @@ async function go(screen) {
   } else if (screen === "dashboard") {
     const { open } = await import("/dashboard.js");
     await open();
+  } else if (screen === "workload") {
+    const { open } = await import("/workload.js");
+    await open();
   } else if (screen === "suppliers") {
     const { open } = await import("/suppliers.js");
     await open();
@@ -589,6 +592,13 @@ function setNavCollapsed(collapsed) {
  */
 const NAV_PERMISSIONS = {
   dashboard: "AP.Dashboard",
+  /**
+   * **`AP.Analysis`, decision 0415** — the same permission
+   * `workers/vf-app/src/workload-route.ts` requires, and the first
+   * screen to reuse it: a manager's own view of team throughput,
+   * distinct from `AP.Dashboard`'s personal "what should I do next."
+   */
+  workload: "AP.Analysis",
   tasks: "AP.TaskView",
   sources: "Admin.Configure",
   suppliers: "AP.Supplier",
@@ -664,6 +674,7 @@ export function frame(main) {
       heading: "accountspayable",
       screens: [
         ["dashboard", "dashboard"],
+        ["workload", "workload"],
         ["tasks", "tasks"],
         ["documents", "documents"],
       ],

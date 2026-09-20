@@ -6,6 +6,7 @@ import {
   handleSaveDashboard,
   handleResetDashboard,
 } from "./dashboard-route.js";
+import { handleWorkloadThroughput } from "./workload-route.js";
 import { evaluateRuleSet, validateRule } from "@vibefinance/shared";
 import type { CompiledRuleSet, InvoiceFacts } from "@vibefinance/shared";
 import { COMPILER_MODEL_ID, createWorkersAiCompilerModel } from "./compiler-model.js";
@@ -1122,6 +1123,25 @@ export default {
        * dashboard's own cards.
        */
       const result = await handleDashboard(db, auth.user.id, url.searchParams.get("org"));
+      return json(result.body, result.status);
+    }
+
+    /**
+     * **Team throughput by stage — decision 0415.** The first route to
+     * read back `AP.Analysis` (`permissions.ts`), reserved since before
+     * this bundle and never previously read by anything. Same shape as
+     * every other analysis route: authenticate, then require the
+     * permission, then scope the query to the units it grants.
+     */
+    if (pathname === "/workload/throughput" && request.method === "GET") {
+      const { db } = resolveTenant(request, env);
+      const auth = await authenticatePerson(db, request, env);
+      if (!auth.user) return json({ error: auth.reason }, 401);
+      if (!(await hasPermission(db, auth.user.id, "AP.Analysis"))) {
+        return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
+      }
+
+      const result = await handleWorkloadThroughput(db, auth.user.id, url.searchParams.get("org"));
       return json(result.body, result.status);
     }
 

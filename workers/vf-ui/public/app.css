@@ -1578,6 +1578,27 @@
   }
 
   /*
+    A key row for a chart with no ring to sit beside — decision 0415,
+    `stackedBarChart`'s own legend. `.donutkey`'s row shape, reused;
+    laid out left to right and wrapping rather than in `.donutlegend`'s
+    own single column, since this sits under a chart of any width
+    instead of beside a fixed-size ring.
+  */
+  .chartlegend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 18px;
+    margin-top: 10px;
+  }
+  .chartkey {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: var(--text-sm);
+  }
+  .chartdot { width: 9px; height: 9px; border-radius: 999px; flex: 0 0 auto; }
+
+  /*
     **The worklist scrolls rather than growing** — decision 0250.
 
     Twenty-five rows is a card taller than the screen, and everything
