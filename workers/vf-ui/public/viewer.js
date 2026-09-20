@@ -11,7 +11,7 @@
  */
 
 import { t } from "/strings.js";
-import { el, frame, topbar } from "/tasks.js";
+import { el, frame, topbar, refreshTask } from "/tasks.js";
 import { icon } from "/icons.js";
 import { processRow } from "/process-row.js";
 import { buildActivityTab } from "/activity.js";
@@ -883,6 +883,32 @@ async function runAction(name, task, onClose) {
     const failure = await response.json().catch(() => ({}));
     note(failure.error ?? t("viewer.actionfailed"));
     return;
+  }
+
+  /**
+   * **Claiming only changes who holds the lock — decision 0414,**
+   * reported live: *"Upon selecting Claim, I am redirected to the task
+   * list. However it would be preferable to open the same viewer in
+   * edit mode, now that I have claimed the document."* Every other
+   * action here finishes the task or moves it away, which is what the
+   * `onClose()` below is actually for; claiming does neither, so the
+   * same document at the same stage should stay on screen, now unlocked.
+   *
+   * **Reopened on a fresh task, not the stale one already in hand** —
+   * `canEditAnything` reads `task.ownership` from whatever `openViewer()`
+   * was handed, and `task` here still carries whatever it was before
+   * this claim succeeded. `refreshTask()` re-fetches it.
+   */
+  if (name === "claim") {
+    const fresh = await refreshTask(task.id);
+    if (fresh) {
+      await openViewer(fresh, onClose);
+      return;
+    }
+    // Claimed, but no longer in the list this screen would refresh to
+    // — most likely a view filtered to unclaimed work. Nothing fresh
+    // to reopen, so this falls through to the same close every other
+    // action already takes below.
   }
 
   // The task is finished or moved, so the viewer has nothing left to

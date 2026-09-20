@@ -395,6 +395,21 @@ a rule, and left an approval task in a queue.
 - Usage telemetry, per environment, aggregate-only
 
 ### The interface
+- **Claiming a task inside the document viewer keeps the viewer open,
+  now unlocked, instead of closing back to the task list** (0414).
+  Reported live: *"Upon selecting Claim, I am redirected to the task
+  list. However it would be preferable to open the same viewer in edit
+  mode, now that I have claimed the document."* `runAction()` closed
+  the viewer unconditionally after any action the server accepted, on
+  reasoning that held for Complete, Return, Discard and Return to
+  supplier (each finishes or moves the task away) but not for Claim,
+  which only changes who holds the lock. Reopening on the same stale
+  `task` object would not have unlocked anything either —
+  `canEditAnything` reads `task.ownership` at open time, and the
+  claim response itself carries no such field — so `tasks.js` gains
+  `refreshTask(taskId)`, re-fetching the list and handing back the one
+  row now claimed, for `runAction()` to reopen the viewer on. Release
+  and every other action keep their existing close.
 - **Changing language no longer bounces the main window to the default
   screen** (0413). `languagePicker()` had reloaded the whole page since
   0302, which always lands on the default screen regardless of what

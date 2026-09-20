@@ -159,6 +159,31 @@ async function openTask(taskId) {
   });
 }
 
+/**
+ * A fresh copy of one task, by id — decision 0414.
+ *
+ * **For `viewer.js`'s own `runAction()`**, after claiming: the response
+ * a claim gets back (`{ taskId, claimedBy, claimedAt }`, `task-route.ts`'s
+ * own `handleClaimTask`) carries no `ownership` or `actions` to patch
+ * onto the task object already in hand, and that object is now stale in
+ * exactly the field that matters — `openViewer()` reads `canEditAnything`
+ * from `task.ownership` at the moment it is called, not live. There is
+ * no single-task endpoint to ask instead, so this re-fetches the list —
+ * the one place `ownership` and `actions` are assembled correctly — and
+ * looks up the one row, the same lookup `openTask()` and `act()` already
+ * do from `lastTasks` above.
+ *
+ * **Returns `undefined` if the task is no longer in the refreshed list**
+ * — a real outcome, not a bug: claiming can drop a task out of a view
+ * filtered to `ownership=available`, since it is no longer available.
+ * The caller falls back to closing, which is correct here: the task
+ * left the list this screen is showing.
+ */
+export async function refreshTask(taskId) {
+  await loadTasks();
+  return lastTasks.find((t) => t.id === taskId);
+}
+
 async function act(taskId, action) {
   // Keying opens a screen rather than calling anything (decision 0106).
   if (action === "key") {

@@ -2,7 +2,7 @@
 
 **Written 4 September 2026, updated 17 September (six times), updated
 18 September (four times), updated 19 September (thirty-two times),
-updated 20 September (five times).**
+updated 20 September (six times).**
 
 **For a session starting cold.** Where things stand, what needs a
 decision rather than work, what to do next, and the habits this project
@@ -39,8 +39,39 @@ twice.
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
 | `vf-app-poc` migrations | through `0070` |
 | `vf-licence-poc` migrations | through `0125` applied, all confirmed live — checksums `9e4d534bcef6…` (`0122`), `79ff9f930fdb…` (`0123`), `408f61e5b11a…` (`0124`); `0125` applied by the operator (no checksum reported this time), confirmed live via `/api/ui-strings` returning all six new title values — run via `apply_migrations.py --remote --migrations-dir workers/vf-licence/migrations --database vf-licence-poc` |
-| Tests | vf-admin 9 · vf-app 1970 · vf-licence 320 · vf-ui 74 Worker + 730 browser · shared 287 (+3 known pre-existing failures) |
-| Decision records | 413 |
+| Tests | vf-admin 9 · vf-app 1970 · vf-licence 320 · vf-ui 74 Worker + 732 browser · shared 287 (+3 known pre-existing failures) |
+| Decision records | 414 |
+
+**Decision 0414 (claiming does not finish anything) is built, not yet
+pushed.** Reported live: *"When I open a task that it not claimed, the
+fields are locked. There is a claim button in the document viewer.
+Upon selecting Claim, I am redirected to the task list. However it
+would be preferable to open the same viewer in edit mode, now that I
+have claimed the document."* `runAction()` (`viewer.js`) closed the
+viewer unconditionally after any action the server accepted — right
+for Complete, Return, Discard and Return to supplier, which really do
+finish the task or move it away, wrong for Claim, which only changes
+who holds the lock. Reopening on the same stale `task` object would
+not have unlocked the fields either: `canEditAnything` reads
+`task.ownership` from whatever object `openViewer()` was handed, and
+the claim response itself (`{ taskId, claimedBy, claimedAt }`) carries
+no such field. `tasks.js` gains `refreshTask(taskId)` — there is no
+single-task endpoint, so it re-fetches the list and hands back the one
+row, the same lookup `openTask()` and `act()` already make from
+`lastTasks` — for `runAction()` to reopen the viewer on when the claim
+succeeds; a task that fell out of the current filtered view (claiming
+something in an "available"-only view) has nothing to reopen, so that
+falls through to the same close every other action already takes.
+Release and every other action are untouched — the report was specific
+to Claim, and Release's own desired reopen behaviour was not obviously
+the same. Two new tests, fail-first verified (the first pass at the
+test itself had a bug — `button.act` matched the list's own hidden
+row-level Claim button rather than the viewer's, so it exercised the
+wrong code path; caught by the failure landing on the wrong assertion
+and fixed by scoping the selector to `#viewer`). Full vf-ui suite
+74 Worker + 732 browser (730 + 2 new), known pre-existing
+unhandled-rejection count unchanged (160). `eslint` clean. Full detail
+in `docs/decisions/0414-claiming-does-not-finish-anything.md`.
 
 **Decision 0413 (a language has no relationship to the org) is pushed
 and deployed** — `origin/main` is `674d79b`, confirmed by direct `git

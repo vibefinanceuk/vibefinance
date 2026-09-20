@@ -1545,3 +1545,160 @@ describe("the ownership dropdown shows the filter in force (decision 0256)", () 
     expect(ownership.value).toBe("");
   });
 });
+
+describe("the claim button inside the document viewer (decision 0414)", () => {
+  /**
+   * Reported live: *"When I open a task that it not claimed, the
+   * fields are locked. There is a claim button in the document viewer.
+   * Upon selecting Claim, I am redirected to the task list. However it
+   * would be preferable to open the same viewer in edit mode, now that
+   * I have claimed the document."*
+   *
+   * `runAction()`'s own `onClose()` was unconditional: right for
+   * Complete, Return, Discard and Return to supplier, which really do
+   * finish or move a task away — wrong for Claim, which only changes
+   * who holds the lock. The same document, at the same stage, should
+   * stay in view, now unlocked.
+   */
+  const UNCLAIMED_TASK = {
+    id: "t-avail",
+    stageId: "validation",
+    stageName: "Validation",
+    ownership: "available",
+    createdAt: "2026-09-01 09:00:00",
+    actions: ["claim"],
+    subject: { type: "invoice", id: "inv-9", supplierName: "Munch GmbH", totalWithVat: 1200 },
+  };
+
+  /** Reuses `openList()`'s own inv-9 stub set (decision 0413's own note explains why each one is there), with the two entries this decision needs of its own. */
+  function claimRoutes(tasks: unknown[]) {
+    return {
+      "/api/ui-strings": STRINGS,
+      "/api/whoami": { id: "u-dan", name: "Dan", permissions: ALL_NAV_PERMISSIONS },
+      "/api/tasks": { tasks, counts: {} },
+      "/api/sources": { sources: [] },
+      "/api/processes": { processes: [] },
+      "/api/rules": { rules: [] },
+      "/api/rules/stages": { stages: [] },
+      "/api/documents": { documents: [], searched: 0 },
+      // One editable header field, BT-27 (Seller name) — otherwise
+      // `canEditAnything` could never be true even once ownership
+      // reads "mine", and the test would not be able to tell claiming
+      // apart from any other reopen.
+      "/api/field-visibility": { fields: [{ field: "BT-27", line: false, visibility: "edit" }], derived: {} },
+      "/api/invoices/inv-9/document-url": { url: null },
+      "/api/invoices/inv-9/progress": { inProcess: false, stages: [] },
+      "/api/invoices/inv-9/pages": { pages: [] },
+      "/api/documents/inv-9/activity": { items: [] },
+      "/api/suppliers": { suppliers: [], lastLoad: null, fedByLoad: false },
+      "/api/org/units": { units: [] },
+      "/api/dashboard": { cards: [], usingDefault: true },
+      "/api/tasks/t-avail/claim": { taskId: "t-avail", claimedBy: "u-dan", claimedAt: "2026-09-20T09:00:00.000Z" },
+    } as Record<string, unknown>;
+  }
+
+  it("stays open on the same task, now unlocked, instead of returning to the list", async () => {
+    const routes = claimRoutes([UNCLAIMED_TASK]);
+    stubFetch(routes);
+
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { start } = await import("/tasks.js");
+    await start();
+
+    const tasksLink = [...document.querySelectorAll(".navitem")].find((a) =>
+      a.textContent?.includes("Tasks")
+    ) as HTMLElement;
+    tasksLink.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    const row = document.querySelector("tbody tr") as HTMLElement;
+    row.click();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(document.getElementById("viewer")?.hidden).toBe(false);
+
+    // Locked: BT-27 reads as plain text, not an input, even though the
+    // stage marks it "edit" — nobody has claimed it yet.
+    expect(document.getElementById("f-BT-27")?.tagName).toBe("DIV");
+
+    /**
+     * The real claim changes what the server's own `/api/tasks` answers
+     * next — this swaps the stub the same way, right before Claim is
+     * clicked, so `refreshTask()`'s own re-fetch sees a task now
+     * claimed by this person and offering what a claimed task offers.
+     */
+    routes["/api/tasks"] = {
+      tasks: [{ ...UNCLAIMED_TASK, ownership: "mine", actions: ["release", "complete"] }],
+      counts: {},
+    };
+
+    // Scoped to #viewer, not `button.act` — that class belongs to the
+    // list's own row-level Claim/Release buttons (decision 0288's own
+    // `act()`, a different code path), which stay in the DOM, merely
+    // hidden, once the viewer opens over the shell.
+    const claimButton = [...document.querySelectorAll("#viewer button")].find(
+      (b) => b.textContent === "Claim"
+    ) as HTMLButtonElement;
+    claimButton.click();
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
+
+    // Never bounced back to the list — the bug this decision fixes.
+    expect(document.getElementById("viewer")?.hidden).toBe(false);
+    expect(document.getElementById("shell")?.hidden).toBe(true);
+
+    // And unlocked: the same field is a real input now that ownership
+    // reads "mine".
+    expect(document.getElementById("f-BT-27")?.tagName).toBe("INPUT");
+
+    const posted = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls
+      .filter((c) => (c[1] as RequestInit | undefined)?.method === "POST")
+      .map((c) => String(c[0]));
+    expect(posted).toContain("/api/tasks/t-avail/claim");
+  });
+
+  it("falls back to the list when the claimed task drops out of the current view", async () => {
+    /**
+     * Claiming can remove a task from a view filtered to unclaimed
+     * work — `refreshTask()` genuinely finds nothing to reopen, and
+     * the only honest answer is the same close every other action
+     * already takes.
+     */
+    const routes = claimRoutes([UNCLAIMED_TASK]);
+    stubFetch(routes);
+
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { start } = await import("/tasks.js");
+    await start();
+
+    const tasksLink = [...document.querySelectorAll(".navitem")].find((a) =>
+      a.textContent?.includes("Tasks")
+    ) as HTMLElement;
+    tasksLink.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    const row = document.querySelector("tbody tr") as HTMLElement;
+    row.click();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(document.getElementById("viewer")?.hidden).toBe(false);
+
+    // The task claiming just removed from view — the next /api/tasks
+    // fetch no longer carries it at all.
+    routes["/api/tasks"] = { tasks: [], counts: {} };
+
+    // Scoped to #viewer, not `button.act` — that class belongs to the
+    // list's own row-level Claim/Release buttons (decision 0288's own
+    // `act()`, a different code path), which stay in the DOM, merely
+    // hidden, once the viewer opens over the shell.
+    const claimButton = [...document.querySelectorAll("#viewer button")].find(
+      (b) => b.textContent === "Claim"
+    ) as HTMLButtonElement;
+    claimButton.click();
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(document.getElementById("viewer")?.hidden).toBe(true);
+    expect(document.getElementById("shell")?.hidden).toBe(false);
+  });
+});
