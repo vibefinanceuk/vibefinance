@@ -2,7 +2,7 @@
 
 **Written 4 September 2026, updated 17 September (six times), updated
 18 September (four times), updated 19 September (thirty-two times),
-updated 20 September (once).**
+updated 20 September (twice).**
 
 **For a session starting cold.** Where things stand, what needs a
 decision rather than work, what to do next, and the habits this project
@@ -31,19 +31,21 @@ twice.
 
 | | |
 | --- | --- |
-| `origin/main` | `a25b0dc` |
+| `origin/main` | `266218e` |
 | vf-admin deployed | `8e27a34` · `https://admin.vibefinance-ai.com` · behind Cloudflare Access |
-| vf-app deployed | `a25b0dc` (operator's report — API sits behind auth, not independently checkable from here) |
+| vf-app deployed | `266218e` (operator's report — API sits behind auth, not independently checkable from here) |
 | vf-licence deployed | `04072df` (operator's own `wrangler deploy` output, version `39c2f745…`) |
-| vf-ui deployed | `a25b0dc` · `https://app.vibefinance-ai.com` — operator confirmed deployed |
+| vf-ui deployed | `266218e` · `https://app.vibefinance-ai.com` — operator confirmed deployed |
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
 | `vf-app-poc` migrations | through `0070` |
 | `vf-licence-poc` migrations | through `0125` applied, all confirmed live — checksums `9e4d534bcef6…` (`0122`), `79ff9f930fdb…` (`0123`), `408f61e5b11a…` (`0124`); `0125` applied by the operator (no checksum reported this time), confirmed live via `/api/ui-strings` returning all six new title values — run via `apply_migrations.py --remote --migrations-dir workers/vf-licence/migrations --database vf-licence-poc` |
 | Tests | vf-admin 9 · vf-app 1970 · vf-licence 320 · vf-ui 74 Worker + 721 browser · shared 287 (+3 known pre-existing failures) |
 | Decision records | 411 |
 
-**Decision 0411 (ask the bar, not a second query) is built, not yet
-committed** — awaiting sign-off. Reported live, verbatim: *"please can
+**Decision 0411 (ask the bar, not a second query) is pushed and
+deployed** — `origin/main` is `266218e`, confirmed by direct `git
+fetch`; the operator confirmed both `vf-app` and `vf-ui` deployed.
+Reported live, verbatim: *"please can
 you update the exceptions by supplier, and Task Aging Report in the
 Dashboard, so that they link to the Document screen with items
 shortlisted?"* Both cards now drill through to Documents the same way
