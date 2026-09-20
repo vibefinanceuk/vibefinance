@@ -2,7 +2,7 @@
 
 **Written 4 September 2026, updated 17 September (six times), updated
 18 September (four times), updated 19 September (thirty-two times),
-updated 20 September (seven times).**
+updated 20 September (eight times).**
 
 **For a session starting cold.** Where things stand, what needs a
 decision rather than work, what to do next, and the habits this project
@@ -31,21 +31,31 @@ twice.
 
 | | |
 | --- | --- |
-| `origin/main` | `5d771aa` |
+| `origin/main` | `26f8c86` — fetched directly by this session, confirmed |
 | vf-admin deployed | `8e27a34` · `https://admin.vibefinance-ai.com` · behind Cloudflare Access |
-| vf-app deployed | `266218e` (operator's report — API sits behind auth, not independently checkable from here) |
-| vf-licence deployed | `04072df` (operator's own `wrangler deploy` output, version `39c2f745…`) |
-| vf-ui deployed | `5d771aa` · `https://app.vibefinance-ai.com` — operator confirmed pushed and deployed |
+| vf-app deployed | `26f8c86` (operator's report — API sits behind auth, not independently checkable from here) |
+| vf-licence deployed | `26f8c86` (operator's own `wrangler deploy` output; live `/api/ui-strings` confirmed serving decision 0415's own new keys, so the redeploy genuinely landed) |
+| vf-ui deployed | `26f8c86` · `https://app.vibefinance-ai.com` — confirmed directly: the live `workload.js` is served and contains the real code (`stackedBarChart`, `chartLegend`, the `/api/workload/throughput` fetch), not a stale build |
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
 | `vf-app-poc` migrations | through `0070` |
-| `vf-licence-poc` migrations | through `0125` applied, all confirmed live — checksums `9e4d534bcef6…` (`0122`), `79ff9f930fdb…` (`0123`), `408f61e5b11a…` (`0124`); `0125` applied by the operator (no checksum reported this time), confirmed live via `/api/ui-strings` returning all six new title values — run via `apply_migrations.py --remote --migrations-dir workers/vf-licence/migrations --database vf-licence-poc` |
+| `vf-licence-poc` migrations | through `0127` applied — `0125` confirmed live via `/api/ui-strings` returning all six new title values (checksums `9e4d534bcef6…` (`0122`), `79ff9f930fdb…` (`0123`), `408f61e5b11a…` (`0124`)); `0126` and `0127` applied together in the operator's own `apply_migrations.py --remote` run (no checksums reported), `0127` confirmed live the same way — `/api/ui-strings?locale=en` returning `nav.workload`, `workload.heading`, `workload.sub`, `workload.throughput`, `workload.throughputsub`, `workload.nothroughput`; `0126` not independently re-checked but applied in the same run and nothing since has reported it missing — run via `apply_migrations.py --remote --migrations-dir workers/vf-licence/migrations --database vf-licence-poc` |
 | Tests | vf-admin 9 · vf-app 1984 · vf-licence 320 · vf-ui 74 Worker + 739 browser · shared 287 (+3 known pre-existing failures) |
 | Decision records | 415 |
 
-**Decision 0415 (`AP.Analysis` reads something at last) is built,
-committed locally on top of `1eb33d6`, and not yet pushed** — this
-session has no push access to `vibefinanceuk/vibefinance`, delivered
-as bundle 0611 for the operator's own pull/push/deploy sequence. Asked
+**Decision 0415 (`AP.Analysis` reads something at last) is pushed and
+deployed, confirmed directly rather than taken on the report alone.**
+This session had no push access to `vibefinanceuk/vibefinance` and
+committed locally on top of `1eb33d6`, delivered as bundle 0611 for
+the operator's own pull/push/deploy sequence — the same path decisions
+0391, 0562 and 0566 already used. `origin/main` fetched directly reads
+`26f8c86`, matching this session's own commit exactly. `vf-licence`:
+`GET /api/ui-strings?locale=en` on the live deployment returns all six
+new `workload.*`/`nav.workload` values, which only reads correctly if
+migrations `0126`/`0127` and the worker redeploy all landed. `vf-ui`:
+the live `workload.js`, fetched directly, is real code — `stackedBarChart`,
+`chartLegend`, and the `/api/workload/throughput` fetch — not a stale
+build. `vf-app`'s own deploy rests on the operator's report, same as
+every prior decision whose API sits behind auth. Asked
 mid-edit to a Workload mock-up: *"In order to make this a reality -
 what would you start with?"*, answered with one vertical slice —
 "Throughput by user, stacked by stage" — because it needed no new

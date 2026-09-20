@@ -1,8 +1,18 @@
 # 0415 — `AP.Analysis` reads something at last
 
-**Status: built, not yet pushed** (this session has no push access to
-`vibefinanceuk/vibefinance` — delivered as a bundle, same as every
-other unpushed commit here).
+**Status: built, pushed, and deployed.** This session had no push
+access to `vibefinanceuk/vibefinance` and delivered the commit as
+bundle 0611 for the operator's own pull/push/deploy sequence.
+Confirmed directly rather than taken on the report alone: `origin/main`
+fetched directly reads `26f8c86`, matching this session's own commit;
+`GET /api/ui-strings?locale=en` on the live `vf-licence` deployment
+returns all six new `workload.*`/`nav.workload` values, which only
+reads correctly if migrations `0126`/`0127` and the worker redeploy
+both landed; the live `workload.js` on `vf-ui`, fetched directly, is
+the real code (`stackedBarChart`, `chartLegend`, the
+`/api/workload/throughput` fetch), not a stale build. `vf-app`'s own
+deploy rests on the operator's report, same as every prior decision
+whose API sits behind auth.
 
 ---
 
