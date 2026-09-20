@@ -2,7 +2,7 @@
 
 **Written 4 September 2026, updated 17 September (six times), updated
 18 September (four times), updated 19 September (thirty-two times),
-updated 20 September (four times).**
+updated 20 September (five times).**
 
 **For a session starting cold.** Where things stand, what needs a
 decision rather than work, what to do next, and the habits this project
@@ -31,19 +31,21 @@ twice.
 
 | | |
 | --- | --- |
-| `origin/main` | `bdebfa4` |
+| `origin/main` | `674d79b` |
 | vf-admin deployed | `8e27a34` · `https://admin.vibefinance-ai.com` · behind Cloudflare Access |
 | vf-app deployed | `266218e` (operator's report — API sits behind auth, not independently checkable from here) |
 | vf-licence deployed | `04072df` (operator's own `wrangler deploy` output, version `39c2f745…`) |
-| vf-ui deployed | `bdebfa4` · `https://app.vibefinance-ai.com` — operator confirmed deployed |
+| vf-ui deployed | `674d79b` · `https://app.vibefinance-ai.com` — operator confirmed deployed and tested |
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
 | `vf-app-poc` migrations | through `0070` |
 | `vf-licence-poc` migrations | through `0125` applied, all confirmed live — checksums `9e4d534bcef6…` (`0122`), `79ff9f930fdb…` (`0123`), `408f61e5b11a…` (`0124`); `0125` applied by the operator (no checksum reported this time), confirmed live via `/api/ui-strings` returning all six new title values — run via `apply_migrations.py --remote --migrations-dir workers/vf-licence/migrations --database vf-licence-poc` |
 | Tests | vf-admin 9 · vf-app 1970 · vf-licence 320 · vf-ui 74 Worker + 730 browser · shared 287 (+3 known pre-existing failures) |
 | Decision records | 413 |
 
-**Decision 0413 (a language has no relationship to the org) is built,
-not yet committed** — awaiting sign-off. Reported live, right after
+**Decision 0413 (a language has no relationship to the org) is pushed
+and deployed** — `origin/main` is `674d79b`, confirmed by direct `git
+fetch`; the operator confirmed both `vf-app` and `vf-ui` deployed and
+reported testing it successfully. Reported live, right after
 0412 shipped: *"when the language is changed, the main browser window
 resets, and redirects to the Dashboard... rather than keeping focus on
 the invoice task that is currently on the screen. Is there a way to
