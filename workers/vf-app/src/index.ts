@@ -7,6 +7,7 @@ import {
   handleResetDashboard,
 } from "./dashboard-route.js";
 import { handleWorkloadThroughput } from "./workload-route.js";
+import { handleAccruals } from "./accruals-route.js";
 import { handleSupplierSpend } from "./supplier-performance-route.js";
 import { evaluateRuleSet, validateRule } from "@vibefinance/shared";
 import type { CompiledRuleSet, InvoiceFacts } from "@vibefinance/shared";
@@ -1164,6 +1165,25 @@ export default {
       }
 
       const result = await handleWorkloadThroughput(db, auth.user.id, url.searchParams.get("org"));
+      return json(result.body, result.status);
+    }
+
+    /**
+     * **The accruals report — decision 0417's own follow-on.** The
+     * first vertical slice of the Financial Performance tab, gated on
+     * `AP.Analysis` like Workload above it — the design's own choice
+     * for this screen, and the same permission the tab itself already
+     * checks to be reachable at all.
+     */
+    if (pathname === "/accruals" && request.method === "GET") {
+      const { db } = resolveTenant(request, env);
+      const auth = await authenticatePerson(db, request, env);
+      if (!auth.user) return json({ error: auth.reason }, 401);
+      if (!(await hasPermission(db, auth.user.id, "AP.Analysis"))) {
+        return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
+      }
+
+      const result = await handleAccruals(db, url.searchParams.get("org"), auth.user.id);
       return json(result.body, result.status);
     }
 

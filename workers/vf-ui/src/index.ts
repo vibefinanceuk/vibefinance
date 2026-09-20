@@ -208,6 +208,14 @@ const PROXIED_TO_INSTANCE: RegExp[] = [
    * answered `{"error":"not found"}` before `vf-app` ever saw it.
    */
   /^\/workload\/throughput$/,
+  /**
+   * **The accruals report — decision 0417's own follow-on.** Checked
+   * directly this time, not assumed: `/accruals` matches no existing
+   * wildcard on this list, unlike `/suppliers/spend` (decision 0416),
+   * so it gets its own entry rather than the gap decision 0415 already
+   * left once.
+   */
+  /^\/accruals$/,
   /^\/suppliers$/,
   /^\/suppliers\/load$/,
   // Finding and choosing a supplier by hand (decision 0222).

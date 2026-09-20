@@ -1617,6 +1617,25 @@
   }
 
   /*
+    One currency's own accruals, labelled with its own total —
+    decision 0417's own follow-on. Not `.spendcurrency` reused: that
+    class's own header is a bare currency code, hidden entirely for
+    the ordinary single-currency case (`supplier-performance.js`'s own
+    `currencySection`); here the header is always shown, because the
+    accrued total is the report's own headline figure rather than a
+    disambiguation the common case can drop. Same spacing rule,
+    honest name.
+  */
+  .accrualcurrency { margin-top: 14px; }
+  .accrualcurrency:first-of-type { margin-top: 0; }
+  .accrualcurrency > .muted {
+    font-size: var(--text-sm);
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    margin-bottom: 6px;
+  }
+
+  /*
     **The worklist scrolls rather than growing** — decision 0250.
 
     Twenty-five rows is a card taller than the screen, and everything

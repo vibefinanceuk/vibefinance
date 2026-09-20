@@ -379,6 +379,14 @@ describe("the proxy carries every path a screen calls (decision 0131)", () => {
      * which pattern happens to match it.
      */
     ["GET", "/api/suppliers/spend"],
+    /**
+     * The Financial Performance tab's own accruals report — decision
+     * 0417's own follow-on. `/accruals` matches no existing wildcard
+     * (unlike `/suppliers/spend`), so it needed a real new entry on
+     * `PROXIED_TO_INSTANCE` — proven reachable here rather than merely
+     * added and assumed correct.
+     */
+    ["GET", "/api/accruals"],
   ];
 
   it("carries all of them", async () => {

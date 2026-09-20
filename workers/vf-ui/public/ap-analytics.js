@@ -2,22 +2,27 @@ import { t } from "/strings.js";
 import { el, frame, topbar, setCurrentScreen, hasMyPermission, holdsEverywhere } from "/tasks.js";
 import { load as loadOperational, renderCard as operationalCard } from "/workload.js";
 import { load as loadSupplierSpend, renderCard as supplierSpendCard } from "/supplier-performance.js";
+import { load as loadAccruals, renderCard as accrualsCard } from "/accruals.js";
 
 /**
  * AP Analytics — decision 0417, the single tabbed home for every
  * screen the Management Dashboard design sketched.
  *
- * **Consolidates two standalone screens, at the operator's own
- * request.** Workload (decision 0415) and Supplier Performance
- * (decision 0416) each shipped as their own top-level nav item first;
- * asked directly whether to keep them there or fold them into one
- * tabbed screen, the operator chose to fold them in — their own
- * `open()` entry points are gone, replaced by an exported `load()` +
- * `renderCard()` pair each this screen calls directly. The pill tabs
- * are `access.js`'s own `.tabbar`/`.tab` component, reused rather
- * than rebuilt — the same shape the operator pointed at by name.
+ * **Consolidates standalone screens, at the operator's own request.**
+ * Workload (decision 0415), Supplier Performance (decision 0416), and
+ * now Accruals (decision 0417's own follow-on) each shipped as, or
+ * would otherwise have shipped as, their own top-level nav item;
+ * asked directly whether Workload and Supplier Performance should
+ * stay there or fold into one tabbed screen, the operator chose to
+ * fold them in — their own `open()` entry points are gone, replaced
+ * by an exported `load()` + `renderCard()` pair each this screen
+ * calls directly, the same shape Accruals was built with from the
+ * start rather than ever having a standalone screen of its own. The
+ * pill tabs are `access.js`'s own `.tabbar`/`.tab` component, reused
+ * rather than rebuilt — the same shape the operator pointed at by
+ * name.
  *
- * **Five tabs, two real.** The operator's own names, mapped onto the
+ * **Five tabs, three real.** The operator's own names, mapped onto the
  * design's five original screens:
  *
  * | Tab | Design's own screen | Permission |
@@ -28,11 +33,12 @@ import { load as loadSupplierSpend, renderCard as supplierSpendCard } from "/sup
  * | Executive IQ | Multi-Enterprise CFO View | `AP.Analysis` + `holdsEverywhere` |
  * | Fraud Prevention | Fraud & Risk Detection | `AP.FraudReview` |
  *
- * Operational and Supplier Performance are real, reusing the routes
- * and screens decisions 0415/0416 already built and tested. The other
- * three render a plain "not built yet" placeholder — still gated on
- * their own real permission, so who can even see a tab exists is
- * correct today, ahead of what is behind it.
+ * Operational, Financial (its own first real metric, the accruals
+ * report), and Supplier Performance are real, reusing the routes and
+ * screens decisions 0415, 0417, and 0416 respectively already built
+ * and tested. The other two render a plain "not built yet"
+ * placeholder — still gated on their own real permission, so who can
+ * even see a tab exists is correct today, ahead of what is behind it.
  *
  * **The permission each tab actually checks matches its own route's
  * own gate, not the design document's own original proposal.**
@@ -93,6 +99,7 @@ function loadErrorCard() {
 async function tabContent(key) {
   const tab = TABS.find((candidate) => candidate.key === key);
   if (key === "operational") return (await loadOperational()) ? operationalCard() : loadErrorCard();
+  if (key === "financial") return (await loadAccruals()) ? accrualsCard() : loadErrorCard();
   if (key === "supplier") return (await loadSupplierSpend()) ? supplierSpendCard() : loadErrorCard();
   return placeholderCard(tab);
 }

@@ -10,13 +10,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
  * proving: "Access to tabs, and visibility of tabs controlled through
  * user permissions."
  *
- * **What this file does not re-prove.** The Operational Performance
- * and Supplier Performance tabs delegate to `workload.js` and
- * `supplier-performance.js`, each already covered by its own test
- * file for chart correctness, currency splitting and so on. This file
- * only proves the wiring — that the right module's `load()`/
- * `renderCard()` land behind the right tab — not that module's own
- * content in detail.
+ * **What this file does not re-prove.** The Operational Performance,
+ * Financial Performance, and Supplier Performance tabs delegate to
+ * `workload.js`, `accruals.js`, and `supplier-performance.js`
+ * respectively, each already covered by its own test file for chart
+ * correctness, currency splitting and so on. This file only proves
+ * the wiring — that the right module's `load()`/`renderCard()` land
+ * behind the right tab — not that module's own content in detail.
  */
 
 function mountShell() {
@@ -83,6 +83,13 @@ const STRINGS = {
     "workload.throughput": "Throughput by user",
     "workload.throughputsub": "Completed in the last 7 days, stacked by stage",
     "workload.nothroughput": "Nothing completed in the last 7 days",
+    // The Financial Performance tab's real content — decision 0417's
+    // own follow-on.
+    "financialperformance.accruals": "Accruals report",
+    "financialperformance.accrualssub": "Received, not yet payment-eligible, by stage",
+    "financialperformance.noaccruals": "No open liabilities right now",
+    "financialperformance.accrued": "{amount} accrued",
+    "financialperformance.invoicecount": "{n} invoices",
     // The Supplier Performance tab's real content — decision 0416.
     "supplierperformance.spend": "Spend by supplier",
     "supplierperformance.spendsub": "Ranked by total invoiced amount, by currency",
@@ -118,10 +125,11 @@ function stubFetch(routes: Record<string, unknown>) {
  * and every permission check this screen makes — its own tab gate,
  * `holdsEverywhere` for Executive IQ — reads `me` directly.
  *
- * `/api/workload/throughput` and `/api/suppliers/spend` are stubbed
- * empty by default on every call, whether or not the test's own
- * permission set makes either tab reachable — harmless when unused,
- * and one less thing each individual test has to remember.
+ * `/api/workload/throughput`, `/api/accruals`, and
+ * `/api/suppliers/spend` are stubbed empty by default on every call,
+ * whether or not the test's own permission set makes any given tab
+ * reachable — harmless when unused, and one less thing each
+ * individual test has to remember.
  */
 async function openApAnalytics(
   permissions: string[],
@@ -133,6 +141,7 @@ async function openApAnalytics(
     "/api/whoami": { id: "u-dan", name: "Dan", permissions, ...extraWhoami },
     "/api/tasks": { tasks: [], counts: {} },
     "/api/workload/throughput": { users: [], legend: [] },
+    "/api/accruals": { currencies: [] },
     "/api/suppliers/spend": { currencies: [] },
     ...extraRoutes,
   });
@@ -269,6 +278,14 @@ describe("real tabs wire to the already-tested module behind them, placeholders 
     expect(document.body.textContent).toContain("Nothing completed in the last 7 days");
   });
 
+  it("Financial Performance renders accruals.js's own card", async () => {
+    await openApAnalytics(["AP.Analysis"]);
+
+    await switchTab("Financial Performance");
+    expect(document.querySelector(".cardhead h3")?.textContent).toBe("Accruals report");
+    expect(document.body.textContent).toContain("No open liabilities right now");
+  });
+
   it("Supplier Performance renders supplier-performance.js's own card", async () => {
     await openApAnalytics(["AP.Supplier"]);
 
@@ -277,11 +294,8 @@ describe("real tabs wire to the already-tested module behind them, placeholders 
     expect(document.body.textContent).toContain("No priced invoices yet");
   });
 
-  it("Financial Performance, Executive IQ and Fraud Prevention each say not built yet, gated on their own real permission", async () => {
+  it("Executive IQ and Fraud Prevention each say not built yet, gated on their own real permission", async () => {
     await openApAnalytics(["AP.Analysis", "AP.FraudReview"], { holdsEverywhere: true });
-
-    await switchTab("Financial Performance");
-    expect(document.body.textContent).toContain("Not built yet");
 
     await switchTab("Executive IQ");
     expect(document.body.textContent).toContain("Not built yet");
@@ -293,6 +307,13 @@ describe("real tabs wire to the already-tested module behind them, placeholders 
   it("shows a real error rather than crashing, when a real tab's own fetch fails", async () => {
     await openApAnalytics(["AP.Analysis"], {}, { "/api/workload/throughput": { ok: false, status: 500 } });
 
+    expect(document.body.textContent).toContain("Could not load this tab right now");
+  });
+
+  it("shows a real error for Financial Performance too, when its own fetch fails", async () => {
+    await openApAnalytics(["AP.Analysis"], {}, { "/api/accruals": { ok: false, status: 500 } });
+
+    await switchTab("Financial Performance");
     expect(document.body.textContent).toContain("Could not load this tab right now");
   });
 });

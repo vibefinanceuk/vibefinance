@@ -2,7 +2,7 @@
 
 **Written 4 September 2026, updated 17 September (six times), updated
 18 September (four times), updated 19 September (thirty-two times),
-updated 20 September (twelve times).**
+updated 20 September (thirteen times).**
 
 **For a session starting cold.** Where things stand, what needs a
 decision rather than work, what to do next, and the habits this project
@@ -37,10 +37,67 @@ twice.
 | vf-licence deployed | `299b316` (operator's own report; migration `0129` below is now applied) |
 | vf-ui deployed | `299b316` · `https://app.vibefinance-ai.com` — operator's own report: "deployed and pushed" |
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
-| `vf-app-poc` migrations | through `0071` applied and confirmed live |
-| `vf-licence-poc` migrations | through `0129` applied and confirmed live |
-| Tests | vf-admin 9 · vf-app 1998 · vf-licence 320 · vf-ui 74 Worker + 762 browser · shared 287 (+3 known pre-existing failures) |
-| Decision records | 417 |
+| `vf-app-poc` migrations | through `0071` applied and confirmed live (decision 0418 below adds no new one) |
+| `vf-licence-poc` migrations | through `0129` applied and confirmed live; `0130` (decision 0418's own accruals strings) committed locally, not yet applied remotely |
+| Tests | vf-admin 9 · vf-app 2016 · vf-licence 320 · vf-ui 74 Worker + 772 browser · shared 287 (+3 known pre-existing failures) |
+| Decision records | 418 |
+
+**Decision 0418 (the accruals report, Financial Performance's first
+real metric) is built and committed locally — not yet pushed or
+deployed.** With decision 0417 confirmed live, asked directly which of
+the three remaining vertical slices to build next — Financial
+Performance, Fraud Prevention, Executive IQ, or Supplier Performance's
+own other six metrics instead — the operator chose Financial
+Performance, the recommended option: no new scoping concept, and the
+tab it lands in is already reachable by anyone who reaches Operational
+Performance. The design's own first bullet under Liabilities &
+Accruals' six key metrics — "Accruals report: invoices received but
+not yet at the payment-eligible stage" — because it needed no
+payment-execution data this codebase does not capture, unlike three of
+the other five (payment history, payment terms held vs. actual, and
+the DPO trend they feed). New route (`GET /accruals`,
+`workers/vf-app/src/accruals-route.ts`, gated on `AP.Analysis` like
+the rest of the tab): an invoice counts as accrued while its process
+instance is still in flight and **not yet at its own process's final
+stage** — computed per process (`MAX(sequence)`), never assumed from
+`ap-live`'s own 7-stage shape, proven directly with a 2-stage test
+process whose own "final" stage is 2, not 7. **Never summed across
+currencies**, the same discipline decision 0416 established, but
+**broken out by stage in process order rather than ranked by size** —
+a liability reads as the money's own path through the process, not
+biggest-first — and **always shows its own currency total even in the
+ordinary single-currency case**, a real difference from Supplier
+Performance's own bare currency label: the accrued total here is the
+report's own headline figure, not merely a disambiguation. New screen
+(`accruals.js`, built straight as `load()`/`renderCard()` — never a
+standalone screen with its own `open()`, unlike Workload and Supplier
+Performance before 0417 folded them in), wired into AP Analytics'
+Financial Performance tab alongside the two other real tabs.
+**Checked the proxy allow-list immediately this time, not after a live
+report**: `/accruals` matched no existing wildcard, so it got a real
+new entry alongside the route itself, proven reachable by a
+regression test in the same change — this file's own comments already
+name the same recurring gap several times over (0415's own case among
+them); this is one caught and fixed before shipping rather than
+after a real request failed on it.
+Tests: 18 new in `workers/vf-app/test/accruals.test.ts` (permission
+gate, what-counts-as-an-accrual including the per-process final-stage
+computation and the completed-instance exclusion, never-summed-across-
+currencies, stage ordering proven against a deliberately
+size-inverted fixture, scoping), 7 new in
+`workers/vf-ui/test-browser/accruals.test.ts`. **Two existing
+`ap-analytics.test.ts` tests needed real changes, not just a re-run**:
+the one test asserting Financial Performance said "not built yet" no
+longer holds, split into a real wiring test plus the still-accurate
+"Executive IQ and Fraud Prevention" pairing, and a new test proves
+Financial Performance's own load-failure path. Full suites: vf-app
+2016/2016 (1998 + 18 new), vf-licence 320/320 (migration-only; full
+suite re-run clean), vf-ui 74 Worker + 772 browser (762 + 10 net new),
+known pre-existing unhandled-rejection count unchanged (160). `eslint
+.` clean across `vf-app`, `vf-ui`, and `vf-licence`. Full detail in
+`docs/decisions/0418-accruals-report-excludes-the-payment-eligible-stage.md`.
+**Five of Liabilities & Accruals' own six metrics stay unbuilt** — see
+that decision's own "What is not built."
 
 **Decision 0417 (AP Analytics, tabbed and permission-gated) is pushed
 and deployed, confirmed directly.** `origin/main` fetched directly
