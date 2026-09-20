@@ -1,0 +1,15 @@
+-- 0071_ap_fraud_review_permission.sql
+--
+-- **A reserved permission for the Fraud Prevention tab** — decision
+-- 0417's own AP Analytics screen gates its Fraud Prevention tab's
+-- visibility on `AP.FraudReview`, the same "reserved, unused" standing
+-- `AP.Analysis` itself held from decision 0362 until decision 0415
+-- gave it a real route to check. No route enforces it yet.
+--
+-- No schema change: process_stages.required_permission already
+-- accepts any text, checked only by the standing invariant decision
+-- 0200 established (migration 0048), already restated by migrations
+-- 0062, 0063, and 0066. Restated again here with the vocabulary as it
+-- now stands, rather than editing any earlier, already-applied
+-- migration in place.
+-- ASSERT ALWAYS: SELECT count(*) FROM process_stages WHERE required_permission IS NOT NULL AND required_permission NOT IN ('AP.Analysis','AP.Approve','AP.Code','AP.Dashboard','AP.Discard','AP.FraudReview','AP.Match','AP.Return','AP.ReturnAny','AP.ReturnToSupplier','AP.Review','AP.Supplier','AP.TaskManage','AP.TaskView','AP.Validate','AR.Analysis','AR.Approve','AR.Collect','AR.Issue','AR.Remind','AR.Validate','Admin.ConfigManagement','Admin.Configure','Admin.RoleManagement','Admin.RuleActivation','Admin.RuleManagement','Admin.UserManagement','Expense.Approve','Expense.Review','Expense.Submit','Supplier.Maintain','System.LicenceRefresh','System.UsagePush') == 0

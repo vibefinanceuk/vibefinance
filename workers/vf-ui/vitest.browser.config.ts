@@ -90,6 +90,7 @@ export default defineConfig({
       "/dashboard.js": resolve(__dirname, "public/dashboard.js"),
       "/workload.js": resolve(__dirname, "public/workload.js"),
       "/supplier-performance.js": resolve(__dirname, "public/supplier-performance.js"),
+      "/ap-analytics.js": resolve(__dirname, "public/ap-analytics.js"),
       "/charts.js": resolve(__dirname, "public/charts.js"),
       "/mood.js": resolve(__dirname, "public/mood.js"),
       "/orgs.js": resolve(__dirname, "public/orgs.js"),

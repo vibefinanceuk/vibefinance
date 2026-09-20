@@ -31,7 +31,7 @@ const STRINGS = {
     "nav.purchaseorders": "Purchase Orders",
     "nav.dashboard": "Dashboard",
     "nav.suppliers": "Suppliers",
-    "nav.supplierperformance": "Performance",
+    "nav.apanalytics": "AP Analytics",
     "nav.rules": "Rules",
     "rules.subtitle": "What should happen to an invoice, in your words",
     "rules.process": "Process",
@@ -315,12 +315,14 @@ describe("the navigation", () => {
     // once, which is what it is for.
     expect(nav).toEqual([
       "Dashboard",
+      // AP Analytics — decision 0417, replacing the standalone
+      // Workload item and consolidating Supplier Performance's own
+      // nav item (decision 0416, same permission as Suppliers,
+      // `AP.Supplier`) into one of its tabs.
+      "AP Analytics",
       "Tasks",
       "Documents",
       "Suppliers",
-      // Supplier Performance — decision 0416, same permission as
-      // Suppliers (`AP.Supplier`).
-      "Performance",
       "Access",
       "Sources",
       "Purchase Orders",

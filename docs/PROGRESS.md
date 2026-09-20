@@ -313,6 +313,48 @@ a rule, and left an approval task in a queue.
   directly with a regression test in `test/index.test.ts`'s own
   decision-0131 block rather than assumed from the pattern alone.
 
+### AP Analytics — one tabbed screen for the whole Management Dashboard design, permission-gated per tab (0417)
+- **Workload and Supplier Performance folded in, not duplicated.**
+  Both lose their own standalone nav item; their `open()` entry points
+  are gone, replaced by the `load()`/`renderCard()` pair each already
+  exported, now called directly by the new tab shell
+  (`workers/vf-ui/public/ap-analytics.js`). No route, chart, or
+  currency-safe behaviour either screen already had changed — only
+  what assembled a full page around each one did.
+- **All five of the design's own screens have a tab now, two of them
+  real.** Operational Performance (Workload) and Supplier Performance
+  reuse the real, tested routes 0415 and 0416 built. Financial
+  Performance (Liabilities & Accruals), Executive IQ (the
+  Multi-Enterprise CFO View), and Fraud Prevention (Fraud & Risk
+  Detection) each render a plain "not built yet" placeholder — still
+  gated on their own real permission, so who can even see a tab exists
+  is correct today, ahead of what is behind it.
+- **A tab's own permission always matches its own route's own gate,
+  not the design document's original two-permission-per-screen
+  proposal.** Gating a tab more strictly than the data behind it would
+  let a person reach that data through the API the tab itself hid from
+  them, or the reverse — see decision 0417 for the full reasoning.
+- **`AP.FraudReview`, a new reserved permission**, granted by no
+  migration — the same standing `AP.Analysis` itself held until
+  decision 0415 gave it something real to gate. Gates the Fraud
+  Prevention tab's own visibility today; nothing else yet. Adding it
+  to `permissions.ts` alone failed `stage-permissions.test.ts`'s
+  standing closed-set check on the first full run — a hand-restated
+  permission list spread across several migrations has to stay in
+  lockstep with the code, and does, because the test catches it when
+  it doesn't. Fixed with a new migration
+  (`migrations/0071_ap_fraud_review_permission.sql`), the same way
+  decision 0350's own `Supplier.Maintain` addition was.
+- **Executive IQ's second gate reuses `me.holdsEverywhere`**, exported
+  from `tasks.js` for the first time (`orgPicker()` already read it
+  off `me` since decision 0313) — a consolidated cross-entity view is
+  more sensitive than any single org-scoped permission alone, the
+  design document's own reasoning for the eventual CFO View.
+- **The nav's own `AP.Supplier` OR-gate**: `apanalytics` is unlocked by
+  any one of `AP.Analysis`, `AP.Supplier`, or `AP.FraudReview` — so
+  the nav item appears the moment any real content behind it does,
+  without needing every one of the three.
+
 ### Purchase orders and matching
 - Purchase order storage grounded in Peppol BIS Order Only 3.3, via UBL
   XML ingestion (0081) and CSV load (0370) — the same tables, the same
@@ -1220,12 +1262,19 @@ vocabulary's EN 16931 reference fields and supplier groups.
 of Supplier Performance's own seven key metrics.** Decisions 0415 and
 0416 built two vertical slices for real — Workload's "Throughput by
 user, stacked by stage," and Supplier Performance's "Spend by
-supplier." Fraud & Risk Detection, Liabilities & Accruals, and
-Multi-Enterprise CFO View remain a Claude Docs design document and
-Design-canvas mock-ups only, not routes or UI in this repo. The CFO
-view in particular needs a real multi-org scoping concept that does
-not exist yet; the other two need their own routes and their own
-scoping decisions worked out, the way 0415 and 0416 worked out theirs.
+supplier." Decision 0417 gave all five their own tab inside the new AP
+Analytics screen, but only wired the two that already had a real
+route; Fraud & Risk Detection, Liabilities & Accruals, and
+Multi-Enterprise CFO View still have no route or real UI behind their
+own tab — each renders a permission-gated "not built yet" placeholder
+rather than a Claude Docs design document and Design-canvas mock-ups
+being the only place they exist. The CFO view in particular needs a
+real multi-org scoping concept that does not exist yet; the other two
+need their own routes and their own scoping decisions worked out, the
+way 0415 and 0416 worked out theirs. `AP.FraudReview`, the permission
+Fraud Prevention's own tab is gated on, is itself reserved — granted
+by no migration, enforced by no route, the same standing `AP.Analysis`
+held until 0415 gave it something real to gate.
 **Supplier Performance's own other six metrics** — active supplier
 count by status, average cycle time, exception rate, PO-variance
 ranking, payment terms held vs. negotiated, early-payment capture
@@ -1387,11 +1436,11 @@ elsewhere.
 |---|---|
 | `vf-app` | 1998 |
 | `vf-licence` | 320 |
-| `vf-ui` | 74 Worker · 747 browser |
+| `vf-ui` | 74 Worker · 762 browser |
 | `shared` | 287 passing, 3 known pre-existing failures |
 
 Both migration chains replay clean with every standing invariant
-holding — 70 migrations for `vf-app`, 128 for `vf-licence`.
+holding — 71 migrations for `vf-app`, 129 for `vf-licence`.
 
 **`vf-app`'s count was recorded as 1851 through decision 0379**; a clean
 run at `46c1da2`, with no `vf-app` change since decision 0378 recorded

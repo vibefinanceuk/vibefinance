@@ -36,6 +36,20 @@ export function hasMyPermission(permission) {
 }
 
 /**
+ * **Whether the current person holds an unscoped, instance-wide role
+ * — decision 0417.** The same `me.holdsEverywhere` `orgPicker()`
+ * already reads (`relaunchAfterOrgChange`'s own call, above), exported
+ * for the first time because a screen now needs it for something
+ * other than the org switcher: the AP Analytics screen's Executive IQ
+ * tab, gated on `AP.Analysis` **and** this — the design's own choice,
+ * since a consolidated cross-entity view is more sensitive than any
+ * single org-scoped permission alone.
+ */
+export function holdsEverywhere() {
+  return me?.holdsEverywhere ?? false;
+}
+
+/**
  * The stages the task list has seen — decision 0254.
  *
  * A `Map` so a stage appearing twice is one option, and insertion
@@ -509,14 +523,11 @@ async function go(screen) {
   } else if (screen === "dashboard") {
     const { open } = await import("/dashboard.js");
     await open();
-  } else if (screen === "workload") {
-    const { open } = await import("/workload.js");
+  } else if (screen === "apanalytics") {
+    const { open } = await import("/ap-analytics.js");
     await open();
   } else if (screen === "suppliers") {
     const { open } = await import("/suppliers.js");
-    await open();
-  } else if (screen === "supplierperformance") {
-    const { open } = await import("/supplier-performance.js");
     await open();
   } else if (screen === "purchaseorders") {
     const { open } = await import("/purchase-orders.js");
@@ -596,22 +607,22 @@ function setNavCollapsed(collapsed) {
 const NAV_PERMISSIONS = {
   dashboard: "AP.Dashboard",
   /**
-   * **`AP.Analysis`, decision 0415** — the same permission
-   * `workers/vf-app/src/workload-route.ts` requires, and the first
-   * screen to reuse it: a manager's own view of team throughput,
-   * distinct from `AP.Dashboard`'s personal "what should I do next."
+   * **Consolidated under one tabbed screen — decision 0417.** Workload
+   * (0415) and Supplier Performance (0416) each had their own nav
+   * entry here first; the operator asked to fold every analytics
+   * screen into one "AP Analytics" link with pill tabs instead, so
+   * both entries are gone and `ap-analytics.js`'s own tabs gate
+   * themselves individually (`AP.Analysis`, `AP.Supplier`, and
+   * `AP.FraudReview`, reserved). This nav item shows for anyone
+   * holding any one of the three, the same OR-shape `access` below
+   * already uses for its own two permissions — a tab-less person still
+   * reaches a screen with nothing unlocked inside it only if held by
+   * none of the three, which mirrors every other nav item's own rule.
    */
-  workload: "AP.Analysis",
+  apanalytics: ["AP.Analysis", "AP.Supplier", "AP.FraudReview"],
   tasks: "AP.TaskView",
   sources: "Admin.Configure",
   suppliers: "AP.Supplier",
-  /**
-   * **`AP.Supplier`, decision 0416** — the design's own choice, not a
-   * new permission: scoped exactly the way the Suppliers screen
-   * already is, so anyone who can see a supplier on that list can see
-   * what was spent with them here too.
-   */
-  supplierperformance: "AP.Supplier",
   rules: "Admin.RuleManagement",
   documents: "AP.Review",
   processes: "Admin.Configure",
@@ -684,17 +695,14 @@ export function frame(main) {
       heading: "accountspayable",
       screens: [
         ["dashboard", "dashboard"],
-        ["workload", "workload"],
+        ["apanalytics", "apanalytics"],
         ["tasks", "tasks"],
         ["documents", "documents"],
       ],
     },
     {
       heading: "suppliermanagement",
-      screens: [
-        ["suppliers", "suppliers"],
-        ["supplierperformance", "supplierperformance"],
-      ],
+      screens: [["suppliers", "suppliers"]],
     },
     {
       heading: "configuration",

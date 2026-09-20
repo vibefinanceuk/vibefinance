@@ -405,6 +405,18 @@ Object.assign(ICONS, {
   dashboard:
     '<rect x="3" y="3" width="8" height="8" rx="1.5"/><rect x="13" y="3" width="8" height="5" rx="1.5"/><rect x="13" y="10" width="8" height="11" rx="1.5"/><rect x="3" y="13" width="8" height="8" rx="1.5"/>',
 
+  // A single trend line with a marker at its high point — decision
+  // 0417, AP Analytics' own icon. Neither `workload`'s two people nor
+  // `supplierperformance`'s ranked bars nor `dashboard`'s four uneven
+  // tiles say "trend across everything this screen now holds"; a line
+  // that rises and is watched does. The two icons it replaces on the
+  // nav stay in this file rather than being deleted (decision 0078's
+  // own discipline about not pretending the past didn't happen) —
+  // nothing on the nav points at them any more, but their own screens'
+  // history still does.
+  apanalytics:
+    '<path d="M3 16l5-6 4 3 8-9"/><circle cx="20" cy="4" r="1.6"/><path d="M3 21h18"/>',
+
   // A person and the two behind them — a team, not an individual
   // (`suppliers`' own building draws an organisation; this draws
   // people). Decision 0415, the same path already used for this

@@ -1,5 +1,5 @@
 import { t } from "/strings.js";
-import { el, frame, topbar, setCurrentScreen } from "/tasks.js";
+import { el } from "/tasks.js";
 import { currentOrgId } from "/orgs.js";
 import { stackedBarChart, chartLegend } from "/charts.js";
 
@@ -8,17 +8,19 @@ import { stackedBarChart, chartLegend } from "/charts.js";
  * `AP.Analysis` (`workers/vf-app/src/workload-route.ts`), reserved
  * since before this bundle and never previously read by anything.
  *
- * **One chart, not a dashboard.** The Management Dashboard design
- * (decision 0414's own follow-up work) sketched five screens; this
- * ships the one chart the operator asked to stack first, built for
- * real, because it needed no new permission and no new scoping
- * concept — the vertical slice that proves the pattern before the
- * rest of that design gets its own real routes.
+ * **One card, not a standalone screen — decision 0417.** Shipped as
+ * its own top-level nav item first; moved into the Operational
+ * Performance tab of the new AP Analytics screen
+ * (`ap-analytics.js`) once that existed, at the operator's own
+ * request to consolidate every analytics screen under one tabbed
+ * link. `load()` and `renderCard()` are exported for that screen to
+ * call; there is no `open()` here any more, and no topbar or frame of
+ * this module's own — the tab shell owns both.
  */
 
 let data = { users: [], legend: [] };
 
-async function load() {
+export async function load() {
   try {
     /**
      * **The chosen org**, the same treatment `dashboard.js`'s own
@@ -49,47 +51,29 @@ function colourFor(bucket) {
   return `var(--chart-${bucket})`;
 }
 
-function render() {
-  const shell = document.getElementById("shell");
-  if (!shell) return;
-
-  const body =
-    data.users.length === 0
-      ? el("div", { class: "panel card-graphic" }, [
-          el("div", { class: "cardhead" }, [el("h3", { text: t("workload.throughput") })]),
-          el("div", { class: "muted", text: t("workload.nothroughput") }),
-        ])
-      : el("div", { class: "panel card-graphic" }, [
-          el("div", { class: "cardhead" }, [el("h3", { text: t("workload.throughput") })]),
-          el("div", { class: "sub", text: t("workload.throughputsub") }),
-          stackedBarChart(
-            data.users.map((u) => ({
-              label: u.userName,
-              total: u.total,
-              segments: u.buckets.map((b) => ({ value: b.n, colour: colourFor(b.bucket) })),
-            }))
-          ),
-          chartLegend(
-            data.legend.map((b) => ({
-              label: b.label,
-              value: b.n,
-              colour: colourFor(b.bucket),
-            }))
-          ),
-        ]);
-
-  shell.replaceChildren(
-    frame(
-      el("div", { class: "dashboardpage" }, [
-        topbar(t("workload.heading"), t("workload.sub")),
-        el("div", { class: "dashflow" }, [body]),
+/** The card itself, built from whatever `load()` last fetched. Callers own the topbar, frame and tab shell around it. */
+export function renderCard() {
+  return data.users.length === 0
+    ? el("div", { class: "panel card-graphic" }, [
+        el("div", { class: "cardhead" }, [el("h3", { text: t("workload.throughput") })]),
+        el("div", { class: "muted", text: t("workload.nothroughput") }),
       ])
-    )
-  );
-}
-
-export async function open() {
-  setCurrentScreen("workload");
-  if (!(await load())) return;
-  render();
+    : el("div", { class: "panel card-graphic" }, [
+        el("div", { class: "cardhead" }, [el("h3", { text: t("workload.throughput") })]),
+        el("div", { class: "sub", text: t("workload.throughputsub") }),
+        stackedBarChart(
+          data.users.map((u) => ({
+            label: u.userName,
+            total: u.total,
+            segments: u.buckets.map((b) => ({ value: b.n, colour: colourFor(b.bucket) })),
+          }))
+        ),
+        chartLegend(
+          data.legend.map((b) => ({
+            label: b.label,
+            value: b.n,
+            colour: colourFor(b.bucket),
+          }))
+        ),
+      ]);
 }

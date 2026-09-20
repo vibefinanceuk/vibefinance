@@ -2,7 +2,7 @@
 
 **Written 4 September 2026, updated 17 September (six times), updated
 18 September (four times), updated 19 September (thirty-two times),
-updated 20 September (eleven times).**
+updated 20 September (twelve times).**
 
 **For a session starting cold.** Where things stand, what needs a
 decision rather than work, what to do next, and the habits this project
@@ -31,19 +31,94 @@ twice.
 
 | | |
 | --- | --- |
-| `origin/main` | `5195b84` — fetched directly by this session, confirmed matching local `main` exactly |
+| `origin/main` | `0eb8903` — fetched directly by this session after decision 0416 shipped, confirmed matching; decision 0417 below is committed locally only, not yet pushed |
 | vf-admin deployed | `8e27a34` · `https://admin.vibefinance-ai.com` · behind Cloudflare Access |
-| vf-app deployed | `26f8c86` (operator's report — API sits behind auth, not independently checkable from here; unchanged since decision 0415's own proxy-allow-list fix touched only `vf-ui`, and decision 0416 below does not touch `vf-app` deployment status yet either) |
-| vf-licence deployed | `26f8c86` (operator's own `wrangler deploy` output; live `/api/ui-strings` confirmed serving decision 0415's own new keys, so the redeploy genuinely landed; migration `0128` below is committed but not yet applied) |
-| vf-ui deployed | `5195b84` · `https://app.vibefinance-ai.com` — confirmed by the operator's own screenshot of the live Workload screen rendering real data, the strongest confirmation yet: the whole path working, not just served code |
+| vf-app deployed | `0eb8903` (operator's own "deployed and pushed" report, confirmed indirectly — `GET /suppliers/spend` live and returning real ranked spend is only possible with decision 0416's own route deployed) |
+| vf-licence deployed | `0eb8903` (operator's own report; migration `0128` below is now applied — the live Supplier Performance card renders its own real strings, not raw keys) |
+| vf-ui deployed | `0eb8903` · `https://app.vibefinance-ai.com` — operator's own report: "deployed and pushed - I can see the supplier performance link now" / "Yes, I see spend by supplier" |
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
-| `vf-app-poc` migrations | through `0070` |
-| `vf-licence-poc` migrations | through `0127` applied and confirmed live; `0128` (decision 0416's own supplier-performance strings) committed locally, not yet applied remotely |
-| Tests | vf-admin 9 · vf-app 1998 · vf-licence 320 · vf-ui 74 Worker + 747 browser · shared 287 (+3 known pre-existing failures) |
-| Decision records | 416 |
+| `vf-app-poc` migrations | through `0071` (`0071` committed locally as part of decision 0417, not yet applied remotely) |
+| `vf-licence-poc` migrations | through `0128` applied and confirmed live; `0129` (decision 0417's own AP Analytics strings) committed locally, not yet applied remotely |
+| Tests | vf-admin 9 · vf-app 1998 · vf-licence 320 · vf-ui 74 Worker + 762 browser · shared 287 (+3 known pre-existing failures) |
+| Decision records | 417 |
+
+**Decision 0417 (AP Analytics, tabbed and permission-gated) is built
+and committed locally — not yet pushed or deployed.** Before another
+Management Dashboard screen was built, the operator asked to align on
+navigation first: "I was hoping to have an AP Analytics link, with
+all dashboard available via tabs. Using similar pill-box tabs seen in
+the Access screen. The tabs can be for Operational Performance,
+Financial Performance, Supplier Performance, Executive IQ, and Fraud
+Prevention." Three questions were asked and answered directly: which
+design screen each tab name maps to (confirmed one-to-one, Operational
+= Workload, Financial = Liabilities & Accruals, Executive IQ = the
+CFO view, Fraud Prevention = Fraud & Risk Detection); whether Workload
+and Supplier Performance's own standalone nav items move under the new
+screen (confirmed — moved, their own nav items removed entirely); and
+what to actually build (confirmed — the tab shell now, two tabs real,
+three as permission-gated placeholders). A fourth requirement arrived
+mid-build as its own explicit instruction: "Access to tabs, and
+visibility of tabs controlled through user permissions." Built:
+`workload.js` and `supplier-performance.js` lost their own `open()`
+and became reusable `load()`/`renderCard()` modules; a new
+`ap-analytics.js` reuses `access.js`'s own `.tabbar`/`.tab` pill
+component over a `TABS` array, each entry carrying its own permission
+— `AP.Analysis` for Operational and Financial, `AP.Supplier` for
+Supplier Performance, `AP.Analysis` **and** `holdsEverywhere` for
+Executive IQ, and a new, reserved `AP.FraudReview` for Fraud
+Prevention. **Each tab's own gate matches its own route's own gate,
+never a stricter or looser independent guess** — the design
+document's original two-permission-per-screen proposal was
+deliberately not followed, because decisions 0415 and 0416 each
+already shipped with one permission apiece, and a tab gated more
+strictly than its own data would let someone reach that data through
+the API the tab itself hid from them. Nav consolidated: `workload` and
+`supplierperformance` standalone entries replaced by one `apanalytics`
+entry, unlocked by any of the three tab permissions (an OR-gate, the
+same shape `roles` already uses). New icon (a rising trend line);
+new `ui_strings` migration `0129` (en/de). **`AP.FraudReview`'s own
+addition to `permissions.ts` failed `stage-permissions.test.ts`'s
+standing closed-set check on the first full `vf-app` run, exactly as
+that test exists to catch** — fixed with a new migration
+(`migrations/0071_ap_fraud_review_permission.sql`) restating the
+invariant, the same way decision 0350's own `Supplier.Maintain`
+addition was fixed, not by weakening the check. Tests: 15 new in
+`workers/vf-ui/test-browser/ap-analytics.test.ts` (tab visibility per
+permission including the `holdsEverywhere` double-gate, default-tab
+selection among a filtered set, tab switching with exactly one tab
+active at a time, real-tab wiring, load-failure handling);
+`workload.test.ts` and `supplier-performance.test.ts` rewritten (not
+just re-passed) to call `load()`/`renderCard()` directly since neither
+module exports `open()` any more. **`tasks.test.ts`'s and
+`rules.test.ts`'s own nav-enumeration tests needed updating for the
+second time in three decisions** — `"Performance"` removed, `"AP
+Analytics"` inserted where `"Workload"` used to sit (itself never
+tested here, a pre-existing gap decision 0416 already documented and
+left alone), and `tasks.test.ts`'s own `AP.Supplier`-unlocks-two-items
+assertion changed to `["AP Analytics", "Suppliers"]` — a different
+label **and** a different order (`NAV_GROUPS` lists AP Analytics'
+own heading ahead of Suppliers'), caught by the test itself failing on
+the first, order-naive guess rather than reasoned out in advance.
+Full suites: vf-app 1998/1998 (permission change only, no new test
+file — `org-route.test.ts` derives its expectations from
+`PERMISSIONS`/`PERMISSION_DESCRIPTIONS` so it re-passed unchanged),
+vf-licence 320/320 (migration-only; full suite and a `--replay-only`
+of the whole 129-migration chain both re-run clean), vf-ui 74 Worker +
+762 browser (747 + 15 new), known pre-existing unhandled-rejection
+count unchanged (160). `eslint .` clean across `vf-app`, `vf-ui`, and
+`vf-licence`. Full detail in
+`docs/decisions/0417-ap-analytics-tabbed-and-permission-gated.md`.
+**Financial Performance, Executive IQ, and Fraud Prevention still have
+no route or real screen** — each is a permission-gated placeholder;
+see that decision's own "What is not built."
 
 **Decision 0416 (spend by supplier, never summed across currencies)
-is built and committed locally — not yet pushed or deployed.** Asked
+is pushed and deployed, confirmed directly by the operator's own
+report rather than taken on trust alone: "deployed and pushed - I can
+see the supplier performance link now" / "Yes, I see spend by
+supplier. but only 1 supplier right now" — confirmed as correct,
+sparse-seed-data behaviour, not a bug, once the operator reported only
+one supplier's invoices were actually seeded.** Asked
 directly which of the Management Dashboard's four remaining screens to
 build next, the operator chose Supplier Performance over Liabilities &
 Accruals, Fraud & Risk Detection, and the Multi-Enterprise CFO View

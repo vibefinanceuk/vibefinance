@@ -986,9 +986,11 @@
     surface, fully rounded, the active tab lifted onto `--surface-2`
     with `--tab-active-shadow` (0398's own token, reused rather than a
     second one invented for the same job) — under the class names this
-    screen already had (`.tabbar`, `.tab`, `.tab.active`), since
-    `access.js` is the only caller and a rename would be a JS change
-    for no visible reason.
+    screen already had (`.tabbar`, `.tab`, `.tab.active`). A second
+    caller, decision 0417 — `ap-analytics.js`'s own pill tabs, "similar
+    pill-box tabs seen in the Access screen," the operator's own
+    words — reuses this same component rather than a second copy of
+    it.
   */
   .tabbar {
     display: flex;

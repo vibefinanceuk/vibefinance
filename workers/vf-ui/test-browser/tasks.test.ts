@@ -32,7 +32,7 @@ const STRINGS = {
     "nav.purchaseorders": "Purchase Orders",
     "nav.dashboard": "Dashboard",
     "nav.suppliers": "Suppliers",
-    "nav.supplierperformance": "Performance",
+    "nav.apanalytics": "AP Analytics",
     "nav.rules": "Rules",
     "nav.documents": "Documents",
     "nav.roles": "Roles",
@@ -86,6 +86,12 @@ const ALL_NAV_PERMISSIONS = [
   "AP.Supplier",
   "Admin.RuleManagement",
   "AP.Review",
+  // AP Analytics' own OR-gate, decision 0417 — AP.Supplier above
+  // already unlocks the nav item on its own, but a constant that
+  // claims to be "every permission the nav's own mapping checks for"
+  // should actually list both of the others it also accepts.
+  "AP.Analysis",
+  "AP.FraudReview",
 ];
 
 const APPROVAL_TASK = {
@@ -376,13 +382,13 @@ describe("the flat nav, permission-filtered (decisions 0274 and 0276)", () => {
     const labels = [...document.querySelectorAll(".navitem")].map((a) => a.textContent);
     expect(labels).toEqual([
       "Dashboard",
+      // AP Analytics — decision 0417, replacing the standalone
+      // Workload item (never separately tested here) and consolidating
+      // Supplier Performance's own nav item into one of its tabs.
+      "AP Analytics",
       "Tasks",
       "Documents",
       "Suppliers",
-      // The Supplier Performance screen — decision 0416, same
-      // permission as Suppliers (`AP.Supplier`), so it appears
-      // whenever Suppliers does.
-      "Performance",
       "Access",
       "Sources",
       "Purchase Orders",
@@ -630,10 +636,10 @@ describe("the flat nav, permission-filtered (decisions 0274 and 0276)", () => {
     expect(labels).not.toContain("Rules");
     expect(labels).toEqual([
       "Dashboard",
+      "AP Analytics",
       "Tasks",
       "Documents",
       "Suppliers",
-      "Performance",
       "Access",
       "Sources",
       "Purchase Orders",
@@ -705,11 +711,22 @@ describe("the flat nav, permission-filtered (decisions 0274 and 0276)", () => {
     expect(labels, "permission Admin.Configure").toEqual(["Access", "Sources", "Purchase Orders", "Processes"]);
 
     /**
-     * **`AP.Supplier` unlocks two items together, decision 0416** —
-     * Supplier Performance shares the Suppliers screen's own
-     * permission, the design's own choice, so it is pulled out here
-     * the same way `Admin.Configure` already was rather than forced
-     * into the loop's one-permission-one-label shape.
+     * **`AP.Supplier` unlocks two items together, decisions 0416/0417**
+     * — Supplier Performance shared the Suppliers screen's own
+     * permission from the moment it shipped; decision 0417 moved it
+     * into a tab of AP Analytics rather than removing the sharing, so
+     * `AP.Supplier` alone still unlocks a second nav item — just AP
+     * Analytics itself now, one of the three permissions its own
+     * OR-gate accepts, rather than a standalone Performance link.
+     * Pulled out here the same way `Admin.Configure` already was
+     * rather than forced into the loop's one-permission-one-label
+     * shape.
+     *
+     * **AP Analytics before Suppliers**, not after — `NAV_GROUPS`
+     * lists the "accountspayable" heading (AP Analytics' own home)
+     * ahead of "suppliermanagement" (Suppliers' own), so that is the
+     * order both appear in regardless of which permission unlocked
+     * them.
      */
     stubFetch({
       "/api/ui-strings": STRINGS,
@@ -721,7 +738,7 @@ describe("the flat nav, permission-filtered (decisions 0274 and 0276)", () => {
     const { start: start2 } = await import("/tasks.js");
     await start2();
     const supplierLabels = [...document.querySelectorAll(".navitem")].map((a) => a.textContent);
-    expect(supplierLabels, "permission AP.Supplier").toEqual(["Suppliers", "Performance"]);
+    expect(supplierLabels, "permission AP.Supplier").toEqual(["AP Analytics", "Suppliers"]);
   });
 
   it("unlocks Access for a delegated administrator too, decision 0321", async () => {

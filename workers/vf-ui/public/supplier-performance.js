@@ -1,5 +1,5 @@
 import { t } from "/strings.js";
-import { el, frame, topbar, setCurrentScreen } from "/tasks.js";
+import { el } from "/tasks.js";
 import { currentOrgId } from "/orgs.js";
 import { barList } from "/charts.js";
 
@@ -24,11 +24,17 @@ import { barList } from "/charts.js";
  * rather than one blended total nobody could trust. For the common
  * case — a customer whose suppliers all invoice in one currency —
  * that reads as exactly the single simple list the design asked for.
+ *
+ * **One card, not a standalone screen — decision 0417.** Shipped as
+ * its own top-level nav item first; moved into the Supplier
+ * Performance tab of the new AP Analytics screen (`ap-analytics.js`)
+ * once that existed. `load()` and `renderCard()` are exported for
+ * that screen to call; there is no `open()` here any more.
  */
 
 let data = { currencies: [] };
 
-async function load() {
+export async function load() {
   try {
     const org = currentOrgId();
     const query = org ? `?org=${encodeURIComponent(org)}` : "";
@@ -68,34 +74,16 @@ function currencySection(group) {
     : rows;
 }
 
-function render() {
-  const shell = document.getElementById("shell");
-  if (!shell) return;
-
-  const body =
-    data.currencies.length === 0
-      ? el("div", { class: "panel card-graphic" }, [
-          el("div", { class: "cardhead" }, [el("h3", { text: t("supplierperformance.spend") })]),
-          el("div", { class: "muted", text: t("supplierperformance.nospend") }),
-        ])
-      : el("div", { class: "panel card-graphic" }, [
-          el("div", { class: "cardhead" }, [el("h3", { text: t("supplierperformance.spend") })]),
-          el("div", { class: "sub", text: t("supplierperformance.spendsub") }),
-          ...data.currencies.map((group) => currencySection(group)),
-        ]);
-
-  shell.replaceChildren(
-    frame(
-      el("div", { class: "dashboardpage" }, [
-        topbar(t("supplierperformance.heading"), t("supplierperformance.sub")),
-        el("div", { class: "dashflow" }, [body]),
+/** The card itself, built from whatever `load()` last fetched. Callers own the topbar, frame and tab shell around it. */
+export function renderCard() {
+  return data.currencies.length === 0
+    ? el("div", { class: "panel card-graphic" }, [
+        el("div", { class: "cardhead" }, [el("h3", { text: t("supplierperformance.spend") })]),
+        el("div", { class: "muted", text: t("supplierperformance.nospend") }),
       ])
-    )
-  );
-}
-
-export async function open() {
-  setCurrentScreen("supplierperformance");
-  if (!(await load())) return;
-  render();
+    : el("div", { class: "panel card-graphic" }, [
+        el("div", { class: "cardhead" }, [el("h3", { text: t("supplierperformance.spend") })]),
+        el("div", { class: "sub", text: t("supplierperformance.spendsub") }),
+        ...data.currencies.map((group) => currencySection(group)),
+      ]);
 }
