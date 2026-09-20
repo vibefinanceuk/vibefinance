@@ -104,6 +104,32 @@ const LANGUAGES = [
 ];
 
 /**
+ * Reload a window that carries no language button of its own, the
+ * moment a *different* window changes the language — decision 0412.
+ *
+ * **For the document pop-out only**, the same reasoning as `mood.js`'s
+ * own `watchMoodChanges()`: the pop-out has no `languagePicker()` of
+ * its own, only ever the main window does, and `storage` is the one
+ * event a same-origin window gets for free when a *different* window
+ * writes to `localStorage`.
+ *
+ * **A reload here, matching what `languagePicker()`'s own `onclick`
+ * already does on the window where somebody actually clicked it** —
+ * decision 0302 chose a full reload over an in-place re-render because
+ * there is no router to re-open whichever screen is showing; the
+ * pop-out is simpler still, since `document-window.js` already reads
+ * which invoice to show from its own URL on every load (decision
+ * 0384), so reloading it lands back on the exact same document, now in
+ * the newly chosen language.
+ */
+export function watchLocaleChanges() {
+  window.addEventListener("storage", (event) => {
+    if (event.key !== LOCALE_KEY) return;
+    location.reload();
+  });
+}
+
+/**
  * The control itself, for a screen's top bar — decision 0302, reported
  * live: "add a Language button and icon, where English, or German can
  * be selected... Use De, or En as the Icon perhaps."

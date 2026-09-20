@@ -873,6 +873,50 @@ describe("the language toggle, between Night/Day and Sign out (decision 0302)", 
   });
 });
 
+describe("re-loading a window with no language button of its own (decision 0412)", () => {
+  /**
+   * **For the document pop-out.** It carries no `languagePicker()` of
+   * its own, so the only way its language ever changes is the main
+   * window's own button being clicked while the pop-out is already
+   * open — the same `storage` signal `watchMoodChanges()`
+   * (`mood.test.ts`) is tested against, simulated the same way: a real
+   * second window's `dispatchEvent`, never a same-window `setItem`.
+   */
+  function stubLocationReload() {
+    // `vi.stubGlobal`, not `Object.defineProperty` directly — this
+    // file's own top-level `afterEach` already calls
+    // `vi.unstubAllGlobals()`, which is what puts the real
+    // `window.location` back afterward. A direct `defineProperty`
+    // (document-window.test.ts's own helper) is fine there because its
+    // stub is the last describe block in that file; here, later
+    // describes in this file read `location` for real navigation and
+    // must not inherit this stub.
+    const reload = vi.fn();
+    vi.stubGlobal("location", { reload });
+    return reload;
+  }
+
+  it("reloads the moment the other window's own language changes", async () => {
+    const reload = stubLocationReload();
+    const { watchLocaleChanges } = await import("/strings.js");
+    watchLocaleChanges();
+
+    window.dispatchEvent(new StorageEvent("storage", { key: "vf-locale", newValue: "de", storageArea: localStorage }));
+
+    expect(reload).toHaveBeenCalled();
+  });
+
+  it("ignores a storage change to an unrelated key", async () => {
+    const reload = stubLocationReload();
+    const { watchLocaleChanges } = await import("/strings.js");
+    watchLocaleChanges();
+
+    window.dispatchEvent(new StorageEvent("storage", { key: "vf-mood", newValue: "night", storageArea: localStorage }));
+
+    expect(reload).not.toHaveBeenCalled();
+  });
+});
+
 describe("the boundary between a page's own controls and every screen's own (decision 0304)", () => {
   /**
    * **From a mock-up, confirmed**: "a small vertical line, to the

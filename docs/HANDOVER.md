@@ -2,7 +2,7 @@
 
 **Written 4 September 2026, updated 17 September (six times), updated
 18 September (four times), updated 19 September (thirty-two times),
-updated 20 September (twice).**
+updated 20 September (three times).**
 
 **For a session starting cold.** Where things stand, what needs a
 decision rather than work, what to do next, and the habits this project
@@ -31,7 +31,7 @@ twice.
 
 | | |
 | --- | --- |
-| `origin/main` | `266218e` |
+| `origin/main` | `eb0e624` |
 | vf-admin deployed | `8e27a34` · `https://admin.vibefinance-ai.com` · behind Cloudflare Access |
 | vf-app deployed | `266218e` (operator's report — API sits behind auth, not independently checkable from here) |
 | vf-licence deployed | `04072df` (operator's own `wrangler deploy` output, version `39c2f745…`) |
@@ -39,8 +39,33 @@ twice.
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
 | `vf-app-poc` migrations | through `0070` |
 | `vf-licence-poc` migrations | through `0125` applied, all confirmed live — checksums `9e4d534bcef6…` (`0122`), `79ff9f930fdb…` (`0123`), `408f61e5b11a…` (`0124`); `0125` applied by the operator (no checksum reported this time), confirmed live via `/api/ui-strings` returning all six new title values — run via `apply_migrations.py --remote --migrations-dir workers/vf-licence/migrations --database vf-licence-poc` |
-| Tests | vf-admin 9 · vf-app 1970 · vf-licence 320 · vf-ui 74 Worker + 721 browser · shared 287 (+3 known pre-existing failures) |
-| Decision records | 411 |
+| Tests | vf-admin 9 · vf-app 1970 · vf-licence 320 · vf-ui 74 Worker + 728 browser · shared 287 (+3 known pre-existing failures) |
+| Decision records | 412 |
+
+**Decision 0412 (the window with no button of its own) is built, not
+yet committed** — awaiting sign-off. Reported live, verbatim: *"Are you
+able to configure the system, so that when a different skin (such as
+Day or Night), or a different language (such as English or German) is
+selected in the main browser, that your selection is pushed to the
+current screen, but also push to the extended Document Image viewer,
+when the image viewer is Expanded, to the breakout window?"* The main
+window already pushed each choice to itself; the document pop-out
+(decision 0384) carries no mood or language button of its own and only
+ever read either setting once, at its own boot, so a choice made in
+the main window while the pop-out was already open never reached it.
+Fixed with `storage`, the one event a same-origin window gets for free
+when a *different* window writes to `localStorage` — the same
+same-origin-page reasoning decision 0384 already relied on, and the
+same platform-primitive-over-a-built-channel choice decision 0384 made
+for retargeting the pop-out to a different task. `mood.js` gains
+`watchMoodChanges()` (re-applies the mood attribute live — pure CSS
+from there, no re-render); `strings.js` gains `watchLocaleChanges()`
+(reloads, matching what the language button's own click already does
+on the window where somebody clicked it); `document-window.js`'s
+`boot()` calls both. Seven new tests across three files, all
+fail-first verified; full vf-ui suite 74 Worker + 728 browser, same
+known pre-existing 162-error batch, unchanged. Full detail in
+`docs/decisions/0412-the-window-with-no-button-of-its-own.md`.
 
 **Decision 0411 (ask the bar, not a second query) is pushed and
 deployed** — `origin/main` is `266218e`, confirmed by direct `git

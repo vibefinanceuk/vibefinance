@@ -210,8 +210,13 @@ describe("initDocumentWindow — the same panel the embedded card shows, mounted
 
 describe("document-window.js's own bootstrap", () => {
   function stubLocationSearch(search: string) {
+    // `reload` rides along unconditionally, not only for the tests
+    // below that use it — decision 0412's `watchLocaleChanges()` is
+    // wired up by every `boot()` call in this describe block, stubbed
+    // or not, so any of them could reach `location.reload()` if a
+    // `storage` event happened to land during the test.
     Object.defineProperty(window, "location", {
-      value: { search },
+      value: { search, reload: vi.fn() },
       writable: true,
       configurable: true,
     });
@@ -255,5 +260,51 @@ describe("document-window.js's own bootstrap", () => {
     // distinction a second way: only the code past the guard sets it.
     expect(document.getElementById("docwindow-root")?.textContent).toBe("No document retained");
     expect(document.title).not.toBe("Document");
+  });
+
+  /**
+   * **The actual ask, end to end — decision 0412.** Reported live:
+   * "when a different skin ... or a different language ... is
+   * selected in the main browser, that your selection is pushed to
+   * the current screen, but also push to the extended Document Image
+   * viewer, when the image viewer is Expanded, to the breakout
+   * window." `mood.test.ts`'s own "re-theming a window with no button
+   * of its own" and `tasks.test.ts`'s own "re-loading a window with no
+   * language button of its own" already cover `watchMoodChanges()`/
+   * `watchLocaleChanges()` in isolation; these two confirm
+   * `document-window.js`'s real `boot()` actually calls them, the same
+   * way the pop-out is actually booted.
+   */
+  it("re-themes itself the moment the main window's own mood changes, while it is already open", async () => {
+    document.documentElement.setAttribute("data-mood", "day");
+    stubLocationSearch("?task=inv-7");
+    stubFetch({
+      "/api/ui-strings": STRINGS,
+      "/api/invoices/inv-7": { facts: {}, lines: [], validation: { passed: true, checked: [], failures: [] } },
+      "/api/documents/inv-7/activity": { items: [] },
+    });
+
+    await import("/document-window.js");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    window.dispatchEvent(new StorageEvent("storage", { key: "vf-mood", newValue: "night", storageArea: localStorage }));
+
+    expect(document.documentElement.getAttribute("data-mood")).toBe("night");
+  });
+
+  it("reloads itself the moment the main window's own language changes, while it is already open", async () => {
+    stubLocationSearch("?task=inv-7");
+    stubFetch({
+      "/api/ui-strings": STRINGS,
+      "/api/invoices/inv-7": { facts: {}, lines: [], validation: { passed: true, checked: [], failures: [] } },
+      "/api/documents/inv-7/activity": { items: [] },
+    });
+
+    await import("/document-window.js");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    window.dispatchEvent(new StorageEvent("storage", { key: "vf-locale", newValue: "de", storageArea: localStorage }));
+
+    expect((window.location as unknown as { reload: ReturnType<typeof vi.fn> }).reload).toHaveBeenCalled();
   });
 });

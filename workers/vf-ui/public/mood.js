@@ -53,6 +53,36 @@ export function applyMood(mood) {
 }
 
 /**
+ * Re-theme a window that carries no mood button of its own, the moment
+ * a *different* window changes it — decision 0412.
+ *
+ * **For the document pop-out (decision 0384) only.** The main window
+ * needs nothing here: `moodPicker()`'s own `onclick` calls `applyMood()`
+ * directly, in the same document, which is already as live as a change
+ * can be. The pop-out has no picker of its own — it only ever shows
+ * whichever mood the main window's own button last set, read once at
+ * its own boot. Reported live: *"when a different skin ... is selected
+ * in the main browser, [it] is pushed to the current screen, but also
+ * push ... to the breakout window."*
+ *
+ * **`storage`, not `postMessage` or `BroadcastChannel`.** It is the one
+ * event a same-origin window receives automatically when a *different*
+ * window of its own writes to `localStorage` — never fired back at the
+ * window that made the change, so the button's own window never loops
+ * on its own click. `document-window.js` (decision 0384) already
+ * chose plain navigation over a message channel for retargeting the
+ * pop-out to a different task; this reaches for the platform's own
+ * cross-window primitive the same way, rather than building a channel
+ * neither of those needed.
+ */
+export function watchMoodChanges() {
+  window.addEventListener("storage", (event) => {
+    if (event.key !== KEY) return;
+    document.documentElement.setAttribute("data-mood", event.newValue ?? systemMood());
+  });
+}
+
+/**
  * The control itself, for a screen's top bar — decision 0286's own
  * toggle button, replacing the `<select>` decision 0139 built.
  *

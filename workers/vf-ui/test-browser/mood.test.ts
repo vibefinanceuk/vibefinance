@@ -127,6 +127,53 @@ describe("choosing", () => {
   });
 });
 
+describe("re-theming a window with no button of its own (decision 0412)", () => {
+  /**
+   * **For the document pop-out.** It carries no mood button, so the
+   * only way it ever changes there is the main window's own button
+   * being clicked while the pop-out is already open — `storage` is
+   * the cross-window signal for that, simulated here the way a real
+   * second window would deliver it: `dispatchEvent`, never a second
+   * `localStorage.setItem` (the spec never fires `storage` back at the
+   * window that made the change, so a same-window `setItem` would
+   * prove nothing here).
+   */
+  function fireMoodChange(newValue: string | null) {
+    window.dispatchEvent(new StorageEvent("storage", { key: "vf-mood", newValue, storageArea: localStorage }));
+  }
+
+  it("applies the other window's own choice the moment it changes", async () => {
+    document.documentElement.setAttribute("data-mood", "day");
+    const { watchMoodChanges } = await import("/mood.js");
+    watchMoodChanges();
+
+    fireMoodChange("night");
+
+    expect(document.documentElement.getAttribute("data-mood")).toBe("night");
+  });
+
+  it("ignores a storage change to an unrelated key", async () => {
+    document.documentElement.setAttribute("data-mood", "day");
+    const { watchMoodChanges } = await import("/mood.js");
+    watchMoodChanges();
+
+    window.dispatchEvent(new StorageEvent("storage", { key: "vf-locale", newValue: "de", storageArea: localStorage }));
+
+    expect(document.documentElement.getAttribute("data-mood")).toBe("day");
+  });
+
+  it("falls back to the system's own mood if the stored choice is ever cleared", async () => {
+    withSystem(true);
+    document.documentElement.setAttribute("data-mood", "day");
+    const { watchMoodChanges } = await import("/mood.js");
+    watchMoodChanges();
+
+    fireMoodChange(null);
+
+    expect(document.documentElement.getAttribute("data-mood")).toBe("night");
+  });
+});
+
 describe("the palettes", () => {
   const css = stylesheets["tokens.css"];
 

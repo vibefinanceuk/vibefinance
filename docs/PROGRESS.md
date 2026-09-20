@@ -395,6 +395,18 @@ a rule, and left an approval task in a queue.
 - Usage telemetry, per environment, aggregate-only
 
 ### The interface
+- **A skin or language change in the main window now reaches the
+  document pop-out too, while it is already open** (0412). The pop-out
+  (0384) carries no mood or language button of its own and only ever
+  read either setting once, at its own boot, so a choice made in the
+  main window behind it never arrived. Fixed with `storage`, the one
+  event a same-origin window gets for free when a *different* window
+  writes to `localStorage` — no message channel built, the same
+  platform-primitive choice 0384 already made for retargeting the
+  pop-out to a different task. A mood change re-applies the attribute
+  live (pure CSS from there); a language change reloads, matching what
+  the language button's own click already does on the window where
+  somebody clicked it.
 - **A line-scoped rule's own firings collapse into one Timeline/Chat
   entry, not one per line it matched** (0409). A rule set scoped to
   evaluate per line (0027) runs once per invoice line, and the
