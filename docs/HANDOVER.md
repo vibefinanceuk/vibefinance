@@ -2,7 +2,7 @@
 
 **Written 4 September 2026, updated 17 September (six times), updated
 18 September (four times), updated 19 September (thirty-two times),
-updated 20 September (nineteen times).**
+updated 20 September (twenty times).**
 
 **For a session starting cold.** Where things stand, what needs a
 decision rather than work, what to do next, and the habits this project
@@ -31,27 +31,29 @@ twice.
 
 | | |
 | --- | --- |
-| `origin/main` | `1ebb957` — fetched directly by this session after decision 0420 shipped, confirmed matching local `main` exactly |
+| `origin/main` | `bb382fd` — fetched directly by this session after decision 0421 shipped, confirmed matching local `main` exactly |
 | vf-admin deployed | `8e27a34` · `https://admin.vibefinance-ai.com` · behind Cloudflare Access |
-| vf-app deployed | `1ebb957` (operator's own "deployed and pushed - I can see the potential duplicate in the UI under Fraud Prevention" report — API sits behind auth, not independently checkable from here) |
-| vf-licence deployed | `1ebb957` (operator's own report; migration `0132` below is now applied) |
-| vf-ui deployed | `1ebb957` · `https://app.vibefinance-ai.com` — operator's own report, confirming the live screen itself: "I can see the potential duplicate in the UI under Fraud Prevention" |
+| vf-app deployed | `bb382fd` (operator's own "deployed and pushed" report — API sits behind auth, not independently checkable from here) |
+| vf-licence deployed | `bb382fd` (operator's own report; migration `0133` below is now applied) |
+| vf-ui deployed | `bb382fd` · `https://app.vibefinance-ai.com` — operator's own report |
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
-| `vf-app-poc` migrations | through `0071` applied and confirmed live (decision 0420 added no new one) |
-| `vf-licence-poc` migrations | through `0132` applied and confirmed live |
+| `vf-app-poc` migrations | through `0071` applied and confirmed live (decision 0421 added no new one) |
+| `vf-licence-poc` migrations | through `0133` applied and confirmed live |
 | Tests | vf-admin 9 · vf-app 2110 · vf-licence 320 · vf-ui 74 Worker + 818 browser · shared 287 (+3 known pre-existing failures) |
 | Decision records | 421 |
 
 **Decision 0421 (Supplier Performance, the remaining six metrics) is
-built, committed locally — not yet pushed or deployed.** Asked
-directly to "build out all of the supplier performance metrics."
-Investigated first, the same discipline every decision in this arc
-follows: the design document, read fresh, now lists eight key metrics
-for this screen, not the seven decision 0416 recorded — the extra one,
-"Active supplier count, by status," turned out to already exist
-elsewhere (`/api/suppliers/status-counts`, decision 0378), just never
-wired into this tab. Built four genuinely new routes (average cycle
-time, exception rate + type mix, PO variance, payment terms held vs.
+pushed and deployed, confirmed directly.** `origin/main` fetched
+directly reads `bb382fd`, matching this session's own commit exactly;
+the operator confirmed with "deployed and pushed." Asked directly to
+"build out all of the supplier performance metrics." Investigated
+first, the same discipline every decision in this arc follows: the
+design document, read fresh, now lists eight key metrics for this
+screen, not the seven decision 0416 recorded — the extra one, "Active
+supplier count, by status," turned out to already exist elsewhere
+(`/api/suppliers/status-counts`, decision 0378), just never wired into
+this tab. Built four genuinely new routes (average cycle time,
+exception rate + type mix, PO variance, payment terms held vs.
 negotiated with an on-time rate), each reusing an honesty pattern an
 earlier decision already established rather than inventing a new one
 — decision 0418's "payment-eligible = readiness to pay," decision
