@@ -2,7 +2,7 @@
 
 **Written 4 September 2026, updated 17 September (six times), updated
 18 September (four times), updated 19 September (thirty-two times),
-updated 20 September (twenty times).**
+updated 20 September (twenty-one times).**
 
 **For a session starting cold.** Where things stand, what needs a
 decision rather than work, what to do next, and the habits this project
@@ -31,16 +31,43 @@ twice.
 
 | | |
 | --- | --- |
-| `origin/main` | `bb382fd` — fetched directly by this session after decision 0421 shipped, confirmed matching local `main` exactly |
+| `origin/main` | `30d6e10` — fetched directly by this session after decision 0422 shipped, confirmed matching local `main` exactly |
 | vf-admin deployed | `8e27a34` · `https://admin.vibefinance-ai.com` · behind Cloudflare Access |
-| vf-app deployed | `bb382fd` (operator's own "deployed and pushed" report — API sits behind auth, not independently checkable from here) |
-| vf-licence deployed | `bb382fd` (operator's own report; migration `0133` below is now applied) |
-| vf-ui deployed | `bb382fd` · `https://app.vibefinance-ai.com` — operator's own report |
+| vf-app deployed | `30d6e10` (operator's own "pushed and deployed" report — API sits behind auth, not independently checkable from here) |
+| vf-licence deployed | `30d6e10` (operator's own report; migration `0134` below is now applied) |
+| vf-ui deployed | `30d6e10` · `https://app.vibefinance-ai.com` — operator's own report |
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
-| `vf-app-poc` migrations | through `0071` applied and confirmed live (decision 0421 added no new one) |
-| `vf-licence-poc` migrations | through `0133` applied and confirmed live |
-| Tests | vf-admin 9 · vf-app 2110 · vf-licence 320 · vf-ui 74 Worker + 818 browser · shared 287 (+3 known pre-existing failures) |
-| Decision records | 421 |
+| `vf-app-poc` migrations | through `0071` applied and confirmed live (decision 0422 added no new one) |
+| `vf-licence-poc` migrations | through `0134` applied and confirmed live |
+| Tests | vf-admin 9 · vf-app 2126 · vf-licence 320 · vf-ui 74 Worker + 828 browser · shared 287 (+3 known pre-existing failures) |
+| Decision records | 422 |
+
+**Decision 0422 (unapproved-supplier invoices, Fraud Prevention's
+second real metric) is pushed and deployed, confirmed directly.**
+`origin/main` fetched directly reads `30d6e10`, matching this
+session's own commit exactly; the operator confirmed with "pushed and
+deployed." Asked "whats next?" once decision 0421 shipped; offered
+four candidates, the operator chose this one. Investigated first: an
+invoice is "not on file" when `invoice_headers.supplier_id IS NULL` —
+confirmed reliable by reading `matchSupplier()`'s own write path
+directly, since `source-capture-route.ts` only ever sets that column
+on a real match, across all three of that function's own failure
+reasons. "On hold" is read **live** from `suppliers.on_hold`,
+deliberately not the frozen `supplier.onHold` fact captured once at
+invoice arrival (decision 0231's own snapshot, built for automated
+rule evaluation, not for a reviewer asking about today) — a hold
+placed after capture would be invisible under the frozen fact, and a
+lifted hold would keep flagging a resolved invoice. Gated
+`AP.FraudReview`, scoped on the invoice's own org unit, the identical
+rule decision 0420's duplicates route already established — the only
+one available here, since an unmatched invoice has no `supplier_id`
+and so cannot use Supplier Performance's own supplier-org scoping.
+Fraud Prevention now shows two real cards, not one. Full local test
+suites all clean: `vf-app` 2110 → 2126, `vf-ui` browser 818 → 828
+(both worker and browser-known-rejection counts otherwise unchanged),
+`vf-licence` 320 (migration `0134`, no new test file). `eslint .`
+clean across all three packages. See decision 0422's own doc for the
+full reasoning, and `docs/PROGRESS.md` for the durable record.
 
 **Decision 0421 (Supplier Performance, the remaining six metrics) is
 pushed and deployed, confirmed directly.** `origin/main` fetched

@@ -1,9 +1,12 @@
 # 0422 — Unapproved-supplier invoices, Fraud Prevention's second real metric
 
-**Status: built, committed locally — not yet pushed or deployed.** This
-session has no push access to `vibefinanceuk/vibefinance`; delivered
-as a git bundle for the operator's own pull/push/deploy sequence, the
-same path decisions 0391, 0415–0421, 0562 and 0566 already used.
+**Status: pushed and deployed, confirmed directly.** `origin/main`
+fetched directly reads `30d6e10`, matching this session's own commit
+exactly; the operator confirmed with "pushed and deployed." This
+session still has no push access to `vibefinanceuk/vibefinance`;
+delivered as a git bundle for the operator's own pull/push/deploy
+sequence, the same path decisions 0391, 0415–0421, 0562 and 0566
+already used.
 
 ---
 
