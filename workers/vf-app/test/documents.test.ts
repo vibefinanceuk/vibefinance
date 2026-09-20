@@ -348,13 +348,23 @@ describe("linking a dashboard alert to the documents it names (decision 0259)", 
   });
 
   describe("duplicates=1", () => {
+    /**
+     * **Writes the real column, not the stored-`facts_json` key —
+     * decision 0411.** This test used to `json_set` a key,
+     * `"invoice.duplicate_confidence"`, that the real write path
+     * (`handleUpsertInvoice()`, `invoice-facts-route.ts`) never
+     * actually puts into stored `facts_json` — so it was exercising a
+     * shape of data that could never occur outside the test itself,
+     * and never would have caught the query reading the wrong place.
+     * Decision 0410 found and fixed the identical mistake on the
+     * dashboard tile's own count; this route had the same bug in its
+     * own click-through, still present after that fix because 0410
+     * never touched this file. Seeding `duplicate_confidence` directly
+     * is what the real column actually holds.
+     */
     async function seedDuplicate(id: string, confidence: number) {
       await seedDocument(id, { "BT-1": id });
-      await env.DB.prepare(
-        `UPDATE invoice_headers
-         SET facts_json = json_set(facts_json, '$."invoice.duplicate_confidence"', ?)
-         WHERE id = ?`
-      )
+      await env.DB.prepare(`UPDATE invoice_headers SET duplicate_confidence = ? WHERE id = ?`)
         .bind(confidence, id)
         .run();
     }
@@ -577,5 +587,175 @@ describe("filtering documents by what I completed this week (decision 0265)", ()
     // must not accidentally match everyone's completions.
     await completedByOnDayOfWeek("inv-1", "alice", 2);
     expect((await list("doneByMe=1")).documents).toHaveLength(0);
+  });
+});
+
+describe("filtering documents by a supplier's own recent exceptions (decision 0411)", () => {
+  /**
+   * **Must match `exceptionsBySupplier()`'s exact definition** —
+   * `stage_visits.validation_passed = 0` within the last 30 days,
+   * grouped by `COALESCE(sup.name, BT-27, 'Unknown')`. A looser or
+   * tighter filter here and the dashboard's own bar would disagree
+   * with what a click on it shows — the same fault decisions 0252
+   * through 0265 kept finding in other pairs of screens.
+   */
+  async function seedException(
+    id: string,
+    facts: Record<string, unknown>,
+    opts: { daysAgo?: number; passed?: 0 | 1 } = {}
+  ) {
+    await seedDocument(id, facts, "validation");
+    const passed = opts.passed ?? 0;
+    await env.DB.prepare(
+      `INSERT INTO stage_visits
+         (id, process_instance_id, stage_id, outcome, validation_passed, validation_checked, validation_failures, created_at)
+       VALUES (?, ?, 'validation', 'held', ?, 'some_check', ?, datetime('now', ?))`
+    )
+      .bind(`v-${id}`, `pi-${id}`, passed, passed === 1 ? "" : "some_check", `-${opts.daysAgo ?? 1} days`)
+      .run();
+  }
+
+  async function seedSupplier(id: string, name: string) {
+    await env.DB.prepare(
+      `INSERT INTO suppliers (id, erp_identifier, name, status) VALUES (?, NULL, ?, 'active')`
+    )
+      .bind(id, name)
+      .run();
+  }
+
+  it("shows a supplier's own recent, failed-validation document", async () => {
+    await seedException("inv-1", { "BT-1": "inv-1", "BT-27": "Northwind Logistics" });
+
+    const body = await list("exceptionSupplier=" + encodeURIComponent("Northwind Logistics"));
+    expect(body.documents.map((d) => d.id)).toEqual(["inv-1"]);
+  });
+
+  it("matches on the supplier's own master record name, not just the free-text field", async () => {
+    await seedSupplier("s-1", "Northwind Logistics Ltd");
+    await seedException("inv-1", { "BT-1": "inv-1", "BT-27": "Northwind (as typed on the invoice)" });
+    await env.DB.prepare("UPDATE invoice_headers SET supplier_id = 's-1' WHERE id = 'inv-1'").run();
+
+    const body = await list("exceptionSupplier=" + encodeURIComponent("Northwind Logistics Ltd"));
+    expect(body.documents.map((d) => d.id)).toEqual(["inv-1"]);
+  });
+
+  it("matches 'Unknown' the same way the card's own label does, for a document naming no supplier", async () => {
+    await seedException("inv-1", { "BT-1": "inv-1" });
+
+    const body = await list("exceptionSupplier=Unknown");
+    expect(body.documents.map((d) => d.id)).toEqual(["inv-1"]);
+  });
+
+  it("excludes a document whose validation actually passed", async () => {
+    await seedException("inv-1", { "BT-1": "inv-1", "BT-27": "Northwind Logistics" }, { passed: 1 });
+
+    const body = await list("exceptionSupplier=" + encodeURIComponent("Northwind Logistics"));
+    expect(body.documents).toHaveLength(0);
+  });
+
+  it("excludes a failure older than 30 days", async () => {
+    await seedException("inv-1", { "BT-1": "inv-1", "BT-27": "Northwind Logistics" }, { daysAgo: 40 });
+
+    const body = await list("exceptionSupplier=" + encodeURIComponent("Northwind Logistics"));
+    expect(body.documents).toHaveLength(0);
+  });
+
+  it("excludes a different supplier's own exception", async () => {
+    await seedException("inv-1", { "BT-1": "inv-1", "BT-27": "Northwind Logistics" });
+
+    const body = await list("exceptionSupplier=" + encodeURIComponent("A Different Supplier"));
+    expect(body.documents).toHaveLength(0);
+  });
+
+  it("still applies the ordinary unit scope alongside a supplier", async () => {
+    await env.DB.prepare(
+      "INSERT INTO org_units (id, name, kind) VALUES ('acme-fr', 'Acme France', 'legal_entity')"
+    ).run();
+    await seedException("inv-fr", { "BT-1": "inv-fr", "BT-27": "Northwind Logistics" });
+    await env.DB.prepare("UPDATE invoice_headers SET org_unit_id = 'acme-fr' WHERE id = 'inv-fr'").run();
+    await seedException("inv-none", { "BT-1": "inv-none", "BT-27": "Northwind Logistics" });
+
+    const scoped = await list(
+      "exceptionSupplier=" + encodeURIComponent("Northwind Logistics"),
+      ["acme-fr"]
+    );
+    expect(scoped.documents.map((d) => d.id)).toEqual(["inv-fr"]);
+  });
+
+  it("leaves the ordinary list unaffected when no supplier is asked for", async () => {
+    await seedException("inv-1", { "BT-1": "inv-1", "BT-27": "Northwind Logistics" });
+    expect((await list("")).documents).toHaveLength(1);
+  });
+});
+
+describe("filtering documents by an aging bucket's own open work (decision 0411)", () => {
+  /**
+   * **Must match `ageing()`'s exact definition** — an open task whose
+   * `created_at` falls in the given day range. `agingMinDays`/
+   * `agingMaxDays` are the same two numbers `ageing()`
+   * (`dashboard-route.ts`) already computed for the bucket being
+   * clicked, never a boundary this route decides on its own.
+   */
+  async function seedOpenTask(id: string, daysOld: number) {
+    await seedDocument(id, { "BT-1": id }, "validation");
+    await env.DB.prepare(
+      `INSERT INTO stage_visits (id, process_instance_id, stage_id, outcome)
+       VALUES (?, ?, 'validation', 'held')`
+    )
+      .bind(`v-${id}`, `pi-${id}`)
+      .run();
+    await env.DB.prepare(
+      `INSERT INTO tasks (id, stage_id, stage_visit_id, required_permission, status, created_at)
+       VALUES (?, 'validation', ?, 'AP.Validate', 'open', datetime('now', ?))`
+    )
+      .bind(`t-${id}`, `v-${id}`, `-${daysOld} days`)
+      .run();
+  }
+
+  it("shows a document whose open task falls inside the bucket", async () => {
+    await seedOpenTask("inv-mid", 5);
+
+    const body = await list("agingMinDays=4&agingMaxDays=8");
+    expect(body.documents.map((d) => d.id)).toEqual(["inv-mid"]);
+  });
+
+  it("excludes a document just outside the bucket's own boundary", async () => {
+    await seedOpenTask("inv-young", 3);
+    await seedOpenTask("inv-old", 8);
+
+    const body = await list("agingMinDays=4&agingMaxDays=8");
+    expect(body.documents).toHaveLength(0);
+  });
+
+  it("leaves the top bucket open-ended when no max is given", async () => {
+    await seedOpenTask("inv-ancient", 90);
+
+    const body = await list("agingMinDays=31");
+    expect(body.documents.map((d) => d.id)).toEqual(["inv-ancient"]);
+  });
+
+  it("excludes a task that has already been completed", async () => {
+    await seedOpenTask("inv-done", 40);
+    await env.DB.prepare("UPDATE tasks SET status = 'completed' WHERE id = 't-inv-done'").run();
+
+    const body = await list("agingMinDays=31");
+    expect(body.documents).toHaveLength(0);
+  });
+
+  it("still applies the ordinary unit scope alongside an aging bucket", async () => {
+    await env.DB.prepare(
+      "INSERT INTO org_units (id, name, kind) VALUES ('acme-fr', 'Acme France', 'legal_entity')"
+    ).run();
+    await seedOpenTask("inv-fr", 40);
+    await env.DB.prepare("UPDATE invoice_headers SET org_unit_id = 'acme-fr' WHERE id = 'inv-fr'").run();
+    await seedOpenTask("inv-none", 40);
+
+    const scoped = await list("agingMinDays=31", ["acme-fr"]);
+    expect(scoped.documents.map((d) => d.id)).toEqual(["inv-fr"]);
+  });
+
+  it("leaves the ordinary list unaffected when no aging bucket is asked for", async () => {
+    await seedOpenTask("inv-1", 5);
+    expect((await list("")).documents).toHaveLength(1);
   });
 });

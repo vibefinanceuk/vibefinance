@@ -129,8 +129,16 @@ export function sparkline(values, { colour = "var(--chart-1)", height = 38, back
  * @param rows `[{ label, value, warn }]` — `warn` colours one bar as
  * something to look at, which is why the palette and the warning colour
  * are separate (decision 0242).
+ *
+ * **`onSelect`, decision 0411.** Unlike `donutChart`'s own arc — a
+ * stroke a few pixels wide, deliberately left unclickable in favour of
+ * its HTML legend row beside it — one bar here is a real rectangle,
+ * often taller and wider than the row a legend would have drawn, so it
+ * is the click target itself rather than needing a second one beside
+ * it. Only a bar with `value > 0` is offered: decision 0161's rule,
+ * that a card only links to something real to see.
  */
-export function barChart(rows, { height = 112 } = {}) {
+export function barChart(rows, { height = 112, onSelect = null } = {}) {
   /**
    * **Wider than it is tall, and more so than at first** — decision
    * 0246.
@@ -205,8 +213,17 @@ export function barChart(rows, { height = 112 } = {}) {
     const defs = el("defs");
     defs.append(gradient);
 
-    node.append(
-      defs,
+    /**
+     * **The bar's own group is the click target** — decision 0411.
+     * Offered only where there is something real to click through to:
+     * `value > 0`, the same rule decision 0161 already applies to
+     * every other card that links out.
+     */
+    const selectable = Boolean(onSelect) && row.value > 0;
+    const barGroup = el("g", selectable ? { class: "bargroup clickable" } : { class: "bargroup" });
+    if (selectable) barGroup.onclick = () => onSelect(row);
+
+    barGroup.append(
       el("rect", {
         x: x.toFixed(1),
         y: y.toFixed(1),
@@ -241,6 +258,8 @@ export function barChart(rows, { height = 112 } = {}) {
         row.label
       )
     );
+
+    node.append(defs, barGroup);
   });
 
   return node;
@@ -294,8 +313,12 @@ export function donut(percent, { label = "", colour = "var(--chart-2)" } = {}) {
  * **HTML rather than SVG**, because the labels are supplier names —
  * arbitrary length, and text that has to wrap and be selectable. An SVG
  * label is a picture of a word.
+ *
+ * **`onSelect`, decision 0411** — offered per row, only where
+ * `value > 0` (decision 0161's rule), the same shape `donutChart`'s
+ * own legend rows already use.
  */
-export function barList(rows, { colour = "var(--chart-1)" } = {}) {
+export function barList(rows, { colour = "var(--chart-1)", onSelect = null } = {}) {
   /**
    * **One row is not a proportion** — decision 0245.
    *
@@ -332,6 +355,12 @@ export function barList(rows, { colour = "var(--chart-1)" } = {}) {
 
     track.append(fill);
     line.append(head, track);
+
+    if (onSelect && row.value > 0) {
+      line.classList.add("clickable");
+      line.onclick = () => onSelect(row);
+    }
+
     wrap.append(line);
   }
 

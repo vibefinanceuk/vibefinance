@@ -39,6 +39,31 @@ let alertFilter = null;
 let stageFilter = null;
 
 /**
+ * **A supplier, from Exceptions by Supplier — decision 0411.**
+ *
+ * The same shape as `stageFilter`: the dashboard's own bar already
+ * shows the supplier's name, so the click carries it along rather than
+ * this screen looking it up again. The name itself is the filter — it
+ * is also the exact grouping key `exceptionsBySupplier()` counts by
+ * (`dashboard-route.ts`), so asking the server for documents matching
+ * this name, with the same 30-day/failed-validation condition, is
+ * "ask the click" (decision 0368) rather than a second, separate
+ * definition of the same question.
+ */
+let supplierFilter = null;
+
+/**
+ * **An age bucket, from Task Aging Report — decision 0411.**
+ *
+ * `minDays`/`maxDays` (the latter possibly `null`, for the open-ended
+ * last bucket) come straight from `ageing()`'s own response
+ * (`dashboard-route.ts`) rather than being decided again here — the
+ * one place those five numbers are chosen. `label` is carried only for
+ * the banner text.
+ */
+let agingFilter = null;
+
+/**
  * Which part of the business to show — decision 0193.
  *
  * **Empty means all of them**, which is what a customer with one unit
@@ -132,6 +157,13 @@ async function load() {
   if (alertFilter === "duplicates") params.set("duplicates", "1");
   if (alertFilter === "donebyme") params.set("doneByMe", "1");
   if (stageFilter) params.set("stage", stageFilter.id);
+  if (supplierFilter) params.set("exceptionSupplier", supplierFilter.name);
+  if (agingFilter) {
+    params.set("agingMinDays", String(agingFilter.minDays));
+    if (agingFilter.maxDays !== null && agingFilter.maxDays !== undefined) {
+      params.set("agingMaxDays", String(agingFilter.maxDays));
+    }
+  }
   /**
    * **The chosen org, decision 0315** — extending decision 0314's own
    * treatment of Tasks to Documents. A different, wider concept from
@@ -345,6 +377,18 @@ function columnsIcon() {
   return svg;
 }
 
+/**
+ * The banner's own sentence — decision 0411 extends decision
+ * 0259/0264's original ternary to two more filters rather than
+ * growing it past the point a reader can follow inline.
+ */
+function bannerText() {
+  if (stageFilter) return t("documents.showing.stage").replace("{stage}", stageFilter.name);
+  if (supplierFilter) return t("documents.showing.exceptionsupplier").replace("{supplier}", supplierFilter.name);
+  if (agingFilter) return t("documents.showing.aging").replace("{bucket}", agingFilter.label);
+  return t(`documents.showing.${alertFilter}`);
+}
+
 function render() {
   const shell = document.getElementById("shell");
   if (!shell) return;
@@ -397,19 +441,17 @@ function render() {
          * one — decision 0256 fixed exactly this shape of confusion for
          * a dropdown that quietly filtered without saying so.
          */
-        alertFilter || stageFilter
+        alertFilter || stageFilter || supplierFilter || agingFilter
           ? el("div", { class: "panel alertbanner" }, [
-              el("span", {
-                text: stageFilter
-                  ? t("documents.showing.stage").replace("{stage}", stageFilter.name)
-                  : t(`documents.showing.${alertFilter}`),
-              }),
+              el("span", { text: bannerText() }),
               el("button", {
                 class: "chip",
                 text: t("documents.clearfilter"),
                 onclick: async () => {
                   alertFilter = null;
                   stageFilter = null;
+                  supplierFilter = null;
+                  agingFilter = null;
                   await load();
                   render();
                 },
@@ -545,6 +587,51 @@ export async function openDocumentsAtStage(stageId, stageName) {
   unit = "";
   alertFilter = null;
   stageFilter = { id: stageId, name: stageName };
+  setCurrentScreen("documents");
+  await loadUnits();
+  if (!(await load())) return;
+  render();
+}
+
+/**
+ * Open the documents screen filtered to one supplier's own recent
+ * exceptions — decision 0411, from the dashboard's "Exceptions by
+ * Supplier" bar list.
+ *
+ * **The supplier's own name is the filter**, the same one
+ * `exceptionsBySupplier()` (`dashboard-route.ts`) already grouped by
+ * to produce the bar being clicked — not a second lookup for a
+ * supplier id this card was never given.
+ */
+export async function openDocumentsForSupplierExceptions(supplierName) {
+  query = "";
+  unit = "";
+  alertFilter = null;
+  stageFilter = null;
+  agingFilter = null;
+  supplierFilter = { name: supplierName };
+  setCurrentScreen("documents");
+  await loadUnits();
+  if (!(await load())) return;
+  render();
+}
+
+/**
+ * Open the documents screen filtered to one aging bucket's own open
+ * work — decision 0411, from the dashboard's "Task Aging Report" bars.
+ *
+ * **`minDays`/`maxDays` are read off the bar, not recomputed here** —
+ * they came from `ageing()`'s own response in the first place
+ * (`dashboard-route.ts`), the one place those five boundaries are
+ * decided.
+ */
+export async function openDocumentsAged(bucket) {
+  query = "";
+  unit = "";
+  alertFilter = null;
+  stageFilter = null;
+  supplierFilter = null;
+  agingFilter = bucket;
   setCurrentScreen("documents");
   await loadUnits();
   if (!(await load())) return;

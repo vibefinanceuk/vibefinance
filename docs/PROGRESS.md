@@ -182,6 +182,22 @@ a rule, and left an approval task in a queue.
   building a third copy.
 
 ### The Dashboard — default landing, layout, and "Waiting for me" (0359–0369)
+- **Exceptions by Supplier and Task Aging Report now drill through to
+  Documents** (0411), the same pattern `where_things_are` already had:
+  a supplier's own bar filters Documents to that supplier's own name —
+  the exact expression `exceptionsBySupplier()` groups by, with the
+  same 30-day/failed-validation condition, not a second definition of
+  "an exception" — and an aging bucket's own bar filters Documents to
+  that bucket's own day range, carried from `ageing()`'s own response
+  rather than re-decided in `documents-route.ts`. Neither `barChart`
+  nor `barList` had a click before this; added directly to the bar
+  itself, unlike the donut's own legend-is-the-target workaround
+  (0264) for a click target too thin to hit reliably. In the same
+  commit: `documents-route.ts`'s own `duplicates=1` click-through had
+  the identical never-persisted-`facts_json`-key bug 0410 fixed on the
+  Possible Duplicates tile's own count, still broken because 0410
+  never touched this route — now reads the real `duplicate_confidence`
+  column too.
 - **Two empty cards, two different root causes** (0410). Possible
   Duplicates counted a `facts_json` key that's never actually stored
   — the score lives only in its own column, and the key existed only

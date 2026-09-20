@@ -349,14 +349,24 @@ async function ageing(db: D1Database, scope: Scope) {
    * **Buckets, not an average.** An average of 3 days hides one item
    * from August, and the one from August is the story — decision 0239's
    * argument for showing age at all.
+   *
+   * **`minDays`/`maxDays` travel with each bucket now** — decision
+   * 0411, for the click each bucket gained through to the Documents
+   * screen. The boundaries here are the only place they are decided;
+   * carrying them out to the client, rather than making
+   * `documents-route.ts` (or `dashboard.js`) guess the same five
+   * numbers a second time, is what keeps a click from being able to
+   * drift from the count beside it — the exact failure class decision
+   * 0368 already named once for a different card. `maxDays: null`
+   * means unbounded, the open top of the last bucket.
    */
   return {
     buckets: [
-      { label: "<1d", n: row?.d0 ?? 0 },
-      { label: "1–3d", n: row?.d1 ?? 0 },
-      { label: "4–7d", n: row?.d4 ?? 0 },
-      { label: "8–30d", n: row?.d8 ?? 0 },
-      { label: "30d+", n: row?.d31 ?? 0 },
+      { label: "<1d", n: row?.d0 ?? 0, minDays: 0, maxDays: 1 },
+      { label: "1–3d", n: row?.d1 ?? 0, minDays: 1, maxDays: 4 },
+      { label: "4–7d", n: row?.d4 ?? 0, minDays: 4, maxDays: 8 },
+      { label: "8–30d", n: row?.d8 ?? 0, minDays: 8, maxDays: 31 },
+      { label: "30d+", n: row?.d31 ?? 0, minDays: 31, maxDays: null },
     ],
   };
 }

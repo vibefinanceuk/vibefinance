@@ -1,7 +1,8 @@
 # Handover
 
 **Written 4 September 2026, updated 17 September (six times), updated
-18 September (four times), updated 19 September (thirty-two times).**
+18 September (four times), updated 19 September (thirty-two times),
+updated 20 September (once).**
 
 **For a session starting cold.** Where things stand, what needs a
 decision rather than work, what to do next, and the habits this project
@@ -38,8 +39,39 @@ twice.
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
 | `vf-app-poc` migrations | through `0070` |
 | `vf-licence-poc` migrations | through `0125` applied, all confirmed live — checksums `9e4d534bcef6…` (`0122`), `79ff9f930fdb…` (`0123`), `408f61e5b11a…` (`0124`); `0125` applied by the operator (no checksum reported this time), confirmed live via `/api/ui-strings` returning all six new title values — run via `apply_migrations.py --remote --migrations-dir workers/vf-licence/migrations --database vf-licence-poc` |
-| Tests | vf-admin 9 · vf-app 1955 · vf-licence 320 · vf-ui 74 Worker + 716 browser · shared 287 (+3 known pre-existing failures) |
-| Decision records | 410 |
+| Tests | vf-admin 9 · vf-app 1970 · vf-licence 320 · vf-ui 74 Worker + 721 browser · shared 287 (+3 known pre-existing failures) |
+| Decision records | 411 |
+
+**Decision 0411 (ask the bar, not a second query) is built, not yet
+committed** — awaiting sign-off. Reported live, verbatim: *"please can
+you update the exceptions by supplier, and Task Aging Report in the
+Dashboard, so that they link to the Document screen with items
+shortlisted?"* Both cards now drill through to Documents the same way
+`where_things_are` already does: a supplier's own bar opens Documents
+filtered to that supplier's own name (the exact expression
+`exceptionsBySupplier()` groups by, with the same 30-day/failed-
+validation condition — "ask the click," decision 0368); an aging
+bucket's own bar opens Documents filtered to that bucket's own
+`minDays`/`maxDays`, carried from `ageing()`'s own response rather than
+re-decided in a second place. Neither `barChart` nor `barList` had a
+click before this — added directly to the bar itself (a wide rectangle,
+unlike the donut's thin arc that decision 0264 avoided clicking).
+20 new tests (1 server dashboard, 15 server documents, 5 browser, one
+of which is this codebase's first SVG `dispatchEvent` click and was
+confirmed working before anything else was treated as done), all
+fail-first verified. **Also found and fixed in the same commit**:
+`documents-route.ts`'s pre-existing `duplicates=1` filter had the same
+never-persisted-`facts_json`-key bug decision 0410 already fixed on
+the dashboard-count side, but that fix never touched this route — so
+clicking "Possible Duplicates" through to Documents still showed
+nothing. Raised with the operator directly rather than folded in
+silently; they chose to fix it here. Now reads `h.duplicate_confidence`
+directly, the same column 0410 pointed the tile's own count at; the
+existing test's own fixture, which had been `json_set`-ing the stale
+key to pass, now seeds the real column instead. Full `vf-app` suite
+1970/1970, full `vf-ui` suite 74 Worker + 721 browser, full
+`vf-licence` suite 320/320. Full detail in
+`docs/decisions/0411-ask-the-bar-not-a-second-query.md`.
 
 **Decision 0410 (two empty cards, two different answers) is pushed and
 deployed** — `origin/main` is `a25b0dc`, confirmed by direct `git

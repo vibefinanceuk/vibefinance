@@ -103,6 +103,17 @@ export async function handleListDocuments(
    * **Two new filters, decision 0259** — for the dashboard's
    * *Unplaced Documents* and *Possible Duplicates* cards, each of
    * which now needs somewhere real to send a click.
+   *
+   * **`duplicatesOnly`'s own query read the wrong place — decision
+   * 0411.** It matched `json_extract(h.facts_json,
+   * '$."invoice.duplicate_confidence"')`, a key decision 0410 already
+   * found is never written to stored `facts_json` — it's synthesised
+   * only in memory, at read time, by a different route. This route
+   * wasn't touched by 0410, so the click-through was still silently
+   * broken after that fix: the dashboard tile counted correctly again,
+   * but clicking through to Documents kept showing nothing. Reads
+   * `h.duplicate_confidence` directly now, the same column 0410
+   * pointed the tile's own count at.
    */
   const unplacedOnly = params.get("unplaced") === "1";
   const duplicatesOnly = params.get("duplicates") === "1";
@@ -130,6 +141,34 @@ export async function handleListDocuments(
   const monday = mondayOfThisWeek();
 
   /**
+   * **A supplier's own recent exceptions — decision 0411**, from the
+   * dashboard's "Exceptions by Supplier" bar list.
+   *
+   * **The label is the filter**, matched against the exact expression
+   * `exceptionsBySupplier()` (`dashboard-route.ts`) groups by —
+   * `COALESCE(sup.name, BT-27, 'Unknown')` — rather than a supplier id
+   * this card was never given. "Ask the click" (decision 0368): this
+   * is the same 30-day, failed-validation condition that card counts,
+   * not a second, separately-maintained definition of "an exception."
+   */
+  const exceptionSupplier = params.get("exceptionSupplier");
+
+  /**
+   * **One aging bucket's own open work — decision 0411**, from the
+   * dashboard's "Task Aging Report" bars.
+   *
+   * **The boundaries travel from the click, not decided again here.**
+   * `ageing()` (`dashboard-route.ts`) is the one place the five
+   * buckets' day ranges are chosen; this route only ever applies
+   * whatever range it is given. `agingMaxDays` absent (`null`) is the
+   * open-ended top of the last bucket.
+   */
+  const agingMinDaysRaw = params.get("agingMinDays");
+  const agingMinDays = agingMinDaysRaw === null ? null : Number(agingMinDaysRaw);
+  const agingMaxDaysRaw = params.get("agingMaxDays");
+  const agingMaxDays = agingMaxDaysRaw === null ? null : Number(agingMaxDaysRaw);
+
+  /**
    * The sender and recipient come from the email that brought it —
    * decision 0147's log — because that is what a person searches by
    * when the supplier name was never extracted.
@@ -152,6 +191,7 @@ export async function handleListDocuments(
          ON i.subject_type = 'invoice' AND i.subject_id = h.id
        LEFT JOIN process_stages s ON s.id = i.current_stage_id
        LEFT JOIN org_units ou ON ou.id = h.org_unit_id
+       LEFT JOIN suppliers sup ON sup.id = h.supplier_id
        LEFT JOIN inbound_email_events e
          ON e.id = (SELECT e2.id FROM inbound_email_events e2
                     WHERE e2.outcome = 'captured' AND e2.occurred_at <= h.created_at
@@ -162,7 +202,7 @@ export async function handleListDocuments(
            OR (?3 = 0 OR h.org_unit_id IN (SELECT value FROM json_each(?4)))
          )
          AND (?5 = 0 OR (h.org_unit_id IS NULL AND json_extract(h.facts_json, '$."org.unplaced"') IS NOT NULL))
-         AND (?6 = 0 OR CAST(json_extract(h.facts_json, '$."invoice.duplicate_confidence"') AS REAL) >= 0.5)
+         AND (?6 = 0 OR h.duplicate_confidence >= 0.5)
          AND (?7 IS NULL OR (i.current_stage_id = ?7 AND i.status = 'in_progress'))
          AND (
            ?8 = 0
@@ -172,6 +212,29 @@ export async function handleListDocuments(
              WHERE dv.process_instance_id = i.id
                AND dt.completed_by = ?9
                AND date(dt.completed_at) >= ?10
+           )
+         )
+         AND (
+           ?11 IS NULL
+           OR (
+             COALESCE(sup.name, json_extract(h.facts_json, '$."BT-27"'), 'Unknown') = ?11
+             AND EXISTS (
+               SELECT 1 FROM stage_visits ev
+               WHERE ev.process_instance_id = i.id
+                 AND ev.validation_passed = 0
+                 AND julianday('now') - julianday(ev.created_at) < 30
+             )
+           )
+         )
+         AND (
+           ?12 IS NULL
+           OR EXISTS (
+             SELECT 1 FROM tasks at2
+             JOIN stage_visits av ON av.id = at2.stage_visit_id
+             WHERE av.process_instance_id = i.id
+               AND at2.status = 'open'
+               AND julianday('now') - julianday(at2.created_at) >= ?12
+               AND (?13 IS NULL OR julianday('now') - julianday(at2.created_at) < ?13)
            )
          )
        ORDER BY h.created_at DESC, h.rowid DESC
@@ -217,7 +280,10 @@ export async function handleListDocuments(
       stageId,
       doneByMe ? 1 : 0,
       userId ?? "",
-      monday
+      monday,
+      exceptionSupplier,
+      agingMinDays,
+      agingMaxDays
     )
     .all<DocumentRow>();
 

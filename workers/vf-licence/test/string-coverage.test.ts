@@ -516,6 +516,8 @@ const KEYS_THE_INTERFACE_USES = [
   "documents.clearfilter",
   "documents.showing.stage",
   "documents.showing.donebyme",
+  "documents.showing.exceptionsupplier",
+  "documents.showing.aging",
   "column.number",
   "column.type",
   "column.status",

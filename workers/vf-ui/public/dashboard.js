@@ -2,7 +2,13 @@ import { t } from "/strings.js";
 import { el, frame, topbar, setCurrentScreen, openTasksFiltered, openTaskById } from "/tasks.js";
 import { icon } from "/icons.js";
 import { currentOrgId } from "/orgs.js";
-import { openDocumentsFiltered, openDocumentsAtStage, openDocumentsCompletedByMe } from "/documents.js";
+import {
+  openDocumentsFiltered,
+  openDocumentsAtStage,
+  openDocumentsCompletedByMe,
+  openDocumentsForSupplierExceptions,
+  openDocumentsAged,
+} from "/documents.js";
 import { openSuppliersAwaitingErp } from "/suppliers.js";
 /**
  * **`sparkline` is built and not used here** — decisions 0242 and 0265.
@@ -458,6 +464,13 @@ const RENDERERS = {
 
   ageing: (data) => {
     const buckets = data.buckets ?? [];
+    /**
+     * **Each bucket leads to the Documents behind it** — decision
+     * 0411. `minDays`/`maxDays` ride along on the same row object
+     * `barChart` already builds one bar from, straight through from
+     * `ageing()`'s own response (`dashboard-route.ts`) rather than
+     * this file deciding the five boundaries a second time.
+     */
     return panel(
       t("dash.ageing"),
       t("dash.ageingsub"),
@@ -468,7 +481,10 @@ const RENDERERS = {
           value: b.n,
           // The last two buckets are the ones worth looking at.
           warn: i >= 3 && b.n > 0,
-        }))
+          minDays: b.minDays,
+          maxDays: b.maxDays,
+        })),
+        { onSelect: (row) => openDocumentsAged({ label: row.label, minDays: row.minDays, maxDays: row.maxDays }) }
       )
     );
   },
@@ -532,18 +548,38 @@ const RENDERERS = {
   exceptions_by_supplier: (data) => {
     const suppliers = data.suppliers ?? [];
     if (suppliers.length === 1) {
-      // The same argument as above.
-      return panel(t("dash.exceptions_by_supplier"), null, { kind: "narrow" },
+      /**
+       * **One supplier is a figure, not a chart** — decision 0244's
+       * rule, applied here too. Clickable the same way every other
+       * single-item collapse already is (`where_things_are`,
+       * `waiting_for_me`) — decision 0411.
+       */
+      const card = panel(t("dash.exceptions_by_supplier"), null, { kind: "narrow" },
         figure(suppliers[0].n, suppliers[0].supplier, { warn: true }));
+
+      if (suppliers[0].n > 0) {
+        card.classList.add("clickable");
+        card.onclick = () => openDocumentsForSupplierExceptions(suppliers[0].supplier);
+      }
+
+      return card;
     }
 
+    /**
+     * **Each row leads to that one supplier's own exceptions** —
+     * decision 0411. `s.supplier` is the exact label
+     * `exceptionsBySupplier()` (`dashboard-route.ts`) grouped by, so
+     * the click asks for precisely what the bar already counted.
+     */
     return panel(
       t("dash.exceptions_by_supplier"),
       t("dash.exceptionssub"),
       { kind: "graphic" },
       suppliers.length === 0
         ? el("div", { class: "muted", text: t("dash.noexceptions") })
-        : barList(suppliers.map((s) => ({ label: s.supplier, value: s.n, warn: true })))
+        : barList(suppliers.map((s) => ({ label: s.supplier, value: s.n, warn: true })), {
+            onSelect: (row) => openDocumentsForSupplierExceptions(row.label),
+          })
     );
   },
 

@@ -352,6 +352,31 @@ describe("how long things have waited", () => {
     expect(buckets.find((b) => b.label === "<1d")?.n).toBe(1);
     expect(buckets.find((b) => b.label === "30d+")?.n).toBe(1);
   });
+
+  it("carries each bucket's own day range, for the click it now leads to (decision 0411)", async () => {
+    /**
+     * **The one place these five numbers are decided.** Carried out to
+     * the response rather than left for `documents-route.ts` or
+     * `dashboard.js` to guess the same boundaries a second time —
+     * decision 0368's own argument against two definitions of one
+     * question, applied here before a second definition could exist.
+     */
+    await person("alice", ["AP.Review"], null);
+
+    const body = await cardsFor("alice");
+    const buckets = card<{ buckets: { label: string; minDays: number; maxDays: number | null }[] }>(
+      body,
+      "ageing"
+    ).buckets;
+
+    expect(buckets.map((b) => [b.label, b.minDays, b.maxDays])).toEqual([
+      ["<1d", 0, 1],
+      ["1–3d", 1, 4],
+      ["4–7d", 4, 8],
+      ["8–30d", 8, 31],
+      ["30d+", 31, null],
+    ]);
+  });
 });
 
 describe("one card failing is not the dashboard failing", () => {

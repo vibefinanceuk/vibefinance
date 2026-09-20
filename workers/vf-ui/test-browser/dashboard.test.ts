@@ -67,6 +67,11 @@ const STRINGS = {
     "dash.possible_duplicates": "Possible duplicates",
     "dash.about.possible_duplicates": "Invoices that may already be on file",
     "dash.allclear": "Nothing is stuck.",
+    "dash.exceptions_by_supplier": "Exceptions by Supplier",
+    "dash.exceptionssub": "Recent failures, by supplier",
+    "dash.noexceptions": "Nothing has failed validation recently.",
+    "documents.showing.exceptionsupplier": "Showing {supplier}'s recent exceptions only",
+    "documents.showing.aging": "Showing open work aged {bucket} only",
     // The suppliers screen's own strings, needed because navigating
     // there is exactly what one of these tests does.
     "suppliers.showingawaiting": "Showing suppliers awaiting the ERP only",
@@ -1599,6 +1604,166 @@ describe("clicking through (decision 0250)", () => {
     const rows = document.querySelectorAll(".clocktable tbody tr.clickable");
     expect(rows).toHaveLength(1);
     expect(typeof (rows[0] as HTMLElement).onclick).toBe("function");
+  });
+});
+
+describe("exceptions by supplier leads to that supplier's own documents (decision 0411)", () => {
+  function fetchDocuments(seen: string[]) {
+    const real = globalThis.fetch;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        const path = String(url);
+        seen.push(path);
+        if (path.startsWith("/api/org/units")) return { ok: true, json: async () => ({ units: [] }) } as Response;
+        if (path.startsWith("/api/documents"))
+          return { ok: true, json: async () => ({ documents: [], searched: 0 }) } as Response;
+        return real(url);
+      })
+    );
+  }
+
+  it("links a supplier's own bar to that supplier's own recent exceptions", async () => {
+    const seen: string[] = [];
+    stubDashboard(
+      [
+        {
+          id: "x",
+          cardType: "exceptions_by_supplier",
+          settings: {},
+          position: 0,
+          data: {
+            suppliers: [
+              { supplier: "Northwind Logistics", n: 4 },
+              { supplier: "Acme Freight", n: 2 },
+            ],
+          },
+        },
+      ],
+      seen
+    );
+    fetchDocuments(seen);
+
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { open } = await import("/dashboard.js");
+    await open();
+
+    const row = [...document.querySelectorAll(".barlist-row")].find((r) =>
+      r.textContent?.includes("Northwind Logistics")
+    );
+    (row as HTMLElement).click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    const request = seen.find((u) => u.startsWith("/api/documents"));
+    expect(new URL(request!, "http://x").searchParams.get("exceptionSupplier")).toBe("Northwind Logistics");
+    expect(document.body.textContent).toContain("Northwind Logistics");
+  });
+
+  it("links the tile figure to its own supplier when only one has an exception", async () => {
+    const seen: string[] = [];
+    stubDashboard(
+      [
+        {
+          id: "x",
+          cardType: "exceptions_by_supplier",
+          settings: {},
+          position: 0,
+          data: { suppliers: [{ supplier: "Northwind Logistics", n: 3 }] },
+        },
+      ],
+      seen
+    );
+    fetchDocuments(seen);
+
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { open } = await import("/dashboard.js");
+    await open();
+
+    const card = [...document.querySelectorAll(".panel.clickable")].find((p) =>
+      p.textContent?.includes("Northwind Logistics")
+    );
+    (card as HTMLElement).click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    const request = seen.find((u) => u.startsWith("/api/documents"));
+    expect(new URL(request!, "http://x").searchParams.get("exceptionSupplier")).toBe("Northwind Logistics");
+  });
+
+  it("offers no click at all when there is nothing to show", async () => {
+    await openDashboard([
+      { id: "x", cardType: "exceptions_by_supplier", settings: {}, position: 0, data: { suppliers: [] } },
+    ]);
+
+    expect(document.querySelectorAll(".barlist-row.clickable")).toHaveLength(0);
+  });
+});
+
+describe("an aging bucket leads to the documents behind it (decision 0411)", () => {
+  it("links a bucket's own bar to the documents whose open work falls in it", async () => {
+    const seen: string[] = [];
+    stubDashboard(
+      [
+        {
+          id: "y",
+          cardType: "ageing",
+          settings: {},
+          position: 0,
+          data: {
+            buckets: [
+              { label: "<1d", n: 2, minDays: 0, maxDays: 1 },
+              { label: "1–3d", n: 0, minDays: 1, maxDays: 4 },
+              { label: "4–7d", n: 0, minDays: 4, maxDays: 8 },
+              { label: "8–30d", n: 0, minDays: 8, maxDays: 31 },
+              { label: "30d+", n: 5, minDays: 31, maxDays: null },
+            ],
+          },
+        },
+      ],
+      seen
+    );
+    const real = globalThis.fetch;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        const path = String(url);
+        seen.push(path);
+        if (path.startsWith("/api/org/units")) return { ok: true, json: async () => ({ units: [] }) } as Response;
+        if (path.startsWith("/api/documents"))
+          return { ok: true, json: async () => ({ documents: [], searched: 0 }) } as Response;
+        return real(url);
+      })
+    );
+
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { open } = await import("/dashboard.js");
+    await open();
+
+    const bars = [...document.querySelectorAll(".bargroup.clickable")];
+    // The last bar drawn is "30d+", the bucket with `n: 5`.
+    (bars[bars.length - 1] as unknown as SVGElement).dispatchEvent(new Event("click"));
+    await new Promise((r) => setTimeout(r, 0));
+
+    const request = seen.find((u) => u.startsWith("/api/documents"));
+    expect(request).toContain("agingMinDays=31");
+    expect(request).not.toContain("agingMaxDays");
+    expect(document.body.textContent).toContain("30d+");
+  });
+
+  it("offers no click on a bucket with nothing in it", async () => {
+    await openDashboard([
+      {
+        id: "y",
+        cardType: "ageing",
+        settings: {},
+        position: 0,
+        data: { buckets: [{ label: "<1d", n: 0, minDays: 0, maxDays: 1 }] },
+      },
+    ]);
+
+    expect(document.querySelectorAll(".bargroup.clickable")).toHaveLength(0);
   });
 });
 
