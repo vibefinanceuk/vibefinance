@@ -395,6 +395,19 @@ a rule, and left an approval task in a queue.
 - Usage telemetry, per environment, aggregate-only
 
 ### The interface
+- **Changing language no longer bounces the main window to the default
+  screen** (0413). `languagePicker()` had reloaded the whole page since
+  0302, which always lands on the default screen regardless of what
+  was open — the same reload-loses-focus gap 0362 already fixed for
+  the org switcher, by relaunching via `go()` instead of reloading.
+  `languagePicker()` now takes an `onChosen` callback the same shape
+  `orgPicker` already has; `relaunchAfterLanguageChange()` refreshes
+  strings, then relaunches the current screen or reopens the exact
+  task that was open. The one real difference from
+  `relaunchAfterOrgChange()`, which falls back to the default screen
+  instead: an org-scoped invoice does not survive an org switch, but a
+  language change has no such relationship to the document on screen,
+  so this keeps it in view rather than dropping it.
 - **A skin or language change in the main window now reaches the
   document pop-out too, while it is already open** (0412). The pop-out
   (0384) carries no mood or language button of its own and only ever

@@ -11,7 +11,7 @@
  * the browser would mean two versions of one rule, which drift.
  */
 
-import { t, languagePicker } from "/strings.js";
+import { t, languagePicker, loadStrings } from "/strings.js";
 import { moodPicker } from "/mood.js";
 import { orgPicker, currentOrgId } from "/orgs.js";
 import { icon } from "/icons.js";
@@ -813,7 +813,7 @@ export function topbar(title, subtitle, right = [], extra = []) {
        * reported live: "At the top of the page, between Night / Day,
        * and Sign out... add a Language button."
        */
-      languagePicker(),
+      languagePicker(relaunchAfterLanguageChange),
       el(
         "button",
         {
@@ -963,6 +963,65 @@ export async function start() {
 export async function relaunchAfterOrgChange() {
   const viewer = document.getElementById("viewer");
   if (viewer && !viewer.hidden) {
+    viewer.hidden = true;
+    shell.hidden = false;
+    await openDefaultScreen();
+    return;
+  }
+
+  await go(current);
+}
+
+/**
+ * **Relaunch whatever the app is currently showing, in the newly
+ * chosen language — decision 0413.** Reported live, after decision
+ * 0412 had already fixed the document pop-out's own copy of this same
+ * gap: *"when the language is changed, the main browser window
+ * resets, and redirects to the Dashboard, which I believe is the
+ * default window, rather than keeping focus on the invoice task that
+ * is currently on the screen."*
+ *
+ * **The one real difference from `relaunchAfterOrgChange()` above.**
+ * That function falls back to the default screen when the viewer has
+ * focus, because the operator said directly that an org-specific
+ * invoice "would be specific to the org the user is navigating away
+ * from." A language has no such relationship to the document on
+ * screen — the same invoice, read in a different language, is still
+ * the same invoice — so this reopens it instead of dropping it.
+ *
+ * **`viewer.js`'s own `currentTask()`, not a task rebuilt from
+ * scratch.** `openViewer(task, onClose)` needs the same shape of
+ * `task` object `openTaskById()` already gets from a list row click —
+ * `subject.id`, `stageId`, `ownership`, and the rest `subhead()` and
+ * the action buttons read. Re-deriving that from just an invoice id
+ * would mean a second, separate fetch this file has no reason to make
+ * when viewer.js is already holding the exact object that opened it.
+ *
+ * **A fresh `loadStrings()` first**, unlike `relaunchAfterOrgChange()`
+ * above, which never needed one — an org change does not change which
+ * words are on screen, only which rows come back. `t()` reads
+ * `strings.js`'s own module-level state directly, so every `render()`
+ * call this triggers — the reopened viewer's own `frame()`/`topbar()`
+ * included — already sees the new language the moment this resolves.
+ */
+export async function relaunchAfterLanguageChange() {
+  await loadStrings();
+
+  const viewer = document.getElementById("viewer");
+  if (viewer && !viewer.hidden) {
+    const { openViewer, currentTask } = await import("/viewer.js");
+    const task = currentTask();
+    if (task) {
+      await openViewer(task, async () => {
+        viewer.hidden = true;
+        shell.hidden = false;
+        await go(current);
+      });
+      return;
+    }
+    // No task retained to reopen — the same fallback
+    // relaunchAfterOrgChange() uses, rather than leaving a stale
+    // screen showing in the language it was already in.
     viewer.hidden = true;
     shell.hidden = false;
     await openDefaultScreen();

@@ -1439,6 +1439,20 @@ function subhead(task) {
   ]);
 }
 
+/**
+ * The exact `task` object the viewer is currently open on, or `null`
+ * if it never opened one — decision 0413.
+ *
+ * **For `tasks.js`'s own `relaunchAfterLanguageChange()`.** Re-opening
+ * the viewer in a newly chosen language needs to call `openViewer()`
+ * again with the same task, and this module is already the one place
+ * holding it — set below, the same line `openViewer()` itself has
+ * always kept it at.
+ */
+export function currentTask() {
+  return current;
+}
+
 export async function openViewer(task, onClose) {
   docPanelTab = "doc";
 

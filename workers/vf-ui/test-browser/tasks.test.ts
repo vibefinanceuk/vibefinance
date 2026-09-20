@@ -126,6 +126,19 @@ async function openList(tasks: unknown[]) {
      */
     "/api/invoices/inv-1/document-url": { url: null },
     "/api/invoices/inv-1/progress": { inProcess: false, stages: [] },
+    /**
+     * **`APPROVAL_TASK`'s own subject, decision 0413** — its
+     * `subject.id` is `inv-9`, and `relaunchAfterLanguageChange()`'s
+     * own tests open it a second time (the reopen itself), so the
+     * fire-and-forget tab/page fetches `openViewer()` makes need a
+     * real stub here rather than surfacing as an unhandled rejection
+     * blamed on whichever later test happened to be running when the
+     * promise finally settled.
+     */
+    "/api/invoices/inv-9/document-url": { url: null },
+    "/api/invoices/inv-9/progress": { inProcess: false, stages: [] },
+    "/api/invoices/inv-9/pages": { pages: [] },
+    "/api/documents/inv-9/activity": { items: [] },
     "/api/suppliers": { suppliers: [], lastLoad: null, fedByLoad: false },
     "/api/org/units": { units: [] },
     // **A screen this test now visits** (decision 0244): the navigation
@@ -870,6 +883,73 @@ describe("the language toggle, between Night/Day and Sign out (decision 0302)", 
     await loadStrings();
 
     expect(requested).toContain("de");
+  });
+
+  /**
+   * **Relaunching the current screen, decision 0413.** Reported live,
+   * after decision 0362 had already fixed the identical gap for the
+   * org switcher: *"when the language is changed, the main browser
+   * window resets, and redirects to the Dashboard, which I believe is
+   * the default window, rather than keeping focus on the invoice task
+   * that is currently on the screen."*
+   */
+  describe("relaunches whatever screen is current, rather than always landing on the default", () => {
+    function clickLanguageButton() {
+      const button = rightButtons().find((b) => b.getAttribute("title") === "English") as HTMLButtonElement;
+      button.click();
+    }
+
+    it("re-fetches the same screen the person was already on, in the newly-chosen language", async () => {
+      await openList([APPROVAL_TASK]);
+
+      const documentsLink = [...document.querySelectorAll(".navitem")].find((a) =>
+        a.textContent?.includes("Documents")
+      ) as HTMLElement;
+      documentsLink.click();
+      await new Promise((r) => setTimeout(r, 0));
+
+      clickLanguageButton();
+      await new Promise((r) => setTimeout(r, 0));
+
+      // Still on Documents, not bounced to the default screen.
+      expect(document.querySelector(".nav a.on")?.textContent).toBe("Documents");
+
+      const calls = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls.map((c) => String(c[0]));
+      const requestedLocales = calls
+        .filter((u) => u.startsWith("/api/ui-strings"))
+        .map((u) => new URL(u, "http://x").searchParams.get("locale"));
+      expect(requestedLocales).toContain("de");
+    });
+
+    /**
+     * **The one real difference from the org switcher's own
+     * relaunch.** `relaunchAfterOrgChange()` falls back to the default
+     * screen when a task has focus, because that invoice "would be
+     * specific to the org the user is navigating away from" — the
+     * operator's own reasoning for that one, decision 0362. A language
+     * has no such relationship to the document on screen, so this
+     * reopens it instead of dropping it.
+     */
+    it("reopens the same task, rather than falling back to the default screen", async () => {
+      await openList([APPROVAL_TASK]);
+      const row = document.querySelector("tbody tr") as HTMLElement;
+      row.click();
+      await new Promise((r) => setTimeout(r, 0));
+      expect(document.getElementById("viewer")?.hidden).toBe(false);
+
+      clickLanguageButton();
+      await new Promise((r) => setTimeout(r, 0));
+
+      expect(document.getElementById("viewer")?.hidden).toBe(false);
+      expect(document.getElementById("shell")?.hidden).toBe(true);
+      expect(document.querySelector(".doctabs")).not.toBeNull();
+
+      const calls = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls.map((c) => String(c[0]));
+      const requestedLocales = calls
+        .filter((u) => u.startsWith("/api/ui-strings"))
+        .map((u) => new URL(u, "http://x").searchParams.get("locale"));
+      expect(requestedLocales).toContain("de");
+    });
   });
 });
 

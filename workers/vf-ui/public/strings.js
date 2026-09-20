@@ -146,15 +146,25 @@ export function watchLocaleChanges() {
  * there is for day and night, and the operator's own suggestion was
  * the code itself.
  *
- * **A full reload, not a re-render in place.** Decision 0126 built no
- * router and no in-memory way to re-open whichever screen is
- * currently showing from outside itself — the same reason Sign Out
- * (decision 0283) reloads rather than re-renders. Every screen's own
- * `render()` calls `t()` throughout, and a fresh `loadStrings()` on
- * load is the one place already guaranteed to run before any of them
- * do.
+ * **`onChosen`, decision 0413 — no longer a reload.** Decision 0126's
+ * own reasoning for reloading — no router, no in-memory way to re-open
+ * whichever screen is currently showing from outside itself — stopped
+ * holding the moment decision 0362 built `go()` for exactly that, and
+ * used it to relaunch the current screen after an org change instead
+ * of reloading the whole page. Reported live, once that fix was in
+ * place for org but not language: *"when the language is changed, the
+ * main browser window resets, and redirects to the Dashboard... rather
+ * than keeping focus on the invoice task that is currently on the
+ * screen."* `tasks.js` passes `relaunchAfterLanguageChange`, the same
+ * `onChosen` shape `orgPicker` already takes (decision 0362) —
+ * `strings.js` describes the control, never the app around it, and
+ * does not need to know that name or that it exists to remain
+ * correct. A fresh `loadStrings()` still has to run before any of
+ * that relaunching starts, since every screen's own `render()` calls
+ * `t()` throughout — `relaunchAfterLanguageChange` is the one that
+ * awaits it first, not this button.
  */
-export function languagePicker() {
+export function languagePicker(onChosen) {
   const button = document.createElement("button");
   button.className = "actionlink";
 
@@ -169,7 +179,7 @@ export function languagePicker() {
     button.replaceChildren(badge, label);
   }
 
-  button.onclick = () => {
+  button.onclick = async () => {
     const current = storedLocale() ?? locale;
     const next = LANGUAGES.find((l) => l.code !== current)?.code ?? "en";
     try {
@@ -178,7 +188,7 @@ export function languagePicker() {
       // The screen is right for this session either way, since
       // loadStrings() falls back to the browser's own language.
     }
-    location.reload();
+    await onChosen?.();
   };
 
   render(storedLocale() ?? locale);

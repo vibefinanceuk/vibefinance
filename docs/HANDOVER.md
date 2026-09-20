@@ -2,7 +2,7 @@
 
 **Written 4 September 2026, updated 17 September (six times), updated
 18 September (four times), updated 19 September (thirty-two times),
-updated 20 September (three times).**
+updated 20 September (four times).**
 
 **For a session starting cold.** Where things stand, what needs a
 decision rather than work, what to do next, and the habits this project
@@ -31,19 +31,47 @@ twice.
 
 | | |
 | --- | --- |
-| `origin/main` | `eb0e624` |
+| `origin/main` | `bdebfa4` |
 | vf-admin deployed | `8e27a34` · `https://admin.vibefinance-ai.com` · behind Cloudflare Access |
 | vf-app deployed | `266218e` (operator's report — API sits behind auth, not independently checkable from here) |
 | vf-licence deployed | `04072df` (operator's own `wrangler deploy` output, version `39c2f745…`) |
-| vf-ui deployed | `266218e` · `https://app.vibefinance-ai.com` — operator confirmed deployed |
+| vf-ui deployed | `bdebfa4` · `https://app.vibefinance-ai.com` — operator confirmed deployed |
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
 | `vf-app-poc` migrations | through `0070` |
 | `vf-licence-poc` migrations | through `0125` applied, all confirmed live — checksums `9e4d534bcef6…` (`0122`), `79ff9f930fdb…` (`0123`), `408f61e5b11a…` (`0124`); `0125` applied by the operator (no checksum reported this time), confirmed live via `/api/ui-strings` returning all six new title values — run via `apply_migrations.py --remote --migrations-dir workers/vf-licence/migrations --database vf-licence-poc` |
-| Tests | vf-admin 9 · vf-app 1970 · vf-licence 320 · vf-ui 74 Worker + 728 browser · shared 287 (+3 known pre-existing failures) |
-| Decision records | 412 |
+| Tests | vf-admin 9 · vf-app 1970 · vf-licence 320 · vf-ui 74 Worker + 730 browser · shared 287 (+3 known pre-existing failures) |
+| Decision records | 413 |
 
-**Decision 0412 (the window with no button of its own) is built, not
-yet committed** — awaiting sign-off. Reported live, verbatim: *"Are you
+**Decision 0413 (a language has no relationship to the org) is built,
+not yet committed** — awaiting sign-off. Reported live, right after
+0412 shipped: *"when the language is changed, the main browser window
+resets, and redirects to the Dashboard... rather than keeping focus on
+the invoice task that is currently on the screen. Is there a way to
+keep the current session window, and update the language rather than
+redirecting?"* Self-diagnosed correctly as predating 0412:
+`languagePicker()` has reloaded the whole page since decision 0302,
+and a reload always lands on the default screen regardless of what was
+open. Fixed with exactly decision 0362's own precedent — the org
+switcher used to reload for the identical reason and was fixed by
+relaunching via `go()` instead. `languagePicker()` now takes an
+`onChosen` callback, the same shape `orgPicker` already has;
+`relaunchAfterLanguageChange()` (`tasks.js`) refreshes strings, then
+either relaunches the current screen or reopens the exact task that
+was open — the one real difference from `relaunchAfterOrgChange()`,
+which falls back to the default screen instead, because an org-scoped
+invoice genuinely does not survive an org switch the way it survives a
+language change. `viewer.js` gains `currentTask()` so the reopen has
+the task object to work with. Two new tests, fail-first verified;
+along the way, closed a real gap in `openList()`'s own shared test
+stub table that was surfacing as unhandled-rejection noise. Full vf-ui
+suite 74 Worker + 730 browser, known pre-existing error count *down*
+(160, was 162) as a side effect of closing that gap. Full detail in
+`docs/decisions/0413-a-language-has-no-relationship-to-the-org.md`.
+
+**Decision 0412 (the window with no button of its own) is pushed and
+deployed** — `origin/main` is `bdebfa4`, confirmed by direct `git
+fetch`; the operator confirmed both `vf-app` and `vf-ui` deployed.
+Reported live, verbatim: *"Are you
 able to configure the system, so that when a different skin (such as
 Day or Night), or a different language (such as English or German) is
 selected in the main browser, that your selection is pushed to the
