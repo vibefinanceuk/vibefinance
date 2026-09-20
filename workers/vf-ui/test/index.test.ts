@@ -369,6 +369,16 @@ describe("the proxy carries every path a screen calls (decision 0131)", () => {
     // this line: the nav item, the click handler, and the fetch all
     // worked, and this proxy still answered 404 before `vf-app` saw it.
     ["GET", "/api/workload/throughput"],
+    /**
+     * The Supplier Performance screen's own chart — decision 0416.
+     * Already carried by the wildcard `/^\/suppliers\/[^/]+$/` a few
+     * lines above `PROXIED_TO_INSTANCE`'s "spend" entry would go —
+     * confirmed here explicitly rather than assumed, the same
+     * discipline this whole block exists to enforce: a path a screen
+     * calls is proven reachable by a real fetch, never inferred from
+     * which pattern happens to match it.
+     */
+    ["GET", "/api/suppliers/spend"],
   ];
 
   it("carries all of them", async () => {

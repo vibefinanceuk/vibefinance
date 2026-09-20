@@ -1599,6 +1599,22 @@
   .chartdot { width: 9px; height: 9px; border-radius: 999px; flex: 0 0 auto; }
 
   /*
+    One currency's own ranked list, labelled — decision 0416. Shown
+    only when a supplier's spend is genuinely split across more than
+    one currency (`supplier-performance.js`'s own `currencySection`);
+    the ordinary single-currency case renders `barList` directly with
+    no wrapper or label at all.
+  */
+  .spendcurrency { margin-top: 14px; }
+  .spendcurrency:first-of-type { margin-top: 0; }
+  .spendcurrency > .muted {
+    font-size: var(--text-sm);
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    margin-bottom: 6px;
+  }
+
+  /*
     **The worklist scrolls rather than growing** — decision 0250.
 
     Twenty-five rows is a card taller than the screen, and everything

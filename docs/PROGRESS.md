@@ -277,6 +277,42 @@ a rule, and left an approval task in a queue.
   caught along the way (a legend label built from SQL row order rather
   than process sequence).
 
+### The Supplier Performance screen — spend by supplier, the second real slice of the Management Dashboard design (0416)
+- **A second screen, `AP.Supplier` reused rather than a new
+  permission.** The design's own choice: scoped exactly the way the
+  existing Suppliers screen already is (`unitsWherePermitted`
+  intersected on the supplier's own org unit, decision 0358) — a real,
+  gated route (`workers/vf-app/src/supplier-performance-route.ts`,
+  `GET /suppliers/spend`) and a real screen
+  (`workers/vf-ui/public/supplier-performance.js`).
+- **One metric of seven.** "Spend by supplier, with a top-N ranking" —
+  the design's own second bullet under this screen's key metrics —
+  because `invoice_headers.total_with_vat` and `suppliers.org_unit_id`
+  already exist and needed no new plumbing. The other six (cycle time,
+  exception rate, PO variance, payment terms, early-payment capture,
+  hold history) stay unbuilt — see "Not built."
+- **Never summed across currencies.** Real invoices here are genuinely
+  multi-currency (GBP, EUR and USD all appear in this project's own
+  test fixtures) and nothing in this codebase converts between them —
+  every existing screen that shows a monetary figure pairs it with its
+  own currency and never adds two together. Asked directly rather than
+  assumed: spend is grouped by `(supplier, currency)`, and the route
+  hands back one ranked top-N list per currency actually present
+  rather than one blended total nobody could trust. A customer whose
+  suppliers all invoice in one currency — the common case — sees
+  exactly the single simple list the design asked for; a genuinely
+  multi-currency customer sees one list per currency instead.
+- **`charts.js`'s `barList` gains an optional `display` field** — the
+  figure shown beside a label when the raw value a caller sorts and
+  sizes bars by (a plain number) is not what a reader should see
+  (money, formatted). Additive: no existing caller passes it, so every
+  row it already drew is unchanged.
+- **The proxy allow-list lesson from decision 0415 held.** `/suppliers/spend`
+  needed no new entry in `vf-ui`'s `PROXIED_TO_INSTANCE` — it already
+  matches the existing `/^\/suppliers\/[^/]+$/` wildcard — confirmed
+  directly with a regression test in `test/index.test.ts`'s own
+  decision-0131 block rather than assumed from the pattern alone.
+
 ### Purchase orders and matching
 - Purchase order storage grounded in Peppol BIS Order Only 3.3, via UBL
   XML ingestion (0081) and CSV load (0370) — the same tables, the same
@@ -1180,15 +1216,23 @@ value lands in which field — *"use the transport reference as the
 invoice number"* (0058). The machinery exists; what is missing is the
 vocabulary's EN 16931 reference fields and supplier groups.
 
-**Four of the Management Dashboard's five designed screens.** Decision
-0415 built the one vertical slice — the Workload screen's own
-"Throughput by user, stacked by stage" — for real. Supplier
-Performance, Fraud & Risk Detection, Liabilities & Accruals, and
+**Three of the Management Dashboard's five designed screens, and six
+of Supplier Performance's own seven key metrics.** Decisions 0415 and
+0416 built two vertical slices for real — Workload's "Throughput by
+user, stacked by stage," and Supplier Performance's "Spend by
+supplier." Fraud & Risk Detection, Liabilities & Accruals, and
 Multi-Enterprise CFO View remain a Claude Docs design document and
 Design-canvas mock-ups only, not routes or UI in this repo. The CFO
 view in particular needs a real multi-org scoping concept that does
-not exist yet; the other three need their own routes and their own
-scoping decisions worked out, the way 0415 worked out Workload's.
+not exist yet; the other two need their own routes and their own
+scoping decisions worked out, the way 0415 and 0416 worked out theirs.
+**Supplier Performance's own other six metrics** — active supplier
+count by status, average cycle time, exception rate, PO-variance
+ranking, payment terms held vs. negotiated, early-payment capture
+rate, and hold history — stay unbuilt on the one screen that does now
+partly exist; none of them share spend's own currency question, and
+each would need its own look at what it actually means before it gets
+a route.
 
 **Line-level extraction.** Extracted from images since 0044's addendum;
 still absent from the UBL parser's allowance and charge groups.
@@ -1341,13 +1385,13 @@ elsewhere.
 
 | Package | Tests |
 |---|---|
-| `vf-app` | 1984 |
+| `vf-app` | 1998 |
 | `vf-licence` | 320 |
-| `vf-ui` | 74 Worker · 739 browser |
+| `vf-ui` | 74 Worker · 747 browser |
 | `shared` | 287 passing, 3 known pre-existing failures |
 
 Both migration chains replay clean with every standing invariant
-holding — 70 migrations for `vf-app`, 127 for `vf-licence`.
+holding — 70 migrations for `vf-app`, 128 for `vf-licence`.
 
 **`vf-app`'s count was recorded as 1851 through decision 0379**; a clean
 run at `46c1da2`, with no `vf-app` change since decision 0378 recorded

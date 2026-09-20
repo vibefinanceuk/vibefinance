@@ -428,6 +428,13 @@ Object.assign(ICONS, {
   suppliers:
     '<path d="M4 21V5a1 1 0 0 1 1-1h8a1 1 0 0 1 1 1v16"/><path d="M14 21v-9a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v9"/><path d="M4 21h16"/><path d="M7 7h2M7 11h2M7 15h2M11 7h1M11 11h1M11 15h1"/>',
 
+  // Three ascending bars and a baseline — a ranking, not a total
+  // (`dashboard`'s own four uneven tiles already mean "everything at
+  // once"; this means "who is highest"). Decision 0416, the Supplier
+  // Performance screen's own icon, distinct from `suppliers`' building.
+  supplierperformance:
+    '<path d="M4 20h16"/><rect x="5" y="14" width="3" height="6" rx="0.6"/><rect x="10.5" y="10" width="3" height="10" rx="0.6"/><rect x="16" y="6" width="3" height="14" rx="0.6"/>',
+
   // A branch, not the lines-and-brackets `compile` already draws for
   // the act of writing one. This is what a rule *is* once it exists:
   // one condition, two ways an invoice can go from it.

@@ -7,6 +7,7 @@ import {
   handleResetDashboard,
 } from "./dashboard-route.js";
 import { handleWorkloadThroughput } from "./workload-route.js";
+import { handleSupplierSpend } from "./supplier-performance-route.js";
 import { evaluateRuleSet, validateRule } from "@vibefinance/shared";
 import type { CompiledRuleSet, InvoiceFacts } from "@vibefinance/shared";
 import { COMPILER_MODEL_ID, createWorkersAiCompilerModel } from "./compiler-model.js";
@@ -1039,6 +1040,27 @@ export default {
       }
 
       const result = await handleGetSupplierStatusCounts(db, url.searchParams.get("org"), auth.user.id);
+      return json(result.body, result.status);
+    }
+
+    /**
+     * **Spend by supplier, ranked — decision 0416.** The first
+     * vertical slice of the Supplier Performance screen, placed beside
+     * `/suppliers/status-counts` and before the plain `/suppliers` GET
+     * below, the same "the more specific path first" discipline that
+     * route ordering already follows throughout this file. Gated on
+     * `AP.Supplier`, not a new permission — the design's own choice,
+     * scoped the same way the Suppliers list already is.
+     */
+    if (pathname === "/suppliers/spend" && request.method === "GET") {
+      const { db } = resolveTenant(request, env);
+      const auth = await authenticatePerson(db, request, env);
+      if (!auth.user) return json({ error: auth.reason }, 401);
+      if (!(await hasPermission(db, auth.user.id, "AP.Supplier"))) {
+        return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
+      }
+
+      const result = await handleSupplierSpend(db, url.searchParams.get("org"), auth.user.id);
       return json(result.body, result.status);
     }
 

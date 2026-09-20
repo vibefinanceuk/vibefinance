@@ -32,6 +32,7 @@ const STRINGS = {
     "nav.purchaseorders": "Purchase Orders",
     "nav.dashboard": "Dashboard",
     "nav.suppliers": "Suppliers",
+    "nav.supplierperformance": "Performance",
     "nav.rules": "Rules",
     "nav.documents": "Documents",
     "nav.roles": "Roles",
@@ -378,6 +379,10 @@ describe("the flat nav, permission-filtered (decisions 0274 and 0276)", () => {
       "Tasks",
       "Documents",
       "Suppliers",
+      // The Supplier Performance screen — decision 0416, same
+      // permission as Suppliers (`AP.Supplier`), so it appears
+      // whenever Suppliers does.
+      "Performance",
       "Access",
       "Sources",
       "Purchase Orders",
@@ -417,7 +422,7 @@ describe("the flat nav, permission-filtered (decisions 0274 and 0276)", () => {
     await openList([APPROVAL_TASK]);
 
     const items = [...document.querySelectorAll(".navitem")];
-    expect(items).toHaveLength(9);
+    expect(items).toHaveLength(10);
     for (const item of items) {
       expect(item.querySelector("svg")).not.toBeNull();
     }
@@ -623,7 +628,17 @@ describe("the flat nav, permission-filtered (decisions 0274 and 0276)", () => {
 
     const labels = [...document.querySelectorAll(".navitem")].map((a) => a.textContent);
     expect(labels).not.toContain("Rules");
-    expect(labels).toEqual(["Dashboard", "Tasks", "Documents", "Suppliers", "Access", "Sources", "Purchase Orders", "Processes"]);
+    expect(labels).toEqual([
+      "Dashboard",
+      "Tasks",
+      "Documents",
+      "Suppliers",
+      "Performance",
+      "Access",
+      "Sources",
+      "Purchase Orders",
+      "Processes",
+    ]);
   });
 
   it("shows nothing but the logo for a person with none of the six permissions", async () => {
@@ -655,7 +670,6 @@ describe("the flat nav, permission-filtered (decisions 0274 and 0276)", () => {
     const cases: [string, string][] = [
       ["AP.Dashboard", "Dashboard"],
       ["AP.TaskView", "Tasks"],
-      ["AP.Supplier", "Suppliers"],
       ["Admin.RuleManagement", "Rules"],
       ["AP.Review", "Documents"],
     ];
@@ -689,6 +703,25 @@ describe("the flat nav, permission-filtered (decisions 0274 and 0276)", () => {
     await start();
     const labels = [...document.querySelectorAll(".navitem")].map((a) => a.textContent);
     expect(labels, "permission Admin.Configure").toEqual(["Access", "Sources", "Purchase Orders", "Processes"]);
+
+    /**
+     * **`AP.Supplier` unlocks two items together, decision 0416** —
+     * Supplier Performance shares the Suppliers screen's own
+     * permission, the design's own choice, so it is pulled out here
+     * the same way `Admin.Configure` already was rather than forced
+     * into the loop's one-permission-one-label shape.
+     */
+    stubFetch({
+      "/api/ui-strings": STRINGS,
+      "/api/whoami": { id: "u-dan", name: "Dan", permissions: ["AP.Supplier"] },
+      "/api/tasks": { tasks: [], counts: {} },
+    });
+    const { loadStrings: loadStrings2 } = await import("/strings.js");
+    await loadStrings2();
+    const { start: start2 } = await import("/tasks.js");
+    await start2();
+    const supplierLabels = [...document.querySelectorAll(".navitem")].map((a) => a.textContent);
+    expect(supplierLabels, "permission AP.Supplier").toEqual(["Suppliers", "Performance"]);
   });
 
   it("unlocks Access for a delegated administrator too, decision 0321", async () => {

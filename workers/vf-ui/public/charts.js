@@ -341,7 +341,18 @@ export function barList(rows, { colour = "var(--chart-1)", onSelect = null } = {
 
     const note = document.createElement("span");
     note.className = "muted";
-    note.textContent = row.note ? `${row.value} · ${row.note}` : String(row.value);
+    /**
+     * **`display`, decision 0416** — the figure shown beside the label,
+     * when the raw `value` a caller sorts and sizes bars by is not
+     * what a reader should see. Supplier spend sorts and sizes on a
+     * plain number but reads as money (`"£12,400.00"`), which
+     * `String(row.value)` alone can never produce. Still joins with
+     * `note` exactly like the plain number did (`"£12,400.00 · 8
+     * invoices"`). Optional and additive: a caller that never passes
+     * it keeps the exact text every existing row already shows.
+     */
+    const primary = row.display ?? String(row.value);
+    note.textContent = row.note ? `${primary} · ${row.note}` : primary;
 
     head.append(name, note);
 

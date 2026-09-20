@@ -31,6 +31,7 @@ const STRINGS = {
     "nav.purchaseorders": "Purchase Orders",
     "nav.dashboard": "Dashboard",
     "nav.suppliers": "Suppliers",
+    "nav.supplierperformance": "Performance",
     "nav.rules": "Rules",
     "rules.subtitle": "What should happen to an invoice, in your words",
     "rules.process": "Process",
@@ -317,6 +318,9 @@ describe("the navigation", () => {
       "Tasks",
       "Documents",
       "Suppliers",
+      // Supplier Performance — decision 0416, same permission as
+      // Suppliers (`AP.Supplier`).
+      "Performance",
       "Access",
       "Sources",
       "Purchase Orders",

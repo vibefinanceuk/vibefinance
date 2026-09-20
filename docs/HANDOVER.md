@@ -2,7 +2,7 @@
 
 **Written 4 September 2026, updated 17 September (six times), updated
 18 September (four times), updated 19 September (thirty-two times),
-updated 20 September (ten times).**
+updated 20 September (eleven times).**
 
 **For a session starting cold.** Where things stand, what needs a
 decision rather than work, what to do next, and the habits this project
@@ -31,16 +31,73 @@ twice.
 
 | | |
 | --- | --- |
-| `origin/main` | `f680c78` (operator's report of pulling and pushing bundle 0613; this session cannot fetch to confirm — no push access) |
+| `origin/main` | `5195b84` — fetched directly by this session, confirmed matching local `main` exactly |
 | vf-admin deployed | `8e27a34` · `https://admin.vibefinance-ai.com` · behind Cloudflare Access |
-| vf-app deployed | `26f8c86` (operator's report — API sits behind auth, not independently checkable from here; unchanged since 0415's own proxy-allow-list fix touched only `vf-ui`) |
-| vf-licence deployed | `26f8c86` (operator's own `wrangler deploy` output; live `/api/ui-strings` confirmed serving decision 0415's own new keys, so the redeploy genuinely landed) |
-| vf-ui deployed | `f680c78` · `https://app.vibefinance-ai.com` — confirmed by the operator's own screenshot of the live Workload screen rendering real data (Alice McDonald, 2 completed, coloured bucket and matching legend dot), the strongest confirmation yet: the whole path working, not just served code |
+| vf-app deployed | `26f8c86` (operator's report — API sits behind auth, not independently checkable from here; unchanged since decision 0415's own proxy-allow-list fix touched only `vf-ui`, and decision 0416 below does not touch `vf-app` deployment status yet either) |
+| vf-licence deployed | `26f8c86` (operator's own `wrangler deploy` output; live `/api/ui-strings` confirmed serving decision 0415's own new keys, so the redeploy genuinely landed; migration `0128` below is committed but not yet applied) |
+| vf-ui deployed | `5195b84` · `https://app.vibefinance-ai.com` — confirmed by the operator's own screenshot of the live Workload screen rendering real data, the strongest confirmation yet: the whole path working, not just served code |
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
 | `vf-app-poc` migrations | through `0070` |
-| `vf-licence-poc` migrations | through `0127` applied — `0125` confirmed live via `/api/ui-strings` returning all six new title values (checksums `9e4d534bcef6…` (`0122`), `79ff9f930fdb…` (`0123`), `408f61e5b11a…` (`0124`)); `0126` and `0127` applied together in the operator's own `apply_migrations.py --remote` run (no checksums reported), `0127` confirmed live the same way — `/api/ui-strings?locale=en` returning `nav.workload`, `workload.heading`, `workload.sub`, `workload.throughput`, `workload.throughputsub`, `workload.nothroughput`; `0126` not independently re-checked but applied in the same run and nothing since has reported it missing — run via `apply_migrations.py --remote --migrations-dir workers/vf-licence/migrations --database vf-licence-poc` |
-| Tests | vf-admin 9 · vf-app 1984 · vf-licence 320 · vf-ui 74 Worker + 739 browser · shared 287 (+3 known pre-existing failures) |
-| Decision records | 415 |
+| `vf-licence-poc` migrations | through `0127` applied and confirmed live; `0128` (decision 0416's own supplier-performance strings) committed locally, not yet applied remotely |
+| Tests | vf-admin 9 · vf-app 1998 · vf-licence 320 · vf-ui 74 Worker + 747 browser · shared 287 (+3 known pre-existing failures) |
+| Decision records | 416 |
+
+**Decision 0416 (spend by supplier, never summed across currencies)
+is built and committed locally — not yet pushed or deployed.** Asked
+directly which of the Management Dashboard's four remaining screens to
+build next, the operator chose Supplier Performance over Liabilities &
+Accruals, Fraud & Risk Detection, and the Multi-Enterprise CFO View
+(left for last — it needs a real multi-org scoping concept this
+codebase does not have). The same "one real vertical slice" discipline
+0415 established: one of the design's seven key metrics — "Spend by
+supplier, with a top-N ranking" — because it needed no new permission
+(`AP.Supplier`, already gating the Suppliers screen) and no new scoping
+concept. **A real conflict surfaced along the way, not decided
+silently**: real invoices here are genuinely multi-currency (GBP, EUR
+and USD all in this project's own test fixtures) and nothing in this
+codebase converts between currencies, so summing a supplier's spend
+blindly would produce a number with no honest meaning the moment that
+supplier is billed in more than one currency. Asked directly, the
+operator chose to group spend by `(supplier, currency)` and rank each
+currency separately, rather than switch the metric to invoice count or
+ship the blended sum with the gap merely noted. New route (`GET
+/suppliers/spend`, `workers/vf-app/src/supplier-performance-route.ts`,
+gated on `AP.Supplier`, scoped exactly the way the Suppliers list
+already is), new screen (`supplier-performance.js`), `charts.js`'s
+existing `barList` gains an optional `display` field so a row can show
+a formatted money figure while still sorting and sizing by the plain
+number underneath it — additive, no existing caller affected. Nav
+entry, icon, and a new `ui_strings` migration (`0128`, en/de).
+**Learned from decision 0415's own mistake, confirmed rather than
+assumed this time**: before shipping, checked whether `/suppliers/spend`
+needed a new entry in `vf-ui`'s own proxy allow-list — it did not,
+already covered by an existing wildcard pattern — and added a
+regression test proving that reachable by a real fetch rather than
+trusting the pattern match alone. Tests: 14 new in
+`workers/vf-app/test/supplier-spend.test.ts` (permission gate,
+never-summed-across-currencies with the exact £15,600-equivalent
+blended figure asserted absent, scoping, ranking and `limit`), 8 new in
+`workers/vf-ui/test-browser/supplier-performance.test.ts` (including
+one proving a multi-currency supplier never shows one blended figure
+anywhere on the page). **Two pre-existing nav-enumeration tests needed
+real updates, not just a re-run** — `tasks.test.ts` and `rules.test.ts`
+both hard-code the full nav list precisely to catch a screen appearing
+or disappearing, and `AP.Supplier` now unlocks two items together the
+same way `Admin.Configure` already does, so `tasks.test.ts`'s own
+one-permission-one-label loop needed that case pulled out the same
+way. Their own `STRINGS` fixtures were already stale for decision
+0415 (neither ever gained `nav.workload`) — a pre-existing gap this
+decision did not introduce and left alone, adding only
+`nav.supplierperformance` to keep the diff to what 0416 actually
+changed. Full suites: vf-app 1998/1998 (1984 + 14 new), vf-licence
+320/320 (migration-only; full suite and a `--replay-only` of the whole
+128-migration chain both re-run clean), vf-ui 74 Worker + 747 browser
+(739 + 8 new), known pre-existing unhandled-rejection count unchanged
+(160). `eslint .` clean across `vf-app` and `vf-ui`. Full detail in
+`docs/decisions/0416-spend-by-supplier-never-summed-across-currencies.md`.
+**Supplier Performance's own other six metrics, and two of the four
+remaining Management Dashboard screens, stay unbuilt** — see that
+decision's own "What is not built."
 
 **Decision 0415 (`AP.Analysis` reads something at last) is pushed and
 deployed, confirmed directly rather than taken on the report alone.**

@@ -515,6 +515,9 @@ async function go(screen) {
   } else if (screen === "suppliers") {
     const { open } = await import("/suppliers.js");
     await open();
+  } else if (screen === "supplierperformance") {
+    const { open } = await import("/supplier-performance.js");
+    await open();
   } else if (screen === "purchaseorders") {
     const { open } = await import("/purchase-orders.js");
     await open();
@@ -602,6 +605,13 @@ const NAV_PERMISSIONS = {
   tasks: "AP.TaskView",
   sources: "Admin.Configure",
   suppliers: "AP.Supplier",
+  /**
+   * **`AP.Supplier`, decision 0416** — the design's own choice, not a
+   * new permission: scoped exactly the way the Suppliers screen
+   * already is, so anyone who can see a supplier on that list can see
+   * what was spent with them here too.
+   */
+  supplierperformance: "AP.Supplier",
   rules: "Admin.RuleManagement",
   documents: "AP.Review",
   processes: "Admin.Configure",
@@ -681,7 +691,10 @@ export function frame(main) {
     },
     {
       heading: "suppliermanagement",
-      screens: [["suppliers", "suppliers"]],
+      screens: [
+        ["suppliers", "suppliers"],
+        ["supplierperformance", "supplierperformance"],
+      ],
     },
     {
       heading: "configuration",
