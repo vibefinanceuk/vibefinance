@@ -31,19 +31,21 @@ twice.
 
 | | |
 | --- | --- |
-| `origin/main` | `674d79b` |
+| `origin/main` | `5d771aa` |
 | vf-admin deployed | `8e27a34` · `https://admin.vibefinance-ai.com` · behind Cloudflare Access |
 | vf-app deployed | `266218e` (operator's report — API sits behind auth, not independently checkable from here) |
 | vf-licence deployed | `04072df` (operator's own `wrangler deploy` output, version `39c2f745…`) |
-| vf-ui deployed | `674d79b` · `https://app.vibefinance-ai.com` — operator confirmed deployed and tested |
+| vf-ui deployed | `5d771aa` · `https://app.vibefinance-ai.com` — operator confirmed pushed and deployed |
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
 | `vf-app-poc` migrations | through `0070` |
 | `vf-licence-poc` migrations | through `0125` applied, all confirmed live — checksums `9e4d534bcef6…` (`0122`), `79ff9f930fdb…` (`0123`), `408f61e5b11a…` (`0124`); `0125` applied by the operator (no checksum reported this time), confirmed live via `/api/ui-strings` returning all six new title values — run via `apply_migrations.py --remote --migrations-dir workers/vf-licence/migrations --database vf-licence-poc` |
 | Tests | vf-admin 9 · vf-app 1970 · vf-licence 320 · vf-ui 74 Worker + 732 browser · shared 287 (+3 known pre-existing failures) |
 | Decision records | 414 |
 
-**Decision 0414 (claiming does not finish anything) is built, not yet
-pushed.** Reported live: *"When I open a task that it not claimed, the
+**Decision 0414 (claiming does not finish anything) is pushed and
+deployed** — `origin/main` is `5d771aa`, confirmed by direct `git
+fetch`; the operator confirmed vf-ui deployed. Reported live: *"When I
+open a task that it not claimed, the
 fields are locked. There is a claim button in the document viewer.
 Upon selecting Claim, I am redirected to the task list. However it
 would be preferable to open the same viewer in edit mode, now that I
