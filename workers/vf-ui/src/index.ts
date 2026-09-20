@@ -199,6 +199,15 @@ const PROXIED_TO_INSTANCE: RegExp[] = [
   // What a person should do next (decision 0240).
   /^\/dashboard$/,
   /^\/dashboard\/catalogue$/,
+  /**
+   * Team throughput by stage — decision 0415. Added after the fact:
+   * the route shipped in the same commit as this screen's own UI, and
+   * this list was not updated alongside it — the exact gap decisions
+   * 0131 and 0212 already document in this file. The nav item was
+   * real, the click handler ran, the fetch went out — and this proxy
+   * answered `{"error":"not found"}` before `vf-app` ever saw it.
+   */
+  /^\/workload\/throughput$/,
   /^\/suppliers$/,
   /^\/suppliers\/load$/,
   // Finding and choosing a supplier by hand (decision 0222).

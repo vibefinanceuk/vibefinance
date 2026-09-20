@@ -1,18 +1,21 @@
 # 0415 — `AP.Analysis` reads something at last
 
-**Status: built, pushed, and deployed.** This session had no push
-access to `vibefinanceuk/vibefinance` and delivered the commit as
-bundle 0611 for the operator's own pull/push/deploy sequence.
-Confirmed directly rather than taken on the report alone: `origin/main`
-fetched directly reads `26f8c86`, matching this session's own commit;
-`GET /api/ui-strings?locale=en` on the live `vf-licence` deployment
-returns all six new `workload.*`/`nav.workload` values, which only
-reads correctly if migrations `0126`/`0127` and the worker redeploy
-both landed; the live `workload.js` on `vf-ui`, fetched directly, is
-the real code (`stackedBarChart`, `chartLegend`, the
+**Status: built, pushed, and deployed — with one bug found live and
+fixed after that first deploy.** This session had no push access to
+`vibefinanceuk/vibefinance` and delivered the commit as bundle 0611
+for the operator's own pull/push/deploy sequence. Confirmed directly
+rather than taken on the report alone: `origin/main` fetched directly
+reads `26f8c86`, matching this session's own commit; `GET
+/api/ui-strings?locale=en` on the live `vf-licence` deployment returns
+all six new `workload.*`/`nav.workload` values, which only reads
+correctly if migrations `0126`/`0127` and the worker redeploy both
+landed; the live `workload.js` on `vf-ui`, fetched directly, is the
+real code (`stackedBarChart`, `chartLegend`, the
 `/api/workload/throughput` fetch), not a stale build. `vf-app`'s own
-deploy rests on the operator's report, same as every prior decision
-whose API sits behind auth.
+deploy rested on the operator's report at that point, same as every
+prior decision whose API sits behind auth — and that trust turned out
+to be misplaced in the other direction: `vf-app` was never the
+problem. See "A second bug, found live" below.
 
 ---
 
@@ -84,8 +87,8 @@ auth.user.id, "AP.Analysis")` → 403 → the handler → `json(result.body,
 result.status)`.
 
 **The real UI.** `workers/vf-ui/public/workload.js`, new — one card,
-fetched from `/api/workload/throughput` (the generic `/api/*` proxy
-needed no change), rendered with two new exports from `charts.js`:
+fetched from `/api/workload/throughput`, rendered with two new exports
+from `charts.js`:
 
 - `stackedBarChart(rows)` — vertical bars, one per user, stacked by
   bucket. **Colour is passed in per segment, not computed from a
@@ -143,6 +146,63 @@ before building the label, rather than trusting `Set` insertion order.
 Re-run after the fix: passes, along with the other 13 tests in the
 same file that had already passed against the buggy version — this
 one genuinely needed the exact-label assertion to surface at all.
+
+---
+
+## A second bug, found live: `vf-ui`'s own proxy never learned this route
+
+Reported from the screen, after the first deploy was confirmed
+pushed and live: *"I see the Workload menu option as my user, but I
+cannot click it"* — clarified to *"When I click 'Workload,' literally
+nothing happens (page stays as-is)"*, cursor still changing to a
+pointer, so the link itself was real. Redeploying `vf-app` on the
+working theory that it had not picked up the new route changed
+nothing, which disproved that theory outright.
+
+The actual cause: `workers/vf-ui/src/index.ts`'s `/api/*` handler is
+**an explicit allow-list, not a forwarder** (decision 0102) —
+`PROXIED_TO_INSTANCE`, checked by `mayProxy()` before anything is sent
+to `vf-app`. `/workload/throughput` was never added to it. This
+decision's own "What was built" section originally claimed *"the
+generic `/api/*` proxy needed no change"* — that claim was wrong, not
+a simplification; there is no generic proxy, and this decision simply
+never added the one line the allow-list needed. Confirmed directly:
+`vf-ui`'s own proxy returned `{"error":"not found"}` with a 404 before
+the request ever reached `vf-app`, matching the browser console error
+reported (`GET .../api/workload/throughput?org=acme-group 404`)
+exactly, and matching the symptom exactly — `workload.js`'s own
+`load()` treats a non-OK response as a silent failure and returns
+early with nothing rendered, no error surfaced, which is why the
+screen looked like it did nothing at all.
+
+**This is not a new class of bug in this file.** `workers/vf-ui/src/index.ts`
+documents at least seven prior instances of the same gap, by decision
+number, going back to 0212 — a route shipped on `vf-app` and never
+added to this list, found only when a real click or a real `curl`
+came back 404. This decision is an eighth. The allow-list's own doc
+comment names exactly why it stays an allow-list rather than becoming
+a forwarder (a forwarder would have shipped three write routes above
+an admin gate, decision 0097, by exactly this kind of inattention) —
+the cost of that choice is that adding a route and adding it here are
+two separate steps, and nothing ties them together but a habit this
+decision failed to follow.
+
+**Fixed** by adding `/^\/workload\/throughput$/` to
+`PROXIED_TO_INSTANCE`, grouped with the other "what a person should do
+next" entries (`/dashboard`, `/dashboard/catalogue`) rather than left
+wherever it happened to fit. **Regression test**: `test/index.test.ts`'s
+own decision-0131 block — *"the proxy carries every path a screen
+calls"* — exists for exactly this failure mode (its own doc comment:
+*"reported from the screen: the rename button did nothing"*) and
+already asserts, for a hand-maintained list of every path a real
+screen calls, that none of them come back 404. `GET
+/api/workload/throughput` is now on that list. Re-run: 74 `vf-ui`
+Worker tests pass, count unchanged (an entry added to an existing
+test, not a new one) — and the test would have caught this before the
+first deploy had it been added when the route was.
+
+Only `vf-ui` needed redeploying for this fix — the bug never reached
+`vf-app`, and `vf-app`'s own route and tests are unchanged by it.
 
 ---
 

@@ -2,7 +2,7 @@
 
 **Written 4 September 2026, updated 17 September (six times), updated
 18 September (four times), updated 19 September (thirty-two times),
-updated 20 September (eight times).**
+updated 20 September (nine times).**
 
 **For a session starting cold.** Where things stand, what needs a
 decision rather than work, what to do next, and the habits this project
@@ -101,6 +101,38 @@ clean stashed tree). `eslint .` clean across the whole repo. Full
 detail in `docs/decisions/0415-ap-analysis-reads-something-at-last.md`.
 **The other four Management Dashboard screens remain design-only** —
 see that decision's own "What is not built."
+
+**A second bug in decision 0415, found live after that first deploy
+was confirmed, is fixed and committed — not yet pushed or deployed.**
+Reported from the screen: *"I see the Workload menu option as my user,
+but I cannot click it"* — the cursor still changed to a pointer, and
+redeploying `vf-app` on the working theory that it had not picked up
+the new route changed nothing. The real cause was never `vf-app`:
+`workers/vf-ui/src/index.ts`'s `/api/*` handler is an explicit
+allow-list (`PROXIED_TO_INSTANCE`, decision 0102), not a forwarder,
+and `/workload/throughput` was never added to it — `vf-ui`'s own proxy
+answered `{"error":"not found"}`, 404, before the request ever reached
+`vf-app`, and `workload.js`'s own `load()` treats a non-OK response as
+a silent failure, which is why the screen looked like it did nothing
+at all. This decision's own "What was built" section had claimed *"the
+generic `/api/*` proxy needed no change"* — wrong, and now corrected in
+place rather than quietly: there is no generic proxy, and this is the
+eighth time this file's own allow-list has been missed for a route
+that shipped on `vf-app` (it documents seven prior instances by
+decision number, from 0212 on). Fixed by adding
+`/^\/workload\/throughput$/` to `PROXIED_TO_INSTANCE`; regression
+coverage added to `test/index.test.ts`'s own decision-0131 block
+(*"the proxy carries every path a screen calls"*), which exists for
+exactly this failure mode and would have caught this before the first
+deploy had it been added when the route was. `vf-ui` Worker suite:
+74/74, count unchanged (an entry added to an existing test). Browser
+suite unaffected: 739/739, same 160 known pre-existing unhandled
+rejections. `eslint .` clean. Full detail, including why `vf-app`'s
+redeploy could never have fixed this, now lives in
+`docs/decisions/0415-ap-analysis-reads-something-at-last.md`'s own
+new "A second bug, found live" section. **Only `vf-ui` needs
+redeploying for this fix** — `vf-app` and `vf-licence` are untouched
+by it and do not need redeploying again.
 
 **Decision 0414 (claiming does not finish anything) is pushed and
 deployed** — `origin/main` is `5d771aa`, confirmed by direct `git

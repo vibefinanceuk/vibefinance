@@ -365,6 +365,10 @@ describe("the proxy carries every path a screen calls (decision 0131)", () => {
     // decision 0372.
     ["POST", "/api/purchase-orders/csv-load"],
     ["GET", "/api/purchase-orders"],
+    // The Workload screen's own chart — decision 0415. Shipped without
+    // this line: the nav item, the click handler, and the fetch all
+    // worked, and this proxy still answered 404 before `vf-app` saw it.
+    ["GET", "/api/workload/throughput"],
   ];
 
   it("carries all of them", async () => {
