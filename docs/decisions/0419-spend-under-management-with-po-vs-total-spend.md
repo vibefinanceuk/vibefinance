@@ -1,7 +1,9 @@
 # 0419 — Spend under management (with PO) vs. total spend
 
-**Status: built, committed locally — not yet pushed or deployed.**
-This session still has no push access to `vibefinanceuk/vibefinance`;
+**Status: pushed and deployed, confirmed directly.** `origin/main`
+fetched directly reads `28aaf9c`, matching this session's own commit
+exactly; the operator confirmed it: "pushed and deployed." This
+session still has no push access to `vibefinanceuk/vibefinance`;
 delivered as a git bundle for the operator's own pull/push/deploy
 sequence, the same path decisions 0391, 0415, 0416, 0417, 0418, 0562
 and 0566 already used.

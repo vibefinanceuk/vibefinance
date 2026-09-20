@@ -2,7 +2,7 @@
 
 **Written 4 September 2026, updated 17 September (six times), updated
 18 September (four times), updated 19 September (thirty-two times),
-updated 20 September (fifteen times).**
+updated 20 September (sixteen times).**
 
 **For a session starting cold.** Where things stand, what needs a
 decision rather than work, what to do next, and the habits this project
@@ -31,20 +31,22 @@ twice.
 
 | | |
 | --- | --- |
-| `origin/main` | `dcfea73` — fetched directly by this session, confirmed matching local `main` exactly; deployed rows below still describe `ea47035`, the last commit the operator confirmed live |
+| `origin/main` | `28aaf9c` — fetched directly by this session after decision 0419 shipped, confirmed matching local `main` exactly |
 | vf-admin deployed | `8e27a34` · `https://admin.vibefinance-ai.com` · behind Cloudflare Access |
-| vf-app deployed | `ea47035` (operator's own "deployed and pushed - I see the accruals now" report — API sits behind auth, not independently checkable from here) |
-| vf-licence deployed | `ea47035` (operator's own report; migration `0130` below is now applied) |
-| vf-ui deployed | `ea47035` · `https://app.vibefinance-ai.com` — operator's own report: "deployed and pushed - I see the accruals now" |
+| vf-app deployed | `28aaf9c` (operator's own "pushed and deployed" report — API sits behind auth, not independently checkable from here) |
+| vf-licence deployed | `28aaf9c` (operator's own report; migration `0131` below is now applied) |
+| vf-ui deployed | `28aaf9c` · `https://app.vibefinance-ai.com` — operator's own report: "pushed and deployed" |
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
-| `vf-app-poc` migrations | through `0071` applied and confirmed live (decision 0419 below added no new one) |
-| `vf-licence-poc` migrations | through `0130` applied and confirmed live; `0131` (decision 0419's own spend-under-management strings) committed locally, not yet applied remotely |
+| `vf-app-poc` migrations | through `0071` applied and confirmed live (decision 0419 added no new one) |
+| `vf-licence-poc` migrations | through `0131` applied and confirmed live |
 | Tests | vf-admin 9 · vf-app 2032 · vf-licence 320 · vf-ui 74 Worker + 782 browser · shared 287 (+3 known pre-existing failures) |
 | Decision records | 419 |
 
 **Decision 0419 (spend under management, Financial Performance's
-second real metric) is built and committed locally — not yet pushed or
-deployed.** With decision 0418 confirmed live, asked directly which of
+second real metric) is pushed and deployed, confirmed directly.**
+`origin/main` fetched directly reads `28aaf9c`, matching this
+session's own commit exactly; the operator's own report — "pushed and
+deployed" — confirms it. With decision 0418 confirmed live, asked directly which of
 the remaining vertical slices to build next — another Liabilities &
 Accruals metric, Fraud Prevention, Executive IQ, or Supplier
 Performance's own other six metrics — the operator chose "Spend under
