@@ -572,6 +572,66 @@ a rule, and left an approval task in a queue.
 - The proxy allow-list checked directly again: `/fraud/exception-trends`
   matched no existing wildcard either, its own new entry added.
 
+### Statistical outliers and segregation-of-duties flags — Fraud Prevention's fourth and fifth real metrics, built together (0424)
+- **Both built in one request, at the operator's own direction.** Asked
+  "what would be next" after decision 0423 shipped, offered four
+  ranked candidates; the operator's own answer, "Can you tackle 1 and
+  2," chose both statistical outliers and segregation-of-duties flags
+  rather than one at a time — the same bundling precedent decision
+  0421 already set for Supplier Performance's own remaining six
+  metrics.
+- **Statistical outliers — a z-score against a supplier's own history,
+  self-excluded.** `workers/vf-app/src/fraud-statistical-outliers-
+  route.ts` (`GET /fraud/statistical-outliers`) groups each supplier's
+  own priced invoices by `(supplier, currency)` — never mixing
+  currencies or suppliers into one baseline — and computes a candidate
+  invoice's mean and standard deviation from every *other* invoice in
+  its own group, so the candidate can never pull its own baseline
+  toward itself. A named, arguable threshold (`Z_SCORE_THRESHOLD =
+  2.5`) and a named minimum sample size (`MIN_HISTORY = 5`) are stated
+  directly in the route's own doc comment rather than left implicit —
+  fewer than five other same-currency invoices for a supplier means no
+  baseline is trusted, and that invoice is excluded entirely rather
+  than measured against a mean of one or two points, the same
+  "exclude rather than fabricate" discipline decision 0421's own
+  payment-terms route already applied. **A zero-variance history gets
+  an honest `null`, never a fabricated number** — when every historical
+  invoice for a supplier carries the identical amount, a z-score is
+  mathematically undefined; a candidate that still differs from that
+  identical amount is flagged with `zScore: null` (an "undefined
+  magnitude") and sorts first, ahead of any numeric score.
+- **Segregation-of-duties flags — anchored on `AP.Approve`, the
+  design's own named action, paired generically with any other
+  distinct permission.** `workers/vf-app/src/fraud-segregation-of-
+  duties-route.ts` (`GET /fraud/segregation-of-duties`) flags a person
+  whose own `completed_by` covers both a task whose stage declared
+  `required_permission = 'AP.Approve'` and at least one other task on
+  the same invoice whose stage declared a different, non-null
+  permission — reading `process_stages.required_permission` (decision
+  0048's own "a stage declares its own permission"), not a hardcoded
+  stage id, so the rule stays correct for any customer's own process
+  shape. The other side of the pair is deliberately generic rather
+  than naming a second specific permission, so it does not silently
+  stop working the day a process is reshaped; a stage with no declared
+  permission at all (a pass-through stage, decision 0080's own
+  automatic stages) never contributes either half. One flag per
+  invoice, not per pair of tasks — the flagged invoice lists every
+  stage that person completed on it, in the order they completed them,
+  so a reviewer can judge whether it's a real control gap or an
+  explainable one-off.
+- **Both gated `AP.FraudReview`, scoped `h.org_unit_id`** — the same
+  gate and scoping column every other Fraud Prevention route already
+  uses. Both are worklists, not top-N rankings, the same shape
+  `/fraud/duplicates` and `/fraud/unapproved-suppliers` already use.
+- **Fraud Prevention now shows five real cards, not three** —
+  `ap-analytics.js`'s `tabContent()` "fraud" branch extends the same
+  array-of-cards, each-fails-independently shape decisions 0422 and
+  0423 already established, from three cards to five.
+- The proxy allow-list checked directly again, the same discipline
+  every decision in this arc keeps: neither `/fraud/statistical-
+  outliers` nor `/fraud/segregation-of-duties` matched any existing
+  wildcard — both got their own new entry.
+
 ### Purchase orders and matching
 - Purchase order storage grounded in Peppol BIS Order Only 3.3, via UBL
   XML ingestion (0081) and CSV load (0370) — the same tables, the same
@@ -1478,35 +1538,39 @@ vocabulary's EN 16931 reference fields and supplier groups.
 **One of the Management Dashboard's five designed screens, four of
 Liabilities & Accruals' own six key metrics, three of Fraud & Risk
 Detection's own six, and two of Supplier Performance's own eight.**
-Decisions 0415, 0416, 0418, 0419, 0420, 0421, 0422, and 0423 each
-built one or more vertical slices for real — Workload's "Throughput by
-user, stacked by stage," Financial Performance's "Accruals report" and
-"Spend under management (with PO)," Fraud Prevention's "Potential
-duplicate invoices," "Unapproved-supplier invoices," and "Exceptions
-by type, by user, by supplier, trended," and Supplier Performance's
-own "Spend by supplier," active supplier count by status, average
-cycle time, exception rate and type mix, PO variance, and payment
-terms held vs. negotiated. Decision 0417 gave all five design screens
-their own tab inside the new AP Analytics screen;
-only the Multi-Enterprise CFO View (Executive IQ) still has no route
-or real UI behind its own tab — it renders a permission-gated "not
-built yet" placeholder rather than a Claude Docs design document and
-Design-canvas mock-ups being the only place it exists. It needs a real
-multi-org scoping concept that does not exist yet — and is spend under
-management's own *listed primary* screen too, per the design's own
-deliberate cross-referencing (0419), so that metric likely belongs
+Decisions 0415, 0416, 0418, 0419, 0420, 0421, 0422, 0423, and 0424
+each built one or more vertical slices for real — Workload's
+"Throughput by user, stacked by stage," Financial Performance's
+"Accruals report" and "Spend under management (with PO)," Fraud
+Prevention's "Potential duplicate invoices," "Unapproved-supplier
+invoices," "Exceptions by type, by user, by supplier, trended,"
+"Statistical outliers," and "Segregation-of-duties flags," and
+Supplier Performance's own "Spend by supplier," active supplier count
+by status, average cycle time, exception rate and type mix, PO
+variance, and payment terms held vs. negotiated. Decision 0417 gave
+all five design screens their own tab inside the new AP Analytics
+screen; only the Multi-Enterprise CFO View (Executive IQ) still has no
+route or real UI behind its own tab — it renders a permission-gated
+"not built yet" placeholder rather than a Claude Docs design document
+and Design-canvas mock-ups being the only place it exists. It needs a
+real multi-org scoping concept that does not exist yet — and is spend
+under management's own *listed primary* screen too, per the design's
+own deliberate cross-referencing (0419), so that metric likely belongs
 there as well once it exists. **Liabilities & Accruals' own other four
 metrics** — early-payment/discount eligibility, cash-flow forecast,
 payment terms held vs. actual, and DPO — stay unbuilt; three of them
 need payment-execution data (when and on what terms an invoice was
 actually paid) this codebase does not capture anywhere.
-**Fraud & Risk Detection's own other three metrics** — statistical
-outliers, vendor banking-detail-change alerts (the design's own words:
-"not currently captured by VibeFinance... noted as a real gap, not
-assumed solvable"), and segregation-of-duties flags — stay unbuilt on
-the one screen that does now partly exist. Decision 0422 built the
-second of the six, unapproved-supplier invoices; decision 0423 built
-the third, exceptions by type, by user, by supplier, trended.
+**Fraud & Risk Detection has five of its own six metrics built now —
+only vendor banking-detail-change alerts stays unbuilt**, the design's
+own words: "not currently captured by VibeFinance... noted as a real
+gap, not assumed solvable" — no field anywhere in this codebase
+records a supplier's banking details changing, only their current
+value. Decision 0422 built the second of the six, unapproved-supplier
+invoices; decision 0423 built the third, exceptions by type, by user,
+by supplier, trended; decision 0424 built the fourth and sixth
+together, statistical outliers and segregation-of-duties flags, at the
+operator's own request ("Can you tackle 1 and 2").
 
 **Early-payment/discount eligibility, specifically, is parked rather
 than ruled out — it needs more thought, at the operator's own
@@ -1697,13 +1761,13 @@ elsewhere.
 
 | Package | Tests |
 |---|---|
-| `vf-app` | 2151 |
+| `vf-app` | 2184 |
 | `vf-licence` | 320 |
-| `vf-ui` | 74 Worker · 837 browser |
+| `vf-ui` | 74 Worker · 850 browser |
 | `shared` | 287 passing, 3 known pre-existing failures |
 
 Both migration chains replay clean with every standing invariant
-holding — 71 migrations for `vf-app`, 135 for `vf-licence`.
+holding — 71 migrations for `vf-app`, 136 for `vf-licence`.
 
 **`vf-app`'s count was recorded as 1851 through decision 0379**; a clean
 run at `46c1da2`, with no `vf-app` change since decision 0378 recorded

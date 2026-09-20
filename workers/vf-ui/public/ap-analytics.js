@@ -7,6 +7,8 @@ import { load as loadSpendUnderManagement, renderCard as spendUnderManagementCar
 import { load as loadDuplicates, renderCard as duplicatesCard } from "/fraud-duplicates.js";
 import { load as loadUnapprovedSuppliers, renderCard as unapprovedSuppliersCard } from "/fraud-unapproved-suppliers.js";
 import { load as loadExceptionTrends, renderCard as exceptionTrendsCard } from "/fraud-exception-trends.js";
+import { load as loadStatisticalOutliers, renderCard as statisticalOutliersCard } from "/fraud-statistical-outliers.js";
+import { load as loadSegregationOfDuties, renderCard as segregationOfDutiesCard } from "/fraud-segregation-of-duties.js";
 import { load as loadSupplierStatus, renderCard as supplierStatusCard } from "/supplier-status.js";
 import { load as loadSupplierCycleTime, renderCard as supplierCycleTimeCard } from "/supplier-cycle-time.js";
 import { load as loadSupplierExceptions, renderCard as supplierExceptionsCard } from "/supplier-exceptions.js";
@@ -72,14 +74,19 @@ import { load as loadSupplierPaymentTerms, renderCard as supplierPaymentTermsCar
  * hold history (parked, decision 0421 — no history table exists,
  * only current `on_hold` state) stay unbuilt.
  *
- * **Fraud Prevention shows three real cards, not one** — decisions
- * 0422 and 0423, the same "an array of cards, each failing
+ * **Fraud Prevention shows five real cards, not one** — decisions
+ * 0422, 0423 and 0424, the same "an array of cards, each failing
  * independently" shape `financial` and `supplier` already established:
  * potential duplicate invoices (0420), unapproved-supplier invoices —
  * an invoice with no matched supplier, or one whose matched supplier
- * is on hold today (0422) — and exceptions by type, by user, by
- * supplier, trended over eight weeks (0423), `charts.js`'s own
- * `sparkline()` first real caller.
+ * is on hold today (0422) — exceptions by type, by user, by supplier,
+ * trended over eight weeks (0423, `charts.js`'s own `sparkline()`
+ * first real caller), statistical outliers — an invoice amount well
+ * outside a supplier's own historical range (0424) — and
+ * segregation-of-duties flags — the same person claiming and
+ * approving where the process should prevent it (0424). Only vendor
+ * banking-detail-change alerts, the design's own remaining Fraud & Risk
+ * Detection metric, stays unbuilt — a real gap, not assumed solvable.
  *
  * **The permission each tab actually checks matches its own route's
  * own gate, not the design document's own original proposal.**
@@ -169,19 +176,23 @@ async function tabContent(key) {
     ];
   }
   if (key === "fraud") {
-    // Three independent cards, decision 0423's own follow-on to 0420
-    // and 0422 — the same "one screen's own fetch failing never hides
-    // another's real data" discipline `financial` and `supplier`
+    // Five independent cards, decision 0424's own follow-on to 0420,
+    // 0422 and 0423 — the same "one screen's own fetch failing never
+    // hides another's real data" discipline `financial` and `supplier`
     // already established.
-    const [duplicatesOk, unapprovedOk, trendsOk] = await Promise.all([
+    const [duplicatesOk, unapprovedOk, trendsOk, outliersOk, segregationOk] = await Promise.all([
       loadDuplicates(),
       loadUnapprovedSuppliers(),
       loadExceptionTrends(),
+      loadStatisticalOutliers(),
+      loadSegregationOfDuties(),
     ]);
     return [
       duplicatesOk ? duplicatesCard() : loadErrorCard(),
       unapprovedOk ? unapprovedSuppliersCard() : loadErrorCard(),
       trendsOk ? exceptionTrendsCard() : loadErrorCard(),
+      outliersOk ? statisticalOutliersCard() : loadErrorCard(),
+      segregationOk ? segregationOfDutiesCard() : loadErrorCard(),
     ];
   }
   return placeholderCard(tab);

@@ -17,14 +17,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
  * once, `supplier-status.js`, `supplier-performance.js`,
  * `supplier-cycle-time.js`, `supplier-exceptions.js`,
  * `supplier-po-variance.js` and `supplier-payment-terms.js` (decision
- * 0421); Fraud Prevention delegates to three modules at once,
+ * 0421); Fraud Prevention delegates to five modules at once,
  * `fraud-duplicates.js` (decision 0420),
- * `fraud-unapproved-suppliers.js` (decision 0422), and
- * `fraud-exception-trends.js` (decision 0423). Each is already
- * covered by its own test file for chart/table correctness, currency
- * splitting and so on. This file only proves the wiring — that the
- * right module's `load()`/`renderCard()` land behind the right tab —
- * not that module's own content in detail.
+ * `fraud-unapproved-suppliers.js` (decision 0422),
+ * `fraud-exception-trends.js` (decision 0423), and
+ * `fraud-statistical-outliers.js` / `fraud-segregation-of-duties.js`
+ * (decision 0424). Each is already covered by its own test file for
+ * chart/table correctness, currency splitting and so on. This file
+ * only proves the wiring — that the right module's
+ * `load()`/`renderCard()` land behind the right tab — not that
+ * module's own content in detail.
  */
 
 function mountShell() {
@@ -166,6 +168,17 @@ const STRINGS = {
     "fraudprevention.user": "User",
     "fraudprevention.type": "Type",
     "fraudprevention.nosupplier": "No matched supplier",
+    // The Fraud Prevention tab's fourth and fifth real cards — decision 0424.
+    "fraudprevention.statisticaloutliers": "Statistical outliers",
+    "fraudprevention.statisticaloutlierssub": "An amount well outside the supplier's own historical range",
+    "fraudprevention.nostatisticaloutliers": "No statistical outliers right now",
+    "fraudprevention.historicalmean": "Historical average",
+    "fraudprevention.deviation": "Deviation",
+    "fraudprevention.undefinedmagnitude": "Undefined magnitude",
+    "fraudprevention.segregationofduties": "Segregation-of-duties flags",
+    "fraudprevention.segregationofdutiessub": "The same person claiming and approving the same invoice",
+    "fraudprevention.nosegregationofduties": "No segregation-of-duties flags right now",
+    "fraudprevention.stagescompleted": "Stages completed",
   },
 };
 
@@ -198,10 +211,11 @@ function stubFetch(routes: Record<string, unknown>) {
  *
  * `/api/workload/throughput`, `/api/accruals`,
  * `/api/spend/under-management`, `/api/suppliers/spend`,
- * `/api/fraud/duplicates`, `/api/fraud/unapproved-suppliers`, and
- * `/api/fraud/exception-trends` are stubbed empty by default on every
- * call, whether or not the test's own permission set makes any given
- * tab reachable — harmless when unused, and one less thing each
+ * `/api/fraud/duplicates`, `/api/fraud/unapproved-suppliers`,
+ * `/api/fraud/exception-trends`, `/api/fraud/statistical-outliers` and
+ * `/api/fraud/segregation-of-duties` are stubbed empty by default on
+ * every call, whether or not the test's own permission set makes any
+ * given tab reachable — harmless when unused, and one less thing each
  * individual test has to remember.
  */
 async function openApAnalytics(
@@ -225,6 +239,8 @@ async function openApAnalytics(
     "/api/fraud/duplicates": { invoices: [] },
     "/api/fraud/unapproved-suppliers": { invoices: [] },
     "/api/fraud/exception-trends": { weekStartDates: [], bySupplier: [], byUser: [], byType: [] },
+    "/api/fraud/statistical-outliers": { invoices: [] },
+    "/api/fraud/segregation-of-duties": { invoices: [] },
     ...extraRoutes,
   });
   const { loadStrings } = await import("/strings.js");
@@ -409,7 +425,7 @@ describe("real tabs wire to the already-tested module behind them, placeholders 
     expect(document.body.textContent).toContain("Not built yet");
   });
 
-  it("Fraud Prevention renders all three of its own cards, decision 0423 — three real cards, not one", async () => {
+  it("Fraud Prevention renders all five of its own cards, decision 0424 — five real cards, not one", async () => {
     await openApAnalytics(["AP.FraudReview"]);
 
     expect(document.querySelector(".tab.active")?.textContent).toBe("Fraud Prevention");
@@ -418,19 +434,25 @@ describe("real tabs wire to the already-tested module behind them, placeholders 
       "Potential duplicate invoices",
       "Unapproved-supplier invoices",
       "Exceptions by type, by user, by supplier",
+      "Statistical outliers",
+      "Segregation-of-duties flags",
     ]);
     expect(document.body.textContent).toContain("No potential duplicates right now");
     expect(document.body.textContent).toContain("No unapproved-supplier invoices right now");
     expect(document.body.textContent).toContain("No exceptions in the last 8 weeks");
+    expect(document.body.textContent).toContain("No statistical outliers right now");
+    expect(document.body.textContent).toContain("No segregation-of-duties flags right now");
   });
 
-  it("Fraud Prevention's three cards fail independently — one's own load failure never hides the others' real content", async () => {
+  it("Fraud Prevention's five cards fail independently — one's own load failure never hides the others' real content", async () => {
     await openApAnalytics(["AP.FraudReview"], {}, { "/api/fraud/duplicates": { ok: false, status: 500 } });
 
     expect(document.body.textContent).toContain("Could not load this tab right now");
     const headings = [...document.querySelectorAll(".cardhead h3")].map((h) => h.textContent);
     expect(headings).toContain("Unapproved-supplier invoices");
     expect(headings).toContain("Exceptions by type, by user, by supplier");
+    expect(headings).toContain("Statistical outliers");
+    expect(headings).toContain("Segregation-of-duties flags");
     expect(headings).not.toContain("Potential duplicate invoices");
   });
 

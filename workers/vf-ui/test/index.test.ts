@@ -428,6 +428,15 @@ describe("the proxy carries every path a screen calls (decision 0131)", () => {
      * the same recurring gap this whole block keeps finding.
      */
     ["GET", "/api/fraud/exception-trends"],
+    /**
+     * The Fraud Prevention tab's own fourth and fifth real metrics,
+     * statistical outliers and segregation-of-duties flags — decision
+     * 0424. Neither `/fraud/statistical-outliers` nor
+     * `/fraud/segregation-of-duties` matched any existing wildcard
+     * either, the same recurring gap this whole block keeps finding.
+     */
+    ["GET", "/api/fraud/statistical-outliers"],
+    ["GET", "/api/fraud/segregation-of-duties"],
   ];
 
   it("carries all of them", async () => {

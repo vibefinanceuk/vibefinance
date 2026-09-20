@@ -245,6 +245,20 @@ const PROXIED_TO_INSTANCE: RegExp[] = [
    * `/fraud/exception-trends` matches no existing wildcard either.
    */
   /^\/fraud\/exception-trends$/,
+  /**
+   * **Statistical outliers — decision 0424.** Checked directly again,
+   * the same discipline decisions 0418–0423 already established for
+   * this exact recurring gap: `/fraud/statistical-outliers` matches no
+   * existing wildcard either.
+   */
+  /^\/fraud\/statistical-outliers$/,
+  /**
+   * **Segregation-of-duties flags — decision 0424.** Checked directly
+   * again, the same discipline decisions 0418–0423 already established
+   * for this exact recurring gap: `/fraud/segregation-of-duties`
+   * matches no existing wildcard either.
+   */
+  /^\/fraud\/segregation-of-duties$/,
   /^\/suppliers$/,
   /^\/suppliers\/load$/,
   // Finding and choosing a supplier by hand (decision 0222).

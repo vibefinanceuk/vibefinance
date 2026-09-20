@@ -12,6 +12,8 @@ import { handleSpendUnderManagement } from "./spend-under-management-route.js";
 import { handlePossibleDuplicates } from "./fraud-duplicates-route.js";
 import { handleUnapprovedSuppliers } from "./fraud-unapproved-suppliers-route.js";
 import { handleFraudExceptionTrends } from "./fraud-exception-trends-route.js";
+import { handleStatisticalOutliers } from "./fraud-statistical-outliers-route.js";
+import { handleSegregationOfDuties } from "./fraud-segregation-of-duties-route.js";
 import { handleSupplierSpend } from "./supplier-performance-route.js";
 import { handleSupplierCycleTime } from "./supplier-cycle-time-route.js";
 import { handleSupplierExceptions } from "./supplier-exceptions-route.js";
@@ -1325,6 +1327,47 @@ export default {
       }
 
       const result = await handleFraudExceptionTrends(db, url.searchParams.get("org"), auth.user.id);
+      return json(result.body, result.status);
+    }
+
+    /**
+     * **Statistical outliers — decision 0424.** The Fraud Prevention
+     * tab's fourth real metric: an invoice amount well outside a
+     * supplier's own historical range. Same gate, same scoping column
+     * as the three routes above — see
+     * `fraud-statistical-outliers-route.ts` for the z-score, minimum-
+     * history, and zero-variance reasoning.
+     */
+    if (pathname === "/fraud/statistical-outliers" && request.method === "GET") {
+      const { db } = resolveTenant(request, env);
+      const auth = await authenticatePerson(db, request, env);
+      if (!auth.user) return json({ error: auth.reason }, 401);
+      if (!(await hasPermission(db, auth.user.id, "AP.FraudReview"))) {
+        return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
+      }
+
+      const result = await handleStatisticalOutliers(db, url.searchParams.get("org"), auth.user.id);
+      return json(result.body, result.status);
+    }
+
+    /**
+     * **Segregation-of-duties flags — decision 0424.** The Fraud
+     * Prevention tab's fifth real metric: the same person claiming and
+     * approving where the process should prevent it. Same gate, same
+     * scoping column as the routes above — see
+     * `fraud-segregation-of-duties-route.ts` for why the rule is
+     * anchored on `AP.Approve` specifically rather than any two
+     * permissions.
+     */
+    if (pathname === "/fraud/segregation-of-duties" && request.method === "GET") {
+      const { db } = resolveTenant(request, env);
+      const auth = await authenticatePerson(db, request, env);
+      if (!auth.user) return json({ error: auth.reason }, 401);
+      if (!(await hasPermission(db, auth.user.id, "AP.FraudReview"))) {
+        return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
+      }
+
+      const result = await handleSegregationOfDuties(db, url.searchParams.get("org"), auth.user.id);
       return json(result.body, result.status);
     }
 
