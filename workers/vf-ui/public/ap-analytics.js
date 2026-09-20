@@ -5,6 +5,7 @@ import { load as loadSupplierSpend, renderCard as supplierSpendCard } from "/sup
 import { load as loadAccruals, renderCard as accrualsCard } from "/accruals.js";
 import { load as loadSpendUnderManagement, renderCard as spendUnderManagementCard } from "/spend-under-management.js";
 import { load as loadDuplicates, renderCard as duplicatesCard } from "/fraud-duplicates.js";
+import { load as loadUnapprovedSuppliers, renderCard as unapprovedSuppliersCard } from "/fraud-unapproved-suppliers.js";
 import { load as loadSupplierStatus, renderCard as supplierStatusCard } from "/supplier-status.js";
 import { load as loadSupplierCycleTime, renderCard as supplierCycleTimeCard } from "/supplier-cycle-time.js";
 import { load as loadSupplierExceptions, renderCard as supplierExceptionsCard } from "/supplier-exceptions.js";
@@ -41,8 +42,9 @@ import { load as loadSupplierPaymentTerms, renderCard as supplierPaymentTermsCar
  * | Fraud Prevention | Fraud & Risk Detection | `AP.FraudReview` |
  *
  * Operational, Financial, Supplier Performance, and now Fraud
- * Prevention (decision 0420's own potential-duplicate-invoices table)
- * are real, reusing the routes and screens decisions 0415–0420 already
+ * Prevention (decision 0420's own potential-duplicate-invoices table,
+ * joined by decision 0422's own unapproved-supplier-invoices table)
+ * are real, reusing the routes and screens decisions 0415–0422 already
  * built and tested. Only Executive IQ still renders a plain "not built
  * yet" placeholder — still gated on its own real permission, so who
  * can even see the tab exists is correct today, ahead of what is
@@ -67,6 +69,12 @@ import { load as loadSupplierPaymentTerms, renderCard as supplierPaymentTermsCar
  * decision 0420 — no structured discount data exists anywhere) and
  * hold history (parked, decision 0421 — no history table exists,
  * only current `on_hold` state) stay unbuilt.
+ *
+ * **Fraud Prevention shows two real cards, not one** — decision 0422,
+ * the same "an array of cards, each failing independently" shape
+ * `financial` and `supplier` already established: potential duplicate
+ * invoices (0420) and unapproved-supplier invoices — an invoice with
+ * no matched supplier, or one whose matched supplier is on hold today.
  *
  * **The permission each tab actually checks matches its own route's
  * own gate, not the design document's own original proposal.**
@@ -155,7 +163,14 @@ async function tabContent(key) {
       termsOk ? supplierPaymentTermsCard() : loadErrorCard(),
     ];
   }
-  if (key === "fraud") return (await loadDuplicates()) ? duplicatesCard() : loadErrorCard();
+  if (key === "fraud") {
+    // Two independent cards, decision 0422's own follow-on to 0420 —
+    // the same "one screen's own fetch failing never hides another's
+    // real data" discipline `financial` and `supplier` already
+    // established.
+    const [duplicatesOk, unapprovedOk] = await Promise.all([loadDuplicates(), loadUnapprovedSuppliers()]);
+    return [duplicatesOk ? duplicatesCard() : loadErrorCard(), unapprovedOk ? unapprovedSuppliersCard() : loadErrorCard()];
+  }
   return placeholderCard(tab);
 }
 

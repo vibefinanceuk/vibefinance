@@ -17,11 +17,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
  * once, `supplier-status.js`, `supplier-performance.js`,
  * `supplier-cycle-time.js`, `supplier-exceptions.js`,
  * `supplier-po-variance.js` and `supplier-payment-terms.js` (decision
- * 0421); Fraud Prevention delegates to `fraud-duplicates.js` (decision
- * 0420). Each is already covered by its own test file for chart/table
- * correctness, currency splitting and so on. This file only proves the
- * wiring — that the right module's `load()`/`renderCard()` land behind
- * the right tab — not that module's own content in detail.
+ * 0421); Fraud Prevention delegates to two modules at once,
+ * `fraud-duplicates.js` (decision 0420) and
+ * `fraud-unapproved-suppliers.js` (decision 0422). Each is already
+ * covered by its own test file for chart/table correctness, currency
+ * splitting and so on. This file only proves the wiring — that the
+ * right module's `load()`/`renderCard()` land behind the right tab —
+ * not that module's own content in detail.
  */
 
 function mountShell() {
@@ -144,6 +146,13 @@ const STRINGS = {
     "fraudprevention.amount": "Amount",
     "fraudprevention.issuedate": "Issue date",
     "fraudprevention.confidence": "Confidence",
+    // The Fraud Prevention tab's second real card — decision 0422.
+    "fraudprevention.unapprovedsuppliers": "Unapproved-supplier invoices",
+    "fraudprevention.unapprovedsupplierssub": "A supplier not on file, or one currently on hold",
+    "fraudprevention.nounapprovedsuppliers": "No unapproved-supplier invoices right now",
+    "fraudprevention.reason": "Reason",
+    "fraudprevention.reasonnotonfile": "Not on file",
+    "fraudprevention.reasononhold": "On hold",
   },
 };
 
@@ -175,11 +184,11 @@ function stubFetch(routes: Record<string, unknown>) {
  * `holdsEverywhere` for Executive IQ — reads `me` directly.
  *
  * `/api/workload/throughput`, `/api/accruals`,
- * `/api/spend/under-management`, `/api/suppliers/spend`, and
- * `/api/fraud/duplicates` are stubbed empty by default on every call,
- * whether or not the test's own permission set makes any given tab
- * reachable — harmless when unused, and one less thing each
- * individual test has to remember.
+ * `/api/spend/under-management`, `/api/suppliers/spend`,
+ * `/api/fraud/duplicates`, and `/api/fraud/unapproved-suppliers` are
+ * stubbed empty by default on every call, whether or not the test's
+ * own permission set makes any given tab reachable — harmless when
+ * unused, and one less thing each individual test has to remember.
  */
 async function openApAnalytics(
   permissions: string[],
@@ -200,6 +209,7 @@ async function openApAnalytics(
     "/api/suppliers/po-variance": { suppliers: [] },
     "/api/suppliers/payment-terms": { suppliers: [] },
     "/api/fraud/duplicates": { invoices: [] },
+    "/api/fraud/unapproved-suppliers": { invoices: [] },
     ...extraRoutes,
   });
   const { loadStrings } = await import("/strings.js");
@@ -384,12 +394,23 @@ describe("real tabs wire to the already-tested module behind them, placeholders 
     expect(document.body.textContent).toContain("Not built yet");
   });
 
-  it("Fraud Prevention renders fraud-duplicates.js's own card, decision 0420", async () => {
+  it("Fraud Prevention renders both of its own cards, decision 0422 — two real cards, not one", async () => {
     await openApAnalytics(["AP.FraudReview"]);
 
     expect(document.querySelector(".tab.active")?.textContent).toBe("Fraud Prevention");
-    expect(document.querySelector(".cardhead h3")?.textContent).toBe("Potential duplicate invoices");
+    const headings = [...document.querySelectorAll(".cardhead h3")].map((h) => h.textContent);
+    expect(headings).toEqual(["Potential duplicate invoices", "Unapproved-supplier invoices"]);
     expect(document.body.textContent).toContain("No potential duplicates right now");
+    expect(document.body.textContent).toContain("No unapproved-supplier invoices right now");
+  });
+
+  it("Fraud Prevention's two cards fail independently — one's own load failure never hides the other's real content", async () => {
+    await openApAnalytics(["AP.FraudReview"], {}, { "/api/fraud/duplicates": { ok: false, status: 500 } });
+
+    expect(document.body.textContent).toContain("Could not load this tab right now");
+    const headings = [...document.querySelectorAll(".cardhead h3")].map((h) => h.textContent);
+    expect(headings).toContain("Unapproved-supplier invoices");
+    expect(headings).not.toContain("Potential duplicate invoices");
   });
 
   it("shows a real error rather than crashing, when a real tab's own fetch fails", async () => {

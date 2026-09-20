@@ -414,6 +414,13 @@ describe("the proxy carries every path a screen calls (decision 0131)", () => {
     ["GET", "/api/suppliers/exceptions"],
     ["GET", "/api/suppliers/po-variance"],
     ["GET", "/api/suppliers/payment-terms"],
+    /**
+     * The Fraud Prevention tab's own second real metric, unapproved-
+     * supplier invoices — decision 0422. `/fraud/unapproved-suppliers`
+     * matched no existing wildcard either, the same recurring gap this
+     * whole block keeps finding — checked directly, not assumed.
+     */
+    ["GET", "/api/fraud/unapproved-suppliers"],
   ];
 
   it("carries all of them", async () => {

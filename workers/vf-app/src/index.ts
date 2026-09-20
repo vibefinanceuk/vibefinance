@@ -10,6 +10,7 @@ import { handleWorkloadThroughput } from "./workload-route.js";
 import { handleAccruals } from "./accruals-route.js";
 import { handleSpendUnderManagement } from "./spend-under-management-route.js";
 import { handlePossibleDuplicates } from "./fraud-duplicates-route.js";
+import { handleUnapprovedSuppliers } from "./fraud-unapproved-suppliers-route.js";
 import { handleSupplierSpend } from "./supplier-performance-route.js";
 import { handleSupplierCycleTime } from "./supplier-cycle-time-route.js";
 import { handleSupplierExceptions } from "./supplier-exceptions-route.js";
@@ -1283,6 +1284,27 @@ export default {
       }
 
       const result = await handlePossibleDuplicates(db, url.searchParams.get("org"), auth.user.id);
+      return json(result.body, result.status);
+    }
+
+    /**
+     * **Unapproved-supplier invoices — decision 0422.** The Fraud
+     * Prevention tab's second real metric: an invoice naming no
+     * supplier we recognise, or naming one currently on hold. Same
+     * gate, same scoping column as `/fraud/duplicates` — see
+     * `fraud-unapproved-suppliers-route.ts` for why an unmatched
+     * invoice rules out Supplier Performance's own supplier-org
+     * scoping rule here.
+     */
+    if (pathname === "/fraud/unapproved-suppliers" && request.method === "GET") {
+      const { db } = resolveTenant(request, env);
+      const auth = await authenticatePerson(db, request, env);
+      if (!auth.user) return json({ error: auth.reason }, 401);
+      if (!(await hasPermission(db, auth.user.id, "AP.FraudReview"))) {
+        return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
+      }
+
+      const result = await handleUnapprovedSuppliers(db, url.searchParams.get("org"), auth.user.id);
       return json(result.body, result.status);
     }
 

@@ -230,6 +230,14 @@ const PROXIED_TO_INSTANCE: RegExp[] = [
    * matches no existing wildcard on this list either.
    */
   /^\/fraud\/duplicates$/,
+  /**
+   * **Unapproved-supplier invoices — decision 0422.** Checked directly
+   * again, the same discipline decisions 0418–0420 already established
+   * for this exact recurring gap: `/fraud/unapproved-suppliers`
+   * matches no existing wildcard on this list either — it is a
+   * sibling of `/fraud/duplicates` above, not a suffix of it.
+   */
+  /^\/fraud\/unapproved-suppliers$/,
   /^\/suppliers$/,
   /^\/suppliers\/load$/,
   // Finding and choosing a supplier by hand (decision 0222).
