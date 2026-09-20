@@ -223,6 +223,13 @@ const PROXIED_TO_INSTANCE: RegExp[] = [
    * existing wildcard on this list either.
    */
   /^\/spend\/under-management$/,
+  /**
+   * **Potential duplicate invoices — decision 0420.** Checked directly
+   * again, the same discipline decisions 0418 and 0419 already
+   * established for this exact recurring gap: `/fraud/duplicates`
+   * matches no existing wildcard on this list either.
+   */
+  /^\/fraud\/duplicates$/,
   /^\/suppliers$/,
   /^\/suppliers\/load$/,
   // Finding and choosing a supplier by hand (decision 0222).

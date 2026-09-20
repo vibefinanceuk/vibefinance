@@ -9,6 +9,7 @@ import {
 import { handleWorkloadThroughput } from "./workload-route.js";
 import { handleAccruals } from "./accruals-route.js";
 import { handleSpendUnderManagement } from "./spend-under-management-route.js";
+import { handlePossibleDuplicates } from "./fraud-duplicates-route.js";
 import { handleSupplierSpend } from "./supplier-performance-route.js";
 import { evaluateRuleSet, validateRule } from "@vibefinance/shared";
 import type { CompiledRuleSet, InvoiceFacts } from "@vibefinance/shared";
@@ -1204,6 +1205,25 @@ export default {
       }
 
       const result = await handleSpendUnderManagement(db, url.searchParams.get("org"), auth.user.id);
+      return json(result.body, result.status);
+    }
+
+    /**
+     * **Potential duplicate invoices — decision 0420.** The Fraud
+     * Prevention tab's first real metric, and `AP.FraudReview`'s own
+     * first real consumer — reserved since decision 0417, the same
+     * "described as unused" precedent `AP.Analysis` itself set before
+     * decision 0415 gave it something real to gate.
+     */
+    if (pathname === "/fraud/duplicates" && request.method === "GET") {
+      const { db } = resolveTenant(request, env);
+      const auth = await authenticatePerson(db, request, env);
+      if (!auth.user) return json({ error: auth.reason }, 401);
+      if (!(await hasPermission(db, auth.user.id, "AP.FraudReview"))) {
+        return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
+      }
+
+      const result = await handlePossibleDuplicates(db, url.searchParams.get("org"), auth.user.id);
       return json(result.body, result.status);
     }
 

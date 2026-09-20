@@ -2,7 +2,7 @@
 
 **Written 4 September 2026, updated 17 September (six times), updated
 18 September (four times), updated 19 September (thirty-two times),
-updated 20 September (sixteen times).**
+updated 20 September (seventeen times).**
 
 **For a session starting cold.** Where things stand, what needs a
 decision rather than work, what to do next, and the habits this project
@@ -31,16 +31,67 @@ twice.
 
 | | |
 | --- | --- |
-| `origin/main` | `28aaf9c` — fetched directly by this session after decision 0419 shipped, confirmed matching local `main` exactly |
+| `origin/main` | `d71f011` — deployed rows below describe this commit, the last the operator confirmed live; decision 0420 below is a newer local commit, not yet pushed |
 | vf-admin deployed | `8e27a34` · `https://admin.vibefinance-ai.com` · behind Cloudflare Access |
 | vf-app deployed | `28aaf9c` (operator's own "pushed and deployed" report — API sits behind auth, not independently checkable from here) |
 | vf-licence deployed | `28aaf9c` (operator's own report; migration `0131` below is now applied) |
 | vf-ui deployed | `28aaf9c` · `https://app.vibefinance-ai.com` — operator's own report: "pushed and deployed" |
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
-| `vf-app-poc` migrations | through `0071` applied and confirmed live (decision 0419 added no new one) |
-| `vf-licence-poc` migrations | through `0131` applied and confirmed live |
-| Tests | vf-admin 9 · vf-app 2032 · vf-licence 320 · vf-ui 74 Worker + 782 browser · shared 287 (+3 known pre-existing failures) |
-| Decision records | 419 |
+| `vf-app-poc` migrations | through `0071` applied and confirmed live (decision 0420 below added no new one) |
+| `vf-licence-poc` migrations | through `0131` applied and confirmed live; `0132` (decision 0420's own duplicate-invoices strings) committed locally, not yet applied remotely |
+| Tests | vf-admin 9 · vf-app 2048 · vf-licence 320 · vf-ui 74 Worker + 790 browser · shared 287 (+3 known pre-existing failures) |
+| Decision records | 420 |
+
+**Decision 0420 (potential duplicate invoices, Fraud Prevention's
+first real metric) is built and committed locally — not yet pushed or
+deployed.** Recommending early-payment/discount eligibility as the
+next slice, investigated it first and found it genuinely blocked — no
+structured discount-rate/window field anywhere, on the invoice
+(`BT-20`, free text) or the supplier record (`suppliers.payment_terms`,
+also free text). Reported directly rather than built around; the
+operator's own instinct (terms belong on the supplier record, not the
+invoice) matches this codebase's own existing structure but does not
+by itself unblock the metric, since that field is still free text —
+**parked at the operator's own direction, "it needs more thought."**
+Moved to Fraud Prevention instead: the design's own first bullet under
+Fraud & Risk Detection is explicit this is not new work — "VibeFinance
+already computes this: the Dashboard's possible_duplicates card reads
+a real duplicate_confidence column today: this screen is a fuller,
+filterable view of data already captured, not a new detection
+system." New route (`GET /fraud/duplicates`,
+`workers/vf-app/src/fraud-duplicates-route.ts`, gated on
+`AP.FraudReview` — its first real consumer, reserved since decision
+0417): reads the same `duplicate_confidence` column and the same
+`>= 0.5` threshold the Dashboard's own card already uses, so the two
+screens never disagree. **A table of flagged invoices, not matched
+pairs** — which other invoice a given one was scored against is never
+itself persisted, only the resulting scalar confidence, so the route
+honestly answers "which invoices look like duplicates" rather than
+"invoice A duplicates invoice B." Supplier name falls back to the
+document's own printed name (`BT-27`) the same way `dashboard-route.ts`
+and `documents-route.ts` already do. New screen
+(`fraud-duplicates.js`, a plain data table — `.tablewrap`/`table`, the
+same shape `purchase-orders.js` and `documents.js` already build,
+since the design's own suggested visualization here is literally a
+sorted table, not a chart). Fraud Prevention is now the fourth of AP
+Analytics' five tabs to be real; only Executive IQ remains a
+placeholder. **Checked the proxy allow-list immediately again**:
+`/fraud/duplicates` matched no existing wildcard, so it got a real new
+entry alongside the route itself. Tests: 16 new in
+`workers/vf-app/test/fraud-duplicates.test.ts` (permission gate
+including "AP.Analysis alone is not enough," reads-the-stored-score
+behaviour, supplier-name fallback, scoping), 6 new in
+`workers/vf-ui/test-browser/fraud-duplicates.test.ts`, 2 new in
+`workers/vf-ui/test-browser/ap-analytics.test.ts` (the real card
+renders; its own load failure shows the real error). Full suites:
+vf-app 2048/2048 (2032 + 16 new), vf-licence 320/320 (migration-only;
+full suite re-run clean), vf-ui 74 Worker + 790 browser (782 + 8 net
+new), known pre-existing unhandled-rejection count unchanged (160).
+`eslint .` clean across `vf-app`, `vf-ui`, and `vf-licence`. Full
+detail in
+`docs/decisions/0420-potential-duplicate-invoices-fraud-preventions-first-real-metric.md`.
+**Five of Fraud & Risk Detection's own six metrics stay unbuilt** —
+see that decision's own "What is not built."
 
 **Decision 0419 (spend under management, Financial Performance's
 second real metric) is pushed and deployed, confirmed directly.**

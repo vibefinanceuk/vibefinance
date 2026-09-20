@@ -4,6 +4,7 @@ import { load as loadOperational, renderCard as operationalCard } from "/workloa
 import { load as loadSupplierSpend, renderCard as supplierSpendCard } from "/supplier-performance.js";
 import { load as loadAccruals, renderCard as accrualsCard } from "/accruals.js";
 import { load as loadSpendUnderManagement, renderCard as spendUnderManagementCard } from "/spend-under-management.js";
+import { load as loadDuplicates, renderCard as duplicatesCard } from "/fraud-duplicates.js";
 
 /**
  * AP Analytics — decision 0417, the single tabbed home for every
@@ -23,7 +24,7 @@ import { load as loadSpendUnderManagement, renderCard as spendUnderManagementCar
  * rather than rebuilt — the same shape the operator pointed at by
  * name.
  *
- * **Five tabs, three real.** The operator's own names, mapped onto the
+ * **Five tabs, four real.** The operator's own names, mapped onto the
  * design's five original screens:
  *
  * | Tab | Design's own screen | Permission |
@@ -34,11 +35,13 @@ import { load as loadSpendUnderManagement, renderCard as spendUnderManagementCar
  * | Executive IQ | Multi-Enterprise CFO View | `AP.Analysis` + `holdsEverywhere` |
  * | Fraud Prevention | Fraud & Risk Detection | `AP.FraudReview` |
  *
- * Operational, Financial, and Supplier Performance are real, reusing
- * the routes and screens decisions 0415–0419 already built and
- * tested. The other two render a plain "not built yet" placeholder —
- * still gated on their own real permission, so who can even see a tab
- * exists is correct today, ahead of what is behind it.
+ * Operational, Financial, Supplier Performance, and now Fraud
+ * Prevention (decision 0420's own potential-duplicate-invoices table)
+ * are real, reusing the routes and screens decisions 0415–0420 already
+ * built and tested. Only Executive IQ still renders a plain "not built
+ * yet" placeholder — still gated on its own real permission, so who
+ * can even see the tab exists is correct today, ahead of what is
+ * behind it.
  *
  * **Financial Performance shows two real cards, not one** — decision
  * 0419's own follow-on to 0417's accruals report: spend under
@@ -114,6 +117,7 @@ async function tabContent(key) {
     return [accrualsOk ? accrualsCard() : loadErrorCard(), spendOk ? spendUnderManagementCard() : loadErrorCard()];
   }
   if (key === "supplier") return (await loadSupplierSpend()) ? supplierSpendCard() : loadErrorCard();
+  if (key === "fraud") return (await loadDuplicates()) ? duplicatesCard() : loadErrorCard();
   return placeholderCard(tab);
 }
 

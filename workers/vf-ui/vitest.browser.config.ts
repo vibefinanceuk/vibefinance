@@ -92,6 +92,7 @@ export default defineConfig({
       "/supplier-performance.js": resolve(__dirname, "public/supplier-performance.js"),
       "/accruals.js": resolve(__dirname, "public/accruals.js"),
       "/spend-under-management.js": resolve(__dirname, "public/spend-under-management.js"),
+      "/fraud-duplicates.js": resolve(__dirname, "public/fraud-duplicates.js"),
       "/ap-analytics.js": resolve(__dirname, "public/ap-analytics.js"),
       "/charts.js": resolve(__dirname, "public/charts.js"),
       "/mood.js": resolve(__dirname, "public/mood.js"),

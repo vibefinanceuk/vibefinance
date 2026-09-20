@@ -89,15 +89,15 @@ const AP_PERMISSIONS = [
   // also send documents backwards through the workflow.
   "AP.TaskManage",
   /**
-   * **Reserved, unused — decision 0417.** The Management Dashboard
-   * design's own Fraud & Risk Detection screen is the one screen that
-   * document explicitly recommends a new permission for, rather than
-   * riding on `AP.Analysis`: *"fraud/risk data is more sensitive than
-   * ordinary throughput or spend data and deserves its own gate."*
-   * Added now, ahead of the screen itself, the same "add now,
-   * described as unused" precedent `AP.Analysis` itself set — nobody
-   * is granted this by any migration; it starts held by nobody, the
-   * same honest starting state `AP.Analysis` had before decision 0415.
+   * **Reserved since decision 0417, real since decision 0420.** The
+   * Management Dashboard design's own Fraud & Risk Detection screen is
+   * the one screen that document explicitly recommends a new
+   * permission for, rather than riding on `AP.Analysis`: *"fraud/risk
+   * data is more sensitive than ordinary throughput or spend data and
+   * deserves its own gate."* Decision 0420 gave it its first real
+   * consumer, `GET /fraud/duplicates` — nobody is granted this by any
+   * migration; who holds it is an operator decision made through the
+   * Access screen, not this codebase's.
    */
   "AP.FraudReview",
 ] as const;
@@ -249,7 +249,7 @@ export const PERMISSION_DESCRIPTIONS: Record<Permission, string> = {
   "AP.ReturnToSupplier": "Send an invoice back to the supplier",
   "AP.ReturnAny": "Return any invoice, even one someone else owns",
   "AP.Discard": "Discard a document that cannot be processed",
-  "AP.FraudReview": "See the AP Analytics screen's Fraud Prevention tab — reserved, no screen shows it yet",
+  "AP.FraudReview": "See the AP Analytics screen's Fraud Prevention tab",
   "AP.TaskManage": "See and release every user's tasks, not just your own",
 
   "AR.Validate": "Accounts Receivable — not yet built",

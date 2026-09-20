@@ -321,15 +321,16 @@ a rule, and left an approval task in a queue.
   (`workers/vf-ui/public/ap-analytics.js`). No route, chart, or
   currency-safe behaviour either screen already had changed — only
   what assembled a full page around each one did.
-- **All five of the design's own screens have a tab now, three of them
+- **All five of the design's own screens have a tab now, four of them
   real.** Operational Performance (Workload), Financial Performance
-  (two real metrics now — decision 0418's accruals report and decision
-  0419's spend under management), and Supplier Performance reuse the
-  real, tested routes 0415–0419 built respectively. Executive IQ (the
-  Multi-Enterprise CFO View) and Fraud Prevention (Fraud & Risk
-  Detection) each still render a plain "not built yet" placeholder —
-  still gated on their own real permission, so who can even see a tab
-  exists is correct today, ahead of what is behind it.
+  (two real metrics — decision 0418's accruals report and decision
+  0419's spend under management), Supplier Performance, and now Fraud
+  Prevention (decision 0420's own potential-duplicate-invoices table)
+  reuse the real, tested routes 0415–0420 built respectively. Only
+  Executive IQ (the Multi-Enterprise CFO View) still renders a plain
+  "not built yet" placeholder — still gated on its own real
+  permission, so who can even see the tab exists is correct today,
+  ahead of what is behind it.
 - **A tab's own permission always matches its own route's own gate,
   not the design document's original two-permission-per-screen
   proposal.** Gating a tab more strictly than the data behind it would
@@ -337,15 +338,16 @@ a rule, and left an approval task in a queue.
   them, or the reverse — see decision 0417 for the full reasoning.
 - **`AP.FraudReview`, a new reserved permission**, granted by no
   migration — the same standing `AP.Analysis` itself held until
-  decision 0415 gave it something real to gate. Gates the Fraud
-  Prevention tab's own visibility today; nothing else yet. Adding it
-  to `permissions.ts` alone failed `stage-permissions.test.ts`'s
-  standing closed-set check on the first full run — a hand-restated
-  permission list spread across several migrations has to stay in
-  lockstep with the code, and does, because the test catches it when
-  it doesn't. Fixed with a new migration
+  decision 0415 gave it something real to gate. Adding it to
+  `permissions.ts` alone failed `stage-permissions.test.ts`'s standing
+  closed-set check on the first full run — a hand-restated permission
+  list spread across several migrations has to stay in lockstep with
+  the code, and does, because the test catches it when it doesn't.
+  Fixed with a new migration
   (`migrations/0071_ap_fraud_review_permission.sql`), the same way
-  decision 0350's own `Supplier.Maintain` addition was.
+  decision 0350's own `Supplier.Maintain` addition was. **Its first
+  real consumer is decision 0420's own duplicate-invoices route** —
+  see below.
 - **Executive IQ's second gate reuses `me.holdsEverywhere`**, exported
   from `tasks.js` for the first time (`orgPicker()` already read it
   off `me` since decision 0313) — a consolidated cross-entity view is
@@ -423,6 +425,35 @@ a rule, and left an approval task in a queue.
 - **The proxy allow-list checked directly again**: `/spend/under-
   management` matched no existing wildcard either, so it got a real
   new entry, the same discipline decision 0418 already established.
+
+### Potential duplicate invoices — Fraud Prevention's first real metric (0420)
+- **Not a new detection system — a fuller view of data already
+  captured**, the design's own explicit framing.
+  `workers/vf-app/src/fraud-duplicates-route.ts` (`GET
+  /fraud/duplicates`) reads `invoice_headers.duplicate_confidence`
+  (decision 0028), the same column and the same `>= 0.5` threshold the
+  Dashboard's own `possible_duplicates` card already uses, so the two
+  screens never disagree about "how many duplicates."
+- **A table of flagged invoices, not matched pairs — the schema's own
+  honest limit.** `duplicate_confidence` is a scalar stored on the
+  invoice that was scored; which other invoice(s) it was scored
+  against is never itself persisted (`findSimilarInvoices()` returns
+  candidates for scoring, not a stored match). So this answers "which
+  invoices look like duplicates, how confident," sorted by confidence
+  (the design's own suggested visualization) — not "invoice A is a
+  duplicate of invoice B."
+- **`AP.FraudReview`'s first real consumer** — reserved since decision
+  0417, the same "described as unused" precedent `AP.Analysis` itself
+  set before decision 0415. `permissions.ts`'s own description string
+  updated to match.
+- **A plain data table, not a chart** — reuses `.tablewrap`/`table`,
+  the same shape `purchase-orders.js`, `documents.js`, and
+  `suppliers.js` already build, since the design's own suggested
+  visualization here is literally a sorted table.
+- Fraud Prevention is now the fourth of AP Analytics' five tabs to be
+  real; only Executive IQ remains a placeholder. The proxy allow-list
+  checked directly again: `/fraud/duplicates` matched no existing
+  wildcard either.
 
 ### Purchase orders and matching
 - Purchase order storage grounded in Peppol BIS Order Only 3.3, via UBL
@@ -1327,32 +1358,59 @@ value lands in which field — *"use the transport reference as the
 invoice number"* (0058). The machinery exists; what is missing is the
 vocabulary's EN 16931 reference fields and supplier groups.
 
-**Two of the Management Dashboard's five designed screens, four of
-Liabilities & Accruals' own six key metrics, and six of Supplier
-Performance's own seven.** Decisions 0415, 0416, 0418, and 0419 each
-built one vertical slice for real — Workload's "Throughput by user,
-stacked by stage," Supplier Performance's "Spend by supplier," and
-Financial Performance's "Accruals report" and "Spend under management
-(with PO)." Decision 0417 gave all five design screens their own tab
-inside the new AP Analytics screen; Fraud & Risk Detection and the
-Multi-Enterprise CFO View still have no route or real UI behind their
-own tab — each renders a permission-gated "not built yet" placeholder
-rather than a Claude Docs design document and Design-canvas mock-ups
-being the only place they exist. The CFO view in particular needs a
-real multi-org scoping concept that does not exist yet — and is spend
-under management's own *listed primary* screen too, per the design's
-own deliberate cross-referencing (0419), so this metric likely belongs
-there as well once it exists; Fraud Prevention needs its own routes
-and its own look at what "fraud/risk data" means in this schema, the
-way 0415, 0416, 0418, and 0419 each worked theirs out. `AP.FraudReview`,
-the permission Fraud Prevention's own tab is gated on, is itself
-reserved — granted by no migration, enforced by no route, the same
-standing `AP.Analysis` held until 0415 gave it something real to gate.
-**Liabilities & Accruals' own other four metrics** —
-early-payment/discount eligibility, cash-flow forecast, payment terms
-held vs. actual, and DPO — stay unbuilt; three of them need
-payment-execution data (when and on what terms an invoice was actually
-paid) this codebase does not capture anywhere.
+**One of the Management Dashboard's five designed screens, four of
+Liabilities & Accruals' own six key metrics, five of Fraud & Risk
+Detection's own six, and six of Supplier Performance's own seven.**
+Decisions 0415, 0416, 0418, 0419, and 0420 each built one vertical
+slice for real — Workload's "Throughput by user, stacked by stage,"
+Supplier Performance's "Spend by supplier," Financial Performance's
+"Accruals report" and "Spend under management (with PO)," and Fraud
+Prevention's "Potential duplicate invoices." Decision 0417 gave all
+five design screens their own tab inside the new AP Analytics screen;
+only the Multi-Enterprise CFO View (Executive IQ) still has no route
+or real UI behind its own tab — it renders a permission-gated "not
+built yet" placeholder rather than a Claude Docs design document and
+Design-canvas mock-ups being the only place it exists. It needs a real
+multi-org scoping concept that does not exist yet — and is spend under
+management's own *listed primary* screen too, per the design's own
+deliberate cross-referencing (0419), so that metric likely belongs
+there as well once it exists. **Liabilities & Accruals' own other four
+metrics** — early-payment/discount eligibility, cash-flow forecast,
+payment terms held vs. actual, and DPO — stay unbuilt; three of them
+need payment-execution data (when and on what terms an invoice was
+actually paid) this codebase does not capture anywhere.
+**Fraud & Risk Detection's own other five metrics** —
+unapproved-supplier invoices, statistical outliers, vendor
+banking-detail-change alerts (the design's own words: "not currently
+captured by VibeFinance... noted as a real gap, not assumed
+solvable"), exceptions by type/user/supplier trended, and
+segregation-of-duties flags — stay unbuilt on the one screen that does
+now partly exist.
+
+**Early-payment/discount eligibility, specifically, is parked rather
+than ruled out — it needs more thought, at the operator's own
+direction.** Investigated directly before being recommended as the
+next vertical slice after decision 0419, and found genuinely blocked:
+the design's own metric needs to know whether an invoice carries a
+real discount offer ("2% if paid within 10 days"), and nothing in this
+codebase captures that in structured form anywhere. `BT-20` (payment
+terms, per-invoice) is free text only, by the standard's own
+definition ("Net 30" is its own example) — and is not even extracted
+from photographed/scanned invoices at all, only from XML. Asked
+directly, the operator's own instinct was that terms are typically
+negotiated with a supplier in advance and held on the supplier record,
+not read per-invoice — and this codebase already agrees in structure:
+`suppliers.payment_terms` (loaded via CSV, `load-suppliers.ts`) is
+exactly that, matching `supplier.paymentTerms`'s own vocabulary entry
+("this is what was agreed; BT-9 is what the supplier claims"). **But
+it is still free text**, the same "Net 30" shape as `BT-20` — no
+discount rate, no discount window, on either field. So the operator's
+own framing is right in principle (supplier record over invoice
+field) and narrows where a future fix would live, but does not by
+itself unblock this metric: parsing a discount schedule out of free
+text reliably, or giving suppliers a real structured discount-terms
+field, is its own decision, not yet made. Parked here rather than
+built around dishonestly.
 **Supplier Performance's own other six metrics** — active supplier
 count by status, average cycle time, exception rate, PO-variance
 ranking, payment terms held vs. negotiated, early-payment capture
@@ -1512,13 +1570,13 @@ elsewhere.
 
 | Package | Tests |
 |---|---|
-| `vf-app` | 2032 |
+| `vf-app` | 2048 |
 | `vf-licence` | 320 |
-| `vf-ui` | 74 Worker · 782 browser |
+| `vf-ui` | 74 Worker · 790 browser |
 | `shared` | 287 passing, 3 known pre-existing failures |
 
 Both migration chains replay clean with every standing invariant
-holding — 71 migrations for `vf-app`, 131 for `vf-licence`.
+holding — 71 migrations for `vf-app`, 132 for `vf-licence`.
 
 **`vf-app`'s count was recorded as 1851 through decision 0379**; a clean
 run at `46c1da2`, with no `vf-app` change since decision 0378 recorded

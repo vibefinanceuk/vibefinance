@@ -14,8 +14,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
  * and Supplier Performance tabs delegate to `workload.js` and
  * `supplier-performance.js` respectively; Financial Performance
  * delegates to two modules at once, `accruals.js` and
- * `spend-under-management.js` (decision 0419). Each is already
- * covered by its own test file for chart correctness, currency
+ * `spend-under-management.js` (decision 0419); Fraud Prevention
+ * delegates to `fraud-duplicates.js` (decision 0420). Each is already
+ * covered by its own test file for chart/table correctness, currency
  * splitting and so on. This file only proves the wiring — that the
  * right module's `load()`/`renderCard()` land behind the right tab —
  * not that module's own content in detail.
@@ -104,6 +105,15 @@ const STRINGS = {
     "supplierperformance.spendsub": "Ranked by total invoiced amount, by currency",
     "supplierperformance.nospend": "No priced invoices yet",
     "supplierperformance.invoicecount": "{n} invoices",
+    // The Fraud Prevention tab's real content — decision 0420.
+    "fraudprevention.duplicates": "Potential duplicate invoices",
+    "fraudprevention.duplicatessub": "Same supplier, amount and date — sorted by confidence",
+    "fraudprevention.noduplicates": "No potential duplicates right now",
+    "fraudprevention.invoicenumber": "Invoice",
+    "fraudprevention.supplier": "Supplier",
+    "fraudprevention.amount": "Amount",
+    "fraudprevention.issuedate": "Issue date",
+    "fraudprevention.confidence": "Confidence",
   },
 };
 
@@ -135,10 +145,11 @@ function stubFetch(routes: Record<string, unknown>) {
  * `holdsEverywhere` for Executive IQ — reads `me` directly.
  *
  * `/api/workload/throughput`, `/api/accruals`,
- * `/api/spend/under-management`, and `/api/suppliers/spend` are
- * stubbed empty by default on every call, whether or not the test's
- * own permission set makes any given tab reachable — harmless when
- * unused, and one less thing each individual test has to remember.
+ * `/api/spend/under-management`, `/api/suppliers/spend`, and
+ * `/api/fraud/duplicates` are stubbed empty by default on every call,
+ * whether or not the test's own permission set makes any given tab
+ * reachable — harmless when unused, and one less thing each
+ * individual test has to remember.
  */
 async function openApAnalytics(
   permissions: string[],
@@ -153,6 +164,7 @@ async function openApAnalytics(
     "/api/accruals": { currencies: [] },
     "/api/spend/under-management": { currencies: [] },
     "/api/suppliers/spend": { currencies: [] },
+    "/api/fraud/duplicates": { invoices: [] },
     ...extraRoutes,
   });
   const { loadStrings } = await import("/strings.js");
@@ -313,14 +325,19 @@ describe("real tabs wire to the already-tested module behind them, placeholders 
     expect(document.body.textContent).toContain("No priced invoices yet");
   });
 
-  it("Executive IQ and Fraud Prevention each say not built yet, gated on their own real permission", async () => {
+  it("Executive IQ says not built yet, gated on its own real permission", async () => {
     await openApAnalytics(["AP.Analysis", "AP.FraudReview"], { holdsEverywhere: true });
 
     await switchTab("Executive IQ");
     expect(document.body.textContent).toContain("Not built yet");
+  });
 
-    await switchTab("Fraud Prevention");
-    expect(document.body.textContent).toContain("Not built yet");
+  it("Fraud Prevention renders fraud-duplicates.js's own card, decision 0420", async () => {
+    await openApAnalytics(["AP.FraudReview"]);
+
+    expect(document.querySelector(".tab.active")?.textContent).toBe("Fraud Prevention");
+    expect(document.querySelector(".cardhead h3")?.textContent).toBe("Potential duplicate invoices");
+    expect(document.body.textContent).toContain("No potential duplicates right now");
   });
 
   it("shows a real error rather than crashing, when a real tab's own fetch fails", async () => {
@@ -344,6 +361,12 @@ describe("real tabs wire to the already-tested module behind them, placeholders 
     expect(document.querySelector(".cardhead h3")?.textContent).toBe("Spend under management");
     expect(document.body.textContent).toContain("No spend recorded yet");
   });
+
+  it("shows a real error for Fraud Prevention too, when its own fetch fails", async () => {
+    await openApAnalytics(["AP.FraudReview"], {}, { "/api/fraud/duplicates": { ok: false, status: 500 } });
+
+    expect(document.body.textContent).toContain("Could not load this tab right now");
+  });
 });
 
 describe("switching tabs", () => {
@@ -361,7 +384,7 @@ describe("switching tabs", () => {
     await switchTab("Fraud Prevention");
     expect(document.querySelectorAll(".tab.active")).toHaveLength(1);
     expect(document.querySelector(".tab.active")?.textContent).toBe("Fraud Prevention");
-    expect(document.body.textContent).toContain("Not built yet");
+    expect(document.querySelector(".cardhead h3")?.textContent).toBe("Potential duplicate invoices");
 
     await switchTab("Operational Performance");
     expect(document.querySelector(".tab.active")?.textContent).toBe("Operational Performance");

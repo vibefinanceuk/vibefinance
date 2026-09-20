@@ -395,6 +395,14 @@ describe("the proxy carries every path a screen calls (decision 0131)", () => {
      * wildcard either.
      */
     ["GET", "/api/spend/under-management"],
+    /**
+     * The Fraud Prevention tab's own first real metric, potential
+     * duplicate invoices — decision 0420. Checked directly again, the
+     * same discipline decisions 0418 and 0419 already established for
+     * this exact recurring gap: `/fraud/duplicates` matched no
+     * existing wildcard either.
+     */
+    ["GET", "/api/fraud/duplicates"],
   ];
 
   it("carries all of them", async () => {
