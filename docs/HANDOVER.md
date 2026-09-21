@@ -2,7 +2,7 @@
 
 **Written 4 September 2026, updated 17 September (six times), updated
 18 September (four times), updated 19 September (thirty-two times),
-updated 20 September (twenty-two times), updated 21 September (six
+updated 20 September (twenty-two times), updated 21 September (seven
 times).**
 
 **For a session starting cold.** Where things stand, what needs a
@@ -32,28 +32,86 @@ twice.
 
 | | |
 | --- | --- |
-| `origin/main` | `b084859` — fetched directly by this session, matching this session's own commit exactly, confirming the operator's own "pushed and deployed" reports for all three of decision 0430's addenda |
+| `origin/main` | `b084859` — fetched directly by this session, matching this session's own commit exactly, confirming the operator's own "pushed and deployed" reports for the first three of decision 0430's addenda. **The fourth and fifth addenda below are built, tested, and committed locally, delivered as a new bundle this session — not yet confirmed pushed.** |
 | vf-admin deployed | `8e27a34` · `https://admin.vibefinance-ai.com` · behind Cloudflare Access |
-| vf-app deployed | `b084859` — decisions 0429 (agreed payment means, a supplier-record placeholder), 0430 (Talk to an AP Expert, Screen 6), and all three of 0430's own addenda (five more assistant tools and the tasks-vs-exceptions bug fixed; `invoice_search`, a tenth tool; an exact invoice count, ambiguous-lookup links returned immediately, and bounded conversation memory), all confirmed |
-| vf-licence deployed | `b084859` per the operator's own reports; migration `0140` below is now applied; none of the three addenda added a new migration |
+| vf-app deployed | `b084859` confirmed — decisions 0429 (agreed payment means, a supplier-record placeholder), 0430 (Talk to an AP Expert, Screen 6), and the first three of 0430's own addenda, all confirmed. The fourth (quarter totals, a minted `latestOnly` link, dash normalization) and fifth (stage filtering, a systemic answer-prompt overclaim fix) addenda are not yet confirmed deployed — awaiting the operator's own pull/push/deploy of this session's new bundle |
+| vf-licence deployed | `b084859` per the operator's own reports; migration `0140` below is now applied; none of the five addenda added a new migration |
 | vf-ui deployed | `b084859` · `https://app.vibefinance-ai.com` — operator's own reports |
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
-| `vf-app-poc` migrations | through `0074` applied and confirmed live — `0073` (decision 0429) is real schema; `0074` (decision 0430) is a documentation-only `ASSERT` restatement with no schema change, the same shape as `0071`; none of the three addenda needed a new migration — their new tools and routes are gated by permissions already real |
+| `vf-app-poc` migrations | through `0074` applied and confirmed live — `0073` (decision 0429) is real schema; `0074` (decision 0430) is a documentation-only `ASSERT` restatement with no schema change, the same shape as `0071`; none of the five addenda needed a new migration — their new tools and routes are gated by permissions already real |
 | `vf-licence-poc` migrations | through `0140` applied and confirmed live — the operator's own `apply_migrations.py --remote` run |
-| Tests | vf-admin 9 · vf-app 2374 · vf-licence 320 · vf-ui 74 Worker + 916 browser · shared 295 (+3 known pre-existing failures) |
+| Tests | vf-admin 9 · vf-app 2374 (all 99 test files run to completion this session, in batches, after the fourth/fifth addenda's own new tests — 0 failures) · vf-licence 320 · vf-ui 74 Worker + 916 browser (unchanged, not re-run this segment — untouched by these addenda) · shared 295 (+3 known pre-existing failures) |
 | Decision records | 430 |
 
 **Decisions 0429 (agreed payment means, a supplier-record placeholder),
-0430 (Talk to an AP Expert, Screen 6), and all three of 0430's own
-addenda are pushed and deployed, confirmed directly.** `origin/main`
+0430 (Talk to an AP Expert, Screen 6), and the first three of 0430's
+own addenda are pushed and deployed, confirmed directly.** `origin/main`
 fetched directly reads `b084859`, matching this session's own commit
 exactly, and the operator's own reports — "pushed and deployed"
-confirmed separately after each of the three addenda — cover all of
-it together; migration `0140` (the chat tab's own strings) confirmed
+confirmed separately after each of the first three addenda — cover all
+of it together; migration `0140` (the chat tab's own strings) confirmed
 separately applied too, the same operator-run
 `apply_migrations.py --remote` step decision 0427 first surfaced as
-distinct from the code deploy. None of the three addenda needed a new
-migration.
+distinct from the code deploy. None of the first three addenda needed
+a new migration. **The fourth and fifth addenda, immediately below,
+are new this session — built, tested, and committed, not yet confirmed
+pushed.**
+
+**Decision 0430's fifth addendum (workflow-stage filtering on
+`invoice_search`, and a systemic fix for two separate overclaim bugs
+sharing one root cause) is built and tested, delivered as this
+session's own new bundle — not yet confirmed pushed.** A second live
+test surfaced two more gaps: "list the invoices held at the Validation
+stage" refused outright (no filter existed for it), and in the same
+round `accrual_summary` overclaimed "no invoices are listed in any
+other stage" — a claim its own data structurally cannot support, since
+it only ever covers invoices still accruing. Both trace to one shared
+architectural gap — `buildAnswerPrompt` never told the phrasing model
+what a tool's own data does and does not cover, the same root cause
+already behind the document-fabrication bug the third/fourth addenda
+fixed for `invoice_search` specifically — so this was fixed once,
+systemically, with a new `AP_ASSISTANT_TOOL_SCOPE` map (one scope
+statement per tool, fed into every answer) rather than patched at each
+symptom. The stage filter itself resolves a stage *name* to every
+matching real stage id first (`resolveStageIds`, since
+`process_stages` is customer-configurable and a name can mean more
+than one real id), added additively to `invoice_search`,
+`documents-route.ts`, and `invoice-count-route.ts` (the last via
+`EXISTS`, deliberately not a `JOIN`, to avoid inflating a count for
+any invoice that ever picks up more than one process instance — proved
+with a dedicated test). A third live-test transcript also surfaced a
+formatting-only follow-up gap ("can you provide a table of results?"
+refused as naming no criteria of its own) — fixed by having the
+selection prompt re-run the same tool and arguments as the preceding
+real question, re-fetching fresh data rather than reformatting a
+remembered answer. Neither item was put to the operator as a fork —
+both narrow, low-risk, and within already-approved scope. See decision
+0430's own doc, "Addendum five," for the full reasoning and tests.
+
+**Decision 0430's fourth addendum (calendar-period totals, a minted
+document link for the single-invoice case, and dash normalization) is
+built and tested, delivered as this session's own new bundle — not yet
+confirmed pushed.** The same live-test round surfaced three more real
+gaps: "total invoice amount for this quarter" refused outright (only a
+month floor existed on the third addendum's own count route, never a
+quarter one); the single-row "most recent invoice" case (`latestOnly`)
+never got the same document-link minting `invoice_lookup` already had,
+so a real document was reported as "not on file"; and an invoice
+number that had just appeared correctly in a search result then failed
+an exact-match follow-up lookup — most likely, though not reproducible
+against this session's own test data (no production database access),
+because the pasted transcript's own invoice numbers use a
+non-standard Unicode hyphen that `COLLATE NOCASE` does not fold. Fixed
+with `firstOfThisQuarter()` in `dates.ts`; a bounded, single-mint
+document link added to `invoice_search`'s own `latestOnly` case; and a
+defensive `normalizeInvoiceNumberQuery()` on `invoice_lookup`'s own
+exact-match query, stripping Unicode dash variants before the bind,
+never touching what gets stored. Two forks put to the operator
+directly, both answered: whether to build period-scoped totals at all
+(*"Yes, month + quarter"*) and whether `invoice_search` should mint a
+document link for the `latestOnly` case (*"Yes, mint one for
+`latestOnly` only"*). See decision 0430's own doc, "Addendum four,"
+for the full reasoning and tests.
 
 **Decision 0430's third addendum (an exact invoice count, ambiguous-
 lookup links returned immediately, and bounded conversation memory)

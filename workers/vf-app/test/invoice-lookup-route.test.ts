@@ -140,3 +140,47 @@ describe("what comes back", () => {
     expect(body.matches[0].hasDocument).toBe(true);
   });
 });
+
+describe("dash-like character normalization (decision 0430's fourth addendum)", () => {
+  /**
+   * Found directly from a live test: a number `invoice_search`'s own
+   * list had just shown moments earlier came back "not found" from
+   * this route on the very next question, which named no number of its
+   * own — meaning the AP Assistant's own model had retyped it out of
+   * its own prior phrased answer. A model can restyle a plain hyphen
+   * into a visually similar Unicode dash when it writes prose, and
+   * `COLLATE NOCASE` never folds that — only the exact case. These
+   * prove the query side tolerates that, without touching stored data.
+   */
+  it("matches a real invoice number even when the query uses a non-breaking hyphen", async () => {
+    await person("alice", ["AP.Validate"]);
+    await supplier("northwind", "Northwind Logistics Ltd");
+    await invoice({ id: "inv-1", number: "INV-NW-1003", supplierId: "northwind", total: 1140, currency: "GBP" });
+
+    const result = await handleInvoiceLookup(env.DB, null, "alice", "INV‑NW‑1003");
+    const body = result.body as InvoiceLookupReport;
+    expect(body.matches).toHaveLength(1);
+    expect(body.matches[0].invoiceNumber).toBe("INV-NW-1003");
+  });
+
+  it("matches with an en dash or em dash too, and with surrounding whitespace", async () => {
+    await person("alice", ["AP.Validate"]);
+    await supplier("northwind", "Northwind Logistics Ltd");
+    await invoice({ id: "inv-1", number: "INV-NW-1003", supplierId: "northwind", total: 1140, currency: "GBP" });
+
+    const viaEnDash = await handleInvoiceLookup(env.DB, null, "alice", "INV–NW–1003");
+    expect((viaEnDash.body as InvoiceLookupReport).matches).toHaveLength(1);
+
+    const viaEmDashAndSpace = await handleInvoiceLookup(env.DB, null, "alice", "  INV—NW—1003  ");
+    expect((viaEmDashAndSpace.body as InvoiceLookupReport).matches).toHaveLength(1);
+  });
+
+  it("still finds nothing for a genuinely different number, not just any dash variant", async () => {
+    await person("alice", ["AP.Validate"]);
+    await supplier("northwind", "Northwind Logistics Ltd");
+    await invoice({ id: "inv-1", number: "INV-NW-1003", supplierId: "northwind", total: 1140, currency: "GBP" });
+
+    const result = await handleInvoiceLookup(env.DB, null, "alice", "INV‑NW‑1004");
+    expect((result.body as InvoiceLookupReport).matches).toEqual([]);
+  });
+});

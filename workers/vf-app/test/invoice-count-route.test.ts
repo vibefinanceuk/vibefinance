@@ -49,6 +49,15 @@ async function invoice(opts: { id: string; supplierId: string; createdAt?: strin
     .run();
 }
 
+/** Used by both the total-amount and the stageIds describe blocks below. */
+async function invoiceWithAmount(opts: { id: string; supplierId: string; total: number | null; currency: string | null; createdAt?: string }) {
+  await env.DB.prepare(
+    "INSERT INTO invoice_headers (id, facts_json, supplier_id, total_with_vat, currency, created_at) VALUES (?, '{}', ?, ?, ?, COALESCE(?, CURRENT_TIMESTAMP))"
+  )
+    .bind(opts.id, opts.supplierId, opts.total, opts.currency, opts.createdAt ?? null)
+    .run();
+}
+
 beforeEach(async () => {
   await applyTestSchema();
 });
@@ -132,6 +141,168 @@ describe("what it counts", () => {
     await invoice({ id: "globex-new", supplierId: "globex", createdAt: "2020-06-01T00:00:00Z" });
 
     const result = await handleInvoiceCount(env.DB, null, "alice", { since: "2020-03-01", supplier: "acme" });
+    expect((result.body as InvoiceCountReport).count).toBe(1);
+  });
+});
+
+describe("the exact total amount by currency — decision 0430's fourth addendum", () => {
+  /**
+   * A real gap a live test surfaced directly: "total invoice amount for
+   * this quarter" was refused outright because nothing anywhere summed
+   * invoice amounts over a period. Built alongside the existing count,
+   * same filters, same discipline — never summed across currencies.
+   */
+
+  it("is empty when nothing exists", async () => {
+    await person("alice", ["AP.Review"]);
+    const result = await handleInvoiceCount(env.DB, null, "alice", {});
+    expect((result.body as InvoiceCountReport).totalByCurrency).toEqual([]);
+  });
+
+  it("sums a single currency's real invoices exactly", async () => {
+    await person("alice", ["AP.Review"]);
+    await supplier("acme", "Acme Widgets");
+    await invoiceWithAmount({ id: "a", supplierId: "acme", total: 100, currency: "GBP" });
+    await invoiceWithAmount({ id: "b", supplierId: "acme", total: 250.5, currency: "GBP" });
+
+    const result = await handleInvoiceCount(env.DB, null, "alice", {});
+    expect((result.body as InvoiceCountReport).totalByCurrency).toEqual([{ currency: "GBP", total: 350.5 }]);
+  });
+
+  it("never blends two currencies into one figure", async () => {
+    await person("alice", ["AP.Review"]);
+    await supplier("acme", "Acme Widgets");
+    await invoiceWithAmount({ id: "gbp-1", supplierId: "acme", total: 100, currency: "GBP" });
+    await invoiceWithAmount({ id: "usd-1", supplierId: "acme", total: 200, currency: "USD" });
+    await invoiceWithAmount({ id: "usd-2", supplierId: "acme", total: 50, currency: "USD" });
+
+    const result = await handleInvoiceCount(env.DB, null, "alice", {});
+    const byCurrency = (result.body as InvoiceCountReport).totalByCurrency;
+    expect(byCurrency).toHaveLength(2);
+    expect(byCurrency).toContainEqual({ currency: "GBP", total: 100 });
+    expect(byCurrency).toContainEqual({ currency: "USD", total: 250 });
+  });
+
+  it("excludes a row missing an amount or a currency from the total, but it still counts", async () => {
+    await person("alice", ["AP.Review"]);
+    await supplier("acme", "Acme Widgets");
+    await invoiceWithAmount({ id: "known", supplierId: "acme", total: 100, currency: "GBP" });
+    await invoiceWithAmount({ id: "no-amount", supplierId: "acme", total: null, currency: "GBP" });
+    await invoiceWithAmount({ id: "no-currency", supplierId: "acme", total: 500, currency: null });
+
+    const result = await handleInvoiceCount(env.DB, null, "alice", {});
+    const body = result.body as InvoiceCountReport;
+    expect(body.count).toBe(3);
+    expect(body.totalByCurrency).toEqual([{ currency: "GBP", total: 100 }]);
+  });
+
+  it("respects the same 'since' and 'supplier' filters as the count", async () => {
+    await person("alice", ["AP.Review"]);
+    await supplier("acme", "Acme Widgets");
+    await supplier("globex", "Globex Corp");
+    await invoiceWithAmount({ id: "acme-old", supplierId: "acme", total: 100, currency: "GBP", createdAt: "2020-01-01T00:00:00Z" });
+    await invoiceWithAmount({ id: "acme-new", supplierId: "acme", total: 200, currency: "GBP", createdAt: "2020-06-01T00:00:00Z" });
+    await invoiceWithAmount({ id: "globex-new", supplierId: "globex", total: 900, currency: "GBP", createdAt: "2020-06-01T00:00:00Z" });
+
+    const result = await handleInvoiceCount(env.DB, null, "alice", { since: "2020-03-01", supplier: "acme" });
+    expect((result.body as InvoiceCountReport).totalByCurrency).toEqual([{ currency: "GBP", total: 200 }]);
+  });
+});
+
+describe("the 'stageIds' filter — decision 0430's fifth addendum", () => {
+  /**
+   * Matched with `EXISTS`, never a `JOIN` — this file's own top-of-file
+   * doc comment explains why: a `JOIN` against `process_instances`
+   * would silently inflate the count or the total for any invoice that
+   * ever picked up more than one instance, which nothing in this
+   * schema actually forbids.
+   */
+  async function process(id: string, stages: { id: string; name: string; sequence: number }[]) {
+    await env.DB.prepare("INSERT OR IGNORE INTO processes (id, name) VALUES (?, ?)").bind(id, id).run();
+    for (const stage of stages) {
+      await env.DB.prepare("INSERT INTO process_stages (id, process_id, name, sequence) VALUES (?, ?, ?, ?)")
+        .bind(stage.id, id, stage.name, stage.sequence)
+        .run();
+    }
+  }
+
+  async function placeAtStage(opts: { invoiceId: string; processId: string; stageId: string; status?: string }) {
+    await env.DB.prepare(
+      "INSERT INTO process_instances (id, process_id, subject_type, subject_id, current_stage_id, status) VALUES (?, ?, 'invoice', ?, ?, ?)"
+    )
+      .bind(`pi-${opts.invoiceId}`, opts.processId, opts.invoiceId, opts.stageId, opts.status ?? "in_progress")
+      .run();
+  }
+
+  it("counts and totals only invoices currently held at one of the given stage ids", async () => {
+    await person("alice", ["AP.Review"]);
+    await process("ap", [
+      { id: "matching", name: "Matching", sequence: 1 },
+      { id: "validation", name: "Validation", sequence: 2 },
+      { id: "payment", name: "Payment-eligible", sequence: 3 },
+    ]);
+    await supplier("acme", "Acme Widgets");
+    await invoiceWithAmount({ id: "at-matching", supplierId: "acme", total: 100, currency: "GBP" });
+    await invoiceWithAmount({ id: "at-validation", supplierId: "acme", total: 200, currency: "GBP" });
+    await invoiceWithAmount({ id: "at-payment", supplierId: "acme", total: 900, currency: "GBP" });
+    await placeAtStage({ invoiceId: "at-matching", processId: "ap", stageId: "matching" });
+    await placeAtStage({ invoiceId: "at-validation", processId: "ap", stageId: "validation" });
+    await placeAtStage({ invoiceId: "at-payment", processId: "ap", stageId: "payment" });
+
+    const result = await handleInvoiceCount(env.DB, null, "alice", { stageIds: ["matching", "validation"] });
+    const body = result.body as InvoiceCountReport;
+    expect(body.count).toBe(2);
+    expect(body.totalByCurrency).toEqual([{ currency: "GBP", total: 300 }]);
+  });
+
+  it("excludes an invoice whose instance has completed, even if it ended at that stage", async () => {
+    await person("alice", ["AP.Review"]);
+    await process("ap", [{ id: "validation", name: "Validation", sequence: 1 }]);
+    await supplier("acme", "Acme Widgets");
+    await invoiceWithAmount({ id: "done", supplierId: "acme", total: 100, currency: "GBP" });
+    await placeAtStage({ invoiceId: "done", processId: "ap", stageId: "validation", status: "completed" });
+
+    const result = await handleInvoiceCount(env.DB, null, "alice", { stageIds: ["validation"] });
+    expect((result.body as InvoiceCountReport).count).toBe(0);
+  });
+
+  it("never inflates the count for an invoice that somehow has more than one process instance", async () => {
+    // Nothing in this schema forbids it, even though it isn't meant to
+    // happen — this is the whole reason EXISTS is used instead of a JOIN.
+    await person("alice", ["AP.Review"]);
+    await process("ap", [{ id: "validation", name: "Validation", sequence: 1 }]);
+    await supplier("acme", "Acme Widgets");
+    await invoiceWithAmount({ id: "double", supplierId: "acme", total: 100, currency: "GBP" });
+    await env.DB.prepare(
+      "INSERT INTO process_instances (id, process_id, subject_type, subject_id, current_stage_id, status) VALUES ('pi-double-a', 'ap', 'invoice', 'double', 'validation', 'in_progress')"
+    ).run();
+    await env.DB.prepare(
+      "INSERT INTO process_instances (id, process_id, subject_type, subject_id, current_stage_id, status) VALUES ('pi-double-b', 'ap', 'invoice', 'double', 'validation', 'in_progress')"
+    ).run();
+
+    const result = await handleInvoiceCount(env.DB, null, "alice", { stageIds: ["validation"] });
+    const body = result.body as InvoiceCountReport;
+    expect(body.count).toBe(1);
+    expect(body.totalByCurrency).toEqual([{ currency: "GBP", total: 100 }]);
+  });
+
+  it("leaves the count and total unaffected when no stage is asked for", async () => {
+    await person("alice", ["AP.Review"]);
+    await supplier("acme", "Acme Widgets");
+    await invoiceWithAmount({ id: "a", supplierId: "acme", total: 100, currency: "GBP" });
+
+    const result = await handleInvoiceCount(env.DB, null, "alice", {});
+    const body = result.body as InvoiceCountReport;
+    expect(body.count).toBe(1);
+    expect(body.totalByCurrency).toEqual([{ currency: "GBP", total: 100 }]);
+  });
+
+  it("treats an empty stageIds array as no filter at all, not as 'match nothing'", async () => {
+    await person("alice", ["AP.Review"]);
+    await supplier("acme", "Acme Widgets");
+    await invoiceWithAmount({ id: "a", supplierId: "acme", total: 100, currency: "GBP" });
+
+    const result = await handleInvoiceCount(env.DB, null, "alice", { stageIds: [] });
     expect((result.body as InvoiceCountReport).count).toBe(1);
   });
 });

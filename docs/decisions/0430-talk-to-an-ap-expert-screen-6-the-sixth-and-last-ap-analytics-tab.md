@@ -1,17 +1,19 @@
 # 0430 — "Talk to an AP Expert," Screen 6, the sixth and last AP Analytics tab
 
-**Status: original build and all three addenda pushed and deployed,
-confirmed directly.** `origin/main` fetched directly reads `b084859`,
-matching this session's own commit exactly for the original four-tool
-build, the first addendum (five more tools, the tasks-vs-exceptions
-bug fixed), the second addendum (`invoice_search`, a tenth tool), and
-the third addendum (an exact count, ambiguous-match links returned
-immediately, bounded conversation memory); the operator separately
-confirmed vf-licence migration `0140` applied remotely too, and none
-of the three addenda needed a new migration. This session still has
-no push access to `vibefinanceuk/vibefinance`; delivered as
-a git bundle for the operator's own pull/push/deploy sequence, the
-same path decisions 0391, 0415–0429 already used.
+**Status: original build and the first three addenda pushed and
+deployed, confirmed directly; the fourth and fifth addenda below built
+and tested this session, not yet confirmed pushed.** `origin/main`
+fetched directly reads `b084859`, matching this session's own commit
+exactly for the original four-tool build, the first addendum (five
+more tools, the tasks-vs-exceptions bug fixed), the second addendum
+(`invoice_search`, a tenth tool), and the third addendum (an exact
+count, ambiguous-match links returned immediately, bounded
+conversation memory); the operator separately confirmed vf-licence
+migration `0140` applied remotely too, and none of the five addenda
+needed a new migration. This session still has no push access to
+`vibefinanceuk/vibefinance`; delivered as a git bundle for the
+operator's own pull/push/deploy sequence, the same path decisions
+0391, 0415–0429 already used.
 
 ---
 
@@ -797,3 +799,298 @@ permission — `invoice-count-route.ts` reuses `AP.Review`, already real.
 - **A document-count tool for anything other than invoices** (purchase
   orders, tasks) — not asked for; `invoice-count-route.ts` is
   deliberately invoice-specific, matching `invoice_search`'s own scope.
+
+## Addendum four — calendar-period totals, a minted link for the single-invoice case, and dash normalization
+
+A live test of the third addendum's own build surfaced three more real
+gaps in the same session it went out, none of them requiring a new
+tool — all three landed inside `invoice_search` and its own supporting
+routes:
+
+1. *"Can you share the document links?"* after a five-row list came
+   back correctly answered for four rows and correctly refused for the
+   fifth (no document on file) — but when the operator then narrowed
+   to *"the most recent invoice"* specifically (`latestOnly`), the
+   single-row answer said "no document link available for it" for an
+   invoice this session's own data had a document for. Checked
+   directly: `runInvoiceSearch` never minted a link for the
+   `latestOnly` case at all — `invoice_lookup` already did this (first
+   addendum), `invoice_search`'s general list deliberately doesn't
+   (third addendum's own reasoning: minting up to 50 links per
+   question is real, avoidable cost), but the one-row `latestOnly`
+   case sits between those two and had never been given either
+   behaviour on purpose — it simply had neither.
+2. *"Can you calculate the total invoice amount for this quarter"* was
+   refused outright: `invoice-count-route.ts` (third addendum) already
+   summed by currency, but only ever for `since: firstOfThisMonth()`
+   or no floor at all — nothing in `dates.ts` computed a quarter start,
+   and nothing let `ap-assistant.ts`'s own `period` arg ask for one.
+3. `invoice_lookup` failed to find `INV‑NW‑1003` — an invoice number
+   that had, moments earlier in the same conversation, appeared
+   correctly in an `invoice_search` result. The pasted transcript's
+   own invoice numbers visibly use a non-standard Unicode hyphen
+   throughout (`‑`, U+2011, not the ASCII `-` a person's keyboard
+   types), and `COLLATE NOCASE` folds case but not Unicode code
+   points, so an exact-match `WHERE h.invoice_number = ?` bind would
+   silently miss a real row whose stored number uses one hyphen form
+   while the typed-or-pasted query uses another. **This could not be
+   reproduced against this session's own seeded test data** — this
+   session has no access to the live production database or request
+   logs to confirm the stored number's own exact bytes — so this is
+   recorded honestly as a defensive fix for a real, demonstrated class
+   of input (the transcript itself proves such characters reach this
+   app), not a confirmed single root cause.
+
+None of these three put to the operator as a fork on their own — (1)
+and (3) are narrow, low-risk, and squarely inside behaviour already
+approved (mint-on-`latestOnly` already exists for `invoice_lookup`;
+exact-match normalization changes no result that was ever correct
+before). (2) is a real new capability, though, so it went to the
+operator directly rather than being assumed:
+
+> **Fork:** *"Invoice 3's real gap: no tool sums invoice amounts over
+> a calendar period. Should I build that now?"* — **"Yes, month +
+> quarter (Recommended)"**
+>
+> **Fork:** *"For the repeatedly-requested 'link to the latest
+> invoice' case specifically (asked in two separate live tests now) —
+> should `invoice_search` mint a real document link when `latestOnly`
+> caps the result to one row?"* — **"Yes, mint one for `latestOnly`
+> only (Recommended)"**
+
+### What was built
+
+**`dates.ts` gained `firstOfThisQuarter`**, mirroring
+`firstOfThisMonth` exactly — UTC quarter-start math, no new
+dependency. `ApAssistantToolArgs.period` widened from a single literal
+to `"this_month" | "this_quarter"`.
+
+**`invoice-count-route.ts`'s own filters gained nothing new here** —
+addendum four only needed `since` to be computable for a quarter, and
+that math lives entirely in `dates.ts`; the route itself was untouched
+by this addendum (it gained the `stageIds` filter in addendum five,
+below).
+
+**`runInvoiceSearch` mints a document link for the `latestOnly` case
+only**, bounded to at most one mint per question — the same
+`handleMintDocumentUrl` call `invoice_lookup` already makes, applied
+here to `body.documents[0]` only when `latestOnly` is true and a row
+came back. `handleMintDocumentUrl` itself 404s when no document is
+retained, so this needed no separate existence check: a `latestOnly`
+answer for an invoice with no document on file correctly reports
+`documentUrl: null`, distinguishable in the tool's own JSON from the
+field being absent entirely (the general, non-`latestOnly` list case,
+where the field is never present at all — see the systemic fix in
+addendum five, which is what actually taught the phrasing model the
+difference).
+
+**`normalizeInvoiceNumberQuery()`, new in `invoice-lookup-route.ts`**,
+strips every Unicode dash/hyphen/minus variant
+(`‐`–`―`, `−`) to a plain ASCII `-` and trims
+whitespace, applied to the query before the exact-match SQL bind —
+never applied to what gets stored, only to what gets searched for, so
+a real invoice number's own stored bytes are never rewritten.
+
+### Tests (addendum four)
+
+**`dates.test.ts`**: 12 `it.each` boundary tests for
+`firstOfThisQuarter` (each quarter's first and last instant, a
+year-boundary case, and stability across different hours within the
+same day).
+
+**`invoice-count-route.test.ts`**: 5 new tests for the exact total by
+currency — zero invoices, a single currency, two currencies never
+summed together, a row missing amount or currency excluded from the
+total but still counted, and past-the-cap correctness matching the
+third addendum's own count test.
+
+**`invoice-lookup-route.test.ts`**: 3 new tests for dash
+normalization — a non-breaking hyphen (`‑`), an en-dash/em-dash
+plus incidental whitespace, and a negative case proving a genuinely
+different invoice number still correctly returns not-found (the
+normalization narrows character variants, it does not loosen the
+match).
+
+**`ap-assistant.test.ts`**: `this_quarter` period tests, exact
+`totalAmountByCurrency` never blended across currencies and correct
+past the 50-row cap, confirmation the general (non-`latestOnly`) list
+carries no `documentUrl` field at all, and `latestOnly` both minting a
+real link when a document exists and correctly reporting `null` when
+one doesn't.
+
+**Full suites, this segment run together with addendum five's own new
+tests** (see the combined test count below).
+
+### What is not built (addendum four)
+
+- **A year-to-date or arbitrary custom-range total.** Only
+  `this_month` and `this_quarter` exist, matching exactly what was
+  asked and forked on; a wider date-range vocabulary is a real future
+  fork of its own, not assumed here.
+- **Document-link minting for `invoice_search`'s own general
+  (non-`latestOnly`) list.** Deliberately unchanged from the third
+  addendum's own reasoning — minting up to 50 links per question is
+  real, avoidable Cloudflare cost, and nothing in this live test asked
+  for it.
+
+## Addendum five — filtering by workflow stage, and fixing the root cause behind two separate overclaim bugs
+
+A second live test, largely of addendum four's own build, surfaced two
+more gaps — one a missing capability, the other a pattern shared with
+a bug addendum four had already partly addressed:
+
+1. *"Can you share what invoices are held at each stage?"* was
+   answered correctly for the one stage with invoices in it (*"In GBP,
+   there are 2 invoices held in the Validation stage..."*) but then
+   overclaimed: *"No invoices are listed in any other stage."*
+   `accrual_summary` (the tool actually selected) never claims or
+   checks full stage coverage — it only ever covers invoices still
+   accruing, in progress, short of the final payment-eligible stage —
+   so this was never something the tool's own data supported saying.
+2. The immediate follow-up, *"list the invoices held at the
+   Validation stage,"* was refused outright: nothing let
+   `invoice_search` narrow by workflow stage at all — only by supplier
+   and calendar period.
+
+(2) is additive and narrow — `invoice_search` already had two filter
+args, adding a third followed the same shape — and was built directly
+rather than forked. (1) is more interesting: read together with the
+document-fabrication bug the third and fourth addenda already fixed
+("no document on file" claimed for invoices `invoice_search` had never
+actually checked for a document at all), both are the same underlying
+shape — the phrasing model, given only a tool's raw JSON result and no
+statement of what that tool does and does not cover, will confidently
+generalize past the edge of what it actually checked. That is an
+architectural gap in `buildAnswerPrompt` itself, not two unrelated
+bugs, so it was fixed once, systemically, rather than patched twice at
+the symptom. Also not put to the operator as a fork — a prompt-only
+change to stop the phrasing model overclaiming is squarely a
+correctness fix within what "answer accurately from real tool data"
+has meant for this whole decision from its very first build.
+
+### What was built
+
+**Stage-name resolution, new `resolveStageIds()` in `ap-assistant.ts`.**
+`process_stages` is customer-configurable (decision 0415's own
+precedent), so a stage *name* such as "Validation" is not guaranteed
+to be one single real id — it can match more than one row across
+different processes. `resolveStageIds(db, stageName)` resolves a name
+to every matching id via `SELECT id FROM process_stages WHERE name = ?
+COLLATE NOCASE`, never just the first match. A name matching zero real
+stages reports `{ stageRecognized: false, stageRequested }` rather
+than silently dropping the filter (which would have quietly answered
+a different, broader question than the one asked) or silently
+returning zero invoices (which would have looked like a real, checked
+answer instead of an unrecognized name).
+
+**`invoice_search` gained a `stage` arg** (a name, "never an id" per
+its own doc comment — the model is never asked to know or guess a
+real id), resolved through `resolveStageIds` before either the
+document list or the count/total query runs.
+
+**`stageIds`, a new filter added additively to both routes
+`invoice_search` already calls**, alongside their existing single-id
+`stage` param rather than replacing it:
+- `documents-route.ts` gained a `stageIds` URL param (a JSON array),
+  matched with `IN (SELECT value FROM json_each(?))` — the same
+  precedent `visibleUnits` already established for this route.
+- `invoice-count-route.ts` gained a `stageIds?: string[] | null`
+  filter, matched with `EXISTS (...)` against `process_instances`,
+  **deliberately not a `JOIN`** — nothing in this schema's own
+  `CREATE TABLE process_instances` forbids more than one instance row
+  per invoice (no `UNIQUE` constraint on `(subject_type, subject_id)`),
+  and a `JOIN` would silently inflate the count or the total for any
+  invoice that ever picked up a second instance. `EXISTS` cannot
+  inflate either regardless of how many instance rows exist. Proved
+  with a dedicated test seeding two `process_instances` rows for one
+  invoice and asserting the count stays 1.
+
+**The systemic fix — a new `AP_ASSISTANT_TOOL_SCOPE` map, one entry
+per tool, fed into every `buildAnswerPrompt` call.** Each entry states
+plainly what that tool's data does and does not cover — `accrual_
+summary`'s own entry now says explicitly that it "can never be read
+as a full account of every invoice in the system, only the ones still
+accruing," and instructs the model never to say or imply there are no
+other invoices anywhere else. `buildAnswerPrompt` now opens with:
+*"You looked this up using the `${tool}` tool, which only ever covers:
+`${AP_ASSISTANT_TOOL_SCOPE[tool]}` Never say or imply anything outside
+that scope as though you checked and found nothing there..."* — a
+single, general instruction, so a future tool's own overclaim risk is
+addressed the same way rather than needing its own one-off prompt
+patch. The prompt also now tells the model how to phrase a `{
+"stageRecognized": false }` result honestly (the name given isn't a
+real stage, rather than silently answering as though it were).
+
+**A formatting-only follow-up gap, found in a third transcript
+covering largely the same ground** (a full invoice list correctly
+returned, then *"can you provide a table of results?"* refused outright
+since a pure reformatting request names no criteria of its own).
+`buildSelectionPrompt` gained a paragraph instructing the model, when
+the current question only asks for a different presentation of the
+answer immediately before it and names no new criteria, to re-select
+the same tool with the same arguments as whichever question before it
+actually named real criteria — re-running the lookup fresh rather than
+refusing, but also rather than reformatting a remembered answer (which
+would let a number silently drift through a second, unverified model
+pass). `buildAnswerPrompt` was given matching permission to use
+table/list formatting when explicitly asked, with an explicit
+instruction that every value in it must still come only from the
+fresh data just returned, never from a table the model remembers
+writing in an earlier answer.
+
+### Tests (addendum five)
+
+**`documents.test.ts`**: 3 new tests for `stageIds` — several stage
+ids at once, matched via a `seedAt()` helper against real
+`process_stages` rows (an earlier attempt to seed a nonexistent stage
+id directly failed with a `FOREIGN KEY constraint failed`, fixed by
+inserting a genuine third stage row instead).
+
+**`invoice-count-route.test.ts`**: 5 new tests for the `stageIds`
+filter — several real stage ids matched, a completed process instance
+correctly excluded, the double-instance-row case proving `EXISTS`
+never inflates the count, behaviour unchanged when `stageIds` is
+absent, and an empty array treated the same as no filter.
+
+**`ap-assistant.test.ts`**: a new describe block for `invoice_search`
+narrowed by stage name — filtering by name, a name resolving across
+more than one real process sharing it, an invoice correctly excluded
+once it has moved on to a different stage, and an unrecognized name
+reporting `stageRecognized: false` rather than a silent empty or
+unfiltered result; a test confirming `accrual_summary`'s own new scope
+text reaches the answer prompt; and a new describe block for the
+formatting-only follow-up covering both the selection-prompt guidance
+and the answer-prompt's grounded-table permission.
+
+**Two real test-authoring bugs, fixed along the way, neither a product
+bug**: a helper (`invoiceWithAmount`) defined locally inside one
+describe block in `invoice-count-route.test.ts` and then reused, out
+of scope, in a second — fixed by hoisting it to module scope; and the
+`FOREIGN KEY` failure above.
+
+**Full suites, run directly, addenda four and five together:** every
+one of `vf-app`'s 99 test files run to completion in this session (in
+four batches, to fit this sandbox's own tool time budget — the
+unfiltered whole-suite run itself timed out three times in a row
+without completing at all, a pre-existing characteristic of this
+suite's own size in this environment, not something introduced by
+this addendum) — **2374 tests, all passing, 0 failures.** `eslint src
+test` (the whole `vf-app` source and test tree) clean, zero output.
+`vf-ui` suites not re-run this segment — neither this addendum's own
+source changes nor its test changes touched anything in `vf-ui`. No
+new migration, no new permission — every new filter and tool arg
+reuses `AP.Review`, already real.
+
+### What is not built (addendum five)
+
+- **A stage filter on any tool other than `invoice_search`.** Not
+  asked for; `accrual_summary` and the others keep their own existing,
+  narrower scopes, now stated explicitly in `AP_ASSISTANT_TOOL_SCOPE`
+  rather than left implicit.
+- **True cross-turn conversational memory of a table's own remembered
+  contents.** The formatting-follow-up fix deliberately re-fetches
+  fresh data rather than reformatting a remembered answer — a
+  narrower, safer fix than teaching the model to recall and reformat
+  its own prior output, which was never asked for and would have
+  reopened the same "is this number still real" question the third
+  addendum's own bounded conversation memory was careful to avoid.

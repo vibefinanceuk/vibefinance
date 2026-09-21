@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { mondayOfThisWeek, firstOfThisMonth } from "../src/dates.js";
+import { mondayOfThisWeek, firstOfThisMonth, firstOfThisQuarter } from "../src/dates.js";
 
 describe("the Monday of a calendar week (decision 0265)", () => {
   /**
@@ -64,6 +64,45 @@ describe("the first day of a calendar month (decision 0430's second addendum)", 
   it("is stable at the edge of a day, not sensitive to the hour given", () => {
     expect(firstOfThisMonth(new Date("2026-09-17T00:00:01Z"))).toBe(
       firstOfThisMonth(new Date("2026-09-17T23:59:59Z"))
+    );
+  });
+});
+
+describe("the first day of a calendar quarter (decision 0430's fourth addendum)", () => {
+  /**
+   * The same "calendar unit, not a rolling window" choice
+   * `firstOfThisMonth` and `mondayOfThisWeek` already made — every day
+   * in a quarter resolves to that quarter's own first day, one of the
+   * four fixed starts (Jan/Apr/Jul/Oct), regardless of which month or
+   * day within it.
+   */
+  const quarter: [string, string][] = [
+    ["2026-01-01", "2026-01-01"], // Q1 start itself
+    ["2026-02-15", "2026-01-01"],
+    ["2026-03-31", "2026-01-01"], // Q1 end
+    ["2026-04-01", "2026-04-01"], // Q2 start
+    ["2026-05-20", "2026-04-01"],
+    ["2026-06-30", "2026-04-01"], // Q2 end
+    ["2026-07-01", "2026-07-01"], // Q3 start
+    ["2026-08-10", "2026-07-01"],
+    ["2026-09-30", "2026-07-01"], // Q3 end
+    ["2026-10-01", "2026-10-01"], // Q4 start
+    ["2026-11-11", "2026-10-01"],
+    ["2026-12-31", "2026-10-01"], // Q4 end
+  ];
+
+  it.each(quarter)("resolves %s to its quarter's own 1st: %s", (input, expected) => {
+    expect(firstOfThisQuarter(new Date(`${input}T12:00:00Z`))).toBe(expected);
+  });
+
+  it("does not drift across a year boundary", () => {
+    expect(firstOfThisQuarter(new Date("2026-01-05T12:00:00Z"))).toBe("2026-01-01");
+    expect(firstOfThisQuarter(new Date("2025-12-31T12:00:00Z"))).toBe("2025-10-01");
+  });
+
+  it("is stable at the edge of a day, not sensitive to the hour given", () => {
+    expect(firstOfThisQuarter(new Date("2026-09-17T00:00:01Z"))).toBe(
+      firstOfThisQuarter(new Date("2026-09-17T23:59:59Z"))
     );
   });
 });

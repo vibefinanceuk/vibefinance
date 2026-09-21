@@ -46,3 +46,20 @@ export function mondayOfThisWeek(now: Date = new Date()): string {
 export function firstOfThisMonth(now: Date = new Date()): string {
   return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString().slice(0, 10);
 }
+
+/**
+ * The first day of the calendar quarter containing `now`
+ * (1 Jan/Apr/Jul/Oct), as `YYYY-MM-DD` — decision 0430's fourth
+ * addendum, for the AP Assistant's own `invoice_search` tool answering
+ * "this quarter." A live test asked for a total "for this quarter" and
+ * found only `this_month` support — the same calendar-boundary
+ * reasoning `firstOfThisMonth` and `mondayOfThisWeek` already apply,
+ * just one bucket coarser.
+ *
+ * `now` is a parameter rather than read fresh internally so a test can
+ * hand it a fixed date without waiting for a particular day to arrive.
+ */
+export function firstOfThisQuarter(now: Date = new Date()): string {
+  const quarterStartMonth = Math.floor(now.getUTCMonth() / 3) * 3;
+  return new Date(Date.UTC(now.getUTCFullYear(), quarterStartMonth, 1)).toISOString().slice(0, 10);
+}

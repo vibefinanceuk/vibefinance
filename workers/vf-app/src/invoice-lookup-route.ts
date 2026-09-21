@@ -65,6 +65,31 @@ export interface InvoiceLookupReport {
   matches: InvoiceLookupMatch[];
 }
 
+/**
+ * Normalizes dash-like characters to a plain ASCII hyphen before an
+ * exact match — decision 0430's fourth addendum, found directly from a
+ * live test: an invoice number that `invoice_search`'s own list had
+ * just shown three times moments earlier came back "not found" from
+ * this route on the very next question, asked with no invoice number
+ * of its own ("can you share the document links") — meaning the
+ * AP Assistant's own tool-selection model had to retype the number out
+ * of its *own prior phrased answer* (see `ap-assistant.ts`'s
+ * `recentTurns`), rather than a person typing it directly. Nothing
+ * stops a model from cosmetically restyling a plain hyphen into a
+ * visually similar Unicode dash when it writes prose, and `COLLATE
+ * NOCASE` folds case, never Unicode code points — a genuinely
+ * different dash character is a genuinely different string to SQLite,
+ * so an exact match silently returns nothing. This could not be
+ * reproduced against this session's own test data (real captured
+ * documents write a plain hyphen), so it is a defensive fix for a real,
+ * demonstrated class of input, not a confirmed single root cause; it
+ * only touches the query side; a genuinely captured `invoice_number`
+ * column is never altered.
+ */
+function normalizeInvoiceNumberQuery(raw: string): string {
+  return raw.replace(/[‐‑‒–—―−]/g, "-").trim();
+}
+
 export async function handleInvoiceLookup(
   db: D1Database,
   currentOrg: string | null = null,
@@ -74,6 +99,7 @@ export async function handleInvoiceLookup(
   const visible = userId ? await unitsWherePermitted(db, userId, "AP.Validate") : null;
   const scopedUnits = await scopedToChosenOrg(db, visible, currentOrg);
   const clause = unitClause({ units: scopedUnits }, "h.org_unit_id");
+  const normalizedNumber = normalizeInvoiceNumberQuery(invoiceNumber);
 
   const rows = await db
     .prepare(
@@ -89,7 +115,7 @@ export async function handleInvoiceLookup(
        WHERE h.invoice_number = ? COLLATE NOCASE ${clause.sql}
        ORDER BY h.issue_date DESC`
     )
-    .bind(invoiceNumber, ...clause.binds)
+    .bind(normalizedNumber, ...clause.binds)
     .all<InvoiceLookupRow>();
 
   const matches: InvoiceLookupMatch[] = rows.results.map((row) => ({

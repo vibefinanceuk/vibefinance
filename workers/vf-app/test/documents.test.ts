@@ -542,6 +542,52 @@ describe("filtering documents by stage, for the dashboard's own donut (decision 
   });
 });
 
+describe("'stageIds', decision 0430's fifth addendum — several real stage ids at once", () => {
+  /**
+   * A second, additive filter alongside `stage` above, for the AP
+   * Assistant's own `invoice_search` tool: a person names a stage by
+   * its own *name* ("Validation"), and `process_stages` is customer-
+   * configurable, so the same name can resolve to more than one real
+   * id across different processes — `ap-assistant.ts`'s own job to
+   * resolve that, this route's own job only to filter by whatever ids
+   * it is handed. `stage` above stays untouched, a single id, exactly
+   * as the real Documents screen has always sent.
+   */
+  async function seedAt(id: string, stage: string, status = "in_progress") {
+    await seedDocument(id, { "BT-1": id }, null);
+    await env.DB.prepare(
+      `INSERT INTO process_instances (id, process_id, subject_type, subject_id, current_stage_id, status)
+       VALUES (?, 'ap', 'invoice', ?, ?, ?)`
+    )
+      .bind(`pi-${id}`, id, stage, status)
+      .run();
+  }
+
+  it("shows documents at any of several stage ids, and none at another", async () => {
+    await env.DB.prepare("INSERT INTO process_stages (id, process_id, name, sequence) VALUES ('other', 'ap', 'Other', 3)").run();
+    await seedAt("inv-val", "validation");
+    await seedAt("inv-pay", "payment");
+    await seedAt("inv-neither", "other");
+
+    const body = await list(`stageIds=${encodeURIComponent(JSON.stringify(["validation", "payment"]))}`);
+    expect(body.documents.map((d) => d.id).sort()).toEqual(["inv-pay", "inv-val"]);
+  });
+
+  it("excludes an instance that has finished, the same as the single-id 'stage' filter", async () => {
+    await seedAt("inv-done", "validation", "completed");
+    await seedAt("inv-live", "validation", "in_progress");
+
+    const body = await list(`stageIds=${encodeURIComponent(JSON.stringify(["validation"]))}`);
+    expect(body.documents.map((d) => d.id)).toEqual(["inv-live"]);
+  });
+
+  it("leaves the ordinary list, and the single-id 'stage' filter, unaffected when absent", async () => {
+    await seedAt("inv-1", "validation");
+    expect((await list("")).documents).toHaveLength(1);
+    expect((await list("stage=validation")).documents).toHaveLength(1);
+  });
+});
+
 describe("filtering documents by what I completed this week (decision 0265)", () => {
   /**
    * **Must match `done()`'s exact scope** — `completed_by = me`, on or

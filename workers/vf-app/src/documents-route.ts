@@ -132,6 +132,24 @@ export async function handleListDocuments(
   const stageId = params.get("stage");
 
   /**
+   * **Several stage ids at once, by name rather than by id** — decision
+   * 0430's fourth addendum, for the AP Assistant's own `invoice_search`
+   * tool answering "invoices at the Validation stage." A person says a
+   * stage's own *name*, and `process_stages` is customer-configurable
+   * (decision 0415's own reasoning) — the same name can genuinely exist
+   * on more than one process, so resolving it can mean more than one
+   * real stage id. `stage` above stays a single id, unchanged, because
+   * the real Documents screen has always sent exactly one (its own
+   * click always knows which); this is a second, separate, additive
+   * parameter so that caller is never touched. Same `IN (SELECT value
+   * FROM json_each(...))` shape decision 0259 already uses for
+   * `visibleUnits` above, and the same `status = 'in_progress'`
+   * restriction `stage` already applies — "held at" means currently
+   * there, not merely having passed through once.
+   */
+  const stageIdsRaw = params.get("stageIds");
+
+  /**
    * **What I completed this week** — decision 0265, from the
    * dashboard's redefined "Done" card. Matched with the exact same
    * `mondayOfThisWeek()` the card's own query uses, so the two can
@@ -214,6 +232,7 @@ export async function handleListDocuments(
          AND (?5 = 0 OR (h.org_unit_id IS NULL AND json_extract(h.facts_json, '$."org.unplaced"') IS NOT NULL))
          AND (?6 = 0 OR h.duplicate_confidence >= 0.5)
          AND (?7 IS NULL OR (i.current_stage_id = ?7 AND i.status = 'in_progress'))
+         AND (?15 IS NULL OR (i.current_stage_id IN (SELECT value FROM json_each(?15)) AND i.status = 'in_progress'))
          AND (
            ?8 = 0
            OR EXISTS (
@@ -295,7 +314,8 @@ export async function handleListDocuments(
       exceptionSupplier,
       agingMinDays,
       agingMaxDays,
-      since
+      since,
+      stageIdsRaw
     )
     .all<DocumentRow>();
 

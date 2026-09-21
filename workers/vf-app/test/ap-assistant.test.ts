@@ -284,6 +284,43 @@ describe("a tool the person doesn't hold the permission for — refused before t
   });
 });
 
+/**
+ * A pure "reformat what you just told me" follow-up — decision 0430's
+ * fifth addendum. A live test asked "list all invoices" (invoice_search
+ * answered it fully), then "can you provide a table of results?" and
+ * was refused: "The request does not specify which data or criteria to
+ * retrieve" — true of that one question in isolation, but not of the
+ * conversation, since `recentTurns` already carries what the person is
+ * asking to see reformatted. The selection prompt now tells the model
+ * to re-run the same tool a formatting-only follow-up refers back to,
+ * rather than refuse — real data fetched fresh, never a table typed out
+ * from a memorized answer.
+ */
+describe("a formatting-only follow-up with no criteria of its own", () => {
+  it("tells the selection model to re-select the preceding real question's own tool, not refuse", async () => {
+    await person("alice", ["AP.Assistant", "AP.Analysis"]);
+    const model = fakeModel('{"tool": "accrual_summary", "args": {}}', "irrelevant");
+    await handleAskApAssistant(env.DB, model, null, "alice", "can you provide a table of results?", undefined, "", [
+      { question: "what do we owe right now?", answer: "You have £400 in accruals." },
+    ]);
+
+    const calls = (model.compile as ReturnType<typeof vi.fn>).mock.calls as [string][];
+    const selectionPrompt = calls.find(([p]) => p.includes("Reply with ONLY a JSON object"))![0];
+    expect(selectionPrompt).toContain("same tool, with the same arguments");
+  });
+
+  it("tells the phrasing model a table or list is fine when explicitly asked, grounded only in the fresh data", async () => {
+    await person("alice", ["AP.Assistant", "AP.Analysis"]);
+    const model = fakeModel('{"tool": "accrual_summary", "args": {}}', "irrelevant");
+    await handleAskApAssistant(env.DB, model, null, "alice", "can you provide a table of results?");
+
+    const calls = (model.compile as ReturnType<typeof vi.fn>).mock.calls as [string][];
+    const answerPrompt = calls.find(([p]) => !p.includes("Reply with ONLY a JSON object"))![0];
+    expect(answerPrompt).toContain("a short markdown table or list is fine");
+    expect(answerPrompt).toContain("never from a table you remember writing in an earlier answer");
+  });
+});
+
 describe("a real tool call — real data, real permission check, the model only phrases the answer", () => {
   it("runs accrual_summary for real and hands the phrasing model its real result", async () => {
     await person("alice", ["AP.Assistant", "AP.Analysis"]);
@@ -308,6 +345,26 @@ describe("a real tool call — real data, real permission check, the model only 
     const calls = (model.compile as ReturnType<typeof vi.fn>).mock.calls as [string][];
     const answerPrompt = calls.find(([p]) => !p.includes("Reply with ONLY a JSON object"))![0];
     expect(answerPrompt).toContain("400");
+  });
+
+  /**
+   * Decision 0430's fifth addendum. A live test asked "what invoices
+   * are held at each stage" and got back accrual_summary's own real
+   * data phrased as "No invoices are listed in any other stage" — true
+   * only of the pre-final stages this tool actually covers, since it
+   * structurally excludes anything already at its process's own final,
+   * payment-eligible stage. Nothing told the phrasing model that
+   * boundary; this proves it now does.
+   */
+  it("tells the phrasing model accrual_summary excludes the final, payment-eligible stage — not every invoice", async () => {
+    await person("alice", ["AP.Assistant", "AP.Analysis"]);
+    const model = fakeModel('{"tool": "accrual_summary", "args": {}}', "irrelevant");
+    await handleAskApAssistant(env.DB, model, null, "alice", "what invoices are held at each stage?");
+
+    const calls = (model.compile as ReturnType<typeof vi.fn>).mock.calls as [string][];
+    const answerPrompt = calls.find(([p]) => !p.includes("Reply with ONLY a JSON object"))![0];
+    expect(answerPrompt).toContain("payment-eligible stage");
+    expect(answerPrompt).toContain("never say or imply there are no other invoices anywhere else");
   });
 
   it("filters supplier_spend to the named supplier only, from the real ranked list", async () => {
@@ -717,6 +774,218 @@ describe("invoice_search, a browsable list rather than one exact number", () => 
     const data = JSON.parse(dataJson) as { totalMatching: number; moreMayExist: boolean };
     expect(data.totalMatching).toBe(2);
     expect(data.moreMayExist).toBe(false);
+  });
+
+  /**
+   * Decision 0430's fourth addendum — a live test asked "total invoice
+   * amount for this quarter" and got refused: no tool anywhere summed
+   * amounts over a period, and "this_quarter" wasn't even an accepted
+   * period value yet.
+   */
+  it('"period": "this_quarter" excludes an invoice received last quarter', async () => {
+    await person("alice", ["AP.Assistant", "AP.Review"]);
+    await supplier("acme", "Acme Widgets");
+    await invoice({ id: "last-q", number: "INV-LAST-Q", supplierId: "acme", total: 100, currency: "GBP", createdAt: "2020-01-01T00:00:00Z" });
+    await invoice({ id: "this-q", number: "INV-THIS-Q", supplierId: "acme", total: 200, currency: "GBP" }); // defaults to now
+
+    const model = fakeModel('{"tool": "invoice_search", "args": {"period": "this_quarter"}}', "One invoice this quarter: INV-THIS-Q.");
+    const result = await handleAskApAssistant(env.DB, model, null, "alice", "invoices received this quarter");
+    expect((result.body as ApAssistantAnswer).answer).toBe("One invoice this quarter: INV-THIS-Q.");
+
+    const calls = (model.compile as ReturnType<typeof vi.fn>).mock.calls as [string][];
+    const answerPrompt = calls.find(([p]) => !p.includes("Reply with ONLY a JSON object"))![0];
+    const dataJson = answerPrompt.slice(answerPrompt.indexOf("{"), answerPrompt.lastIndexOf("}") + 1);
+    const data = JSON.parse(dataJson) as { invoices: { number: string | null }[] };
+    expect(data.invoices.map((i) => i.number)).toEqual(["INV-THIS-Q"]);
+  });
+
+  it("'totalAmountByCurrency' is exact and never blends two currencies, even past the 50-row list cap", async () => {
+    await person("alice", ["AP.Assistant", "AP.Review"]);
+    await supplier("acme", "Acme Widgets");
+    for (let i = 0; i < 55; i++) {
+      await invoice({ id: `gbp-${i}`, number: `INV-GBP-${i}`, supplierId: "acme", total: 10, currency: "GBP" });
+    }
+    await invoice({ id: "usd-1", number: "INV-USD-1", supplierId: "acme", total: 999, currency: "USD" });
+
+    const model = fakeModel('{"tool": "invoice_search", "args": {}}', "£550 and $999.");
+    const result = await handleAskApAssistant(env.DB, model, null, "alice", "what's the total invoice amount?");
+    expect((result.body as ApAssistantAnswer).answer).toBe("£550 and $999.");
+
+    const calls = (model.compile as ReturnType<typeof vi.fn>).mock.calls as [string][];
+    const answerPrompt = calls.find(([p]) => !p.includes("Reply with ONLY a JSON object"))![0];
+    const dataJson = answerPrompt.slice(answerPrompt.indexOf("{"), answerPrompt.lastIndexOf("}") + 1);
+    const data = JSON.parse(dataJson) as { totalAmountByCurrency: { currency: string; total: number }[] };
+    expect(data.totalAmountByCurrency).toContainEqual({ currency: "GBP", total: 550 });
+    expect(data.totalAmountByCurrency).toContainEqual({ currency: "USD", total: 999 });
+  });
+
+  /**
+   * Decision 0430's fourth addendum — the general list carries no
+   * document field at all, on purpose (checking up to 50 rows would
+   * mean up to 50 signed-URL mints for one browsing question). A live
+   * test showed the answer-phrasing model fabricating "no document on
+   * file" for every row anyway; the fix lives in the answer prompt
+   * itself, but this proves the tool's own data gives it nothing to
+   * go on either way.
+   */
+  it("carries no document field at all for the general list, so there is nothing to fabricate from", async () => {
+    await person("alice", ["AP.Assistant", "AP.Review"]);
+    await supplier("acme", "Acme Widgets");
+    await invoice({ id: "a", number: "INV-A", supplierId: "acme", total: 100, currency: "GBP" });
+
+    const model = fakeModel('{"tool": "invoice_search", "args": {}}', "irrelevant");
+    await handleAskApAssistant(env.DB, model, null, "alice", "list recent invoices", "test-secret", "https://app.example.com");
+
+    const calls = (model.compile as ReturnType<typeof vi.fn>).mock.calls as [string][];
+    const answerPrompt = calls.find(([p]) => !p.includes("Reply with ONLY a JSON object"))![0];
+    const dataJson = answerPrompt.slice(answerPrompt.indexOf("{"), answerPrompt.lastIndexOf("}") + 1);
+    const data = JSON.parse(dataJson) as { invoices: Record<string, unknown>[] };
+    expect(data.invoices).toHaveLength(1);
+    expect(Object.keys(data.invoices[0])).not.toContain("documentUrl");
+  });
+
+  /**
+   * Asked for in two separate live tests now: "please show the most
+   * recent invoice" immediately followed by "can you provide the
+   * link." `latestOnly` caps the result at exactly one row, so minting
+   * a document link there costs no more than `invoice_lookup` already
+   * pays for a single match.
+   */
+  it("'latestOnly': true mints a real document link for that one invoice, when one is on file", async () => {
+    await person("alice", ["AP.Assistant", "AP.Review"]);
+    await supplier("acme", "Acme Widgets");
+    await invoice({ id: "inv-1", number: "INV-LATEST", supplierId: "acme", total: 100, currency: "GBP" });
+    await env.DB.prepare(
+      "INSERT INTO invoice_documents (id, invoice_id, r2_key, document_type, content_type) VALUES ('d-1', 'inv-1', 'k-1', 'original', 'application/pdf')"
+    ).run();
+
+    const model = fakeModel('{"tool": "invoice_search", "args": {"latestOnly": true}}', "Here's INV-LATEST and its document.");
+    const result = await handleAskApAssistant(env.DB, model, null, "alice", "link to the latest invoice", "test-secret", "https://app.example.com");
+    expect((result.body as ApAssistantAnswer).answer).toBe("Here's INV-LATEST and its document.");
+
+    const calls = (model.compile as ReturnType<typeof vi.fn>).mock.calls as [string][];
+    const answerPrompt = calls.find(([p]) => !p.includes("Reply with ONLY a JSON object"))![0];
+    const dataJson = answerPrompt.slice(answerPrompt.indexOf("{"), answerPrompt.lastIndexOf("}") + 1);
+    const data = JSON.parse(dataJson) as { invoices: { documentUrl?: string | null }[] };
+    expect(data.invoices[0].documentUrl).toContain("https://app.example.com/documents/");
+  });
+
+  it("'latestOnly': true states a null documentUrl, not silence, when no document is on file", async () => {
+    await person("alice", ["AP.Assistant", "AP.Review"]);
+    await supplier("acme", "Acme Widgets");
+    await invoice({ id: "inv-1", number: "INV-LATEST", supplierId: "acme", total: 100, currency: "GBP" });
+    // No invoice_documents row — nothing retained.
+
+    const model = fakeModel('{"tool": "invoice_search", "args": {"latestOnly": true}}', "irrelevant");
+    await handleAskApAssistant(env.DB, model, null, "alice", "link to the latest invoice", "test-secret", "https://app.example.com");
+
+    const calls = (model.compile as ReturnType<typeof vi.fn>).mock.calls as [string][];
+    const answerPrompt = calls.find(([p]) => !p.includes("Reply with ONLY a JSON object"))![0];
+    const dataJson = answerPrompt.slice(answerPrompt.indexOf("{"), answerPrompt.lastIndexOf("}") + 1);
+    const data = JSON.parse(dataJson) as { invoices: { documentUrl?: string | null }[] };
+    expect(data.invoices[0]).toHaveProperty("documentUrl", null);
+  });
+});
+
+/**
+ * A workflow stage, by name — decision 0430's fifth addendum. A live
+ * test asked "list the invoices held at the Validation stage" and was
+ * refused outright, even though `documents-route.ts`'s own `stage`
+ * filter already existed; nothing exposed it here. `process_stages` is
+ * customer-configurable, so a name is resolved to every real id
+ * sharing it, never just the first found.
+ */
+async function placeAtStage(opts: { invoiceId: string; processId: string; stageId: string; status?: string }) {
+  await env.DB.prepare(
+    "INSERT INTO process_instances (id, process_id, subject_type, subject_id, current_stage_id, status) VALUES (?, ?, 'invoice', ?, ?, ?)"
+  )
+    .bind(`pi-${opts.invoiceId}`, opts.processId, opts.invoiceId, opts.stageId, opts.status ?? "in_progress")
+    .run();
+}
+
+describe("invoice_search, narrowed to one real workflow stage by name", () => {
+  it("lists only the invoices currently held at the named stage", async () => {
+    await person("alice", ["AP.Assistant", "AP.Review"]);
+    await process("ap", [
+      { id: "matching", name: "Matching", sequence: 1 },
+      { id: "validation", name: "Validation", sequence: 2 },
+    ]);
+    await supplier("acme", "Acme Widgets");
+    await invoice({ id: "in-matching", number: "INV-MATCHING", supplierId: "acme", total: 100, currency: "GBP" });
+    await invoice({ id: "in-validation", number: "INV-VALIDATION", supplierId: "acme", total: 200, currency: "GBP" });
+    await placeAtStage({ invoiceId: "in-matching", processId: "ap", stageId: "matching" });
+    await placeAtStage({ invoiceId: "in-validation", processId: "ap", stageId: "validation" });
+
+    const model = fakeModel('{"tool": "invoice_search", "args": {"stage": "Validation"}}', "One invoice at Validation: INV-VALIDATION.");
+    const result = await handleAskApAssistant(env.DB, model, null, "alice", "list the invoices held at the validation stage");
+    expect((result.body as ApAssistantAnswer).answer).toBe("One invoice at Validation: INV-VALIDATION.");
+
+    const calls = (model.compile as ReturnType<typeof vi.fn>).mock.calls as [string][];
+    const answerPrompt = calls.find(([p]) => !p.includes("Reply with ONLY a JSON object"))![0];
+    const dataJson = answerPrompt.slice(answerPrompt.indexOf("{"), answerPrompt.lastIndexOf("}") + 1);
+    const data = JSON.parse(dataJson) as { invoices: { number: string | null }[]; totalMatching: number };
+    expect(data.invoices.map((i) => i.number)).toEqual(["INV-VALIDATION"]);
+    expect(data.totalMatching).toBe(1);
+  });
+
+  it("matches a stage name across every process that has one, not just the first found", async () => {
+    await person("alice", ["AP.Assistant", "AP.Review"]);
+    await process("ap", [{ id: "ap-validation", name: "Validation", sequence: 1 }]);
+    await process("expenses", [{ id: "exp-validation", name: "Validation", sequence: 1 }]);
+    await supplier("acme", "Acme Widgets");
+    await invoice({ id: "ap-inv", number: "INV-AP", supplierId: "acme", total: 100, currency: "GBP" });
+    await invoice({ id: "exp-inv", number: "INV-EXP", supplierId: "acme", total: 200, currency: "GBP" });
+    await placeAtStage({ invoiceId: "ap-inv", processId: "ap", stageId: "ap-validation" });
+    await placeAtStage({ invoiceId: "exp-inv", processId: "expenses", stageId: "exp-validation" });
+
+    const model = fakeModel('{"tool": "invoice_search", "args": {"stage": "Validation"}}', "Two invoices at Validation.");
+    const result = await handleAskApAssistant(env.DB, model, null, "alice", "invoices at the validation stage");
+    expect((result.body as ApAssistantAnswer).answer).toBe("Two invoices at Validation.");
+
+    const calls = (model.compile as ReturnType<typeof vi.fn>).mock.calls as [string][];
+    const answerPrompt = calls.find(([p]) => !p.includes("Reply with ONLY a JSON object"))![0];
+    const dataJson = answerPrompt.slice(answerPrompt.indexOf("{"), answerPrompt.lastIndexOf("}") + 1);
+    const data = JSON.parse(dataJson) as { totalMatching: number };
+    expect(data.totalMatching).toBe(2);
+  });
+
+  it("excludes an invoice that only passed through the stage and has since moved on", async () => {
+    await person("alice", ["AP.Assistant", "AP.Review"]);
+    await process("ap", [
+      { id: "matching", name: "Matching", sequence: 1 },
+      { id: "validation", name: "Validation", sequence: 2 },
+    ]);
+    await supplier("acme", "Acme Widgets");
+    await invoice({ id: "moved-on", number: "INV-MOVED-ON", supplierId: "acme", total: 100, currency: "GBP" });
+    // Now sitting at Validation, not Matching — even though it once passed through Matching.
+    await placeAtStage({ invoiceId: "moved-on", processId: "ap", stageId: "validation" });
+
+    const model = fakeModel('{"tool": "invoice_search", "args": {"stage": "Matching"}}', "None at Matching.");
+    const result = await handleAskApAssistant(env.DB, model, null, "alice", "invoices at the matching stage");
+    expect((result.body as ApAssistantAnswer).answer).toBe("None at Matching.");
+
+    const calls = (model.compile as ReturnType<typeof vi.fn>).mock.calls as [string][];
+    const answerPrompt = calls.find(([p]) => !p.includes("Reply with ONLY a JSON object"))![0];
+    const dataJson = answerPrompt.slice(answerPrompt.indexOf("{"), answerPrompt.lastIndexOf("}") + 1);
+    const data = JSON.parse(dataJson) as { invoices: unknown[]; totalMatching: number };
+    expect(data.invoices).toEqual([]);
+    expect(data.totalMatching).toBe(0);
+  });
+
+  it("reports a name matching no real stage plainly, rather than silently dropping the filter or claiming zero", async () => {
+    await person("alice", ["AP.Assistant", "AP.Review"]);
+    await supplier("acme", "Acme Widgets");
+    await invoice({ id: "a", number: "INV-A", supplierId: "acme", total: 100, currency: "GBP" });
+
+    const model = fakeModel('{"tool": "invoice_search", "args": {"stage": "Not A Real Stage"}}', "irrelevant");
+    await handleAskApAssistant(env.DB, model, null, "alice", "invoices at the not-a-real-stage stage");
+
+    const calls = (model.compile as ReturnType<typeof vi.fn>).mock.calls as [string][];
+    const answerPrompt = calls.find(([p]) => !p.includes("Reply with ONLY a JSON object"))![0];
+    const dataJson = answerPrompt.slice(answerPrompt.indexOf("{"), answerPrompt.lastIndexOf("}") + 1);
+    const data = JSON.parse(dataJson) as { stageRecognized: boolean; stageRequested: string };
+    expect(data.stageRecognized).toBe(false);
+    expect(data.stageRequested).toBe("Not A Real Stage");
   });
 });
 

@@ -988,6 +988,51 @@ query. See decision 0430's own third addendum section for the full
 reasoning, including the real Cloudflare cost math behind the 50-turn
 cap.
 
+**Fourth addendum — calendar-period totals, a minted link for the
+single-invoice case, and dash normalization.** A live test of the
+third addendum's own build found three more real gaps: "total invoice
+amount for this quarter" refused outright (only a month floor existed,
+never a quarter one); the single-row "most recent invoice" case never
+got the same document-link minting `invoice_lookup` already had; and
+an invoice number that had just appeared in a search result failed a
+follow-up exact lookup, most likely (though not confirmed against this
+session's own test data — no production database access) because the
+transcript's own invoice numbers use a non-standard Unicode hyphen
+that `COLLATE NOCASE` does not fold. Fixed with `firstOfThisQuarter()`
+in `dates.ts`; a bounded, single-mint document link for
+`invoice_search`'s own `latestOnly` case; and a defensive Unicode-dash
+normalization on `invoice_lookup`'s own exact-match query. The
+period-totals capability was the one real new fork put to the
+operator directly — answered "Yes, month + quarter."
+
+**Fifth addendum — filtering by workflow stage, and a systemic fix for
+two separate overclaim bugs sharing one root cause.** "List the
+invoices held at the Validation stage" was refused outright (no filter
+existed for it), and in the same round `accrual_summary` overclaimed
+"no invoices are listed in any other stage" — a claim its own data
+never actually supports, since it only ever covers invoices still
+accruing. Both trace to the same gap: `buildAnswerPrompt` never told
+the phrasing model what a tool's own data does and does not cover, so
+it would confidently generalize past what was actually checked — the
+same shape as the document-fabrication bug the third and fourth
+addenda had already fixed for `invoice_search` specifically. Fixed
+once, systemically, with a new `AP_ASSISTANT_TOOL_SCOPE` map (one
+scope statement per tool, fed into every answer) rather than patched
+per-symptom. The stage filter itself resolves a name to every matching
+real stage id (`process_stages` is customer-configurable — a name can
+mean more than one real id), added additively to `invoice_search`,
+`documents-route.ts`, and `invoice-count-route.ts` (the last via
+`EXISTS`, deliberately not a `JOIN`, to avoid inflating a count for any
+invoice that ever picks up more than one process instance). A third
+live-test transcript also surfaced a formatting-only follow-up gap
+("can you provide a table of results?" refused as naming no criteria
+of its own) — fixed by having the selection prompt re-run the same
+tool and arguments as the preceding real question rather than either
+refusing or reformatting a remembered answer. Neither addendum's own
+items were put to the operator as forks — both narrow and within
+already-approved scope. See decision 0430's own fourth and fifth
+addendum sections for the full reasoning and tests.
+
 ### Purchase orders and matching
 - Purchase order storage grounded in Peppol BIS Order Only 3.3, via UBL
   XML ingestion (0081) and CSV load (0370) — the same tables, the same

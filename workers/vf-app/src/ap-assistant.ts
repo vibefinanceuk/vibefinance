@@ -15,7 +15,7 @@ import { handleMintDocumentUrl } from "./document-route.js";
 import { handleListDocuments } from "./documents-route.js";
 import { handleInvoiceCount, type InvoiceCountReport } from "./invoice-count-route.js";
 import { unitsWherePermitted, scopedToChosenOrg } from "./enforce.js";
-import { firstOfThisMonth } from "./dates.js";
+import { firstOfThisMonth, firstOfThisQuarter } from "./dates.js";
 
 /**
  * Talk to an AP Expert — decision 0430, Screen 6 of the Management
@@ -110,6 +110,48 @@ import { firstOfThisMonth } from "./dates.js";
  * server-side storage of any kind was added for this — the browser
  * already kept this history for display; only where it also gets sent
  * changed.
+ *
+ * **A fourth addendum, three more findings from live use with real
+ * conversation memory now flowing.** "Share the most recent invoices"
+ * then "share the document links" answered every invoice with a
+ * fabricated "no document on file" — `invoice_search`'s own data never
+ * carries document status at all (checking retention for up to 50 rows
+ * would mean up to 50 signed-URL mints per browsing question, the same
+ * cost reasoning that already kept links out of the real Documents
+ * screen's own list), but the answer-phrasing prompt only ever told the
+ * model what to say when a `documentUrl` field is *present and null* —
+ * nothing told it what an *absent* field means, so it improvised.
+ * Fixed by telling the answer prompt explicitly that this tool's data
+ * never states document availability, so it must never claim one way
+ * or the other. The very next question then asked for a specific
+ * invoice's link by a number named nowhere in that question itself —
+ * exactly what `recentTurns` exists to let the model infer — and
+ * `invoice_lookup` answered "not found" for a number `invoice_search`
+ * had shown three times moments before. Root-caused as far as this
+ * session's own tools allow (no access to the live database or
+ * request logs): the number reaching `invoice_lookup` this time had
+ * passed through a model's own hands at least once, retyped out of its
+ * own prior phrased answer rather than typed by a person, and nothing
+ * stops a model from cosmetically restyling a hyphen when it writes
+ * prose — `COLLATE NOCASE` folds case, never Unicode code points, so a
+ * different dash character is a different string to SQLite. Fixed
+ * defensively either way: `invoice-lookup-route.ts` now normalizes
+ * dash-like characters on the query side before matching, and the
+ * answer prompt is now told to reproduce identifiers exactly as given,
+ * never restyled. Separately, "total invoice amount for this quarter"
+ * was refused correctly — no tool anywhere sums invoice amounts over a
+ * calendar period, and `period` only ever understood "this_month." The
+ * operator's own choice, asked directly: build it now, covering both
+ * month and quarter. `invoice-count-route.ts` gained an exact,
+ * unbounded total by currency (never blended, the same discipline
+ * every other money total in this app already keeps) alongside its
+ * existing count; `period` now also accepts `"this_quarter"`
+ * (`firstOfThisQuarter`, `dates.ts`). The operator's own second
+ * choice, also asked directly: for the one-row `latestOnly` case
+ * specifically — asked for in two separate live tests now — a document
+ * link is minted for that single invoice, the same bounded cost
+ * `invoice_lookup` already pays for one match; the general up-to-50
+ * list still mints nothing.
  */
 
 export const AP_ASSISTANT_TOOL_NAMES = [
@@ -133,10 +175,12 @@ export interface ApAssistantToolArgs {
   orderNumber?: string;
   /** An invoice's own printed number, exactly as the person gave it — required by `invoice_lookup` only. */
   invoiceNumber?: string;
-  /** `invoice_search` only: narrows to the current calendar month, when the person asked for that. Absent means no date narrowing at all. */
-  period?: "this_month";
+  /** `invoice_search` only: narrows to the current calendar month or quarter, when the person asked for that. Absent means no date narrowing at all. */
+  period?: "this_month" | "this_quarter";
   /** `invoice_search` only: true when the person asked for one single most-recent invoice ("the latest") rather than a list. */
   latestOnly?: boolean;
+  /** `invoice_search` only: a workflow stage's own name, as the person said it ("Validation," "Matching") — never an id, which they would never know. Absent means no stage narrowing. */
+  stage?: string;
 }
 
 export interface ApAssistantToolCall {
@@ -183,8 +227,9 @@ export function parseToolSelection(raw: string): ApAssistantSelection {
   if (typeof rawArgs.supplier === "string" && rawArgs.supplier.trim()) args.supplier = rawArgs.supplier.trim();
   if (typeof rawArgs.orderNumber === "string" && rawArgs.orderNumber.trim()) args.orderNumber = rawArgs.orderNumber.trim();
   if (typeof rawArgs.invoiceNumber === "string" && rawArgs.invoiceNumber.trim()) args.invoiceNumber = rawArgs.invoiceNumber.trim();
-  if (rawArgs.period === "this_month") args.period = "this_month";
+  if (rawArgs.period === "this_month" || rawArgs.period === "this_quarter") args.period = rawArgs.period;
   if (rawArgs.latestOnly === true) args.latestOnly = true;
+  if (typeof rawArgs.stage === "string" && rawArgs.stage.trim()) args.stage = rawArgs.stage.trim();
 
   return { kind: "tool", tool: v.tool as ApAssistantToolName, args };
 }
@@ -195,13 +240,13 @@ function matchesSupplier(name: string | null | undefined, wanted?: string): bool
   return name.toLowerCase().includes(wanted.toLowerCase());
 }
 
-/** Everything a tool's own `run` function might need — one shape for all nine, even though most ignore most of it. */
+/** Everything a tool's own `run` function might need — one shape for all ten, even though most ignore most of it. */
 interface ToolRunContext {
   db: D1Database;
   currentOrg: string | null;
   userId: string;
   args: ApAssistantToolArgs;
-  /** Only `invoice_lookup` mints a document link; every other tool ignores these two. */
+  /** `invoice_lookup` always mints document links; `invoice_search` mints exactly one when `latestOnly` caps its result to a single row — decision 0430's fourth addendum. Every other tool ignores these two. */
   documentUrlSecret: string | undefined;
   origin: string;
 }
@@ -369,6 +414,8 @@ async function runInvoiceLookup(ctx: ToolRunContext) {
 }
 
 interface InvoiceSearchDocument {
+  /** The row's own real database id — never included in this tool's output; used only, internally, to mint a document link for the `latestOnly` case below. */
+  id: string;
   number: string | null;
   supplier: string | null;
   amount: number | null;
@@ -401,34 +448,88 @@ interface InvoiceSearchDocument {
  * when the cap is hit, say so and point at the real Documents screen
  * rather than silently truncating or trying to fetch everything into
  * one chat answer.
+ *
+ * **Never mints a document link for the general list — except the one
+ * case where the cap already makes it cheap.** Checking document
+ * retention for up to 50 rows would mean up to 50 existence checks and
+ * up to 50 signed-URL mints for one browsing question — the same cost
+ * reasoning that already kept links off the real Documents screen's own
+ * list. `latestOnly` caps the result at exactly one row, so decision
+ * 0430's fourth addendum mints a link for that one row at the same
+ * bounded cost `invoice_lookup` already pays for a single match — asked
+ * for in two separate live tests now ("please show the most recent
+ * invoice" immediately followed by "can you provide the link").
+ * `handleMintDocumentUrl` itself 404s when no document is retained, so
+ * no separate existence check is needed first.
+ *
+ * **A stage narrows by name, resolved to real ids first.** A live test
+ * asked to "list the invoices held at the Validation stage" and was
+ * refused outright — `documents-route.ts`'s own `stage` filter already
+ * existed, but nothing exposed it here. A person says a stage's own
+ * *name*, never an id, and `process_stages` is customer-configurable
+ * (decision 0415's own reasoning), so the same name can genuinely
+ * exist on more than one real process — `resolveStageIds` below
+ * resolves to every real id sharing that name, never just the first
+ * one found, and both the list and the exact count/total are narrowed
+ * by all of them together via `documents-route.ts`'s own `stageIds`
+ * and `invoice-count-route.ts`'s own `stageIds` filter, the same
+ * `EXISTS`-based, never-a-`JOIN` shape that route's own doc comment
+ * explains. A name matching no real stage is reported honestly as
+ * such, not silently treated as "no filter" (which would answer a
+ * different question than the one asked) or as "zero invoices" (which
+ * would claim to have checked a real stage that was never found).
  */
+async function resolveStageIds(db: D1Database, stageName: string): Promise<string[]> {
+  const rows = await db.prepare("SELECT id FROM process_stages WHERE name = ? COLLATE NOCASE").bind(stageName).all<{ id: string }>();
+  return rows.results.map((r) => r.id);
+}
+
 async function runInvoiceSearch(ctx: ToolRunContext) {
+  let stageIds: string[] | null = null;
+  if (ctx.args.stage) {
+    stageIds = await resolveStageIds(ctx.db, ctx.args.stage);
+    if (stageIds.length === 0) {
+      return { tool: "invoice_search", stageRecognized: false, stageRequested: ctx.args.stage };
+    }
+  }
+
   const cap = ctx.args.latestOnly ? 1 : 50;
   const params = new URLSearchParams();
   if (ctx.args.supplier) params.set("q", ctx.args.supplier);
   params.set("limit", String(cap));
-  const since = ctx.args.period === "this_month" ? firstOfThisMonth() : null;
+  const since =
+    ctx.args.period === "this_month" ? firstOfThisMonth() : ctx.args.period === "this_quarter" ? firstOfThisQuarter() : null;
   if (since) params.set("since", since);
+  if (stageIds) params.set("stageIds", JSON.stringify(stageIds));
 
   const visible = await unitsWherePermitted(ctx.db, ctx.userId, "AP.Review");
   const scoped = await scopedToChosenOrg(ctx.db, visible, ctx.currentOrg);
   const result = await handleListDocuments(ctx.db, params, scoped, ctx.userId);
   const body = result.body as { documents: InvoiceSearchDocument[]; searched: number };
 
-  // An exact, unbounded count — decision 0430's third addendum, so
-  // "how many" never has to be guessed from a capped, 50-row list.
-  // `invoice-count-route.ts`'s own doc comment explains why this is a
-  // separate small query rather than derived from `body` above.
+  // An exact, unbounded count and total-by-currency — decision 0430's
+  // third addendum built the count, so "how many" never has to be
+  // guessed from a capped, 50-row list; the fourth addendum added the
+  // total, for the same reason. `invoice-count-route.ts`'s own doc
+  // comment explains why this is a separate small query rather than
+  // derived from `body` above.
   const countResult = await handleInvoiceCount(ctx.db, ctx.currentOrg, ctx.userId, {
     since,
     supplier: ctx.args.supplier ?? null,
+    stageIds,
   });
-  const totalMatching = (countResult.body as InvoiceCountReport).count;
+  const { count: totalMatching, totalByCurrency } = countResult.body as InvoiceCountReport;
+
+  let latestDocumentUrl: string | null = null;
+  if (ctx.args.latestOnly && body.documents.length > 0) {
+    const minted = await handleMintDocumentUrl(ctx.db, ctx.documentUrlSecret, body.documents[0].id, null, ctx.origin);
+    if (minted.status === 200) latestDocumentUrl = (minted.body as { url: string }).url;
+  }
 
   return {
     tool: "invoice_search",
     period: ctx.args.period ?? null,
-    invoices: body.documents.map((d) => ({
+    invoices: body.documents.map((d, i) => ({
       number: d.number,
       supplier: d.supplier,
       amount: d.amount,
@@ -437,12 +538,21 @@ async function runInvoiceSearch(ctx: ToolRunContext) {
       receivedAt: d.receivedAt,
       stage: d.stageName,
       status: d.status,
+      // Only ever present for the single `latestOnly` row — see this
+      // function's own doc comment. Every other invoice_search call
+      // carries no document information at all; the answer prompt is
+      // told explicitly never to infer one from its absence.
+      ...(ctx.args.latestOnly && i === 0 ? { documentUrl: latestDocumentUrl } : {}),
     })),
     countReturned: body.documents.length,
     // Exact, not a heuristic — answers "how many" directly. Distinct
     // from `countReturned`, which can be smaller than this when a
     // supplier filter narrows the (already capped) fetched rows.
     totalMatching,
+    // Exact, unbounded, by currency — never blended into one number.
+    // Empty when nothing matched, or when every match is missing an
+    // amount or a currency.
+    totalAmountByCurrency: totalByCurrency,
     moreMayExist: totalMatching > body.documents.length,
   };
 }
@@ -545,27 +655,59 @@ Tools:
 - purchase_order_status: how many purchase orders are in each status (active, on hold, closed, partially invoiced, fully invoiced) right now. No arguments.
 - purchase_order_lookup: full detail on one specific purchase order. Requires arg "orderNumber": the order's own number, exactly as given.
 - invoice_lookup: full detail on one specific, already-identified invoice, including which workflow stage it is at and a link to its document if one is on file. Requires arg "invoiceNumber": the invoice's own printed number, exactly as given. Use this only when the person already named a specific invoice number — never for "the latest" or "invoices from this month," which is the next tool.
-- invoice_search: a list of recent invoices (newest first, up to 50 at a time) AND an exact, unbounded count of how many match — use this for "the latest invoice," "invoices received this month," "how many invoices this month," "how many from [supplier]," or just browsing what's come in, optionally narrowed to one supplier. The count in its result is always exact even when the list itself is capped at 50 — always answer a "how many" question from that exact count, never by counting the list. Never returns a document link itself (ask invoice_lookup for one specific invoice's link once you know its number). Optional arg "period": set to "this_month" only when they asked about the current calendar month specifically. Optional arg "latestOnly": set to true only when they asked for one single most recent invoice ("the latest," "the most recent"), never for a general list or a count. Optional arg "supplier".
+- invoice_search: a list of recent invoices (newest first, up to 50 at a time), an exact, unbounded count of how many match, AND an exact, unbounded total amount by currency — use this for "the latest invoice," "invoices received this month/quarter," "how many invoices this month," "total invoice amount this quarter," "how many/how much from [supplier]," "invoices at the Validation stage," or just browsing what's come in, optionally narrowed to one supplier and/or one workflow stage. The count and the total are always exact even when the list itself is capped at 50 — always answer a "how many" question from the exact count and a "total amount" question from the exact total, never by counting or adding up the list yourself, and never add the total across two different currencies. Only ever returns a document link for one single most-recent invoice (see "latestOnly" below) — for any other specific invoice's link, ask invoice_lookup once you know its number. Optional arg "period": set to "this_month" or "this_quarter" only when they asked about that specific calendar window. Optional arg "latestOnly": set to true only when they asked for one single most recent invoice ("the latest," "the most recent"), never for a general list or a count or a total. Optional arg "supplier". Optional arg "stage": a workflow stage's own name exactly as they said it ("Validation," "Matching," "Payment-eligible") when they asked about invoices at a specific stage — if that name matches no real stage, the data will say so plainly; never guess a close-sounding name instead.
 - duplicate_invoices: invoices flagged as possible duplicates of another invoice already on file (same supplier, similar amount, similar date), ranked by how confident that match is. Optional arg "supplier".
 
-None of these tools can say whether an invoice was actually paid, or when — this product does not capture that anywhere, so never claim otherwise. None of them can produce a list of system users, or narrow by any date range other than the current calendar month.
+None of these tools can say whether an invoice was actually paid, or when — this product does not capture that anywhere, so never claim otherwise. None of them can produce a list of system users, or narrow by any date range other than the current calendar month or quarter.
+
+If the current question asks only for a different presentation of the answer immediately before it — "as a table," "sort that," "just the totals" — and names no new criteria of its own, treat it as the same request as whichever question immediately before it actually named real criteria: pick that same tool, with the same arguments, rather than refusing just because this question alone names nothing. This re-runs the lookup fresh rather than reusing a remembered answer, so the numbers stay real. Only do this when the current question is genuinely just asking for a different presentation — never invent criteria for a question that is honestly asking something new.
 ${recentTurnsBlock(recentTurns)}
 The person asked: "${question}"
 
 Reply with ONLY a JSON object, no other text, no markdown fences. Either:
-{"tool": "<one of the ten tool names above>", "args": {"supplier": "<a name, only if relevant and named>", "orderNumber": "<only for purchase_order_lookup>", "invoiceNumber": "<only for invoice_lookup>", "period": "<only \\"this_month\\", only for invoice_search>", "latestOnly": <true, only for invoice_search, only when they asked for a single most-recent invoice>}}
+{"tool": "<one of the ten tool names above>", "args": {"supplier": "<a name, only if relevant and named>", "orderNumber": "<only for purchase_order_lookup>", "invoiceNumber": "<only for invoice_lookup, copied exactly character-for-character from wherever it came from — never restyled, reformatted, or re-punctuated>", "period": "<only \\"this_month\\" or \\"this_quarter\\", only for invoice_search>", "latestOnly": <true, only for invoice_search, only when they asked for a single most-recent invoice>, "stage": "<a workflow stage's own name, only for invoice_search, only when they asked about a specific stage>"}}
 (omit any arg key that doesn't apply — most questions need none at all)
 or, if their question cannot be answered with any of these ten tools:
 {"tool": "none", "reason": "<one honest sentence explaining why, in plain language, to show them directly>"}`;
 }
 
+/**
+ * What each tool's own data does and does not cover — a short version
+ * of that tool's own selection-prompt description above, repeated here
+ * because `buildAnswerPrompt` below never otherwise sees it. Found
+ * necessary directly from two separate live-test bugs that turned out
+ * to share one root cause: the phrasing model only ever sees the raw
+ * JSON a tool returned, never the tool's own real boundaries, so
+ * nothing stopped it from generalizing past them — `invoice_search`'s
+ * data was read as proof no document exists anywhere (it never checks
+ * that at all), and `accrual_summary`'s own "no invoices in any other
+ * stage" read as a claim about every invoice in the system, when that
+ * tool structurally excludes anything already at its process's final,
+ * payment-eligible stage or already completed. Decision 0430's fifth
+ * addendum.
+ */
+const AP_ASSISTANT_TOOL_SCOPE: Record<ApAssistantToolName, string> = {
+  supplier_spend: "total spend by supplier, ranked and grouped by currency — nothing here says which workflow stage an invoice is at, or whether it has been paid.",
+  overdue_balance: "invoices still open in the workflow whose stated due date has already passed — says nothing about invoices that are not overdue, or about payment status.",
+  accrual_summary:
+    "invoices received but not yet at the final, payment-eligible stage of the workflow, and still in progress. An invoice already at that final stage, or whose process instance has already completed, is never included here — this can never be read as a full account of every invoice in the system, only the ones still accruing, so never say or imply there are no other invoices anywhere else.",
+  exception_counts: "validation failures on invoices from roughly the last eight weeks — never a count of anyone's current open tasks.",
+  tasks_by_user: "today's open tasks by person, plus how many are unclaimed right now — never a count of validation failures or exceptions.",
+  purchase_order_status: "how many purchase orders are in each status right now — says nothing about individual invoices.",
+  purchase_order_lookup: "full detail on one specific purchase order, matched by its own number.",
+  invoice_lookup: "full detail on one specific, already-identified invoice, matched by its own printed number.",
+  invoice_search:
+    "a list of recent invoices, capped at 50 even though the count and total beside it are always exact, optionally narrowed by supplier, calendar period, or workflow stage — never states whether a document is on file for any invoice except the single most-recent one, when asked for specifically.",
+  duplicate_invoices: "invoices flagged as possible duplicates of another already on file, ranked by how confident that match is.",
+};
+
 function buildAnswerPrompt(question: string, tool: ApAssistantToolName, toolResult: unknown, recentTurns: ApAssistantRecentTurn[] = []): string {
   return `You are answering an Accounts Payable manager's question using VibeFinance. They asked: "${question}"
 ${recentTurnsBlock(recentTurns)}
-You looked this up using the ${tool} tool and got back this real, verified data:
+You looked this up using the ${tool} tool, which only ever covers: ${AP_ASSISTANT_TOOL_SCOPE[tool]} Never say or imply anything outside that scope as though you checked and found nothing there — if this tool's data doesn't cover something, you simply don't know, so answer only what the data below actually shows. It returned this real, verified data:
 ${JSON.stringify(toolResult)}
 
-Write one short, direct, natural-language answer using ONLY the numbers and facts in that data. Do not invent, estimate, or add any figure that isn't there. State plainly what each number represents, using the data's own field names as your guide — never rename or reinterpret what a number counts (for example, a count of exceptions is never "tasks," and a count of open tasks is never "exceptions"). If the data is empty or shows nothing relevant to what they asked, say so plainly rather than guessing. If the data includes a "documentUrl" that is not null, include that exact URL in your answer so they can open it; if it is null, say plainly that no document is on file rather than inventing a link. If the data shows "ambiguous": true with more than one match, briefly list each one (supplier and amount) with its own document link exactly as given — a "documentUrl" that is null for a given match means no document is on file for that one, so say so for that match specifically rather than omitting it; do not ask which one they meant, since every match's own information and link are already included. If "moreMatchesNotShown" is true, say plainly that there were more matches than shown. If the data shows "found": false, say plainly you could not find anything with that number. If the data has an "invoices" list, describe what's in it rather than reading out every single row when there are many; if asked "how many," state the exact "totalMatching" number rather than counting the "invoices" list yourself (that list can be capped at 50 while "totalMatching" never is); if "moreMayExist" is true, say plainly that the list shown is not the complete set and that the Documents screen can browse all of them. Never claim to know whether an invoice was actually paid — this data never says that. Do not mention "tools", "JSON", or how you looked this up; answer like a knowledgeable colleague would, in a sentence or two.`;
+Write one short, direct, natural-language answer using ONLY the numbers and facts in that data. Do not invent, estimate, or add any figure that isn't there. Reproduce any invoice number, order number, or other identifier exactly character-for-character as it appears in the data — never restyle its punctuation (for example, never change a hyphen to a different dash character) even for readability, since a person may need to type or paste it back exactly. State plainly what each number represents, using the data's own field names as your guide — never rename or reinterpret what a number counts (for example, a count of exceptions is never "tasks," and a count of open tasks is never "exceptions"). If the data is empty or shows nothing relevant to what they asked, say so plainly rather than guessing. If a specific invoice entry includes a "documentUrl" field at all (present, whether a real URL or null), that entry's document status is known: a non-null value is a real link to include; a null value means say plainly no document is on file for that one. If an invoice entry has no "documentUrl" field at all, its document status is simply not known from this data — never say a document is or isn't on file for it; if they want that specific invoice's link, tell them to ask for it by its own invoice number. If the data shows "ambiguous": true with more than one match, briefly list each one (supplier and amount) with its own document link exactly as given — a "documentUrl" that is null for a given match means no document is on file for that one, so say so for that match specifically rather than omitting it; do not ask which one they meant, since every match's own information and link are already included. If "moreMatchesNotShown" is true, say plainly that there were more matches than shown. If the data shows "found": false, say plainly you could not find anything with that number. If the data shows "stageRecognized": false, say plainly that "stageRequested" is not a real workflow stage in this system, rather than guessing which one they meant. If the data has an "invoices" list, describe what's in it rather than reading out every single row when there are many; if asked "how many," state the exact "totalMatching" number rather than counting the "invoices" list yourself (that list can be capped at 50 while "totalMatching" never is); if asked for a total amount, state the exact "totalAmountByCurrency" figures rather than adding up the list yourself, one figure per currency, and never combine two currencies into one number; if "moreMayExist" is true, say plainly that the list shown is not the complete set and that the Documents screen can browse all of them. Never claim to know whether an invoice was actually paid — this data never says that. Do not mention "tools", "JSON", or how you looked this up; answer like a knowledgeable colleague would. If they explicitly asked for a table, a list, or another specific layout, give them that — a short markdown table or list is fine — but every value in it must still come only from the data above, never from a table you remember writing in an earlier answer. Otherwise, keep it to a sentence or two.`;
 }
 
 export interface ApAssistantAnswer {
