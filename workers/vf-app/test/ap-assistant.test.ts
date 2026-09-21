@@ -60,11 +60,28 @@ async function supplier(id: string, name: string) {
   await env.DB.prepare("INSERT INTO suppliers (id, erp_identifier, name) VALUES (?, ?, ?)").bind(id, id, name).run();
 }
 
-async function invoice(opts: { id: string; supplierId: string; total: number; currency: string; number?: string }) {
+async function invoice(opts: { id: string; supplierId: string; total: number; currency: string; number?: string; createdAt?: string }) {
+  // `facts_json` carries `BT-1` too, not just an empty object — the
+  // `invoice_number` column is what `invoice_lookup` reads (decision
+  // 0430's own addendum), but `documents-route.ts`'s own listing
+  // (which `invoice_search`, its second addendum, wraps) reads the
+  // number out of `facts_json`'s own `BT-1` key instead, the same
+  // field every other Documents test in this codebase seeds. Both are
+  // real, independent readings of "the invoice's own number" in this
+  // schema, so a helper meant to exercise both tools sets both.
+  const factsJson = JSON.stringify(opts.number ? { "BT-1": opts.number } : {});
+  if (opts.createdAt) {
+    await env.DB.prepare(
+      "INSERT INTO invoice_headers (id, invoice_number, facts_json, total_with_vat, currency, supplier_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)"
+    )
+      .bind(opts.id, opts.number ?? null, factsJson, opts.total, opts.currency, opts.supplierId, opts.createdAt)
+      .run();
+    return;
+  }
   await env.DB.prepare(
-    "INSERT INTO invoice_headers (id, invoice_number, facts_json, total_with_vat, currency, supplier_id) VALUES (?, ?, '{}', ?, ?, ?)"
+    "INSERT INTO invoice_headers (id, invoice_number, facts_json, total_with_vat, currency, supplier_id) VALUES (?, ?, ?, ?, ?, ?)"
   )
-    .bind(opts.id, opts.number ?? null, opts.total, opts.currency, opts.supplierId)
+    .bind(opts.id, opts.number ?? null, factsJson, opts.total, opts.currency, opts.supplierId)
     .run();
 }
 
@@ -484,5 +501,99 @@ describe("invoice_lookup, including a real minted document link", () => {
     expect(answerPrompt).toContain('"ambiguous":true');
     expect(answerPrompt).toContain("Acme Widgets");
     expect(answerPrompt).toContain("Globex Corp");
+  });
+});
+
+/**
+ * `invoice_search` — decision 0430's second addendum, live testing's
+ * second real gap: "the latest invoice," "invoices received this
+ * month," and "list all invoices" all refused, because nothing in the
+ * codebase — not just no tool — could list a set of invoices at all.
+ * Wraps the real Documents screen's own `handleListDocuments`
+ * (`documents-route.ts`), gated by that screen's own `AP.Review`
+ * permission rather than `AP.Validate`.
+ */
+describe("invoice_search, a browsable list rather than one exact number", () => {
+  it("is gated by AP.Review, not AP.Assistant alone", async () => {
+    await person("alice", ["AP.Assistant"]);
+    const model = fakeModel('{"tool": "invoice_search", "args": {}}');
+    const result = await handleAskApAssistant(env.DB, model, null, "alice", "list recent invoices");
+    const body = result.body as ApAssistantAnswer;
+    expect(body.answer).toContain("AP.Review");
+  });
+
+  it("lists recent invoices, newest received first", async () => {
+    await person("alice", ["AP.Assistant", "AP.Review"]);
+    await supplier("acme", "Acme Widgets");
+    await invoice({ id: "old", number: "INV-OLD", supplierId: "acme", total: 100, currency: "GBP", createdAt: "2020-01-01T00:00:00Z" });
+    await invoice({ id: "new", number: "INV-NEW", supplierId: "acme", total: 200, currency: "GBP", createdAt: "2020-06-01T00:00:00Z" });
+
+    const model = fakeModel('{"tool": "invoice_search", "args": {}}', "Two invoices: INV-NEW and INV-OLD.");
+    const result = await handleAskApAssistant(env.DB, model, null, "alice", "list recent invoices");
+    const body = result.body as ApAssistantAnswer;
+    expect(body.answer).toBe("Two invoices: INV-NEW and INV-OLD.");
+
+    const calls = (model.compile as ReturnType<typeof vi.fn>).mock.calls as [string][];
+    const answerPrompt = calls.find(([p]) => !p.includes("Reply with ONLY a JSON object"))![0];
+    const dataJson = answerPrompt.slice(answerPrompt.indexOf("{"), answerPrompt.lastIndexOf("}") + 1);
+    const data = JSON.parse(dataJson) as { invoices: { number: string | null }[] };
+    expect(data.invoices.map((i) => i.number)).toEqual(["INV-NEW", "INV-OLD"]);
+  });
+
+  it('"period": "this_month" excludes an invoice received months ago', async () => {
+    await person("alice", ["AP.Assistant", "AP.Review"]);
+    await supplier("acme", "Acme Widgets");
+    await invoice({ id: "ancient", number: "INV-ANCIENT", supplierId: "acme", total: 100, currency: "GBP", createdAt: "2020-01-01T00:00:00Z" });
+    await invoice({ id: "current", number: "INV-CURRENT", supplierId: "acme", total: 200, currency: "GBP" }); // defaults to now
+
+    const model = fakeModel('{"tool": "invoice_search", "args": {"period": "this_month"}}', "One invoice this month: INV-CURRENT.");
+    const result = await handleAskApAssistant(env.DB, model, null, "alice", "invoices received this month");
+    const body = result.body as ApAssistantAnswer;
+    expect(body.answer).toBe("One invoice this month: INV-CURRENT.");
+
+    const calls = (model.compile as ReturnType<typeof vi.fn>).mock.calls as [string][];
+    const answerPrompt = calls.find(([p]) => !p.includes("Reply with ONLY a JSON object"))![0];
+    const dataJson = answerPrompt.slice(answerPrompt.indexOf("{"), answerPrompt.lastIndexOf("}") + 1);
+    const data = JSON.parse(dataJson) as { invoices: { number: string | null }[] };
+    expect(data.invoices.map((i) => i.number)).toEqual(["INV-CURRENT"]);
+  });
+
+  it('"latestOnly": true returns exactly one, and says more may exist when others do', async () => {
+    await person("alice", ["AP.Assistant", "AP.Review"]);
+    await supplier("acme", "Acme Widgets");
+    await invoice({ id: "a", number: "INV-A", supplierId: "acme", total: 100, currency: "GBP", createdAt: "2020-01-01T00:00:00Z" });
+    await invoice({ id: "b", number: "INV-B", supplierId: "acme", total: 100, currency: "GBP", createdAt: "2020-02-01T00:00:00Z" });
+    await invoice({ id: "c", number: "INV-C", supplierId: "acme", total: 100, currency: "GBP", createdAt: "2020-03-01T00:00:00Z" });
+
+    const model = fakeModel('{"tool": "invoice_search", "args": {"latestOnly": true}}', "The latest is INV-C.");
+    const result = await handleAskApAssistant(env.DB, model, null, "alice", "what's the latest invoice");
+    const body = result.body as ApAssistantAnswer;
+    expect(body.answer).toBe("The latest is INV-C.");
+
+    const calls = (model.compile as ReturnType<typeof vi.fn>).mock.calls as [string][];
+    const answerPrompt = calls.find(([p]) => !p.includes("Reply with ONLY a JSON object"))![0];
+    const dataJson = answerPrompt.slice(answerPrompt.indexOf("{"), answerPrompt.lastIndexOf("}") + 1);
+    const data = JSON.parse(dataJson) as { invoices: { number: string | null }[]; moreMayExist: boolean };
+    expect(data.invoices.map((i) => i.number)).toEqual(["INV-C"]);
+    expect(data.moreMayExist).toBe(true);
+  });
+
+  it("narrows to one supplier when asked", async () => {
+    await person("alice", ["AP.Assistant", "AP.Review"]);
+    await supplier("acme", "Acme Widgets");
+    await supplier("globex", "Globex Corp");
+    await invoice({ id: "a", number: "INV-ACME", supplierId: "acme", total: 100, currency: "GBP" });
+    await invoice({ id: "g", number: "INV-GLOBEX", supplierId: "globex", total: 100, currency: "GBP" });
+
+    const model = fakeModel('{"tool": "invoice_search", "args": {"supplier": "Acme"}}', "Just the one from Acme.");
+    const result = await handleAskApAssistant(env.DB, model, null, "alice", "invoices from Acme");
+    const body = result.body as ApAssistantAnswer;
+    expect(body.answer).toBe("Just the one from Acme.");
+
+    const calls = (model.compile as ReturnType<typeof vi.fn>).mock.calls as [string][];
+    const answerPrompt = calls.find(([p]) => !p.includes("Reply with ONLY a JSON object"))![0];
+    const dataJson = answerPrompt.slice(answerPrompt.indexOf("{"), answerPrompt.lastIndexOf("}") + 1);
+    const data = JSON.parse(dataJson) as { invoices: { number: string | null }[] };
+    expect(data.invoices.map((i) => i.number)).toEqual(["INV-ACME"]);
   });
 });

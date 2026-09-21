@@ -12,6 +12,9 @@ import { handleGetPurchaseOrderStatusCounts, handleGetPurchaseOrder } from "./pu
 import { handlePossibleDuplicates } from "./fraud-duplicates-route.js";
 import { handleInvoiceLookup, type InvoiceLookupReport } from "./invoice-lookup-route.js";
 import { handleMintDocumentUrl } from "./document-route.js";
+import { handleListDocuments } from "./documents-route.js";
+import { unitsWherePermitted, scopedToChosenOrg } from "./enforce.js";
+import { firstOfThisMonth } from "./dates.js";
 
 /**
  * Talk to an AP Expert — decision 0430, Screen 6 of the Management
@@ -70,6 +73,20 @@ import { handleMintDocumentUrl } from "./document-route.js";
  * explicitly with its nearest neighbour rather than merely describe
  * itself, and the answer-phrasing prompt is now told never to rename
  * what a number counts.
+ *
+ * **Ten tools now, a second addendum to the same decision.** Further
+ * live testing asked plain questions — "a link to the latest invoice
+ * document," "invoices received this month," "lookup all invoices" —
+ * that no tool, and in fact no route anywhere in this codebase, could
+ * answer: every existing invoice route was either one invoice by id
+ * or by its own printed number, or an aggregate summary. Nothing did
+ * "a set of invoices matching a filter." `invoice_search` fills that,
+ * wrapping the real Documents screen's own route
+ * (`documents-route.ts`'s `handleListDocuments`) rather than a new
+ * query, scoped by the same `AP.Review` permission and the same unit
+ * scoping that screen already enforces, capped at 50 results with an
+ * honest "more may exist, try Documents" rather than a silent
+ * truncation — the operator's own choice, asked directly.
  */
 
 export const AP_ASSISTANT_TOOL_NAMES = [
@@ -82,6 +99,7 @@ export const AP_ASSISTANT_TOOL_NAMES = [
   "purchase_order_lookup",
   "duplicate_invoices",
   "invoice_lookup",
+  "invoice_search",
 ] as const;
 export type ApAssistantToolName = (typeof AP_ASSISTANT_TOOL_NAMES)[number];
 
@@ -92,6 +110,10 @@ export interface ApAssistantToolArgs {
   orderNumber?: string;
   /** An invoice's own printed number, exactly as the person gave it — required by `invoice_lookup` only. */
   invoiceNumber?: string;
+  /** `invoice_search` only: narrows to the current calendar month, when the person asked for that. Absent means no date narrowing at all. */
+  period?: "this_month";
+  /** `invoice_search` only: true when the person asked for one single most-recent invoice ("the latest") rather than a list. */
+  latestOnly?: boolean;
 }
 
 export interface ApAssistantToolCall {
@@ -109,7 +131,7 @@ export interface ApAssistantNoTool {
 export type ApAssistantSelection = ApAssistantToolCall | ApAssistantNoTool;
 
 const DEFAULT_REFUSAL_REASON =
-  "That's not something I can answer today — I can look at supplier spend, overdue balances, the accrual summary, exception counts, open tasks by person, purchase order status, one purchase order or invoice by its own number, and possible duplicate invoices.";
+  "That's not something I can answer today — I can look at supplier spend, overdue balances, the accrual summary, exception counts, open tasks by person, purchase order status, one purchase order or invoice by its own number, possible duplicate invoices, and recent invoices by date or supplier.";
 
 /**
  * Parse and validate the model's tool-selection response — the same
@@ -138,6 +160,8 @@ export function parseToolSelection(raw: string): ApAssistantSelection {
   if (typeof rawArgs.supplier === "string" && rawArgs.supplier.trim()) args.supplier = rawArgs.supplier.trim();
   if (typeof rawArgs.orderNumber === "string" && rawArgs.orderNumber.trim()) args.orderNumber = rawArgs.orderNumber.trim();
   if (typeof rawArgs.invoiceNumber === "string" && rawArgs.invoiceNumber.trim()) args.invoiceNumber = rawArgs.invoiceNumber.trim();
+  if (rawArgs.period === "this_month") args.period = "this_month";
+  if (rawArgs.latestOnly === true) args.latestOnly = true;
 
   return { kind: "tool", tool: v.tool as ApAssistantToolName, args };
 }
@@ -300,6 +324,78 @@ async function runInvoiceLookup(ctx: ToolRunContext) {
   };
 }
 
+interface InvoiceSearchDocument {
+  number: string | null;
+  supplier: string | null;
+  amount: number | null;
+  currency: string | null;
+  issueDate: string | null;
+  receivedAt: string;
+  stageName: string | null;
+  status: string;
+}
+
+/**
+ * A browsable list of recent invoices — "the latest," "received this
+ * month" — decision 0430's second addendum. Live testing surfaced
+ * this gap the same way as the first addendum's bug: the operator
+ * asked plain questions ("Please list invoices received this month")
+ * that no tool, and no route anywhere in this codebase, could answer
+ * at all. `invoice_lookup` finds one invoice by its own printed
+ * number; this finds a set, by recency and an optional month or
+ * supplier narrowing.
+ *
+ * **Wraps the real Documents screen's own route
+ * (`documents-route.ts`'s `handleListDocuments`), not a new query** —
+ * the same discipline `invoice_lookup` followed for document-link
+ * minting. Scoped by unit and chosen org exactly like that screen
+ * (`AP.Review`, the same permission), so this tool can never show
+ * someone an invoice the Documents screen itself would hide from
+ * them.
+ *
+ * **Capped, honestly.** The operator's own choice: cap at 50, and
+ * when the cap is hit, say so and point at the real Documents screen
+ * rather than silently truncating or trying to fetch everything into
+ * one chat answer.
+ */
+async function runInvoiceSearch(ctx: ToolRunContext) {
+  const cap = ctx.args.latestOnly ? 1 : 50;
+  const params = new URLSearchParams();
+  if (ctx.args.supplier) params.set("q", ctx.args.supplier);
+  params.set("limit", String(cap));
+  if (ctx.args.period === "this_month") params.set("since", firstOfThisMonth());
+
+  const visible = await unitsWherePermitted(ctx.db, ctx.userId, "AP.Review");
+  const scoped = await scopedToChosenOrg(ctx.db, visible, ctx.currentOrg);
+  const result = await handleListDocuments(ctx.db, params, scoped, ctx.userId);
+  const body = result.body as { documents: InvoiceSearchDocument[]; searched: number };
+
+  return {
+    tool: "invoice_search",
+    period: ctx.args.period ?? null,
+    invoices: body.documents.map((d) => ({
+      number: d.number,
+      supplier: d.supplier,
+      amount: d.amount,
+      currency: d.currency,
+      issueDate: d.issueDate,
+      receivedAt: d.receivedAt,
+      stage: d.stageName,
+      status: d.status,
+    })),
+    countReturned: body.documents.length,
+    // Honest, not exact — checked against `searched` (how many rows
+    // were actually fetched), not `documents.length` (how many
+    // survived an optional supplier filter). A supplier filter can
+    // legitimately leave few or no matches even when the raw fetch
+    // hit its cap, and that raw-fetch cap — not the filtered count —
+    // is what "more may exist beyond what was even looked at" means,
+    // the same "searched N, not everything" honesty
+    // `documents-route.ts`'s own `searched` field already carries.
+    moreMayExist: body.searched >= cap,
+  };
+}
+
 interface ApAssistantToolDef {
   /** The permission that tool's own real route already checks — never `AP.Assistant` itself, which only gates the chat. */
   requiredPermission: Permission;
@@ -329,10 +425,11 @@ const AP_ASSISTANT_TOOLS: Record<ApAssistantToolName, ApAssistantToolDef> = {
     missingArgMessage: "I'd need an invoice number to look that up — which one did you mean?",
     run: runInvoiceLookup,
   },
+  invoice_search: { requiredPermission: "AP.Review", run: runInvoiceSearch },
 };
 
 function buildSelectionPrompt(question: string): string {
-  return `You are answering questions for an Accounts Payable manager using VibeFinance, an AP automation product. You can only answer using one of these nine tools — you cannot look anything else up, and you must never invent a number yourself. Read every tool's own description carefully: several sound similar but count genuinely different things, and picking the wrong one because the wording sounds close is worse than refusing.
+  return `You are answering questions for an Accounts Payable manager using VibeFinance, an AP automation product. You can only answer using one of these ten tools — you cannot look anything else up, and you must never invent a number yourself. Read every tool's own description carefully: several sound similar but count genuinely different things, and picking the wrong one because the wording sounds close is worse than refusing.
 
 Tools:
 - supplier_spend: total spend by supplier, ranked, grouped by currency. Optional arg "supplier": a supplier's name, to look at one in particular.
@@ -342,17 +439,18 @@ Tools:
 - tasks_by_user: how many tasks are open and currently assigned to each person right now, plus how many are unclaimed and available to anyone — today's real workload by person. This is the right tool for "who has the most tasks," "who's busiest," or "workload by person." It has nothing to do with validation failures or exceptions. No arguments.
 - purchase_order_status: how many purchase orders are in each status (active, on hold, closed, partially invoiced, fully invoiced) right now. No arguments.
 - purchase_order_lookup: full detail on one specific purchase order. Requires arg "orderNumber": the order's own number, exactly as given.
-- invoice_lookup: full detail on one specific invoice, including which workflow stage it is at and a link to its document if one is on file. Requires arg "invoiceNumber": the invoice's own printed number, exactly as given. This tool cannot find "the latest" or "the most recent" invoice — only one named by its own number.
+- invoice_lookup: full detail on one specific, already-identified invoice, including which workflow stage it is at and a link to its document if one is on file. Requires arg "invoiceNumber": the invoice's own printed number, exactly as given. Use this only when the person already named a specific invoice number — never for "the latest" or "invoices from this month," which is the next tool.
+- invoice_search: a list of recent invoices, newest first, up to 50 at a time — for "the latest invoice," "invoices received this month," or just browsing what's come in, optionally narrowed to one supplier. Never returns a document link itself (ask invoice_lookup for one specific invoice's link once you know its number). Optional arg "period": set to "this_month" only when they asked about the current calendar month specifically. Optional arg "latestOnly": set to true only when they asked for one single most recent invoice ("the latest," "the most recent"), never for a general list. Optional arg "supplier".
 - duplicate_invoices: invoices flagged as possible duplicates of another invoice already on file (same supplier, similar amount, similar date), ranked by how confident that match is. Optional arg "supplier".
 
-None of these tools can say whether an invoice was actually paid, or when — this product does not capture that anywhere, so never claim otherwise. None of them can produce a list of system users, a count of documents received in a date range, or any data not named above.
+None of these tools can say whether an invoice was actually paid, or when — this product does not capture that anywhere, so never claim otherwise. None of them can produce a list of system users, or narrow by any date range other than the current calendar month.
 
 The person asked: "${question}"
 
 Reply with ONLY a JSON object, no other text, no markdown fences. Either:
-{"tool": "<one of the nine tool names above>", "args": {"supplier": "<a name, only if relevant and named>", "orderNumber": "<only for purchase_order_lookup>", "invoiceNumber": "<only for invoice_lookup>"}}
+{"tool": "<one of the ten tool names above>", "args": {"supplier": "<a name, only if relevant and named>", "orderNumber": "<only for purchase_order_lookup>", "invoiceNumber": "<only for invoice_lookup>", "period": "<only \\"this_month\\", only for invoice_search>", "latestOnly": <true, only for invoice_search, only when they asked for a single most-recent invoice>}}
 (omit any arg key that doesn't apply — most questions need none at all)
-or, if their question cannot be answered with any of these nine tools:
+or, if their question cannot be answered with any of these ten tools:
 {"tool": "none", "reason": "<one honest sentence explaining why, in plain language, to show them directly>"}`;
 }
 
@@ -362,7 +460,7 @@ function buildAnswerPrompt(question: string, tool: ApAssistantToolName, toolResu
 You looked this up using the ${tool} tool and got back this real, verified data:
 ${JSON.stringify(toolResult)}
 
-Write one short, direct, natural-language answer using ONLY the numbers and facts in that data. Do not invent, estimate, or add any figure that isn't there. State plainly what each number represents, using the data's own field names as your guide — never rename or reinterpret what a number counts (for example, a count of exceptions is never "tasks," and a count of open tasks is never "exceptions"). If the data is empty or shows nothing relevant to what they asked, say so plainly rather than guessing. If the data includes a "documentUrl" that is not null, include that exact URL in your answer so they can open it; if it is null, say plainly that no document is on file rather than inventing a link. If the data shows "ambiguous": true with more than one match, briefly list what you found (supplier and amount for each) and ask which one they meant, rather than picking one for them. If the data shows "found": false, say plainly you could not find anything with that number. Never claim to know whether an invoice was actually paid — this data never says that. Do not mention "tools", "JSON", or how you looked this up; answer like a knowledgeable colleague would, in a sentence or two.`;
+Write one short, direct, natural-language answer using ONLY the numbers and facts in that data. Do not invent, estimate, or add any figure that isn't there. State plainly what each number represents, using the data's own field names as your guide — never rename or reinterpret what a number counts (for example, a count of exceptions is never "tasks," and a count of open tasks is never "exceptions"). If the data is empty or shows nothing relevant to what they asked, say so plainly rather than guessing. If the data includes a "documentUrl" that is not null, include that exact URL in your answer so they can open it; if it is null, say plainly that no document is on file rather than inventing a link. If the data shows "ambiguous": true with more than one match, briefly list what you found (supplier and amount for each) and ask which one they meant, rather than picking one for them. If the data shows "found": false, say plainly you could not find anything with that number. If the data has an "invoices" list, describe what's in it rather than reading out every single row when there are many; if "moreMayExist" is true, say plainly that this may not be the complete list and that the Documents screen can search the full set. Never claim to know whether an invoice was actually paid — this data never says that. Do not mention "tools", "JSON", or how you looked this up; answer like a knowledgeable colleague would, in a sentence or two.`;
 }
 
 export interface ApAssistantAnswer {

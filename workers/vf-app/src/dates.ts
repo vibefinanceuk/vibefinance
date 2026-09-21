@@ -28,3 +28,21 @@ export function mondayOfThisWeek(now: Date = new Date()): string {
   );
   return monday.toISOString().slice(0, 10);
 }
+
+/**
+ * The first day of the calendar month containing `now`, as `YYYY-MM-DD`
+ * — decision 0430's second addendum, for the AP Assistant's own
+ * `invoice_search` tool answering "received this month."
+ *
+ * Calendar month, not a rolling thirty days — the same choice
+ * `mondayOfThisWeek` already made for "this week," for the same
+ * reason: a person asking "this month" means the one on the
+ * calendar, not a window that silently slides across a month
+ * boundary.
+ *
+ * `now` is a parameter rather than read fresh internally so a test can
+ * hand it a fixed date without waiting for a particular day to arrive.
+ */
+export function firstOfThisMonth(now: Date = new Date()): string {
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString().slice(0, 10);
+}

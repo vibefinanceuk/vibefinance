@@ -478,3 +478,142 @@ Workload, Purchase Orders, and Fraud Prevention screens respectively.
   unbuilt since decision 0010, and `purchase_order_status`'s own
   status counts do not include an "unmatched" state because none
   exists in this schema's own closed vocabulary of order statuses.
+
+## Addendum two — `invoice_search`, the gap the first addendum's own "What is not built" already named
+
+Further live testing, three real refusals in a row: *"Can you provide
+a link to the latest invoice document?"*, *"Please list invoices
+received this month,"* and *"Please lookup all invoices"* — all
+correctly refused, because nothing in this codebase, not just no
+assistant tool, could list a *set* of invoices at all. Checked
+directly before writing anything: every existing invoice route was
+either one invoice by its own id (the keying screen) or by its own
+printed number (`invoice_lookup`, the first addendum, above), or an
+aggregate summary (spend, overdue balance, accruals). This is exactly
+the gap the first addendum's own "What is not built" section already
+named and left alone as "outside what was asked" — now asked.
+
+**The operator's own question first, answered honestly before
+building anything.** Asked directly whether this was a permission or
+model limitation: it was neither — the assistant's refusal was
+correct given what existed. Three real design forks put to the
+operator before writing code, all decided in one answer:
+
+1. **How many results, with no pagination UI in a chat reply.**
+   Capped at 50, newest received first; when the cap is hit, the
+   answer says so and points at the real Documents screen rather than
+   silently truncating. *"Notify the user that the query is capped at
+   50 invoices, and to leverage the Document search for larger
+   datasets"* — the operator's own words, and also the reason no
+   count-total query was built: honest about hitting a limit, without
+   pretending to know an exact total beyond it.
+2. **Document links per result — deliberately not built.** Minting a
+   token is cheap for one invoice; multiplied across up to 50 results
+   it is real added cost and complexity for a tool whose own job is
+   browsing, not confirming one document. `invoice_lookup` already
+   exists for that, once a specific number is known from the list.
+3. **Which date "latest" and "this month" mean.** `created_at` (when
+   an invoice entered this system), not `issue_date` (the number
+   printed on it) — monotonic and never backdated by a supplier, so
+   "latest" cannot surprise anyone the way a printed date could.
+
+**Wraps the real Documents screen's own route, not a new query** —
+the same discipline `invoice_lookup` already followed for its own
+document-link minting. `documents-route.ts`'s `handleListDocuments`
+already does everything this needed except a date floor: real unit
+scoping, real org scoping, the same `AP.Review` permission the actual
+Documents screen itself checks, and an existing in-memory supplier
+text search. One small, additive extension — a `since` query param,
+`AND (?14 IS NULL OR h.created_at >= ?14)`, the same "inert unless a
+real value is given" shape every other optional filter in that route
+already has (`unplaced`, `duplicates`, `stage`, `doneByMe`, and so
+on) — is the only change to a route the real screen itself still
+uses unmodified; nothing there needed to send the new param for the
+screen to keep working exactly as before.
+
+**A new date helper, mirroring the one that already exists for
+"this week."** `dates.ts`'s `mondayOfThisWeek()` (decision 0265)
+already established calendar-unit-not-rolling-window as this
+codebase's own answer to "this X," and already established the
+`now: Date` parameter shape so a test never has to wait for a
+particular day. `firstOfThisMonth()` follows both exactly.
+
+**The new tool itself, `invoice_search`**, gated by `AP.Review` — not
+`AP.Validate` or `AP.Assistant` — because that is the real permission
+the Documents screen it wraps already requires; a person who cannot
+browse invoices on that screen cannot browse them through the
+assistant either. Two optional args beyond the existing `supplier`:
+`period` (only ever `"this_month"` today) and `latestOnly` (caps the
+result to exactly one, for "the latest invoice" specifically rather
+than a general list). The selection prompt was rewritten to
+distinguish it explicitly from `invoice_lookup` — *"use this only
+when the person already named a specific invoice number"* — the same
+contrastive-description discipline the first addendum's bug fix
+established, so a fifth tool sounding similar to a fourth does not
+repeat that mistake a third time.
+
+**`moreMayExist` is checked against what was actually fetched, not
+against what survived an optional supplier filter** — a subtlety
+caught before it shipped: a supplier-narrowed question could
+legitimately return only a handful of matches even when the raw
+50-row fetch behind it was exhausted, and "more may exist beyond what
+was even looked at" is a claim about the fetch hitting its cap, not
+about how many of those fetched rows happened to match one supplier's
+name.
+
+## Tests (addendum two)
+
+**`workers/vf-app/test/dates.test.ts`** (11 new tests): `firstOfThisMonth`
+against the first of a month, the last day of a long month, a short
+month, and a leap day; a year-boundary case; an hour-of-day stability
+case — the same shape `mondayOfThisWeek`'s own existing tests already
+use.
+
+**`workers/vf-app/test/documents.test.ts`** (2 new tests): the new
+`since` param excludes a document received before the given date, and
+is inert (matches everything) when absent — tested directly at the
+route it actually lives in, not only indirectly through the
+assistant, since the real Documents screen shares this route
+unmodified.
+
+**`workers/vf-app/test/ap-assistant.test.ts`** (5 new tests, 32 → 37):
+the `AP.Review` permission gate; recent invoices returned newest
+received first; `period: "this_month"` genuinely excluding an invoice
+received months ago; `latestOnly: true` returning exactly one result
+and correctly reporting `moreMayExist` when others do; narrowing to
+one named supplier. The shared `invoice()` test helper was extended to
+also write `facts_json`'s own `BT-1` key, not only the `invoice_number`
+column — `documents-route.ts`'s listing reads the number from `facts_json`
+(the field every other Documents test in this codebase already seeds),
+a genuinely different reading of "the invoice's own number" than
+`invoice_lookup`'s route uses; both are real, and a helper meant to
+exercise both tools now sets both.
+
+**Full suites, run directly:** `vf-app` 2340 → **2355** (15 new: 11 in
+`dates.test.ts`, 2 in `documents.test.ts`, plus 5 more in
+`ap-assistant.test.ts` bringing that file's own total from 32 to 37 —
+see its own count above for why 15, not 18: some of the 11 date cases
+are `it.each` rows counted individually by the test runner, not one
+per bullet above), all passing. `eslint` clean on every changed and
+new file. `tsc --noEmit` was also run directly: every error it reports
+is in files this addendum never touched (`workload*.test.ts`,
+every `vf-licence`/`vf-ui` test importing `cloudflare:test` at the
+project root rather than through vitest's own resolved config) —
+confirmed pre-existing, not introduced here, and left alone rather
+than fixed as a drive-by. No new migration, no new permission —
+`invoice_search` reuses `AP.Review`, already real and already held by
+whoever sees the Documents screen itself.
+
+## What is not built (addendum two)
+
+- **An arbitrary date range.** Only "this calendar month" exists —
+  the operator's own words named that specifically; a `since`/`until`
+  pair for any other range was not asked for and was not built.
+- **A true total count past the 50-row cap.** `moreMayExist` is
+  honest about the fetch having hit its limit; it is not a claim about
+  how many rows exist beyond it, matching the real Documents screen's
+  own "searched N" framing rather than inventing a "N of M" figure
+  neither route actually computes.
+- **Document links inside `invoice_search`'s own results.** A
+  deliberate choice (fork 2, above), not an oversight — `invoice_lookup`
+  already covers it once a specific number is known.

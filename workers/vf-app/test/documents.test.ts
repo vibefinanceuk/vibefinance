@@ -33,11 +33,18 @@ async function seedProcess() {
 async function seedDocument(
   id: string,
   facts: Record<string, unknown>,
-  stage: string | null = "validation"
+  stage: string | null = "validation",
+  createdAt?: string
 ) {
-  await env.DB.prepare("INSERT INTO invoice_headers (id, facts_json) VALUES (?, ?)")
-    .bind(id, JSON.stringify(facts))
-    .run();
+  if (createdAt) {
+    await env.DB.prepare("INSERT INTO invoice_headers (id, facts_json, created_at) VALUES (?, ?, ?)")
+      .bind(id, JSON.stringify(facts), createdAt)
+      .run();
+  } else {
+    await env.DB.prepare("INSERT INTO invoice_headers (id, facts_json) VALUES (?, ?)")
+      .bind(id, JSON.stringify(facts))
+      .run();
+  }
 
   if (stage) {
     await env.DB.prepare(
@@ -102,6 +109,30 @@ describe("what the list shows", () => {
     const body = await list();
     expect(body.documents[0].status).toBe("outside");
     expect(body.documents[0].stageName).toBeNull();
+  });
+});
+
+describe("'since', decision 0430's second addendum", () => {
+  /**
+   * No screen sends this yet — added for the AP Assistant's own
+   * `invoice_search` tool answering "received this month." Tested
+   * here directly, at the route it actually lives in, not only
+   * indirectly through the assistant.
+   */
+  it("excludes a document received before the given date", async () => {
+    await seedDocument("old", { "BT-1": "OLD" }, "validation", "2020-01-01T00:00:00Z");
+    await seedDocument("new", { "BT-1": "NEW" }, "validation", "2020-06-01T00:00:00Z");
+
+    const body = await list("since=2020-03-01");
+    expect(body.documents.map((d) => d.number)).toEqual(["NEW"]);
+  });
+
+  it("is inert when absent, same as every other optional filter here", async () => {
+    await seedDocument("old", { "BT-1": "OLD" }, "validation", "2020-01-01T00:00:00Z");
+    await seedDocument("new", { "BT-1": "NEW" }, "validation", "2020-06-01T00:00:00Z");
+
+    const body = await list();
+    expect(body.documents).toHaveLength(2);
   });
 });
 

@@ -935,6 +935,28 @@ decision 0430's own addendum section for the full accounting,
 including a correction to that decision's own original text about why
 one earlier route needed proxying.
 
+**Second addendum — `invoice_search`, the gap the first addendum
+itself had already named and left unbuilt.** Further live testing
+refused three plain questions in a row — "the latest invoice
+document," "invoices received this month," "list all invoices" —
+correctly, because no route anywhere in this codebase (not just no
+tool) could list a *set* of invoices at all. Wraps the real Documents
+screen's own `handleListDocuments` route rather than a new query,
+gated by that screen's own `AP.Review` permission and scoped by unit
+exactly like it, with one small additive extension to that shared
+route — an optional `since` date floor, inert unless given, the same
+shape every other optional filter there already has. Three real forks
+put to the operator directly: how many results with no pagination in
+a chat reply (capped at 50, newest received first, pointing at the
+real Documents screen when the cap is hit — the operator's own
+words); whether to mint a document link for every result (no —
+`invoice_lookup` already covers one specific invoice once its number
+is known from the list); and which date "latest"/"this month" mean
+(`created_at`, when it entered the system — monotonic, unlike a
+supplier's own printed `issue_date`). Ten tools total now, still no
+new permission or migration — see decision 0430's own second addendum
+section.
+
 ### Purchase orders and matching
 - Purchase order storage grounded in Peppol BIS Order Only 3.3, via UBL
   XML ingestion (0081) and CSV load (0370) — the same tables, the same
@@ -2199,7 +2221,7 @@ elsewhere.
 
 | Package | Tests |
 |---|---|
-| `vf-app` | 2340 |
+| `vf-app` | 2355 |
 | `vf-licence` | 320 |
 | `vf-ui` | 74 Worker · 915 browser |
 | `shared` | 295 passing, 3 known pre-existing failures |

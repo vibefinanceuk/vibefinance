@@ -169,6 +169,16 @@ export async function handleListDocuments(
   const agingMaxDays = agingMaxDaysRaw === null ? null : Number(agingMaxDaysRaw);
 
   /**
+   * **When it entered the system, at the earliest** — decision 0430's
+   * second addendum, for the AP Assistant's own `invoice_search` tool
+   * answering "received this month" (`firstOfThisMonth()`,
+   * `dates.ts`). No screen sends this yet; it is simply inert without
+   * a real value, the same "add now, wire it in when something needs
+   * it" shape as every other optional filter above.
+   */
+  const since = params.get("since");
+
+  /**
    * The sender and recipient come from the email that brought it —
    * decision 0147's log — because that is what a person searches by
    * when the supplier name was never extracted.
@@ -237,6 +247,7 @@ export async function handleListDocuments(
                AND (?13 IS NULL OR julianday('now') - julianday(at2.created_at) < ?13)
            )
          )
+         AND (?14 IS NULL OR h.created_at >= ?14)
        ORDER BY h.created_at DESC, h.rowid DESC
        LIMIT ?2`
     )
@@ -283,7 +294,8 @@ export async function handleListDocuments(
       monday,
       exceptionSupplier,
       agingMinDays,
-      agingMaxDays
+      agingMaxDays,
+      since
     )
     .all<DocumentRow>();
 
