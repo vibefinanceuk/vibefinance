@@ -738,28 +738,52 @@ export function frame(main) {
 
   const navEl = el("nav", { class: navCollapsed() ? "nav collapsed" : "nav" }, [
     /**
-     * The mark, at the head of the column — decision 0145.
-     *
-     * It sat at the foot first, on the argument that the top of a
-     * sidebar is where somebody looks to move. **The operator wanted
-     * it at the top**, which is the conventional place and the one
-     * people look for when orienting themselves rather than
-     * navigating — and small enough that it does not compete.
-     *
-     * **A third image, decision 0274**: `navmark` is the same "V" the
-     * full wordmark already draws as its first letter, cropped from
-     * the same source rather than redrawn — shown only when the nav
-     * is folded to icons, in place of the full logo neither collapsed
-     * width can hold.
-     *
-     * `alt` is empty on purpose: the name is in the page title, and a
-     * screen reader announcing "VibeFinance logo" before every
-     * navigation is noise rather than information.
+     * **The logo and nav items live inside `.navscroll`, decision
+     * 0436** — everything above `.who` that can, in principle, keep
+     * growing as more screens are added. Reported live: "the height
+     * of the side menu... so the username and instance, which appear
+     * at the bottom can always be seen on-screen" — found to be a real
+     * gap in decision 0281's own fix, not a duplicate of it. `.nav`
+     * has held one viewport's height (`height: 100vh`) since 0281, but
+     * nothing capped what went inside it; three more configuration
+     * screens landed since (Purchase Orders, Rules, Processes among
+     * them), and the nav's own content quietly grew past 100vh with
+     * nowhere for the overflow to go but past the box's own bottom
+     * edge — pushing `.who` below the fold exactly the way 0281 had
+     * already fixed once for the page as a whole. `.navscroll` is
+     * `overflow-y: auto` in the wide layout (app.css), so the nav
+     * ITEMS scroll internally once there are enough of them, while
+     * `.who` — kept a direct sibling, outside this wrapper, exactly
+     * where 0281 left it — stays pinned to the bottom of the sticky
+     * box regardless. `display: contents` in the narrow-screen media
+     * query undoes the wrapper there, so the horizontal nav bar's flex
+     * layout sees the same flat list of children it always did.
      */
-    el("img", { class: "brandmark dark", src: "/img/logo.png", alt: "" }),
-    el("img", { class: "brandmark light", src: "/img/logo-light.png", alt: "" }),
-    el("img", { class: "navmark", src: "/img/logo-mark.png", alt: "" }),
-    ...navItems,
+    el("div", { class: "navscroll" }, [
+      /**
+       * The mark, at the head of the column — decision 0145.
+       *
+       * It sat at the foot first, on the argument that the top of a
+       * sidebar is where somebody looks to move. **The operator wanted
+       * it at the top**, which is the conventional place and the one
+       * people look for when orienting themselves rather than
+       * navigating — and small enough that it does not compete.
+       *
+       * **A third image, decision 0274**: `navmark` is the same "V" the
+       * full wordmark already draws as its first letter, cropped from
+       * the same source rather than redrawn — shown only when the nav
+       * is folded to icons, in place of the full logo neither collapsed
+       * width can hold.
+       *
+       * `alt` is empty on purpose: the name is in the page title, and a
+       * screen reader announcing "VibeFinance logo" before every
+       * navigation is noise rather than information.
+       */
+      el("img", { class: "brandmark dark", src: "/img/logo.png", alt: "" }),
+      el("img", { class: "brandmark light", src: "/img/logo-light.png", alt: "" }),
+      el("img", { class: "navmark", src: "/img/logo-mark.png", alt: "" }),
+      ...navItems,
+    ]),
     el("div", { class: "who" }, [
       el("div", { text: me?.name ?? "" }),
       el("div", { class: "muted", text: me?.environmentId ?? "" }),

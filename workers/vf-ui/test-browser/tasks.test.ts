@@ -315,7 +315,12 @@ describe("the brand mark (decision 0145)", () => {
     // small enough that it does not compete.
     await openList([APPROVAL_TASK]);
 
-    const children = [...(document.querySelector(".nav")?.children ?? [])];
+    // **Decision 0436 moved both into `.navscroll`**, a wrapper inside
+    // `.nav` that lets the nav items scroll independently of `.who` —
+    // this test's own claim (the mark sits above the links) is about
+    // their order relative to EACH OTHER, which `.navscroll`'s own
+    // children still carry exactly as `.nav`'s own used to.
+    const children = [...(document.querySelector(".nav .navscroll")?.children ?? [])];
     const firstLink = children.findIndex((c) => c.tagName === "A");
     const mark = children.findIndex((c) => c.classList.contains("brandmark"));
 
@@ -791,6 +796,70 @@ describe("the nav stays pinned to the browser window, not the page (decision 028
 
     expect(mediaBlock).toContain("position: static");
     expect(mediaBlock).toContain("height: auto");
+  });
+});
+
+describe("the nav's own content scrolls independently of .who, once there's enough of it (decision 0436)", () => {
+  /**
+   * **Reported live**: "the height of the side menu... so the
+   * username and instance, which appear at the bottom can always be
+   * seen on-screen." Decision 0281 kept `.nav` itself exactly one
+   * viewport tall, but never capped what went *inside* that box —
+   * three more configuration screens (Purchase Orders, Rules,
+   * Processes) landed since, and the logo-plus-nav-items block grew
+   * past 100vh, overflowing straight past `.nav`'s own bottom edge
+   * and pushing `.who` below the fold. Checked live against the
+   * deployed app (a widened preview pane): `.nav`'s rendered height
+   * measured 1040px against its own 1000px box.
+   *
+   * `.navscroll` wraps everything above `.who` (the logo images and
+   * every `.navgroup`/`.navitem`) so it — not `.nav` itself, and not
+   * `.who` — is what scrolls once it no longer fits.
+   */
+  it("wraps the logo and every nav item in .navscroll, with .who left outside it", async () => {
+    await openList([APPROVAL_TASK]);
+
+    const nav = document.querySelector(".nav");
+    const navscroll = document.querySelector(".nav > .navscroll");
+    const who = document.querySelector(".nav > .who");
+    expect(navscroll).not.toBeNull();
+    expect(who).not.toBeNull();
+
+    // Every brandmark image and every real nav link lives inside the
+    // scrolling wrapper, not as a direct child of .nav alongside it —
+    // the whole point being that .nav's own box never has to grow.
+    expect(navscroll!.querySelector(".navmark")).not.toBeNull();
+    expect(navscroll!.querySelectorAll(".navitem").length).toBeGreaterThan(0);
+    expect(nav!.querySelectorAll(":scope > .navitem")).toHaveLength(0);
+
+    // .who is a direct child of .nav, a sibling of .navscroll rather
+    // than nested inside it — margin-top: auto (decision 0281) only
+    // pushes it to the bottom of ITS OWN flex container, so it has to
+    // stay outside the part that scrolls for that to mean .nav's box.
+    expect(who!.parentElement).toBe(nav);
+    expect(navscroll!.contains(who)).toBe(false);
+  });
+
+  it("makes .navscroll the thing that scrolls in the wide layout, not .nav itself", async () => {
+    const css = (await import("virtual:stylesheets")).default["app.css"];
+    const rule = css.slice(
+      css.indexOf(".nav .navscroll {\n    flex:"),
+      css.indexOf(".nav .navscroll {\n    flex:") + css.slice(css.indexOf(".nav .navscroll {\n    flex:")).indexOf("}") + 1
+    );
+
+    expect(rule).toContain("overflow-y: auto");
+    // A flex item's default min-height is "as tall as my content" —
+    // without this, overflow-y: auto never has anything to trigger it.
+    expect(rule).toContain("min-height: 0");
+  });
+
+  it("undoes the wrapper on the narrow, horizontal-bar layout, so the nav's flex row sees a flat list of children again", async () => {
+    const css = (await import("virtual:stylesheets")).default["app.css"];
+    const mediaStart = css.indexOf("@media (max-width: 1100px)");
+    const mediaEnd = css.indexOf("@media", mediaStart + 1);
+    const mediaBlock = css.slice(mediaStart, mediaEnd === -1 ? undefined : mediaEnd);
+
+    expect(mediaBlock).toContain(".nav .navscroll { display: contents; }");
   });
 });
 

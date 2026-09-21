@@ -1309,6 +1309,43 @@ section for the full reasoning and tests.
   2490, `vf-ui` browser 953, `vf-licence`/`vf-ui` Worker unchanged.
   `eslint .` clean.
 
+### The nav's own content scrolls, so `.who` stays on screen (0436)
+- **Asked**: *"I wondered if the height of the side menu alone can
+  resize to the height of the browser window, so the username and
+  instance, which appear at the bottom can always be seen on-screen?"*
+  — read as a possible duplicate of decision 0281's own fix, and
+  checked live rather than assumed either way.
+- **Found live**, signed in through the built-in browser at a real
+  desktop width: `.nav` itself was still exactly what decision 0281
+  built — `position: sticky`, a `1000px` computed height — but its own
+  content (logo images plus every `.navgroup`/`.navitem`) measured
+  `1040px`, forty pixels taller than the box, overflowing straight past
+  `.nav`'s own bottom edge with nowhere else to go. Decision 0281
+  capped the box in 2026; three more configuration screens (Purchase
+  Orders, Rules, Processes) joined the nav afterwards, and nobody had
+  reason to re-check a fixed-height sidebar against a longer nav at the
+  time each one landed.
+- `tasks.js`'s `navEl` now wraps the logo images and every nav item in
+  a new `.navscroll` div; `.who` stays a direct child of `.nav`, a
+  sibling of `.navscroll` rather than nested inside it. `.nav
+  .navscroll` gets `flex: 1 1 auto; min-height: 0; overflow-y: auto` in
+  the wide layout — `min-height: 0` is what actually makes the overflow
+  rule real, since a flex item's default `min-height: auto` otherwise
+  defeats it regardless of what `overflow-y` says. The narrow-screen
+  media query gets `.nav .navscroll { display: contents; }`, undoing
+  the wrapper there so the horizontal nav bar's flex row sees the same
+  flat list of children it always did.
+- New describe block in `tasks.test.ts` (+3): confirms the DOM wraps
+  the mark and every nav item inside `.navscroll` with `.who` left
+  outside it, confirms the wide-layout `overflow-y`/`min-height` rule,
+  confirms the narrow-layout `display: contents` override. One
+  pre-existing test ("the brand mark... sits at the head of the
+  column") repointed at `.navscroll`'s own children, since the DOM it
+  asserted against genuinely moved one level deeper — the property it
+  checks (mark before links) is unchanged. `vf-ui` browser 953 → 956;
+  Worker, `vf-app`, `vf-licence` all unchanged. `eslint public
+  test-browser` clean.
+
 ### Purchase orders and matching
 - Purchase order storage grounded in Peppol BIS Order Only 3.3, via UBL
   XML ingestion (0081) and CSV load (0370) — the same tables, the same

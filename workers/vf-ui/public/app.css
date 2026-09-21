@@ -236,6 +236,39 @@
     cursor: pointer;
   }
   .nav .who { margin-top: auto; }
+  /**
+   * **The nav's own content, capped independently of `.who` —
+   * decision 0436.** `.nav` has held one viewport's height since
+   * decision 0281, but that alone only keeps the BOX one viewport
+   * tall; nothing kept what's inside it that short. Reported live:
+   * *"the height of the side menu... so the username and instance,
+   * which appear at the bottom can always be seen on-screen"* —
+   * checked directly (`.nav`'s own rendered height measured 1040px
+   * against a 1000px box) and confirmed real: three more configuration
+   * screens (Purchase Orders, Rules, Processes) landed since 0281
+   * shipped, and the logo-plus-nav-items block quietly grew past
+   * 100vh, overflowing straight past `.nav`'s own bottom edge with
+   * nowhere else to go — pushing `.who` below the fold the same way
+   * 0281 had already fixed once for the page as a whole.
+   *
+   * `flex: 1 1 auto; min-height: 0` is what lets a flex child shrink
+   * below its own content height at all — a flex item's default
+   * `min-height: auto` means "as tall as my content," which silently
+   * defeats `overflow-y` no matter what it's set to. `min-height: 0`
+   * is the one line that makes the overflow rule underneath it real.
+   *
+   * **`.who` stays a direct sibling of `.navscroll`, outside it** —
+   * tasks.js only wraps the logo and nav items, so this rule scrolls
+   * the part of the nav that keeps growing without touching `.who`'s
+   * own `margin-top: auto`, which still pushes it to the bottom of
+   * `.nav`'s own fixed, one-viewport box exactly as decision 0281
+   * left it.
+   */
+  .nav .navscroll {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+  }
 
   /*
     Two marks, swapped by the mood — decision 0145.
@@ -2332,6 +2365,19 @@
       height: auto;
     }
     .nav .mark, .nav .who { display: none; }
+    /**
+     * **Undoes `.navscroll`'s own wrapping, decision 0436** — that
+     * wrapper exists to cap and scroll the nav's content in the wide,
+     * one-viewport-tall sidebar; at this width `.nav` is a short
+     * horizontal bar with no such box to fill, and every child
+     * (brandmark images, `.navgroup` headings, `.navitem` links) needs
+     * to be a direct flex item of `.nav`'s own row layout the same way
+     * it always was before this wrapper existed. `display: contents`
+     * removes `.navscroll` from the box tree entirely — no box, no
+     * `overflow-y`, no width or height of its own — while leaving its
+     * children exactly where `.nav`'s flex row expects to find them.
+     */
+    .nav .navscroll { display: contents; }
   }
 
   /*

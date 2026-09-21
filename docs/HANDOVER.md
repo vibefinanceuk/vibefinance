@@ -2,7 +2,7 @@
 
 **Written 4 September 2026, updated 17 September (six times), updated
 18 September (four times), updated 19 September (thirty-two times),
-updated 20 September (twenty-two times), updated 21 September (eighteen
+updated 20 September (twenty-two times), updated 21 September (nineteen
 times).**
 
 **For a session starting cold.** Where things stand, what needs a
@@ -32,7 +32,7 @@ twice.
 
 | | |
 | --- | --- |
-| `origin/main` | `7233382` — fetched directly by this session, matching this session's own commit exactly. Decisions 0434 (org placement and supplier matching now reach the first stage visit) and 0435 (a stage visit error is recorded, not swallowed) are both confirmed pushed and deployed. |
+| `origin/main` | `ab3d1ee` — fetched directly by this session, matching this session's own commit exactly. Decisions 0434 (org placement and supplier matching now reach the first stage visit) and 0435 (a stage visit error is recorded, not swallowed) are both confirmed pushed and deployed. **Decision 0436 (the nav's own content scrolls, so `.who` stays on screen) is built, tested, and documented on top of that, not yet pushed or deployed.** |
 | vf-admin deployed | `8e27a34` · `https://admin.vibefinance-ai.com` · behind Cloudflare Access |
 | vf-app deployed | `7233382` confirmed — decisions 0429 (agreed payment means, a supplier-record placeholder), 0430 (Talk to an AP Expert, Screen 6) with all eight of its own addenda, 0431 (Executive IQ's remaining four metrics), 0432 with its own addendum, 0433 (org-ranked supplier search), 0434 (org/supplier facts reach the first stage visit), and 0435 (a stage visit error is recorded, not swallowed), all confirmed. |
 | vf-licence deployed | `7233382` per the operator's own reports; migrations `0140` through `0144` all applied — `0144` is decision 0435's own banner-label string. |
@@ -40,8 +40,43 @@ twice.
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
 | `vf-app-poc` migrations | through `0074` applied and confirmed live — `0073` (decision 0429) is real schema; `0074` (decision 0430) is a documentation-only `ASSERT` restatement with no schema change, the same shape as `0071`; none of 0430's eight addenda needed a new `vf-app` migration; decision 0431 also needed none — its four new routes read existing tables only; decision 0433 also needed none — its ranking change reads the existing `org_unit_id` column only; decision 0434 also needed none — it changes when facts already computed reach the workflow engine, not the schema; decision 0435 also needed none — it writes a new fact through the existing `facts_json` column. **A tenant-data fix, not a migration**: the operator's own live Validation stage had `required_permission IS NULL` — the root cause behind decision 0435's own finding — fixed directly with `UPDATE process_stages SET required_permission = 'AP.Validate' WHERE id = 'validation'`. **This did not hold on the first attempt**: after decision 0435 deployed, a fresh test invoice hit the identical `requiredPermission "undefined"` error via the new `workflow.stageError` banner, and a direct re-check found `required_permission` back to `NULL` — code was traced end to end (`process-route.ts`'s stage-creation and draft/publish handlers, `field-visibility-route.ts`, `rules-list-route.ts`) and **nothing in the application ever writes this column**, so the revert's cause is unexplained, not a known bug. Re-run a second time with the `UPDATE` and a `SELECT` in the same statement batch, confirmed set to `AP.Validate` in that same round-trip, and then confirmed durable and working end-to-end by the operator submitting a genuinely fresh test invoice: it stopped at Validation, no error banner, and a task appeared with `required_permission = AP.Validate`. **If this reverts a third time**, suspect a second database bound to the same `vf-app-poc` name (check `wrangler d1 list` against `workers/vf-app/wrangler.toml`'s `database_id`) rather than re-tracing application code again. |
 | `vf-licence-poc` migrations | through `0144` applied and confirmed live — the operator's own `apply_migrations.py --remote` run, `0144` is decision 0435's own banner-label string (`viewer.workflow.stageerror`, en/de). |
-| Tests | vf-admin 9 · vf-app 2490 (109 test files, +2 from decision 0435's own new describe block in `source-capture-workflow.test.ts`, confirmed by one unfiltered whole-suite run) · vf-licence 320 (unchanged — decision 0435's new migration `0144` added no new test, matching decision 0433's own precedent on `string-coverage.test.ts`'s stale migration list) · vf-ui 74 Worker (unchanged) + 953 browser (951 + 2 in decision 0435's own new describe block in `viewer.test.ts`, confirmed by one unfiltered whole-suite run) · shared 295 (+3 known pre-existing failures) |
-| Decision records | 435 |
+| Tests | vf-admin 9 · vf-app 2490 (unchanged by decision 0436 — vf-ui only) · vf-licence 320 (unchanged) · vf-ui 74 Worker (unchanged) + 956 browser (953 + 3 in decision 0436's own new describe block in `tasks.test.ts`, confirmed by one unfiltered whole-suite run) · shared 295 (+3 known pre-existing failures) |
+| Decision records | 436 |
+
+**Decision 0436 (the nav's own content scrolls, so `.who` stays on
+screen) is built, tested, and documented. Not yet pushed or
+deployed.** Asked live: *"I wondered if the height of the side menu
+alone can resize to the height of the browser window, so the username
+and instance, which appear at the bottom can always be seen
+on-screen?"* — read as a possible duplicate of decision 0281's own fix
+(the wording is close to identical), so checked live before touching
+anything rather than assumed either way. Signed in through the
+built-in browser at a genuine desktop width (the preview pane's own
+default width is under 1100px and triggers a *different*, intentional
+0281 behaviour — the narrow-screen horizontal bar, which hides `.who`
+entirely by design): `.nav` itself measured exactly as 0281 built it —
+`position: sticky`, a `1000px` computed height — but its own rendered
+content (the logo images plus every `.navgroup`/`.navitem`) measured
+`1040px`, forty pixels taller than the box, overflowing straight past
+`.nav`'s own bottom edge with nowhere else to go. **0281 capped the
+box; nothing capped what went inside it** — three more configuration
+screens (Purchase Orders, Rules, Processes) joined the nav afterwards,
+each a real addition nobody had reason to re-check against a
+fixed-height sidebar at the time. Fixed by wrapping the logo and every
+nav item in a new `.navscroll` div (`tasks.js`), kept a sibling of
+`.who` rather than a parent of it, given `overflow-y: auto; min-height:
+0` in the wide layout (`app.css`) so the nav ITEMS scroll internally
+once there are enough of them while `.who` stays pinned to the bottom
+of `.nav`'s own unchanged, one-viewport box; `display: contents` in
+the narrow-screen media query undoes the wrapper there so the
+horizontal bar's flex layout is unaffected. New describe block in
+`tasks.test.ts` (+3); one pre-existing test ("the brand mark... sits
+at the head of the column") repointed at `.navscroll`'s own children,
+since the DOM it asserted against genuinely moved one level deeper —
+the property it checks is unchanged. `vf-ui` browser 953 → 956, all
+green; Worker, `vf-app`, `vf-licence` untouched. `eslint public
+test-browser` clean. See decision 0436 for the full reasoning and
+tests.
 
 **Decision 0435 (a stage visit error is recorded, not swallowed) is
 pushed and deployed, confirmed directly.** `origin/main` fetched
