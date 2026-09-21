@@ -437,6 +437,14 @@ describe("the proxy carries every path a screen calls (decision 0131)", () => {
      */
     ["GET", "/api/fraud/statistical-outliers"],
     ["GET", "/api/fraud/segregation-of-duties"],
+    /**
+     * The Multi-Enterprise CFO View's own first real metric,
+     * consolidated spend across org units / legal entities — decision
+     * 0425. `/executive/consolidated-spend` matched no existing
+     * wildcard either, the same recurring gap this whole block keeps
+     * finding.
+     */
+    ["GET", "/api/executive/consolidated-spend"],
   ];
 
   it("carries all of them", async () => {

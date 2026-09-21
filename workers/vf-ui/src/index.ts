@@ -259,6 +259,14 @@ const PROXIED_TO_INSTANCE: RegExp[] = [
    * matches no existing wildcard either.
    */
   /^\/fraud\/segregation-of-duties$/,
+  /**
+   * **Consolidated spend across org units / legal entities — decision
+   * 0425.** The Multi-Enterprise CFO View's first real metric. Checked
+   * directly again, the same discipline decisions 0418–0424 already
+   * established for this exact recurring gap: `/executive/consolidated-
+   * spend` matches no existing wildcard either.
+   */
+  /^\/executive\/consolidated-spend$/,
   /^\/suppliers$/,
   /^\/suppliers\/load$/,
   // Finding and choosing a supplier by hand (decision 0222).

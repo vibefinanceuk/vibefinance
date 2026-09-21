@@ -97,6 +97,7 @@ export default defineConfig({
       "/fraud-exception-trends.js": resolve(__dirname, "public/fraud-exception-trends.js"),
       "/fraud-statistical-outliers.js": resolve(__dirname, "public/fraud-statistical-outliers.js"),
       "/fraud-segregation-of-duties.js": resolve(__dirname, "public/fraud-segregation-of-duties.js"),
+      "/executive-consolidated-spend.js": resolve(__dirname, "public/executive-consolidated-spend.js"),
       "/supplier-status.js": resolve(__dirname, "public/supplier-status.js"),
       "/supplier-cycle-time.js": resolve(__dirname, "public/supplier-cycle-time.js"),
       "/supplier-exceptions.js": resolve(__dirname, "public/supplier-exceptions.js"),

@@ -9,6 +9,7 @@ import {
 import { handleWorkloadThroughput } from "./workload-route.js";
 import { handleAccruals } from "./accruals-route.js";
 import { handleSpendUnderManagement } from "./spend-under-management-route.js";
+import { handleExecutiveConsolidatedSpend } from "./executive-consolidated-spend-route.js";
 import { handlePossibleDuplicates } from "./fraud-duplicates-route.js";
 import { handleUnapprovedSuppliers } from "./fraud-unapproved-suppliers-route.js";
 import { handleFraudExceptionTrends } from "./fraud-exception-trends-route.js";
@@ -1268,6 +1269,32 @@ export default {
       }
 
       const result = await handleSpendUnderManagement(db, url.searchParams.get("org"), auth.user.id);
+      return json(result.body, result.status);
+    }
+
+    /**
+     * **Consolidated spend across org units / legal entities —
+     * decision 0425.** The Multi-Enterprise CFO View's first real
+     * metric. Gated `AP.Analysis` **and** `holdsEverywhere` — the same
+     * two-part gate `ap-analytics.js`'s own `executiveiq` tab already
+     * checks to be reachable at all, checked again here server-side
+     * since a hidden tab is not a closed route. Deliberately takes no
+     * `?org=` — see the route's own doc comment for why narrowing to
+     * one chosen org would defeat this screen's entire point.
+     */
+    if (pathname === "/executive/consolidated-spend" && request.method === "GET") {
+      const { db } = resolveTenant(request, env);
+      const auth = await authenticatePerson(db, request, env);
+      if (!auth.user) return json({ error: auth.reason }, 401);
+      if (!(await hasPermission(db, auth.user.id, "AP.Analysis"))) {
+        return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
+      }
+      const { holdsEverywhere } = await unitsFor(db, auth.user.id);
+      if (!holdsEverywhere) {
+        return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
+      }
+
+      const result = await handleExecutiveConsolidatedSpend(db);
       return json(result.body, result.status);
     }
 

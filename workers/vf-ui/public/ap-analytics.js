@@ -9,6 +9,7 @@ import { load as loadUnapprovedSuppliers, renderCard as unapprovedSuppliersCard 
 import { load as loadExceptionTrends, renderCard as exceptionTrendsCard } from "/fraud-exception-trends.js";
 import { load as loadStatisticalOutliers, renderCard as statisticalOutliersCard } from "/fraud-statistical-outliers.js";
 import { load as loadSegregationOfDuties, renderCard as segregationOfDutiesCard } from "/fraud-segregation-of-duties.js";
+import { load as loadConsolidatedSpend, renderCard as consolidatedSpendCard } from "/executive-consolidated-spend.js";
 import { load as loadSupplierStatus, renderCard as supplierStatusCard } from "/supplier-status.js";
 import { load as loadSupplierCycleTime, renderCard as supplierCycleTimeCard } from "/supplier-cycle-time.js";
 import { load as loadSupplierExceptions, renderCard as supplierExceptionsCard } from "/supplier-exceptions.js";
@@ -33,8 +34,8 @@ import { load as loadSupplierPaymentTerms, renderCard as supplierPaymentTermsCar
  * rather than rebuilt — the same shape the operator pointed at by
  * name.
  *
- * **Five tabs, four real.** The operator's own names, mapped onto the
- * design's five original screens:
+ * **Five tabs, all five real now.** The operator's own names, mapped
+ * onto the design's five original screens:
  *
  * | Tab | Design's own screen | Permission |
  * |---|---|---|
@@ -44,15 +45,11 @@ import { load as loadSupplierPaymentTerms, renderCard as supplierPaymentTermsCar
  * | Executive IQ | Multi-Enterprise CFO View | `AP.Analysis` + `holdsEverywhere` |
  * | Fraud Prevention | Fraud & Risk Detection | `AP.FraudReview` |
  *
- * Operational, Financial, Supplier Performance, and now Fraud
- * Prevention (decision 0420's own potential-duplicate-invoices table,
- * joined by decision 0422's own unapproved-supplier-invoices table and
- * decision 0423's own exceptions-by-type/user/supplier trend) are
- * real, reusing the routes and screens decisions 0415–0423 already
- * built and tested. Only Executive IQ still renders a plain "not built
- * yet" placeholder — still gated on its own real permission, so who
- * can even see the tab exists is correct today, ahead of what is
- * behind it.
+ * Every tab reuses the routes and screens decisions 0415–0425 already
+ * built and tested. Executive IQ (decision 0425) was the last to gain
+ * real content — until now it rendered a plain "not built yet"
+ * placeholder, still gated on its own real permission, so who could
+ * even see the tab exists was correct ahead of what was behind it.
  *
  * **Financial Performance shows two real cards, not one** — decision
  * 0419's own follow-on to 0417's accruals report: spend under
@@ -87,6 +84,17 @@ import { load as loadSupplierPaymentTerms, renderCard as supplierPaymentTermsCar
  * approving where the process should prevent it (0424). Only vendor
  * banking-detail-change alerts, the design's own remaining Fraud & Risk
  * Detection metric, stays unbuilt — a real gap, not assumed solvable.
+ *
+ * **Executive IQ shows one real card, not the whole six-metric
+ * screen** — decision 0425, "Consolidated spend across org units /
+ * legal entities," the design's own first Multi-Enterprise CFO View
+ * bullet, reusing the same `holdsEverywhere` gate the tab itself
+ * already checks (see the route's own doc comment for the scoping
+ * decision the design flagged and how it was resolved). Unlike every
+ * other card on this screen, its own `load()` passes no `?org=` at
+ * all — the whole point of this card is every entity at once, not
+ * whichever one the switcher happens to be set to. The design's other
+ * five Multi-Enterprise CFO View metrics stay unbuilt.
  *
  * **The permission each tab actually checks matches its own route's
  * own gate, not the design document's own original proposal.**
@@ -194,6 +202,13 @@ async function tabContent(key) {
       outliersOk ? statisticalOutliersCard() : loadErrorCard(),
       segregationOk ? segregationOfDutiesCard() : loadErrorCard(),
     ];
+  }
+  if (key === "executiveiq") {
+    // The Multi-Enterprise CFO View's own first real card — decision
+    // 0425. One card today, not the whole six-metric screen, the same
+    // "one real vertical slice first" discipline every other tab on
+    // this screen started with.
+    return (await loadConsolidatedSpend()) ? consolidatedSpendCard() : loadErrorCard();
   }
   return placeholderCard(tab);
 }

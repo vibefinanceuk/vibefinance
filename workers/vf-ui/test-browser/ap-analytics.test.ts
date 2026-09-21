@@ -179,6 +179,12 @@ const STRINGS = {
     "fraudprevention.segregationofdutiessub": "The same person claiming and approving the same invoice",
     "fraudprevention.nosegregationofduties": "No segregation-of-duties flags right now",
     "fraudprevention.stagescompleted": "Stages completed",
+    // Executive IQ's first real card — decision 0425.
+    "executiveiq.consolidatedspend": "Consolidated spend across org units / legal entities",
+    "executiveiq.consolidatedspendsub": "Every entity, by currency",
+    "executiveiq.noconsolidatedspend": "No priced, placed invoices yet",
+    "executiveiq.legalentity": "Legal entity",
+    "executiveiq.operatingunit": "Operating unit",
   },
 };
 
@@ -212,8 +218,9 @@ function stubFetch(routes: Record<string, unknown>) {
  * `/api/workload/throughput`, `/api/accruals`,
  * `/api/spend/under-management`, `/api/suppliers/spend`,
  * `/api/fraud/duplicates`, `/api/fraud/unapproved-suppliers`,
- * `/api/fraud/exception-trends`, `/api/fraud/statistical-outliers` and
- * `/api/fraud/segregation-of-duties` are stubbed empty by default on
+ * `/api/fraud/exception-trends`, `/api/fraud/statistical-outliers`,
+ * `/api/fraud/segregation-of-duties` and
+ * `/api/executive/consolidated-spend` are stubbed empty by default on
  * every call, whether or not the test's own permission set makes any
  * given tab reachable — harmless when unused, and one less thing each
  * individual test has to remember.
@@ -241,6 +248,7 @@ async function openApAnalytics(
     "/api/fraud/exception-trends": { weekStartDates: [], bySupplier: [], byUser: [], byType: [] },
     "/api/fraud/statistical-outliers": { invoices: [] },
     "/api/fraud/segregation-of-duties": { invoices: [] },
+    "/api/executive/consolidated-spend": { currencies: [] },
     ...extraRoutes,
   });
   const { loadStrings } = await import("/strings.js");
@@ -418,11 +426,26 @@ describe("real tabs wire to the already-tested module behind them, placeholders 
     expect(headings).not.toContain("Spend by supplier");
   });
 
-  it("Executive IQ says not built yet, gated on its own real permission", async () => {
+  it("Executive IQ renders its own real card, decision 0425 — no longer a placeholder", async () => {
     await openApAnalytics(["AP.Analysis", "AP.FraudReview"], { holdsEverywhere: true });
 
     await switchTab("Executive IQ");
-    expect(document.body.textContent).toContain("Not built yet");
+    expect(document.body.textContent).not.toContain("Not built yet");
+    expect(document.querySelector(".cardhead h3")?.textContent).toBe(
+      "Consolidated spend across org units / legal entities"
+    );
+    expect(document.body.textContent).toContain("No priced, placed invoices yet");
+  });
+
+  it("shows a real error for Executive IQ too, when its own fetch fails", async () => {
+    await openApAnalytics(
+      ["AP.Analysis", "AP.FraudReview"],
+      { holdsEverywhere: true },
+      { "/api/executive/consolidated-spend": { ok: false, status: 500 } }
+    );
+
+    await switchTab("Executive IQ");
+    expect(document.body.textContent).toContain("Could not load this tab right now");
   });
 
   it("Fraud Prevention renders all five of its own cards, decision 0424 — five real cards, not one", async () => {

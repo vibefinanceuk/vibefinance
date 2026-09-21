@@ -632,6 +632,53 @@ a rule, and left an approval task in a queue.
   outliers` nor `/fraud/segregation-of-duties` matched any existing
   wildcard — both got their own new entry.
 
+### Consolidated spend across org units / legal entities — the Multi-Enterprise CFO View's first real metric (0425)
+- **Executive IQ gains real content — the last of AP Analytics' five
+  tabs to do so.** Asked "what would be next" after decision 0424
+  shipped, offered four ranked candidates; the operator chose
+  Executive IQ / Multi-Enterprise CFO View. The design's own Screen 5
+  section flags two real decisions before this screen could be built at
+  all, both put to the operator directly rather than assumed: the
+  scoping approach (reuse `holdsEverywhere` with `GROUP BY
+  org_unit_id`, the design's own recommended "Option 1," over a
+  genuinely new multi-select org-comparison scope its own "Option 2"
+  explicitly defers) and which of the screen's six key metrics to build
+  first (consolidated spend, the design's own first-listed bullet,
+  reusing data no new capture is needed for).
+- **No new access-control concept.** The design's own Role-Based Access
+  Model table for this screen already matches the pre-existing
+  client-side tab gate exactly — `AP.Analysis` and `holdsEverywhere =
+  true`, checked independently. `workers/vf-app/src/executive-
+  consolidated-spend-route.ts` (`GET /executive/consolidated-spend`)
+  checks both again server-side, the same "a hidden tab is not a closed
+  route" discipline decision 0417 established for every other tab.
+- **Enterprise-wide by definition — no `?org=` narrowing, on either the
+  route or the card.** Every other analysis route in this codebase
+  narrows to a chosen org; this one deliberately does not, since the
+  entire point of this screen is comparing every entity a CFO is
+  responsible for in one place — narrowing to one chosen org would
+  collapse the comparison back into the same one-org-at-a-time view the
+  design's own "real gap" section names as the problem.
+- **Grouped by the invoice's own recorded `org_unit_id`, exactly as the
+  design's own "Option 1" says — no invented rollup from an operating
+  unit up to its own parent legal entity.** An invoice's `org_unit_id`
+  may name either kind (decision 0226); this route reports each
+  recorded unit exactly as named, carrying its own `kind` so a reader
+  can tell a legal entity from an operating unit rather than the two
+  being silently blended. Never summed across currencies — the same
+  discipline decisions 0416, 0418, 0419 and 0421 already follow — and
+  an invoice with no recorded org unit is excluded, not guessed into a
+  bucket.
+- **`workers/vf-ui/public/executive-consolidated-spend.js`, new** —
+  reuses `charts.js`'s own `barList()`, first built for and proven by
+  decision 0416's "Spend by supplier" card. `ap-analytics.js`'s
+  `tabContent()` gains a real `executiveiq` branch — one card, not the
+  whole six-metric screen, the same "one real vertical slice first"
+  discipline every other tab on this screen started with.
+- The proxy allow-list checked directly again, the same discipline this
+  whole arc keeps: `/executive/consolidated-spend` matched no existing
+  wildcard either, its own new entry added.
+
 ### Purchase orders and matching
 - Purchase order storage grounded in Peppol BIS Order Only 3.3, via UBL
   XML ingestion (0081) and CSV load (0370) — the same tables, the same
@@ -1535,32 +1582,45 @@ value lands in which field — *"use the transport reference as the
 invoice number"* (0058). The machinery exists; what is missing is the
 vocabulary's EN 16931 reference fields and supplier groups.
 
-**One of the Management Dashboard's five designed screens, four of
-Liabilities & Accruals' own six key metrics, three of Fraud & Risk
-Detection's own six, and two of Supplier Performance's own eight.**
-Decisions 0415, 0416, 0418, 0419, 0420, 0421, 0422, 0423, and 0424
-each built one or more vertical slices for real — Workload's
-"Throughput by user, stacked by stage," Financial Performance's
-"Accruals report" and "Spend under management (with PO)," Fraud
-Prevention's "Potential duplicate invoices," "Unapproved-supplier
-invoices," "Exceptions by type, by user, by supplier, trended,"
-"Statistical outliers," and "Segregation-of-duties flags," and
-Supplier Performance's own "Spend by supplier," active supplier count
-by status, average cycle time, exception rate and type mix, PO
-variance, and payment terms held vs. negotiated. Decision 0417 gave
-all five design screens their own tab inside the new AP Analytics
-screen; only the Multi-Enterprise CFO View (Executive IQ) still has no
-route or real UI behind its own tab — it renders a permission-gated
-"not built yet" placeholder rather than a Claude Docs design document
-and Design-canvas mock-ups being the only place it exists. It needs a
-real multi-org scoping concept that does not exist yet — and is spend
-under management's own *listed primary* screen too, per the design's
-own deliberate cross-referencing (0419), so that metric likely belongs
-there as well once it exists. **Liabilities & Accruals' own other four
-metrics** — early-payment/discount eligibility, cash-flow forecast,
-payment terms held vs. actual, and DPO — stay unbuilt; three of them
-need payment-execution data (when and on what terms an invoice was
-actually paid) this codebase does not capture anywhere.
+**All five of the Management Dashboard's designed screens now have at
+least one real metric behind them; four of Liabilities & Accruals' own
+six key metrics, one of Fraud & Risk Detection's own six, two of
+Supplier Performance's own eight, and five of the Multi-Enterprise CFO
+View's own six stay unbuilt.** Decisions 0415, 0416, 0418, 0419, 0420,
+0421, 0422, 0423, 0424, and 0425 each built one or more vertical slices
+for real — Workload's "Throughput by user, stacked by stage," Financial
+Performance's "Accruals report" and "Spend under management (with
+PO)," Fraud Prevention's "Potential duplicate invoices,"
+"Unapproved-supplier invoices," "Exceptions by type, by user, by
+supplier, trended," "Statistical outliers," and "Segregation-of-duties
+flags," Supplier Performance's own "Spend by supplier," active supplier
+count by status, average cycle time, exception rate and type mix, PO
+variance, and payment terms held vs. negotiated, and now the
+Multi-Enterprise CFO View's own "Consolidated spend across org units /
+legal entities" (0425) — the design's own recommended "Option 1"
+scoping (`holdsEverywhere`, `GROUP BY org_unit_id`), chosen directly by
+the operator over the genuinely new multi-select org-comparison scope
+the design itself defers. Decision 0417 gave all five design screens
+their own tab inside the new AP Analytics screen; decision 0425 is the
+first to give Executive IQ real content behind its own tab rather than
+a permission-gated "not built yet" placeholder. **Spend under
+management is still also the Multi-Enterprise CFO View's own *listed
+primary* screen**, per the design's own deliberate cross-referencing
+(0419) — now that Executive IQ exists, that metric likely belongs there
+too, not built there yet. **The Multi-Enterprise CFO View's own other
+five metrics** — liabilities and accruals by entity, cash position
+across currencies, cross-entity supplier concentration, cross-entity
+exception and fraud-signal trend, and cross-org throughput/workload
+comparison — stay unbuilt, each named as a declined option in decision
+0425's own first-metric question. **The genuinely new "compare selected
+orgs" scoping concept (the design's own "Option 2") stays exactly where
+the design document leaves it** — a decision for a future design pass,
+not assumed solved by decision 0425's own Option 1 build. **Liabilities
+& Accruals' own other four metrics** — early-payment/discount
+eligibility, cash-flow forecast, payment terms held vs. actual, and
+DPO — stay unbuilt; three of them need payment-execution data (when and
+on what terms an invoice was actually paid) this codebase does not
+capture anywhere.
 **Fraud & Risk Detection has five of its own six metrics built now —
 only vendor banking-detail-change alerts stays unbuilt**, the design's
 own words: "not currently captured by VibeFinance... noted as a real
@@ -1761,9 +1821,9 @@ elsewhere.
 
 | Package | Tests |
 |---|---|
-| `vf-app` | 2184 |
+| `vf-app` | 2196 |
 | `vf-licence` | 320 |
-| `vf-ui` | 74 Worker · 850 browser |
+| `vf-ui` | 74 Worker · 860 browser |
 | `shared` | 287 passing, 3 known pre-existing failures |
 
 Both migration chains replay clean with every standing invariant
