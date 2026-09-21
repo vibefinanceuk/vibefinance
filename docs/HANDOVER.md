@@ -2,7 +2,7 @@
 
 **Written 4 September 2026, updated 17 September (six times), updated
 18 September (four times), updated 19 September (thirty-two times),
-updated 20 September (twenty-two times).**
+updated 20 September (twenty-two times), updated 21 September (once).**
 
 **For a session starting cold.** Where things stand, what needs a
 decision rather than work, what to do next, and the habits this project
@@ -31,16 +31,52 @@ twice.
 
 | | |
 | --- | --- |
-| `origin/main` | `e262666` — fetched directly by this session after decision 0423 shipped, confirmed matching local `main` exactly |
+| `origin/main` | `a3cdbe6` — fetched directly by this session after decision 0424 shipped, confirmed matching local `main` exactly |
 | vf-admin deployed | `8e27a34` · `https://admin.vibefinance-ai.com` · behind Cloudflare Access |
-| vf-app deployed | `e262666` (operator's own "deployed and pushed - tested successfully" report, confirming the live screen itself) |
-| vf-licence deployed | `e262666` (operator's own report; migration `0135` below is now applied) |
-| vf-ui deployed | `e262666` · `https://app.vibefinance-ai.com` — operator's own report |
+| vf-app deployed | `a3cdbe6` (operator's own "deployed and pushed" report) |
+| vf-licence deployed | `a3cdbe6` (operator's own report; migration `0136` below is now applied) |
+| vf-ui deployed | `a3cdbe6` · `https://app.vibefinance-ai.com` — operator's own report |
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
-| `vf-app-poc` migrations | through `0071` applied and confirmed live (decision 0423 added no new one) |
-| `vf-licence-poc` migrations | through `0135` applied and confirmed live |
-| Tests | vf-admin 9 · vf-app 2151 · vf-licence 320 · vf-ui 74 Worker + 837 browser · shared 287 (+3 known pre-existing failures) |
-| Decision records | 423 |
+| `vf-app-poc` migrations | through `0071` applied and confirmed live (decision 0424 added no new one) |
+| `vf-licence-poc` migrations | through `0136` applied and confirmed live |
+| Tests | vf-admin 9 · vf-app 2184 · vf-licence 320 · vf-ui 74 Worker + 850 browser · shared 287 (+3 known pre-existing failures) |
+| Decision records | 424 |
+
+**Decision 0424 (statistical outliers and segregation-of-duties
+flags — Fraud Prevention's fourth and fifth real metrics, built
+together) is pushed and deployed, confirmed directly.** `origin/main`
+fetched directly reads `a3cdbe6`, matching this session's own commit
+exactly; the operator confirmed with "deployed and pushed." Asked
+"what would be next" once decision 0423 shipped; offered four
+candidates, the operator's own answer was "Can you tackle 1 and 2" —
+both statistical outliers and segregation-of-duties flags in one
+request, the same bundling precedent decision 0421 already set.
+Investigated first: two designs for segregation-of-duties were
+considered and rejected (hardcoded stage ids, violating the engine's
+own subject/stage-agnostic principle; a fully generic "any two
+permissions," too unfaithful to the design's own specific word
+*approving*) before settling on a hybrid — anchored on `AP.Approve`
+(`process_stages.required_permission`, decision 0048), paired
+generically with any other distinct permission the same person
+completed on the same invoice, using `completed_by` consistently on
+both sides so a pass-through stage with no declared permission never
+contributes either half. Statistical outliers computes a z-score
+against a supplier's own same-currency history, the candidate
+self-excluded from its own baseline, with a named minimum-history gate
+(5 other invoices) and threshold (2.5 standard deviations) stated
+directly rather than left implicit, and an honest `zScore: null` for
+the zero-variance case rather than a fabricated number. Both gated
+`AP.FraudReview`, scoped by the invoice's own org unit, shaped as
+uncapped worklists matching `/fraud/duplicates` and
+`/fraud/unapproved-suppliers`. Fraud Prevention now shows five real
+cards, not three — only vendor banking-detail-change alerts remains
+unbuilt on Fraud & Risk Detection's own six metrics. Full local test
+suites all clean: `vf-app` 2151 → 2184 (33 new, exactly), `vf-ui`
+browser 837 → 850 (13 new, both worker and browser-known-rejection
+counts otherwise unchanged), `vf-licence` 320 (migration `0136`, no
+new test file). `eslint .` clean across all three packages. See
+decision 0424's own doc for the full reasoning, and
+`docs/PROGRESS.md` for the durable record.
 
 **Decision 0423 (exceptions by type, by user, by supplier, trended —
 Fraud Prevention's third real metric) is pushed and deployed, tested
