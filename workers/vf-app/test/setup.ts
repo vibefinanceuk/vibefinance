@@ -75,6 +75,7 @@ import embeddedXmlDocumentTypeSql from "../../../migrations/0070_embedded_xml_do
 // body, the same "nothing to execute" shape as 0054/0062/0063/0066/0067
 // above — skipped here for the same reason.
 import supplierDiscountAndFieldChangeHistorySql from "../../../migrations/0072_supplier_discount_terms_and_field_change_history.sql?raw";
+import agreedPaymentMeansPlaceholderSql from "../../../migrations/0073_agreed_payment_means_placeholder.sql?raw";
 
 // Another known divergence from production, on top of the one below:
 // D1's exec() splits its input by newline and executes each non-empty
@@ -281,6 +282,7 @@ export async function applyTestSchema(): Promise<void> {
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(purchaseOrderStatusSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(embeddedXmlDocumentTypeSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(supplierDiscountAndFieldChangeHistorySql)));
+  await env.DB.exec(toOneStatementPerLine(stripSqlComments(agreedPaymentMeansPlaceholderSql)));
 }
 
 /**

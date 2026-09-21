@@ -35,6 +35,11 @@ export const AUDITED_FIELDS = [
   "quantity_tolerance_pct",
   "discount_pct",
   "discount_days",
+  // The agreed side of a payment-means comparison — decision 0429, a
+  // placeholder. See migration 0073.
+  "agreed_payment_means",
+  "agreed_account_identifier",
+  "agreed_account_name",
   "erp_site_identifier",
   "is_pay_site",
   "is_procurement_site",

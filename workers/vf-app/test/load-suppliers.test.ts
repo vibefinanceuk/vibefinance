@@ -1575,6 +1575,105 @@ describe("the general field-change history — decision 0427", () => {
   });
 });
 
+describe("the agreed side of a payment-means comparison — decision 0429, a placeholder", () => {
+  /**
+   * **Loaded exactly like `discount_pct`/`discount_days` (decision
+   * 0427)** — a customer's own CSV export, under any of the header
+   * spellings `COLUMNS` recognises — and left absent from every other
+   * surface on purpose. See migration 0073 for why: there is no
+   * "invoiced payment means" yet to compare these against, and a report
+   * drawn now would mostly measure which suppliers happened to be in
+   * the file, the same shape of problem decision 0428's second
+   * addendum pulled a live report over.
+   */
+  it("loads all three from a real export's own column names", async () => {
+    await load(
+      "ERP ID,Name,Payment Means,IBAN,Account Name\n" +
+        "40118,Northwind,Credit transfer,GB29NWBK60161331926819,Northwind Trading Ltd"
+    );
+
+    const row = await env.DB
+      .prepare(
+        "SELECT agreed_payment_means AS means, agreed_account_identifier AS iban, agreed_account_name AS name FROM suppliers"
+      )
+      .first<{ means: string; iban: string; name: string }>();
+    expect(row?.means).toBe("Credit transfer");
+    expect(row?.iban).toBe("GB29NWBK60161331926819");
+    expect(row?.name).toBe("Northwind Trading Ltd");
+  });
+
+  it("also recognises the column's own db-style names, like discount_pct's own aliases do", async () => {
+    await load(
+      "ERP ID,Name,agreed_payment_means,agreed_account_identifier,agreed_account_name\n" +
+        "40118,Northwind,SEPA credit transfer,DE89370400440532013000,Northwind GmbH"
+    );
+
+    const row = await env.DB
+      .prepare("SELECT agreed_payment_means AS means FROM suppliers")
+      .first<{ means: string }>();
+    expect(row?.means).toBe("SEPA credit transfer");
+  });
+
+  it("leaves all three NULL when an export never mentions them — forward-looking only, no guess", async () => {
+    await load(`${HEADER}\n40100,Acme Widgets,GB123456789,GB,Net 30`);
+
+    const row = await env.DB
+      .prepare(
+        "SELECT agreed_payment_means AS means, agreed_account_identifier AS iban, agreed_account_name AS name FROM suppliers"
+      )
+      .first<{ means: string | null; iban: string | null; name: string | null }>();
+    expect(row).toEqual({ means: null, iban: null, name: null });
+  });
+
+  it("is not editable by hand — a placeholder loaded from the ERP export, not typed in", async () => {
+    await load(
+      "ERP ID,Name,Payment Means,IBAN\n40118,Northwind,Credit transfer,GB29NWBK60161331926819"
+    );
+    const supplier = await env.DB.prepare("SELECT id FROM suppliers").first<{ id: string }>();
+
+    // `handleUpdateSupplier` silently ignores a key outside `EDITABLE`
+    // rather than erroring — the same behaviour any other unrecognised
+    // body key already gets — so this proves the value survives an
+    // attempted hand-edit untouched, not that the route rejects one.
+    const result = await handleUpdateSupplier(
+      env.DB,
+      supplier!.id,
+      { agreedPaymentMeans: "Wire transfer" },
+      "bob"
+    );
+    expect(result.status).toBe(400); // "nothing to change" — no recognised field was in the body
+
+    const row = await env.DB
+      .prepare("SELECT agreed_payment_means AS means FROM suppliers")
+      .first<{ means: string }>();
+    expect(row?.means).toBe("Credit transfer");
+  });
+
+  it("feeds the same field-change history decision 0427 built, on a second load with a different value", async () => {
+    await load("ERP ID,Name,IBAN\n40118,Northwind,GB29NWBK60161331926819");
+    await load("ERP ID,Name,IBAN\n40118,Northwind,GB94BARC10201530093459");
+    const supplier = await env.DB.prepare("SELECT id FROM suppliers").first<{ id: string }>();
+
+    const rows = await env.DB
+      .prepare("SELECT field, old_value, new_value FROM supplier_field_changes WHERE supplier_id = ? AND field = 'agreed_account_identifier'")
+      .bind(supplier!.id)
+      .all<{ field: string; old_value: string | null; new_value: string | null }>();
+    expect(rows.results).toEqual([
+      { field: "agreed_account_identifier", old_value: "GB29NWBK60161331926819", new_value: "GB94BARC10201530093459" },
+    ]);
+  });
+
+  it("is left out of the list and search API responses — nothing surfaces it yet", async () => {
+    await load(
+      "ERP ID,Name,Payment Means,IBAN\n40118,Northwind,Credit transfer,GB29NWBK60161331926819"
+    );
+
+    const listed = await handleListSuppliers(env.DB);
+    const body = JSON.stringify(listed.body);
+    expect(body).not.toMatch(/agreed|payment_means|iban|GB29NWBK/i);
+  });
+});
+
 describe("searching the supplier list — mirroring decision 0376 for Purchase Orders", () => {
   it("matches on name", async () => {
     await load("ERP ID,Name\n1,Northwind Logistics\n2,Bishopsgate Supplies");

@@ -849,6 +849,29 @@ a rule, and left an approval task in a queue.
   unused by any screen (the migration itself is never edited after the
   fact — see decision 0428's own second addendum).
 
+### Agreed payment means — a supplier-record placeholder, report deliberately not built (0429)
+- Answering the operator's own question about Peppol BIS Billing 3.0's
+  payment fields (`BG-16`'s `BT-81`/`BT-84`/`BT-85`, plus the standalone
+  `BT-9`/`BT-20`) surfaced that this codebase captures the two
+  standalone invoice fields but nothing from `BG-16` — and that a real
+  "agreed vs invoiced payment means" comparison needs the *agreed* side
+  held somewhere that isn't the invoice, which existed nowhere either.
+- `suppliers.agreed_payment_means` / `.agreed_account_identifier` /
+  `.agreed_account_name` — three new nullable columns (migration
+  `0073`), the operator's own explicit scope: **"add the fields to the
+  supplier record, as a placeholder — but we should hide the report
+  dashboard at this point."** Loaded exactly like `discount_pct`/
+  `discount_days` (0427) — a customer's own CSV export, forward-looking
+  only — and, on purpose, left out of `EDITABLE`, the suppliers screen,
+  and every other route's `SELECT` list. The general field-change audit
+  (0427) covers them for free.
+- **No comparison, no mismatch flag, no dashboard card, no report** —
+  there was none live to hide, and building one now would be comparing
+  a real agreed value against an invoice side that still captures
+  nothing from `BG-16` at all. Left explicitly unbuilt; see decision
+  0429's own doc for the reasoning, including the parallel drawn to why
+  0428's own second addendum pulled "Exceptions by user."
+
 ### Purchase orders and matching
 - Purchase order storage grounded in Peppol BIS Order Only 3.3, via UBL
   XML ingestion (0081) and CSV load (0370) — the same tables, the same
@@ -1836,8 +1859,16 @@ payment / dynamic discount, payment history, cash-flow forecast (and
 by currency), and payment terms held vs. actual with the resulting DPO
 trend — stay unbuilt; three of them need payment-execution data (when
 and on what terms an invoice was actually paid) this codebase does not
-capture anywhere. **Worth noting for whoever picks this screen up
-next: the design's own wording for "invoices eligible for early
+capture anywhere. **Decision 0429 added a related but distinct
+placeholder** — `suppliers.agreed_payment_means`/
+`.agreed_account_identifier`/`.agreed_account_name`, the *agreed* side
+of a future payment-means mismatch check, loaded from a customer's own
+export and deliberately surfaced nowhere yet. It does not close this
+gap: the *invoiced* side (an inbound invoice's own `BG-16` payment
+means/IBAN/account name) is still not captured anywhere either, and a
+payment-means mismatch is a different question from *when* a payment
+happened — the DPO/cash-flow gap above stays exactly as unbuilt as it
+was. **Worth noting for whoever picks this screen up next: the design's own wording for "invoices eligible for early
 payment / dynamic discount, by volume and by amount" here is close
 kin to Supplier Performance's own "early-payment/discount capture
 rate," which decision 0427 built, honestly narrowed, as
@@ -2073,13 +2104,13 @@ elsewhere.
 
 | Package | Tests |
 |---|---|
-| `vf-app` | 2281 |
+| `vf-app` | 2287 |
 | `vf-licence` | 320 |
 | `vf-ui` | 74 Worker · 910 browser |
 | `shared` | 287 passing, 3 known pre-existing failures |
 
 Both migration chains replay clean with every standing invariant
-holding — 72 migrations for `vf-app`, 139 for `vf-licence`.
+holding — 73 migrations for `vf-app`, 139 for `vf-licence`.
 
 **`vf-app`'s count was recorded as 1851 through decision 0379**; a clean
 run at `46c1da2`, with no `vf-app` change since decision 0378 recorded

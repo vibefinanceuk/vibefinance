@@ -1,0 +1,58 @@
+-- 0073_agreed_payment_means_placeholder.sql
+--
+-- Decision 0429 — agreed payment means, held on the supplier record.
+--
+-- **Why this exists at all.** The operator, reasoning about whether
+-- Peppol BIS Billing 3.0 exposes payment details on an invoice: an
+-- invoice's own `BG-16 PAYMENT INSTRUCTIONS` group (payment means type,
+-- IBAN, account name — `BT-81`/`BT-84`/`BT-85`) says how *this
+-- document* asks to be paid. That is only half a comparison. To catch
+-- an invoice whose payment means has silently changed from what this
+-- supplier was actually agreed on — the classic bank-detail-change
+-- fraud pattern — the *agreed* side has to be held somewhere that
+-- isn't the invoice itself. It was held nowhere.
+--
+-- **A placeholder, not a feature.** The operator's own words: *"add
+-- the fields to the supplier record, as a placeholder — but we should
+-- hide the report dashboard at this point."* These three columns are
+-- loaded and audited exactly like `discount_pct`/`discount_days`
+-- (migration 0072, decision 0427) — a customer's own CSV export, never
+-- invented or backfilled — and, deliberately, nothing else. No
+-- comparison route, no dashboard card, no hand-edit form field. That
+-- half stays unbuilt on purpose:
+--
+--   * There is no "invoiced payment means" to compare against yet.
+--     Nothing in this codebase parses `BG-16` off an inbound invoice —
+--     confirmed by reading `shared/ingestion/ubl-parser.ts` and
+--     `shared/interpreter/vocabulary.ts` directly, which today capture
+--     only `BT-9` (due date) and `BT-20` (payment terms text), not the
+--     payment-instructions group. A comparison built now would be
+--     comparing a real agreed value against nothing.
+--   * Even once both sides exist, a report drawn from a column most
+--     suppliers will have `NULL` in — because most customer exports
+--     were never asked for this — is exactly the shape of thing this
+--     project has already pulled a live report over once (decision
+--     0428's second addendum, "Exceptions by user"): a number that
+--     looks like a finding but is mostly reporting on which suppliers
+--     happened to be in the file.
+--
+-- **Forward-looking only, honestly** — the same promise migration 0072
+-- made. A supplier loaded before these columns existed has `NULL` in
+-- all three until its own next reload; nothing here guesses a bank
+-- detail nobody supplied.
+--
+-- **Named after the standard's own three fields, not copied wholesale.**
+-- `BG-18` (card) and `BG-19` (direct debit) are left out: this table
+-- mirrors who VibeFinance's own customers pay and how, and a supplier
+-- paid by credit transfer — the normal case for B2B AP — is described
+-- by a payment-means type, an account identifier, and an account name.
+-- Card and direct-debit mandate details can be added the same way,
+-- later, if a real customer's export ever carries them; nothing here
+-- forecloses that.
+ALTER TABLE suppliers ADD COLUMN agreed_payment_means TEXT;
+ALTER TABLE suppliers ADD COLUMN agreed_account_identifier TEXT;
+ALTER TABLE suppliers ADD COLUMN agreed_account_name TEXT;
+
+-- Point-in-time: a schema that can now hold an agreed payment means,
+-- holding none yet.
+-- ASSERT: SELECT count(*) FROM suppliers WHERE agreed_payment_means IS NOT NULL OR agreed_account_identifier IS NOT NULL OR agreed_account_name IS NOT NULL == 0

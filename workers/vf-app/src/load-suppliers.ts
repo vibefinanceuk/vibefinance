@@ -54,6 +54,23 @@ const COLUMNS: Record<string, string> = {
   discount_days: "discount_days",
   "discount window": "discount_days",
   "discount days": "discount_days",
+  // **The agreed side of a payment-means comparison — decision 0429,
+  // a placeholder.** Loaded exactly like `discount_pct`/`discount_days`
+  // above — a customer's own CSV export, never guessed — and, on
+  // purpose, read nowhere else yet: no route, no report, no hand-edit
+  // form. See migration 0073 for the full reasoning, including why the
+  // "invoiced" side this would eventually compare against does not
+  // exist in this codebase either.
+  agreed_payment_means: "agreed_payment_means",
+  "payment means": "agreed_payment_means",
+  "agreed payment means": "agreed_payment_means",
+  agreed_account_identifier: "agreed_account_identifier",
+  iban: "agreed_account_identifier",
+  "account number": "agreed_account_identifier",
+  "agreed iban": "agreed_account_identifier",
+  agreed_account_name: "agreed_account_name",
+  "account name": "agreed_account_name",
+  "agreed account name": "agreed_account_name",
   erp_site_identifier: "erp_site_identifier",
   site: "erp_site_identifier",
   /**
@@ -368,10 +385,11 @@ export async function handleLoadSuppliers(
                                 payment_terms, on_hold, hold_reason, match_option,
                                 amount_tolerance_pct, quantity_tolerance_pct,
                                 discount_pct, discount_days,
+                                agreed_payment_means, agreed_account_identifier, agreed_account_name,
                                 erp_site_identifier, is_pay_site, is_procurement_site,
                                 address_line, city, postal_code, email, phone, status, loaded_at,
                                 org_unit_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', datetime('now'), ?)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', datetime('now'), ?)
          ON CONFLICT(id) DO UPDATE SET
            -- **The retroactive part.** An adopted row had none.
            erp_identifier = excluded.erp_identifier,
@@ -388,6 +406,9 @@ export async function handleLoadSuppliers(
            quantity_tolerance_pct = excluded.quantity_tolerance_pct,
            discount_pct = excluded.discount_pct,
            discount_days = excluded.discount_days,
+           agreed_payment_means = excluded.agreed_payment_means,
+           agreed_account_identifier = excluded.agreed_account_identifier,
+           agreed_account_name = excluded.agreed_account_name,
            is_pay_site = excluded.is_pay_site,
            is_procurement_site = excluded.is_procurement_site,
            address_line = excluded.address_line,
@@ -414,6 +435,9 @@ export async function handleLoadSuppliers(
         values.quantity_tolerance_pct ? Number(values.quantity_tolerance_pct) : null,
         values.discount_pct ? Number(values.discount_pct) : null,
         values.discount_days ? Number(values.discount_days) : null,
+        values.agreed_payment_means || null,
+        values.agreed_account_identifier || null,
+        values.agreed_account_name || null,
         values.erp_site_identifier || null,
         flag(values.is_pay_site) ? 1 : 0,
         flag(values.is_procurement_site) ? 1 : 0,
@@ -480,6 +504,9 @@ export async function handleLoadSuppliers(
         quantity_tolerance_pct: values.quantity_tolerance_pct ? Number(values.quantity_tolerance_pct) : null,
         discount_pct: values.discount_pct ? Number(values.discount_pct) : null,
         discount_days: values.discount_days ? Number(values.discount_days) : null,
+        agreed_payment_means: values.agreed_payment_means || null,
+        agreed_account_identifier: values.agreed_account_identifier || null,
+        agreed_account_name: values.agreed_account_name || null,
         erp_site_identifier: values.erp_site_identifier || null,
         is_pay_site: flag(values.is_pay_site),
         is_procurement_site: flag(values.is_procurement_site),
