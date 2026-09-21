@@ -1,7 +1,9 @@
 # 0435 — A stage visit error is recorded, not swallowed
 
-**Status: built, tested, documented. Not yet confirmed pushed and
-deployed** — this session still has no push access to
+**Status: built, tested, documented, pushed and deployed, confirmed
+directly** — `origin/main` fetched directly reads `7233382`, matching
+this session's own commit exactly; the operator confirmed with
+*"pushed and deployed"*. This session still has no push access to
 `vibefinanceuk/vibefinance`; delivered as a git bundle for the
 operator's own pull/push/deploy sequence, the same path decisions
 0391, 0415–0434 already used.

@@ -2,7 +2,7 @@
 
 **Written 4 September 2026, updated 17 September (six times), updated
 18 September (four times), updated 19 September (thirty-two times),
-updated 20 September (twenty-two times), updated 21 September (sixteen
+updated 20 September (twenty-two times), updated 21 September (seventeen
 times).**
 
 **For a session starting cold.** Where things stand, what needs a
@@ -32,49 +32,55 @@ twice.
 
 | | |
 | --- | --- |
-| `origin/main` | `d07e5f5` — fetched directly by this session, matching this session's own commit exactly. Decision 0434 (org placement and supplier matching now reach the first stage visit) is confirmed pushed and deployed. **Decision 0435 (a stage visit error is recorded, not swallowed) is built, tested, and documented on top of that, not yet pushed or deployed.** |
+| `origin/main` | `7233382` — fetched directly by this session, matching this session's own commit exactly. Decisions 0434 (org placement and supplier matching now reach the first stage visit) and 0435 (a stage visit error is recorded, not swallowed) are both confirmed pushed and deployed. |
 | vf-admin deployed | `8e27a34` · `https://admin.vibefinance-ai.com` · behind Cloudflare Access |
-| vf-app deployed | `d07e5f5` confirmed — decisions 0429 (agreed payment means, a supplier-record placeholder), 0430 (Talk to an AP Expert, Screen 6) with all eight of its own addenda, 0431 (Executive IQ's remaining four metrics), 0432 with its own addendum, 0433 (org-ranked supplier search), and 0434 (org/supplier facts reach the first stage visit), all confirmed. |
-| vf-licence deployed | `d07e5f5` per the operator's own reports; migrations `0140` through `0143` all applied — `0143` is decision 0433's own string. Decision 0434 added no new migration. |
-| vf-ui deployed | `d07e5f5` · `https://app.vibefinance-ai.com` — operator's own reports, confirmed directly: *"deployed and pushed"* against the icon buttons live, then, with a screenshot, *"the icons are a little lower or the text box is higher. They seem a little un-aligned"*, then *"pushed and deployed"* again confirming the alignment-fix addendum live, then *"deployed and pushed"* confirming decision 0433's own org-ranked supplier search live, then *"pushed and deployed - this seems to have worked"* confirming decision 0434 live. |
+| vf-app deployed | `7233382` confirmed — decisions 0429 (agreed payment means, a supplier-record placeholder), 0430 (Talk to an AP Expert, Screen 6) with all eight of its own addenda, 0431 (Executive IQ's remaining four metrics), 0432 with its own addendum, 0433 (org-ranked supplier search), 0434 (org/supplier facts reach the first stage visit), and 0435 (a stage visit error is recorded, not swallowed), all confirmed. |
+| vf-licence deployed | `7233382` per the operator's own reports; migrations `0140` through `0144` all applied — `0144` is decision 0435's own banner-label string. |
+| vf-ui deployed | `7233382` · `https://app.vibefinance-ai.com` — operator's own reports, confirmed directly: *"deployed and pushed"* against the icon buttons live, then, with a screenshot, *"the icons are a little lower or the text box is higher. They seem a little un-aligned"*, then *"pushed and deployed"* again confirming the alignment-fix addendum live, then *"deployed and pushed"* confirming decision 0433's own org-ranked supplier search live, then *"pushed and deployed - this seems to have worked"* confirming decision 0434 live, then *"pushed and deployed"* again confirming decision 0435 live. |
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
-| `vf-app-poc` migrations | through `0074` applied and confirmed live — `0073` (decision 0429) is real schema; `0074` (decision 0430) is a documentation-only `ASSERT` restatement with no schema change, the same shape as `0071`; none of 0430's eight addenda needed a new `vf-app` migration; decision 0431 also needed none — its four new routes read existing tables only; decision 0433 also needed none — its ranking change reads the existing `org_unit_id` column only; decision 0434 also needed none — it changes when facts already computed reach the workflow engine, not the schema. **A tenant-data fix, not a migration**: the operator's own live Validation stage had `required_permission IS NULL` — the root cause behind decision 0435's own finding — fixed directly with `UPDATE process_stages SET required_permission = 'AP.Validate' WHERE id = 'validation'`, confirmed via the operator's own read-only queries against `vf-app-poc` before and after. |
-| `vf-licence-poc` migrations | through `0143` applied and confirmed live — the operator's own `apply_migrations.py --remote` run, `0143` is decision 0433's own string. Decision 0434 added none; decision 0435 adds `0144` (its own banner label string), not yet applied. |
+| `vf-app-poc` migrations | through `0074` applied and confirmed live — `0073` (decision 0429) is real schema; `0074` (decision 0430) is a documentation-only `ASSERT` restatement with no schema change, the same shape as `0071`; none of 0430's eight addenda needed a new `vf-app` migration; decision 0431 also needed none — its four new routes read existing tables only; decision 0433 also needed none — its ranking change reads the existing `org_unit_id` column only; decision 0434 also needed none — it changes when facts already computed reach the workflow engine, not the schema; decision 0435 also needed none — it writes a new fact through the existing `facts_json` column. **A tenant-data fix, not a migration**: the operator's own live Validation stage had `required_permission IS NULL` — the root cause behind decision 0435's own finding — fixed directly with `UPDATE process_stages SET required_permission = 'AP.Validate' WHERE id = 'validation'`, confirmed via the operator's own read-only queries against `vf-app-poc` before and after. |
+| `vf-licence-poc` migrations | through `0144` applied and confirmed live — the operator's own `apply_migrations.py --remote` run, `0144` is decision 0435's own banner-label string (`viewer.workflow.stageerror`, en/de). |
 | Tests | vf-admin 9 · vf-app 2490 (109 test files, +2 from decision 0435's own new describe block in `source-capture-workflow.test.ts`, confirmed by one unfiltered whole-suite run) · vf-licence 320 (unchanged — decision 0435's new migration `0144` added no new test, matching decision 0433's own precedent on `string-coverage.test.ts`'s stale migration list) · vf-ui 74 Worker (unchanged) + 953 browser (951 + 2 in decision 0435's own new describe block in `viewer.test.ts`, confirmed by one unfiltered whole-suite run) · shared 295 (+3 known pre-existing failures) |
 | Decision records | 435 |
 
 **Decision 0435 (a stage visit error is recorded, not swallowed) is
-built, tested, and documented. Not yet pushed or deployed.**
-Immediately after decision 0434 deployed, the operator re-tested and
-reported real progress — *"pushed and deployed - this seems to have
-worked. The item is in validation"* — followed directly by *"however,
-nothing appears in the Tasks screen strangely."* Traced to
-`handleCreateTask`'s own requirement (decision 0200): a task needs a
-required permission from either the stage or the rule's own action,
-and refuses outright if neither supplies one — `visitCurrentStage`
-turns that refusal into a real error, and `handleCaptureIntake` was
-unconditionally returning `201` regardless, folding the error into a
-`body.visit.error` field nothing ever read. The invoice looked exactly
-like one genuinely waiting on a person. **Confirmed live against the
-real database**, by the operator's own read-only queries: the
-Validation stage's own `required_permission` was `null`, and the live
-rule's own `compiled_json` named no permission either — fixed live
-with a one-column `UPDATE`, no code involved (see the migrations row
-above). This decision is the code fix for the *next* time this class
-of misconfiguration happens, anywhere in the process: `handleCaptureIntake`
+pushed and deployed, confirmed directly.** `origin/main` fetched
+directly reads `7233382`, matching this session's own commit exactly;
+the operator confirmed with *"pushed and deployed"* immediately after
+the automated stop-hook flagged the one unpushed commit. Immediately
+after decision 0434 deployed, the operator re-tested and reported real
+progress — *"pushed and deployed - this seems to have worked. The item
+is in validation"* — followed directly by *"however, nothing appears
+in the Tasks screen strangely."* Traced to `handleCreateTask`'s own
+requirement (decision 0200): a task needs a required permission from
+either the stage or the rule's own action, and refuses outright if
+neither supplies one — `visitCurrentStage` turns that refusal into a
+real error, and `handleCaptureIntake` was unconditionally returning
+`201` regardless, folding the error into a `body.visit.error` field
+nothing ever read. The invoice looked exactly like one genuinely
+waiting on a person. **Confirmed live against the real database**, by
+the operator's own read-only queries: the Validation stage's own
+`required_permission` was `null`, and the live rule's own
+`compiled_json` named no permission either — fixed live with a
+one-column `UPDATE`, no code involved (see the migrations row above).
+This decision is the code fix for the *next* time this class of
+misconfiguration happens, anywhere in the process: `handleCaptureIntake`
 now writes the real error onto the invoice as `workflow.stageError`
 whenever a visit genuinely fails (`>= 400`) — the same "why, not just
 that" treatment `org.unplaced` already gets (decision 0162) — surfaced
 through `invoice-facts-route.ts` and shown as a labelled banner in the
 viewer, above the stage-progress bar. One new string, migration
-`0144`. New describe blocks in `source-capture-workflow.test.ts` (+2)
-and `viewer.test.ts` (+2), both reproducing the operator's own exact
-misconfiguration. Full suites re-run in every workspace — `vf-app`
-2490, `vf-ui` browser 953 — all green. **This does not retroactively
-fix `TEST-ORG-0020`** — nothing here revisits history; a person needs
-to manually re-trigger its stage visit or submit a fresh test invoice
-to see the now-working rule, now that the stage's own permission is
-set. See decision 0435 for the full reasoning and tests.
+`0144`, now applied and confirmed live. New describe blocks in
+`source-capture-workflow.test.ts` (+2) and `viewer.test.ts` (+2), both
+reproducing the operator's own exact misconfiguration. Full suites
+re-run in every workspace — `vf-app` 2490, `vf-ui` browser 953 — all
+green. **This did not retroactively fix `TEST-ORG-0020`** — nothing
+here revisits history; a person needs to manually re-trigger its stage
+visit or submit a fresh test invoice to see the now-working rule, now
+that the stage's own permission is set (already done live — see the
+`vf-app-poc` migrations row). **Nothing from this session is currently
+outstanding for decision 0435 itself.** See decision 0435 for the full
+reasoning and tests.
 
 **Decision 0434 (org placement and supplier matching now reach the
 first stage visit) is pushed and deployed, confirmed directly.**
