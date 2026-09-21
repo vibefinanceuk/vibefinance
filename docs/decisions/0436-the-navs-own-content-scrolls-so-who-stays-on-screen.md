@@ -1,9 +1,12 @@
 # 0436 — The nav's own content scrolls, so `.who` stays on screen
 
-**Status: built, tested, documented. Not yet pushed or deployed** —
-this session still has no push access to `vibefinanceuk/vibefinance`;
-delivered as a git bundle for the operator's own pull/push/deploy
-sequence, the same path decisions 0391, 0415–0435 already used.
+**Status: built, tested, documented, pushed and deployed, confirmed
+directly** — `origin/main` fetched directly reads `ca1de60`, matching
+this session's own commit exactly; the operator confirmed with
+*"pushed and deployed"*. This session still has no push access to
+`vibefinanceuk/vibefinance`; delivered as a git bundle for the
+operator's own pull/push/deploy sequence, the same path decisions
+0391, 0415–0435 already used.
 
 ---
 

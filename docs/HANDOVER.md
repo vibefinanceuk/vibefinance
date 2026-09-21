@@ -2,7 +2,7 @@
 
 **Written 4 September 2026, updated 17 September (six times), updated
 18 September (four times), updated 19 September (thirty-two times),
-updated 20 September (twenty-two times), updated 21 September (nineteen
+updated 20 September (twenty-two times), updated 21 September (twenty
 times).**
 
 **For a session starting cold.** Where things stand, what needs a
@@ -32,11 +32,11 @@ twice.
 
 | | |
 | --- | --- |
-| `origin/main` | `ab3d1ee` — fetched directly by this session, matching this session's own commit exactly. Decisions 0434 (org placement and supplier matching now reach the first stage visit) and 0435 (a stage visit error is recorded, not swallowed) are both confirmed pushed and deployed. **Decision 0436 (the nav's own content scrolls, so `.who` stays on screen) is built, tested, and documented on top of that, not yet pushed or deployed.** |
+| `origin/main` | `ca1de60` — fetched directly by this session, matching this session's own commit exactly. Decisions 0434 (org placement and supplier matching now reach the first stage visit), 0435 (a stage visit error is recorded, not swallowed), and 0436 (the nav's own content scrolls, so `.who` stays on screen) are all confirmed pushed and deployed. |
 | vf-admin deployed | `8e27a34` · `https://admin.vibefinance-ai.com` · behind Cloudflare Access |
-| vf-app deployed | `7233382` confirmed — decisions 0429 (agreed payment means, a supplier-record placeholder), 0430 (Talk to an AP Expert, Screen 6) with all eight of its own addenda, 0431 (Executive IQ's remaining four metrics), 0432 with its own addendum, 0433 (org-ranked supplier search), 0434 (org/supplier facts reach the first stage visit), and 0435 (a stage visit error is recorded, not swallowed), all confirmed. |
-| vf-licence deployed | `7233382` per the operator's own reports; migrations `0140` through `0144` all applied — `0144` is decision 0435's own banner-label string. |
-| vf-ui deployed | `7233382` · `https://app.vibefinance-ai.com` — operator's own reports, confirmed directly: *"deployed and pushed"* against the icon buttons live, then, with a screenshot, *"the icons are a little lower or the text box is higher. They seem a little un-aligned"*, then *"pushed and deployed"* again confirming the alignment-fix addendum live, then *"deployed and pushed"* confirming decision 0433's own org-ranked supplier search live, then *"pushed and deployed - this seems to have worked"* confirming decision 0434 live, then *"pushed and deployed"* again confirming decision 0435 live. |
+| vf-app deployed | `ca1de60` confirmed — decisions 0429 (agreed payment means, a supplier-record placeholder), 0430 (Talk to an AP Expert, Screen 6) with all eight of its own addenda, 0431 (Executive IQ's remaining four metrics), 0432 with its own addendum, 0433 (org-ranked supplier search), 0434 (org/supplier facts reach the first stage visit), 0435 (a stage visit error is recorded, not swallowed), and 0436 (vf-ui only — the nav's own content scrolls), all confirmed. |
+| vf-licence deployed | `ca1de60` per the operator's own reports; migrations `0140` through `0144` all applied — `0144` is decision 0435's own banner-label string. Decision 0436 added none. |
+| vf-ui deployed | `ca1de60` · `https://app.vibefinance-ai.com` — operator's own reports, confirmed directly: *"deployed and pushed"* against the icon buttons live, then, with a screenshot, *"the icons are a little lower or the text box is higher. They seem a little un-aligned"*, then *"pushed and deployed"* again confirming the alignment-fix addendum live, then *"deployed and pushed"* confirming decision 0433's own org-ranked supplier search live, then *"pushed and deployed - this seems to have worked"* confirming decision 0434 live, then *"pushed and deployed"* again confirming decision 0435 live, then *"pushed and deployed"* again confirming decision 0436 live. |
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
 | `vf-app-poc` migrations | through `0074` applied and confirmed live — `0073` (decision 0429) is real schema; `0074` (decision 0430) is a documentation-only `ASSERT` restatement with no schema change, the same shape as `0071`; none of 0430's eight addenda needed a new `vf-app` migration; decision 0431 also needed none — its four new routes read existing tables only; decision 0433 also needed none — its ranking change reads the existing `org_unit_id` column only; decision 0434 also needed none — it changes when facts already computed reach the workflow engine, not the schema; decision 0435 also needed none — it writes a new fact through the existing `facts_json` column. **A tenant-data fix, not a migration**: the operator's own live Validation stage had `required_permission IS NULL` — the root cause behind decision 0435's own finding — fixed directly with `UPDATE process_stages SET required_permission = 'AP.Validate' WHERE id = 'validation'`. **This did not hold on the first attempt**: after decision 0435 deployed, a fresh test invoice hit the identical `requiredPermission "undefined"` error via the new `workflow.stageError` banner, and a direct re-check found `required_permission` back to `NULL` — code was traced end to end (`process-route.ts`'s stage-creation and draft/publish handlers, `field-visibility-route.ts`, `rules-list-route.ts`) and **nothing in the application ever writes this column**, so the revert's cause is unexplained, not a known bug. Re-run a second time with the `UPDATE` and a `SELECT` in the same statement batch, confirmed set to `AP.Validate` in that same round-trip, and then confirmed durable and working end-to-end by the operator submitting a genuinely fresh test invoice: it stopped at Validation, no error banner, and a task appeared with `required_permission = AP.Validate`. **If this reverts a third time**, suspect a second database bound to the same `vf-app-poc` name (check `wrangler d1 list` against `workers/vf-app/wrangler.toml`'s `database_id`) rather than re-tracing application code again. |
 | `vf-licence-poc` migrations | through `0144` applied and confirmed live — the operator's own `apply_migrations.py --remote` run, `0144` is decision 0435's own banner-label string (`viewer.workflow.stageerror`, en/de). |
@@ -44,8 +44,11 @@ twice.
 | Decision records | 436 |
 
 **Decision 0436 (the nav's own content scrolls, so `.who` stays on
-screen) is built, tested, and documented. Not yet pushed or
-deployed.** Asked live: *"I wondered if the height of the side menu
+screen) is pushed and deployed, confirmed directly.** `origin/main`
+fetched directly reads `ca1de60`, matching this session's own commit
+exactly; the operator confirmed with *"pushed and deployed"*
+immediately after the automated stop-hook flagged the one unpushed
+commit. Asked live: *"I wondered if the height of the side menu
 alone can resize to the height of the browser window, so the username
 and instance, which appear at the bottom can always be seen
 on-screen?"* — read as a possible duplicate of decision 0281's own fix
@@ -75,8 +78,9 @@ at the head of the column") repointed at `.navscroll`'s own children,
 since the DOM it asserted against genuinely moved one level deeper —
 the property it checks is unchanged. `vf-ui` browser 953 → 956, all
 green; Worker, `vf-app`, `vf-licence` untouched. `eslint public
-test-browser` clean. See decision 0436 for the full reasoning and
-tests.
+test-browser` clean. **Nothing from this session is currently
+outstanding for decision 0436 itself.** See decision 0436 for the full
+reasoning and tests.
 
 **Decision 0435 (a stage visit error is recorded, not swallowed) is
 pushed and deployed, confirmed directly.** `origin/main` fetched
