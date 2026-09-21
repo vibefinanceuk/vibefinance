@@ -1,8 +1,14 @@
 # 0430 — "Talk to an AP Expert," Screen 6, the sixth and last AP Analytics tab
 
-**Status: built, not yet delivered.** No bundle handed over yet for
-this decision. This session still has no push access to
-`vibefinanceuk/vibefinance`; will be delivered as a git bundle for the
+**Status: original build pushed and deployed, confirmed directly —
+addendum below not yet delivered.** `origin/main` fetched directly
+reads `df32830`, matching this session's own commit exactly for the
+original four-tool build; the operator separately confirmed vf-licence
+migration `0140` applied remotely too. The addendum below (five more
+tools, and a real bug from live testing) is built and tested but not
+yet committed or delivered as of this note — see its own section for
+what changed and why. This session still has no push access to
+`vibefinanceuk/vibefinance`; delivered as a git bundle for the
 operator's own pull/push/deploy sequence, the same path decisions
 0391, 0415–0429 already used.
 
@@ -284,3 +290,192 @@ clearing and re-enabling once an answer lands.
 With this decision, all six of the Management Dashboard design's own
 screens now have at least one real, tested, deployed-pending vertical
 slice behind them.
+
+---
+
+## Addendum — nine tools, and the tasks-vs-exceptions bug live testing found
+
+The operator ran the deployed assistant against real questions and
+shared the transcript directly. Seven of eight were handled correctly
+— refusing "how many users are set up," "a link to the latest invoice"
+(no "latest" concept exists), and "documents received since a date,"
+none of which any of the four original tools cover, and answering
+"where are items in the workflow" and "most active supplier"
+correctly from real `accrual_summary`/`supplier_spend` data. **One was
+a real bug**, reported back and investigated before anything was
+changed: *"Who has the most tasks assigned? — Alice McDonald has the
+most tasks assigned, with 2 tasks."*
+
+**Root cause, confirmed by reading the code the live answer actually
+ran, not assumed from the symptom.** No tool answers task-assignment
+questions at all. `exception_counts`' own description said "broken
+down by supplier, **by user**, and by type" — close enough in wording
+that the selection model chose it for a "who has the most tasks"
+question instead of refusing. The tool then genuinely ran (real SQL,
+real permission check) and returned `byUser: [{userName, total}]`,
+where `total` counts *exceptions*, not tasks — and the phrasing model,
+told to answer the person's own question using that data, relabeled
+the count to match the question's own wording rather than the data's
+own meaning. **This is the same per-person exception ranking decision
+0428's own second addendum pulled from the Workload screen live**,
+over a real governance concern about naming individuals in a ranked
+list under a broad gate with nothing enforcing the "not to assign
+blame" subtitle. This bug let that exact data resurface through the
+assistant anyway — mislabeled, and outside whatever review the
+Workload screen's own removal was meant to enforce.
+
+The operator's own follow-up, in one message: *"Yes, please fix - Also
+the tool should be able to inquire upon purchase orders, invoices,
+duplicates, tasks and provide links to documents."* Both handled
+together, since the fix and the expansion touch the same file.
+
+### The fix — two layers, not one
+
+1. **A real, correctly-matching tool now exists.** `tasks_by_user`
+   wraps `handleWorkloadOpenTasks` (decision 0428's own already-shipped
+   route), gated `AP.Analysis` — real, current open-task counts per
+   person, exactly what "who has the most tasks" asks for.
+2. **Every tool's own result is named after what it actually counts**,
+   not a shared, ambiguous `byUser`. `exception_counts` now returns
+   `exceptionsPerPerson`; `tasks_by_user` returns `openTasksPerPerson`.
+   A field name that could be misread as the other tool's own data is
+   what let the model relabel the number in the first place.
+3. **The selection prompt now contrasts neighbours explicitly** rather
+   than describing each tool in isolation — `exception_counts`' own
+   entry says outright *"never about how many tasks someone currently
+   has open, which is a different tool below"* and `tasks_by_user`'s
+   says *"It has nothing to do with validation failures or
+   exceptions."*
+4. **The answer-phrasing prompt now says, generally, not to relabel a
+   number** — *"never rename or reinterpret what a number counts (for
+   example, a count of exceptions is never 'tasks,' and a count of
+   open tasks is never 'exceptions')"* — a safeguard against the same
+   class of mistake recurring with a tool not yet built.
+
+### The five new tools
+
+- **`tasks_by_user`** — above. `AP.Analysis`.
+- **`purchase_order_status`** — counts of purchase orders by status
+  (active, on hold, closed, partially invoiced, fully invoiced),
+  wrapping `handleGetPurchaseOrderStatusCounts` (decision 0377,
+  already shipped). `AP.Validate`, the same permission the Purchase
+  Orders screen itself uses. No arguments.
+- **`purchase_order_lookup`** — one order's own detail by its order
+  number, wrapping `handleGetPurchaseOrder` (decision 0081/0375,
+  already shipped). `AP.Validate`. Requires `orderNumber`; the model
+  is refused with a plain request for the number rather than guessing
+  or running the tool with nothing to look up, the same discipline
+  every required-arg tool below follows.
+- **`duplicate_invoices`** — invoices flagged as possible duplicates,
+  ranked by confidence, wrapping `handlePossibleDuplicates` (decision
+  0420, already shipped — the design's own `duplicate_confidence`
+  scoring, not a new detection system). `AP.FraudReview`. Optional
+  `supplier` filter, capped at the top 10 by confidence.
+- **`invoice_lookup`** — one invoice's own detail by its printed
+  number, including its current workflow stage and, when one is
+  retained, a real, short-lived signed link to its document.
+  `AP.Validate`. Requires `invoiceNumber`.
+
+**`invoice_lookup` needed a new route, `invoice-lookup-route.ts`** —
+not a reuse of `handleGetInvoice` (the keying screen's own handler),
+which hydrates buyer/supplier detail, every line's own facts, and a
+live validation verdict that a one-sentence chat answer has no use
+for, and which does not report the one thing actually asked for here:
+which workflow stage the invoice is at. A new, small, purpose-built
+query instead, following `overdue-balance-route.ts`'s own precedent —
+join `invoice_headers` to `process_instances`/`process_stages` for the
+stage, `suppliers` for the name, and `invoice_documents` for whether a
+document exists, scoped by `AP.Validate` and the org-unit clause every
+sibling route already uses. **`invoice_number` is not unique** —
+checked directly, no `UNIQUE` constraint exists, and two suppliers can
+genuinely reuse the same numbering scheme — so every match is
+returned; the tool surfaces an ambiguous result rather than silently
+answering about the wrong company's invoice, and the answer-phrasing
+prompt is told to list what it found and ask which one was meant.
+Wired as a real, independently-reachable `GET /invoices/lookup?number=`
+endpoint (`AP.Validate`), the same "every capability is a real
+endpoint, not only a function the assistant can reach" precedent
+`overdue-balance-route.ts` already set.
+
+**Document-link minting was extracted, not duplicated.** The existing
+`POST /invoices/:id/document-url` route (decision 0073) had its own
+"which document, chosen once" logic written inline inside `index.ts`.
+Pulled out into `handleMintDocumentUrl` (`document-route.ts`) so
+`invoice_lookup` calls the identical function rather than a second,
+independently-drifting copy of the same choice — `index.ts`'s own
+route now calls it too, one implementation, two callers. A link is
+only ever minted once `invoice_lookup` has resolved to exactly one
+unambiguous invoice, never for every candidate in an ambiguous match.
+
+**A correction to this decision's own original text, above.** It
+claimed adding `/liabilities/overdue-balance` to vf-ui's proxy
+allow-list was necessary because "missing this would have shipped a
+chat panel whose every question came back as a proxy-level 404." On
+review while building this addendum, that is not accurate: the chat
+panel only ever calls `POST /api/ap-assistant/ask` from the browser —
+every tool's own underlying route is called as a direct, in-process
+function call from `ap-assistant.ts`, never a second browser fetch.
+`/api/ap-assistant/ask` genuinely did need proxying, and still does;
+`/liabilities/overdue-balance` did not, though adding it was harmless
+and consistent with this codebase's general practice of keeping every
+`vf-app` endpoint reachable through the proxy. Recorded here rather
+than silently edited into the original text above, per this project's
+own "records are dated, contradictions are real" discipline — the
+original text stands as written, and this note is what corrects it.
+`invoice_lookup`'s own new `GET /invoices/lookup` route was
+deliberately **not** added to vf-ui's proxy list or `CALLED_BY_A_
+SCREEN` for this same reason: nothing in the browser calls it, so
+claiming a screen reaches it would repeat the same inaccuracy.
+
+## Tests (addendum)
+
+**`workers/vf-app/test/invoice-lookup-route.test.ts`** (new, 9 tests):
+permission-gate tests (200 with `AP.Validate`, 401 no session, 403
+wrong permission, 400 with no `?number=`); real lookups — empty when
+nothing matches, finds a real invoice case-insensitively, reports the
+real current workflow stage, returns every match when a number was
+reused across suppliers rather than guessing, and reports whether a
+document is retained.
+
+**`workers/vf-app/test/ap-assistant.test.ts`** (15 new tests, 17 → 32):
+three more `parseToolSelection` cases (`orderNumber`, `invoiceNumber`,
+a no-arg `tasks_by_user` call); the bug-fix regression itself — asserts
+`exception_counts`' own result never contains a `byUser` field a
+phrasing model could misread, and that `tasks_by_user` answers "who
+has the most tasks assigned" from real, seeded open-task counts;
+`purchase_order_status`/`purchase_order_lookup` against real seeded
+orders, including the required-`orderNumber` refusal and an honest
+not-found; `duplicate_invoices` against a real flagged invoice;
+`invoice_lookup` end to end, including a **real minted document
+URL** (a fake secret passed directly to `handleAskApAssistant`, since
+this sandbox's own test config deliberately omits a real
+`DOCUMENT_URL_SECRET` — see `wrangler.test.jsonc`'s own comment on the
+`ai` binding for why declaring bindings a test doesn't need is
+avoided here), a plain "no document on file" case, a refusal to guess
+"the latest" invoice, and the ambiguous-match case surfacing both
+suppliers rather than picking one.
+
+**Full suites, run directly:** `vf-app` 2316 → **2340** (24 new: 9 in
+the new `invoice-lookup-route.test.ts` plus 15 added to
+`ap-assistant.test.ts`), all passing, `eslint` clean on every changed
+and new file. `vf-ui` untouched — no frontend change was needed; the existing
+chat panel already POSTs any question to the same endpoint regardless
+of which of the now-nine tools answers it. No new migration, no new
+permission — all five new tools reuse `AP.Analysis`, `AP.Validate`,
+and `AP.FraudReview`, already held by whoever already sees the
+Workload, Purchase Orders, and Fraud Prevention screens respectively.
+
+## What is not built (addendum)
+
+- **A tenth tool for "documents received since a date."** No route
+  anywhere in this codebase currently answers that question at all
+  (checked directly) — a real gap, not assumed solvable here, and
+  outside what was asked.
+- **A user-count tool.** Correctly refused live; nothing in the
+  operator's own follow-up asked for it.
+- **PO-to-invoice matching detail beyond what already exists.** *"How
+  many unmatched purchase orders exist"* was correctly refused live —
+  `AP.Match` (three-way match) remains an explicit placeholder,
+  unbuilt since decision 0010, and `purchase_order_status`'s own
+  status counts do not include an "unmatched" state because none
+  exists in this schema's own closed vocabulary of order statuses.

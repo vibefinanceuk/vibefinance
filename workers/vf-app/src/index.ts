@@ -21,6 +21,7 @@ import { handlePossibleDuplicates } from "./fraud-duplicates-route.js";
 import { handleUnapprovedSuppliers } from "./fraud-unapproved-suppliers-route.js";
 import { handleFraudExceptionTrends } from "./fraud-exception-trends-route.js";
 import { handleAskApAssistant } from "./ap-assistant.js";
+import { handleInvoiceLookup } from "./invoice-lookup-route.js";
 import { handleStatisticalOutliers } from "./fraud-statistical-outliers-route.js";
 import { handleSegregationOfDuties } from "./fraud-segregation-of-duties-route.js";
 import { handleSupplierSpend } from "./supplier-performance-route.js";
@@ -160,18 +161,12 @@ import {
   handleSetStageReadOnly,
 } from "./field-visibility-route.js";
 import { handlePreflight, withCors } from "@vibefinance/shared";
-import { mintDocumentToken, verifyDocumentToken, mintPageToken, verifyPageToken } from "./document-token.js";
-import {
-  retrieveInvoiceDocument,
-  preferredDocumentType,
-  documentTypeInfo,
-  renderXmlForDisplay,
-  type DocumentType,
-} from "./document-storage.js";
+import { verifyDocumentToken, mintPageToken, verifyPageToken } from "./document-token.js";
+import { retrieveInvoiceDocument, renderXmlForDisplay } from "./document-storage.js";
 import { resolveVocabulary } from "@vibefinance/shared";
 import { getSupplierHistory } from "./invoice-history.js";
 import { handleCreateCustomField, handleListCustomFields, loadCustomFields } from "./custom-field-route.js";
-import { handleUploadDocument, handleRetrieveDocument } from "./document-route.js";
+import { handleUploadDocument, handleRetrieveDocument, handleMintDocumentUrl } from "./document-route.js";
 import { handleCreateProcessInstance, onTaskCompleted, visitCurrentStage } from "./workflow-engine.js";
 import { handleClaimTask, handleCompleteTask, handleCreateTask, handleReleaseTask } from "./task-route.js";
 import type { Permission } from "./permissions.js";
@@ -1557,8 +1552,34 @@ export default {
         model,
         url.searchParams.get("org"),
         auth.user.id,
-        (body as Record<string, unknown> | null)?.question
+        (body as Record<string, unknown> | null)?.question,
+        env.DOCUMENT_URL_SECRET,
+        url.origin
       );
+      return json(result.body, result.status);
+    }
+
+    /**
+     * **Looking up one invoice by its own number — decision 0430's own
+     * addendum**, so the `invoice_lookup` tool above wraps a real,
+     * independently-reachable endpoint like every sibling metric route
+     * already does, not a function only the assistant can reach.
+     * `?number=` rather than a path segment: an invoice number is not
+     * this codebase's own primary key and can contain characters a URL
+     * path segment would need escaping either way.
+     */
+    if (pathname === "/invoices/lookup" && request.method === "GET") {
+      const { db } = resolveTenant(request, env);
+      const auth = await authenticatePerson(db, request, env);
+      if (!auth.user) return json({ error: auth.reason }, 401);
+      if (!(await hasPermission(db, auth.user.id, "AP.Validate"))) {
+        return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
+      }
+      const number = url.searchParams.get("number");
+      if (!number) {
+        return json({ error: "?number= is required" }, 400);
+      }
+      const result = await handleInvoiceLookup(db, url.searchParams.get("org"), auth.user.id, number);
       return json(result.body, result.status);
     }
 
@@ -2414,9 +2435,6 @@ export default {
       if (!(await hasPermission(db, auth.user.id, "AP.Validate"))) {
         return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
       }
-      if (!env.DOCUMENT_URL_SECRET) {
-        return json({ error: "DOCUMENT_URL_SECRET is not configured" }, 500);
-      }
       /**
        * **Which document, chosen once and only once** — decision 0273,
        * widened by decision 0383 to a second explicit type.
@@ -2426,32 +2444,13 @@ export default {
        * `preferredDocumentType` picks as it always has. Whichever is
        * chosen travels inside the signed token itself now, so
        * `/documents/:token` never re-derives it and cannot disagree
-       * with the choice made here.
+       * with the choice made here. Extracted into `handleMintDocumentUrl`
+       * (decision 0430) so the AP Assistant's own `invoice_lookup` tool
+       * reuses the identical logic rather than a second copy of it.
        */
       const requestedType = url.searchParams.get("type");
-      let documentType: DocumentType;
-      let contentType: string;
-      if (requestedType === "original" || requestedType === "embedded_xml") {
-        const info = await documentTypeInfo(db, docUrlMatch[1], requestedType);
-        if (!info) {
-          return json({ error: `no ${requestedType} document is retained for invoice ${docUrlMatch[1]}` }, 404);
-        }
-        documentType = requestedType;
-        contentType = info.contentType;
-      } else {
-        const stored = await preferredDocumentType(db, docUrlMatch[1]);
-        if (!stored) {
-          return json({ error: `no document is retained for invoice ${docUrlMatch[1]}` }, 404);
-        }
-        documentType = stored.documentType;
-        contentType = stored.contentType;
-      }
-      const minted = await mintDocumentToken(env.DOCUMENT_URL_SECRET, docUrlMatch[1], documentType);
-      return json({
-        url: `${url.origin}/documents/${minted.token}`,
-        expiresAt: new Date(minted.expiresAt * 1000).toISOString(),
-        contentType,
-      }, 200);
+      const result = await handleMintDocumentUrl(db, env.DOCUMENT_URL_SECRET, docUrlMatch[1], requestedType, url.origin);
+      return json(result.body, result.status);
     }
 
     // Fetching by token. Deliberately unauthenticated: the token IS the

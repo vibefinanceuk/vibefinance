@@ -907,6 +907,34 @@ a rule, and left an approval task in a queue.
   despite it), not caused by or fixed in this decision. See decision
   0430's own doc.
 
+**Addendum — five more tools, and a real bug live testing found.** The
+operator tested the deployed assistant directly; "who has the most
+tasks assigned" came back answering with a count of *exceptions*
+mislabeled as "tasks" — no tool covered task assignment at all, so the
+selection model picked `exception_counts` (whose own description said
+"by user") and the phrasing model relabeled the number to match the
+question. The same per-person exception ranking decision 0428's own
+second addendum pulled from the Workload screen over a real governance
+concern, resurfacing here mislabeled. Fixed two ways: a real,
+correctly-matching `tasks_by_user` tool now exists (wrapping decision
+0428's own `handleWorkloadOpenTasks`), and every tool's own result
+field is now named after what it actually counts
+(`exceptionsPerPerson`, `openTasksPerPerson`) rather than a shared
+`byUser` a model could misread. Alongside the fix, the operator asked
+for real coverage of purchase orders, invoices, duplicates, and
+document links — four more tools now exist: `purchase_order_status`,
+`purchase_order_lookup`, `duplicate_invoices` (all wrapping
+already-shipped routes), and `invoice_lookup` (a new, small,
+purpose-built route, since two different suppliers can genuinely reuse
+the same invoice number and no existing route answers "which workflow
+stage is this invoice at"). `invoice_lookup` mints a real, short-lived
+document link when one is retained, reusing decision 0073's own
+signed-URL logic (extracted into a shared function rather than
+duplicated). Nine tools total now, no new permission or migration — see
+decision 0430's own addendum section for the full accounting,
+including a correction to that decision's own original text about why
+one earlier route needed proxying.
+
 ### Purchase orders and matching
 - Purchase order storage grounded in Peppol BIS Order Only 3.3, via UBL
   XML ingestion (0081) and CSV load (0370) — the same tables, the same
@@ -1960,7 +1988,18 @@ invariant test this decision's own change broke and fixed (migration
 building this and deliberately left alone. A further "standalone
 remote MCP server" option the design also sketches for this screen is
 explicitly out of scope for the document itself, not merely deferred —
-its own future decision, should it ever be made.
+its own future decision, should it ever be made. **Five more tools
+added by an addendum, once live**, after the operator tested the
+deployed assistant directly and found a real bug: "who has the most
+tasks assigned" came back naming a count of *exceptions*, mislabeled,
+because no tool covered task assignment and the selection model picked
+the closest-sounding one. Fixed with a real `tasks_by_user` tool and
+field names that say what they count (`exceptionsPerPerson`,
+`openTasksPerPerson`, never a shared `byUser`); `purchase_order_status`,
+`purchase_order_lookup`, `duplicate_invoices`, and `invoice_lookup`
+(which can also hand back a real, minted document link) followed the
+operator's own request in the same message. See decision 0430's own
+addendum section.
 
 **~~Early-payment/discount eligibility, specifically, is parked.~~
 Built, honestly narrowed, as eligibility rather than the design's own
@@ -2160,7 +2199,7 @@ elsewhere.
 
 | Package | Tests |
 |---|---|
-| `vf-app` | 2316 |
+| `vf-app` | 2340 |
 | `vf-licence` | 320 |
 | `vf-ui` | 74 Worker · 915 browser |
 | `shared` | 295 passing, 3 known pre-existing failures |

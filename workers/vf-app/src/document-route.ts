@@ -1,8 +1,68 @@
 import type { RouteResult } from "./org-route.js";
-import { computeDocumentKey, storeInvoiceDocument, retrieveInvoiceDocument, type DocumentType } from "./document-storage.js";
+import {
+  computeDocumentKey,
+  storeInvoiceDocument,
+  retrieveInvoiceDocument,
+  preferredDocumentType,
+  documentTypeInfo,
+  type DocumentType,
+} from "./document-storage.js";
+import { mintDocumentToken } from "./document-token.js";
 
 function isDocumentType(value: string | null): value is DocumentType {
   return value === "original" || value === "generated_rendering" || value === "embedded_xml";
+}
+
+/**
+ * Minting a short-lived signed document URL — decision 0073's own
+ * logic, extracted here from `index.ts`'s own inline `POST
+ * /invoices/:id/document-url` route (decision 0430) so the AP
+ * Assistant's own `invoice_lookup` tool can reuse the identical
+ * behaviour rather than a second, drifting copy of the same "which
+ * document type, chosen once" logic `preferredDocumentType`'s own doc
+ * comment already warns two copies of would eventually disagree.
+ * `index.ts`'s own route now calls this too — one implementation,
+ * two callers, matching this whole file's own precedent for every
+ * other document operation.
+ */
+export async function handleMintDocumentUrl(
+  db: D1Database,
+  secret: string | undefined,
+  invoiceId: string,
+  requestedType: string | null,
+  origin: string
+): Promise<RouteResult> {
+  if (!secret) {
+    return { status: 500, body: { error: "DOCUMENT_URL_SECRET is not configured" } };
+  }
+
+  let documentType: DocumentType;
+  let contentType: string;
+  if (requestedType === "original" || requestedType === "embedded_xml") {
+    const info = await documentTypeInfo(db, invoiceId, requestedType);
+    if (!info) {
+      return { status: 404, body: { error: `no ${requestedType} document is retained for invoice ${invoiceId}` } };
+    }
+    documentType = requestedType;
+    contentType = info.contentType;
+  } else {
+    const stored = await preferredDocumentType(db, invoiceId);
+    if (!stored) {
+      return { status: 404, body: { error: `no document is retained for invoice ${invoiceId}` } };
+    }
+    documentType = stored.documentType;
+    contentType = stored.contentType;
+  }
+
+  const minted = await mintDocumentToken(secret, invoiceId, documentType);
+  return {
+    status: 200,
+    body: {
+      url: `${origin}/documents/${minted.token}`,
+      expiresAt: new Date(minted.expiresAt * 1000).toISOString(),
+      contentType,
+    },
+  };
 }
 
 function extFromContentType(contentType: string): string {
