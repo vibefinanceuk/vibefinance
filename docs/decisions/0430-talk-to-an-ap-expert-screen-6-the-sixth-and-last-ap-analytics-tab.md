@@ -1331,3 +1331,73 @@ test-browser`) and `vf-app` (`src test`).
   PDF" dialog, not a generated `.pdf` — no PDF-generation library
   exists in this codebase and none can be added without a bundler this
   workspace does not have.
+
+## Addendum eight — disclosing unclaimed tasks the same way every other easy-to-miss field already had to be
+
+### What was found
+
+A production smoke test, run after the sixth and seventh addenda went
+live, confirmed both of those fixes work correctly — document links now
+render as real, clickable, in-app Document Viewer links — and surfaced
+one more small gap in the same family as the sixth addendum's own
+disclosure fix. *"Who is the most active AP team member?"* answered
+*"There are currently no open tasks assigned to any team member, so I
+can't identify a most-active AP team member from the available data"*
+against a workflow whose only open task genuinely was unclaimed rather
+than owned by anyone — `tasks_by_user`'s own real data
+(`openTasksPerPerson`) genuinely was empty, so nothing in the answer was
+factually wrong. But `unclaimedAndAvailable` — the same tool's own count
+of open, unclaimed tasks, sitting right beside that empty list — was
+never mentioned at all, so the answer read as "the workflow is empty"
+rather than the true "nobody has claimed anything yet, but work is
+waiting." The rest of the same smoke test checked out: a "matching
+invoices" follow-up and an explicit "potential duplicate invoices"
+question both correctly and consistently resolved to `duplicate_
+invoices` with a real, empty result; "tasks completed this week" was
+correctly refused (no tool anywhere tracks completions, only open
+tasks); and both a misspelled and a correctly-spelled unrecognized
+stage name were both handled honestly.
+
+Every other tool result field this easy to silently drop already has
+its own explicit instruction in `buildAnswerPrompt` for exactly this
+reason — `documentUrl`'s presence vs. absence, `moreMayExist`, and the
+sixth addendum's own `unconfirmedAmountCount` all exist because a
+phrasing model given only a raw JSON blob has no way to know which
+fields matter unless it's told. `unclaimedAndAvailable` had simply never
+been given the same treatment. Fixed directly — narrow, low-risk, and
+squarely a continuation of that same established discipline, not a
+fork.
+
+### What was built
+
+**One new sentence in `buildAnswerPrompt`**, alongside the tool's other
+field-specific instructions: when the data carries an
+`unclaimedAndAvailable` number alongside an `openTasksPerPerson` list,
+always mention the former too — and specifically, when the list is
+empty but `unclaimedAndAvailable` is above zero, say plainly that no one
+currently has a task claimed but that many are open and available to be
+picked up, rather than only reporting the empty per-person list. No
+change to `runTasksByUser` itself or its result shape — the data was
+already correct and already present; only the phrasing instruction was
+missing.
+
+### Tests (addendum eight)
+
+**`ap-assistant.test.ts`**: a new test seeding one open, genuinely
+unclaimed task (`openTask({ owner: null })` — the helper's own `owner`
+param widened to accept `null` for this case) and asserting the answer
+prompt contains both `"openTasksPerPerson":[]` and
+`"unclaimedAndAvailable":1`, plus the new disclosure instruction text
+itself.
+
+**Full suite**: `ap-assistant.test.ts` — 68 passing (67 plus this
+addendum's own new test). `eslint src test` clean.
+
+### What is not built (addendum eight)
+
+- **A change to what `tasks_by_user` returns.** The data was already
+  right; only the answer prompt's own instructions were incomplete.
+- **A general audit of every other tool's own result shape for a
+  similarly unmentioned field.** This addendum fixes the one gap a real
+  production smoke test actually found and demonstrated, not a
+  speculative sweep of the other nine tools' own result shapes.

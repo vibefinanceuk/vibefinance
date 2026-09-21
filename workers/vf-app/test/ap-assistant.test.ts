@@ -107,7 +107,7 @@ async function invoice(opts: { id: string; supplierId: string; total: number | n
 
 let openTaskSeq = 0;
 
-async function openTask(opts: { owner: string; unit?: string | null }) {
+async function openTask(opts: { owner: string | null; unit?: string | null }) {
   const n = openTaskSeq++;
   const invoiceId = `task-inv-${n}`;
   const piId = `task-pi-${n}`;
@@ -440,6 +440,32 @@ describe("the tasks-vs-exceptions bug, fixed — decision 0430's own addendum", 
     // The real, seeded count — proving this reached the real
     // `handleWorkloadOpenTasks` query, not a guess.
     expect(answerPrompt).toContain('"openCount":2');
+  });
+
+  /**
+   * **A live test asked "who is the most active AP team member?" against
+   * a workflow where every open task was unclaimed** — `openTasksPerPerson`
+   * came back empty, and nothing told the phrasing model that an empty
+   * per-person list and a real, positive `unclaimedAndAvailable` count are
+   * two different things: "nobody has a task claimed" is not the same
+   * claim as "there are no open tasks," but without this instruction a
+   * phrasing model reading an empty list alone has no reason to say
+   * anything about the second, real number sitting right beside it.
+   * Decision 0430's eighth addendum.
+   */
+  it("tells the phrasing model to mention 'unclaimedAndAvailable' even when nobody currently has a task claimed", async () => {
+    await person("alice", ["AP.Assistant", "AP.Analysis"]);
+    await openTask({ owner: null });
+
+    const model = fakeModel('{"tool": "tasks_by_user", "args": {}}', "irrelevant");
+    await handleAskApAssistant(env.DB, model, null, "alice", "who is the most active AP team member?");
+
+    const calls = (model.compile as ReturnType<typeof vi.fn>).mock.calls as [string][];
+    const answerPrompt = calls.find(([p]) => !p.includes("Reply with ONLY a JSON object"))![0];
+    expect(answerPrompt).toContain('"openTasksPerPerson":[]');
+    expect(answerPrompt).toContain('"unclaimedAndAvailable":1');
+    expect(answerPrompt).toContain("unclaimedAndAvailable");
+    expect(answerPrompt).toContain("no one currently has any task claimed");
   });
 
   it("the selection prompt itself tells the model these are different tools, not a matter of wording", () => {

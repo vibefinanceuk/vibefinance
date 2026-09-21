@@ -1077,6 +1077,24 @@ migration, `0141`, following `0140`'s own exact pattern. See decision
 0430's own sixth and seventh addendum sections for the full reasoning
 and tests.
 
+**Eighth addendum — disclosing unclaimed tasks the same way every
+other easy-to-miss field already had to be.** A production smoke test
+confirmed the sixth/seventh addenda's own fixes work live, and found
+one more small gap of the same shape as the sixth addendum's own
+disclosure fix: "who is the most active AP team member?" answered "no
+open tasks are assigned to anyone" on a workflow whose only open task
+was genuinely unclaimed rather than owned — technically correct
+(`openTasksPerPerson` really was empty) but silent about
+`unclaimedAndAvailable`, the same tool's own real count sitting right
+beside that empty list. Fixed with one new sentence in
+`buildAnswerPrompt` telling the model to mention that number whenever
+the per-person list is empty but it is not, the same "every
+easy-to-miss field gets its own explicit instruction" discipline
+`documentUrl`, `moreMayExist`, and `unconfirmedAmountCount` already
+follow. No change to the underlying data — only the phrasing
+instruction was missing. See decision 0430's own eighth addendum
+section for the full reasoning and tests.
+
 ### Purchase orders and matching
 - Purchase order storage grounded in Peppol BIS Order Only 3.3, via UBL
   XML ingestion (0081) and CSV load (0370) — the same tables, the same
@@ -2341,7 +2359,7 @@ elsewhere.
 
 | Package | Tests |
 |---|---|
-| `vf-app` | 2428 |
+| `vf-app` | 2429 |
 | `vf-licence` | 320 |
 | `vf-ui` | 74 Worker · 924 browser |
 | `shared` | 295 passing, 3 known pre-existing failures |
@@ -2372,6 +2390,11 @@ explained after the fact. This is also the first time in this session
 the full, unfiltered suite completed rather than timing out — addendum
 five recorded its own 2374 from four separate batched runs, never one
 whole-suite run.
+
+**The eighth addendum's own single new test brings this to 2429** — a
+targeted `ap-assistant.test.ts` re-run confirmed 68 passing (67 plus
+one), added arithmetically to the 2428 above rather than re-run as a
+fresh whole-suite pass, since only that one file changed.
 
 ---
 
