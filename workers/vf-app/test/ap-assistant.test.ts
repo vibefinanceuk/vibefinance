@@ -76,7 +76,7 @@ async function supplier(id: string, name: string) {
   await env.DB.prepare("INSERT INTO suppliers (id, erp_identifier, name) VALUES (?, ?, ?)").bind(id, id, name).run();
 }
 
-async function invoice(opts: { id: string; supplierId: string; total: number; currency: string; number?: string; createdAt?: string }) {
+async function invoice(opts: { id: string; supplierId: string; total: number | null; currency: string | null; number?: string; createdAt?: string }) {
   // `facts_json` carries `BT-1` and `BT-27` too, not just an empty
   // object — the `invoice_number` column is what `invoice_lookup`
   // reads (decision 0430's own addendum), but `documents-route.ts`'s
@@ -300,7 +300,7 @@ describe("a formatting-only follow-up with no criteria of its own", () => {
   it("tells the selection model to re-select the preceding real question's own tool, not refuse", async () => {
     await person("alice", ["AP.Assistant", "AP.Analysis"]);
     const model = fakeModel('{"tool": "accrual_summary", "args": {}}', "irrelevant");
-    await handleAskApAssistant(env.DB, model, null, "alice", "can you provide a table of results?", undefined, "", [
+    await handleAskApAssistant(env.DB, model, null, "alice", "can you provide a table of results?", [
       { question: "what do we owe right now?", answer: "You have £400 in accruals." },
     ]);
 
@@ -519,8 +519,8 @@ describe("duplicate_invoices", () => {
   });
 });
 
-describe("invoice_lookup, including a real minted document link", () => {
-  it("finds one real invoice and includes a real, minted document URL", async () => {
+describe("invoice_lookup, including a real Document Viewer link", () => {
+  it("finds one real invoice and includes a real Document Viewer link", async () => {
     await person("alice", ["AP.Assistant", "AP.Validate"]);
     await supplier("acme", "Acme Widgets");
     await invoice({ id: "inv-1", number: "INV-1001", supplierId: "acme", total: 250, currency: "GBP" });
@@ -529,13 +529,29 @@ describe("invoice_lookup, including a real minted document link", () => {
     ).run();
 
     const model = fakeModel('{"tool": "invoice_lookup", "args": {"invoiceNumber": "INV-1001"}}', "Here's INV-1001 and its document.");
-    const result = await handleAskApAssistant(env.DB, model, null, "alice", "give me a link to invoice INV-1001", "test-secret", "https://app.example.com");
+    const result = await handleAskApAssistant(env.DB, model, null, "alice", "give me a link to invoice INV-1001");
     const body = result.body as ApAssistantAnswer;
     expect(body.answer).toBe("Here's INV-1001 and its document.");
 
     const calls = (model.compile as ReturnType<typeof vi.fn>).mock.calls as [string][];
     const answerPrompt = calls.find(([p]) => !p.includes("Reply with ONLY a JSON object"))![0];
-    expect(answerPrompt).toContain("https://app.example.com/documents/");
+    expect(answerPrompt).toContain("/document-window.html?task=inv-1");
+  });
+
+  it("tells the phrasing model to give a document link as a markdown link, decision 0430's sixth addendum", async () => {
+    await person("alice", ["AP.Assistant", "AP.Validate"]);
+    await supplier("acme", "Acme Widgets");
+    await invoice({ id: "inv-1", number: "INV-1001", supplierId: "acme", total: 250, currency: "GBP" });
+    await env.DB.prepare(
+      "INSERT INTO invoice_documents (id, invoice_id, r2_key, document_type, content_type) VALUES ('d-1', 'inv-1', 'k-1', 'original', 'application/pdf')"
+    ).run();
+
+    const model = fakeModel('{"tool": "invoice_lookup", "args": {"invoiceNumber": "INV-1001"}}', "irrelevant");
+    await handleAskApAssistant(env.DB, model, null, "alice", "give me a link to invoice INV-1001");
+
+    const calls = (model.compile as ReturnType<typeof vi.fn>).mock.calls as [string][];
+    const answerPrompt = calls.find(([p]) => !p.includes("Reply with ONLY a JSON object"))![0];
+    expect(answerPrompt).toContain("[View document]");
   });
 
   it("says plainly when no document is on file, rather than inventing a link", async () => {
@@ -544,7 +560,7 @@ describe("invoice_lookup, including a real minted document link", () => {
     await invoice({ id: "inv-1", number: "INV-1001", supplierId: "acme", total: 250, currency: "GBP" });
 
     const model = fakeModel('{"tool": "invoice_lookup", "args": {"invoiceNumber": "INV-1001"}}', "No document is on file for INV-1001.");
-    const result = await handleAskApAssistant(env.DB, model, null, "alice", "link to INV-1001's document", "test-secret", "https://app.example.com");
+    const result = await handleAskApAssistant(env.DB, model, null, "alice", "link to INV-1001's document");
     const body = result.body as ApAssistantAnswer;
     expect(body.answer).toBe("No document is on file for INV-1001.");
 
@@ -598,7 +614,7 @@ describe("invoice_lookup, including a real minted document link", () => {
     ).run();
 
     const model = fakeModel('{"tool": "invoice_lookup", "args": {"invoiceNumber": "INV-1001"}}', "Here are both.");
-    const result = await handleAskApAssistant(env.DB, model, null, "alice", "link to invoice INV-1001", "test-secret", "https://app.example.com");
+    const result = await handleAskApAssistant(env.DB, model, null, "alice", "link to invoice INV-1001");
     expect((result.body as ApAssistantAnswer).answer).toBe("Here are both.");
 
     const calls = (model.compile as ReturnType<typeof vi.fn>).mock.calls as [string][];
@@ -607,7 +623,7 @@ describe("invoice_lookup, including a real minted document link", () => {
     const data = JSON.parse(dataJson) as { matches: { supplierName: string; documentUrl: string | null }[]; moreMatchesNotShown: boolean };
     expect(data.matches).toHaveLength(2);
     for (const m of data.matches) {
-      expect(m.documentUrl).toContain("https://app.example.com/documents/");
+      expect(m.documentUrl).toMatch(/^\/document-window\.html\?task=/);
     }
     expect(data.moreMatchesNotShown).toBe(false);
   });
@@ -624,7 +640,7 @@ describe("invoice_lookup, including a real minted document link", () => {
     // inv-2 (Globex) has no document on file.
 
     const model = fakeModel('{"tool": "invoice_lookup", "args": {"invoiceNumber": "INV-1001"}}', "irrelevant");
-    await handleAskApAssistant(env.DB, model, null, "alice", "link to invoice INV-1001", "test-secret", "https://app.example.com");
+    await handleAskApAssistant(env.DB, model, null, "alice", "link to invoice INV-1001");
 
     const calls = (model.compile as ReturnType<typeof vi.fn>).mock.calls as [string][];
     const answerPrompt = calls.find(([p]) => !p.includes("Reply with ONLY a JSON object"))![0];
@@ -633,7 +649,7 @@ describe("invoice_lookup, including a real minted document link", () => {
     const globex = data.matches.find((m) => m.supplierName === "Globex Corp")!;
     const acme = data.matches.find((m) => m.supplierName === "Acme Widgets")!;
     expect(globex.documentUrl).toBeNull();
-    expect(acme.documentUrl).toContain("https://app.example.com/documents/");
+    expect(acme.documentUrl).toBe("/document-window.html?task=inv-1");
   });
 });
 
@@ -820,9 +836,63 @@ describe("invoice_search, a browsable list rather than one exact number", () => 
   });
 
   /**
+   * Decision 0430's sixth addendum — a live test pasted back an answer
+   * whose own "exact" total did not match what its own visible rows
+   * summed to. Traced to `invoice-count-route.ts`'s total correctly
+   * excluding an invoice with no confirmed amount/currency yet, while
+   * `invoice_search`'s own list shows it anyway (from raw extracted
+   * facts) — correct on both sides, but nothing ever said the total
+   * could be narrower than the list beside it. `unconfirmedAmountCount`
+   * is how the answer prompt learns to say so.
+   */
+  describe("'unconfirmedAmountCount' — the total can be narrower than the list, honestly", () => {
+    it("is zero when every matching invoice has a confirmed amount and currency", async () => {
+      await person("alice", ["AP.Assistant", "AP.Review"]);
+      await supplier("acme", "Acme Widgets");
+      await invoice({ id: "a", number: "INV-A", supplierId: "acme", total: 100, currency: "GBP" });
+
+      const model = fakeModel('{"tool": "invoice_search", "args": {}}', "irrelevant");
+      await handleAskApAssistant(env.DB, model, null, "alice", "list recent invoices");
+
+      const calls = (model.compile as ReturnType<typeof vi.fn>).mock.calls as [string][];
+      const answerPrompt = calls.find(([p]) => !p.includes("Reply with ONLY a JSON object"))![0];
+      const dataJson = answerPrompt.slice(answerPrompt.indexOf("{"), answerPrompt.lastIndexOf("}") + 1);
+      const data = JSON.parse(dataJson) as { unconfirmedAmountCount: number };
+      expect(data.unconfirmedAmountCount).toBe(0);
+    });
+
+    it("counts an invoice with no confirmed amount/currency yet, exactly", async () => {
+      await person("alice", ["AP.Assistant", "AP.Review"]);
+      await supplier("acme", "Acme Widgets");
+      await invoice({ id: "confirmed", number: "INV-CONFIRMED", supplierId: "acme", total: 100, currency: "GBP" });
+      await invoice({ id: "unconfirmed", number: "INV-UNCONFIRMED", supplierId: "acme", total: null, currency: null });
+
+      const model = fakeModel('{"tool": "invoice_search", "args": {}}', "irrelevant");
+      await handleAskApAssistant(env.DB, model, null, "alice", "list recent invoices");
+
+      const calls = (model.compile as ReturnType<typeof vi.fn>).mock.calls as [string][];
+      const answerPrompt = calls.find(([p]) => !p.includes("Reply with ONLY a JSON object"))![0];
+      const dataJson = answerPrompt.slice(answerPrompt.indexOf("{"), answerPrompt.lastIndexOf("}") + 1);
+      const data = JSON.parse(dataJson) as { unconfirmedAmountCount: number };
+      expect(data.unconfirmedAmountCount).toBe(1);
+    });
+
+    it("tells the answer prompt to disclose it plainly, only when it is above zero", async () => {
+      await person("alice", ["AP.Assistant", "AP.Review"]);
+      const model = fakeModel('{"tool": "invoice_search", "args": {}}', "irrelevant");
+      await handleAskApAssistant(env.DB, model, null, "alice", "list recent invoices");
+
+      const calls = (model.compile as ReturnType<typeof vi.fn>).mock.calls as [string][];
+      const answerPrompt = calls.find(([p]) => !p.includes("Reply with ONLY a JSON object"))![0];
+      expect(answerPrompt).toContain("unconfirmedAmountCount");
+      expect(answerPrompt).toContain("does not include every invoice shown");
+    });
+  });
+
+  /**
    * Decision 0430's fourth addendum — the general list carries no
    * document field at all, on purpose (checking up to 50 rows would
-   * mean up to 50 signed-URL mints for one browsing question). A live
+   * mean up to 50 existence checks for one browsing question). A live
    * test showed the answer-phrasing model fabricating "no document on
    * file" for every row anyway; the fix lives in the answer prompt
    * itself, but this proves the tool's own data gives it nothing to
@@ -834,7 +904,7 @@ describe("invoice_search, a browsable list rather than one exact number", () => 
     await invoice({ id: "a", number: "INV-A", supplierId: "acme", total: 100, currency: "GBP" });
 
     const model = fakeModel('{"tool": "invoice_search", "args": {}}', "irrelevant");
-    await handleAskApAssistant(env.DB, model, null, "alice", "list recent invoices", "test-secret", "https://app.example.com");
+    await handleAskApAssistant(env.DB, model, null, "alice", "list recent invoices");
 
     const calls = (model.compile as ReturnType<typeof vi.fn>).mock.calls as [string][];
     const answerPrompt = calls.find(([p]) => !p.includes("Reply with ONLY a JSON object"))![0];
@@ -860,14 +930,14 @@ describe("invoice_search, a browsable list rather than one exact number", () => 
     ).run();
 
     const model = fakeModel('{"tool": "invoice_search", "args": {"latestOnly": true}}', "Here's INV-LATEST and its document.");
-    const result = await handleAskApAssistant(env.DB, model, null, "alice", "link to the latest invoice", "test-secret", "https://app.example.com");
+    const result = await handleAskApAssistant(env.DB, model, null, "alice", "link to the latest invoice");
     expect((result.body as ApAssistantAnswer).answer).toBe("Here's INV-LATEST and its document.");
 
     const calls = (model.compile as ReturnType<typeof vi.fn>).mock.calls as [string][];
     const answerPrompt = calls.find(([p]) => !p.includes("Reply with ONLY a JSON object"))![0];
     const dataJson = answerPrompt.slice(answerPrompt.indexOf("{"), answerPrompt.lastIndexOf("}") + 1);
     const data = JSON.parse(dataJson) as { invoices: { documentUrl?: string | null }[] };
-    expect(data.invoices[0].documentUrl).toContain("https://app.example.com/documents/");
+    expect(data.invoices[0].documentUrl).toBe("/document-window.html?task=inv-1");
   });
 
   it("'latestOnly': true states a null documentUrl, not silence, when no document is on file", async () => {
@@ -877,13 +947,66 @@ describe("invoice_search, a browsable list rather than one exact number", () => 
     // No invoice_documents row — nothing retained.
 
     const model = fakeModel('{"tool": "invoice_search", "args": {"latestOnly": true}}', "irrelevant");
-    await handleAskApAssistant(env.DB, model, null, "alice", "link to the latest invoice", "test-secret", "https://app.example.com");
+    await handleAskApAssistant(env.DB, model, null, "alice", "link to the latest invoice");
 
     const calls = (model.compile as ReturnType<typeof vi.fn>).mock.calls as [string][];
     const answerPrompt = calls.find(([p]) => !p.includes("Reply with ONLY a JSON object"))![0];
     const dataJson = answerPrompt.slice(answerPrompt.indexOf("{"), answerPrompt.lastIndexOf("}") + 1);
     const data = JSON.parse(dataJson) as { invoices: { documentUrl?: string | null }[] };
     expect(data.invoices[0]).toHaveProperty("documentUrl", null);
+  });
+});
+
+/**
+ * `ApAssistantAnswer.table` — decision 0430's seventh addendum, real
+ * rows for a downloadable CSV/PDF, asked for directly in the same live
+ * test that asked for a clickable document link. Built from
+ * `invoice_search`'s own real result, never from the phrasing model's
+ * own prose, so the numbers in a downloaded file can never drift from
+ * the sentence sitting right above the download button.
+ */
+describe("'table' — real rows behind an answer, for a download", () => {
+  it("is a real table for invoice_search, matching the tool's own real rows exactly", async () => {
+    await person("alice", ["AP.Assistant", "AP.Review"]);
+    await supplier("acme", "Acme Widgets");
+    await invoice({ id: "a", number: "INV-A", supplierId: "acme", total: 100, currency: "GBP" });
+
+    const model = fakeModel('{"tool": "invoice_search", "args": {}}', "One invoice: INV-A.");
+    const result = await handleAskApAssistant(env.DB, model, null, "alice", "list recent invoices");
+    const body = result.body as ApAssistantAnswer;
+
+    expect(body.table).not.toBeNull();
+    expect(body.table?.columns).toEqual(["Invoice #", "Supplier", "Amount", "Currency", "Issue date", "Received at", "Stage", "Status"]);
+    expect(body.table?.rows).toHaveLength(1);
+    expect(body.table?.rows[0][0]).toBe("INV-A");
+    expect(body.table?.rows[0][1]).toBe("Acme Widgets");
+  });
+
+  it("is null for a tool with no naturally tabular result", async () => {
+    await person("alice", ["AP.Assistant", "AP.Analysis"]);
+    const model = fakeModel('{"tool": "accrual_summary", "args": {}}', "You have £0 in accruals.");
+    const result = await handleAskApAssistant(env.DB, model, null, "alice", "what do we owe?");
+    expect((result.body as ApAssistantAnswer).table).toBeNull();
+  });
+
+  it("is null when the question is refused outright, rather than missing", async () => {
+    await person("alice", ["AP.Assistant"]);
+    const model = fakeModel("irrelevant");
+    const result = await handleAskApAssistant(env.DB, model, null, "alice", "hello");
+    expect((result.body as ApAssistantAnswer).table).toBeNull();
+  });
+
+  it("tells the selection model a download/export/CSV/PDF follow-up reuses the preceding real question, the same as a table request", async () => {
+    await person("alice", ["AP.Assistant", "AP.Review"]);
+    const model = fakeModel('{"tool": "invoice_search", "args": {}}', "irrelevant");
+    await handleAskApAssistant(env.DB, model, null, "alice", "can I download that as a CSV?", [
+      { question: "list recent invoices", answer: "Here are the invoices." },
+    ]);
+
+    const calls = (model.compile as ReturnType<typeof vi.fn>).mock.calls as [string][];
+    const selectionPrompt = calls.find(([p]) => p.includes("Reply with ONLY a JSON object"))![0];
+    expect(selectionPrompt).toContain("as a CSV");
+    expect(selectionPrompt).toContain("as a PDF");
   });
 });
 
@@ -1011,16 +1134,9 @@ describe("recentTurns, bounded conversational context", () => {
   it("appears in both the selection and answer prompts when given", async () => {
     await person("alice", ["AP.Assistant", "AP.Analysis"]);
     const model = fakeModel('{"tool": "accrual_summary", "args": {}}', "You have £0 in accruals.");
-    await handleAskApAssistant(
-      env.DB,
-      model,
-      null,
-      "alice",
-      "and the year before that?",
-      undefined,
-      "",
-      [{ question: "how much have we spent with Acme?", answer: "You've spent £1,200 with Acme this year." }]
-    );
+    await handleAskApAssistant(env.DB, model, null, "alice", "and the year before that?", [
+      { question: "how much have we spent with Acme?", answer: "You've spent £1,200 with Acme this year." },
+    ]);
 
     const calls = (model.compile as ReturnType<typeof vi.fn>).mock.calls as [string][];
     expect(calls).toHaveLength(2);
@@ -1033,7 +1149,7 @@ describe("recentTurns, bounded conversational context", () => {
   it("is silently ignored when not an array, rather than erroring", async () => {
     await person("alice", ["AP.Assistant", "AP.Analysis"]);
     const model = fakeModel('{"tool": "accrual_summary", "args": {}}', "You have £0 in accruals.");
-    const result = await handleAskApAssistant(env.DB, model, null, "alice", "what do we owe?", undefined, "", "not an array");
+    const result = await handleAskApAssistant(env.DB, model, null, "alice", "what do we owe?", "not an array");
 
     expect(result.status).toBe(200);
     const calls = (model.compile as ReturnType<typeof vi.fn>).mock.calls as [string][];
@@ -1045,7 +1161,7 @@ describe("recentTurns, bounded conversational context", () => {
   it("drops a malformed entry (missing 'answer') rather than including it half-formed", async () => {
     await person("alice", ["AP.Assistant", "AP.Analysis"]);
     const model = fakeModel('{"tool": "accrual_summary", "args": {}}', "You have £0 in accruals.");
-    await handleAskApAssistant(env.DB, model, null, "alice", "what do we owe?", undefined, "", [
+    await handleAskApAssistant(env.DB, model, null, "alice", "what do we owe?", [
       { question: "a real question with no answer field" },
       { question: "a real one", answer: "and a real answer" },
     ]);
@@ -1061,7 +1177,7 @@ describe("recentTurns, bounded conversational context", () => {
     await person("alice", ["AP.Assistant", "AP.Analysis"]);
     const model = fakeModel('{"tool": "accrual_summary", "args": {}}', "You have £0 in accruals.");
     const longAnswer = "x".repeat(1000);
-    await handleAskApAssistant(env.DB, model, null, "alice", "what do we owe?", undefined, "", [
+    await handleAskApAssistant(env.DB, model, null, "alice", "what do we owe?", [
       { question: "q", answer: longAnswer },
     ]);
 
@@ -1076,7 +1192,7 @@ describe("recentTurns, bounded conversational context", () => {
     await person("alice", ["AP.Assistant", "AP.Analysis"]);
     const model = fakeModel('{"tool": "accrual_summary", "args": {}}', "You have £0 in accruals.");
     const turns = Array.from({ length: 55 }, (_, i) => ({ question: `question number ${i}`, answer: `answer number ${i}` }));
-    await handleAskApAssistant(env.DB, model, null, "alice", "what do we owe?", undefined, "", turns);
+    await handleAskApAssistant(env.DB, model, null, "alice", "what do we owe?", turns);
 
     const calls = (model.compile as ReturnType<typeof vi.fn>).mock.calls as [string][];
     const selectionPrompt = calls.find(([p]) => p.includes("Reply with ONLY a JSON object"))![0];

@@ -2,7 +2,7 @@
 
 **Written 4 September 2026, updated 17 September (six times), updated
 18 September (four times), updated 19 September (thirty-two times),
-updated 20 September (twenty-two times), updated 21 September (seven
+updated 20 September (twenty-two times), updated 21 September (eight
 times).**
 
 **For a session starting cold.** Where things stand, what needs a
@@ -32,15 +32,15 @@ twice.
 
 | | |
 | --- | --- |
-| `origin/main` | `b084859` — fetched directly by this session, matching this session's own commit exactly, confirming the operator's own "pushed and deployed" reports for the first three of decision 0430's addenda. **The fourth and fifth addenda below are built, tested, and committed locally, delivered as a new bundle this session — not yet confirmed pushed.** |
+| `origin/main` | `b084859` — fetched directly by this session, matching this session's own commit exactly, confirming the operator's own "pushed and deployed" reports for the first three of decision 0430's addenda. **The fourth through seventh addenda below are built, tested, and committed locally, delivered as new bundles this session — not yet confirmed pushed.** |
 | vf-admin deployed | `8e27a34` · `https://admin.vibefinance-ai.com` · behind Cloudflare Access |
-| vf-app deployed | `b084859` confirmed — decisions 0429 (agreed payment means, a supplier-record placeholder), 0430 (Talk to an AP Expert, Screen 6), and the first three of 0430's own addenda, all confirmed. The fourth (quarter totals, a minted `latestOnly` link, dash normalization) and fifth (stage filtering, a systemic answer-prompt overclaim fix) addenda are not yet confirmed deployed — awaiting the operator's own pull/push/deploy of this session's new bundle |
-| vf-licence deployed | `b084859` per the operator's own reports; migration `0140` below is now applied; none of the five addenda added a new migration |
+| vf-app deployed | `b084859` confirmed — decisions 0429 (agreed payment means, a supplier-record placeholder), 0430 (Talk to an AP Expert, Screen 6), and the first three of 0430's own addenda, all confirmed. The fourth (quarter totals, a minted `latestOnly` link, dash normalization), fifth (stage filtering, a systemic answer-prompt overclaim fix), sixth (unconfirmed-amount disclosure, a real document link) and seventh (downloadable report, Clear button) addenda are not yet confirmed deployed — awaiting the operator's own pull/push/deploy of this session's new bundle |
+| vf-licence deployed | `b084859` per the operator's own reports; migration `0140` below is now applied; the seventh addendum's own `0141` (Clear/Download button strings) is committed, not yet confirmed applied — none of the other five addenda added a new migration |
 | vf-ui deployed | `b084859` · `https://app.vibefinance-ai.com` — operator's own reports |
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
-| `vf-app-poc` migrations | through `0074` applied and confirmed live — `0073` (decision 0429) is real schema; `0074` (decision 0430) is a documentation-only `ASSERT` restatement with no schema change, the same shape as `0071`; none of the five addenda needed a new migration — their new tools and routes are gated by permissions already real |
-| `vf-licence-poc` migrations | through `0140` applied and confirmed live — the operator's own `apply_migrations.py --remote` run |
-| Tests | vf-admin 9 · vf-app 2374 (all 99 test files run to completion this session, in batches, after the fourth/fifth addenda's own new tests — 0 failures) · vf-licence 320 · vf-ui 74 Worker + 916 browser (unchanged, not re-run this segment — untouched by these addenda) · shared 295 (+3 known pre-existing failures) |
+| `vf-app-poc` migrations | through `0074` applied and confirmed live — `0073` (decision 0429) is real schema; `0074` (decision 0430) is a documentation-only `ASSERT` restatement with no schema change, the same shape as `0071`; none of the seven addenda needed a new `vf-app` migration — their new tools, routes and (for the seventh) UI strings are gated by permissions already real, or live in `vf-licence`'s own migration chain |
+| `vf-licence-poc` migrations | through `0140` applied and confirmed live — the operator's own `apply_migrations.py --remote` run; `0141` (this session's own Clear/Download strings) committed, not yet confirmed applied |
+| Tests | vf-admin 9 · vf-app 2428 (all 104 test files run to completion in one unfiltered pass this session — the first time this whole-suite run has completed rather than needing batches — after the sixth/seventh addenda's own new tests, 0 failures) · vf-licence 320 (including migration `0141`) · vf-ui 74 Worker + 924 browser (re-run this segment, up 8 from 916 — the sixth addendum's own markdown-link test plus the seventh addendum's own 7 new tests) · shared 295 (+3 known pre-existing failures) |
 | Decision records | 430 |
 
 **Decisions 0429 (agreed payment means, a supplier-record placeholder),
@@ -53,9 +53,57 @@ of it together; migration `0140` (the chat tab's own strings) confirmed
 separately applied too, the same operator-run
 `apply_migrations.py --remote` step decision 0427 first surfaced as
 distinct from the code deploy. None of the first three addenda needed
-a new migration. **The fourth and fifth addenda, immediately below,
-are new this session — built, tested, and committed, not yet confirmed
-pushed.**
+a new migration. **The fourth through seventh addenda, immediately
+below, are new this session — built, tested, and committed, not yet
+confirmed pushed.**
+
+**Decision 0430's seventh addendum (a downloadable CSV/PDF report, and
+a Clear button next to Ask) is built and tested, delivered as this
+session's own new bundle — not yet confirmed pushed.** Asked directly,
+live: *"when asked for a report, provide something I can download,"*
+and a Clear button next to Ask. Two forks went to the operator —
+format ("both, user's choice") and trigger ("explicit ask only") — both
+answered before building. `ApAssistantAnswer.table` is now built
+server-side, straight from `invoice_search`'s own real tool result
+(never LLM-authored), and returned alongside the answer text so a
+download can never show a number the chat bubble didn't. The client
+renders "Download CSV"/"Download PDF" only when the *question* itself
+reads as a download ask and a table came back — never automatically.
+CSV reuses `purchase-orders.js`'s own `Blob`/`createObjectURL` pattern
+with real per-cell escaping; PDF has no library and no bundler to add
+one with, so it opens a blank window, builds a plain `<table>` with the
+same `textContent`-only discipline as everywhere else, and calls
+`win.print()` — the browser's own print-to-PDF is the export. The
+Clear button resets the in-memory chat history to empty; nothing
+persisted server-side to undo. New bilingual UI strings via a new
+`vf-licence` migration, `0141`, following `0140`'s own exact pattern.
+See decision 0430's own doc, "Addendum seven," for the full reasoning
+and tests.
+
+**Decision 0430's sixth addendum (disclosing an unconfirmed-amount
+total mismatch, and fixing a document link that neither worked nor
+rendered) is built and tested, delivered as this session's own new
+bundle — not yet confirmed pushed.** A live-test transcript showed a
+five-row invoice list summing to £8,580 sitting directly above its own
+"exact" total of £6,072 — correct (the total only ever sums confirmed
+rows, third addendum) but never explained, so it read as wrong. Fixed
+with a new `unconfirmedCount`/`unconfirmedAmountCount` signal, and an
+explicit instruction for the answer prompt to disclose the exclusion
+rather than leave the mismatch unexplained or blend the unconfirmed
+amount into the total. The same transcript's document link used the
+retired, decision-0073-era raw signed-URL pattern instead of decision
+0384's `document-window.html`, and, even had it been right, rendered as
+inert plain text — `el()`'s own deliberate `textContent`-only
+discipline (0126) never turns a string into a link on its own. Fixed by
+switching to decision 0384's own URL pattern (which also let
+`documentUrlSecret`/`origin` come out of the tool-run context and route
+handler entirely) and by having the answer prompt emit exactly one
+narrow markup form, `[label](url)`, that the client parses into a real
+`<a>` — never `innerHTML`, never a markdown library — sharing decision
+0384's "one window, always" pop-out via `viewer.js`'s newly-exported
+`POPOUT_NAME`. Neither item was put to the operator as a fork — both
+direct continuations of already-established discipline. See decision
+0430's own doc, "Addendum six," for the full reasoning and tests.
 
 **Decision 0430's fifth addendum (workflow-stage filtering on
 `invoice_search`, and a systemic fix for two separate overclaim bugs

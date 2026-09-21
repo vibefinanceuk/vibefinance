@@ -1033,6 +1033,50 @@ items were put to the operator as forks — both narrow and within
 already-approved scope. See decision 0430's own fourth and fifth
 addendum sections for the full reasoning and tests.
 
+**Sixth addendum — disclosing an unconfirmed-amount total mismatch,
+and a document link that neither worked nor rendered.** A live-test
+transcript showed a five-row list summing to £8,580 sitting directly
+above its own "exact" total of £6,072 — the total (third addendum)
+correctly excludes rows whose amount was never confirmed into
+structured columns, but nothing said so. Fixed with a new
+`unconfirmedCount`/`unconfirmedAmountCount` signal threaded to the
+answer prompt, with an explicit instruction to disclose the exclusion
+rather than leave the mismatch unexplained — never blending the
+unconfirmed amount into the total itself. The same transcript's
+document link also used the retired, decision-0073-era raw signed-URL
+pattern instead of decision 0384's `document-window.html`, and — even
+had it been the right URL — showed as inert plain text, since `el()`'s
+own deliberate `textContent`-only discipline (0126) never turns a
+string into a link on its own. Fixed by switching to
+`documentViewerUrl()` (0384's own pattern, which also let
+`documentUrlSecret`/`origin` come out of the tool-run context and
+route handler entirely — a same-origin, no-token link needs neither),
+and by having the answer prompt emit exactly one narrow markup form,
+`[label](url)`, that the client parses into a real `<a>` — never
+`innerHTML`, never a markdown library — sharing decision 0384's "one
+window, always" pop-out via `viewer.js`'s own newly-exported
+`POPOUT_NAME`.
+
+**Seventh addendum — a downloadable report, and a Clear button.** Two
+direct requests: *"when asked for a report, provide something I can
+download,"* and a Clear button next to Ask. Two forks went to the
+operator: format — answered "both, user's choice" — and trigger —
+answered "explicit ask only." Built as a new `ApAssistantAnswer.table`
+(real rows straight from `invoice_search`'s own tool result, never
+LLM-authored, so a download can never drift from the chat bubble above
+it), rendered as "Download CSV" / "Download PDF" buttons only when the
+question that produced the answer itself reads as a download ask. CSV
+reuses `purchase-orders.js`'s own Blob/`createObjectURL` pattern with
+real cell escaping; PDF has no library and no bundler to add one with,
+so it opens a blank window, builds a plain `<table>` in it with the
+same `textContent`-only discipline as everywhere else, and calls
+`win.print()` — the browser's own print-to-PDF is the export. The
+Clear button resets the in-memory `history` array to empty; nothing
+persisted server-side to undo. New bilingual UI strings via a new
+migration, `0141`, following `0140`'s own exact pattern. See decision
+0430's own sixth and seventh addendum sections for the full reasoning
+and tests.
+
 ### Purchase orders and matching
 - Purchase order storage grounded in Peppol BIS Order Only 3.3, via UBL
   XML ingestion (0081) and CSV load (0370) — the same tables, the same
@@ -2297,13 +2341,13 @@ elsewhere.
 
 | Package | Tests |
 |---|---|
-| `vf-app` | 2374 |
+| `vf-app` | 2428 |
 | `vf-licence` | 320 |
-| `vf-ui` | 74 Worker · 916 browser |
+| `vf-ui` | 74 Worker · 924 browser |
 | `shared` | 295 passing, 3 known pre-existing failures |
 
 Both migration chains replay clean with every standing invariant
-holding — 74 migrations for `vf-app`, 140 for `vf-licence`.
+holding — 74 migrations for `vf-app`, 141 for `vf-licence`.
 
 **`shared`'s count was recorded as 287 through decision 0429**; a
 clean run at this decision's own commit, with no `shared` change since
@@ -2316,6 +2360,18 @@ fact. The 3 known pre-existing failures are unchanged.
 run at `46c1da2`, with no `vf-app` change since decision 0378 recorded
 1851, counts 1893. Why the two differ is not established — recorded as
 measured (0380) rather than explained after the fact.
+
+**`vf-app`'s count was recorded as 2374 through decision 0430's own
+fifth addendum**; a clean, unfiltered run of all 104 test files at this
+decision's own sixth/seventh addendum commit counts 2428 — a +54
+difference. Decision 0430's own sixth and seventh addenda together
+account for 12 of those (4 new in `invoice-count-route.test.ts`, 8 new
+in `ap-assistant.test.ts`); the remaining 42 are not established, and
+are recorded as measured (following 0380's own precedent) rather than
+explained after the fact. This is also the first time in this session
+the full, unfiltered suite completed rather than timing out — addendum
+five recorded its own 2374 from four separate batched runs, never one
+whole-suite run.
 
 ---
 

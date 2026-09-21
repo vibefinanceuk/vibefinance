@@ -3272,6 +3272,7 @@
   .chatbubble-question > div { background: var(--bg-accent); color: var(--text-accent); }
   .chatbubble-answer { justify-content: flex-start; }
   .chatbubble-answer > div { background: var(--surface-1); color: var(--text-primary); }
+  .chatactions { display: flex; gap: 8px; margin: -2px 0 0 2px; }
   .chatinputrow { display: flex; gap: 10px; margin-top: 12px; }
   .chatinputrow .chatinput {
     flex: 1;

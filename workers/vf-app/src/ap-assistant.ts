@@ -11,7 +11,7 @@ import { handleWorkloadOpenTasks } from "./workload-open-tasks-route.js";
 import { handleGetPurchaseOrderStatusCounts, handleGetPurchaseOrder } from "./purchase-order-route.js";
 import { handlePossibleDuplicates } from "./fraud-duplicates-route.js";
 import { handleInvoiceLookup, type InvoiceLookupReport } from "./invoice-lookup-route.js";
-import { handleMintDocumentUrl } from "./document-route.js";
+import { preferredDocumentType } from "./document-storage.js";
 import { handleListDocuments } from "./documents-route.js";
 import { handleInvoiceCount, type InvoiceCountReport } from "./invoice-count-route.js";
 import { unitsWherePermitted, scopedToChosenOrg } from "./enforce.js";
@@ -152,6 +152,48 @@ import { firstOfThisMonth, firstOfThisQuarter } from "./dates.js";
  * link is minted for that single invoice, the same bounded cost
  * `invoice_lookup` already pays for one match; the general up-to-50
  * list still mints nothing.
+ *
+ * **A sixth addendum, two more findings from the next live test.**
+ * First: every document link this chat had ever returned, since the
+ * very first build, pointed at the raw signed-bytes URL
+ * `handleMintDocumentUrl` mints (`document-route.ts`) — the exact
+ * pattern `viewer.js`'s own doc comment says decision 0384 already
+ * retired everywhere else in this app, for opening "a blank tab with
+ * no app chrome at all... nothing but the bytes," in favor of a real
+ * second page of this app, `document-window.html?task=<id>`, same
+ * origin, same session. This chat had simply never been updated to
+ * follow that same decision. Fixed by dropping the mint entirely —
+ * `preferredDocumentType` (`document-storage.ts`) answers the same
+ * "does a document exist" question `handleMintDocumentUrl`'s own 404
+ * used to, with no token, no secret, no expiry, and a link that (unlike
+ * the one it replaces) never goes stale before someone clicks it,
+ * since this chat only ever runs inside an already-authenticated
+ * session. Second: that same live test's own displayed invoice total
+ * did not match the sum of the very rows sitting right above it in the
+ * same answer — traced to `invoice-count-route.ts`'s total only ever
+ * summing the structured, confirmed `total_with_vat`/`currency`
+ * columns (correct, and unchanged here — an unconfirmed, merely
+ * extracted figure can never be allowed into a total this tool calls
+ * exact), while `invoice_search`'s own list shows whatever a
+ * document's raw extracted facts say regardless. The total was never
+ * wrong; nothing ever said it could be narrower than the list beside
+ * it. Fixed by exposing `unconfirmedCount` (`invoice-count-route.ts`)
+ * and telling the answer prompt to disclose it in plain language
+ * whenever it is not zero, rather than a total that silently does not
+ * add up to what the person can see for themselves.
+ *
+ * **A seventh addendum: a real download, not just a nicer chat
+ * bubble.** The same conversation that asked for a clickable link also
+ * asked, directly, for "something I can download" when a question asks
+ * for a report — this chat's own text-only bubble has no way to hand
+ * someone a file. `ApAssistantAnswer` gained `table`, real rows behind
+ * an `invoice_search` answer (`invoiceSearchTable` below), so
+ * `ap-assistant.js` can build a CSV or a PDF from the exact numbers
+ * already shown, never a second pass through a model. Two forks put to
+ * the operator directly: which format(s) to support — answered "both,
+ * CSV and PDF, the person's own choice" — and when to offer a download
+ * at all — answered "only when they explicitly ask, same as the table
+ * request before it," so an ordinary answer stays uncluttered.
  */
 
 export const AP_ASSISTANT_TOOL_NAMES = [
@@ -246,9 +288,26 @@ interface ToolRunContext {
   currentOrg: string | null;
   userId: string;
   args: ApAssistantToolArgs;
-  /** `invoice_lookup` always mints document links; `invoice_search` mints exactly one when `latestOnly` caps its result to a single row — decision 0430's fourth addendum. Every other tool ignores these two. */
-  documentUrlSecret: string | undefined;
-  origin: string;
+}
+
+/**
+ * The in-app Document Viewer's own link — decision 0384's already-
+ * established page for this, `document-window.html?task=<invoiceId>`
+ * (`viewer.js`'s own `popoutUrl`), never the raw signed-bytes URL
+ * `handleMintDocumentUrl` mints, which that same file's own doc
+ * comment names as retired: "no app chrome at all... nothing but the
+ * bytes." Decision 0430's sixth addendum, after live testing showed
+ * this chat had never been updated to follow decision 0384 like the
+ * rest of the app. Deliberately relative, resolved by the person's own
+ * browser against wherever this chat is actually running (vf-ui's own
+ * origin) — this file only ever knows vf-app's own origin, which was
+ * never the right one for a vf-ui page anyway. No secret, no token, no
+ * expiry: the person asking is already inside a real vf-ui session by
+ * the time any tool call here ever runs, the same session that page
+ * itself would need.
+ */
+function documentViewerUrl(invoiceId: string): string {
+  return `/document-window.html?task=${encodeURIComponent(invoiceId)}`;
 }
 
 interface SupplierSpendCurrency {
@@ -374,16 +433,15 @@ async function runInvoiceLookup(ctx: ToolRunContext) {
     // `duplicate_invoices`' own existing cap — a number this large
     // would itself be a data problem, not a normal case.
     const capped = body.matches.slice(0, 10);
-    const matches = await Promise.all(
-      capped.map(async (m) => {
-        let documentUrl: string | null = null;
-        if (m.hasDocument) {
-          const minted = await handleMintDocumentUrl(ctx.db, ctx.documentUrlSecret, m.id, null, ctx.origin);
-          if (minted.status === 200) documentUrl = (minted.body as { url: string }).url;
-        }
-        return { supplierName: m.supplierName, totalWithVat: m.totalWithVat, currency: m.currency, stage: m.stage, documentUrl };
-      })
-    );
+    const matches = capped.map((m) => ({
+      supplierName: m.supplierName,
+      totalWithVat: m.totalWithVat,
+      currency: m.currency,
+      stage: m.stage,
+      // `hasDocument` (`invoice-lookup-route.ts`) already answers "does
+      // a document exist" — no separate lookup needed to build the link.
+      documentUrl: m.hasDocument ? documentViewerUrl(m.id) : null,
+    }));
     return {
       tool: "invoice_lookup",
       ambiguous: true,
@@ -394,12 +452,6 @@ async function runInvoiceLookup(ctx: ToolRunContext) {
   }
 
   const match = body.matches[0];
-  let documentUrl: string | null = null;
-  if (match.hasDocument) {
-    const minted = await handleMintDocumentUrl(ctx.db, ctx.documentUrlSecret, match.id, null, ctx.origin);
-    if (minted.status === 200) documentUrl = (minted.body as { url: string }).url;
-  }
-
   return {
     tool: "invoice_lookup",
     found: true,
@@ -409,7 +461,7 @@ async function runInvoiceLookup(ctx: ToolRunContext) {
     currency: match.currency,
     stage: match.stage,
     inProgress: match.inProgress,
-    documentUrl,
+    documentUrl: match.hasDocument ? documentViewerUrl(match.id) : null,
   };
 }
 
@@ -449,18 +501,21 @@ interface InvoiceSearchDocument {
  * rather than silently truncating or trying to fetch everything into
  * one chat answer.
  *
- * **Never mints a document link for the general list — except the one
- * case where the cap already makes it cheap.** Checking document
- * retention for up to 50 rows would mean up to 50 existence checks and
- * up to 50 signed-URL mints for one browsing question — the same cost
- * reasoning that already kept links off the real Documents screen's own
- * list. `latestOnly` caps the result at exactly one row, so decision
- * 0430's fourth addendum mints a link for that one row at the same
- * bounded cost `invoice_lookup` already pays for a single match — asked
- * for in two separate live tests now ("please show the most recent
- * invoice" immediately followed by "can you provide the link").
- * `handleMintDocumentUrl` itself 404s when no document is retained, so
- * no separate existence check is needed first.
+ * **Never checks document existence for the general list — except the
+ * one case where the cap already makes it cheap.** Checking document
+ * retention for up to 50 rows would mean up to 50 existence checks for
+ * one browsing question — the same cost reasoning that already kept
+ * links off the real Documents screen's own list. `latestOnly` caps
+ * the result at exactly one row, so decision 0430's fourth addendum
+ * built a link for that one row at the same bounded cost `invoice_
+ * lookup` already pays for a single match — asked for in two separate
+ * live tests now ("please show the most recent invoice" immediately
+ * followed by "can you provide the link"). The sixth addendum changed
+ * what that link *is* (the in-app Document Viewer, never a signed
+ * bytes URL — `documentViewerUrl`'s own doc comment above explains
+ * why) without touching this cost reasoning at all — `preferredDocumentType`
+ * answers the same existence question `handleMintDocumentUrl`'s own
+ * 404 used to, at the same cost.
  *
  * **A stage narrows by name, resolved to real ids first.** A live test
  * asked to "list the invoices held at the Validation stage" and was
@@ -518,12 +573,17 @@ async function runInvoiceSearch(ctx: ToolRunContext) {
     supplier: ctx.args.supplier ?? null,
     stageIds,
   });
-  const { count: totalMatching, totalByCurrency } = countResult.body as InvoiceCountReport;
+  const { count: totalMatching, totalByCurrency, unconfirmedCount } = countResult.body as InvoiceCountReport;
 
   let latestDocumentUrl: string | null = null;
   if (ctx.args.latestOnly && body.documents.length > 0) {
-    const minted = await handleMintDocumentUrl(ctx.db, ctx.documentUrlSecret, body.documents[0].id, null, ctx.origin);
-    if (minted.status === 200) latestDocumentUrl = (minted.body as { url: string }).url;
+    // documents-route.ts's own list carries no "has a document" flag
+    // (checking that for up to 50 rows is exactly the cost this list
+    // deliberately avoids) — `latestOnly` caps the result to the one
+    // row this bounded existence check is for, the same cost
+    // `invoice_lookup` already pays for a single match.
+    const hasDocument = await preferredDocumentType(ctx.db, body.documents[0].id);
+    if (hasDocument) latestDocumentUrl = documentViewerUrl(body.documents[0].id);
   }
 
   return {
@@ -553,6 +613,12 @@ async function runInvoiceSearch(ctx: ToolRunContext) {
     // Empty when nothing matched, or when every match is missing an
     // amount or a currency.
     totalAmountByCurrency: totalByCurrency,
+    // How many matching invoices this total leaves out because they
+    // have no confirmed amount/currency yet — decision 0430's sixth
+    // addendum. Present even when zero, so the answer prompt can check
+    // it plainly rather than guessing from its absence, the same
+    // present-vs-absent discipline `documentUrl` already established.
+    unconfirmedAmountCount: unconfirmedCount,
     moreMayExist: totalMatching > body.documents.length,
   };
 }
@@ -660,7 +726,7 @@ Tools:
 
 None of these tools can say whether an invoice was actually paid, or when — this product does not capture that anywhere, so never claim otherwise. None of them can produce a list of system users, or narrow by any date range other than the current calendar month or quarter.
 
-If the current question asks only for a different presentation of the answer immediately before it — "as a table," "sort that," "just the totals" — and names no new criteria of its own, treat it as the same request as whichever question immediately before it actually named real criteria: pick that same tool, with the same arguments, rather than refusing just because this question alone names nothing. This re-runs the lookup fresh rather than reusing a remembered answer, so the numbers stay real. Only do this when the current question is genuinely just asking for a different presentation — never invent criteria for a question that is honestly asking something new.
+If the current question asks only for a different presentation of the answer immediately before it — "as a table," "sort that," "just the totals," "can I download that," "export this," "as a CSV," "as a PDF" — and names no new criteria of its own, treat it as the same request as whichever question immediately before it actually named real criteria: pick that same tool, with the same arguments, rather than refusing just because this question alone names nothing. This re-runs the lookup fresh rather than reusing a remembered answer, so the numbers stay real. Only do this when the current question is genuinely just asking for a different presentation — never invent criteria for a question that is honestly asking something new.
 ${recentTurnsBlock(recentTurns)}
 The person asked: "${question}"
 
@@ -697,7 +763,7 @@ const AP_ASSISTANT_TOOL_SCOPE: Record<ApAssistantToolName, string> = {
   purchase_order_lookup: "full detail on one specific purchase order, matched by its own number.",
   invoice_lookup: "full detail on one specific, already-identified invoice, matched by its own printed number.",
   invoice_search:
-    "a list of recent invoices, capped at 50 even though the count and total beside it are always exact, optionally narrowed by supplier, calendar period, or workflow stage — never states whether a document is on file for any invoice except the single most-recent one, when asked for specifically.",
+    "a list of recent invoices, capped at 50 even though the count and total beside it are always exact, optionally narrowed by supplier, calendar period, or workflow stage — never states whether a document is on file for any invoice except the single most-recent one, when asked for specifically. The total can be smaller than what the visible list appears to add up to, when unconfirmedAmountCount is above zero — that is correct, not an error, since the total only ever sums confirmed amounts.",
   duplicate_invoices: "invoices flagged as possible duplicates of another already on file, ranked by how confident that match is.",
 };
 
@@ -707,13 +773,59 @@ ${recentTurnsBlock(recentTurns)}
 You looked this up using the ${tool} tool, which only ever covers: ${AP_ASSISTANT_TOOL_SCOPE[tool]} Never say or imply anything outside that scope as though you checked and found nothing there — if this tool's data doesn't cover something, you simply don't know, so answer only what the data below actually shows. It returned this real, verified data:
 ${JSON.stringify(toolResult)}
 
-Write one short, direct, natural-language answer using ONLY the numbers and facts in that data. Do not invent, estimate, or add any figure that isn't there. Reproduce any invoice number, order number, or other identifier exactly character-for-character as it appears in the data — never restyle its punctuation (for example, never change a hyphen to a different dash character) even for readability, since a person may need to type or paste it back exactly. State plainly what each number represents, using the data's own field names as your guide — never rename or reinterpret what a number counts (for example, a count of exceptions is never "tasks," and a count of open tasks is never "exceptions"). If the data is empty or shows nothing relevant to what they asked, say so plainly rather than guessing. If a specific invoice entry includes a "documentUrl" field at all (present, whether a real URL or null), that entry's document status is known: a non-null value is a real link to include; a null value means say plainly no document is on file for that one. If an invoice entry has no "documentUrl" field at all, its document status is simply not known from this data — never say a document is or isn't on file for it; if they want that specific invoice's link, tell them to ask for it by its own invoice number. If the data shows "ambiguous": true with more than one match, briefly list each one (supplier and amount) with its own document link exactly as given — a "documentUrl" that is null for a given match means no document is on file for that one, so say so for that match specifically rather than omitting it; do not ask which one they meant, since every match's own information and link are already included. If "moreMatchesNotShown" is true, say plainly that there were more matches than shown. If the data shows "found": false, say plainly you could not find anything with that number. If the data shows "stageRecognized": false, say plainly that "stageRequested" is not a real workflow stage in this system, rather than guessing which one they meant. If the data has an "invoices" list, describe what's in it rather than reading out every single row when there are many; if asked "how many," state the exact "totalMatching" number rather than counting the "invoices" list yourself (that list can be capped at 50 while "totalMatching" never is); if asked for a total amount, state the exact "totalAmountByCurrency" figures rather than adding up the list yourself, one figure per currency, and never combine two currencies into one number; if "moreMayExist" is true, say plainly that the list shown is not the complete set and that the Documents screen can browse all of them. Never claim to know whether an invoice was actually paid — this data never says that. Do not mention "tools", "JSON", or how you looked this up; answer like a knowledgeable colleague would. If they explicitly asked for a table, a list, or another specific layout, give them that — a short markdown table or list is fine — but every value in it must still come only from the data above, never from a table you remember writing in an earlier answer. Otherwise, keep it to a sentence or two.`;
+Write one short, direct, natural-language answer using ONLY the numbers and facts in that data. Do not invent, estimate, or add any figure that isn't there. Reproduce any invoice number, order number, or other identifier exactly character-for-character as it appears in the data — never restyle its punctuation (for example, never change a hyphen to a different dash character) even for readability, since a person may need to type or paste it back exactly. State plainly what each number represents, using the data's own field names as your guide — never rename or reinterpret what a number counts (for example, a count of exceptions is never "tasks," and a count of open tasks is never "exceptions"). If the data is empty or shows nothing relevant to what they asked, say so plainly rather than guessing. If a specific invoice entry includes a "documentUrl" field at all (present, whether a real URL or null), that entry's document status is known: a non-null value is a real link to include; a null value means say plainly no document is on file for that one. Give a non-null "documentUrl" as a markdown link, "[View document](<the documentUrl value, exactly as given>)" — never write the raw path out as plain text, since the chat window turns exactly this markdown form into something clickable and nothing else. If an invoice entry has no "documentUrl" field at all, its document status is simply not known from this data — never say a document is or isn't on file for it; if they want that specific invoice's link, tell them to ask for it by its own invoice number. If the data shows "ambiguous": true with more than one match, briefly list each one (supplier and amount) with its own document link exactly as given (as a markdown link, per above) — a "documentUrl" that is null for a given match means no document is on file for that one, so say so for that match specifically rather than omitting it; do not ask which one they meant, since every match's own information and link are already included. If "moreMatchesNotShown" is true, say plainly that there were more matches than shown. If the data shows "found": false, say plainly you could not find anything with that number. If the data shows "stageRecognized": false, say plainly that "stageRequested" is not a real workflow stage in this system, rather than guessing which one they meant. If the data has an "invoices" list, describe what's in it rather than reading out every single row when there are many; if asked "how many," state the exact "totalMatching" number rather than counting the "invoices" list yourself (that list can be capped at 50 while "totalMatching" never is); if asked for a total amount, state the exact "totalAmountByCurrency" figures rather than adding up the list yourself, one figure per currency, and never combine two currencies into one number; if "unconfirmedAmountCount" is above zero, say plainly that the total does not include every invoice shown — that many do not have a confirmed amount yet — rather than letting the total look like it should match what someone could add up from the list themselves; if "moreMayExist" is true, say plainly that the list shown is not the complete set and that the Documents screen can browse all of them. Never claim to know whether an invoice was actually paid — this data never says that. Do not mention "tools", "JSON", or how you looked this up; answer like a knowledgeable colleague would. If they explicitly asked for a table, a list, or another specific layout, give them that — a short markdown table or list is fine — but every value in it must still come only from the data above, never from a table you remember writing in an earlier answer. Otherwise, keep it to a sentence or two.`;
+}
+
+/**
+ * A downloadable report's own raw material — decision 0430's seventh
+ * addendum, real rows straight from a tool's own result, never text
+ * the phrasing model wrote. Built once, server-side, so a CSV or PDF
+ * the person downloads is built from the exact same numbers the
+ * sentence above it already used — never a second, separate trip
+ * through a model that could quietly drift from the first.
+ */
+export interface ApAssistantAnswerTable {
+  columns: string[];
+  rows: (string | number | null)[][];
 }
 
 export interface ApAssistantAnswer {
   question: string;
   tool: ApAssistantToolName | null;
   answer: string;
+  /**
+   * Real, tabular data behind this answer, when the tool that ran
+   * naturally has some — `invoice_search` today, the only tool this
+   * addendum builds it for (see this file's own top comment). `null`
+   * for every other tool, and for a refused or permission-denied
+   * question. Always present, never merely absent, so the client never
+   * has to guess whether a download is possible from silence.
+   */
+  table: ApAssistantAnswerTable | null;
+}
+
+/**
+ * `invoice_search`'s own result, reshaped into `ApAssistantAnswerTable`
+ * — decision 0430's seventh addendum, so a person asking to download
+ * an invoice list gets one built from these exact rows, never text a
+ * model wrote. Only `invoice_search` today: the one tool whose result
+ * is already a real row-per-invoice list, and the one this whole
+ * addendum was asked for directly, live-testing's own "can you provide
+ * a table of results?" and "give me something I can download" in the
+ * same conversation. A future addendum can widen this to another
+ * tool's own list shape (`duplicate_invoices`, say) the same way,
+ * without touching this one.
+ */
+function invoiceSearchTable(toolResult: unknown): ApAssistantAnswerTable | null {
+  const body = toolResult as {
+    tool?: string;
+    invoices?: { number: string | null; supplier: string | null; amount: number | null; currency: string | null; issueDate: string | null; receivedAt: string; stage: string | null; status: string }[];
+  };
+  if (body.tool !== "invoice_search" || !Array.isArray(body.invoices)) return null;
+  return {
+    columns: ["Invoice #", "Supplier", "Amount", "Currency", "Issue date", "Received at", "Stage", "Status"],
+    rows: body.invoices.map((i) => [i.number, i.supplier, i.amount, i.currency, i.issueDate, i.receivedAt, i.stage, i.status]),
+  };
 }
 
 /**
@@ -723,9 +835,13 @@ export interface ApAssistantAnswer {
  * starts one level in, at "which tool, and does this person actually
  * hold what that tool needs."
  *
- * `documentUrlSecret`/`origin` exist only for `invoice_lookup`'s own
- * document-link minting (`handleMintDocumentUrl`, `document-route.ts`)
- * — every other tool ignores both.
+ * **No `documentUrlSecret`/`origin` any more, decision 0430's sixth
+ * addendum.** Every document link this chat returns used to be minted
+ * through `handleMintDocumentUrl`, the only reason these two
+ * parameters existed at all; now every link is `documentViewerUrl`'s
+ * own relative, in-app path instead, needing neither. Removed rather
+ * than left in place unused, so a reader never has to wonder what
+ * still depends on them.
  *
  * `recentTurns` is optional, untrusted client input — decision 0430's
  * third addendum. Nothing is stored server-side; the browser already
@@ -741,8 +857,6 @@ export async function handleAskApAssistant(
   currentOrg: string | null,
   userId: string,
   question: unknown,
-  documentUrlSecret?: string,
-  origin: string = "",
   recentTurns?: unknown
 ): Promise<RouteResult> {
   const trimmed = typeof question === "string" ? question.trim() : "";
@@ -755,7 +869,7 @@ export async function handleAskApAssistant(
   const selection = parseToolSelection(selectionRaw);
 
   if (selection.kind === "none") {
-    return { status: 200, body: { question: trimmed, tool: null, answer: selection.reason } satisfies ApAssistantAnswer };
+    return { status: 200, body: { question: trimmed, tool: null, answer: selection.reason, table: null } satisfies ApAssistantAnswer };
   }
 
   const toolDef = AP_ASSISTANT_TOOLS[selection.tool];
@@ -766,6 +880,7 @@ export async function handleAskApAssistant(
         question: trimmed,
         tool: selection.tool,
         answer: `I can't answer that — it needs the ${toolDef.requiredPermission} permission, which you don't currently hold.`,
+        table: null,
       } satisfies ApAssistantAnswer,
     };
   }
@@ -773,13 +888,18 @@ export async function handleAskApAssistant(
   if (toolDef.requiredArg && !selection.args[toolDef.requiredArg]) {
     return {
       status: 200,
-      body: { question: trimmed, tool: selection.tool, answer: toolDef.missingArgMessage ?? "I need a bit more detail to look that up." } satisfies ApAssistantAnswer,
+      body: {
+        question: trimmed,
+        tool: selection.tool,
+        answer: toolDef.missingArgMessage ?? "I need a bit more detail to look that up.",
+        table: null,
+      } satisfies ApAssistantAnswer,
     };
   }
 
-  const toolResult = await toolDef.run({ db, currentOrg, userId, args: selection.args, documentUrlSecret, origin });
+  const toolResult = await toolDef.run({ db, currentOrg, userId, args: selection.args });
   const answerRaw = await model.compile(buildAnswerPrompt(trimmed, selection.tool, toolResult, recent));
   const answer = answerRaw.trim() || "I found the data but couldn't put together an answer — please try rephrasing the question.";
 
-  return { status: 200, body: { question: trimmed, tool: selection.tool, answer } satisfies ApAssistantAnswer };
+  return { status: 200, body: { question: trimmed, tool: selection.tool, answer, table: invoiceSearchTable(toolResult) } satisfies ApAssistantAnswer };
 }

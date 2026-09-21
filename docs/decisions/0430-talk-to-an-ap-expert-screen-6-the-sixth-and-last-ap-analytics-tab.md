@@ -1094,3 +1094,240 @@ reuses `AP.Review`, already real.
   its own prior output, which was never asked for and would have
   reopened the same "is this number still real" question the third
   addendum's own bounded conversation memory was careful to avoid.
+
+## Addendum six — a real total-vs-list mismatch, and a document link that neither worked nor rendered
+
+### What was found
+
+A live-test transcript pasted by the operator showed two real,
+demonstrated problems in the same reply. Asking to list invoices in
+the workflow returned five rows that sum to £8,580, but the same
+answer's own "Total amount (GBP)" read £6,072 — an "exact" total that
+did not match the very rows displayed directly above it. Traced to
+`documents-route.ts` (the list) reading raw, unconfirmed `facts_json`
+amounts (BT-112/BT-5) for display, while `invoice-count-route.ts`'s
+own total (third addendum) only ever sums confirmed, structured
+`total_with_vat`/`currency` columns — correctly excluding a row whose
+amount was never confirmed, but with nothing telling the model, or the
+operator, that any exclusion had happened. The total wasn't inventing
+anything, but it wasn't being explained either — a real gap in the
+"never invent or estimate" discipline addendum two already
+established: staying accurate is not the same as staying legible.
+
+Separately, the same transcript's document link came back as
+`https://vf-app.vibefinance.workers.dev/documents/<id>.original.<ts>.<token>`
+— the retired, decision-0073-era raw signed-URL pattern, not
+`document-window.html`'s in-app viewer (decision 0384's own
+established replacement) — and, being plain text in a chat bubble, was
+not clickable either way. The operator's own mid-turn follow-up named
+this directly: *"Is it possible for the chat to return links, rather
+than just a URL in plain text. What I would like is a link to the
+Document Viewer that can be clicked in the UI."*
+
+Neither needed a fork put to the operator — the first is a direct
+continuation of addendum two's own disclosure discipline, and the
+second is a bug (the wrong, already-retired URL pattern) plus a
+rendering gap (`el()`'s own deliberate `textContent`-only discipline,
+decision 0126, correctly refusing to turn any string into a link on
+its own) — both fixed directly.
+
+### What was built
+
+**`unconfirmedCount` on `InvoiceCountReport`**, `invoice-count-
+route.ts` — one additional aggregate column on the same count query
+(`SUM(CASE WHEN h.total_with_vat IS NULL OR h.currency IS NULL THEN 1
+ELSE 0 END)`), not a second query. Threaded through `runInvoiceSearch`
+as `unconfirmedAmountCount`, and `AP_ASSISTANT_TOOL_SCOPE.invoice_
+search`'s own entry extended to state the total excludes unconfirmed
+rows. `buildAnswerPrompt` gained an explicit instruction: when
+`unconfirmedAmountCount > 0`, say so plainly — how many rows the total
+excludes — rather than presenting the total as though it covered every
+row shown.
+
+**The document link itself switched to the real, current pattern.**
+`documentViewerUrl(invoiceId)` returns `/document-window.html?task=
+<id>` (decision 0384's own URL, the same one `viewer.js`'s Expand
+button already uses) in place of `handleMintDocumentUrl`'s signed,
+expiring, secret-bearing one — which also let `documentUrlSecret` and
+`origin` come out of `ToolRunContext`, `handleAskApAssistant`'s own
+signature, and `index.ts`'s route handler entirely: a same-origin,
+no-token, no-expiry in-app link needs neither. `preferredDocumentType`
+(already exported, already used by `invoice-facts-route.ts`) replaced
+`handleMintDocumentUrl` as the existence check behind it.
+
+**Markdown-link rendering, client-side only.** `ap-assistant.ts`'s own
+answer prompt is now told to format a document link as exactly
+`[label](url)` — the only markup it is ever told to produce.
+`ap-assistant.js` parses only that one pattern (`MARKDOWN_LINK`), and
+only ever for a relative, in-app URL (`url.startsWith("/")`) —
+anything else (nothing this chat's own tools should ever return, but
+checked anyway) falls back to plain text rather than becoming a link.
+A match becomes a real `<a>` node built with `el()`, never `innerHTML`
+and never a markdown-parsing library — every other character of the
+answer, including a supplier name or invoice number sitting right next
+to a link, is still ever only a text node. `viewer.js`'s own
+`POPOUT_NAME` constant (previously a private `const`) is now exported
+and reused directly here via the anchor's own `target` attribute, so a
+document link opened from a chat answer shares decision 0384's "one
+window, always" pop-out with every other document link in the app —
+for free, no new JS logic, just the one HTML attribute.
+
+### Tests (addendum six)
+
+**`invoice-count-route.test.ts`**: 4 new tests for `unconfirmedCount`
+— zero when every row is confirmed, an exact count of 2 in a mixed
+set, zero (not `null`) when the result set is empty, and respecting
+the route's existing filters.
+
+**`ap-assistant.test.ts`**: tests confirming `unconfirmedAmountCount`
+reaches `runInvoiceSearch`'s own result and the answer prompt's
+disclosure instruction; document-link assertions across the
+ambiguous-match, single-match and `latestOnly` cases all updated to
+expect `/document-window.html?task=...` rather than a minted signed
+URL; a new test confirming the answer prompt is told to format a link
+as `[label](url)`.
+
+**`ap-analytics.test.ts` (vf-ui)**: a new test proving a
+`[label](url)` link renders as a real `<a>`, with the shared
+`vibefinance-document-window` `target`, correct surrounding plain text
+either side of it, and no leaked raw markdown syntax left visible.
+
+**Full suites**: `vf-app`'s six-file batch touched by this addendum
+(`ap-assistant.test.ts`, `invoice-count-route.test.ts`,
+`documents.test.ts`, `dates.test.ts`, `invoice-lookup-route.test.ts`,
+`index.test.ts`) — 305 passing. `eslint src test` clean. `vf-ui`
+browser suite — 917 passing (up one from addendum five's own 916),
+`eslint public test-browser` clean.
+
+### What is not built (addendum six)
+
+- **Blending the unconfirmed amount into the total, estimated or
+  otherwise.** Disclosure, not estimation — consistent with addendum
+  two's own "never invent or estimate" rule; an unconfirmed row's
+  amount is never summed, only counted.
+- **A document link for every invoice in a general `invoice_search`
+  list.** Unchanged from the third/fourth addenda's own reasoning —
+  this addendum only changed *which* URL pattern gets minted, for the
+  same two cases (`invoice_lookup`, and `invoice_search`'s
+  `latestOnly`) that already minted one.
+
+## Addendum seven — a downloadable report, and a Clear button
+
+### What was asked
+
+Two more requests landed mid-session, both direct: *"When asked for a
+report, provide something I can download,"* alongside the same
+message's complaint about plain-text links (addendum six, above); and,
+separately, *"Can we also add a 'Clear' button, next to 'Ask', to
+clear the Q&A box."*
+
+The download request left two real forks open — what format(s), and
+what should trigger it — put to the operator directly rather than
+assumed:
+
+> **Fork:** *"For a downloadable report from the chat — which format
+> should it produce?"* — **"Both, user's choice"**
+>
+> **Fork:** *"What should trigger the download — do they have to
+> explicitly ask, or does every list/table answer get one
+> automatically?"* — **"Explicit ask only (Recommended)"**
+
+### What was built
+
+**`ApAssistantAnswer.table`, new, server-side.** `invoiceSearchTable()`
+builds a plain `{ columns, rows }` structure directly from
+`invoice_search`'s own already-real tool result (never LLM-authored
+text) whenever that tool ran — the same rows the answer text itself
+was generated from, so a download can never show a number the chat
+bubble above it didn't. `handleAskApAssistant` returns `table: null`
+for every other tool, and every return site was updated to include it.
+`buildSelectionPrompt`'s own formatting-follow-up paragraph (addendum
+five) was extended to also recognize a download/export/CSV/PDF
+follow-up as a request to re-run the same lookup fresh — the same
+"never reformat a remembered answer" discipline addendum five already
+established for a plain reformatting ask.
+
+**Client-side download, gated on explicit ask.** `ap-assistant.js`
+stores `body.table` on each turn and, only when that turn's own
+question also matches `DOWNLOAD_INTENT` (download, export, csv, pdf,
+spreadsheet, "as a file") *and* a table came back, renders "Download
+CSV" / "Download PDF" underneath that answer's own bubble — never for
+a plain list/table answer that never asked to be downloaded, per the
+operator's own second fork answer.
+
+- **CSV** reuses `purchase-orders.js`'s own established pattern
+  exactly — a `Blob`, `URL.createObjectURL`, a hidden `<a download>`,
+  click, revoke — with real per-cell CSV escaping (`csvCell()`:
+  quoted, with an embedded quote doubled, whenever a cell itself
+  contains a comma, quote or newline).
+- **PDF has no precedent anywhere in this codebase and no bundler in
+  `vf-ui`** (`public/*.js` are raw ES modules; nothing here can
+  `import` a PDF library at runtime), so `downloadTableAsPdf()` opens a
+  blank window (`window.open`), builds a plain `<table>` inside it
+  using the same `createElement`/`textContent`-only discipline as
+  every other node on this page (never `document.write`, never
+  `innerHTML`), and calls `win.print()` — the browser's own "print to
+  PDF" is the actual export. A blocked pop-up (`window.open` returning
+  `null`, the one real failure mode of this approach) shows a plain
+  `alert()` rather than failing silently — the same `window.alert`
+  pattern `processes.js` already uses for a save failure.
+
+**A "Clear" button, next to "Ask."** `renderPanel()` gained a second
+button, `clearButtonEl`, disabled/re-enabled alongside `sendButtonEl`
+and the input while a question is in flight (so a question already
+sent can't be interrupted mid-request by clearing the array it's about
+to write into), wired to a new `clear()` that resets `history` to `[]`
+and re-renders. Nothing server-side to undo — this screen has never
+persisted history anywhere (this file's own top comment) — so "clear"
+is exactly "forget," instantly.
+
+**New UI strings, a new migration** —
+`0141_talk_to_an_ap_expert_clear_and_download_strings.sql`, following
+`0140`'s own exact pattern (bilingual en/de `INSERT`, a point-in-time
+`-- ASSERT` count comment), never editing `0140` itself:
+`apassistant.clear`, `apassistant.downloadcsv`,
+`apassistant.downloadpdf`, and `apassistant.popupblocked` (the
+pop-up-blocked message).
+
+### Tests (addendum seven)
+
+**`ap-assistant.test.ts`**: a new describe block for `table` — `null`
+for every tool but `invoice_search`, the real columns/rows built from
+a real search result, and the selection prompt now recognizing both
+"as a CSV" and "as a PDF" as a formatting-only follow-up.
+
+**`ap-analytics.test.ts` (vf-ui)**: a new describe block — the Clear
+button rendered next to Ask; clicking it resets the panel to its own
+empty state; no download buttons for a table-bearing answer whose own
+question wasn't a download ask; both buttons rendered once the
+question itself asked to download and a table came back; a real CSV
+download proved end to end (`URL.createObjectURL` captured and read
+back as text, including a cell containing a comma correctly quoted); a
+real PDF window proved end to end (`window.open` stubbed with a real
+`document.implementation.createHTMLDocument()`, then the resulting
+`<table>`'s own header and data cells read back directly, and
+`print()` asserted called); and the pop-up-blocked path proved by
+stubbing `window.open` to return `null` and asserting the alert text.
+
+**Full suites**: `vf-licence`'s 21 files / 320 tests, including the
+new migration, all passing. `vf-ui` browser suite — 924 passing (up 7
+from addendum six's own 917), the same pre-existing 160
+`document-window.test.ts` errors (decision 0430's third addendum)
+unrelated to this addendum's own changes. `vf-app`'s
+`ap-assistant.test.ts`, `invoice-count-route.test.ts` and
+`index.test.ts` re-run together — 212 passing, unaffected by this
+addendum (server-side `table` was addendum seven's only `vf-app`
+change, already covered above). `eslint` clean across `vf-ui` (`public
+test-browser`) and `vf-app` (`src test`).
+
+### What is not built (addendum seven)
+
+- **Automatic download on every list/table answer.** Deliberately
+  gated on explicit ask only — the operator's own second fork answer.
+- **A downloadable report for any tool other than `invoice_search`.**
+  No other tool returns row-shaped data a table format fits; `table`
+  is `null` for all of them, same as before this addendum.
+- **A real PDF file.** `win.print()` is the browser's own "save as
+  PDF" dialog, not a generated `.pdf` — no PDF-generation library
+  exists in this codebase and none can be added without a bundler this
+  workspace does not have.

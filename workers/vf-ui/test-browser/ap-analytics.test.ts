@@ -262,6 +262,12 @@ const STRINGS = {
     "apassistant.placeholder": "Ask a question…",
     "apassistant.send": "Ask",
     "apassistant.error": "Something went wrong answering that — please try again.",
+    // The Clear button and the downloadable-report buttons —
+    // decision 0430's seventh addendum.
+    "apassistant.clear": "Clear",
+    "apassistant.downloadcsv": "Download CSV",
+    "apassistant.downloadpdf": "Download PDF",
+    "apassistant.popupblocked": "Your browser blocked the PDF preview window — please allow pop-ups for this site and try again.",
   },
 };
 
@@ -687,6 +693,47 @@ describe("Talk to an AP Expert — decision 0430, a real chat, not a card compar
     expect(document.body.textContent).not.toContain("Ask a question to get started");
   });
 
+  it("renders a '[label](url)' document link as a real, clickable link — decision 0430's sixth addendum", async () => {
+    // A live test's own complaint: a document link came back as inert
+    // text, since `bubble()` only ever used `el()`'s `text` prop
+    // (`textContent`, never `innerHTML`). `ap-assistant.ts`'s own
+    // answer prompt is told to write exactly one markup form for a
+    // link, "[label](url)" — this proves the client turns exactly
+    // that form into a real anchor, safely, and leaves the rest of the
+    // sentence as plain text either side of it.
+    await openApAnalytics(["AP.Assistant"], {}, {
+      "/api/ap-assistant/ask": {
+        question: "give me a link to invoice INV-1001",
+        tool: "invoice_lookup",
+        answer: "Here's INV-1001: [View document](/document-window.html?task=inv-1) — let me know if you need anything else.",
+      },
+    });
+
+    const input = document.querySelector<HTMLInputElement>(".chatinput")!;
+    input.value = "give me a link to invoice INV-1001";
+    input.dispatchEvent(new Event("input"));
+    document.querySelector<HTMLButtonElement>(".chatinputrow button")!.click();
+
+    for (let i = 0; i < 100; i++) {
+      if (document.body.textContent?.includes("View document")) break;
+      await new Promise((r) => setTimeout(r, 10));
+    }
+
+    const link = document.querySelector<HTMLAnchorElement>(".chatbubble-answer a");
+    expect(link).not.toBeNull();
+    expect(link?.textContent).toBe("View document");
+    expect(link?.getAttribute("href")).toBe("/document-window.html?task=inv-1");
+    // The one window this chat's own document links share with the
+    // Documents screen's own Expand button — decision 0384's "one
+    // window, always" guarantee, given to a plain <a> for free via its
+    // own `target`, no JS required.
+    expect(link?.getAttribute("target")).toBe("vibefinance-document-window");
+    expect(document.body.textContent).toContain("Here's INV-1001:");
+    expect(document.body.textContent).toContain("let me know if you need anything else.");
+    // Never the raw markdown syntax left visible.
+    expect(document.body.textContent).not.toContain("[View document]");
+  });
+
   it("shows a plain error message rather than a blank bubble when the request fails", async () => {
     await openApAnalytics(["AP.Assistant"], {}, {
       "/api/ap-assistant/ask": { ok: false, status: 500 },
@@ -759,5 +806,169 @@ describe("Talk to an AP Expert — decision 0430, a real chat, not a card compar
     expect(secondBody.recentTurns).toEqual([
       { question: "how much have we spent with Acme?", answer: "You've spent £1,200 with Acme this year." },
     ]);
+  });
+});
+
+/** A stand-in for `window.open`'s own return value, real enough for `downloadTableAsPdf()` to build a real `<table>` in it — `viewer.test.ts`'s own `fakeWindow()` pattern, plus a real document so the built table can be inspected. */
+function fakePrintWindow() {
+  return { document: document.implementation.createHTMLDocument(""), focus: vi.fn(), print: vi.fn() };
+}
+
+async function askAndWait(question: string, waitForText: string) {
+  const input = document.querySelector<HTMLInputElement>(".chatinput")!;
+  input.value = question;
+  input.dispatchEvent(new Event("input"));
+  document.querySelector<HTMLButtonElement>(".chatinputrow button")!.click();
+  for (let i = 0; i < 100; i++) {
+    if (document.body.textContent?.includes(waitForText)) break;
+    await new Promise((r) => setTimeout(r, 10));
+  }
+}
+
+describe("Talk to an AP Expert — Clear and downloadable report, decision 0430's seventh addendum", () => {
+  it("renders a Clear button next to Ask", async () => {
+    await openApAnalytics(["AP.Assistant"]);
+
+    const buttons = [...document.querySelectorAll(".chatinputrow button")].map((b) => b.textContent);
+    expect(buttons).toEqual(["Ask", "Clear"]);
+  });
+
+  it("resets the Q&A history back to the empty state", async () => {
+    await openApAnalytics(["AP.Assistant"], {}, {
+      "/api/ap-assistant/ask": { question: "q", tool: "supplier_spend", answer: "You've spent £1,200 with Acme this year." },
+    });
+
+    await askAndWait("how much have we spent with Acme?", "You've spent");
+    expect(document.body.textContent).not.toContain("Ask a question to get started");
+
+    const clearButton = [...document.querySelectorAll(".chatinputrow button")].find((b) => b.textContent === "Clear");
+    clearButton?.click();
+
+    expect(document.body.textContent).toContain("Ask a question to get started");
+    expect(document.body.textContent).not.toContain("You've spent");
+  });
+
+  it("shows no download buttons for a table-bearing answer whose own question wasn't a download ask", async () => {
+    await openApAnalytics(["AP.Assistant"], {}, {
+      "/api/ap-assistant/ask": {
+        question: "list the invoices in the workflow",
+        tool: "invoice_search",
+        answer: "Here are the invoices currently in the workflow.",
+        table: { columns: ["Invoice #", "Supplier", "Amount"], rows: [["INV-1", "Acme", 100]] },
+      },
+    });
+
+    await askAndWait("list the invoices in the workflow", "Here are the invoices");
+
+    expect(document.querySelector(".chatactions")).toBeNull();
+    expect(document.body.textContent).not.toContain("Download CSV");
+  });
+
+  it("shows Download CSV and Download PDF once the question itself asked to download, and a table came back", async () => {
+    await openApAnalytics(["AP.Assistant"], {}, {
+      "/api/ap-assistant/ask": {
+        question: "can I download the invoices as a csv",
+        tool: "invoice_search",
+        answer: "Here's the invoice list you can download.",
+        table: { columns: ["Invoice #", "Supplier", "Amount"], rows: [["INV-1", "Acme", 100]] },
+      },
+    });
+
+    await askAndWait("can I download the invoices as a csv", "Here's the invoice list");
+
+    const actionButtons = [...document.querySelectorAll(".chatactions button")].map((b) => b.textContent);
+    expect(actionButtons).toEqual(["Download CSV", "Download PDF"]);
+  });
+
+  it("downloads a CSV built from the table's own columns and rows, quoting a cell that itself contains a comma", async () => {
+    await openApAnalytics(["AP.Assistant"], {}, {
+      "/api/ap-assistant/ask": {
+        question: "export this as a csv please",
+        tool: "invoice_search",
+        answer: "Here you go.",
+        table: {
+          columns: ["Invoice #", "Supplier", "Amount"],
+          rows: [
+            ["INV-1", "Acme, Inc.", 100],
+            ["INV-2", null, 200],
+          ],
+        },
+      },
+    });
+
+    await askAndWait("export this as a csv please", "Here you go.");
+
+    let capturedBlob: Blob | undefined;
+    const createSpy = vi.spyOn(URL, "createObjectURL").mockImplementation((blob) => {
+      capturedBlob = blob as Blob;
+      return "blob:mock";
+    });
+    const revokeSpy = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+
+    const csvButton = [...document.querySelectorAll(".chatactions button")].find((b) => b.textContent === "Download CSV");
+    csvButton?.click();
+
+    expect(createSpy).toHaveBeenCalledOnce();
+    expect(clickSpy).toHaveBeenCalledOnce();
+    expect(revokeSpy).toHaveBeenCalledWith("blob:mock");
+
+    const text = await capturedBlob?.text();
+    expect(text).toBe('Invoice #,Supplier,Amount\nINV-1,"Acme, Inc.",100\nINV-2,,200\n');
+
+    createSpy.mockRestore();
+    revokeSpy.mockRestore();
+    clickSpy.mockRestore();
+  });
+
+  it("opens a print window with a real table built from the same rows, and calls print()", async () => {
+    await openApAnalytics(["AP.Assistant"], {}, {
+      "/api/ap-assistant/ask": {
+        question: "give me this as a pdf",
+        tool: "invoice_search",
+        answer: "Here you go.",
+        table: { columns: ["Invoice #", "Amount"], rows: [["INV-1", 100]] },
+      },
+    });
+
+    await askAndWait("give me this as a pdf", "Here you go.");
+
+    const handle = fakePrintWindow();
+    const openSpy = vi.fn(() => handle);
+    vi.stubGlobal("open", openSpy);
+
+    const pdfButton = [...document.querySelectorAll(".chatactions button")].find((b) => b.textContent === "Download PDF");
+    pdfButton?.click();
+
+    expect(openSpy).toHaveBeenCalledOnce();
+    expect(handle.focus).toHaveBeenCalledOnce();
+    expect(handle.print).toHaveBeenCalledOnce();
+
+    const headerCells = [...handle.document.querySelectorAll("th")].map((th) => th.textContent);
+    expect(headerCells).toEqual(["Invoice #", "Amount"]);
+    const dataCells = [...handle.document.querySelectorAll("tbody td")].map((td) => td.textContent);
+    expect(dataCells).toEqual(["INV-1", "100"]);
+  });
+
+  it("shows the pop-up-blocked message instead of crashing when window.open returns null", async () => {
+    await openApAnalytics(["AP.Assistant"], {}, {
+      "/api/ap-assistant/ask": {
+        question: "give me this as a pdf",
+        tool: "invoice_search",
+        answer: "Here you go.",
+        table: { columns: ["Invoice #"], rows: [["INV-1"]] },
+      },
+    });
+
+    await askAndWait("give me this as a pdf", "Here you go.");
+
+    vi.stubGlobal("open", vi.fn(() => null));
+    const alertSpy = vi.fn();
+    vi.stubGlobal("alert", alertSpy);
+
+    const pdfButton = [...document.querySelectorAll(".chatactions button")].find((b) => b.textContent === "Download PDF");
+    pdfButton?.click();
+
+    expect(alertSpy).toHaveBeenCalledWith("Your browser blocked the PDF preview window — please allow pop-ups for this site and try again.");
   });
 });

@@ -196,6 +196,54 @@ describe("the exact total amount by currency — decision 0430's fourth addendum
     expect(body.totalByCurrency).toEqual([{ currency: "GBP", total: 100 }]);
   });
 
+  /**
+   * Decision 0430's sixth addendum — a live test pasted an answer
+   * where the total genuinely did not match what the same answer's own
+   * visible rows summed to, and nothing had ever said that could
+   * happen. `unconfirmedCount` is how the answer prompt learns to say
+   * so, rather than leaving a total that silently disagrees with a
+   * list sitting right next to it.
+   */
+  describe("'unconfirmedCount' — decision 0430's sixth addendum", () => {
+    it("is zero when every matching invoice has a confirmed amount and currency", async () => {
+      await person("alice", ["AP.Review"]);
+      await supplier("acme", "Acme Widgets");
+      await invoiceWithAmount({ id: "a", supplierId: "acme", total: 100, currency: "GBP" });
+      await invoiceWithAmount({ id: "b", supplierId: "acme", total: 200, currency: "GBP" });
+
+      const result = await handleInvoiceCount(env.DB, null, "alice", {});
+      expect((result.body as InvoiceCountReport).unconfirmedCount).toBe(0);
+    });
+
+    it("counts a row missing an amount and a row missing a currency, exactly, not merely non-zero", async () => {
+      await person("alice", ["AP.Review"]);
+      await supplier("acme", "Acme Widgets");
+      await invoiceWithAmount({ id: "known", supplierId: "acme", total: 100, currency: "GBP" });
+      await invoiceWithAmount({ id: "no-amount", supplierId: "acme", total: null, currency: "GBP" });
+      await invoiceWithAmount({ id: "no-currency", supplierId: "acme", total: 500, currency: null });
+
+      const result = await handleInvoiceCount(env.DB, null, "alice", {});
+      expect((result.body as InvoiceCountReport).unconfirmedCount).toBe(2);
+    });
+
+    it("is zero, not null, when nothing matches at all", async () => {
+      await person("alice", ["AP.Review"]);
+      const result = await handleInvoiceCount(env.DB, null, "alice", {});
+      expect((result.body as InvoiceCountReport).unconfirmedCount).toBe(0);
+    });
+
+    it("respects the same 'since' and 'supplier' filters as the count itself", async () => {
+      await person("alice", ["AP.Review"]);
+      await supplier("acme", "Acme Widgets");
+      await supplier("globex", "Globex Corp");
+      await invoiceWithAmount({ id: "acme-unconfirmed", supplierId: "acme", total: null, currency: null });
+      await invoiceWithAmount({ id: "globex-unconfirmed", supplierId: "globex", total: null, currency: null });
+
+      const result = await handleInvoiceCount(env.DB, null, "alice", { supplier: "acme" });
+      expect((result.body as InvoiceCountReport).unconfirmedCount).toBe(1);
+    });
+  });
+
   it("respects the same 'since' and 'supplier' filters as the count", async () => {
     await person("alice", ["AP.Review"]);
     await supplier("acme", "Acme Widgets");

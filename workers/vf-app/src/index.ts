@@ -1554,8 +1554,6 @@ export default {
         url.searchParams.get("org"),
         auth.user.id,
         (body as Record<string, unknown> | null)?.question,
-        env.DOCUMENT_URL_SECRET,
-        url.origin,
         (body as Record<string, unknown> | null)?.recentTurns
       );
       return json(result.body, result.status);

@@ -53,11 +53,34 @@ import type { RouteResult } from "./org-route.js";
  * real Documents screen — the same `AP.Review` permission, so this
  * can never count or total an invoice that screen itself would hide
  * from the person asking.
+ *
+ * **`unconfirmedCount`, decision 0430's sixth addendum.** A live test
+ * pasted the assistant's own answer straight back showing why this is
+ * needed: a five-row invoice list whose own visible amounts summed to
+ * one number, sitting right above a total the assistant called exact
+ * that was a different, smaller number — both true statements about
+ * this route's own two data sources disagreeing silently. `invoice_
+ * search`'s own list (`documents-route.ts`) shows whatever a document's
+ * raw extracted `BT-112`/`BT-5` facts say, for every row that has them,
+ * whether or not this app has ever confirmed them; this route's own
+ * total only ever sums the structured, confirmed `total_with_vat`/
+ * `currency` columns, exactly as it always has, on purpose — the
+ * "never invent, never estimate" discipline this whole feature is
+ * built on means an unconfirmed extracted figure can never be allowed
+ * into a total this tool calls exact. So the total staying narrower
+ * than the list is correct, not a bug — the bug was that nothing ever
+ * said so. `unconfirmedCount` is how many of the matching invoices
+ * were left out of the total for exactly this reason, computed
+ * alongside `count` at no extra query cost, so the answer-phrasing
+ * prompt can disclose the gap in plain language instead of leaving a
+ * total that silently doesn't add up to a list sitting right next to
+ * it.
  */
 
 export interface InvoiceCountReport {
   count: number;
   totalByCurrency: { currency: string; total: number }[];
+  unconfirmedCount: number;
 }
 
 export async function handleInvoiceCount(
@@ -103,7 +126,8 @@ export async function handleInvoiceCount(
 
   const countRow = await db
     .prepare(
-      `SELECT count(*) AS n
+      `SELECT count(*) AS n,
+              SUM(CASE WHEN h.total_with_vat IS NULL OR h.currency IS NULL THEN 1 ELSE 0 END) AS unconfirmed
        FROM invoice_headers h
        LEFT JOIN suppliers sup ON sup.id = h.supplier_id
        WHERE (?1 IS NULL OR h.created_at >= ?1)
@@ -112,7 +136,7 @@ export async function handleInvoiceCount(
          ${clause.sql}`
     )
     .bind(since, supplierLike, stageIdsJson, ...clause.binds)
-    .first<{ n: number }>();
+    .first<{ n: number; unconfirmed: number | null }>();
 
   const totalRows = await db
     .prepare(
@@ -135,6 +159,9 @@ export async function handleInvoiceCount(
     body: {
       count: countRow?.n ?? 0,
       totalByCurrency: totalRows.results.map((r) => ({ currency: r.currency, total: r.total })),
+      // SQLite's SUM over zero rows is NULL, not 0 — coerced here so
+      // callers never have to handle a third possible value.
+      unconfirmedCount: countRow?.unconfirmed ?? 0,
     } satisfies InvoiceCountReport,
   };
 }

@@ -392,7 +392,17 @@ async function documentUrl(invoiceId, type) {
  * rather than opening a new one, even if `popoutHandle` below had
  * somehow been lost.
  */
-const POPOUT_NAME = "vibefinance-document-window";
+/**
+ * Exported so any other page can target the same named window with a
+ * plain `<a target={POPOUT_NAME}>` — the browser itself then reuses or
+ * focuses this exact window if one is already open, no JS required,
+ * the same "one window, always" guarantee this constant already gives
+ * `openDocumentWindow` below. Decision 0430's sixth addendum, for the
+ * AP Assistant's own document links (`ap-assistant.js`), so a link
+ * clicked from chat can never spawn a second pop-out competing with
+ * one the Documents screen's own Expand button already opened.
+ */
+export const POPOUT_NAME = "vibefinance-document-window";
 /** The open pop-out's own window handle, or null if none is open. */
 let popoutHandle = null;
 /** Which invoice the pop-out is currently showing, to skip a pointless re-navigation to the page it is already on. */
