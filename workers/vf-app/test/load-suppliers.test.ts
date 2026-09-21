@@ -9,6 +9,7 @@ import {
   handleSetInvoiceSupplier,
   handleCreateSupplier,
   handleUpdateSupplier,
+  handleSetSupplierState,
   parseCsv,
 } from "../src/load-suppliers.js";
 import { matchSupplier } from "../src/match-supplier.js";
@@ -1438,6 +1439,138 @@ describe("Supplier Maintenance triggering — decision 0350", () => {
 
       const count = await env.DB.prepare("SELECT count(*) AS n FROM process_instances").first<{ n: number }>();
       expect(count?.n).toBe(0);
+    });
+  });
+});
+
+describe("the general field-change history — decision 0427", () => {
+  /**
+   * Every row `supplier_field_changes` holds for one supplier, in the
+   * shape the assertions below read directly.
+   */
+  async function changes(supplierId: string) {
+    const rows = await env.DB
+      .prepare(
+        "SELECT field, old_value, new_value, changed_by FROM supplier_field_changes WHERE supplier_id = ? ORDER BY field"
+      )
+      .bind(supplierId)
+      .all<{ field: string; old_value: string | null; new_value: string | null; changed_by: string }>();
+    return rows.results;
+  }
+
+  describe("the CSV mirror load", () => {
+    it("records nothing on a supplier's very first load — nothing to have transitioned from", async () => {
+      await load(`${HEADER}\n40100,Acme Widgets,GB123456789,GB,Net 30`);
+      const supplier = await env.DB.prepare("SELECT id FROM suppliers").first<{ id: string }>();
+
+      expect(await changes(supplier!.id)).toEqual([]);
+    });
+
+    it("records a changed field, with its own old and new value, on a second load with a different one", async () => {
+      await load(`${HEADER}\n40100,Acme Widgets,GB123456789,GB,Net 30`);
+      await load(`${HEADER}\n40100,Acme Widgets,GB123456789,GB,Net 45`);
+      const supplier = await env.DB.prepare("SELECT id FROM suppliers").first<{ id: string }>();
+
+      const rows = await changes(supplier!.id);
+      expect(rows).toContainEqual({ field: "payment_terms", old_value: "Net 30", new_value: "Net 45", changed_by: "alice" });
+    });
+
+    it("records nothing when a second load repeats exactly the same values", async () => {
+      await load(`${HEADER}\n40100,Acme Widgets,GB123456789,GB,Net 30`);
+      await load(`${HEADER}\n40100,Acme Widgets,GB123456789,GB,Net 30`);
+      const supplier = await env.DB.prepare("SELECT id FROM suppliers").first<{ id: string }>();
+
+      expect(await changes(supplier!.id)).toEqual([]);
+    });
+
+    it("records both on_hold and hold_reason when a second load puts a supplier on hold", async () => {
+      // **The full column set restated on both loads** — a real export
+      // carries every column each time; a narrower second header would
+      // also, correctly, clear whatever it left out, which is a
+      // different fact this test is not about.
+      await load(`${HEADER},Hold,hold_reason\n40100,Acme Widgets,GB123456789,GB,Net 30,,`);
+      await load(`${HEADER},Hold,hold_reason\n40100,Acme Widgets,GB123456789,GB,Net 30,yes,Quality dispute`);
+      const supplier = await env.DB.prepare("SELECT id FROM suppliers").first<{ id: string }>();
+
+      const rows = await changes(supplier!.id);
+      expect(rows).toContainEqual({ field: "on_hold", old_value: "0", new_value: "1", changed_by: "alice" });
+      expect(rows).toContainEqual({ field: "hold_reason", old_value: null, new_value: "Quality dispute", changed_by: "alice" });
+    });
+
+    it("records the retroactive ERP identifier as a real field change when a locally recorded supplier is adopted (decision 0233)", async () => {
+      const created = await handleCreateSupplier(env.DB, { name: "Kingsway Print", vatId: "GB556677889" }, "alice");
+      const localId = (created.body as { id: string }).id;
+
+      await load("ERP ID,Name,VAT\n40999,Kingsway Print Services,GB556677889");
+
+      const rows = await changes(localId);
+      expect(rows).toContainEqual({ field: "erp_identifier", old_value: null, new_value: "40999", changed_by: "alice" });
+      // **The name changed too, in the same load** — this is a real,
+      // separate transition, not folded into the identifier's own row.
+      expect(rows).toContainEqual({ field: "name", old_value: "Kingsway Print", new_value: "Kingsway Print Services", changed_by: "alice" });
+    });
+  });
+
+  describe("changing a supplier by hand (handleUpdateSupplier)", () => {
+    async function seedOne() {
+      await load(`${HEADER}\n40100,Acme Widgets,GB123456789,GB,Net 30`);
+      const supplier = await env.DB.prepare("SELECT id FROM suppliers").first<{ id: string }>();
+      return supplier!.id;
+    }
+
+    it("records a field change with its own old and new value, and the given changedBy", async () => {
+      const id = await seedOne();
+      await handleUpdateSupplier(env.DB, id, { paymentTerms: "Net 60" }, "bob");
+
+      const rows = await changes(id);
+      expect(rows).toContainEqual({ field: "payment_terms", old_value: "Net 30", new_value: "Net 60", changed_by: "bob" });
+    });
+
+    it("records nothing when a field is set to exactly the value it already had", async () => {
+      const id = await seedOne();
+      await handleUpdateSupplier(env.DB, id, { paymentTerms: "Net 30" }, "bob");
+
+      expect(await changes(id)).toEqual([]);
+    });
+  });
+
+  describe("holding, releasing, and deactivating (handleSetSupplierState)", () => {
+    async function seedOne() {
+      await load(`${HEADER}\n40100,Acme Widgets,GB123456789,GB,Net 30`);
+      const supplier = await env.DB.prepare("SELECT id FROM suppliers").first<{ id: string }>();
+      return supplier!.id;
+    }
+
+    it("records both on_hold and hold_reason, with the given changedBy, when a supplier is held", async () => {
+      const id = await seedOne();
+      await handleSetSupplierState(env.DB, id, { onHold: true, holdReason: "Quality dispute" }, "carol");
+
+      const rows = await changes(id);
+      expect(rows).toContainEqual({ field: "on_hold", old_value: "0", new_value: "1", changed_by: "carol" });
+      expect(rows).toContainEqual({ field: "hold_reason", old_value: null, new_value: "Quality dispute", changed_by: "carol" });
+    });
+
+    it("records the release as its own separate transition", async () => {
+      const id = await seedOne();
+      await handleSetSupplierState(env.DB, id, { onHold: true, holdReason: "Quality dispute" }, "carol");
+      await handleSetSupplierState(env.DB, id, { onHold: false }, "carol");
+
+      const rows = await env.DB
+        .prepare("SELECT field, old_value, new_value FROM supplier_field_changes WHERE supplier_id = ? AND field = 'on_hold' ORDER BY changed_at")
+        .bind(id)
+        .all<{ field: string; old_value: string | null; new_value: string | null }>();
+      expect(rows.results).toEqual([
+        { field: "on_hold", old_value: "0", new_value: "1" },
+        { field: "on_hold", old_value: "1", new_value: "0" },
+      ]);
+    });
+
+    it("records status when a supplier is deactivated", async () => {
+      const id = await seedOne();
+      await handleSetSupplierState(env.DB, id, { status: "inactive" }, "carol");
+
+      const rows = await changes(id);
+      expect(rows).toContainEqual({ field: "status", old_value: "active", new_value: "inactive", changed_by: "carol" });
     });
   });
 });

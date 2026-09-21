@@ -20,6 +20,8 @@ import { handleSupplierCycleTime } from "./supplier-cycle-time-route.js";
 import { handleSupplierExceptions } from "./supplier-exceptions-route.js";
 import { handleSupplierPoVariance } from "./supplier-po-variance-route.js";
 import { handleSupplierPaymentTerms } from "./supplier-payment-terms-route.js";
+import { handleSupplierHoldHistory } from "./supplier-hold-history-route.js";
+import { handleSupplierDiscountEligibility } from "./supplier-discount-eligibility-route.js";
 import { evaluateRuleSet, validateRule } from "@vibefinance/shared";
 import type { CompiledRuleSet, InvoiceFacts } from "@vibefinance/shared";
 import { COMPILER_MODEL_ID, createWorkersAiCompilerModel } from "./compiler-model.js";
@@ -1019,7 +1021,7 @@ export default {
          */
         const result =
           request.method === "PATCH"
-            ? await handleSetSupplierState(db, id, body)
+            ? await handleSetSupplierState(db, id, body, auth.user.id)
             : await handleUpdateSupplier(db, id, body, auth.user.id);
 
         return json(result.body, result.status);
@@ -1128,6 +1130,42 @@ export default {
       }
 
       const result = await handleSupplierPaymentTerms(db, url.searchParams.get("org"), auth.user.id);
+      return json(result.body, result.status);
+    }
+
+    /**
+     * **Hold history — decision 0427.** The eighth and last of Supplier
+     * Performance's own key metrics. See the route's own doc comment
+     * for how discrete hold periods are recovered from
+     * `supplier_field_changes` (migration 0072).
+     */
+    if (pathname === "/suppliers/hold-history" && request.method === "GET") {
+      const { db } = resolveTenant(request, env);
+      const auth = await authenticatePerson(db, request, env);
+      if (!auth.user) return json({ error: auth.reason }, 401);
+      if (!(await hasPermission(db, auth.user.id, "AP.Supplier"))) {
+        return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
+      }
+
+      const result = await handleSupplierHoldHistory(db, url.searchParams.get("org"), auth.user.id);
+      return json(result.body, result.status);
+    }
+
+    /**
+     * **Early-payment / discount eligibility — decision 0427.** The
+     * seventh of Supplier Performance's own key metrics, deliberately
+     * reporting eligibility rather than the design's own literal
+     * "capture rate" — see the route's own doc comment for why.
+     */
+    if (pathname === "/suppliers/discount-eligibility" && request.method === "GET") {
+      const { db } = resolveTenant(request, env);
+      const auth = await authenticatePerson(db, request, env);
+      if (!auth.user) return json({ error: auth.reason }, 401);
+      if (!(await hasPermission(db, auth.user.id, "AP.Supplier"))) {
+        return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
+      }
+
+      const result = await handleSupplierDiscountEligibility(db, url.searchParams.get("org"), auth.user.id);
       return json(result.body, result.status);
     }
 

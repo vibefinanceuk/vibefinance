@@ -2,6 +2,13 @@ import { matchSupplier } from "./match-supplier.js";
 import type { RouteResult } from "./org-route.js";
 import { unitsWherePermitted, scopedToChosenOrg, unitClause } from "./enforce.js";
 import { spawnSupplierMaintenanceInstance, detectSupplierChanges } from "./supplier-maintenance.js";
+import {
+  AUDITED_FIELDS,
+  diffSupplierFields,
+  recordSupplierFieldChanges,
+  type AuditedField,
+  type SupplierAuditSnapshot,
+} from "./supplier-audit.js";
 
 /**
  * Loading the customer's supplier master file — decision 0211.
@@ -38,6 +45,15 @@ const COLUMNS: Record<string, string> = {
   match_option: "match_option",
   amount_tolerance_pct: "amount_tolerance_pct",
   quantity_tolerance_pct: "quantity_tolerance_pct",
+  // Early-payment / dynamic-discount terms — decision 0427. Structured,
+  // unlike `payment_terms`, so this metric can be computed honestly
+  // rather than parsed out of free text.
+  discount_pct: "discount_pct",
+  "discount %": "discount_pct",
+  "early payment discount": "discount_pct",
+  discount_days: "discount_days",
+  "discount window": "discount_days",
+  "discount days": "discount_days",
   erp_site_identifier: "erp_site_identifier",
   site: "erp_site_identifier",
   /**
@@ -285,12 +301,12 @@ export async function handleLoadSuppliers(
      */
     const existing = await db
       .prepare(
-        `SELECT id, name, vat_id, electronic_address, payment_terms FROM suppliers
+        `SELECT id, ${AUDITED_FIELDS.join(", ")} FROM suppliers
          WHERE erp_identifier = ?
            AND ((erp_site_identifier IS NULL AND ?2 IS NULL) OR erp_site_identifier = ?2)`
       )
       .bind(values.erp_identifier, values.erp_site_identifier || null)
-      .first<{ id: string; name: string; vat_id: string | null; electronic_address: string | null; payment_terms: string | null }>();
+      .first<{ id: string } & Record<AuditedField, string | number | null>>();
 
     /**
      * **Adopting a supplier somebody recorded before the ERP had one** —
@@ -313,7 +329,7 @@ export async function handleLoadSuppliers(
       ? null
       : await db
           .prepare(
-            `SELECT id FROM suppliers
+            `SELECT id, ${AUDITED_FIELDS.join(", ")} FROM suppliers
              WHERE erp_identifier IS NULL
                AND (
                  (?1 != '' AND upper(replace(vat_id, ' ', '')) = upper(replace(?1, ' ', '')))
@@ -322,7 +338,7 @@ export async function handleLoadSuppliers(
              LIMIT 1`
           )
           .bind(values.vat_id ?? "", values.electronic_address ?? "")
-          .first<{ id: string }>();
+          .first<{ id: string } & Record<AuditedField, string | number | null>>();
 
     /**
      * **An adopted row keeps its own id**, like any existing one
@@ -351,10 +367,11 @@ export async function handleLoadSuppliers(
         `INSERT INTO suppliers (id, erp_identifier, name, vat_id, electronic_address, country,
                                 payment_terms, on_hold, hold_reason, match_option,
                                 amount_tolerance_pct, quantity_tolerance_pct,
+                                discount_pct, discount_days,
                                 erp_site_identifier, is_pay_site, is_procurement_site,
                                 address_line, city, postal_code, email, phone, status, loaded_at,
                                 org_unit_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', datetime('now'), ?)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', datetime('now'), ?)
          ON CONFLICT(id) DO UPDATE SET
            -- **The retroactive part.** An adopted row had none.
            erp_identifier = excluded.erp_identifier,
@@ -369,6 +386,8 @@ export async function handleLoadSuppliers(
            match_option = excluded.match_option,
            amount_tolerance_pct = excluded.amount_tolerance_pct,
            quantity_tolerance_pct = excluded.quantity_tolerance_pct,
+           discount_pct = excluded.discount_pct,
+           discount_days = excluded.discount_days,
            is_pay_site = excluded.is_pay_site,
            is_procurement_site = excluded.is_procurement_site,
            address_line = excluded.address_line,
@@ -393,6 +412,8 @@ export async function handleLoadSuppliers(
         matchOption || null,
         values.amount_tolerance_pct ? Number(values.amount_tolerance_pct) : null,
         values.quantity_tolerance_pct ? Number(values.quantity_tolerance_pct) : null,
+        values.discount_pct ? Number(values.discount_pct) : null,
+        values.discount_days ? Number(values.discount_days) : null,
         values.erp_site_identifier || null,
         flag(values.is_pay_site) ? 1 : 0,
         flag(values.is_procurement_site) ? 1 : 0,
@@ -410,18 +431,67 @@ export async function handleLoadSuppliers(
      * ERP already named (`existing`), never a brand-new or newly-
      * adopted row: those are the "new supplier" half, already handled
      * by `handleCreateSupplier`, and comparing a row against itself on
-     * its first-ever load would flag every field as "changed."
+     * its first-ever load would flag every field as "changed." Left
+     * exactly as it is — a narrow, purpose-built trigger for the
+     * Supplier Maintenance workflow, decision 0427 built a separate,
+     * general mechanism beside it rather than replacing it.
      */
     if (existing) {
-      const changedFields = detectSupplierChanges(existing, {
-        name: values.name,
-        vat_id: values.vat_id || null,
-        electronic_address: values.electronic_address || null,
-        payment_terms: values.payment_terms || null,
-      });
+      const changedFields = detectSupplierChanges(
+        {
+          name: existing.name as string,
+          vat_id: existing.vat_id as string | null,
+          electronic_address: existing.electronic_address as string | null,
+          payment_terms: existing.payment_terms as string | null,
+        },
+        {
+          name: values.name,
+          vat_id: values.vat_id || null,
+          electronic_address: values.electronic_address || null,
+          payment_terms: values.payment_terms || null,
+        }
+      );
       if (changedFields.length > 0) {
         await spawnSupplierMaintenanceInstance(db, id, values.name, "changed", changedFields);
       }
+    }
+
+    /**
+     * **The general field-change history — decision 0427.** Against
+     * `existing` when the ERP already named this row, or `adopted`'s
+     * own prior values when a local record just gained its ERP
+     * identifier retroactively (decision 0233) — both are real "before"
+     * states. A genuinely brand-new row (neither) has nothing to have
+     * transitioned from, so nothing is recorded for it.
+     */
+    const before = existing ?? adopted;
+    if (before) {
+      const after: SupplierAuditSnapshot = {
+        erp_identifier: values.erp_identifier,
+        name: values.name,
+        vat_id: values.vat_id || null,
+        electronic_address: values.electronic_address || null,
+        country: values.country || null,
+        payment_terms: values.payment_terms || null,
+        on_hold: onHold,
+        hold_reason: values.hold_reason || null,
+        match_option: matchOption || null,
+        amount_tolerance_pct: values.amount_tolerance_pct ? Number(values.amount_tolerance_pct) : null,
+        quantity_tolerance_pct: values.quantity_tolerance_pct ? Number(values.quantity_tolerance_pct) : null,
+        discount_pct: values.discount_pct ? Number(values.discount_pct) : null,
+        discount_days: values.discount_days ? Number(values.discount_days) : null,
+        erp_site_identifier: values.erp_site_identifier || null,
+        is_pay_site: flag(values.is_pay_site),
+        is_procurement_site: flag(values.is_procurement_site),
+        address_line: values.address_line || null,
+        city: values.city || null,
+        postal_code: values.postal_code || null,
+        email: values.email || null,
+        phone: values.phone || null,
+        status: "active",
+        org_unit_id: orgUnitId,
+      };
+      await recordSupplierFieldChanges(db, id, diffSupplierFields(before, after), loadedBy);
     }
 
     loaded++;
@@ -1049,9 +1119,9 @@ export async function handleUpdateSupplier(
   changedBy: string
 ): Promise<RouteResult> {
   const supplier = await db
-    .prepare("SELECT id, erp_identifier FROM suppliers WHERE id = ?")
+    .prepare(`SELECT id, ${EDITABLE.join(", ")} FROM suppliers WHERE id = ?`)
     .bind(supplierId)
-    .first<{ id: string; erp_identifier: string | null }>();
+    .first<{ id: string; erp_identifier: string | null } & Record<(typeof EDITABLE)[number], string | null>>();
   if (!supplier) return { status: 404, body: { error: `supplier ${supplierId} does not exist` } };
 
   /**
@@ -1078,6 +1148,7 @@ export async function handleUpdateSupplier(
 
   const sets: string[] = [];
   const values: unknown[] = [];
+  const touched: SupplierAuditSnapshot = {};
 
   for (const column of EDITABLE) {
     const key = column.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
@@ -1098,8 +1169,10 @@ export async function handleUpdateSupplier(
       return { status: 400, body: { error: "a supplier needs a name" } };
     }
 
+    const stored = value === null || value === "" ? null : value;
     sets.push(`${column} = ?`);
-    values.push(value === null || value === "" ? null : value);
+    values.push(stored);
+    touched[column as AuditedField] = stored;
   }
 
   if (sets.length === 0) return { status: 400, body: { error: "nothing to change" } };
@@ -1108,6 +1181,8 @@ export async function handleUpdateSupplier(
     .prepare(`UPDATE suppliers SET ${sets.join(", ")} WHERE id = ?`)
     .bind(...values, supplierId)
     .run();
+
+  await recordSupplierFieldChanges(db, supplierId, diffSupplierFields(supplier, touched), changedBy);
 
   return { status: 200, body: { id: supplierId, changedBy } };
 }
@@ -1124,7 +1199,8 @@ export async function handleUpdateSupplier(
 export async function handleSetSupplierState(
   db: D1Database,
   supplierId: string,
-  body: Record<string, unknown>
+  body: Record<string, unknown>,
+  changedBy: string
 ): Promise<RouteResult> {
   const supplier = await db
     .prepare("SELECT id, on_hold, hold_reason, status FROM suppliers WHERE id = ?")
@@ -1134,6 +1210,7 @@ export async function handleSetSupplierState(
 
   const sets: string[] = [];
   const values: unknown[] = [];
+  const touched: SupplierAuditSnapshot = {};
 
   if ("onHold" in body) {
     const hold = body.onHold === true;
@@ -1154,6 +1231,8 @@ export async function handleSetSupplierState(
 
     sets.push("on_hold = ?", "hold_reason = ?");
     values.push(hold ? 1 : 0, hold ? reason : null);
+    touched.on_hold = hold;
+    touched.hold_reason = hold ? reason : null;
   }
 
   if ("status" in body) {
@@ -1162,6 +1241,7 @@ export async function handleSetSupplierState(
     }
     sets.push("status = ?");
     values.push(body.status);
+    touched.status = body.status;
   }
 
   if (sets.length === 0) return { status: 400, body: { error: "nothing to change" } };
@@ -1170,6 +1250,13 @@ export async function handleSetSupplierState(
     .prepare(`UPDATE suppliers SET ${sets.join(", ")} WHERE id = ?`)
     .bind(...values, supplierId)
     .run();
+
+  await recordSupplierFieldChanges(
+    db,
+    supplierId,
+    diffSupplierFields({ on_hold: supplier.on_hold, hold_reason: supplier.hold_reason, status: supplier.status }, touched),
+    changedBy
+  );
 
   /**
    * **Invoices already matched to this supplier keep their flag**, and

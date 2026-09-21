@@ -445,6 +445,16 @@ describe("the proxy carries every path a screen calls (decision 0131)", () => {
      * finding.
      */
     ["GET", "/api/executive/consolidated-spend"],
+    /**
+     * Supplier Performance's own last two metrics, discount eligibility
+     * and hold history — decision 0427. Each matches the same
+     * `/^\/suppliers\/[^/]+$/` wildcard `/suppliers/spend` already does
+     * — confirmed directly with a real fetch rather than assumed from
+     * the pattern alone, the same discipline decision 0421 already
+     * established for this screen's own other four metrics.
+     */
+    ["GET", "/api/suppliers/discount-eligibility"],
+    ["GET", "/api/suppliers/hold-history"],
   ];
 
   it("carries all of them", async () => {

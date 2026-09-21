@@ -679,6 +679,77 @@ a rule, and left an approval task in a queue.
   whole arc keeps: `/executive/consolidated-spend` matched no existing
   wildcard either, its own new entry added.
 
+### Early-payment discount eligibility and hold history — Supplier Performance's last two metrics, the screen's own full parity with the design (0427)
+- **"Lets finish off Supplier Performance."** Both of this screen's own
+  remaining metrics had been genuinely parked, not merely deferred (see
+  their own now-resolved entries under "Not built" above) — so before
+  building either, three real design decisions were investigated and
+  put to the operator directly rather than assumed.
+- **How discount terms are captured**: structured `discount_pct`/
+  `discount_days` fields added to `suppliers` (migration 0072,
+  CSV-loadable like `payment_terms` already is), over parsing a
+  discount schedule out of existing free-text fields — the operator's
+  own choice, matching their own prior instinct that terms belong on
+  the supplier record.
+- **What "capture rate" could honestly become with only structured
+  fields, no payment-execution data**: the design's own literal metric
+  needs to know whether a discount was actually *taken*, which nothing
+  in this codebase records for any invoice. Surfaced directly, the
+  operator chose to build eligibility instead of capture rate — which
+  currently-open invoices sit inside their supplier's own discount
+  window today — an honestly narrower, differently-named metric, not
+  that one finished.
+- **How hold history is captured**: a general field-change audit trail
+  (`supplier_field_changes`, migration 0072) over a hold-specific
+  history table — the operator's own choice, and the broader of the
+  two options offered. Justified by investigating all three real write
+  paths into `suppliers` first: CSV mirror-load (`load-suppliers.ts`,
+  "replace rather than merge," 0208 — can silently flip `on_hold` on
+  every reload), the hand-edit route, and the hold/release route
+  (0230's "four acts, one route"). All three are now wired to
+  `diffSupplierFields()`/`recordSupplierFieldChanges()`
+  (`workers/vf-app/src/supplier-audit.ts`), diffing 23 auditable
+  fields and writing one row per real change, insert-only.
+- **Deliberately separate from decision 0350's own
+  `detectSupplierChanges`/`spawnSupplierMaintenanceInstance`
+  mechanism**, left completely untouched — that one watches a narrower
+  `WATCHED_FIELDS` set to spawn a Supplier Maintenance review task, a
+  different purpose from this general audit trail, and repurposing it
+  would have risked its own tested, narrow behavior.
+- **`GET /suppliers/discount-eligibility`**
+  (`supplier-discount-eligibility-route.ts`) — open invoices whose
+  supplier carries discount terms and are still inside the discount
+  window, grouped by currency (never summed across them, the same
+  discipline every money-reporting route on this screen already
+  follows), then by supplier within each currency
+  (`supplier-discount-eligibility.js`, reusing `charts.js`'s own
+  `barList()`). A supplier with no discount terms is excluded, not
+  guessed into a zero.
+- **`GET /suppliers/hold-history`** (`supplier-hold-history-route.ts`)
+  — pairs each `on_hold` 0→1/1→0 transition recorded in
+  `supplier_field_changes` into a discrete period, carrying whatever
+  `hold_reason` was recorded alongside it; an unresolved hold is
+  reported as ongoing (`endedAt: null`), not dropped; a supplier held
+  since its very first-ever load has no prior row to diff against, so
+  it is honestly reported as having no recorded period, not backfilled.
+  Rendered as a plain table (`supplier-hold-history.js`), matching
+  `fraud-duplicates.js`/`supplier-payment-terms.js`'s own precedent for
+  a metric the design gives no visualization suggestion for and which
+  carries more than one fact per row.
+- **Both routes scoped the same way this screen's own other routes
+  already are** — `unitClause`/`unitsWherePermitted` on
+  `sup.org_unit_id`, matching `supplier-payment-terms-route.ts`'s own
+  pattern — a deliberate contrast with Executive IQ's own enterprise-wide,
+  unscoped design (0425).
+- `ap-analytics.js`'s `tabContent()` now loads all eight of Supplier
+  Performance's own cards in one `Promise.all`, each failing
+  independently — the same discipline `financial` and `supplier`
+  already established, extended from six cards to eight.
+- **A note left for whoever picks up Liabilities & Accruals next**: its
+  own "invoices eligible for early payment / dynamic discount, by
+  volume and by amount" is close kin to what this decision just built,
+  aggregated differently — see that screen's own "Not built" entry.
+
 ### Purchase orders and matching
 - Purchase order storage grounded in Peppol BIS Order Only 3.3, via UBL
   XML ingestion (0081) and CSV load (0370) — the same tables, the same
@@ -1590,8 +1661,10 @@ Expert," that had never once been named here — see its own entry
 below. Correcting the record: of the five screens with at least one
 real metric behind them, seven of User & Team Workload's own eight key
 metrics, four of Liabilities & Accruals' own six, one of Fraud & Risk
-Detection's own six, two of Supplier Performance's own eight, and five
-of the Multi-Enterprise CFO View's own six stay unbuilt — Workload's
+Detection's own six, and five of the Multi-Enterprise CFO View's own
+six stay unbuilt — **Supplier Performance is the first of the six
+screens to reach full parity with its own design list, all eight of
+its own key metrics built (0421, 0427).** Workload's
 own count had never actually been checked against its own metrics list
 before now; only "Throughput by user, stacked by stage" (0415) exists,
 and the other seven — open task count by user split by ownership,
@@ -1600,16 +1673,17 @@ time, tasks pending action and approaching/past due, team queue depth
 (available vs. locked), workload balance (variance in open-task count
 across a team), and exceptions by user — have never been raised as a
 decision. Decisions 0415, 0416, 0418, 0419, 0420, 0421, 0422, 0423,
-0424, and 0425 each built one or more vertical slices for real —
+0424, 0425, and 0427 each built one or more vertical slices for real —
 Workload's own throughput metric, Financial Performance's "Accruals
 report" and "Spend under management (with PO)," Fraud Prevention's
 "Potential duplicate invoices," "Unapproved-supplier invoices,"
 "Exceptions by type, by user, by supplier, trended," "Statistical
 outliers," and "Segregation-of-duties flags," Supplier Performance's
 own "Spend by supplier," active supplier count by status, average
-cycle time, exception rate and type mix, PO variance, and payment
-terms held vs. negotiated, and now the Multi-Enterprise CFO View's own
-"Consolidated spend across org units / legal entities" (0425) — the
+cycle time, exception rate and type mix, PO variance, payment terms
+held vs. negotiated, and — the last two, decision 0427 — early-payment
+discount eligibility and hold history, the Multi-Enterprise CFO View's
+own "Consolidated spend across org units / legal entities" (0425) — the
 design's own recommended "Option 1" scoping (`holdsEverywhere`, `GROUP
 BY org_unit_id`), chosen directly by the operator over the genuinely
 new multi-select org-comparison scope the design itself defers.
@@ -1634,7 +1708,17 @@ payment / dynamic discount, payment history, cash-flow forecast (and
 by currency), and payment terms held vs. actual with the resulting DPO
 trend — stay unbuilt; three of them need payment-execution data (when
 and on what terms an invoice was actually paid) this codebase does not
-capture anywhere.
+capture anywhere. **Worth noting for whoever picks this screen up
+next: the design's own wording for "invoices eligible for early
+payment / dynamic discount, by volume and by amount" here is close
+kin to Supplier Performance's own "early-payment/discount capture
+rate," which decision 0427 built, honestly narrowed, as
+per-supplier eligibility (`GET /suppliers/discount-eligibility`,
+grouped by currency) — the same underlying `discount_pct`/
+`discount_days` fields and open-invoice query, aggregated by supplier
+rather than by volume/amount. Not built here, and not assumed
+equivalent without checking — but the data behind it already exists,
+which the other three of this screen's metrics do not.
 **Fraud & Risk Detection has five of its own six metrics built now —
 only vendor banking-detail-change alerts stays unbuilt**, the design's
 own words: "not currently captured by VibeFinance... noted as a real
@@ -1663,43 +1747,52 @@ MCP server" option the design also sketches for this screen is
 explicitly out of scope for the document itself, not merely deferred —
 its own future decision, should it ever be made.
 
-**Early-payment/discount eligibility, specifically, is parked rather
-than ruled out — it needs more thought, at the operator's own
-direction.** Investigated directly before being recommended as the
-next vertical slice after decision 0419, and found genuinely blocked:
-the design's own metric needs to know whether an invoice carries a
-real discount offer ("2% if paid within 10 days"), and nothing in this
-codebase captures that in structured form anywhere. `BT-20` (payment
-terms, per-invoice) is free text only, by the standard's own
-definition ("Net 30" is its own example) — and is not even extracted
-from photographed/scanned invoices at all, only from XML. Asked
-directly, the operator's own instinct was that terms are typically
-negotiated with a supplier in advance and held on the supplier record,
-not read per-invoice — and this codebase already agrees in structure:
-`suppliers.payment_terms` (loaded via CSV, `load-suppliers.ts`) is
-exactly that, matching `supplier.paymentTerms`'s own vocabulary entry
-("this is what was agreed; BT-9 is what the supplier claims"). **But
-it is still free text**, the same "Net 30" shape as `BT-20` — no
-discount rate, no discount window, on either field. So the operator's
-own framing is right in principle (supplier record over invoice
-field) and narrows where a future fix would live, but does not by
-itself unblock this metric: parsing a discount schedule out of free
-text reliably, or giving suppliers a real structured discount-terms
-field, is its own decision, not yet made. Parked here rather than
-built around dishonestly.
-**Supplier Performance's own remaining two metrics — both parked, for
-two different reasons.** Early-payment/discount capture rate is the
-metric described just above. **Hold history — how often and for how
-long a supplier has been placed on hold, and why — is a different
-shape of gap.** `suppliers.on_hold` and `suppliers.hold_reason`
-(migration 0049) are current state only: a plain `UPDATE` overwrites
-them, and nothing in this codebase — checked directly, no
-`audit_log`, `supplier_history`, `hold_history` or `status_history`
-table exists anywhere — records when a hold started, ended, or what it
-replaced. Not a parsing or schema-field decision like early-payment;
-it needs a genuinely new capability, an audit trail on supplier field
-changes, which does not exist for any field on this record today.
-Decision 0421 built the other six of this screen's eight key metrics.
+**~~Early-payment/discount eligibility, specifically, is parked.~~
+Built, honestly narrowed, as eligibility rather than the design's own
+literal "capture rate" (0427).** This paragraph's own investigation —
+that a real discount offer ("2% if paid within 10 days") was captured
+nowhere in structured form, and that the operator's own instinct
+(terms belong on the supplier record, not per-invoice) was right in
+principle but blocked by `suppliers.payment_terms` being free text
+only — is what the operator was asked to resolve directly: add
+structured `discount_pct`/`discount_days` fields to `suppliers`
+(migration 0072), CSV-loadable like `payment_terms` already is. **But
+structured fields alone still don't reach "capture rate."** The
+design's own literal metric needs to know whether a discount was
+actually *taken* — payment-execution data (when and on what terms an
+invoice was actually paid) this codebase has never captured anywhere,
+the same gap that blocks Liabilities & Accruals' own "payment history"
+below. Surfaced to the operator directly, who chose the honestly
+narrower framing: report which currently-open invoices sit inside
+their supplier's discount window today (`GET
+/suppliers/discount-eligibility`), not a historical capture rate. The
+literal "capture rate" metric itself stays unbuilt, for the
+payment-execution reason above — the eligibility framing is a
+deliberately different, honestly-labeled metric, not that metric
+finished.
+**~~Hold history was a different shape of gap — no audit trail existed
+for any supplier field.~~ Built, on a new general mechanism, not a
+hold-specific table (0427).** `suppliers.on_hold` and
+`suppliers.hold_reason` (migration 0049) were current state only, and
+three separate write paths reach `suppliers` — CSV mirror-load
+(`load-suppliers.ts`, which can silently flip `on_hold` on every
+reload), the hand-edit route, and the hold/release route — a fact
+investigated directly before design, and the reason the operator was
+asked (and chose) the broader of two real options: not a narrow
+hold-only history table, but a general field-change audit trail
+(`supplier_field_changes`, migration 0072) covering all three write
+paths and every editable/settable field, not only hold. Deliberately
+kept separate from decision 0350's own pre-existing
+`detectSupplierChanges` mechanism (which watches a narrower field set
+to spawn Supplier Maintenance review tasks, and is untouched by this
+change) rather than repurposing it. `GET /suppliers/hold-history`
+pairs each `on_hold` 0→1/1→0 transition into a discrete period, with
+its `hold_reason` at the time; a supplier held since its very
+first-ever load (no prior row to diff against) has no recorded period
+at all, honestly, rather than backfilled.
+Decision 0421 built six of this screen's eight key metrics; decision
+0427 built the last two — Supplier Performance is now the first of the
+six design screens with all of its own key metrics built.
 
 **Line-level extraction.** Extracted from images since 0044's addendum;
 still absent from the UBL parser's allowance and charge groups.
@@ -1852,13 +1945,13 @@ elsewhere.
 
 | Package | Tests |
 |---|---|
-| `vf-app` | 2196 |
+| `vf-app` | 2233 |
 | `vf-licence` | 320 |
-| `vf-ui` | 74 Worker · 860 browser |
+| `vf-ui` | 74 Worker · 873 browser |
 | `shared` | 287 passing, 3 known pre-existing failures |
 
 Both migration chains replay clean with every standing invariant
-holding — 71 migrations for `vf-app`, 136 for `vf-licence`.
+holding — 72 migrations for `vf-app`, 138 for `vf-licence`.
 
 **`vf-app`'s count was recorded as 1851 through decision 0379**; a clean
 run at `46c1da2`, with no `vf-app` change since decision 0378 recorded

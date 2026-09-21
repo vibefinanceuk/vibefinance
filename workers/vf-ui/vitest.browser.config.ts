@@ -103,6 +103,8 @@ export default defineConfig({
       "/supplier-exceptions.js": resolve(__dirname, "public/supplier-exceptions.js"),
       "/supplier-po-variance.js": resolve(__dirname, "public/supplier-po-variance.js"),
       "/supplier-payment-terms.js": resolve(__dirname, "public/supplier-payment-terms.js"),
+      "/supplier-discount-eligibility.js": resolve(__dirname, "public/supplier-discount-eligibility.js"),
+      "/supplier-hold-history.js": resolve(__dirname, "public/supplier-hold-history.js"),
       "/ap-analytics.js": resolve(__dirname, "public/ap-analytics.js"),
       "/charts.js": resolve(__dirname, "public/charts.js"),
       "/mood.js": resolve(__dirname, "public/mood.js"),

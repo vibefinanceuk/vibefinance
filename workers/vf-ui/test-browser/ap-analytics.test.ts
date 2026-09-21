@@ -13,11 +13,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
  * **What this file does not re-prove.** The Operational Performance
  * tab delegates to `workload.js`; Financial Performance delegates to
  * two modules at once, `accruals.js` and `spend-under-management.js`
- * (decision 0419); Supplier Performance delegates to six modules at
+ * (decision 0419); Supplier Performance delegates to eight modules at
  * once, `supplier-status.js`, `supplier-performance.js`,
  * `supplier-cycle-time.js`, `supplier-exceptions.js`,
  * `supplier-po-variance.js` and `supplier-payment-terms.js` (decision
- * 0421); Fraud Prevention delegates to five modules at once,
+ * 0421), and — its own last two, decision 0427 —
+ * `supplier-discount-eligibility.js` and `supplier-hold-history.js`;
+ * Fraud Prevention delegates to five modules at once,
  * `fraud-duplicates.js` (decision 0420),
  * `fraud-unapproved-suppliers.js` (decision 0422),
  * `fraud-exception-trends.js` (decision 0423), and
@@ -140,6 +142,19 @@ const STRINGS = {
     "supplierperformance.negotiatedterms": "Negotiated",
     "supplierperformance.heldterms": "Invoiced",
     "supplierperformance.ontimerate": "On time",
+    // Supplier Performance's last two remaining real cards — decision 0427.
+    "supplierperformance.discounteligibility": "Early-payment discount eligibility",
+    "supplierperformance.discounteligibilitysub": "Invoices currently inside their supplier's own discount window, by currency",
+    "supplierperformance.nodiscounteligibility": "No invoices currently eligible for an early-payment discount",
+    "supplierperformance.discounteligiblenote": "{n} invoices eligible at {pct}% within {days} days",
+    "supplierperformance.holdhistory": "Hold history",
+    "supplierperformance.holdhistorysub": "How often and for how long a supplier has been placed on hold, and why",
+    "supplierperformance.noholdhistory": "No recorded hold periods yet",
+    "supplierperformance.holdstarted": "Started",
+    "supplierperformance.holdended": "Ended",
+    "supplierperformance.holdongoing": "Ongoing",
+    "supplierperformance.holdduration": "Days on hold",
+    "supplierperformance.holdreason": "Reason",
     // The Fraud Prevention tab's real content — decision 0420.
     "fraudprevention.duplicates": "Potential duplicate invoices",
     "fraudprevention.duplicatessub": "Same supplier, amount and date — sorted by confidence",
@@ -217,6 +232,7 @@ function stubFetch(routes: Record<string, unknown>) {
  *
  * `/api/workload/throughput`, `/api/accruals`,
  * `/api/spend/under-management`, `/api/suppliers/spend`,
+ * `/api/suppliers/discount-eligibility`, `/api/suppliers/hold-history`,
  * `/api/fraud/duplicates`, `/api/fraud/unapproved-suppliers`,
  * `/api/fraud/exception-trends`, `/api/fraud/statistical-outliers`,
  * `/api/fraud/segregation-of-duties` and
@@ -243,6 +259,8 @@ async function openApAnalytics(
     "/api/suppliers/exceptions": { suppliers: [], typeMix: [] },
     "/api/suppliers/po-variance": { suppliers: [] },
     "/api/suppliers/payment-terms": { suppliers: [] },
+    "/api/suppliers/discount-eligibility": { currencies: [] },
+    "/api/suppliers/hold-history": { periods: [] },
     "/api/fraud/duplicates": { invoices: [] },
     "/api/fraud/unapproved-suppliers": { invoices: [] },
     "/api/fraud/exception-trends": { weekStartDates: [], bySupplier: [], byUser: [], byType: [] },
@@ -401,7 +419,7 @@ describe("real tabs wire to the already-tested module behind them, placeholders 
     expect(document.body.textContent).toContain("No spend recorded yet");
   });
 
-  it("Supplier Performance renders all six of its own cards, decision 0421", async () => {
+  it("Supplier Performance renders all eight of its own cards, decision 0427 — all eight of the design's own key metrics for this screen, now real", async () => {
     await openApAnalytics(["AP.Supplier"]);
 
     expect(document.querySelector(".tab.active")?.textContent).toBe("Supplier Performance");
@@ -413,11 +431,13 @@ describe("real tabs wire to the already-tested module behind them, placeholders 
       "Exception rate",
       "Invoice variance to order value",
       "Payment terms held vs. negotiated",
+      "Early-payment discount eligibility",
+      "Hold history",
     ]);
     expect(document.body.textContent).toContain("No priced invoices yet");
   });
 
-  it("Supplier Performance's six cards fail independently — one's own load failure never hides the others' real content", async () => {
+  it("Supplier Performance's eight cards fail independently — one's own load failure never hides the others' real content", async () => {
     await openApAnalytics(["AP.Supplier"], {}, { "/api/suppliers/spend": { ok: false, status: 500 } });
 
     expect(document.body.textContent).toContain("Could not load this tab right now");

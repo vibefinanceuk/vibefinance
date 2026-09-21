@@ -71,6 +71,10 @@ import userPropertiesSql from "../../../migrations/0065_user_properties.sql?raw"
 import purchaseOrderOrgSql from "../../../migrations/0068_purchase_order_org.sql?raw";
 import purchaseOrderStatusSql from "../../../migrations/0069_purchase_order_status.sql?raw";
 import embeddedXmlDocumentTypeSql from "../../../migrations/0070_embedded_xml_document_type.sql?raw";
+// 0071 is a documentation-only ASSERT restatement with no real SQL
+// body, the same "nothing to execute" shape as 0054/0062/0063/0066/0067
+// above — skipped here for the same reason.
+import supplierDiscountAndFieldChangeHistorySql from "../../../migrations/0072_supplier_discount_terms_and_field_change_history.sql?raw";
 
 // Another known divergence from production, on top of the one below:
 // D1's exec() splits its input by newline and executes each non-empty
@@ -145,6 +149,7 @@ const TABLES_IN_DROP_ORDER = ["document_comments", "process_stage_versions", "in
   // key — which is the constraint doing its job on a teardown that had
   // the order wrong.
   "dashboard_cards",
+  "supplier_field_changes",
   "suppliers",
   "suppliers_new",
   "supplier_loads",
@@ -275,6 +280,7 @@ export async function applyTestSchema(): Promise<void> {
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(purchaseOrderOrgSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(purchaseOrderStatusSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(embeddedXmlDocumentTypeSql)));
+  await env.DB.exec(toOneStatementPerLine(stripSqlComments(supplierDiscountAndFieldChangeHistorySql)));
 }
 
 /**
