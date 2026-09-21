@@ -97,6 +97,7 @@ const STRINGS = {
     "viewer.supplier.none": "This invoice has not been matched to a supplier.",
     "viewer.supplier.no_match": "No supplier on file matches this seller.",
     "suppliers.pay": "Payment",
+    "suppliers.sameorg": "Same org as this invoice",
     "action.changebuyer": "Change Buyer",
     "action.changeseller": "Change Seller",
     "viewer.noexceptions": "Nothing to resolve.",
@@ -2497,6 +2498,100 @@ describe("each party card carries its own action (decision 0228)", () => {
     await new Promise((r) => setTimeout(r, 0));
 
     expect(document.querySelector(".popout")).not.toBeNull();
+  });
+});
+
+describe("the manual supplier search ranks by the invoice's own org (decision 0433)", () => {
+  /**
+   * **Found live**: an invoice whose seller matched two sites sharing
+   * a VAT number, neither a pay site, reached this exact search — and
+   * every candidate looked equally plausible, because nothing here
+   * knew which one does business with the buying entity this invoice
+   * was actually placed under. `stored.orgUnitId` (decision 0198) is
+   * sent along so the backend can rank by it — `match-supplier.test.ts`
+   * covers the backend's own ranking; this covers that the request and
+   * the rendered row actually carry it.
+   */
+  function open(orgUnitId: string | null) {
+    const calls: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        calls.push(String(url));
+        const path = String(url).split("?")[0];
+        const bodies: Record<string, unknown> = {
+          "/api/ui-strings": STRINGS,
+          "/api/code-lists": { fields: {} },
+          "/api/field-visibility": FIELDS,
+          "/api/invoices/inv-1": {
+            facts: {},
+            lines: [],
+            validation: { passed: true, checked: [], failures: [] },
+            supplier: null,
+            orgUnitId,
+          },
+          "/api/invoices/inv-1/document-url": { url: null },
+          "/api/invoices/inv-1/progress": { inProcess: false, stages: [] },
+          "/api/invoices/inv-1/pages": { pages: [] },
+          "/api/documents/inv-1/activity": { items: [] },
+          "/api/suppliers/search": {
+            suppliers: [
+              { id: "fr", name: "Northwind FR", erp_identifier: "1", org_match: 0 },
+              { id: "de", name: "Northwind DE", erp_identifier: "2", org_match: 1 },
+            ],
+          },
+        };
+        if (!(path in bodies)) throw new Error(`no stub for ${path}`);
+        return { ok: true, json: async () => bodies[path] } as Response;
+      })
+    );
+    return calls;
+  }
+
+  async function openAndSearch(orgUnitId: string | null) {
+    const calls = open(orgUnitId);
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    await openViewer(TASK, () => {});
+    await new Promise((r) => setTimeout(r, 0));
+
+    const sellerCard = [...document.querySelectorAll(".panel")].find(
+      (p) => p.querySelector("h3")?.textContent === "Seller"
+    );
+    (sellerCard?.querySelector(".actionlink") as HTMLButtonElement)?.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    const input = document.querySelector(".searchbox") as HTMLInputElement;
+    input.value = "northwind";
+    input.oninput?.(new Event("input"));
+    await new Promise((r) => setTimeout(r, 0));
+
+    return calls;
+  }
+
+  it("sends the invoice's own org on the search request", async () => {
+    const calls = await openAndSearch("acme-uk");
+    const searchCall = calls.find((c) => c.startsWith("/api/suppliers/search"));
+    expect(searchCall).toContain("orgUnitId=acme-uk");
+  });
+
+  it("sends an empty orgUnitId where the invoice has none", async () => {
+    const calls = await openAndSearch(null);
+    const searchCall = calls.find((c) => c.startsWith("/api/suppliers/search"));
+    expect(searchCall).toContain("orgUnitId=");
+    expect(searchCall).not.toContain("orgUnitId=null");
+  });
+
+  it("marks the row the backend flagged as an org match", async () => {
+    await openAndSearch("acme-uk");
+
+    const rows = [...document.querySelectorAll(".searchresult")];
+    const deRow = rows.find((r) => r.textContent?.includes("Northwind DE"));
+    const frRow = rows.find((r) => r.textContent?.includes("Northwind FR"));
+
+    expect(deRow?.textContent).toContain("Same org as this invoice");
+    expect(frRow?.textContent).not.toContain("Same org as this invoice");
   });
 });
 

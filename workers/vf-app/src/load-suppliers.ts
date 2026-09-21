@@ -898,7 +898,31 @@ export async function handleListSuppliers(
  */
 export async function handleSearchSuppliers(
   db: D1Database,
-  query: string
+  query: string,
+  /**
+   * **The invoice's own buying entity, to rank by — decision 0433.**
+   *
+   * Found live: an invoice whose seller matched several sites sharing
+   * one VAT number, none tagged as a pay site, reached this same
+   * unscoped search for a person to resolve by hand — and every
+   * candidate looked equally plausible, because nothing here knew
+   * which of them actually does business with *this* buying entity.
+   * `matchSupplier`'s own automatic tiebreak already narrows exactly
+   * this way (decision 0317's own words: "the supplier might have a
+   * different ERP Identifier per Org") — this gives the manual search
+   * the same signal, one step later, for the case the automatic
+   * tiebreak still could not resolve alone.
+   *
+   * **Ranks, never filters.** A `LEFT JOIN` on `org_unit_id`, not a
+   * `WHERE`: org tagging on the supplier master file is something a
+   * customer fills in over time, never a promise it is complete, and a
+   * site nobody has tagged yet has not thereby said it is *not* the
+   * right one — the same reasoning `match-supplier.ts` already gives
+   * its own org tiebreak. Optional and defaulted to `null` so every
+   * existing caller, and every existing test, keeps searching exactly
+   * as it did.
+   */
+  orgUnitId: string | null = null
 ): Promise<RouteResult> {
   const q = query.trim();
   if (q.length < 2) {
@@ -913,7 +937,8 @@ export async function handleSearchSuppliers(
     .prepare(
       `SELECT id, erp_identifier, erp_site_identifier, name, vat_id, electronic_address,
               email, phone, address_line, city, postal_code, country,
-              is_pay_site, is_procurement_site, on_hold, hold_reason, payment_terms
+              is_pay_site, is_procurement_site, on_hold, hold_reason, payment_terms,
+              (org_unit_id IS NOT NULL AND org_unit_id = ?2) AS org_match
        FROM suppliers
        WHERE status = 'active'
          AND (
@@ -929,15 +954,19 @@ export async function handleSearchSuppliers(
          )
        ORDER BY
          /**
-          * **Pay sites first.** An invoice goes to one (decision 0218),
-          * so a person choosing by hand is usually choosing one — and
-          * the list should not make them scroll past two procurement
-          * sites to reach it.
+          * **The invoice's own org first, then pay sites, decision
+          * 0433 ahead of decision 0218's own tiebreak.** Both answer
+          * "which of these is most likely right", and org is the
+          * stronger claim: a pay site is a guess at which of a
+          * supplier's *own* sites gets paid, where an org match says
+          * this site has *already done business* with this exact
+          * buying entity. Neither hides the other's candidates — this
+          * only decides who is on screen first.
           */
-         is_pay_site DESC, name
+         org_match DESC, is_pay_site DESC, name
        LIMIT 25`
     )
-    .bind(like)
+    .bind(like, orgUnitId)
     .all<Record<string, unknown>>();
 
   return { status: 200, body: { suppliers: rows.results } };

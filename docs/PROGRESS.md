@@ -1202,6 +1202,46 @@ section for the full reasoning and tests.
   `stretch`'s own problem. See decision 0432's own addendum section
   for the full accounting.
 
+### The manual supplier search ranks by the invoice's own org (0433)
+- **Found live**, following on from decision 0431/0432's own testing:
+  an invoice reached payment-eligible through every stage despite its
+  seller matching two active sites sharing one VAT number, neither a
+  pay site — `matchSupplier`'s own `ambiguous_site` outcome. Two
+  separate gaps, not one: nothing currently blocks on an unmatched or
+  ambiguous supplier at any stage (a tenant rule-configuration question,
+  not a code one — `supplier.matched`/`supplier.unmatchedReason` are
+  already real facts a rule can test), and the manual "select the right
+  supplier" picker (`/api/suppliers/search`) had no idea which org the
+  invoice belonged to, so every candidate looked equally plausible to
+  a person resolving it by hand.
+- **Asked directly**: *"I think we need a rule in the Validation stage
+  to flag for a user to select the right supplier, based on the Org of
+  the Buying legal entity identified."* Two forks resolved directly:
+  the org **ranks, never filters** the picker's candidates (an
+  untagged site has not said it is *not* the right one — the same
+  reasoning `matchSupplier`'s own automatic tiebreak already gives),
+  and the new rule should flag **only `ambiguous_site`**, not every
+  unmatched reason — `no_identifier`/`no_match` already have decision
+  0222's own amber-ribbon answer.
+- `handleSearchSuppliers` takes an optional `orgUnitId`, ranking a
+  supplier tagged to that same org first — ahead of decision 0218's
+  own pay-site tiebreak — defaulted to `null` so every existing caller
+  keeps searching exactly as before. The picker sends
+  `stored.orgUnitId` (decision 0198) on every keystroke, and its own
+  `describe()` line gains a *"Same org as this invoice"* marker, read
+  ahead of the existing *"Payment"* one.
+- **The Validation-stage rule itself is configuration, not code** —
+  every migration in this repository confirms process/stage/rule-set
+  definitions are entirely tenant data with no seed here, so this
+  session cannot create it directly. The exact condition and action are
+  written into decision 0433's own doc for the operator's own Rules
+  screen: `supplier.unmatchedReason equals ambiguous_site` at
+  Validation, action creates a task — task visibility already follows
+  the invoice's own org (decision 0199/0202), so nothing else is needed
+  once the rule exists.
+- New tests only, no new test file: `load-suppliers.test.ts` +6,
+  `viewer.test.ts` +3. `eslint .` clean across `vf-app` and `vf-ui`.
+
 ### Purchase orders and matching
 - Purchase order storage grounded in Peppol BIS Order Only 3.3, via UBL
   XML ingestion (0081) and CSV load (0370) — the same tables, the same

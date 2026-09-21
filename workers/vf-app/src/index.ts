@@ -1037,12 +1037,17 @@ export default {
     }
 
     // Finding a supplier by whatever a person has to hand — 0222.
+    // `orgUnitId` ranks by the invoice's own buying entity — 0433.
     if (pathname === "/suppliers/search" && request.method === "GET") {
       const { db } = resolveTenant(request, env);
       const auth = await authenticatePerson(db, request, env);
       if (!auth.user) return json({ error: auth.reason }, 401);
 
-      const result = await handleSearchSuppliers(db, url.searchParams.get("q") ?? "");
+      const result = await handleSearchSuppliers(
+        db,
+        url.searchParams.get("q") ?? "",
+        url.searchParams.get("orgUnitId") || null
+      );
       return json(result.body, result.status);
     }
 

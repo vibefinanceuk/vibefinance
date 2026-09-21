@@ -2,7 +2,7 @@
 
 **Written 4 September 2026, updated 17 September (six times), updated
 18 September (four times), updated 19 September (thirty-two times),
-updated 20 September (twenty-two times), updated 21 September (twelve
+updated 20 September (twenty-two times), updated 21 September (thirteen
 times).**
 
 **For a session starting cold.** Where things stand, what needs a
@@ -32,7 +32,7 @@ twice.
 
 | | |
 | --- | --- |
-| `origin/main` | `f1001f5` — fetched directly by this session, matching this session's own commit exactly. Decision 0432's own addendum (a vertical alignment fix to the same Ask/Clear row) is confirmed pushed and deployed. **Nothing from this session is currently outstanding.** |
+| `origin/main` | `f1001f5` — fetched directly by this session, matching this session's own commit exactly. Decision 0432's own addendum (a vertical alignment fix to the same Ask/Clear row) is confirmed pushed and deployed. **Decision 0433 (the manual supplier search ranks by the invoice's own org) is built, tested, and documented on top of that, not yet pushed or deployed.** |
 | vf-admin deployed | `8e27a34` · `https://admin.vibefinance-ai.com` · behind Cloudflare Access |
 | vf-app deployed | `f1001f5` confirmed — decisions 0429 (agreed payment means, a supplier-record placeholder), 0430 (Talk to an AP Expert, Screen 6) with all eight of its own addenda, 0431 (Executive IQ's remaining four metrics), and 0432 with its own addendum, all confirmed. Decision 0432 and its own addendum both touch `vf-ui` only, nothing to deploy here. |
 | vf-licence deployed | `f1001f5` per the operator's own reports; migrations `0140` through `0142` all applied — `0142` is decision 0431's own strings. Decision 0432 and its own addendum both added no new migration. |
@@ -40,8 +40,41 @@ twice.
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
 | `vf-app-poc` migrations | through `0074` applied and confirmed live — `0073` (decision 0429) is real schema; `0074` (decision 0430) is a documentation-only `ASSERT` restatement with no schema change, the same shape as `0071`; none of 0430's eight addenda needed a new `vf-app` migration; decision 0431 also needed none — its four new routes read existing tables only |
 | `vf-licence-poc` migrations | through `0142` applied and confirmed live — the operator's own `apply_migrations.py --remote` run |
-| Tests | vf-admin 9 · vf-app 2479 (108 test files, +50 from decision 0431's four new route test files, confirmed by one unfiltered whole-suite run) · vf-licence 320 (including migration `0142`, no new test file — migration-assertion coverage only) · vf-ui 74 Worker (unchanged in count — the widened `/executive/*` allow-list proven by new lines inside the existing `CALLED_BY_A_SCREEN` test) + 948 browser (924 + 23 in four new files, +1 net in `ap-analytics.test.ts` for decision 0431; decision 0432 and its own alignment-fix addendum together added six assertions inside two already-counted tests, no change to the total — confirmed by one unfiltered whole-suite run after the addendum) · shared 295 (+3 known pre-existing failures) |
-| Decision records | 432 |
+| Tests | vf-admin 9 · vf-app 2485 (108 test files, +6 from decision 0433's own org-ranking describe block, confirmed by one unfiltered whole-suite run) · vf-licence 320 (unchanged — decision 0433's new migration `0143` added no new test; `string-coverage.test.ts` was checked, not extended, see decision 0433's own Tests section) · vf-ui 74 Worker (unchanged) + 951 browser (948 + 3 in decision 0433's own new describe block in `viewer.test.ts`, confirmed by one unfiltered whole-suite run) · shared 295 (+3 known pre-existing failures) |
+| Decision records | 433 |
+
+**Decision 0433 (the manual supplier search ranks by the invoice's own
+org) is built, tested, and documented. Not yet pushed or deployed.**
+Live testing surfaced an invoice whose seller matched two active sites
+sharing one VAT number, neither a pay site — `matchSupplier`'s own
+`ambiguous_site` outcome — reported directly by the operator with a
+screenshot: *"however when I open the invoice it states that the
+supplier could not be recognised."* The invoice had already run
+through every stage to payment-eligible despite that. Asked directly
+what to build: *"I think we need a rule in the Validation stage to
+flag for a user to select the right supplier, based on the Org of the
+Buying legal entity identified."* Two things, not one: the Validation-
+stage rule itself is tenant configuration this session cannot reach —
+no migration in this repository seeds a process, stage, or rule set,
+every one is created through the product's own Rules screen — so it is
+written up as an exact recommendation for the operator's own Rules
+screen (Stage: Validation; Condition: `supplier.unmatchedReason equals
+ambiguous_site`; Action: create a task) rather than built. What *is*
+code, and is built here: the manual "select the right supplier"
+picker a person reaches from that task had no idea which org the
+invoice belonged to, searching every active supplier with equal
+weight. `handleSearchSuppliers` now takes the invoice's own org and
+ranks a same-org site first — never filters, only ranks, the same
+answer decision 0317's own tiebreak already gives for the automatic
+case — with a new *"Same org as this invoice"* marker in the picker's
+own list so a person sees why a row is near the top. One new string
+(migration `0143`), no new icons, no vocabulary or rule-engine changes
+— `supplier.matched` and `supplier.unmatchedReason` were already real
+facts, "create a task" was already an ordinary action. Full
+`vf-app` (2485) and `vf-licence` (320) suites both confirmed green
+after the build; the full `vf-ui` browser suite (951) confirmed green
+too. See decision 0433 for the full reasoning, the two clarifying
+questions and their answers, and the complete test breakdown.
 
 **Decision 0432 (Ask and Clear, restyled as icon-above-label buttons)
 is pushed and deployed, confirmed directly.** `origin/main` fetched

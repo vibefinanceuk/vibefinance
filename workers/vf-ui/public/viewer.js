@@ -1880,8 +1880,17 @@ export async function openViewer(task, onClose) {
           });
         },
       },
+      /**
+       * **`orgUnitId`, so results rank by the invoice's own buying
+       * entity — decision 0433.** `stored.orgUnitId` (decision 0198)
+       * is exactly what `matchSupplier`'s own automatic tiebreak
+       * already narrows by; this hands the same signal to the person
+       * doing by hand what the automatic match could not finish.
+       */
       search: async (q) => {
-        const response = await fetch(`/api/suppliers/search?q=${encodeURIComponent(q)}`);
+        const response = await fetch(
+          `/api/suppliers/search?q=${encodeURIComponent(q)}&orgUnitId=${encodeURIComponent(stored.orgUnitId ?? "")}`
+        );
         if (!response.ok) throw new Error();
         return (await response.json()).suppliers;
       },
@@ -1890,6 +1899,10 @@ export async function openViewer(task, onClose) {
         [
           s.erp_identifier,
           s.erp_site_identifier,
+          // **Ahead of the pay-site marker — decision 0433.** Read in
+          // the same order the list is sorted: why a row is near the
+          // top comes before what kind of site it is.
+          s.org_match ? t("suppliers.sameorg") : null,
           s.is_pay_site ? t("suppliers.pay") : null,
           s.vat_id,
           [s.address_line, s.city, s.postal_code].filter(Boolean).join(", "),

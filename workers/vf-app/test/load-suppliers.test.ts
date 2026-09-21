@@ -822,6 +822,78 @@ describe("finding a supplier by hand (decision 0222)", () => {
   });
 });
 
+describe("ranking a supplier search by the invoice's own org (decision 0433)", () => {
+  /**
+   * Found live: an invoice whose seller matched two sites sharing a
+   * VAT number, neither one a pay site, reached this exact search —
+   * and every candidate looked equally plausible, because nothing
+   * here knew which one actually does business with the buying entity
+   * that received the invoice. `matchSupplier`'s own automatic
+   * tiebreak already narrows this way (decision 0317); this hands the
+   * same signal to a person searching by hand.
+   */
+  beforeEach(async () => {
+    await env.DB.prepare("INSERT INTO org_units (id, name) VALUES ('acme-fr', 'Acme France')").run();
+    await env.DB.prepare("INSERT INTO org_units (id, name) VALUES ('acme-de', 'Acme Germany')").run();
+    await load(
+      "ERP ID,Name,VAT,Org Unit\n" +
+        "1,Northwind FR,GB1,Acme France\n" +
+        "2,Northwind DE,GB1,Acme Germany"
+    );
+  });
+
+  async function search(q: string, orgUnitId: string | null) {
+    const result = await handleSearchSuppliers(env.DB, q, orgUnitId);
+    return (result.body as { suppliers: { id: string; name: string; org_match: number }[] }).suppliers;
+  }
+
+  it("puts the matching org first", async () => {
+    expect((await search("northwind", "acme-de")).map((s) => s.name)).toEqual([
+      "Northwind DE",
+      "Northwind FR",
+    ]);
+  });
+
+  it("flips the order for the other org", async () => {
+    expect((await search("northwind", "acme-fr")).map((s) => s.name)).toEqual([
+      "Northwind FR",
+      "Northwind DE",
+    ]);
+  });
+
+  it("marks which row matched", async () => {
+    const results = await search("northwind", "acme-de");
+    expect(results.find((s) => s.name === "Northwind DE")?.org_match).toBe(1);
+    expect(results.find((s) => s.name === "Northwind FR")?.org_match).toBe(0);
+  });
+
+  it("never hides a candidate outside the org — ranks, does not filter", async () => {
+    expect(await search("northwind", "acme-de")).toHaveLength(2);
+  });
+
+  it("degrades to the existing order when no org is given", async () => {
+    // Every caller before decision 0433 — no third argument at all.
+    expect((await search("northwind", null)).map((s) => s.name)).toEqual([
+      "Northwind DE",
+      "Northwind FR",
+    ]);
+  });
+
+  it("does not let an untagged site win over a real org match", async () => {
+    // **One load, all three rows** — decision 0208's own "replace
+    // rather than merge": a second `load()` call is the ERP's whole
+    // current truth, not an addition, and would deactivate the two
+    // rows this test still needs.
+    await load(
+      "ERP ID,Name,VAT,Org Unit\n" +
+        "1,Northwind FR,GB1,Acme France\n" +
+        "2,Northwind DE,GB1,Acme Germany\n" +
+        "3,Northwind Untagged,GB1,"
+    );
+    expect((await search("northwind", "acme-de"))[0].name).toBe("Northwind DE");
+  });
+});
+
 describe("choosing one by hand (decision 0222)", () => {
   beforeEach(async () => {
     await load("ERP ID,Name,VAT\n40118,Northwind,GB1");
