@@ -71,7 +71,10 @@ export const ICONS = {
   addcard: '<path d="M12 5v14M5 12h14"/>',
 
   // An arrow curling back on itself — undoing every choice made since
-  // the default, not undoing one step at a time.
+  // the default, not undoing one step at a time. Reused by decision
+  // 0432 for "Talk to an AP Expert"'s own Clear button — clearing the
+  // chat *is* restoring it to its own default, empty state, not
+  // undoing one question at a time.
   restoredefault: '<path d="M4 4v6h6"/><path d="M20 12a8 8 0 1 1-2.5-5.8L20 10"/>',
 
   // Arrows to the four corners — "make this bigger", not "leave here".
@@ -353,7 +356,9 @@ Object.assign(ICONS, {
   // decision 0268. The same shape almost every messaging surface
   // already uses for "send", chosen over inventing a new one for the
   // sake of it: a person should recognise this without reading the
-  // label beside it.
+  // label beside it. Reused by decision 0432 for "Talk to an AP
+  // Expert"'s own Ask button — asking a question is the identical
+  // send action, not a second shape for the same idea.
   post: '<line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>',
 
   // A switch thrown, not a play button: a rule is not something that

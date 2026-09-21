@@ -1,7 +1,7 @@
 import { t } from "/strings.js";
 import { el } from "/tasks.js";
 import { currentOrgId } from "/orgs.js";
-import { POPOUT_NAME } from "/viewer.js";
+import { POPOUT_NAME, actionLink } from "/viewer.js";
 
 /**
  * Talk to an AP Expert — decision 0430, Screen 6 of the Management
@@ -71,6 +71,23 @@ import { POPOUT_NAME } from "/viewer.js";
  * resets `history` to empty and re-renders. Nothing server-side to
  * undo: this screen has never persisted history anywhere (this file's
  * own top comment, above), so "clear" is just "forget," instantly.
+ *
+ * **Ask and Clear, restyled as icon-above-label buttons — decision
+ * 0432.** Asked for directly: "similar to other buttons on the page."
+ * Both now go through `viewer.js`'s own `actionLink()`, the same
+ * `.actionlink` shape decision 0122 built for the document viewer and
+ * decision 0234 exported for reuse — an icon, a label a person can
+ * read, `title` set to the same text, and a disabled state that mirrors
+ * whatever this file already sets on `sendButtonEl`/`clearButtonEl`.
+ * No new icons: `post`'s own paper plane (decision 0268, the activity
+ * panel's own "send") and `restoredefault`'s own curling arrow
+ * (decision 0303's own dashboard reset) are reused as-is, each true to
+ * what it already meant — asking is sending, and clearing this
+ * chat *is* restoring it to its own empty default. `apassistant.send`/
+ * `apassistant.clear` (decisions 0430/0430's seventh addendum) needed
+ * no new strings, only a new `label` override the same way decision
+ * 0374 already gives Purchase Orders' own buttons custom text over a
+ * shared icon.
  */
 
 // The operator's own choice, revised after checking the real cost:
@@ -302,8 +319,16 @@ export function renderPanel() {
       if (e.key === "Enter") send();
     },
   });
-  sendButtonEl = el("button", { class: "primary", text: t("apassistant.send"), onclick: send });
-  clearButtonEl = el("button", { class: "secondary", text: t("apassistant.clear"), onclick: clear });
+  // Icon above label, in a column — decision 0432, matching
+  // `actionLink()`'s own shape every other action button on the page
+  // already uses (`viewer.js`, `dashboard.js`), rather than the plain
+  // text buttons this panel started with. `post`'s own paper-plane and
+  // `restoredefault`'s own curling arrow are reused as-is (see
+  // `icons.js`'s own comments for why each is true here), with
+  // `label` overriding their shared `action.*` text the same way
+  // decision 0374 already does for Purchase Orders' own buttons.
+  sendButtonEl = actionLink("post", { primary: true, label: t("apassistant.send"), onclick: send });
+  clearButtonEl = actionLink("restoredefault", { label: t("apassistant.clear"), onclick: clear });
 
   renderMessages();
 

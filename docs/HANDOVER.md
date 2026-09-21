@@ -2,7 +2,7 @@
 
 **Written 4 September 2026, updated 17 September (six times), updated
 18 September (four times), updated 19 September (thirty-two times),
-updated 20 September (twenty-two times), updated 21 September (nine
+updated 20 September (twenty-two times), updated 21 September (ten
 times).**
 
 **For a session starting cold.** Where things stand, what needs a
@@ -32,16 +32,33 @@ twice.
 
 | | |
 | --- | --- |
-| `origin/main` | `e4534f0` — fetched directly by this session, matching this session's own commit exactly. Nothing from this session is outstanding. |
+| `origin/main` | `e4534f0` — fetched directly by this session, matching this session's own commit exactly. Decision 0432 (Ask and Clear restyled as icon buttons) is built and tested, in its own new commit on top, **not yet pushed**. |
 | vf-admin deployed | `8e27a34` · `https://admin.vibefinance-ai.com` · behind Cloudflare Access |
-| vf-app deployed | `e4534f0` confirmed — decisions 0429 (agreed payment means, a supplier-record placeholder), 0430 (Talk to an AP Expert, Screen 6) with all eight of its own addenda, and 0431 (Executive IQ's remaining four metrics), all confirmed |
-| vf-licence deployed | `e4534f0` per the operator's own reports; migrations `0140` through `0142` all applied — `0142` is decision 0431's own strings |
-| vf-ui deployed | `e4534f0` · `https://app.vibefinance-ai.com` — operator's own reports, confirmed directly: *"deployed and pushed - I can see the reports in the Executive IQ tab"* |
+| vf-app deployed | `e4534f0` confirmed — decisions 0429 (agreed payment means, a supplier-record placeholder), 0430 (Talk to an AP Expert, Screen 6) with all eight of its own addenda, and 0431 (Executive IQ's remaining four metrics), all confirmed. Decision 0432 touches `vf-ui` only, nothing to deploy here. |
+| vf-licence deployed | `e4534f0` per the operator's own reports; migrations `0140` through `0142` all applied — `0142` is decision 0431's own strings. Decision 0432 added no new migration. |
+| vf-ui deployed | `e4534f0` · `https://app.vibefinance-ai.com` — operator's own reports, confirmed directly: *"deployed and pushed - I can see the reports in the Executive IQ tab"*. Decision 0432's icon-button restyling is built and tested locally, not yet deployed. |
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
 | `vf-app-poc` migrations | through `0074` applied and confirmed live — `0073` (decision 0429) is real schema; `0074` (decision 0430) is a documentation-only `ASSERT` restatement with no schema change, the same shape as `0071`; none of 0430's eight addenda needed a new `vf-app` migration; decision 0431 also needed none — its four new routes read existing tables only |
 | `vf-licence-poc` migrations | through `0142` applied and confirmed live — the operator's own `apply_migrations.py --remote` run |
-| Tests | vf-admin 9 · vf-app 2479 (108 test files, +50 from decision 0431's four new route test files, confirmed by one unfiltered whole-suite run) · vf-licence 320 (including migration `0142`, no new test file — migration-assertion coverage only) · vf-ui 74 Worker (unchanged in count — the widened `/executive/*` allow-list proven by new lines inside the existing `CALLED_BY_A_SCREEN` test) + 948 browser (924 + 23 in four new files, +1 net in `ap-analytics.test.ts`) · shared 295 (+3 known pre-existing failures) |
-| Decision records | 431 |
+| Tests | vf-admin 9 · vf-app 2479 (108 test files, +50 from decision 0431's four new route test files, confirmed by one unfiltered whole-suite run) · vf-licence 320 (including migration `0142`, no new test file — migration-assertion coverage only) · vf-ui 74 Worker (unchanged in count — the widened `/executive/*` allow-list proven by new lines inside the existing `CALLED_BY_A_SCREEN` test) + 948 browser (924 + 23 in four new files, +1 net in `ap-analytics.test.ts` for decision 0431; decision 0432 added six assertions inside two already-counted tests, no change to the total) · shared 295 (+3 known pre-existing failures) |
+| Decision records | 432 |
+
+**Decision 0432 (Ask and Clear, restyled as icon-above-label buttons)
+is built, tested, and documented — in its own new commit on top of
+`e4534f0`, not yet pushed or deployed.** Asked directly, live: *"change
+the Ask and Clear buttons to be Icons, similar to other buttons on the
+page, with text beaneath."* Both now go through `viewer.js`'s own
+`actionLink()` — the same icon-above-label stack every other action
+button on the page already uses — reusing two already-true icons
+rather than drawing new ones: `post`'s own paper plane for Ask
+(decision 0268's "send"), `restoredefault`'s own curling arrow for
+Clear (decision 0303's "restore to default," which is exactly what
+clearing this never-persisted chat is). One CSS fix alongside it:
+`.chatinputrow` gained `align-items: flex-end` so the plain text input
+keeps its own natural height beside the now-taller icon buttons rather
+than stretching to match them. No new strings, no new icons, no new
+test file — six new assertions inside two already-tested cases. See
+decision 0432 for the full reasoning and tests.
 
 **Decision 0431 (Executive IQ's remaining four data-buildable metrics
 — liabilities and accruals by entity, cross-entity supplier

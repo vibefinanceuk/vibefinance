@@ -1164,6 +1164,32 @@ section for the full reasoning and tests.
   Supplier Performance remains the only screen at full parity. See
   decision 0431 for the full reasoning and tests.
 
+### Ask and Clear, restyled as icon-above-label buttons (0432)
+- **"Change the Ask and Clear buttons to be Icons, similar to other
+  buttons on the page, with text beaneath"** — the operator's own
+  direct request once decision 0431 shipped, pushed, deployed, and
+  confirmed. Talk to an AP Expert's own Ask/Clear pair (decision 0430)
+  had been the only buttons on the whole AP Analytics screen not built
+  from `viewer.js`'s own `actionLink()`, the icon-above-label stack
+  decision 0122 built and decision 0234 exported for exactly this kind
+  of reuse.
+- **No new icons, no new strings.** Ask reuses `post`'s own paper
+  plane (decision 0268's own "send"), Clear reuses `restoredefault`'s
+  own curling arrow (decision 0303's own "restore to default") — each
+  already true to what "Ask" and "Clear" actually do here, so nothing
+  new was drawn. `label` overrides `actionLink`'s own shared
+  `action.*` text with the strings this screen already has, the same
+  technique decision 0374 already uses for Purchase Orders' own
+  buttons.
+- One CSS fix alongside it: `.chatinputrow`'s default `align-items:
+  stretch` was pulling the plain text input up to match the now-taller
+  icon buttons' own height; `align-items: flex-end` keeps the input at
+  its natural size.
+- No new test file — six new assertions added inside two already-
+  counted `ap-analytics.test.ts` tests (the `actionlink` class, a real
+  `<svg>`, and Ask alone carrying `primary`). Every existing assertion
+  in that describe block is unchanged and still passes.
+
 ### Purchase orders and matching
 - Purchase order storage grounded in Peppol BIS Order Only 3.3, via UBL
   XML ingestion (0081) and CSV load (0370) — the same tables, the same

@@ -3273,7 +3273,14 @@
   .chatbubble-answer { justify-content: flex-start; }
   .chatbubble-answer > div { background: var(--surface-1); color: var(--text-primary); }
   .chatactions { display: flex; gap: 8px; margin: -2px 0 0 2px; }
-  .chatinputrow { display: flex; gap: 10px; margin-top: 12px; }
+  /**
+   * `align-items: flex-end` — decision 0432. Ask and Clear became
+   * `.actionlink`'s own icon-above-label stack, taller than the plain
+   * text input beside them; without this the row's default `stretch`
+   * pulled the input to match the buttons' own height instead of
+   * sitting at its natural size.
+   */
+  .chatinputrow { display: flex; align-items: flex-end; gap: 10px; margin-top: 12px; }
   .chatinputrow .chatinput {
     flex: 1;
     padding: 9px 12px;

@@ -719,6 +719,10 @@ describe("Talk to an AP Expert — decision 0430, a real chat, not a card compar
     expect(document.body.textContent).toContain("Ask a question to get started");
     expect(document.querySelector(".chatinput")).not.toBeNull();
     expect(document.querySelector(".chatinputrow button")?.textContent).toBe("Ask");
+    // Icon above label — decision 0432, the same `.actionlink` shape
+    // every other action button on the page already uses.
+    expect(document.querySelector(".chatinputrow button")?.className).toContain("actionlink");
+    expect(document.querySelector(".chatinputrow button svg")).not.toBeNull();
   });
 
   it("sends a typed question and shows the real answer that comes back", async () => {
@@ -878,8 +882,16 @@ describe("Talk to an AP Expert — Clear and downloadable report, decision 0430'
   it("renders a Clear button next to Ask", async () => {
     await openApAnalytics(["AP.Assistant"]);
 
-    const buttons = [...document.querySelectorAll(".chatinputrow button")].map((b) => b.textContent);
-    expect(buttons).toEqual(["Ask", "Clear"]);
+    const buttons = [...document.querySelectorAll<HTMLButtonElement>(".chatinputrow button")];
+    expect(buttons.map((b) => b.textContent)).toEqual(["Ask", "Clear"]);
+    // Icon above label — decision 0432, matching every other action
+    // button on the page, not a pair of plain text buttons.
+    expect(buttons.every((b) => b.className.includes("actionlink"))).toBe(true);
+    expect(buttons.every((b) => b.querySelector("svg"))).toBe(true);
+    // "Ask" stays the one dominant action on the row — decision 0108's
+    // own discipline, reused here rather than giving both equal weight.
+    expect(buttons[0].className).toContain("primary");
+    expect(buttons[1].className).not.toContain("primary");
   });
 
   it("resets the Q&A history back to the empty state", async () => {
