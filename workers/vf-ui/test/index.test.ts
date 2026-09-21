@@ -446,6 +446,18 @@ describe("the proxy carries every path a screen calls (decision 0131)", () => {
      */
     ["GET", "/api/executive/consolidated-spend"],
     /**
+     * The Multi-Enterprise CFO View's own remaining four
+     * data-buildable metrics — decision 0431. Each matches the
+     * `/^\/executive\/[^/]+$/` wildcard `/executive/consolidated-spend`
+     * was widened into for exactly this — confirmed directly with a
+     * real fetch against every one of them, not assumed from the
+     * pattern alone.
+     */
+    ["GET", "/api/executive/liabilities-by-entity"],
+    ["GET", "/api/executive/supplier-concentration"],
+    ["GET", "/api/executive/exception-trends"],
+    ["GET", "/api/executive/throughput"],
+    /**
      * Supplier Performance's own last two metrics, discount eligibility
      * and hold history — decision 0427. Each matches the same
      * `/^\/suppliers\/[^/]+$/` wildcard `/suppliers/spend` already does

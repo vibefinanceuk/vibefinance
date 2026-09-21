@@ -22,6 +22,10 @@ import { load as loadExceptionTrends, renderCard as exceptionTrendsCard } from "
 import { load as loadStatisticalOutliers, renderCard as statisticalOutliersCard } from "/fraud-statistical-outliers.js";
 import { load as loadSegregationOfDuties, renderCard as segregationOfDutiesCard } from "/fraud-segregation-of-duties.js";
 import { load as loadConsolidatedSpend, renderCard as consolidatedSpendCard } from "/executive-consolidated-spend.js";
+import { load as loadLiabilitiesByEntity, renderCard as liabilitiesByEntityCard } from "/executive-liabilities-by-entity.js";
+import { load as loadSupplierConcentration, renderCard as supplierConcentrationCard } from "/executive-supplier-concentration.js";
+import { load as loadExecutiveExceptionTrends, renderCard as executiveExceptionTrendsCard } from "/executive-exception-trends.js";
+import { load as loadExecutiveThroughput, renderCard as executiveThroughputCard } from "/executive-throughput.js";
 import { load as loadSupplierStatus, renderCard as supplierStatusCard } from "/supplier-status.js";
 import { load as loadSupplierCycleTime, renderCard as supplierCycleTimeCard } from "/supplier-cycle-time.js";
 import { load as loadSupplierExceptions, renderCard as supplierExceptionsCard } from "/supplier-exceptions.js";
@@ -115,16 +119,25 @@ import { renderPanel as assistantPanel } from "/ap-assistant.js";
  * banking-detail-change alerts, the design's own remaining Fraud & Risk
  * Detection metric, stays unbuilt — a real gap, not assumed solvable.
  *
- * **Executive IQ shows one real card, not the whole six-metric
- * screen** — decision 0425, "Consolidated spend across org units /
- * legal entities," the design's own first Multi-Enterprise CFO View
- * bullet, reusing the same `holdsEverywhere` gate the tab itself
- * already checks (see the route's own doc comment for the scoping
- * decision the design flagged and how it was resolved). Unlike every
- * other card on this screen, its own `load()` passes no `?org=` at
- * all — the whole point of this card is every entity at once, not
- * whichever one the switcher happens to be set to. The design's other
- * five Multi-Enterprise CFO View metrics stay unbuilt.
+ * **Executive IQ shows five real cards, one shy of the whole
+ * six-metric screen** — decisions 0425 and 0431: consolidated spend
+ * across org units / legal entities (0425), liabilities and accruals
+ * by entity, cross-entity supplier concentration (top 5 suppliers by
+ * spend per entity, flagged at 2+ entities — the operator's own
+ * answer to the one fork the design left open), cross-entity exception
+ * and fraud-signal trend, and cross-org throughput/workload comparison
+ * (0431's own four). Every one of the five reuses the same
+ * `holdsEverywhere` gate the tab itself already checks — including the
+ * fraud-signal trend, deliberately not re-gated on `AP.FraudReview`
+ * the way its Fraud Prevention counterpart is (see
+ * `executive-exception-trends-route.ts`'s own doc comment for why).
+ * Unlike every other card on every other tab, none of these five pass
+ * `?org=` at all — the whole point of this screen is every entity at
+ * once, not whichever one the switcher happens to be set to. Only
+ * "cash position across currencies" stays unbuilt — a genuine data
+ * gap, not assumed solvable: no table anywhere in this schema captures
+ * cash or bank balances, the same class of gap Financial Performance's
+ * own DPO/cash-flow-forecast/payment-history metrics already document.
  *
  * **The permission each tab actually checks matches its own route's
  * own gate, not the design document's own original proposal.**
@@ -269,11 +282,30 @@ async function tabContent(key) {
     ];
   }
   if (key === "executiveiq") {
-    // The Multi-Enterprise CFO View's own first real card — decision
-    // 0425. One card today, not the whole six-metric screen, the same
-    // "one real vertical slice first" discipline every other tab on
-    // this screen started with.
-    return (await loadConsolidatedSpend()) ? consolidatedSpendCard() : loadErrorCard();
+    // The Multi-Enterprise CFO View's own five data-buildable cards —
+    // decisions 0425 and 0431. Five of the design's own six key
+    // metrics now real; the sixth, cash position across currencies,
+    // stays unbuilt — no table anywhere in this schema captures cash
+    // or bank balances at all, the same class of gap Financial
+    // Performance's own DPO/cash-flow-forecast/payment-history metrics
+    // already document as not built rather than faked. The same "one
+    // screen's own fetch failing never hides another's real data"
+    // discipline `financial`, `supplier` and `fraud` already
+    // established.
+    const [spendOk, liabilitiesOk, concentrationOk, trendsOk, throughputOk] = await Promise.all([
+      loadConsolidatedSpend(),
+      loadLiabilitiesByEntity(),
+      loadSupplierConcentration(),
+      loadExecutiveExceptionTrends(),
+      loadExecutiveThroughput(),
+    ]);
+    return [
+      spendOk ? consolidatedSpendCard() : loadErrorCard(),
+      liabilitiesOk ? liabilitiesByEntityCard() : loadErrorCard(),
+      concentrationOk ? supplierConcentrationCard() : loadErrorCard(),
+      trendsOk ? executiveExceptionTrendsCard() : loadErrorCard(),
+      throughputOk ? executiveThroughputCard() : loadErrorCard(),
+    ];
   }
   if (key === "assistant") {
     // No load()/renderCard() split — see ap-assistant.js's own doc

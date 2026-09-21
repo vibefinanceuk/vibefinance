@@ -2,7 +2,7 @@
 
 **Written 4 September 2026, updated 17 September (six times), updated
 18 September (four times), updated 19 September (thirty-two times),
-updated 20 September (twenty-two times), updated 21 September (eight
+updated 20 September (twenty-two times), updated 21 September (nine
 times).**
 
 **For a session starting cold.** Where things stand, what needs a
@@ -32,16 +32,42 @@ twice.
 
 | | |
 | --- | --- |
-| `origin/main` | `eb921d1` — fetched directly by this session, matching this session's own commit exactly. Nothing from this session is outstanding. |
+| `origin/main` | `eb921d1` — fetched directly by this session, matching this session's own commit exactly. Decision 0431 (Executive IQ's remaining four metrics) is built and tested, in its own new commit on top, **not yet pushed**. |
 | vf-admin deployed | `8e27a34` · `https://admin.vibefinance-ai.com` · behind Cloudflare Access |
-| vf-app deployed | `eb921d1` confirmed — decisions 0429 (agreed payment means, a supplier-record placeholder), 0430 (Talk to an AP Expert, Screen 6), and all eight of 0430's own addenda, all confirmed |
-| vf-licence deployed | `eb921d1` per the operator's own reports; migrations `0140` and `0141` (Clear/Download button strings) both applied — the eighth addendum added no new migration |
-| vf-ui deployed | `eb921d1` · `https://app.vibefinance-ai.com` — operator's own reports |
+| vf-app deployed | `eb921d1` confirmed — decisions 0429 (agreed payment means, a supplier-record placeholder), 0430 (Talk to an AP Expert, Screen 6), and all eight of 0430's own addenda, all confirmed. Decision 0431's four new routes are built and tested locally, not yet deployed. |
+| vf-licence deployed | `eb921d1` per the operator's own reports; migrations `0140` and `0141` (Clear/Download button strings) both applied — the eighth addendum added no new migration. Migration `0142` (decision 0431's own strings) is built and tested locally, not yet applied. |
+| vf-ui deployed | `eb921d1` · `https://app.vibefinance-ai.com` — operator's own reports. Decision 0431's four new cards are built and tested locally, not yet deployed. |
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
-| `vf-app-poc` migrations | through `0074` applied and confirmed live — `0073` (decision 0429) is real schema; `0074` (decision 0430) is a documentation-only `ASSERT` restatement with no schema change, the same shape as `0071`; none of the eight addenda needed a new `vf-app` migration — their new tools, routes and (for the seventh) UI strings are gated by permissions already real, or live in `vf-licence`'s own migration chain |
-| `vf-licence-poc` migrations | through `0141` applied and confirmed live — the operator's own `apply_migrations.py --remote` run |
-| Tests | vf-admin 9 · vf-app 2429 (104 test files, 2428 confirmed by one unfiltered whole-suite run, +1 from the eighth addendum's own new test in `ap-assistant.test.ts`, confirmed by a targeted re-run of that one file rather than a second full pass) · vf-licence 320 (including migration `0141`) · vf-ui 74 Worker + 924 browser (unchanged by the eighth addendum — untouched by it) · shared 295 (+3 known pre-existing failures) |
-| Decision records | 430 |
+| `vf-app-poc` migrations | through `0074` applied and confirmed live — `0073` (decision 0429) is real schema; `0074` (decision 0430) is a documentation-only `ASSERT` restatement with no schema change, the same shape as `0071`; none of the eight addenda needed a new `vf-app` migration — their new tools, routes and (for the seventh) UI strings are gated by permissions already real, or live in `vf-licence`'s own migration chain. Decision 0431 also needed no new `vf-app` migration — its four new routes read existing tables only. |
+| `vf-licence-poc` migrations | through `0141` applied and confirmed live — the operator's own `apply_migrations.py --remote` run. `0142` (decision 0431) built and tested locally, not yet applied. |
+| Tests | vf-admin 9 · vf-app 2479 (108 test files, +50 from decision 0431's four new route test files, confirmed by one unfiltered whole-suite run) · vf-licence 320 (including migration `0142`, no new test file — migration-assertion coverage only) · vf-ui 74 Worker (unchanged in count — the widened `/executive/*` allow-list proven by new lines inside the existing `CALLED_BY_A_SCREEN` test) + 948 browser (924 + 23 in four new files, +1 net in `ap-analytics.test.ts`) · shared 295 (+3 known pre-existing failures) |
+| Decision records | 431 |
+
+**Decision 0431 (Executive IQ's remaining four data-buildable metrics
+— liabilities and accruals by entity, cross-entity supplier
+concentration, cross-entity exception and fraud-signal trend, and
+cross-org throughput/workload comparison) is built, tested, and
+documented — in its own new commit on top of `eb921d1`, not yet pushed
+or deployed.** Asked directly: *"are there any more dashboards to
+create in the AP Analytics screens?"*, then *"Please can you build
+'Executive IQ / Multi-Enterprise CFO View — 1 of 6 metrics built.
+Consolidated spend across org units/legal entities exists'"* — the
+operator's own choice once every screen's own build status was laid
+out. One real fork went to the operator first: cross-entity supplier
+concentration's own "top vendor" definition and flag threshold,
+answered **top 5 per entity, flagged at 2 or more entities**. Every
+new route reuses decision 0425's own resolved scoping question
+unchanged — `AP.Analysis` + `holdsEverywhere`, no `currentOrg`
+narrowing, grouped by the invoice's own recorded `org_unit_id`, never
+summed across currencies, uncapped. **Cash position across
+currencies, the design's own sixth and last key metric for this
+screen, was checked directly and confirmed unbuildable** — no table
+anywhere in the schema captures a cash or bank balance, the same class
+of gap Financial Performance's own DPO/cash-flow-forecast/payment-
+history metrics already document — and is left honestly not built
+rather than faked. Executive IQ now shows five of the design's own six
+key metrics. See decision 0431 for the full reasoning, every route and
+card, and the complete test breakdown.
 
 **Decisions 0429 (agreed payment means, a supplier-record placeholder),
 0430 (Talk to an AP Expert, Screen 6), and all eight of 0430's own

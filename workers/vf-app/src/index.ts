@@ -17,6 +17,10 @@ import { handleAccruals } from "./accruals-route.js";
 import { handleOverdueBalance } from "./overdue-balance-route.js";
 import { handleSpendUnderManagement } from "./spend-under-management-route.js";
 import { handleExecutiveConsolidatedSpend } from "./executive-consolidated-spend-route.js";
+import { handleExecutiveLiabilitiesByEntity } from "./executive-liabilities-by-entity-route.js";
+import { handleExecutiveSupplierConcentration } from "./executive-supplier-concentration-route.js";
+import { handleExecutiveExceptionTrends } from "./executive-exception-trends-route.js";
+import { handleExecutiveThroughput } from "./executive-throughput-route.js";
 import { handlePossibleDuplicates } from "./fraud-duplicates-route.js";
 import { handleUnapprovedSuppliers } from "./fraud-unapproved-suppliers-route.js";
 import { handleFraudExceptionTrends } from "./fraud-exception-trends-route.js";
@@ -1455,6 +1459,93 @@ export default {
       }
 
       const result = await handleExecutiveConsolidatedSpend(db);
+      return json(result.body, result.status);
+    }
+
+    /**
+     * **Liabilities and accruals by entity — decision 0431.** The
+     * Multi-Enterprise CFO View's second real metric. Same two-part
+     * gate as `/executive/consolidated-spend`, checked again here —
+     * see that route's own doc comment for why.
+     */
+    if (pathname === "/executive/liabilities-by-entity" && request.method === "GET") {
+      const { db } = resolveTenant(request, env);
+      const auth = await authenticatePerson(db, request, env);
+      if (!auth.user) return json({ error: auth.reason }, 401);
+      if (!(await hasPermission(db, auth.user.id, "AP.Analysis"))) {
+        return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
+      }
+      const { holdsEverywhere } = await unitsFor(db, auth.user.id);
+      if (!holdsEverywhere) {
+        return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
+      }
+
+      const result = await handleExecutiveLiabilitiesByEntity(db);
+      return json(result.body, result.status);
+    }
+
+    /**
+     * **Cross-entity supplier concentration — decision 0431.** The
+     * Multi-Enterprise CFO View's third real metric. Same two-part
+     * gate as `/executive/consolidated-spend`.
+     */
+    if (pathname === "/executive/supplier-concentration" && request.method === "GET") {
+      const { db } = resolveTenant(request, env);
+      const auth = await authenticatePerson(db, request, env);
+      if (!auth.user) return json({ error: auth.reason }, 401);
+      if (!(await hasPermission(db, auth.user.id, "AP.Analysis"))) {
+        return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
+      }
+      const { holdsEverywhere } = await unitsFor(db, auth.user.id);
+      if (!holdsEverywhere) {
+        return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
+      }
+
+      const result = await handleExecutiveSupplierConcentration(db);
+      return json(result.body, result.status);
+    }
+
+    /**
+     * **Cross-entity exception and fraud-signal trend — decision
+     * 0431.** The Multi-Enterprise CFO View's fourth real metric.
+     * Gated `AP.Analysis` + `holdsEverywhere`, not `AP.FraudReview` —
+     * the route's own doc comment explains why this card, unlike its
+     * Fraud Prevention counterpart, follows the tab's own single gate.
+     */
+    if (pathname === "/executive/exception-trends" && request.method === "GET") {
+      const { db } = resolveTenant(request, env);
+      const auth = await authenticatePerson(db, request, env);
+      if (!auth.user) return json({ error: auth.reason }, 401);
+      if (!(await hasPermission(db, auth.user.id, "AP.Analysis"))) {
+        return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
+      }
+      const { holdsEverywhere } = await unitsFor(db, auth.user.id);
+      if (!holdsEverywhere) {
+        return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
+      }
+
+      const result = await handleExecutiveExceptionTrends(db);
+      return json(result.body, result.status);
+    }
+
+    /**
+     * **Cross-org throughput/workload comparison — decision 0431.**
+     * The Multi-Enterprise CFO View's fifth and last data-buildable
+     * metric. Same two-part gate as `/executive/consolidated-spend`.
+     */
+    if (pathname === "/executive/throughput" && request.method === "GET") {
+      const { db } = resolveTenant(request, env);
+      const auth = await authenticatePerson(db, request, env);
+      if (!auth.user) return json({ error: auth.reason }, 401);
+      if (!(await hasPermission(db, auth.user.id, "AP.Analysis"))) {
+        return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
+      }
+      const { holdsEverywhere } = await unitsFor(db, auth.user.id);
+      if (!holdsEverywhere) {
+        return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
+      }
+
+      const result = await handleExecutiveThroughput(db);
       return json(result.body, result.status);
     }
 

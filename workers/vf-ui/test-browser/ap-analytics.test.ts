@@ -254,6 +254,23 @@ const STRINGS = {
     "executiveiq.noconsolidatedspend": "No priced, placed invoices yet",
     "executiveiq.legalentity": "Legal entity",
     "executiveiq.operatingunit": "Operating unit",
+    // Executive IQ's remaining four real cards — decision 0431.
+    "executiveiq.liabilitiesbyentity": "Liabilities and accruals by entity",
+    "executiveiq.liabilitiesbyentitysub": "Every entity, by currency",
+    "executiveiq.noliabilitiesbyentity": "No accruing invoices yet",
+    "executiveiq.supplierconcentration": "Cross-entity supplier concentration",
+    "executiveiq.supplierconcentrationsub": "Suppliers ranking as a top-5 vendor in 2 or more entities",
+    "executiveiq.nosupplierconcentration": "No supplier ranks as a top vendor in more than one entity",
+    "executiveiq.supplier": "Supplier",
+    "executiveiq.entitycount": "Entities",
+    "executiveiq.entities": "Appears as a top vendor in",
+    "executiveiq.exceptiontrendsbyentity": "Cross-entity exception and fraud-signal trend",
+    "executiveiq.exceptiontrendsbyentitysub": "Every entity, trended over 8 weeks",
+    "executiveiq.noexceptiontrendsbyentity": "No exceptions in the last 8 weeks",
+    "executiveiq.entity": "Entity",
+    "executiveiq.throughputbyentity": "Cross-org throughput/workload comparison",
+    "executiveiq.throughputbyentitysub": "Tasks completed in the last 7 days, by entity",
+    "executiveiq.nothroughputbyentity": "No tasks completed in the last 7 days",
     // Talk to an AP Expert — decision 0430, Screen 6, the sixth tab.
     "apassistant.heading": "Talk to an AP Expert",
     "apassistant.sub": "Ask a plain question about supplier spend, overdue balances, accruals, or exceptions",
@@ -346,6 +363,10 @@ async function openApAnalytics(
     "/api/fraud/statistical-outliers": { invoices: [] },
     "/api/fraud/segregation-of-duties": { invoices: [] },
     "/api/executive/consolidated-spend": { currencies: [] },
+    "/api/executive/liabilities-by-entity": { currencies: [] },
+    "/api/executive/supplier-concentration": { suppliers: [] },
+    "/api/executive/exception-trends": { weekStartDates: [], byEntity: [] },
+    "/api/executive/throughput": { entities: [] },
     ...extraRoutes,
   });
   const { loadStrings } = await import("/strings.js");
@@ -557,22 +578,50 @@ describe("real tabs wire to the already-tested module behind them, placeholders 
     expect(headings).not.toContain("Spend by supplier");
   });
 
-  it("Executive IQ renders its own real card, decision 0425 — no longer a placeholder", async () => {
+  it("Executive IQ renders five of its own cards, decision 0431 — five of the design's own six key metrics, now real", async () => {
     await openApAnalytics(["AP.Analysis", "AP.FraudReview"], { holdsEverywhere: true });
 
     await switchTab("Executive IQ");
     expect(document.body.textContent).not.toContain("Not built yet");
-    expect(document.querySelector(".cardhead h3")?.textContent).toBe(
-      "Consolidated spend across org units / legal entities"
-    );
+    const headings = [...document.querySelectorAll(".cardhead h3")].map((h) => h.textContent);
+    expect(headings).toEqual([
+      "Consolidated spend across org units / legal entities",
+      "Liabilities and accruals by entity",
+      "Cross-entity supplier concentration",
+      "Cross-entity exception and fraud-signal trend",
+      "Cross-org throughput/workload comparison",
+    ]);
     expect(document.body.textContent).toContain("No priced, placed invoices yet");
   });
 
-  it("shows a real error for Executive IQ too, when its own fetch fails", async () => {
+  it("Executive IQ's five cards fail independently — one's own load failure never hides the others' real content", async () => {
     await openApAnalytics(
       ["AP.Analysis", "AP.FraudReview"],
       { holdsEverywhere: true },
-      { "/api/executive/consolidated-spend": { ok: false, status: 500 } }
+      { "/api/executive/supplier-concentration": { ok: false, status: 500 } }
+    );
+
+    await switchTab("Executive IQ");
+    expect(document.body.textContent).toContain("Could not load this tab right now");
+    const headings = [...document.querySelectorAll(".cardhead h3")].map((h) => h.textContent);
+    expect(headings).toContain("Consolidated spend across org units / legal entities");
+    expect(headings).toContain("Liabilities and accruals by entity");
+    expect(headings).toContain("Cross-entity exception and fraud-signal trend");
+    expect(headings).toContain("Cross-org throughput/workload comparison");
+    expect(headings).not.toContain("Cross-entity supplier concentration");
+  });
+
+  it("shows a real error for Executive IQ too, when every one of its own fetches fails", async () => {
+    await openApAnalytics(
+      ["AP.Analysis", "AP.FraudReview"],
+      { holdsEverywhere: true },
+      {
+        "/api/executive/consolidated-spend": { ok: false, status: 500 },
+        "/api/executive/liabilities-by-entity": { ok: false, status: 500 },
+        "/api/executive/supplier-concentration": { ok: false, status: 500 },
+        "/api/executive/exception-trends": { ok: false, status: 500 },
+        "/api/executive/throughput": { ok: false, status: 500 },
+      }
     );
 
     await switchTab("Executive IQ");

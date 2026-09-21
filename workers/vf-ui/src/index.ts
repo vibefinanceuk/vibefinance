@@ -274,9 +274,20 @@ const PROXIED_TO_INSTANCE: RegExp[] = [
    * 0425.** The Multi-Enterprise CFO View's first real metric. Checked
    * directly again, the same discipline decisions 0418–0424 already
    * established for this exact recurring gap: `/executive/consolidated-
-   * spend` matches no existing wildcard either.
+   * spend` matched no existing wildcard either.
+   *
+   * **Widened to a wildcard — decision 0431.** The Multi-Enterprise
+   * CFO View's remaining four data-buildable metrics each add their
+   * own `/executive/<name>` route; a single exact match would have
+   * needed four more entries for the identical family this codebase
+   * already has a pattern for (`/^\/workload\/[^/]+$/` above, widened
+   * for the same reason by decision 0428). One wildcard, matching
+   * every `/executive/*` path this screen calls, checked directly with
+   * a real fetch against each of the five paths it covers rather than
+   * assumed from the pattern alone — `test/index.test.ts`'s own
+   * `CALLED_BY_A_SCREEN` list.
    */
-  /^\/executive\/consolidated-spend$/,
+  /^\/executive\/[^/]+$/,
   /^\/suppliers$/,
   /^\/suppliers\/load$/,
   // Finding and choosing a supplier by hand (decision 0222).

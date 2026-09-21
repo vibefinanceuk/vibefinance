@@ -1095,6 +1095,75 @@ follow. No change to the underlying data — only the phrasing
 instruction was missing. See decision 0430's own eighth addendum
 section for the full reasoning and tests.
 
+### Liabilities by entity, supplier concentration, exception trends, and throughput — the Multi-Enterprise CFO View's remaining four data-buildable metrics (0431)
+- **"Are there any more dashboards to create in the AP Analytics
+  screens?"** — asked once decision 0430's eighth addendum shipped,
+  pushed, deployed, and confirmed directly against a live-test
+  transcript. A full per-screen breakdown against the design's own key-
+  metrics lists was given; the operator chose Executive IQ / Multi-
+  Enterprise CFO View's own remaining metrics.
+- **Cash position across currencies, checked and confirmed
+  unbuildable before anything else was built.** `grep -rn "CREATE
+  TABLE" migrations/*.sql | grep -iE "cash|bank|balance"` finds
+  nothing — no table anywhere captures a cash or bank balance, the same
+  class of gap Financial Performance's own
+  DPO/cash-flow-forecast/payment-history metrics already document.
+  Left not built, honestly, rather than approximated.
+- **One real fork the design left open, put to the operator directly:**
+  cross-entity supplier concentration's own "top vendor" definition and
+  flag threshold. Offered top-3-flag-at-2, top-5-flag-at-2
+  (recommended), and top-10-flag-at-3; the operator chose **top 5 per
+  entity, flagged at 2 or more entities**.
+- **The scoping decision decision 0425 already made, reused unchanged
+  four more times**: no `currentOrg` narrowing, `AP.Analysis` +
+  `holdsEverywhere` gated in `index.ts`, grouped by the invoice's own
+  recorded `org_unit_id` (excluded, not guessed, when unrecorded),
+  never summed across currencies, uncapped rather than top-N. One
+  deliberate exception: the fraud-signal trend is gated on the tab's
+  own single gate, not re-gated `AP.FraudReview` the way its Fraud
+  Prevention counterpart is — a second gate on one of five cards would
+  mean a mysterious gap on the fifth for someone who can see the other
+  four.
+- **`executive-liabilities-by-entity-route.ts`, new** — decision
+  0417's own accrual definition, grouped by entity; one total and
+  invoice count per entity, deliberately not a further stage breakdown
+  (a wall-of-numbers across a few dozen entities the design's own "roll
+  up" language exists to avoid).
+- **`executive-supplier-concentration-route.ts`, new** — top 5
+  suppliers by spend per `(entity, currency)`, flagged once a supplier
+  appears in 2 or more distinct entities' own top 5; only flagged
+  suppliers returned, since the overlap is the deliverable, not the
+  full working set. An unmatched invoice (`supplier_id IS NULL`) is
+  excluded entirely, unlike decision 0423's own shared "unmatched"
+  bucket — concentration needs a named, stable identity.
+- **`executive-exception-trends-route.ts`, new** — decision 0423's own
+  exception definition and eight-week trend window, grouped by entity
+  instead of supplier/user/type, uncapped.
+- **`executive-throughput-route.ts`, new** — `workload-route.ts`'s own
+  "completed in the last 7 days" definition, grouped by entity, with no
+  stage bucketing — the same "compare entities, not stages within one"
+  call the liabilities route already makes.
+- Four new UI cards (`executive-liabilities-by-entity.js`,
+  `executive-supplier-concentration.js` — a table, not a bar list, the
+  first card on this screen to need one — `executive-exception-
+  trends.js`, `executive-throughput.js`). `ap-analytics.js`'s
+  `executiveiq` branch changed from one card to a five-card
+  `Promise.all`, the same independent-failure discipline `financial`,
+  `supplier`, and `fraud` already established.
+- The proxy allow-list's own `/^\/executive\/consolidated-spend$/`
+  widened to `/^\/executive\/[^/]+$/`, the same wildcard-widening
+  decision 0428 already did for `/workload/*`. New migration `0142`,
+  reusing three existing string keys rather than duplicating them.
+  `vitest.browser.config.ts`'s own hand-maintained alias list needed
+  four new entries — without them every test in `ap-analytics.test.ts`
+  fails at import time, caught by running the browser suite rather than
+  assumed working from the Worker suite alone.
+- **Executive IQ now shows five of the design's own six key metrics —
+  one short, the same "one metric short" position Financial Performance
+  and Fraud Prevention are each already in for their own reasons.**
+  Supplier Performance remains the only screen at full parity. See
+  decision 0431 for the full reasoning and tests.
+
 ### Purchase orders and matching
 - Purchase order storage grounded in Peppol BIS Order Only 3.3, via UBL
   XML ingestion (0081) and CSV load (0370) — the same tables, the same
