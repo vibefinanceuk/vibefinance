@@ -2,7 +2,7 @@
 
 **Written 4 September 2026, updated 17 September (six times), updated
 18 September (four times), updated 19 September (thirty-two times),
-updated 20 September (twenty-two times), updated 21 September (three
+updated 20 September (twenty-two times), updated 21 September (four
 times).**
 
 **For a session starting cold.** Where things stand, what needs a
@@ -32,16 +32,73 @@ twice.
 
 | | |
 | --- | --- |
-| `origin/main` | `96c7eae` — fetched directly by this session after decision 0427 shipped, confirmed matching local `main` exactly |
+| `origin/main` | `7fd97e0` — fetched directly by this session, matching decision 0428's own commit exactly, confirming the operator's own "deployed and pushed" report |
 | vf-admin deployed | `8e27a34` · `https://admin.vibefinance-ai.com` · behind Cloudflare Access |
-| vf-app deployed | `96c7eae` (operator's own report, then "I put a supplier on hold and it applied to the list") |
-| vf-licence deployed | `96c7eae` (operator's own report; migration `0138` below is now applied) |
-| vf-ui deployed | `96c7eae` · `https://app.vibefinance-ai.com` — operator's own report |
+| vf-app deployed | `7fd97e0` (decision 0428) per the operator's own report; the addendum fix (`0c646a7`, bundle `0640`) not yet confirmed deployed |
+| vf-licence deployed | `7fd97e0` per the operator's own report; migration `0139` below is now applied |
+| vf-ui deployed | `7fd97e0` · `https://app.vibefinance-ai.com` — operator's own report |
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
-| `vf-app-poc` migrations | through `0072` applied and confirmed live — the operator's own `apply_migrations.py --remote` run, after the two new cards first failed without it (see decision 0427 below) |
-| `vf-licence-poc` migrations | through `0138` applied and confirmed live |
-| Tests | vf-admin 9 · vf-app 2233 · vf-licence 320 · vf-ui 74 Worker + 873 browser · shared 287 (+3 known pre-existing failures) |
-| Decision records | 427 |
+| `vf-app-poc` migrations | through `0072` applied and confirmed live — no new `vf-app` migration in decision 0428 |
+| `vf-licence-poc` migrations | through `0139` applied and confirmed live — the operator's own `apply_migrations.py --remote` run |
+| Tests | vf-admin 9 · vf-app 2289 · vf-licence 320 · vf-ui 74 Worker + 915 browser · shared 287 (+3 known pre-existing failures) |
+| Decision records | 428 |
+
+**Decision 0428 (Workload's remaining seven metrics — the screen's own
+full parity, six of seven whole) is pushed and deployed, confirmed
+directly.** `origin/main` fetched directly reads `7fd97e0`, matching
+this session's own commit exactly. "shall we tackle - User & Team
+Workload 1/8. - 7 metrics, none previously tracked" — the operator's
+own instruction; Workload's own count against its own design list had
+never actually been checked before decision 0426's own correction, and
+only "Throughput by user, stacked by stage" (0415) existed of its own
+eight. Built all seven together, the operator's own choice over one at
+a time. One genuine structural gap surfaced before building: "tasks
+pending action and approaching/past due" needs a per-task due date,
+and none exists anywhere in this schema — `hold_until` is a fired rule
+action logged against an *invoice*, never a queryable column on a
+*task*, confirmed by grepping the whole codebase. The operator chose
+to build "pending over a period" only, honestly leaving "approaching/
+past due" unbuilt rather than held back entirely. Seven new
+`AP.Analysis`-gated routes, no new `vf-app` migration (reuses
+`tasks`/`org_teams`/`stage_visits`); `vf-ui`'s `PROXIED_TO_INSTANCE`
+wildcard widened rather than extended with seven exact-match entries,
+matching the `/suppliers/[^/]+$/` precedent; new `vf-licence` strings
+migration `0139` (34 keys, 68 rows). Full local test suites all clean:
+`vf-app` 2233 → 2287 (54 new), `vf-ui` browser 873 → 915 (42 new),
+`vf-licence` 320 (migration `0139`, no new test file). `eslint .` and
+`tsc --noEmit` clean.
+
+**A real scoping bug found live and fixed in the same cycle, addendum
+to 0428.** The operator's own confirmation of the deploy came with a
+screenshot: the Workload Balance card showing the same person, "Alice
+McDonald," with an identical count in every one of seven teams —
+"the chart seems to show replication though." Investigated directly
+rather than patched on sight: `org_team_members` was joined correctly
+per team, so the memberships were real, not duplicated — the *count*
+beside each name was the bug, global (a member's whole open workload,
+anywhere) rather than scoped to the team the card was showing, exactly
+as this decision's own first build intended but not as the operator
+expected once seen live. Put to the operator directly: team
+memberships confirmed real (expected for an early pilot with one
+person staffed across every team); the operator chose to scope each
+team's own count to tasks that team itself owns
+(`t.owner_team_id = tm.id`, the same column `workload/queue-depth`
+already reads) over keeping the whole-workload reading. Two new tests
+prove it: a member on two real teams now shows a different, smaller
+count in each; a task with no owning team at all is honestly excluded
+even when it's genuinely that member's own. `vf-app` 2287 → 2289 (2
+new); `vf-ui` unaffected (backend-only fix, no response shape
+changed). `eslint`/`tsc` clean. Delivered as bundle `0640`
+(base `7fd97e0`) — **not yet confirmed pushed or deployed**; the
+operator's own confirmation above covers decision 0428's original
+build only.
+
+Workload now has six of its own eight key metrics built whole and a
+seventh built half (pending-over-a-period, honestly not approaching/
+past-due) — the second of the design's six dashboard screens (after
+Supplier Performance) to reach practical parity with its own design
+list. See decision 0428's own doc, including its addendum, for the
+full reasoning, and `docs/PROGRESS.md` for the durable record.
 
 **Decision 0427 (early-payment discount eligibility and hold
 history — Supplier Performance's last two metrics) is pushed and
