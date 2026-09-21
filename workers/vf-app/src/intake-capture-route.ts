@@ -44,6 +44,36 @@ interface CaptureIntakeBody {
   /** Set when extraction capped the line list, so line_sum knows not
    *  to run against an incomplete one. */
   linesTruncated?: unknown;
+  /**
+   * **Facts a caller can only compute once it has seen this
+   * document's own facts** — decision 0434's own hook.
+   *
+   * `po.matched` (decision 0370, just below) is "computed fresh here,
+   * not read from anywhere stored" for a reason: a rule at the FIRST
+   * stage this instance ever visits needs today's answer, not
+   * whatever was true when nobody had looked yet. Org placement and
+   * supplier matching (decisions 0111/0209, both wired through
+   * `source-capture-route.ts`) make the identical argument but were
+   * never given the identical treatment — they were computed and
+   * written to `invoice_headers` only AFTER this function's own first
+   * `visitCurrentStage` call had already returned, so a Validation-
+   * stage rule testing `supplier.unmatchedReason` was refused the one
+   * fact it exists to test, on every single invoice, every time.
+   * Confirmed live: an email-captured invoice with an ambiguous
+   * supplier match reached payment-eligible with a brand-new,
+   * correctly-written Validation rule in place, because the fact that
+   * rule tested did not exist yet at the moment Validation was
+   * evaluated — it was still being computed, by code that ran later
+   * in the same request.
+   *
+   * Optional and additive: called with `mergedFacts` immediately
+   * before the first visit, its result merged on top. A caller with
+   * nothing further to add — every existing caller before this
+   * decision, including the direct `/capture-xml` and `/capture-image`
+   * API routes, which have no "source" and so nothing to derive —
+   * simply never supplies one, and behaves exactly as before.
+   */
+  enrichFacts?: (facts: InvoiceFacts) => Promise<Record<string, unknown>>;
   [key: string]: unknown;
 }
 
@@ -98,7 +128,7 @@ export async function handleCaptureIntake(db: D1Database, channelId: string, bod
     return { status: 404, body: { error: `intake channel ${channelId} does not exist` } };
   }
 
-  const { id, subjectType, mandateChannel, facts } = body;
+  const { id, subjectType, mandateChannel, facts, enrichFacts } = body;
   if (typeof id !== "string" || !id) {
     await recordCaptureEvent(db, channelId, "rejected", "id (string) is required", null);
     return { status: 400, body: { error: "id (string) is required" } };
@@ -168,8 +198,17 @@ export async function handleCaptureIntake(db: D1Database, channelId: string, bod
   // this invoice, and a rule at the Matching stage needs today's
   // answer, not the one true at capture.
   const poMerged = await mergePoMatchFacts(db, structuredFacts, canonicalLines ?? []);
-  const mergedFacts = poMerged.headerFacts;
+  let mergedFacts = poMerged.headerFacts;
   const lines = canonicalLines ? poMerged.lines : undefined;
+  // Org placement / supplier matching / anything else a caller can only
+  // derive from this document's own facts — decision 0434. Same
+  // reasoning as po.matched just above, given to a caller-supplied hook
+  // rather than built in here, since org and supplier are source-transport
+  // concerns (decision 0111's own words) and this function serves every
+  // capture path, most of which have no source at all.
+  if (typeof enrichFacts === "function") {
+    mergedFacts = { ...mergedFacts, ...(await enrichFacts(mergedFacts)) };
+  }
   // The channel's own currency tolerance reaches validation here —
   // decision 0057. Every capture path (XML, hybrid PDF, image,
   // multi-page finalise) converges on this function, so loading it
@@ -255,7 +294,11 @@ export async function handleCaptureUblXml(
   db: D1Database,
   channelId: string,
   xml: string,
-  idOverride?: string
+  idOverride?: string,
+  // Decision 0434's own hook, forwarded through unchanged — see
+  // CaptureIntakeBody.enrichFacts. Every existing caller (the direct
+  // /capture-xml API route included) omits this and is unaffected.
+  enrichFacts?: CaptureIntakeBody["enrichFacts"]
 ): Promise<RouteResult> {
   let parsed: { facts: InvoiceFacts; lines: Array<InvoiceFacts & { lineNumber: number }> };
   try {
@@ -293,6 +336,7 @@ export async function handleCaptureUblXml(
     totalWithVat: facts["BT-112"] as number | undefined,
     facts,
     lines,
+    enrichFacts,
   });
 }
 
@@ -425,7 +469,11 @@ export async function handleCaptureImage(
   channelId: string,
   bytes: Uint8Array,
   model: ExtractionModel,
-  idOverride?: string
+  idOverride?: string,
+  // Decision 0434's own hook, forwarded through unchanged — see
+  // CaptureIntakeBody.enrichFacts. Every existing caller (the direct
+  // /capture-image API route included) omits this and is unaffected.
+  enrichFacts?: CaptureIntakeBody["enrichFacts"]
 ): Promise<RouteResult> {
   const channel = await db.prepare("SELECT id FROM intake_channels WHERE id = ?").bind(channelId).first();
   if (!channel) {
@@ -506,6 +554,7 @@ export async function handleCaptureImage(
     // against an image-captured invoice at all.
     lines: extractedLines,
     linesTruncated,
+    enrichFacts,
   });
 
   if (result.status === 201) {

@@ -56,6 +56,87 @@ async function channelFor(
     .first<ChannelRow>();
 }
 
+/**
+ * **Decision 0434 — org placement and supplier matching, in time to
+ * matter.**
+ *
+ * `handleCaptureIntake` (`intake-capture-route.ts`) visits a fresh
+ * instance's first stage(s) **before this function ever runs** — the
+ * block below this one computes org placement and supplier matching
+ * only *after* `handleCaptureUblXml` / `capturePreExtractedXml` /
+ * `handleCaptureImage` has already returned, and writes them straight
+ * to `invoice_headers` for display. That was always too late: a
+ * cascading visit can carry a fresh instance clean through Validation,
+ * Matching, Coding and Approval to `completed` in that one call, and
+ * once it has, nothing revisits it. Confirmed live: an emailed invoice
+ * with an ambiguous supplier match reached payment-eligible with a
+ * correctly-written Validation-stage rule already in place, because
+ * `supplier.unmatchedReason` did not exist yet at the moment that rule
+ * was evaluated.
+ *
+ * This is the same computation, handed to `handleCaptureIntake`'s own
+ * `enrichFacts` hook instead, so it runs on the facts a rule actually
+ * sees — before the first visit, not after. **The block below still
+ * runs too**, and still owns the durable `invoice_headers` columns
+ * (`org_unit_id`, `supplier_id`, `on_hold`, …) that outlive any one
+ * request; this only closes the gap for the rule engine itself. The
+ * two are kept deliberately parallel — a change to one almost always
+ * wants the other.
+ */
+function buildIntakeEnricher(
+  db: D1Database,
+  source: SourceRow
+): (facts: Record<string, unknown>) => Promise<Record<string, unknown>> {
+  return async (facts) => {
+    const extra: Record<string, unknown> = {};
+
+    // Org placement — decision 0111: the source's own default first,
+    // and only where it has none does the document get read at all.
+    let orgUnitId = source.default_org_unit_id;
+    if (!orgUnitId) {
+      const derived = await deriveOrgUnit(db, facts);
+      orgUnitId = derived.unitId;
+      if (derived.reason) extra["org.unplaced"] = derived.reason;
+    }
+
+    // Supplier matching — decision 0209, org-aware since 0317.
+    const matched = await matchSupplier(db, facts, orgUnitId);
+    extra["supplier.matched"] = matched.supplierId !== null;
+    extra["supplier.listLoadedAt"] = matched.listLoadedAt;
+    if (matched.reason) extra["supplier.unmatchedReason"] = matched.reason;
+
+    // What the matched supplier's own record says — decisions 0230,
+    // 0231, 0238. False/absent where nothing matched, the same
+    // "matched and payable are two claims" distinction the block below
+    // already makes.
+    const state = matched.supplierId
+      ? await db
+          .prepare(
+            `SELECT on_hold, erp_identifier, payment_terms, match_option,
+                    amount_tolerance_pct, quantity_tolerance_pct
+             FROM suppliers WHERE id = ?`
+          )
+          .bind(matched.supplierId)
+          .first<{
+            on_hold: number;
+            erp_identifier: string | null;
+            payment_terms: string | null;
+            match_option: string | null;
+            amount_tolerance_pct: number | null;
+            quantity_tolerance_pct: number | null;
+          }>()
+      : null;
+    extra["supplier.onHold"] = state?.on_hold === 1;
+    extra["supplier.awaitingErp"] = state ? !state.erp_identifier : false;
+    extra["supplier.paymentTerms"] = state?.payment_terms ?? null;
+    extra["supplier.matchOption"] = state ? state.match_option ?? "none" : null;
+    extra["supplier.amountTolerancePct"] = state?.amount_tolerance_pct ?? null;
+    extra["supplier.quantityTolerancePct"] = state?.quantity_tolerance_pct ?? null;
+
+    return extra;
+  };
+}
+
 export interface RetentionOutcome {
   retained: boolean;
   /** Present when retained: what the document was stored as. */
@@ -296,15 +377,20 @@ export async function handleCaptureFromSource(
   // Dispatch. Each branch delegates to the handler that already exists
   // and is already proven — this route decides WHICH, and adds no
   // extraction logic of its own.
+  // Decision 0434: org placement and supplier matching, computed from
+  // this document's own facts in time for the first stage visit —
+  // see buildIntakeEnricher's own comment for why this exists.
+  const enricher = buildIntakeEnricher(db, source);
+
   let result: RouteResult;
   if (detection.structure === "structured_pdfa") {
     // The embedded XML is already in hand from detection, so it is
     // parsed here rather than extracted a second time.
-    result = await capturePreExtractedXml(db, channel.id, detection.embeddedXml as string, attempted, idOverride);
+    result = await capturePreExtractedXml(db, channel.id, detection.embeddedXml as string, attempted, idOverride, enricher);
   } else if (detection.structure === "structured_xml") {
-    result = await handleCaptureUblXml(db, channel.id, new TextDecoder().decode(bytes), idOverride);
+    result = await handleCaptureUblXml(db, channel.id, new TextDecoder().decode(bytes), idOverride, enricher);
   } else {
-    result = await handleCaptureImage(db, channel.id, bytes, model, idOverride);
+    result = await handleCaptureImage(db, channel.id, bytes, model, idOverride, enricher);
 
     /**
      * A model that never answered keeps the document — decision 0163.
@@ -611,7 +697,8 @@ async function capturePreExtractedXml(
   channelId: string,
   xml: string,
   attempted: string,
-  idOverride?: string
+  idOverride?: string,
+  enrichFacts?: (facts: Record<string, unknown>) => Promise<Record<string, unknown>>
 ): Promise<RouteResult> {
   let parsed;
   try {
@@ -640,6 +727,7 @@ async function capturePreExtractedXml(
       "intake.attempted": attempted,
     },
     lines: parsed.lines,
+    enrichFacts,
   } as Parameters<typeof handleCaptureIntake>[2]);
   return withIntakeFacts(result, "structured_pdfa", attempted);
 }
@@ -695,6 +783,13 @@ async function captureWithoutFacts(
       // between a diagnosis and a list of questions.
       "intake.detail": detailOfAttempts(detail),
     },
+    // No BT-* facts exist on this path, so matchSupplier's own first
+    // branch always answers "no_identifier" regardless of timing —
+    // wired in anyway, for the same reason decision 0434 wires in
+    // every other path: consistency, and so supplier.matched reaches
+    // Validation the moment this instance exists rather than a beat
+    // later.
+    enrichFacts: buildIntakeEnricher(db, source),
   } as Parameters<typeof handleCaptureIntake>[2]);
 
   if (result.status >= 400) return result;

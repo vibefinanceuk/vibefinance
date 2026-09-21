@@ -2,7 +2,7 @@
 
 **Written 4 September 2026, updated 17 September (six times), updated
 18 September (four times), updated 19 September (thirty-two times),
-updated 20 September (twenty-two times), updated 21 September (fourteen
+updated 20 September (twenty-two times), updated 21 September (fifteen
 times).**
 
 **For a session starting cold.** Where things stand, what needs a
@@ -32,16 +32,52 @@ twice.
 
 | | |
 | --- | --- |
-| `origin/main` | `a3d5ab1` — fetched directly by this session, matching this session's own commit exactly. Decision 0433 (the manual supplier search ranks by the invoice's own org) is confirmed pushed and deployed. **Nothing from this session is currently outstanding.** |
+| `origin/main` | `a3d5ab1` — fetched directly by this session, matching this session's own commit exactly. Decision 0433 (the manual supplier search ranks by the invoice's own org) is confirmed pushed and deployed. **Decision 0434 (org placement and supplier matching now reach the first stage visit) is built, tested, and documented on top of that, not yet pushed or deployed.** |
 | vf-admin deployed | `8e27a34` · `https://admin.vibefinance-ai.com` · behind Cloudflare Access |
 | vf-app deployed | `a3d5ab1` confirmed — decisions 0429 (agreed payment means, a supplier-record placeholder), 0430 (Talk to an AP Expert, Screen 6) with all eight of its own addenda, 0431 (Executive IQ's remaining four metrics), 0432 with its own addendum, and 0433 (org-ranked supplier search), all confirmed. |
 | vf-licence deployed | `a3d5ab1` per the operator's own reports; migrations `0140` through `0143` all applied — `0143` is decision 0433's own string. Decision 0432 and its own addendum both added no new migration. |
 | vf-ui deployed | `a3d5ab1` · `https://app.vibefinance-ai.com` — operator's own reports, confirmed directly: *"deployed and pushed"* against the icon buttons live, then, with a screenshot, *"the icons are a little lower or the text box is higher. They seem a little un-aligned"*, then *"pushed and deployed"* again confirming the alignment-fix addendum live, then *"deployed and pushed"* once more confirming decision 0433's own org-ranked supplier search live. |
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
-| `vf-app-poc` migrations | through `0074` applied and confirmed live — `0073` (decision 0429) is real schema; `0074` (decision 0430) is a documentation-only `ASSERT` restatement with no schema change, the same shape as `0071`; none of 0430's eight addenda needed a new `vf-app` migration; decision 0431 also needed none — its four new routes read existing tables only; decision 0433 also needed none — its ranking change reads the existing `org_unit_id` column only |
+| `vf-app-poc` migrations | through `0074` applied and confirmed live — `0073` (decision 0429) is real schema; `0074` (decision 0430) is a documentation-only `ASSERT` restatement with no schema change, the same shape as `0071`; none of 0430's eight addenda needed a new `vf-app` migration; decision 0431 also needed none — its four new routes read existing tables only; decision 0433 also needed none — its ranking change reads the existing `org_unit_id` column only; decision 0434 also needed none — it changes when facts already computed reach the workflow engine, not the schema |
 | `vf-licence-poc` migrations | through `0143` applied and confirmed live — the operator's own `apply_migrations.py --remote` run, `0143` is decision 0433's own string |
-| Tests | vf-admin 9 · vf-app 2485 (108 test files, +6 from decision 0433's own org-ranking describe block, confirmed by one unfiltered whole-suite run) · vf-licence 320 (unchanged — decision 0433's new migration `0143` added no new test; `string-coverage.test.ts` was checked, not extended, see decision 0433's own Tests section) · vf-ui 74 Worker (unchanged) + 951 browser (948 + 3 in decision 0433's own new describe block in `viewer.test.ts`, confirmed by one unfiltered whole-suite run) · shared 295 (+3 known pre-existing failures) |
-| Decision records | 433 |
+| Tests | vf-admin 9 · vf-app 2488 (109 test files, +3 from decision 0434's own new `source-capture-workflow.test.ts`, confirmed by one unfiltered whole-suite run) · vf-licence 320 (unchanged — decision 0434 touches vf-app only) · vf-ui 74 Worker (unchanged) + 951 browser (unchanged — decision 0434 touches vf-app only) · shared 295 (+3 known pre-existing failures) |
+| Decision records | 434 |
+
+**Decision 0434 (org placement and supplier matching now reach the
+first stage visit) is built, tested, and documented. Not yet pushed or
+deployed.** The operator built decision 0433's own recommended
+Validation-stage rule exactly as written, tested again, and reported
+the same behaviour: *"On testing I am seeing the same behaviour - the
+invoice goes straight to Payment-eligible."* The rule was confirmed
+correct, live, against the operator's own screenshot. Tracing it found
+a real bug, not a configuration gap: `handleCaptureFromSource` (the
+email intake path every real invoice arrives through) creates a fresh
+process instance and visits its first stage **immediately** — often
+cascading straight to `completed` in that one call — and only
+*afterward* derives the invoice's org and matches its supplier,
+writing both to `invoice_headers` for display. A Validation rule
+testing `supplier.unmatchedReason` was being asked to test a fact that
+did not exist yet. Confirmed live with a reproduction using the
+operator's own rule and the same ambiguous-VAT shape as their own
+`TEST-ORG-0020`: the instance completed with zero tasks while the fact
+it needed sat correctly, and uselessly, in `facts_json`. Every
+supplier.* fact decisions 0230/0231/0238 wired up shared the identical
+defect, not only decision 0433's own flag. Fixed with an additive hook
+— `handleCaptureIntake` now takes an optional `enrichFacts` callback,
+called immediately before the first visit; every existing caller,
+including the direct `/capture-xml`/`/capture-image` API routes,
+supplies none and is unaffected. `source-capture-route.ts` builds it
+from the same computation its own post-hoc block already runs, left in
+place unchanged for the durable columns other screens still read
+directly. New file `source-capture-workflow.test.ts`, 3 tests: blocks
+with a real task for the operator's own exact scenario, no regression
+for an ordinary match, no false block for `no_match`. Full `vf-app`
+suite (2488) re-run and green; `vf-licence`/`vf-ui` untouched. **Once
+this is pushed and deployed, re-testing the operator's own rule against
+a *new* invoice submission (not the already-completed `TEST-ORG-0020`)
+is what will exercise the fix** — nothing here revisits history for an
+invoice that already completed under the old ordering. See decision
+0434 for the full reasoning and tests.
 
 **Decision 0433 (the manual supplier search ranks by the invoice's own
 org) is pushed and deployed, confirmed directly.** `origin/main`

@@ -1242,6 +1242,42 @@ section for the full reasoning and tests.
 - New tests only, no new test file: `load-suppliers.test.ts` +6,
   `viewer.test.ts` +3. `eslint .` clean across `vf-app` and `vf-ui`.
 
+### Org placement and supplier facts reach the first stage visit (0434)
+- **Found live**: the operator built decision 0433's own recommended
+  Validation-stage rule exactly as written and re-tested — *"On testing
+  I am seeing the same behaviour - the invoice goes straight to
+  Payment-eligible."* The rule was correct. Tracing it found a real bug:
+  `handleCaptureFromSource` (email intake) creates a fresh process
+  instance and visits its first stage **immediately** — sometimes
+  cascading all the way to `completed` in one call — and only
+  *afterward* derives the invoice's org (0111) and matches its supplier
+  (0209), writing both to `invoice_headers` for display. A Validation
+  rule testing `supplier.unmatchedReason` was being asked to test a
+  fact that would not exist for several more lines of code. Confirmed
+  live with a reproduction using the operator's own rule and the same
+  ambiguous-VAT shape as their own `TEST-ORG-0020`: the instance
+  completed with zero tasks while the fact it needed sat correctly, and
+  uselessly, in `facts_json`.
+- **Every supplier.* fact decisions 0230/0231/0238 wired up shared the
+  identical defect**, not only decision 0433's own flag — all computed
+  in the same post-hoc block, all equally unable to reach a rule at an
+  email-captured invoice's first visit. Scoped to `source-capture-route.ts`
+  only; the direct `/capture-xml`/`/capture-image` API routes never
+  derived org or supplier at all, matching decision 0111's own explicit
+  scope ("a source is a transport concern").
+- `handleCaptureIntake` gained an optional `enrichFacts` hook, called
+  with the merged facts immediately before the first visit — additive,
+  every existing caller (including the direct API routes) supplies none
+  and is unaffected. `handleCaptureUblXml`/`handleCaptureImage` pass it
+  through. `source-capture-route.ts` builds it from the same
+  computation its own post-hoc block already runs, deliberately left in
+  place unchanged (it still owns the durable `invoice_headers` columns
+  other screens read directly).
+- New file `source-capture-workflow.test.ts`, 3 tests: blocks with a
+  real task for the operator's own exact scenario, no regression for an
+  ordinary unambiguous match, no false block for `no_match`. Full
+  `vf-app` suite re-run. `eslint .` clean.
+
 ### Purchase orders and matching
 - Purchase order storage grounded in Peppol BIS Order Only 3.3, via UBL
   XML ingestion (0081) and CSV load (0370) — the same tables, the same
