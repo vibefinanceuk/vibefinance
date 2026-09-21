@@ -1,7 +1,15 @@
 # 0427 — Early-payment discount eligibility and hold history, Supplier Performance's last two metrics
 
-**Status: committed, awaiting the operator's own push/deploy
-confirmation.** This session still has no push access to
+**Status: pushed and deployed, confirmed directly — the live behaviour
+itself, not just the served code.** `origin/main` fetched directly
+reads `96c7eae`, matching this session's own commit exactly. The two
+migrations (`vf-app`'s `0072`, `vf-licence`'s `0138`) needed their own
+separate `apply_migrations.py --remote` step, confirmed by the
+operator after the cards first showed "Could not load this tab right
+now" — the new columns/table not existing yet on the live database,
+resolved once the operator ran both migration commands. The operator
+then confirmed directly: "I put a supplier on hold and it applied to
+the list." This session still has no push access to
 `vibefinanceuk/vibefinance`; delivered as a git bundle for the
 operator's own pull/push/deploy sequence, the same path decisions
 0391, 0415–0426 already used.

@@ -2,7 +2,8 @@
 
 **Written 4 September 2026, updated 17 September (six times), updated
 18 September (four times), updated 19 September (thirty-two times),
-updated 20 September (twenty-two times), updated 21 September (twice).**
+updated 20 September (twenty-two times), updated 21 September (three
+times).**
 
 **For a session starting cold.** Where things stand, what needs a
 decision rather than work, what to do next, and the habits this project
@@ -31,42 +32,80 @@ twice.
 
 | | |
 | --- | --- |
-| `origin/main` | `a432413` — fetched directly by this session after decision 0425 shipped, confirmed matching local `main` exactly |
+| `origin/main` | `96c7eae` — fetched directly by this session after decision 0427 shipped, confirmed matching local `main` exactly |
 | vf-admin deployed | `8e27a34` · `https://admin.vibefinance-ai.com` · behind Cloudflare Access |
-| vf-app deployed | `a432413` (operator's own "deployed and pushed" report, then "Confirmed I can see the new report") |
-| vf-licence deployed | `a432413` (operator's own report; migration `0137` below is now applied) |
-| vf-ui deployed | `a432413` · `https://app.vibefinance-ai.com` — operator's own report |
+| vf-app deployed | `96c7eae` (operator's own report, then "I put a supplier on hold and it applied to the list") |
+| vf-licence deployed | `96c7eae` (operator's own report; migration `0138` below is now applied) |
+| vf-ui deployed | `96c7eae` · `https://app.vibefinance-ai.com` — operator's own report |
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
-| `vf-app-poc` migrations | through `0071` applied and confirmed live (decision 0425 added no new one) |
-| `vf-licence-poc` migrations | through `0137` applied and confirmed live |
-| Tests | vf-admin 9 · vf-app 2196 · vf-licence 320 · vf-ui 74 Worker + 860 browser · shared 287 (+3 known pre-existing failures) |
-| Decision records | 426 |
+| `vf-app-poc` migrations | through `0072` applied and confirmed live — the operator's own `apply_migrations.py --remote` run, after the two new cards first failed without it (see decision 0427 below) |
+| `vf-licence-poc` migrations | through `0138` applied and confirmed live |
+| Tests | vf-admin 9 · vf-app 2233 · vf-licence 320 · vf-ui 74 Worker + 873 browser · shared 287 (+3 known pre-existing failures) |
+| Decision records | 427 |
+
+**Decision 0427 (early-payment discount eligibility and hold
+history — Supplier Performance's last two metrics) is pushed and
+deployed, confirmed directly — the live behaviour itself, not just the
+served code.** `origin/main` fetched directly reads `96c7eae`, matching
+this session's own commit exactly. "Lets finish off Supplier
+Performance" — both of this screen's own remaining metrics had been
+genuinely parked, not merely deferred; investigating the real blockers
+first surfaced three real design decisions, each put to the operator
+directly: how discount terms are captured (structured `discount_pct`/
+`discount_days` fields on `suppliers`, the operator's own choice, over
+parsing free text), how hold history is captured (a general
+field-change audit trail across all three real write paths into
+`suppliers`, the operator's own choice — explicitly the *broader* of
+two options offered, after investigating those write paths found CSV
+mirror-load can silently flip `on_hold` on every reload), and how the
+discount metric should be scoped once "capture rate" turned out to
+still need payment-execution data nowhere in this codebase (the
+operator chose eligibility, an honestly narrower metric, over the
+design's own literal but overclaiming "capture rate"). Deliberately
+kept separate from decision 0350's own pre-existing
+`detectSupplierChanges` mechanism, left untouched. **The two new cards
+first showed "Could not load this tab right now"** — migration `0072`
+(the new `suppliers` columns and the `supplier_field_changes` table)
+had not yet been applied to the live database, a separate step from
+the code deploy this project has always kept separate (`apply_migrations.py
+--remote`, operator-run only). Resolved once the operator ran that
+migration and vf-licence's own `0138` for the new strings; confirmed
+directly with "I put a supplier on hold and it applied to the list."
+Supplier Performance now has all eight of its own key metrics built —
+the first of the design's six dashboard screens to reach full parity
+with its own design list. Full local test suites all clean: `vf-app`
+2196 → 2233 (37 new), `vf-ui` browser 860 → 873 (13 new), `vf-licence`
+320 (migration `0138`, no new test file), `vf-ui` Worker unchanged
+(both new routes matched an existing proxy wildcard). `eslint .` and
+`tsc --noEmit` clean. See decision 0427's own doc for the full
+reasoning, and `docs/PROGRESS.md` for the durable record.
 
 **Decision 0426 (`docs/PROGRESS.md` undercounted the design — a sixth
-screen, and Workload's own metrics, never tracked) is committed,
-awaiting the operator's own push confirmation.** Documentation only,
-nothing to deploy. Asked "what else is remaining, to bring the
-dashboards in line with the mock-ups" once decision 0425 shipped;
-answering it meant re-reading the design document directly rather than
-trusting this repo's own prior summary of it, which surfaced two real
-gaps in the record: the design names **six** new dashboard additions,
-not five — its own Executive Summary lists "Talk to an AP Expert" as a
-sixth, which had never once appeared anywhere in this repo's docs, its
-own full Screen 6 section, `AP.Assistant` permission, and Phase 5
-sequencing all previously unrecorded — and Workload's own remaining
-seven of eight key metrics had never been checked against the design's
-own list for that screen at all, unlike every other screen's count.
-Reported to the operator before touching anything; the operator chose
-to correct the record now, before picking the next build.
-`docs/PROGRESS.md`'s own "Not built" section rewritten: the six-screen
-count, Workload's own seven unbuilt metrics named for the first time,
-"payment history" restored to the Liabilities & Accruals list (it had
-silently dropped out), and a new paragraph for Screen 6 itself. No
-code changed. The dated 0415/0417 narrative entries describing "five
-screens" are left as-is — they record what was believed at the time,
-and this project's own standing rule is that records are never
-rewritten to agree with later ones. See decision 0426's own doc for
-the full reasoning.
+screen, and Workload's own metrics, never tracked) is pushed, confirmed
+directly.** `origin/main` fetched directly reads `96c7eae` (decision
+0427's own commit), which carries this one in its own history.
+Documentation only, nothing to deploy. Asked "what else is remaining,
+to bring the dashboards in line with the mock-ups" once decision 0425
+shipped; answering it meant re-reading the design document directly
+rather than trusting this repo's own prior summary of it, which
+surfaced two real gaps in the record: the design names **six** new
+dashboard additions, not five — its own Executive Summary lists "Talk
+to an AP Expert" as a sixth, which had never once appeared anywhere in
+this repo's docs, its own full Screen 6 section, `AP.Assistant`
+permission, and Phase 5 sequencing all previously unrecorded — and
+Workload's own remaining seven of eight key metrics had never been
+checked against the design's own list for that screen at all, unlike
+every other screen's count. Reported to the operator before touching
+anything; the operator chose to correct the record now, before picking
+the next build. `docs/PROGRESS.md`'s own "Not built" section rewritten:
+the six-screen count, Workload's own seven unbuilt metrics named for
+the first time, "payment history" restored to the Liabilities &
+Accruals list (it had silently dropped out), and a new paragraph for
+Screen 6 itself. No code changed. The dated 0415/0417 narrative entries
+describing "five screens" are left as-is — they record what was
+believed at the time, and this project's own standing rule is that
+records are never rewritten to agree with later ones. See decision
+0426's own doc for the full reasoning.
 
 **Decision 0425 (consolidated spend across org units / legal
 entities — the Multi-Enterprise CFO View's first real metric) is

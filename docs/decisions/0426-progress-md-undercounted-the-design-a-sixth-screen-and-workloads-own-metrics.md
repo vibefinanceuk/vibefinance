@@ -1,9 +1,13 @@
 # 0426 — `docs/PROGRESS.md` undercounted the design: a sixth screen, and Workload's own metrics, never tracked
 
-**Status: committed. Documentation only — nothing to deploy.** This
-session still has no push access to `vibefinanceuk/vibefinance`;
-delivered as a git bundle for the operator's own pull/push sequence,
-the same path decisions 0391, 0415–0425, 0562 and 0566 already used.
+**Status: pushed, confirmed directly.** `origin/main` fetched directly
+reads `96c7eae` (decision 0427's own commit), which carries this
+commit in its own history — this session still has no push access to
+`vibefinanceuk/vibefinance`; delivered as a git bundle for the
+operator's own pull/push sequence, the same path decisions 0391,
+0415–0425, 0562 and 0566 already used. Documentation only — nothing to
+deploy, so there is no separate "live" confirmation beyond the push
+itself.
 
 ---
 
