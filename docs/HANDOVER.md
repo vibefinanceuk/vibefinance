@@ -32,22 +32,85 @@ twice.
 
 | | |
 | --- | --- |
-| `origin/main` | `32a99d5` — fetched directly by this session, matching this session's own commit exactly, confirming the operator's own "pushed and deployed" report |
+| `origin/main` | `df32830` — fetched directly by this session, matching this session's own commit exactly, confirming the operator's own "deployed and pushed" report |
 | vf-admin deployed | `8e27a34` · `https://admin.vibefinance-ai.com` · behind Cloudflare Access |
-| vf-app deployed | `32a99d5` — decision 0428, the Workload Balance scoping fix, and the Exceptions-by-user pull, all confirmed |
-| vf-licence deployed | `32a99d5` per the operator's own report; migration `0139` below is now applied (four of its keys now unused — see decision 0428's own second addendum) |
-| vf-ui deployed | `32a99d5` · `https://app.vibefinance-ai.com` — operator's own report |
+| vf-app deployed | `df32830` — decisions 0429 (agreed payment means, a supplier-record placeholder) and 0430 (Talk to an AP Expert, Screen 6), both confirmed |
+| vf-licence deployed | `df32830` per the operator's own report; migration `0140` below is now applied |
+| vf-ui deployed | `df32830` · `https://app.vibefinance-ai.com` — operator's own report |
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
-| `vf-app-poc` migrations | through `0072` applied and confirmed live — no new `vf-app` migration in decision 0428 or either addendum |
-| `vf-licence-poc` migrations | through `0139` applied and confirmed live — the operator's own `apply_migrations.py --remote` run |
-| Tests | vf-admin 9 · vf-app 2281 · vf-licence 320 · vf-ui 74 Worker + 910 browser · shared 287 (+3 known pre-existing failures) |
-| Decision records | 428 |
+| `vf-app-poc` migrations | through `0074` applied and confirmed live — `0073` (decision 0429) is real schema; `0074` (decision 0430) is a documentation-only `ASSERT` restatement with no schema change, the same shape as `0071` |
+| `vf-licence-poc` migrations | through `0140` applied and confirmed live — the operator's own `apply_migrations.py --remote` run |
+| Tests | vf-admin 9 · vf-app 2316 · vf-licence 320 · vf-ui 74 Worker + 915 browser · shared 295 (+3 known pre-existing failures) |
+| Decision records | 430 |
+
+**Decisions 0429 (agreed payment means, a supplier-record placeholder)
+and 0430 (Talk to an AP Expert, Screen 6) are pushed and deployed,
+confirmed directly.** `origin/main` fetched directly reads `df32830`,
+matching this session's own commit exactly, and the operator's own
+"deployed and pushed" covers both commits together — migration `0140`
+(the new chat tab's own strings) confirmed separately applied too, the
+same operator-run `apply_migrations.py --remote` step decision 0427
+first surfaced as distinct from the code deploy.
+
+**Decision 0430 ("Talk to an AP Expert," the sixth and last AP
+Analytics tab).** The operator's own instruction, following decision
+0426's discovery of a sixth screen this repo had never tracked:
+*"okay thank you I think lets try part 6 next."* A conversational tab
+answering plain-language AP questions through exactly four named tool
+calls (`supplier_spend`, `overdue_balance`, `accrual_summary`,
+`exception_counts`) — never open text-to-SQL, the design's own
+explicit instruction — gated by a new, dedicated `AP.Assistant`
+permission that gates the tab itself, not the data: every tool call is
+separately re-checked against its own real permission at call time.
+Three genuine design forks put to the operator directly rather than
+decided silently: "overdue" honestly defined as still-open and past
+its due date (this codebase has no payment-execution data — 0429);
+the final answer phrased by a second model call rather than shown as
+raw structured data; chat history ephemeral for this first build. Two
+model calls per question, both reusing decision 0002's own existing
+`CompilerModel`/`AiRunnable` infrastructure rather than duplicating it.
+A new standalone `GET /liabilities/overdue-balance` route backs the
+design's own worked example, deliberately kept out of the Financial
+Performance tab since "overdue balance" is not one of that screen's
+own six listed metrics. Along the way: adding `AP.Assistant` broke the
+"closed set, in two places" permissions invariant, fixed with a new
+migration (`0074`) restating it, the same pattern decision 0071
+already used for `AP.FraudReview`; both new `vf-app` routes were found
+missing entirely from `vf-ui`'s own proxy allow-list and added there;
+a pre-existing gap was found in `vf-licence`'s own test harness
+(roughly the last fourteen UI-string migrations never wired into
+`test/setup.ts`) — confirmed pre-existing and self-consistent, left
+alone. `vf-app` 2287 → 2316 (29 new), `vf-ui` browser 910 → 915 (5
+new), `vf-licence` 320 (migration `0140`, no new test file). `eslint`
+clean on every changed file. See decision 0430's own doc for the full
+reasoning, and `docs/PROGRESS.md` for the durable record.
+
+**Decision 0429 (agreed payment means, a supplier-record placeholder;
+the report dashboard deliberately not built).** The operator's own
+instruction, following a factual question about Peppol BIS Billing
+3.0's payment fields: *"add the fields to the supplier record, as a
+placeholder — but we should hide the report dashboard at this
+point."* Three new nullable columns on `suppliers` (migration `0073`),
+loaded exactly like `discount_pct`/`discount_days` (0427) from a
+customer's own CSV export, and deliberately left out of every other
+surface — not in `EDITABLE`, not in the suppliers screen, not in any
+route's `SELECT` list beyond the load itself, no comparison route, no
+dashboard card. Two independent reasons the report stays unbuilt,
+both checked directly: this codebase captures nothing from an inbound
+invoice's own `BG-16` payment-instructions group, so there is no
+"invoiced" side to compare against yet; and a report over a mostly-
+`NULL` column is the same category of mistake decision 0428's own
+second addendum already pulled a live card for. `vf-app` 2281 → 2287
+(6 new). `eslint` and `migrations/test_apply_migrations.py` (27
+passed) clean. See decision 0429's own doc for the full reasoning, and
+`docs/PROGRESS.md` for the durable record.
 
 **Decision 0428 (Workload's remaining seven metrics) and both of its
 own live addenda are pushed and deployed, confirmed directly.**
 `origin/main` fetched directly reads `32a99d5`, matching this
-session's own commit exactly, and the operator's own "pushed and
-deployed" covers all three commits together.
+session's own commit exactly (superseded by `df32830` above), and the
+operator's own "pushed and deployed" covers all three commits
+together.
 
 **The original build (`7fd97e0`).** "shall we tackle - User & Team
 Workload 1/8. - 7 metrics, none previously tracked" — the operator's
