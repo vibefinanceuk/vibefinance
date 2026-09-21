@@ -32,35 +32,50 @@ twice.
 
 | | |
 | --- | --- |
-| `origin/main` | `b084859` — fetched directly by this session, matching this session's own commit exactly, confirming the operator's own "pushed and deployed" reports for the first three of decision 0430's addenda. **The fourth through seventh addenda below are built, tested, and committed locally, delivered as new bundles this session — not yet confirmed pushed.** |
+| `origin/main` | `59d243a` — fetched directly by this session (confirming the operator's own "deployed and pushed" report), matching this session's own commit through the seventh addendum exactly. **The eighth addendum below is new this session — built, tested, and committed locally at `0521040`, not yet confirmed pushed.** |
 | vf-admin deployed | `8e27a34` · `https://admin.vibefinance-ai.com` · behind Cloudflare Access |
-| vf-app deployed | `b084859` confirmed — decisions 0429 (agreed payment means, a supplier-record placeholder), 0430 (Talk to an AP Expert, Screen 6), and the first three of 0430's own addenda, all confirmed. The fourth (quarter totals, a minted `latestOnly` link, dash normalization), fifth (stage filtering, a systemic answer-prompt overclaim fix), sixth (unconfirmed-amount disclosure, a real document link) and seventh (downloadable report, Clear button) addenda are not yet confirmed deployed — awaiting the operator's own pull/push/deploy of this session's new bundle |
-| vf-licence deployed | `b084859` per the operator's own reports; migration `0140` below is now applied; the seventh addendum's own `0141` (Clear/Download button strings) is committed, not yet confirmed applied — none of the other five addenda added a new migration |
-| vf-ui deployed | `b084859` · `https://app.vibefinance-ai.com` — operator's own reports |
+| vf-app deployed | `59d243a` confirmed — decisions 0429 (agreed payment means, a supplier-record placeholder), 0430 (Talk to an AP Expert, Screen 6), and all seven of 0430's own addenda through the seventh (downloadable report, Clear button), all confirmed. The eighth (disclosing `unclaimedAndAvailable`) is not yet confirmed deployed — awaiting the operator's own pull/push/deploy of this session's new bundle |
+| vf-licence deployed | `59d243a` per the operator's own reports; migrations `0140` and `0141` (Clear/Download button strings) both now applied — the eighth addendum added no new migration |
+| vf-ui deployed | `59d243a` · `https://app.vibefinance-ai.com` — operator's own reports |
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
-| `vf-app-poc` migrations | through `0074` applied and confirmed live — `0073` (decision 0429) is real schema; `0074` (decision 0430) is a documentation-only `ASSERT` restatement with no schema change, the same shape as `0071`; none of the seven addenda needed a new `vf-app` migration — their new tools, routes and (for the seventh) UI strings are gated by permissions already real, or live in `vf-licence`'s own migration chain |
-| `vf-licence-poc` migrations | through `0140` applied and confirmed live — the operator's own `apply_migrations.py --remote` run; `0141` (this session's own Clear/Download strings) committed, not yet confirmed applied |
-| Tests | vf-admin 9 · vf-app 2428 (all 104 test files run to completion in one unfiltered pass this session — the first time this whole-suite run has completed rather than needing batches — after the sixth/seventh addenda's own new tests, 0 failures) · vf-licence 320 (including migration `0141`) · vf-ui 74 Worker + 924 browser (re-run this segment, up 8 from 916 — the sixth addendum's own markdown-link test plus the seventh addendum's own 7 new tests) · shared 295 (+3 known pre-existing failures) |
+| `vf-app-poc` migrations | through `0074` applied and confirmed live — `0073` (decision 0429) is real schema; `0074` (decision 0430) is a documentation-only `ASSERT` restatement with no schema change, the same shape as `0071`; none of the eight addenda needed a new `vf-app` migration — their new tools, routes and (for the seventh) UI strings are gated by permissions already real, or live in `vf-licence`'s own migration chain |
+| `vf-licence-poc` migrations | through `0141` applied and confirmed live — the operator's own `apply_migrations.py --remote` run |
+| Tests | vf-admin 9 · vf-app 2429 (104 test files, 2428 confirmed by one unfiltered whole-suite run at `59d243a`, +1 from the eighth addendum's own new test in `ap-assistant.test.ts`, confirmed by a targeted re-run of that one file rather than a second full pass) · vf-licence 320 (including migration `0141`) · vf-ui 74 Worker + 924 browser (unchanged by the eighth addendum — untouched by it) · shared 295 (+3 known pre-existing failures) |
 | Decision records | 430 |
 
 **Decisions 0429 (agreed payment means, a supplier-record placeholder),
-0430 (Talk to an AP Expert, Screen 6), and the first three of 0430's
-own addenda are pushed and deployed, confirmed directly.** `origin/main`
-fetched directly reads `b084859`, matching this session's own commit
-exactly, and the operator's own reports — "pushed and deployed"
-confirmed separately after each of the first three addenda — cover all
-of it together; migration `0140` (the chat tab's own strings) confirmed
-separately applied too, the same operator-run
-`apply_migrations.py --remote` step decision 0427 first surfaced as
-distinct from the code deploy. None of the first three addenda needed
-a new migration. **The fourth through seventh addenda, immediately
-below, are new this session — built, tested, and committed, not yet
-confirmed pushed.**
+0430 (Talk to an AP Expert, Screen 6), and all seven of 0430's own
+addenda through the seventh are pushed and deployed, confirmed
+directly.** `origin/main` fetched directly reads `59d243a`, matching
+this session's own commit through the seventh addendum exactly, and
+the operator's own report — *"deployed and pushed"* — covers all of it
+together; migrations `0140` and `0141` (the chat tab's own strings, and
+its Clear/Download button strings) both confirmed applied the same way.
+None of the eight addenda needed a new `vf-app` migration. **The
+eighth addendum, immediately below, is new this session — built,
+tested, and committed at `0521040`, not yet confirmed pushed.**
+
+**Decision 0430's eighth addendum (disclosing `unclaimedAndAvailable`
+even when nobody currently has a task claimed) is built and tested,
+not yet confirmed pushed.** A production smoke test run right after the
+sixth/seventh addenda went live confirmed both of those fixes work
+correctly, and found one more small gap of the same shape as the sixth
+addendum's own disclosure fix: *"who is the most active AP team
+member?"* answered as though the workflow were empty
+(`openTasksPerPerson` genuinely was empty) without ever mentioning
+`unclaimedAndAvailable` — the same tool's own real, positive count
+sitting right beside that empty list, on a workflow whose one open task
+simply hadn't been claimed by anyone yet. Every other easy-to-miss
+field (`documentUrl`, `moreMayExist`, the sixth addendum's own
+`unconfirmedAmountCount`) already gets its own explicit answer-prompt
+instruction for exactly this reason; this one never had. Fixed with one
+new sentence in `buildAnswerPrompt` — no change to `tasks_by_user`'s own
+data, which was already correct. See decision 0430's own doc, "Addendum
+eight," for the full reasoning and tests.
 
 **Decision 0430's seventh addendum (a downloadable CSV/PDF report, and
-a Clear button next to Ask) is built and tested, delivered as this
-session's own new bundle — not yet confirmed pushed.** Asked directly,
-live: *"when asked for a report, provide something I can download,"*
+a Clear button next to Ask) is pushed and deployed, confirmed
+directly.** Asked directly, live: *"when asked for a report, provide something I can download,"*
 and a Clear button next to Ask. Two forks went to the operator —
 format ("both, user's choice") and trigger ("explicit ask only") — both
 answered before building. `ApAssistantAnswer.table` is now built
@@ -82,8 +97,7 @@ and tests.
 
 **Decision 0430's sixth addendum (disclosing an unconfirmed-amount
 total mismatch, and fixing a document link that neither worked nor
-rendered) is built and tested, delivered as this session's own new
-bundle — not yet confirmed pushed.** A live-test transcript showed a
+rendered) is pushed and deployed, confirmed directly.** A live-test transcript showed a
 five-row invoice list summing to £8,580 sitting directly above its own
 "exact" total of £6,072 — correct (the total only ever sums confirmed
 rows, third addendum) but never explained, so it read as wrong. Fixed
@@ -107,8 +121,8 @@ direct continuations of already-established discipline. See decision
 
 **Decision 0430's fifth addendum (workflow-stage filtering on
 `invoice_search`, and a systemic fix for two separate overclaim bugs
-sharing one root cause) is built and tested, delivered as this
-session's own new bundle — not yet confirmed pushed.** A second live
+sharing one root cause) is pushed and deployed, confirmed directly.**
+A second live
 test surfaced two more gaps: "list the invoices held at the Validation
 stage" refused outright (no filter existed for it), and in the same
 round `accrual_summary` overclaimed "no invoices are listed in any
@@ -138,8 +152,7 @@ both narrow, low-risk, and within already-approved scope. See decision
 
 **Decision 0430's fourth addendum (calendar-period totals, a minted
 document link for the single-invoice case, and dash normalization) is
-built and tested, delivered as this session's own new bundle — not yet
-confirmed pushed.** The same live-test round surfaced three more real
+pushed and deployed, confirmed directly.** The same live-test round surfaced three more real
 gaps: "total invoice amount for this quarter" refused outright (only a
 month floor existed on the third addendum's own count route, never a
 quarter one); the single-row "most recent invoice" case (`latestOnly`)
