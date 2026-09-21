@@ -32,11 +32,11 @@ twice.
 
 | | |
 | --- | --- |
-| `origin/main` | `d06c4f3` — fetched directly by this session, matching this session's own commit exactly, confirming the operator's own "deployed and pushed" report covers all eight of decision 0430's addenda. |
+| `origin/main` | `eb921d1` — fetched directly by this session, matching this session's own commit exactly. Nothing from this session is outstanding. |
 | vf-admin deployed | `8e27a34` · `https://admin.vibefinance-ai.com` · behind Cloudflare Access |
-| vf-app deployed | `d06c4f3` confirmed — decisions 0429 (agreed payment means, a supplier-record placeholder), 0430 (Talk to an AP Expert, Screen 6), and all eight of 0430's own addenda, all confirmed |
-| vf-licence deployed | `d06c4f3` per the operator's own reports; migrations `0140` and `0141` (Clear/Download button strings) both applied — the eighth addendum added no new migration |
-| vf-ui deployed | `d06c4f3` · `https://app.vibefinance-ai.com` — operator's own reports |
+| vf-app deployed | `eb921d1` confirmed — decisions 0429 (agreed payment means, a supplier-record placeholder), 0430 (Talk to an AP Expert, Screen 6), and all eight of 0430's own addenda, all confirmed |
+| vf-licence deployed | `eb921d1` per the operator's own reports; migrations `0140` and `0141` (Clear/Download button strings) both applied — the eighth addendum added no new migration |
+| vf-ui deployed | `eb921d1` · `https://app.vibefinance-ai.com` — operator's own reports |
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
 | `vf-app-poc` migrations | through `0074` applied and confirmed live — `0073` (decision 0429) is real schema; `0074` (decision 0430) is a documentation-only `ASSERT` restatement with no schema change, the same shape as `0071`; none of the eight addenda needed a new `vf-app` migration — their new tools, routes and (for the seventh) UI strings are gated by permissions already real, or live in `vf-licence`'s own migration chain |
 | `vf-licence-poc` migrations | through `0141` applied and confirmed live — the operator's own `apply_migrations.py --remote` run |
@@ -46,7 +46,7 @@ twice.
 **Decisions 0429 (agreed payment means, a supplier-record placeholder),
 0430 (Talk to an AP Expert, Screen 6), and all eight of 0430's own
 addenda are pushed and deployed, confirmed directly.** `origin/main`
-fetched directly reads `d06c4f3`, matching this session's own commit
+fetched directly reads `eb921d1`, matching this session's own commit
 exactly, and the operator's own report — *"deployed and pushed"* —
 covers all of it together; migrations `0140` and `0141` (the chat
 tab's own strings, and its Clear/Download button strings) both
