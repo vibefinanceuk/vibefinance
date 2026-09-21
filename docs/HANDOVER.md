@@ -32,32 +32,32 @@ twice.
 
 | | |
 | --- | --- |
-| `origin/main` | `59d243a` — fetched directly by this session (confirming the operator's own "deployed and pushed" report), matching this session's own commit through the seventh addendum exactly. **The eighth addendum below is new this session — built, tested, and committed locally at `0521040`, not yet confirmed pushed.** |
+| `origin/main` | `d06c4f3` — fetched directly by this session, matching this session's own commit exactly, confirming the operator's own "deployed and pushed" report covers all eight of decision 0430's addenda. |
 | vf-admin deployed | `8e27a34` · `https://admin.vibefinance-ai.com` · behind Cloudflare Access |
-| vf-app deployed | `59d243a` confirmed — decisions 0429 (agreed payment means, a supplier-record placeholder), 0430 (Talk to an AP Expert, Screen 6), and all seven of 0430's own addenda through the seventh (downloadable report, Clear button), all confirmed. The eighth (disclosing `unclaimedAndAvailable`) is not yet confirmed deployed — awaiting the operator's own pull/push/deploy of this session's new bundle |
-| vf-licence deployed | `59d243a` per the operator's own reports; migrations `0140` and `0141` (Clear/Download button strings) both now applied — the eighth addendum added no new migration |
-| vf-ui deployed | `59d243a` · `https://app.vibefinance-ai.com` — operator's own reports |
+| vf-app deployed | `d06c4f3` confirmed — decisions 0429 (agreed payment means, a supplier-record placeholder), 0430 (Talk to an AP Expert, Screen 6), and all eight of 0430's own addenda, all confirmed |
+| vf-licence deployed | `d06c4f3` per the operator's own reports; migrations `0140` and `0141` (Clear/Download button strings) both applied — the eighth addendum added no new migration |
+| vf-ui deployed | `d06c4f3` · `https://app.vibefinance-ai.com` — operator's own reports |
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
 | `vf-app-poc` migrations | through `0074` applied and confirmed live — `0073` (decision 0429) is real schema; `0074` (decision 0430) is a documentation-only `ASSERT` restatement with no schema change, the same shape as `0071`; none of the eight addenda needed a new `vf-app` migration — their new tools, routes and (for the seventh) UI strings are gated by permissions already real, or live in `vf-licence`'s own migration chain |
 | `vf-licence-poc` migrations | through `0141` applied and confirmed live — the operator's own `apply_migrations.py --remote` run |
-| Tests | vf-admin 9 · vf-app 2429 (104 test files, 2428 confirmed by one unfiltered whole-suite run at `59d243a`, +1 from the eighth addendum's own new test in `ap-assistant.test.ts`, confirmed by a targeted re-run of that one file rather than a second full pass) · vf-licence 320 (including migration `0141`) · vf-ui 74 Worker + 924 browser (unchanged by the eighth addendum — untouched by it) · shared 295 (+3 known pre-existing failures) |
+| Tests | vf-admin 9 · vf-app 2429 (104 test files, 2428 confirmed by one unfiltered whole-suite run, +1 from the eighth addendum's own new test in `ap-assistant.test.ts`, confirmed by a targeted re-run of that one file rather than a second full pass) · vf-licence 320 (including migration `0141`) · vf-ui 74 Worker + 924 browser (unchanged by the eighth addendum — untouched by it) · shared 295 (+3 known pre-existing failures) |
 | Decision records | 430 |
 
 **Decisions 0429 (agreed payment means, a supplier-record placeholder),
-0430 (Talk to an AP Expert, Screen 6), and all seven of 0430's own
-addenda through the seventh are pushed and deployed, confirmed
-directly.** `origin/main` fetched directly reads `59d243a`, matching
-this session's own commit through the seventh addendum exactly, and
-the operator's own report — *"deployed and pushed"* — covers all of it
-together; migrations `0140` and `0141` (the chat tab's own strings, and
-its Clear/Download button strings) both confirmed applied the same way.
-None of the eight addenda needed a new `vf-app` migration. **The
-eighth addendum, immediately below, is new this session — built,
-tested, and committed at `0521040`, not yet confirmed pushed.**
+0430 (Talk to an AP Expert, Screen 6), and all eight of 0430's own
+addenda are pushed and deployed, confirmed directly.** `origin/main`
+fetched directly reads `d06c4f3`, matching this session's own commit
+exactly, and the operator's own report — *"deployed and pushed"* —
+covers all of it together; migrations `0140` and `0141` (the chat
+tab's own strings, and its Clear/Download button strings) both
+confirmed applied the same way. None of the eight addenda needed a new
+`vf-app` migration. **Nothing from this session is currently
+outstanding — every commit through decision 0430's eighth addendum is
+pushed and deployed.**
 
 **Decision 0430's eighth addendum (disclosing `unclaimedAndAvailable`
-even when nobody currently has a task claimed) is built and tested,
-not yet confirmed pushed.** A production smoke test run right after the
+even when nobody currently has a task claimed) is pushed and deployed,
+confirmed directly.** A production smoke test run right after the
 sixth/seventh addenda went live confirmed both of those fixes work
 correctly, and found one more small gap of the same shape as the sixth
 addendum's own disclosure fix: *"who is the most active AP team
