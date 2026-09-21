@@ -2,7 +2,7 @@
 
 **Written 4 September 2026, updated 17 September (six times), updated
 18 September (four times), updated 19 September (thirty-two times),
-updated 20 September (twenty-two times), updated 21 September (once).**
+updated 20 September (twenty-two times), updated 21 September (twice).**
 
 **For a session starting cold.** Where things stand, what needs a
 decision rather than work, what to do next, and the habits this project
@@ -31,16 +31,52 @@ twice.
 
 | | |
 | --- | --- |
-| `origin/main` | `a3cdbe6` — fetched directly by this session after decision 0424 shipped, confirmed matching local `main` exactly |
+| `origin/main` | `a432413` — fetched directly by this session after decision 0425 shipped, confirmed matching local `main` exactly |
 | vf-admin deployed | `8e27a34` · `https://admin.vibefinance-ai.com` · behind Cloudflare Access |
-| vf-app deployed | `a3cdbe6` (operator's own "deployed and pushed" report) |
-| vf-licence deployed | `a3cdbe6` (operator's own report; migration `0136` below is now applied) |
-| vf-ui deployed | `a3cdbe6` · `https://app.vibefinance-ai.com` — operator's own report |
+| vf-app deployed | `a432413` (operator's own "deployed and pushed" report, then "Confirmed I can see the new report") |
+| vf-licence deployed | `a432413` (operator's own report; migration `0137` below is now applied) |
+| vf-ui deployed | `a432413` · `https://app.vibefinance-ai.com` — operator's own report |
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
-| `vf-app-poc` migrations | through `0071` applied and confirmed live (decision 0424 added no new one) |
-| `vf-licence-poc` migrations | through `0136` applied and confirmed live |
-| Tests | vf-admin 9 · vf-app 2184 · vf-licence 320 · vf-ui 74 Worker + 850 browser · shared 287 (+3 known pre-existing failures) |
-| Decision records | 424 |
+| `vf-app-poc` migrations | through `0071` applied and confirmed live (decision 0425 added no new one) |
+| `vf-licence-poc` migrations | through `0137` applied and confirmed live |
+| Tests | vf-admin 9 · vf-app 2196 · vf-licence 320 · vf-ui 74 Worker + 860 browser · shared 287 (+3 known pre-existing failures) |
+| Decision records | 425 |
+
+**Decision 0425 (consolidated spend across org units / legal
+entities — the Multi-Enterprise CFO View's first real metric) is
+pushed and deployed, confirmed directly — the live report itself, not
+just the served code.** `origin/main` fetched directly reads
+`a432413`, matching this session's own commit exactly; the operator
+confirmed with "deployed and pushed," then "Confirmed I can see the
+new report." Asked "what would be next on the list" once decision 0424
+shipped; offered four candidates, the operator chose Executive IQ /
+Multi-Enterprise CFO View. The design document itself flags two real
+decisions before this screen could be built at all, both put to the
+operator directly: the scoping approach (the operator chose the
+design's own recommended "Option 1" — reuse `holdsEverywhere` with
+`GROUP BY org_unit_id`, over a genuinely new multi-select
+org-comparison scope its own "Option 2" explicitly defers) and which
+of the screen's six key metrics to build first (the operator chose
+consolidated spend, the design's own first-listed bullet, reusing data
+no new capture is needed for). No new access-control concept — the
+design's own Role-Based Access Model table for this screen already
+matches the pre-existing client-side tab gate exactly (`AP.Analysis`
+and `holdsEverywhere = true`, checked independently server-side).
+Enterprise-wide by definition — no `?org=` narrowing on either the
+route or the card, since the entire point is comparing every entity at
+once rather than collapsing back into a one-org-at-a-time view. Grouped
+by the invoice's own recorded `org_unit_id` exactly as recorded, no
+invented rollup from an operating unit to its own parent legal entity,
+never summed across currencies, an unplaced invoice excluded rather
+than guessed into a bucket. Executive IQ now shows one real card, not
+the whole six-metric screen — the last of AP Analytics' five tabs to
+gain real content. Full local test suites all clean: `vf-app` 2184 →
+2196 (12 new, exactly), `vf-ui` browser 850 → 860 (9 new plus one net
+new in `ap-analytics.test.ts`, both worker and browser-known-rejection
+counts otherwise unchanged), `vf-licence` 320 (migration `0137`, no new
+test file). `eslint .` clean across all three packages. See decision
+0425's own doc for the full reasoning, and `docs/PROGRESS.md` for the
+durable record.
 
 **Decision 0424 (statistical outliers and segregation-of-duties
 flags — Fraud Prevention's fourth and fifth real metrics, built

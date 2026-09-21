@@ -1,9 +1,13 @@
 # 0425 — Consolidated spend across org units / legal entities, the Multi-Enterprise CFO View's first real metric
 
-**Status: built, tested, not yet deployed.** This session still has no
-push access to `vibefinanceuk/vibefinance`; delivered as a git bundle
-for the operator's own pull/push/deploy sequence, the same path
-decisions 0391, 0415–0424, 0562 and 0566 already used.
+**Status: pushed and deployed, confirmed directly — the live report
+itself, not just the served code.** `origin/main` fetched directly
+reads `a432413`, matching this session's own commit exactly; the
+operator confirmed with "deployed and pushed," then "Confirmed I can
+see the new report." This session still has no push access to
+`vibefinanceuk/vibefinance`; delivered as a git bundle for the
+operator's own pull/push/deploy sequence, the same path decisions
+0391, 0415–0424, 0562 and 0566 already used.
 
 ---
 
