@@ -7,13 +7,30 @@ import type { RouteResult } from "./org-route.js";
  * balance — variance in open-task count across a team, to catch one
  * person quietly carrying the queue."*).
  *
- * **Per member's own total open-task count, the same "mine" test
- * decision 0428's own open-tasks route applies to every user** —
- * `owner_user_id` or `claimed_by` equal to that member, `status =
- * 'open'`. Not restricted to tasks this specific team owns
- * (`owner_team_id`): the point of this metric is whether one *person*
- * is quietly overloaded, which means their own whole open workload,
- * not just the slice one team happens to hold.
+ * **Scoped to tasks this specific team owns** (`t.owner_team_id =
+ * tm.id`), on top of the same "mine" test decision 0428's own
+ * open-tasks route applies to every user — `owner_user_id` or
+ * `claimed_by` equal to that member, `status = 'open'`.
+ *
+ * **Changed from the first build, once real production data caught
+ * it.** The first version counted a member's own *whole* open
+ * workload — every open task assigned or claimed by them, anywhere,
+ * not just this team's own — on the reasoning that catching one
+ * *person* quietly overloaded matters more than which team happened
+ * to own the work. Live on the operator's own real customer, where one
+ * person belongs to every team, that made every team's own card show
+ * the same person with the same identical count — mathematically
+ * correct for what was built, but read as a bug ("the chart seems to
+ * show replication though"). Investigated directly rather than
+ * assumed: `org_team_members` was joined correctly per `team_id`, so
+ * the memberships themselves were real, not duplicated — it was the
+ * count beside each name that was global rather than per-team. Put to
+ * the operator directly: keep the whole-workload reading, or scope
+ * each team's own count to tasks that team itself owns, which reads
+ * as "who's carrying this team's own queue" rather than "who's
+ * carrying the most anywhere." The operator chose **team-scoped** —
+ * a person in several teams can now show a different, smaller number
+ * in each, which is the truer answer to what this specific card asks.
  *
  * **Every team member counted, including zero.** Someone carrying
  * nothing is as much a sign of imbalance as someone carrying
@@ -80,7 +97,7 @@ export async function handleWorkloadBalance(
        FROM org_teams tm
        JOIN org_team_members m ON m.team_id = tm.id
        JOIN org_users mu ON mu.id = m.user_id
-       LEFT JOIN tasks t ON (t.owner_user_id = mu.id OR t.claimed_by = mu.id) AND t.status = 'open'
+       LEFT JOIN tasks t ON (t.owner_user_id = mu.id OR t.claimed_by = mu.id) AND t.status = 'open' AND t.owner_team_id = tm.id
        LEFT JOIN stage_visits v ON v.id = t.stage_visit_id
        LEFT JOIN process_instances pi ON pi.id = v.process_instance_id
        LEFT JOIN invoice_headers h ON pi.subject_type = 'invoice' AND h.id = pi.subject_id

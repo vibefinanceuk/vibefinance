@@ -805,7 +805,13 @@ a rule, and left an approval task in a queue.
     labelled group per team (`.teamgroup`/`.teamgrouphead`, a new CSS
     class pair — not `.spendcurrency` reused, matching decision 0417's
     own naming discipline), each wrapping a `barList` of that team's own
-    members.
+    members. **Corrected live, addendum to 0428**: the first build
+    counted each member's *whole* open workload rather than tasks this
+    specific team owns, which read as duplication on the operator's
+    own real data (one person on every team, showing the same total
+    everywhere) — the operator confirmed the memberships were real and
+    chose to scope the count to `t.owner_team_id = tm.id` instead, the
+    same column `workload/queue-depth` already reads.
   - **`GET /workload/exceptions`** — reuses decision 0423's own
     exception definition (`stage_visits.validation_passed = 0`) under
     `AP.Analysis` rather than `AP.FraudReview`, framed as coaching
@@ -2035,13 +2041,13 @@ elsewhere.
 
 | Package | Tests |
 |---|---|
-| `vf-app` | 2233 |
+| `vf-app` | 2289 |
 | `vf-licence` | 320 |
-| `vf-ui` | 74 Worker · 873 browser |
+| `vf-ui` | 74 Worker · 915 browser |
 | `shared` | 287 passing, 3 known pre-existing failures |
 
 Both migration chains replay clean with every standing invariant
-holding — 72 migrations for `vf-app`, 138 for `vf-licence`.
+holding — 72 migrations for `vf-app`, 139 for `vf-licence`.
 
 **`vf-app`'s count was recorded as 1851 through decision 0379**; a clean
 run at `46c1da2`, with no `vf-app` change since decision 0378 recorded

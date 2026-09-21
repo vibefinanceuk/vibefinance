@@ -46,7 +46,15 @@ async function member(teamId: string, userId: string) {
 
 let seq = 0;
 
-async function openTask(owner: string) {
+/**
+ * `team` is optional — decision 0428's own scoping change, once
+ * production data showed a member's *whole* workload read as
+ * duplication when they belonged to more than one team. Most tests
+ * pass the owning team explicitly now; a task with no team at all
+ * (`team` omitted) proves the route's own team-ownership filter really
+ * excludes it rather than counting every task a member merely touches.
+ */
+async function openTask(owner: string, team?: string) {
   const n = seq++;
   const invoiceId = `inv-${n}`;
   const piId = `pi-${n}`;
@@ -65,10 +73,10 @@ async function openTask(owner: string) {
     .bind(visitId, piId)
     .run();
   await env.DB.prepare(
-    `INSERT INTO tasks (id, stage_id, stage_visit_id, owner_user_id, required_permission, status)
-     VALUES (?, 'validation', ?, ?, 'AP.Validate', 'open')`
+    `INSERT INTO tasks (id, stage_id, stage_visit_id, owner_user_id, owner_team_id, required_permission, status)
+     VALUES (?, 'validation', ?, ?, ?, 'AP.Validate', 'open')`
   )
-    .bind(`t-${n}`, visitId, owner)
+    .bind(`t-${n}`, visitId, owner, team ?? null)
     .run();
 }
 
@@ -105,7 +113,7 @@ describe("variance in open-task count across a team's own members", () => {
     await team("t1", "AP Team", "acme-fr");
     await member("t1", "dana");
     await member("t1", "wei");
-    await openTask("dana");
+    await openTask("dana", "t1");
 
     const body = (await handleWorkloadBalance(env.DB, null, "alice")).body as WorkloadBalanceReport;
     expect(body.teams[0].members).toEqual(
@@ -124,7 +132,7 @@ describe("variance in open-task count across a team's own members", () => {
     await team("t1", "AP Team", "acme-fr");
     await member("t1", "dana");
     await member("t1", "wei");
-    for (let i = 0; i < 4; i++) await openTask("dana");
+    for (let i = 0; i < 4; i++) await openTask("dana", "t1");
     // wei: 0
 
     const body = (await handleWorkloadBalance(env.DB, null, "alice")).body as WorkloadBalanceReport;
@@ -144,13 +152,13 @@ describe("variance in open-task count across a team's own members", () => {
     await team("balanced", "Balanced Team", "acme-fr");
     await member("balanced", "dana");
     await member("balanced", "wei");
-    await openTask("dana");
-    await openTask("wei");
+    await openTask("dana", "balanced");
+    await openTask("wei", "balanced");
 
     await team("unbalanced", "Unbalanced Team", "acme-fr");
     await member("unbalanced", "sam");
     await member("unbalanced", "ravi");
-    for (let i = 0; i < 5; i++) await openTask("sam");
+    for (let i = 0; i < 5; i++) await openTask("sam", "unbalanced");
     // ravi: 0
 
     const body = (await handleWorkloadBalance(env.DB, null, "alice")).body as WorkloadBalanceReport;
@@ -161,5 +169,42 @@ describe("variance in open-task count across a team's own members", () => {
     await person("alice", ["AP.Analysis"], null);
     const body = (await handleWorkloadBalance(env.DB, null, "alice")).body as WorkloadBalanceReport;
     expect(body.teams).toEqual([]);
+  });
+
+  it("scopes a member's own count to tasks this specific team owns, not their whole workload — decision 0428's own live fix", async () => {
+    /**
+     * **The exact shape of the bug report.** One person, "dana," on
+     * two real teams — before this fix, both cards would have shown
+     * her identical whole-workload total (3). Team-scoping means each
+     * team now shows only the tasks it itself owns.
+     */
+    await units();
+    await person("alice", ["AP.Analysis"], null);
+    await person("dana", [], null);
+    await team("t1", "AP Coding", "acme-fr");
+    await team("t2", "AP Validation", "acme-fr");
+    await member("t1", "dana");
+    await member("t2", "dana");
+    await openTask("dana", "t1");
+    await openTask("dana", "t1");
+    await openTask("dana", "t2");
+
+    const body = (await handleWorkloadBalance(env.DB, null, "alice")).body as WorkloadBalanceReport;
+    const t1 = body.teams.find((t) => t.teamId === "t1");
+    const t2 = body.teams.find((t) => t.teamId === "t2");
+    expect(t1?.members).toEqual([{ userId: "dana", userName: "dana", openCount: 2 }]);
+    expect(t2?.members).toEqual([{ userId: "dana", userName: "dana", openCount: 1 }]);
+  });
+
+  it("does not count a task with no owning team at all, even when it's genuinely this member's own", async () => {
+    await units();
+    await person("alice", ["AP.Analysis"], null);
+    await person("dana", [], null);
+    await team("t1", "AP Team", "acme-fr");
+    await member("t1", "dana");
+    await openTask("dana"); // no owning team
+
+    const body = (await handleWorkloadBalance(env.DB, null, "alice")).body as WorkloadBalanceReport;
+    expect(body.teams[0].members).toEqual([{ userId: "dana", userName: "dana", openCount: 0 }]);
   });
 });

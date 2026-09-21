@@ -1,13 +1,17 @@
 # 0428 — Workload's remaining seven metrics, the screen's own full parity, six of seven whole
 
-**Status: built and tested, not yet pushed.** This session has no push
-access to `vibefinanceuk/vibefinance`; delivered as a git bundle for
-the operator's own pull/push/deploy sequence, the same path decisions
-0391, 0415–0427 already used. No new `vf-app` migration this decision,
-so no separate `apply_migrations.py` step is needed for that package —
-only the new `vf-licence` strings migration (`0139`) needs its own
-`--remote` apply, the same gotcha decision 0427 hit for its own two
-migrations.
+**Status: pushed and deployed, confirmed directly — and one real
+scoping bug in the balance card found live and fixed, see the addendum
+below.** The operator confirmed "deployed and pushed" directly, along
+with a screenshot of the Workload Balance card showing the same
+person, "Alice McDonald," with an identical count in every one of
+seven teams — investigated rather than dismissed, and traced to a real
+design choice in this decision's own first build, not a query-
+duplication bug. Corrected below, in the same commit cycle, once the
+operator chose the fix over keeping the original reading. This session
+still has no push access to `vibefinanceuk/vibefinance`; delivered as
+a git bundle for the operator's own pull/push/deploy sequence, the
+same path decisions 0391, 0415–0427 already used.
 
 ---
 
@@ -256,3 +260,76 @@ this decision** — see `docs/PROGRESS.md`'s own "Not built" section for
 Liabilities & Accruals, Fraud & Risk Detection's one remaining metric,
 the Multi-Enterprise CFO View's remaining five, and Screen 6 ("Talk to
 an AP Expert"), none of which this decision touched.
+
+---
+
+## Addendum — the balance card's own scoping, found live and corrected
+
+**"deployed and pushed- the chart seems to show replication though,"**
+with a screenshot of Workload Balance: seven teams (AP Coding, AP
+Matching, AP Review, AP Supplier Maintenance, AP Team, AP Validation,
+Supplier Maintenance), every one showing the same person, "Alice
+McDonald," with the same identical count of 2.
+
+**Investigated directly rather than patched on sight.** Reading
+`workload-balance-route.ts` again: `org_team_members` was joined
+correctly per `team_id`, so the memberships themselves were real, not
+a query-duplication artefact. What was global, by this decision's own
+first design, was the *count* beside each name — every open task
+`owner_user_id`/`claimed_by` that member anywhere, not scoped to the
+team the card was showing. Mathematically that's exactly what was
+built and documented in the route's own doc comment ("their own whole
+open workload, not just the slice one team happens to hold"), and it
+explains the screenshot precisely: if one person belongs to every
+team, every team's own card shows her identical global total.
+
+**Put to the operator directly, two separate questions** (via
+`AskUserQuestion`), rather than assumed:
+
+1. **Is the team membership itself real** — is Alice McDonald
+   genuinely meant to be on all seven teams? Confirmed: **yes, that's
+   real** — expected for an early pilot with one person staffed across
+   every team.
+2. **Should the count stay global, or become team-scoped?** Offered
+   keeping the whole-workload reading (catches a person spread thin
+   across many teams, at the cost of showing identical numbers for
+   anyone in more than one) against scoping each team's own count to
+   tasks that team itself owns (a truer "who's carrying this team's
+   own queue," at the cost of missing load from outside the team). The
+   operator chose **team-scoped**.
+
+**Fixed**: `workload-balance-route.ts`'s own task join gained one more
+condition, `AND t.owner_team_id = tm.id`, alongside the existing
+owner/claimed-by and `status = 'open'` checks — the same
+`owner_team_id` column `workload-queue-depth-route.ts` already reads
+for its own team-level metric. A member on two real teams now shows a
+different, smaller number in each, based on which team actually owns
+each of their open tasks, rather than their one global total repeated
+everywhere. The route's own doc comment rewritten to record both the
+original reasoning and why it changed, so a future reader sees the
+real tradeoff rather than just the current behaviour.
+
+**Two new backend tests** added to `workload-balance.test.ts`, both
+passing: one seeding the exact shape of the bug report — one member on
+two real teams, tasks split between them — proving each team now shows
+only its own share; one proving a task with no owning team at all
+(`owner_team_id IS NULL`) is honestly excluded even when it is
+genuinely that member's own task, rather than silently counted
+anywhere. `openTask()`'s own test helper gained an optional `team`
+parameter; every pre-existing call site updated to pass the owning
+team explicitly, since the route no longer counts an unscoped task at
+all. `workload-balance.test.ts`: 7 tests → **9**. Full `vf-app` suite
+re-run clean: **2287 → 2289** (101 files, all passing). `vf-ui` is
+unaffected — this fix is backend-only, no route response shape
+changed, so `vf-ui` stays at 74 Worker · 915 browser. `eslint`/`tsc`
+clean on both changed files (the same pre-existing, unrelated
+`cloudflare:test` module-resolution and test-file type-narrowing noise
+as every other decision in this arc, not new).
+
+**A broader note, for whoever next builds a per-member metric that
+spans more than one team**: "which team's own tasks" and "this
+person's whole workload" are both real, different questions, and nothing
+in the design document's own wording forces one over the other — this
+decision guessed at build time and production caught it. Worth asking
+directly, the next time it comes up, rather than assuming either
+reading generalizes.
