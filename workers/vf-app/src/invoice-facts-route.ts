@@ -524,6 +524,11 @@ export async function handleGetInvoice(db: D1Database, invoiceId: string): Promi
        * and nothing has ever shown them.
        */
       buyerUnplaced: invoice.org_unit_id ? null : facts["org.unplaced"] ?? null,
+      /**
+       * Why processing stopped, where it did — decision 0435, the same
+       * "why, not just that" reasoning as buyerUnplaced just above.
+       */
+      workflowStageError: facts["workflow.stageError"] ?? null,
       supplier: matchedSupplier
         ? {
             ...matchedSupplier,

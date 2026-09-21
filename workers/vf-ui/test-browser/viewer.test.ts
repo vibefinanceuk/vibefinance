@@ -98,6 +98,7 @@ const STRINGS = {
     "viewer.supplier.no_match": "No supplier on file matches this seller.",
     "suppliers.pay": "Payment",
     "suppliers.sameorg": "Same org as this invoice",
+    "viewer.workflow.stageerror": "This invoice stopped moving because of a processing error:",
     "action.changebuyer": "Change Buyer",
     "action.changeseller": "Change Seller",
     "viewer.noexceptions": "Nothing to resolve.",
@@ -2498,6 +2499,58 @@ describe("each party card carries its own action (decision 0228)", () => {
     await new Promise((r) => setTimeout(r, 0));
 
     expect(document.querySelector(".popout")).not.toBeNull();
+  });
+});
+
+describe("a workflow stage error is shown, not silently absorbed (decision 0435)", () => {
+  function stub(body: Record<string, unknown>) {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        const path = String(url).split("?")[0];
+        const bodies: Record<string, unknown> = {
+          "/api/ui-strings": STRINGS,
+          "/api/code-lists": { fields: {} },
+          "/api/field-visibility": FIELDS,
+          "/api/invoices/inv-1": {
+            facts: {},
+            lines: [],
+            validation: { passed: true, checked: [], failures: [] },
+            ...body,
+          },
+          "/api/invoices/inv-1/document-url": { url: null },
+          "/api/invoices/inv-1/progress": { inProcess: false, stages: [] },
+          "/api/invoices/inv-1/pages": { pages: [] },
+          "/api/documents/inv-1/activity": { events: [] },
+        };
+        if (!(path in bodies)) throw new Error(`no stub for ${path}`);
+        return { ok: true, json: async () => bodies[path] } as Response;
+      })
+    );
+  }
+
+  async function open(body: Record<string, unknown>) {
+    stub(body);
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    await openViewer(TASK, () => {});
+    await new Promise((r) => setTimeout(r, 0));
+  }
+
+  it("shows the raw error, prefixed by a labelled banner, when a stage visit failed", async () => {
+    await open({ workflowStageError: 'assign_task fired an invalid task: {"error":"requiredPermission \\"undefined\\" is not in the closed permission vocabulary"}' });
+
+    const warn = document.querySelector(".panel.needsattention .warn");
+    expect(warn?.textContent).toContain("This invoice stopped moving because of a processing error:");
+    expect(warn?.textContent).toContain("requiredPermission");
+  });
+
+  it("shows nothing when there is no stage error — the ordinary case", async () => {
+    await open({ workflowStageError: null });
+
+    const banners = [...document.querySelectorAll(".panel.needsattention .warn")].map((w) => w.textContent);
+    expect(banners.some((t) => t?.includes("processing error"))).toBe(false);
   });
 });
 

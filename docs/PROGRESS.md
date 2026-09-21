@@ -1278,6 +1278,37 @@ section for the full reasoning and tests.
   ordinary unambiguous match, no false block for `no_match`. Full
   `vf-app` suite re-run. `eslint .` clean.
 
+### A stage visit error is recorded, not swallowed (0435)
+- **Found live**, immediately after decision 0434 deployed: the
+  operator re-tested, the invoice correctly reached and stopped at
+  Validation, but *"nothing appears in the Tasks screen strangely."*
+  Traced to `handleCreateTask`'s own requirement (decision 0200): a
+  task needs a `required_permission` from either the stage or the
+  rule's own action, and refuses outright if neither supplies one —
+  `visitCurrentStage` turns that into a real error, and
+  `handleCaptureIntake` was unconditionally returning `201` regardless,
+  folding the error into a `body.visit.error` field nothing ever read.
+  The invoice looked exactly like one genuinely waiting on a person.
+- **Confirmed live against the real database**: the Validation stage's
+  own `required_permission` is `null`, and the live rule's own
+  `compiled_json` names no permission either — neither of decision
+  0200's two sources supplied one. Fixed live with a one-column
+  `UPDATE`, not a code change.
+- `handleCaptureIntake` now writes the underlying error onto the
+  invoice as `workflow.stageError` whenever a visit genuinely errors
+  (`>= 400`) — the same "why, not just that" treatment as `org.unplaced`
+  (decision 0162). Surfaced through `invoice-facts-route.ts` as
+  `workflowStageError` and shown as a labelled banner
+  (`workflowErrorPanel()`) above the stage-progress bar in the viewer —
+  one new string, migration `0144`.
+- New describe block in `source-capture-workflow.test.ts` (+2) and in
+  `viewer.test.ts` (+2): reproduces the operator's own exact
+  misconfiguration, confirms the invoice still stores and the real
+  error is recorded, confirms no false positives on an ordinary
+  successful visit. Full suites re-run in every workspace — `vf-app`
+  2490, `vf-ui` browser 953, `vf-licence`/`vf-ui` Worker unchanged.
+  `eslint .` clean.
+
 ### Purchase orders and matching
 - Purchase order storage grounded in Peppol BIS Order Only 3.3, via UBL
   XML ingestion (0081) and CSV load (0370) — the same tables, the same

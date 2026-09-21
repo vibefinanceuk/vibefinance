@@ -95,6 +95,31 @@ async function loadProgress(invoiceId) {
  * fortnight — the server decides the words, so a German customer reads
  * them in German.
  */
+/**
+ * **A process stopped is not a process waiting** — decision 0435.
+ *
+ * `progressRow()` below shows where an invoice IS; this shows why it
+ * is not moving, when that reason is a real error rather than an
+ * ordinary open task. Found live: a rule fired `assign_task` against
+ * a stage with no declared permission, task creation was refused, and
+ * the invoice sat at Validation with nothing visible to explain it —
+ * indistinguishable from a document genuinely waiting on a person.
+ *
+ * The raw error is shown as it was recorded, not translated — this is
+ * a configuration/engine detail rather than closed vocabulary like
+ * `supplier.unmatchedReason`'s three reasons, so there is no fixed set
+ * of strings to translate it into.
+ */
+function workflowErrorPanel() {
+  if (!stored.workflowStageError) return null;
+  return el("div", { class: "panel needsattention" }, [
+    el("div", { class: "warn" }, [
+      el("strong", { text: t("viewer.workflow.stageerror") }),
+      el("span", { text: ` ${stored.workflowStageError}` }),
+    ]),
+  ]);
+}
+
 function progressRow() {
   if (!progress.inProcess || progress.stages.length === 0) return null;
 
@@ -165,6 +190,8 @@ export async function loadInvoice(invoiceId) {
       // And which of our own units it is for — decision 0224.
       buyer: body.buyer ?? null,
       buyerUnplaced: body.buyerUnplaced ?? null,
+      // Why processing stopped, where it did — decision 0435.
+      workflowStageError: body.workflowStageError ?? null,
       /**
        * **Which unit this document belongs to** — decision 0198, and
        * kept because it decides which fields may be edited (decision
@@ -2425,7 +2452,7 @@ export async function openViewer(task, onClose) {
   // beneath both rather than confined to this column. (Decision
   // 0392 above changes what those areas are once popped out.)
   columnsEl.append(
-    el("div", { class: "c-process" }, [progressRow()].filter(Boolean)),
+    el("div", { class: "c-process" }, [workflowErrorPanel(), progressRow()].filter(Boolean)),
     el("div", { class: "c-document" }, [
       documentPanel(task, setDocPoppedOut),
       exceptionPanel(),

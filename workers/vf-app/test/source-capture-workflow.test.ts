@@ -137,3 +137,77 @@ describe("a Validation-stage rule testing supplier.unmatchedReason (decision 043
     expect(instanceRow).toEqual({ status: "completed" });
   });
 });
+
+/**
+ * Decision 0435 — a stage visit that genuinely ERRORS (as opposed to
+ * one that simply has nothing to fire) must not disappear. Found
+ * live, immediately after decision 0434 shipped: the operator's own
+ * rule fired `assign_task` against a Validation stage with no
+ * declared `required_permission`, task creation was refused, and the
+ * invoice sat at Validation with no task ever appearing — and no way
+ * for the operator to see why.
+ */
+describe("a stage visit that errors out is recorded, not swallowed (decision 0435)", () => {
+  beforeEach(async () => {
+    await applyTestSchema();
+    await handleCreateProcess(env.DB, { id: "p-workflow-error", name: "AP" });
+    // The exact misconfiguration this decision was found from: a rule
+    // whose own action names no permission, on a stage that declares
+    // none either — handleCreateTask has nothing to fall back to.
+    await seedRuleSet("rs-misconfigured", {
+      conditions: { field: "supplier.unmatchedReason", operator: "is", value: "ambiguous_site" },
+      actions: [{ type: "assign_task", params: { team: "team1" } }],
+    });
+    await env.DB.prepare("INSERT INTO org_units (id, name) VALUES ('u1', 'Acme UK') ON CONFLICT(id) DO NOTHING").run();
+    await handleCreateTeam(env.DB, { id: "team1", name: "AP Team", unitId: "u1" });
+    await handleCreateStage(env.DB, "p-workflow-error", { id: "s-validation", name: "Validation", sequence: 1, ruleSetId: "rs-misconfigured" });
+    await handleCreateStage(env.DB, "p-workflow-error", { id: "s-payment-eligible", name: "Payment-eligible", sequence: 2 });
+
+    await handleCreateSource(env.DB, "p-workflow-error", { id: "src-mail", name: "AP mailbox", mechanism: "email" });
+    await handleCreateIntakeChannel(env.DB, "p-workflow-error", { id: "ch-xml", name: "Structured XML", structure: "structured_xml" });
+    await handleLoadSuppliers(
+      env.DB,
+      `ERP ID,Name,VAT,Pay Site\nSITE-A,Northwind A,GB447711223,No\nSITE-B,Northwind B,GB447711223,No\n`,
+      "test-loader"
+    );
+  });
+
+  it("still stores the invoice (201) and records why the stage visit failed, as a fact on the invoice", async () => {
+    const result = await handleCaptureFromSource(env.DB, "src-mail", ublWithSupplierVat("INV-MISCONFIG-1", "GB447711223"), fakeModel);
+
+    // The document is genuinely stored — a rule-configuration mistake
+    // is not a reason to lose the invoice, or to make an email
+    // pipeline think it needs to retry.
+    expect(result.status).toBe(201);
+    const invoiceId = (result.body as { id: string }).id;
+
+    const invoiceRow = await env.DB
+      .prepare("SELECT facts_json FROM invoice_headers WHERE id = ?")
+      .bind(invoiceId)
+      .first<{ facts_json: string }>();
+    const stageError = JSON.parse(invoiceRow!.facts_json)["workflow.stageError"] as string;
+    expect(stageError).toContain("assign_task fired an invalid task");
+    expect(stageError).toContain("closed permission vocabulary");
+
+    // And no task exists — this was never a real block, just a stall.
+    const taskCount = await env.DB.prepare("SELECT count(*) AS n FROM tasks").first<{ n: number }>();
+    expect(taskCount?.n).toBe(0);
+  });
+
+  it("writes nothing when the visit succeeds ordinarily — no false positives", async () => {
+    // A clean, unambiguous match never triggers the misconfigured
+    // rule's condition at all, so nothing errors.
+    await env.DB.prepare("DELETE FROM suppliers").run();
+    await handleLoadSuppliers(env.DB, `ERP ID,Name,VAT,Pay Site\nSITE-A,Northwind A,GB447711223,Yes\n`, "test-loader");
+
+    const result = await handleCaptureFromSource(env.DB, "src-mail", ublWithSupplierVat("INV-CLEAN-2", "GB447711223"), fakeModel);
+    expect(result.status).toBe(201);
+    const invoiceId = (result.body as { id: string }).id;
+
+    const invoiceRow = await env.DB
+      .prepare("SELECT facts_json FROM invoice_headers WHERE id = ?")
+      .bind(invoiceId)
+      .first<{ facts_json: string }>();
+    expect(JSON.parse(invoiceRow!.facts_json)["workflow.stageError"]).toBeUndefined();
+  });
+});

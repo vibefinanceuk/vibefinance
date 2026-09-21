@@ -223,6 +223,44 @@ export async function handleCaptureIntake(db: D1Database, channelId: string, bod
     toValidationSettings(captureSettings)
   );
 
+  /**
+   * **A visit that errors out is not the same as a visit that simply
+   * has nothing to say** — decision 0435.
+   *
+   * `visitCurrentStage` returns a real error status (a stage's own
+   * `assign_task` naming a permission nobody declared, an org a stage
+   * requires but has none, a `route_to` aimed at a stage that does not
+   * exist) whenever a rule fires something the engine cannot actually
+   * do. Until now that error was folded straight into this function's
+   * own always-201 response, inside `body.visit`, where nothing ever
+   * looked — the invoice sat exactly where it landed, correctly
+   * stored, indistinguishable from an invoice genuinely waiting on a
+   * person. Found live: an operator built a Validation-stage rule
+   * exactly as recommended, watched an invoice sit at Validation with
+   * no task ever appearing, and had no way to learn why — the rule's
+   * own `assign_task` had fired against a stage with no declared
+   * permission, which is a configuration mistake, not a code one, but
+   * one this repository gave no way to see.
+   *
+   * **Recorded the same way decision 0162 already treats "why, where
+   * it could not be placed"**: a fact on the invoice itself, so a
+   * person looking at it — or a future rule — can see exactly what
+   * happened rather than a document that looks calm and is not
+   * advancing. The response still reports 201: the invoice genuinely
+   * was stored, and changing that status would risk a caller (a mail
+   * pipeline, say) treating a stored document as lost.
+   */
+  if (visitResult.status >= 400) {
+    await db
+      .prepare(
+        `UPDATE invoice_headers
+         SET facts_json = json_set(facts_json, '$."workflow.stageError"', ?)
+         WHERE id = ?`
+      )
+      .bind((visitResult.body as { error?: string })?.error ?? "the stage visit failed", id)
+      .run();
+  }
+
   // Persist any correction a rule made — decision 0049 addendum.
   //
   // Facts are stored before the visit, so a set_field that corrects a
