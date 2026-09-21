@@ -1,6 +1,13 @@
 import { t } from "/strings.js";
 import { el, frame, topbar, setCurrentScreen, hasMyPermission, holdsEverywhere } from "/tasks.js";
 import { load as loadOperational, renderCard as operationalCard } from "/workload.js";
+import { load as loadOpenTasks, renderCard as openTasksCard } from "/workload-open-tasks.js";
+import { load as loadHandlingTime, renderCard as handlingTimeCard } from "/workload-handling-time.js";
+import { load as loadCycleTime, renderCard as cycleTimeCard } from "/workload-cycle-time.js";
+import { load as loadPending, renderCard as pendingCard } from "/workload-pending.js";
+import { load as loadQueueDepth, renderCard as queueDepthCard } from "/workload-queue-depth.js";
+import { load as loadBalance, renderCard as balanceCard } from "/workload-balance.js";
+import { load as loadWorkloadExceptions, renderCard as workloadExceptionsCard } from "/workload-exceptions.js";
 import { load as loadSupplierSpend, renderCard as supplierSpendCard } from "/supplier-performance.js";
 import { load as loadAccruals, renderCard as accrualsCard } from "/accruals.js";
 import { load as loadSpendUnderManagement, renderCard as spendUnderManagementCard } from "/spend-under-management.js";
@@ -159,7 +166,34 @@ function loadErrorCard() {
 
 async function tabContent(key) {
   const tab = TABS.find((candidate) => candidate.key === key);
-  if (key === "operational") return (await loadOperational()) ? operationalCard() : loadErrorCard();
+  if (key === "operational") {
+    // Eight independent cards, decision 0428 — throughput (0415) plus
+    // Workload's own remaining seven, all built together at the
+    // operator's own choice, the same "one screen's own fetch failing
+    // never hides another's real data" discipline every other tab on
+    // this screen already follows.
+    const [throughputOk, openTasksOk, handlingTimeOk, cycleTimeOk, pendingOk, queueDepthOk, balanceOk, exceptionsOk] =
+      await Promise.all([
+        loadOperational(),
+        loadOpenTasks(),
+        loadHandlingTime(),
+        loadCycleTime(),
+        loadPending(),
+        loadQueueDepth(),
+        loadBalance(),
+        loadWorkloadExceptions(),
+      ]);
+    return [
+      throughputOk ? operationalCard() : loadErrorCard(),
+      openTasksOk ? openTasksCard() : loadErrorCard(),
+      handlingTimeOk ? handlingTimeCard() : loadErrorCard(),
+      cycleTimeOk ? cycleTimeCard() : loadErrorCard(),
+      pendingOk ? pendingCard() : loadErrorCard(),
+      queueDepthOk ? queueDepthCard() : loadErrorCard(),
+      balanceOk ? balanceCard() : loadErrorCard(),
+      exceptionsOk ? workloadExceptionsCard() : loadErrorCard(),
+    ];
+  }
   if (key === "financial") {
     // Two independent cards, two independent failures — one screen's
     // own fetch failing never hides the other's real data.

@@ -1649,6 +1649,29 @@
   .spendundermanagementtile:first-of-type { margin-top: 0; }
 
   /*
+    One team's own ranked member list, labelled with its own name and
+    imbalance — decision 0428's own workload-balance card. Not
+    `.spendcurrency` reused: that class's own header hides for the
+    ordinary single-currency case; a team's own name is always shown
+    here, the same "always shown" choice `.accrualcurrency` already
+    made and for the same reason — an honest, separately-named class
+    rather than a currency class doing double duty.
+  */
+  .teamgroup { margin-top: 14px; }
+  .teamgroup:first-of-type { margin-top: 0; }
+  .teamgrouphead {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 6px;
+  }
+  .teamgrouphead > .muted {
+    font-size: var(--text-sm);
+    font-weight: 600;
+    letter-spacing: 0.02em;
+  }
+
+  /*
     **The worklist scrolls rather than growing** — decision 0250.
 
     Twenty-five rows is a card taller than the screen, and everything

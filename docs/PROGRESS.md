@@ -750,6 +750,79 @@ a rule, and left an approval task in a queue.
   volume and by amount" is close kin to what this decision just built,
   aggregated differently — see that screen's own "Not built" entry.
 
+### User & Team Workload's remaining seven metrics — the screen's own full parity with the design, six of seven metrics built whole (0428)
+- **"shall we tackle - User & Team Workload 1/8. - 7 metrics, none
+  previously tracked"** — the operator's own explicit instruction.
+  Workload's own design-list count had never actually been checked
+  against the codebase before this decision; only "Throughput by user,
+  stacked by stage" (0415) existed of its own eight key metrics.
+- **"All seven together"** — the operator's own choice, over building
+  one metric at a time, once asked how much of the remaining seven
+  should be tackled in one decision.
+- **The one genuine structural gap, surfaced before building**: "tasks
+  pending action and approaching/past due" needs a per-task due date,
+  and none exists anywhere in this schema. `hold_until` is the only
+  date-like concept anywhere near a task, and it is a fired rule
+  *action* recorded in the activity log against an *invoice*
+  (`activity-route.ts`'s own `describeAction`), never a queryable
+  column on a *task* — confirmed by grepping the whole codebase for
+  every use of `hold_until`. Put to the operator directly: build
+  "pending over a period" only, honestly leaving "approaching/past
+  due" unbuilt, or hold the whole metric back until a due-date column
+  exists. The operator chose **"pending over a period" only**
+  (recommended).
+- **Seven new routes**, all gated `AP.Analysis` like the rest of this
+  screen, all reusing existing tables — no new `vf-app` migration:
+  - **`GET /workload/open-tasks`** — per-user open-task counts plus one
+    shared "available" (unclaimed) total. Deliberately drops the
+    per-viewer "locked" ownership concept `task-list-route.ts`'s own
+    `ownershipOf` computes — it is inherently relative to one viewer,
+    and meaningless as an absolute column in an aggregate manager view.
+  - **`GET /workload/handling-time`** — average claim-to-complete hours
+    by *(stage, user)*, a matrix, rendered as a plain table matching
+    decision 0427's own hold-history precedent for a metric that is not
+    a single ranked dimension.
+  - **`GET /workload/cycle-time`** — the same claim-to-complete
+    measurement, aggregated per user only — the design's own adjacent
+    bullet to handling time, kept as its own separate metric rather
+    than folded in.
+  - **`GET /workload/pending`** — open tasks past 3/7/14-day age
+    thresholds (`created_at`, not `claimed_at`), split by user plus one
+    shared "unclaimed" row. A user with nothing past even the shortest
+    threshold is omitted from the response entirely, not shown as a row
+    of zeros — a bug caught by its own test and fixed before this
+    shipped.
+  - **`GET /workload/queue-depth`** — available vs. locked task counts
+    per team, scoped by the team's own org unit (`org_teams.unit_id`,
+    0064) rather than reaching through a task's own invoice — more
+    direct for a team-level metric. Rendered with `stackedBarChart`,
+    the same shape `workload.js`'s own throughput card already
+    established, two fixed segments instead of a stage's own
+    colour-coded buckets.
+  - **`GET /workload/balance`** — per-team variance in open-task count
+    across that team's own members (population mean, variance,
+    `stdDev`), teams sorted most-imbalanced first. Rendered as one
+    labelled group per team (`.teamgroup`/`.teamgrouphead`, a new CSS
+    class pair — not `.spendcurrency` reused, matching decision 0417's
+    own naming discipline), each wrapping a `barList` of that team's own
+    members.
+  - **`GET /workload/exceptions`** — reuses decision 0423's own
+    exception definition (`stage_visits.validation_passed = 0`) under
+    `AP.Analysis` rather than `AP.FraudReview`, framed as coaching
+    ("not to assign blame... to see where extra support or training
+    would help") rather than fraud review — a flat count, not trended.
+- **`vf-ui`'s `PROXIED_TO_INSTANCE` regex widened**, not extended with
+  seven new exact-match entries — the pre-existing exact
+  `/^\/workload\/throughput$/` becomes `/^\/workload\/[^/]+$/`,
+  matching the `/suppliers/[^/]+$/` precedent already used for this
+  screen's own sibling family.
+- `ap-analytics.js`'s `tabContent()` now loads all eight of Operational
+  Performance's own cards in one `Promise.all`, each failing
+  independently — the same discipline every other multi-card tab on
+  this screen already established.
+- **Strings**: `workers/vf-licence/migrations/0139_workload_remaining_
+  seven_metrics_strings.sql` — 34 keys, English and German (68 rows).
+
 ### Purchase orders and matching
 - Purchase order storage grounded in Peppol BIS Order Only 3.3, via UBL
   XML ingestion (0081) and CSV load (0370) — the same tables, the same
@@ -1658,31 +1731,48 @@ vocabulary's EN 16931 reference fields and supplier groups.
 tracked five.** Re-reading the design directly (rather than this
 file's own prior summary of it) surfaced a Screen 6, "Talk to an AP
 Expert," that had never once been named here — see its own entry
-below. Correcting the record: of the five screens with at least one
-real metric behind them, seven of User & Team Workload's own eight key
-metrics, four of Liabilities & Accruals' own six, one of Fraud & Risk
-Detection's own six, and five of the Multi-Enterprise CFO View's own
-six stay unbuilt — **Supplier Performance is the first of the six
-screens to reach full parity with its own design list, all eight of
-its own key metrics built (0421, 0427).** Workload's
-own count had never actually been checked against its own metrics list
-before now; only "Throughput by user, stacked by stage" (0415) exists,
-and the other seven — open task count by user split by ownership,
-average handling time by stage and by user, claim-to-complete cycle
-time, tasks pending action and approaching/past due, team queue depth
+below. Correcting the record: of the six screens with at least one
+real metric behind them, four of Liabilities & Accruals' own six, one
+of Fraud & Risk Detection's own six, and five of the Multi-Enterprise
+CFO View's own six stay unbuilt — **Supplier Performance and User &
+Team Workload are the first two of the six screens to reach full
+parity with their own design lists** — Supplier Performance all eight
+of its own key metrics (0421, 0427), Workload all eight of its own
+(0415, 0428) — **though Workload's own "tasks pending action and
+approaching/past due" is honestly only half of what its own design
+bullet names**: 0428 built "pending over a period" (three fixed
+thresholds — 3, 7, 14 days), by the operator's own explicit choice,
+and did not build "approaching/past due," because no due-date column
+exists anywhere on a task in this schema — `hold_until` is the only
+date-like concept anywhere near a task, and it is a fired rule
+*action* recorded in the activity log against an *invoice*
+(`activity-route.ts`), never a queryable column on a *task*, confirmed
+by grepping the whole codebase. Workload's own count had never
+actually been checked against its own metrics list before 0428; only
+"Throughput by user, stacked by stage" (0415) existed, and the other
+seven — open task count by user split by ownership, average handling
+time by stage and by user, claim-to-complete cycle time, tasks pending
+action (and approaching/past due, not built), team queue depth
 (available vs. locked), workload balance (variance in open-task count
-across a team), and exceptions by user — have never been raised as a
-decision. Decisions 0415, 0416, 0418, 0419, 0420, 0421, 0422, 0423,
-0424, 0425, and 0427 each built one or more vertical slices for real —
-Workload's own throughput metric, Financial Performance's "Accruals
-report" and "Spend under management (with PO)," Fraud Prevention's
-"Potential duplicate invoices," "Unapproved-supplier invoices,"
-"Exceptions by type, by user, by supplier, trended," "Statistical
-outliers," and "Segregation-of-duties flags," Supplier Performance's
-own "Spend by supplier," active supplier count by status, average
-cycle time, exception rate and type mix, PO variance, payment terms
-held vs. negotiated, and — the last two, decision 0427 — early-payment
-discount eligibility and hold history, the Multi-Enterprise CFO View's
+across a team), and exceptions by user — had never been raised as a
+decision before the operator's own explicit instruction, "shall we
+tackle - User & Team Workload 1/8. - 7 metrics, none previously
+tracked," at which point 0428 built all seven together, the operator's
+own choice over building them one at a time. Decisions 0415, 0416,
+0418, 0419, 0420, 0421, 0422, 0423, 0424, 0425, 0427, and 0428 each
+built one or more vertical slices for real — Workload's own throughput
+metric and — 0428's own remaining seven — open tasks by user, average
+handling time, claim-to-complete cycle time, tasks pending over a
+period, team queue depth, workload balance, and exceptions by user,
+Financial Performance's "Accruals report" and "Spend under management
+(with PO)," Fraud Prevention's "Potential duplicate invoices,"
+"Unapproved-supplier invoices," "Exceptions by type, by user, by
+supplier, trended," "Statistical outliers," and "Segregation-of-duties
+flags," Supplier Performance's own "Spend by supplier," active
+supplier count by status, average cycle time, exception rate and type
+mix, PO variance, payment terms held vs. negotiated, and — the last
+two, decision 0427 — early-payment discount eligibility and hold
+history, the Multi-Enterprise CFO View's
 own "Consolidated spend across org units / legal entities" (0425) — the
 design's own recommended "Option 1" scoping (`holdsEverywhere`, `GROUP
 BY org_unit_id`), chosen directly by the operator over the genuinely

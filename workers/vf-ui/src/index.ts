@@ -206,8 +206,18 @@ const PROXIED_TO_INSTANCE: RegExp[] = [
    * 0131 and 0212 already document in this file. The nav item was
    * real, the click handler ran, the fetch went out — and this proxy
    * answered `{"error":"not found"}` before `vf-app` ever saw it.
+   *
+   * **Widened to a wildcard — decision 0428.** Workload's own
+   * remaining seven metrics each add their own `/workload/<name>`
+   * route; a single exact match would have needed seven more entries
+   * for the identical family this codebase already has a pattern for
+   * (`/suppliers/[^/]+$/` below). One wildcard, matching every
+   * `/workload/*` path this screen calls, checked directly with a
+   * real fetch against each of the eight paths it covers rather than
+   * assumed from the pattern alone — `test/index.test.ts`'s own
+   * `CALLED_BY_A_SCREEN` list.
    */
-  /^\/workload\/throughput$/,
+  /^\/workload\/[^/]+$/,
   /**
    * **The accruals report — decision 0417's own follow-on.** Checked
    * directly this time, not assumed: `/accruals` matches no existing

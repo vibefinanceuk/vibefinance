@@ -7,6 +7,13 @@ import {
   handleResetDashboard,
 } from "./dashboard-route.js";
 import { handleWorkloadThroughput } from "./workload-route.js";
+import { handleWorkloadOpenTasks } from "./workload-open-tasks-route.js";
+import { handleWorkloadHandlingTime } from "./workload-handling-time-route.js";
+import { handleWorkloadCycleTime } from "./workload-cycle-time-route.js";
+import { handleWorkloadPending } from "./workload-pending-route.js";
+import { handleWorkloadQueueDepth } from "./workload-queue-depth-route.js";
+import { handleWorkloadBalance } from "./workload-balance-route.js";
+import { handleWorkloadExceptions } from "./workload-exceptions-route.js";
 import { handleAccruals } from "./accruals-route.js";
 import { handleSpendUnderManagement } from "./spend-under-management-route.js";
 import { handleExecutiveConsolidatedSpend } from "./executive-consolidated-spend-route.js";
@@ -1269,6 +1276,89 @@ export default {
       }
 
       const result = await handleWorkloadThroughput(db, auth.user.id, url.searchParams.get("org"));
+      return json(result.body, result.status);
+    }
+
+    /**
+     * **Workload's own remaining seven metrics — decision 0428.** All
+     * seven gated `AP.Analysis`, the same permission `/workload/
+     * throughput` above already checks — this screen's one, unchanged
+     * access concept.
+     */
+    if (pathname === "/workload/open-tasks" && request.method === "GET") {
+      const { db } = resolveTenant(request, env);
+      const auth = await authenticatePerson(db, request, env);
+      if (!auth.user) return json({ error: auth.reason }, 401);
+      if (!(await hasPermission(db, auth.user.id, "AP.Analysis"))) {
+        return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
+      }
+      const result = await handleWorkloadOpenTasks(db, url.searchParams.get("org"), auth.user.id);
+      return json(result.body, result.status);
+    }
+
+    if (pathname === "/workload/handling-time" && request.method === "GET") {
+      const { db } = resolveTenant(request, env);
+      const auth = await authenticatePerson(db, request, env);
+      if (!auth.user) return json({ error: auth.reason }, 401);
+      if (!(await hasPermission(db, auth.user.id, "AP.Analysis"))) {
+        return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
+      }
+      const result = await handleWorkloadHandlingTime(db, url.searchParams.get("org"), auth.user.id);
+      return json(result.body, result.status);
+    }
+
+    if (pathname === "/workload/cycle-time" && request.method === "GET") {
+      const { db } = resolveTenant(request, env);
+      const auth = await authenticatePerson(db, request, env);
+      if (!auth.user) return json({ error: auth.reason }, 401);
+      if (!(await hasPermission(db, auth.user.id, "AP.Analysis"))) {
+        return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
+      }
+      const result = await handleWorkloadCycleTime(db, url.searchParams.get("org"), auth.user.id);
+      return json(result.body, result.status);
+    }
+
+    if (pathname === "/workload/pending" && request.method === "GET") {
+      const { db } = resolveTenant(request, env);
+      const auth = await authenticatePerson(db, request, env);
+      if (!auth.user) return json({ error: auth.reason }, 401);
+      if (!(await hasPermission(db, auth.user.id, "AP.Analysis"))) {
+        return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
+      }
+      const result = await handleWorkloadPending(db, url.searchParams.get("org"), auth.user.id);
+      return json(result.body, result.status);
+    }
+
+    if (pathname === "/workload/queue-depth" && request.method === "GET") {
+      const { db } = resolveTenant(request, env);
+      const auth = await authenticatePerson(db, request, env);
+      if (!auth.user) return json({ error: auth.reason }, 401);
+      if (!(await hasPermission(db, auth.user.id, "AP.Analysis"))) {
+        return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
+      }
+      const result = await handleWorkloadQueueDepth(db, url.searchParams.get("org"), auth.user.id);
+      return json(result.body, result.status);
+    }
+
+    if (pathname === "/workload/balance" && request.method === "GET") {
+      const { db } = resolveTenant(request, env);
+      const auth = await authenticatePerson(db, request, env);
+      if (!auth.user) return json({ error: auth.reason }, 401);
+      if (!(await hasPermission(db, auth.user.id, "AP.Analysis"))) {
+        return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
+      }
+      const result = await handleWorkloadBalance(db, url.searchParams.get("org"), auth.user.id);
+      return json(result.body, result.status);
+    }
+
+    if (pathname === "/workload/exceptions" && request.method === "GET") {
+      const { db } = resolveTenant(request, env);
+      const auth = await authenticatePerson(db, request, env);
+      if (!auth.user) return json({ error: auth.reason }, 401);
+      if (!(await hasPermission(db, auth.user.id, "AP.Analysis"))) {
+        return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
+      }
+      const result = await handleWorkloadExceptions(db, url.searchParams.get("org"), auth.user.id);
       return json(result.body, result.status);
     }
 

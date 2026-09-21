@@ -11,7 +11,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
  * user permissions."
  *
  * **What this file does not re-prove.** The Operational Performance
- * tab delegates to `workload.js`; Financial Performance delegates to
+ * tab delegates to eight modules at once, `workload.js` (decision
+ * 0415) and — decision 0428, Workload's own remaining seven key
+ * metrics, built together at the operator's own choice — `workload-
+ * open-tasks.js`, `workload-handling-time.js`, `workload-cycle-
+ * time.js`, `workload-pending.js`, `workload-queue-depth.js`,
+ * `workload-balance.js` and `workload-exceptions.js`; Financial
+ * Performance delegates to
  * two modules at once, `accruals.js` and `spend-under-management.js`
  * (decision 0419); Supplier Performance delegates to eight modules at
  * once, `supplier-status.js`, `supplier-performance.js`,
@@ -95,6 +101,43 @@ const STRINGS = {
     "workload.throughput": "Throughput by user",
     "workload.throughputsub": "Completed in the last 7 days, stacked by stage",
     "workload.nothroughput": "Nothing completed in the last 7 days",
+    // The Operational Performance tab's remaining seven real cards —
+    // decision 0428, all seven of Workload's own remaining key
+    // metrics, built together.
+    "workload.opentasks": "Open tasks by user",
+    "workload.opentaskssub": "Who currently owns or has claimed what, and how much sits unclaimed",
+    "workload.noopentasks": "No open tasks right now",
+    "workload.opentasksavailable": "{n} unclaimed",
+    "workload.handlingtime": "Average handling time",
+    "workload.handlingtimesub": "Claim to complete, by stage and by user",
+    "workload.nohandlingtime": "No completed, claimed tasks yet",
+    "workload.stage": "Stage",
+    "workload.user": "User",
+    "workload.avghandlingtime": "Avg. handling time",
+    "workload.taskcount": "Tasks",
+    "workload.hourscount": "{n} hours",
+    "workload.cycletime": "Claim-to-complete cycle time",
+    "workload.cycletimesub": "How long a task sits once somebody has it",
+    "workload.nocycletime": "No completed, claimed tasks yet",
+    "workload.taskcountnote": "{n} tasks",
+    "workload.pending": "Tasks pending action",
+    "workload.pendingsub": "Open longer than 3, 7 or 14 days",
+    "workload.nopending": "Nothing has been open that long",
+    "workload.dayplusheader": "{n}+ days",
+    "workload.unclaimed": "Unclaimed",
+    "workload.queuedepth": "Team queue depth",
+    "workload.queuedepthsub": "Available (unclaimed) vs. locked (claimed but not finished), by team",
+    "workload.noqueuedepth": "No team-owned tasks open right now",
+    "workload.available": "Available",
+    "workload.locked": "Locked",
+    "workload.balance": "Workload balance",
+    "workload.balancesub": "Variance in open-task count across each team's own members",
+    "workload.nobalance": "No teams to compare yet",
+    "workload.balancestddev": "±{n} tasks",
+    "workload.exceptions": "Exceptions by user",
+    "workload.exceptionssub": "Not to assign blame — to see where extra support or training would help",
+    "workload.noexceptions": "No exceptions recorded",
+    "workload.exceptioncount": "{n} exceptions",
     // The Financial Performance tab's real content — decision 0417's
     // own follow-on.
     "financialperformance.accruals": "Accruals report",
@@ -230,7 +273,11 @@ function stubFetch(routes: Record<string, unknown>) {
  * and every permission check this screen makes — its own tab gate,
  * `holdsEverywhere` for Executive IQ — reads `me` directly.
  *
- * `/api/workload/throughput`, `/api/accruals`,
+ * `/api/workload/throughput`, `/api/workload/open-tasks`,
+ * `/api/workload/handling-time`, `/api/workload/cycle-time`,
+ * `/api/workload/pending`, `/api/workload/queue-depth`,
+ * `/api/workload/balance`, `/api/workload/exceptions`,
+ * `/api/accruals`,
  * `/api/spend/under-management`, `/api/suppliers/spend`,
  * `/api/suppliers/discount-eligibility`, `/api/suppliers/hold-history`,
  * `/api/fraud/duplicates`, `/api/fraud/unapproved-suppliers`,
@@ -251,6 +298,13 @@ async function openApAnalytics(
     "/api/whoami": { id: "u-dan", name: "Dan", permissions, ...extraWhoami },
     "/api/tasks": { tasks: [], counts: {} },
     "/api/workload/throughput": { users: [], legend: [] },
+    "/api/workload/open-tasks": { users: [], available: 0 },
+    "/api/workload/handling-time": { rows: [] },
+    "/api/workload/cycle-time": { users: [] },
+    "/api/workload/pending": { thresholdsDays: [3, 7, 14], users: [], unclaimed: [0, 0, 0] },
+    "/api/workload/queue-depth": { teams: [] },
+    "/api/workload/balance": { teams: [] },
+    "/api/workload/exceptions": { users: [] },
     "/api/accruals": { currencies: [] },
     "/api/spend/under-management": { currencies: [] },
     "/api/suppliers/spend": { currencies: [] },
@@ -394,12 +448,37 @@ describe("the default tab, when only some permissions are held", () => {
 });
 
 describe("real tabs wire to the already-tested module behind them, placeholders say what they are", () => {
-  it("Operational Performance renders workload.js's own card", async () => {
+  it("Operational Performance renders all eight of its own cards, decision 0428 — all eight of Workload's own key metrics, now real", async () => {
     await openApAnalytics(["AP.Analysis"]);
 
     expect(document.querySelector(".tab.active")?.textContent).toBe("Operational Performance");
-    expect(document.querySelector(".cardhead h3")?.textContent).toBe("Throughput by user");
+    const headings = [...document.querySelectorAll(".cardhead h3")].map((h) => h.textContent);
+    expect(headings).toEqual([
+      "Throughput by user",
+      "Open tasks by user",
+      "Average handling time",
+      "Claim-to-complete cycle time",
+      "Tasks pending action",
+      "Team queue depth",
+      "Workload balance",
+      "Exceptions by user",
+    ]);
     expect(document.body.textContent).toContain("Nothing completed in the last 7 days");
+  });
+
+  it("Operational Performance's eight cards fail independently — one's own load failure never hides the others' real content", async () => {
+    await openApAnalytics(["AP.Analysis"], {}, { "/api/workload/handling-time": { ok: false, status: 500 } });
+
+    expect(document.body.textContent).toContain("Could not load this tab right now");
+    const headings = [...document.querySelectorAll(".cardhead h3")].map((h) => h.textContent);
+    expect(headings).toContain("Throughput by user");
+    expect(headings).toContain("Open tasks by user");
+    expect(headings).toContain("Claim-to-complete cycle time");
+    expect(headings).toContain("Tasks pending action");
+    expect(headings).toContain("Team queue depth");
+    expect(headings).toContain("Workload balance");
+    expect(headings).toContain("Exceptions by user");
+    expect(headings).not.toContain("Average handling time");
   });
 
   it("Financial Performance renders accruals.js's own card", async () => {
