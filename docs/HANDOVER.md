@@ -2,7 +2,7 @@
 
 **Written 4 September 2026, updated 17 September (six times), updated
 18 September (four times), updated 19 September (thirty-two times),
-updated 20 September (twenty-two times), updated 21 September (thirteen
+updated 20 September (twenty-two times), updated 21 September (fourteen
 times).**
 
 **For a session starting cold.** Where things stand, what needs a
@@ -32,20 +32,22 @@ twice.
 
 | | |
 | --- | --- |
-| `origin/main` | `f1001f5` — fetched directly by this session, matching this session's own commit exactly. Decision 0432's own addendum (a vertical alignment fix to the same Ask/Clear row) is confirmed pushed and deployed. **Decision 0433 (the manual supplier search ranks by the invoice's own org) is built, tested, and documented on top of that, not yet pushed or deployed.** |
+| `origin/main` | `a3d5ab1` — fetched directly by this session, matching this session's own commit exactly. Decision 0433 (the manual supplier search ranks by the invoice's own org) is confirmed pushed and deployed. **Nothing from this session is currently outstanding.** |
 | vf-admin deployed | `8e27a34` · `https://admin.vibefinance-ai.com` · behind Cloudflare Access |
-| vf-app deployed | `f1001f5` confirmed — decisions 0429 (agreed payment means, a supplier-record placeholder), 0430 (Talk to an AP Expert, Screen 6) with all eight of its own addenda, 0431 (Executive IQ's remaining four metrics), and 0432 with its own addendum, all confirmed. Decision 0432 and its own addendum both touch `vf-ui` only, nothing to deploy here. |
-| vf-licence deployed | `f1001f5` per the operator's own reports; migrations `0140` through `0142` all applied — `0142` is decision 0431's own strings. Decision 0432 and its own addendum both added no new migration. |
-| vf-ui deployed | `f1001f5` · `https://app.vibefinance-ai.com` — operator's own reports, confirmed directly: *"deployed and pushed"* against the icon buttons live, then, with a screenshot, *"the icons are a little lower or the text box is higher. They seem a little un-aligned"*, then *"pushed and deployed"* again confirming the alignment-fix addendum live. |
+| vf-app deployed | `a3d5ab1` confirmed — decisions 0429 (agreed payment means, a supplier-record placeholder), 0430 (Talk to an AP Expert, Screen 6) with all eight of its own addenda, 0431 (Executive IQ's remaining four metrics), 0432 with its own addendum, and 0433 (org-ranked supplier search), all confirmed. |
+| vf-licence deployed | `a3d5ab1` per the operator's own reports; migrations `0140` through `0143` all applied — `0143` is decision 0433's own string. Decision 0432 and its own addendum both added no new migration. |
+| vf-ui deployed | `a3d5ab1` · `https://app.vibefinance-ai.com` — operator's own reports, confirmed directly: *"deployed and pushed"* against the icon buttons live, then, with a screenshot, *"the icons are a little lower or the text box is higher. They seem a little un-aligned"*, then *"pushed and deployed"* again confirming the alignment-fix addendum live, then *"deployed and pushed"* once more confirming decision 0433's own org-ranked supplier search live. |
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
-| `vf-app-poc` migrations | through `0074` applied and confirmed live — `0073` (decision 0429) is real schema; `0074` (decision 0430) is a documentation-only `ASSERT` restatement with no schema change, the same shape as `0071`; none of 0430's eight addenda needed a new `vf-app` migration; decision 0431 also needed none — its four new routes read existing tables only |
-| `vf-licence-poc` migrations | through `0142` applied and confirmed live — the operator's own `apply_migrations.py --remote` run |
+| `vf-app-poc` migrations | through `0074` applied and confirmed live — `0073` (decision 0429) is real schema; `0074` (decision 0430) is a documentation-only `ASSERT` restatement with no schema change, the same shape as `0071`; none of 0430's eight addenda needed a new `vf-app` migration; decision 0431 also needed none — its four new routes read existing tables only; decision 0433 also needed none — its ranking change reads the existing `org_unit_id` column only |
+| `vf-licence-poc` migrations | through `0143` applied and confirmed live — the operator's own `apply_migrations.py --remote` run, `0143` is decision 0433's own string |
 | Tests | vf-admin 9 · vf-app 2485 (108 test files, +6 from decision 0433's own org-ranking describe block, confirmed by one unfiltered whole-suite run) · vf-licence 320 (unchanged — decision 0433's new migration `0143` added no new test; `string-coverage.test.ts` was checked, not extended, see decision 0433's own Tests section) · vf-ui 74 Worker (unchanged) + 951 browser (948 + 3 in decision 0433's own new describe block in `viewer.test.ts`, confirmed by one unfiltered whole-suite run) · shared 295 (+3 known pre-existing failures) |
 | Decision records | 433 |
 
 **Decision 0433 (the manual supplier search ranks by the invoice's own
-org) is built, tested, and documented. Not yet pushed or deployed.**
-Live testing surfaced an invoice whose seller matched two active sites
+org) is pushed and deployed, confirmed directly.** `origin/main`
+fetched directly reads `a3d5ab1`, matching this session's own commit
+exactly; the operator confirmed with *"deployed and pushed."* Live
+testing surfaced an invoice whose seller matched two active sites
 sharing one VAT number, neither a pay site — `matchSupplier`'s own
 `ambiguous_site` outcome — reported directly by the operator with a
 screenshot: *"however when I open the invoice it states that the
@@ -73,8 +75,10 @@ own list so a person sees why a row is near the top. One new string
 facts, "create a task" was already an ordinary action. Full
 `vf-app` (2485) and `vf-licence` (320) suites both confirmed green
 after the build; the full `vf-ui` browser suite (951) confirmed green
-too. See decision 0433 for the full reasoning, the two clarifying
-questions and their answers, and the complete test breakdown.
+too. **Nothing from this session is currently outstanding — every
+commit through decision 0433 is pushed and deployed.** See decision
+0433 for the full reasoning, the two clarifying questions and their
+answers, and the complete test breakdown.
 
 **Decision 0432 (Ask and Clear, restyled as icon-above-label buttons)
 is pushed and deployed, confirmed directly.** `origin/main` fetched
