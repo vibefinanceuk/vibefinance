@@ -1582,44 +1582,58 @@ value lands in which field — *"use the transport reference as the
 invoice number"* (0058). The machinery exists; what is missing is the
 vocabulary's EN 16931 reference fields and supplier groups.
 
-**All five of the Management Dashboard's designed screens now have at
-least one real metric behind them; four of Liabilities & Accruals' own
-six key metrics, one of Fraud & Risk Detection's own six, two of
-Supplier Performance's own eight, and five of the Multi-Enterprise CFO
-View's own six stay unbuilt.** Decisions 0415, 0416, 0418, 0419, 0420,
-0421, 0422, 0423, 0424, and 0425 each built one or more vertical slices
-for real — Workload's "Throughput by user, stacked by stage," Financial
-Performance's "Accruals report" and "Spend under management (with
-PO)," Fraud Prevention's "Potential duplicate invoices,"
-"Unapproved-supplier invoices," "Exceptions by type, by user, by
-supplier, trended," "Statistical outliers," and "Segregation-of-duties
-flags," Supplier Performance's own "Spend by supplier," active supplier
-count by status, average cycle time, exception rate and type mix, PO
-variance, and payment terms held vs. negotiated, and now the
-Multi-Enterprise CFO View's own "Consolidated spend across org units /
-legal entities" (0425) — the design's own recommended "Option 1"
-scoping (`holdsEverywhere`, `GROUP BY org_unit_id`), chosen directly by
-the operator over the genuinely new multi-select org-comparison scope
-the design itself defers. Decision 0417 gave all five design screens
-their own tab inside the new AP Analytics screen; decision 0425 is the
-first to give Executive IQ real content behind its own tab rather than
-a permission-gated "not built yet" placeholder. **Spend under
-management is still also the Multi-Enterprise CFO View's own *listed
-primary* screen**, per the design's own deliberate cross-referencing
-(0419) — now that Executive IQ exists, that metric likely belongs there
-too, not built there yet. **The Multi-Enterprise CFO View's own other
-five metrics** — liabilities and accruals by entity, cash position
-across currencies, cross-entity supplier concentration, cross-entity
-exception and fraud-signal trend, and cross-org throughput/workload
-comparison — stay unbuilt, each named as a declined option in decision
-0425's own first-metric question. **The genuinely new "compare selected
-orgs" scoping concept (the design's own "Option 2") stays exactly where
-the design document leaves it** — a decision for a future design pass,
-not assumed solved by decision 0425's own Option 1 build. **Liabilities
-& Accruals' own other four metrics** — early-payment/discount
-eligibility, cash-flow forecast, payment terms held vs. actual, and
-DPO — stay unbuilt; three of them need payment-execution data (when and
-on what terms an invoice was actually paid) this codebase does not
+**The design document names six new dashboard additions, not five —
+`docs/PROGRESS.md` and every decision through 0425 had only ever
+tracked five.** Re-reading the design directly (rather than this
+file's own prior summary of it) surfaced a Screen 6, "Talk to an AP
+Expert," that had never once been named here — see its own entry
+below. Correcting the record: of the five screens with at least one
+real metric behind them, seven of User & Team Workload's own eight key
+metrics, four of Liabilities & Accruals' own six, one of Fraud & Risk
+Detection's own six, two of Supplier Performance's own eight, and five
+of the Multi-Enterprise CFO View's own six stay unbuilt — Workload's
+own count had never actually been checked against its own metrics list
+before now; only "Throughput by user, stacked by stage" (0415) exists,
+and the other seven — open task count by user split by ownership,
+average handling time by stage and by user, claim-to-complete cycle
+time, tasks pending action and approaching/past due, team queue depth
+(available vs. locked), workload balance (variance in open-task count
+across a team), and exceptions by user — have never been raised as a
+decision. Decisions 0415, 0416, 0418, 0419, 0420, 0421, 0422, 0423,
+0424, and 0425 each built one or more vertical slices for real —
+Workload's own throughput metric, Financial Performance's "Accruals
+report" and "Spend under management (with PO)," Fraud Prevention's
+"Potential duplicate invoices," "Unapproved-supplier invoices,"
+"Exceptions by type, by user, by supplier, trended," "Statistical
+outliers," and "Segregation-of-duties flags," Supplier Performance's
+own "Spend by supplier," active supplier count by status, average
+cycle time, exception rate and type mix, PO variance, and payment
+terms held vs. negotiated, and now the Multi-Enterprise CFO View's own
+"Consolidated spend across org units / legal entities" (0425) — the
+design's own recommended "Option 1" scoping (`holdsEverywhere`, `GROUP
+BY org_unit_id`), chosen directly by the operator over the genuinely
+new multi-select org-comparison scope the design itself defers.
+Decision 0417 gave all five design screens their own tab inside the
+new AP Analytics screen; decision 0425 is the first to give Executive
+IQ real content behind its own tab rather than a permission-gated "not
+built yet" placeholder. **Spend under management is still also the
+Multi-Enterprise CFO View's own *listed primary* screen**, per the
+design's own deliberate cross-referencing (0419) — now that Executive
+IQ exists, that metric likely belongs there too, not built there yet.
+**The Multi-Enterprise CFO View's own other five metrics** —
+liabilities and accruals by entity, cash position across currencies,
+cross-entity supplier concentration, cross-entity exception and
+fraud-signal trend, and cross-org throughput/workload comparison — stay
+unbuilt, each named as a declined option in decision 0425's own
+first-metric question. **The genuinely new "compare selected orgs"
+scoping concept (the design's own "Option 2") stays exactly where the
+design document leaves it** — a decision for a future design pass, not
+assumed solved by decision 0425's own Option 1 build. **Liabilities &
+Accruals' own other four metrics** — invoices eligible for early
+payment / dynamic discount, payment history, cash-flow forecast (and
+by currency), and payment terms held vs. actual with the resulting DPO
+trend — stay unbuilt; three of them need payment-execution data (when
+and on what terms an invoice was actually paid) this codebase does not
 capture anywhere.
 **Fraud & Risk Detection has five of its own six metrics built now —
 only vendor banking-detail-change alerts stays unbuilt**, the design's
@@ -1631,6 +1645,23 @@ invoices; decision 0423 built the third, exceptions by type, by user,
 by supplier, trended; decision 0424 built the fourth and sixth
 together, statistical outliers and segregation-of-duties flags, at the
 operator's own request ("Can you tackle 1 and 2").
+
+**Screen 6 — "Talk to an AP Expert," entirely unbuilt, no vertical
+slice started.** The design's own sixth and last dashboard addition: a
+conversational tab answering plain-language questions about live AP
+data — *"what's our overdue balance with Acme this month"* — without a
+person having to find the right screen or report first. Gated on a
+new, dedicated `AP.Assistant` permission, deliberately not implied by
+any existing grant. Architecturally a small, reviewed set of named
+tool calls, each running through the same `hasPermission`/`unitClause`
+checks as the screen it stands in for — explicitly **not** open
+text-to-SQL against D1. The design's own Recommended Phasing sequences
+it last, Phase 5, on purpose: its tool palette wraps the scoped query
+functions the other five screens' own routes already build, so it has
+the least to stand on until they exist. A further "standalone remote
+MCP server" option the design also sketches for this screen is
+explicitly out of scope for the document itself, not merely deferred —
+its own future decision, should it ever be made.
 
 **Early-payment/discount eligibility, specifically, is parked rather
 than ruled out — it needs more thought, at the operator's own
