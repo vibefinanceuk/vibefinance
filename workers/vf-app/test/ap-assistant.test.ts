@@ -56,20 +56,40 @@ async function process(id: string, stages: { id: string; name: string; sequence:
   }
 }
 
+/**
+ * Tracked here so `invoice()` below can embed the same name as
+ * `facts_json`'s own `BT-27` automatically — found the hard way
+ * (a `totalMatching` test failure): `documents-route.ts`'s own
+ * in-memory supplier search reads `BT-27`, never the real
+ * `suppliers.name` join, so a test that only sets `supplier_id`
+ * exercises a genuinely different supplier-matching path than the
+ * SQL-level one `invoice-count-route.ts` uses. Real production data
+ * usually has both agree (a supplier name extracted from the invoice
+ * and a supplier record it was matched to), so this keeps test data
+ * realistic rather than papering over that with a shortcut a real
+ * invoice would not take.
+ */
+const supplierNames = new Map<string, string>();
+
 async function supplier(id: string, name: string) {
+  supplierNames.set(id, name);
   await env.DB.prepare("INSERT INTO suppliers (id, erp_identifier, name) VALUES (?, ?, ?)").bind(id, id, name).run();
 }
 
 async function invoice(opts: { id: string; supplierId: string; total: number; currency: string; number?: string; createdAt?: string }) {
-  // `facts_json` carries `BT-1` too, not just an empty object — the
-  // `invoice_number` column is what `invoice_lookup` reads (decision
-  // 0430's own addendum), but `documents-route.ts`'s own listing
-  // (which `invoice_search`, its second addendum, wraps) reads the
-  // number out of `facts_json`'s own `BT-1` key instead, the same
-  // field every other Documents test in this codebase seeds. Both are
-  // real, independent readings of "the invoice's own number" in this
-  // schema, so a helper meant to exercise both tools sets both.
-  const factsJson = JSON.stringify(opts.number ? { "BT-1": opts.number } : {});
+  // `facts_json` carries `BT-1` and `BT-27` too, not just an empty
+  // object — the `invoice_number` column is what `invoice_lookup`
+  // reads (decision 0430's own addendum), but `documents-route.ts`'s
+  // own listing (which `invoice_search`, its second addendum, wraps)
+  // reads the number and the supplier name out of `facts_json` itself
+  // instead, the same fields every other Documents test in this
+  // codebase seeds. Both readings are real; a helper meant to
+  // exercise every tool that touches an invoice sets all of them.
+  const facts: Record<string, string> = {};
+  if (opts.number) facts["BT-1"] = opts.number;
+  const supplierName = supplierNames.get(opts.supplierId);
+  if (supplierName) facts["BT-27"] = supplierName;
+  const factsJson = JSON.stringify(facts);
   if (opts.createdAt) {
     await env.DB.prepare(
       "INSERT INTO invoice_headers (id, invoice_number, facts_json, total_with_vat, currency, supplier_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)"
@@ -121,6 +141,7 @@ async function purchaseOrder(opts: { id: string; number: string; payable: number
 beforeEach(async () => {
   await applyTestSchema();
   openTaskSeq = 0;
+  supplierNames.clear();
 });
 
 describe("parseToolSelection — refusal by default, the same discipline parseModelOutput already established", () => {
@@ -484,23 +505,78 @@ describe("invoice_lookup, including a real minted document link", () => {
     expect((model.compile as ReturnType<typeof vi.fn>).mock.calls).toHaveLength(1);
   });
 
-  it("surfaces an ambiguous match rather than silently picking one supplier's invoice", async () => {
+  it("surfaces an ambiguous match with data for both, rather than silently picking one supplier's invoice", async () => {
     await person("alice", ["AP.Assistant", "AP.Validate"]);
     await supplier("acme", "Acme Widgets");
     await supplier("globex", "Globex Corp");
     await invoice({ id: "inv-1", number: "INV-1001", supplierId: "acme", total: 250, currency: "GBP" });
     await invoice({ id: "inv-2", number: "INV-1001", supplierId: "globex", total: 900, currency: "GBP" });
 
-    const model = fakeModel('{"tool": "invoice_lookup", "args": {"invoiceNumber": "INV-1001"}}', "There are two invoices numbered INV-1001 — which one?");
+    const model = fakeModel('{"tool": "invoice_lookup", "args": {"invoiceNumber": "INV-1001"}}', "There are two invoices numbered INV-1001: Acme Widgets and Globex Corp.");
     const result = await handleAskApAssistant(env.DB, model, null, "alice", "link to invoice INV-1001");
     const body = result.body as ApAssistantAnswer;
-    expect(body.answer).toContain("which one");
+    expect(body.answer).toContain("Acme Widgets");
 
     const calls = (model.compile as ReturnType<typeof vi.fn>).mock.calls as [string][];
     const answerPrompt = calls.find(([p]) => !p.includes("Reply with ONLY a JSON object"))![0];
     expect(answerPrompt).toContain('"ambiguous":true');
     expect(answerPrompt).toContain("Acme Widgets");
     expect(answerPrompt).toContain("Globex Corp");
+  });
+
+  it("returns every ambiguous match's own real document link immediately, rather than withholding all of them", async () => {
+    // Decision 0430's third addendum — this chat has no memory of its
+    // own, so a bare "which one did you mean?" with no links at all
+    // was a dead end every time. Both real documents come back at once.
+    await person("alice", ["AP.Assistant", "AP.Validate"]);
+    await supplier("acme", "Acme Widgets");
+    await supplier("globex", "Globex Corp");
+    await invoice({ id: "inv-1", number: "INV-1001", supplierId: "acme", total: 250, currency: "GBP" });
+    await invoice({ id: "inv-2", number: "INV-1001", supplierId: "globex", total: 900, currency: "GBP" });
+    await env.DB.prepare(
+      "INSERT INTO invoice_documents (id, invoice_id, r2_key, document_type, content_type) VALUES ('d-1', 'inv-1', 'k-1', 'original', 'application/pdf')"
+    ).run();
+    await env.DB.prepare(
+      "INSERT INTO invoice_documents (id, invoice_id, r2_key, document_type, content_type) VALUES ('d-2', 'inv-2', 'k-2', 'original', 'application/pdf')"
+    ).run();
+
+    const model = fakeModel('{"tool": "invoice_lookup", "args": {"invoiceNumber": "INV-1001"}}', "Here are both.");
+    const result = await handleAskApAssistant(env.DB, model, null, "alice", "link to invoice INV-1001", "test-secret", "https://app.example.com");
+    expect((result.body as ApAssistantAnswer).answer).toBe("Here are both.");
+
+    const calls = (model.compile as ReturnType<typeof vi.fn>).mock.calls as [string][];
+    const answerPrompt = calls.find(([p]) => !p.includes("Reply with ONLY a JSON object"))![0];
+    const dataJson = answerPrompt.slice(answerPrompt.indexOf("{"), answerPrompt.lastIndexOf("}") + 1);
+    const data = JSON.parse(dataJson) as { matches: { supplierName: string; documentUrl: string | null }[]; moreMatchesNotShown: boolean };
+    expect(data.matches).toHaveLength(2);
+    for (const m of data.matches) {
+      expect(m.documentUrl).toContain("https://app.example.com/documents/");
+    }
+    expect(data.moreMatchesNotShown).toBe(false);
+  });
+
+  it("says plainly when a specific ambiguous match has no document, rather than a link for one and silence for the other", async () => {
+    await person("alice", ["AP.Assistant", "AP.Validate"]);
+    await supplier("acme", "Acme Widgets");
+    await supplier("globex", "Globex Corp");
+    await invoice({ id: "inv-1", number: "INV-1001", supplierId: "acme", total: 250, currency: "GBP" });
+    await invoice({ id: "inv-2", number: "INV-1001", supplierId: "globex", total: 900, currency: "GBP" });
+    await env.DB.prepare(
+      "INSERT INTO invoice_documents (id, invoice_id, r2_key, document_type, content_type) VALUES ('d-1', 'inv-1', 'k-1', 'original', 'application/pdf')"
+    ).run();
+    // inv-2 (Globex) has no document on file.
+
+    const model = fakeModel('{"tool": "invoice_lookup", "args": {"invoiceNumber": "INV-1001"}}', "irrelevant");
+    await handleAskApAssistant(env.DB, model, null, "alice", "link to invoice INV-1001", "test-secret", "https://app.example.com");
+
+    const calls = (model.compile as ReturnType<typeof vi.fn>).mock.calls as [string][];
+    const answerPrompt = calls.find(([p]) => !p.includes("Reply with ONLY a JSON object"))![0];
+    const dataJson = answerPrompt.slice(answerPrompt.indexOf("{"), answerPrompt.lastIndexOf("}") + 1);
+    const data = JSON.parse(dataJson) as { matches: { supplierName: string; documentUrl: string | null }[] };
+    const globex = data.matches.find((m) => m.supplierName === "Globex Corp")!;
+    const acme = data.matches.find((m) => m.supplierName === "Acme Widgets")!;
+    expect(globex.documentUrl).toBeNull();
+    expect(acme.documentUrl).toContain("https://app.example.com/documents/");
   });
 });
 
@@ -595,5 +671,150 @@ describe("invoice_search, a browsable list rather than one exact number", () => 
     const dataJson = answerPrompt.slice(answerPrompt.indexOf("{"), answerPrompt.lastIndexOf("}") + 1);
     const data = JSON.parse(dataJson) as { invoices: { number: string | null }[] };
     expect(data.invoices.map((i) => i.number)).toEqual(["INV-ACME"]);
+  });
+
+  it("'totalMatching' is exact even past the 50-row list cap — decision 0430's third addendum", async () => {
+    // The live gap this closes: "how many invoices were received this
+    // month" was refused because the old result only ever had a
+    // capped list to count from. 62 real rows, cap 50 — the returned
+    // list is truncated but the count is not.
+    await person("alice", ["AP.Assistant", "AP.Review"]);
+    await supplier("acme", "Acme Widgets");
+    for (let i = 0; i < 62; i++) {
+      await invoice({ id: `inv-${i}`, number: `INV-${i}`, supplierId: "acme", total: 100, currency: "GBP" });
+    }
+
+    const model = fakeModel('{"tool": "invoice_search", "args": {}}', "There are 62 invoices.");
+    const result = await handleAskApAssistant(env.DB, model, null, "alice", "how many invoices are there?");
+    const body = result.body as ApAssistantAnswer;
+    expect(body.answer).toBe("There are 62 invoices.");
+
+    const calls = (model.compile as ReturnType<typeof vi.fn>).mock.calls as [string][];
+    const answerPrompt = calls.find(([p]) => !p.includes("Reply with ONLY a JSON object"))![0];
+    const dataJson = answerPrompt.slice(answerPrompt.indexOf("{"), answerPrompt.lastIndexOf("}") + 1);
+    const data = JSON.parse(dataJson) as { invoices: unknown[]; countReturned: number; totalMatching: number; moreMayExist: boolean };
+    expect(data.countReturned).toBe(50);
+    expect(data.totalMatching).toBe(62);
+    expect(data.moreMayExist).toBe(true);
+  });
+
+  it("'totalMatching' reflects a supplier filter, not just the raw fetch cap", async () => {
+    await person("alice", ["AP.Assistant", "AP.Review"]);
+    await supplier("acme", "Acme Widgets");
+    await supplier("globex", "Globex Corp");
+    await invoice({ id: "a1", number: "INV-A1", supplierId: "acme", total: 100, currency: "GBP" });
+    await invoice({ id: "a2", number: "INV-A2", supplierId: "acme", total: 100, currency: "GBP" });
+    await invoice({ id: "g1", number: "INV-G1", supplierId: "globex", total: 100, currency: "GBP" });
+
+    const model = fakeModel('{"tool": "invoice_search", "args": {"supplier": "Acme"}}', "Two invoices from Acme.");
+    const result = await handleAskApAssistant(env.DB, model, null, "alice", "how many invoices from Acme?");
+    const body = result.body as ApAssistantAnswer;
+    expect(body.answer).toBe("Two invoices from Acme.");
+
+    const calls = (model.compile as ReturnType<typeof vi.fn>).mock.calls as [string][];
+    const answerPrompt = calls.find(([p]) => !p.includes("Reply with ONLY a JSON object"))![0];
+    const dataJson = answerPrompt.slice(answerPrompt.indexOf("{"), answerPrompt.lastIndexOf("}") + 1);
+    const data = JSON.parse(dataJson) as { totalMatching: number; moreMayExist: boolean };
+    expect(data.totalMatching).toBe(2);
+    expect(data.moreMayExist).toBe(false);
+  });
+});
+
+/**
+ * `recentTurns` — decision 0430's third addendum. Nothing is stored
+ * server-side; this is untrusted client input, the same trust level
+ * `question` itself has always had, so every case here treats it that
+ * way — sanitized, capped, and simply ignored when malformed rather
+ * than erroring.
+ */
+describe("recentTurns, bounded conversational context", () => {
+  it("is absent from both prompts when no history is given, unchanged from before this addendum", async () => {
+    await person("alice", ["AP.Assistant", "AP.Analysis"]);
+    const model = fakeModel('{"tool": "accrual_summary", "args": {}}', "You have £0 in accruals.");
+    await handleAskApAssistant(env.DB, model, null, "alice", "what do we owe?");
+
+    const calls = (model.compile as ReturnType<typeof vi.fn>).mock.calls as [string][];
+    for (const [prompt] of calls) {
+      expect(prompt).not.toContain("For context");
+    }
+  });
+
+  it("appears in both the selection and answer prompts when given", async () => {
+    await person("alice", ["AP.Assistant", "AP.Analysis"]);
+    const model = fakeModel('{"tool": "accrual_summary", "args": {}}', "You have £0 in accruals.");
+    await handleAskApAssistant(
+      env.DB,
+      model,
+      null,
+      "alice",
+      "and the year before that?",
+      undefined,
+      "",
+      [{ question: "how much have we spent with Acme?", answer: "You've spent £1,200 with Acme this year." }]
+    );
+
+    const calls = (model.compile as ReturnType<typeof vi.fn>).mock.calls as [string][];
+    expect(calls).toHaveLength(2);
+    for (const [prompt] of calls) {
+      expect(prompt).toContain("how much have we spent with Acme?");
+      expect(prompt).toContain("You've spent £1,200 with Acme this year.");
+    }
+  });
+
+  it("is silently ignored when not an array, rather than erroring", async () => {
+    await person("alice", ["AP.Assistant", "AP.Analysis"]);
+    const model = fakeModel('{"tool": "accrual_summary", "args": {}}', "You have £0 in accruals.");
+    const result = await handleAskApAssistant(env.DB, model, null, "alice", "what do we owe?", undefined, "", "not an array");
+
+    expect(result.status).toBe(200);
+    const calls = (model.compile as ReturnType<typeof vi.fn>).mock.calls as [string][];
+    for (const [prompt] of calls) {
+      expect(prompt).not.toContain("For context");
+    }
+  });
+
+  it("drops a malformed entry (missing 'answer') rather than including it half-formed", async () => {
+    await person("alice", ["AP.Assistant", "AP.Analysis"]);
+    const model = fakeModel('{"tool": "accrual_summary", "args": {}}', "You have £0 in accruals.");
+    await handleAskApAssistant(env.DB, model, null, "alice", "what do we owe?", undefined, "", [
+      { question: "a real question with no answer field" },
+      { question: "a real one", answer: "and a real answer" },
+    ]);
+
+    const calls = (model.compile as ReturnType<typeof vi.fn>).mock.calls as [string][];
+    for (const [prompt] of calls) {
+      expect(prompt).not.toContain("a real question with no answer field");
+      expect(prompt).toContain("and a real answer");
+    }
+  });
+
+  it("truncates an oversized turn rather than sending it whole", async () => {
+    await person("alice", ["AP.Assistant", "AP.Analysis"]);
+    const model = fakeModel('{"tool": "accrual_summary", "args": {}}', "You have £0 in accruals.");
+    const longAnswer = "x".repeat(1000);
+    await handleAskApAssistant(env.DB, model, null, "alice", "what do we owe?", undefined, "", [
+      { question: "q", answer: longAnswer },
+    ]);
+
+    const calls = (model.compile as ReturnType<typeof vi.fn>).mock.calls as [string][];
+    for (const [prompt] of calls) {
+      expect(prompt).not.toContain(longAnswer);
+      expect(prompt).toContain("x".repeat(300));
+    }
+  });
+
+  it("caps at 50 turns even when the client sends more, keeping the most recent", async () => {
+    await person("alice", ["AP.Assistant", "AP.Analysis"]);
+    const model = fakeModel('{"tool": "accrual_summary", "args": {}}', "You have £0 in accruals.");
+    const turns = Array.from({ length: 55 }, (_, i) => ({ question: `question number ${i}`, answer: `answer number ${i}` }));
+    await handleAskApAssistant(env.DB, model, null, "alice", "what do we owe?", undefined, "", turns);
+
+    const calls = (model.compile as ReturnType<typeof vi.fn>).mock.calls as [string][];
+    const selectionPrompt = calls.find(([p]) => p.includes("Reply with ONLY a JSON object"))![0];
+    // The oldest five (0–4) were dropped; the most recent fifty (5–54) kept.
+    expect(selectionPrompt).not.toContain("question number 0\"");
+    expect(selectionPrompt).not.toContain("question number 4\"");
+    expect(selectionPrompt).toContain("question number 5\"");
+    expect(selectionPrompt).toContain("question number 54\"");
   });
 });

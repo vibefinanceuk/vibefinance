@@ -13,6 +13,7 @@ import { handlePossibleDuplicates } from "./fraud-duplicates-route.js";
 import { handleInvoiceLookup, type InvoiceLookupReport } from "./invoice-lookup-route.js";
 import { handleMintDocumentUrl } from "./document-route.js";
 import { handleListDocuments } from "./documents-route.js";
+import { handleInvoiceCount, type InvoiceCountReport } from "./invoice-count-route.js";
 import { unitsWherePermitted, scopedToChosenOrg } from "./enforce.js";
 import { firstOfThisMonth } from "./dates.js";
 
@@ -87,6 +88,28 @@ import { firstOfThisMonth } from "./dates.js";
  * scoping that screen already enforces, capped at 50 results with an
  * honest "more may exist, try Documents" rather than a silent
  * truncation — the operator's own choice, asked directly.
+ *
+ * **A third addendum, three more real gaps from further live
+ * testing.** "How many invoices were received this month" refused
+ * correctly — `invoice_search` only ever returned a capped, 50-row
+ * list, never a true count — fixed with a small, separate, unbounded
+ * `COUNT(*)` (`invoice-count-route.ts`), always exact regardless of
+ * how many rows match. An ambiguous `invoice_lookup` ("two invoices
+ * share this number, which one?") was a dead end every time, because
+ * this chat had **zero memory between questions** — the operator's
+ * own original, explicit choice for the first build — so a reply to
+ * the assistant's own clarifying question could never reach back to
+ * it. Fixed two ways, both the operator's own explicit choices, asked
+ * directly rather than assumed: an ambiguous lookup now returns every
+ * match's own document link immediately rather than withholding all
+ * of them, and a bounded slice of recent history (at most
+ * `MAX_RECENT_TURNS` turns, further bounded to the last fifteen
+ * minutes by the client that sends it — `ap-assistant.js`'s own
+ * `recentTurnsToSend()`) now travels with each question, so an actual
+ * follow-up like "and the year before that?" can be understood. No
+ * server-side storage of any kind was added for this — the browser
+ * already kept this history for display; only where it also gets sent
+ * changed.
  */
 
 export const AP_ASSISTANT_TOOL_NAMES = [
@@ -293,14 +316,35 @@ async function runInvoiceLookup(ctx: ToolRunContext) {
     return { tool: "invoice_lookup", found: false, invoiceNumber };
   }
   if (body.matches.length > 1) {
+    // A document link for every match, not none — decision 0430's
+    // third addendum, reversing this tool's own original choice.
+    // Withholding every link and asking "which one did you mean?"
+    // only works if a follow-up reply can reach back to this
+    // question, and this chat has no memory of its own beyond what
+    // the caller explicitly sends as `recentTurns` (see this file's
+    // own top comment) — so until that changes, a bare "which one?"
+    // is frequently a dead end. Returning every match's own link
+    // immediately means an ambiguous lookup never blocks someone from
+    // getting a document. Capped at 10 candidates, matching
+    // `duplicate_invoices`' own existing cap — a number this large
+    // would itself be a data problem, not a normal case.
+    const capped = body.matches.slice(0, 10);
+    const matches = await Promise.all(
+      capped.map(async (m) => {
+        let documentUrl: string | null = null;
+        if (m.hasDocument) {
+          const minted = await handleMintDocumentUrl(ctx.db, ctx.documentUrlSecret, m.id, null, ctx.origin);
+          if (minted.status === 200) documentUrl = (minted.body as { url: string }).url;
+        }
+        return { supplierName: m.supplierName, totalWithVat: m.totalWithVat, currency: m.currency, stage: m.stage, documentUrl };
+      })
+    );
     return {
       tool: "invoice_lookup",
       ambiguous: true,
       invoiceNumber,
-      // No document link for an ambiguous match — minting one for
-      // every candidate would hand over a document before anyone
-      // confirmed which invoice was meant.
-      matches: body.matches.map((m) => ({ supplierName: m.supplierName, totalWithVat: m.totalWithVat, currency: m.currency, stage: m.stage })),
+      matches,
+      moreMatchesNotShown: body.matches.length > capped.length,
     };
   }
 
@@ -363,12 +407,23 @@ async function runInvoiceSearch(ctx: ToolRunContext) {
   const params = new URLSearchParams();
   if (ctx.args.supplier) params.set("q", ctx.args.supplier);
   params.set("limit", String(cap));
-  if (ctx.args.period === "this_month") params.set("since", firstOfThisMonth());
+  const since = ctx.args.period === "this_month" ? firstOfThisMonth() : null;
+  if (since) params.set("since", since);
 
   const visible = await unitsWherePermitted(ctx.db, ctx.userId, "AP.Review");
   const scoped = await scopedToChosenOrg(ctx.db, visible, ctx.currentOrg);
   const result = await handleListDocuments(ctx.db, params, scoped, ctx.userId);
   const body = result.body as { documents: InvoiceSearchDocument[]; searched: number };
+
+  // An exact, unbounded count — decision 0430's third addendum, so
+  // "how many" never has to be guessed from a capped, 50-row list.
+  // `invoice-count-route.ts`'s own doc comment explains why this is a
+  // separate small query rather than derived from `body` above.
+  const countResult = await handleInvoiceCount(ctx.db, ctx.currentOrg, ctx.userId, {
+    since,
+    supplier: ctx.args.supplier ?? null,
+  });
+  const totalMatching = (countResult.body as InvoiceCountReport).count;
 
   return {
     tool: "invoice_search",
@@ -384,15 +439,11 @@ async function runInvoiceSearch(ctx: ToolRunContext) {
       status: d.status,
     })),
     countReturned: body.documents.length,
-    // Honest, not exact — checked against `searched` (how many rows
-    // were actually fetched), not `documents.length` (how many
-    // survived an optional supplier filter). A supplier filter can
-    // legitimately leave few or no matches even when the raw fetch
-    // hit its cap, and that raw-fetch cap — not the filtered count —
-    // is what "more may exist beyond what was even looked at" means,
-    // the same "searched N, not everything" honesty
-    // `documents-route.ts`'s own `searched` field already carries.
-    moreMayExist: body.searched >= cap,
+    // Exact, not a heuristic — answers "how many" directly. Distinct
+    // from `countReturned`, which can be smaller than this when a
+    // supplier filter narrows the (already capped) fetched rows.
+    totalMatching,
+    moreMayExist: totalMatching > body.documents.length,
   };
 }
 
@@ -428,7 +479,61 @@ const AP_ASSISTANT_TOOLS: Record<ApAssistantToolName, ApAssistantToolDef> = {
   invoice_search: { requiredPermission: "AP.Review", run: runInvoiceSearch },
 };
 
-function buildSelectionPrompt(question: string): string {
+/** One immediately-preceding question and its answer, exactly as the person saw it — see `sanitizeRecentTurns` below. */
+export interface ApAssistantRecentTurn {
+  question: string;
+  answer: string;
+}
+
+/**
+ * At most this many turns of real context — decision 0430's third
+ * addendum. The operator's own choice, revised after checking the
+ * real Workers AI cost: at the exact per-model pricing for
+ * `@cf/openai/gpt-oss-120b` this app already calls
+ * ($0.35/M input tokens), even 50 turns adds a small fraction of a
+ * cent per question — negligible, and this screen has no users yet
+ * and is being limited to AP Managers and C-Suite, per the operator's
+ * own words. Still bounded on turn count, not just the client's own
+ * 15-minute recency window, so a long, fast conversation cannot grow
+ * this without bound the way a time-only cap would allow.
+ */
+const MAX_RECENT_TURNS = 50;
+/** Each remembered turn's own question/answer text, trimmed to this — shorter than the live question's own 500-character cap, since this is supporting context, not the thing being answered. */
+const MAX_RECENT_TURN_CHARS = 300;
+
+/**
+ * Validates whatever the client sent as `recentTurns` — untrusted
+ * input, the same trust level `question` itself has always had.
+ * Never assumes the client's own 4-turn/15-minute limits were
+ * actually applied; re-caps here regardless.
+ */
+function sanitizeRecentTurns(raw: unknown): ApAssistantRecentTurn[] {
+  if (!Array.isArray(raw)) return [];
+  const turns: ApAssistantRecentTurn[] = [];
+  for (const entry of raw.slice(-MAX_RECENT_TURNS)) {
+    if (typeof entry !== "object" || entry === null) continue;
+    const e = entry as Record<string, unknown>;
+    if (typeof e.question !== "string" || typeof e.answer !== "string") continue;
+    const question = e.question.trim().slice(0, MAX_RECENT_TURN_CHARS);
+    const answer = e.answer.trim().slice(0, MAX_RECENT_TURN_CHARS);
+    if (!question || !answer) continue;
+    turns.push({ question, answer });
+  }
+  return turns;
+}
+
+/**
+ * The recent-context block shared by both prompts below — absent
+ * entirely (not an empty header) when there is no real history yet,
+ * so a first question in a session reads exactly as it always did.
+ */
+function recentTurnsBlock(recentTurns: ApAssistantRecentTurn[]): string {
+  if (recentTurns.length === 0) return "";
+  const lines = recentTurns.map((t, i) => `${i + 1}. They asked: "${t.question}"\n   You answered: "${t.answer}"`).join("\n");
+  return `\n\nFor context, here is what was asked and answered immediately before this (oldest first) — use it only to understand what a short follow-up like "both," "the second one," or "and its total?" refers back to, never as a source of numbers or facts for the new question itself:\n${lines}\n`;
+}
+
+function buildSelectionPrompt(question: string, recentTurns: ApAssistantRecentTurn[] = []): string {
   return `You are answering questions for an Accounts Payable manager using VibeFinance, an AP automation product. You can only answer using one of these ten tools — you cannot look anything else up, and you must never invent a number yourself. Read every tool's own description carefully: several sound similar but count genuinely different things, and picking the wrong one because the wording sounds close is worse than refusing.
 
 Tools:
@@ -440,11 +545,11 @@ Tools:
 - purchase_order_status: how many purchase orders are in each status (active, on hold, closed, partially invoiced, fully invoiced) right now. No arguments.
 - purchase_order_lookup: full detail on one specific purchase order. Requires arg "orderNumber": the order's own number, exactly as given.
 - invoice_lookup: full detail on one specific, already-identified invoice, including which workflow stage it is at and a link to its document if one is on file. Requires arg "invoiceNumber": the invoice's own printed number, exactly as given. Use this only when the person already named a specific invoice number — never for "the latest" or "invoices from this month," which is the next tool.
-- invoice_search: a list of recent invoices, newest first, up to 50 at a time — for "the latest invoice," "invoices received this month," or just browsing what's come in, optionally narrowed to one supplier. Never returns a document link itself (ask invoice_lookup for one specific invoice's link once you know its number). Optional arg "period": set to "this_month" only when they asked about the current calendar month specifically. Optional arg "latestOnly": set to true only when they asked for one single most recent invoice ("the latest," "the most recent"), never for a general list. Optional arg "supplier".
+- invoice_search: a list of recent invoices (newest first, up to 50 at a time) AND an exact, unbounded count of how many match — use this for "the latest invoice," "invoices received this month," "how many invoices this month," "how many from [supplier]," or just browsing what's come in, optionally narrowed to one supplier. The count in its result is always exact even when the list itself is capped at 50 — always answer a "how many" question from that exact count, never by counting the list. Never returns a document link itself (ask invoice_lookup for one specific invoice's link once you know its number). Optional arg "period": set to "this_month" only when they asked about the current calendar month specifically. Optional arg "latestOnly": set to true only when they asked for one single most recent invoice ("the latest," "the most recent"), never for a general list or a count. Optional arg "supplier".
 - duplicate_invoices: invoices flagged as possible duplicates of another invoice already on file (same supplier, similar amount, similar date), ranked by how confident that match is. Optional arg "supplier".
 
 None of these tools can say whether an invoice was actually paid, or when — this product does not capture that anywhere, so never claim otherwise. None of them can produce a list of system users, or narrow by any date range other than the current calendar month.
-
+${recentTurnsBlock(recentTurns)}
 The person asked: "${question}"
 
 Reply with ONLY a JSON object, no other text, no markdown fences. Either:
@@ -454,13 +559,13 @@ or, if their question cannot be answered with any of these ten tools:
 {"tool": "none", "reason": "<one honest sentence explaining why, in plain language, to show them directly>"}`;
 }
 
-function buildAnswerPrompt(question: string, tool: ApAssistantToolName, toolResult: unknown): string {
+function buildAnswerPrompt(question: string, tool: ApAssistantToolName, toolResult: unknown, recentTurns: ApAssistantRecentTurn[] = []): string {
   return `You are answering an Accounts Payable manager's question using VibeFinance. They asked: "${question}"
-
+${recentTurnsBlock(recentTurns)}
 You looked this up using the ${tool} tool and got back this real, verified data:
 ${JSON.stringify(toolResult)}
 
-Write one short, direct, natural-language answer using ONLY the numbers and facts in that data. Do not invent, estimate, or add any figure that isn't there. State plainly what each number represents, using the data's own field names as your guide — never rename or reinterpret what a number counts (for example, a count of exceptions is never "tasks," and a count of open tasks is never "exceptions"). If the data is empty or shows nothing relevant to what they asked, say so plainly rather than guessing. If the data includes a "documentUrl" that is not null, include that exact URL in your answer so they can open it; if it is null, say plainly that no document is on file rather than inventing a link. If the data shows "ambiguous": true with more than one match, briefly list what you found (supplier and amount for each) and ask which one they meant, rather than picking one for them. If the data shows "found": false, say plainly you could not find anything with that number. If the data has an "invoices" list, describe what's in it rather than reading out every single row when there are many; if "moreMayExist" is true, say plainly that this may not be the complete list and that the Documents screen can search the full set. Never claim to know whether an invoice was actually paid — this data never says that. Do not mention "tools", "JSON", or how you looked this up; answer like a knowledgeable colleague would, in a sentence or two.`;
+Write one short, direct, natural-language answer using ONLY the numbers and facts in that data. Do not invent, estimate, or add any figure that isn't there. State plainly what each number represents, using the data's own field names as your guide — never rename or reinterpret what a number counts (for example, a count of exceptions is never "tasks," and a count of open tasks is never "exceptions"). If the data is empty or shows nothing relevant to what they asked, say so plainly rather than guessing. If the data includes a "documentUrl" that is not null, include that exact URL in your answer so they can open it; if it is null, say plainly that no document is on file rather than inventing a link. If the data shows "ambiguous": true with more than one match, briefly list each one (supplier and amount) with its own document link exactly as given — a "documentUrl" that is null for a given match means no document is on file for that one, so say so for that match specifically rather than omitting it; do not ask which one they meant, since every match's own information and link are already included. If "moreMatchesNotShown" is true, say plainly that there were more matches than shown. If the data shows "found": false, say plainly you could not find anything with that number. If the data has an "invoices" list, describe what's in it rather than reading out every single row when there are many; if asked "how many," state the exact "totalMatching" number rather than counting the "invoices" list yourself (that list can be capped at 50 while "totalMatching" never is); if "moreMayExist" is true, say plainly that the list shown is not the complete set and that the Documents screen can browse all of them. Never claim to know whether an invoice was actually paid — this data never says that. Do not mention "tools", "JSON", or how you looked this up; answer like a knowledgeable colleague would, in a sentence or two.`;
 }
 
 export interface ApAssistantAnswer {
@@ -479,6 +584,14 @@ export interface ApAssistantAnswer {
  * `documentUrlSecret`/`origin` exist only for `invoice_lookup`'s own
  * document-link minting (`handleMintDocumentUrl`, `document-route.ts`)
  * — every other tool ignores both.
+ *
+ * `recentTurns` is optional, untrusted client input — decision 0430's
+ * third addendum. Nothing is stored server-side; the browser already
+ * keeps this history for display (`ap-assistant.js`'s own `history`
+ * array) and now sends a bounded, recent slice of it alongside each
+ * new question, purely so a short follow-up like "both" or "the
+ * second one" can be understood. Absent or malformed entirely, this
+ * behaves exactly as it always did.
  */
 export async function handleAskApAssistant(
   db: D1Database,
@@ -487,13 +600,16 @@ export async function handleAskApAssistant(
   userId: string,
   question: unknown,
   documentUrlSecret?: string,
-  origin: string = ""
+  origin: string = "",
+  recentTurns?: unknown
 ): Promise<RouteResult> {
   const trimmed = typeof question === "string" ? question.trim() : "";
   if (!trimmed) return { status: 400, body: { error: "a question is required" } };
   if (trimmed.length > 500) return { status: 400, body: { error: "that question is too long — try asking something shorter and more specific" } };
 
-  const selectionRaw = await model.compile(buildSelectionPrompt(trimmed));
+  const recent = sanitizeRecentTurns(recentTurns);
+
+  const selectionRaw = await model.compile(buildSelectionPrompt(trimmed, recent));
   const selection = parseToolSelection(selectionRaw);
 
   if (selection.kind === "none") {
@@ -520,7 +636,7 @@ export async function handleAskApAssistant(
   }
 
   const toolResult = await toolDef.run({ db, currentOrg, userId, args: selection.args, documentUrlSecret, origin });
-  const answerRaw = await model.compile(buildAnswerPrompt(trimmed, selection.tool, toolResult));
+  const answerRaw = await model.compile(buildAnswerPrompt(trimmed, selection.tool, toolResult, recent));
   const answer = answerRaw.trim() || "I found the data but couldn't put together an answer — please try rephrasing the question.";
 
   return { status: 200, body: { question: trimmed, tool: selection.tool, answer } satisfies ApAssistantAnswer };

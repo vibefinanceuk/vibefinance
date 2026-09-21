@@ -16,16 +16,46 @@ import { currentOrgId } from "/orgs.js";
  * answer; the server decides that).
  *
  * **Ephemeral, the operator's own explicit choice.** History lives in
- * a module-level array, in memory only — nothing persisted, nothing
- * sent anywhere but the one question being asked. Switching tabs and
- * back keeps it (the array survives); reloading the page does not.
+ * a module-level array, in memory only — nothing persisted server-side.
+ * Switching tabs and back keeps it (the array survives); reloading the
+ * page does not.
+ *
+ * **A bounded recent slice is sent, decision 0430's third addendum.**
+ * Live testing found that a follow-up like "both" or "the second one"
+ * always failed — the server had never seen anything but the single
+ * question being asked, so a reply to its own clarifying question was
+ * unusable. This array was already being kept for display; now the
+ * last `MAX_RECENT_TURNS` completed turns from the last
+ * `RECENT_TURNS_WINDOW_MS` also go out with each new question, so the
+ * server can resolve what a short follow-up refers back to. Still
+ * nothing persisted anywhere, still gone on reload — only the *destination*
+ * of this same in-memory array changed, not its lifetime.
  */
+
+// The operator's own choice, revised after checking the real cost:
+// at Workers AI's exact per-token pricing for the model this app
+// already calls, even 50 turns is a small fraction of a cent per
+// question — negligible, on a screen with no users yet, being
+// limited to AP Managers and C-Suite. The server (`ap-assistant.ts`'s
+// own `sanitizeRecentTurns`) re-caps independently regardless of what
+// this sends, so the two do not need to be changed together.
+const MAX_RECENT_TURNS = 50;
+const RECENT_TURNS_WINDOW_MS = 15 * 60 * 1000;
 
 let history = [];
 let sending = false;
 let messagesEl = null;
 let inputEl = null;
 let sendButtonEl = null;
+
+/** The bounded, recent slice of `history` sent alongside a new question — see this file's own top comment. */
+function recentTurnsToSend() {
+  const cutoff = Date.now() - RECENT_TURNS_WINDOW_MS;
+  return history
+    .filter((turn) => !turn.pending && turn.askedAt >= cutoff)
+    .slice(-MAX_RECENT_TURNS)
+    .map((turn) => ({ question: turn.question, answer: turn.answer }));
+}
 
 function bubble(role, text) {
   return el("div", { class: `chatbubble chatbubble-${role}` }, [el("div", { text })]);
@@ -55,7 +85,11 @@ async function send() {
   inputEl.disabled = true;
   if (sendButtonEl) sendButtonEl.disabled = true;
 
-  const turn = { question, answer: "", pending: true };
+  // Computed before the new turn is added, so a question never sends
+  // itself back as its own "recent" context.
+  const recentTurns = recentTurnsToSend();
+
+  const turn = { question, answer: "", pending: true, askedAt: Date.now() };
   history = [...history, turn];
   renderMessages();
 
@@ -65,7 +99,7 @@ async function send() {
     const response = await fetch(`/api/ap-assistant/ask${query}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ question }),
+      body: JSON.stringify({ question, recentTurns }),
     });
     if (!response.ok) {
       turn.answer = t("apassistant.error");

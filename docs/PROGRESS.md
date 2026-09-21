@@ -957,6 +957,37 @@ supplier's own printed `issue_date`). Ten tools total now, still no
 new permission or migration — see decision 0430's own second addendum
 section.
 
+**Third addendum — an exact count, ambiguous-match links returned
+immediately, and bounded conversation memory.** A third round of live
+testing: "how many invoices were received this month" refused
+correctly (`invoice_search` only ever had a capped, 50-row list, never
+a true count — exactly the gap the second addendum's own "What is not
+built" had already named); an ambiguous `invoice_lookup` withheld
+every document link and asked "which one did you mean," and every one
+of the operator's own follow-up replies ("both," "share both
+invoices") failed, because this chat has **zero memory between
+questions** — the first build's own original, explicit choice.
+Fixed three ways, all the operator's own explicit choices asked
+directly: a new, small, unbounded `COUNT(*)` (`invoice-count-route.ts`,
+its own real `GET /invoices/count` route) so "how many" is always
+exact regardless of list size; an ambiguous lookup now returns every
+match's own real document link immediately rather than withholding
+all of them, reversing that tool's own original safety choice, on the
+reasoning that a clarifying question nobody can answer is worse than
+handing over what was asked for; and a bounded slice of the browser's
+own existing chat-history array (at most 50 turns, further bounded to
+the client's own 15-minute window) now travels with each question —
+no new server-side storage of any kind, since this runs on stateless
+Cloudflare Workers and the browser already kept this history for
+display. A genuine, narrow asymmetry was found and recorded rather
+than silently fixed: the new count prefers the real, linked supplier
+record, while `invoice_search`'s own list still only reads the raw
+extracted supplier name (an existing, already-documented limitation
+of the route it wraps) — the two usually agree but are not the same
+query. See decision 0430's own third addendum section for the full
+reasoning, including the real Cloudflare cost math behind the 50-turn
+cap.
+
 ### Purchase orders and matching
 - Purchase order storage grounded in Peppol BIS Order Only 3.3, via UBL
   XML ingestion (0081) and CSV load (0370) — the same tables, the same
@@ -2221,9 +2252,9 @@ elsewhere.
 
 | Package | Tests |
 |---|---|
-| `vf-app` | 2355 |
+| `vf-app` | 2374 |
 | `vf-licence` | 320 |
-| `vf-ui` | 74 Worker · 915 browser |
+| `vf-ui` | 74 Worker · 916 browser |
 | `shared` | 295 passing, 3 known pre-existing failures |
 
 Both migration chains replay clean with every standing invariant

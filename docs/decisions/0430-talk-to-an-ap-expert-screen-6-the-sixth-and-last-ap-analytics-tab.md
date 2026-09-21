@@ -1,16 +1,18 @@
 # 0430 — "Talk to an AP Expert," Screen 6, the sixth and last AP Analytics tab
 
-**Status: original build and first addendum both pushed and deployed,
-confirmed directly — second addendum below not yet delivered.**
-`origin/main` fetched directly reads `b90ef57`, matching this
-session's own commit exactly for both the original four-tool build
-and the first addendum (five more tools, and the tasks-vs-exceptions
-bug fixed); the operator separately confirmed vf-licence migration
-`0140` applied remotely too, and neither addendum needed a new
-migration. The second addendum below (`invoice_search`, a tenth tool)
-is built and tested but not yet committed or delivered as of this
-note — see its own section for what changed and why. This session
-still has no push access to `vibefinanceuk/vibefinance`; delivered as
+**Status: original build and first two addenda all pushed and
+deployed, confirmed directly — third addendum below not yet
+delivered.** `origin/main` fetched directly reads `c9cafa3`, matching
+this session's own commit exactly for the original four-tool build,
+the first addendum (five more tools, the tasks-vs-exceptions bug
+fixed), and the second addendum (`invoice_search`, a tenth tool); the
+operator separately confirmed vf-licence migration `0140` applied
+remotely too, and none of the three addenda needed a new migration.
+The third addendum below (an exact count, ambiguous-match links
+returned immediately, bounded conversation memory) is built and
+tested but not yet committed or delivered as of this note — see its
+own section for what changed and why. This session still has no push
+access to `vibefinanceuk/vibefinance`; delivered as
 a git bundle for the operator's own pull/push/deploy sequence, the
 same path decisions 0391, 0415–0429 already used.
 
@@ -616,7 +618,185 @@ whoever sees the Documents screen itself.
   honest about the fetch having hit its limit; it is not a claim about
   how many rows exist beyond it, matching the real Documents screen's
   own "searched N" framing rather than inventing a "N of M" figure
-  neither route actually computes.
+  neither route actually computes. **Superseded by the third addendum
+  below** — this record stands as written (dated, not rewritten), but
+  is no longer true: `totalMatching` is now that exact count.
 - **Document links inside `invoice_search`'s own results.** A
   deliberate choice (fork 2, above), not an oversight — `invoice_lookup`
   already covers it once a specific number is known.
+
+## Addendum three — an exact count, ambiguous links returned immediately, and bounded conversation memory
+
+A third round of live testing, real transcripts, three more genuine
+gaps:
+
+1. *"How many invoices were received this month?"* and *"How many
+   invoices are received from Northwind Logistics?"* — both correctly
+   refused. `invoice_search`'s own result never had a true count, only
+   a capped, 50-row list — exactly the limitation the second
+   addendum's own "What is not built" section had already named and
+   left alone.
+2. *"Can you provide the link to INV-NW-1003"* — genuinely ambiguous
+   (two real invoices, same number, same supplier, same stage, same
+   total, in this operator's own live data) — correctly surfaced both,
+   but withheld every document link and asked *"which one did you
+   mean?"* The operator then asked for **both** documents, in three
+   different phrasings across three more messages, and every one
+   failed: *"I need the specific invoice numbers... before I can
+   retrieve document links,"* *"Could you confirm which one you
+   need?,"* *"The request 'both' is ambiguous."*
+3. Root cause of (2), traced directly rather than guessed at: **this
+   chat has zero memory between questions**, the operator's own
+   original, explicit choice for the first build (`ap-assistant.js`'s
+   own top comment: *"Ephemeral... nothing sent anywhere but the one
+   question being asked"*). Every one of the operator's follow-up
+   replies was received by the server as a brand-new, context-free
+   question — a reply to the assistant's own clarifying question could
+   never reach back to it. This is not specific to ambiguous invoices:
+   any clarifying question this assistant has ever asked (`purchase_
+   order_lookup`'s own missing-`orderNumber` message included) is the
+   same kind of dead end.
+
+**The operator's own question first, answered honestly before
+building anything**: asked directly whether "how many" was a
+permission or model limitation, and it was neither — a genuine,
+confirmed gap (checked directly: no route anywhere counted invoices,
+only listed them, capped). Two real design forks, put to the operator
+directly, both answered:
+
+1. **Should an ambiguous `invoice_lookup` return every match's own
+   document link immediately, rather than withholding all of them and
+   asking which one?** *"Yes, return every match's link immediately"*
+   — reversing this tool's own original safety choice (the first
+   addendum's own comment: *"minting one for every candidate would
+   hand over a document before anyone confirmed which invoice was
+   meant"*), on the reasoning that withholding only works if a
+   follow-up reply can reach back to the question, and — per finding
+   (3) above — it never can today. A person who asked for a specific
+   number has already confirmed enough intent; getting every real
+   candidate's own link is strictly better than a dead end.
+2. **Should the assistant gain short-lived memory of recent questions
+   and answers, reversing the original "ephemeral, nothing sent"
+   choice?** *"The assistant should keep memory for the current
+   session length, to a maximum of 15 minutes... without causing
+   system strain, and too wide a context?"* — answered directly before
+   building: this runs on Cloudflare Workers + D1, stateless per
+   request, so genuine session memory would mean a real new
+   architecture piece (a Durable Object, KV, or a new D1 table) with
+   its own cost and cleanup story. Proposed instead: no new
+   server-side storage at all — `ap-assistant.js`'s own `history` array
+   already exists, kept only for display; send a *bounded* recent
+   slice of that same array with each new question. Bounded on **both**
+   turn count and time (a time-only cap does not bound a fast
+   conversation's own prompt growth), landing on at most `MAX_
+   RECENT_TURNS` turns from the last fifteen minutes. The operator
+   then asked the real Cloudflare cost of raising that cap to 10 turns
+   — answered with this app's own actual Workers AI pricing for
+   `@cf/openai/gpt-oss-120b` ($0.35/M input tokens): negligible, a
+   fraction of a cent per question either way, since this design adds
+   no storage cost at all and the only thing that grows is prompt
+   tokens on calls this assistant already makes. Given that, and given
+   this screen has no users yet and is being limited to AP Managers
+   and C-Suite (the operator's own words), the cap was raised to 50
+   turns rather than kept low for cost reasons that do not actually
+   apply here.
+
+**The count, `invoice-count-route.ts`, new and deliberately separate
+from `invoice_search`'s own list** — a small, unbounded `COUNT(*)`,
+always exact regardless of how many rows match, rather than derived
+from a capped, in-memory-filtered list the way a naive fix might have
+tried. Reuses `AP.Review` and the same unit/org scoping `invoice_
+search` and the real Documents screen already enforce. Got its own
+real HTTP route (`GET /invoices/count`) for the same reason `/invoices
+/lookup` did in the first addendum — a real, independently-reachable
+endpoint, not a function only the assistant can call.
+
+**A genuine, narrow asymmetry found while testing this, recorded
+rather than smoothed over**: `invoice-count-route.ts`'s own supplier
+match prefers the real, linked `suppliers.name` record, falling back
+to the raw `BT-27` fact only when no supplier is linked — the more
+authoritative of the two. `documents-route.ts`'s own in-memory search
+(which `invoice_search`'s own list still uses) reads only the raw
+`BT-27` fact, never the linked record, an existing, already-documented
+limitation of that route ("searched only what was loaded"). The two
+usually agree, since a real invoice's extracted supplier name and its
+matched supplier record are usually the same string — but they are
+not the same query, and a supplier-narrowed `invoice_search` answer
+can, in principle, show a `totalMatching` that disagrees slightly with
+what its own capped `invoices` list actually contains, if a specific
+record's `BT-27` and linked supplier name have drifted apart. Left as
+is rather than forcing the count to match the list's weaker
+definition — not asked about directly, and a real product decision
+either way, not a bug to silently pick a side on.
+
+**Conversation memory, entirely client-driven, nothing new stored
+anywhere.** `ap-assistant.js`'s own `recentTurnsToSend()` filters its
+existing `history` array to completed turns from the last fifteen
+minutes, caps it at `MAX_RECENT_TURNS`, and sends that alongside the
+question; `ap-assistant.ts`'s own `sanitizeRecentTurns` re-validates
+and re-caps server-side regardless of what the client claims (the same
+trust level `question` itself has always had) before folding it into
+both the selection and the answer prompt as a clearly-labelled
+"for context" block — explicitly instructed to use it only to resolve
+what a short follow-up refers to, never as a source of facts for the
+new question itself.
+
+## Tests (addendum three)
+
+**`workers/vf-app/test/invoice-count-route.test.ts`** (new, 9 tests):
+the route's own permission gate (200 with `AP.Review`, 401, 403); real
+counts — zero, a plain count with no filters, exact past the 50-row
+cap that would have truncated `invoice_search`'s own list (62 real
+rows), a `since` date floor, a case-insensitive supplier narrowing,
+and both filters combined as a real `AND`.
+
+**`workers/vf-app/test/ap-assistant.test.ts`** (10 new tests, 37 →
+47): `invoice_search`'s own `totalMatching` exact past the cap and
+correctly reflecting a supplier filter (the test that first caught the
+`BT-27`-vs-`suppliers.name` asymmetry above — the shared `invoice()`
+test helper now embeds a seeded supplier's own name into `facts_json`'s
+`BT-27` automatically, via a small `supplierNames` map populated by
+`supplier()`, so test data matches what a real captured invoice
+usually has); an ambiguous `invoice_lookup` now returning a real
+minted document link for every match rather than none, including the
+case where only one of two matches actually has a document on file;
+a `recentTurns` describe block — absent from both prompts with no
+history (unchanged behaviour), present in both when given, silently
+ignored when not an array, a malformed entry (missing `answer`)
+dropped rather than included half-formed, an oversized turn truncated
+to `MAX_RECENT_TURN_CHARS`, and a 55-turn array capped to the most
+recent 50.
+
+**`workers/vf-ui/test-browser/ap-analytics.test.ts`** (1 new test):
+the client sends `recentTurns: []` on a first question and the prior
+exchange's own `{question, answer}` on the very next one, read
+directly off the real `fetch` mock's own call arguments — the same
+request-inspection pattern `access.test.ts` already established for
+this codebase, not a new one invented here.
+
+**Full suites, run directly:** `vf-app` 2355 → **2374** (19 new: 9 in
+the new `invoice-count-route.test.ts`, 10 in `ap-assistant.test.ts`),
+`vf-ui` Worker suite unchanged at 74, `vf-ui` browser suite 915 →
+**916** (all passing; the suite's own pre-existing unhandled-rejection
+exit-1 issue — decision 0380 — is untouched by this addendum, confirmed
+by checking that the one new failure surfaced belongs to
+`document-window.test.ts`, a file this addendum never touched). `eslint`
+clean on every changed and new file. No new migration, no new
+permission — `invoice-count-route.ts` reuses `AP.Review`, already real.
+
+## What is not built (addendum three)
+
+- **Server-side conversation storage of any kind.** Explicitly
+  decided against, given the real architecture cost (a new Durable
+  Object, KV namespace, or D1 table) versus a client-sent bounded
+  slice of an array that already existed. If a future need requires
+  memory the browser tab itself cannot supply (a conversation
+  continuing across devices, say), this decision would need
+  revisiting.
+- **Reconciling the `BT-27`-vs-`suppliers.name` supplier-match
+  asymmetry** between `invoice_search`'s own list and its own
+  `totalMatching` count — recorded above as a real, narrow,
+  undecided-on-purpose asymmetry, not fixed either direction.
+- **A document-count tool for anything other than invoices** (purchase
+  orders, tasks) — not asked for; `invoice-count-route.ts` is
+  deliberately invoice-specific, matching `invoice_search`'s own scope.

@@ -22,6 +22,7 @@ import { handleUnapprovedSuppliers } from "./fraud-unapproved-suppliers-route.js
 import { handleFraudExceptionTrends } from "./fraud-exception-trends-route.js";
 import { handleAskApAssistant } from "./ap-assistant.js";
 import { handleInvoiceLookup } from "./invoice-lookup-route.js";
+import { handleInvoiceCount } from "./invoice-count-route.js";
 import { handleStatisticalOutliers } from "./fraud-statistical-outliers-route.js";
 import { handleSegregationOfDuties } from "./fraud-segregation-of-duties-route.js";
 import { handleSupplierSpend } from "./supplier-performance-route.js";
@@ -1554,7 +1555,8 @@ export default {
         auth.user.id,
         (body as Record<string, unknown> | null)?.question,
         env.DOCUMENT_URL_SECRET,
-        url.origin
+        url.origin,
+        (body as Record<string, unknown> | null)?.recentTurns
       );
       return json(result.body, result.status);
     }
@@ -1580,6 +1582,28 @@ export default {
         return json({ error: "?number= is required" }, 400);
       }
       const result = await handleInvoiceLookup(db, url.searchParams.get("org"), auth.user.id, number);
+      return json(result.body, result.status);
+    }
+
+    /**
+     * **An exact count of invoices — decision 0430's third addendum**,
+     * for the same reason `/invoices/lookup` above got its own route:
+     * a real, independently-reachable endpoint, not a function only
+     * the assistant's `invoice_search` tool can reach. `?since=` (an
+     * ISO date) and `?supplier=` are both optional; neither given
+     * counts everything this person can see.
+     */
+    if (pathname === "/invoices/count" && request.method === "GET") {
+      const { db } = resolveTenant(request, env);
+      const auth = await authenticatePerson(db, request, env);
+      if (!auth.user) return json({ error: auth.reason }, 401);
+      if (!(await hasPermission(db, auth.user.id, "AP.Review"))) {
+        return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
+      }
+      const result = await handleInvoiceCount(db, url.searchParams.get("org"), auth.user.id, {
+        since: url.searchParams.get("since"),
+        supplier: url.searchParams.get("supplier"),
+      });
       return json(result.body, result.status);
     }
 

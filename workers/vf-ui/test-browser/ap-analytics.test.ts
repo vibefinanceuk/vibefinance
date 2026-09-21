@@ -723,4 +723,41 @@ describe("Talk to an AP Expert — decision 0430, a real chat, not a card compar
     expect(input.value).toBe("");
     expect(input.disabled).toBe(false);
   });
+
+  it("sends the prior exchange as recentTurns on a follow-up question, and none on the first", async () => {
+    // Decision 0430's third addendum — a bounded slice of this
+    // module's own `history` array now goes out with each question,
+    // so a short follow-up like "both" can be understood server-side.
+    await openApAnalytics(["AP.Assistant"], {}, {
+      "/api/ap-assistant/ask": { question: "q", tool: "supplier_spend", answer: "You've spent £1,200 with Acme this year." },
+    });
+
+    const input = document.querySelector<HTMLInputElement>(".chatinput")!;
+    const button = document.querySelector<HTMLButtonElement>(".chatinputrow button")!;
+
+    input.value = "how much have we spent with Acme?";
+    input.dispatchEvent(new Event("input"));
+    button.click();
+    for (let i = 0; i < 100; i++) {
+      if (document.body.textContent?.includes("You've spent")) break;
+      await new Promise((r) => setTimeout(r, 10));
+    }
+
+    input.value = "and the year before that?";
+    input.dispatchEvent(new Event("input"));
+    button.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    const calls = (fetch as unknown as { mock: { calls: unknown[][] } }).mock.calls;
+    const postCalls = calls.filter(([url, init]) => String(url).startsWith("/api/ap-assistant/ask") && (init as RequestInit)?.method === "POST");
+    expect(postCalls).toHaveLength(2);
+
+    const firstBody = JSON.parse((postCalls[0][1] as RequestInit).body as string);
+    expect(firstBody.recentTurns).toEqual([]);
+
+    const secondBody = JSON.parse((postCalls[1][1] as RequestInit).body as string);
+    expect(secondBody.recentTurns).toEqual([
+      { question: "how much have we spent with Acme?", answer: "You've spent £1,200 with Acme this year." },
+    ]);
+  });
 });
