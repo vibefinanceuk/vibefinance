@@ -71,9 +71,9 @@ import userPropertiesSql from "../../../migrations/0065_user_properties.sql?raw"
 import purchaseOrderOrgSql from "../../../migrations/0068_purchase_order_org.sql?raw";
 import purchaseOrderStatusSql from "../../../migrations/0069_purchase_order_status.sql?raw";
 import embeddedXmlDocumentTypeSql from "../../../migrations/0070_embedded_xml_document_type.sql?raw";
-// 0071 is a documentation-only ASSERT restatement with no real SQL
-// body, the same "nothing to execute" shape as 0054/0062/0063/0066/0067
-// above — skipped here for the same reason.
+// 0071 and 0074 are documentation-only ASSERT restatements with no
+// real SQL body, the same "nothing to execute" shape as
+// 0054/0062/0063/0066/0067 above — skipped here for the same reason.
 import supplierDiscountAndFieldChangeHistorySql from "../../../migrations/0072_supplier_discount_terms_and_field_change_history.sql?raw";
 import agreedPaymentMeansPlaceholderSql from "../../../migrations/0073_agreed_payment_means_placeholder.sql?raw";
 

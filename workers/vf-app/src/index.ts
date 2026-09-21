@@ -14,11 +14,13 @@ import { handleWorkloadPending } from "./workload-pending-route.js";
 import { handleWorkloadQueueDepth } from "./workload-queue-depth-route.js";
 import { handleWorkloadBalance } from "./workload-balance-route.js";
 import { handleAccruals } from "./accruals-route.js";
+import { handleOverdueBalance } from "./overdue-balance-route.js";
 import { handleSpendUnderManagement } from "./spend-under-management-route.js";
 import { handleExecutiveConsolidatedSpend } from "./executive-consolidated-spend-route.js";
 import { handlePossibleDuplicates } from "./fraud-duplicates-route.js";
 import { handleUnapprovedSuppliers } from "./fraud-unapproved-suppliers-route.js";
 import { handleFraudExceptionTrends } from "./fraud-exception-trends-route.js";
+import { handleAskApAssistant } from "./ap-assistant.js";
 import { handleStatisticalOutliers } from "./fraud-statistical-outliers-route.js";
 import { handleSegregationOfDuties } from "./fraud-segregation-of-duties-route.js";
 import { handleSupplierSpend } from "./supplier-performance-route.js";
@@ -1394,6 +1396,28 @@ export default {
     }
 
     /**
+     * **Overdue balance, by supplier — decision 0430.** Not one of
+     * Screen 4's own named key metrics and not wired into any tab —
+     * see `overdue-balance-route.ts`'s own doc comment. Built as a
+     * real, independently reviewable and testable route anyway, the
+     * same as everything else in this codebase, rather than a private
+     * helper only the AP Assistant can reach. Gated on `AP.Analysis`,
+     * the same permission Accruals above it checks, since it reuses
+     * that report's own definition of "still an accrual."
+     */
+    if (pathname === "/liabilities/overdue-balance" && request.method === "GET") {
+      const { db } = resolveTenant(request, env);
+      const auth = await authenticatePerson(db, request, env);
+      if (!auth.user) return json({ error: auth.reason }, 401);
+      if (!(await hasPermission(db, auth.user.id, "AP.Analysis"))) {
+        return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
+      }
+
+      const result = await handleOverdueBalance(db, url.searchParams.get("org"), auth.user.id);
+      return json(result.body, result.status);
+    }
+
+    /**
      * **Spend under management (with PO) vs. total spend — decision
      * 0419.** Financial Performance's second real metric, gated on
      * `AP.Analysis` like Accruals above it — the design's own choice
@@ -1494,6 +1518,47 @@ export default {
       }
 
       const result = await handleFraudExceptionTrends(db, url.searchParams.get("org"), auth.user.id);
+      return json(result.body, result.status);
+    }
+
+    /**
+     * **Talk to an AP Expert — decision 0430, Screen 6, Phase 5 of the
+     * design's own Recommended Phasing, sequenced last on purpose.**
+     * `AP.Assistant` gates the chat itself, checked here exactly like
+     * every other AP Analytics tab's own gate; `ap-assistant.ts`'s own
+     * `handleAskApAssistant` checks each individual tool's own real
+     * permission again before running it, never trusting the model's
+     * own choice of tool as authorization. Same `env.AI` binding and
+     * the same `createWorkersAiCompilerModel` wrapper `/rules/compile`
+     * already uses (decision 0002) — the interface is deliberately
+     * narrow (raw text in, raw text out), so reusing it here for an
+     * unrelated prompt is exactly what it was built swappable for.
+     */
+    if (pathname === "/ap-assistant/ask" && request.method === "POST") {
+      const { db } = resolveTenant(request, env);
+      const locale = resolveLocale(env.LOCALE);
+      const auth = await authenticatePerson(db, request, env);
+      if (!auth.user) return json({ error: auth.reason }, 401);
+      if (!(await hasPermission(db, auth.user.id, "AP.Assistant"))) {
+        return json({ error: t("forbidden", locale) }, 403);
+      }
+      if (!env.AI) {
+        return json({ error: "AI binding not configured" }, 500);
+      }
+      let body: unknown;
+      try {
+        body = await request.json();
+      } catch {
+        return json({ error: t("invalidJsonBody", locale) }, 400);
+      }
+      const model = createWorkersAiCompilerModel(env.AI);
+      const result = await handleAskApAssistant(
+        db,
+        model,
+        url.searchParams.get("org"),
+        auth.user.id,
+        (body as Record<string, unknown> | null)?.question
+      );
       return json(result.body, result.status);
     }
 

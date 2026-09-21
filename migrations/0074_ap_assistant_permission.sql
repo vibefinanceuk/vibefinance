@@ -1,0 +1,18 @@
+-- 0074_ap_assistant_permission.sql
+--
+-- **A dedicated permission for "Talk to an AP Expert"** — decision
+-- 0430's own Screen 6 of the Management Dashboard, gating the chat
+-- tab itself, deliberately not implied by any existing grant. The
+-- design's own words: "a new, dedicated `AP.Assistant` permission —
+-- deliberately not implied by any existing grant, since this is the
+-- one screen that answers open-ended questions rather than rendering
+-- a fixed, reviewed report." Reserved since decision 0426 (the design
+-- doc's Screen 6 was found but not yet built); real since this one.
+--
+-- No schema change: process_stages.required_permission already
+-- accepts any text, checked only by the standing invariant decision
+-- 0200 established (migration 0048), already restated by migrations
+-- 0062, 0063, 0066, and 0071. Restated again here with the
+-- vocabulary as it now stands, rather than editing any earlier,
+-- already-applied migration in place.
+-- ASSERT ALWAYS: SELECT count(*) FROM process_stages WHERE required_permission IS NOT NULL AND required_permission NOT IN ('AP.Analysis','AP.Approve','AP.Assistant','AP.Code','AP.Dashboard','AP.Discard','AP.FraudReview','AP.Match','AP.Return','AP.ReturnAny','AP.ReturnToSupplier','AP.Review','AP.Supplier','AP.TaskManage','AP.TaskView','AP.Validate','AR.Analysis','AR.Approve','AR.Collect','AR.Issue','AR.Remind','AR.Validate','Admin.ConfigManagement','Admin.Configure','Admin.RoleManagement','Admin.RuleActivation','Admin.RuleManagement','Admin.UserManagement','Expense.Approve','Expense.Review','Expense.Submit','Supplier.Maintain','System.LicenceRefresh','System.UsagePush') == 0

@@ -36,7 +36,15 @@ export interface AiRunnable {
  * parseModelOutput to work with (which itself treats unparseable input
  * as a refusal, never a crash) rather than throwing here.
  */
-function extractResponseText(raw: unknown): string {
+/**
+ * Exported for reuse by `ap-assistant.ts` (decision 0430) — the same
+ * defensive, shape-agnostic response handling this Workers AI model
+ * family needs regardless of which prompt it's answering. Kept as one
+ * function rather than a second near-identical one, the same reasoning
+ * `shared/compiler/parse.ts`'s own `extractJson` already gives for its
+ * own reuse across the compiler and `examples.ts`.
+ */
+export function extractResponseText(raw: unknown): string {
   if (typeof raw === "string") return raw;
   if (raw && typeof raw === "object") {
     const obj = raw as Record<string, unknown>;

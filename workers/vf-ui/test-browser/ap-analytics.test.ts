@@ -39,6 +39,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
  * only proves the wiring — that the right module's
  * `load()`/`renderCard()` land behind the right tab — not that
  * module's own content in detail.
+ *
+ * **Talk to an AP Expert, the sixth tab — decision 0430.** Not a
+ * `load()`/`renderCard()` pair like every tab above: `ap-assistant.js`'s
+ * own `renderPanel()` builds a small, self-contained chat with no data
+ * to fetch ahead of render, so this file's own coverage for it is the
+ * gate (`AP.Assistant`) and the panel's own real interaction — typing a
+ * question, sending it, and the real answer landing — rather than a
+ * card-content comparison.
  */
 
 function mountShell() {
@@ -98,6 +106,7 @@ const STRINGS = {
     "apanalytics.supplier": "Supplier Performance",
     "apanalytics.executiveiq": "Executive IQ",
     "apanalytics.fraud": "Fraud Prevention",
+    "apanalytics.assistant": "Talk to an AP Expert",
     "apanalytics.notbuilt": "Not built yet",
     "apanalytics.loaderror": "Could not load this tab right now",
     "apanalytics.none": "No AP Analytics tabs are available to you",
@@ -245,6 +254,14 @@ const STRINGS = {
     "executiveiq.noconsolidatedspend": "No priced, placed invoices yet",
     "executiveiq.legalentity": "Legal entity",
     "executiveiq.operatingunit": "Operating unit",
+    // Talk to an AP Expert — decision 0430, Screen 6, the sixth tab.
+    "apassistant.heading": "Talk to an AP Expert",
+    "apassistant.sub": "Ask a plain question about supplier spend, overdue balances, accruals, or exceptions",
+    "apassistant.empty": "Ask a question to get started",
+    "apassistant.thinking": "Thinking…",
+    "apassistant.placeholder": "Ask a question…",
+    "apassistant.send": "Ask",
+    "apassistant.error": "Something went wrong answering that — please try again.",
   },
 };
 
@@ -415,8 +432,15 @@ describe("tab visibility is permission-gated, not fixed — decision 0417's own 
     expect(tabs).toEqual(["Fraud Prevention"]);
   });
 
-  it("shows every tab once all three permissions and holdsEverywhere are held", async () => {
-    await openApAnalytics(["AP.Analysis", "AP.Supplier", "AP.FraudReview"], { holdsEverywhere: true });
+  it("shows only Talk to an AP Expert behind AP.Assistant alone — decision 0430", async () => {
+    await openApAnalytics(["AP.Assistant"]);
+
+    const tabs = [...document.querySelectorAll(".tabbar button")].map((b) => b.textContent);
+    expect(tabs).toEqual(["Talk to an AP Expert"]);
+  });
+
+  it("shows every tab once all four permissions and holdsEverywhere are held", async () => {
+    await openApAnalytics(["AP.Analysis", "AP.Supplier", "AP.FraudReview", "AP.Assistant"], { holdsEverywhere: true });
 
     const tabs = [...document.querySelectorAll(".tabbar button")].map((b) => b.textContent);
     expect(tabs).toEqual([
@@ -425,6 +449,7 @@ describe("tab visibility is permission-gated, not fixed — decision 0417's own 
       "Supplier Performance",
       "Executive IQ",
       "Fraud Prevention",
+      "Talk to an AP Expert",
     ]);
   });
 
@@ -628,5 +653,74 @@ describe("switching tabs", () => {
     await switchTab("Operational Performance");
     expect(document.querySelector(".tab.active")?.textContent).toBe("Operational Performance");
     expect(document.querySelector(".cardhead h3")?.textContent).toBe("Throughput by user");
+  });
+});
+
+describe("Talk to an AP Expert — decision 0430, a real chat, not a card comparison", () => {
+  it("renders the empty state, a text input and a send button — nothing to fetch ahead of render", async () => {
+    await openApAnalytics(["AP.Assistant"]);
+
+    expect(document.querySelector(".cardhead h3")?.textContent).toBe("Talk to an AP Expert");
+    expect(document.body.textContent).toContain("Ask a question to get started");
+    expect(document.querySelector(".chatinput")).not.toBeNull();
+    expect(document.querySelector(".chatinputrow button")?.textContent).toBe("Ask");
+  });
+
+  it("sends a typed question and shows the real answer that comes back", async () => {
+    await openApAnalytics(["AP.Assistant"], {}, {
+      "/api/ap-assistant/ask": { question: "how much have we spent with Acme?", tool: "supplier_spend", answer: "You've spent £1,200 with Acme this year." },
+    });
+
+    const input = document.querySelector<HTMLInputElement>(".chatinput")!;
+    input.value = "how much have we spent with Acme?";
+    input.dispatchEvent(new Event("input"));
+    document.querySelector<HTMLButtonElement>(".chatinputrow button")!.click();
+
+    for (let i = 0; i < 100; i++) {
+      if (document.body.textContent?.includes("You've spent")) break;
+      await new Promise((r) => setTimeout(r, 10));
+    }
+
+    expect(document.body.textContent).toContain("how much have we spent with Acme?");
+    expect(document.body.textContent).toContain("You've spent £1,200 with Acme this year.");
+    // The empty-state message is gone once a real exchange exists.
+    expect(document.body.textContent).not.toContain("Ask a question to get started");
+  });
+
+  it("shows a plain error message rather than a blank bubble when the request fails", async () => {
+    await openApAnalytics(["AP.Assistant"], {}, {
+      "/api/ap-assistant/ask": { ok: false, status: 500 },
+    });
+
+    const input = document.querySelector<HTMLInputElement>(".chatinput")!;
+    input.value = "what do we owe?";
+    input.dispatchEvent(new Event("input"));
+    document.querySelector<HTMLButtonElement>(".chatinputrow button")!.click();
+
+    for (let i = 0; i < 100; i++) {
+      if (document.body.textContent?.includes("Something went wrong")) break;
+      await new Promise((r) => setTimeout(r, 10));
+    }
+
+    expect(document.body.textContent).toContain("Something went wrong answering that");
+  });
+
+  it("clears the input and re-enables it once an answer lands, ready for the next question", async () => {
+    await openApAnalytics(["AP.Assistant"], {}, {
+      "/api/ap-assistant/ask": { question: "q", tool: "accrual_summary", answer: "You have £0 in accruals." },
+    });
+
+    const input = document.querySelector<HTMLInputElement>(".chatinput")!;
+    input.value = "what do we owe?";
+    input.dispatchEvent(new Event("input"));
+    document.querySelector<HTMLButtonElement>(".chatinputrow button")!.click();
+
+    for (let i = 0; i < 100; i++) {
+      if (document.body.textContent?.includes("£0 in accruals")) break;
+      await new Promise((r) => setTimeout(r, 10));
+    }
+
+    expect(input.value).toBe("");
+    expect(input.disabled).toBe(false);
   });
 });

@@ -872,6 +872,41 @@ a rule, and left an approval task in a queue.
   0429's own doc for the reasoning, including the parallel drawn to why
   0428's own second addendum pulled "Exceptions by user."
 
+### Talk to an AP Expert — Screen 6, the sixth and last AP Analytics tab (0430)
+- The design's own sixth screen, discovered by 0426 and built here: a
+  conversational tab answering plain-language AP questions through
+  exactly four named tool calls (`supplier_spend`, `overdue_balance`,
+  `accrual_summary`, `exception_counts`) — never open text-to-SQL,
+  matching the design's own explicit instruction.
+- New `AP.Assistant` permission gates the tab itself, not the data —
+  each tool call is separately checked against that tool's own real
+  permission (`AP.Supplier`, `AP.Analysis`, `AP.FraudReview`) at call
+  time, so a person's answers are scoped exactly the way their screens
+  already are.
+- Two model calls per question (tool selection, then answer phrasing),
+  both built on decision 0002's own existing `CompilerModel`/
+  `AiRunnable` infrastructure, reused rather than duplicated.
+- New standalone `GET /liabilities/overdue-balance` route, built
+  solely to back the assistant's own worked example — "overdue"
+  honestly defined as still-open and past its `BT-9` due date, never a
+  claim about payment (this codebase still captures no
+  payment-execution data — 0429), and deliberately kept out of
+  Financial Performance's own tab since it is not one of Liabilities &
+  Accruals' own six listed metrics.
+- Chat history is ephemeral by the operator's own choice for this
+  first build; three genuine design forks put to the operator directly
+  rather than decided silently — see decision 0430's own doc.
+- Fixed a second, unrelated invariant this decision's own change
+  broke: adding `AP.Assistant` to the permission vocabulary needed a
+  new migration (`0074`) restating the closed permission set, the same
+  pattern decision 0071 already established for `AP.FraudReview`.
+- Found, and deliberately left alone: a pre-existing gap where `vf-
+  licence`'s own test harness has not wired in roughly the last
+  fourteen UI-string migrations (0127 onward) — confirmed pre-existing
+  and self-consistent (its own string-coverage test already passes
+  despite it), not caused by or fixed in this decision. See decision
+  0430's own doc.
+
 ### Purchase orders and matching
 - Purchase order storage grounded in Peppol BIS Order Only 3.3, via UBL
   XML ingestion (0081) and CSV load (0370) — the same tables, the same
@@ -1889,20 +1924,41 @@ by supplier, trended; decision 0424 built the fourth and sixth
 together, statistical outliers and segregation-of-duties flags, at the
 operator's own request ("Can you tackle 1 and 2").
 
-**Screen 6 — "Talk to an AP Expert," entirely unbuilt, no vertical
-slice started.** The design's own sixth and last dashboard addition: a
-conversational tab answering plain-language questions about live AP
-data — *"what's our overdue balance with Acme this month"* — without a
-person having to find the right screen or report first. Gated on a
-new, dedicated `AP.Assistant` permission, deliberately not implied by
-any existing grant. Architecturally a small, reviewed set of named
-tool calls, each running through the same `hasPermission`/`unitClause`
-checks as the screen it stands in for — explicitly **not** open
-text-to-SQL against D1. The design's own Recommended Phasing sequences
-it last, Phase 5, on purpose: its tool palette wraps the scoped query
-functions the other five screens' own routes already build, so it has
-the least to stand on until they exist. A further "standalone remote
-MCP server" option the design also sketches for this screen is
+**~~Screen 6 — "Talk to an AP Expert," entirely unbuilt, no vertical
+slice started.~~ Built (0430) — the design's sixth and last screen now
+has a real vertical slice, the same as the other five.** A
+conversational sixth tab on AP Analytics answering plain-language
+questions over live AP data through exactly four named tool calls —
+`supplier_spend`, `overdue_balance`, `accrual_summary`,
+`exception_counts` — never open text-to-SQL against D1, matching the
+design's own explicit instruction. Gated on a new, dedicated
+`AP.Assistant` permission (deliberately not implied by any existing
+grant, the design's own words), which answers nothing by itself: each
+tool call is additionally checked against that tool's own real
+permission at call time (`AP.Supplier`, `AP.Analysis`, `AP.
+FraudReview`), so a person's chat answers are scoped exactly the way
+their screens already are. Two model calls per question — tool
+selection, then a second call phrasing the final answer around the
+tool's real, verified result, the operator's own choice over showing
+the raw structured result directly — both built on decision 0002's own
+existing `CompilerModel`/`AiRunnable` infrastructure, reused rather
+than duplicated. Chat history is ephemeral, the operator's own choice
+for this first build. The design's own worked example — *"what's our
+overdue balance with Acme this month"* — needed a new, standalone
+`GET /liabilities/overdue-balance` route: "overdue," investigated and
+found to exist nowhere in this codebase, is honestly defined as
+still-open (still-accruing, 0417/0418's own definition reused) and
+past its `BT-9` due date — never a claim about payment, since this
+codebase still captures no payment-execution data at all (0429). Built
+deliberately outside Financial Performance's own tab: "overdue
+balance" is not one of Liabilities & Accruals' own six listed metrics,
+so it exists solely to back this screen's tool call, not as an
+unrequested seventh metric. See decision 0430's own doc for the three
+forks put to the operator directly, a second, unrelated permissions-
+invariant test this decision's own change broke and fixed (migration
+`0074`), and a pre-existing `vf-licence` test-harness gap found while
+building this and deliberately left alone. A further "standalone
+remote MCP server" option the design also sketches for this screen is
 explicitly out of scope for the document itself, not merely deferred —
 its own future decision, should it ever be made.
 
@@ -2104,13 +2160,20 @@ elsewhere.
 
 | Package | Tests |
 |---|---|
-| `vf-app` | 2287 |
+| `vf-app` | 2316 |
 | `vf-licence` | 320 |
-| `vf-ui` | 74 Worker · 910 browser |
-| `shared` | 287 passing, 3 known pre-existing failures |
+| `vf-ui` | 74 Worker · 915 browser |
+| `shared` | 295 passing, 3 known pre-existing failures |
 
 Both migration chains replay clean with every standing invariant
-holding — 73 migrations for `vf-app`, 139 for `vf-licence`.
+holding — 74 migrations for `vf-app`, 140 for `vf-licence`.
+
+**`shared`'s count was recorded as 287 through decision 0429**; a
+clean run at this decision's own commit, with no `shared` change since
+then, counts 295. Why the two differ is not established — recorded as
+measured (following 0380's own precedent for the same kind of
+unexplained drift in `vf-app`'s count) rather than explained after the
+fact. The 3 known pre-existing failures are unchanged.
 
 **`vf-app`'s count was recorded as 1851 through decision 0379**; a clean
 run at `46c1da2`, with no `vf-app` change since decision 0378 recorded

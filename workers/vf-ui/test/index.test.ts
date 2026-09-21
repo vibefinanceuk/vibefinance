@@ -474,6 +474,21 @@ describe("the proxy carries every path a screen calls (decision 0131)", () => {
     ["GET", "/api/workload/pending"],
     ["GET", "/api/workload/queue-depth"],
     ["GET", "/api/workload/balance"],
+    /**
+     * The AP Assistant's own worked example, the overdue-invoice
+     * balance — decision 0430. Not one of Financial Performance's six
+     * metrics; built solely to back the assistant's `overdue_balance`
+     * tool call. `/liabilities/overdue-balance` matched no existing
+     * wildcard either, the same recurring gap this whole block keeps
+     * finding.
+     */
+    ["GET", "/api/liabilities/overdue-balance"],
+    /**
+     * "Talk to an AP Expert" itself — decision 0430, the sixth and last
+     * tab on AP Analytics. `/ap-assistant/ask` matched no existing
+     * wildcard either.
+     */
+    ["POST", "/api/ap-assistant/ask"],
   ];
 
   it("carries all of them", async () => {

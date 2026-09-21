@@ -111,6 +111,7 @@ export default defineConfig({
       "/supplier-payment-terms.js": resolve(__dirname, "public/supplier-payment-terms.js"),
       "/supplier-discount-eligibility.js": resolve(__dirname, "public/supplier-discount-eligibility.js"),
       "/supplier-hold-history.js": resolve(__dirname, "public/supplier-hold-history.js"),
+      "/ap-assistant.js": resolve(__dirname, "public/ap-assistant.js"),
       "/ap-analytics.js": resolve(__dirname, "public/ap-analytics.js"),
       "/charts.js": resolve(__dirname, "public/charts.js"),
       "/mood.js": resolve(__dirname, "public/mood.js"),

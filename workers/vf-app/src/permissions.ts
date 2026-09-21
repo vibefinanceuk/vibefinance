@@ -100,6 +100,26 @@ const AP_PERMISSIONS = [
    * Access screen, not this codebase's.
    */
   "AP.FraudReview",
+  /**
+   * **Reserved since decision 0426, real since decision 0430.** The
+   * Management Dashboard design's own Screen 6, "Talk to an AP
+   * Expert" — a conversational tab answering plain-language questions
+   * over live AP data. The design's own words, quoted directly: *"a
+   * new, dedicated `AP.Assistant` permission — deliberately not
+   * implied by any existing grant, since this is the one screen that
+   * answers open-ended questions rather than rendering a fixed,
+   * reviewed report."*
+   *
+   * **Gates the chat itself, not the data.** Holding this alone
+   * answers nothing: every tool the assistant can call is additionally
+   * gated by that tool's own real permission (`AP.Supplier`,
+   * `AP.Analysis`) at call time, exactly the design's own Role-Based
+   * Access Model row for this screen — *"each tool call runs through
+   * the same `hasPermission`/`unitClause` checks as the screen it
+   * stands in for"* — so a person's chat answers are scoped exactly
+   * the way their screens already are, never more.
+   */
+  "AP.Assistant",
 ] as const;
 
 /**
@@ -251,6 +271,7 @@ export const PERMISSION_DESCRIPTIONS: Record<Permission, string> = {
   "AP.Discard": "Discard a document that cannot be processed",
   "AP.FraudReview": "See the AP Analytics screen's Fraud Prevention tab",
   "AP.TaskManage": "See and release every user's tasks, not just your own",
+  "AP.Assistant": "Ask the AP Analytics screen's Talk to an AP Expert tab a question — each answer still scoped by whatever else you hold",
 
   "AR.Validate": "Accounts Receivable — not yet built",
   "AR.Approve": "Accounts Receivable — not yet built",

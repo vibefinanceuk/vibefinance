@@ -29,6 +29,7 @@ import { load as loadSupplierPoVariance, renderCard as supplierPoVarianceCard } 
 import { load as loadSupplierPaymentTerms, renderCard as supplierPaymentTermsCard } from "/supplier-payment-terms.js";
 import { load as loadDiscountEligibility, renderCard as discountEligibilityCard } from "/supplier-discount-eligibility.js";
 import { load as loadHoldHistory, renderCard as holdHistoryCard } from "/supplier-hold-history.js";
+import { renderPanel as assistantPanel } from "/ap-assistant.js";
 
 /**
  * AP Analytics — decision 0417, the single tabbed home for every
@@ -48,8 +49,8 @@ import { load as loadHoldHistory, renderCard as holdHistoryCard } from "/supplie
  * rather than rebuilt — the same shape the operator pointed at by
  * name.
  *
- * **Five tabs, all five real now.** The operator's own names, mapped
- * onto the design's five original screens:
+ * **Six tabs, all six real now.** The operator's own names, mapped
+ * onto the design's six original screens:
  *
  * | Tab | Design's own screen | Permission |
  * |---|---|---|
@@ -58,6 +59,18 @@ import { load as loadHoldHistory, renderCard as holdHistoryCard } from "/supplie
  * | Supplier Performance | Supplier Performance | `AP.Supplier` |
  * | Executive IQ | Multi-Enterprise CFO View | `AP.Analysis` + `holdsEverywhere` |
  * | Fraud Prevention | Fraud & Risk Detection | `AP.FraudReview` |
+ * | Talk to an AP Expert | Talk to an AP Expert | `AP.Assistant` |
+ *
+ * **Talk to an AP Expert — decision 0430, the sixth and last screen,
+ * Phase 5 of the design's own Recommended Phasing, sequenced last on
+ * purpose.** Unlike every tab above it, this one is not a `load()` +
+ * `renderCard()` pair over a fixed report: `ap-assistant.js`'s own
+ * `renderPanel()` builds a small chat, and each question it answers is
+ * scoped twice over — `AP.Assistant` gates the tab itself, exactly like
+ * every permission below gates its own; the specific tool the question
+ * needs is gated again, server-side, by that tool's own real
+ * permission (`AP.Supplier`/`AP.Analysis`/`AP.FraudReview`), never
+ * trusting the model's own choice as authorization.
  *
  * Every tab reuses the routes and screens decisions 0415–0425 already
  * built and tested. Executive IQ (decision 0425) was the last to gain
@@ -132,6 +145,7 @@ const TABS = [
   { key: "supplier", labelKey: "apanalytics.supplier", permission: "AP.Supplier" },
   { key: "executiveiq", labelKey: "apanalytics.executiveiq", permission: "AP.Analysis", global: true },
   { key: "fraud", labelKey: "apanalytics.fraud", permission: "AP.FraudReview" },
+  { key: "assistant", labelKey: "apanalytics.assistant", permission: "AP.Assistant" },
 ];
 
 function availableTabs() {
@@ -260,6 +274,12 @@ async function tabContent(key) {
     // "one real vertical slice first" discipline every other tab on
     // this screen started with.
     return (await loadConsolidatedSpend()) ? consolidatedSpendCard() : loadErrorCard();
+  }
+  if (key === "assistant") {
+    // No load()/renderCard() split — see ap-assistant.js's own doc
+    // comment for why this tab is built differently from every other
+    // one on this screen.
+    return assistantPanel();
   }
   return placeholderCard(tab);
 }

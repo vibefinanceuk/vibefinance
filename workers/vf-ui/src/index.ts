@@ -349,6 +349,22 @@ const PROXIED_TO_INSTANCE: RegExp[] = [
   // the symptom is a button that does nothing, refused by this proxy
   // rather than by the route it was aimed at.
   /^\/sources\/[^/]+$/,
+  /**
+   * **The overdue-invoice balance — decision 0430's own worked
+   * example.** Built solely to back the AP Assistant's `overdue_balance`
+   * tool call, not a Screen 4 metric card. Checked directly again, the
+   * same discipline decisions 0418–0425 already established for this
+   * exact recurring gap: `/liabilities/overdue-balance` matches no
+   * existing wildcard on this list either.
+   */
+  /^\/liabilities\/overdue-balance$/,
+  /**
+   * **"Talk to an AP Expert" — decision 0430**, the sixth and last tab
+   * on AP Analytics. A single `POST`, not a `GET` report fetch like
+   * every entry above it, so it needed its own entry regardless: no
+   * existing wildcard on this list matches `/ap-assistant/ask`.
+   */
+  /^\/ap-assistant\/ask$/,
 ];
 
 /**
