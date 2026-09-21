@@ -456,11 +456,17 @@ describe("the proxy carries every path a screen calls (decision 0131)", () => {
     ["GET", "/api/suppliers/discount-eligibility"],
     ["GET", "/api/suppliers/hold-history"],
     /**
-     * Workload's own remaining seven metrics — decision 0428. Each
-     * matches the `/^\/workload\/[^/]+$/` wildcard `/workload/throughput`
-     * was widened into for exactly this — confirmed directly with a
-     * real fetch against every one of the eight paths it now covers,
-     * not assumed from the pattern alone.
+     * Six of Workload's own remaining seven metrics — decision 0428.
+     * Each matches the `/^\/workload\/[^/]+$/` wildcard
+     * `/workload/throughput` was widened into for exactly this —
+     * confirmed directly with a real fetch against every one of them,
+     * not assumed from the pattern alone. The seventh,
+     * `/workload/exceptions`, is deliberately not listed here — no
+     * screen calls it any more, since decision 0428's own second
+     * addendum pulled the card and its route over an unresolved
+     * governance concern and a broken raw-count calculation. The
+     * wildcard would still proxy it if a screen ever called it again;
+     * nothing calls it today.
      */
     ["GET", "/api/workload/open-tasks"],
     ["GET", "/api/workload/handling-time"],
@@ -468,7 +474,6 @@ describe("the proxy carries every path a screen calls (decision 0131)", () => {
     ["GET", "/api/workload/pending"],
     ["GET", "/api/workload/queue-depth"],
     ["GET", "/api/workload/balance"],
-    ["GET", "/api/workload/exceptions"],
   ];
 
   it("carries all of them", async () => {

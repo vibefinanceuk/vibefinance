@@ -1,17 +1,23 @@
 # 0428 — Workload's remaining seven metrics, the screen's own full parity, six of seven whole
 
-**Status: pushed and deployed, confirmed directly — and one real
-scoping bug in the balance card found live and fixed, see the addendum
-below.** The operator confirmed "deployed and pushed" directly, along
-with a screenshot of the Workload Balance card showing the same
-person, "Alice McDonald," with an identical count in every one of
-seven teams — investigated rather than dismissed, and traced to a real
-design choice in this decision's own first build, not a query-
-duplication bug. Corrected below, in the same commit cycle, once the
-operator chose the fix over keeping the original reading. This session
-still has no push access to `vibefinanceuk/vibefinance`; delivered as
-a git bundle for the operator's own pull/push/deploy sequence, the
-same path decisions 0391, 0415–0427 already used.
+**Status: original seven-metric build (`7fd97e0`) pushed and deployed,
+confirmed directly. Two live findings since, addressed in two
+addenda below — one fixed and delivered, awaiting confirmation; one
+resulted in a report being pulled entirely, awaiting confirmation.**
+The operator confirmed "deployed and pushed" directly, along with a
+screenshot of the Workload Balance card showing the same person,
+"Alice McDonald," with an identical count in every one of seven teams.
+Investigated rather than dismissed: a real scoping choice in this
+decision's own first build, not a query-duplication bug — fixed in
+the first addendum below (`0c646a7`, bundle `0640`). Separately, the
+Exceptions by user card drew a real governance concern the moment it
+was seen live — investigating it further surfaced a second, more
+fundamental flaw in the calculation itself. The operator chose to pull
+that report entirely rather than ship a partial fix — see the second
+addendum below. This session still has no push access to
+`vibefinanceuk/vibefinance`; delivered as a git bundle for the
+operator's own pull/push/deploy sequence, the same path decisions
+0391, 0415–0427 already used.
 
 ---
 
@@ -333,3 +339,109 @@ in the design document's own wording forces one over the other — this
 decision guessed at build time and production caught it. Worth asking
 directly, the next time it comes up, rather than assuming either
 reading generalizes.
+
+---
+
+## Second addendum — Exceptions by user, pulled live
+
+**"There is an exceptions by user report which says 'Not to assign
+blame — to see where extra support or training would help.'"** No
+request attached — just the subtitle, quoted back. Rather than assume
+what was wanted, this was put to the operator directly: explain the
+reasoning, change the wording, or flag a real concern. The operator
+chose **flag a real concern**.
+
+**The concern, stated directly, was correct on both counts:**
+
+1. **Naming individual users in a ranked exceptions list is a real
+   governance risk, whatever the subtitle says.** The card names the
+   top 10 users by exception count, gated only behind `AP.Analysis` —
+   a broad permission, not the narrower `AP.FraudReview` gate decision
+   0423 used for the *identical* underlying exception data in Fraud
+   Prevention. A subtitle disclaiming blame is copy, not an access
+   control; it does nothing to stop the same ranked, named list being
+   used in a performance review or a disciplinary conversation.
+2. **The calculation itself measures the wrong thing.** Investigating
+   `workload-exceptions-route.ts` directly at the operator's own
+   request confirmed it exactly: a raw `COUNT(*)` of validation
+   failures credited to `completed_by`, over a 90-day window, with
+   **no denominator** — no total-tasks-completed alongside it. The
+   operator's own read was exact: *"if it is a raw count of the items
+   processed in exception by a user, that does not indicate that they
+   need training. It indicates that they are the most productive."*
+   Someone completing 500 tasks at a 2% error rate (10 exceptions)
+   would outrank someone completing 20 tasks at a 40% error rate (8
+   exceptions) — the opposite of what a "who needs support" metric
+   should show. Not a presentation flaw; the metric measures volume,
+   not accuracy.
+
+**Two separate questions were then put to the operator, via
+`AskUserQuestion`, rather than fixed on assumption:**
+
+1. **How should individuals be identified**, given the governance
+   concern — keep named with a rate added, de-identify entirely, or
+   leave as built for now. The operator's own answer went past the
+   options offered, straight to the calculation itself — confirming
+   the raw-count reading above was the real issue, ahead of the
+   identification question.
+2. **Should the access gate be narrowed** from the broad `AP.Analysis`
+   to something closer to `AP.FraudReview`. The operator chose
+   **narrow it**.
+3. **Given the raw count is confirmed misleading, how should it be
+   fixed** — rank by rate with count as context (recommended), add
+   rate but keep ranking by count, or pull the report entirely. With
+   both a broken calculation *and* an unresolved access question still
+   open at once, the operator chose **pull the report entirely** —
+   explicitly declining a partial fix.
+
+**What was done.** No route, no card — not narrowed, not
+recalculated, removed:
+
+- `workers/vf-app/src/index.ts` — the `/workload/exceptions` route
+  block and its `handleWorkloadExceptions` import removed, replaced
+  with a doc comment recording why and where the working code still
+  lives.
+- `workers/vf-app/src/workload-exceptions-route.ts` and
+  `workers/vf-app/test/workload-exceptions.test.ts` deleted.
+- `workers/vf-ui/public/ap-analytics.js` — the `workload-exceptions.js`
+  import and its slot in the operational tab's `Promise.all` removed;
+  the tab is seven cards again, not eight.
+- `workers/vf-ui/public/workload-exceptions.js` and
+  `workers/vf-ui/test-browser/workload-exceptions.test.ts` deleted.
+- `workers/vf-ui/vitest.browser.config.ts` — its path alias removed.
+- `workers/vf-ui/test/index.test.ts` — its `CALLED_BY_A_SCREEN` entry
+  removed (nothing calls it any more); the `/^\/workload\/[^/]+$/`
+  wildcard itself is untouched and would still proxy it if a screen
+  ever called it again.
+- `workers/vf-ui/test-browser/ap-analytics.test.ts` — the operational
+  tab's own tests reverted to seven cards; the `workload.exceptions*`
+  strings and default route stub removed; the doc comment updated.
+
+**Nothing about `vf-licence` migration `0139` changes.** It is already
+applied live, and this project's own convention is that a migration is
+never edited after the fact. Its four `workload.exceptions*` keys
+simply go unused by any screen now — harmless, and cheaper to leave
+than to write a removal migration for four dead string rows.
+
+**Deliberately not deleted from git history.** `workload-exceptions-
+route.ts` and `workload-exceptions.js` are fully recoverable from
+commit `7fd97e0` — the complete, tested implementation, ready for
+whoever redesigns the calculation (a rate, not a raw count) and the
+access gate (narrower than `AP.Analysis`) together, rather than being
+rebuilt from nothing.
+
+**Suite state:** `vf-app` 2289 → **2281** (−8, the deleted route's own
+test file). `vf-ui` browser 915 → **910** (−5, the deleted card's own
+test file); `vf-ui` Worker stays at 74 (one array entry removed, not a
+parametrized test). `vf-licence` unaffected. Full suites re-run clean:
+`vf-app` 100 files / 2281 tests, `vf-ui` browser 42 files / 910 tests
+(same pre-existing 160 unhandled-rejection baseline as every other
+decision in this arc), `vf-ui` Worker 61 tests. `eslint`/`tsc` clean on
+every changed file.
+
+**Workload's own standing, corrected**: six of its own eight key
+metrics built and live, one built half (pending-over-a-period, not
+approaching/past-due), one built and then pulled (exceptions by user).
+Not the full parity with its own design list the first addendum's own
+"six of seven whole" framing implied — see `docs/PROGRESS.md`'s own
+"Not built" section for the corrected record.

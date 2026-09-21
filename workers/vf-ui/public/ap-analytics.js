@@ -7,7 +7,12 @@ import { load as loadCycleTime, renderCard as cycleTimeCard } from "/workload-cy
 import { load as loadPending, renderCard as pendingCard } from "/workload-pending.js";
 import { load as loadQueueDepth, renderCard as queueDepthCard } from "/workload-queue-depth.js";
 import { load as loadBalance, renderCard as balanceCard } from "/workload-balance.js";
-import { load as loadWorkloadExceptions, renderCard as workloadExceptionsCard } from "/workload-exceptions.js";
+// "Exceptions by user" pulled — decision 0428's own second addendum.
+// Named-individual exception data behind a broad AP.Analysis gate, with
+// a raw count that rewards volume over accuracy — see workers/vf-app/
+// src/index.ts's own doc comment where the route used to be wired, and
+// decision 0428's own second addendum, for the full reasoning. The
+// working module is recoverable in full from commit 7fd97e0.
 import { load as loadSupplierSpend, renderCard as supplierSpendCard } from "/supplier-performance.js";
 import { load as loadAccruals, renderCard as accrualsCard } from "/accruals.js";
 import { load as loadSpendUnderManagement, renderCard as spendUnderManagementCard } from "/spend-under-management.js";
@@ -167,12 +172,16 @@ function loadErrorCard() {
 async function tabContent(key) {
   const tab = TABS.find((candidate) => candidate.key === key);
   if (key === "operational") {
-    // Eight independent cards, decision 0428 — throughput (0415) plus
-    // Workload's own remaining seven, all built together at the
+    // Seven independent cards, decision 0428 — throughput (0415) plus
+    // six of Workload's own remaining seven, all built together at the
     // operator's own choice, the same "one screen's own fetch failing
     // never hides another's real data" discipline every other tab on
-    // this screen already follows.
-    const [throughputOk, openTasksOk, handlingTimeOk, cycleTimeOk, pendingOk, queueDepthOk, balanceOk, exceptionsOk] =
+    // this screen already follows. "Exceptions by user," the eighth
+    // and last, was pulled live — decision 0428's own second addendum
+    // — over a governance concern (naming individuals under a broad
+    // gate) and a broken raw-count calculation found once the first
+    // concern was investigated. Not rebuilt here; see that addendum.
+    const [throughputOk, openTasksOk, handlingTimeOk, cycleTimeOk, pendingOk, queueDepthOk, balanceOk] =
       await Promise.all([
         loadOperational(),
         loadOpenTasks(),
@@ -181,7 +190,6 @@ async function tabContent(key) {
         loadPending(),
         loadQueueDepth(),
         loadBalance(),
-        loadWorkloadExceptions(),
       ]);
     return [
       throughputOk ? operationalCard() : loadErrorCard(),
@@ -191,7 +199,6 @@ async function tabContent(key) {
       pendingOk ? pendingCard() : loadErrorCard(),
       queueDepthOk ? queueDepthCard() : loadErrorCard(),
       balanceOk ? balanceCard() : loadErrorCard(),
-      exceptionsOk ? workloadExceptionsCard() : loadErrorCard(),
     ];
   }
   if (key === "financial") {

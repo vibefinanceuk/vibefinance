@@ -95,7 +95,6 @@ export default defineConfig({
       "/workload-pending.js": resolve(__dirname, "public/workload-pending.js"),
       "/workload-queue-depth.js": resolve(__dirname, "public/workload-queue-depth.js"),
       "/workload-balance.js": resolve(__dirname, "public/workload-balance.js"),
-      "/workload-exceptions.js": resolve(__dirname, "public/workload-exceptions.js"),
       "/supplier-performance.js": resolve(__dirname, "public/supplier-performance.js"),
       "/accruals.js": resolve(__dirname, "public/accruals.js"),
       "/spend-under-management.js": resolve(__dirname, "public/spend-under-management.js"),

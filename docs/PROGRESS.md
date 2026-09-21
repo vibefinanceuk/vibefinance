@@ -812,22 +812,42 @@ a rule, and left an approval task in a queue.
     everywhere) — the operator confirmed the memberships were real and
     chose to scope the count to `t.owner_team_id = tm.id` instead, the
     same column `workload/queue-depth` already reads.
-  - **`GET /workload/exceptions`** — reuses decision 0423's own
-    exception definition (`stage_visits.validation_passed = 0`) under
-    `AP.Analysis` rather than `AP.FraudReview`, framed as coaching
-    ("not to assign blame... to see where extra support or training
-    would help") rather than fraud review — a flat count, not trended.
+  - **`GET /workload/exceptions`** — built, deployed, then **pulled
+    live, second addendum to 0428**. Originally reused decision 0423's
+    own exception definition (`stage_visits.validation_passed = 0`)
+    under `AP.Analysis` rather than `AP.FraudReview`, framed as
+    coaching ("not to assign blame... to see where extra support or
+    training would help"). Live, the operator flagged a real
+    governance concern — naming individuals under a broad gate, a
+    subtitle disclaiming blame with nothing enforcing it — and
+    investigating the calculation itself surfaced a second, more
+    fundamental problem: a raw `COUNT(*)` with no denominator rewards
+    *volume*, not accuracy, so the busiest, most reliable person could
+    rank above someone with a genuinely worse error rate. Given both a
+    broken calculation and an unresolved access question, the operator
+    chose to pull the route and card entirely rather than ship a
+    partial fix. **Not currently reachable** — no route in
+    `workers/vf-app/src/index.ts`, no card in `ap-analytics.js`. The
+    full working implementation is recoverable in full from commit
+    `7fd97e0` for whoever redesigns the calculation (rate, not count)
+    and the permission gate (narrower than `AP.Analysis`) together.
 - **`vf-ui`'s `PROXIED_TO_INSTANCE` regex widened**, not extended with
   seven new exact-match entries — the pre-existing exact
   `/^\/workload\/throughput$/` becomes `/^\/workload\/[^/]+$/`,
   matching the `/suppliers/[^/]+$/` precedent already used for this
-  screen's own sibling family.
-- `ap-analytics.js`'s `tabContent()` now loads all eight of Operational
-  Performance's own cards in one `Promise.all`, each failing
-  independently — the same discipline every other multi-card tab on
-  this screen already established.
+  screen's own sibling family. Still correct after `/workload/
+  exceptions` was pulled — the wildcard just has one fewer real path
+  behind it today.
+- `ap-analytics.js`'s `tabContent()` loads seven of Operational
+  Performance's own cards in one `Promise.all` (throughput plus six of
+  Workload's remaining seven — exceptions pulled, see above), each
+  failing independently — the same discipline every other multi-card
+  tab on this screen already established.
 - **Strings**: `workers/vf-licence/migrations/0139_workload_remaining_
-  seven_metrics_strings.sql` — 34 keys, English and German (68 rows).
+  seven_metrics_strings.sql` — 34 keys, English and German (68 rows),
+  applied and live. The four `workload.exceptions*` keys are now
+  unused by any screen (the migration itself is never edited after the
+  fact — see decision 0428's own second addendum).
 
 ### Purchase orders and matching
 - Purchase order storage grounded in Peppol BIS Order Only 3.3, via UBL
@@ -1740,38 +1760,50 @@ Expert," that had never once been named here — see its own entry
 below. Correcting the record: of the six screens with at least one
 real metric behind them, four of Liabilities & Accruals' own six, one
 of Fraud & Risk Detection's own six, and five of the Multi-Enterprise
-CFO View's own six stay unbuilt — **Supplier Performance and User &
-Team Workload are the first two of the six screens to reach full
-parity with their own design lists** — Supplier Performance all eight
-of its own key metrics (0421, 0427), Workload all eight of its own
-(0415, 0428) — **though Workload's own "tasks pending action and
-approaching/past due" is honestly only half of what its own design
-bullet names**: 0428 built "pending over a period" (three fixed
-thresholds — 3, 7, 14 days), by the operator's own explicit choice,
-and did not build "approaching/past due," because no due-date column
-exists anywhere on a task in this schema — `hold_until` is the only
-date-like concept anywhere near a task, and it is a fired rule
-*action* recorded in the activity log against an *invoice*
-(`activity-route.ts`), never a queryable column on a *task*, confirmed
-by grepping the whole codebase. Workload's own count had never
-actually been checked against its own metrics list before 0428; only
+CFO View's own six stay unbuilt — **Supplier Performance is the first
+of the six screens to reach full parity with its own design list**,
+all eight of its own key metrics (0421, 0427). **User & Team Workload
+came close — six of its own eight built whole — but stops short of
+full parity for two separate, honest reasons, not one.** First:
+Workload's own "tasks pending action and approaching/past due" is only
+half of what its own design bullet names — 0428 built "pending over a
+period" (three fixed thresholds — 3, 7, 14 days), by the operator's own
+explicit choice, and did not build "approaching/past due," because no
+due-date column exists anywhere on a task in this schema —
+`hold_until` is the only date-like concept anywhere near a task, and
+it is a fired rule *action* recorded in the activity log against an
+*invoice* (`activity-route.ts`), never a queryable column on a *task*,
+confirmed by grepping the whole codebase. Second: "exceptions by user"
+was built and deployed by 0428, then **pulled live by its own second
+addendum** — the operator flagged a real governance concern (naming
+individual users in a ranked list, under a broad `AP.Analysis` gate,
+with only a subtitle disclaiming blame and nothing enforcing it), and
+investigating the calculation itself surfaced a second, more
+fundamental flaw: a raw `COUNT(*)` of exceptions per user, with no
+denominator, rewards *volume* over *accuracy* — the busiest, most
+reliable person could rank above someone with a genuinely worse error
+rate. Rather than ship a partial fix with both problems still open,
+the operator chose to pull the route and card entirely. The working
+implementation is not lost — recoverable in full from commit `7fd97e0`
+— but nothing is live today. Workload's own count had never actually
+been checked against its own metrics list before 0428; only
 "Throughput by user, stacked by stage" (0415) existed, and the other
 seven — open task count by user split by ownership, average handling
 time by stage and by user, claim-to-complete cycle time, tasks pending
 action (and approaching/past due, not built), team queue depth
 (available vs. locked), workload balance (variance in open-task count
-across a team), and exceptions by user — had never been raised as a
-decision before the operator's own explicit instruction, "shall we
-tackle - User & Team Workload 1/8. - 7 metrics, none previously
-tracked," at which point 0428 built all seven together, the operator's
-own choice over building them one at a time. Decisions 0415, 0416,
-0418, 0419, 0420, 0421, 0422, 0423, 0424, 0425, 0427, and 0428 each
-built one or more vertical slices for real — Workload's own throughput
-metric and — 0428's own remaining seven — open tasks by user, average
-handling time, claim-to-complete cycle time, tasks pending over a
-period, team queue depth, workload balance, and exceptions by user,
-Financial Performance's "Accruals report" and "Spend under management
-(with PO)," Fraud Prevention's "Potential duplicate invoices,"
+across a team), and exceptions by user (built, then pulled) — had
+never been raised as a decision before the operator's own explicit
+instruction, "shall we tackle - User & Team Workload 1/8. - 7 metrics,
+none previously tracked," at which point 0428 built all seven
+together, the operator's own choice over building them one at a time.
+Decisions 0415, 0416, 0418, 0419, 0420, 0421, 0422, 0423, 0424, 0425,
+0427, and 0428 each built one or more vertical slices for real —
+Workload's own throughput metric and — 0428's own remaining six that
+stayed live — open tasks by user, average handling time,
+claim-to-complete cycle time, tasks pending over a period, team queue
+depth, and workload balance, Financial Performance's "Accruals report"
+and "Spend under management (with PO)," Fraud Prevention's "Potential duplicate invoices,"
 "Unapproved-supplier invoices," "Exceptions by type, by user, by
 supplier, trended," "Statistical outliers," and "Segregation-of-duties
 flags," Supplier Performance's own "Spend by supplier," active
@@ -2041,9 +2073,9 @@ elsewhere.
 
 | Package | Tests |
 |---|---|
-| `vf-app` | 2289 |
+| `vf-app` | 2281 |
 | `vf-licence` | 320 |
-| `vf-ui` | 74 Worker · 915 browser |
+| `vf-ui` | 74 Worker · 910 browser |
 | `shared` | 287 passing, 3 known pre-existing failures |
 
 Both migration chains replay clean with every standing invariant

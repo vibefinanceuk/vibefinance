@@ -11,13 +11,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
  * user permissions."
  *
  * **What this file does not re-prove.** The Operational Performance
- * tab delegates to eight modules at once, `workload.js` (decision
- * 0415) and — decision 0428, Workload's own remaining seven key
+ * tab delegates to seven modules at once, `workload.js` (decision
+ * 0415) and — decision 0428, six of Workload's own remaining seven key
  * metrics, built together at the operator's own choice — `workload-
  * open-tasks.js`, `workload-handling-time.js`, `workload-cycle-
- * time.js`, `workload-pending.js`, `workload-queue-depth.js`,
- * `workload-balance.js` and `workload-exceptions.js`; Financial
- * Performance delegates to
+ * time.js`, `workload-pending.js`, `workload-queue-depth.js`, and
+ * `workload-balance.js`. The seventh, "Exceptions by user"
+ * (`workload-exceptions.js`), was pulled live — decision 0428's own
+ * second addendum — over a governance concern (naming individuals
+ * under a broad `AP.Analysis` gate) and a raw-count calculation that
+ * rewarded volume over accuracy; no route, no card, until both are
+ * redesigned together. Financial Performance delegates to
  * two modules at once, `accruals.js` and `spend-under-management.js`
  * (decision 0419); Supplier Performance delegates to eight modules at
  * once, `supplier-status.js`, `supplier-performance.js`,
@@ -134,10 +138,8 @@ const STRINGS = {
     "workload.balancesub": "Variance in open-task count across each team's own members",
     "workload.nobalance": "No teams to compare yet",
     "workload.balancestddev": "±{n} tasks",
-    "workload.exceptions": "Exceptions by user",
-    "workload.exceptionssub": "Not to assign blame — to see where extra support or training would help",
-    "workload.noexceptions": "No exceptions recorded",
-    "workload.exceptioncount": "{n} exceptions",
+    // workload.exceptions* deliberately not included — the card and its
+    // route were pulled live, decision 0428's own second addendum.
     // The Financial Performance tab's real content — decision 0417's
     // own follow-on.
     "financialperformance.accruals": "Accruals report",
@@ -276,7 +278,8 @@ function stubFetch(routes: Record<string, unknown>) {
  * `/api/workload/throughput`, `/api/workload/open-tasks`,
  * `/api/workload/handling-time`, `/api/workload/cycle-time`,
  * `/api/workload/pending`, `/api/workload/queue-depth`,
- * `/api/workload/balance`, `/api/workload/exceptions`,
+ * `/api/workload/balance` (not `/api/workload/exceptions` — that
+ * route was pulled live, decision 0428's own second addendum),
  * `/api/accruals`,
  * `/api/spend/under-management`, `/api/suppliers/spend`,
  * `/api/suppliers/discount-eligibility`, `/api/suppliers/hold-history`,
@@ -304,7 +307,6 @@ async function openApAnalytics(
     "/api/workload/pending": { thresholdsDays: [3, 7, 14], users: [], unclaimed: [0, 0, 0] },
     "/api/workload/queue-depth": { teams: [] },
     "/api/workload/balance": { teams: [] },
-    "/api/workload/exceptions": { users: [] },
     "/api/accruals": { currencies: [] },
     "/api/spend/under-management": { currencies: [] },
     "/api/suppliers/spend": { currencies: [] },
@@ -448,7 +450,7 @@ describe("the default tab, when only some permissions are held", () => {
 });
 
 describe("real tabs wire to the already-tested module behind them, placeholders say what they are", () => {
-  it("Operational Performance renders all eight of its own cards, decision 0428 — all eight of Workload's own key metrics, now real", async () => {
+  it("Operational Performance renders seven of its own cards, decision 0428 — six of Workload's own remaining seven key metrics, now real; the eighth, Exceptions by user, was pulled live", async () => {
     await openApAnalytics(["AP.Analysis"]);
 
     expect(document.querySelector(".tab.active")?.textContent).toBe("Operational Performance");
@@ -461,12 +463,12 @@ describe("real tabs wire to the already-tested module behind them, placeholders 
       "Tasks pending action",
       "Team queue depth",
       "Workload balance",
-      "Exceptions by user",
     ]);
+    expect(headings).not.toContain("Exceptions by user");
     expect(document.body.textContent).toContain("Nothing completed in the last 7 days");
   });
 
-  it("Operational Performance's eight cards fail independently — one's own load failure never hides the others' real content", async () => {
+  it("Operational Performance's seven cards fail independently — one's own load failure never hides the others' real content", async () => {
     await openApAnalytics(["AP.Analysis"], {}, { "/api/workload/handling-time": { ok: false, status: 500 } });
 
     expect(document.body.textContent).toContain("Could not load this tab right now");
@@ -477,7 +479,6 @@ describe("real tabs wire to the already-tested module behind them, placeholders 
     expect(headings).toContain("Tasks pending action");
     expect(headings).toContain("Team queue depth");
     expect(headings).toContain("Workload balance");
-    expect(headings).toContain("Exceptions by user");
     expect(headings).not.toContain("Average handling time");
   });
 

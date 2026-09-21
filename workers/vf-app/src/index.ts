@@ -13,7 +13,6 @@ import { handleWorkloadCycleTime } from "./workload-cycle-time-route.js";
 import { handleWorkloadPending } from "./workload-pending-route.js";
 import { handleWorkloadQueueDepth } from "./workload-queue-depth-route.js";
 import { handleWorkloadBalance } from "./workload-balance-route.js";
-import { handleWorkloadExceptions } from "./workload-exceptions-route.js";
 import { handleAccruals } from "./accruals-route.js";
 import { handleSpendUnderManagement } from "./spend-under-management-route.js";
 import { handleExecutiveConsolidatedSpend } from "./executive-consolidated-spend-route.js";
@@ -1351,16 +1350,29 @@ export default {
       return json(result.body, result.status);
     }
 
-    if (pathname === "/workload/exceptions" && request.method === "GET") {
-      const { db } = resolveTenant(request, env);
-      const auth = await authenticatePerson(db, request, env);
-      if (!auth.user) return json({ error: auth.reason }, 401);
-      if (!(await hasPermission(db, auth.user.id, "AP.Analysis"))) {
-        return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
-      }
-      const result = await handleWorkloadExceptions(db, url.searchParams.get("org"), auth.user.id);
-      return json(result.body, result.status);
-    }
+    /**
+     * **`/workload/exceptions` pulled — decision 0428's own second
+     * addendum.** Live, the operator flagged a real governance concern
+     * before the raw-count flaw was even raised: naming individual
+     * users in an exceptions list, with only a subtitle disclaiming
+     * blame, risks exactly the punitive use the subtitle disclaims.
+     * Investigating the calculation itself then surfaced a second, more
+     * fundamental problem — `handleWorkloadExceptions` returned a raw
+     * `COUNT(*)` of validation failures per user with no denominator,
+     * which rewards *volume* over *accuracy*: the busiest, most
+     * reliable person can rank above someone who completes far fewer
+     * tasks with a far worse error rate. That is not a presentation
+     * flaw, it is the metric measuring the wrong thing. Given both a
+     * broken calculation and an unresolved access question at once, the
+     * operator chose to pull the report entirely rather than ship a
+     * partial fix — no route, no card, until both are redesigned
+     * together. The full working implementation is not lost: it is
+     * `workload-exceptions-route.ts` in commit `7fd97e0` (and
+     * `workers/vf-ui/public/workload-exceptions.js` beside it),
+     * recoverable in full for whoever redesigns the calculation and the
+     * permission gate together. See decision 0428's own second
+     * addendum for the complete reasoning.
+     */
 
     /**
      * **The accruals report — decision 0417's own follow-on.** The
