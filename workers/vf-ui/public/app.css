@@ -3274,13 +3274,18 @@
   .chatbubble-answer > div { background: var(--surface-1); color: var(--text-primary); }
   .chatactions { display: flex; gap: 8px; margin: -2px 0 0 2px; }
   /**
-   * `align-items: flex-end` — decision 0432. Ask and Clear became
-   * `.actionlink`'s own icon-above-label stack, taller than the plain
-   * text input beside them; without this the row's default `stretch`
-   * pulled the input to match the buttons' own height instead of
-   * sitting at its natural size.
+   * `align-items: center` — decision 0432, corrected by its own first
+   * addendum. `flex-end` bottom-edge-aligned the input against
+   * `.actionlink`'s own icon-above-label stack, which is mathematically
+   * aligned but not visually aligned: the stack's weight sits in its
+   * icon, near its own top, so a shared bottom edge still read as the
+   * buttons floating above the input rather than sitting beside it
+   * (measured ~9.5px off at this row's own sizes). `center` lines up
+   * the two elements' actual vertical centres instead — still without
+   * `stretch`'s own problem of pulling the input up to the buttons'
+   * full height.
    */
-  .chatinputrow { display: flex; align-items: flex-end; gap: 10px; margin-top: 12px; }
+  .chatinputrow { display: flex; align-items: center; gap: 10px; margin-top: 12px; }
   .chatinputrow .chatinput {
     flex: 1;
     padding: 9px 12px;

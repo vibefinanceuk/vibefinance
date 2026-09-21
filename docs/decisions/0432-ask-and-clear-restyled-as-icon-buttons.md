@@ -96,3 +96,45 @@ Nothing new is deferred by this decision — it restyles two buttons
 that already existed and already worked, with no behavioural change to
 sending, clearing, or the download buttons beside them
 (`.chatactions`, decision 0430's seventh addendum, left untouched).
+
+## Addendum — a vertical alignment fix
+
+Live once this decision's own build shipped, the operator reported it
+directly, with a screenshot: *"please can you fix the alignment, so
+that the icons are a little lower or the text box is higher. They seem
+a little un-aligned."*
+
+**`align-items: flex-end` was mathematically doing its job and still
+looked wrong.** It bottom-edge-aligns `.chatinput` against
+`.actionlink`'s own icon-above-label stack — confirmed in a headless
+rendering of the exact markup and stylesheet: both boxes' bottom edges
+landed on the same pixel. But `.actionlink`'s own weight sits in its
+icon, near its own *top* — the label beneath it is the lighter, second
+element in the stack — so a shared bottom edge still reads as the
+buttons floating above the input rather than sitting beside it. The
+same rendering measured it directly: the button's own visual centre
+sat roughly 9-10px above the input's own centre, at this row's own
+sizes.
+
+**Fixed by switching to `align-items: center`.** This lines up the two
+elements' actual vertical centres — confirmed by the same headless
+rendering, the two centres now land on the same pixel — without
+reintroducing `stretch`'s own problem (decision 0432's own original
+build already ruled that out: `stretch` pulls the shorter input up to
+match the taller button's own full height). `.chatinputrow` is the
+only rule this touches.
+
+### Tests
+
+No test asserted the removed `align-items: flex-end;` value on
+`.chatinputrow` specifically — `test-browser/typography.test.ts`'s own
+`flex-end` assertion targets a different rule
+(`.panel > .cardhead {`), confirmed unaffected. The full
+`ap-analytics.test.ts` and `typography.test.ts` browser suites
+(82 tests) pass unchanged; the full `vf-ui` browser suite passes in
+full. `eslint .` clean across `vf-ui`.
+
+### What is not built
+
+Nothing else changes — the fix is a single `align-items` value on one
+existing rule.

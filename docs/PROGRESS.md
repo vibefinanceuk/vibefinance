@@ -1189,6 +1189,18 @@ section for the full reasoning and tests.
   counted `ap-analytics.test.ts` tests (the `actionlink` class, a real
   `<svg>`, and Ask alone carrying `primary`). Every existing assertion
   in that describe block is unchanged and still passes.
+- **Addendum, once this shipped and the operator saw it live:** "the
+  icons are a little lower or the text box is higher... a little
+  un-aligned" — `align-items: flex-end` was bottom-edge-aligning the
+  input against `.actionlink`'s own stack exactly as written, but the
+  stack's own weight sits in its icon near the *top*, so a shared
+  bottom edge still read as the buttons floating above the input. A
+  headless rendering of the actual markup confirmed it: bottom edges
+  matched to the pixel, centres sat ~9-10px apart. Switched to
+  `align-items: center` instead, which lines up the two elements' own
+  visual centres — confirmed by the same rendering — without
+  `stretch`'s own problem. See decision 0432's own addendum section
+  for the full accounting.
 
 ### Purchase orders and matching
 - Purchase order storage grounded in Peppol BIS Order Only 3.3, via UBL
