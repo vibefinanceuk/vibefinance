@@ -2,7 +2,7 @@
 
 **Written 4 September 2026, updated 17 September (six times), updated
 18 September (four times), updated 19 September (thirty-two times),
-updated 20 September (twenty-two times), updated 21 September (five
+updated 20 September (twenty-two times), updated 21 September (six
 times).**
 
 **For a session starting cold.** Where things stand, what needs a
@@ -32,27 +32,111 @@ twice.
 
 | | |
 | --- | --- |
-| `origin/main` | `b90ef57` — fetched directly by this session, matching this session's own commit exactly, confirming the operator's own "pushed and deployed" report |
+| `origin/main` | `b084859` — fetched directly by this session, matching this session's own commit exactly, confirming the operator's own "pushed and deployed" reports for all three of decision 0430's addenda |
 | vf-admin deployed | `8e27a34` · `https://admin.vibefinance-ai.com` · behind Cloudflare Access |
-| vf-app deployed | `b90ef57` — decisions 0429 (agreed payment means, a supplier-record placeholder), 0430 (Talk to an AP Expert, Screen 6), and 0430's own addendum (five more assistant tools, the tasks-vs-exceptions bug fixed), all confirmed |
-| vf-licence deployed | `b90ef57` per the operator's own report; migration `0140` below is now applied; the addendum added no new migration |
-| vf-ui deployed | `b90ef57` · `https://app.vibefinance-ai.com` — operator's own report |
+| vf-app deployed | `b084859` — decisions 0429 (agreed payment means, a supplier-record placeholder), 0430 (Talk to an AP Expert, Screen 6), and all three of 0430's own addenda (five more assistant tools and the tasks-vs-exceptions bug fixed; `invoice_search`, a tenth tool; an exact invoice count, ambiguous-lookup links returned immediately, and bounded conversation memory), all confirmed |
+| vf-licence deployed | `b084859` per the operator's own reports; migration `0140` below is now applied; none of the three addenda added a new migration |
+| vf-ui deployed | `b084859` · `https://app.vibefinance-ai.com` — operator's own reports |
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
-| `vf-app-poc` migrations | through `0074` applied and confirmed live — `0073` (decision 0429) is real schema; `0074` (decision 0430) is a documentation-only `ASSERT` restatement with no schema change, the same shape as `0071`; the addendum needed no new migration — its five new tools are gated by permissions already real |
+| `vf-app-poc` migrations | through `0074` applied and confirmed live — `0073` (decision 0429) is real schema; `0074` (decision 0430) is a documentation-only `ASSERT` restatement with no schema change, the same shape as `0071`; none of the three addenda needed a new migration — their new tools and routes are gated by permissions already real |
 | `vf-licence-poc` migrations | through `0140` applied and confirmed live — the operator's own `apply_migrations.py --remote` run |
-| Tests | vf-admin 9 · vf-app 2340 · vf-licence 320 · vf-ui 74 Worker + 915 browser · shared 295 (+3 known pre-existing failures) |
+| Tests | vf-admin 9 · vf-app 2374 · vf-licence 320 · vf-ui 74 Worker + 916 browser · shared 295 (+3 known pre-existing failures) |
 | Decision records | 430 |
 
 **Decisions 0429 (agreed payment means, a supplier-record placeholder),
-0430 (Talk to an AP Expert, Screen 6), and 0430's own addendum are
-pushed and deployed, confirmed directly.** `origin/main` fetched
-directly reads `b90ef57`, matching this session's own commit exactly,
-and the operator's own "pushed and deployed" covers all three commits
-together — migration `0140` (the chat tab's own strings) confirmed
+0430 (Talk to an AP Expert, Screen 6), and all three of 0430's own
+addenda are pushed and deployed, confirmed directly.** `origin/main`
+fetched directly reads `b084859`, matching this session's own commit
+exactly, and the operator's own reports — "pushed and deployed"
+confirmed separately after each of the three addenda — cover all of
+it together; migration `0140` (the chat tab's own strings) confirmed
 separately applied too, the same operator-run
 `apply_migrations.py --remote` step decision 0427 first surfaced as
-distinct from the code deploy. The addendum itself needed no new
+distinct from the code deploy. None of the three addenda needed a new
 migration.
+
+**Decision 0430's third addendum (an exact invoice count, ambiguous-
+lookup links returned immediately, and bounded conversation memory)
+is pushed and deployed, confirmed directly.** A third live-test
+transcript the operator pasted in showed three further real gaps:
+"how many invoices" questions still refused (no tool anywhere computed
+an exact count — `invoice_search`'s own list is capped at 50, so
+reusing it would undercount); an ambiguous `invoice_lookup` (two real
+invoices sharing the printed number `INV-NW-1003`) asked "which one
+did you mean?" and then could never be answered, across five further
+follow-up messages ("both," "share both invoices," ...); root cause
+traced directly to the AP Assistant having **zero memory between
+questions** — its own original, explicit "ephemeral, nothing sent to
+the server" design choice from decision 0430's first build. Two
+design forks put to the operator directly rather than decided
+silently: whether an ambiguous lookup should return every match's own
+document link immediately instead of asking an unanswerable follow-up
+question (the operator chose **yes, return every match's link
+immediately**); and how long the assistant should remember prior
+turns (the operator's own answer: *"The assistant should keep memory
+for the current session length, to a maximum of 15 minutes. Would
+that be okay, without causing system strain, and too wide a
+context?"*). Built: a new, separate, unbounded `GET /invoices/count`
+route (`invoice-count-route.ts`) — deliberately not derived from
+`invoice_search`'s own capped list, mirroring `/invoices/lookup`'s own
+precedent of a real, independently-reachable endpoint; `invoice_lookup`
+reversed to mint and return a document link for every ambiguous match
+(capped at 10, matching `duplicate_invoices`' own precedent) instead
+of withholding all of them; and bounded conversation memory reusing
+the browser's own pre-existing `history` array (kept for display since
+the original build, never before sent to the server) rather than any
+new server-side storage — no Durable Object, KV, or D1 table added,
+consistent with this app running stateless per request on Cloudflare
+Workers. Bounded on both turn count and client-side recency (15
+minutes) together, since a time-only cap would not bound a fast
+conversation's own prompt growth. The operator asked directly what
+raising the turn cap to 10 would cost in real Cloudflare Workers AI
+terms; answered with sourced, current pricing
+(`@cf/openai/gpt-oss-120b` at $0.35/million input tokens, 10,000 free
+Neurons/day) showing the cost negligible even at 10 turns. The
+operator's own explicit instruction followed: *"That cost is
+negligible. We currently have no users, and I would limit this
+functionality to AP Managers and C-Suite. So lets bound it at 50
+turns"* — built at `MAX_RECENT_TURNS = 50` exactly, both server
+(`ap-assistant.ts`) and client (`ap-assistant.js`), re-validated and
+re-capped server-side regardless of what the client sends, the same
+untrusted-input treatment the question text itself already gets. A
+real, narrow production asymmetry was found while fixing a test
+fixture gap, not silently resolved: `invoice_search`'s own list (via
+`documents-route.ts`) matches a supplier name only against the
+document's own captured `BT-27` fact, never the real linked
+`suppliers.name` record, while the new count route prefers the real
+linked name, falling back to `BT-27` — documented as a deliberate,
+unresolved limitation. `vf-app` 2355 → 2374 (19 new, plus a new
+`invoice-count-route.test.ts` file), `vf-ui` browser 915 → 916 (1 new).
+`eslint` clean. See decision 0430's own doc, "Addendum three," for the
+full reasoning.
+
+**Decision 0430's second addendum (`invoice_search`, a tenth tool) is
+pushed and deployed, confirmed directly.** A live-test transcript the
+operator pasted in showed three plain browsing questions refused
+outright — "can you provide a link to the latest invoice," "please
+list invoices received this month," "please lookup all invoices" —
+because every existing tool needed an exact identifying detail
+(a supplier, a PO, an invoice number) the assistant had no tool for
+answering without. The operator's own direct question, *"Should I not
+be able to query like this?,"* confirmed this was a real gap, not
+intended behaviour. Built `invoice_search`, wrapping the real
+Documents screen's own existing route (`handleListDocuments` in
+`documents-route.ts`) rather than a new query, gated by `AP.Review`
+(the same permission that screen itself uses), capped at 50 results
+(or 1 for "the latest" specifically), with an optional `period:
+"this_month"` (a new `firstOfThisMonth()` date helper and a new
+`since` SQL param, inert unless supplied) and optional supplier
+narrowing reusing that route's own existing in-memory text search.
+Put to the operator directly when asked "what are the design forks?":
+result cap and how to communicate it (the operator's own custom
+answer — notify the user the query is capped at 50 and to use the
+Documents screen for larger sets, rather than silently truncating or
+paginating). `vf-app` 2340 → 2355 (15 new, plus `firstOfThisMonth`
+tests in `dates.test.ts` and a `since` test in `documents.test.ts`).
+`eslint` clean. See decision 0430's own doc, "Addendum two," for the
+full reasoning.
 
 **Decision 0430's own addendum (five more AP Assistant tools, and the
 tasks-vs-exceptions bug live testing found).** Real live-tested

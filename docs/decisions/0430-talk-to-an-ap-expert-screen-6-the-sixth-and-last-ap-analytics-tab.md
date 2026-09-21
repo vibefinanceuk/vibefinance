@@ -1,18 +1,15 @@
 # 0430 — "Talk to an AP Expert," Screen 6, the sixth and last AP Analytics tab
 
-**Status: original build and first two addenda all pushed and
-deployed, confirmed directly — third addendum below not yet
-delivered.** `origin/main` fetched directly reads `c9cafa3`, matching
-this session's own commit exactly for the original four-tool build,
-the first addendum (five more tools, the tasks-vs-exceptions bug
-fixed), and the second addendum (`invoice_search`, a tenth tool); the
-operator separately confirmed vf-licence migration `0140` applied
-remotely too, and none of the three addenda needed a new migration.
-The third addendum below (an exact count, ambiguous-match links
-returned immediately, bounded conversation memory) is built and
-tested but not yet committed or delivered as of this note — see its
-own section for what changed and why. This session still has no push
-access to `vibefinanceuk/vibefinance`; delivered as
+**Status: original build and all three addenda pushed and deployed,
+confirmed directly.** `origin/main` fetched directly reads `b084859`,
+matching this session's own commit exactly for the original four-tool
+build, the first addendum (five more tools, the tasks-vs-exceptions
+bug fixed), the second addendum (`invoice_search`, a tenth tool), and
+the third addendum (an exact count, ambiguous-match links returned
+immediately, bounded conversation memory); the operator separately
+confirmed vf-licence migration `0140` applied remotely too, and none
+of the three addenda needed a new migration. This session still has
+no push access to `vibefinanceuk/vibefinance`; delivered as
 a git bundle for the operator's own pull/push/deploy sequence, the
 same path decisions 0391, 0415–0429 already used.
 
