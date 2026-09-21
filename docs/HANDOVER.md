@@ -2,7 +2,7 @@
 
 **Written 4 September 2026, updated 17 September (six times), updated
 18 September (four times), updated 19 September (thirty-two times),
-updated 20 September (twenty-two times), updated 21 September (four
+updated 20 September (twenty-two times), updated 21 September (five
 times).**
 
 **For a session starting cold.** Where things stand, what needs a
@@ -32,21 +32,24 @@ twice.
 
 | | |
 | --- | --- |
-| `origin/main` | `7fd97e0` — fetched directly by this session, matching decision 0428's own commit exactly, confirming the operator's own "deployed and pushed" report |
+| `origin/main` | `32a99d5` — fetched directly by this session, matching this session's own commit exactly, confirming the operator's own "pushed and deployed" report |
 | vf-admin deployed | `8e27a34` · `https://admin.vibefinance-ai.com` · behind Cloudflare Access |
-| vf-app deployed | `7fd97e0` (decision 0428) per the operator's own report; the addendum fix (`0c646a7`, bundle `0640`) not yet confirmed deployed |
-| vf-licence deployed | `7fd97e0` per the operator's own report; migration `0139` below is now applied |
-| vf-ui deployed | `7fd97e0` · `https://app.vibefinance-ai.com` — operator's own report |
+| vf-app deployed | `32a99d5` — decision 0428, the Workload Balance scoping fix, and the Exceptions-by-user pull, all confirmed |
+| vf-licence deployed | `32a99d5` per the operator's own report; migration `0139` below is now applied (four of its keys now unused — see decision 0428's own second addendum) |
+| vf-ui deployed | `32a99d5` · `https://app.vibefinance-ai.com` — operator's own report |
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
-| `vf-app-poc` migrations | through `0072` applied and confirmed live — no new `vf-app` migration in decision 0428 |
+| `vf-app-poc` migrations | through `0072` applied and confirmed live — no new `vf-app` migration in decision 0428 or either addendum |
 | `vf-licence-poc` migrations | through `0139` applied and confirmed live — the operator's own `apply_migrations.py --remote` run |
-| Tests | vf-admin 9 · vf-app 2289 · vf-licence 320 · vf-ui 74 Worker + 915 browser · shared 287 (+3 known pre-existing failures) |
+| Tests | vf-admin 9 · vf-app 2281 · vf-licence 320 · vf-ui 74 Worker + 910 browser · shared 287 (+3 known pre-existing failures) |
 | Decision records | 428 |
 
-**Decision 0428 (Workload's remaining seven metrics — the screen's own
-full parity, six of seven whole) is pushed and deployed, confirmed
-directly.** `origin/main` fetched directly reads `7fd97e0`, matching
-this session's own commit exactly. "shall we tackle - User & Team
+**Decision 0428 (Workload's remaining seven metrics) and both of its
+own live addenda are pushed and deployed, confirmed directly.**
+`origin/main` fetched directly reads `32a99d5`, matching this
+session's own commit exactly, and the operator's own "pushed and
+deployed" covers all three commits together.
+
+**The original build (`7fd97e0`).** "shall we tackle - User & Team
 Workload 1/8. - 7 metrics, none previously tracked" — the operator's
 own instruction; Workload's own count against its own design list had
 never actually been checked before decision 0426's own correction, and
@@ -63,16 +66,15 @@ past due" unbuilt rather than held back entirely. Seven new
 `tasks`/`org_teams`/`stage_visits`); `vf-ui`'s `PROXIED_TO_INSTANCE`
 wildcard widened rather than extended with seven exact-match entries,
 matching the `/suppliers/[^/]+$/` precedent; new `vf-licence` strings
-migration `0139` (34 keys, 68 rows). Full local test suites all clean:
-`vf-app` 2233 → 2287 (54 new), `vf-ui` browser 873 → 915 (42 new),
-`vf-licence` 320 (migration `0139`, no new test file). `eslint .` and
-`tsc --noEmit` clean.
+migration `0139` (34 keys, 68 rows). Test suites at this point: `vf-app`
+2233 → 2287 (54 new), `vf-ui` browser 873 → 915 (42 new), `vf-licence`
+320 (migration `0139`, no new test file).
 
-**A real scoping bug found live and fixed in the same cycle, addendum
-to 0428.** The operator's own confirmation of the deploy came with a
-screenshot: the Workload Balance card showing the same person, "Alice
-McDonald," with an identical count in every one of seven teams —
-"the chart seems to show replication though." Investigated directly
+**First addendum, a real scoping bug found live and fixed
+(`0c646a7`).** The operator's own confirmation of the deploy came with
+a screenshot: the Workload Balance card showing the same person,
+"Alice McDonald," with an identical count in every one of seven teams
+— "the chart seems to show replication though." Investigated directly
 rather than patched on sight: `org_team_members` was joined correctly
 per team, so the memberships were real, not duplicated — the *count*
 beside each name was the bug, global (a member's whole open workload,
@@ -87,17 +89,42 @@ already reads) over keeping the whole-workload reading. Two new tests
 prove it: a member on two real teams now shows a different, smaller
 count in each; a task with no owning team at all is honestly excluded
 even when it's genuinely that member's own. `vf-app` 2287 → 2289 (2
-new); `vf-ui` unaffected (backend-only fix, no response shape
-changed). `eslint`/`tsc` clean. Delivered as bundle `0640`
-(base `7fd97e0`) — **not yet confirmed pushed or deployed**; the
-operator's own confirmation above covers decision 0428's original
-build only.
+new); `vf-ui` unaffected (backend-only fix, no response shape changed).
 
-Workload now has six of its own eight key metrics built whole and a
-seventh built half (pending-over-a-period, honestly not approaching/
-past-due) — the second of the design's six dashboard screens (after
-Supplier Performance) to reach practical parity with its own design
-list. See decision 0428's own doc, including its addendum, for the
+**Second addendum, Exceptions by user pulled entirely (`a861a69`,
+`32a99d5`).** No request attached, just the card's own subtitle quoted
+back: *"Not to assign blame — to see where extra support or training
+would help."* Put to the operator directly rather than assumed —
+explain the reasoning, change the wording, or flag a real concern.
+The operator chose **flag a real concern**, and was right on two
+counts: naming individual users in a ranked list, gated only behind
+the broad `AP.Analysis` rather than the narrower `AP.FraudReview`
+decision 0423 used for the identical underlying exception data, with a
+subtitle that disclaims blame but enforces nothing; and, once the
+calculation itself was investigated at the operator's own request, a
+raw `COUNT(*)` of exceptions per user with **no denominator** — the
+operator's own words, *"that does not indicate that they need
+training. It indicates that they are the most productive."* Offered
+three ways to fix the calculation (rank by rate with count as context,
+add rate but keep ranking by count, or pull the report), with both the
+calculation and the access question still unresolved at once, the
+operator chose to **pull the report entirely** rather than ship a
+partial fix. No route, no card — `workload-exceptions-route.ts` and
+`workload-exceptions.js` (plus their tests and wiring) removed, fully
+recoverable from commit `7fd97e0` for whoever redesigns the
+calculation and the access gate together. `vf-app` 2289 → 2281 (−8),
+`vf-ui` browser 915 → 910 (−5). **A staging mistake caught before
+delivery, not by the operator**: the first commit for this addendum
+(`a861a69`) only staged the file deletions — a bad `git add` pathspec
+silently dropped the rest — caught by `git status` before bundling,
+fixed with a second commit (`32a99d5`) that wired up the actual
+removal (index.ts, ap-analytics.js, both test files).
+
+Workload now has six of its own eight key metrics built and live, one
+built half (pending-over-a-period, honestly not approaching/past-due),
+and one built, deployed, then pulled (exceptions by user) — not the
+full parity with its own design list the decision's own original title
+implied. See decision 0428's own doc, including both addenda, for the
 full reasoning, and `docs/PROGRESS.md` for the durable record.
 
 **Decision 0427 (early-payment discount eligibility and hold

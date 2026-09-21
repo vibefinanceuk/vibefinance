@@ -1,20 +1,20 @@
 # 0428 — Workload's remaining seven metrics, the screen's own full parity, six of seven whole
 
-**Status: original seven-metric build (`7fd97e0`) pushed and deployed,
-confirmed directly. Two live findings since, addressed in two
-addenda below — one fixed and delivered, awaiting confirmation; one
-resulted in a report being pulled entirely, awaiting confirmation.**
-The operator confirmed "deployed and pushed" directly, along with a
-screenshot of the Workload Balance card showing the same person,
-"Alice McDonald," with an identical count in every one of seven teams.
-Investigated rather than dismissed: a real scoping choice in this
-decision's own first build, not a query-duplication bug — fixed in
-the first addendum below (`0c646a7`, bundle `0640`). Separately, the
-Exceptions by user card drew a real governance concern the moment it
-was seen live — investigating it further surfaced a second, more
-fundamental flaw in the calculation itself. The operator chose to pull
-that report entirely rather than ship a partial fix — see the second
-addendum below. This session still has no push access to
+**Status: pushed and deployed, confirmed directly — original build and
+both addenda.** `origin/main` fetched directly reads `32a99d5`,
+matching this session's own commit exactly. The operator confirmed
+"deployed and pushed" directly, along with a screenshot of the
+Workload Balance card showing the same person, "Alice McDonald," with
+an identical count in every one of seven teams. Investigated rather
+than dismissed: a real scoping choice in this decision's own first
+build, not a query-duplication bug — fixed in the first addendum below
+(`0c646a7`). Separately, the Exceptions by user card drew a real
+governance concern the moment it was seen live — investigating it
+further surfaced a second, more fundamental flaw in the calculation
+itself. The operator chose to pull that report entirely rather than
+ship a partial fix — see the second addendum below (`a861a69`,
+`32a99d5`). The operator's own final confirmation, "pushed and
+deployed," covers all of it. This session still has no push access to
 `vibefinanceuk/vibefinance`; delivered as a git bundle for the
 operator's own pull/push/deploy sequence, the same path decisions
 0391, 0415–0427 already used.
