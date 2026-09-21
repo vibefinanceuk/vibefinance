@@ -32,25 +32,59 @@ twice.
 
 | | |
 | --- | --- |
-| `origin/main` | `df32830` — fetched directly by this session, matching this session's own commit exactly, confirming the operator's own "deployed and pushed" report |
+| `origin/main` | `b90ef57` — fetched directly by this session, matching this session's own commit exactly, confirming the operator's own "pushed and deployed" report |
 | vf-admin deployed | `8e27a34` · `https://admin.vibefinance-ai.com` · behind Cloudflare Access |
-| vf-app deployed | `df32830` — decisions 0429 (agreed payment means, a supplier-record placeholder) and 0430 (Talk to an AP Expert, Screen 6), both confirmed |
-| vf-licence deployed | `df32830` per the operator's own report; migration `0140` below is now applied |
-| vf-ui deployed | `df32830` · `https://app.vibefinance-ai.com` — operator's own report |
+| vf-app deployed | `b90ef57` — decisions 0429 (agreed payment means, a supplier-record placeholder), 0430 (Talk to an AP Expert, Screen 6), and 0430's own addendum (five more assistant tools, the tasks-vs-exceptions bug fixed), all confirmed |
+| vf-licence deployed | `b90ef57` per the operator's own report; migration `0140` below is now applied; the addendum added no new migration |
+| vf-ui deployed | `b90ef57` · `https://app.vibefinance-ai.com` — operator's own report |
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
-| `vf-app-poc` migrations | through `0074` applied and confirmed live — `0073` (decision 0429) is real schema; `0074` (decision 0430) is a documentation-only `ASSERT` restatement with no schema change, the same shape as `0071` |
+| `vf-app-poc` migrations | through `0074` applied and confirmed live — `0073` (decision 0429) is real schema; `0074` (decision 0430) is a documentation-only `ASSERT` restatement with no schema change, the same shape as `0071`; the addendum needed no new migration — its five new tools are gated by permissions already real |
 | `vf-licence-poc` migrations | through `0140` applied and confirmed live — the operator's own `apply_migrations.py --remote` run |
-| Tests | vf-admin 9 · vf-app 2316 · vf-licence 320 · vf-ui 74 Worker + 915 browser · shared 295 (+3 known pre-existing failures) |
+| Tests | vf-admin 9 · vf-app 2340 · vf-licence 320 · vf-ui 74 Worker + 915 browser · shared 295 (+3 known pre-existing failures) |
 | Decision records | 430 |
 
-**Decisions 0429 (agreed payment means, a supplier-record placeholder)
-and 0430 (Talk to an AP Expert, Screen 6) are pushed and deployed,
-confirmed directly.** `origin/main` fetched directly reads `df32830`,
-matching this session's own commit exactly, and the operator's own
-"deployed and pushed" covers both commits together — migration `0140`
-(the new chat tab's own strings) confirmed separately applied too, the
-same operator-run `apply_migrations.py --remote` step decision 0427
-first surfaced as distinct from the code deploy.
+**Decisions 0429 (agreed payment means, a supplier-record placeholder),
+0430 (Talk to an AP Expert, Screen 6), and 0430's own addendum are
+pushed and deployed, confirmed directly.** `origin/main` fetched
+directly reads `b90ef57`, matching this session's own commit exactly,
+and the operator's own "pushed and deployed" covers all three commits
+together — migration `0140` (the chat tab's own strings) confirmed
+separately applied too, the same operator-run
+`apply_migrations.py --remote` step decision 0427 first surfaced as
+distinct from the code deploy. The addendum itself needed no new
+migration.
+
+**Decision 0430's own addendum (five more AP Assistant tools, and the
+tasks-vs-exceptions bug live testing found).** Real live-tested
+transcripts the operator pasted in showed the assistant answering
+"Who has the most tasks assigned?" with mislabeled exception-count
+data — root cause was an ambiguous tool description plus a shared,
+ambiguous result field name letting the phrasing model relabel an
+exception count as a task count. The operator's own explicit
+instruction: *"Yes, please fix - Also the tool should be able to
+inquire upon purchase orders, invoices, duplicates, tasks and provide
+links to documents."* Fixed with a two-layer approach — a new,
+correctly-matching `tasks_by_user` tool, plus renamed, unambiguous
+result fields (`exceptionsPerPerson`, `openTasksPerPerson`),
+contrastive tool descriptions in the selection prompt, and a general
+anti-relabeling instruction in the phrasing prompt. Five new tools in
+total: `tasks_by_user`, `purchase_order_status`,
+`purchase_order_lookup`, `duplicate_invoices`, and `invoice_lookup`
+(which returns every match rather than guessing, since
+`invoice_number` carries no uniqueness constraint in this schema, and
+mints a real document link via the same `document-token.ts` machinery
+the existing document route uses, extracted into a shared
+`handleMintDocumentUrl` so both paths stay in sync). No new permission
+or migration needed — all nine tools (four original, five new) are
+each gated by their own existing, real permission. `vf-app` 2316 →
+2340 (24 new), `eslint` clean. A self-correction is recorded in the
+addendum's own text: the original decision 0430 doc had wrongly
+justified adding `/liabilities/overdue-balance` to `vf-ui`'s proxy
+list on the grounds that a missing entry would 404 every assistant
+question — false, since every tool call is an in-process function
+call, never a second browser fetch; the addendum corrects this in
+place rather than silently editing the original. See decision 0430's
+own doc, addendum section, for the full reasoning.
 
 **Decision 0430 ("Talk to an AP Expert," the sixth and last AP
 Analytics tab).** The operator's own instruction, following decision
