@@ -2,8 +2,8 @@
 
 **Written 4 September 2026, updated 17 September (six times), updated
 18 September (four times), updated 19 September (thirty-two times),
-updated 20 September (twenty-two times), updated 21 September (twenty
-times).**
+updated 20 September (twenty-two times), updated 21 September
+(twenty-one times).**
 
 **For a session starting cold.** Where things stand, what needs a
 decision rather than work, what to do next, and the habits this project
@@ -32,7 +32,7 @@ twice.
 
 | | |
 | --- | --- |
-| `origin/main` | `ca1de60` — fetched directly by this session, matching this session's own commit exactly. Decisions 0434 (org placement and supplier matching now reach the first stage visit), 0435 (a stage visit error is recorded, not swallowed), and 0436 (the nav's own content scrolls, so `.who` stays on screen) are all confirmed pushed and deployed. |
+| `origin/main` | `ca1de60` — fetched directly by this session, matching this session's own commit exactly. Decisions 0434 (org placement and supplier matching now reach the first stage visit) and 0435 (a stage visit error is recorded, not swallowed) are confirmed pushed and deployed. **Decision 0436 (the nav's own content scrolls, so `.who` stays on screen) is also pushed and deployed, but its own diagnosis was wrong — reported live to have zero effect. Decision 0437 (the nav's box is really one viewport tall, and doesn't scroll sideways) is the correction: built, tested, and documented on top of `ca1de60`, not yet pushed or deployed.** |
 | vf-admin deployed | `8e27a34` · `https://admin.vibefinance-ai.com` · behind Cloudflare Access |
 | vf-app deployed | `ca1de60` confirmed — decisions 0429 (agreed payment means, a supplier-record placeholder), 0430 (Talk to an AP Expert, Screen 6) with all eight of its own addenda, 0431 (Executive IQ's remaining four metrics), 0432 with its own addendum, 0433 (org-ranked supplier search), 0434 (org/supplier facts reach the first stage visit), 0435 (a stage visit error is recorded, not swallowed), and 0436 (vf-ui only — the nav's own content scrolls), all confirmed. |
 | vf-licence deployed | `ca1de60` per the operator's own reports; migrations `0140` through `0144` all applied — `0144` is decision 0435's own banner-label string. Decision 0436 added none. |
@@ -40,8 +40,56 @@ twice.
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
 | `vf-app-poc` migrations | through `0074` applied and confirmed live — `0073` (decision 0429) is real schema; `0074` (decision 0430) is a documentation-only `ASSERT` restatement with no schema change, the same shape as `0071`; none of 0430's eight addenda needed a new `vf-app` migration; decision 0431 also needed none — its four new routes read existing tables only; decision 0433 also needed none — its ranking change reads the existing `org_unit_id` column only; decision 0434 also needed none — it changes when facts already computed reach the workflow engine, not the schema; decision 0435 also needed none — it writes a new fact through the existing `facts_json` column. **A tenant-data fix, not a migration**: the operator's own live Validation stage had `required_permission IS NULL` — the root cause behind decision 0435's own finding — fixed directly with `UPDATE process_stages SET required_permission = 'AP.Validate' WHERE id = 'validation'`. **This did not hold on the first attempt**: after decision 0435 deployed, a fresh test invoice hit the identical `requiredPermission "undefined"` error via the new `workflow.stageError` banner, and a direct re-check found `required_permission` back to `NULL` — code was traced end to end (`process-route.ts`'s stage-creation and draft/publish handlers, `field-visibility-route.ts`, `rules-list-route.ts`) and **nothing in the application ever writes this column**, so the revert's cause is unexplained, not a known bug. Re-run a second time with the `UPDATE` and a `SELECT` in the same statement batch, confirmed set to `AP.Validate` in that same round-trip, and then confirmed durable and working end-to-end by the operator submitting a genuinely fresh test invoice: it stopped at Validation, no error banner, and a task appeared with `required_permission = AP.Validate`. **If this reverts a third time**, suspect a second database bound to the same `vf-app-poc` name (check `wrangler d1 list` against `workers/vf-app/wrangler.toml`'s `database_id`) rather than re-tracing application code again. |
 | `vf-licence-poc` migrations | through `0144` applied and confirmed live — the operator's own `apply_migrations.py --remote` run, `0144` is decision 0435's own banner-label string (`viewer.workflow.stageerror`, en/de). |
-| Tests | vf-admin 9 · vf-app 2490 (unchanged by decision 0436 — vf-ui only) · vf-licence 320 (unchanged) · vf-ui 74 Worker (unchanged) + 956 browser (953 + 3 in decision 0436's own new describe block in `tasks.test.ts`, confirmed by one unfiltered whole-suite run) · shared 295 (+3 known pre-existing failures) |
-| Decision records | 436 |
+| Tests | vf-admin 9 · vf-app 2490 (unchanged by decisions 0436/0437 — vf-ui only) · vf-licence 320 (unchanged) · vf-ui 74 Worker (unchanged) + 958 browser (953 + 3 decision 0436's own, + 2 decision 0437's own, both in `tasks.test.ts`, confirmed by one unfiltered whole-suite run) · shared 295 (+3 known pre-existing failures) |
+| Decision records | 437 |
+
+**Decision 0437 (the nav's box is really one viewport tall, and
+doesn't scroll sideways) is built, tested, and documented. Not yet
+pushed or deployed.** Decision 0436 shipped, and the operator reported
+back: *"that doesn't seem to have worked... I still have to scroll
+down the page to see the username and instance"*, then separately:
+*"Now there seems to have been introduced a horizontal scrollbar which
+is not needed."* Re-checked live (built-in browser, a genuine desktop
+width, with the device's own dev tools reached directly) rather than
+assumed either way — this session's device connection dropped
+mid-investigation and had not reconnected as of this paragraph, so the
+fix below is verified by live measurement taken just before the
+connection dropped, not by a live re-check of the fix itself.
+**Decision 0436's own diagnosis was wrong**: the 1040px-vs-1000px
+measurement it read as `.navscroll`'s content overflowing its box was
+actually `.nav`'s own `padding: 20px 12px`, added on top of `height:
+100vh` by the default `box-sizing: content-box` rather than included
+in it — `.navscroll`'s content was confirmed, by the same live check,
+to fit its own space with zero overflow. Measuring `.nav` before and
+after decision 0436 deployed gave identical numbers, which a real
+before/after comparison should have caught and didn't. The horizontal
+scrollbar is a real, separate regression from decision 0436's own
+`overflow-y: auto` — the CSS Overflow spec silently promotes
+`overflow-x` to `auto` whenever the other axis is set and this one is
+left at its default `visible`, turning a small pre-existing horizontal
+overflow in the nav column from invisible into an actual scrollbar.
+Fixed: `.nav { box-sizing: border-box }` (so `height: 100vh` now means
+the whole rendered box, padding included) and `.nav .navscroll {
+overflow-x: hidden }`. Decision 0436's own `.navscroll` wrapper was
+left in place — real protection against a genuinely longer nav
+someday outgrowing its box, even though it wasn't what this particular
+symptom needed — with its own comment in `app.css` corrected rather
+than left to mislead the next reader. **Not fully closed**: `body`'s
+own top padding (32px) still leaves `.nav`'s natural, un-stuck
+position 32px below the true top of the viewport, so a small scroll
+can still be needed immediately on page load before `position: sticky`
+engages — a candidate fix (a matching negative `margin-top` on `.nav`)
+was considered and deliberately not shipped without a live visual
+check, since the connection dropped before it could be verified and a
+position change to a hand-tuned sidebar is exactly the kind of thing
+arithmetic alone has gotten wrong once already in this same
+investigation. New describe block in `tasks.test.ts` (+2). `vf-ui`
+browser 956 → 958, all green; Worker, `vf-app`, `vf-licence`
+untouched. `eslint public test-browser` clean. **Once pushed/deployed,
+ask the operator to re-check both the scroll behaviour and the
+scrollbar, and — if the device connection is back — verify live before
+attempting the remaining 32px gap.** See decision 0437 for the full
+reasoning and tests.
 
 **Decision 0436 (the nav's own content scrolls, so `.who` stays on
 screen) is pushed and deployed, confirmed directly.** `origin/main`
@@ -78,8 +126,14 @@ at the head of the column") repointed at `.navscroll`'s own children,
 since the DOM it asserted against genuinely moved one level deeper —
 the property it checks is unchanged. `vf-ui` browser 953 → 956, all
 green; Worker, `vf-app`, `vf-licence` untouched. `eslint public
-test-browser` clean. **Nothing from this session is currently
-outstanding for decision 0436 itself.** See decision 0436 for the full
+test-browser` clean. **This decision's own diagnosis was wrong, found
+after it deployed with zero effect — see decision 0437, which
+corrects it.** The `.navscroll` wrapper this decision built stayed in
+place (real protection against a genuinely longer nav someday
+outgrowing its box), but the 1040-vs-1000px measurement it read as
+content overflow was actually `.nav`'s own padding being added on top
+of its `height: 100vh` rather than included in it — nothing this
+decision built addressed that. See decision 0436 for the full
 reasoning and tests.
 
 **Decision 0435 (a stage visit error is recorded, not swallowed) is

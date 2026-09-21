@@ -221,10 +221,27 @@
      * keeps the nav exactly one viewport tall and pinned to it as the
      * page scrolls; `align-self: start` is what stops the grid's own
      * stretch from overriding that height with the row's taller one.
+     *
+     * **`box-sizing: border-box`, decision 0437 — `height: 100vh` was
+     * never actually one viewport tall.** Checked live, against the
+     * deployed page: `.nav`'s own rendered box measured 1040px against
+     * a 1000px viewport — not content overflowing (0436's own
+     * diagnosis, and wrong: `.navscroll`'s content was confirmed, by
+     * the same live check, to fit its own box with zero overflow).
+     * The real cause is this rule's own `padding: 20px 12px` — with
+     * the default `box-sizing: content-box`, an explicit `height`
+     * sets the CONTENT box only, and padding is added on top of it,
+     * so `height: 100vh` plus 20px top and 20px bottom padding
+     * rendered as 100vh + 40px, every time, regardless of content.
+     * `border-box` is what makes an explicit `height` mean the total,
+     * rendered box — padding included — which is what "one viewport
+     * tall" has to mean for `.who` to actually reach the bottom edge
+     * of it.
      */
     position: sticky;
     top: 0;
     height: 100vh;
+    box-sizing: border-box;
     align-self: start;
     /**
      * **The nav itself is the collapse toggle, decision 0311** — a
@@ -242,14 +259,23 @@
    * decision 0281, but that alone only keeps the BOX one viewport
    * tall; nothing kept what's inside it that short. Reported live:
    * *"the height of the side menu... so the username and instance,
-   * which appear at the bottom can always be seen on-screen"* —
-   * checked directly (`.nav`'s own rendered height measured 1040px
-   * against a 1000px box) and confirmed real: three more configuration
-   * screens (Purchase Orders, Rules, Processes) landed since 0281
-   * shipped, and the logo-plus-nav-items block quietly grew past
-   * 100vh, overflowing straight past `.nav`'s own bottom edge with
-   * nowhere else to go — pushing `.who` below the fold the same way
-   * 0281 had already fixed once for the page as a whole.
+   * which appear at the bottom can always be seen on-screen"* — this
+   * rule defends against the nav's own content someday genuinely
+   * outgrowing its box (three more configuration screens landed after
+   * decision 0281 shipped, with nobody re-checking a fixed-height
+   * sidebar against a longer list each time).
+   *
+   * **This decision's own live measurement — `.nav`'s rendered height
+   * at 1040px against a 1000px box — was misread as content overflow
+   * at the time.** Decision 0437's own follow-up measurement found
+   * `.navscroll`'s content fit its own allotted space with zero
+   * overflow; the 40px gap was `.nav`'s own padding, added on top of
+   * `height: 100vh` by the default `box-sizing: content-box` (see
+   * `.nav`'s own `box-sizing: border-box`, above, decision 0437's
+   * real fix). This rule stayed, because the protection it offers
+   * against genuine future overflow is real even though it wasn't
+   * what the reported symptom needed — left as a defensive measure,
+   * not removed, once the actual cause was found.
    *
    * `flex: 1 1 auto; min-height: 0` is what lets a flex child shrink
    * below its own content height at all — a flex item's default
@@ -268,6 +294,26 @@
     flex: 1 1 auto;
     min-height: 0;
     overflow-y: auto;
+    /**
+     * **Decision 0437** — reported live as a new, unwanted horizontal
+     * scrollbar, introduced by this rule's own `overflow-y: auto`.
+     * Confirmed live: `overflow-x` computed to `auto` here even though
+     * nothing set it — the CSS Overflow spec requires it. When one
+     * axis is `visible` (the default, and this rule's own silence on
+     * `overflow-x`) and the other isn't, the browser promotes the
+     * `visible` one to `auto` too, rather than leaving the two axes
+     * disagreeing. A small, pre-existing horizontal overflow in the
+     * nav column (confirmed live: this element's own content measured
+     * a few pixels wider than its box) used to bleed harmlessly under
+     * the old default (`overflow-x: visible` lets content render past
+     * the edge without a scrollbar); once `overflow-y: auto` forced
+     * `overflow-x` to `auto` as well, that same overflow started
+     * drawing an actual scrollbar. `overflow-x: hidden` is the
+     * standard pairing for a `overflow-y: auto` rule that was never
+     * meant to scroll sideways — states the axis explicitly rather
+     * than leaving it for the spec's own promotion rule to decide.
+     */
+    overflow-x: hidden;
   }
 
   /*

@@ -863,6 +863,46 @@ describe("the nav's own content scrolls independently of .who, once there's enou
   });
 });
 
+describe("the nav's own box is really one viewport tall, and doesn't scroll sideways (decision 0437)", () => {
+  /**
+   * **Decision 0436's own diagnosis was wrong.** Reported live, again,
+   * after that decision deployed with zero effect: *"I still have to
+   * scroll down the page to see the username and instance."*
+   * Re-measured live rather than assumed fixed: `.nav`'s rendered box
+   * was 1040px against a 1000px viewport — not `.navscroll`'s content
+   * overflowing (confirmed, that same live check, to fit with zero
+   * overflow) but `.nav`'s own `padding: 20px 12px`, added ON TOP of
+   * `height: 100vh` by the default `box-sizing: content-box` rather
+   * than included within it. `border-box` is what makes an explicit
+   * `height` mean the whole rendered box, padding included.
+   *
+   * **A second, unrelated regression rode in on decision 0436's own
+   * `overflow-y: auto`**: reported live as an unwanted horizontal
+   * scrollbar. The CSS Overflow spec promotes `overflow-x` to `auto`
+   * whenever `overflow-y` is set to anything other than `visible` and
+   * `overflow-x` is left at its own default — silently turning a small,
+   * previously-invisible horizontal overflow in the nav column into a
+   * real scrollbar. `overflow-x: hidden` is the fix.
+   */
+  it("makes .nav's own explicit height include its padding, not add padding on top of it", async () => {
+    const css = (await import("virtual:stylesheets")).default["app.css"];
+    const rule = css.slice(css.indexOf(".nav {\n    display: flex;"), css.indexOf(".nav .who { margin-top: auto; }"));
+
+    expect(rule).toContain("height: 100vh");
+    expect(rule).toContain("box-sizing: border-box");
+  });
+
+  it("stops .navscroll from scrolling sideways", async () => {
+    const css = (await import("virtual:stylesheets")).default["app.css"];
+    const rule = css.slice(
+      css.indexOf(".nav .navscroll {\n    flex:"),
+      css.indexOf(".nav .navscroll {\n    flex:") + css.slice(css.indexOf(".nav .navscroll {\n    flex:")).indexOf("}") + 1
+    );
+
+    expect(rule).toContain("overflow-x: hidden");
+  });
+});
+
 describe("sign out is the frame's own, not one screen's (decision 0283)", () => {
   /**
    * **Reported live**: "update the Sign Out button so that it appears

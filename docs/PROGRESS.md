@@ -1346,6 +1346,52 @@ section for the full reasoning and tests.
   Worker, `vf-app`, `vf-licence` all unchanged. `eslint public
   test-browser` clean.
 
+### The nav's box is really one viewport tall, and doesn't scroll sideways (0437)
+- **Found live**, after decision 0436 deployed with reportedly zero
+  effect: *"that doesn't seem to have worked... I still have to scroll
+  down the page to see the username and instance"*, followed by *"Now
+  there seems to have been introduced a horizontal scrollbar which is
+  not needed."* Re-measured live (built-in browser, real desktop
+  width) rather than assumed either way.
+- **Decision 0436's own diagnosis was wrong**: `.nav`'s rendered height
+  (1040px against a 1000px box) was never `.navscroll`'s content
+  overflowing — that content fit with zero overflow, confirmed by the
+  same live check. It was `.nav`'s own `padding: 20px 12px`, added on
+  top of `height: 100vh` by the default `box-sizing: content-box`
+  rather than included in it — a bug present since decision 0281 built
+  this rule, independent of how much content the nav ever held.
+  `.nav`'s rendered geometry measured identically before and after
+  0436 deployed, which a live before/after comparison should have
+  caught and didn't.
+- The horizontal scrollbar is a real, separate regression from 0436's
+  own `overflow-y: auto`: the CSS Overflow spec promotes `overflow-x`
+  to `auto` whenever the other axis is set and this one is left at its
+  default `visible`, turning a small pre-existing horizontal overflow
+  in the nav column from invisible (bleeding under `overflow-x:
+  visible`) into an actual scrollbar.
+- Fixed: `.nav { box-sizing: border-box }` (its `height: 100vh` now
+  means the whole rendered box, padding included) and `.nav .navscroll
+  { overflow-x: hidden }`. Decision 0436's own wrapper and vertical
+  overflow rule were left in place as real, if not load-bearing for
+  this particular symptom, protection against a genuinely longer nav
+  someday outgrowing its box — its own comment corrected in
+  `app.css` rather than left to mislead the next reader.
+- **Not fully closed**: `body`'s own top padding (32px, `tokens.css`)
+  still leaves `.nav`'s un-stuck, natural position 32px below the true
+  top of the viewport, so a small scroll can still be needed
+  immediately on page load before `position: sticky` engages. A
+  candidate fix (a matching negative `margin-top` on `.nav`) was
+  considered and deliberately not shipped without a live visual check
+  — the device connection dropped mid-investigation before it could be
+  verified, and a position change to a hand-tuned sidebar is exactly
+  the kind of thing arithmetic alone has gotten wrong once already in
+  this same investigation.
+- New describe block in `tasks.test.ts` (+2): confirms `.nav`'s
+  wide-layout rule carries both `height: 100vh` and `box-sizing:
+  border-box`; confirms `.nav .navscroll` carries `overflow-x: hidden`.
+  `vf-ui` browser 956 → 958; Worker, `vf-app`, `vf-licence` all
+  unchanged. `eslint public test-browser` clean.
+
 ### Purchase orders and matching
 - Purchase order storage grounded in Peppol BIS Order Only 3.3, via UBL
   XML ingestion (0081) and CSV load (0370) — the same tables, the same
