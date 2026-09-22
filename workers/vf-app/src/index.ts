@@ -2135,7 +2135,14 @@ export default {
       if (!auth.authorized) {
         return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
       }
-      const result = await handleListCostCentresDetailed(db);
+      // search / page / pageSize — decision 0446, the same treatment
+      // decision 0376 already gave Purchase Orders.
+      const result = await handleListCostCentresDetailed(
+        db,
+        url.searchParams.get("search"),
+        url.searchParams.get("page"),
+        url.searchParams.get("pageSize")
+      );
       return json(result.body, result.status);
     }
 
@@ -2158,7 +2165,20 @@ export default {
         if (!auth.authorized) {
           return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
         }
-        const result = await handleListCodingListEntries(db, decodeURIComponent(match[1]));
+        // search / page / pageSize / all — decision 0446, the same
+        // treatment decision 0376 already gave Purchase Orders. `all`
+        // is set only by a create/edit form's own lazy fetch of every
+        // entry, to populate a parent picker (or, for General Ledger
+        // Code, its Commodity Code filter picker) — never by the table
+        // itself.
+        const result = await handleListCodingListEntries(
+          db,
+          decodeURIComponent(match[1]),
+          url.searchParams.get("search"),
+          url.searchParams.get("page"),
+          url.searchParams.get("pageSize"),
+          url.searchParams.get("all") === "1"
+        );
         return json(result.body, result.status);
       }
       if (match && request.method === "POST") {

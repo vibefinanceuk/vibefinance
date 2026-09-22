@@ -631,6 +631,16 @@ const KEYS_THE_INTERFACE_USES = [
   "apsetup.csvfieldname",
   "apsetup.csvacceptedcolumns",
   "apsetup.csvrequired",
+
+  /**
+   * **Search and real pagination — decision 0446.** `coding-lists.js`'s
+   * own `searchAndPaginationRow()`; the page-nav labels themselves
+   * (`purchaseorders.rows`/`.firstpage`/`.previouspage`/`.nextpage`/
+   * `.lastpage`/`.rangeof`) are covered already, under Purchase
+   * Orders' own entries above — reused here, not duplicated.
+   */
+  "apsetup.codingsearchplaceholder",
+  "apsetup.codingnomatches",
 ];
 
 /**

@@ -305,3 +305,142 @@ describe("Cost Centre's own place in Account Coding — decision 0444", () => {
     expect(result.status).toBe(200);
   });
 });
+
+/**
+ * Search and real, server-side pagination for Cost Centre — decision
+ * 0446, the same treatment `coding-list-route.test.ts`'s own
+ * "searching the list" and "real, server-side pagination" describe
+ * blocks already give the other three coding lists.
+ */
+describe("searching the Cost Centre list — decision 0446", () => {
+  it("matches on id", async () => {
+    await env.DB.prepare("INSERT INTO cost_centres (id, name) VALUES ('UK150001', 'Local IT')").run();
+    await env.DB.prepare("INSERT INTO cost_centres (id, name) VALUES ('FR200002', 'Other')").run();
+    const result = await handleListCostCentresDetailed(env.DB, "UK1500");
+    const body = result.body as { costCentres: { id: string }[] };
+    expect(body.costCentres.map((c) => c.id)).toEqual(["UK150001"]);
+  });
+
+  it("matches on name", async () => {
+    await env.DB.prepare("INSERT INTO cost_centres (id, name) VALUES ('cc1', 'Local IT department')").run();
+    await env.DB.prepare("INSERT INTO cost_centres (id, name) VALUES ('cc2', 'Something else')").run();
+    const result = await handleListCostCentresDetailed(env.DB, "it department");
+    const body = result.body as { costCentres: { id: string }[] };
+    expect(body.costCentres.map((c) => c.id)).toEqual(["cc1"]);
+  });
+
+  it("matches on the resolved owner (Approver) name", async () => {
+    await seedLedger();
+    await seedCostCentre("cc1", { ownerUserId: "alice" });
+    await seedCostCentre("cc2", {});
+    const result = await handleListCostCentresDetailed(env.DB, "Alice");
+    const body = result.body as { costCentres: { id: string }[] };
+    expect(body.costCentres.map((c) => c.id)).toEqual(["cc1"]);
+  });
+
+  it("matches on the resolved parent name", async () => {
+    await seedLedger();
+    await seedCostCentre("group");
+    await seedCostCentre("it", { parentCostCentreId: "group" });
+    const result = await handleListCostCentresDetailed(env.DB, "group");
+    const body = result.body as { costCentres: { id: string }[] };
+    expect(body.costCentres.map((c) => c.id).sort()).toEqual(["group", "it"]);
+  });
+
+  it("treats a literal percent or underscore in the term as itself, not a SQL wildcard", async () => {
+    await env.DB.prepare("INSERT INTO cost_centres (id, name) VALUES ('CC_1', '50% off')").run();
+    await env.DB.prepare("INSERT INTO cost_centres (id, name) VALUES ('CCX1', 'Something else')").run();
+
+    const percentResult = await handleListCostCentresDetailed(env.DB, "50%");
+    expect((percentResult.body as { costCentres: unknown[] }).costCentres).toHaveLength(1);
+
+    const underscoreResult = await handleListCostCentresDetailed(env.DB, "CC_1");
+    const body = underscoreResult.body as { costCentres: { id: string }[] };
+    expect(body.costCentres.map((c) => c.id)).toEqual(["CC_1"]);
+  });
+
+  it("returns an empty list, not an error, when nothing matches", async () => {
+    await env.DB.prepare("INSERT INTO cost_centres (id, name) VALUES ('cc1', 'CC1')").run();
+    const result = await handleListCostCentresDetailed(env.DB, "no such thing anywhere");
+    const body = result.body as { costCentres: unknown[]; total: number };
+    expect(body.costCentres).toEqual([]);
+    expect(body.total).toBe(0);
+  });
+});
+
+describe("real, server-side pagination for Cost Centre — decision 0446", () => {
+  async function seedManyCostCentres(count: number) {
+    for (let i = 0; i < count; i++) {
+      await env.DB.prepare("INSERT INTO cost_centres (id, name) VALUES (?, ?)")
+        .bind(`CC-${1000 + i}`, `Cost centre ${1000 + i}`)
+        .run();
+    }
+  }
+
+  it("returns only pageSize rows, defaulting to 50", async () => {
+    await seedManyCostCentres(120);
+    const result = await handleListCostCentresDetailed(env.DB);
+    const body = result.body as { costCentres: unknown[]; total: number; page: number; pageSize: number };
+    expect(body.costCentres).toHaveLength(50);
+    expect(body.total).toBe(120);
+    expect(body.page).toBe(1);
+    expect(body.pageSize).toBe(50);
+  });
+
+  it("returns the next slice on page 2, with no overlap and no gap", async () => {
+    await seedManyCostCentres(120);
+    const page1 = await handleListCostCentresDetailed(env.DB, null, "1", "50");
+    const page2 = await handleListCostCentresDetailed(env.DB, null, "2", "50");
+    const ids1 = (page1.body as { costCentres: { id: string }[] }).costCentres.map((c) => c.id);
+    const ids2 = (page2.body as { costCentres: { id: string }[] }).costCentres.map((c) => c.id);
+    expect(ids1).toHaveLength(50);
+    expect(ids2).toHaveLength(50);
+    expect(new Set([...ids1, ...ids2]).size).toBe(100);
+  });
+
+  it("returns a real, partial last page rather than padding or erroring", async () => {
+    await seedManyCostCentres(120);
+    const result = await handleListCostCentresDetailed(env.DB, null, "3", "50");
+    expect((result.body as { costCentres: unknown[] }).costCentres).toHaveLength(20);
+  });
+
+  it("falls back to page 1 for anything not a real positive integer", async () => {
+    await seedManyCostCentres(5);
+    for (const bad of ["0", "-1", "abc", null]) {
+      const result = await handleListCostCentresDetailed(env.DB, null, bad);
+      expect((result.body as { page: number }).page).toBe(1);
+    }
+  });
+
+  it("falls back to the default page size for anything outside the allowed set", async () => {
+    await seedManyCostCentres(5);
+    for (const bad of ["10", "9999", "abc", null]) {
+      const result = await handleListCostCentresDetailed(env.DB, null, null, bad);
+      expect((result.body as { pageSize: number }).pageSize).toBe(50);
+    }
+  });
+
+  it("accepts every page size actually offered in the UI", async () => {
+    await seedManyCostCentres(5);
+    for (const allowed of ["25", "50", "100", "200"]) {
+      const result = await handleListCostCentresDetailed(env.DB, null, null, allowed);
+      expect((result.body as { pageSize: number }).pageSize).toBe(Number(allowed));
+    }
+  });
+
+  it("total reflects every matching row, not just the page returned", async () => {
+    await seedManyCostCentres(120);
+    const result = await handleListCostCentresDetailed(env.DB, null, "1", "25");
+    const body = result.body as { costCentres: unknown[]; total: number };
+    expect(body.costCentres).toHaveLength(25);
+    expect(body.total).toBe(120);
+  });
+
+  it("total narrows with search, not just the page's own row count", async () => {
+    await seedManyCostCentres(120);
+    await env.DB.prepare("INSERT INTO cost_centres (id, name) VALUES ('RARE-1', 'A rare cost centre')").run();
+    const result = await handleListCostCentresDetailed(env.DB, "rare");
+    const body = result.body as { costCentres: unknown[]; total: number };
+    expect(body.total).toBe(1);
+  });
+});

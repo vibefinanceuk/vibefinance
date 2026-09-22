@@ -1,6 +1,7 @@
 import { t } from "/strings.js";
 import { el } from "/tasks.js";
 import { actionLink } from "/viewer.js";
+import { icon } from "/icons.js";
 
 /**
  * Account Coding — decision 0444.
@@ -49,6 +50,54 @@ import { actionLink } from "/viewer.js";
  * loaded and what was refused, per row. `.csvformat`, not `.poformat`
  * — the disclosure's own CSS was renamed alongside this decision so a
  * generic style rule no longer carries one feature's own name.
+ *
+ * **Search and real pagination — decision 0446.** *"I would like to
+ * see the table for... the new tables in the AP Setup, Account Coding
+ * tab to support pagination, and search in a similar way that the
+ * purchase orders and supplier pages do."* Cost Centre, Project,
+ * Commodity Code, and General Ledger Code again — Company code stays
+ * the same short, read-only reference list it always was, with
+ * nothing to page through. Each of the four tables now owns its own
+ * search term, page, and page size, pushed to the database exactly
+ * the way `purchase-orders.js`'s own `searchAndPaginationRow` already
+ * does (decision 0376) — reusing that same row's own generic strings
+ * (`purchaseorders.rows`, `.firstpage`, `.previouspage`, `.nextpage`,
+ * `.lastpage`, `.rangeof`) rather than four new, identically-worded
+ * copies.
+ *
+ * **This module now owns that state itself**, rather than `ap-setup.js`
+ * loading everything up front and handing it down as props — the same
+ * shift `purchase-orders.js` and `suppliers.js` made when their own
+ * pagination arrived, since paging or searching one table must no
+ * longer mean re-fetching (or re-rendering) the whole screen.
+ * `loadAccountCodingTables()` seeds page one of all four on screen
+ * open, called from `ap-setup.js`'s own `load()` alongside
+ * `loadCodingListCsvFormats()`; every later page, search, or page-size
+ * change re-fetches and redraws only that one table, in place, via a
+ * stable container id (`accountCodingRoot()`'s own `#codingactivetab`)
+ * — the same "found by id, not held as a stale reference" discipline
+ * `csvLoaderPanel`'s own note box already established, applied here to
+ * a whole section rather than one element.
+ *
+ * **The indent-by-depth on Project's own hierarchy is gone.** A flat,
+ * paged table can split a parent from its child across two different
+ * pages, and `entryDepth()`'s own walk — confined to whatever page
+ * happened to load — would then report a wrong depth rather than the
+ * true one: better no indent than a confidently wrong one. The
+ * existing "Parent" column, already sourced from the server's own
+ * resolved name rather than a client-side lookup, is unaffected either
+ * way and stays the accurate answer to "whose child is this."
+ *
+ * **A create or edit form's own pickers (parent; General Ledger
+ * Code's Commodity Code filter) still need every entry, not a page of
+ * them** — fetched lazily, fresh, right before that form opens
+ * (`?all=1`, `handleListCodingListEntries`'s own bypass), rather than
+ * kept fully loaded for the whole screen visit the way the table used
+ * to be. Cost Centre's own parent picker instead reads `/org/overview`'s
+ * pre-existing lightweight `costCentres` list (`{id, name}`, already
+ * fetched for other pickers across the app) — nothing new to fetch
+ * there at all, now that the table itself no longer needs to double as
+ * that picker's own data source.
  */
 
 const CODING_TABS = [
@@ -62,20 +111,90 @@ const CODING_TABS = [
 let activeCodingTab = "company_code";
 
 /**
- * **How deep an entry sits**, walking its own parent chain within the
- * same list — the same "indented list, not an invented tree widget"
- * choice `access.js`'s own `unitDepth()` already makes for org units.
+ * Per-list-type table state — decision 0446. `PAGINATED_LIST_TYPES` is
+ * Cost Centre plus the three generic lists; Company code has neither
+ * an entry here nor a table endpoint to page through.
  */
-function entryDepth(entries, entry, parentKey) {
-  let depth = 0;
-  let current = entry;
-  const seen = new Set();
-  while (current?.[parentKey] && !seen.has(current[parentKey])) {
-    seen.add(current[parentKey]);
-    current = entries.find((e) => e.id === current[parentKey]);
-    depth++;
+const PAGINATED_LIST_TYPES = ["cost_centre", "project", "commodity_code", "gl_code"];
+const PAGE_SIZES = [25, 50, 100, 200];
+
+function freshTableState() {
+  return { search: "", page: 1, pageSize: 50, total: 0, rows: [], declaredFilters: [] };
+}
+
+let tableState = Object.fromEntries(PAGINATED_LIST_TYPES.map((listType) => [listType, freshTableState()]));
+
+/**
+ * `units`/`users` (from `/org/overview`), stashed here the first time
+ * `accountCodingTab()` runs — needed by `reloadTable()`'s own targeted
+ * redraw of one tab, which happens without `ap-setup.js` ever calling
+ * back into this module with fresh props.
+ */
+let cachedUnits = [];
+let cachedUsers = [];
+let cachedCostCentreNames = [];
+
+function endpointFor(listType) {
+  return listType === "cost_centre" ? "/api/org/cost-centres" : `/api/coding-lists/${listType}`;
+}
+
+/**
+ * One table's own page, from the database — decision 0446, the same
+ * `search`/`page`/`pageSize` request shape `purchase-orders.js`'s own
+ * `load()` already sends (decision 0376).
+ */
+async function loadTable(listType) {
+  const state = tableState[listType];
+  try {
+    const params = new URLSearchParams();
+    if (state.search) params.set("search", state.search);
+    params.set("page", String(state.page));
+    params.set("pageSize", String(state.pageSize));
+    const response = await fetch(`${endpointFor(listType)}?${params}`);
+    if (!response.ok) return false;
+    const body = await response.json();
+    state.rows = listType === "cost_centre" ? body.costCentres ?? [] : body.entries ?? [];
+    state.declaredFilters = body.declaredFilters ?? [];
+    // Read back from the response, not assumed from what was sent —
+    // the route itself clamps an out-of-range page or an unlisted
+    // page size to a real default (`purchase-orders.js`'s own
+    // load() makes the identical point).
+    state.total = body.total ?? 0;
+    state.page = body.page ?? state.page;
+    state.pageSize = body.pageSize ?? state.pageSize;
+    return true;
+  } catch {
+    return false;
   }
-  return depth;
+}
+
+/**
+ * Every entry of one list, unpaginated — decision 0446, fetched fresh
+ * right before a create/edit form opens, never cached across the
+ * screen visit. `?all=1` is `handleListCodingListEntries`'s own
+ * pagination bypass; Cost Centre has no equivalent call at all, since
+ * its own parent picker reads `/org/overview`'s lightweight list
+ * instead (see this file's own header comment).
+ */
+async function loadFullEntries(listType) {
+  const response = await fetch(`/api/coding-lists/${listType}?all=1`);
+  if (!response.ok) return null;
+  const body = await response.json();
+  return { entries: body.entries ?? [], declaredFilters: body.declaredFilters ?? [] };
+}
+
+/**
+ * Redraw one tab in place, after its own data changed — a create, an
+ * edit, or a CSV load. Finds `accountCodingRoot()`'s own stable
+ * container by id rather than holding a reference to it, the same fix
+ * `csvLoaderPanel`'s own note box already needed (`purchase-
+ * orders.js`'s `runLoad()` first, decision 0373): whatever called this
+ * may itself already be inside DOM about to be replaced.
+ */
+async function reloadTable(listType) {
+  await loadTable(listType);
+  const container = document.getElementById("codingactivetab");
+  if (container) container.replaceChildren(buildActiveSection());
 }
 
 function section(titleKey, subKey, emptyKey, headers, rows, headerAction) {
@@ -90,6 +209,82 @@ function section(titleKey, subKey, emptyKey, headers, rows, headerAction) {
           ]),
         ])
       : el("p", { class: "muted", text: t(emptyKey) }),
+  ]);
+}
+
+/**
+ * The search box and pagination controls, in one row above the table —
+ * decision 0446, reusing `purchase-orders.js`'s own `searchAndPagination
+ * Row()` shape and generic strings (`purchaseorders.rows` and the four
+ * page-nav labels) almost line for line, parameterised by list type
+ * since all four tables share one component here rather than one each.
+ */
+function searchAndPaginationRow(listType) {
+  const state = tableState[listType];
+  const searchId = `codingsearch-${listType}`;
+  const sizeId = `codingrowsize-${listType}`;
+
+  const search = el("input", { type: "search", id: searchId, placeholder: t("apsetup.codingsearchplaceholder") });
+  search.value = state.search;
+  search.onchange = async () => {
+    state.search = search.value;
+    state.page = 1;
+    await reloadTable(listType);
+    document.getElementById(searchId)?.focus();
+  };
+
+  const sizePicker = el(
+    "select",
+    { id: sizeId },
+    PAGE_SIZES.map((size) => el("option", { value: String(size), text: String(size) }))
+  );
+  sizePicker.value = String(state.pageSize);
+  sizePicker.onchange = async () => {
+    state.pageSize = Number(sizePicker.value);
+    state.page = 1;
+    await reloadTable(listType);
+    document.getElementById(sizeId)?.focus();
+  };
+
+  const totalPages = state.total === 0 ? 0 : Math.ceil(state.total / state.pageSize);
+  const atFirst = state.page <= 1;
+  const atLast = state.total === 0 || state.page >= totalPages;
+
+  function navButton(name, label, disabled, onclick) {
+    const button = el("button", { class: "iconbutton", "aria-label": label, title: label });
+    button.append(icon(name));
+    button.disabled = disabled;
+    button.onclick = onclick;
+    return button;
+  }
+
+  const rangeStart = state.total === 0 ? 0 : (state.page - 1) * state.pageSize + 1;
+  const rangeEnd = Math.min(state.page * state.pageSize, state.total);
+
+  return el("div", { class: "searchrow" }, [
+    search,
+    el("label", { class: "sm muted", text: t("purchaseorders.rows") }),
+    sizePicker,
+    navButton("chevronsleft", t("purchaseorders.firstpage"), atFirst, async () => {
+      state.page = 1;
+      await reloadTable(listType);
+    }),
+    navButton("chevronleft", t("purchaseorders.previouspage"), atFirst, async () => {
+      state.page = Math.max(1, state.page - 1);
+      await reloadTable(listType);
+    }),
+    el("span", {
+      class: "sm muted",
+      text: t("purchaseorders.rangeof").replace("{start}", String(rangeStart)).replace("{end}", String(rangeEnd)).replace("{total}", String(state.total)),
+    }),
+    navButton("chevronright", t("purchaseorders.nextpage"), atLast, async () => {
+      state.page = Math.min(totalPages, state.page + 1);
+      await reloadTable(listType);
+    }),
+    navButton("chevronsright", t("purchaseorders.lastpage"), atLast, async () => {
+      state.page = totalPages;
+      await reloadTable(listType);
+    }),
   ]);
 }
 
@@ -117,6 +312,23 @@ export async function loadCodingListCsvFormats() {
     })
   );
   csvFormats = Object.fromEntries(results);
+}
+
+/**
+ * Page one of all four paginated tables, at their own default search
+ * (none) and page size — decision 0446. Called from `ap-setup.js`'s
+ * own `load()` alongside `loadCodingListCsvFormats()`, so
+ * `accountCodingTab()`'s own first render already has real data for
+ * whichever sub-tab is active, the same "in its final state by the
+ * time render() runs" discipline that function's own comment
+ * describes. A failed fetch leaves that one table's own `freshTableState()`
+ * defaults in place (empty rows, `total: 0`) rather than throwing —
+ * `loadTable()` itself already degrades this way for any later
+ * page/search change, so the first load is no different.
+ */
+export async function loadAccountCodingTables() {
+  tableState = Object.fromEntries(PAGINATED_LIST_TYPES.map((listType) => [listType, freshTableState()]));
+  await Promise.all(PAGINATED_LIST_TYPES.map((listType) => loadTable(listType)));
 }
 
 /**
@@ -398,15 +610,17 @@ function openCostCentreForm(existing, { costCentres, units, users, onSaved }) {
   (existing ? null : idInput)?.focus();
 }
 
-function costCentreRow(costCentre, costCentres, onClick) {
+function costCentreRow(costCentre, onClick) {
   // **The server's own resolved name, not recomputed here** —
   // `handleListCostCentresDetailed` already joins to `parentName`, and
-  // a parent set on this cost centre may not even be among the rows
-  // this table currently holds if pagination is ever added later.
+  // a parent set on this cost centre may well not be among the rows
+  // this page currently holds, now that the table is paginated
+  // (decision 0446) — a client-side lookup against just this page
+  // would silently miss it.
   const parentName = costCentre.parentName ?? "—";
   const companyCode = costCentre.filters.find((f) => f.filterListTypeId === "company_code")?.filterEntryName ?? "—";
   const row = el("tr", { class: "clickable" }, [
-    el("td", {}, [el("span", { style: `padding-left: ${entryDepth(costCentres, costCentre, "parentCostCentreId") * 20}px`, text: costCentre.name })]),
+    el("td", { text: costCentre.name }),
     el("td", { class: "muted", text: parentName }),
     el("td", { class: "muted", text: costCentre.ownerName ?? "—" }),
     el("td", { class: "muted", text: costCentre.approvalLimit ?? "—" }),
@@ -416,21 +630,32 @@ function costCentreRow(costCentre, costCentres, onClick) {
   return row;
 }
 
-function costCentreTab(costCentres, units, users, refresh) {
-  return section(
-    "apsetup.codingtab.costcentre",
-    "apsetup.codingcostcentresub",
-    "apsetup.nocostcentres",
-    ["apsetup.codingname", "apsetup.codingparent", "apsetup.codingapprover", "apsetup.codingapprovallimit", "apsetup.codingtab.companycode"],
-    costCentres.map((c) =>
-      costCentreRow(c, costCentres, () => openCostCentreForm(c, { costCentres, units, users, onSaved: refresh }))
+/**
+ * `costCentreNames` is `/org/overview`'s own lightweight `{id, name}`
+ * list, cached at module level (`cachedCostCentreNames`) — see this
+ * file's own header comment for why the parent picker no longer reads
+ * the (now paginated) table itself.
+ */
+function costCentreTab(costCentreNames) {
+  const state = tableState.cost_centre;
+  const onSaved = () => reloadTable("cost_centre");
+  return el("div", {}, [
+    el("div", { class: "panel" }, [searchAndPaginationRow("cost_centre")]),
+    section(
+      "apsetup.codingtab.costcentre",
+      "apsetup.codingcostcentresub",
+      state.search ? "apsetup.codingnomatches" : "apsetup.nocostcentres",
+      ["apsetup.codingname", "apsetup.codingparent", "apsetup.codingapprover", "apsetup.codingapprovallimit", "apsetup.codingtab.companycode"],
+      state.rows.map((c) =>
+        costCentreRow(c, () => openCostCentreForm(c, { costCentres: costCentreNames, units: cachedUnits, users: cachedUsers, onSaved }))
+      ),
+      actionLink("create", {
+        primary: true,
+        label: t("apsetup.add"),
+        onclick: () => openCostCentreForm(null, { costCentres: costCentreNames, units: cachedUnits, users: cachedUsers, onSaved }),
+      })
     ),
-    actionLink("create", {
-      primary: true,
-      label: t("apsetup.add"),
-      onclick: () => openCostCentreForm(null, { costCentres, units, users, onSaved: refresh }),
-    })
-  );
+  ]);
 }
 
 /**
@@ -547,9 +772,9 @@ function openCodingEntryForm(listType, listLabelKey, existing, { entries, declar
   (existing ? nameInput : idInput).focus();
 }
 
-function codingEntryRow(entries, entry, declaredFilters, onClick) {
+function codingEntryRow(entry, declaredFilters, onClick) {
   const cells = [
-    el("td", {}, [el("span", { style: `padding-left: ${entryDepth(entries, entry, "parentEntryId") * 20}px`, text: entry.name })]),
+    el("td", { text: entry.name }),
     el("td", { class: "muted", text: entry.parentName ?? "—" }),
     el("td", { class: "muted", text: entry.approverName ?? "—" }),
     el("td", { class: "muted", text: entry.isDefault ? t("roles.yes") : "—" }),
@@ -562,27 +787,58 @@ function codingEntryRow(entries, entry, declaredFilters, onClick) {
   return row;
 }
 
-function codingListTab(listType, titleKey, subKey, emptyKey, { entries, declaredFilters, users, filterSources, refresh }) {
+/**
+ * Fetches this list's own full entries (for the parent picker) and,
+ * when it declares a Commodity Code filter, that list's own full
+ * entries too (for the filter picker) — both lazily, right before the
+ * form opens, per this file's own header comment. A fetch failure
+ * degrades to the table's own last-known `declaredFilters` and empty
+ * picker options, rather than refusing to open the form at all — the
+ * same "a help affordance's own failure blocks only itself" choice
+ * `loadCodingListCsvFormats()` already makes for the Template button.
+ */
+async function openCodingEntryEditor(listType, titleKey, existing) {
+  const known = tableState[listType];
+  const [own, commodityFull] = await Promise.all([
+    loadFullEntries(listType),
+    known.declaredFilters.includes("commodity_code") ? loadFullEntries("commodity_code") : Promise.resolve(null),
+  ]);
+  const filterSources = {
+    company_code: cachedUnits,
+    commodity_code: commodityFull?.entries ?? [],
+  };
+  openCodingEntryForm(listType, titleKey, existing, {
+    entries: own?.entries ?? [],
+    declaredFilters: own?.declaredFilters ?? known.declaredFilters,
+    users: cachedUsers,
+    filterSources,
+    onSaved: () => reloadTable(listType),
+  });
+}
+
+function codingListTab(listType, titleKey, subKey, emptyKey) {
+  const state = tableState[listType];
   const headers = ["apsetup.codingname", "apsetup.codingparent", "apsetup.codingapprover", "apsetup.codingdefault"];
-  for (const filterListTypeId of declaredFilters) {
+  for (const filterListTypeId of state.declaredFilters) {
     headers.push(`apsetup.codingtab.${filterListTypeId === "company_code" ? "companycode" : "commoditycode"}`);
   }
-  return section(
-    titleKey,
-    subKey,
-    emptyKey,
-    headers,
-    entries.map((entry) =>
-      codingEntryRow(entries, entry, declaredFilters, () =>
-        openCodingEntryForm(listType, titleKey, entry, { entries, declaredFilters, users, filterSources, onSaved: refresh })
-      )
+  return el("div", {}, [
+    el("div", { class: "panel" }, [searchAndPaginationRow(listType)]),
+    section(
+      titleKey,
+      subKey,
+      state.search ? "apsetup.codingnomatches" : emptyKey,
+      headers,
+      state.rows.map((entry) =>
+        codingEntryRow(entry, state.declaredFilters, () => openCodingEntryEditor(listType, titleKey, entry))
+      ),
+      actionLink("create", {
+        primary: true,
+        label: t("apsetup.add"),
+        onclick: () => openCodingEntryEditor(listType, titleKey, null),
+      })
     ),
-    actionLink("create", {
-      primary: true,
-      label: t("apsetup.add"),
-      onclick: () => openCodingEntryForm(listType, titleKey, null, { entries, declaredFilters, users, filterSources, onSaved: refresh }),
-    })
-  );
+  ]);
 }
 
 function codingSubTabBar(rerender) {
@@ -602,67 +858,56 @@ function codingSubTabBar(rerender) {
   );
 }
 
-/**
- * The Account Coding tab's own content — called from `ap-setup.js`'s
- * own `render()`, with everything it needs already loaded there (one
- * fetch, one render, the same shape the rest of that screen already
- * uses).
- */
-export function accountCodingTab({ units, users, costCentres, codingLists, refresh, rerender }) {
-  /**
-   * **Read from the server's own response, not duplicated here** —
-   * `coding-list-route.ts`'s own `/coding-lists/:type` already returns
-   * `declaredFilters` (`coding_list_type_filters`, migration 0076's
-   * own seed data), so this tab shows exactly what the backend
-   * actually declares rather than a second copy that could drift.
-   */
-  const declaredFiltersByType = {
-    project: codingLists.project.declaredFilters ?? [],
-    commodity_code: codingLists.commodity_code.declaredFilters ?? [],
-    gl_code: codingLists.gl_code.declaredFilters ?? [],
+/** After a CSV load, a fresh view — the same "back to page 1" choice `purchase-orders.js`'s own loader already makes (decision 0376), extended here to also clear a stale search term. */
+function csvRefresh(listType) {
+  return async () => {
+    const state = tableState[listType];
+    state.search = "";
+    state.page = 1;
+    await reloadTable(listType);
   };
-  const filterSources = {
-    company_code: units,
-    commodity_code: codingLists.commodity_code.entries,
-  };
+}
 
-  const activeSection = {
-    company_code: () => companyCodeTab(units),
-    cost_centre: () => el("div", {}, [csvLoaderPanel("cost_centre", refresh), costCentreTab(costCentres, units, users, refresh)]),
+/**
+ * The active sub-tab's own content, built from this module's own
+ * cached props and `tableState` — no arguments, since both
+ * `accountCodingTab()` (the first render) and `reloadTable()`'s own
+ * targeted redraw (every later one) need exactly the same thing.
+ */
+function buildActiveSection() {
+  return {
+    company_code: () => companyCodeTab(cachedUnits),
+    cost_centre: () => el("div", {}, [csvLoaderPanel("cost_centre", csvRefresh("cost_centre")), costCentreTab(cachedCostCentreNames)]),
     project: () =>
       el("div", {}, [
-        csvLoaderPanel("project", refresh),
-        codingListTab("project", "apsetup.codingtab.project", "apsetup.codingprojectsub", "apsetup.noprojects", {
-          entries: codingLists.project.entries,
-          declaredFilters: declaredFiltersByType.project,
-          users,
-          filterSources,
-          refresh,
-        }),
+        csvLoaderPanel("project", csvRefresh("project")),
+        codingListTab("project", "apsetup.codingtab.project", "apsetup.codingprojectsub", "apsetup.noprojects"),
       ]),
     commodity_code: () =>
       el("div", {}, [
-        csvLoaderPanel("commodity_code", refresh),
-        codingListTab("commodity_code", "apsetup.codingtab.commoditycode", "apsetup.codingcommoditycodesub", "apsetup.nocommoditycodes", {
-          entries: codingLists.commodity_code.entries,
-          declaredFilters: declaredFiltersByType.commodity_code,
-          users,
-          filterSources,
-          refresh,
-        }),
+        csvLoaderPanel("commodity_code", csvRefresh("commodity_code")),
+        codingListTab("commodity_code", "apsetup.codingtab.commoditycode", "apsetup.codingcommoditycodesub", "apsetup.nocommoditycodes"),
       ]),
     gl_code: () =>
       el("div", {}, [
-        csvLoaderPanel("gl_code", refresh),
-        codingListTab("gl_code", "apsetup.codingtab.glcode", "apsetup.codingglcodesub", "apsetup.noglcodes", {
-          entries: codingLists.gl_code.entries,
-          declaredFilters: declaredFiltersByType.gl_code,
-          users,
-          filterSources,
-          refresh,
-        }),
+        csvLoaderPanel("gl_code", csvRefresh("gl_code")),
+        codingListTab("gl_code", "apsetup.codingtab.glcode", "apsetup.codingglcodesub", "apsetup.noglcodes"),
       ]),
   }[activeCodingTab]();
+}
 
-  return el("div", {}, [codingSubTabBar(rerender), activeSection]);
+/**
+ * The Account Coding tab's own content — called from `ap-setup.js`'s
+ * own `render()`. `units`/`users`/`costCentreNames` (the last from
+ * `/org/overview`'s own lightweight list) are cached here rather than
+ * threaded through on every later redraw, since `reloadTable()`'s own
+ * targeted redraw happens without `ap-setup.js` calling back in with
+ * fresh props — see this file's own header comment.
+ */
+export function accountCodingTab({ units, users, costCentreNames, rerender }) {
+  cachedUnits = units;
+  cachedUsers = users;
+  cachedCostCentreNames = costCentreNames;
+
+  return el("div", {}, [codingSubTabBar(rerender), el("div", { id: "codingactivetab" }, [buildActiveSection()])]);
 }

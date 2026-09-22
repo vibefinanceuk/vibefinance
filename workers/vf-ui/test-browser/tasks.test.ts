@@ -37,6 +37,7 @@ const STRINGS = {
     "nav.documents": "Documents",
     "nav.roles": "Roles",
     "nav.access": "Access",
+    "nav.apsetup": "AP Setup",
     "nav.processes": "Processes",
     "nav.group.accountspayable": "Accounts payable",
     "nav.group.suppliermanagement": "Supplier management",
@@ -395,6 +396,7 @@ describe("the flat nav, permission-filtered (decisions 0274 and 0276)", () => {
       "Documents",
       "Suppliers",
       "Access",
+      "AP Setup",
       "Sources",
       "Purchase Orders",
       "Rules",
@@ -433,7 +435,7 @@ describe("the flat nav, permission-filtered (decisions 0274 and 0276)", () => {
     await openList([APPROVAL_TASK]);
 
     const items = [...document.querySelectorAll(".navitem")];
-    expect(items).toHaveLength(10);
+    expect(items).toHaveLength(11);
     for (const item of items) {
       expect(item.querySelector("svg")).not.toBeNull();
     }
@@ -646,6 +648,7 @@ describe("the flat nav, permission-filtered (decisions 0274 and 0276)", () => {
       "Documents",
       "Suppliers",
       "Access",
+      "AP Setup",
       "Sources",
       "Purchase Orders",
       "Processes",
@@ -671,11 +674,12 @@ describe("the flat nav, permission-filtered (decisions 0274 and 0276)", () => {
 
   it("shows exactly the items each permission unlocks, one at a time", async () => {
     /**
-     * **`Admin.Configure` unlocks two items together, decision 0319**
-     * — Roles now shares Sources's own instance-administrator
+     * **`Admin.Configure` unlocks three items together, decisions
+     * 0319/0440** — Roles shares Sources's own instance-administrator
      * standing, corrected live: "the roles menu item is at parent
-     * level permission, i.e. instance administrator." Not a case this
-     * loop's own one-permission-one-label shape can express, so it is
+     * level permission, i.e. instance administrator." AP Setup
+     * (decision 0440) is gated on the same permission too. Not a case
+     * this loop's own one-permission-one-label shape can express, so it is
      * pulled out and asserted directly instead.
      */
     const cases: [string, string][] = [
@@ -713,7 +717,7 @@ describe("the flat nav, permission-filtered (decisions 0274 and 0276)", () => {
     const { start } = await import("/tasks.js");
     await start();
     const labels = [...document.querySelectorAll(".navitem")].map((a) => a.textContent);
-    expect(labels, "permission Admin.Configure").toEqual(["Access", "Sources", "Purchase Orders", "Processes"]);
+    expect(labels, "permission Admin.Configure").toEqual(["Access", "AP Setup", "Sources", "Purchase Orders", "Processes"]);
 
     /**
      * **`AP.Supplier` unlocks two items together, decisions 0416/0417**

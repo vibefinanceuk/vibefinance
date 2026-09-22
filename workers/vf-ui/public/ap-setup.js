@@ -2,7 +2,7 @@ import { t } from "/strings.js";
 import { el, frame, topbar, setCurrentScreen, hasMyPermission } from "/tasks.js";
 import { actionLink } from "/viewer.js";
 import { currencyPicker } from "/access.js";
-import { accountCodingTab, loadCodingListCsvFormats } from "/coding-lists.js";
+import { accountCodingTab, loadCodingListCsvFormats, loadAccountCodingTables } from "/coding-lists.js";
 
 /**
  * AP Setup — decision 0440.
@@ -37,6 +37,17 @@ import { accountCodingTab, loadCodingListCsvFormats } from "/coding-lists.js";
  * Centre, Project, Commodity Code, and General Ledger Code, all built
  * out in `coding-lists.js`; this file just loads what that tab needs
  * alongside everything else and hands it down.
+ *
+ * **Account Coding's four manageable tables own their own paginated,
+ * searched state — decision 0446.** `coding-lists.js` now fetches its
+ * own table data (`loadAccountCodingTables()`, a sibling call to its
+ * own `loadCodingListCsvFormats()`, both awaited the same "ready by
+ * the time render() runs" way) rather than this file eagerly fetching
+ * `/api/org/cost-centres` and three `/api/coding-lists/:type` calls
+ * and handing the full arrays down as props. This file keeps only the
+ * one thing `coding-lists.js` can't get anywhere else — the lightweight
+ * `{id, name}` Cost Centre list `/org/overview` already returns — and
+ * passes that through as `costCentreNames`.
  */
 
 const MODES = ["employee_supervisor", "cost_object", "manual", "api"];
@@ -51,8 +62,7 @@ let units = [];
 let users = [];
 let config = null;
 let activeTab = null;
-let costCentres = [];
-let codingLists = { project: { entries: [] }, commodity_code: { entries: [] }, gl_code: { entries: [] } };
+let costCentreNames = [];
 
 /**
  * **Search over the two override lists, entirely client-side —
@@ -76,40 +86,30 @@ const OVERRIDE_DISPLAY_CAP = 50;
 
 async function load() {
   try {
-    // The CSV Template/Load help affordance (decision 0445) is fetched
+    // The CSV Template/Load help affordance (decision 0445) and the four
+    // paginated Account Coding tables (decision 0446) are both fetched
     // alongside everything else, the same "in its final state by the
     // time render() runs" discipline `purchase-orders.js`'s own
     // loadFormat() already established — but kept out of the ok-check
-    // just below, since its own absence degrades that one panel's
-    // Template button, not this whole screen (loadCodingListCsvFormats()
-    // never throws; a per-type fetch failure just leaves that entry null).
-    const [[overviewResponse, configResponse, costCentresResponse, projectResponse, commodityResponse, glResponse]] = await Promise.all([
-      Promise.all([
-        fetch("/api/org/overview"),
-        fetch("/api/approval-config"),
-        fetch("/api/org/cost-centres"),
-        fetch("/api/coding-lists/project"),
-        fetch("/api/coding-lists/commodity_code"),
-        fetch("/api/coding-lists/gl_code"),
-      ]),
+    // just below, since neither one throws on its own failed fetch;
+    // each degrades its own corner of the coding tab rather than this
+    // whole screen (loadCodingListCsvFormats() leaves a null entry per
+    // failed type, loadAccountCodingTables() leaves that one table's
+    // `freshTableState()` defaults — empty rows, `total: 0` — in place).
+    const [[overviewResponse, configResponse]] = await Promise.all([
+      Promise.all([fetch("/api/org/overview"), fetch("/api/approval-config")]),
       loadCodingListCsvFormats(),
+      loadAccountCodingTables(),
     ]);
-    if (!overviewResponse.ok || !configResponse.ok || !costCentresResponse.ok || !projectResponse.ok || !commodityResponse.ok || !glResponse.ok) {
-      console.error(
-        `AP Setup load failed: overview ${overviewResponse.status}, config ${configResponse.status}, cost centres ${costCentresResponse.status}, project ${projectResponse.status}, commodity code ${commodityResponse.status}, gl code ${glResponse.status}`
-      );
+    if (!overviewResponse.ok || !configResponse.ok) {
+      console.error(`AP Setup load failed: overview ${overviewResponse.status}, config ${configResponse.status}`);
       return false;
     }
     const overview = await overviewResponse.json();
     units = overview.units ?? [];
     users = overview.users ?? [];
+    costCentreNames = overview.costCentres ?? [];
     config = await configResponse.json();
-    costCentres = (await costCentresResponse.json()).costCentres ?? [];
-    codingLists = {
-      project: await projectResponse.json(),
-      commodity_code: await commodityResponse.json(),
-      gl_code: await glResponse.json(),
-    };
     return true;
   } catch (err) {
     console.error("AP Setup load failed", err);
@@ -455,12 +455,7 @@ function render() {
       accountCodingTab({
         units,
         users,
-        costCentres,
-        codingLists,
-        refresh: async () => {
-          await load();
-          render();
-        },
+        costCentreNames,
         rerender: render,
       }),
     approvalhierarchy: () => approvalHierarchyTab(),

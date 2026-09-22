@@ -178,22 +178,101 @@ export async function entryFiltersFor(
   );
 }
 
-export async function handleListCodingListEntries(db: D1Database, listType: string): Promise<RouteResult> {
+const ALLOWED_PAGE_SIZES = [25, 50, 100, 200] as const;
+const DEFAULT_PAGE_SIZE = 50;
+
+function normalizePageSize(requested: string | null): number {
+  const n = requested ? Number(requested) : NaN;
+  return (ALLOWED_PAGE_SIZES as readonly number[]).includes(n) ? n : DEFAULT_PAGE_SIZE;
+}
+
+function normalizePage(requested: string | null): number {
+  const n = requested ? Number(requested) : NaN;
+  return Number.isInteger(n) && n >= 1 ? n : 1;
+}
+
+/**
+ * The search clause — decision 0446, the same shape
+ * `purchase-order-route.ts`'s own `searchClause` already established
+ * (decision 0376). Matched against id, name, the resolved approver
+ * name, and the resolved parent name — every column this list's own
+ * table actually shows, not just the two the row itself stores
+ * directly, since `handleListCodingListEntries` already joins to both.
+ *
+ * `%`, `_`, and `\` in the term itself are escaped, the same reason
+ * `purchase-order-route.ts`'s own version does.
+ */
+function codingListSearchClause(search: string | null): { sql: string; binds: unknown[] } {
+  const term = search?.trim();
+  if (!term) return { sql: "", binds: [] };
+
+  const pattern = `%${term.replace(/[\\%_]/g, "\\$&")}%`;
+  return {
+    sql: ` AND (
+      e.id LIKE ? ESCAPE '\\'
+      OR e.name LIKE ? ESCAPE '\\'
+      OR a.name LIKE ? ESCAPE '\\'
+      OR p.name LIKE ? ESCAPE '\\'
+    )`,
+    binds: [pattern, pattern, pattern, pattern],
+  };
+}
+
+/**
+ * Search and real pagination — decision 0446, the operator's own
+ * follow-up ask once Account Coding (0444) and its CSV load (0445)
+ * existed: *"I would like to see the table for... the new tables in
+ * the AP Setup, Account Coding tab to support pagination, and search
+ * in a similar way that the purchase orders and supplier pages do."*
+ * `total` is a second, real count query — the same reason
+ * `handleListPurchaseOrders` runs one — since a page of 50 rows says
+ * nothing about how many exist in total.
+ *
+ * **`all` bypasses pagination entirely, returning every row** — used
+ * only to populate a create/edit form's own parent picker (and, for
+ * General Ledger Code, its Commodity Code filter picker), fetched
+ * lazily right before that form opens rather than kept in memory for
+ * the whole screen visit. A picker needs every possible value to
+ * choose from, not a page of them; the table itself never sets this.
+ */
+export async function handleListCodingListEntries(
+  db: D1Database,
+  listType: string,
+  search: string | null = null,
+  pageParam: string | null = null,
+  pageSizeParam: string | null = null,
+  all = false
+): Promise<RouteResult> {
   if (!isCodingListType(listType)) {
     return { status: 404, body: { error: `unknown coding list ${listType}` } };
   }
+
+  const search_ = codingListSearchClause(search);
+  const page = normalizePage(pageParam);
+  const pageSize = normalizePageSize(pageSizeParam);
+  const offset = (page - 1) * pageSize;
+
+  const joins = `FROM coding_list_entries e
+       LEFT JOIN org_users a ON a.id = e.approver_user_id
+       LEFT JOIN coding_list_entries p ON p.list_type_id = e.list_type_id AND p.id = e.parent_entry_id`;
+
+  const totalRow = all
+    ? null
+    : await db
+        .prepare(`SELECT count(*) AS n ${joins} WHERE e.list_type_id = ? ${search_.sql}`)
+        .bind(listType, ...search_.binds)
+        .first<{ n: number }>();
 
   const rows = await db
     .prepare(
       `SELECT e.id, e.name, e.is_default, e.approver_user_id, a.name AS approver_name,
               e.parent_entry_id, p.name AS parent_name
-       FROM coding_list_entries e
-       LEFT JOIN org_users a ON a.id = e.approver_user_id
-       LEFT JOIN coding_list_entries p ON p.list_type_id = e.list_type_id AND p.id = e.parent_entry_id
-       WHERE e.list_type_id = ?
-       ORDER BY e.name`
+       ${joins}
+       WHERE e.list_type_id = ? ${search_.sql}
+       ORDER BY e.name
+       ${all ? "" : "LIMIT ? OFFSET ?"}`
     )
-    .bind(listType)
+    .bind(listType, ...search_.binds, ...(all ? [] : [pageSize, offset]))
     .all<EntryRow>();
 
   const entries = await Promise.all(
@@ -209,9 +288,18 @@ export async function handleListCodingListEntries(db: D1Database, listType: stri
     }))
   );
 
+  const total = all ? entries.length : totalRow?.n ?? 0;
+
   return {
     status: 200,
-    body: { listType, declaredFilters: await declaredFiltersFor(db, listType), entries },
+    body: {
+      listType,
+      declaredFilters: await declaredFiltersFor(db, listType),
+      entries,
+      total,
+      page: all ? 1 : page,
+      pageSize: all ? total || 1 : pageSize,
+    },
   };
 }
 

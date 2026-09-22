@@ -1781,6 +1781,104 @@ section for the full reasoning and tests.
   "Habits worth keeping" in `docs/HANDOVER.md` — and the screen has not
   yet been reported working live.
 
+### Search and real pagination for Account Coding (0446)
+- The operator's own follow-up: *"I would like to see the table for
+  Tasks, Documents, and the new tables in the AP Setup, Account Coding
+  tab to support pagination, and search in a similar way that the
+  purchase orders and supplier pages do."* Three clarifying questions
+  asked before writing anything: sequencing (Account Coding shipped
+  now, Tasks/Documents deferred to a separate future decision);
+  Account Coding's own Project hierarchy vs. pagination (paginate like
+  the other three, drop the indent, keep the resolved Parent column);
+  and, for the record only, Tasks/Documents' own future approach (a
+  full rebuild onto real SQL-pushed pagination matching Purchase
+  Orders/Suppliers, not a thin layer over either screen's current
+  in-Worker computation).
+- **Tasks and Documents checked directly, not assumed, and found not
+  to fit this decision's own shape**: Tasks' own row visibility is
+  computed in-Worker per row (an async permission check plus an
+  org-unit-lineage walk, `maySee()`), not expressible as a SQL `WHERE`
+  clause without a larger rewrite; `limit`/`offset` already exist
+  server-side but the frontend never sends them, and there is no
+  search at all. Documents' own SQL already caps at `limit` most-recent
+  rows, and its existing `q` search runs in-Worker against fields
+  already parsed from already-loaded rows — a documented, deliberate
+  limitation, not a bug, but not true pagination either. Account Coding
+  was the only one of the three close enough to Purchase Orders' own
+  shape for this to be additive rather than a rewrite — why the
+  confirmed scope is Account Coding alone.
+- **Follows Purchase Orders' own mechanism (0376) closely**:
+  `ALLOWED_PAGE_SIZES`/`DEFAULT_PAGE_SIZE`/`normalizePage()`/
+  `normalizePageSize()`/a search clause with `%`/`_`/`\` escaped via
+  `LIKE ... ESCAPE '\\'`, locally duplicated per file rather than
+  shared, matching that file's own precedent; a second real `count(*)`
+  query for `total`; one shared `searchAndPaginationRow()` frontend
+  component reusing Purchase Orders' own generic strings
+  (`purchaseorders.rows`/`.firstpage`/`.previouspage`/`.nextpage`/
+  `.lastpage`/`.rangeof`) rather than duplicating them — only two
+  genuinely new string keys needed.
+- **A novel `all=1` bypass mode**, not present in either precedent: a
+  create/edit form's own parent picker (and GL Code's own Commodity
+  Code filter picker) needs every entry, not a page — solved by one
+  flag on the same endpoint that skips the count query and returns
+  every row, fetched lazily right before that form opens, never cached.
+  Cost Centre needed no equivalent — its own parent picker instead
+  reads `/org/overview`'s pre-existing lightweight `{id, name}` list,
+  zero new fetches.
+- **The client-side indent-by-depth on Project's own hierarchy is
+  removed entirely**, not patched: a paginated table can split a
+  parent from its child across two pages, and the old `entryDepth()`
+  walk would have rendered a confidently wrong partial indent rather
+  than an honestly empty one (its own `while` loop increments depth
+  before checking whether the parent lookup actually succeeded). The
+  server-resolved Parent column, unaffected either way, stays the
+  accurate answer.
+- **`coding-lists.js` now owns its own per-table paginated/searched
+  state**, the same shift Purchase Orders/Suppliers already made when
+  their own pagination arrived — `ap-setup.js` no longer eagerly
+  fetches the four tables' own data and hands it down as props; a
+  stable container id (`#codingactivetab`) lets one table's own
+  page/search change re-fetch and redraw only itself.
+- `vf-app` 2587 → **2618** (+17 `coding-list-route.test.ts`, +14
+  `accounting-frame.test.ts`), 113 files, all green. `vf-licence` 320
+  (unchanged in count — migration `0149`, 2 keys × en/de, adds rows to
+  the existing `ui_strings` table), 21 files, all green. `vf-ui`
+  Worker 74 (unchanged), 2 files, all green; browser 1000 → **1011**
+  (+11 `coding-lists.test.ts` — 3 pre-existing tests updated for the
+  new async form-opening behaviour, the old client-side-indent test
+  replaced), **all green**.
+- **A second, unrelated pre-existing gap found and fixed along the
+  way, not left for later**: `test-browser/tasks.test.ts`'s own copy
+  of the "list every nav item" tests never had `nav.apsetup`/"AP
+  Setup" added — the same class of gap decision 0441 already found and
+  fixed once in `rules.test.ts`'s sibling copy of this same test, but
+  this second copy was missed at the time. Confirmed pre-existing and
+  unrelated to this decision via `git stash` against the unmodified
+  baseline before touching it. With this fixed too, the
+  previously-documented `document-window.test.ts` unhandled-rejection
+  flake (160 non-fatal logged errors, confirmed unchanged from
+  baseline) no longer causes any failing assertion anywhere in the
+  browser suite.
+- `eslint .` clean across all three workspaces. `npx tsc --noEmit` in
+  `vf-app` — no new errors; the pre-existing errors this decision's own
+  edited files still surface were confirmed, via `git stash`, to
+  already exist at baseline. `apply_migrations.py --replay-only` clean
+  for the `vf-app` chain (76 migrations/170 invariants, unchanged this
+  decision — no new `vf-app` migration); `vf-licence`'s own
+  149-migration chain has no equivalent Python replay, validated
+  instead through `test/setup.ts` + `string-coverage.test.ts` (both
+  green).
+- **Not built**: Tasks and Documents (explicitly deferred to a
+  separate future decision, above); delete for any of the four types
+  (0444's own gap, unchanged); caching of a picker's own `?all=1`
+  fetch (deliberate — a fresh fetch right before the form opens costs
+  one extra request in exchange for never showing a stale picker).
+- **Built, tested, committed locally — not yet pushed or deployed.**
+  Migration `0149` will need its own separate
+  `apply_migrations.py --remote --database vf-licence-poc
+  --migrations-dir workers/vf-licence/migrations` run once deployed,
+  the same as every migration before it.
+
 ### Purchase orders and matching
 - Purchase order storage grounded in Peppol BIS Order Only 3.3, via UBL
   XML ingestion (0081) and CSV load (0370) — the same tables, the same
@@ -3045,20 +3143,31 @@ elsewhere.
 
 | Package | Tests |
 |---|---|
-| `vf-app` | 2587 |
+| `vf-app` | 2618 |
 | `vf-licence` | 320 |
-| `vf-ui` | 74 Worker · 1000 browser (996 passing, 4 known pre-existing failures — see below) |
+| `vf-ui` | 74 Worker · 1011 browser, all passing — see below |
 | `shared` | 295 passing, 3 known pre-existing failures |
 
 Both migration chains replay clean with every standing invariant
-holding — 76 migrations for `vf-app` (170 invariants), 148 for
-`vf-licence` (73 invariants), as of decision 0445.
+holding — 76 migrations for `vf-app` (170 invariants); `vf-licence`'s
+own 149-migration chain has no equivalent Python replay, and is
+instead validated through `workers/vf-licence/test/setup.ts` +
+`string-coverage.test.ts`, both green as of decision 0446.
 
-**`vf-ui` browser's 4 known pre-existing failures** are all in
-`test-browser/document-window.test.ts` (a long-documented, pre-existing
-unhandled-rejection flake around the XML preview path) — confirmed to
-fail identically on a clean `origin/main` checkout, so unrelated to any
-recent decision. Not yet root-caused or fixed.
+**`vf-ui` browser previously carried 4 known failures**, all in
+`test-browser/document-window.test.ts` — a long-documented,
+pre-existing unhandled-rejection flake around the XML preview path,
+confirmed to fail identically on a clean `origin/main` checkout so
+unrelated to any decision that found it. **The flake itself is still
+present** (160 non-fatal unhandled-rejection errors still log during a
+full run, confirmed unchanged from baseline) but decision 0446 found
+and fixed the actual, separate cause of those 4 failed *assertions*:
+`test-browser/tasks.test.ts`'s own copy of the "list every nav item"
+tests had never had `nav.apsetup`/"AP Setup" added to its own fixture
+— the same class of gap decision 0441 already fixed once in
+`rules.test.ts`'s sibling copy of the same test, missed here at the
+time. With that fixed, the browser suite is fully green; the
+`document-window.test.ts` flake itself remains open and unexplained.
 
 **`shared`'s count was recorded as 287 through decision 0429**; a
 clean run at this decision's own commit, with no `shared` change since
@@ -3104,7 +3213,7 @@ fresh whole-suite pass, since only that one file changed.
 | `docs/design/mockups/` | Four screens as static HTML | Current |
 | `docs/design/multi-authority-intake.md` | Non-EN-16931 authorities | Design only |
 | `docs/design/text-layer-extraction.md` | Reading a PDF's own text | Design only |
-| `docs/decisions/` | 401 decision records | Current |
+| `docs/decisions/` | 446 decision records | Current |
 | `docs/decisions/SUPERSEDED.md` | Which records supersede which | **Read first** |
 
 Document 4's markdown source is at `docs/documents/`, with

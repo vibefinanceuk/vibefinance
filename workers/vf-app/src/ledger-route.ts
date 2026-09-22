@@ -284,27 +284,90 @@ interface CostCentreDetailRow {
   approval_limit: number | null;
 }
 
+const ALLOWED_PAGE_SIZES = [25, 50, 100, 200] as const;
+const DEFAULT_PAGE_SIZE = 50;
+
+function normalizePageSize(requested: string | null): number {
+  const n = requested ? Number(requested) : NaN;
+  return (ALLOWED_PAGE_SIZES as readonly number[]).includes(n) ? n : DEFAULT_PAGE_SIZE;
+}
+
+function normalizePage(requested: string | null): number {
+  const n = requested ? Number(requested) : NaN;
+  return Number.isInteger(n) && n >= 1 ? n : 1;
+}
+
+/**
+ * The search clause — decision 0446, the same shape
+ * `coding-list-route.ts`'s own `codingListSearchClause` already uses
+ * for the other three coding lists. Matched against id, name, the
+ * resolved owner ("Approver," on screen) name, and the resolved
+ * parent name.
+ */
+function costCentreSearchClause(search: string | null): { sql: string; binds: unknown[] } {
+  const term = search?.trim();
+  if (!term) return { sql: "", binds: [] };
+
+  const pattern = `%${term.replace(/[\\%_]/g, "\\$&")}%`;
+  return {
+    sql: ` AND (
+      c.id LIKE ? ESCAPE '\\'
+      OR c.name LIKE ? ESCAPE '\\'
+      OR u.name LIKE ? ESCAPE '\\'
+      OR p.name LIKE ? ESCAPE '\\'
+    )`,
+    binds: [pattern, pattern, pattern, pattern],
+  };
+}
+
 /**
  * **The Cost Centre management screen's own read** — decision 0444.
  * `/org/overview`'s own `costCentres` stays the lightweight `{id,
  * name}` picker list every other screen already reads (Access's own
  * person-cost-centre picker, this same screen's Employee-Supervisor
- * unit picker); this is the richer shape only the new Account Coding
- * tab needs, resolved names included so the table doesn't need a
- * second round trip per row.
+ * unit picker, and — since decision 0446 — this screen's own edit
+ * form's parent picker too); this is the richer shape only the
+ * Account Coding tab's own table needs, resolved names included so
+ * the table doesn't need a second round trip per row.
+ *
+ * **Search and real pagination — decision 0446**, the same treatment
+ * `handleListCodingListEntries` gets alongside this. Unlike that
+ * route, there is no `all` bypass here: nothing needs Cost Centre's
+ * own full list any more, now that the parent picker reads
+ * `/org/overview`'s own lightweight list instead.
  */
-export async function handleListCostCentresDetailed(db: D1Database): Promise<RouteResult> {
+export async function handleListCostCentresDetailed(
+  db: D1Database,
+  search: string | null = null,
+  pageParam: string | null = null,
+  pageSizeParam: string | null = null
+): Promise<RouteResult> {
+  const search_ = costCentreSearchClause(search);
+  const page = normalizePage(pageParam);
+  const pageSize = normalizePageSize(pageSizeParam);
+  const offset = (page - 1) * pageSize;
+
+  const joins = `FROM cost_centres c
+       LEFT JOIN ledgers l ON l.id = c.ledger_id
+       LEFT JOIN cost_centres p ON p.id = c.parent_cost_centre_id
+       LEFT JOIN org_users u ON u.id = c.owner_user_id`;
+
+  const totalRow = await db
+    .prepare(`SELECT count(*) AS n ${joins} WHERE 1 = 1 ${search_.sql}`)
+    .bind(...search_.binds)
+    .first<{ n: number }>();
+
   const rows = await db
     .prepare(
       `SELECT c.id, c.name, c.ledger_id, l.name AS ledger_name,
               c.parent_cost_centre_id, p.name AS parent_name,
               c.owner_user_id, u.name AS owner_name, c.approval_limit
-       FROM cost_centres c
-       LEFT JOIN ledgers l ON l.id = c.ledger_id
-       LEFT JOIN cost_centres p ON p.id = c.parent_cost_centre_id
-       LEFT JOIN org_users u ON u.id = c.owner_user_id
-       ORDER BY c.name`
+       ${joins}
+       WHERE 1 = 1 ${search_.sql}
+       ORDER BY c.name
+       LIMIT ? OFFSET ?`
     )
+    .bind(...search_.binds, pageSize, offset)
     .all<CostCentreDetailRow>();
 
   const costCentres = await Promise.all(
@@ -322,7 +385,10 @@ export async function handleListCostCentresDetailed(db: D1Database): Promise<Rou
     }))
   );
 
-  return { status: 200, body: { costCentres } };
+  return {
+    status: 200,
+    body: { costCentres, total: totalRow?.n ?? 0, page, pageSize },
+  };
 }
 
 /**

@@ -48,6 +48,172 @@ describe("handleListCodingListEntries", () => {
   });
 });
 
+/**
+ * Search and real, server-side pagination — decision 0446, the same
+ * treatment `purchase-order-route.test.ts`'s own "searching the list"
+ * and "real, server-side pagination" describe blocks already give
+ * Purchase Orders (decision 0376).
+ */
+describe("searching the list — decision 0446", () => {
+  it("matches on id", async () => {
+    await handleCreateCodingListEntry(env.DB, "project", { id: "DE01MJO", name: "Mjolner" });
+    await handleCreateCodingListEntry(env.DB, "project", { id: "FR02ABC", name: "Other" });
+    const result = await handleListCodingListEntries(env.DB, "project", "MJO");
+    const body = result.body as { entries: { id: string }[] };
+    expect(body.entries.map((e) => e.id)).toEqual(["DE01MJO"]);
+  });
+
+  it("matches on name", async () => {
+    await handleCreateCodingListEntry(env.DB, "project", { id: "p1", name: "Mjolner" });
+    await handleCreateCodingListEntry(env.DB, "project", { id: "p2", name: "Something else" });
+    const result = await handleListCodingListEntries(env.DB, "project", "mjolner");
+    const body = result.body as { entries: { id: string }[] };
+    expect(body.entries.map((e) => e.id)).toEqual(["p1"]);
+  });
+
+  it("matches on the resolved approver name", async () => {
+    await seedUser();
+    await handleCreateCodingListEntry(env.DB, "project", { id: "p1", name: "P1", approverUserId: "approver-1" });
+    await handleCreateCodingListEntry(env.DB, "project", { id: "p2", name: "P2" });
+    const result = await handleListCodingListEntries(env.DB, "project", "Ada");
+    const body = result.body as { entries: { id: string }[] };
+    expect(body.entries.map((e) => e.id)).toEqual(["p1"]);
+  });
+
+  it("matches on the resolved parent name", async () => {
+    await handleCreateCodingListEntry(env.DB, "project", { id: "DE01MJO", name: "Mjolner" });
+    await handleCreateCodingListEntry(env.DB, "project", { id: "DE01MJO.10", name: "Investigation", parentEntryId: "DE01MJO" });
+    const result = await handleListCodingListEntries(env.DB, "project", "Mjolner");
+    const body = result.body as { entries: { id: string }[] };
+    expect(body.entries.map((e) => e.id).sort()).toEqual(["DE01MJO", "DE01MJO.10"]);
+  });
+
+  it("treats a literal percent or underscore in the term as itself, not a SQL wildcard", async () => {
+    await handleCreateCodingListEntry(env.DB, "project", { id: "PO_1", name: "50% off" });
+    await handleCreateCodingListEntry(env.DB, "project", { id: "POX1", name: "Something else" });
+
+    const percentResult = await handleListCodingListEntries(env.DB, "project", "50%");
+    expect((percentResult.body as { entries: unknown[] }).entries).toHaveLength(1);
+
+    const underscoreResult = await handleListCodingListEntries(env.DB, "project", "PO_1");
+    const body = underscoreResult.body as { entries: { id: string }[] };
+    expect(body.entries.map((e) => e.id)).toEqual(["PO_1"]);
+  });
+
+  it("returns an empty list, not an error, when nothing matches", async () => {
+    await handleCreateCodingListEntry(env.DB, "project", { id: "p1", name: "P1" });
+    const result = await handleListCodingListEntries(env.DB, "project", "no such thing anywhere");
+    const body = result.body as { entries: unknown[]; total: number };
+    expect(body.entries).toEqual([]);
+    expect(body.total).toBe(0);
+  });
+});
+
+describe("real, server-side pagination — decision 0446", () => {
+  async function seedManyEntries(count: number) {
+    for (let i = 0; i < count; i++) {
+      await handleCreateCodingListEntry(env.DB, "project", { id: `P-${1000 + i}`, name: `Project ${1000 + i}` });
+    }
+  }
+
+  it("returns only pageSize rows, defaulting to 50", async () => {
+    await seedManyEntries(120);
+    const result = await handleListCodingListEntries(env.DB, "project");
+    const body = result.body as { entries: unknown[]; total: number; page: number; pageSize: number };
+    expect(body.entries).toHaveLength(50);
+    expect(body.total).toBe(120);
+    expect(body.page).toBe(1);
+    expect(body.pageSize).toBe(50);
+  });
+
+  it("returns the next slice on page 2, with no overlap and no gap", async () => {
+    await seedManyEntries(120);
+    const page1 = await handleListCodingListEntries(env.DB, "project", null, "1", "50");
+    const page2 = await handleListCodingListEntries(env.DB, "project", null, "2", "50");
+    const ids1 = (page1.body as { entries: { id: string }[] }).entries.map((e) => e.id);
+    const ids2 = (page2.body as { entries: { id: string }[] }).entries.map((e) => e.id);
+    expect(ids1).toHaveLength(50);
+    expect(ids2).toHaveLength(50);
+    expect(new Set([...ids1, ...ids2]).size).toBe(100);
+  });
+
+  it("returns a real, partial last page rather than padding or erroring", async () => {
+    await seedManyEntries(120);
+    const result = await handleListCodingListEntries(env.DB, "project", null, "3", "50");
+    expect((result.body as { entries: unknown[] }).entries).toHaveLength(20);
+  });
+
+  it("falls back to page 1 for anything not a real positive integer", async () => {
+    await seedManyEntries(5);
+    for (const bad of ["0", "-1", "abc", null]) {
+      const result = await handleListCodingListEntries(env.DB, "project", null, bad);
+      expect((result.body as { page: number }).page).toBe(1);
+    }
+  });
+
+  it("falls back to the default page size for anything outside the allowed set", async () => {
+    await seedManyEntries(5);
+    for (const bad of ["10", "9999", "abc", null]) {
+      const result = await handleListCodingListEntries(env.DB, "project", null, null, bad);
+      expect((result.body as { pageSize: number }).pageSize).toBe(50);
+    }
+  });
+
+  it("accepts every page size actually offered in the UI", async () => {
+    await seedManyEntries(5);
+    for (const allowed of ["25", "50", "100", "200"]) {
+      const result = await handleListCodingListEntries(env.DB, "project", null, null, allowed);
+      expect((result.body as { pageSize: number }).pageSize).toBe(Number(allowed));
+    }
+  });
+
+  it("total reflects every matching row, not just the page returned", async () => {
+    await seedManyEntries(120);
+    const result = await handleListCodingListEntries(env.DB, "project", null, "1", "25");
+    const body = result.body as { entries: unknown[]; total: number };
+    expect(body.entries).toHaveLength(25);
+    expect(body.total).toBe(120);
+  });
+
+  it("total narrows with search, not just the page's own row count", async () => {
+    await seedManyEntries(120);
+    await handleCreateCodingListEntry(env.DB, "project", { id: "RARE-1", name: "A rare project" });
+    const result = await handleListCodingListEntries(env.DB, "project", "rare");
+    const body = result.body as { entries: unknown[]; total: number };
+    expect(body.total).toBe(1);
+  });
+});
+
+describe("the `all` bypass mode — decision 0446, for a create/edit form's own pickers", () => {
+  it("returns every entry, ignoring page and pageSize", async () => {
+    const seedManyEntries = async (count: number) => {
+      for (let i = 0; i < count; i++) {
+        await handleCreateCodingListEntry(env.DB, "project", { id: `P-${1000 + i}`, name: `Project ${1000 + i}` });
+      }
+    };
+    await seedManyEntries(120);
+    const result = await handleListCodingListEntries(env.DB, "project", null, "1", "50", true);
+    const body = result.body as { entries: unknown[]; total: number; page: number; pageSize: number };
+    expect(body.entries).toHaveLength(120);
+    expect(body.total).toBe(120);
+    expect(body.page).toBe(1);
+  });
+
+  it("still honours a search term — a picker can be narrowed too", async () => {
+    await handleCreateCodingListEntry(env.DB, "project", { id: "p1", name: "Mjolner" });
+    await handleCreateCodingListEntry(env.DB, "project", { id: "p2", name: "Something else" });
+    const result = await handleListCodingListEntries(env.DB, "project", "mjolner", null, null, true);
+    const body = result.body as { entries: { id: string }[] };
+    expect(body.entries.map((e) => e.id)).toEqual(["p1"]);
+  });
+
+  it("runs no count query at all — total is simply the returned entries' own length", async () => {
+    const result = await handleListCodingListEntries(env.DB, "project", null, null, null, true);
+    const body = result.body as { entries: unknown[]; total: number };
+    expect(body.total).toBe(body.entries.length);
+  });
+});
+
 describe("handleCreateCodingListEntry", () => {
   it("404s an unknown list type", async () => {
     const result = await handleCreateCodingListEntry(env.DB, "widget", { id: "w1", name: "Widget" });

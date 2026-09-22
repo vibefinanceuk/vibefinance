@@ -12,6 +12,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
  * routes with a real screen for the first time, and Project, Commodity
  * Code, and General Ledger Code share one generic CRUD, filtered by
  * whatever `declaredFilters` the server says a type carries.
+ *
+ * **Search and real pagination — decision 0446.** Cost Centre,
+ * Project, Commodity Code, and General Ledger Code all gained their
+ * own search box and real, server-side pagination, matching Purchase
+ * Orders and Suppliers (decision 0376) — covered below in "searching
+ * and paginating a coding list." The old client-side indent-by-depth
+ * on Project's own hierarchy is gone (a paginated table can split a
+ * parent from its child across two pages); a create/edit form's own
+ * pickers now fetch every entry fresh, lazily, right before the form
+ * opens, rather than reading the table's own now-partial in-memory
+ * list — covered in "a create/edit form's own pickers see every
+ * entry, not just the current page."
  */
 
 function mountShell() {
@@ -101,6 +113,16 @@ const STRINGS = {
     "apsetup.csvfieldname": "Field",
     "apsetup.csvacceptedcolumns": "Accepted columns",
     "apsetup.csvrequired": "Required",
+    "apsetup.codingsearchplaceholder": "Search",
+    "apsetup.codingnomatches": "No entries match your search.",
+    // Search and real pagination — decision 0446, reusing purchase-orders.js's
+    // own generic strings (see this file's own header comment).
+    "purchaseorders.rows": "Rows",
+    "purchaseorders.rangeof": "{start}–{end} of {total}",
+    "purchaseorders.firstpage": "First page",
+    "purchaseorders.previouspage": "Previous page",
+    "purchaseorders.nextpage": "Next page",
+    "purchaseorders.lastpage": "Last page",
   },
 };
 
@@ -329,7 +351,15 @@ describe("Project — a real hierarchy, decision 0444", () => {
     expect([...(panel?.querySelectorAll("th") ?? [])].some((h) => h.textContent === "Company code")).toBe(false);
   });
 
-  it("indents a child entry under its own parent", async () => {
+  /**
+   * **No indentation — decision 0446.** A paginated table can split a
+   * parent from its child across two different pages, so the old
+   * `entryDepth()` client-side walk (confined to whatever page
+   * happened to load) is gone entirely rather than risk a confidently
+   * wrong depth. The server's own resolved "Parent" column, unaffected
+   * either way, stays the accurate answer.
+   */
+  it("shows a child's own parent by name in the Parent column, with no indentation", async () => {
     await openApSetupAs(EMPTY_OVERVIEW, EMPTY_COST_CENTRES, {
       "/api/coding-lists/project": {
         declaredFilters: [],
@@ -337,13 +367,18 @@ describe("Project — a real hierarchy, decision 0444", () => {
           { id: "DE01MJO", name: "Mjolner", isDefault: false, approverUserId: null, approverName: null, parentEntryId: null, parentName: null, filters: [] },
           { id: "DE01MJO.10", name: "Investigation", isDefault: false, approverUserId: null, approverName: null, parentEntryId: "DE01MJO", parentName: "Mjolner", filters: [] },
         ],
+        total: 2,
+        page: 1,
+        pageSize: 50,
       },
     });
     switchCodingSubTab("Project");
     const rows = [...document.querySelectorAll("tbody tr")];
-    const childSpan = rows.find((r) => r.textContent?.includes("Investigation"))?.querySelector("span");
-    expect(childSpan?.getAttribute("style")).toContain("padding-left: 20px");
-    expect(rows.find((r) => r.textContent?.includes("Investigation"))?.textContent).toContain("Mjolner");
+    const childRow = rows.find((r) => r.textContent?.includes("Investigation"));
+    expect(childRow?.textContent).toContain("Mjolner");
+    // No per-row span carrying its own padding-left any more — the
+    // name cell is a plain text cell, the same as every other column.
+    expect(childRow?.querySelector("td span[style]")).toBeNull();
   });
 
   it("creates a project entry with a parent and default flag, posting the full field set at once", async () => {
@@ -361,6 +396,11 @@ describe("Project — a real hierarchy, decision 0444", () => {
     switchCodingSubTab("Project");
     const addButton = [...document.querySelectorAll(".cardhead button")].find((b) => b.textContent?.includes("Add"));
     addButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    // openCodingEntryEditor() lazily fetches this list's own full
+    // entries for the parent picker (decision 0446) before the form
+    // itself opens — a real async gap the old, already-loaded-array
+    // version never had.
+    await new Promise((r) => setTimeout(r, 0));
 
     const inputs = document.querySelectorAll<HTMLInputElement>(".editgrid input[type=text]");
     inputs[0].value = "DE01MJO.10";
@@ -434,6 +474,11 @@ describe("General Ledger Code — the two declared filters, decision 0444", () =
     switchCodingSubTab("General Ledger Code");
     const addButton = [...document.querySelectorAll(".cardhead button")].find((b) => b.textContent?.includes("Add"));
     addButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    // openCodingEntryEditor() lazily fetches this list's own full
+    // entries AND, since gl_code declares a commodity_code filter, that
+    // list's own full entries too (decision 0446) — both awaited
+    // before the form opens.
+    await new Promise((r) => setTimeout(r, 0));
 
     const selects = document.querySelectorAll<HTMLSelectElement>(".editgrid select");
     // parent, approver, company code (filter), commodity code (filter)
@@ -462,6 +507,270 @@ describe("General Ledger Code — the two declared filters, decision 0444", () =
       approverUserId: null,
       filters: { company_code: "UK01", commodity_code: "10000000" },
     });
+  });
+});
+
+/** A page of `count` entries out of `total`, for pagination-display tests — decision 0446. */
+function pageOfEntries(count: number, total: number, page: number, pageSize: number) {
+  return {
+    declaredFilters: [],
+    entries: Array.from({ length: count }, (_, i) => ({
+      id: `p-${i}`,
+      name: `Project ${i}`,
+      isDefault: false,
+      approverUserId: null,
+      approverName: null,
+      parentEntryId: null,
+      parentName: null,
+      filters: [],
+    })),
+    total,
+    page,
+    pageSize,
+  };
+}
+
+/**
+ * **Search and real, server-side pagination — decision 0446**, the
+ * same treatment `purchase-orders.test.ts`'s own "searching the list"
+ * and "pagination controls" describe blocks already give Purchase
+ * Orders (decision 0376). Exercised against Project, one of the four
+ * tables that share `searchAndPaginationRow()`/`reloadTable()` — the
+ * mechanism itself is generic, so this is not repeated per table.
+ */
+describe("searching and paginating a coding list — decision 0446", () => {
+  it("shows the search box with its own placeholder", async () => {
+    await openApSetupAs();
+    switchCodingSubTab("Project");
+    const search = document.getElementById("codingsearch-project");
+    expect(search?.getAttribute("placeholder")).toBe("Search");
+  });
+
+  it("re-fetches with the search term once typing is done, and resets to page 1", async () => {
+    let requestedUrl = "";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        const path = String(url).split("?")[0];
+        if (path === "/api/ui-strings") return { ok: true, json: async () => STRINGS } as Response;
+        if (path === "/api/whoami") return { ok: true, json: async () => ({ id: "u-dan", name: "Dan", permissions: ["Admin.Configure"] }) } as Response;
+        if (path === "/api/tasks") return { ok: true, json: async () => ({ tasks: [], counts: {} }) } as Response;
+        if (path === "/api/org/overview") return { ok: true, json: async () => EMPTY_OVERVIEW } as Response;
+        if (path === "/api/approval-config") return { ok: true, json: async () => EMPTY_CONFIG } as Response;
+        if (path === "/api/org/cost-centres") return { ok: true, json: async () => EMPTY_COST_CENTRES } as Response;
+        if (path.endsWith("/csv-format")) return { ok: true, json: async () => csvFormat(path.split("/")[3]) } as Response;
+        if (path === "/api/coding-lists/commodity_code") return { ok: true, json: async () => EMPTY_CODING_LIST } as Response;
+        if (path === "/api/coding-lists/gl_code") return { ok: true, json: async () => EMPTY_CODING_LIST } as Response;
+        if (path === "/api/coding-lists/project") {
+          requestedUrl = String(url);
+          return { ok: true, json: async () => pageOfEntries(1, 1, 1, 50) } as Response;
+        }
+        throw new Error(`no stub for ${path}`);
+      })
+    );
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { start } = await import("/tasks.js");
+    await start();
+    const { open } = await import("/ap-setup.js");
+    await open();
+    switchCodingSubTab("Project");
+
+    const search = document.getElementById("codingsearch-project") as HTMLInputElement;
+    search.value = "widgets";
+    search.dispatchEvent(new Event("change"));
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(requestedUrl).toContain("search=widgets");
+    expect(requestedUrl).toContain("page=1");
+  });
+
+  it("keeps focus on the search box after a search reloads the table", async () => {
+    await openApSetupAs();
+    switchCodingSubTab("Project");
+
+    const search = document.getElementById("codingsearch-project") as HTMLInputElement;
+    search.value = "widgets";
+    search.dispatchEvent(new Event("change"));
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(document.activeElement?.id).toBe("codingsearch-project");
+  });
+
+  it("shows a message distinct from the empty state when a search matches nothing", async () => {
+    await openApSetupAs(EMPTY_OVERVIEW, EMPTY_COST_CENTRES, {
+      "/api/coding-lists/project": { declaredFilters: [], entries: [], total: 0, page: 1, pageSize: 50 },
+    });
+    switchCodingSubTab("Project");
+
+    const search = document.getElementById("codingsearch-project") as HTMLInputElement;
+    search.value = "no such thing";
+    search.dispatchEvent(new Event("change"));
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(document.body.textContent).toContain("No entries match your search.");
+    expect(document.body.textContent).not.toContain("No projects configured yet.");
+  });
+
+  it("shows every page size actually offered", async () => {
+    await openApSetupAs();
+    switchCodingSubTab("Project");
+    const options = [...document.querySelectorAll("#codingrowsize-project option")].map((o) => (o as HTMLOptionElement).value);
+    expect(options).toEqual(["25", "50", "100", "200"]);
+  });
+
+  it("disables first and previous on the first page, and next/last stay enabled mid-result", async () => {
+    await openApSetupAs(EMPTY_OVERVIEW, EMPTY_COST_CENTRES, {
+      "/api/coding-lists/project": pageOfEntries(50, 120, 1, 50),
+    });
+    switchCodingSubTab("Project");
+
+    expect(document.querySelector('[aria-label="First page"]')?.disabled).toBe(true);
+    expect(document.querySelector('[aria-label="Previous page"]')?.disabled).toBe(true);
+    expect(document.querySelector('[aria-label="Next page"]')?.disabled).toBe(false);
+    expect(document.querySelector('[aria-label="Last page"]')?.disabled).toBe(false);
+  });
+
+  it("disables next and last on the last page", async () => {
+    await openApSetupAs(EMPTY_OVERVIEW, EMPTY_COST_CENTRES, {
+      "/api/coding-lists/project": pageOfEntries(20, 120, 3, 50),
+    });
+    switchCodingSubTab("Project");
+
+    expect(document.querySelector('[aria-label="Next page"]')?.disabled).toBe(true);
+    expect(document.querySelector('[aria-label="Last page"]')?.disabled).toBe(true);
+    expect(document.querySelector('[aria-label="First page"]')?.disabled).toBe(false);
+    expect(document.querySelector('[aria-label="Previous page"]')?.disabled).toBe(false);
+  });
+
+  it("shows the range as text", async () => {
+    await openApSetupAs(EMPTY_OVERVIEW, EMPTY_COST_CENTRES, {
+      "/api/coding-lists/project": pageOfEntries(50, 120, 2, 50),
+    });
+    switchCodingSubTab("Project");
+    expect(document.body.textContent).toContain("51–100 of 120");
+  });
+
+  it("clicking next advances the page while keeping the same search term", async () => {
+    let requestedUrl = "";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        const path = String(url).split("?")[0];
+        if (path === "/api/ui-strings") return { ok: true, json: async () => STRINGS } as Response;
+        if (path === "/api/whoami") return { ok: true, json: async () => ({ id: "u-dan", name: "Dan", permissions: ["Admin.Configure"] }) } as Response;
+        if (path === "/api/tasks") return { ok: true, json: async () => ({ tasks: [], counts: {} }) } as Response;
+        if (path === "/api/org/overview") return { ok: true, json: async () => EMPTY_OVERVIEW } as Response;
+        if (path === "/api/approval-config") return { ok: true, json: async () => EMPTY_CONFIG } as Response;
+        if (path === "/api/org/cost-centres") return { ok: true, json: async () => EMPTY_COST_CENTRES } as Response;
+        if (path.endsWith("/csv-format")) return { ok: true, json: async () => csvFormat(path.split("/")[3]) } as Response;
+        if (path === "/api/coding-lists/commodity_code") return { ok: true, json: async () => EMPTY_CODING_LIST } as Response;
+        if (path === "/api/coding-lists/gl_code") return { ok: true, json: async () => EMPTY_CODING_LIST } as Response;
+        if (path === "/api/coding-lists/project") {
+          requestedUrl = String(url);
+          return { ok: true, json: async () => pageOfEntries(50, 120, 1, 50) } as Response;
+        }
+        throw new Error(`no stub for ${path}`);
+      })
+    );
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { start } = await import("/tasks.js");
+    await start();
+    const { open } = await import("/ap-setup.js");
+    await open();
+    switchCodingSubTab("Project");
+
+    const search = document.getElementById("codingsearch-project") as HTMLInputElement;
+    search.value = "widgets";
+    search.dispatchEvent(new Event("change"));
+    await new Promise((r) => setTimeout(r, 0));
+
+    const nextButton = document.querySelector<HTMLButtonElement>('[aria-label="Next page"]');
+    nextButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(requestedUrl).toContain("page=2");
+    expect(requestedUrl).toContain("search=widgets");
+  });
+});
+
+/**
+ * **A create/edit form's own pickers fetch every entry, lazily —
+ * decision 0446.** Cost Centre's own parent picker instead reads
+ * `/org/overview`'s lightweight `costCentres` list, entirely
+ * independent of whatever page the table itself currently shows.
+ */
+describe("a create/edit form's own pickers see every entry, not just the current page — decision 0446", () => {
+  it("Cost Centre's parent picker offers a cost centre from /org/overview even when it is not on the table's own current page", async () => {
+    await openApSetupAs(
+      { ...EMPTY_OVERVIEW, costCentres: [{ id: "group", name: "Group HQ" }] },
+      {
+        // The table's own current page holds a different row entirely —
+        // the picker must not be limited to it.
+        costCentres: [
+          { id: "it", name: "IT", ledgerId: null, ledgerName: null, parentCostCentreId: null, parentName: null, ownerUserId: null, ownerName: null, approvalLimit: null, filters: [] },
+        ],
+        total: 2,
+        page: 1,
+        pageSize: 50,
+      }
+    );
+    switchCodingSubTab("Cost Centre");
+    const listPanel = [...document.querySelectorAll(".panel")].at(-1);
+    listPanel?.querySelector("tbody tr")?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    const parentSelect = document.querySelector<HTMLSelectElement>(".editgrid select");
+    const options = [...(parentSelect?.options ?? [])].map((o) => o.textContent);
+    expect(options).toContain("Group HQ");
+  });
+
+  it("a coding list's own parent picker is fetched fresh with `all=1`, independent of the table's own current page", async () => {
+    let requestedFullFetchUrl = "";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        const path = String(url).split("?")[0];
+        if (path === "/api/ui-strings") return { ok: true, json: async () => STRINGS } as Response;
+        if (path === "/api/whoami") return { ok: true, json: async () => ({ id: "u-dan", name: "Dan", permissions: ["Admin.Configure"] }) } as Response;
+        if (path === "/api/tasks") return { ok: true, json: async () => ({ tasks: [], counts: {} }) } as Response;
+        if (path === "/api/org/overview") return { ok: true, json: async () => EMPTY_OVERVIEW } as Response;
+        if (path === "/api/approval-config") return { ok: true, json: async () => EMPTY_CONFIG } as Response;
+        if (path === "/api/org/cost-centres") return { ok: true, json: async () => EMPTY_COST_CENTRES } as Response;
+        if (path.endsWith("/csv-format")) return { ok: true, json: async () => csvFormat(path.split("/")[3]) } as Response;
+        if (path === "/api/coding-lists/commodity_code") return { ok: true, json: async () => EMPTY_CODING_LIST } as Response;
+        if (path === "/api/coding-lists/gl_code") return { ok: true, json: async () => EMPTY_CODING_LIST } as Response;
+        if (path === "/api/coding-lists/project") {
+          const isAll = String(url).includes("all=1");
+          if (isAll) requestedFullFetchUrl = String(url);
+          return {
+            ok: true,
+            json: async () =>
+              isAll
+                ? pageOfEntries(2, 2, 1, 2)
+                : pageOfEntries(1, 120, 1, 1), // the table's own current page — just one row
+          } as Response;
+        }
+        throw new Error(`no stub for ${path}`);
+      })
+    );
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { start } = await import("/tasks.js");
+    await start();
+    const { open } = await import("/ap-setup.js");
+    await open();
+    switchCodingSubTab("Project");
+
+    const addButton = [...document.querySelectorAll(".cardhead button")].find((b) => b.textContent?.includes("Add"));
+    addButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(requestedFullFetchUrl).toContain("all=1");
+    const parentSelect = document.querySelector<HTMLSelectElement>(".editgrid select");
+    // The lazily-fetched `all=1` response (2 rows), not the table's
+    // own single-row current page.
+    expect(parentSelect?.options.length).toBe(3); // "None" plus the 2 fetched entries
   });
 });
 
@@ -673,6 +982,9 @@ describe("saving fails", () => {
     switchCodingSubTab("Project");
     const addButton = [...document.querySelectorAll(".cardhead button")].find((b) => b.textContent?.includes("Add"));
     addButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    // openCodingEntryEditor()'s own lazy fetch — see the comment on
+    // this same wait above, in the Project describe block.
+    await new Promise((r) => setTimeout(r, 0));
 
     const inputs = document.querySelectorAll<HTMLInputElement>(".editgrid input[type=text]");
     inputs[0].value = "p1";
