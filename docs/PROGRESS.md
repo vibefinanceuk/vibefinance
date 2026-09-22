@@ -3269,6 +3269,17 @@ testing a placeholder key (0097). Every one had tests, all calling the
 handler directly, which says nothing about whether the router protects
 it. **Exercise the real path, not the piece you believe is on it.**
 
+**`git bundle create file.bundle <base>..HEAD` records the ref as a
+bare `HEAD`, not `refs/heads/main`.** Decision 0446's own delivery
+bundle was built this way and verified clean (`git bundle verify`
+reported it "okay"), but the operator's own `git pull file.bundle
+main` then failed — *"fatal: couldn't find remote ref main"* — because
+the bundle held no ref by that name to find. A bundle can be
+structurally valid and still fail the one operation it exists for.
+**Bundle with the branch name, not `HEAD`** (`<base>..main`), and check
+`git bundle verify`'s own output names `refs/heads/main` before
+delivering, not just that it says "okay."
+
 **A route existing in the backend proves nothing about whether a
 browser can reach it.** `vf-ui` forwards `/api/*` to `vf-app` only for
 paths on its own explicit allow-list — a second gate, entirely
