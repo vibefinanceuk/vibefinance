@@ -1,9 +1,15 @@
 # 0441 — AP Setup: the proxy never carried its own new routes
 
-**Status: built, tested. Not yet pushed or deployed** — this session
-still has no push access to `vibefinanceuk/vibefinance`; delivered as a
-git bundle for the operator's own pull/push/deploy sequence, the same
-path decisions 0391, 0415–0440 already used.
+**Status: built, tested, pushed and deployed, confirmed directly** —
+`origin/main` fetched directly reads `3aadf95`, matching this session's
+own commit exactly; the operator confirmed with *"deployed and
+pushed."* This session still has no push access to
+`vibefinanceuk/vibefinance`; delivered as a git bundle for the
+operator's own pull/push/deploy sequence, the same path decisions 0391,
+0415–0440 already used. **The proxy fix alone did not close the
+report** — see "What was found next, after this deployed," below; the
+report is fully resolved only as of the operator's own *"that worked -
+thank you."*
 
 ---
 
@@ -97,6 +103,55 @@ before touching anything, with a `git stash` of this decision's own
 changes: the failure reproduces identically on decision 0440's own
 already-delivered commit, so it predates this session's proxy fix and
 is not something the proxy change caused.
+
+## What was found next, after this deployed
+
+The operator deployed and pushed this decision's own fix, then
+reported back: *"deployed and pushed - but I get the same error?"*
+Same wording, genuinely different cause — this session cannot sign in
+to the live instance to reproduce directly (no credentials are entered
+on the operator's behalf), so the operator's own browser console was
+asked for instead. It showed the proxy fix had, in fact, worked: `GET
+/api/org/overview` now returned `200`, and `GET /api/approval-config`
+returned `500` — a real request reaching `vf-app`, not the `{"error":
+"not found"}` a missing allowlist entry gives. `ap-setup.js`'s own
+`load()` fails identically, with the same generic "AP Setup could not
+be loaded" text, whether the underlying cause is a rejected fetch or a
+server error — the two failures look the same on screen but are
+opposite in cause.
+
+`handleGetApprovalConfig`'s first query reads `org_approval_config`,
+the singleton table decision 0439's own migration (`0075`) creates and
+seeds with one row. That migration, and the route built on top of it,
+are both covered by passing tests — so this was read as a live-database
+question, not a code one, and put to the operator directly rather than
+guessed at: a read-only check against the real database. It came back
+unambiguous:
+
+```
+$ npx wrangler d1 execute vf-app-poc --remote --command \
+    "SELECT mode, default_approver_user_id FROM org_approval_config WHERE id = 1"
+✘ no such table: org_approval_config: SQLITE_ERROR
+```
+
+**Migration `0075` had never actually applied to `vf-app-poc`**, despite
+being reported and recorded as confirmed live when decision 0439
+itself shipped. Nothing in that record was dishonest — the operator's
+own "pushed and deployed" at the time was true of the *code*; this
+project has always kept applying a migration as a separate, deliberate,
+operator-run step from deploying a worker (`apply_migrations.py
+--remote`, never run by this session), and that one step was missed
+for `0075` specifically. It is also the first time anything actually
+exercised `org_approval_config` live — decision 0440's own screen never
+got past the proxy rejection to reach it, so there was no earlier
+chance for a missing table to surface.
+
+**Fixed with no code change**: the operator ran
+`migrations/apply_migrations.py --remote` (default database
+`vf-app-poc`, the same one just queried), which applied `0075` — the
+two override tables, `org_approval_config` itself, and its one seeded
+row — and confirmed working immediately after: *"that worked - thank
+you."*
 
 ## Tests
 

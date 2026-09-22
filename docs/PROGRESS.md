@@ -1534,6 +1534,19 @@ section for the full reasoning and tests.
   four the same already-documented, pre-existing `document-window.
   test.ts` flake decision 0440's own delivery note named, unrelated to
   either fix here.
+- **Deploying the proxy fix alone did not resolve the report.** Same
+  message, a different cause: the operator's browser console showed
+  `/api/org/overview` at `200` and `/api/approval-config` at `500` — the
+  proxy fix genuinely worked (a `404` would mean it hadn't). A direct,
+  operator-run, read-only query (`wrangler d1 execute vf-app-poc
+  --remote`) found `org_approval_config` did not exist: decision 0439's
+  own migration `0075`, reported confirmed applied at the time, had
+  never actually run against the real `vf-app-poc` database — this
+  project keeps applying a migration a separate, operator-run step from
+  deploying a worker, and that step was missed for `0075`. Nothing in
+  `vf-app`, `vf-ui` or `vf-licence` changed; fixed by the operator
+  running `apply_migrations.py --remote`, confirmed with *"that worked
+  - thank you."*
 
 ### Purchase orders and matching
 - Purchase order storage grounded in Peppol BIS Order Only 3.3, via UBL
