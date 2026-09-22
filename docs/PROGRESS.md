@@ -1674,6 +1674,21 @@ section for the full reasoning and tests.
 - **Not built**: deriving a GL code from a commodity code automatically
   during invoice coding (SAP's own OBYC shape) — the data this would
   need now exists; the derivation itself does not.
+- **Deployed, then failed live with decision 0441's own exact report**
+  — *"AP Setup could not be loaded."* This time the proxy allowlist
+  was already correct (checked directly rather than re-traced); the
+  operator's own browser console instead showed `overview 200, config
+  200, cost centres 500, project 500, commodity code 500, gl code
+  500` — the two unchanged routes succeeded, the four routes reading
+  migration `0076`'s new tables all failed the same way. `0076` had
+  been written and replay-tested but never separately applied to
+  `vf-app-poc` — the third time this session the deploy-a-worker /
+  apply-a-migration split has been missed (`0075`, `0146`). **Read
+  from the console alone, with no code re-traced**, matching this
+  file's own "instrument the boundary" and "report what happened, not
+  just that it happened" habits. Fixed with no code change: the
+  operator ran `apply_migrations.py --remote`, confirmed with *"that
+  worked - thank you."*
 
 ### Purchase orders and matching
 - Purchase order storage grounded in Peppol BIS Order Only 3.3, via UBL
