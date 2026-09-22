@@ -2147,6 +2147,67 @@ section for the full reasoning and tests.
   *"tested as working."* One migration still needs its own separate
   apply: `0151_tasks_search_and_pagination_strings.sql`.
 
+### Cost-Object Approval Hierarchy — investigation and mock-up (0450)
+- The operator's own follow-up once Account Coding (0444/0446) was
+  live: *"now we have built the account coding structure, it makes the
+  Cost-Object approval more feasible. Please can you investigate how
+  cost-object approval hierarchy could look mapping budget holders for
+  a cost-object at line level in configuration. Specifically can you
+  mock-up how that would look in the AP Setup and Approval Hierarchy
+  configuration we have."* Investigation and a mock-up, explicitly —
+  not a build, and not treated as one.
+- **The gap, found rather than assumed**: Cost-Object mode (0439) has
+  only ever been able to see one cost object — a line's `BT-133` cost
+  centre, walked via `resolveApprovalChain` (0195). Project, Commodity
+  Code, and General Ledger Code (0444) each already carry an Approver
+  and a self-referential parent identical in shape to Cost Centre's
+  own — and neither is wired into the resolver, nor does either carry
+  an approval limit the way Cost Centre does. An Account Coding
+  Approver on any of the three greenfield lists today is purely
+  descriptive.
+- **This is the exact gap decision 0184 (the project's own original
+  cost-object-approval research) left open from the start** — *"what a
+  cost object is, here"*, blocked on *"a project code would need
+  somewhere to come from."* Account Coding is that somewhere; this
+  decision is the follow-up 0184 itself called for.
+- **One of 0184's other open questions stays closed, deliberately, not
+  reopened**: which amount a limit is tested against (the line, the
+  cost object's own portion, or the invoice total) — 0439 already
+  settled this in practice for line-scope resolution (a line's own
+  `BT-131`, never an aggregate), and this design keeps that rather
+  than relitigating it.
+- **Proposed shape** (write-up: `docs/design/cost-object-approval-
+  hierarchy.md`): add `approval_limit` to `coding_list_entries` (same
+  shape `cost_centres.approval_limit` already is); generalize the
+  chain walk to dispatch by cost-object type rather than rewriting it,
+  since `cost_centres` keeps its own dedicated table (0076's own
+  explicit decision, unchanged); and a configurable priority order
+  across the four dimensions, honest that only one of them
+  (Cost Centre) is ever actually captured on an invoice line today.
+- **Mock-up** (`docs/design/mockups/cost-object-approval.html`): a
+  Cost-Object Priority panel added to the Approval Hierarchy tab —
+  reorderable, one row per dimension, an honest "Not yet captured on
+  invoice lines" badge on the three that have nowhere on a line to
+  come from yet, and a worked walk-through of how a line would
+  resolve; an Approval Limit column and field added to Account
+  Coding's Project/Commodity Code/GL Code tables, the same place Cost
+  Centre's own already sits. Every proposed element is marked with a
+  dashed amber box and a "Proposed — not built" tag so it is never
+  mistaken for the shipped screen.
+- **Three questions named as genuinely open, not quietly assumed**:
+  whether priority means first-match-wins (what the mock-up assumes,
+  matching what a single resolver call already does today) or
+  all-enabled-dimensions-must-approve (0184's own literal "parallel
+  across cost objects" reading); how a line ever gets coded to a
+  Project/Commodity Code/GL Code at all — no mechanism exists today,
+  and this is real, separate, unbuilt scope, not a mock-up detail
+  glossed over; and whether the per-line-amount convention above still
+  holds once a line can carry more than one cost-object dimension at
+  once.
+- **Not built**: no migration, no resolver change, no route, no change
+  to `ap-setup.js` or `coding-lists.js`. Documentation and a static
+  mock-up only — nothing to deploy, apply, or test.
+
 ### Purchase orders and matching
 - Purchase order storage grounded in Peppol BIS Order Only 3.3, via UBL
   XML ingestion (0081) and CSV load (0370) — the same tables, the same

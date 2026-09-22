@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Cost-Object Approval — VibeFinance mock-up</title>
+<link rel="stylesheet" href="tokens.css" />
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.2.0/dist/tabler-icons.min.css" />
+<style>
+  body { padding: 2rem 1.25rem; }
+  .page { max-width: 980px; }
+
+  /* Same component names the real screen already uses — ap-setup.js
+     and app.css — reproduced here only as far as this mock-up needs. */
+  .panel {
+    background: var(--surface-2);
+    border: 0.5px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px 18px;
+    margin: 0 0 14px;
+  }
+  .cardhead { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+  .cardhead > h3 { margin: 0; font-size: var(--text-lg); }
+  .muted { color: var(--text-secondary); }
+  .sm { font-size: var(--text-sm); }
+  .editgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 14px; margin: 10px 0; }
+  .editgrid > label { color: var(--text-muted); align-self: end; }
+  .editgrid > select, .editgrid > input { width: 100%; }
+
+  .tabbar { display: flex; align-items: center; gap: 2px; background: var(--surface-1); border: 0.5px solid var(--border); border-radius: 999px; padding: 3px; margin: 4px 0 16px; width: fit-content; }
+  .tabbar .tab { background: none; border: 0.5px solid transparent; border-radius: 999px; padding: 6px 14px; color: var(--text-muted); font-size: var(--text-base); }
+  .tabbar .tab.active { background: var(--surface-2); border-color: var(--border-strong); box-shadow: var(--tab-active-shadow); color: var(--text-primary); font-weight: 600; }
+
+  table { width: 100%; border-collapse: collapse; margin-top: 6px; }
+  th { text-align: left; font-size: var(--text-sm); font-weight: 600; color: var(--text-muted); padding: 0 10px 8px; border-bottom: 0.5px solid var(--border); white-space: nowrap; }
+  td { padding: 10px; border-bottom: 0.5px solid var(--border); vertical-align: top; font-size: var(--text-base); }
+  tbody tr:last-child td { border-bottom: none; }
+
+  .actionlink { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: var(--radius); border: 0.5px solid var(--border-strong); background: var(--surface-2); font-size: var(--text-base); cursor: pointer; }
+  .actionlink.primary { background: var(--text-accent); border-color: var(--text-accent); color: white; }
+  .actionlink.small { padding: 3px 8px; font-size: var(--text-sm); }
+
+  /* What's proposed here, not yet real — a dashed accent border, never
+     the solid app chrome, so a screenshot of this file is never
+     mistaken for the shipped screen. */
+  .proposed {
+    border: 1px dashed var(--border-accent);
+    border-radius: var(--radius);
+    background: var(--bg-accent);
+    padding: 14px 16px;
+    margin: 14px 0 0;
+  }
+  .proposed .tag {
+    display: inline-block;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--text-accent);
+    background: var(--surface-2);
+    border: 0.5px solid var(--border-accent);
+    border-radius: 999px;
+    padding: 2px 8px;
+    margin-bottom: 8px;
+  }
+
+  .priorow {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
+    background: var(--surface-2);
+    border: 0.5px solid var(--border);
+    border-radius: var(--radius);
+    margin-bottom: 6px;
+  }
+  .priorow:last-child { margin-bottom: 0; }
+  .priorow .rank { font-variant-numeric: tabular-nums; color: var(--text-muted); width: 18px; }
+  .priorow .name { font-weight: 500; flex: 0 0 190px; }
+  .priorow .gap {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    color: var(--text-warning);
+    background: var(--bg-warning);
+    border: 0.5px solid var(--border-warning);
+    border-radius: 999px;
+    padding: 2px 8px;
+    margin-right: auto;
+  }
+  .priorow .order-btns { display: flex; gap: 2px; }
+  .priorow .order-btns button { padding: 2px 6px; }
+  .switch {
+    position: relative; width: 34px; height: 20px; flex-shrink: 0;
+    background: var(--border-strong); border-radius: 999px; cursor: pointer; border: none;
+  }
+  .switch.on { background: var(--text-accent); }
+  .switch::after {
+    content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px;
+    background: white; border-radius: 50%; transition: left 0.15s;
+  }
+  .switch.on::after { left: 16px; }
+
+  .newcol { background: var(--bg-accent); }
+  th.newcol { color: var(--text-accent); }
+
+  .walk {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    font-size: var(--text-sm); font-family: monospace;
+  }
+  .walk .step { padding: 4px 8px; border-radius: 6px; border: 0.5px solid var(--border); background: var(--surface-1); }
+  .walk .step.stop { border-color: var(--border-success); background: var(--bg-success); color: var(--text-success); font-weight: 600; }
+  .walk .step.skip { color: var(--text-muted); text-decoration: line-through; }
+</style>
+</head>
+<body>
+<div class="page">
+
+<h1>Cost-Object Approval — mapping budget holders per cost object, at line level</h1>
+<p class="note">
+  Two extensions to a screen that already exists and is already live —
+  AP Setup's Approval Hierarchy and Account Coding tabs (decisions 0440,
+  0444). Reasoning, what's already built, and what this deliberately
+  leaves open for a real decision are in
+  <code>docs/design/cost-object-approval-hierarchy.md</code>.
+  Everything inside a dashed amber box below is proposed and does not
+  exist in the app today; everything outside one is the real, shipped
+  screen, reproduced here only as far as this mock-up needs.
+</p>
+
+<div class="tabbar">
+  <button class="tab" id="tab-hierarchy-btn">Approval Hierarchy</button>
+  <button class="tab" id="tab-coding-btn">Account Coding</button>
+</div>
+
+<!-- ================= APPROVAL HIERARCHY TAB ================= -->
+<div id="tab-hierarchy">
+
+  <div class="panel">
+    <div class="cardhead">
+      <h3>Approval Hierarchy</h3>
+      <button class="actionlink primary"><i class="ti ti-device-floppy" aria-hidden="true"></i><span>Save</span></button>
+    </div>
+    <p class="muted sm">How an invoice's Approval stage decides who signs.</p>
+    <div class="editgrid">
+      <label>Mode</label>
+      <select>
+        <option>Employee-Supervisor</option>
+        <option selected>Cost-Object</option>
+        <option>Manual</option>
+        <option>API</option>
+      </select>
+      <label>Default Approver</label>
+      <select>
+        <option selected>Priya Shah</option>
+        <option>Dan Young</option>
+        <option>Alice Okafor</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="proposed">
+    <span class="tag">Proposed — not built</span>
+    <div class="cardhead">
+      <h3>Cost-Object Priority</h3>
+    </div>
+    <p class="muted sm">
+      Shown because Mode is set to Cost-Object. Which cost-object
+      dimension routes a line's approval, and in what order, when a
+      line carries more than one. The highest-priority dimension that
+      is both switched on and coded on the line wins; the rest are not
+      consulted (see the walk-through below, and the open question in
+      the design doc about whether this should instead require every
+      enabled dimension to approve).
+    </p>
+
+    <div id="priolist"></div>
+
+    <p class="sm muted" style="margin-top:10px;">
+      Reordering here would reuse the same drag control the Process
+      screen's own stage sequence already has (decision 0352) — shown
+      as up/down buttons in this static file only.
+    </p>
+  </div>
+
+  <div class="proposed" style="margin-top:14px;">
+    <span class="tag">Proposed — not built</span>
+    <h3 style="margin:0 0 6px;">How a line would resolve</h3>
+    <p class="muted sm" style="margin-top:0;">
+      A worked example — an €8,400 line coded to GL Code 6100 (Office
+      Supplies, no approver configured) and Cost Centre DE01
+      (Manufacturing DE, owner Alice Okafor, €5,000 limit, parent
+      Cost Centre DE00 owned by Priya Shah with no limit set).
+    </p>
+    <div class="walk">
+      <span class="step skip">1. General Ledger Code — highest priority, not enabled</span>
+      <span>→</span>
+      <span class="step skip">2. Commodity Code — not coded on this line</span>
+      <span>→</span>
+      <span class="step">3. Cost Centre DE01 — Alice Okafor, €5,000 limit — exceeded</span>
+      <span>→</span>
+      <span class="step stop">DE01 → DE00 — Priya Shah, no limit — covers €8,400 ✓</span>
+    </div>
+  </div>
+
+</div>
+
+<!-- ================= ACCOUNT CODING TAB ================= -->
+<div id="tab-coding" style="display:none;">
+
+  <div class="panel">
+    <div class="cardhead">
+      <h3>General Ledger Code</h3>
+      <button class="actionlink primary"><i class="ti ti-plus" aria-hidden="true"></i><span>Add</span></button>
+    </div>
+    <p class="muted sm">
+      The Approval Limit column is the proposed addition — Cost Centre
+      already has one; Project, Commodity Code and General Ledger Code
+      do not, today.
+    </p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Parent</th>
+          <th>Approver</th>
+          <th class="newcol">Approval Limit <span style="font-weight:400;">(proposed)</span></th>
+          <th>Company code</th>
+          <th>Commodity Code</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>6100 — Office Supplies</td>
+          <td class="muted">6000 — Operating Expenses</td>
+          <td class="muted">—</td>
+          <td class="newcol muted">—</td>
+          <td class="muted">Acme DE</td>
+          <td class="muted">—</td>
+        </tr>
+        <tr>
+          <td>6410 — IT Hardware</td>
+          <td class="muted">6400 — IT &amp; Telecoms</td>
+          <td class="muted">Mo Idris</td>
+          <td class="newcol">€2,500</td>
+          <td class="muted">Acme DE</td>
+          <td class="muted">IT-HW</td>
+        </tr>
+        <tr>
+          <td>6420 — Software Licences</td>
+          <td class="muted">6400 — IT &amp; Telecoms</td>
+          <td class="muted">Mo Idris</td>
+          <td class="newcol">€2,500</td>
+          <td class="muted">Acme DE</td>
+          <td class="muted">IT-SW</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="panel">
+    <div class="cardhead"><h3>Edit entry — 6410 IT Hardware</h3></div>
+    <div class="editgrid">
+      <label>ID</label>
+      <input value="6410" disabled />
+      <label>Name</label>
+      <input value="IT Hardware" />
+      <label>Parent</label>
+      <select><option selected>6400 — IT &amp; Telecoms</option></select>
+      <label>Default</label>
+      <input type="checkbox" style="width:auto;" />
+      <label>Approver</label>
+      <select><option selected>Mo Idris</option></select>
+    </div>
+    <div class="proposed" style="margin-top:2px;">
+      <span class="tag">Proposed — not built</span>
+      <div class="editgrid" style="margin:0;">
+        <label>Approval Limit</label>
+        <input type="number" value="2500" />
+      </div>
+      <p class="muted sm" style="margin-bottom:0;">
+        Same shape Cost Centre's own edit form already has — a null
+        limit is the unlimited top of its own chain, on purpose, the
+        same convention <code>resolveApprovalChain</code> already
+        uses.
+      </p>
+    </div>
+  </div>
+
+</div>
+
+</div>
+
+<script>
+(function () {
+  var hierarchyBtn = document.getElementById('tab-hierarchy-btn');
+  var codingBtn = document.getElementById('tab-coding-btn');
+  var hierarchy = document.getElementById('tab-hierarchy');
+  var coding = document.getElementById('tab-coding');
+
+  function show(which) {
+    hierarchy.style.display = which === 'hierarchy' ? '' : 'none';
+    coding.style.display = which === 'coding' ? '' : 'none';
+    hierarchyBtn.classList.toggle('active', which === 'hierarchy');
+    codingBtn.classList.toggle('active', which === 'coding');
+  }
+  hierarchyBtn.addEventListener('click', function () { show('hierarchy'); });
+  codingBtn.addEventListener('click', function () { show('coding'); });
+  show('hierarchy');
+
+  // Cost-Object priority list — enabled state, gap badge, and
+  // up/down reordering, all client-side for this static file.
+  var rows = [
+    { name: 'General Ledger Code', enabled: false, captured: false },
+    { name: 'Commodity Code', enabled: false, captured: false },
+    { name: 'Cost Centre', enabled: true, captured: true },
+    { name: 'Project', enabled: false, captured: false },
+  ];
+
+  function render() {
+    var list = document.getElementById('priolist');
+    list.innerHTML = '';
+    rows.forEach(function (row, i) {
+      var el = document.createElement('div');
+      el.className = 'priorow';
+
+      var rank = document.createElement('span');
+      rank.className = 'rank';
+      rank.textContent = (i + 1) + '.';
+      el.appendChild(rank);
+
+      var name = document.createElement('span');
+      name.className = 'name';
+      name.textContent = row.name;
+      el.appendChild(name);
+
+      if (!row.captured) {
+        var gap = document.createElement('span');
+        gap.className = 'gap';
+        gap.innerHTML = '<i class="ti ti-alert-triangle" aria-hidden="true"></i> Not yet captured on invoice lines';
+        el.appendChild(gap);
+      } else {
+        var spacer = document.createElement('span');
+        spacer.style.marginRight = 'auto';
+        el.appendChild(spacer);
+      }
+
+      var sw = document.createElement('button');
+      sw.className = 'switch' + (row.enabled ? ' on' : '');
+      sw.setAttribute('aria-label', 'Toggle ' + row.name);
+      sw.addEventListener('click', function () {
+        row.enabled = !row.enabled;
+        render();
+      });
+      el.appendChild(sw);
+
+      var btns = document.createElement('span');
+      btns.className = 'order-btns';
+      var up = document.createElement('button');
+      up.innerHTML = '<i class="ti ti-chevron-up" aria-hidden="true"></i>';
+      up.disabled = i === 0;
+      up.addEventListener('click', function () {
+        var tmp = rows[i - 1]; rows[i - 1] = rows[i]; rows[i] = tmp;
+        render();
+      });
+      var down = document.createElement('button');
+      down.innerHTML = '<i class="ti ti-chevron-down" aria-hidden="true"></i>';
+      down.disabled = i === rows.length - 1;
+      down.addEventListener('click', function () {
+        var tmp = rows[i + 1]; rows[i + 1] = rows[i]; rows[i] = tmp;
+        render();
+      });
+      btns.appendChild(up);
+      btns.appendChild(down);
+      el.appendChild(btns);
+
+      list.appendChild(el);
+    });
+  }
+  render();
+})();
+</script>
+</body>
+</html>

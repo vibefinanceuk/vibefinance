@@ -21,7 +21,18 @@ comments in the markup.
 | `activity-panel.html` | System events and messages in one chronology | section 5 |
 | `stage-rail.html` | Stage history with tasks, and the greyed remainder | section 6 |
 | `white-labelling.html` | The same screen under three liveries | section 7 |
-| `tokens.css` | The token layer all four share | section 7 |
+| `cost-object-approval.html` | Cost-Object Priority (Approval Hierarchy tab) and an Approval Limit column (Account Coding tab) — proposed additions to AP Setup, a screen already built | `../cost-object-approval-hierarchy.md` |
+| `tokens.css` | The token layer all five share | section 7 |
+
+**`cost-object-approval.html` is a different case from the other four**,
+worth flagging so it is not read the same way: it does not predate a
+build, it proposes an addition to one — AP Setup's Approval Hierarchy
+and Account Coding tabs are real, live screens (decisions 0440, 0444).
+Proposed elements are marked inline with a dashed amber box and a
+"Proposed — not built" tag rather than left to blend into the rest of
+the mock-up, so a screenshot of it is never mistaken for the shipped
+screen. Its own reasoning lives in `../cost-object-approval-hierarchy.md`,
+not `../operator-interface.md`.
 
 ## Why these are static files rather than a running app
 
