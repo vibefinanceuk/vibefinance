@@ -36,6 +36,19 @@ import { actionLink } from "/viewer.js";
  * and `coding_list_entries.approver_user_id` for the other three —
  * different columns, same word on screen, matching the operator's own
  * vocabulary rather than this app's internal naming.
+ *
+ * **CSV Template and Load — decision 0445.** *"Similar to how we have
+ * done for Loading purchase orders."* Cost Centre, Project, Commodity
+ * Code, and General Ledger Code only — Company code stays read-only,
+ * confirmed directly with the operator (it is `org_units`, generated
+ * from the org structure). The exact same mechanism as `purchase-
+ * orders.js`'s own loader: a Template button that builds a CSV purely
+ * from the server's own `GET .../csv-format` (never a hand-maintained
+ * second copy of what the parser accepts), a Load button that posts
+ * the chosen file's raw text, and an outcome panel reporting what
+ * loaded and what was refused, per row. `.csvformat`, not `.poformat`
+ * — the disclosure's own CSS was renamed alongside this decision so a
+ * generic style rule no longer carries one feature's own name.
  */
 
 const CODING_TABS = [
@@ -77,6 +90,186 @@ function section(titleKey, subKey, emptyKey, headers, rows, headerAction) {
           ]),
         ])
       : el("p", { class: "muted", text: t(emptyKey) }),
+  ]);
+}
+
+const CSV_LIST_TYPES = ["cost_centre", "project", "commodity_code", "gl_code"];
+
+/**
+ * **Fetched once, at screen open** — the same discipline `purchase-
+ * orders.js`'s own `loadFormat()` already established: by the time any
+ * tab's own loader panel renders, `csvFormats[type]` is already in its
+ * final state (a real format, or `null` on failure), so nothing here
+ * needs to react to a later state change. Called from `ap-setup.js`'s
+ * own `load()` alongside everything else that screen fetches.
+ */
+let csvFormats = {};
+
+export async function loadCodingListCsvFormats() {
+  const results = await Promise.all(
+    CSV_LIST_TYPES.map(async (listType) => {
+      try {
+        const response = await fetch(`/api/coding-lists/${listType}/csv-format`);
+        return [listType, response.ok ? await response.json() : null];
+      } catch {
+        return [listType, null];
+      }
+    })
+  );
+  csvFormats = Object.fromEntries(results);
+}
+
+/**
+ * A ready-to-fill CSV, built purely from the recommended (first-listed)
+ * column of every field the format describes — mirrors `purchase-
+ * orders.js`'s own `downloadTemplate()` exactly.
+ */
+function downloadCsvTemplate(listType) {
+  const format = csvFormats[listType];
+  if (!format) return;
+  const csv = format.fields.map((f) => f.columns[0]).join(",") + "\n";
+  const blob = new Blob([csv], { type: "text/csv" });
+  const url = URL.createObjectURL(blob);
+  const anchor = el("a", { href: url, download: `${listType}-template.csv` });
+  document.body.append(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+}
+
+function csvFieldRow(spec) {
+  return el("tr", {}, [
+    el("td", { text: spec.key }),
+    el("td", { class: "muted", text: spec.columns.join(", ") }),
+    el("td", { text: spec.required ? t("apsetup.csvrequired") : "—" }),
+  ]);
+}
+
+/** Fetched once at screen open, so opening this disclosure costs nothing further — no per-expand fetch. */
+function csvFormatReference(listType) {
+  const format = csvFormats[listType];
+  if (!format) return el("div", {});
+  return el("details", { class: "csvformat" }, [
+    el("summary", { text: t("apsetup.csvviewformat") }),
+    el("div", { class: "tablewrap" }, [
+      el("table", {}, [
+        el("thead", {}, [
+          el("tr", {}, [
+            el("th", { text: t("apsetup.csvfieldname") }),
+            el("th", { text: t("apsetup.csvacceptedcolumns") }),
+            el("th", { text: t("apsetup.csvrequired") }),
+          ]),
+        ]),
+        el("tbody", {}, format.fields.map(csvFieldRow)),
+      ]),
+    ]),
+  ]);
+}
+
+/** What a load did — mirrors `purchase-orders.js`'s own `outcome()`, refused rows keyed by id rather than order number. */
+function csvOutcome(result) {
+  const lines = [
+    el("div", { text: t("apsetup.csventriescreated").replace("{n}", String(result.entriesCreated)) }),
+    el("div", { class: "muted", text: t("apsetup.csventriesupdated").replace("{n}", String(result.entriesUpdated)) }),
+  ];
+  if (result.refused?.length > 0) {
+    lines.push(el("h3", { text: t("apsetup.csvrefusedheading") }));
+    for (const row of result.refused.slice(0, 20)) {
+      lines.push(
+        el("div", {
+          class: "warn",
+          text: t("apsetup.csvrefusedentry").replace("{id}", row.id).replace("{reason}", row.reason),
+        })
+      );
+    }
+    if (result.refused.length > 20) {
+      lines.push(el("div", { class: "muted", text: t("apsetup.csvrefusedmore").replace("{n}", String(result.refused.length - 20)) }));
+    }
+  }
+  return el("div", { class: "panel" }, lines);
+}
+
+/**
+ * **The loader panel itself** — one per list type, placed above that
+ * list's own table. Template + Load, top-right of its own card (the
+ * same title-left/action-right shape `.cardhead` already gives every
+ * other card on this screen), a bare file input, and the format
+ * disclosure below — mirrors `purchase-orders.js`'s own `loader()`
+ * almost line for line.
+ */
+function csvLoaderPanel(listType, refresh) {
+  // **Found by id after `refresh()`, not held as a closure reference**
+  // — the same fix `purchase-orders.js`'s own `runLoad()` already
+  // applies: `refresh()` calls `render()`, which replaces the whole
+  // screen and detaches this panel's own DOM entirely, including
+  // whatever local variable pointed at its note box. A stale reference
+  // would still accept `.replaceChildren()` without error — it would
+  // just never be seen, since it is no longer part of the document.
+  const noteId = `codingcsvnote-${listType}`;
+  const noteBox = el("div", { class: "muted sm", id: noteId });
+  const picker = el("input", { type: "file", accept: ".csv,text/csv" });
+  const loadButton = actionLink("load", { primary: true, onclick: () => runLoad(), label: t("apsetup.csvloadbutton") });
+
+  function note(message) {
+    const box = document.getElementById(noteId);
+    if (box) box.textContent = message ?? "";
+  }
+
+  async function runLoad() {
+    const file = picker.files?.[0];
+    if (!file) {
+      note(t("apsetup.csvnofile"));
+      return;
+    }
+    loadButton.disabled = true;
+
+    // One try per thing that can fail, not one around everything —
+    // decision 0216, the same discipline `purchase-orders.js`'s own
+    // loader already follows.
+    let response;
+    try {
+      response = await fetch(`/api/coding-lists/${encodeURIComponent(listType)}/csv-load`, {
+        method: "POST",
+        headers: { "Content-Type": "text/csv" },
+        body: await file.text(),
+      });
+    } catch {
+      note(t("apsetup.csvloadfailed"));
+      loadButton.disabled = false;
+      return;
+    }
+
+    try {
+      const body = await response.json();
+      if (!response.ok) {
+        note(body.error);
+        return;
+      }
+      await refresh();
+      const box = document.getElementById(noteId);
+      if (box) box.replaceChildren(csvOutcome(body));
+    } catch (err) {
+      note(`${t("apsetup.csvloadbroke")} ${err?.message ?? ""}`);
+    } finally {
+      loadButton.disabled = false;
+    }
+  }
+
+  const templateButton = actionLink("download", { onclick: () => downloadCsvTemplate(listType), label: t("apsetup.csvtemplatebutton") });
+  // csvFormats is already in its final state by the time this panel
+  // renders — ap-setup.js's own open() awaits loadCodingListCsvFormats()
+  // before ever calling render().
+  templateButton.disabled = !csvFormats[listType];
+
+  return el("div", { class: "panel" }, [
+    el("div", { class: "cardhead" }, [
+      el("h3", { text: t("apsetup.csvloadheading") }),
+      el("div", { class: "statebuttons" }, [templateButton, loadButton]),
+    ]),
+    el("p", { class: "muted sm", text: t("apsetup.csvloadhelp") }),
+    picker,
+    noteBox,
+    csvFormatReference(listType),
   ]);
 }
 
@@ -435,31 +628,40 @@ export function accountCodingTab({ units, users, costCentres, codingLists, refre
 
   const activeSection = {
     company_code: () => companyCodeTab(units),
-    cost_centre: () => costCentreTab(costCentres, units, users, refresh),
+    cost_centre: () => el("div", {}, [csvLoaderPanel("cost_centre", refresh), costCentreTab(costCentres, units, users, refresh)]),
     project: () =>
-      codingListTab("project", "apsetup.codingtab.project", "apsetup.codingprojectsub", "apsetup.noprojects", {
-        entries: codingLists.project.entries,
-        declaredFilters: declaredFiltersByType.project,
-        users,
-        filterSources,
-        refresh,
-      }),
+      el("div", {}, [
+        csvLoaderPanel("project", refresh),
+        codingListTab("project", "apsetup.codingtab.project", "apsetup.codingprojectsub", "apsetup.noprojects", {
+          entries: codingLists.project.entries,
+          declaredFilters: declaredFiltersByType.project,
+          users,
+          filterSources,
+          refresh,
+        }),
+      ]),
     commodity_code: () =>
-      codingListTab("commodity_code", "apsetup.codingtab.commoditycode", "apsetup.codingcommoditycodesub", "apsetup.nocommoditycodes", {
-        entries: codingLists.commodity_code.entries,
-        declaredFilters: declaredFiltersByType.commodity_code,
-        users,
-        filterSources,
-        refresh,
-      }),
+      el("div", {}, [
+        csvLoaderPanel("commodity_code", refresh),
+        codingListTab("commodity_code", "apsetup.codingtab.commoditycode", "apsetup.codingcommoditycodesub", "apsetup.nocommoditycodes", {
+          entries: codingLists.commodity_code.entries,
+          declaredFilters: declaredFiltersByType.commodity_code,
+          users,
+          filterSources,
+          refresh,
+        }),
+      ]),
     gl_code: () =>
-      codingListTab("gl_code", "apsetup.codingtab.glcode", "apsetup.codingglcodesub", "apsetup.noglcodes", {
-        entries: codingLists.gl_code.entries,
-        declaredFilters: declaredFiltersByType.gl_code,
-        users,
-        filterSources,
-        refresh,
-      }),
+      el("div", {}, [
+        csvLoaderPanel("gl_code", refresh),
+        codingListTab("gl_code", "apsetup.codingtab.glcode", "apsetup.codingglcodesub", "apsetup.noglcodes", {
+          entries: codingLists.gl_code.entries,
+          declaredFilters: declaredFiltersByType.gl_code,
+          users,
+          filterSources,
+          refresh,
+        }),
+      ]),
   }[activeCodingTab]();
 
   return el("div", {}, [codingSubTabBar(rerender), activeSection]);

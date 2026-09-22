@@ -223,7 +223,7 @@ function fieldTable(heading, specs) {
 function formatReference() {
   if (!csvFormat) return el("div", {});
 
-  return el("details", { class: "poformat" }, [
+  return el("details", { class: "csvformat" }, [
     el("summary", { text: t("purchaseorders.viewformat") }),
     fieldTable(t("purchaseorders.headercolumns"), csvFormat.header),
     fieldTable(t("purchaseorders.linecolumns"), csvFormat.line),

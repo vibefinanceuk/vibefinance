@@ -2,7 +2,7 @@ import { t } from "/strings.js";
 import { el, frame, topbar, setCurrentScreen, hasMyPermission } from "/tasks.js";
 import { actionLink } from "/viewer.js";
 import { currencyPicker } from "/access.js";
-import { accountCodingTab } from "/coding-lists.js";
+import { accountCodingTab, loadCodingListCsvFormats } from "/coding-lists.js";
 
 /**
  * AP Setup — decision 0440.
@@ -76,13 +76,23 @@ const OVERRIDE_DISPLAY_CAP = 50;
 
 async function load() {
   try {
-    const [overviewResponse, configResponse, costCentresResponse, projectResponse, commodityResponse, glResponse] = await Promise.all([
-      fetch("/api/org/overview"),
-      fetch("/api/approval-config"),
-      fetch("/api/org/cost-centres"),
-      fetch("/api/coding-lists/project"),
-      fetch("/api/coding-lists/commodity_code"),
-      fetch("/api/coding-lists/gl_code"),
+    // The CSV Template/Load help affordance (decision 0445) is fetched
+    // alongside everything else, the same "in its final state by the
+    // time render() runs" discipline `purchase-orders.js`'s own
+    // loadFormat() already established — but kept out of the ok-check
+    // just below, since its own absence degrades that one panel's
+    // Template button, not this whole screen (loadCodingListCsvFormats()
+    // never throws; a per-type fetch failure just leaves that entry null).
+    const [[overviewResponse, configResponse, costCentresResponse, projectResponse, commodityResponse, glResponse]] = await Promise.all([
+      Promise.all([
+        fetch("/api/org/overview"),
+        fetch("/api/approval-config"),
+        fetch("/api/org/cost-centres"),
+        fetch("/api/coding-lists/project"),
+        fetch("/api/coding-lists/commodity_code"),
+        fetch("/api/coding-lists/gl_code"),
+      ]),
+      loadCodingListCsvFormats(),
     ]);
     if (!overviewResponse.ok || !configResponse.ok || !costCentresResponse.ok || !projectResponse.ok || !commodityResponse.ok || !glResponse.ok) {
       console.error(

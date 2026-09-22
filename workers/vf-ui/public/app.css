@@ -691,9 +691,9 @@
    * own summary the only thing shown until a person actually wants
    * the full column reference.
    */
-  .poformat { margin-top: 14px; }
-  .poformat summary { cursor: pointer; color: var(--text-secondary); font-size: var(--text-sm); }
-  .poformat h4 { margin: 14px 0 6px; font-size: var(--text-sm); color: var(--text-secondary); }
+  .csvformat { margin-top: 14px; }
+  .csvformat summary { cursor: pointer; color: var(--text-secondary); font-size: var(--text-sm); }
+  .csvformat h4 { margin: 14px 0 6px; font-size: var(--text-sm); color: var(--text-secondary); }
   .example .morefacts summary { cursor: pointer; color: var(--text-muted); font-size: var(--text-sm); }
   .example .morefacts > div { margin-top: 5px; line-height: 1.5; }
   .example .confirmed { color: var(--text-success); font-size: var(--text-sm); font-weight: 600; }

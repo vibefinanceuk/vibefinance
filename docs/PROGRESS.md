@@ -1666,9 +1666,9 @@ section for the full reasoning and tests.
   to the existing `ui_strings` table), 21 files, all green. `vf-ui`
   Worker 74 (unchanged), 2 files, all green; browser 979 → **991**
   (+11 new `coding-lists.test.ts`, +1 `ap-setup.test.ts`), 987 green,
-  4 failed — all four in `test-browser/tasks.test.ts` (decision
-  0346's nav-listing tests, untouched here) and confirmed present on
-  a clean `origin/main` checkout too, a pre-existing unrelated flake.
+  4 failed — all four in `test-browser/document-window.test.ts`
+  (a long-documented, pre-existing unhandled-rejection flake, untouched
+  here) and confirmed present on a clean `origin/main` checkout too.
   `apply_migrations.py --replay-only` clean for both chains. `eslint
   .` clean across all three workspaces.
 - **Not built**: deriving a GL code from a commodity code automatically
@@ -1689,6 +1689,94 @@ section for the full reasoning and tests.
   just that it happened" habits. Fixed with no code change: the
   operator ran `apply_migrations.py --remote`, confirmed with *"that
   worked - thank you."*
+
+### CSV Template and Load for Account Coding (0445)
+- The operator's own follow-up ask, once the four manageable coding
+  lists existed (0444): *"for Cost Center, Project, Commodity Code and
+  General Ledger Code we introduce a CSV Template, and Load CSV icons
+  and capability, similar to how we have done for Loading purchase
+  orders."* Company code confirmed excluded directly — *"The Company
+  Code is generated from the Orgs, I think"* — correct, since it is
+  `org_units`, not a `coding_list_entries` row.
+- Cost Centre's own two real shape differences from the other three
+  (no `is_default` column at all; name immutable after creation) put to
+  the operator directly rather than guessed: match the other three
+  lists' CSV column shape exactly — "Approver" maps to Cost Centre's
+  own owner, a Default value in a Cost Centre file is silently ignored,
+  no schema change.
+- **Follows Purchase Orders' own CSV mechanism** (0370/0373): a
+  `CsvFieldSpec[]` array the parser and the format response both derive
+  from, per-row refusal rather than whole-file, a client-built Template
+  download. **Diverges deliberately in two places**: full field replace
+  per row (not PO's delete-and-reinsert — no child lines here to
+  replace underneath a single row) and never-destructive-across-rows
+  (matches PO, not Supplier's own upsert-and-deactivate — coding lists
+  are reference data a person may still edit by hand between loads, the
+  operator's own words, *"manual changes this way will be minimal,"*
+  not *never*).
+- **A genuinely new two-phase load**, needed by neither precedent:
+  phase one writes every row's own fields with its parent explicitly
+  cleared; phase two then sets whatever parent each row actually named,
+  once every id in the file is guaranteed to exist — so a child listed
+  before its own parent in the file loads correctly regardless of row
+  order, while the existing cycle-detection (`wouldCycle()`, 0444)
+  still catches a genuine cycle, since it reads live database state at
+  the moment each phase-two row runs.
+- **One route dispatching to the handlers that already exist**, not a
+  second copy of validation: `handleCreateCostCentre`/
+  `handleUpdateCostCentre` for Cost Centre, `handleCreateCodingListEntry`/
+  `handleUpdateCodingListEntry` for the other three — a CSV-loaded row
+  can never be accepted where a hand-entered one would be refused.
+- A real UI bug caught by testing, not inspection: `csvLoaderPanel`'s
+  note box held a closure-captured DOM reference it tried to update
+  *after* `await refresh()` — which replaces the entire screen's DOM —
+  so the load's own outcome would silently never have appeared. Fixed
+  the same way `purchase-orders.js`'s own `runLoad()` already solved
+  it: an `id`, re-queried with `document.getElementById()` after
+  `refresh()` completes.
+- **The recurring proxy-allowlist gap, checked this time and found
+  clear**: the existing `/^\/coding-lists\/[^/]+\/[^/]+$/` wildcard
+  (0444) already structurally matches both new CSV routes — no new
+  entry needed, the check recorded in a comment rather than left silent.
+- `.poformat` → `.csvformat`: the format-reference disclosure's own CSS
+  class, named after Purchase Orders (0373) even though its rules are
+  entirely generic, renamed now that a second feature shares it.
+- **A genuine pre-existing test-harness bug, found and fixed shipping
+  this decision's own migration**: `vf-licence/test/setup.ts`'s
+  `toOneStatementPerLine()` splits a migration's SQL on every literal
+  `;`, blind to quoted string literals — a help string containing
+  semicolons broke 267 of 320 `vf-licence` tests on the first run,
+  despite the migration replaying clean against real SQLite throughout.
+  Fixed by rewording the one string (an em dash and commas, not three
+  `;`-joined clauses) rather than making the shared splitter
+  quote-aware — smaller, and untouched by every other migration in the
+  148-long chain so far.
+- **Five pre-existing (0444) browser tests broken by this decision's
+  own UI, found and fixed as part of it**: `csvLoaderPanel` renders as
+  a `.panel` ahead of each tab's own list `.panel`, and its own
+  collapsed `<details>` still contains a real, jsdom-queryable table —
+  five bare `.panel`/`tbody tr` lookups in the pre-existing Cost
+  Centre, Project, and GL Code tests were now matching the new panel
+  instead of the list. Fixed by scoping each to the *last* `.panel` in
+  the DOM, not by weakening the new markup.
+- `vf-app` 2561 → **2587** (+26 `coding-list-csv-route.test.ts`), 113
+  files, all green. `vf-licence` 320 (unchanged in count — migration
+  `0148`, 16 keys × en/de, adds rows to the existing `ui_strings`
+  table), 21 files, all green. `vf-ui` Worker 74 (unchanged), 2 files,
+  all green; browser 991 → **1000** (+9 `coding-lists.test.ts`), 996
+  green, 4 failed — the same pre-existing `document-window.test.ts`
+  flake named above, untouched here. `apply_migrations.py --replay-only`
+  clean for both chains (`vf-app` 76 migrations/170 invariants
+  unchanged — no new `vf-app` migration this decision; `vf-licence` 148
+  migrations/73 invariants). `eslint .` clean across all three
+  workspaces.
+- **Not built**: delete for any of these four types (0444's own gap,
+  unchanged — a loaded/edited row is never removed by a load); a
+  dry-run/preview-before-load step (Purchase Orders' own CSV load has
+  never had one either).
+- **Not yet pushed or deployed.** Migration `0148` will need its own
+  separate `apply_migrations.py --remote` run after deploying — see
+  "Habits worth keeping" in `docs/HANDOVER.md`.
 
 ### Purchase orders and matching
 - Purchase order storage grounded in Peppol BIS Order Only 3.3, via UBL
@@ -2954,20 +3042,20 @@ elsewhere.
 
 | Package | Tests |
 |---|---|
-| `vf-app` | 2561 |
+| `vf-app` | 2587 |
 | `vf-licence` | 320 |
-| `vf-ui` | 74 Worker · 991 browser (987 passing, 4 known pre-existing failures — see below) |
+| `vf-ui` | 74 Worker · 1000 browser (996 passing, 4 known pre-existing failures — see below) |
 | `shared` | 295 passing, 3 known pre-existing failures |
 
 Both migration chains replay clean with every standing invariant
-holding — 76 migrations for `vf-app` (170 invariants), 147 for
-`vf-licence` (73 invariants), as of decision 0444.
+holding — 76 migrations for `vf-app` (170 invariants), 148 for
+`vf-licence` (73 invariants), as of decision 0445.
 
 **`vf-ui` browser's 4 known pre-existing failures** are all in
-`test-browser/tasks.test.ts` (decision 0346's nav-listing tests) —
-confirmed to fail identically on a clean `origin/main` checkout with
-none of decision 0444's files applied, so unrelated to that decision.
-Not yet root-caused or fixed.
+`test-browser/document-window.test.ts` (a long-documented, pre-existing
+unhandled-rejection flake around the XML preview path) — confirmed to
+fail identically on a clean `origin/main` checkout, so unrelated to any
+recent decision. Not yet root-caused or fixed.
 
 **`shared`'s count was recorded as 287 through decision 0429**; a
 clean run at this decision's own commit, with no `shared` change since

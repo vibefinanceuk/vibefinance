@@ -85,6 +85,22 @@ const STRINGS = {
     "apsetup.codingapprover": "Approver",
     "apsetup.codingapprovallimit": "Approval limit",
     "apsetup.codingentrysavefailed": "Could not save that.",
+    "apsetup.csvloadheading": "Load from file",
+    "apsetup.csvloadhelp": "Load entries from a CSV export.",
+    "apsetup.csvloadbutton": "Load",
+    "apsetup.csvtemplatebutton": "Template",
+    "apsetup.csvnofile": "Choose a file first.",
+    "apsetup.csvloadfailed": "Could not reach the server. Try again.",
+    "apsetup.csvloadbroke": "Something went wrong after the file loaded:",
+    "apsetup.csventriescreated": "{n} entries created",
+    "apsetup.csventriesupdated": "{n} entries updated",
+    "apsetup.csvrefusedheading": "Not loaded",
+    "apsetup.csvrefusedentry": "{id}: {reason}",
+    "apsetup.csvrefusedmore": "+{n} more",
+    "apsetup.csvviewformat": "View CSV format",
+    "apsetup.csvfieldname": "Field",
+    "apsetup.csvacceptedcolumns": "Accepted columns",
+    "apsetup.csvrequired": "Required",
   },
 };
 
@@ -98,6 +114,26 @@ const EMPTY_CONFIG = {
 };
 const EMPTY_COST_CENTRES = { costCentres: [] };
 const EMPTY_CODING_LIST = { declaredFilters: [], entries: [] };
+
+/**
+ * A CSV format response, decision 0445 — the same base fields every
+ * type carries plus whatever filter columns it declares, mirroring
+ * `coding-list-csv-route.ts`'s own `fieldSpecsFor()` shape closely
+ * enough for a test double without depending on its exact wording.
+ */
+function csvFormat(listType: string, filterListTypeIds: string[] = []) {
+  return {
+    listType,
+    fields: [
+      { key: "id", columns: ["id"], required: true, description: "The list's own code." },
+      { key: "name", columns: ["name", "path"], required: true, description: "Display name." },
+      { key: "is_default", columns: ["default"], required: false, description: "Default." },
+      { key: "approver_email", columns: ["approver", "owner"], required: false, description: "Approver." },
+      { key: "parent_entry_id", columns: ["parent entry id"], required: false, description: "Parent." },
+      ...filterListTypeIds.map((f) => ({ key: `filter_${f}`, columns: [`filter by - ${f}`], required: false, description: f })),
+    ],
+  };
+}
 
 function stubFetch(routes: Record<string, unknown>) {
   vi.stubGlobal(
@@ -143,6 +179,10 @@ async function openApSetupAs(
     "/api/coding-lists/project": EMPTY_CODING_LIST,
     "/api/coding-lists/commodity_code": EMPTY_CODING_LIST,
     "/api/coding-lists/gl_code": EMPTY_CODING_LIST,
+    "/api/coding-lists/cost_centre/csv-format": csvFormat("cost_centre", ["company_code"]),
+    "/api/coding-lists/project/csv-format": csvFormat("project"),
+    "/api/coding-lists/commodity_code/csv-format": csvFormat("commodity_code"),
+    "/api/coding-lists/gl_code/csv-format": csvFormat("gl_code", ["company_code", "commodity_code"]),
     ...codingLists,
     ...extraRoutes,
   });
@@ -157,6 +197,12 @@ async function openApSetupAs(
 function switchTab(label: string) {
   const button = [...document.querySelectorAll<HTMLButtonElement>(".tabbar button")].find((b) => b.textContent === label);
   button?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+}
+
+/** A file picker cannot be filled by a test, so the file is supplied — mirrors purchase-orders.test.ts's own chooseFile(). */
+function chooseFile(text: string) {
+  const picker = document.querySelector('input[type="file"]') as HTMLInputElement;
+  Object.defineProperty(picker, "files", { value: [{ text: async () => text }], configurable: true });
 }
 
 function switchCodingSubTab(label: string) {
@@ -185,7 +231,10 @@ describe("Cost Centre — decision 0444", () => {
   it("shows the empty state when none exist", async () => {
     await openApSetupAs();
     switchCodingSubTab("Cost Centre");
-    expect(document.querySelector(".panel")?.textContent).toContain("No cost centres configured yet.");
+    // csvLoaderPanel (decision 0445) is itself a `.panel`, rendered before the list
+    // section's own `.panel` — scope to the LAST one so this keeps testing the list.
+    const listPanel = [...document.querySelectorAll(".panel")].at(-1);
+    expect(listPanel?.textContent).toContain("No cost centres configured yet.");
   });
 
   it("lists an existing cost centre with its resolved parent, approver, limit, and company code", async () => {
@@ -206,7 +255,11 @@ describe("Cost Centre — decision 0444", () => {
       ],
     });
     switchCodingSubTab("Cost Centre");
-    const rowText = document.querySelector("tbody tr")?.textContent ?? "";
+    // Scope to the list section's own `.panel` — see the empty-state test above
+    // for why a bare `tbody tr` can otherwise match the csvLoaderPanel's own
+    // (collapsed but DOM-present) format-reference table instead.
+    const listPanel = [...document.querySelectorAll(".panel")].at(-1);
+    const rowText = listPanel?.querySelector("tbody tr")?.textContent ?? "";
     expect(rowText).toContain("Local IT department");
     expect(rowText).toContain("Group");
     expect(rowText).toContain("Alice");
@@ -243,7 +296,8 @@ describe("Cost Centre — decision 0444", () => {
       { "PUT /api/cost-centres/cc1": { ok: true, json: async () => ({}) } }
     );
     switchCodingSubTab("Cost Centre");
-    document.querySelector("tbody tr")?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    const editListPanel = [...document.querySelectorAll(".panel")].at(-1);
+    editListPanel?.querySelector("tbody tr")?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
 
     const selects = document.querySelectorAll<HTMLSelectElement>(".editgrid select");
     // parent, approver, company code — no cost centres to be a parent of itself.
@@ -270,7 +324,7 @@ describe("Project — a real hierarchy, decision 0444", () => {
   it("shows the empty state, and no filter columns — project declares none", async () => {
     await openApSetupAs();
     switchCodingSubTab("Project");
-    const panel = document.querySelector(".panel");
+    const panel = [...document.querySelectorAll(".panel")].at(-1);
     expect(panel?.textContent).toContain("No projects configured yet.");
     expect([...(panel?.querySelectorAll("th") ?? [])].some((h) => h.textContent === "Company code")).toBe(false);
   });
@@ -355,11 +409,11 @@ describe("General Ledger Code — the two declared filters, decision 0444", () =
       },
     });
     switchCodingSubTab("General Ledger Code");
-    const panel = document.querySelector(".panel");
+    const panel = [...document.querySelectorAll(".panel")].at(-1);
     const headers = [...(panel?.querySelectorAll("th") ?? [])].map((h) => h.textContent);
     expect(headers).toContain("Company code");
     expect(headers).toContain("Commodity Code");
-    const rowText = document.querySelector("tbody tr")?.textContent ?? "";
+    const rowText = panel?.querySelector("tbody tr")?.textContent ?? "";
     expect(rowText).toContain("Acme UK");
     expect(rowText).toContain("Live Plant & Animal Material");
   });
@@ -408,6 +462,206 @@ describe("General Ledger Code — the two declared filters, decision 0444", () =
       approverUserId: null,
       filters: { company_code: "UK01", commodity_code: "10000000" },
     });
+  });
+});
+
+describe("CSV Template and Load — decision 0445", () => {
+  it("appears on Cost Centre, Project, Commodity Code, and General Ledger Code", async () => {
+    await openApSetupAs();
+    for (const label of ["Cost Centre", "Project", "Commodity Code", "General Ledger Code"]) {
+      switchCodingSubTab(label);
+      const buttons = [...document.querySelectorAll("button")].map((b) => b.textContent);
+      expect(buttons, `${label} should have a Load button`).toContain("Load");
+      expect(buttons, `${label} should have a Template button`).toContain("Template");
+    }
+  });
+
+  it("does not appear on Company code — that list stays read-only, generated from the org structure", async () => {
+    await openApSetupAs();
+    switchCodingSubTab("Company code");
+    const buttons = [...document.querySelectorAll("button")].map((b) => b.textContent);
+    expect(buttons).not.toContain("Load");
+    expect(buttons).not.toContain("Template");
+  });
+
+  it("Template is disabled until the format has loaded, and enabled once it has", async () => {
+    await openApSetupAs(EMPTY_OVERVIEW, EMPTY_COST_CENTRES, {}, { "/api/coding-lists/project/csv-format": { ok: false, status: 500, json: async () => ({}) } });
+    switchCodingSubTab("Project");
+    const templateButton = [...document.querySelectorAll("button")].find((b) => b.textContent === "Template") as HTMLButtonElement;
+    expect(templateButton.disabled).toBe(true);
+
+    switchCodingSubTab("Commodity Code"); // its own csv-format stub succeeds by default
+    const commodityTemplateButton = [...document.querySelectorAll("button")].find((b) => b.textContent === "Template") as HTMLButtonElement;
+    expect(commodityTemplateButton.disabled).toBe(false);
+  });
+
+  it("Template downloads a CSV built from the format's own recommended columns, including declared filters", async () => {
+    await openApSetupAs();
+    switchCodingSubTab("General Ledger Code");
+
+    let capturedBlob: Blob | undefined;
+    const createSpy = vi.spyOn(URL, "createObjectURL").mockImplementation((blob) => {
+      capturedBlob = blob as Blob;
+      return "blob:mock";
+    });
+    const revokeSpy = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+
+    const templateButton = [...document.querySelectorAll("button")].find((b) => b.textContent === "Template");
+    templateButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    expect(createSpy).toHaveBeenCalledOnce();
+    const text = await capturedBlob?.text();
+    expect(text).toBe("id,name,default,approver,parent entry id,filter by - company_code,filter by - commodity_code\n");
+
+    createSpy.mockRestore();
+    revokeSpy.mockRestore();
+    clickSpy.mockRestore();
+  });
+
+  it("shows a message when Load is clicked with no file chosen", async () => {
+    await openApSetupAs();
+    switchCodingSubTab("Project");
+    const loadButton = [...document.querySelectorAll("button")].find((b) => b.textContent === "Load");
+    loadButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(document.body.textContent).toContain("Choose a file first.");
+  });
+
+  it("posts the file's raw text, then refreshes the list and shows what loaded", async () => {
+    let projectCalls = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        const path = String(url).split("?")[0];
+        if (path === "/api/ui-strings") return { ok: true, json: async () => STRINGS } as Response;
+        if (path === "/api/whoami") return { ok: true, json: async () => ({ id: "u-dan", name: "Dan", permissions: ["Admin.Configure"] }) } as Response;
+        if (path === "/api/tasks") return { ok: true, json: async () => ({ tasks: [], counts: {} }) } as Response;
+        if (path === "/api/org/overview") return { ok: true, json: async () => EMPTY_OVERVIEW } as Response;
+        if (path === "/api/approval-config") return { ok: true, json: async () => EMPTY_CONFIG } as Response;
+        if (path === "/api/org/cost-centres") return { ok: true, json: async () => EMPTY_COST_CENTRES } as Response;
+        if (path === "/api/coding-lists/cost_centre/csv-format") return { ok: true, json: async () => csvFormat("cost_centre", ["company_code"]) } as Response;
+        if (path === "/api/coding-lists/project/csv-format") return { ok: true, json: async () => csvFormat("project") } as Response;
+        if (path === "/api/coding-lists/commodity_code/csv-format") return { ok: true, json: async () => csvFormat("commodity_code") } as Response;
+        if (path === "/api/coding-lists/gl_code/csv-format") return { ok: true, json: async () => csvFormat("gl_code", ["company_code", "commodity_code"]) } as Response;
+        if (path === "/api/coding-lists/commodity_code") return { ok: true, json: async () => EMPTY_CODING_LIST } as Response;
+        if (path === "/api/coding-lists/gl_code") return { ok: true, json: async () => EMPTY_CODING_LIST } as Response;
+        if (path === "/api/coding-lists/project/csv-load") {
+          return { ok: true, json: async () => ({ entriesCreated: 1, entriesUpdated: 0, refused: [] }) } as Response;
+        }
+        if (path === "/api/coding-lists/project") {
+          projectCalls++;
+          const body =
+            projectCalls > 1
+              ? {
+                  declaredFilters: [],
+                  entries: [{ id: "p1", name: "One", isDefault: false, approverUserId: null, approverName: null, parentEntryId: null, parentName: null, filters: [] }],
+                }
+              : EMPTY_CODING_LIST;
+          return { ok: true, json: async () => body } as Response;
+        }
+        throw new Error(`no stub for ${path}`);
+      })
+    );
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { start } = await import("/tasks.js");
+    await start();
+    const { open } = await import("/ap-setup.js");
+    await open();
+    switchCodingSubTab("Project");
+    expect(document.body.textContent).toContain("No projects configured yet.");
+
+    chooseFile("id,name\np1,One");
+    const loadButton = [...document.querySelectorAll("button")].find((b) => b.textContent === "Load");
+    loadButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(document.body.textContent).toContain("1 entries created");
+    expect(document.body.textContent).toContain("0 entries updated");
+    expect(document.body.textContent).toContain("One"); // the refreshed list
+    expect(document.body.textContent).not.toContain("No projects configured yet.");
+
+    const postCall = fetchCalls().find(([url, init]) => url === "/api/coding-lists/project/csv-load" && (init as RequestInit)?.method === "POST");
+    expect((postCall?.[1] as RequestInit).body).toBe("id,name\np1,One");
+    expect((postCall?.[1] as RequestInit).headers).toEqual({ "Content-Type": "text/csv" });
+  });
+
+  it("shows a refused row with its own id and reason, not a generic failure", async () => {
+    await openApSetupAs(EMPTY_OVERVIEW, EMPTY_COST_CENTRES, {}, {
+      "POST /api/coding-lists/project/csv-load": {
+        entriesCreated: 1,
+        entriesUpdated: 0,
+        refused: [{ id: "p2", reason: "approver email nobody@acme.com does not exist" }],
+      },
+    });
+    switchCodingSubTab("Project");
+    chooseFile("id,name\np1,One\np2,Two");
+    const loadButton = [...document.querySelectorAll("button")].find((b) => b.textContent === "Load");
+    loadButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(document.body.textContent).toContain("p2: approver email nobody@acme.com does not exist");
+  });
+
+  it("shows the route's own error, not a generic message, when the file is structurally refused", async () => {
+    await openApSetupAs(EMPTY_OVERVIEW, EMPTY_COST_CENTRES, {}, {
+      "POST /api/coding-lists/project/csv-load": { ok: false, status: 400, json: async () => ({ error: "the file needs an id column" }) },
+    });
+    switchCodingSubTab("Project");
+    chooseFile("name\nOne");
+    const loadButton = [...document.querySelectorAll("button")].find((b) => b.textContent === "Load");
+    loadButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(document.body.textContent).toContain("the file needs an id column");
+  });
+
+  it("names the network layer, not the route, when the request never reached the service", async () => {
+    stubFetch({
+      "/api/ui-strings": STRINGS,
+      "/api/whoami": { id: "u-dan", name: "Dan", permissions: ["Admin.Configure"] },
+      "/api/tasks": { tasks: [], counts: {} },
+      "/api/org/overview": EMPTY_OVERVIEW,
+      "/api/approval-config": EMPTY_CONFIG,
+      "/api/org/cost-centres": EMPTY_COST_CENTRES,
+      "/api/coding-lists/project": EMPTY_CODING_LIST,
+      "/api/coding-lists/commodity_code": EMPTY_CODING_LIST,
+      "/api/coding-lists/gl_code": EMPTY_CODING_LIST,
+      "/api/coding-lists/cost_centre/csv-format": csvFormat("cost_centre", ["company_code"]),
+      "/api/coding-lists/project/csv-format": csvFormat("project"),
+      "/api/coding-lists/commodity_code/csv-format": csvFormat("commodity_code"),
+      "/api/coding-lists/gl_code/csv-format": csvFormat("gl_code", ["company_code", "commodity_code"]),
+    });
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { start } = await import("/tasks.js");
+    await start();
+    const { open } = await import("/ap-setup.js");
+    await open();
+    switchCodingSubTab("Project");
+
+    vi.mocked(fetch).mockImplementationOnce(async () => {
+      throw new Error("should not be called");
+    });
+    // Replace fetch with one that throws only for the csv-load call —
+    // every other route this screen already resolved stays a no-op.
+    const realFetch = fetch;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        if (String(url) === "/api/coding-lists/project/csv-load") throw new Error("network down");
+        return (realFetch as unknown as (u: string, i?: RequestInit) => Promise<Response>)(url, init);
+      })
+    );
+
+    chooseFile("id,name\np1,One");
+    const loadButton = [...document.querySelectorAll("button")].find((b) => b.textContent === "Load");
+    loadButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(document.body.textContent).toContain("Could not reach the server. Try again.");
   });
 });
 

@@ -600,7 +600,7 @@ describe("the CSV format reference — decision 0373", () => {
     stubFetch({ "/api/purchase-orders": { body: EMPTY_LIST } });
     await openScreen();
 
-    expect(document.querySelector(".poformat")).toBeNull();
+    expect(document.querySelector(".csvformat")).toBeNull();
   });
 
   it("shows the disclosure, collapsed, with every field's own accepted columns inside it", async () => {
@@ -610,7 +610,7 @@ describe("the CSV format reference — decision 0373", () => {
     });
     await openScreen();
 
-    const details = document.querySelector(".poformat") as HTMLDetailsElement;
+    const details = document.querySelector(".csvformat") as HTMLDetailsElement;
     expect(details).not.toBeNull();
     expect(details.open).toBe(false);
     expect(details.textContent).toContain("order_number");
@@ -626,7 +626,7 @@ describe("the CSV format reference — decision 0373", () => {
     });
     await openScreen();
 
-    const rows = [...document.querySelectorAll(".poformat tbody tr")];
+    const rows = [...document.querySelectorAll(".csvformat tbody tr")];
     const orderNumberRow = rows.find((r) => r.textContent?.includes("order_number"));
     const issueDateRow = rows.find((r) => r.textContent?.includes("issue_date"));
     expect(orderNumberRow?.textContent).toContain("Required");

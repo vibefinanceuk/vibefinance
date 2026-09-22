@@ -407,6 +407,16 @@ const PROXIED_TO_INSTANCE: RegExp[] = [
   /^\/cost-centres\/[^/]+$/,
   /^\/coding-lists\/[^/]+$/,
   /^\/coding-lists\/[^/]+\/[^/]+$/,
+  /**
+   * **CSV Template and Load — decision 0445.** `GET .../csv-format`
+   * and `POST .../csv-load` both have the same two-segment shape as
+   * `/coding-lists/:type/:id` directly above (`mayProxy` tests only
+   * the path, never the method) — checked directly against this list
+   * rather than assumed, given how many times this exact gap has
+   * recurred in this file (0212, 0319, 0324–0328, 0371, 0415,
+   * 0417–0430, 0441, 0444). No new entry needed; this comment is the
+   * record of that check, not a silent no-op.
+   */
 ];
 
 /**

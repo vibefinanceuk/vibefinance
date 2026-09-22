@@ -610,6 +610,27 @@ const KEYS_THE_INTERFACE_USES = [
   "apsetup.codingapprover",
   "apsetup.codingapprovallimit",
   "apsetup.codingentrysavefailed",
+
+  /**
+   * **CSV Template and Load — decision 0445.** `coding-lists.js`'s own
+   * new `csvLoaderPanel()`/`csvFormatReference()`/`csvOutcome()`.
+   */
+  "apsetup.csvloadheading",
+  "apsetup.csvloadhelp",
+  "apsetup.csvloadbutton",
+  "apsetup.csvtemplatebutton",
+  "apsetup.csvnofile",
+  "apsetup.csvloadfailed",
+  "apsetup.csvloadbroke",
+  "apsetup.csventriescreated",
+  "apsetup.csventriesupdated",
+  "apsetup.csvrefusedheading",
+  "apsetup.csvrefusedentry",
+  "apsetup.csvrefusedmore",
+  "apsetup.csvviewformat",
+  "apsetup.csvfieldname",
+  "apsetup.csvacceptedcolumns",
+  "apsetup.csvrequired",
 ];
 
 /**

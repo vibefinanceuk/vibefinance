@@ -135,6 +135,7 @@ import documentsShowingExceptionsAndAgingSql from "../migrations/0126_documents_
 import apSetupStringsSql from "../migrations/0145_ap_setup_strings.sql?raw";
 import apSetupOverrideSearchStringsSql from "../migrations/0146_ap_setup_override_search_strings.sql?raw";
 import accountCodingStringsSql from "../migrations/0147_account_coding_strings.sql?raw";
+import codingListCsvStringsSql from "../migrations/0148_coding_list_csv_strings.sql?raw";
 
 function stripSqlComments(sql: string): string {
   return sql
@@ -293,5 +294,6 @@ export async function applyTestSchema(): Promise<void> {
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(apSetupStringsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(apSetupOverrideSearchStringsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(accountCodingStringsSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(codingListCsvStringsSql)));
 
 }

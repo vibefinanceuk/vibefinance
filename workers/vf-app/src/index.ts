@@ -73,6 +73,7 @@ import {
   handleCreateCodingListEntry,
   handleUpdateCodingListEntry,
 } from "./coding-list-route.js";
+import { handleGetCodingListCsvFormat, handleLoadCodingListCsv } from "./coding-list-csv-route.js";
 import {
   handleGetApprovalConfig,
   handleUpdateApprovalConfig,
@@ -2197,6 +2198,43 @@ export default {
           decodeURIComponent(match[2]),
           (body ?? {}) as Record<string, unknown>
         );
+        return json(result.body, result.status);
+      }
+    }
+
+    /**
+     * **CSV Template and Load for Account Coding — decision 0445.**
+     * Cost Centre, Project, Commodity Code, and General Ledger Code —
+     * not Company code, confirmed directly with the operator (it is
+     * `org_units`, generated from the org structure). Registered before
+     * the `/coding-lists/:type/:id` PUT block above would ever need to
+     * care: that block only answers PUT, these are GET and POST, so
+     * `csv-format`/`csv-load` never collide with it as an `:id` value —
+     * still placed here, together, rather than left to chance.
+     */
+    {
+      const match = pathname.match(/^\/coding-lists\/([^/]+)\/csv-format$/);
+      if (match && request.method === "GET") {
+        const { db } = resolveTenant(request, env);
+        const auth = await requirePermission(db, request, "Admin.Configure", sessionContext(env));
+        if (!auth.authorized) {
+          return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
+        }
+        const result = await handleGetCodingListCsvFormat(db, decodeURIComponent(match[1]));
+        return json(result.body, result.status);
+      }
+    }
+
+    {
+      const match = pathname.match(/^\/coding-lists\/([^/]+)\/csv-load$/);
+      if (match && request.method === "POST") {
+        const { db } = resolveTenant(request, env);
+        const auth = await requirePermission(db, request, "Admin.Configure", sessionContext(env));
+        if (!auth.authorized) {
+          return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
+        }
+        const csv = await request.text();
+        const result = await handleLoadCodingListCsv(db, decodeURIComponent(match[1]), csv);
         return json(result.body, result.status);
       }
     }
