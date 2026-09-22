@@ -64,7 +64,7 @@ const STRINGS = {
     "action.save": "Save",
     "action.create": "Create",
     "action.close": "Close",
-    "apsetup.codingtab.companycode": "Company code",
+    "apsetup.codingtab.companycode": "Org / Company Code",
     "apsetup.codingtab.costcentre": "Cost Centre",
     "apsetup.codingtab.project": "Project",
     "apsetup.codingtab.commoditycode": "Commodity Code",
@@ -214,11 +214,11 @@ describe("Matching stays a real placeholder tab; Account Coding is now built —
     expect(document.querySelector(".panel")?.textContent).toContain("Not built yet");
   });
 
-  it("Account Coding shows its own five sub-tabs, defaulting to Company code", async () => {
+  it("Account Coding shows its own five sub-tabs, defaulting to Org / Company Code", async () => {
     await openApSetupAs(["Admin.Configure"]);
     switchTab("Account Coding");
     const subTabs = [...document.querySelectorAll(".tabbar")][1]?.textContent ?? "";
-    expect(subTabs).toContain("Company code");
+    expect(subTabs).toContain("Org / Company Code");
     expect(subTabs).toContain("Cost Centre");
     expect(subTabs).toContain("Project");
     expect(subTabs).toContain("Commodity Code");

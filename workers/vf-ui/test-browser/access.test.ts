@@ -24,7 +24,7 @@ const STRINGS = {
     "nav.roles": "Roles",
     "nav.access": "Access",
     "roles.subtitle": "Who can do what, where, and up to how much",
-    "roles.units": "Org units",
+    "roles.units": "Org / Company Code",
     "roles.nounits": "No org units configured yet.",
     "roles.kind": "Kind",
     "roles.roles": "Roles",
@@ -240,7 +240,7 @@ describe("org units", () => {
       ...EMPTY,
       units: [{ id: "u1", name: "Acme Group", kind: "legal_entity", parentUnitId: null }],
     });
-    switchTab("Org units");
+    switchTab("Org / Company Code");
 
     const cell = document.querySelector(".panel td span") as HTMLElement;
     expect(cell.style.paddingLeft).toBe("0px");
@@ -255,7 +255,7 @@ describe("org units", () => {
         { id: "u2", name: "Acme France", kind: "legal_entity", parentUnitId: "u1" },
       ],
     });
-    switchTab("Org units");
+    switchTab("Org / Company Code");
 
     const cells = [...document.querySelectorAll(".panel")[0].querySelectorAll("td span")];
     const france = cells.find((c) => c.textContent === "Acme France") as HTMLElement;
@@ -264,7 +264,7 @@ describe("org units", () => {
 
   it("shows the empty message when no units are configured", async () => {
     await openRolesAs(["Admin.Configure"], EMPTY);
-    switchTab("Org units");
+    switchTab("Org / Company Code");
     expect(document.getElementById("shell")?.textContent).toContain("No org units configured yet.");
   });
 
@@ -280,7 +280,7 @@ describe("org units", () => {
       ...EMPTY,
       units: [{ id: "u1", name: "Acme Group", kind: "legal_entity", parentUnitId: null, vatId: null }],
     });
-    switchTab("Org units");
+    switchTab("Org / Company Code");
     const headers = [...document.querySelectorAll(".panel th")].map((h) => h.textContent);
     expect(headers).toContain("Parent org");
     expect(headers).toContain("Tax Identifier");
@@ -294,7 +294,7 @@ describe("org units", () => {
         { id: "u2", name: "Acme France", kind: "legal_entity", parentUnitId: "u1", vatId: "FR12345678901" },
       ],
     });
-    switchTab("Org units");
+    switchTab("Org / Company Code");
 
     const rows = [...document.querySelectorAll(".panel tbody tr")];
     const franceRow = rows.find((r) => r.textContent?.includes("Acme France"));
@@ -307,7 +307,7 @@ describe("org units", () => {
       ...EMPTY,
       units: [{ id: "u1", name: "Acme Group", kind: "legal_entity", parentUnitId: null, vatId: null }],
     });
-    switchTab("Org units");
+    switchTab("Org / Company Code");
 
     const row = document.querySelector(".panel tbody tr");
     const cells = [...(row?.querySelectorAll("td") ?? [])].map((c) => c.textContent);
@@ -321,7 +321,7 @@ describe("org units", () => {
       ...EMPTY,
       units: [{ id: "u1", name: "Acme France", kind: "legal_entity", parentUnitId: null, vatId: "FR12345678901" }],
     });
-    switchTab("Org units");
+    switchTab("Org / Company Code");
 
     expect(document.querySelector(".panel tbody tr")?.textContent).toContain("FR12345678901");
   });
@@ -331,7 +331,7 @@ describe("org units", () => {
       ...EMPTY,
       units: [{ id: "u1", name: "Acme Group", kind: "legal_entity", parentUnitId: null, vatId: null }],
     });
-    switchTab("Org units");
+    switchTab("Org / Company Code");
     (document.querySelector(".panel tbody tr") as HTMLElement)?.click();
 
     const labels = [...document.querySelectorAll(".editgrid label")].map((l) => l.textContent);
@@ -349,20 +349,20 @@ describe("org units", () => {
       ...EMPTY,
       units: [{ id: "u1", name: "Acme Group", kind: "legal_entity", parentUnitId: null }],
     });
-    // Org units itself is hidden without Admin.Configure (0333); this
+    // Org / Company Code itself is hidden without Admin.Configure (0333); this
     // confirms the row is inert even if the DOM somehow held one.
     expect(document.querySelector(".backdrop")).toBeNull();
   });
 
   it("shows a New org button holding Admin.Configure", async () => {
     await openRolesAs(["Admin.Configure"], EMPTY);
-    switchTab("Org units");
+    switchTab("Org / Company Code");
     expect([...document.querySelectorAll("button")].some((b) => b.textContent?.includes("New org"))).toBe(true);
   });
 
   it("creates a real org unit, posting the entered fields", async () => {
     await openRolesAs(["Admin.Configure"], EMPTY, { "POST /api/org/units": { ok: true, json: async () => ({}) } });
-    switchTab("Org units");
+    switchTab("Org / Company Code");
     const button = [...document.querySelectorAll("button")].find((b) => b.textContent?.includes("New org"));
     button?.click();
 
@@ -395,7 +395,7 @@ describe("org units", () => {
         { id: "u2", name: "Acme France", kind: "operating_unit", parentUnitId: "u1", buyerEndpoint: "0088:123", vatId: "FR123", buyerReference: "PO-1" },
       ],
     });
-    switchTab("Org units");
+    switchTab("Org / Company Code");
     const row = [...document.querySelectorAll("tr")].find((r) => r.textContent?.includes("Acme France"));
     row?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
 
@@ -417,7 +417,7 @@ describe("org units", () => {
       { ...EMPTY, units: [{ id: "u1", name: "Acme France", kind: "operating_unit", parentUnitId: null }] },
       { "PUT /api/org/units/u1": { ok: true, json: async () => ({}) } }
     );
-    switchTab("Org units");
+    switchTab("Org / Company Code");
     const row = [...document.querySelectorAll("tr")].find((r) => r.textContent?.includes("Acme France"));
     row?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
 
@@ -448,7 +448,7 @@ describe("org units", () => {
         { id: "u2", name: "Acme France", kind: "operating_unit", parentUnitId: "u1" },
       ],
     });
-    switchTab("Org units");
+    switchTab("Org / Company Code");
     const row = [...document.querySelectorAll("tr")].find((r) => r.textContent?.includes("Acme France"));
     row?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
 
@@ -462,7 +462,7 @@ describe("org units", () => {
     await openRolesAs(["Admin.Configure"], EMPTY, {
       "POST /api/org/units": { ok: false, status: 409, json: async () => ({ error: "unit acme-fr already exists" }) },
     });
-    switchTab("Org units");
+    switchTab("Org / Company Code");
     const button = [...document.querySelectorAll("button")].find((b) => b.textContent?.includes("New org"));
     button?.click();
     const inputs = document.querySelectorAll<HTMLInputElement>(".editgrid input");
@@ -487,16 +487,16 @@ describe("org units", () => {
    * literal check against the role named "Administrator (Global)"
    * itself.
    */
-  it("hides the Org units tab from a delegated administrator holding neither Admin.Configure nor Admin.RoleManagement", async () => {
+  it("hides the Org / Company Code tab from a delegated administrator holding neither Admin.Configure nor Admin.RoleManagement", async () => {
     await openRolesAs(["Admin.UserManagement"], { ...EMPTY, units: [{ id: "u1", name: "Acme Group", kind: "legal_entity", parentUnitId: null }] });
     const tabs = [...document.querySelectorAll(".tabbar button")].map((b) => b.textContent);
-    expect(tabs).not.toContain("Org units");
+    expect(tabs).not.toContain("Org / Company Code");
   });
 
-  it("shows the Org units tab to Admin.Configure alone, even without Admin.RoleManagement", async () => {
+  it("shows the Org / Company Code tab to Admin.Configure alone, even without Admin.RoleManagement", async () => {
     await openRolesAs(["Admin.Configure"], EMPTY);
     const tabs = [...document.querySelectorAll(".tabbar button")].map((b) => b.textContent);
-    expect(tabs).toContain("Org units");
+    expect(tabs).toContain("Org / Company Code");
   });
 });
 

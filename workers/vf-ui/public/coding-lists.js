@@ -420,7 +420,7 @@ function csvLoaderPanel(listType, refresh) {
   const noteId = `codingcsvnote-${listType}`;
   const noteBox = el("div", { class: "muted sm", id: noteId });
   const picker = el("input", { type: "file", accept: ".csv,text/csv" });
-  const loadButton = actionLink("load", { primary: true, onclick: () => runLoad(), label: t("apsetup.csvloadbutton") });
+  const loadButton = actionLink("load", { primary: true, onclick: () => runLoad(), label: t("purchaseorders.loadbutton") });
 
   function note(message) {
     const box = document.getElementById(noteId);
@@ -467,7 +467,7 @@ function csvLoaderPanel(listType, refresh) {
     }
   }
 
-  const templateButton = actionLink("download", { onclick: () => downloadCsvTemplate(listType), label: t("apsetup.csvtemplatebutton") });
+  const templateButton = actionLink("download", { onclick: () => downloadCsvTemplate(listType), label: t("purchaseorders.templatebutton") });
   // csvFormats is already in its final state by the time this panel
   // renders — ap-setup.js's own open() awaits loadCodingListCsvFormats()
   // before ever calling render().

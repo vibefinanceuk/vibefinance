@@ -1883,6 +1883,50 @@ section for the full reasoning and tests.
   placeholder/no-matches text will show as raw string keys until it
   runs.
 
+### Template/Load button strings, and Org / Company Code naming alignment (0447)
+- Two small cosmetic changes reported together: (1) *"update the icons
+  in the AP Setup for Template, and Load, to be the same as the
+  purchase order screen icons that read 'CSV Template' and 'Load
+  CSV'"*; (2) *"can the Access and AP Setup screens... align on the
+  naming of Org Units and Company Code. Perhaps Org / Company Code is a
+  good compromise?"*
+- **Part 1 — there was no icon to change.** `coding-lists.js`'s own
+  loader and Purchase Orders' own loader already call the identical
+  `actionLink("load"/"download", ...)` — same icon, same CSS. Only the
+  **label text** differed (AP Setup: generic "Load"/"Template",
+  migration 0148; Purchase Orders: "Load CSV"/"CSV Template", migration
+  0113). Fixed by pointing `coding-lists.js`'s two buttons at Purchase
+  Orders' own keys directly — the same string-reuse discipline 0445's
+  `.poformat`→`.csvformat` and 0446's pagination-string reuse already
+  established — rather than just rewording the apsetup-specific pair.
+- **Part 2 — Org units and Company code are the same underlying data**,
+  as AP Setup's own sub-heading already said (*"Managed under Access →
+  Org Units. Shown here for reference only."*) — two different labels
+  for one thing was the actual problem. Both `roles.units` (Access) and
+  `apsetup.codingtab.companycode` (AP Setup) are single-point-of-truth
+  keys, so the fix is a value-only migration (`0150`, following
+  migration `0084`'s own UPDATE-based rewording precedent exactly) —
+  no production code change. The cross-reference text pointing from AP
+  Setup to Access is updated in the same migration so it doesn't go
+  stale.
+- `vf-app` 2618 (unchanged — no file touched). `vf-licence` 320
+  (unchanged in count — migration `0150`, 6 rows, adds to `ui_strings`).
+  `vf-ui` Worker 74 (unchanged); browser 1011 (unchanged in count —
+  existing assertions reworded, not added), all green — the
+  pre-existing `document-window.test.ts`/`documents.test.ts`
+  unhandled-rejection flake (160 non-fatal errors) reconfirmed
+  unchanged from baseline via `git stash`.
+- `eslint .` clean across all three workspaces. `npx tsc --noEmit` —
+  no new errors in any file this decision touched.
+- **Not built**: no new string keys anywhere — pure reuse (part 1) or
+  pure re-wording of already-shipped keys (part 2). `roles.nounits`
+  ("No org units configured yet.") deliberately left alone — an
+  empty-state sentence, not the tab's own proper name.
+- **Not yet pushed.** Migration `0150` (and the still-outstanding
+  `0149` from decision 0446) both need their own separate
+  `apply_migrations.py --remote --database vf-licence-poc
+  --migrations-dir workers/vf-licence/migrations` run once deployed.
+
 ### Purchase orders and matching
 - Purchase order storage grounded in Peppol BIS Order Only 3.3, via UBL
   XML ingestion (0081) and CSV load (0370) — the same tables, the same

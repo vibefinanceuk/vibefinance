@@ -137,6 +137,7 @@ import apSetupOverrideSearchStringsSql from "../migrations/0146_ap_setup_overrid
 import accountCodingStringsSql from "../migrations/0147_account_coding_strings.sql?raw";
 import codingListCsvStringsSql from "../migrations/0148_coding_list_csv_strings.sql?raw";
 import accountCodingSearchAndPaginationStringsSql from "../migrations/0149_account_coding_search_and_pagination_strings.sql?raw";
+import orgCompanyCodeNamingAlignmentSql from "../migrations/0150_org_company_code_naming_alignment.sql?raw";
 
 function stripSqlComments(sql: string): string {
   return sql
@@ -297,5 +298,6 @@ export async function applyTestSchema(): Promise<void> {
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(accountCodingStringsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(codingListCsvStringsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(accountCodingSearchAndPaginationStringsSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(orgCompanyCodeNamingAlignmentSql)));
 
 }

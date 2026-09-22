@@ -75,7 +75,7 @@ const STRINGS = {
     "action.save": "Save",
     "action.create": "Create",
     "action.close": "Close",
-    "apsetup.codingtab.companycode": "Company code",
+    "apsetup.codingtab.companycode": "Org / Company Code",
     "apsetup.codingtab.costcentre": "Cost Centre",
     "apsetup.codingtab.project": "Project",
     "apsetup.codingtab.commoditycode": "Commodity Code",
@@ -99,8 +99,6 @@ const STRINGS = {
     "apsetup.codingentrysavefailed": "Could not save that.",
     "apsetup.csvloadheading": "Load from file",
     "apsetup.csvloadhelp": "Load entries from a CSV export.",
-    "apsetup.csvloadbutton": "Load",
-    "apsetup.csvtemplatebutton": "Template",
     "apsetup.csvnofile": "Choose a file first.",
     "apsetup.csvloadfailed": "Could not reach the server. Try again.",
     "apsetup.csvloadbroke": "Something went wrong after the file loaded:",
@@ -123,6 +121,11 @@ const STRINGS = {
     "purchaseorders.previouspage": "Previous page",
     "purchaseorders.nextpage": "Next page",
     "purchaseorders.lastpage": "Last page",
+    // Template/Load buttons — decision 0447, reusing purchase-orders.js's own
+    // button labels instead of the apsetup-specific pair decision 0445 first
+    // added (same string-reuse discipline as the pagination strings above).
+    "purchaseorders.loadbutton": "Load CSV",
+    "purchaseorders.templatebutton": "CSV Template",
   },
 };
 
@@ -238,10 +241,10 @@ function fetchCalls() {
   return (fetch as unknown as { mock: { calls: unknown[][] } }).mock.calls;
 }
 
-describe("Company code — read-only, decision 0444", () => {
+describe("Org / Company Code — read-only, decision 0444", () => {
   it("lists the org units already managed under Access, with no Add button", async () => {
     await openApSetupAs({ ...EMPTY_OVERVIEW, units: [{ id: "UK01", name: "Acme UK" }] });
-    switchCodingSubTab("Company code");
+    switchCodingSubTab("Org / Company Code");
     const panelText = document.querySelector(".panel")?.textContent ?? "";
     expect(panelText).toContain("Acme UK");
     expect(panelText).toContain("Managed under Access → Org Units");
@@ -348,7 +351,7 @@ describe("Project — a real hierarchy, decision 0444", () => {
     switchCodingSubTab("Project");
     const panel = [...document.querySelectorAll(".panel")].at(-1);
     expect(panel?.textContent).toContain("No projects configured yet.");
-    expect([...(panel?.querySelectorAll("th") ?? [])].some((h) => h.textContent === "Company code")).toBe(false);
+    expect([...(panel?.querySelectorAll("th") ?? [])].some((h) => h.textContent === "Org / Company Code")).toBe(false);
   });
 
   /**
@@ -427,7 +430,7 @@ describe("Project — a real hierarchy, decision 0444", () => {
 });
 
 describe("General Ledger Code — the two declared filters, decision 0444", () => {
-  it("shows Company code and Commodity Code as real columns, sourced from the server's own declaredFilters", async () => {
+  it("shows Org / Company Code and Commodity Code as real columns, sourced from the server's own declaredFilters", async () => {
     await openApSetupAs(EMPTY_OVERVIEW, EMPTY_COST_CENTRES, {
       "/api/coding-lists/gl_code": {
         declaredFilters: ["company_code", "commodity_code"],
@@ -451,7 +454,7 @@ describe("General Ledger Code — the two declared filters, decision 0444", () =
     switchCodingSubTab("General Ledger Code");
     const panel = [...document.querySelectorAll(".panel")].at(-1);
     const headers = [...(panel?.querySelectorAll("th") ?? [])].map((h) => h.textContent);
-    expect(headers).toContain("Company code");
+    expect(headers).toContain("Org / Company Code");
     expect(headers).toContain("Commodity Code");
     const rowText = panel?.querySelector("tbody tr")?.textContent ?? "";
     expect(rowText).toContain("Acme UK");
@@ -780,27 +783,27 @@ describe("CSV Template and Load — decision 0445", () => {
     for (const label of ["Cost Centre", "Project", "Commodity Code", "General Ledger Code"]) {
       switchCodingSubTab(label);
       const buttons = [...document.querySelectorAll("button")].map((b) => b.textContent);
-      expect(buttons, `${label} should have a Load button`).toContain("Load");
-      expect(buttons, `${label} should have a Template button`).toContain("Template");
+      expect(buttons, `${label} should have a Load button`).toContain("Load CSV");
+      expect(buttons, `${label} should have a Template button`).toContain("CSV Template");
     }
   });
 
-  it("does not appear on Company code — that list stays read-only, generated from the org structure", async () => {
+  it("does not appear on Org / Company Code — that list stays read-only, generated from the org structure", async () => {
     await openApSetupAs();
-    switchCodingSubTab("Company code");
+    switchCodingSubTab("Org / Company Code");
     const buttons = [...document.querySelectorAll("button")].map((b) => b.textContent);
-    expect(buttons).not.toContain("Load");
-    expect(buttons).not.toContain("Template");
+    expect(buttons).not.toContain("Load CSV");
+    expect(buttons).not.toContain("CSV Template");
   });
 
   it("Template is disabled until the format has loaded, and enabled once it has", async () => {
     await openApSetupAs(EMPTY_OVERVIEW, EMPTY_COST_CENTRES, {}, { "/api/coding-lists/project/csv-format": { ok: false, status: 500, json: async () => ({}) } });
     switchCodingSubTab("Project");
-    const templateButton = [...document.querySelectorAll("button")].find((b) => b.textContent === "Template") as HTMLButtonElement;
+    const templateButton = [...document.querySelectorAll("button")].find((b) => b.textContent === "CSV Template") as HTMLButtonElement;
     expect(templateButton.disabled).toBe(true);
 
     switchCodingSubTab("Commodity Code"); // its own csv-format stub succeeds by default
-    const commodityTemplateButton = [...document.querySelectorAll("button")].find((b) => b.textContent === "Template") as HTMLButtonElement;
+    const commodityTemplateButton = [...document.querySelectorAll("button")].find((b) => b.textContent === "CSV Template") as HTMLButtonElement;
     expect(commodityTemplateButton.disabled).toBe(false);
   });
 
@@ -816,7 +819,7 @@ describe("CSV Template and Load — decision 0445", () => {
     const revokeSpy = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
     const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
 
-    const templateButton = [...document.querySelectorAll("button")].find((b) => b.textContent === "Template");
+    const templateButton = [...document.querySelectorAll("button")].find((b) => b.textContent === "CSV Template");
     templateButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
 
     expect(createSpy).toHaveBeenCalledOnce();
@@ -831,7 +834,7 @@ describe("CSV Template and Load — decision 0445", () => {
   it("shows a message when Load is clicked with no file chosen", async () => {
     await openApSetupAs();
     switchCodingSubTab("Project");
-    const loadButton = [...document.querySelectorAll("button")].find((b) => b.textContent === "Load");
+    const loadButton = [...document.querySelectorAll("button")].find((b) => b.textContent === "Load CSV");
     loadButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     await new Promise((r) => setTimeout(r, 0));
 
@@ -883,7 +886,7 @@ describe("CSV Template and Load — decision 0445", () => {
     expect(document.body.textContent).toContain("No projects configured yet.");
 
     chooseFile("id,name\np1,One");
-    const loadButton = [...document.querySelectorAll("button")].find((b) => b.textContent === "Load");
+    const loadButton = [...document.querySelectorAll("button")].find((b) => b.textContent === "Load CSV");
     loadButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     await new Promise((r) => setTimeout(r, 0));
 
@@ -907,7 +910,7 @@ describe("CSV Template and Load — decision 0445", () => {
     });
     switchCodingSubTab("Project");
     chooseFile("id,name\np1,One\np2,Two");
-    const loadButton = [...document.querySelectorAll("button")].find((b) => b.textContent === "Load");
+    const loadButton = [...document.querySelectorAll("button")].find((b) => b.textContent === "Load CSV");
     loadButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     await new Promise((r) => setTimeout(r, 0));
 
@@ -920,7 +923,7 @@ describe("CSV Template and Load — decision 0445", () => {
     });
     switchCodingSubTab("Project");
     chooseFile("name\nOne");
-    const loadButton = [...document.querySelectorAll("button")].find((b) => b.textContent === "Load");
+    const loadButton = [...document.querySelectorAll("button")].find((b) => b.textContent === "Load CSV");
     loadButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     await new Promise((r) => setTimeout(r, 0));
 
@@ -966,7 +969,7 @@ describe("CSV Template and Load — decision 0445", () => {
     );
 
     chooseFile("id,name\np1,One");
-    const loadButton = [...document.querySelectorAll("button")].find((b) => b.textContent === "Load");
+    const loadButton = [...document.querySelectorAll("button")].find((b) => b.textContent === "Load CSV");
     loadButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     await new Promise((r) => setTimeout(r, 0));
 

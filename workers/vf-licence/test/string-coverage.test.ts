@@ -614,11 +614,16 @@ const KEYS_THE_INTERFACE_USES = [
   /**
    * **CSV Template and Load — decision 0445.** `coding-lists.js`'s own
    * new `csvLoaderPanel()`/`csvFormatReference()`/`csvOutcome()`.
+   * The Template/Load buttons themselves were re-pointed at
+   * `purchaseorders.loadbutton`/`purchaseorders.templatebutton` by
+   * decision 0447 (string reuse, not a new pair of keys) — those two
+   * keys are already listed above, under Purchase Orders. The
+   * `apsetup.csvloadbutton`/`apsetup.csvtemplatebutton` rows in
+   * migration 0148 are now orphaned (harmless — migrations are
+   * append-only and never edited).
    */
   "apsetup.csvloadheading",
   "apsetup.csvloadhelp",
-  "apsetup.csvloadbutton",
-  "apsetup.csvtemplatebutton",
   "apsetup.csvnofile",
   "apsetup.csvloadfailed",
   "apsetup.csvloadbroke",
