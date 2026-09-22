@@ -3,7 +3,7 @@
 **Written 4 September 2026, updated 17 September (six times), updated
 18 September (four times), updated 19 September (thirty-two times),
 updated 20 September (twenty-two times), updated 21 September
-(twenty-one times).**
+(twenty-two times).**
 
 **For a session starting cold.** Where things stand, what needs a
 decision rather than work, what to do next, and the habits this project
@@ -32,7 +32,7 @@ twice.
 
 | | |
 | --- | --- |
-| `origin/main` | `ca1de60` — fetched directly by this session, matching this session's own commit exactly. Decisions 0434 (org placement and supplier matching now reach the first stage visit) and 0435 (a stage visit error is recorded, not swallowed) are confirmed pushed and deployed. **Decision 0436 (the nav's own content scrolls, so `.who` stays on screen) is also pushed and deployed, but its own diagnosis was wrong — reported live to have zero effect. Decision 0437 (the nav's box is really one viewport tall, and doesn't scroll sideways) is the correction: built, tested, and documented on top of `ca1de60`, not yet pushed or deployed.** |
+| `origin/main` | `9146f64` — fetched directly by this session, matching the HANDOVER-only confirm commit for decision 0436. Decisions 0434 (org placement and supplier matching now reach the first stage visit) and 0435 (a stage visit error is recorded, not swallowed) are confirmed pushed and deployed. **Decision 0436 (the nav's own content scrolls, so `.who` stays on screen) is also pushed and deployed, but its own diagnosis was wrong — reported live to have zero effect. Decisions 0437 (the nav's box is really one viewport tall, and doesn't scroll sideways) and 0438 (the nav is flush with the top of the viewport from the very first paint) are the correction, built one on top of the other: both built, tested, and documented on top of `9146f64`, neither yet pushed or deployed.** |
 | vf-admin deployed | `8e27a34` · `https://admin.vibefinance-ai.com` · behind Cloudflare Access |
 | vf-app deployed | `ca1de60` confirmed — decisions 0429 (agreed payment means, a supplier-record placeholder), 0430 (Talk to an AP Expert, Screen 6) with all eight of its own addenda, 0431 (Executive IQ's remaining four metrics), 0432 with its own addendum, 0433 (org-ranked supplier search), 0434 (org/supplier facts reach the first stage visit), 0435 (a stage visit error is recorded, not swallowed), and 0436 (vf-ui only — the nav's own content scrolls), all confirmed. |
 | vf-licence deployed | `ca1de60` per the operator's own reports; migrations `0140` through `0144` all applied — `0144` is decision 0435's own banner-label string. Decision 0436 added none. |
@@ -40,8 +40,8 @@ twice.
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
 | `vf-app-poc` migrations | through `0074` applied and confirmed live — `0073` (decision 0429) is real schema; `0074` (decision 0430) is a documentation-only `ASSERT` restatement with no schema change, the same shape as `0071`; none of 0430's eight addenda needed a new `vf-app` migration; decision 0431 also needed none — its four new routes read existing tables only; decision 0433 also needed none — its ranking change reads the existing `org_unit_id` column only; decision 0434 also needed none — it changes when facts already computed reach the workflow engine, not the schema; decision 0435 also needed none — it writes a new fact through the existing `facts_json` column. **A tenant-data fix, not a migration**: the operator's own live Validation stage had `required_permission IS NULL` — the root cause behind decision 0435's own finding — fixed directly with `UPDATE process_stages SET required_permission = 'AP.Validate' WHERE id = 'validation'`. **This did not hold on the first attempt**: after decision 0435 deployed, a fresh test invoice hit the identical `requiredPermission "undefined"` error via the new `workflow.stageError` banner, and a direct re-check found `required_permission` back to `NULL` — code was traced end to end (`process-route.ts`'s stage-creation and draft/publish handlers, `field-visibility-route.ts`, `rules-list-route.ts`) and **nothing in the application ever writes this column**, so the revert's cause is unexplained, not a known bug. Re-run a second time with the `UPDATE` and a `SELECT` in the same statement batch, confirmed set to `AP.Validate` in that same round-trip, and then confirmed durable and working end-to-end by the operator submitting a genuinely fresh test invoice: it stopped at Validation, no error banner, and a task appeared with `required_permission = AP.Validate`. **If this reverts a third time**, suspect a second database bound to the same `vf-app-poc` name (check `wrangler d1 list` against `workers/vf-app/wrangler.toml`'s `database_id`) rather than re-tracing application code again. |
 | `vf-licence-poc` migrations | through `0144` applied and confirmed live — the operator's own `apply_migrations.py --remote` run, `0144` is decision 0435's own banner-label string (`viewer.workflow.stageerror`, en/de). |
-| Tests | vf-admin 9 · vf-app 2490 (unchanged by decisions 0436/0437 — vf-ui only) · vf-licence 320 (unchanged) · vf-ui 74 Worker (unchanged) + 958 browser (953 + 3 decision 0436's own, + 2 decision 0437's own, both in `tasks.test.ts`, confirmed by one unfiltered whole-suite run) · shared 295 (+3 known pre-existing failures) |
-| Decision records | 437 |
+| Tests | vf-admin 9 · vf-app 2490 (unchanged by decisions 0436/0437/0438 — vf-ui only) · vf-licence 320 (unchanged) · vf-ui 74 Worker (unchanged) + 960 browser (953 + 3 decision 0436's own, + 2 decision 0437's own, + 2 decision 0438's own, all in `tasks.test.ts`, confirmed by one unfiltered whole-suite run) · shared 295 (+3 known pre-existing failures) |
+| Decision records | 438 |
 
 **Decision 0437 (the nav's box is really one viewport tall, and
 doesn't scroll sideways) is built, tested, and documented. Not yet
@@ -85,11 +85,40 @@ position change to a hand-tuned sidebar is exactly the kind of thing
 arithmetic alone has gotten wrong once already in this same
 investigation. New describe block in `tasks.test.ts` (+2). `vf-ui`
 browser 956 → 958, all green; Worker, `vf-app`, `vf-licence`
-untouched. `eslint public test-browser` clean. **Once pushed/deployed,
-ask the operator to re-check both the scroll behaviour and the
-scrollbar, and — if the device connection is back — verify live before
-attempting the remaining 32px gap.** See decision 0437 for the full
-reasoning and tests.
+untouched. `eslint public test-browser` clean. **The remaining 32px
+gap named above was closed the same session, once the device
+connection came back — see decision 0438.** See decision 0437 for the
+full reasoning and tests.
+
+**Decision 0438 (the nav is flush with the top of the viewport from
+the very first paint) is built, tested, and documented. Not yet pushed
+or deployed.** The device connection came back this session, so the
+gap decision 0437 deliberately left open was checked properly rather
+than left for a future session: the candidate fix (`margin-top:
+-32px` on `.nav`, cancelling `body`'s own 32px top padding for this
+one element) was live-patched onto the still-deployed page (decision
+0436's own code — 0437 had not yet reached production) and measured
+directly before writing anything to source. **Unpatched**: `.nav`'s
+rendered box measured `top: 32, bottom: 1072`, `.who`'s own bottom at
+`1012` — twelve pixels below a 1000px viewport, at scroll position
+zero. **Patched**: `.nav` became `top: 0, bottom: 1000`, exactly one
+viewport, flush at the top; `.who`'s bottom moved to `980`, fully
+visible with no scrolling at all. `.topbar` (the rest of the page)
+measured identically before and after, confirming a negative margin on
+one grid item doesn't disturb its siblings — checked rather than
+assumed — and a screenshot of the patched page was reviewed directly
+for visual misalignment (none found). Built: `.nav { margin-top:
+-32px }` in the wide layout, `margin-top: 0` resetting it in the
+narrow-screen media query, where `.nav` is an ordinary flow element
+with no such gap to cancel. Coupled to `body`'s own padding value
+(`tokens.css`, `2rem 1rem`) by a literal number, not a shared
+variable — stated plainly in the comment. New describe block in
+`tasks.test.ts` (+2). `vf-ui` browser 958 → 960, all green; Worker,
+`vf-app`, `vf-licence` untouched. `eslint public test-browser` clean.
+**Nothing from this session is currently outstanding for the sidebar
+— decisions 0436 through 0438 together are believed to fully resolve
+the original report, pending the operator's own confirmation once
+deployed.** See decision 0438 for the full reasoning and tests.
 
 **Decision 0436 (the nav's own content scrolls, so `.who` stays on
 screen) is pushed and deployed, confirmed directly.** `origin/main`

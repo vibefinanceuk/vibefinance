@@ -1392,6 +1392,35 @@ section for the full reasoning and tests.
   `vf-ui` browser 956 → 958; Worker, `vf-app`, `vf-licence` all
   unchanged. `eslint public test-browser` clean.
 
+### The nav is flush with the top of the viewport from the very first paint (0438)
+- **Closes the gap decision 0437 named and deliberately left open**:
+  `body`'s own `padding: 2rem 1rem` (`tokens.css`) pushes `.nav`'s
+  natural, un-stuck position 32px below the true top of the viewport,
+  so `.who` could still sit just below the fold at scroll position
+  zero, before `position: sticky` engages on scroll.
+- **Verified live before writing anything to source** — the device
+  connection came back this session, so the candidate fix was
+  live-patched onto the still-deployed page and measured directly
+  rather than guessed at. Unpatched: `.nav`'s rendered box measured
+  `top: 32, bottom: 1072`, `.who`'s own bottom at `1012` (12px below a
+  1000px viewport). Patched (`margin-top: -32px` added to decision
+  0437's own `box-sizing: border-box`): `.nav` became `top: 0, bottom:
+  1000` — exactly one viewport, flush at the top — and `.who`'s bottom
+  moved to `980`, fully visible with no scrolling at all. `.topbar`
+  (the rest of the page) measured identically before and after,
+  confirming the fix doesn't disturb anything else; a screenshot of
+  the patched page was also reviewed directly.
+- `.nav` gets `margin-top: -32px` in the wide layout, cancelling
+  `body`'s own top padding for this one element; the narrow-screen
+  media query resets it to `margin-top: 0`, since the horizontal-bar
+  layout needs no such correction. Coupled to `body`'s own padding
+  value by a literal number, stated plainly in the comment, since
+  `tokens.css` defines no shared variable for it.
+- New describe block in `tasks.test.ts` (+2): confirms the wide-layout
+  `margin-top: -32px`; confirms the narrow-layout `margin-top: 0`
+  reset. `vf-ui` browser 958 → 960; Worker, `vf-app`, `vf-licence` all
+  unchanged. `eslint public test-browser` clean.
+
 ### Purchase orders and matching
 - Purchase order storage grounded in Peppol BIS Order Only 3.3, via UBL
   XML ingestion (0081) and CSV load (0370) — the same tables, the same

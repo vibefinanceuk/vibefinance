@@ -903,6 +903,40 @@ describe("the nav's own box is really one viewport tall, and doesn't scroll side
   });
 });
 
+describe("the nav is flush with the top of the viewport from the very first paint (decision 0438)", () => {
+  /**
+   * **Closes the gap decision 0437 named and deliberately left open.**
+   * `body`'s own `padding: 2rem 1rem` (`tokens.css`) pushes `.nav`'s
+   * natural, un-stuck position 32px below the true top of the
+   * viewport; `position: sticky` doesn't pin it there until scrolling
+   * would otherwise carry it past that point, so at the very top of
+   * the page `.who` could still sit just below the fold. Verified live
+   * before shipping (unlike 0437's own deliberate restraint, checked
+   * this time before the device connection dropped again could
+   * repeat): `.nav`'s rendered box moved from `top: 32, bottom: 1072`
+   * to `top: 0, bottom: 1000` once patched, `.who`'s own bottom from
+   * `1012` (12px below a 1000px viewport) to `980` (fully visible) at
+   * scroll position zero — and `.topbar` (the rest of the page)
+   * measured identically before and after, confirming the fix doesn't
+   * disturb anything else.
+   */
+  it("cancels body's own top padding for .nav specifically, in the wide layout", async () => {
+    const css = (await import("virtual:stylesheets")).default["app.css"];
+    const rule = css.slice(css.indexOf(".nav {\n    display: flex;"), css.indexOf(".nav .who { margin-top: auto; }"));
+
+    expect(rule).toContain("margin-top: -32px");
+  });
+
+  it("undoes that negative margin on the narrow, horizontal-bar layout, where .nav is an ordinary flow element again", async () => {
+    const css = (await import("virtual:stylesheets")).default["app.css"];
+    const mediaStart = css.indexOf("@media (max-width: 1100px)");
+    const mediaEnd = css.indexOf("@media", mediaStart + 1);
+    const mediaBlock = css.slice(mediaStart, mediaEnd === -1 ? undefined : mediaEnd);
+
+    expect(mediaBlock).toContain("margin-top: 0");
+  });
+});
+
 describe("sign out is the frame's own, not one screen's (decision 0283)", () => {
   /**
    * **Reported live**: "update the Sign Out button so that it appears

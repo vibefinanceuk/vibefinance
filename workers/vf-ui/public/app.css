@@ -244,6 +244,39 @@
     box-sizing: border-box;
     align-self: start;
     /**
+     * **`margin-top: -32px`, decision 0438 — closes the gap decision
+     * 0437 named and left open.** `body`'s own `padding: 2rem 1rem`
+     * (`tokens.css`, 32px at the standard root size) pushes `.nav`'s
+     * NATURAL, un-stuck position 32px below the true top of the
+     * viewport. `position: sticky` only pins an element once scrolling
+     * would otherwise carry it past its `top` offset — at the very top
+     * of the page (scroll position zero), `.nav` is not yet stuck at
+     * all, just sitting wherever normal flow puts it, 32px down. This
+     * negative margin cancels exactly that: `.nav`'s natural position
+     * becomes flush with `top: 0` from the very first paint, so there
+     * is no longer a "scroll a little first" step before `.who`
+     * becomes visible.
+     *
+     * **Verified live before shipping** (decision 0437's own, more
+     * cautious choice not to guess at this): patched onto the
+     * still-deployed page and measured directly. `.nav`'s rendered box
+     * moved from `top: 32, bottom: 1072` to `top: 0, bottom: 1000` —
+     * exactly one viewport, flush at the top; `.who`'s own bottom
+     * moved from `1012` (12px below a 1000px viewport, unpatched) to
+     * `980` (fully visible) at scroll position zero, no scrolling
+     * needed at all. `.topbar`'s own position (`.main`'s content, the
+     * thing sharing this page with `.nav`) measured identically
+     * before and after — a grid item's own margin does not disturb
+     * its siblings, confirmed rather than assumed.
+     *
+     * **Coupled to `body`'s own padding value, by literal number, not
+     * a shared variable** — `tokens.css` defines no custom property
+     * for it. If that padding ever changes, this number needs to
+     * change with it, or this gap reopens by however much the values
+     * now disagree.
+     */
+    margin-top: -32px;
+    /**
      * **The nav itself is the collapse toggle, decision 0311** — a
      * standalone `.navcollapsetoggle` button used to be the only
      * clickable, non-navigating thing here; now the whole nav is,
@@ -2409,6 +2442,16 @@
        */
       position: static;
       height: auto;
+      /**
+       * **Undoes decision 0438's own negative margin here too** — that
+       * margin exists to cancel `body`'s own top padding for the wide,
+       * sticky sidebar specifically; at this width `.nav` is an
+       * ordinary flow element (a horizontal bar, `position: static`
+       * above), so it needs no correction and should sit exactly where
+       * normal flow already puts it, the same as everything else on
+       * the page.
+       */
+      margin-top: 0;
     }
     .nav .mark, .nav .who { display: none; }
     /**
