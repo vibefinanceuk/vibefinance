@@ -127,6 +127,7 @@ export default defineConfig({
       "/rule.js": resolve(__dirname, "public/rule.js"),
       "/documents.js": resolve(__dirname, "public/documents.js"),
       "/access.js": resolve(__dirname, "public/access.js"),
+      "/ap-setup.js": resolve(__dirname, "public/ap-setup.js"),
       "/readback.js": resolve(__dirname, "public/readback.js"),
       "/activity.js": resolve(__dirname, "public/activity.js"),
       "/page-renderer.js": resolve(__dirname, "public/page-renderer.js"),

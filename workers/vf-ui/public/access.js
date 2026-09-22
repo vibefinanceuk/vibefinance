@@ -465,7 +465,15 @@ const PURCHASABLE_CURRENCIES = [
   ["YER", "Yemeni Rial"], ["ZAR", "Rand"], ["ZMW", "Zambian Kwacha"], ["ZWG", "Zimbabwe Gold"],
 ];
 
-function currencyPicker(selectedValue) {
+/**
+ * **Exported — decision 0440.** `ap-setup.js`'s own Approval Hierarchy
+ * tab needs the same closed currency list for its limit-override form
+ * that this screen already builds for authority and spend limits;
+ * reused rather than duplicated, the same "one list, not two that
+ * could drift" reasoning `unit-config.ts`'s own resolver already
+ * follows for unit lineage.
+ */
+export function currencyPicker(selectedValue) {
   return el(
     "select",
     { class: "currencypicker" },

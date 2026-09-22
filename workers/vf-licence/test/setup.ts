@@ -128,6 +128,11 @@ import documentPageCyclingAndHighlightStringsSql from "../migrations/0123_docume
 import poMismatchCheckLabelSql from "../migrations/0124_po_mismatch_check_label.sql?raw";
 import dashboardCardTitlesRewordedSql from "../migrations/0125_dashboard_card_titles_reworded.sql?raw";
 import documentsShowingExceptionsAndAgingSql from "../migrations/0126_documents_showing_exceptions_and_aging.sql?raw";
+// Migrations 0127-0144 are not wired into this file — a pre-existing
+// gap, not introduced here. 0145 is wired in below, resuming the same
+// import-then-exec discipline every migration through 0126 already
+// follows.
+import apSetupStringsSql from "../migrations/0145_ap_setup_strings.sql?raw";
 
 function stripSqlComments(sql: string): string {
   return sql
@@ -283,5 +288,6 @@ export async function applyTestSchema(): Promise<void> {
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(poMismatchCheckLabelSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(dashboardCardTitlesRewordedSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(documentsShowingExceptionsAndAgingSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(apSetupStringsSql)));
 
 }

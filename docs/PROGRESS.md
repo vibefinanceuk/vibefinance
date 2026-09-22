@@ -1457,14 +1457,53 @@ section for the full reasoning and tests.
 - `vf-app` 2490 → **2513** (+21 `approval-hierarchy.test.ts`, +2
   `workflow-engine.test.ts`), full unfiltered run, all green. Migration
   chain replays clean (75 migrations). `eslint` clean.
-- **Not built**: the AP Setup screen and its three tabs (deliberately
-  sequenced after, at the operator's own instruction); the write API
-  for the two override tables and `org_approval_config`; a way to turn
-  `uses_approval_hierarchy` on through `process-route.ts` rather than
-  by hand; Matching and Account Coding (AP Setup's other two tabs,
-  confirmed genuinely greenfield — no Coding stage exists in any real
-  process yet); Manual and API modes (named, no resolver — both fall
-  to the Default Approver or report unresolved).
+- **Not built** (see decision 0440 below for what closed most of this):
+  the AP Setup screen and its three tabs; the write API for the two
+  override tables and `org_approval_config`; Matching and Account
+  Coding (AP Setup's other two tabs, confirmed genuinely greenfield —
+  no Coding stage exists in any real process yet); Manual and API
+  modes (named, no resolver — both fall to the Default Approver or
+  report unresolved).
+
+### AP Setup screen, and the Approval Hierarchy write API (0440)
+- **"AP Setup," a new nav entry** — `ap-setup.js`, gated on
+  `Admin.Configure` (the same instance-wide permission Sources,
+  Purchase Orders and Processes already gate), reusing `access.js`'s
+  own `.tabbar`/`.tab` component, per the operator's own instruction
+  that the screen follow the Access screen's own conventions.
+- **Matching and Account Coding stay real placeholder tabs** — both
+  confirmed genuinely greenfield during 0439's own investigation, the
+  same `placeholderCard()` shape `ap-analytics.js` already uses for an
+  unbuilt tab.
+- **Approval Hierarchy is live**: one `.editgrid` form for mode +
+  Default Approver (the same "replace, not merge" shape
+  `openPersonPropertiesForm` already takes); inline picker rows plus
+  Add/Remove for both override tables (the same shape `openTeamForm`'s
+  own member picker already uses). `access.js`'s own `currencyPicker()`
+  is now exported and reused here rather than duplicated.
+- **The write API**, `approval-config-route.ts` — six handlers:
+  `GET`/`PUT /approval-config` (config + both override lists, joined to
+  real names), `POST`/`DELETE` for each override table, upsert on each
+  table's own composite key, self-supervision refused before the
+  database's own CHECK constraint has to, a delete matching nothing
+  404s. Currency stays free text on this route too — checked directly,
+  no closed ISO-4217-style vocabulary exists anywhere in this codebase,
+  and `handleSetAuthorityLimit` (0009) already sets the precedent; the
+  UI still constrains input to `access.js`'s own closed 156-currency
+  picker.
+- `uses_approval_hierarchy` stays SQL-only, deliberately — no route
+  anywhere in this app edits a stage's own properties post-publish, the
+  same place `required_permission` (0200) already sits, and inventing
+  one for a single flag was out of scope for this screen.
+- New: `workers/vf-app/test/approval-config-route.test.ts` (21 tests).
+  New: `workers/vf-ui/test-browser/ap-setup.test.ts` (13 tests). New:
+  `workers/vf-licence/migrations/0145_ap_setup_strings.sql` (29 keys,
+  en + de).
+- `vf-app` 2513 → **2534**, `vf-licence` **320** tests (both
+  unfiltered runs, all green). `vf-ui` browser suite green (one
+  pre-existing, unrelated flake in `document-window.test.ts` confirmed
+  present on a clean checkout too, not touched by this change). `eslint
+  .` clean across the whole repo.
 
 ### Purchase orders and matching
 - Purchase order storage grounded in Peppol BIS Order Only 3.3, via UBL

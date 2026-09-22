@@ -538,6 +538,9 @@ async function go(screen) {
   } else if (screen === "access") {
     const { open } = await import("/access.js");
     await open();
+  } else if (screen === "apsetup") {
+    const { open } = await import("/ap-setup.js");
+    await open();
   } else if (screen === "processes") {
     const { open } = await import("/processes.js");
     await open();
@@ -649,6 +652,14 @@ const NAV_PERMISSIONS = {
    * than naming only one of the four things it now holds.
    */
   access: ["Admin.Configure", "Admin.UserManagement"],
+  /**
+   * **AP Setup — decision 0440.** `Admin.Configure`, the same
+   * instance-wide permission Sources, Purchase Orders and Processes
+   * already gate in this same "configuration" group — a screen for
+   * configuring how invoices are matched, coded and approved sits
+   * beside them, not among the delegable ones.
+   */
+  apsetup: "Admin.Configure",
 };
 
 /** One nav entry: an icon, a label, and which screen it opens. */
@@ -708,6 +719,7 @@ export function frame(main) {
       heading: "configuration",
       screens: [
         ["access", "users"],
+        ["apsetup", "apsetup"],
         ["sources", "sources"],
         ["purchaseorders", "purchaseorders"],
         ["rules", "rules"],

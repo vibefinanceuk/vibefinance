@@ -3,7 +3,7 @@
 **Written 4 September 2026, updated 17 September (six times), updated
 18 September (four times), updated 19 September (thirty-two times),
 updated 20 September (twenty-two times), updated 21 September
-(twenty-five times).**
+(twenty-five times), updated 22 September (once).**
 
 **For a session starting cold.** Where things stand, what needs a
 decision rather than work, what to do next, and the habits this project
@@ -32,16 +32,16 @@ twice.
 
 | | |
 | --- | --- |
-| `origin/main` | `184f53d` — fetched directly by this session, matching this session's own decision 0439 commit exactly. Decisions 0434 (org placement and supplier matching now reach the first stage visit) and 0435 (a stage visit error is recorded, not swallowed) are confirmed pushed and deployed. **Decisions 0436 through 0438 (the sidebar fix) are confirmed pushed and deployed — the operator reported *"deployed and pushed - works great"*.** **Decision 0439 (Approval Hierarchy — the migration and the resolver) is now also confirmed pushed and deployed — the operator reported *"pushed and deployed"*.** |
+| `origin/main` | `21a96b9` — fetched directly by this session, matching this session's own confirm-0439 commit exactly, immediately before this session began decision 0440. Decisions 0434 (org placement and supplier matching now reach the first stage visit) and 0435 (a stage visit error is recorded, not swallowed) are confirmed pushed and deployed. **Decisions 0436 through 0438 (the sidebar fix) are confirmed pushed and deployed — the operator reported *"deployed and pushed - works great"*.** **Decision 0439 (Approval Hierarchy — the migration and the resolver) is confirmed pushed and deployed — the operator reported *"pushed and deployed"*.** **Decision 0440 (the AP Setup screen and the Approval Hierarchy write API) is built, tested, and delivered as a bundle — not yet confirmed pushed or deployed; this is the next thing to confirm with the operator.** |
 | vf-admin deployed | `8e27a34` · `https://admin.vibefinance-ai.com` · behind Cloudflare Access |
-| vf-app deployed | `ca1de60` confirmed — decisions 0429 (agreed payment means, a supplier-record placeholder), 0430 (Talk to an AP Expert, Screen 6) with all eight of its own addenda, 0431 (Executive IQ's remaining four metrics), 0432 with its own addendum, 0433 (org-ranked supplier search), 0434 (org/supplier facts reach the first stage visit), 0435 (a stage visit error is recorded, not swallowed), and 0436 (vf-ui only — the nav's own content scrolls), all confirmed. **Decision 0439 (Approval Hierarchy — schema and resolver, vf-app only) is also confirmed pushed and deployed, per the operator's own report — no screen or write API exists yet for any of it, so nothing behind it is reachable except by direct SQL, exactly as decision 0439 itself says.** |
-| vf-licence deployed | `ca1de60` per the operator's own reports; migrations `0140` through `0144` all applied — `0144` is decision 0435's own banner-label string. Decision 0436 added none. |
-| vf-ui deployed | `ca1de60` · `https://app.vibefinance-ai.com` — operator's own reports, confirmed directly: *"deployed and pushed"* against the icon buttons live, then, with a screenshot, *"the icons are a little lower or the text box is higher. They seem a little un-aligned"*, then *"pushed and deployed"* again confirming the alignment-fix addendum live, then *"deployed and pushed"* confirming decision 0433's own org-ranked supplier search live, then *"pushed and deployed - this seems to have worked"* confirming decision 0434 live, then *"pushed and deployed"* again confirming decision 0435 live, then *"pushed and deployed"* again confirming decision 0436 live, then *"deployed and pushed - works great"* confirming decisions 0437 and 0438 live together. |
+| vf-app deployed | `ca1de60` confirmed — decisions 0429 (agreed payment means, a supplier-record placeholder), 0430 (Talk to an AP Expert, Screen 6) with all eight of its own addenda, 0431 (Executive IQ's remaining four metrics), 0432 with its own addendum, 0433 (org-ranked supplier search), 0434 (org/supplier facts reach the first stage visit), 0435 (a stage visit error is recorded, not swallowed), and 0436 (vf-ui only — the nav's own content scrolls), all confirmed. Decision 0439 (Approval Hierarchy — schema and resolver, vf-app only) is confirmed pushed and deployed, per the operator's own report. **Decision 0440 (the AP Setup screen's own write API, `approval-config-route.ts`, plus `ap-setup.js` for vf-ui) is built and tested but not yet deployed — the screen exists in this session's own working tree only until the operator pulls, pushes and deploys the bundle.** |
+| vf-licence deployed | `ca1de60` per the operator's own reports; migrations `0140` through `0144` all applied — `0144` is decision 0435's own banner-label string. Decision 0436 added none. **Migration `0145` (decision 0440's own AP Setup strings, 29 keys × en/de) is built and tested but not yet applied to the live database.** |
+| vf-ui deployed | `ca1de60` · `https://app.vibefinance-ai.com` — operator's own reports, confirmed directly: *"deployed and pushed"* against the icon buttons live, then, with a screenshot, *"the icons are a little lower or the text box is higher. They seem a little un-aligned"*, then *"pushed and deployed"* again confirming the alignment-fix addendum live, then *"deployed and pushed"* confirming decision 0433's own org-ranked supplier search live, then *"pushed and deployed - this seems to have worked"* confirming decision 0434 live, then *"pushed and deployed"* again confirming decision 0435 live, then *"pushed and deployed"* again confirming decision 0436 live, then *"deployed and pushed - works great"* confirming decisions 0437 and 0438 live together. **Decision 0440's own `ap-setup.js` (plus the exported `currencyPicker` and the new `apsetup` nav icon) is not yet deployed.** |
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
-| `vf-app-poc` migrations | through `0074` applied and confirmed live — `0073` (decision 0429) is real schema; `0074` (decision 0430) is a documentation-only `ASSERT` restatement with no schema change, the same shape as `0071`; none of 0430's eight addenda needed a new `vf-app` migration; decision 0431 also needed none — its four new routes read existing tables only; decision 0433 also needed none — its ranking change reads the existing `org_unit_id` column only; decision 0434 also needed none — it changes when facts already computed reach the workflow engine, not the schema; decision 0435 also needed none — it writes a new fact through the existing `facts_json` column. **A tenant-data fix, not a migration**: the operator's own live Validation stage had `required_permission IS NULL` — the root cause behind decision 0435's own finding — fixed directly with `UPDATE process_stages SET required_permission = 'AP.Validate' WHERE id = 'validation'`. **This did not hold on the first attempt**: after decision 0435 deployed, a fresh test invoice hit the identical `requiredPermission "undefined"` error via the new `workflow.stageError` banner, and a direct re-check found `required_permission` back to `NULL` — code was traced end to end (`process-route.ts`'s stage-creation and draft/publish handlers, `field-visibility-route.ts`, `rules-list-route.ts`) and **nothing in the application ever writes this column**, so the revert's cause is unexplained, not a known bug. Re-run a second time with the `UPDATE` and a `SELECT` in the same statement batch, confirmed set to `AP.Validate` in that same round-trip, and then confirmed durable and working end-to-end by the operator submitting a genuinely fresh test invoice: it stopped at Validation, no error banner, and a task appeared with `required_permission = AP.Validate`. **If this reverts a third time**, suspect a second database bound to the same `vf-app-poc` name (check `wrangler d1 list` against `workers/vf-app/wrangler.toml`'s `database_id`) rather than re-tracing application code again. **`0075` (decision 0439, Approval Hierarchy) is now applied and confirmed live too** — the operator's own report, *"pushed and deployed"*. |
-| `vf-licence-poc` migrations | through `0144` applied and confirmed live — the operator's own `apply_migrations.py --remote` run, `0144` is decision 0435's own banner-label string (`viewer.workflow.stageerror`, en/de). |
-| Tests | vf-admin 9 · vf-app **2513** (2490 + 21 `approval-hierarchy.test.ts` + 2 `workflow-engine.test.ts`, decision 0439, confirmed by one unfiltered whole-suite run) · vf-licence 320 (unchanged) · vf-ui 74 Worker (unchanged by 0439 — vf-app only) + 960 browser (unchanged by 0436/0437/0438 since those confirmed live) · shared 295 (+3 known pre-existing failures) |
-| Decision records | 439 |
+| `vf-app-poc` migrations | through `0075` applied and confirmed live — `0073` (decision 0429) is real schema; `0074` (decision 0430) is a documentation-only `ASSERT` restatement with no schema change, the same shape as `0071`; none of 0430's eight addenda needed a new `vf-app` migration; decision 0431 also needed none — its four new routes read existing tables only; decision 0433 also needed none — its ranking change reads the existing `org_unit_id` column only; decision 0434 also needed none — it changes when facts already computed reach the workflow engine, not the schema; decision 0435 also needed none — it writes a new fact through the existing `facts_json` column. **A tenant-data fix, not a migration**: the operator's own live Validation stage had `required_permission IS NULL` — the root cause behind decision 0435's own finding — fixed directly with `UPDATE process_stages SET required_permission = 'AP.Validate' WHERE id = 'validation'`. **This did not hold on the first attempt**: after decision 0435 deployed, a fresh test invoice hit the identical `requiredPermission "undefined"` error via the new `workflow.stageError` banner, and a direct re-check found `required_permission` back to `NULL` — code was traced end to end (`process-route.ts`'s stage-creation and draft/publish handlers, `field-visibility-route.ts`, `rules-list-route.ts`) and **nothing in the application ever writes this column**, so the revert's cause is unexplained, not a known bug. Re-run a second time with the `UPDATE` and a `SELECT` in the same statement batch, confirmed set to `AP.Validate` in that same round-trip, and then confirmed durable and working end-to-end by the operator submitting a genuinely fresh test invoice: it stopped at Validation, no error banner, and a task appeared with `required_permission = AP.Validate`. **If this reverts a third time**, suspect a second database bound to the same `vf-app-poc` name (check `wrangler d1 list` against `workers/vf-app/wrangler.toml`'s `database_id`) rather than re-tracing application code again. `0075` (decision 0439, Approval Hierarchy) is applied and confirmed live — the operator's own report, *"pushed and deployed"*. **Decision 0440 needed no new `vf-app` migration — its two new tables already existed from `0075`; this is a routes-and-UI-only decision.** |
+| `vf-licence-poc` migrations | through `0144` applied and confirmed live — the operator's own `apply_migrations.py --remote` run, `0144` is decision 0435's own banner-label string (`viewer.workflow.stageerror`, en/de). **`0145` (decision 0440's own AP Setup strings) not yet applied.** |
+| Tests | vf-admin 9 · vf-app **2534** (2513 + 21 `approval-config-route.test.ts`, decision 0440, confirmed by one unfiltered whole-suite run) · vf-licence **320** (unchanged in count — decision 0440's own migration 0145 adds rows to the existing `ui_strings` table, not new test files) · vf-ui 74 Worker (unchanged by 0440 — vf-app/vf-licence only) + **973** browser (960 + 13 `ap-setup.test.ts`, decision 0440) · shared 295 (+3 known pre-existing failures) |
+| Decision records | 440 |
 
 **Decision 0437 (the nav's box is really one viewport tall, and
 doesn't scroll sideways) is built, tested, documented, and confirmed
@@ -165,6 +165,64 @@ tabs, the write API for the new tables, a way to turn
 Coding (both confirmed genuinely greenfield), and Manual/API modes
 (named, no resolver). See decision 0439 for the full reasoning and
 tests.
+
+**Decision 0440 (the AP Setup screen, and the Approval Hierarchy write
+API) is built and tested — not yet pushed or deployed; this session
+still has no push access.** In direct response to *"yes please - lets
+go"* — the operator's own green light to build the piece decision 0439
+deliberately deferred, *"following the Access screen's own
+conventions, as you asked."* **The screen**: a new "AP Setup" nav entry
+(`ap-setup.js`), gated on `Admin.Configure` alongside Sources, Purchase
+Orders and Processes in the same "configuration" group, reusing
+`access.js`'s own `.tabbar`/`.tab` component. Matching and Account
+Coding stay real placeholder tabs — both confirmed genuinely
+greenfield during decision 0439's own investigation. Approval Hierarchy
+is live: one form for mode + Default Approver (the same "replace, not
+merge" shape `openPersonPropertiesForm` already takes), and inline
+picker rows with Add/Remove for both of decision 0439's own override
+tables (the same shape `openTeamForm`'s own member picker already
+uses). `access.js`'s own `currencyPicker()` is now exported and reused
+here rather than duplicated. **The write API**, a new
+`approval-config-route.ts` — six handlers matching the "closed
+vocabulary, upsert on a composite key" shape `org-route.ts` and
+`field-visibility-route.ts` already established: `GET`/`PUT
+/approval-config` (the config plus both override lists, joined to real
+user and unit names, never bare ids), and `POST`/`DELETE` for each
+override table, upserting on that table's own composite key,
+self-supervision refused before the database's own CHECK constraint
+has to, a delete matching nothing 404s rather than silently no-opping.
+**Currency stays free text on this route too** — checked directly
+before building: `shared/interpreter/closed-values.ts` has no
+ISO-4217-style closed list anywhere in this codebase, and
+`handleSetAuthorityLimit` (decision 0009) already accepts free-text
+currency for the same kind of limit; this route matches that existing
+precedent rather than inventing validation nothing else in the system
+has, and the UI still constrains input to the closed 156-currency
+picker `access.js` already offers. **`uses_approval_hierarchy` stays
+SQL-only, deliberately** — no route anywhere in this app edits a
+stage's own properties post-publish (`process-route.ts` has no
+`handleUpdateStage`), the same place `required_permission` (decision
+0200) already sits; inventing a generic stage-editing mechanism for one
+flag was out of scope for this screen. New:
+`workers/vf-app/test/approval-config-route.test.ts` (21 tests, all
+validation paths, both upserts, the operator's own EUR-France/GBP-UK
+example). New: `workers/vf-ui/test-browser/ap-setup.test.ts` (13
+tests — the screen opens and is refused without `Admin.Configure`, a
+failed load shows a real error and keeps the nav reachable per decision
+0322's own discipline, both placeholder tabs, the mode picker's four
+values, both override lists' empty state/listing/remove). New:
+`workers/vf-licence/migrations/0145_ap_setup_strings.sql` (29 keys, en
++ de) — wired into `vf-licence/test/setup.ts`'s own hand-maintained
+import list (migrations `0127`–`0144` were found NOT wired in at all,
+a pre-existing gap from before this session, left alone as out of
+scope). `vf-app` 2513 → **2534**, `vf-licence` **320** (row count
+grew, test count did not), `vf-ui` browser 960 → **973**, all three
+full unfiltered runs, all green; `eslint .` clean across the whole
+repo. **One pre-existing, unrelated flake confirmed** in
+`document-window.test.ts` (an unhandled-rejection error around
+`/api/invoices/inv-1/document-url`) — reproduced identically on a clean
+`git stash` of this session's own changes, so it predates this work and
+was left alone. See decision 0440 for the full reasoning and tests.
 
 **Decision 0436 (the nav's own content scrolls, so `.who` stays on
 screen) is pushed and deployed, confirmed directly.** `origin/main`
@@ -3241,8 +3299,8 @@ membership; task assignment still names a team by id directly, with
 nothing narrowing which teams a given screen offers based on the org
 a task or document belongs to.
 
-**1. Cost object approval** (decisions 0184, 0195) — **update (0439):
-now callable, not yet the active mode.**
+**1. Cost object approval** (decisions 0184, 0195) — **update (0440):
+selectable from the screen now, still not the default mode.**
 
 A **ledger** exists (Oracle's word; SAP's *controlling area*), legal
 entities account in one, and a cost centre hangs beneath it with a
@@ -3250,12 +3308,21 @@ parent, an owner and a limit. `resolveApprovalChain` walks it in
 decision 0184's **Limit** mode — decision 0439's own
 `approval-hierarchy.ts` is the first thing that calls it, wired to
 `assign_task` through a new stage flag (`uses_approval_hierarchy`) and
-a new customer-wide setting (`org_approval_config.mode`). Selecting
-`cost_object` there activates this path; the operator's own first mode
-to build was Employee-Supervisor instead, so that is what
-`org_approval_config` defaults to today. **The next piece** is the
-screen: nothing yet lets an operator actually change the mode, or set
-a cost centre's owner/limit, without direct SQL.
+a new customer-wide setting (`org_approval_config.mode`). **Decision
+0440 built the screen** — AP Setup's Approval Hierarchy tab now has a
+real mode picker, so an operator can select `cost_object` there without
+direct SQL. The operator's own first mode to build was
+Employee-Supervisor, so that is still what `org_approval_config`
+defaults to until somebody changes it. **What's still missing**: a
+screen for a cost centre's own owner/limit — decision 0440 built CRUD
+for the *Employee-Supervisor* override tables only
+(`org_user_supervisor_overrides`, `org_authority_limit_overrides`).
+Checked directly rather than assumed: `handleUpdateCostCentre`
+(`ledger-route.ts`) already accepts `ownerUserId`/`approvalLimit` and
+is wired to `PUT /cost-centres/:id` in `index.ts` — a real route
+already exists, it is simply not called from anywhere in `vf-ui` yet.
+Manual and API modes also still have no resolver — both fall straight
+to the Default Approver, or report unresolved.
 
 *The original design note:* Cost object approval (decision 0184) — **designed, not built.**
 An invoice line finds its approvers from its cost centre, and how many

@@ -69,6 +69,14 @@ import {
 } from "./org-route.js";
 import { handleCreateCostCentre } from "./cost-centre-route.js";
 import {
+  handleGetApprovalConfig,
+  handleUpdateApprovalConfig,
+  handleSetSupervisorOverride,
+  handleDeleteSupervisorOverride,
+  handleSetLimitOverride,
+  handleDeleteLimitOverride,
+} from "./approval-config-route.js";
+import {
   requirePermission,
   permissionsFor,
   unitsFor,
@@ -1885,6 +1893,106 @@ export default {
         return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
       }
       const result = await handleListUnits(db);
+      return json(result.body, result.status);
+    }
+
+    /**
+     * **AP Setup's own Approval Hierarchy tab — decision 0440.**
+     * `Admin.Configure`, the same permission the screen's own nav
+     * entry (`tasks.js`'s `NAV_PERMISSIONS.apsetup`) already gates —
+     * a tab's own gate always matches its data's own gate, the same
+     * rule `ap-analytics.js`'s own doc comment states for its tabs.
+     */
+    if (pathname === "/approval-config" && request.method === "GET") {
+      const { db } = resolveTenant(request, env);
+      const auth = await requirePermission(db, request, "Admin.Configure", sessionContext(env));
+      if (!auth.authorized) {
+        return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
+      }
+      const result = await handleGetApprovalConfig(db);
+      return json(result.body, result.status);
+    }
+
+    if (pathname === "/approval-config" && request.method === "PUT") {
+      const { db } = resolveTenant(request, env);
+      const auth = await requirePermission(db, request, "Admin.Configure", sessionContext(env));
+      if (!auth.authorized) {
+        return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
+      }
+      let body: unknown;
+      try {
+        body = await request.json();
+      } catch {
+        return json({ error: t("invalidJsonBody", resolveLocale(env.LOCALE)) }, 400);
+      }
+      const result = await handleUpdateApprovalConfig(db, body as Record<string, unknown>);
+      return json(result.body, result.status);
+    }
+
+    if (pathname === "/approval-config/supervisor-overrides" && request.method === "POST") {
+      const { db } = resolveTenant(request, env);
+      const auth = await requirePermission(db, request, "Admin.Configure", sessionContext(env));
+      if (!auth.authorized) {
+        return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
+      }
+      let body: unknown;
+      try {
+        body = await request.json();
+      } catch {
+        return json({ error: t("invalidJsonBody", resolveLocale(env.LOCALE)) }, 400);
+      }
+      const result = await handleSetSupervisorOverride(db, body as Record<string, unknown>);
+      return json(result.body, result.status);
+    }
+
+    const supervisorOverrideMatch = pathname.match(
+      /^\/approval-config\/supervisor-overrides\/([^/]+)\/([^/]+)$/
+    );
+    if (supervisorOverrideMatch && request.method === "DELETE") {
+      const { db } = resolveTenant(request, env);
+      const auth = await requirePermission(db, request, "Admin.Configure", sessionContext(env));
+      if (!auth.authorized) {
+        return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
+      }
+      const result = await handleDeleteSupervisorOverride(
+        db,
+        decodeURIComponent(supervisorOverrideMatch[1]),
+        decodeURIComponent(supervisorOverrideMatch[2])
+      );
+      return json(result.body, result.status);
+    }
+
+    if (pathname === "/approval-config/limit-overrides" && request.method === "POST") {
+      const { db } = resolveTenant(request, env);
+      const auth = await requirePermission(db, request, "Admin.Configure", sessionContext(env));
+      if (!auth.authorized) {
+        return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
+      }
+      let body: unknown;
+      try {
+        body = await request.json();
+      } catch {
+        return json({ error: t("invalidJsonBody", resolveLocale(env.LOCALE)) }, 400);
+      }
+      const result = await handleSetLimitOverride(db, body as Record<string, unknown>);
+      return json(result.body, result.status);
+    }
+
+    const limitOverrideMatch = pathname.match(
+      /^\/approval-config\/limit-overrides\/([^/]+)\/([^/]+)\/([^/]+)$/
+    );
+    if (limitOverrideMatch && request.method === "DELETE") {
+      const { db } = resolveTenant(request, env);
+      const auth = await requirePermission(db, request, "Admin.Configure", sessionContext(env));
+      if (!auth.authorized) {
+        return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
+      }
+      const result = await handleDeleteLimitOverride(
+        db,
+        decodeURIComponent(limitOverrideMatch[1]),
+        decodeURIComponent(limitOverrideMatch[2]),
+        decodeURIComponent(limitOverrideMatch[3])
+      );
       return json(result.body, result.status);
     }
 

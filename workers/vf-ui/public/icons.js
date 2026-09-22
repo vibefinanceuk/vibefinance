@@ -479,6 +479,14 @@ Object.assign(ICONS, {
   processes:
     '<circle cx="4" cy="12" r="2.5"/><path d="M6.5 12h5"/><circle cx="12" cy="12" r="2.5"/><path d="M14.5 12h5"/><circle cx="20" cy="12" r="2.5"/>',
 
+  // AP Setup — decision 0440. A clipboard with a checkmark: Matching,
+  // Account Coding and Approval Hierarchy are all configuration a
+  // person signs off on, so the mark reads as "set up and confirmed"
+  // rather than reusing `rules`' own branch shape, which already means
+  // something else in this same nav group.
+  apsetup:
+    '<path d="M9 4h6a1 1 0 0 1 1 1v1H8V5a1 1 0 0 1 1-1z"/><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M8.5 13l2.5 2.5L16 10"/>',
+
   // A panel with a chevron — decision 0274's collapse toggle. One
   // icon rather than two: the chevron is flipped with a CSS transform
   // for "expand," since the shape is the same claim pointed the other
