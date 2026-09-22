@@ -376,6 +376,23 @@ const PROXIED_TO_INSTANCE: RegExp[] = [
    * existing wildcard on this list matches `/ap-assistant/ask`.
    */
   /^\/ap-assistant\/ask$/,
+  /**
+   * **AP Setup's own Approval Hierarchy tab — decision 0440.** The
+   * exact gap this file's own comments already document more than a
+   * dozen times over (0212, 0319, 0324–0328, 0415, 0417–0425, 0428,
+   * 0430): the route was real and tested in `vf-app`, the nav item was
+   * real, the click handler ran, the fetch went out — and this proxy
+   * answered `{"error":"not found"}` before `vf-app` ever saw it,
+   * reported live as *"AP Setup could not be loaded."* Found by
+   * checking this file directly against the operator's own report
+   * rather than re-tracing `vf-app` or `ap-setup.js`, both of which
+   * were already correct.
+   */
+  /^\/approval-config$/,
+  /^\/approval-config\/supervisor-overrides$/,
+  /^\/approval-config\/supervisor-overrides\/[^/]+\/[^/]+$/,
+  /^\/approval-config\/limit-overrides$/,
+  /^\/approval-config\/limit-overrides\/[^/]+\/[^/]+\/[^/]+$/,
 ];
 
 /**

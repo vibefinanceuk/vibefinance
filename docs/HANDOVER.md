@@ -3,7 +3,7 @@
 **Written 4 September 2026, updated 17 September (six times), updated
 18 September (four times), updated 19 September (thirty-two times),
 updated 20 September (twenty-two times), updated 21 September
-(twenty-five times), updated 22 September (twice).**
+(twenty-five times), updated 22 September (three times).**
 
 **For a session starting cold.** Where things stand, what needs a
 decision rather than work, what to do next, and the habits this project
@@ -32,16 +32,16 @@ twice.
 
 | | |
 | --- | --- |
-| `origin/main` | `fc62876` — fetched directly by this session, matching this session's own decision 0440 commit exactly. Decisions 0434 (org placement and supplier matching now reach the first stage visit) and 0435 (a stage visit error is recorded, not swallowed) are confirmed pushed and deployed. **Decisions 0436 through 0438 (the sidebar fix) are confirmed pushed and deployed — the operator reported *"deployed and pushed - works great"*.** **Decision 0439 (Approval Hierarchy — the migration and the resolver) is confirmed pushed and deployed — the operator reported *"pushed and deployed"*.** **Decision 0440 (the AP Setup screen and the Approval Hierarchy write API) is now also confirmed pushed and deployed — the operator reported *"pushed and deployed"*.** |
+| `origin/main` | `fc62876` — fetched directly by this session, matching this session's own decision 0440 commit exactly. Decisions 0434 (org placement and supplier matching now reach the first stage visit) and 0435 (a stage visit error is recorded, not swallowed) are confirmed pushed and deployed. **Decisions 0436 through 0438 (the sidebar fix) are confirmed pushed and deployed — the operator reported *"deployed and pushed - works great"*.** **Decision 0439 (Approval Hierarchy — the migration and the resolver) is confirmed pushed and deployed — the operator reported *"pushed and deployed"*.** **Decision 0440 (the AP Setup screen and the Approval Hierarchy write API) is now also confirmed pushed and deployed — the operator reported *"pushed and deployed"*.** **Decision 0441 (the proxy-allowlist fix for AP Setup's own routes) is built and tested, one commit ahead of `fc62876` locally — not yet confirmed pushed or deployed; reported live as *"AP Setup could not be loaded"* immediately after 0440 went live.** |
 | vf-admin deployed | `8e27a34` · `https://admin.vibefinance-ai.com` · behind Cloudflare Access |
 | vf-app deployed | `ca1de60` confirmed — decisions 0429 (agreed payment means, a supplier-record placeholder), 0430 (Talk to an AP Expert, Screen 6) with all eight of its own addenda, 0431 (Executive IQ's remaining four metrics), 0432 with its own addendum, 0433 (org-ranked supplier search), 0434 (org/supplier facts reach the first stage visit), 0435 (a stage visit error is recorded, not swallowed), and 0436 (vf-ui only — the nav's own content scrolls), all confirmed. Decision 0439 (Approval Hierarchy — schema and resolver, vf-app only) is confirmed pushed and deployed, per the operator's own report. **Decision 0440's own write API (`approval-config-route.ts`) is now also confirmed pushed and deployed, per the operator's own report.** |
 | vf-licence deployed | `ca1de60` per the operator's own reports; migrations `0140` through `0144` all applied — `0144` is decision 0435's own banner-label string. Decision 0436 added none. **Migration `0145` (decision 0440's own AP Setup strings, 29 keys × en/de) is now also confirmed applied, per the operator's own report.** |
-| vf-ui deployed | `ca1de60` · `https://app.vibefinance-ai.com` — operator's own reports, confirmed directly: *"deployed and pushed"* against the icon buttons live, then, with a screenshot, *"the icons are a little lower or the text box is higher. They seem a little un-aligned"*, then *"pushed and deployed"* again confirming the alignment-fix addendum live, then *"deployed and pushed"* confirming decision 0433's own org-ranked supplier search live, then *"pushed and deployed - this seems to have worked"* confirming decision 0434 live, then *"pushed and deployed"* again confirming decision 0435 live, then *"pushed and deployed"* again confirming decision 0436 live, then *"deployed and pushed - works great"* confirming decisions 0437 and 0438 live together, then *"pushed and deployed"* again confirming decision 0440's own `ap-setup.js` (plus the exported `currencyPicker` and the new `apsetup` nav icon) live. |
+| vf-ui deployed | `ca1de60` · `https://app.vibefinance-ai.com` — operator's own reports, confirmed directly: *"deployed and pushed"* against the icon buttons live, then, with a screenshot, *"the icons are a little lower or the text box is higher. They seem a little un-aligned"*, then *"pushed and deployed"* again confirming the alignment-fix addendum live, then *"deployed and pushed"* confirming decision 0433's own org-ranked supplier search live, then *"pushed and deployed - this seems to have worked"* confirming decision 0434 live, then *"pushed and deployed"* again confirming decision 0435 live, then *"pushed and deployed"* again confirming decision 0436 live, then *"deployed and pushed - works great"* confirming decisions 0437 and 0438 live together, then *"pushed and deployed"* again confirming decision 0440's own `ap-setup.js` (plus the exported `currencyPicker` and the new `apsetup` nav icon) live. **Decision 0440's own screen then failed live** — *"AP Setup could not be loaded"* — root-caused to `vf-ui`'s own `PROXIED_TO_INSTANCE` allowlist never learning about the five new `/approval-config` routes; the fix is decision 0441, built and tested, not yet deployed. |
 | Domain | `vibefinance-ai.com` · **email intake receives real invoices** |
 | `vf-app-poc` migrations | through `0075` applied and confirmed live — `0073` (decision 0429) is real schema; `0074` (decision 0430) is a documentation-only `ASSERT` restatement with no schema change, the same shape as `0071`; none of 0430's eight addenda needed a new `vf-app` migration; decision 0431 also needed none — its four new routes read existing tables only; decision 0433 also needed none — its ranking change reads the existing `org_unit_id` column only; decision 0434 also needed none — it changes when facts already computed reach the workflow engine, not the schema; decision 0435 also needed none — it writes a new fact through the existing `facts_json` column. **A tenant-data fix, not a migration**: the operator's own live Validation stage had `required_permission IS NULL` — the root cause behind decision 0435's own finding — fixed directly with `UPDATE process_stages SET required_permission = 'AP.Validate' WHERE id = 'validation'`. **This did not hold on the first attempt**: after decision 0435 deployed, a fresh test invoice hit the identical `requiredPermission "undefined"` error via the new `workflow.stageError` banner, and a direct re-check found `required_permission` back to `NULL` — code was traced end to end (`process-route.ts`'s stage-creation and draft/publish handlers, `field-visibility-route.ts`, `rules-list-route.ts`) and **nothing in the application ever writes this column**, so the revert's cause is unexplained, not a known bug. Re-run a second time with the `UPDATE` and a `SELECT` in the same statement batch, confirmed set to `AP.Validate` in that same round-trip, and then confirmed durable and working end-to-end by the operator submitting a genuinely fresh test invoice: it stopped at Validation, no error banner, and a task appeared with `required_permission = AP.Validate`. **If this reverts a third time**, suspect a second database bound to the same `vf-app-poc` name (check `wrangler d1 list` against `workers/vf-app/wrangler.toml`'s `database_id`) rather than re-tracing application code again. `0075` (decision 0439, Approval Hierarchy) is applied and confirmed live — the operator's own report, *"pushed and deployed"*. **Decision 0440 needed no new `vf-app` migration — its two new tables already existed from `0075`; this is a routes-and-UI-only decision.** |
 | `vf-licence-poc` migrations | through `0145` applied and confirmed live — the operator's own `apply_migrations.py --remote` run, `0144` is decision 0435's own banner-label string (`viewer.workflow.stageerror`, en/de). **`0145` (decision 0440's own AP Setup strings) is now applied and confirmed live too.** |
 | Tests | vf-admin 9 · vf-app **2534** (2513 + 21 `approval-config-route.test.ts`, decision 0440, confirmed by one unfiltered whole-suite run) · vf-licence **320** (unchanged in count — decision 0440's own migration 0145 adds rows to the existing `ui_strings` table, not new test files) · vf-ui 74 Worker (unchanged by 0440 — vf-app/vf-licence only) + **973** browser (960 + 13 `ap-setup.test.ts`, decision 0440) · shared 295 (+3 known pre-existing failures) |
-| Decision records | 440 |
+| Decision records | 441 |
 
 **Decision 0437 (the nav's box is really one viewport tall, and
 doesn't scroll sideways) is built, tested, documented, and confirmed
@@ -165,6 +165,59 @@ tabs, the write API for the new tables, a way to turn
 Coding (both confirmed genuinely greenfield), and Manual/API modes
 (named, no resolver). See decision 0439 for the full reasoning and
 tests.
+
+**Decision 0441 (the proxy never carried its own new routes) is built
+and tested. Not yet pushed or deployed.** Reported live, immediately
+after confirming decision 0440 itself pushed and deployed: *"I do get
+a message saying 'AP Setup could not be loaded', when I click on the
+side menu item - AP Setup."* `vf-ui` is not just static assets — it is
+a backend-for-frontend (decision 0102) that holds the browser's own
+session and proxies every `/api/*` call to `vf-app` through an
+**explicit allowlist**, `PROXIED_TO_INSTANCE` in `workers/vf-ui/src/
+index.ts`, deliberately not a general forwarder. Decision 0440's own
+five new `/approval-config` routes were real, tested, and wired into
+`vf-app`'s own router — but never added to that allowlist, so every
+fetch `ap-setup.js` made was refused before `vf-app` ever saw it, and
+the screen's own decision-0322-style failure path fired exactly as
+designed. **This is the thirteenth instance of the identical gap** this
+project's own `PROXIED_TO_INSTANCE` comment already documents by
+number (decisions 0212, 0319, 0324–0328, 0415, 0417–0425, 0428, 0430).
+`ap-setup.js` and `approval-config-route.ts` were both confirmed
+already correct, by reading them again rather than assumed, before
+touching anything. **Not caught before delivery because the wrong test
+suite ran**: `vf-app`'s own suite, `vf-licence`'s own suite, and
+`vf-ui`'s own **browser** suite all ran clean for decision 0440 — none
+of them touch this allowlist, which lives in `vf-ui`'s own plain Worker
+code and is tested by a *separate* suite,
+`workers/vf-ui/test/index.test.ts`, never run this round; that suite's
+own `CALLED_BY_A_SCREEN` list is exactly the regression net decision
+0131 built for this precise failure mode. Fixed: five new entries on
+`PROXIED_TO_INSTANCE`, and six new `CALLED_BY_A_SCREEN` entries proving
+each one reachable by a real fetch. **Nothing in `vf-app` or
+`vf-licence` changed** — this is a `vf-ui`-only fix; the routes and
+strings decision 0440 shipped were already correct and already
+confirmed live. `vf-ui` plain-Worker suite: 74 tests, all green
+(unchanged in count — the additions landed inside an existing `it()`'s
+own list). `eslint .` clean. **The delivery habit this corrects**:
+`workers/vf-ui/package.json`'s own `test` script already chains both
+`vf-ui` suites (`vitest run && vitest run --config
+vitest.browser.config.ts`); decision 0440 was verified with hand-picked
+`npx vitest run` commands per workspace instead, the browser config
+explicitly and the plain one never, which is exactly how this slipped
+through. Run the package's own `test` script, not an ad-hoc `vitest
+run`, for any change that touches `vf-ui`. **Running that full suite
+found a second, unrelated gap from decision 0440's own build**:
+`test-browser/rules.test.ts`'s own "lists every screen" test had no
+`nav.apsetup` mock string and no "AP Setup" entry in its own expected
+list — a test-fixture gap only, confirmed against a clean stash of this
+session's changes (the real string, migration 0145, was already
+correct and already live). Fixed with one mock string and one
+expected-array entry, in the same place `tasks.js`'s own `NAV_GROUPS`
+puts the screen. Full `vf-ui` browser suite: 973 tests, 969 green, 4
+failed — all four inside the same already-documented, pre-existing
+`document-window.test.ts` flake decision 0440's own delivery note
+named, unrelated to either fix here. See decision 0441 for the
+full reasoning and tests.
 
 **Decision 0440 (the AP Setup screen, and the Approval Hierarchy write
 API) is built, tested, and confirmed pushed and deployed** —

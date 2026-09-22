@@ -501,6 +501,18 @@ describe("the proxy carries every path a screen calls (decision 0131)", () => {
      * wildcard either.
      */
     ["POST", "/api/ap-assistant/ask"],
+    /**
+     * AP Setup's own Approval Hierarchy tab — decision 0440. Reported
+     * live as "AP Setup could not be loaded": the route was real and
+     * tested in `vf-app`, and this proxy answered 404 before `vf-app`
+     * ever saw it, the exact gap this whole block exists to catch.
+     */
+    ["GET", "/api/approval-config"],
+    ["PUT", "/api/approval-config"],
+    ["POST", "/api/approval-config/supervisor-overrides"],
+    ["DELETE", "/api/approval-config/supervisor-overrides/u-1/unit-1"],
+    ["POST", "/api/approval-config/limit-overrides"],
+    ["DELETE", "/api/approval-config/limit-overrides/u-1/unit-1/EUR"],
   ];
 
   it("carries all of them", async () => {

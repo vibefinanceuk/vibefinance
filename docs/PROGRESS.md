@@ -1505,6 +1505,36 @@ section for the full reasoning and tests.
   present on a clean checkout too, not touched by this change). `eslint
   .` clean across the whole repo.
 
+### The proxy allowlist gap, AP Setup edition (0441)
+- Reported live: *"AP Setup could not be loaded."* `vf-ui` proxies
+  `vf-app` through an explicit allowlist (`PROXIED_TO_INSTANCE`,
+  decision 0102) — 0440's own five `/approval-config` routes were real
+  and tested in `vf-app` but never added there, the same recurring gap
+  this file's own comments already document over a dozen times
+  (0212, 0319, 0324–0328, 0415, 0417–0425, 0428, 0430).
+- **Not caught before delivery because the wrong test suite ran**:
+  `workers/vf-ui/test/index.test.ts` (the plain-Worker suite, where
+  `CALLED_BY_A_SCREEN` lives) was never run for 0440 — only the browser
+  suite and `vf-app`/`vf-licence`'s own suites were.
+- Fixed: five new patterns on `PROXIED_TO_INSTANCE`; six new
+  `CALLED_BY_A_SCREEN` entries proving each one reachable. `vf-ui`
+  plain-Worker suite 74/74. `vf-app`/`vf-licence` untouched — this is a
+  `vf-ui`-only fix. `eslint .` clean.
+- **Habit correction, stated plainly**: the workspace's own `npm run
+  test` (or root `npm test`) runs both `vf-ui` suites together
+  (`vitest.config.ts` then `vitest.browser.config.ts`); an ad-hoc
+  `npx vitest run` picks only one and is how this slipped through.
+- **Running that full suite found a second, unrelated gap from 0440's
+  own build**: `test-browser/rules.test.ts`'s own "lists every screen"
+  test had no `nav.apsetup` mock string and no "AP Setup" entry in its
+  expected list — test-fixture-only, confirmed against a clean stash of
+  this session's changes (the real string, migration 0145, was already
+  correct and live). Fixed with one mock string and one expected-array
+  entry. `vf-ui` browser suite: 973 tests, 969 green, 4 failed — all
+  four the same already-documented, pre-existing `document-window.
+  test.ts` flake decision 0440's own delivery note named, unrelated to
+  either fix here.
+
 ### Purchase orders and matching
 - Purchase order storage grounded in Peppol BIS Order Only 3.3, via UBL
   XML ingestion (0081) and CSV load (0370) — the same tables, the same

@@ -50,6 +50,7 @@ const STRINGS = {
     "nav.documents": "Documents",
     "nav.roles": "Roles",
     "nav.access": "Access",
+    "nav.apsetup": "AP Setup",
     "nav.processes": "Processes",
     "nav.group.accountspayable": "Accounts payable",
     "nav.group.suppliermanagement": "Supplier management",
@@ -324,6 +325,12 @@ describe("the navigation", () => {
       "Documents",
       "Suppliers",
       "Access",
+      // AP Setup — decision 0440, added to the configuration group
+      // right after Access. Missed here when that decision built the
+      // screen; caught only once decision 0441 finally ran this
+      // suite's own full, unfiltered form rather than a hand-picked
+      // subset.
+      "AP Setup",
       "Sources",
       "Purchase Orders",
       "Rules",
