@@ -1922,10 +1922,12 @@ section for the full reasoning and tests.
   pure re-wording of already-shipped keys (part 2). `roles.nounits`
   ("No org units configured yet.") deliberately left alone — an
   empty-state sentence, not the tab's own proper name.
-- **Not yet pushed.** Migration `0150` (and the still-outstanding
-  `0149` from decision 0446) both need their own separate
-  `apply_migrations.py --remote --database vf-licence-poc
-  --migrations-dir workers/vf-licence/migrations` run once deployed.
+- **Confirmed pushed and deployed** — `origin/main` fetched directly
+  reads `78357d6`, matching this session's own commit exactly, and the
+  operator confirmed with *"deployed and pushed."* Migration `0150`
+  (and the still-outstanding `0149` from decision 0446) both need their
+  own separate `apply_migrations.py --remote --database vf-licence-poc
+  --migrations-dir workers/vf-licence/migrations` run.
 
 ### Purchase orders and matching
 - Purchase order storage grounded in Peppol BIS Order Only 3.3, via UBL

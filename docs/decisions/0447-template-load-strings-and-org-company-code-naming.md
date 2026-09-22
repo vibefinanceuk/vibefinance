@@ -1,10 +1,12 @@
 # 0447 — Template/Load Button Strings, and Org / Company Code Naming Alignment
 
-**Status: built, tested, not yet pushed** — this session has no push
-access; delivered as a git bundle for the operator's own
-pull/push/deploy sequence, the same path decisions 0391, 0415–0446
-already used. **Migration `0150` (and the still-outstanding `0149` from
-decision 0446) both need their own separate `apply_migrations.py
+**Status: built, tested, confirmed pushed and deployed** — `origin/main`
+fetched directly reads `78357d6`, matching this session's own commit
+exactly, and the operator confirmed with *"deployed and pushed."*
+Delivered as a git bundle for the operator's own pull/push/deploy
+sequence, the same path decisions 0391, 0415–0446 already used.
+**Migration `0150` (and the still-outstanding `0149` from decision
+0446) both still need their own separate `apply_migrations.py
 --remote` run — see "Still to do, operator side" below.**
 
 ---
@@ -152,9 +154,9 @@ untouched by this decision.
 
 ## Still to do, operator side
 
-Not yet pushed. Once pushed and deployed, migration `0150` needs its
-own separate apply — and so, still, does migration `0149` from decision
-0446, which per `docs/HANDOVER.md` has not yet been applied live:
+Confirmed pushed and deployed. Migration `0150` needs its own separate
+apply — and so, still, does migration `0149` from decision 0446, which
+per `docs/HANDOVER.md` has not yet been applied live:
 
 ```
 apply_migrations.py --remote --database vf-licence-poc --migrations-dir workers/vf-licence/migrations
