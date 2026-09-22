@@ -1,11 +1,13 @@
 # 0450 — Cost-Object Approval Hierarchy: investigation and mock-up
 
-**Status: investigated, documented, and mocked up. Not built** — no
-migration, no resolver change, no route, no screen change. Committed
-and delivered as a git bundle for the operator's own pull/push
-sequence, the same path decisions 0391, 0415–0449 already used. Unlike
-those, there is nothing here to deploy: this is a design record and a
-static mock-up, the same kind of deliverable decision 0184 itself was.
+**Status: investigated, documented, mocked up, and confirmed pushed.**
+`origin/main` fetched directly reads `6e996c9`, matching this
+session's own commit exactly, and the operator confirmed with
+*"deployed and pushed."* Nothing here was ever deployable — this is a
+design record and a static mock-up, the same kind of deliverable
+decision 0184 itself was — so that confirmation is read as "pushed,"
+not as any running code going live. No migration, no resolver change,
+no route, no screen change.
 
 ---
 

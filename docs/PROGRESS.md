@@ -2207,6 +2207,18 @@ section for the full reasoning and tests.
 - **Not built**: no migration, no resolver change, no route, no change
   to `ap-setup.js` or `coding-lists.js`. Documentation and a static
   mock-up only — nothing to deploy, apply, or test.
+- **The core principle confirmed directly**: *"If cost object approval
+  is needed on the invoice line, the invoice should be routed to the
+  budget holder for that cost center"* — exactly what decision 0439's
+  Cost-Object mode already does; confirmation of the base case, not a
+  change to it. The three open questions above are unaffected — they
+  only bear on what happens once a line can carry a budget holder from
+  more than one cost-object dimension at once.
+- **Confirmed pushed** — `origin/main` fetched directly reads
+  `6e996c9`, matching this session's own commit exactly, and the
+  operator confirmed with *"deployed and pushed."* Nothing here was
+  ever deployable; read as confirming the docs landed on `main`, not
+  any running code going live.
 
 ### Purchase orders and matching
 - Purchase order storage grounded in Peppol BIS Order Only 3.3, via UBL
