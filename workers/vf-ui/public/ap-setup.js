@@ -46,6 +46,26 @@ let users = [];
 let config = null;
 let activeTab = null;
 
+/**
+ * **Search over the two override lists, entirely client-side —
+ * decision 0442.** Both lists arrive in one `load()` fetch already
+ * (`/api/approval-config` returns every row, unlike Documents' own
+ * server-side, `LIMIT`-capped search), so filtering and capping what's
+ * *shown* happens in the browser rather than a second round trip. Kept
+ * as plain module state, the same shape `activeTab` above already is
+ * — reset per screen visit, not persisted.
+ */
+let supervisorSearchQuery = "";
+let limitSearchQuery = "";
+
+/**
+ * **How many rows render before the list asks you to narrow it** — the
+ * same default Documents' own `limit` query param falls back to
+ * (`documents-route.ts`), reused here as a display cap rather than a
+ * fetch cap since the whole list is already in memory.
+ */
+const OVERRIDE_DISPLAY_CAP = 50;
+
 async function load() {
   try {
     const [overviewResponse, configResponse] = await Promise.all([
@@ -134,41 +154,65 @@ function modeForm(problem) {
 }
 
 /**
+ * **A search box plus a capped list, shared by both override
+ * tables — decision 0442.** The operator's own request: the list
+ * "build below the configuration boxes" (the add-row form, moved
+ * above this in both sections below) and be "searchable and
+ * paginated, as the Document search looks" — Documents' own search
+ * turned out to mean a query box plus a capped, `LIMIT`-ed result set
+ * with a "shown of total" note (`documents.js`'s own `searchedcount`),
+ * not real page-number controls, which this app has nowhere at all;
+ * matched here rather than inventing a first one.
+ *
+ * **`onchange`, not `oninput`, and a re-focus after re-rendering** —
+ * the same discipline `documents.js`'s own search box already uses
+ * and comments on: `render()` replaces the whole shell's children, so
+ * filtering on every keystroke would rebuild the input out from under
+ * itself mid-type.
+ */
+function searchableOverrideList({ query, onQueryChange, searchId, hint, items, matchText, rowsFor, emptyText, nomatchText }) {
+  const needle = query.trim().toLowerCase();
+  const matches = needle ? items.filter((item) => matchText(item).toLowerCase().includes(needle)) : items;
+  const shown = matches.slice(0, OVERRIDE_DISPLAY_CAP);
+
+  const search = el("input", { type: "search", id: searchId, placeholder: hint });
+  search.value = query;
+  search.onchange = () => {
+    onQueryChange(search.value);
+    render();
+    document.getElementById(searchId)?.focus();
+  };
+
+  const rows = shown.length > 0 ? rowsFor(shown) : [el("p", { class: "muted", text: needle ? nomatchText : emptyText })];
+
+  return [
+    el("div", { class: "searchrow" }, [search]),
+    el("div", { class: "assignmentlist" }, rows),
+    ...(matches.length > shown.length
+      ? [
+          el("p", {
+            class: "sm muted",
+            text: t("apsetup.overridesearchedcount")
+              .replace("{shown}", String(shown.length))
+              .replace("{total}", String(matches.length)),
+          }),
+        ]
+      : []),
+  ];
+}
+
+/**
  * **One unit-scoped override at a time — decision 0440.** Same
  * "inline picker row plus its own Add button" shape `openTeamForm`'s
  * own member picker already uses, rather than a second pop-out
  * component for what is, per row, three fields.
+ *
+ * **The list moved below the add-row form, and gained search — decision
+ * 0442**, at the operator's own request once these lists started to
+ * grow: the add-row controls stay the first thing you see, the search
+ * box and the (now potentially long) list of existing overrides follow.
  */
 function supervisorOverridesSection(problem) {
-  const rows =
-    config.supervisorOverrides.length > 0
-      ? config.supervisorOverrides.map((o) =>
-          el("div", { class: "assignmentrow" }, [
-            el("span", { text: `${o.userName} — ${o.unitName} — ${t("apsetup.reportsto")} ${o.supervisorName}` }),
-            el("button", {
-              text: t("roles.remove"),
-              onclick: async () => {
-                problem.textContent = "";
-                try {
-                  const response = await fetch(
-                    `/api/approval-config/supervisor-overrides/${encodeURIComponent(o.userId)}/${encodeURIComponent(o.unitId)}`,
-                    { method: "DELETE" }
-                  );
-                  if (!response.ok) {
-                    problem.textContent = (await response.json()).error ?? t("apsetup.overridesavefailed");
-                    return;
-                  }
-                  await load();
-                  render();
-                } catch {
-                  problem.textContent = t("apsetup.overridesavefailed");
-                }
-              },
-            }),
-          ])
-        )
-      : [el("p", { class: "muted", text: t("apsetup.nosupervisoroverrides") })];
-
   const userPicker = el("select", {}, users.map((u) => el("option", { value: u.id, text: u.name })));
   const unitPicker = el("select", {}, units.map((u) => el("option", { value: u.id, text: u.name })));
   const supervisorPicker = el("select", {}, users.map((u) => el("option", { value: u.id, text: u.name })));
@@ -197,7 +241,6 @@ function supervisorOverridesSection(problem) {
   return el("div", { class: "panel" }, [
     el("div", { class: "cardhead" }, [el("h3", { text: t("apsetup.supervisoroverrides") })]),
     el("p", { class: "muted sm", text: t("apsetup.supervisoroverridessub") }),
-    el("div", { class: "assignmentlist" }, rows),
     el("div", { class: "editgrid" }, [
       el("label", { text: t("apsetup.person") }),
       userPicker,
@@ -207,22 +250,28 @@ function supervisorOverridesSection(problem) {
       supervisorPicker,
     ]),
     el("div", { class: "memberpickerrow" }, [addBtn]),
-  ]);
-}
-
-function limitOverridesSection(problem) {
-  const rows =
-    config.limitOverrides.length > 0
-      ? config.limitOverrides.map((o) =>
+    ...searchableOverrideList({
+      query: supervisorSearchQuery,
+      onQueryChange: (value) => {
+        supervisorSearchQuery = value;
+      },
+      searchId: "supervisoroverridesearch",
+      hint: t("apsetup.supervisoroverridesearchhint"),
+      items: config.supervisorOverrides,
+      matchText: (o) => `${o.userName} ${o.unitName} ${o.supervisorName}`,
+      emptyText: t("apsetup.nosupervisoroverrides"),
+      nomatchText: t("apsetup.supervisoroverridenomatch"),
+      rowsFor: (shown) =>
+        shown.map((o) =>
           el("div", { class: "assignmentrow" }, [
-            el("span", { text: `${o.userName} — ${o.unitName} — ${o.currency} ${o.maxAmount}` }),
+            el("span", { text: `${o.userName} — ${o.unitName} — ${t("apsetup.reportsto")} ${o.supervisorName}` }),
             el("button", {
               text: t("roles.remove"),
               onclick: async () => {
                 problem.textContent = "";
                 try {
                   const response = await fetch(
-                    `/api/approval-config/limit-overrides/${encodeURIComponent(o.userId)}/${encodeURIComponent(o.unitId)}/${encodeURIComponent(o.currency)}`,
+                    `/api/approval-config/supervisor-overrides/${encodeURIComponent(o.userId)}/${encodeURIComponent(o.unitId)}`,
                     { method: "DELETE" }
                   );
                   if (!response.ok) {
@@ -237,9 +286,17 @@ function limitOverridesSection(problem) {
               },
             }),
           ])
-        )
-      : [el("p", { class: "muted", text: t("apsetup.nolimitoverrides") })];
+        ),
+    }),
+  ]);
+}
 
+/**
+ * **The list moved below the add-row form, and gained search —
+ * decision 0442.** Same reasoning as `supervisorOverridesSection`
+ * above, and the same shared `searchableOverrideList()` helper.
+ */
+function limitOverridesSection(problem) {
   const userPicker = el("select", {}, users.map((u) => el("option", { value: u.id, text: u.name })));
   const unitPicker = el("select", {}, units.map((u) => el("option", { value: u.id, text: u.name })));
   const currencyInput = currencyPicker();
@@ -276,7 +333,6 @@ function limitOverridesSection(problem) {
   return el("div", { class: "panel" }, [
     el("div", { class: "cardhead" }, [el("h3", { text: t("apsetup.limitoverrides") })]),
     el("p", { class: "muted sm", text: t("apsetup.limitoverridessub") }),
-    el("div", { class: "assignmentlist" }, rows),
     el("div", { class: "editgrid" }, [
       el("label", { text: t("apsetup.person") }),
       userPicker,
@@ -288,6 +344,44 @@ function limitOverridesSection(problem) {
       amountInput,
     ]),
     el("div", { class: "memberpickerrow" }, [addBtn]),
+    ...searchableOverrideList({
+      query: limitSearchQuery,
+      onQueryChange: (value) => {
+        limitSearchQuery = value;
+      },
+      searchId: "limitoverridesearch",
+      hint: t("apsetup.limitoverridesearchhint"),
+      items: config.limitOverrides,
+      matchText: (o) => `${o.userName} ${o.unitName} ${o.currency} ${o.maxAmount}`,
+      emptyText: t("apsetup.nolimitoverrides"),
+      nomatchText: t("apsetup.limitoverridenomatch"),
+      rowsFor: (shown) =>
+        shown.map((o) =>
+          el("div", { class: "assignmentrow" }, [
+            el("span", { text: `${o.userName} — ${o.unitName} — ${o.currency} ${o.maxAmount}` }),
+            el("button", {
+              text: t("roles.remove"),
+              onclick: async () => {
+                problem.textContent = "";
+                try {
+                  const response = await fetch(
+                    `/api/approval-config/limit-overrides/${encodeURIComponent(o.userId)}/${encodeURIComponent(o.unitId)}/${encodeURIComponent(o.currency)}`,
+                    { method: "DELETE" }
+                  );
+                  if (!response.ok) {
+                    problem.textContent = (await response.json()).error ?? t("apsetup.overridesavefailed");
+                    return;
+                  }
+                  await load();
+                  render();
+                } catch {
+                  problem.textContent = t("apsetup.overridesavefailed");
+                }
+              },
+            }),
+          ])
+        ),
+    }),
   ]);
 }
 

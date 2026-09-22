@@ -1548,6 +1548,34 @@ section for the full reasoning and tests.
   running `apply_migrations.py --remote`, confirmed with *"that worked
   - thank you."*
 
+### The override lists reordered below their own forms, and made searchable (0442)
+- Raised directly: *"These overrides could get large. Does the UI cap
+  the height of the list, and leverage scrolling?"* Checked, not
+  assumed: no — the two override lists reuse `access.js`'s own
+  unbounded `.assignmentlist` component, the same shape its team-member
+  and role lists already have; not a defect 0440 introduced.
+- Operator's own concrete ask: *"list the... entries below the prompt
+  boxes... make the list searchable and paginated, as the Document
+  search looks."* Checked first: Documents' own "search" is a query box
+  plus a server-side-capped result set with a "shown of total" note —
+  this app has no real page-number pagination anywhere.
+- Two forks put to the operator, both answered: match Documents' own
+  capped-list-plus-search shape (not invent real pagination); filter
+  client-side (`GET /approval-config` already returns every override in
+  one call, no `LIMIT`).
+- Built: add-row form now precedes a new search box, which precedes the
+  list, in both sections; a shared `searchableOverrideList()` helper
+  filters by substring match and caps display at 50 rows (Documents'
+  own default `limit`, reused as a display cap not a fetch cap), with a
+  "{shown} of {total} matching" note when more exist. Four new strings,
+  migration `0146`, wired into `vf-licence/test/setup.ts` continuing
+  `0145`'s own resumed discipline.
+- `vf-ui`-only — nothing server-side changed. `ap-setup.test.ts` 13 →
+  18 (+5). `vf-ui` browser suite 973 → 978, all green except the same
+  already-documented `document-window.test.ts` flake. `vf-licence` 320
+  (row count grew, test count did not). `eslint .` clean; migration
+  chain replays clean (146 migrations).
+
 ### Purchase orders and matching
 - Purchase order storage grounded in Peppol BIS Order Only 3.3, via UBL
   XML ingestion (0081) and CSV load (0370) — the same tables, the same

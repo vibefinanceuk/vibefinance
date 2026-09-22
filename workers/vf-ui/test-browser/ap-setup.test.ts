@@ -44,6 +44,11 @@ const STRINGS = {
     "apsetup.limitoverridessub": "A person's approval limit, specific to one org and one currency.",
     "apsetup.nolimitoverrides": "No approval limit overrides configured",
     "apsetup.overridesavefailed": "Could not save that override",
+    "apsetup.supervisoroverridesearchhint": "Person, org, or supervisor",
+    "apsetup.supervisoroverridenomatch": "Nothing matches that. Try a person, org, or supervisor name.",
+    "apsetup.limitoverridesearchhint": "Person, org, or currency",
+    "apsetup.limitoverridenomatch": "Nothing matches that. Try a person, org, or currency.",
+    "apsetup.overridesearchedcount": "{shown} of {total} matching.",
     "apsetup.add": "Add",
     "apsetup.person": "Person",
     "apsetup.supervisor": "Supervisor",
@@ -280,5 +285,118 @@ describe("Approval Hierarchy — approval limit overrides", () => {
     switchTab("Approval Hierarchy");
 
     expect(document.body.textContent).toContain("Alice — Acme France — EUR 5000");
+  });
+});
+
+/**
+ * **The lists moved below their own add-row forms, and gained search
+ * — decision 0442.** The operator's own request, once these lists
+ * started to grow: the add-row controls (the "prompt boxes") stay the
+ * first thing you see; the search box and the list of existing
+ * overrides follow, matching Documents' own search — a query box plus
+ * a capped, "shown of total" result set, not real page-number
+ * controls, which this app has nowhere at all.
+ */
+describe("Approval Hierarchy — the override lists sit below their own add-row forms, and are searchable (decision 0442)", () => {
+  function panelFor(heading: string): Element {
+    const panel = [...document.querySelectorAll(".panel")].find((p) => p.querySelector("h3")?.textContent === heading);
+    if (!panel) throw new Error(`no panel found for "${heading}"`);
+    return panel;
+  }
+
+  /** The add-row form (`.editgrid` + its own Add button) precedes the list of existing overrides, in real DOM order. */
+  function editgridComesBeforeList(panel: Element) {
+    const children = [...panel.children];
+    const editgridIndex = children.findIndex((c) => c.classList.contains("editgrid"));
+    const listIndex = children.findIndex((c) => c.classList.contains("assignmentlist"));
+    expect(editgridIndex).toBeGreaterThanOrEqual(0);
+    expect(listIndex).toBeGreaterThan(editgridIndex);
+  }
+
+  const oneSupervisorOverride = [
+    { userId: "u1", userName: "Alice", unitId: "org1", unitName: "Acme France", supervisorId: "u2", supervisorName: "Bob" },
+  ];
+  const oneLimitOverride = [{ userId: "u1", userName: "Alice", unitId: "org1", unitName: "Acme France", currency: "EUR", maxAmount: 5000 }];
+
+  it("the add-row form sits above the list, for both override sections", async () => {
+    await openApSetupAs(["Admin.Configure"], EMPTY_OVERVIEW, {
+      ...EMPTY_CONFIG,
+      supervisorOverrides: oneSupervisorOverride,
+      limitOverrides: oneLimitOverride,
+    });
+    switchTab("Approval Hierarchy");
+
+    editgridComesBeforeList(panelFor("Supervisor overrides"));
+    editgridComesBeforeList(panelFor("Approval limit overrides"));
+  });
+
+  it("a matching search narrows the supervisor override list; a non-matching one shows the no-match message", async () => {
+    await openApSetupAs(["Admin.Configure"], EMPTY_OVERVIEW, {
+      ...EMPTY_CONFIG,
+      supervisorOverrides: [
+        ...oneSupervisorOverride,
+        { userId: "u3", userName: "Carol", unitId: "org2", unitName: "Acme UK", supervisorId: "u4", supervisorName: "Dave" },
+      ],
+    });
+    switchTab("Approval Hierarchy");
+
+    const search = document.getElementById("supervisoroverridesearch") as HTMLInputElement;
+    search.value = "Carol";
+    search.dispatchEvent(new Event("change"));
+
+    expect(document.body.textContent).toContain("Carol — Acme UK — reports to Dave");
+    expect(document.body.textContent).not.toContain("Alice — Acme France — reports to Bob");
+
+    search.value = "nobody by this name";
+    search.dispatchEvent(new Event("change"));
+
+    expect(document.body.textContent).toContain("Nothing matches that. Try a person, org, or supervisor name.");
+  });
+
+  it("a matching search narrows the limit override list; a non-matching one shows the no-match message", async () => {
+    await openApSetupAs(["Admin.Configure"], EMPTY_OVERVIEW, {
+      ...EMPTY_CONFIG,
+      limitOverrides: [
+        ...oneLimitOverride,
+        { userId: "u3", userName: "Carol", unitId: "org2", unitName: "Acme UK", currency: "GBP", maxAmount: 1000 },
+      ],
+    });
+    switchTab("Approval Hierarchy");
+
+    const search = document.getElementById("limitoverridesearch") as HTMLInputElement;
+    search.value = "GBP";
+    search.dispatchEvent(new Event("change"));
+
+    expect(document.body.textContent).toContain("Carol — Acme UK — GBP 1000");
+    expect(document.body.textContent).not.toContain("Alice — Acme France — EUR 5000");
+
+    search.value = "nothing recorded like this";
+    search.dispatchEvent(new Event("change"));
+
+    expect(document.body.textContent).toContain("Nothing matches that. Try a person, org, or currency.");
+  });
+
+  it("caps how many rows render, and says so, once a list runs past the display cap", async () => {
+    const manyOverrides = Array.from({ length: 51 }, (_, i) => ({
+      userId: `u${i}`,
+      userName: `Person ${i}`,
+      unitId: "org1",
+      unitName: "Acme France",
+      supervisorId: "u-boss",
+      supervisorName: "Boss",
+    }));
+    await openApSetupAs(["Admin.Configure"], EMPTY_OVERVIEW, { ...EMPTY_CONFIG, supervisorOverrides: manyOverrides });
+    switchTab("Approval Hierarchy");
+
+    const panel = panelFor("Supervisor overrides");
+    expect(panel.querySelectorAll(".assignmentrow").length).toBe(50);
+    expect(panel.textContent).toContain("50 of 51 matching.");
+  });
+
+  it("no count note appears when every override already fits within the cap", async () => {
+    await openApSetupAs(["Admin.Configure"], EMPTY_OVERVIEW, { ...EMPTY_CONFIG, supervisorOverrides: oneSupervisorOverride });
+    switchTab("Approval Hierarchy");
+
+    expect(panelFor("Supervisor overrides").textContent).not.toContain("matching.");
   });
 });
