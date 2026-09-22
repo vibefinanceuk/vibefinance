@@ -11,6 +11,17 @@ it asked for — no migration, no resolver change, no route, and no
 change to the real screens. See `docs/design/mockups/
 cost-object-approval.html`.
 
+**The core principle is confirmed**: *"If cost object approval is
+needed on the invoice line, the invoice should be routed to the budget
+holder for that cost center."* That is exactly what decision 0439's
+Cost-Object mode already does today — a line's cost centre, walked up
+to the first owner whose limit covers the amount — and the operator
+confirmed it is correct as-is, not a request to change it. Nothing in
+this document's own proposal touches that base case; it only asks what
+should happen once a line can carry a budget holder from more than one
+cost-object dimension at once, which the base case alone does not
+answer.
+
 ---
 
 ## What already exists, checked directly rather than assumed

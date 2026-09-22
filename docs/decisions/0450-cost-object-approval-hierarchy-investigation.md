@@ -21,6 +21,17 @@ configuration we have."*
 An investigation and a mock-up, explicitly — not a build. Treated that
 way throughout.
 
+**Confirmed as a follow-up, once the mock-up and design were
+delivered**: *"If cost object approval is needed on the invoice line,
+the invoice should be routed to the budget holder for that cost
+center."* Checked directly against the request rather than assumed —
+this is exactly what decision 0439's Cost-Object mode already does
+today, and the operator confirmed it is correct as-is, a validation of
+the base case rather than a change to it. It leaves the design
+document's own open questions genuinely open: the base case says
+nothing about what happens once a line carries a budget holder from
+more than one cost-object dimension at once.
+
 ## What was found
 
 Cost-Object mode (decision 0439) has run since it shipped, but has
