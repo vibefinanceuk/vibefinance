@@ -1,8 +1,9 @@
 # 0449 — Real Search and Pagination for the Tasks Screen
 
-**Status: built, tested, not yet confirmed by the operator.** Committed
-and delivered as a git bundle for the operator's own pull/push/deploy
-sequence, the same path decisions 0391, 0415–0448 already used.
+**Status: confirmed pushed, deployed, and tested working.** `origin/main`
+fetched directly reads `4577011`, matching this session's own commit
+exactly, and the operator confirmed with *"deployed and pushed"* and,
+separately, *"tested as working."*
 
 ---
 
@@ -327,7 +328,14 @@ and is untouched by this decision.
 
 ## Still to do, operator side
 
-Built, tested, and delivered as a bundle. Not yet confirmed pushed and
-deployed — awaiting the operator's own check, the same two-step
-confirmation pattern decisions 0447 and 0448 both went through. One
-new migration to apply: `0151_tasks_search_and_pagination_strings.sql`.
+**Confirmed pushed, deployed, and tested working** — `origin/main`
+fetched directly reads `4577011`, matching this session's own commit
+exactly, and the operator confirmed with *"deployed and pushed"* and
+*"tested as working."* One migration still needs its own separate
+apply, per this project's now well-established habit that a code
+deploy and a migration apply are two different steps:
+`0151_tasks_search_and_pagination_strings.sql`
+(`apply_migrations.py --remote --database vf-licence-poc
+--migrations-dir workers/vf-licence/migrations`). Until that runs,
+expect the new Tasks search box's placeholder and no-matches message
+to show as raw string keys rather than real text.

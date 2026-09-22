@@ -2141,9 +2141,11 @@ section for the full reasoning and tests.
   `json_each`) — used identically in both 0446 and here, but each
   route builds its own inline, matching the rest of this codebase's
   existing preference for locality over a shared utility at this size.
-- **Built, tested, and delivered as a git bundle — not yet confirmed
-  pushed and deployed.** One new migration to apply once deployed:
-  `0151_tasks_search_and_pagination_strings.sql`.
+- **Confirmed pushed and deployed** — `origin/main` fetched directly
+  reads `4577011`, matching this session's own commit exactly, and the
+  operator confirmed with *"deployed and pushed"* and, separately,
+  *"tested as working."* One migration still needs its own separate
+  apply: `0151_tasks_search_and_pagination_strings.sql`.
 
 ### Purchase orders and matching
 - Purchase order storage grounded in Peppol BIS Order Only 3.3, via UBL
