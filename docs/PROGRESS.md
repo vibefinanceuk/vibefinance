@@ -1774,9 +1774,12 @@ section for the full reasoning and tests.
   unchanged — a loaded/edited row is never removed by a load); a
   dry-run/preview-before-load step (Purchase Orders' own CSV load has
   never had one either).
-- **Not yet pushed or deployed.** Migration `0148` will need its own
-  separate `apply_migrations.py --remote` run after deploying — see
-  "Habits worth keeping" in `docs/HANDOVER.md`.
+- **Confirmed pushed and deployed** — `origin/main` fetched directly
+  reads `81af146`, matching this session's own commit exactly, and the
+  operator confirmed with *"deployed and pushed."* Migration `0148`
+  still needs its own separate `apply_migrations.py --remote` run — see
+  "Habits worth keeping" in `docs/HANDOVER.md` — and the screen has not
+  yet been reported working live.
 
 ### Purchase orders and matching
 - Purchase order storage grounded in Peppol BIS Order Only 3.3, via UBL

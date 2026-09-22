@@ -1,9 +1,13 @@
 # 0445 — CSV Template and Load for Cost Centre, Project, Commodity Code, and General Ledger Code
 
-**Status: built, tested. Not yet pushed or deployed** — this session
-still has no push access to `vibefinanceuk/vibefinance`; delivered as a
-git bundle for the operator's own pull/push/deploy sequence, the same
-path decisions 0391, 0415–0444 already used.
+**Status: built, tested, confirmed pushed and deployed** —
+`origin/main` fetched directly reads `81af146`, matching this session's
+own commit exactly, and the operator confirmed with *"deployed and
+pushed."* Delivered as a git bundle for the operator's own
+pull/push/deploy sequence, the same path decisions 0391, 0415–0444
+already used. **Migration `0148` still needs its own separate
+`apply_migrations.py --remote` run — see "Still to do, operator side"
+below — and the screen has not yet been reported working live.**
 
 ---
 
