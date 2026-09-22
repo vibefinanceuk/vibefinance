@@ -23,6 +23,26 @@ let me = null;
 let filters = { stage: "", ownership: "" };
 
 /**
+ * Real, server-side search and pagination — decision 0449, the same
+ * `documents.js`/`purchase-orders.js`/`coding-lists.js` shape: module-
+ * level state, reset to defaults every time the screen opens rather
+ * than carried across navigations.
+ */
+let query = "";
+let page = 1;
+let pageSize = 50;
+let total = 0;
+const PAGE_SIZES = [25, 50, 100, 200];
+
+/**
+ * The counts behind the current filter — decision 0255, still true,
+ * now read straight off the response rather than assembled from a
+ * local destructure inside the old `loadTasks()`, since `render()`
+ * needs them too.
+ */
+let counts = { mine: 0, available: 0, locked: 0 };
+
+/**
  * **What the current person may do, for a screen deciding what to
  * show them — decision 0326.** `frame()`'s own `unlocked()` has
  * checked `me?.permissions` for nav visibility since decision 0313;
@@ -169,7 +189,7 @@ async function openTask(taskId) {
   await openViewer(task, async () => {
     document.getElementById("viewer").hidden = true;
     document.getElementById("shell").hidden = false;
-    await loadTasks();
+    await reload();
   });
 }
 
@@ -192,9 +212,15 @@ async function openTask(taskId) {
  * filtered to `ownership=available`, since it is no longer available.
  * The caller falls back to closing, which is correct here: the task
  * left the list this screen is showing.
+ *
+ * **`load()`, not `reload()`** — the viewer, not `#shell`, has the
+ * screen at this point (decision 0414's own moment: mid-claim, inside
+ * `viewer.js`'s own `runAction()`), so there is nothing on screen for
+ * a full render to usefully redraw. `open()`'s own close callback
+ * calls `reload()` once the person actually returns to the list.
  */
 export async function refreshTask(taskId) {
-  await loadTasks();
+  await load();
   return lastTasks.find((t) => t.id === taskId);
 }
 
@@ -211,7 +237,7 @@ async function act(taskId, action) {
         document.getElementById("shell").hidden = false;
         // Reloaded on the way back, because keying changes what the row
         // says about the document.
-        await loadTasks();
+        await reload();
       });
     }
     return;
@@ -230,11 +256,20 @@ async function act(taskId, action) {
     problem(body.error ?? `Could not ${action} that task.`);
     return;
   }
-  await loadTasks();
+  await reload();
 }
 
 function problem(message) {
-  document.getElementById("problem").textContent = message;
+  /**
+   * **Guarded, decision 0449** — `load()` now runs *before* the first
+   * `render()` (the same `load()`-then-`render()` order `documents.js`
+   * uses), so `#problem` does not exist yet the first time `load()`
+   * clears it on entry. Every later call still has a real element to
+   * write into; only that first one needs the element to simply not
+   * exist yet, which is not an error.
+   */
+  const node = document.getElementById("problem");
+  if (node) node.textContent = message;
 }
 
 function taskRow(task) {
@@ -298,11 +333,22 @@ function taskRow(task) {
   );
 }
 
-async function loadTasks() {
+/**
+ * Fetch only — decision 0449, splitting what `loadTasks()` used to do
+ * in one pass into a `load()`/`render()` pair, the same shape
+ * `documents.js`'s own `load()`/`render()` already established for
+ * decision 0448. `render()` below rebuilds the stage `<select>` fresh
+ * from `knownStages` on every call, which is what makes the old
+ * "patch the existing option in, then set the value" fix (decision
+ * 0359) unnecessary now: there is no longer a stale, already-built
+ * `<select>` for a new stage to be missing from — `render()` sees the
+ * updated `knownStages` before it builds the element at all.
+ */
+async function load() {
   problem("");
-  const query = new URLSearchParams();
-  if (filters.stage) query.set("stage", filters.stage);
-  if (filters.ownership) query.set("ownership", filters.ownership);
+  const params = new URLSearchParams({ q: query, page: String(page), pageSize: String(pageSize) });
+  if (filters.stage) params.set("stage", filters.stage);
+  if (filters.ownership) params.set("ownership", filters.ownership);
   /**
    * **The chosen org, decision 0314** — following directly from
    * decision 0313's own switcher: "let me pick one org to focus on,
@@ -311,16 +357,30 @@ async function loadTasks() {
    * always shown.
    */
   const org = currentOrgId();
-  if (org) query.set("org", org);
+  if (org) params.set("org", org);
 
-  const response = await fetch(`/api/tasks?${query}`);
+  const response = await fetch(`/api/tasks?${params}`);
   if (!response.ok) {
     problem(t("tasks.loadfailed"));
-    return;
+    return false;
   }
 
-  const { tasks, counts, total } = await response.json();
-  lastTasks = tasks;
+  const body = await response.json();
+  lastTasks = body.tasks ?? [];
+  counts = body.counts ?? { mine: 0, available: 0, locked: 0 };
+  /**
+   * **Always real, decision 0449** — unlike `documents.js`'s own
+   * `total`, which is only meaningful once a page was actually asked
+   * for (decision 0448's own `paginating` gate): `total`/`counts` were
+   * already computed unconditionally here, over a full in-Worker scan
+   * strictly more expensive than the SQL this decision replaced it
+   * with, so `task-list-route.ts` never had a reason to withhold them
+   * the way `documents-route.ts` withholds `total` from an unpaginated
+   * caller.
+   */
+  total = body.total ?? 0;
+  page = body.page ?? page;
+  pageSize = body.pageSize ?? pageSize;
 
   /**
    * **Remember every stage seen** — decision 0254, so the filter offers
@@ -329,48 +389,103 @@ async function loadTasks() {
    * Only added to, never replaced: filtering to one stage should not
    * shrink the list of stages you can filter to.
    */
-  for (const task of tasks) {
+  for (const task of lastTasks) {
     if (task.stageId && task.stageName) knownStages.set(task.stageId, task.stageName);
   }
-  /**
-   * **Both the option and the value, not just the value — decision
-   * 0359's own fix.** `filterBar()` builds the stage `<select>`'s own
-   * `<option>` elements once, from whatever `knownStages` held at
-   * render time, and never revisits them. A stage this screen has
-   * never seen before has no matching `<option>` at that point, so
-   * setting `.value` to it — here or at render time — silently does
-   * nothing until the option itself exists too. Exactly decision
-   * 0254's own bug, for a new reason: `start()` used to always call
-   * this function once before anything else could reach this screen,
-   * so `knownStages` was never genuinely empty by the time a filtered
-   * open ran its own `render()`. Landing on the Dashboard by default
-   * now makes that no longer true.
-   */
-  const stageSelect = document.querySelector(".filters select");
-  if (stageSelect && filters.stage && !stageSelect.querySelector(`option[value="${filters.stage}"]`)) {
-    const name = knownStages.get(filters.stage);
-    if (name) stageSelect.append(el("option", { value: filters.stage, text: name }));
-  }
-  if (stageSelect) stageSelect.value = filters.stage;
+  return true;
+}
 
-  const body = document.getElementById("rows");
-  body.replaceChildren(
-    ...(tasks.length
-      ? tasks.map(taskRow)
-      : [el("tr", {}, [el("td", { colspan: "6", class: "muted", text: t("tasks.empty") })])])
+/**
+ * Reload after any control changes state, then redraw the whole
+ * screen — the same "full render, then restore focus" shape
+ * `documents.js`'s own `reload()` already established for decision
+ * 0448. `focusId`, when given, is re-focused afterward, since
+ * `render()` rebuilds the whole screen and would otherwise drop focus
+ * out of whatever control the person was just using.
+ */
+async function reload(focusId) {
+  if (!(await load())) return;
+  render();
+  if (focusId) document.getElementById(focusId)?.focus();
+}
+
+/**
+ * The search box and pagination controls, in one row — decision 0449,
+ * the same `documents.js`/`purchase-orders.js`/`coding-lists.js` shape.
+ */
+function searchAndPaginationRow() {
+  const search = el("input", {
+    type: "search",
+    id: "tasksearch",
+    placeholder: t("tasks.searchhint"),
+  });
+  search.value = query;
+  search.onchange = async () => {
+    query = search.value;
+    page = 1;
+    await reload("tasksearch");
+  };
+
+  const sizePicker = el(
+    "select",
+    { id: "taskrowsize" },
+    PAGE_SIZES.map((size) => el("option", { value: String(size), text: String(size) }))
   );
+  sizePicker.value = String(pageSize);
+  sizePicker.onchange = async () => {
+    pageSize = Number(sizePicker.value);
+    page = 1;
+    await reload("taskrowsize");
+  };
 
-  // Counts survive paging but not filtering (decision 0103), so these
-  // describe what the person is currently looking at.
-  document.getElementById("counts").textContent =
-    `${total} shown · ${counts.mine} mine · ${counts.available} available · ${counts.locked} held`;
+  const totalPages = total === 0 ? 0 : Math.ceil(total / pageSize);
+  const atFirst = page <= 1;
+  const atLast = total === 0 || page >= totalPages;
+
+  function navButton(name, label, disabled, onclick) {
+    const button = el("button", { class: "iconbutton", "aria-label": label, title: label });
+    button.append(icon(name));
+    button.disabled = disabled;
+    button.onclick = onclick;
+    return button;
+  }
+
+  const rangeStart = total === 0 ? 0 : (page - 1) * pageSize + 1;
+  const rangeEnd = Math.min(page * pageSize, total);
+
+  return [
+    search,
+    el("label", { class: "sm muted", text: t("purchaseorders.rows") }),
+    sizePicker,
+    navButton("chevronsleft", t("purchaseorders.firstpage"), atFirst, async () => {
+      page = 1;
+      await reload();
+    }),
+    navButton("chevronleft", t("purchaseorders.previouspage"), atFirst, async () => {
+      page = Math.max(1, page - 1);
+      await reload();
+    }),
+    el("span", {
+      class: "sm muted",
+      text: t("purchaseorders.rangeof").replace("{start}", String(rangeStart)).replace("{end}", String(rangeEnd)).replace("{total}", String(total)),
+    }),
+    navButton("chevronright", t("purchaseorders.nextpage"), atLast, async () => {
+      page = Math.min(totalPages, page + 1);
+      await reload();
+    }),
+    navButton("chevronsright", t("purchaseorders.lastpage"), atLast, async () => {
+      page = totalPages;
+      await reload();
+    }),
+  ];
 }
 
 function filterBar() {
   const stages = el("select", {
-    onchange: (event) => {
+    onchange: async (event) => {
       filters.stage = event.target.value;
-      loadTasks();
+      page = 1;
+      await reload();
     },
   });
   stages.append(el("option", { value: "", text: t("tasks.allstages") }));
@@ -398,9 +513,10 @@ function filterBar() {
   stages.value = filters.stage;
 
   const ownership = el("select", {
-    onchange: (event) => {
+    onchange: async (event) => {
       filters.ownership = event.target.value;
-      loadTasks();
+      page = 1;
+      await reload();
     },
   });
   for (const [value, key] of [
@@ -471,6 +587,11 @@ export function setCurrentScreen(screen) {
  */
 export async function openTasksFiltered(next) {
   filters = { stage: next.stage ?? "", ownership: next.ownership ?? "" };
+  // A stale search term or page number from a previous visit means
+  // nothing here — decision 0449, the same reset `documents.js`'s own
+  // `openDocumentsFiltered()` already does for its own alert filters.
+  query = "";
+  page = 1;
   await go("tasks");
 }
 
@@ -546,20 +667,21 @@ async function go(screen) {
     await open();
   } else {
     /**
-     * **Rebuild the screen, then fill it** — decision 0191.
+     * **Fill, then render** — decision 0191, updated by decision 0449.
+     * The original fix here called `loadTasks()` alone, which fetched
+     * and patched the table in place; that was right when Tasks was
+     * already on screen and did nothing at all when it was not, so
+     * Tasks was unreachable from Sources, Rules and Documents, each of
+     * which replaces the shell with its own.
      *
-     * This called `loadTasks()` alone, which fetches and updates the
-     * table. That is right when Tasks is already on screen and does
-     * nothing at all when it is not — so Tasks was unreachable from
-     * Sources, Rules and Documents, each of which replaces the shell
-     * with its own.
-     *
-     * The other three branches call something that renders. This one
-     * assumed it was already rendered, which was true when it was the
-     * only screen.
+     * **The order flipped once `render()` started reading `total`/
+     * `counts`/`page`/`pageSize`** to build the pagination row and the
+     * counts line — those only mean anything once `load()` has actually
+     * run, the same `load()`-then-`render()` order `documents.js`'s own
+     * `open()` already uses for the identical reason.
      */
+    if (!(await load())) return;
     render();
-    await loadTasks();
   }
 }
 
@@ -935,8 +1057,31 @@ function render() {
     frame(
       el("div", {}, [
         topbar(t("nav.tasks"), `${me.name} · ${me.environmentId ?? ""}`),
-        filterBar(),
-        el("p", { class: "counts", id: "counts" }),
+
+        el("div", { class: "panel" }, [
+          el("div", { class: "searchrow" }, [...searchAndPaginationRow(), filterBar()]),
+        ]),
+
+        /**
+         * **`counts` no longer says "N shown" — decision 0449.** That
+         * used to be honest: everything matching was shown, up to
+         * `limit`. Now that paging is real, `total` here would mean
+         * "matching across every page," and printing it beside "shown"
+         * would read as a claim about the rows on screen, which is
+         * exactly what the pagination row's own range text already
+         * states correctly. Left as what it has always actually been:
+         * a breakdown of the queue by ownership, decision 0255's own
+         * count still computed over what the person may see, unaffected
+         * by which page or ownership filter narrows the table below it.
+         */
+        el("p", {
+          class: "counts",
+          id: "counts",
+          text: t("tasks.countsline")
+            .replace("{mine}", String(counts.mine ?? 0))
+            .replace("{available}", String(counts.available ?? 0))
+            .replace("{locked}", String(counts.locked ?? 0)),
+        }),
         // The list in a panel of its own, like everything else
         // (decision 0108).
         el("div", { class: "panel" }, [
@@ -951,7 +1096,21 @@ function render() {
                 el("th", { text: "" }),
               ]),
             ]),
-            el("tbody", { id: "rows" }),
+            el(
+              "tbody",
+              { id: "rows" },
+              lastTasks.length
+                ? lastTasks.map(taskRow)
+                : [
+                    el("tr", {}, [
+                      el("td", {
+                        colspan: "6",
+                        class: "muted",
+                        text: query ? t("tasks.nomatch") : t("tasks.empty"),
+                      }),
+                    ]),
+                  ]
+            ),
           ]),
         ]),
         el("div", { class: "problem", id: "problem", role: "alert" }),
@@ -993,8 +1152,8 @@ async function openDefaultScreen() {
     const { open } = await import("/dashboard.js");
     await open();
   } else {
+    if (!(await load())) return;
     render();
-    await loadTasks();
   }
 }
 

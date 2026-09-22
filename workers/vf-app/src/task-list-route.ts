@@ -1,4 +1,4 @@
-import { unitLineage } from "./unit-config.js";
+import { unitsBeneath } from "./enforce.js";
 import type { RouteResult } from "./org-route.js";
 
 /**
@@ -222,23 +222,70 @@ export interface TaskListOptions {
   /**
    * One ownership kind.
    *
-   * Applied **after** the rows are read, unlike `stageId`, because
-   * ownership is derived from a comparison rather than stored — a task
-   * is "mine" or "locked" depending on who is asking. Filtering it in
-   * SQL would mean expressing that comparison twice, in two languages,
-   * and the two would drift.
+   * **Filtered in SQL now, decision 0449** — see `ownershipClause`
+   * below. Not stored on the row, but fully expressible as a `CASE`
+   * over columns the row already has (`owner_user_id`, `claimed_by`),
+   * so there is no second, drifting definition the way there would be
+   * for something genuinely computed client-side.
    */
   ownership?: Ownership;
+  /**
+   * Free-text search — decision 0449, the same `documents-route.ts`/
+   * `coding-list-route.ts` shape: matched against the stage name, the
+   * supplier name, and the amount — the three things a row actually
+   * shows a person besides how long it has waited and who holds it.
+   */
+  search?: string;
   /**
    * How many rows to return. Bounded, because an unbounded list is a
    * screen that works for one customer and not the next.
    */
   limit?: number;
   offset?: number;
+  /**
+   * Real, page-based pagination — decision 0449, the same
+   * `ALLOWED_PAGE_SIZES`/`page`/`pageSize` shape `documents-route.ts`,
+   * `purchase-order-route.ts`, and `coding-list-route.ts` already use.
+   * **Wins over `limit`/`offset` when given.** Left absent, `limit`/
+   * `offset` behave exactly as before — the shape `dashboard-route.ts`'s
+   * own two internal callers still rely on (`limit: 1000`, no page
+   * controls of their own), so neither needed to change for this.
+   */
+  page?: number;
+  pageSize?: number;
 }
 
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 200;
+
+/** Page sizes offered in the UI dropdown — the same list every other paginated screen offers. */
+const ALLOWED_PAGE_SIZES = [25, 50, 100, 200] as const;
+const DEFAULT_PAGE_SIZE = 50;
+
+function normalizePageSize(requested: number | undefined): number {
+  return requested !== undefined && (ALLOWED_PAGE_SIZES as readonly number[]).includes(requested)
+    ? requested
+    : DEFAULT_PAGE_SIZE;
+}
+
+function normalizePage(requested: number | undefined): number {
+  return requested !== undefined && Number.isInteger(requested) && requested >= 1 ? requested : 1;
+}
+
+/**
+ * Real, server-side search — decision 0449, the same `%`/`_`/`\`
+ * escaping `documents-route.ts`'s own `documentSearchPattern()`
+ * already applies, kept local rather than shared (this codebase's own
+ * established precedent — `purchase-order-route.ts`'s `searchClause()`,
+ * `documents-route.ts`'s `documentSearchPattern()`, and
+ * `coding-list-route.ts`'s `codingListSearchClause()` are each their
+ * own copy too).
+ */
+function taskSearchPattern(search: string | null | undefined): string | null {
+  const term = search?.trim();
+  if (!term) return null;
+  return `%${term.replace(/[\\%_]/g, "\\$&")}%`;
+}
 
 export async function handleListMyTasks(
   db: D1Database,
@@ -289,6 +336,229 @@ export async function handleListMyTasks(
     }
   }
 
+  /**
+   * **Real, SQL-pushed visibility — decision 0449**, replacing the old
+   * per-row, async `maySee()` walk (kept below only in this comment's
+   * own memory of it) that decision 0446 named as the reason Tasks
+   * could not take the same search-and-pagination treatment Account
+   * Coding got: *"not expressible as a SQL `WHERE` clause without a
+   * much larger change."*
+   *
+   * **The insight that makes it expressible**: `maySee()`'s own
+   * permission check — "is some unit this permission is held in an
+   * ancestor of the task's own unit" — is exactly `unitsWherePermitted()`'s
+   * job, just asked in the opposite direction and one row at a time.
+   * `unitsBeneath()` (`enforce.ts`) already computes, for one starting
+   * unit, every unit downward-reachable from it — the exact set whose
+   * membership test is equivalent to "is this held unit an ancestor of
+   * mine," just phrased as a precomputed lookup instead of a per-row
+   * upward walk. Computed once here, per **held** unit (there are
+   * rarely more than one or two — most roles are held everywhere,
+   * which needs no computation at all), rather than once per task.
+   *
+   * **`scopedPermissions`** — every permission this user's roles hold
+   * in **specific** units rather than everywhere (`heldIn`'s own
+   * non-null entries). A permission absent from this list imposes no
+   * restriction here, matching `maySee()`'s own `held === undefined`
+   * (not held via any role at all) and `held === null` (held
+   * everywhere) cases, which the old code folded into one "no
+   * restriction" branch — this list folds them the same way, by
+   * simply not appearing in it.
+   *
+   * **`reachablePairs`** — one `"<permission>|<unit>"` string per
+   * (scoped permission, downward-reachable unit) combination. A task
+   * is visible on this ground when its own `required_permission` is
+   * not in `scopedPermissions` at all (no restriction), **or** the
+   * pair of its own permission and its own unit is in this list (some
+   * held unit reaches it). Flat strings, not a nested JSON structure
+   * keyed by permission — `IN (SELECT value FROM json_each(?))` is
+   * the one pattern this whole codebase already uses everywhere else
+   * for exactly this "match against a precomputed set" shape, and
+   * building a two-column match out of it needs nothing more exotic
+   * than concatenating the pair into one string on both sides.
+   */
+  const scopedPermissions: string[] = [];
+  const reachablePairs: string[] = [];
+  for (const [permission, units] of heldIn) {
+    if (units === null) continue; // Held everywhere — nothing to restrict.
+    scopedPermissions.push(permission);
+    const reachable = new Set<string>();
+    for (const unit of units) {
+      for (const id of await unitsBeneath(db, unit)) reachable.add(id);
+    }
+    for (const unit of reachable) reachablePairs.push(`${permission}|${unit}`);
+  }
+
+  /**
+   * **The org-focus narrowing, decision 0314/0315 — the same
+   * downward-reachable-set shape, for one chosen org rather than a
+   * held permission.** `scopedToChosenOrg()` (`enforce.ts`) does the
+   * identical thing for Documents/Purchase Orders by intersecting a
+   * `visibleUnits` list; here there is no single `visibleUnits` list
+   * to intersect (visibility is per-permission, not per-query), so the
+   * reachable set is computed once and applied as its own, separate
+   * `AND` — matching `maySee()`'s own two-separate-checks structure,
+   * both of which had to pass.
+   */
+  const orgFocusActive = options.currentOrgUnitId ? 1 : 0;
+  const orgFocusReachable = options.currentOrgUnitId ? await unitsBeneath(db, options.currentOrgUnitId) : [];
+
+  const searchPattern = taskSearchPattern(options.search);
+
+  /**
+   * **Real pagination, decision 0449** — `page`/`pageSize` win when
+   * given; `limit`/`offset` behave exactly as before when they are
+   * not, which is what `dashboard-route.ts`'s own two internal callers
+   * (`limit: 1000`, no page controls) still rely on. `page`/`pageSize`
+   * are always returned in the body regardless of which path was
+   * taken — derived from whichever `limit`/`offset` actually applied,
+   * for a caller using the old shape, rather than only present when
+   * the new one was used. Unlike `documents-route.ts`'s own
+   * `paginating` flag, there is no extra query to gate here: `total`
+   * and `counts` were already computed unconditionally before this
+   * decision, over a full in-Worker scan that was strictly more
+   * expensive than the SQL this replaces it with.
+   */
+  const usingPageParams = options.page !== undefined || options.pageSize !== undefined;
+  const pageSize = usingPageParams
+    ? normalizePageSize(options.pageSize)
+    : Math.min(Math.max(1, options.limit ?? DEFAULT_LIMIT), MAX_LIMIT);
+  const limit = pageSize;
+  const page = usingPageParams
+    ? normalizePage(options.page)
+    : Math.floor(Math.max(0, options.offset ?? 0) / limit) + 1;
+  const offset = usingPageParams ? (page - 1) * pageSize : Math.max(0, options.offset ?? 0);
+
+  const joins = `FROM tasks t
+       LEFT JOIN org_users claimer ON claimer.id = t.claimed_by
+       LEFT JOIN org_users owner ON owner.id = t.owner_user_id
+       LEFT JOIN process_stages s ON s.id = t.stage_id
+       LEFT JOIN stage_visits v ON v.id = t.stage_visit_id
+       LEFT JOIN process_instances pi ON pi.id = v.process_instance_id
+       -- Invoice-specific, and only where the subject says so. A
+       -- subject of another type simply yields nulls here.
+       LEFT JOIN invoice_headers h
+         ON pi.subject_type = 'invoice' AND h.id = pi.subject_id`;
+
+  /**
+   * **One `WHERE`, shared by the counts query, the total query, and
+   * the page itself** — the same "narrow once, reuse the identical
+   * clause everywhere" shape `documents-route.ts` established for
+   * decision 0448, for the same reason: a count computed against a
+   * different `WHERE` than the rows themselves used would be a real,
+   * silent bug.
+   *
+   * **This file's own numbered-placeholder convention, adopted here
+   * for the first time** — the single `?`/`?`/`?` positional style
+   * this query used before decision 0449 repeated `userId` twice by
+   * passing it twice to `.bind()`; now that `userId` (`?2`) is reused
+   * across the team-membership subquery *and* the ownership `CASE`
+   * below, and several more optional filters exist besides `stageId`,
+   * numbered placeholders are what keeps a growing bind array
+   * expressing each value once rather than by how many times its own
+   * placeholder happens to appear in the text.
+   *
+   * Ownership is **not** part of this shared clause — it is the one
+   * filter the counts query must NOT apply, since the counts describe
+   * every kind the person could switch to, not only the one currently
+   * chosen (see `ownershipClause` below).
+   */
+  const baseWhereClause = `WHERE t.status = ?1
+         AND (
+           t.owner_user_id = ?2
+           OR t.owner_team_id IN (SELECT team_id FROM org_team_members WHERE user_id = ?2)
+         )
+         -- One stage, or every stage.
+         AND (?3 IS NULL OR t.stage_id = ?3)
+         -- The permission-scoped visibility computed above.
+         AND (
+           h.org_unit_id IS NULL
+           OR t.required_permission NOT IN (SELECT value FROM json_each(?4))
+           OR (t.required_permission || '|' || h.org_unit_id) IN (SELECT value FROM json_each(?5))
+         )
+         -- The org-focus narrowing computed above.
+         AND (h.org_unit_id IS NULL OR ?6 = 0 OR h.org_unit_id IN (SELECT value FROM json_each(?7)))
+         -- Free-text search, decision 0449: stage name, supplier name
+         -- (the same BT-27 fact the row itself displays via
+         -- sellerNameOf() below — no supplier-table join needed, since
+         -- nothing shown here comes from one), and amount.
+         AND (
+           ?8 IS NULL
+           OR (
+             s.name LIKE ?8 ESCAPE '\\'
+             OR json_extract(h.facts_json, '$."BT-27"') LIKE ?8 ESCAPE '\\'
+             OR CAST(h.total_with_vat AS TEXT) LIKE ?8 ESCAPE '\\'
+           )
+         )`;
+
+  const baseBinds = [
+    options.includeCompleted ? "completed" : "open",
+    userId,
+    options.stageId ?? null,
+    JSON.stringify(scopedPermissions),
+    JSON.stringify(reachablePairs),
+    orgFocusActive,
+    JSON.stringify(orgFocusReachable),
+    searchPattern,
+  ] as const;
+
+  /**
+   * **The same three-way split `ownershipOf()` computes per row,
+   * expressed once as SQL** — `?2` (`userId`) is reused from the base
+   * clause above rather than bound again, the same numbered-placeholder
+   * reuse the rest of this query now relies on.
+   */
+  const ownershipCase = `CASE
+           WHEN (t.owner_user_id = ?2 OR t.claimed_by = ?2) THEN 'mine'
+           WHEN t.claimed_by IS NOT NULL THEN 'locked'
+           ELSE 'available'
+         END`;
+  const ownershipClause = ` AND (?9 IS NULL OR (${ownershipCase}) = ?9)`;
+
+  /**
+   * **Counted over what the person may see, decision 0255 — still
+   * true, now computed in SQL rather than over a full in-Worker
+   * scan.** Deliberately excludes `ownershipClause`: these describe
+   * every kind the person could switch to, not only the one page is
+   * currently narrowed to — the same reason a Validation-filtered view
+   * must not report an Approval count, but must still say how many of
+   * each ownership kind exist within Validation.
+   *
+   * **Built on `ownershipCase`, not on its own `NOT (...)` restated —
+   * that was tried first and was wrong.** SQL's three-valued logic
+   * bites exactly here: for an unclaimed team task, `owner_user_id`
+   * and `claimed_by` are both `NULL`, so `owner_user_id = ?2 OR
+   * claimed_by = ?2` is `NULL` rather than `FALSE`, and `NOT NULL` is
+   * `NULL` again — a `CASE WHEN … AND NOT (…)` built that way silently
+   * drops the row from *every* branch instead of landing in
+   * `available`. `ownershipCase`'s sequential `CASE … WHEN … ELSE`
+   * has no such gap: each `WHEN` only has to be `TRUE` to match, `NULL`
+   * falls through to the next `WHEN` exactly like `FALSE` does, and the
+   * final `ELSE` catches everything else — the same reasoning that
+   * already made `ownershipClause` safe to compare with `= ?9`.
+   */
+  const groupCountsRow = await db
+    .prepare(
+      `SELECT
+         SUM(CASE WHEN (${ownershipCase}) = 'mine' THEN 1 ELSE 0 END) AS mine,
+         SUM(CASE WHEN (${ownershipCase}) = 'locked' THEN 1 ELSE 0 END) AS locked,
+         SUM(CASE WHEN (${ownershipCase}) = 'available' THEN 1 ELSE 0 END) AS available
+       ${joins}
+       ${baseWhereClause}`
+    )
+    .bind(...baseBinds)
+    .first<{ mine: number | null; locked: number | null; available: number | null }>();
+
+  /**
+   * **`total`, over the identical `WHERE` the page itself uses** —
+   * including `ownershipClause` this time, since this is the count
+   * behind the page a person is actually paging through.
+   */
+  const totalRow = await db
+    .prepare(`SELECT count(*) AS n ${joins} ${baseWhereClause}${ownershipClause}`)
+    .bind(...baseBinds, options.ownership ?? null)
+    .first<{ n: number }>();
+
   const rows = await db
     .prepare(
       `SELECT
@@ -304,40 +574,18 @@ export async function handleListMyTasks(
          pi.subject_type, pi.subject_id,
          h.supplier_vat_id, h.currency, h.issue_date, h.total_with_vat, h.facts_json,
          h.org_unit_id
-       FROM tasks t
-       LEFT JOIN org_users claimer ON claimer.id = t.claimed_by
-       LEFT JOIN org_users owner ON owner.id = t.owner_user_id
-       LEFT JOIN process_stages s ON s.id = t.stage_id
-       LEFT JOIN stage_visits v ON v.id = t.stage_visit_id
-       LEFT JOIN process_instances pi ON pi.id = v.process_instance_id
-       -- Invoice-specific, and only where the subject says so. A
-       -- subject of another type simply yields nulls here.
-       LEFT JOIN invoice_headers h
-         ON pi.subject_type = 'invoice' AND h.id = pi.subject_id
-       WHERE t.status = ?
-         AND (
-           t.owner_user_id = ?
-           OR t.owner_team_id IN (SELECT team_id FROM org_team_members WHERE user_id = ?)
-         )
-         -- One stage, or every stage. Filtered in SQL because a stage
-         -- is stored on the row; ownership is not, and is applied
-         -- afterwards.
-         AND (? IS NULL OR t.stage_id = ?)
-       ORDER BY t.created_at ASC`
+       ${joins}
+       ${baseWhereClause}${ownershipClause}
+       ORDER BY t.created_at ASC
+       LIMIT ?10 OFFSET ?11`
     )
     // Open only, by default. A completed task is history rather than
     // work, and a queue that showed both would need the person to
     // filter before it was useful.
-    .bind(
-      options.includeCompleted ? "completed" : "open",
-      userId,
-      userId,
-      options.stageId ?? null,
-      options.stageId ?? null
-    )
+    .bind(...baseBinds, options.ownership ?? null, limit, offset)
     .all<Raw>();
 
-  const all: TaskRow[] = rows.results.map((row) => {
+  const tasks: TaskRow[] = rows.results.map((row) => {
     const ownership = ownershipOf(row, userId);
 
     const task: TaskRow = {
@@ -443,101 +691,44 @@ export async function handleListMyTasks(
 
   /**
    * **Work somebody may not do is work they should not be shown** —
-   * decision 0202.
+   * decision 0202, now pushed into SQL by decision 0449.
    *
-   * A German validator holds `AP.Validate` and would correctly be
-   * refused on a French invoice; until now the list showed it to them
-   * anyway. Decision 0199 recorded that as its largest gap: *"a person
-   * is correctly denied acting and still shown the work."*
-   *
-   * Resolved against the **document's** unit, walking up from it, so a
-   * role held at Acme France covers AP France beneath it.
+   * The permission-visibility check (a German validator correctly
+   * refused on a French invoice) and the org-focus narrowing (decision
+   * 0314) are both computed above, in `reachablePairs` and
+   * `orgFocusReachable`, and applied inside `baseWhereClause`. See the
+   * proof in decision 0449: "is the task's unit in the
+   * downward-reachable set from some held unit" is exactly equivalent
+   * to the old per-row "is some held unit an ancestor of the task's
+   * unit" — verified case-by-case for a task with no org unit, a
+   * permission held nowhere, held everywhere, and held in specific
+   * units.
    */
-  const lineageCache = new Map<string, Set<string>>();
-
-  async function maySee(task: TaskRow): Promise<boolean> {
-    const held = heldIn.get(task.requiredPermission);
-
-    /**
-     * **A task about a document in no unit stays visible regardless of
-     * which org is chosen** — the same reasoning decision 0202 already
-     * gives for the permission-denial check below: hiding it would make
-     * it invisible under every choice, since it belongs to none of
-     * them, and that is a loss of real work rather than the narrowing
-     * either feature is meant to do.
-     */
-    if (!task.orgUnitId) return true;
-
-    let lineage = lineageCache.get(task.orgUnitId);
-    if (!lineage) {
-      lineage = new Set(await unitLineage(db, task.orgUnitId));
-      lineageCache.set(task.orgUnitId, lineage);
-    }
-
-    /**
-     * **Decision 0202's own check, unchanged**: a permission held
-     * nowhere in particular (`undefined` or `null`) imposes no
-     * restriction of its own; held somewhere, the task's own unit must
-     * be reachable from at least one of those.
-     */
-    if (held !== undefined && held !== null && !held.some((unit) => lineage!.has(unit))) {
-      return false;
-    }
-
-    /**
-     * **Decision 0314's own narrowing, layered on top** — focused on
-     * one org, the task's own unit must also be reachable from that
-     * one specifically, not merely from somewhere the person happens
-     * to hold the permission. Applies even when the permission itself
-     * is held everywhere: "seeing only that org's work" was the
-     * operator's own request regardless of how broadly a role reaches.
-     */
-    if (options.currentOrgUnitId && !lineage.has(options.currentOrgUnitId)) {
-      return false;
-    }
-
-    return true;
-  }
-
-  const visible: TaskRow[] = [];
-  for (const task of all) {
-    if (await maySee(task)) visible.push(task);
-  }
-
-  const filtered = options.ownership
-    ? visible.filter((t) => t.ownership === options.ownership)
-    : visible;
-
-  const limit = Math.min(Math.max(1, options.limit ?? DEFAULT_LIMIT), MAX_LIMIT);
-  const offset = Math.max(0, options.offset ?? 0);
 
   return {
     status: 200,
     body: {
-      tasks: filtered.slice(offset, offset + limit),
+      tasks,
       // **Counted over everything the person can see at this stage**,
       // not over the page returned. A count that changed as somebody
       // paged would be telling them about the page rather than about
       // their work.
       /**
-       * **Counted over what the person may see** — decision 0255.
-       *
-       * These were counted over `all`, before `maySee` ran, so the
-       * numbers under the table could include tasks the table would
-       * never show — a German validator's summary counting French work
-       * that decision 0202 had just hidden from the rows.
-       *
-       * Found because the dashboard's stage card now reads these, and a
-       * card that links to a list must say what the list shows.
+       * **Counted over what the person may see** — decision 0255, now a
+       * SQL `SUM`/`CASE` over `baseWhereClause` (decision 0449) rather
+       * than a JS `.filter().length` over an in-Worker array — same
+       * rule, same scope, computed where the row set already lives.
        */
       counts: {
-        mine: visible.filter((t) => t.ownership === "mine").length,
-        available: visible.filter((t) => t.ownership === "available").length,
-        locked: visible.filter((t) => t.ownership === "locked").length,
+        mine: groupCountsRow?.mine ?? 0,
+        available: groupCountsRow?.available ?? 0,
+        locked: groupCountsRow?.locked ?? 0,
       },
-      total: filtered.length,
+      total: totalRow?.n ?? 0,
       limit,
       offset,
+      page,
+      pageSize,
     },
   };
 }

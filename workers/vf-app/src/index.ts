@@ -3105,6 +3105,11 @@ export default {
             : undefined,
         limit: Number(url.searchParams.get("limit")) || undefined,
         offset: Number(url.searchParams.get("offset")) || undefined,
+        // Real, server-side search and pagination — decision 0449, the
+        // same `q`/`page`/`pageSize` shape `/documents` already reads.
+        search: url.searchParams.get("q") ?? undefined,
+        page: Number(url.searchParams.get("page")) || undefined,
+        pageSize: Number(url.searchParams.get("pageSize")) || undefined,
       });
       return json(result.body, result.status);
     }

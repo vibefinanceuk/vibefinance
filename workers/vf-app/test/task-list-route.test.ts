@@ -603,3 +603,238 @@ describe("a task about one line (decision 0183)", () => {
     expect(lines).toEqual([1, 2]);
   });
 });
+
+/**
+ * Sets the invoice's facts and/or amount after `seedInstance()` has
+ * already created it — mirrors `documents.test.ts`'s own pattern of
+ * updating `invoice_headers` directly rather than growing `seedInstance`
+ * a parameter for every field a search test happens to need.
+ */
+async function setInvoiceFacts(invoiceId: string, facts: Record<string, unknown>) {
+  await env.DB.prepare("UPDATE invoice_headers SET facts_json = ? WHERE id = ?")
+    .bind(JSON.stringify(facts), invoiceId)
+    .run();
+}
+
+async function setInvoiceAmount(invoiceId: string, amount: number) {
+  await env.DB.prepare("UPDATE invoice_headers SET total_with_vat = ? WHERE id = ?")
+    .bind(amount, invoiceId)
+    .run();
+}
+
+describe("searching — real SQL, decision 0449", () => {
+  /**
+   * **The same three fields the row itself shows** — stage name,
+   * supplier (the BT-27 fact `sellerNameOf()` already reads), and
+   * amount. Invoice number is deliberately not one of them: this
+   * screen has never selected or displayed it, unlike Documents.
+   */
+  it("finds by stage name", async () => {
+    await grant("alice", ["AP.Validate", "AP.Approve"]);
+    await seedInstance("inv-1", "validation", "v-1");
+    await seedInstance("inv-2", "approval", "v-2");
+    await seedTask("t-1", "validation", "v-1", { user: "alice" });
+    await seedTask("t-2", "approval", "v-2", { user: "alice" });
+
+    const result = await handleListMyTasks(env.DB, "alice", { search: "valid" });
+    expect((result.body as { tasks: TaskRow[] }).tasks.map((t) => t.id)).toEqual(["t-1"]);
+  });
+
+  it("finds by supplier name", async () => {
+    await seedInstance("inv-1", "validation", "v-1");
+    await seedInstance("inv-2", "validation", "v-2");
+    await seedTask("t-1", "validation", "v-1", { user: "alice" });
+    await seedTask("t-2", "validation", "v-2", { user: "alice" });
+    await setInvoiceFacts("inv-1", { "BT-27": "Nordwind Logistik" });
+    await setInvoiceFacts("inv-2", { "BT-27": "Munch GmbH" });
+
+    const result = await handleListMyTasks(env.DB, "alice", { search: "nordwind" });
+    expect((result.body as { tasks: TaskRow[] }).tasks.map((t) => t.id)).toEqual(["t-1"]);
+  });
+
+  it("finds by amount", async () => {
+    await seedInstance("inv-1", "validation", "v-1");
+    await seedInstance("inv-2", "validation", "v-2");
+    await seedTask("t-1", "validation", "v-1", { user: "alice" });
+    await seedTask("t-2", "validation", "v-2", { user: "alice" });
+    await setInvoiceAmount("inv-1", 251.88);
+    await setInvoiceAmount("inv-2", 900);
+
+    const result = await handleListMyTasks(env.DB, "alice", { search: "251.88" });
+    expect((result.body as { tasks: TaskRow[] }).tasks.map((t) => t.id)).toEqual(["t-1"]);
+  });
+
+  it("ignores case", async () => {
+    await seedInstance("inv-1", "validation", "v-1");
+    await seedTask("t-1", "validation", "v-1", { user: "alice" });
+    await setInvoiceFacts("inv-1", { "BT-27": "Nordwind Logistik" });
+
+    const result = await handleListMyTasks(env.DB, "alice", { search: "NORDWIND" });
+    expect((result.body as { tasks: TaskRow[] }).tasks).toHaveLength(1);
+  });
+
+  it("escapes a literal % or _ in the term rather than treating it as a SQL wildcard", async () => {
+    await seedInstance("inv-1", "validation", "v-1");
+    await seedInstance("inv-2", "validation", "v-2");
+    await seedTask("t-1", "validation", "v-1", { user: "alice" });
+    await seedTask("t-2", "validation", "v-2", { user: "alice" });
+    await setInvoiceFacts("inv-1", { "BT-27": "INV_100%" });
+    await setInvoiceFacts("inv-2", { "BT-27": "INVX100Y" });
+
+    // An unescaped LIKE pattern (`%_100%%`) would also match "INVX100Y",
+    // since `_` and `%` are themselves SQL wildcards there.
+    const result = await handleListMyTasks(env.DB, "alice", { search: "_100%" });
+    expect((result.body as { tasks: TaskRow[] }).tasks.map((t) => t.id)).toEqual(["t-1"]);
+  });
+
+  it("returns nothing rather than everything when nothing matches", async () => {
+    await seedInstance("inv-1", "validation", "v-1");
+    await seedTask("t-1", "validation", "v-1", { user: "alice" });
+    await setInvoiceFacts("inv-1", { "BT-27": "Nordwind Logistik" });
+
+    const result = await handleListMyTasks(env.DB, "alice", { search: "zzzz" });
+    expect((result.body as { tasks: TaskRow[] }).tasks).toHaveLength(0);
+  });
+
+  it("total narrows with a search term, same as the page itself", async () => {
+    await seedInstance("inv-1", "validation", "v-1");
+    await seedInstance("inv-2", "validation", "v-2");
+    await seedTask("t-1", "validation", "v-1", { user: "alice" });
+    await seedTask("t-2", "validation", "v-2", { user: "alice" });
+    await setInvoiceFacts("inv-1", { "BT-27": "Nordwind Logistik" });
+    await setInvoiceFacts("inv-2", { "BT-27": "Munch GmbH" });
+
+    const result = await handleListMyTasks(env.DB, "alice", {
+      search: "nordwind",
+      page: 1,
+      pageSize: 25,
+    });
+    const body = result.body as { tasks: TaskRow[]; total: number };
+    expect(body.tasks).toHaveLength(1);
+    expect(body.total).toBe(1);
+  });
+});
+
+describe("real, server-side pagination — decision 0449", () => {
+  async function seedMany(n: number) {
+    for (let i = 0; i < n; i++) {
+      const id = `inv-${i}`;
+      await seedInstance(id, "validation", `v-${i}`);
+      await seedTask(`t-${i}`, "validation", `v-${i}`, { user: "alice" });
+    }
+  }
+
+  it("total/page/pageSize are always present — unlike Documents, counts were never gated on asking for a page", async () => {
+    await seedInstance("inv-1", "validation", "v-1");
+    await seedTask("t-1", "validation", "v-1", { user: "alice" });
+
+    const result = await handleListMyTasks(env.DB, "alice");
+    const body = result.body as { total: number; page: number; pageSize: number };
+    expect(body.total).toBe(1);
+    expect(body.page).toBe(1);
+    expect(body.pageSize).toBe(50);
+  });
+
+  it("total reflects every matching row, not just the page returned", async () => {
+    await seedMany(60);
+    const result = await handleListMyTasks(env.DB, "alice", { page: 1, pageSize: 25 });
+    const body = result.body as { tasks: TaskRow[]; total: number; page: number; pageSize: number };
+    expect(body.tasks).toHaveLength(25);
+    expect(body.total).toBe(60);
+    expect(body.page).toBe(1);
+    expect(body.pageSize).toBe(25);
+  });
+
+  it("page 2 returns a disjoint set from page 1", async () => {
+    await seedMany(60);
+    const page1 = (
+      (await handleListMyTasks(env.DB, "alice", { page: 1, pageSize: 25 })).body as { tasks: TaskRow[] }
+    ).tasks.map((t) => t.id);
+    const page2 = (
+      (await handleListMyTasks(env.DB, "alice", { page: 2, pageSize: 25 })).body as { tasks: TaskRow[] }
+    ).tasks.map((t) => t.id);
+    expect(page1).toHaveLength(25);
+    expect(page2).toHaveLength(25);
+    expect(page1.some((id) => page2.includes(id))).toBe(false);
+  });
+
+  it("a real, partial last page", async () => {
+    await seedMany(60);
+    const result = await handleListMyTasks(env.DB, "alice", { page: 3, pageSize: 25 });
+    const body = result.body as { tasks: TaskRow[]; total: number };
+    expect(body.tasks).toHaveLength(10);
+    expect(body.total).toBe(60);
+  });
+
+  it("normalizes a bad page number back to 1", async () => {
+    await seedMany(5);
+    const result = await handleListMyTasks(env.DB, "alice", { page: NaN, pageSize: 25 });
+    expect((result.body as { page: number }).page).toBe(1);
+  });
+
+  it("normalizes an unlisted page size back to the default", async () => {
+    await seedMany(5);
+    const result = await handleListMyTasks(env.DB, "alice", { page: 1, pageSize: 17 });
+    expect((result.body as { pageSize: number }).pageSize).toBe(50);
+  });
+
+  it("every allowed page size is honoured", async () => {
+    await seedMany(60);
+    for (const size of [25, 50, 100, 200]) {
+      const result = await handleListMyTasks(env.DB, "alice", { page: 1, pageSize: size });
+      const body = result.body as { pageSize: number; tasks: TaskRow[] };
+      expect(body.pageSize).toBe(size);
+      expect(body.tasks.length).toBeLessThanOrEqual(size);
+    }
+  });
+
+  it("page/pageSize win over legacy limit/offset when both are given", async () => {
+    await seedMany(60);
+    const result = await handleListMyTasks(env.DB, "alice", {
+      limit: 5,
+      offset: 0,
+      page: 2,
+      pageSize: 25,
+    });
+    const body = result.body as { tasks: TaskRow[]; page: number; pageSize: number };
+    expect(body.tasks).toHaveLength(25);
+    expect(body.page).toBe(2);
+    expect(body.pageSize).toBe(25);
+  });
+
+  it("derives page/pageSize from limit/offset for a caller still using the legacy shape", async () => {
+    // `dashboard-route.ts`'s own two internal callers use `limit: 1000`
+    // and no page controls of their own — this is what they get back.
+    await seedMany(5);
+    const result = await handleListMyTasks(env.DB, "alice", { limit: 2, offset: 2 });
+    const body = result.body as { page: number; pageSize: number };
+    expect(body.page).toBe(2);
+    expect(body.pageSize).toBe(2);
+  });
+
+  it("total is computed under the ownership filter, in SQL, not by loading everything first", async () => {
+    // The genuine improvement over the old code: `total` for a
+    // "mine"-only page used to be `filtered.length` after an in-Worker
+    // `.filter()` over the whole visible set. Here it is a `count(*)`
+    // that already applied `ownershipClause`.
+    await grant("alice", ["AP.Validate"]);
+    await seedInstance("inv-1", "validation", "v-1");
+    await seedInstance("inv-2", "validation", "v-2");
+    await seedInstance("inv-3", "validation", "v-3");
+    await seedTask("t-1", "validation", "v-1", { user: "alice" });
+    await seedTask("t-2", "validation", "v-2", { team: "ap" });
+    await seedTask("t-3", "validation", "v-3", { team: "ap" }, "sarah");
+
+    const result = await handleListMyTasks(env.DB, "alice", {
+      ownership: "available",
+      page: 1,
+      pageSize: 25,
+    });
+    const body = result.body as { tasks: TaskRow[]; total: number; counts: Record<string, number> };
+    expect(body.total).toBe(1);
+    expect(body.tasks).toHaveLength(1);
+    expect(body.tasks[0].id).toBe("t-2");
+    // Counts describe every kind, unaffected by the ownership filter.
+    expect(body.counts).toEqual({ mine: 1, available: 1, locked: 1 });
+  });
+});

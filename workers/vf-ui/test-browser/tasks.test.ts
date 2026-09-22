@@ -58,8 +58,21 @@ const STRINGS = {
     "tasks.available": "Available",
     "tasks.locked": "Locked",
     "tasks.empty": "Nothing here",
+    "tasks.nomatch": "Nothing matches that.",
+    "tasks.countsline": "{mine} mine · {available} available · {locked} held",
+    "tasks.searchhint": "Stage, supplier, or amount",
     "tasks.nodocument": "No document",
     "tasks.notkeyed": "Not keyed",
+    /**
+     * Reused, not re-typed — decision 0449, the same
+     * `documents.js`/`purchase-orders.js` pagination-row keys.
+     */
+    "purchaseorders.rows": "Rows",
+    "purchaseorders.rangeof": "{start}–{end} of {total}",
+    "purchaseorders.firstpage": "First page",
+    "purchaseorders.previouspage": "Previous page",
+    "purchaseorders.nextpage": "Next page",
+    "purchaseorders.lastpage": "Last page",
     "action.complete": "Complete",
     "action.return": "Return",
     "action.key": "Key",
@@ -1897,5 +1910,221 @@ describe("the claim button inside the document viewer (decision 0414)", () => {
 
     expect(document.getElementById("viewer")?.hidden).toBe(true);
     expect(document.getElementById("shell")?.hidden).toBe(false);
+  });
+});
+
+/**
+ * A page of `count` tasks out of `total` — decision 0449, the same
+ * shape `documents.test.ts`'s own `pageOf()` (decision 0448) uses, for
+ * tests about the pagination display rather than any one row's own
+ * content.
+ */
+function pageOf(count: number, total: number, page: number, pageSize: number) {
+  return {
+    tasks: Array.from({ length: count }, (_, i) => ({ ...APPROVAL_TASK, id: `t-${i}` })),
+    counts: { mine: count, available: 0, locked: 0 },
+    total,
+    page,
+    pageSize,
+  };
+}
+
+/**
+ * Stubs `/api/tasks` with a fetch that also records the last requested
+ * URL — the rest of the routes are the same fixed set `openList()`
+ * above already stubs, needed to get from `start()`'s own default
+ * landing (Dashboard, since `ALL_NAV_PERMISSIONS` holds `AP.Dashboard`)
+ * across to the Tasks screen via a real nav click.
+ */
+function stubTasksRecordingUrl(body: unknown) {
+  let requestedUrl = "";
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (url: string) => {
+      const path = String(url).split("?")[0];
+      if (path === "/api/tasks") {
+        requestedUrl = String(url);
+        return { ok: true, json: async () => body } as Response;
+      }
+      const routes: Record<string, unknown> = {
+        "/api/ui-strings": STRINGS,
+        "/api/whoami": { id: "u-dan", name: "Dan", permissions: ALL_NAV_PERMISSIONS },
+        "/api/dashboard": { cards: [], usingDefault: true },
+        "/api/dashboard/catalogue": { cards: [] },
+      };
+      if (path in routes) return { ok: true, json: async () => routes[path] } as Response;
+      throw new Error(`no stub for ${path}`);
+    })
+  );
+  return () => requestedUrl;
+}
+
+async function openScreen() {
+  window.localStorage.clear();
+  const { loadStrings } = await import("/strings.js");
+  await loadStrings();
+  const { start } = await import("/tasks.js");
+  await start();
+  const tasksLink = [...document.querySelectorAll(".navitem")].find((a) => a.textContent?.includes("Tasks")) as HTMLElement;
+  tasksLink?.click();
+  await new Promise((r) => setTimeout(r, 0));
+}
+
+describe("searching the list — real, server-side search, decision 0449", () => {
+  it("shows the search box with its own placeholder", async () => {
+    await openList([]);
+
+    const search = document.getElementById("tasksearch");
+    expect(search?.getAttribute("placeholder")).toBe("Stage, supplier, or amount");
+  });
+
+  it("re-fetches with the search term once typing is done, and resets to page 1", async () => {
+    const requestedUrl = stubTasksRecordingUrl(pageOf(1, 1, 1, 50));
+    await openScreen();
+
+    const search = document.getElementById("tasksearch") as HTMLInputElement;
+    search.value = "nordwind";
+    search.dispatchEvent(new Event("change"));
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(requestedUrl()).toContain("q=nordwind");
+    expect(requestedUrl()).toContain("page=1");
+  });
+
+  it("keeps focus on the search box after a search reloads the screen", async () => {
+    stubTasksRecordingUrl(pageOf(0, 0, 1, 50));
+    await openScreen();
+
+    const search = document.getElementById("tasksearch") as HTMLInputElement;
+    search.value = "nordwind";
+    search.dispatchEvent(new Event("change"));
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(document.activeElement?.id).toBe("tasksearch");
+  });
+
+  it("shows a message distinct from 'nothing here' when a search matches nothing", async () => {
+    stubTasksRecordingUrl(pageOf(0, 0, 1, 50));
+    await openScreen();
+
+    const search = document.getElementById("tasksearch") as HTMLInputElement;
+    search.value = "no such thing";
+    search.dispatchEvent(new Event("change"));
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(document.body.textContent).toContain("Nothing matches that.");
+    expect(document.body.textContent).not.toContain("Nothing here");
+  });
+
+  it("sends the current filters alongside the search term", async () => {
+    const requestedUrl = stubTasksRecordingUrl(pageOf(1, 1, 1, 50));
+    await openScreen();
+    await openTasksFilteredAfterOpen({ stage: "approval", ownership: "mine" });
+
+    const search = document.getElementById("tasksearch") as HTMLInputElement;
+    search.value = "munch";
+    search.dispatchEvent(new Event("change"));
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(requestedUrl()).toContain("q=munch");
+    expect(requestedUrl()).toContain("stage=approval");
+    expect(requestedUrl()).toContain("ownership=mine");
+  });
+});
+
+/**
+ * `openTasksFiltered()` is exported for real callers (a dashboard
+ * card), not for a test already sitting on the Tasks screen — this
+ * calls it the same way, from a running import, rather than reopening
+ * the screen from scratch a second time.
+ */
+async function openTasksFilteredAfterOpen(next: { stage?: string; ownership?: string }) {
+  const { openTasksFiltered } = await import("/tasks.js");
+  await openTasksFiltered(next);
+  await new Promise((r) => setTimeout(r, 0));
+}
+
+describe("pagination controls — decision 0449", () => {
+  it("shows every page size actually offered", async () => {
+    await openList([]);
+
+    const options = [...document.querySelectorAll("#taskrowsize option")].map((o) => (o as HTMLOptionElement).value);
+    expect(options).toEqual(["25", "50", "100", "200"]);
+  });
+
+  it("changing the page size re-fetches with the new size and resets to page 1", async () => {
+    const requestedUrl = stubTasksRecordingUrl(pageOf(25, 120, 1, 25));
+    await openScreen();
+
+    const sizePicker = document.getElementById("taskrowsize") as HTMLSelectElement;
+    sizePicker.value = "25";
+    sizePicker.dispatchEvent(new Event("change"));
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(requestedUrl()).toContain("pageSize=25");
+    expect(requestedUrl()).toContain("page=1");
+  });
+
+  it("disables first and previous on the first page", async () => {
+    stubTasksRecordingUrl(pageOf(50, 120, 1, 50));
+    await openScreen();
+
+    expect((document.querySelector('[aria-label="First page"]') as HTMLButtonElement)?.disabled).toBe(true);
+    expect((document.querySelector('[aria-label="Previous page"]') as HTMLButtonElement)?.disabled).toBe(true);
+    expect((document.querySelector('[aria-label="Next page"]') as HTMLButtonElement)?.disabled).toBe(false);
+    expect((document.querySelector('[aria-label="Last page"]') as HTMLButtonElement)?.disabled).toBe(false);
+  });
+
+  it("disables next and last on the last page", async () => {
+    stubTasksRecordingUrl(pageOf(20, 120, 3, 50));
+    await openScreen();
+
+    expect((document.querySelector('[aria-label="Next page"]') as HTMLButtonElement)?.disabled).toBe(true);
+    expect((document.querySelector('[aria-label="Last page"]') as HTMLButtonElement)?.disabled).toBe(true);
+    expect((document.querySelector('[aria-label="First page"]') as HTMLButtonElement)?.disabled).toBe(false);
+    expect((document.querySelector('[aria-label="Previous page"]') as HTMLButtonElement)?.disabled).toBe(false);
+  });
+
+  it("shows the range as text", async () => {
+    stubTasksRecordingUrl(pageOf(50, 120, 2, 50));
+    await openScreen();
+
+    expect(document.body.textContent).toContain("51–100 of 120");
+  });
+
+  it("clicking next advances the page while keeping the same search term", async () => {
+    const requestedUrl = stubTasksRecordingUrl(pageOf(50, 120, 1, 50));
+    await openScreen();
+
+    const search = document.getElementById("tasksearch") as HTMLInputElement;
+    search.value = "nordwind";
+    search.dispatchEvent(new Event("change"));
+    await new Promise((r) => setTimeout(r, 0));
+
+    (document.querySelector('[aria-label="Next page"]') as HTMLButtonElement)?.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(requestedUrl()).toContain("page=2");
+    expect(requestedUrl()).toContain("q=nordwind");
+  });
+
+  it("the counts line reports mine/available/locked, not a page-relative total", async () => {
+    // Decision 0449 retired "N shown" from this line — see `render()`'s
+    // own comment on why that would now misstate what real pagination
+    // shows. 3 tasks matched everywhere; only 2 are on this page.
+    stubTasksRecordingUrl({
+      tasks: [{ ...APPROVAL_TASK, id: "t-0" }, { ...APPROVAL_TASK, id: "t-1" }],
+      counts: { mine: 3, available: 1, locked: 2 },
+      total: 6,
+      page: 1,
+      pageSize: 2,
+    });
+    await openScreen();
+
+    const counts = document.getElementById("counts")?.textContent ?? "";
+    expect(counts).toContain("3 mine");
+    expect(counts).toContain("1 available");
+    expect(counts).toContain("2 held");
+    expect(counts).not.toMatch(/^\d+ shown/);
   });
 });

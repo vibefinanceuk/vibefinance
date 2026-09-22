@@ -721,6 +721,89 @@ describe("focused on one org (decision 0314)", () => {
   });
 });
 
+describe("search stays inside what visibility already narrowed to (decision 0449)", () => {
+  /**
+   * **Decision 0449 pushed both decision 0202's permission-scoped
+   * visibility and decision 0314's org focus into the same `WHERE` a
+   * free-text search now also lives in.** The risk that composition
+   * creates: a search clause written carelessly could `OR` its way
+   * around the visibility conditions rather than narrowing within them.
+   * Checked directly, the same way `documents.test.ts`'s own "composes
+   * with the org focus" test checks it for Documents.
+   */
+  async function seedTaskFor(invoiceId: string, unitId: string, taskId: string, supplierName: string) {
+    await seedInvoice(invoiceId, unitId);
+    await env.DB.prepare("UPDATE invoice_headers SET facts_json = ? WHERE id = ?")
+      .bind(JSON.stringify({ "BT-27": supplierName }), invoiceId)
+      .run();
+    await env.DB.prepare("INSERT OR IGNORE INTO processes (id, name) VALUES ('ap', 'AP')").run();
+    await env.DB.prepare(
+      "INSERT OR IGNORE INTO process_stages (id, process_id, name, sequence) VALUES ('validation', 'ap', 'Validation', 1)"
+    ).run();
+    await env.DB.prepare(
+      `INSERT INTO process_instances (id, process_id, subject_type, subject_id, current_stage_id)
+       VALUES (?, 'ap', 'invoice', ?, 'validation')`
+    )
+      .bind(`pi-${invoiceId}`, invoiceId)
+      .run();
+    await env.DB.prepare(
+      `INSERT INTO stage_visits (id, process_instance_id, stage_id, outcome)
+       VALUES (?, ?, 'validation', 'matched')`
+    )
+      .bind(`v-${invoiceId}`, `pi-${invoiceId}`)
+      .run();
+    await env.DB.prepare(
+      `INSERT INTO tasks (id, stage_id, stage_visit_id, owner_team_id, required_permission)
+       VALUES (?, 'validation', ?, 'ap-team', 'AP.Validate')`
+    )
+      .bind(taskId, `v-${invoiceId}`)
+      .run();
+  }
+
+  beforeEach(async () => {
+    await env.DB.prepare("INSERT INTO org_units (id, name) VALUES ('team-unit', 'Team Unit') ON CONFLICT(id) DO NOTHING").run();
+    await env.DB.prepare("INSERT INTO org_teams (id, name, unit_id) VALUES ('ap-team', 'AP team', 'team-unit')").run();
+    await env.DB.prepare(
+      "INSERT INTO org_team_members (team_id, user_id) VALUES ('ap-team', 'alice')"
+    ).run();
+    await env.DB.prepare(
+      `INSERT INTO org_roles (id, name, permissions_json)
+       VALUES ('validator', 'AP Validator', '["AP.Validate"]')`
+    ).run();
+  });
+
+  it("a match outside the permission-scoped visible units stays hidden", async () => {
+    // Held only in Germany; both tasks' supplier names would otherwise
+    // match the same search term.
+    await env.DB.prepare(
+      "INSERT INTO org_user_roles (user_id, role_id, unit_id) VALUES ('alice', 'validator', 'acme-de')"
+    ).run();
+    await seedTaskFor("inv-fr", "ap-fr", "t-fr", "Findme France");
+    await seedTaskFor("inv-de", "ap-de", "t-de", "Findme Deutschland");
+
+    const result = await handleListMyTasks(env.DB, "alice", { search: "findme" });
+    const tasks = (result.body as { tasks: { id: string }[] }).tasks.map((t) => t.id);
+    expect(tasks).toEqual(["t-de"]);
+  });
+
+  it("a match outside the focused org's own visible units stays hidden", async () => {
+    // Held everywhere, but focused on Germany — the same widening a
+    // careless `OR` would risk undoing.
+    await env.DB.prepare(
+      "INSERT INTO org_user_roles (user_id, role_id, unit_id) VALUES ('alice', 'validator', NULL)"
+    ).run();
+    await seedTaskFor("inv-fr", "ap-fr", "t-fr", "Findme France");
+    await seedTaskFor("inv-de", "ap-de", "t-de", "Findme Deutschland");
+
+    const result = await handleListMyTasks(env.DB, "alice", {
+      search: "findme",
+      currentOrgUnitId: "acme-de",
+    });
+    const tasks = (result.body as { tasks: { id: string }[] }).tasks.map((t) => t.id);
+    expect(tasks).toEqual(["t-de"]);
+  });
+});
+
 describe("claiming is bounded by the org too (decision 0203)", () => {
   /**
    * **The last place the boundary was a screen.**

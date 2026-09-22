@@ -215,6 +215,12 @@ const KEYS_THE_INTERFACE_USES = [
   "tasks.notkeyed",
   "tasks.nodocument",
   "tasks.loadfailed",
+  // The search box and pagination controls — decision 0449. The
+  // pagination controls themselves reuse `purchaseorders.*`, already
+  // listed below for Documents' own decision-0448 controls.
+  "tasks.searchhint",
+  "tasks.nomatch",
+  "tasks.countsline",
   // Every action a task can report (decisions 0103, 0104)
   "action.claim",
   // The action row (decision 0122).

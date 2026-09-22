@@ -2018,6 +2018,133 @@ section for the full reasoning and tests.
   operator confirmed with *"deployed and pushed - looks great I have
   checked."* No migration to apply — this decision added none.
 
+### Search and real pagination for Tasks (0449)
+- The operator's own standing instruction once 0448 (Documents) shipped:
+  *"yes - move onto Tasks please"* — the harder half 0448 itself
+  deferred, since Tasks' own visibility check is architecturally
+  different from every other screen this arc has touched.
+- **The core unblock: proving the upward walk and the downward walk are
+  equivalent.** The old `maySee(task)` asked, per task, "is some unit I
+  hold permission in an ancestor of this task's own unit?" — walking
+  *upward* from the task's unit via `unitLineage()`, one query per
+  level, impossible to express as a single SQL `WHERE` clause without a
+  much larger change (0446's own finding, carried forward from 0448).
+  The equivalent question, askable in SQL, is the one Documents/Purchase
+  Orders/Account Coding already answer: "is this task's own unit
+  *downward-reachable* from some unit I hold permission in?" — reusing
+  `unitsBeneath()` from `enforce.ts` unmodified. Checked case-by-case
+  (no org unit on the task → visible; permission held nowhere or
+  everywhere → no restriction either way; held in specific units →
+  visible iff downward-reachable from one of them) and then checked
+  **empirically**, not just by argument: the untouched, pre-existing
+  46-test `scoped-roles.test.ts` suite — covering exactly this
+  visibility logic for Tasks (decisions 0202 and 0314) — was run
+  against the rewritten SQL with zero test changes needed. All 46
+  passed unchanged. That a suite nobody touched for this decision still
+  passed in full is stronger evidence than the proof alone.
+- **Ownership pushed into SQL the same way, and a real bug caught doing
+  it.** `ownershipCase` (`CASE WHEN (owner_user_id=?2 OR
+  claimed_by=?2) THEN 'mine' WHEN claimed_by IS NOT NULL THEN 'locked'
+  ELSE 'available' END`) already existed for the per-row ownership
+  filter; reusing it for the group counts query — rather than the
+  query's own separate `SUM(CASE WHEN ... AND NOT (...) THEN 1 ELSE 0
+  END)` expressions — uncovered a genuine, previously-undetected SQL
+  three-valued-logic bug: `NOT (a = ?2 OR b = ?2)` evaluates to `NULL`,
+  not `TRUE`, when both `a` and `b` are `NULL`, so an unclaimed team
+  task (both `owner_user_id` and `claimed_by` `NULL`) silently fell into
+  every branch's `ELSE 0` and was never counted at all. Caught by a
+  **pre-existing** regression test failing (`counts each kind`
+  expecting `{mine:1, available:1, locked:1}`, getting
+  `{mine:1, available:0, locked:0}`), not a new one written for this
+  decision — the strongest kind of validation the existing suite could
+  give. Fixed by rebuilding all three count branches on
+  `ownershipCase`'s own sequential `CASE WHEN ... ELSE`, which has no
+  such gap (a `NULL` `WHEN` condition simply falls through, exactly like
+  `FALSE` does).
+- **Same three-query architecture Documents/Account Coding use**:
+  `groupCountsRow` (counts every kind, `baseWhereClause` only, no
+  ownership filter — the counts line describes every kind regardless of
+  the current ownership filter), `totalRow` (real total behind the
+  current page, `baseWhereClause` + `ownershipClause`), `rows` (the
+  page itself, same two clauses + `ORDER BY ... LIMIT ... OFFSET`).
+  Search fields: stage name, supplier name (`json_extract(...'$."BT-27"'`,
+  matching `sellerNameOf()`), amount — invoice number deliberately
+  excluded, since Tasks never shows it, unlike Documents.
+- **`total`/`page`/`pageSize` always present in the response body**,
+  unlike Documents' `paginating`-gated version — since the counts and
+  total were already computed unconditionally before this decision
+  (over a strictly *more* expensive full in-Worker scan than the new
+  SQL), there is no cost reason to withhold them behind a flag here.
+- **The frontend rebuilt to the same `load()`/`render()`/`reload()`
+  split `documents.js` established (0448)** — `load()` fetches and
+  populates module state only; `render()` rebuilds `#shell` from that
+  state, no fetch; `reload()` does both, with an optional refocus.
+  Every former `loadTasks()` call site now calls `reload()` (when
+  `#shell` will be visible) or `load()` alone (`refreshTask()`, used by
+  `viewer.js` after a claim, where the viewer — not `#shell` — currently
+  owns the screen).
+- **The decision-0359 stage-select-patching hack retired, not just
+  left alone** — since `render()` now rebuilds the stage `<select>`
+  fresh from `knownStages` on every call (after `load()` has already
+  updated it), the old manual "append the missing `<option>` into the
+  existing node, then set `.value`" workaround has nothing left to do.
+  Deleted, with a comment explaining why, not silently.
+- **A real bug found while making that split, not introduced by it**:
+  `problem()` called `document.getElementById("problem").textContent =
+  ...` — fine under the old order, where `render()` always ran first so
+  `#problem` always existed, but now `load()` runs *before* the first
+  `render()`, so `getElementById("problem")` is `null` the very first
+  time. Found via the browser suite reporting an unhandled rejection on
+  nearly every test, traced through `problem` → `load` → `go` →
+  nav-click. Fixed by guarding the element's existence before setting
+  `.textContent`.
+- `tasks.countsline` (`{mine} mine · {available} available · {locked}
+  held`) replaces the old hand-built `"${total} shown · ..."` string —
+  "N shown" would misstate what's on screen once pagination is real;
+  the pagination row's own range text already says that correctly.
+  Pagination controls themselves reuse `purchaseorders.*` strings
+  (0448's own precedent) — only three new keys needed:
+  `tasks.searchhint`, `tasks.nomatch`, `tasks.countsline`, migration
+  `0151`.
+- `vf-app` `test/task-list-route.test.ts` 67/67 (45 pre-existing + 22
+  new: 7 search tests — stage/supplier/amount, case-insensitive,
+  literal `%`/`_` escaped, no-match-not-everything, total narrows under
+  pagination — and 9 real-pagination tests, mirroring 0448's own
+  shape) and `test/scoped-roles.test.ts` 48/48 (46 pre-existing + 2 new,
+  proving search stays inside what permission-scoping/org-focus already
+  narrowed to — a match outside the visible units, or outside the
+  focused org's own visible units, stays hidden even though the search
+  term itself matches). `test/dashboard.test.ts` 64/64 (unmodified,
+  confirming `dashboard-route.ts`'s two internal `handleListMyTasks`
+  callers keep working) and `test/session-routes.test.ts` 15/15
+  (unmodified, the one file exercising `/tasks` at the full HTTP-route
+  level) run directly for the same reason 0448 gave: the full,
+  whole-repo `vf-app` suite (113 files, ~2618 tests) could not complete
+  inside this session's own tool timeout, so every file plausibly
+  touching the changed code was run individually instead — 308 tests
+  across the five files above, all green, no regressions. `vf-licence`
+  320 → still 320 in file count (migration `0151` adds rows to the
+  existing `ui_strings` table, not a new test file), replay-tested
+  clean (151 migrations) and confirmed via `test/setup.ts` +
+  `string-coverage.test.ts` (both green — the new migration file has to
+  be added to both by hand, since `setup.ts` imports and execs each
+  migration explicitly rather than discovering them). `vf-ui` Worker 74
+  (unchanged); browser 1022 → **1034** (+12 `tasks.test.ts` — search
+  box/pagination controls, mirroring `documents.test.ts`'s own
+  decision-0448 blocks), all green; the pre-existing unhandled-rejection
+  flake (160 non-fatal errors) reconfirmed at its identical baseline via
+  a direct `git stash` comparison.
+- **Not built**: delete/bulk actions — out of scope, Tasks never had
+  either. Invoice number is not a search field here — Tasks never
+  shows it, unlike Documents. No shared helper extracted for the
+  "flat pairs" SQL technique (`"<permission>|<unit>"` matched via
+  `json_each`) — used identically in both 0446 and here, but each
+  route builds its own inline, matching the rest of this codebase's
+  existing preference for locality over a shared utility at this size.
+- **Built, tested, and delivered as a git bundle — not yet confirmed
+  pushed and deployed.** One new migration to apply once deployed:
+  `0151_tasks_search_and_pagination_strings.sql`.
+
 ### Purchase orders and matching
 - Purchase order storage grounded in Peppol BIS Order Only 3.3, via UBL
   XML ingestion (0081) and CSV load (0370) — the same tables, the same
@@ -3284,14 +3411,14 @@ elsewhere.
 |---|---|
 | `vf-app` | 2618 (as of decision 0447's own full-suite run — see note below) |
 | `vf-licence` | 320 |
-| `vf-ui` | 74 Worker · 1022 browser, all passing — see below |
+| `vf-ui` | 74 Worker · 1034 browser, all passing — see below |
 | `shared` | 295 passing, 3 known pre-existing failures |
 
 Both migration chains replay clean with every standing invariant
 holding — 76 migrations for `vf-app` (170 invariants); `vf-licence`'s
-own 149-migration chain has no equivalent Python replay, and is
+own 151-migration chain has no equivalent Python replay, and is
 instead validated through `workers/vf-licence/test/setup.ts` +
-`string-coverage.test.ts`, both green as of decision 0446.
+`string-coverage.test.ts`, both green as of decision 0449.
 
 **Decision 0448's own `vf-app` count is not re-verified against the
 full, whole-repo suite** — this session's own tool timeout could not
@@ -3300,6 +3427,19 @@ files this decision touches or is at risk of breaking
 (`test/documents.test.ts` 66/66, `test/ap-assistant.test.ts` 68/68)
 were run directly. The 2618 figure above is decision 0447's own
 confirmed baseline, with no `vf-app` file touched by this decision.
+
+**Decision 0449 hit the identical full-suite timeout** — the same
+113-file, ~2618-test `vf-app` suite again could not complete inside
+this session's own tool timeout, so every file plausibly touching the
+changed code was run individually instead:
+`test/task-list-route.test.ts` 67/67, `test/scoped-roles.test.ts`
+48/48, `test/dashboard.test.ts` 64/64, `test/documents.test.ts` 66/66,
+`test/ap-assistant.test.ts` 68/68, `test/session-routes.test.ts`
+15/15 — 308 tests total, all green. The 2618 figure above still
+reflects decision 0447's own last confirmed full-suite baseline. The
+`vf-ui` browser figure moved from 1022 to **1034** (+12 in
+`tasks.test.ts`, decision 0449's own search/pagination coverage),
+confirmed by an unfiltered whole-suite run.
 
 **`vf-ui` browser previously carried 4 known failures**, all in
 `test-browser/document-window.test.ts` — a long-documented,
