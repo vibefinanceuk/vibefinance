@@ -1421,6 +1421,51 @@ section for the full reasoning and tests.
   reset. `vf-ui` browser 958 → 960; Worker, `vf-app`, `vf-licence` all
   unchanged. `eslint public test-browser` clean.
 
+### Approval Hierarchy — migration and resolver (0439)
+- **The exact gap the operator named directly**: `org_users.manager_id`
+  (0334) and `org_authority_limits` (0009) are both global per person —
+  no way to express "EUR at Acme France, GBP at Acme UK." Closed
+  additively, the `stage_field_visibility_overrides` shape (0197) —
+  two new unit-scoped override tables beside the existing global ones,
+  neither rebuilt: `org_user_supervisor_overrides` and
+  `org_authority_limit_overrides`, read through `unit-config.ts`'s own
+  `unitLineage()` walk, most-specific-unit-wins.
+- **Cost-Object mode was already fully built and unused**:
+  `resolveApprovalChain` (0195) walks a cost centre's parent chain by
+  owner and limit — this is the first thing that calls it.
+- **Employee-Supervisor, the operator's own first mode to build**: a
+  new resolver (`approval-hierarchy.ts`) starts from whoever completed
+  the task on that line at the stage immediately before Approval
+  (structurally, by sequence — never a hardcoded stage id), climbs
+  through supervisors comparing each one's own unit-scoped limit
+  against the amount, and — deliberately the opposite of
+  `resolveApprovalChain`'s own null-limit-approves-anything convention
+  — treats a person with no limit recorded as a gap to escalate past,
+  not an unlimited approver.
+- `org_approval_config` (new singleton, the `org_settings` shape):
+  customer-wide mode (`employee_supervisor` | `cost_object` | `manual`
+  | `api`) plus a Default Approver, the operator's own answer for a
+  routing gap. `process_stages.uses_approval_hierarchy` (new column,
+  the `required_permission` shape, 0200): a stage marked this way
+  ignores whatever team/user its own rule names and resolves through
+  the config instead — `workflow-engine.ts` wired accordingly, 409ing
+  with a named reason when nothing resolves and no Default Approver is
+  set, rather than creating an ownerless task.
+- **Already free, no new code**: multiple tasks gating one stage visit
+  until all are complete (0015/0019) — line-level approval spawning
+  several tasks needed nothing new here.
+- `vf-app` 2490 → **2513** (+21 `approval-hierarchy.test.ts`, +2
+  `workflow-engine.test.ts`), full unfiltered run, all green. Migration
+  chain replays clean (75 migrations). `eslint` clean.
+- **Not built**: the AP Setup screen and its three tabs (deliberately
+  sequenced after, at the operator's own instruction); the write API
+  for the two override tables and `org_approval_config`; a way to turn
+  `uses_approval_hierarchy` on through `process-route.ts` rather than
+  by hand; Matching and Account Coding (AP Setup's other two tabs,
+  confirmed genuinely greenfield — no Coding stage exists in any real
+  process yet); Manual and API modes (named, no resolver — both fall
+  to the Default Approver or report unresolved).
+
 ### Purchase orders and matching
 - Purchase order storage grounded in Peppol BIS Order Only 3.3, via UBL
   XML ingestion (0081) and CSV load (0370) — the same tables, the same

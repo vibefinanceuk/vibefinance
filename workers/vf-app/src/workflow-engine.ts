@@ -10,6 +10,7 @@ import { applySetFieldActions, type FieldOverride } from "./set-field.js";
 import { resolveRuleSetForStage } from "./unit-config.js";
 import { loadActiveRuleSet } from "./rule-set-loader.js";
 import { handleCreateTask } from "./task-route.js";
+import { resolveApprovalHierarchy } from "./approval-hierarchy.js";
 import type { RouteResult } from "./org-route.js";
 
 /**
@@ -62,6 +63,16 @@ interface StageRow {
   evaluation_scope: string;
   /** Whether this stage refuses to finish without an org (0111). */
   requires_org: number;
+  /**
+   * Whether this stage's own `assign_task` actions resolve through
+   * the configured Approval Hierarchy instead of whatever team/user a
+   * rule names — decision 0439, the same "stage overrides the rule"
+   * shape as `required_permission` above. Optional on the type: only
+   * the top-level stage fetch below selects it, the same partial-
+   * select convention `onTaskCompleted`'s own `StageRow` query
+   * already uses for `sequence` alone.
+   */
+  uses_approval_hierarchy?: number;
 }
 
 type LineInput = InvoiceFacts & { lineNumber: number };
@@ -300,7 +311,7 @@ export async function visitCurrentStage(
   for (let i = 0; i < MAX_STAGES_PER_VISIT; i++) {
     const stage = await db
       .prepare(
-        "SELECT id, process_id, sequence, rule_set_id, evaluation_scope, requires_org, required_permission FROM process_stages WHERE id = ?"
+        "SELECT id, process_id, sequence, rule_set_id, evaluation_scope, requires_org, required_permission, uses_approval_hierarchy FROM process_stages WHERE id = ?"
       )
       .bind(currentStageId)
       .first<StageRow>();
@@ -390,7 +401,7 @@ export async function visitCurrentStage(
     const routeTargets = new Set<string>();
     const orgTargets = new Set<string>();
     const stepStatements: D1PreparedStatement[] = [];
-    const pendingTaskActions: Array<{ params: Record<string, unknown>; lineNumber: number | null }> = [];
+    const pendingTaskActions: Array<{ params: Record<string, unknown>; lineNumber: number | null; facts: InvoiceFacts }> = [];
     // Every field a rule changed, recorded so an auditor can ask what
     // this invoice said before a rule touched it (decision 0049).
     const allOverrides: FieldOverride[] = [];
@@ -447,7 +458,21 @@ export async function visitCurrentStage(
         orgTargets.add((action.params?.org as string) ?? "");
       }
       for (const action of result.actions.filter((a) => a.type === "assign_task")) {
-        pendingTaskActions.push({ params: (action.params ?? {}) as Record<string, unknown>, lineNumber: evaluation.lineNumber });
+        /**
+         * **The evaluation's own facts travel with the action** —
+         * decision 0439. A line-scope evaluation's facts already
+         * carry that line's own BT-131 (amount) and BT-133 (cost
+         * centre) merged over the header's BT-5 (currency); a
+         * header-scope one carries BT-112 (invoice total) and BT-5
+         * alone. Needed only when this stage resolves through the
+         * Approval Hierarchy rather than a rule-named team/user — see
+         * the assign_task loop below.
+         */
+        pendingTaskActions.push({
+          params: (action.params ?? {}) as Record<string, unknown>,
+          lineNumber: evaluation.lineNumber,
+          facts: evaluation.facts,
+        });
       }
     }
 
@@ -586,7 +611,7 @@ export async function visitCurrentStage(
     // can genuinely need different approvers. Now safe: the
     // stage_visits row this references was already inserted above.
     let tasksCreated = 0;
-    for (const { params, lineNumber } of pendingTaskActions) {
+    for (const { params, lineNumber, facts: taskFacts } of pendingTaskActions) {
       /**
        * **The stage's own, where it declares one** — decision 0200.
        *
@@ -613,11 +638,46 @@ export async function visitCurrentStage(
         };
       }
 
+      /**
+       * **A stage marked `uses_approval_hierarchy` resolves its own
+       * target — decision 0439.** Whatever team/user the rule names
+       * is ignored here, the same "the stage's own wins" shape
+       * `required_permission` above already established, not a second
+       * vocabulary a rule author could disagree with. The amount
+       * tested is the line's own net amount (BT-131) for a line-scope
+       * evaluation, or the invoice total (BT-112) for a header-scope
+       * one — whichever this evaluation's own facts carry.
+       */
+      let teamId = params.team;
+      let userId = params.user;
+      if (stage.uses_approval_hierarchy) {
+        const amountRaw = lineNumber !== null ? taskFacts["BT-131"] : taskFacts["BT-112"];
+        const resolution = await resolveApprovalHierarchy(db, {
+          instanceId: currentInstanceId,
+          processId: stage.process_id,
+          currentSequence: stage.sequence,
+          processVersion: instance.process_version,
+          lineNumber,
+          unitId: subjectUnitId,
+          currency: typeof taskFacts["BT-5"] === "string" ? (taskFacts["BT-5"] as string) : null,
+          amount: typeof amountRaw === "number" ? amountRaw : null,
+          costCentreId: typeof taskFacts["BT-133"] === "string" ? (taskFacts["BT-133"] as string) : null,
+        });
+        if ("unresolved" in resolution) {
+          return {
+            status: 409,
+            body: { error: `approval hierarchy could not resolve a target for stage ${stage.id}: ${resolution.reason}`, reason: "approval_hierarchy_unresolved" },
+          };
+        }
+        teamId = undefined;
+        userId = resolution.targetUserId;
+      }
+
       const createResult = await handleCreateTask(db, {
         id: crypto.randomUUID(),
         stageId: stage.id,
-        teamId: params.team,
-        userId: params.user,
+        teamId,
+        userId,
         requiredPermission: stage.required_permission ?? params.permission,
       });
       if (createResult.status !== 201) {

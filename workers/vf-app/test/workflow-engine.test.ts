@@ -219,6 +219,81 @@ describe("visitCurrentStage — assign_task blocks advancement", () => {
   });
 });
 
+describe("visitCurrentStage — a stage marked uses_approval_hierarchy resolves its own target (decision 0439)", () => {
+  it("ignores the rule's own team and routes through Employee-Supervisor instead: coder over limit, escalates to supervisor", async () => {
+    await handleCreateProcess(env.DB, { id: "p1", name: "AP" });
+    await handleCreateUser(env.DB, { id: "alice", email: "alice@acme.com", name: "Alice" });
+    await handleCreateUser(env.DB, { id: "bob", email: "bob@acme.com", name: "Bob" });
+    await env.DB.prepare("UPDATE org_users SET manager_id = 'bob' WHERE id = 'alice'").run();
+    await env.DB.prepare("INSERT INTO org_authority_limits (user_id, currency, max_amount) VALUES ('alice', 'EUR', 2000)").run();
+    await env.DB.prepare("INSERT INTO org_authority_limits (user_id, currency, max_amount) VALUES ('bob', 'EUR', 10000)").run();
+
+    // Coding always fires, naming Alice directly — an ordinary,
+    // unresolved assign_task, exactly like every other stage.
+    await seedRuleSet("rs-coding", {
+      conditions: { field: "BT-131", operator: "greater_than", value: -1 },
+      actions: [{ type: "assign_task", params: { user: "alice", permission: "AP.Code" } }],
+    });
+    // Approval names a team that must never actually get the task —
+    // proof the stage's own hierarchy resolution wins, not the rule.
+    await seedRuleSet("rs-approval", {
+      conditions: { field: "BT-131", operator: "greater_than", value: -1 },
+      actions: [{ type: "assign_task", params: { team: "decoy-team", permission: "AP.Approve" } }],
+    });
+    await handleCreateStage(env.DB, "p1", { id: "coding", name: "Coding", sequence: 1, ruleSetId: "rs-coding", evaluationScope: "line" });
+    await handleCreateStage(env.DB, "p1", { id: "approval", name: "Approval", sequence: 2, ruleSetId: "rs-approval", evaluationScope: "line" });
+    await env.DB.prepare("UPDATE process_stages SET uses_approval_hierarchy = 1 WHERE id = 'approval'").run();
+
+    const created = await handleCreateProcessInstance(env.DB, "p1", { subjectType: "invoice", subjectId: "inv-1" });
+    const instanceId = (created.body as { id: string }).id;
+
+    const lines = [{ lineNumber: 1, "BT-131": 5000, "BT-5": "EUR" }];
+    await visitCurrentStage(env.DB, instanceId, { "BT-5": "EUR" }, lines);
+
+    const codingTask = await env.DB.prepare("SELECT id FROM tasks WHERE stage_id = 'coding'").first<{ id: string }>();
+    await handleClaimTask(env.DB, codingTask!.id, "alice");
+    await handleCompleteTask(env.DB, codingTask!.id, "alice");
+    await onTaskCompleted(env.DB, codingTask!.id); // advances to 'approval', stops there — a real rule set needs real facts
+
+    const advanced = await env.DB.prepare("SELECT current_stage_id FROM process_instances WHERE id = ?").bind(instanceId).first();
+    expect(advanced).toEqual({ current_stage_id: "approval" });
+
+    await visitCurrentStage(env.DB, instanceId, { "BT-5": "EUR" }, lines);
+
+    const approvalTask = await env.DB.prepare(
+      "SELECT owner_team_id, owner_user_id, required_permission FROM tasks WHERE stage_id = 'approval'"
+    ).first<{ owner_team_id: string | null; owner_user_id: string | null; required_permission: string }>();
+    // Bob, not decoy-team: 5000 > Alice's own 2000 EUR limit, escalated
+    // to her supervisor, whose 10000 EUR limit covers it.
+    expect(approvalTask).toEqual({ owner_team_id: null, owner_user_id: "bob", required_permission: "AP.Approve" });
+  });
+
+  it("409s with a clear reason when the hierarchy cannot resolve a target and no Default Approver is configured", async () => {
+    await handleCreateProcess(env.DB, { id: "p1", name: "AP" });
+    // Automatic — no rule set, so it spawns nothing and the call
+    // cascades straight through to Approval. Nobody ever completed a
+    // task on this line anywhere, so the resolver has no starting
+    // point and nothing configured to fall back to.
+    await handleCreateStage(env.DB, "p1", { id: "coding", name: "Coding", sequence: 1 });
+    await seedRuleSet("rs-approval", {
+      conditions: { field: "BT-131", operator: "greater_than", value: -1 },
+      actions: [{ type: "assign_task", params: { team: "decoy-team", permission: "AP.Approve" } }],
+    });
+    await handleCreateStage(env.DB, "p1", { id: "approval", name: "Approval", sequence: 2, ruleSetId: "rs-approval", evaluationScope: "line" });
+    await env.DB.prepare("UPDATE process_stages SET uses_approval_hierarchy = 1 WHERE id = 'approval'").run();
+
+    const created = await handleCreateProcessInstance(env.DB, "p1", { subjectType: "invoice", subjectId: "inv-1" });
+    const instanceId = (created.body as { id: string }).id;
+
+    const result = await visitCurrentStage(env.DB, instanceId, { "BT-5": "EUR" }, [{ lineNumber: 1, "BT-131": 5000, "BT-5": "EUR" }]);
+    expect(result.status).toBe(409);
+    expect((result.body as { reason: string }).reason).toBe("approval_hierarchy_unresolved");
+
+    const taskCount = await env.DB.prepare("SELECT count(*) AS n FROM tasks WHERE stage_id = 'approval'").first<{ n: number }>();
+    expect(taskCount?.n).toBe(0);
+  });
+});
+
 describe("visitCurrentStage — route_to", () => {
   it("advances to the named stage, skipping intermediate sequence stages", async () => {
     await handleCreateProcess(env.DB, { id: "p1", name: "AP" });

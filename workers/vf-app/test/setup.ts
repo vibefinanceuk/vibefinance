@@ -76,6 +76,10 @@ import embeddedXmlDocumentTypeSql from "../../../migrations/0070_embedded_xml_do
 // 0054/0062/0063/0066/0067 above — skipped here for the same reason.
 import supplierDiscountAndFieldChangeHistorySql from "../../../migrations/0072_supplier_discount_terms_and_field_change_history.sql?raw";
 import agreedPaymentMeansPlaceholderSql from "../../../migrations/0073_agreed_payment_means_placeholder.sql?raw";
+// 0074 is a documentation-only ASSERT restatement with no real SQL
+// body, the same "nothing to execute" shape noted above — skipped
+// here for the same reason.
+import approvalHierarchySql from "../../../migrations/0075_approval_hierarchy.sql?raw";
 
 // Another known divergence from production, on top of the one below:
 // D1's exec() splits its input by newline and executes each non-empty
@@ -163,6 +167,12 @@ const TABLES_IN_DROP_ORDER = ["document_comments", "process_stage_versions", "in
   "licence_cache",
   "org_team_members",
   "org_teams",
+  // Approval Hierarchy (decision 0439) — reference org_users and/or
+  // org_units, so before both, the same place org_authority_limits
+  // itself already sits.
+  "org_authority_limit_overrides",
+  "org_user_supervisor_overrides",
+  "org_approval_config",
   "org_authority_limits",
   "org_spend_limits",
   "org_user_roles",
@@ -283,6 +293,7 @@ export async function applyTestSchema(): Promise<void> {
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(embeddedXmlDocumentTypeSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(supplierDiscountAndFieldChangeHistorySql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(agreedPaymentMeansPlaceholderSql)));
+  await env.DB.exec(toOneStatementPerLine(stripSqlComments(approvalHierarchySql)));
 }
 
 /**
