@@ -1,8 +1,11 @@
 # 0448 — Real Search and Pagination for the Documents Screen
 
-**Status: built, tested, not yet delivered this decision's own commit**
-— delivered as a git bundle for the operator's own pull/push/deploy
-sequence, the same path decisions 0391, 0415–0447 already used.
+**Status: built, tested, confirmed pushed and deployed** — `origin/main`
+fetched directly reads `91eebe9`, matching this session's own commit
+exactly, and the operator confirmed with *"deployed and pushed - looks
+great I have checked."* Delivered as a git bundle for the operator's
+own pull/push/deploy sequence, the same path decisions 0391, 0415–0447
+already used.
 
 ---
 
@@ -282,7 +285,5 @@ since every string the new pagination row uses already existed.
 
 ## Still to do, operator side
 
-Not yet confirmed pushed and deployed as of this decision's own
-writing — delivered as a git bundle for the operator's own pull, push,
-and deploy. No migration to apply once it is: this decision added
-none.
+Confirmed pushed and deployed. No migration to apply — this decision
+added none.

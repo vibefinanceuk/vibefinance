@@ -2013,8 +2013,10 @@ section for the full reasoning and tests.
   Delete/bulk actions — out of scope, unrelated, Documents never had
   either. No new migration or string key — genuinely nothing was
   needed.
-- **Built and tested, delivered as a git bundle — not yet confirmed
-  pushed or deployed** as of this writing.
+- **Confirmed pushed and deployed** — `origin/main` fetched directly
+  reads `91eebe9`, matching this session's own commit exactly, and the
+  operator confirmed with *"deployed and pushed - looks great I have
+  checked."* No migration to apply — this decision added none.
 
 ### Purchase orders and matching
 - Purchase order storage grounded in Peppol BIS Order Only 3.3, via UBL
