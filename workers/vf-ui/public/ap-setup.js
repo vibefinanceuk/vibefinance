@@ -2,6 +2,7 @@ import { t } from "/strings.js";
 import { el, frame, topbar, setCurrentScreen, hasMyPermission } from "/tasks.js";
 import { actionLink } from "/viewer.js";
 import { currencyPicker } from "/access.js";
+import { accountCodingTab } from "/coding-lists.js";
 
 /**
  * AP Setup — decision 0440.
@@ -31,6 +32,11 @@ import { currencyPicker } from "/access.js";
  * 0439's own "What is not built") — no route exists anywhere in this
  * app to edit a stage's own properties, and inventing one for a single
  * flag was out of scope for this screen.
+ *
+ * **Account Coding is live too — decision 0444.** Company code, Cost
+ * Centre, Project, Commodity Code, and General Ledger Code, all built
+ * out in `coding-lists.js`; this file just loads what that tab needs
+ * alongside everything else and hands it down.
  */
 
 const MODES = ["employee_supervisor", "cost_object", "manual", "api"];
@@ -45,6 +51,8 @@ let units = [];
 let users = [];
 let config = null;
 let activeTab = null;
+let costCentres = [];
+let codingLists = { project: { entries: [] }, commodity_code: { entries: [] }, gl_code: { entries: [] } };
 
 /**
  * **Search over the two override lists, entirely client-side —
@@ -68,18 +76,30 @@ const OVERRIDE_DISPLAY_CAP = 50;
 
 async function load() {
   try {
-    const [overviewResponse, configResponse] = await Promise.all([
+    const [overviewResponse, configResponse, costCentresResponse, projectResponse, commodityResponse, glResponse] = await Promise.all([
       fetch("/api/org/overview"),
       fetch("/api/approval-config"),
+      fetch("/api/org/cost-centres"),
+      fetch("/api/coding-lists/project"),
+      fetch("/api/coding-lists/commodity_code"),
+      fetch("/api/coding-lists/gl_code"),
     ]);
-    if (!overviewResponse.ok || !configResponse.ok) {
-      console.error(`AP Setup load failed: overview ${overviewResponse.status}, config ${configResponse.status}`);
+    if (!overviewResponse.ok || !configResponse.ok || !costCentresResponse.ok || !projectResponse.ok || !commodityResponse.ok || !glResponse.ok) {
+      console.error(
+        `AP Setup load failed: overview ${overviewResponse.status}, config ${configResponse.status}, cost centres ${costCentresResponse.status}, project ${projectResponse.status}, commodity code ${commodityResponse.status}, gl code ${glResponse.status}`
+      );
       return false;
     }
     const overview = await overviewResponse.json();
     units = overview.units ?? [];
     users = overview.users ?? [];
     config = await configResponse.json();
+    costCentres = (await costCentresResponse.json()).costCentres ?? [];
+    codingLists = {
+      project: await projectResponse.json(),
+      commodity_code: await commodityResponse.json(),
+      gl_code: await glResponse.json(),
+    };
     return true;
   } catch (err) {
     console.error("AP Setup load failed", err);
@@ -421,7 +441,18 @@ function render() {
 
   const activeSection = {
     matching: () => placeholderCard("apsetup.matching"),
-    coding: () => placeholderCard("apsetup.coding"),
+    coding: () =>
+      accountCodingTab({
+        units,
+        users,
+        costCentres,
+        codingLists,
+        refresh: async () => {
+          await load();
+          render();
+        },
+        rerender: render,
+      }),
     approvalhierarchy: () => approvalHierarchyTab(),
   }[activeTab]();
 

@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 20 September 2026. A living document: what is built, what
+Last updated 22 September 2026. A living document: what is built, what
 is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -1474,7 +1474,8 @@ section for the full reasoning and tests.
 - **Matching and Account Coding stay real placeholder tabs** — both
   confirmed genuinely greenfield during 0439's own investigation, the
   same `placeholderCard()` shape `ap-analytics.js` already uses for an
-  unbuilt tab.
+  unbuilt tab. **Account Coding is a placeholder no longer — see
+  decision 0444, below.** Matching remains one.
 - **Approval Hierarchy is live**: one `.editgrid` form for mode +
   Default Approver (the same "replace, not merge" shape
   `openPersonPropertiesForm` already takes); inline picker rows plus
@@ -1603,6 +1604,76 @@ section for the full reasoning and tests.
   `<svg>`, still reads "Add," and `.memberpickerrow` is gone. `vf-ui`
   browser suite 978 → 979, same pre-existing flake aside. `vf-app`/
   `vf-licence` untouched. `eslint .` clean.
+
+### The five coding lists get one generic framework, and a real screen (0444)
+- The operator supplied five real CSV exports — Company code, Cost
+  Centre, Project, Commodity Code, General Ledger Code — asked for
+  first as the missing structure behind AP Setup's own long-placeholder
+  Account Coding tab (0440), and delivered them once asked. All five
+  share one generic shape (`ID, Path, Default, Approver, Parent List
+  ID, Parent Entry ID`); Cost Centre and GL Code additionally carry
+  dynamic `Filter by — X` columns (GL Code scoped by both company code
+  and commodity code; Cost Centre scoped by company code).
+- Three forks put to the operator, all answered with the recommended
+  option: one generic framework rather than five bespoke tables; build
+  cross-list filtering now rather than defer it; give Project real
+  parent pointers rather than lean on the source data's dot-notation
+  convention alone.
+- **Grounded in SAP and Oracle practice**, at the operator's own
+  request: SAP Buchungskreis (Company code), Kostenstelle (Cost
+  Centre), Kostenrechnungskreis (already this app's own `ledgers`
+  table, decision 0194), WBS-Element (Project's hierarchy), Sachkonto
+  (GL Code), Warengruppe (Commodity Code), OBYC (automatic account
+  determination — named as deferred scope, not built); Oracle
+  Accounting Flexfield segments as a near 1:1 match for the five lists;
+  Oracle Cross-Validation Rules as the closest analog to "Filter by"
+  (data-only here, not enforced). The Commodity Code data itself is
+  UNSPSC.
+- **Built**: `coding_list_types` / `coding_list_type_filters` /
+  `coding_list_entries` / `coding_list_entry_filters` (migration
+  `0076`) — Project, Commodity Code and GL Code live fully inside this
+  generic framework; Company code and Cost Centre participate only by
+  metadata and filter-value reuse, **never merged into it** — Company
+  code stays fully represented by the existing `org_units` table
+  (shown read-only, not duplicated), and Cost Centre stays the
+  deliberately separate concept migration `0016`'s own header comment
+  already named, now reusing `coding_list_entry_filters` generically
+  (via `owner_list_type_id = 'cost_centre'`) for its own new "Filter by
+  company code" rather than a rigid new column.
+- New `coding-list-route.ts` (generic CRUD, closed-vocabulary filter
+  declarations, cycle detection on parent reassignment, 400 vs 404
+  discrimination) and `ledger-route.ts`'s `handleUpdateCostCentre`
+  extended with the same filter validation. New `coding-lists.js`
+  reuses `access.js`'s own established patterns rather than inventing
+  new ones — indent-by-depth (`unitDepth()` → `entryDepth()`),
+  backdrop-popout forms (`openUnitForm()` → `openCostCentreForm()` /
+  `openCodingEntryForm()`), table-plus-header-action sections.
+- **The recurring proxy-allowlist gap (0212, 0319, 0324–0328, 0415,
+  0417–0425, 0428, 0430, 0441), found proactively this time**: two
+  new `/coding-lists/*` patterns needed adding, and two long-standing
+  unproxied cost-centre routes (`POST /org/cost-centres`, `PUT
+  /cost-centres/:id`, both real since 0031/0195) were found and fixed
+  alongside them, before delivery rather than after a live report.
+- A real UI bug caught by testing, not inspection: `costCentreRow()`
+  recomputed a parent's name by searching the local, possibly
+  incomplete `costCentres` array instead of trusting the name the
+  backend's own `handleListCostCentresDetailed` JOIN already resolved
+  — a test asserting a parent not present in a one-item test array
+  still showed by name caught it.
+- `vf-app` 2534 → **2561** (+21 `coding-list-route.test.ts`, +6
+  `accounting-frame.test.ts`), 112 files, all green. `vf-licence` 320
+  (unchanged in count — migration `0147`, 22 keys × en/de, adds rows
+  to the existing `ui_strings` table), 21 files, all green. `vf-ui`
+  Worker 74 (unchanged), 2 files, all green; browser 979 → **991**
+  (+11 new `coding-lists.test.ts`, +1 `ap-setup.test.ts`), 987 green,
+  4 failed — all four in `test-browser/tasks.test.ts` (decision
+  0346's nav-listing tests, untouched here) and confirmed present on
+  a clean `origin/main` checkout too, a pre-existing unrelated flake.
+  `apply_migrations.py --replay-only` clean for both chains. `eslint
+  .` clean across all three workspaces.
+- **Not built**: deriving a GL code from a commodity code automatically
+  during invoice coding (SAP's own OBYC shape) — the data this would
+  need now exists; the derivation itself does not.
 
 ### Purchase orders and matching
 - Purchase order storage grounded in Peppol BIS Order Only 3.3, via UBL
@@ -2868,13 +2939,20 @@ elsewhere.
 
 | Package | Tests |
 |---|---|
-| `vf-app` | 2429 |
+| `vf-app` | 2561 |
 | `vf-licence` | 320 |
-| `vf-ui` | 74 Worker · 924 browser |
+| `vf-ui` | 74 Worker · 991 browser (987 passing, 4 known pre-existing failures — see below) |
 | `shared` | 295 passing, 3 known pre-existing failures |
 
 Both migration chains replay clean with every standing invariant
-holding — 74 migrations for `vf-app`, 141 for `vf-licence`.
+holding — 76 migrations for `vf-app` (170 invariants), 147 for
+`vf-licence` (73 invariants), as of decision 0444.
+
+**`vf-ui` browser's 4 known pre-existing failures** are all in
+`test-browser/tasks.test.ts` (decision 0346's nav-listing tests) —
+confirmed to fail identically on a clean `origin/main` checkout with
+none of decision 0444's files applied, so unrelated to that decision.
+Not yet root-caused or fixed.
 
 **`shared`'s count was recorded as 287 through decision 0429**; a
 clean run at this decision's own commit, with no `shared` change since

@@ -80,6 +80,7 @@ import agreedPaymentMeansPlaceholderSql from "../../../migrations/0073_agreed_pa
 // body, the same "nothing to execute" shape noted above — skipped
 // here for the same reason.
 import approvalHierarchySql from "../../../migrations/0075_approval_hierarchy.sql?raw";
+import accountCodingListsSql from "../../../migrations/0076_account_coding_lists.sql?raw";
 
 // Another known divergence from production, on top of the one below:
 // D1's exec() splits its input by newline and executes each non-empty
@@ -173,6 +174,15 @@ const TABLES_IN_DROP_ORDER = ["document_comments", "process_stage_versions", "in
   "org_authority_limit_overrides",
   "org_user_supervisor_overrides",
   "org_approval_config",
+  // Account Coding (decision 0444). Children before the parent they
+  // all reference (coding_list_types), and before org_users, which
+  // coding_list_entries.approver_user_id points at — the same
+  // "children before parents, for the foreign keys" rule this whole
+  // list already follows.
+  "coding_list_entry_filters",
+  "coding_list_entries",
+  "coding_list_type_filters",
+  "coding_list_types",
   "org_authority_limits",
   "org_spend_limits",
   "org_user_roles",
@@ -294,6 +304,7 @@ export async function applyTestSchema(): Promise<void> {
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(supplierDiscountAndFieldChangeHistorySql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(agreedPaymentMeansPlaceholderSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(approvalHierarchySql)));
+  await env.DB.exec(toOneStatementPerLine(stripSqlComments(accountCodingListsSql)));
 }
 
 /**

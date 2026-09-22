@@ -513,6 +513,19 @@ describe("the proxy carries every path a screen calls (decision 0131)", () => {
     ["DELETE", "/api/approval-config/supervisor-overrides/u-1/unit-1"],
     ["POST", "/api/approval-config/limit-overrides"],
     ["DELETE", "/api/approval-config/limit-overrides/u-1/unit-1/EUR"],
+    /**
+     * AP Setup's own Account Coding tab — decision 0444. The exact
+     * same gap decision 0440 found above, this time for
+     * `/org/cost-centres` (POST, decision 0031, already real in
+     * `vf-app` and never proxied) and the three genuinely new
+     * coding-list routes this decision's own generic CRUD adds.
+     */
+    ["GET", "/api/org/cost-centres"],
+    ["POST", "/api/org/cost-centres"],
+    ["PUT", "/api/cost-centres/cc-1"],
+    ["GET", "/api/coding-lists/project"],
+    ["POST", "/api/coding-lists/project"],
+    ["PUT", "/api/coding-lists/project/p-1"],
   ];
 
   it("carries all of them", async () => {

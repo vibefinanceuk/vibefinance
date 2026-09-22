@@ -5,11 +5,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
  *
  * *"Under a new side menu option, I would like to establish AP
  * Configuration options... Matching, Account Coding and Approval
- * Hierarchy setup screens in tabs."* Matching and Account Coding stay
- * real placeholder tabs — both genuinely greenfield (decision 0439's
- * own "What is not built"). Approval Hierarchy is live: the mode and
- * Default Approver decision 0439's own resolver already reads, plus
- * CRUD for the two unit-scoped override tables.
+ * Hierarchy setup screens in tabs."* Matching stays a real placeholder
+ * tab — still genuinely greenfield (decision 0439's own "What is not
+ * built"). Approval Hierarchy is live: the mode and Default Approver
+ * decision 0439's own resolver already reads, plus CRUD for the two
+ * unit-scoped override tables. **Account Coding is live too, as of
+ * decision 0444** — its own content is covered in depth in
+ * `coding-lists.test.ts`; this file only covers that it renders at
+ * all, from AP Setup's own tab bar.
  */
 
 function mountShell() {
@@ -56,7 +59,33 @@ const STRINGS = {
     "apsetup.limitamount": "Amount",
     "roles.org": "Organisation",
     "roles.remove": "Remove",
+    "roles.none": "None",
+    "roles.yes": "Yes",
     "action.save": "Save",
+    "action.create": "Create",
+    "action.close": "Close",
+    "apsetup.codingtab.companycode": "Company code",
+    "apsetup.codingtab.costcentre": "Cost Centre",
+    "apsetup.codingtab.project": "Project",
+    "apsetup.codingtab.commoditycode": "Commodity Code",
+    "apsetup.codingtab.glcode": "General Ledger Code",
+    "apsetup.codingcompanycodesub": "Managed under Access → Org Units. Shown here for reference only.",
+    "apsetup.codingcostcentresub": "A company-wide financial construct, used by Cost-Object approval routing. Not scoped to any one process.",
+    "apsetup.codingprojectsub": "A manageable list only — not enforced against rule values or invoice lines.",
+    "apsetup.codingcommoditycodesub": "A manageable list only — not enforced against rule values or invoice lines.",
+    "apsetup.codingglcodesub": "A manageable list only — not enforced against rule values or invoice lines.",
+    "apsetup.nocompanycodes": "No company codes configured yet.",
+    "apsetup.nocostcentres": "No cost centres configured yet.",
+    "apsetup.noprojects": "No projects configured yet.",
+    "apsetup.nocommoditycodes": "No commodity codes configured yet.",
+    "apsetup.noglcodes": "No general ledger codes configured yet.",
+    "apsetup.codingid": "ID",
+    "apsetup.codingname": "Name",
+    "apsetup.codingparent": "Parent",
+    "apsetup.codingdefault": "Default",
+    "apsetup.codingapprover": "Approver",
+    "apsetup.codingapprovallimit": "Approval limit",
+    "apsetup.codingentrysavefailed": "Could not save that. Check the values and try again.",
   },
 };
 
@@ -68,6 +97,8 @@ const EMPTY_CONFIG = {
   supervisorOverrides: [],
   limitOverrides: [],
 };
+const EMPTY_COST_CENTRES = { costCentres: [] };
+const EMPTY_CODING_LIST = { declaredFilters: [], entries: [] };
 
 function stubFetch(routes: Record<string, unknown>) {
   vi.stubGlobal(
@@ -115,6 +146,10 @@ async function openApSetupAs(
     "/api/tasks": { tasks: [], counts: {} },
     "/api/org/overview": overview,
     "/api/approval-config": config,
+    "/api/org/cost-centres": EMPTY_COST_CENTRES,
+    "/api/coding-lists/project": EMPTY_CODING_LIST,
+    "/api/coding-lists/commodity_code": EMPTY_CODING_LIST,
+    "/api/coding-lists/gl_code": EMPTY_CODING_LIST,
     ...extraRoutes,
   });
   const { loadStrings } = await import("/strings.js");
@@ -172,11 +207,23 @@ describe("the screen opens at all", () => {
   });
 });
 
-describe("Matching and Account Coding — real placeholder tabs, both genuinely greenfield", () => {
-  it("Account Coding shows the same not-built placeholder", async () => {
+describe("Matching stays a real placeholder tab; Account Coding is now built — decision 0444", () => {
+  it("Matching still shows the not-built placeholder", async () => {
+    await openApSetupAs(["Admin.Configure"]);
+    switchTab("Matching");
+    expect(document.querySelector(".panel")?.textContent).toContain("Not built yet");
+  });
+
+  it("Account Coding shows its own five sub-tabs, defaulting to Company code", async () => {
     await openApSetupAs(["Admin.Configure"]);
     switchTab("Account Coding");
-    expect(document.querySelector(".panel")?.textContent).toContain("Not built yet");
+    const subTabs = [...document.querySelectorAll(".tabbar")][1]?.textContent ?? "";
+    expect(subTabs).toContain("Company code");
+    expect(subTabs).toContain("Cost Centre");
+    expect(subTabs).toContain("Project");
+    expect(subTabs).toContain("Commodity Code");
+    expect(subTabs).toContain("General Ledger Code");
+    expect(document.querySelector(".panel")?.textContent).toContain("No company codes configured yet.");
   });
 });
 

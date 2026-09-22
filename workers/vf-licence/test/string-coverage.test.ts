@@ -580,6 +580,36 @@ const KEYS_THE_INTERFACE_USES = [
   "viewer.linetotal",
   "viewer.matches",
   "viewer.differs",
+  /**
+   * **AP Setup's own Account Coding tab (decision 0444).** Its
+   * sibling tabs' own strings (decisions 0440, 0442, 0443) were found,
+   * while adding these, to have never been added to this list either
+   * — a pre-existing gap this decision does not attempt to backfill,
+   * named here rather than silently left for the next person to
+   * re-discover. Only this decision's own new keys are added below.
+   */
+  "apsetup.codingtab.companycode",
+  "apsetup.codingtab.costcentre",
+  "apsetup.codingtab.project",
+  "apsetup.codingtab.commoditycode",
+  "apsetup.codingtab.glcode",
+  "apsetup.codingcompanycodesub",
+  "apsetup.codingcostcentresub",
+  "apsetup.codingprojectsub",
+  "apsetup.codingcommoditycodesub",
+  "apsetup.codingglcodesub",
+  "apsetup.nocompanycodes",
+  "apsetup.nocostcentres",
+  "apsetup.noprojects",
+  "apsetup.nocommoditycodes",
+  "apsetup.noglcodes",
+  "apsetup.codingid",
+  "apsetup.codingname",
+  "apsetup.codingparent",
+  "apsetup.codingdefault",
+  "apsetup.codingapprover",
+  "apsetup.codingapprovallimit",
+  "apsetup.codingentrysavefailed",
 ];
 
 /**

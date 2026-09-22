@@ -1,4 +1,5 @@
 import type { RouteResult } from "./org-route.js";
+import { entryFiltersFor, validateFilters, replaceFilters } from "./coding-list-route.js";
 
 /**
  * The accounting frame — decision 0195.
@@ -240,14 +241,88 @@ export async function handleUpdateCostCentre(
     values.push(limit);
   }
 
-  if (sets.length === 0) return { status: 400, body: { error: "nothing to change" } };
+  let filtersResult: { ok: true; value: Record<string, string> } | { ok: false; error: string } | undefined;
+  if ("filters" in body) {
+    filtersResult = await validateFilters(db, "cost_centre", body.filters);
+    if (!filtersResult.ok) return { status: filtersResult.status, body: { error: filtersResult.error } };
+  }
 
-  await db
-    .prepare(`UPDATE cost_centres SET ${sets.join(", ")} WHERE id = ?`)
-    .bind(...values, costCentreId)
-    .run();
+  if (sets.length === 0 && !filtersResult) return { status: 400, body: { error: "nothing to change" } };
+
+  if (sets.length > 0) {
+    await db
+      .prepare(`UPDATE cost_centres SET ${sets.join(", ")} WHERE id = ?`)
+      .bind(...values, costCentreId)
+      .run();
+  }
+
+  /**
+   * **A cost centre's own "Filter by company code" — decision 0444.**
+   * Not a column on `cost_centres` (0016's own header comment is
+   * explicit that a cost centre is deliberately not foreign-keyed to
+   * `org_units`) — stored the same generic way `gl_code` and every
+   * other declared filter is, under `owner_list_type_id = 'cost_centre'`,
+   * reusing `coding-list-route.ts`'s own validate/replace helpers
+   * rather than a second copy of that logic.
+   */
+  if (filtersResult) {
+    await replaceFilters(db, "cost_centre", costCentreId, filtersResult.value);
+  }
 
   return { status: 200, body: { id: costCentreId } };
+}
+
+interface CostCentreDetailRow {
+  id: string;
+  name: string;
+  ledger_id: string | null;
+  ledger_name: string | null;
+  parent_cost_centre_id: string | null;
+  parent_name: string | null;
+  owner_user_id: string | null;
+  owner_name: string | null;
+  approval_limit: number | null;
+}
+
+/**
+ * **The Cost Centre management screen's own read** — decision 0444.
+ * `/org/overview`'s own `costCentres` stays the lightweight `{id,
+ * name}` picker list every other screen already reads (Access's own
+ * person-cost-centre picker, this same screen's Employee-Supervisor
+ * unit picker); this is the richer shape only the new Account Coding
+ * tab needs, resolved names included so the table doesn't need a
+ * second round trip per row.
+ */
+export async function handleListCostCentresDetailed(db: D1Database): Promise<RouteResult> {
+  const rows = await db
+    .prepare(
+      `SELECT c.id, c.name, c.ledger_id, l.name AS ledger_name,
+              c.parent_cost_centre_id, p.name AS parent_name,
+              c.owner_user_id, u.name AS owner_name, c.approval_limit
+       FROM cost_centres c
+       LEFT JOIN ledgers l ON l.id = c.ledger_id
+       LEFT JOIN cost_centres p ON p.id = c.parent_cost_centre_id
+       LEFT JOIN org_users u ON u.id = c.owner_user_id
+       ORDER BY c.name`
+    )
+    .all<CostCentreDetailRow>();
+
+  const costCentres = await Promise.all(
+    rows.results.map(async (r) => ({
+      id: r.id,
+      name: r.name,
+      ledgerId: r.ledger_id,
+      ledgerName: r.ledger_name,
+      parentCostCentreId: r.parent_cost_centre_id,
+      parentName: r.parent_name,
+      ownerUserId: r.owner_user_id,
+      ownerName: r.owner_name,
+      approvalLimit: r.approval_limit,
+      filters: await entryFiltersFor(db, "cost_centre", r.id),
+    }))
+  );
+
+  return { status: 200, body: { costCentres } };
 }
 
 /**

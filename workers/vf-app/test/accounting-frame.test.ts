@@ -5,6 +5,7 @@ import {
   handleCreateLedger,
   handleAssignLedger,
   handleUpdateCostCentre,
+  handleListCostCentresDetailed,
   resolveApprovalChain,
 } from "../src/ledger-route.js";
 
@@ -240,5 +241,67 @@ describe("who approves what is charged here", () => {
     const result = await resolveApprovalChain(env.DB, "a", 50000);
     expect(result.covered).toBe(false);
     expect(result.chain).toHaveLength(2);
+  });
+});
+
+describe("Cost Centre's own place in Account Coding — decision 0444", () => {
+  it("handleListCostCentresDetailed resolves every name a management screen needs", async () => {
+    await seedLedger();
+    await env.DB.prepare("INSERT INTO org_units (id, name) VALUES ('UK01', 'Acme UK')").run();
+    await seedCostCentre("group", { ownerUserId: "cfo", approvalLimit: 100000 });
+    await seedCostCentre("it", { ownerUserId: "alice", approvalLimit: 5000, parentCostCentreId: "group" });
+
+    const result = await handleListCostCentresDetailed(env.DB);
+    expect(result.status).toBe(200);
+    const it = (result.body as { costCentres: Record<string, unknown>[] }).costCentres.find((c) => c.id === "it");
+    expect(it).toMatchObject({
+      id: "it",
+      name: "Cost centre it",
+      ledgerId: "eu",
+      ledgerName: "Ledger eu",
+      parentCostCentreId: "group",
+      parentName: "Cost centre group",
+      ownerUserId: "alice",
+      ownerName: "Alice",
+      approvalLimit: 5000,
+      filters: [],
+    });
+  });
+
+  it("a cost centre with no company-code filter set shows an empty filters list, not an error", async () => {
+    await env.DB.prepare("INSERT INTO cost_centres (id, name) VALUES ('cc1', 'Unscoped')").run();
+    const result = await handleListCostCentresDetailed(env.DB);
+    expect((result.body as { costCentres: { filters: unknown[] }[] }).costCentres[0].filters).toEqual([]);
+  });
+
+  it("**the operator's own Cost Centre example** — filtered by a real company code, reusing the same generic mechanism gl_code uses", async () => {
+    await env.DB.prepare("INSERT INTO org_units (id, name) VALUES ('UK01', 'Acme UK')").run();
+    await env.DB.prepare("INSERT INTO cost_centres (id, name) VALUES ('UK150001', 'Local IT department')").run();
+
+    const setResult = await handleUpdateCostCentre(env.DB, "UK150001", { filters: { company_code: "UK01" } });
+    expect(setResult.status).toBe(200);
+
+    const result = await handleListCostCentresDetailed(env.DB);
+    const cc = (result.body as { costCentres: { filters: { filterListTypeId: string; filterEntryId: string; filterEntryName: string }[] }[] }).costCentres[0];
+    expect(cc.filters).toEqual([{ filterListTypeId: "company_code", filterEntryId: "UK01", filterEntryName: "Acme UK" }]);
+  });
+
+  it("400s a filter cost_centre does not declare", async () => {
+    await env.DB.prepare("INSERT INTO cost_centres (id, name) VALUES ('cc1', 'CC1')").run();
+    const result = await handleUpdateCostCentre(env.DB, "cc1", { filters: { commodity_code: "10000000" } });
+    expect(result.status).toBe(400);
+  });
+
+  it("404s a company code that does not exist", async () => {
+    await env.DB.prepare("INSERT INTO cost_centres (id, name) VALUES ('cc1', 'CC1')").run();
+    const result = await handleUpdateCostCentre(env.DB, "cc1", { filters: { company_code: "nope" } });
+    expect(result.status).toBe(404);
+  });
+
+  it("setting only a filter, with nothing else in the body, still counts as a real change", async () => {
+    await env.DB.prepare("INSERT INTO org_units (id, name) VALUES ('UK01', 'Acme UK')").run();
+    await env.DB.prepare("INSERT INTO cost_centres (id, name) VALUES ('cc1', 'CC1')").run();
+    const result = await handleUpdateCostCentre(env.DB, "cc1", { filters: { company_code: "UK01" } });
+    expect(result.status).toBe(200);
   });
 });

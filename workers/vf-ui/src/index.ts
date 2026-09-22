@@ -393,6 +393,20 @@ const PROXIED_TO_INSTANCE: RegExp[] = [
   /^\/approval-config\/supervisor-overrides\/[^/]+\/[^/]+$/,
   /^\/approval-config\/limit-overrides$/,
   /^\/approval-config\/limit-overrides\/[^/]+\/[^/]+\/[^/]+$/,
+  /**
+   * **AP Setup's own Account Coding tab — decision 0444.** The exact
+   * same gap decision 0440's own Approval Hierarchy tab already hit
+   * this file for: `/org/cost-centres` (POST, decision 0031) and
+   * `/cost-centres/:id` (PUT, decision 0195) were both real in `vf-app`
+   * and had never been added here, confirmed directly rather than
+   * assumed — no existing wildcard on this list matches either. Added
+   * alongside the three genuinely new routes this decision's own
+   * generic coding-list CRUD needs.
+   */
+  /^\/org\/cost-centres$/,
+  /^\/cost-centres\/[^/]+$/,
+  /^\/coding-lists\/[^/]+$/,
+  /^\/coding-lists\/[^/]+\/[^/]+$/,
 ];
 
 /**

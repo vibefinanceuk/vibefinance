@@ -69,6 +69,11 @@ import {
 } from "./org-route.js";
 import { handleCreateCostCentre } from "./cost-centre-route.js";
 import {
+  handleListCodingListEntries,
+  handleCreateCodingListEntry,
+  handleUpdateCodingListEntry,
+} from "./coding-list-route.js";
+import {
   handleGetApprovalConfig,
   handleUpdateApprovalConfig,
   handleSetSupervisorOverride,
@@ -149,6 +154,7 @@ import {
   handleCreateLedger,
   handleAssignLedger,
   handleUpdateCostCentre,
+  handleListCostCentresDetailed,
 } from "./ledger-route.js";
 import {
   handleIngestPurchaseOrder,
@@ -2112,6 +2118,87 @@ export default {
       }
       const result = await handleCreateCostCentre(db, (body ?? {}) as Record<string, unknown>);
       return json(result.body, result.status);
+    }
+
+    /**
+     * **The Account Coding tab's own Cost Centre section — decision
+     * 0444.** Richer than `/org/overview`'s own `costCentres` (ledger,
+     * parent, owner, approval limit, and its new "Filter by company
+     * code"), so gated the same way the rest of that tab already is —
+     * `Admin.Configure`, matching `ap-setup.js`'s own "a tab's own gate
+     * always matches its data's own gate" rule.
+     */
+    if (pathname === "/org/cost-centres" && request.method === "GET") {
+      const { db } = resolveTenant(request, env);
+      const auth = await requirePermission(db, request, "Admin.Configure", sessionContext(env));
+      if (!auth.authorized) {
+        return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
+      }
+      const result = await handleListCostCentresDetailed(db);
+      return json(result.body, result.status);
+    }
+
+    /**
+     * **Project, Commodity Code, and General Ledger Code — decision
+     * 0444.** The three genuinely greenfield Account Coding lists,
+     * sharing one generic CRUD gated the same `Admin.Configure`
+     * permission as the rest of AP Setup's own configuration screen.
+     * `:type` is validated inside the handler itself, against the
+     * same closed vocabulary migration 0076's own CHECK constraint
+     * enforces — an unknown type 404s rather than 400s, the same
+     * "route doesn't exist for that value" shape `/coding-lists/foo`
+     * would get for any other unmatched path.
+     */
+    {
+      const match = pathname.match(/^\/coding-lists\/([^/]+)$/);
+      if (match && request.method === "GET") {
+        const { db } = resolveTenant(request, env);
+        const auth = await requirePermission(db, request, "Admin.Configure", sessionContext(env));
+        if (!auth.authorized) {
+          return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
+        }
+        const result = await handleListCodingListEntries(db, decodeURIComponent(match[1]));
+        return json(result.body, result.status);
+      }
+      if (match && request.method === "POST") {
+        const { db } = resolveTenant(request, env);
+        const auth = await requirePermission(db, request, "Admin.Configure", sessionContext(env));
+        if (!auth.authorized) {
+          return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
+        }
+        let body: unknown;
+        try {
+          body = await request.json();
+        } catch {
+          return json({ error: t("invalidJsonBody", resolveLocale(env.LOCALE)) }, 400);
+        }
+        const result = await handleCreateCodingListEntry(db, decodeURIComponent(match[1]), (body ?? {}) as Record<string, unknown>);
+        return json(result.body, result.status);
+      }
+    }
+
+    {
+      const match = pathname.match(/^\/coding-lists\/([^/]+)\/([^/]+)$/);
+      if (match && request.method === "PUT") {
+        const { db } = resolveTenant(request, env);
+        const auth = await requirePermission(db, request, "Admin.Configure", sessionContext(env));
+        if (!auth.authorized) {
+          return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
+        }
+        let body: unknown;
+        try {
+          body = await request.json();
+        } catch {
+          return json({ error: t("invalidJsonBody", resolveLocale(env.LOCALE)) }, 400);
+        }
+        const result = await handleUpdateCodingListEntry(
+          db,
+          decodeURIComponent(match[1]),
+          decodeURIComponent(match[2]),
+          (body ?? {}) as Record<string, unknown>
+        );
+        return json(result.body, result.status);
+      }
     }
 
     // Customer-defined fields — decision 0041. Declarations only:
