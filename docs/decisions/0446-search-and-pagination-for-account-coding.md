@@ -1,9 +1,13 @@
 # 0446 — Search and Real Pagination for Account Coding
 
-**Status: built, tested. Not yet pushed or deployed** — this session
-still has no push access to `vibefinanceuk/vibefinance`; delivered as a
-git bundle for the operator's own pull/push/deploy sequence, the same
-path decisions 0391, 0415–0445 already used.
+**Status: built, tested, confirmed pushed and deployed** — `origin/main`
+fetched directly reads `3f530f6`, matching this session's own commit
+exactly, and the operator confirmed with *"deployed and pushed - looks
+good."* Delivered as a git bundle for the operator's own
+pull/push/deploy sequence, the same path decisions 0391, 0415–0445
+already used. **Migration `0149` still needs its own separate
+`apply_migrations.py --remote` run — see "Still to do, operator side"
+below.**
 
 ---
 
@@ -330,10 +334,14 @@ above).
 
 ## Still to do, operator side
 
-This decision has not yet been committed, bundled, or delivered as of
-this document's own writing. Once delivered and deployed, migration
-`0149` will need its own separate
-`apply_migrations.py --remote --database vf-licence-poc --migrations-dir
-workers/vf-licence/migrations` run — the same two-separate-steps
-reminder this project has now needed stated explicitly for migrations
-0075, 0076, and 0148 before it.
+Confirmed pushed and deployed. Migration `0149` is **not yet applied to
+any live database** — it has only been replayed via
+`test/setup.ts`/`string-coverage.test.ts`. Per this session's own
+now-four-times-repeated finding (migrations 0075, 0076, 0146, 0148: a
+deploy and a migration apply are two separate steps here, and skipping
+the second one produces raw-string-key UI, not an error), the
+operator's own next step is:
+
+```
+apply_migrations.py --remote --database vf-licence-poc --migrations-dir workers/vf-licence/migrations
+```

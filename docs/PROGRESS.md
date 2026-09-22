@@ -1873,11 +1873,15 @@ section for the full reasoning and tests.
   (0444's own gap, unchanged); caching of a picker's own `?all=1`
   fetch (deliberate — a fresh fetch right before the form opens costs
   one extra request in exchange for never showing a stale picker).
-- **Built, tested, committed locally — not yet pushed or deployed.**
-  Migration `0149` will need its own separate
+- **Confirmed pushed and deployed** — `origin/main` fetched directly
+  reads `3f530f6`, matching this session's own commit exactly, and the
+  operator confirmed with *"deployed and pushed - looks good."*
+  Migration `0149` still needs its own separate
   `apply_migrations.py --remote --database vf-licence-poc
-  --migrations-dir workers/vf-licence/migrations` run once deployed,
-  the same as every migration before it.
+  --migrations-dir workers/vf-licence/migrations` run — see "Habits
+  worth keeping" in `docs/HANDOVER.md` — and the search box's own
+  placeholder/no-matches text will show as raw string keys until it
+  runs.
 
 ### Purchase orders and matching
 - Purchase order storage grounded in Peppol BIS Order Only 3.3, via UBL
