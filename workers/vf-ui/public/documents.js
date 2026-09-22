@@ -1,6 +1,7 @@
 import { t } from "/strings.js";
 import { el, frame, topbar, setCurrentScreen } from "/tasks.js";
 import { currentOrgId } from "/orgs.js";
+import { icon } from "/icons.js";
 
 /**
  * Every document that has arrived — decision 0164.
@@ -12,8 +13,21 @@ import { currentOrgId } from "/orgs.js";
  */
 
 let documents = [];
-let searched = 0;
 let query = "";
+
+/**
+ * Real, server-side pagination — decision 0448, the same
+ * `purchase-orders.js`/`coding-lists.js` shape: module-level state,
+ * reset to defaults every time the screen opens (`open()` below)
+ * rather than carried across navigations. `total` is only ever
+ * meaningful once `load()` has actually asked for a page — see its own
+ * comment on why `page`/`pageSize` are always sent now, unlike before
+ * this decision.
+ */
+let page = 1;
+let pageSize = 50;
+let total = 0;
+const PAGE_SIZES = [25, 50, 100, 200];
 
 /**
  * A drill-through filter from the dashboard — decision 0259.
@@ -152,7 +166,7 @@ async function loadUnits() {
 }
 
 async function load() {
-  const params = new URLSearchParams({ q: query, unit });
+  const params = new URLSearchParams({ q: query, unit, page: String(page), pageSize: String(pageSize) });
   if (alertFilter === "unplaced") params.set("unplaced", "1");
   if (alertFilter === "duplicates") params.set("duplicates", "1");
   if (alertFilter === "donebyme") params.set("doneByMe", "1");
@@ -178,7 +192,25 @@ async function load() {
 
   const body = await response.json();
   documents = body.documents ?? [];
-  searched = body.searched ?? 0;
+  /**
+   * **`total` replaces the old "N of M looked through" honesty
+   * message — decision 0448.** `documents-route.ts` now always
+   * returns a real `total` because this screen always sends
+   * `page`/`pageSize`; the search itself runs in SQL, so there is no
+   * load window it could have missed within any more. The route's own
+   * `searched` field still exists for `ap-assistant.ts`'s unpaginated
+   * caller, but this screen has no more use for it now that `total` is
+   * always real.
+   *
+   * `page`/`pageSize` are read back the same way `purchase-orders.js`'s
+   * own `load()` already does — `normalizePage()`/`normalizePageSize()`
+   * on the server can clamp what was actually sent (a bad page number,
+   * an unsupported page size), and the range text below has to agree
+   * with what was actually served, not what was asked for.
+   */
+  total = body.total ?? 0;
+  page = body.page ?? page;
+  pageSize = body.pageSize ?? pageSize;
   return true;
 }
 
@@ -389,12 +421,27 @@ function bannerText() {
   return t(`documents.showing.${alertFilter}`);
 }
 
-function render() {
-  const shell = document.getElementById("shell");
-  if (!shell) return;
+/**
+ * Reload after any control changes state, then redraw the whole
+ * screen — the same "full render, then restore focus" shape
+ * `purchase-orders.js`'s own `reload()` already established.
+ * `focusId`, when given, is re-focused afterward, since `render()`
+ * rebuilds the whole screen and would otherwise drop focus out of
+ * whatever control the person was just using.
+ */
+async function reload(focusId) {
+  await load();
+  render();
+  if (focusId) document.getElementById(focusId)?.focus();
+}
 
-  const visible = COLUMNS.filter((c) => shown.has(c.key));
-
+/**
+ * The search box and pagination controls, in one row — decision 0448,
+ * the same `purchase-orders.js`/`coding-lists.js` shape. Both push to
+ * the database now, rather than the search filtering a fully-loaded
+ * list in the browser.
+ */
+function searchAndPaginationRow() {
   const search = el("input", {
     type: "search",
     id: "docsearch",
@@ -403,10 +450,69 @@ function render() {
   search.value = query;
   search.onchange = async () => {
     query = search.value;
-    await load();
-    render();
-    document.getElementById("docsearch")?.focus();
+    page = 1;
+    await reload("docsearch");
   };
+
+  const sizePicker = el(
+    "select",
+    { id: "docrowsize" },
+    PAGE_SIZES.map((size) => el("option", { value: String(size), text: String(size) }))
+  );
+  sizePicker.value = String(pageSize);
+  sizePicker.onchange = async () => {
+    pageSize = Number(sizePicker.value);
+    page = 1;
+    await reload("docrowsize");
+  };
+
+  const totalPages = total === 0 ? 0 : Math.ceil(total / pageSize);
+  const atFirst = page <= 1;
+  const atLast = total === 0 || page >= totalPages;
+
+  function navButton(name, label, disabled, onclick) {
+    const button = el("button", { class: "iconbutton", "aria-label": label, title: label });
+    button.append(icon(name));
+    button.disabled = disabled;
+    button.onclick = onclick;
+    return button;
+  }
+
+  const rangeStart = total === 0 ? 0 : (page - 1) * pageSize + 1;
+  const rangeEnd = Math.min(page * pageSize, total);
+
+  return [
+    search,
+    el("label", { class: "sm muted", text: t("purchaseorders.rows") }),
+    sizePicker,
+    navButton("chevronsleft", t("purchaseorders.firstpage"), atFirst, async () => {
+      page = 1;
+      await reload();
+    }),
+    navButton("chevronleft", t("purchaseorders.previouspage"), atFirst, async () => {
+      page = Math.max(1, page - 1);
+      await reload();
+    }),
+    el("span", {
+      class: "sm muted",
+      text: t("purchaseorders.rangeof").replace("{start}", String(rangeStart)).replace("{end}", String(rangeEnd)).replace("{total}", String(total)),
+    }),
+    navButton("chevronright", t("purchaseorders.nextpage"), atLast, async () => {
+      page = Math.min(totalPages, page + 1);
+      await reload();
+    }),
+    navButton("chevronsright", t("purchaseorders.lastpage"), atLast, async () => {
+      page = totalPages;
+      await reload();
+    }),
+  ];
+}
+
+function render() {
+  const shell = document.getElementById("shell");
+  if (!shell) return;
+
+  const visible = COLUMNS.filter((c) => shown.has(c.key));
 
   /**
    * **Only where there is a choice to make** — decision 0193.
@@ -461,7 +567,7 @@ function render() {
 
         el("div", { class: "panel" }, [
           el("div", { class: "searchrow" }, [
-            search,
+            ...searchAndPaginationRow(),
             ...(units.length > 1 ? [unitPicker] : []),
             columnPicker(),
           ]),
@@ -511,19 +617,6 @@ function render() {
             : // **An empty screen is an invitation to act**, not an
               // apology.
               el("div", { class: "empty muted", text: query ? t("documents.nomatch") : t("documents.none") }),
-
-          // What was looked through, so the screen does not imply it
-          // searched everything (see the route's own note).
-          ...(query && documents.length > 0
-            ? [
-                el("p", {
-                  class: "sm muted",
-                  text: t("documents.searchedcount")
-                    .replace("{shown}", String(documents.length))
-                    .replace("{searched}", String(searched)),
-                }),
-              ]
-            : []),
         ]),
       ].filter(Boolean))
     )
@@ -532,6 +625,13 @@ function render() {
 
 export async function open() {
   setCurrentScreen("documents");
+  // Search and pagination reset to their defaults on every fresh open
+  // — decision 0448, the same "a clean view each time" choice
+  // `purchase-orders.js`'s own `open()` already makes. `pageSize` is
+  // left alone, matching that same precedent — a page-3 search from a
+  // previous visit means nothing here, but a person's own preferred
+  // row count is worth keeping.
+  page = 1;
   await loadUnits();
   if (!(await load())) return;
   render();
@@ -551,6 +651,7 @@ export async function open() {
 export async function openDocumentsFiltered(kind) {
   query = "";
   unit = "";
+  page = 1;
   alertFilter = kind;
   stageFilter = null;
   setCurrentScreen("documents");
@@ -585,6 +686,7 @@ export async function openDocumentsCompletedByMe() {
 export async function openDocumentsAtStage(stageId, stageName) {
   query = "";
   unit = "";
+  page = 1;
   alertFilter = null;
   stageFilter = { id: stageId, name: stageName };
   setCurrentScreen("documents");
@@ -606,6 +708,7 @@ export async function openDocumentsAtStage(stageId, stageName) {
 export async function openDocumentsForSupplierExceptions(supplierName) {
   query = "";
   unit = "";
+  page = 1;
   alertFilter = null;
   stageFilter = null;
   agingFilter = null;
@@ -628,6 +731,7 @@ export async function openDocumentsForSupplierExceptions(supplierName) {
 export async function openDocumentsAged(bucket) {
   query = "";
   unit = "";
+  page = 1;
   alertFilter = null;
   stageFilter = null;
   supplierFilter = null;

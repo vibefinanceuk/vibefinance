@@ -1929,6 +1929,93 @@ section for the full reasoning and tests.
   own separate `apply_migrations.py --remote --database vf-licence-poc
   --migrations-dir workers/vf-licence/migrations` run.
 
+### Search and real pagination for Documents (0448)
+- The operator's own follow-up, after 0446 deferred Tasks and Documents:
+  *"We parked the Document and Task search screen, which require a
+  deeper level of build to introduce search and pagination. Can you
+  implement those changes now?"*, then, before any code was written, a
+  scope requirement: *"Both searches need to respect the Org selected
+  at the top of the screen... the search for Tasks and Documents needs
+  to be within the boundaries of the Org that currently has focus."*
+  Documents only — Tasks needs its own decision (0449).
+- **Checked directly against 0446's own "needs a full rebuild"
+  framing, rather than taken on faith — only partly true for
+  Documents.** Three of the search's own four fields already had real,
+  kept-in-sync SQL columns: `number`/`amount` (`invoice_number`/
+  `total_with_vat`, written on every `handleUpsertInvoice` call since
+  migrations 0007/0014) and `sender` (`inbound_email_events.sender`,
+  already joined, never in `facts_json` at all). Only `supplier`
+  needed the same `COALESCE(sup.name, json_extract(...'$."BT-27"'),
+  ...)` fallback this same file already used for `exceptionSupplier`.
+  Genuinely additive, not architectural — unlike Tasks (see below).
+- **The org-focus requirement was already fully built, not new work.**
+  `documents.js` already sent `currentOrgId()` as `org`; `index.ts`
+  already narrowed it through `scopedToChosenOrg()` into
+  `handleListDocuments`'s own `visibleUnits` — the same downward-walk
+  pattern Purchase Orders uses. A new test (search term + `visibleUnits`
+  scoped to one org, composed together) makes this explicit rather than
+  leaving it implicit.
+- **Follows Purchase Orders'/Account Coding's own mechanism (0376,
+  0446) exactly**: `documentSearchPattern()` (same `%`/`_`/`\` escaping,
+  kept to this file's own `(?N IS NULL OR ...)` convention rather than
+  `purchase-order-route.ts`'s repeated-bind one), the same
+  `ALLOWED_PAGE_SIZES`/`normalizePage()`/`normalizePageSize()` shape,
+  pagination only running when `page`/`pageSize` is actually sent (so
+  `ap-assistant.ts`'s own `limit`-only caller keeps its exact existing
+  cost profile — no added `count(*)` query), and one
+  `searchAndPaginationRow()` reusing Purchase Orders' own generic
+  strings — needing **zero** new string keys, since every string this
+  row uses already existed.
+- **A numbered-placeholder bug caught before any test ran, not by
+  one failing**: the first draft tried to drop the unused `limit`
+  value from the count query's own bind array, since its text never
+  references `?2` — wrong, because a numbered placeholder binds by
+  array position, not by which placeholders the text happens to use;
+  trimming it would have silently shifted every later value into the
+  wrong condition. Kept the full 16-element array for both queries,
+  documented directly in the code.
+- **`documents.searchedcount`, the old "N of M looked through" honesty
+  message, is gone** — the new search runs against the whole matching
+  set in SQL, so `total` (via the new pagination row's own range text)
+  is simply the true count, with no load window it could have missed
+  within. The key is left in its migration as-is and removed from
+  `string-coverage.test.ts`'s own `KEYS_THE_INTERFACE_USES`, the same
+  orphaning 0447 already did for the CSV button keys.
+- `vf-app` `test/documents.test.ts` 66/66 (new: sender search,
+  whole-number-amount `CAST` behaviour, a match beyond the old load
+  window, 7 real-pagination tests, one org-focus-composes-with-search
+  test) and `test/ap-assistant.test.ts` 68/68 (unmodified, confirming
+  `runInvoiceSearch()`'s backward compatibility) — the full,
+  whole-repo `vf-app` suite could not complete inside this session's
+  own tool timeout, so these two files (the ones this decision touches
+  or is most at risk of breaking) were run directly instead; decision
+  0447 already confirmed the full suite as a clean 2618/2618 baseline
+  with no `vf-app` file touched. `vf-licence` 320 (unchanged — no new
+  migration, no new string key). `vf-ui` Worker 74 (unchanged); browser
+  1011 → **1022** (+11 `documents.test.ts` — search box/pagination
+  controls, mirroring `purchase-orders.test.ts`'s own decision-0376
+  blocks), all green.
+- A second, real (non-flake) `tsc` error found and fixed along the
+  way: `test/documents.test.ts`'s own `list()` helper's return-type
+  cast was missing `sender` — a field the route has always returned,
+  surfaced only once the new "finds by sender" test started reading it.
+  Fixed by adding it to the cast.
+- `eslint .` clean across every file touched. `npx tsc --noEmit` — no
+  new errors beyond the fix above; every other error a standalone run
+  surfaces (`cloudflare:test` module resolution, `workload*.test.ts`
+  narrowing) is the same pre-existing baseline decision 0447 already
+  confirmed.
+- **Not built**: Tasks — genuinely different shape (`maySee()` walks
+  **upward** per-task via `unitLineage()`, additionally scoped by each
+  task's own `requiredPermission`, the opposite direction from the
+  downward-walk pattern Documents/Purchase Orders/Account Coding all
+  share) and belongs in its own decision, 0449, not folded in here.
+  Delete/bulk actions — out of scope, unrelated, Documents never had
+  either. No new migration or string key — genuinely nothing was
+  needed.
+- **Built and tested, delivered as a git bundle — not yet confirmed
+  pushed or deployed** as of this writing.
+
 ### Purchase orders and matching
 - Purchase order storage grounded in Peppol BIS Order Only 3.3, via UBL
   XML ingestion (0081) and CSV load (0370) — the same tables, the same
@@ -3193,9 +3280,9 @@ elsewhere.
 
 | Package | Tests |
 |---|---|
-| `vf-app` | 2618 |
+| `vf-app` | 2618 (as of decision 0447's own full-suite run — see note below) |
 | `vf-licence` | 320 |
-| `vf-ui` | 74 Worker · 1011 browser, all passing — see below |
+| `vf-ui` | 74 Worker · 1022 browser, all passing — see below |
 | `shared` | 295 passing, 3 known pre-existing failures |
 
 Both migration chains replay clean with every standing invariant
@@ -3203,6 +3290,14 @@ holding — 76 migrations for `vf-app` (170 invariants); `vf-licence`'s
 own 149-migration chain has no equivalent Python replay, and is
 instead validated through `workers/vf-licence/test/setup.ts` +
 `string-coverage.test.ts`, both green as of decision 0446.
+
+**Decision 0448's own `vf-app` count is not re-verified against the
+full, whole-repo suite** — this session's own tool timeout could not
+complete a full `vf-app` run (113 files, ~2618 tests), so only the two
+files this decision touches or is at risk of breaking
+(`test/documents.test.ts` 66/66, `test/ap-assistant.test.ts` 68/68)
+were run directly. The 2618 figure above is decision 0447's own
+confirmed baseline, with no `vf-app` file touched by this decision.
 
 **`vf-ui` browser previously carried 4 known failures**, all in
 `test-browser/document-window.test.ts` — a long-documented,

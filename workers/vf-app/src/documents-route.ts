@@ -43,6 +43,62 @@ function statusOf(row: DocumentRow, facts: Record<string, unknown>): string {
   return row.hands > 0 ? "waiting" : "moving";
 }
 
+/**
+ * Real, server-side search and pagination — decision 0448.
+ *
+ * **The search was never actually "not expressible in SQL" — only one
+ * of its four fields was.** Decision 0446 grouped Documents with Tasks
+ * as both needing "a full rebuild" before this could happen; checked
+ * directly rather than assumed, that turned out to be true for Tasks
+ * and only partly true here. `number` (`BT-1`) and `amount` (`BT-112`)
+ * have carried real, kept-in-sync columns — `invoice_number`,
+ * `total_with_vat` — since migrations 0007/0014, written on every
+ * `handleUpsertInvoice` call alongside `facts_json`, never drifting
+ * from it (`mergeStructuredInvoiceFacts()`'s own comment in
+ * `invoice-facts-route.ts` states the invariant directly). `sender`
+ * was never in `facts_json` at all — it is `inbound_email_events.
+ * sender`, already a real, already-joined column. Only `supplier`
+ * (`BT-27`) has no mirrored column, and this file already has the
+ * exact fallback shape a search needs for it — `COALESCE(sup.name,
+ * json_extract(h.facts_json, '$."BT-27"'), 'Unknown')`, used a few
+ * lines below for `exceptionSupplier` — matched here (without the
+ * `'Unknown'` default, which exists there only to give a *label* to
+ * group by, not to search).
+ *
+ * **This file's own numbered-placeholder convention, not
+ * `purchase-order-route.ts`'s repeated-bind one.** Every other
+ * optional filter in this query is `(?N IS NULL OR ...)`, bound once
+ * and left `NULL` to mean "skip" — carried through here rather than
+ * switching to that file's own `{ sql: "", binds: [] }` shape, which
+ * would read as a second convention living inside one query. A single
+ * placeholder number is reused across all four `LIKE`s, since D1 binds
+ * a numbered placeholder once no matter how many times its own number
+ * appears in the statement.
+ *
+ * `%`, `_`, and `\` in the term itself are escaped, not read as SQL
+ * wildcards — the same reasoning and the same escape
+ * `purchase-order-route.ts`'s own `searchClause()` already applies.
+ */
+function documentSearchPattern(search: string | null): string | null {
+  const term = search?.trim();
+  if (!term) return null;
+  return `%${term.replace(/[\\%_]/g, "\\$&")}%`;
+}
+
+/** Page sizes offered in the UI dropdown — anything else is rejected back to the default, the same list `purchase-order-route.ts` already offers. */
+const ALLOWED_PAGE_SIZES = [25, 50, 100, 200] as const;
+const DEFAULT_PAGE_SIZE = 50;
+
+function normalizePageSize(requested: string | null): number {
+  const n = requested ? Number(requested) : NaN;
+  return (ALLOWED_PAGE_SIZES as readonly number[]).includes(n) ? n : DEFAULT_PAGE_SIZE;
+}
+
+function normalizePage(requested: string | null): number {
+  const n = requested ? Number(requested) : NaN;
+  return Number.isInteger(n) && n >= 1 ? n : 1;
+}
+
 export async function handleListDocuments(
   db: D1Database,
   params: URLSearchParams,
@@ -66,16 +122,40 @@ export async function handleListDocuments(
    */
   userId: string | null = null
 ): Promise<RouteResult> {
-  const query = (params.get("q") ?? "").trim().toLowerCase();
+  /**
+   * **Filtered in SQL now too — decision 0448.** No longer lower-cased
+   * here: SQLite's own `LIKE` is already case-insensitive over ASCII,
+   * the same as every other search this codebase runs, and lower-casing
+   * the term would do nothing but diverge from `documentSearchPattern()`'s
+   * own escaping if the two ever disagreed about casing.
+   */
+  const query = (params.get("q") ?? "").trim();
+  const searchPattern = documentSearchPattern(query);
 
   /**
-   * **Filtered in SQL, unlike the search** — decision 0193.
-   *
-   * The text search reads only what was loaded, because the facts live
-   * in a JSON blob and `LIKE` would match a key as readily as a value.
-   * A unit is a real column, so this narrows the query itself: a person
-   * asking for France gets France's most recent, not France's share of
-   * everybody's most recent.
+   * **Real pagination, decision 0448 — but only when asked for.**
+   * `documents.js`'s own screen now sends `page`/`pageSize`; the AP
+   * Assistant's own `invoice_search` tool (`ap-assistant.ts`) does
+   * not — it still sends only `limit` (1 for "the latest," 50
+   * otherwise) and was never given page controls to move through, so
+   * it keeps its own existing cost profile: one bounded fetch, no
+   * second `count(*)` query, exactly as before. `total`/`page`/
+   * `pageSize` are simply absent from the response when nobody asked
+   * for them, rather than computed and then not returned.
+   */
+  const pageParam = params.get("page");
+  const pageSizeParam = params.get("pageSize");
+  const paginating = pageParam !== null || pageSizeParam !== null;
+  const page = normalizePage(pageParam);
+  const pageSize = normalizePageSize(pageSizeParam);
+  const limit = paginating ? pageSize : Math.min(Math.max(Number(params.get("limit") ?? "50") || 50, 1), 200);
+  const offset = paginating ? (page - 1) * pageSize : 0;
+
+  /**
+   * **Unit is still filtered in SQL, as it always was** — decision
+   * 0193. A unit is a real column, so this narrows the query itself: a
+   * person asking for France gets France's most recent, not France's
+   * share of everybody's most recent.
    */
   /**
    * **A live defect, unrelated to decision 0259** — decision 0260.
@@ -97,7 +177,6 @@ export async function handleListDocuments(
    * frontend sends, and exactly where the fault hid.
    */
   const unit = params.get("unit") || null;
-  const limit = Math.min(Math.max(Number(params.get("limit") ?? "50") || 50, 1), 200);
 
   /**
    * **Two new filters, decision 0259** — for the dashboard's
@@ -204,17 +283,7 @@ export async function handleListDocuments(
    * Joined loosely: a document captured any other way has neither, and
    * that is a fact about it rather than a missing row.
    */
-  const rows = await db
-    .prepare(
-      `SELECT h.id, h.facts_json, h.created_at,
-              i.current_stage_id, i.status AS instance_status,
-              s.name AS stage_name,
-              h.org_unit_id, ou.name AS org_unit_name,
-              e.sender, e.recipient,
-              (SELECT count(*) FROM tasks t
-                 JOIN stage_visits v ON v.id = t.stage_visit_id
-               WHERE v.process_instance_id = i.id) AS hands
-       FROM invoice_headers h
+  const joins = `FROM invoice_headers h
        LEFT JOIN process_instances i
          ON i.subject_type = 'invoice' AND i.subject_id = h.id
        LEFT JOIN process_stages s ON s.id = i.current_stage_id
@@ -223,8 +292,22 @@ export async function handleListDocuments(
        LEFT JOIN inbound_email_events e
          ON e.id = (SELECT e2.id FROM inbound_email_events e2
                     WHERE e2.outcome = 'captured' AND e2.occurred_at <= h.created_at
-                    ORDER BY e2.occurred_at DESC LIMIT 1)
-       WHERE (?1 IS NULL OR h.org_unit_id = ?1)
+                    ORDER BY e2.occurred_at DESC LIMIT 1)`;
+
+  /**
+   * **One `WHERE`, shared by the count and the page** — decision 0448,
+   * the same "narrow, then count, then page, with the identical clause
+   * both times" shape `purchase-order-route.ts`'s own
+   * `handleListPurchaseOrders` established. Extracted to a constant
+   * specifically so the two queries below cannot quietly drift apart —
+   * a `total` computed against a different `WHERE` than the page itself
+   * used would be a real, silent bug, not a cosmetic one.
+   *
+   * `?16` is the new search pattern (see `documentSearchPattern()`
+   * above) — appended last, after every pre-existing filter, so every
+   * `?N` below it keeps the exact number it already had.
+   */
+  const whereClause = `WHERE (?1 IS NULL OR h.org_unit_id = ?1)
          AND (
            ?5 = 1
            OR (?3 = 0 OR h.org_unit_id IN (SELECT value FROM json_each(?4)))
@@ -267,56 +350,111 @@ export async function handleListDocuments(
            )
          )
          AND (?14 IS NULL OR h.created_at >= ?14)
+         AND (
+           ?16 IS NULL
+           OR (
+             h.invoice_number LIKE ?16 ESCAPE '\\'
+             OR CAST(h.total_with_vat AS TEXT) LIKE ?16 ESCAPE '\\'
+             OR e.sender LIKE ?16 ESCAPE '\\'
+             OR COALESCE(sup.name, json_extract(h.facts_json, '$."BT-27"')) LIKE ?16 ESCAPE '\\'
+           )
+         )`;
+
+  /**
+   * **A document with no unit is nobody's, unless somebody asked for
+   * exactly that** — decision 0199, carved out by decision 0259.
+   *
+   * 0199's policy is right for ordinary browsing: a person restricted
+   * to France should not see an unassigned document that might turn
+   * out to be Germany's. But *"unplaced"* is not ordinary browsing —
+   * it is the alert this same policy would otherwise hide from
+   * everyone who could act on it, which is decision 0255's argument
+   * in `dashboard-route.ts`'s `unplacedDocuments()`: an unplaced
+   * document is not a secret from anyone, because somebody has to
+   * notice it before it can be placed at all.
+   *
+   * Without `?5` bypassing the visibility clause here, the dashboard
+   * card and this list would disagree for every scoped person on
+   * earth — the card built from `unplacedDocuments()`'s unscoped
+   * count, and the click landing on a list that the ordinary
+   * visibility rule had just emptied to zero. Found by tracing the
+   * click through rather than wiring it and trusting it.
+   *
+   * **And the filter matches `unplacedDocuments()`'s exact
+   * definition**, not just "has no unit" — a document can have no
+   * unit for reasons that are not the one this card is about (nobody
+   * has run org-derivation on it yet, say), and only a null unit
+   * *paired with the recorded failure reason* is what the count on
+   * the card actually means. The first version of this checked the
+   * unit alone and a test caught it: a document nobody had assigned
+   * for any reason showed up under "unplaced" when it should not
+   * have, over-counting in the list relative to what the card claims.
+   */
+  /**
+   * **All sixteen positions, `?1` through `?16`, every time — even
+   * `?2` (`limit`) here, which the count query's own text below never
+   * mentions.** Numbered placeholders can have holes (SQLite allows
+   * `?1`/`?3` with no `?2` in the text at all), but `.bind()` still
+   * fills array position *N* into parameter index *N+1* — the
+   * statement's own highest referenced index (16, from `?16`) is what
+   * has to be satisfied, not which of the sixteen the text happens to
+   * use. Leaving `limit` out of this array to match the count query's
+   * own unused `?2` would shift every value after it by one index and
+   * silently rebind the wrong filter to the wrong condition — this
+   * exact array, unchanged, is what keeps both queries honest.
+   */
+  const whereBinds = [
+    unit,
+    limit,
+    visibleUnits === null ? 0 : 1,
+    JSON.stringify(visibleUnits ?? []),
+    unplacedOnly ? 1 : 0,
+    duplicatesOnly ? 1 : 0,
+    stageId,
+    doneByMe ? 1 : 0,
+    userId ?? "",
+    monday,
+    exceptionSupplier,
+    agingMinDays,
+    agingMaxDays,
+    since,
+    stageIdsRaw,
+    searchPattern,
+  ] as const;
+
+  /**
+   * **`total`, only when a page was actually asked for.** A second,
+   * real `count(*)` query against the identical `WHERE` — matching
+   * `purchase-order-route.ts`'s own reasoning: a page of 50 rows says
+   * nothing about how many exist in total. Skipped entirely for
+   * `invoice_search`'s own `limit`-only calls, which have never needed
+   * a total and would otherwise pay for one on every question asked.
+   * No `hands` subquery, no `ou`/`s` name joins in the `SELECT` — the
+   * count only needs whatever the `WHERE` itself reads.
+   */
+  const totalRow = paginating
+    ? await db
+        .prepare(`SELECT count(*) AS n ${joins} ${whereClause}`)
+        .bind(...whereBinds)
+        .first<{ n: number }>()
+    : null;
+
+  const rows = await db
+    .prepare(
+      `SELECT h.id, h.facts_json, h.created_at,
+              i.current_stage_id, i.status AS instance_status,
+              s.name AS stage_name,
+              h.org_unit_id, ou.name AS org_unit_name,
+              e.sender, e.recipient,
+              (SELECT count(*) FROM tasks t
+                 JOIN stage_visits v ON v.id = t.stage_visit_id
+               WHERE v.process_instance_id = i.id) AS hands
+       ${joins}
+       ${whereClause}
        ORDER BY h.created_at DESC, h.rowid DESC
-       LIMIT ?2`
+       LIMIT ?2 OFFSET ?17`
     )
-    /**
-     * **A document with no unit is nobody's, unless somebody asked for
-     * exactly that** — decision 0199, carved out by decision 0259.
-     *
-     * 0199's policy is right for ordinary browsing: a person restricted
-     * to France should not see an unassigned document that might turn
-     * out to be Germany's. But *"unplaced"* is not ordinary browsing —
-     * it is the alert this same policy would otherwise hide from
-     * everyone who could act on it, which is decision 0255's argument
-     * in `dashboard-route.ts`'s `unplacedDocuments()`: an unplaced
-     * document is not a secret from anyone, because somebody has to
-     * notice it before it can be placed at all.
-     *
-     * Without `?5` bypassing the visibility clause here, the dashboard
-     * card and this list would disagree for every scoped person on
-     * earth — the card built from `unplacedDocuments()`'s unscoped
-     * count, and the click landing on a list that the ordinary
-     * visibility rule had just emptied to zero. Found by tracing the
-     * click through rather than wiring it and trusting it.
-     *
-     * **And the filter matches `unplacedDocuments()`'s exact
-     * definition**, not just "has no unit" — a document can have no
-     * unit for reasons that are not the one this card is about (nobody
-     * has run org-derivation on it yet, say), and only a null unit
-     * *paired with the recorded failure reason* is what the count on
-     * the card actually means. The first version of this checked the
-     * unit alone and a test caught it: a document nobody had assigned
-     * for any reason showed up under "unplaced" when it should not
-     * have, over-counting in the list relative to what the card claims.
-     */
-    .bind(
-      unit,
-      limit,
-      visibleUnits === null ? 0 : 1,
-      JSON.stringify(visibleUnits ?? []),
-      unplacedOnly ? 1 : 0,
-      duplicatesOnly ? 1 : 0,
-      stageId,
-      doneByMe ? 1 : 0,
-      userId ?? "",
-      monday,
-      exceptionSupplier,
-      agingMinDays,
-      agingMaxDays,
-      since,
-      stageIdsRaw
-    )
+    .bind(...whereBinds, offset)
     .all<DocumentRow>();
 
   const documents = rows.results.map((row) => {
@@ -368,29 +506,30 @@ export async function handleListDocuments(
   });
 
   /**
-   * Searched in the Worker rather than in SQL.
+   * **No longer filtered here — decision 0448.** The rows above are
+   * already exactly the matching set, filtered in SQL by
+   * `documentSearchPattern()`, appended into `whereClause`. `matched`
+   * used to be the JS-side narrowing of whatever the `LIMIT` had
+   * already loaded; now `rows` itself is the narrowing, so there is
+   * nothing left to filter twice.
    *
-   * **The facts live in a JSON blob**, so a supplier name is not a
-   * column to match on — `LIKE` against `facts_json` would match the
-   * key as readily as the value, and find `BT-27` in every row.
-   *
-   * That is a real limit: it searches only what was loaded. Recorded
-   * rather than hidden behind a query that looks like it does more.
+   * `searched` stays in the response, kept for the one caller that
+   * still reads a stable shape without reading this field itself —
+   * `ap-assistant.ts`'s own `runInvoiceSearch` types it through but
+   * never uses it. Its meaning has changed with the fix it reports:
+   * it used to mean "how many rows were loaded before filtering,"
+   * honestly admitting the search might have missed a match past the
+   * load window; now that the search runs inside the same query that
+   * enforces `LIMIT`, there is no window it could have missed within
+   * — `documents.length` and "how many matched" are the same number.
    */
-  const matched = query
-    ? documents.filter((d) =>
-        [d.number, d.supplier, d.sender, d.amount === null ? null : String(d.amount)]
-          .some((field) => field !== null && String(field).toLowerCase().includes(query))
-      )
-    : documents;
-
   return {
     status: 200,
     body: {
-      documents: matched,
-      // What was looked through, so a screen can say "50 of 512" rather
-      // than implying it searched everything.
+      documents,
       searched: documents.length,
+      // Only when a page was actually asked for — see `paginating` above.
+      ...(paginating ? { total: totalRow?.n ?? 0, page, pageSize } : {}),
     },
   };
 }

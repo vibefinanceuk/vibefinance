@@ -504,7 +504,18 @@ const KEYS_THE_INTERFACE_USES = [
   "documents.choosecolumns",
   "documents.none",
   "documents.nomatch",
-  "documents.searchedcount",
+
+  /**
+   * **`documents.searchedcount` is now orphaned — decision 0448.** It
+   * was the "N of M looked through" honesty message for the old
+   * in-Worker, load-window search. `documents.js` now sends real
+   * `page`/`pageSize` and gets a real `total` back from
+   * `documents-route.ts`, covered by `purchaseorders.rangeof` (already
+   * listed above, under Purchase Orders — string reuse, not a new
+   * pair of keys, the same discipline decision 0447 applied). The row
+   * in migration 0044 is left as-is — migrations are append-only and
+   * never edited.
+   */
   "documents.unreadable",
   "documents.notread",
   "documents.unknownsender",

@@ -49,7 +49,6 @@ const STRINGS = {
     "documents.choosecolumns": "Choose columns",
     "documents.none": "Nothing has arrived yet.",
     "documents.nomatch": "Nothing matches that.",
-    "documents.searchedcount": "{shown} of the {searched} most recent.",
     "documents.unreadable": "Could not be read automatically",
     "documents.notread": "Not read",
     "documents.unknownsender": "Unknown",
@@ -70,6 +69,16 @@ const STRINGS = {
     "column.unit": "Business unit",
     "documents.nounit": "Unassigned",
     "documents.allunits": "All business units",
+    /**
+     * Reused, not re-typed — decision 0448, the same
+     * `purchase-orders.js`/`coding-lists.js` pagination-row keys.
+     */
+    "purchaseorders.rows": "Rows",
+    "purchaseorders.rangeof": "{start}–{end} of {total}",
+    "purchaseorders.firstpage": "First page",
+    "purchaseorders.previouspage": "Previous page",
+    "purchaseorders.nextpage": "Next page",
+    "purchaseorders.lastpage": "Last page",
     "docstatus.waiting": "Waiting",
     "docstatus.moving": "In progress",
     "docstatus.done": "Finished",
@@ -115,7 +124,7 @@ async function openDocuments(documents: unknown[]) {
   window.localStorage.clear();
   stubFetch({
     "/api/ui-strings": STRINGS,
-    "/api/documents": { documents, searched: documents.length },
+    "/api/documents": { documents, searched: documents.length, total: documents.length, page: 1, pageSize: 50 },
     "/api/org/units": { units: UNITS },
     "/api/code-lists": { fields: {} },
     "/api/field-visibility": { fields: [], derived: {} },
@@ -466,7 +475,7 @@ describe("focused on one org, decision 0315", () => {
     window.localStorage.clear();
     stubFetch({
       "/api/ui-strings": STRINGS,
-      "/api/documents": { documents: [DOC], searched: 1 },
+      "/api/documents": { documents: [DOC], searched: 1, total: 1, page: 1, pageSize: 50 },
       "/api/org/units": { units: UNITS },
       "/api/code-lists": { fields: {} },
     });
@@ -491,5 +500,169 @@ describe("focused on one org, decision 0315", () => {
     const calls = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls.map((c) => String(c[0]));
     const call = calls.find((u) => u.startsWith("/api/documents?"));
     expect(call).not.toContain("org=");
+  });
+});
+
+/**
+ * A page of `count` documents out of `total` — decision 0448, the same
+ * shape `purchase-orders.js`'s own `pageOf()` (decision 0376) uses,
+ * for tests about the pagination display rather than any one row's
+ * own content.
+ */
+function pageOf(count: number, total: number, page: number, pageSize: number) {
+  return {
+    documents: Array.from({ length: count }, (_, i) => ({ ...DOC, id: `doc-${i}`, number: `DOC-${i}` })),
+    searched: count,
+    total,
+    page,
+    pageSize,
+  };
+}
+
+/** Stubs `/api/documents` with a fetch that also records the last requested URL. */
+function stubDocumentsRecordingUrl(body: unknown) {
+  let requestedUrl = "";
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (url: string) => {
+      const path = String(url).split("?")[0];
+      if (path === "/api/ui-strings") return { ok: true, json: async () => STRINGS } as Response;
+      if (path === "/api/org/units") return { ok: true, json: async () => ({ units: UNITS }) } as Response;
+      if (path === "/api/documents") {
+        requestedUrl = String(url);
+        return { ok: true, json: async () => body } as Response;
+      }
+      throw new Error(`no stub for ${path}`);
+    })
+  );
+  return () => requestedUrl;
+}
+
+async function openScreen() {
+  window.localStorage.clear();
+  const { loadStrings } = await import("/strings.js");
+  await loadStrings();
+  const { open } = await import("/documents.js");
+  await open();
+  await new Promise((r) => setTimeout(r, 0));
+}
+
+describe("searching the list — real, server-side search, decision 0448", () => {
+  it("shows the search box with its own placeholder", async () => {
+    await openDocuments([]);
+
+    const search = document.getElementById("docsearch");
+    expect(search?.getAttribute("placeholder")).toBe("Supplier, document number, or amount");
+  });
+
+  it("re-fetches with the search term once typing is done, and resets to page 1", async () => {
+    const requestedUrl = stubDocumentsRecordingUrl(pageOf(1, 1, 1, 50));
+    await openScreen();
+
+    const search = document.getElementById("docsearch") as HTMLInputElement;
+    search.value = "widgets";
+    search.dispatchEvent(new Event("change"));
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(requestedUrl()).toContain("q=widgets");
+    expect(requestedUrl()).toContain("page=1");
+  });
+
+  it("keeps focus on the search box after a search reloads the screen", async () => {
+    await openDocuments([]);
+
+    const search = document.getElementById("docsearch") as HTMLInputElement;
+    search.value = "widgets";
+    search.dispatchEvent(new Event("change"));
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(document.activeElement?.id).toBe("docsearch");
+  });
+
+  it("shows a message distinct from 'nothing has arrived' when a search matches nothing", async () => {
+    stubDocumentsRecordingUrl(pageOf(0, 0, 1, 50));
+    await openScreen();
+
+    const search = document.getElementById("docsearch") as HTMLInputElement;
+    search.value = "no such thing";
+    search.dispatchEvent(new Event("change"));
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(document.body.textContent).toContain("Nothing matches that.");
+    expect(document.body.textContent).not.toContain("Nothing has arrived yet");
+  });
+});
+
+describe("pagination controls — decision 0448", () => {
+  it("shows every page size actually offered", async () => {
+    await openDocuments([]);
+
+    const options = [...document.querySelectorAll("#docrowsize option")].map((o) => (o as HTMLOptionElement).value);
+    expect(options).toEqual(["25", "50", "100", "200"]);
+  });
+
+  it("changing the page size re-fetches with the new size and resets to page 1", async () => {
+    const requestedUrl = stubDocumentsRecordingUrl(pageOf(25, 120, 1, 25));
+    await openScreen();
+
+    const sizePicker = document.getElementById("docrowsize") as HTMLSelectElement;
+    sizePicker.value = "25";
+    sizePicker.dispatchEvent(new Event("change"));
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(requestedUrl()).toContain("pageSize=25");
+    expect(requestedUrl()).toContain("page=1");
+  });
+
+  it("disables first and previous on the first page", async () => {
+    stubDocumentsRecordingUrl(pageOf(50, 120, 1, 50));
+    await openScreen();
+
+    expect((document.querySelector('[aria-label="First page"]') as HTMLButtonElement)?.disabled).toBe(true);
+    expect((document.querySelector('[aria-label="Previous page"]') as HTMLButtonElement)?.disabled).toBe(true);
+    expect((document.querySelector('[aria-label="Next page"]') as HTMLButtonElement)?.disabled).toBe(false);
+    expect((document.querySelector('[aria-label="Last page"]') as HTMLButtonElement)?.disabled).toBe(false);
+  });
+
+  it("disables next and last on the last page", async () => {
+    stubDocumentsRecordingUrl(pageOf(20, 120, 3, 50));
+    await openScreen();
+
+    expect((document.querySelector('[aria-label="Next page"]') as HTMLButtonElement)?.disabled).toBe(true);
+    expect((document.querySelector('[aria-label="Last page"]') as HTMLButtonElement)?.disabled).toBe(true);
+    expect((document.querySelector('[aria-label="First page"]') as HTMLButtonElement)?.disabled).toBe(false);
+    expect((document.querySelector('[aria-label="Previous page"]') as HTMLButtonElement)?.disabled).toBe(false);
+  });
+
+  it("enables every button in the middle of a multi-page result", async () => {
+    stubDocumentsRecordingUrl(pageOf(50, 120, 2, 50));
+    await openScreen();
+
+    for (const label of ["First page", "Previous page", "Next page", "Last page"]) {
+      expect((document.querySelector(`[aria-label="${label}"]`) as HTMLButtonElement)?.disabled).toBe(false);
+    }
+  });
+
+  it("shows the range as text", async () => {
+    stubDocumentsRecordingUrl(pageOf(50, 120, 2, 50));
+    await openScreen();
+
+    expect(document.body.textContent).toContain("51–100 of 120");
+  });
+
+  it("clicking next advances the page while keeping the same search term", async () => {
+    const requestedUrl = stubDocumentsRecordingUrl(pageOf(50, 120, 1, 50));
+    await openScreen();
+
+    const search = document.getElementById("docsearch") as HTMLInputElement;
+    search.value = "widgets";
+    search.dispatchEvent(new Event("change"));
+    await new Promise((r) => setTimeout(r, 0));
+
+    (document.querySelector('[aria-label="Next page"]') as HTMLButtonElement)?.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(requestedUrl()).toContain("page=2");
+    expect(requestedUrl()).toContain("q=widgets");
   });
 });

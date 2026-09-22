@@ -36,13 +36,33 @@ async function seedDocument(
   stage: string | null = "validation",
   createdAt?: string
 ) {
+  /**
+   * **The structured columns, derived the same way `handleUpsertInvoice`
+   * derives them — decision 0448.** A real row always carries
+   * `invoice_number`/`total_with_vat` alongside `facts_json`, kept in
+   * lockstep with it (`mergeStructuredInvoiceFacts()`'s own comment in
+   * `invoice-facts-route.ts` states the invariant directly). This
+   * fixture only ever wrote `facts_json` — already one step removed
+   * from a real row — and now that `documentSearchPattern()` in
+   * `documents-route.ts` searches these columns directly rather than
+   * `facts_json` itself, it would be a *wrong* step: every test seeding
+   * a `BT-1`/`BT-112` fact gets the matching real column for free, the
+   * same as a genuine invoice would.
+   */
+  const invoiceNumber = (facts["BT-1"] as string) ?? null;
+  const totalWithVat = (facts["BT-112"] as number) ?? null;
+
   if (createdAt) {
-    await env.DB.prepare("INSERT INTO invoice_headers (id, facts_json, created_at) VALUES (?, ?, ?)")
-      .bind(id, JSON.stringify(facts), createdAt)
+    await env.DB.prepare(
+      "INSERT INTO invoice_headers (id, facts_json, invoice_number, total_with_vat, created_at) VALUES (?, ?, ?, ?, ?)"
+    )
+      .bind(id, JSON.stringify(facts), invoiceNumber, totalWithVat, createdAt)
       .run();
   } else {
-    await env.DB.prepare("INSERT INTO invoice_headers (id, facts_json) VALUES (?, ?)")
-      .bind(id, JSON.stringify(facts))
+    await env.DB.prepare(
+      "INSERT INTO invoice_headers (id, facts_json, invoice_number, total_with_vat) VALUES (?, ?, ?, ?)"
+    )
+      .bind(id, JSON.stringify(facts), invoiceNumber, totalWithVat)
       .run();
   }
 
@@ -62,6 +82,7 @@ async function list(params = "", visibleUnits: string[] | null = null, userId: s
       id: string;
       number: string | null;
       supplier: string | null;
+      sender: string | null;
       amount: number | null;
       currency: string | null;
       status: string;
@@ -71,6 +92,10 @@ async function list(params = "", visibleUnits: string[] | null = null, userId: s
       hands: number;
     }[];
     searched: number;
+    // Only present when `page`/`pageSize` was sent — decision 0448.
+    total?: number;
+    page?: number;
+    pageSize?: number;
   };
 }
 
@@ -151,7 +176,7 @@ describe("a document nothing could read", () => {
   });
 });
 
-describe("searching", () => {
+describe("searching — real SQL now, decision 0448", () => {
   it("finds by supplier", async () => {
     await seedDocument("inv-1", { "BT-27": "Nordwind Logistik", "BT-1": "NL-1" });
     await seedDocument("inv-2", { "BT-27": "Munch GmbH", "BT-1": "MG-1" });
@@ -177,25 +202,162 @@ describe("searching", () => {
     expect((await list("q=251.88")).documents).toHaveLength(1);
   });
 
+  it("finds a whole-number amount too, despite SQLite's own text form of a REAL carrying a trailing .0", async () => {
+    await seedDocument("inv-1", { "BT-1": "A", "BT-112": 900 });
+    expect((await list("q=900")).documents).toHaveLength(1);
+  });
+
+  it("finds by sender, a real joined column that was never in facts_json at all", async () => {
+    await seedDocument("inv-1", { "BT-1": "A" });
+    await env.DB.prepare(
+      `INSERT INTO inbound_email_events (id, source_id, sender, recipient, outcome, occurred_at)
+       VALUES ('ev-1', NULL, 'ap@nordwind.example', 'invoices@vibefinance.example', 'captured', datetime('now'))`
+    ).run();
+    // seedDocument() defaults created_at to now, so the email's own
+    // occurred_at (also now) satisfies the `<=` join this route's own
+    // sender/recipient subquery uses.
+    expect((await list("q=nordwind")).documents[0]?.sender).toBe("ap@nordwind.example");
+  });
+
   it("ignores case", async () => {
     await seedDocument("inv-1", { "BT-27": "Nordwind Logistik", "BT-1": "A" });
     expect((await list("q=NORDWIND")).documents).toHaveLength(1);
   });
 
-  it("says how many it looked through", async () => {
-    // **So the screen does not imply it searched everything**: the
-    // facts live in a JSON blob, so this searches what was loaded.
+  it("escapes a literal % or _ in the term rather than treating it as a SQL wildcard", async () => {
+    await seedDocument("inv-1", { "BT-1": "INV_100%" });
+    await seedDocument("inv-2", { "BT-1": "INVX100Y" });
+
+    // A literal search for "_100%" must not also match "X100Y" — which
+    // an unescaped LIKE pattern (`%_100%%`) would, since `_` and `%`
+    // are themselves SQL wildcards there.
+    expect((await list("q=_100%")).documents.map((d) => d.number)).toEqual(["INV_100%"]);
+  });
+
+  it("finds a match beyond the old load window — the actual bug this decision fixes", async () => {
+    // **The point of pushing search into SQL.** The old behaviour
+    // loaded only `limit` (default 50) most-recent rows and filtered
+    // those in the Worker — a matching document older than the most
+    // recent 50 was invisible to search, not merely on a later page.
+    // Fifty-one rows here, the oldest one the only match: the old code
+    // would never have seen it at all.
+    for (let i = 0; i < 50; i++) {
+      await seedDocument(`inv-recent-${i}`, { "BT-1": `RECENT-${i}` }, "validation", "2024-06-01T00:00:00Z");
+    }
+    await seedDocument("inv-old", { "BT-1": "FINDME" }, "validation", "2020-01-01T00:00:00Z");
+
+    const body = await list("q=findme");
+    expect(body.documents).toHaveLength(1);
+    expect(body.documents[0].number).toBe("FINDME");
+  });
+
+  it("says how many matched, now that it means the same thing as how many were found", async () => {
+    // **The field's own meaning changed, not just its number** — see
+    // `documents-route.ts`'s own comment on `searched` in the return.
+    // It used to report "how many were loaded before filtering," an
+    // honest admission the search might have missed something past the
+    // load window. Now the search runs inside the same query the load
+    // window comes from, so there is no window it could miss within.
     await seedDocument("inv-1", { "BT-27": "Nordwind", "BT-1": "A" });
     await seedDocument("inv-2", { "BT-27": "Munch", "BT-1": "B" });
 
     const body = await list("q=nordwind");
     expect(body.documents).toHaveLength(1);
-    expect(body.searched).toBe(2);
+    expect(body.searched).toBe(1);
   });
 
   it("returns nothing rather than everything when nothing matches", async () => {
     await seedDocument("inv-1", { "BT-27": "Nordwind", "BT-1": "A" });
     expect((await list("q=zzzz")).documents).toHaveLength(0);
+  });
+
+  it("composes with the org focus — a match outside the focused org's own visible units stays hidden", async () => {
+    // **The operator's own requirement, checked directly**: search
+    // must stay inside the org currently in focus, not run against
+    // everything and merely label the result. `visibleUnits` here is
+    // exactly what `scopedToChosenOrg()`/`unitsWherePermitted()` would
+    // have already narrowed to before this route is ever called
+    // (`index.ts`'s own wiring) — this route must never widen it back
+    // out just because a search term was also given.
+    await env.DB.prepare("INSERT INTO org_units (id, name, kind) VALUES ('acme-fr', 'Acme France', 'legal_entity')").run();
+    await env.DB.prepare("INSERT INTO org_units (id, name, kind) VALUES ('acme-de', 'Acme Deutschland', 'legal_entity')").run();
+    await seedDocument("inv-fr", { "BT-1": "FINDME-FR" });
+    await seedDocument("inv-de", { "BT-1": "FINDME-DE" });
+    await env.DB.prepare("UPDATE invoice_headers SET org_unit_id = 'acme-fr' WHERE id = 'inv-fr'").run();
+    await env.DB.prepare("UPDATE invoice_headers SET org_unit_id = 'acme-de' WHERE id = 'inv-de'").run();
+
+    const body = await list("q=findme", ["acme-fr"]);
+    expect(body.documents.map((d) => d.number)).toEqual(["FINDME-FR"]);
+  });
+});
+
+describe("real, server-side pagination — decision 0448", () => {
+  async function seedMany(n: number) {
+    for (let i = 0; i < n; i++) {
+      await seedDocument(`inv-${i}`, { "BT-1": `INV-${String(i).padStart(3, "0")}` }, "validation", `2024-01-${String((i % 28) + 1).padStart(2, "0")}T00:00:00Z`);
+    }
+  }
+
+  it("total/page/pageSize are absent unless page or pageSize was actually sent", async () => {
+    await seedDocument("inv-1", { "BT-1": "A" });
+    const body = await list();
+    expect(body.total).toBeUndefined();
+    expect(body.page).toBeUndefined();
+    expect(body.pageSize).toBeUndefined();
+  });
+
+  it("total reflects every matching row, not just the page returned", async () => {
+    await seedMany(60);
+    const body = await list("page=1&pageSize=25");
+    expect(body.documents).toHaveLength(25);
+    expect(body.total).toBe(60);
+    expect(body.page).toBe(1);
+    expect(body.pageSize).toBe(25);
+  });
+
+  it("page 2 returns a disjoint set from page 1", async () => {
+    await seedMany(60);
+    const page1 = (await list("page=1&pageSize=25")).documents.map((d) => d.id);
+    const page2 = (await list("page=2&pageSize=25")).documents.map((d) => d.id);
+    expect(page1).toHaveLength(25);
+    expect(page2).toHaveLength(25);
+    expect(page1.some((id) => page2.includes(id))).toBe(false);
+  });
+
+  it("a real, partial last page", async () => {
+    await seedMany(60);
+    const body = await list("page=3&pageSize=25");
+    expect(body.documents).toHaveLength(10);
+    expect(body.total).toBe(60);
+  });
+
+  it("normalizes a bad page number back to 1", async () => {
+    await seedMany(5);
+    const body = await list("page=notanumber&pageSize=25");
+    expect(body.page).toBe(1);
+  });
+
+  it("normalizes an unlisted page size back to the default", async () => {
+    await seedMany(5);
+    const body = await list("page=1&pageSize=17");
+    expect(body.pageSize).toBe(50);
+  });
+
+  it("every allowed page size is honoured", async () => {
+    await seedMany(60);
+    for (const size of [25, 50, 100, 200]) {
+      const body = await list(`page=1&pageSize=${size}`);
+      expect(body.pageSize).toBe(size);
+      expect(body.documents.length).toBeLessThanOrEqual(size);
+    }
+  });
+
+  it("total narrows with a search term, same as the page itself", async () => {
+    await seedMany(10);
+    await seedDocument("inv-findme", { "BT-1": "FINDME" });
+    const body = await list("q=findme&page=1&pageSize=25");
+    expect(body.total).toBe(1);
+    expect(body.documents).toHaveLength(1);
   });
 });
 
