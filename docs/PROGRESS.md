@@ -1575,6 +1575,34 @@ section for the full reasoning and tests.
   already-documented `document-window.test.ts` flake. `vf-licence` 320
   (row count grew, test count did not). `eslint .` clean; migration
   chain replays clean (146 migrations).
+- **Confirmed deployed, then a real gap surfaced**: the operator
+  reported *"deployed and pushed,"* then a screenshot showed the new
+  search-hint strings as raw, untranslated keys — very likely because
+  migration `0146` was never applied to the real `vf-licence-poc`, the
+  same shape decision 0441's own second finding (migration `0075`)
+  already was. See decision 0443, below.
+
+### The Add button becomes an icon button, top-right of its own card (0443)
+- Asked directly from a screenshot, once 0442 deployed: *"create a
+  suitable icon for the Add button and move to the top-right of each
+  card."*
+- Not a new pattern: `modeForm()`, one form above these two sections on
+  the same tab, already puts its own Save button in `.cardhead`'s own
+  `.statebuttons` slot — the same title-left/action-right shape
+  `.cardhead`'s CSS already gives, and every other screen's
+  Create/Save button already uses.
+- Built: both override sections' plain `<button>Add</button>` (and its
+  own `.memberpickerrow` wrapper) replaced with `actionLink("create",
+  {primary: true, label: t("apsetup.add"), onclick})` inside the
+  section's own `cardhead` — the `create` icon this app already draws
+  for "add a new record" everywhere else, label kept as "Add" via the
+  same override mechanism `sources.js`'s own CSV buttons already use.
+  No new strings, no new icon, no CSS.
+- One new test per section (`ap-setup.test.ts` 18 → 19): the Add button
+  lives at `.cardhead .statebuttons .actionlink`, carries a real
+  `<svg>`, still reads "Add," and `.memberpickerrow` is gone. `vf-ui`
+  browser suite 978 → 979, same pre-existing flake aside. `vf-app`/
+  `vf-licence` untouched. `eslint .` clean.
 
 ### Purchase orders and matching
 - Purchase order storage grounded in Peppol BIS Order Only 3.3, via UBL

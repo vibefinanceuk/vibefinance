@@ -216,8 +216,9 @@ function supervisorOverridesSection(problem) {
   const userPicker = el("select", {}, users.map((u) => el("option", { value: u.id, text: u.name })));
   const unitPicker = el("select", {}, units.map((u) => el("option", { value: u.id, text: u.name })));
   const supervisorPicker = el("select", {}, users.map((u) => el("option", { value: u.id, text: u.name })));
-  const addBtn = el("button", {
-    text: t("apsetup.add"),
+  const addBtn = actionLink("create", {
+    primary: true,
+    label: t("apsetup.add"),
     onclick: async () => {
       problem.textContent = "";
       try {
@@ -239,7 +240,10 @@ function supervisorOverridesSection(problem) {
   });
 
   return el("div", { class: "panel" }, [
-    el("div", { class: "cardhead" }, [el("h3", { text: t("apsetup.supervisoroverrides") })]),
+    el("div", { class: "cardhead" }, [
+      el("h3", { text: t("apsetup.supervisoroverrides") }),
+      el("div", { class: "statebuttons" }, [addBtn]),
+    ]),
     el("p", { class: "muted sm", text: t("apsetup.supervisoroverridessub") }),
     el("div", { class: "editgrid" }, [
       el("label", { text: t("apsetup.person") }),
@@ -249,7 +253,6 @@ function supervisorOverridesSection(problem) {
       el("label", { text: t("apsetup.supervisor") }),
       supervisorPicker,
     ]),
-    el("div", { class: "memberpickerrow" }, [addBtn]),
     ...searchableOverrideList({
       query: supervisorSearchQuery,
       onQueryChange: (value) => {
@@ -301,8 +304,9 @@ function limitOverridesSection(problem) {
   const unitPicker = el("select", {}, units.map((u) => el("option", { value: u.id, text: u.name })));
   const currencyInput = currencyPicker();
   const amountInput = el("input", { type: "number", min: "0" });
-  const addBtn = el("button", {
-    text: t("apsetup.add"),
+  const addBtn = actionLink("create", {
+    primary: true,
+    label: t("apsetup.add"),
     onclick: async () => {
       problem.textContent = "";
       const maxAmount = amountInput.value.trim();
@@ -331,7 +335,10 @@ function limitOverridesSection(problem) {
   });
 
   return el("div", { class: "panel" }, [
-    el("div", { class: "cardhead" }, [el("h3", { text: t("apsetup.limitoverrides") })]),
+    el("div", { class: "cardhead" }, [
+      el("h3", { text: t("apsetup.limitoverrides") }),
+      el("div", { class: "statebuttons" }, [addBtn]),
+    ]),
     el("p", { class: "muted sm", text: t("apsetup.limitoverridessub") }),
     el("div", { class: "editgrid" }, [
       el("label", { text: t("apsetup.person") }),
@@ -343,7 +350,6 @@ function limitOverridesSection(problem) {
       el("label", { text: t("apsetup.limitamount") }),
       amountInput,
     ]),
-    el("div", { class: "memberpickerrow" }, [addBtn]),
     ...searchableOverrideList({
       query: limitSearchQuery,
       onQueryChange: (value) => {

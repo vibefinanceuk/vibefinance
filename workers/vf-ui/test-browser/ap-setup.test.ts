@@ -330,6 +330,32 @@ describe("Approval Hierarchy — the override lists sit below their own add-row 
     editgridComesBeforeList(panelFor("Approval limit overrides"));
   });
 
+  /**
+   * **The Add button became an icon button in the card's own top-right
+   * — decision 0443.** Reported directly, once 0442 deployed: *"create
+   * a suitable icon for the Add button and move to the top-right of
+   * each card."* Same `.cardhead > .statebuttons > .actionlink` shape
+   * `modeForm`'s own Save button, right above these two sections, and
+   * every other screen's Create/Save button already use — not a new
+   * pattern invented for this.
+   */
+  it("the Add button is an icon button in the card's own top-right, for both override sections", async () => {
+    await openApSetupAs(["Admin.Configure"]);
+    switchTab("Approval Hierarchy");
+
+    for (const heading of ["Supervisor overrides", "Approval limit overrides"]) {
+      const panel = panelFor(heading);
+      const addButton = panel.querySelector(".cardhead .statebuttons .actionlink");
+      expect(addButton).not.toBeNull();
+      expect(addButton?.textContent).toContain("Add");
+      // An icon button carries its own SVG glyph, not just text — the
+      // same shape `actionLink()` gives every other icon button.
+      expect(addButton?.querySelector("svg")).not.toBeNull();
+      // No leftover plain-button row beneath the add-row form.
+      expect(panel.querySelector(".memberpickerrow")).toBeNull();
+    }
+  });
+
   it("a matching search narrows the supervisor override list; a non-matching one shows the no-match message", async () => {
     await openApSetupAs(["Admin.Configure"], EMPTY_OVERVIEW, {
       ...EMPTY_CONFIG,
