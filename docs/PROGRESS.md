@@ -2704,15 +2704,44 @@ section for the full reasoning and tests.
   but the pop-out itself shrinks from 900px to 556px — the report was
   about the pop-out reading too wide as a whole, and that's most of
   what changes here.
-- **Verified against the real, unmodified `app.css`** — not just the
-  mock-up's own reproduction of it — rendered headless in the dark
-  theme to confirm Close lands directly above the box's own right
-  edge and Org / Company Code matches the search boxes in both width
-  and height.
-- **Built and committed, not yet confirmed deployed** — CSS only,
-  touches `vf-ui`'s `app.css` alone; no `viewer.js` change, no
+- **Rendered against the real, unmodified `app.css`**, not just the
+  mock-up's own reproduction of it, and read as right by eye — Close
+  landed directly above the box's own right edge. **Confirmed
+  deployed, and reported live as still wrong** — see decision 0462
+  just below: the screenshot check here only looked, it never measured
+  the actual geometry, and `.popout`'s own `overflow: auto` was
+  quietly clipping the Org / Company Code box's own overflow at the
+  pop-out's edge rather than showing it, in an unscrolled screenshot.
+  Touches `vf-ui`'s `app.css` alone; no `viewer.js` change, no
   migration, no new string key — see decision 0461 for the full
-  reasoning and verification.
+  reasoning.
+
+### `.readonly` is a `<div>`, and `box-sizing` never reached it (0462)
+- **Reported live, with two screenshots, once 0461 deployed**:
+  *"the Org / Company Code field is way out of line again. It spills
+  out of the page...."*
+- **The actual root cause, at last** — 0460's `66.6667%` and 0461's
+  `width: 100%` both matched the search boxes' own number exactly, and
+  the box was still wider both times, because `width` doesn't mean the
+  same thing on the two elements. `tokens.css` gives every
+  `input`/`textarea` `box-sizing: border-box`; `.readonly` is a
+  `<div>`, never touched by that rule, so it renders at the
+  browser's default `content-box` — a `width: 100%` there adds
+  `.readonly`'s own 22px of horizontal padding *on top of* the
+  column, instead of counting it, the way the same `width` on a real
+  `<input>` already does.
+- **One property, one element** — `box-sizing: border-box` added to
+  `.popout.codingpopout .codingcompanycode` alone; `.readonly`'s own
+  shared rule untouched, with a one-line doc comment added there for
+  the next person who gives it an explicit width.
+- **Verified by measurement this time, not a screenshot** — read the
+  actual laid-out `getBoundingClientRect()` of both boxes against the
+  real, unmodified files: identical left and right edges, and
+  `.popout.scrollWidth === .popout.clientWidth` — no overflow, the
+  exact failure just reported.
+- **Built and committed, not yet confirmed deployed** — CSS only, one
+  property plus a doc comment; no migration, no new string key — see
+  decision 0462 for the full reasoning and verification.
 
 ### Purchase orders and matching
 - Purchase order storage grounded in Peppol BIS Order Only 3.3, via UBL
@@ -4141,7 +4170,7 @@ fresh whole-suite pass, since only that one file changed.
 | `docs/design/multi-authority-intake.md` | Non-EN-16931 authorities | Design only |
 | `docs/design/text-layer-extraction.md` | Reading a PDF's own text | Design only |
 | `docs/design/cost-object-approval-hierarchy.md` | Cost-Object Approval Hierarchy investigation (decision 0450) — its proposed shape and three open questions are now built and answered by decision 0452 | Design only |
-| `docs/decisions/` | 461 decision records | Current |
+| `docs/decisions/` | 462 decision records | Current |
 | `docs/decisions/SUPERSEDED.md` | Which records supersede which | **Read first** |
 
 Document 4's markdown source is at `docs/documents/`, with

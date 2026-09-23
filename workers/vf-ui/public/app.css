@@ -1965,16 +1965,27 @@
   .codingsearch .searchbox { margin: 0; }
 
   /*
-    **Org / Company Code, matched to the fields beneath it** — decision
-    0460's own ask, restated by decision 0461: the generic `.readonly`
-    rule (decision 0402) is 32px tall with no border, a real `<input>`
-    here is 38px with one. `min-height` still restates that one number
-    — `.readonly` is shared far too widely to touch its own default —
-    but `width` is now `100%` of the same `--codingfield-w` column
-    `.codingsearch` above resolves to, rather than its own separate
-    copy of `66.6667%`, so the two cannot read differently again.
+    **Org / Company Code, matched to the fields beneath it — decision
+    0462, the actual reason 0461's own `width: 100%` still rendered
+    wider than the search boxes (reported live again: "way out of
+    line... it spills out of the page").** `.readonly` is a `<div>`,
+    not an `<input>` — `tokens.css`'s own `box-sizing: border-box` rule
+    is stated for `input:not([type=checkbox]):not([type=radio]),
+    textarea` specifically, and never reaches it. A content-box div
+    with `width: 100%` and its own `padding: 8px 11px` (`.readonly`,
+    decision 0402) renders at *the column's own width plus 22px* — the
+    real reason this box was ever wider than the search boxes, in
+    every decision that touched it (0460's matching `66.6667%`, and
+    0461's matching `width: 100%`, both matched the *number* and still
+    rendered a different *pixel width*, since one box's padding counts
+    toward its own width and the other's doesn't). `box-sizing:
+    border-box` makes `width: 100%` mean the same thing here as it
+    already does for a real `<input>`. `min-height` still restates
+    `.readonly`'s own 32px as 38px — `.readonly` is shared far too
+    widely to touch its own default for one popout.
   */
   .popout.codingpopout .codingcompanycode {
+    box-sizing: border-box;
     min-height: 38px;
     width: 100%;
   }
@@ -2866,6 +2877,18 @@
     keep it reading as a flatter, non-interactive fill rather than
     something to click into, while still sharing `var(--radius)` so the
     two field types share one visual language.
+  */
+  /*
+    **No `box-sizing: border-box` here, unlike `tokens.css`'s own rule
+    for `input`/`textarea` — decision 0462's own finding.** A `.readonly`
+    div left at the browser's default `content-box` renders any
+    explicit `width` you give it plus this padding on top, unlike a
+    real `<input>` at the same width. Invisible everywhere today,
+    since nowhere else puts an explicit percentage or `100%` width on
+    one — `.popout.codingpopout .codingcompanycode` is the one place
+    that does, and states its own `box-sizing: border-box` for exactly
+    this reason. If a future screen ever gives `.readonly` an explicit
+    width too, it will hit the identical gap.
   */
   .readonly {
     min-height: 32px;
