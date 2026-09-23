@@ -53,6 +53,26 @@ interface LimitOverrideRow {
 }
 
 /**
+ * The four dimensions Cost-Object mode can route on — decision 0452,
+ * `cost_object_dimensions` (migration `0077`). Always exactly these
+ * four rows, seeded by that migration and never created or deleted
+ * here; only their `enabled`/`sequence` change.
+ */
+const COST_OBJECT_DIMENSIONS = ["cost_centre", "project", "commodity_code", "gl_code"] as const;
+type CostObjectDimensionId = (typeof COST_OBJECT_DIMENSIONS)[number];
+
+function isCostObjectDimension(value: unknown): value is CostObjectDimensionId {
+  return typeof value === "string" && (COST_OBJECT_DIMENSIONS as readonly string[]).includes(value);
+}
+
+interface DimensionRow {
+  list_type_id: CostObjectDimensionId;
+  name: string;
+  enabled: number;
+  sequence: number;
+}
+
+/**
  * Everything the tab needs, in one call — the same "one fetch, one
  * render" shape `/org/overview` already gives `access.js`.
  */
@@ -97,6 +117,18 @@ export async function handleGetApprovalConfig(db: D1Database): Promise<RouteResu
     )
     .all<LimitOverrideRow>();
 
+  // Cost-Object Priority — decision 0452. Fetched here too, the same
+  // "everything the tab needs, in one call" this route's own doc
+  // comment already promises, since the panel lives on this same tab.
+  const dimensions = await db
+    .prepare(
+      `SELECT d.list_type_id, t.name, d.enabled, d.sequence
+       FROM cost_object_dimensions d
+       JOIN coding_list_types t ON t.id = d.list_type_id
+       ORDER BY d.sequence`
+    )
+    .all<DimensionRow>();
+
   return {
     status: 200,
     body: {
@@ -119,8 +151,77 @@ export async function handleGetApprovalConfig(db: D1Database): Promise<RouteResu
         currency: r.currency,
         maxAmount: r.max_amount,
       })),
+      costObjectDimensions: dimensions.results.map((r) => ({
+        listTypeId: r.list_type_id,
+        name: r.name,
+        enabled: !!r.enabled,
+        sequence: r.sequence,
+      })),
     },
   };
+}
+
+interface SetCostObjectDimensionsBody {
+  dimensions?: unknown;
+}
+
+/**
+ * **Which cost-object dimensions route approval, and in what display
+ * order** — decision 0452's own write half of `handleGetApprovalConfig`'s
+ * new `costObjectDimensions`. Always exactly the four rows migration
+ * `0077` seeded; this updates `enabled`/`sequence` on named ones, and
+ * never creates or deletes a row — the same "closed vocabulary, upsert
+ * nothing that isn't already there" discipline `handleSetFieldVisibility`
+ * already applies to `field_visibility`.
+ */
+export async function handleSetCostObjectDimensions(
+  db: D1Database,
+  body: SetCostObjectDimensionsBody
+): Promise<RouteResult> {
+  const { dimensions } = body;
+  if (!Array.isArray(dimensions) || dimensions.length === 0) {
+    return { status: 400, body: { error: "dimensions (a non-empty array) is required" } };
+  }
+
+  const rows: { listTypeId: CostObjectDimensionId; enabled: boolean; sequence: number }[] = [];
+  for (const [index, entry] of dimensions.entries()) {
+    const { listTypeId, enabled, sequence } = (entry ?? {}) as Record<string, unknown>;
+    if (!isCostObjectDimension(listTypeId)) {
+      return {
+        status: 422,
+        body: { error: `${String(listTypeId)} is not a cost-object dimension this system knows` },
+      };
+    }
+    if (typeof enabled !== "boolean") {
+      return { status: 422, body: { error: `${listTypeId}: enabled must be true or false` } };
+    }
+    rows.push({
+      listTypeId,
+      enabled,
+      // Position in the request, unless one is given — the same
+      // convention `handleSetFieldVisibility`'s own sortOrder already
+      // uses, so a caller can express order simply by listing
+      // dimensions in the order it wants them displayed.
+      sequence: typeof sequence === "number" ? sequence : index,
+    });
+  }
+
+  const seen = new Set(rows.map((r) => r.listTypeId));
+  if (seen.size !== rows.length) {
+    return { status: 422, body: { error: "the same dimension was named more than once" } };
+  }
+
+  await db.batch(
+    rows.map((row) =>
+      db
+        .prepare(
+          "UPDATE cost_object_dimensions SET enabled = ?, sequence = ?, updated_at = ? WHERE list_type_id = ?"
+        )
+        .bind(row.enabled ? 1 : 0, row.sequence, new Date().toISOString(), row.listTypeId)
+    )
+  );
+
+  return { status: 200, body: { configured: rows.length } };
 }
 
 interface UpdateApprovalConfigBody {

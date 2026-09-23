@@ -294,6 +294,115 @@ describe("visitCurrentStage — a stage marked uses_approval_hierarchy resolves 
   });
 });
 
+describe("visitCurrentStage — Cost-Object mode spawns one task per resolved dimension, completable in parallel (decision 0452)", () => {
+  it("a line coded to two enabled dimensions raises two Approval tasks; the stage only advances once both are done", async () => {
+    await handleCreateProcess(env.DB, { id: "p1", name: "AP" });
+    await handleCreateUser(env.DB, { id: "alice", email: "alice@acme.com", name: "Alice" });
+    await handleCreateUser(env.DB, { id: "bob", email: "bob@acme.com", name: "Bob" });
+
+    await env.DB.prepare("UPDATE org_approval_config SET mode = 'cost_object' WHERE id = 1").run();
+    await env.DB.prepare("UPDATE cost_object_dimensions SET enabled = 1 WHERE list_type_id = 'project'").run();
+    await env.DB.prepare(
+      "INSERT INTO cost_centres (id, name, owner_user_id, approval_limit) VALUES ('cc1', 'Marketing', 'alice', 10000)"
+    ).run();
+    await env.DB.prepare(
+      "INSERT INTO coding_list_entries (list_type_id, id, name, approver_user_id, approval_limit) VALUES ('project', 'proj1', 'Mjolner', 'bob', 10000)"
+    ).run();
+
+    // Automatic — no rule set, cascades straight to Approval, exactly
+    // like the single-dimension test above.
+    await handleCreateStage(env.DB, "p1", { id: "coding", name: "Coding", sequence: 1 });
+    await seedRuleSet("rs-approval", {
+      conditions: { field: "BT-131", operator: "greater_than", value: -1 },
+      actions: [{ type: "assign_task", params: { team: "decoy-team", permission: "AP.Approve" } }],
+    });
+    await handleCreateStage(env.DB, "p1", { id: "approval", name: "Approval", sequence: 2, ruleSetId: "rs-approval", evaluationScope: "line" });
+    await env.DB.prepare("UPDATE process_stages SET uses_approval_hierarchy = 1 WHERE id = 'approval'").run();
+
+    const created = await handleCreateProcessInstance(env.DB, "p1", { subjectType: "invoice", subjectId: "inv-1" });
+    const instanceId = (created.body as { id: string }).id;
+
+    const lines = [{ lineNumber: 1, "BT-131": 1500, "BT-5": "EUR", "BT-133": "cc1", "coding.project": "proj1" }];
+    const result = await visitCurrentStage(env.DB, instanceId, { "BT-5": "EUR" }, lines);
+    expect(result.status).toBe(200);
+
+    const approvalTasks = await env.DB.prepare(
+      "SELECT owner_user_id, required_permission FROM tasks WHERE stage_id = 'approval' ORDER BY owner_user_id"
+    ).all<{ owner_user_id: string | null; required_permission: string }>();
+    // Both dimensions coded, both enabled — one task each, not one
+    // line-scope task and not "the highest-priority dimension wins."
+    expect(approvalTasks.results).toEqual([
+      { owner_user_id: "alice", required_permission: "AP.Approve" },
+      { owner_user_id: "bob", required_permission: "AP.Approve" },
+    ]);
+
+    const aliceTask = approvalTasks.results.find((t) => t.owner_user_id === "alice")!;
+    const bobTask = approvalTasks.results.find((t) => t.owner_user_id === "bob")!;
+    const aliceTaskId = (
+      await env.DB.prepare("SELECT id FROM tasks WHERE stage_id = 'approval' AND owner_user_id = 'alice'").first<{ id: string }>()
+    )!.id;
+    const bobTaskId = (
+      await env.DB.prepare("SELECT id FROM tasks WHERE stage_id = 'approval' AND owner_user_id = 'bob'").first<{ id: string }>()
+    )!.id;
+
+    // Completing only one leaves the other open — the instance does
+    // not advance. Same stage_visit_id-scoped gate onTaskCompleted
+    // already uses, no change needed for this to work.
+    await handleClaimTask(env.DB, aliceTaskId, "alice");
+    await handleCompleteTask(env.DB, aliceTaskId, "alice");
+    await onTaskCompleted(env.DB, aliceTaskId);
+
+    const stillWaiting = await env.DB.prepare("SELECT current_stage_id FROM process_instances WHERE id = ?").bind(instanceId).first();
+    expect(stillWaiting).toEqual({ current_stage_id: "approval" });
+
+    // Completing the second, independent task finally lets the
+    // instance move on — both dimensions' approvals were required,
+    // neither alone was enough.
+    await handleClaimTask(env.DB, bobTaskId, "bob");
+    await handleCompleteTask(env.DB, bobTaskId, "bob");
+    await onTaskCompleted(env.DB, bobTaskId);
+
+    const instanceStatus = await env.DB.prepare("SELECT status FROM process_instances WHERE id = ?").bind(instanceId).first();
+    // No stage after 'approval' in this test's own process — the
+    // instance completes, proving the gate actually released.
+    expect(instanceStatus).toEqual({ status: "completed" });
+  });
+
+  it("409s all-or-nothing when one of two coded dimensions cannot resolve — no partial task creation", async () => {
+    await handleCreateProcess(env.DB, { id: "p1", name: "AP" });
+    await handleCreateUser(env.DB, { id: "alice", email: "alice@acme.com", name: "Alice" });
+
+    await env.DB.prepare("UPDATE org_approval_config SET mode = 'cost_object' WHERE id = 1").run();
+    await env.DB.prepare("UPDATE cost_object_dimensions SET enabled = 1 WHERE list_type_id = 'project'").run();
+    await env.DB.prepare(
+      "INSERT INTO cost_centres (id, name, owner_user_id, approval_limit) VALUES ('cc1', 'Marketing', 'alice', 10000)"
+    ).run();
+    // 'proj1' is coded on the line below but never created as a
+    // coding_list_entries row — its chain resolves to nothing, and no
+    // Default Approver is configured either.
+    await handleCreateStage(env.DB, "p1", { id: "coding", name: "Coding", sequence: 1 });
+    await seedRuleSet("rs-approval", {
+      conditions: { field: "BT-131", operator: "greater_than", value: -1 },
+      actions: [{ type: "assign_task", params: { team: "decoy-team", permission: "AP.Approve" } }],
+    });
+    await handleCreateStage(env.DB, "p1", { id: "approval", name: "Approval", sequence: 2, ruleSetId: "rs-approval", evaluationScope: "line" });
+    await env.DB.prepare("UPDATE process_stages SET uses_approval_hierarchy = 1 WHERE id = 'approval'").run();
+
+    const created = await handleCreateProcessInstance(env.DB, "p1", { subjectType: "invoice", subjectId: "inv-1" });
+    const instanceId = (created.body as { id: string }).id;
+
+    const lines = [{ lineNumber: 1, "BT-131": 1500, "BT-5": "EUR", "BT-133": "cc1", "coding.project": "proj1" }];
+    const result = await visitCurrentStage(env.DB, instanceId, { "BT-5": "EUR" }, lines);
+    expect(result.status).toBe(409);
+    expect((result.body as { reason: string }).reason).toBe("approval_hierarchy_unresolved");
+
+    // Not even the cost centre's own, perfectly resolvable task exists —
+    // all-or-nothing, not "create what you can."
+    const taskCount = await env.DB.prepare("SELECT count(*) AS n FROM tasks WHERE stage_id = 'approval'").first<{ n: number }>();
+    expect(taskCount?.n).toBe(0);
+  });
+});
+
 describe("visitCurrentStage — route_to", () => {
   it("advances to the named stage, skipping intermediate sequence stages", async () => {
     await handleCreateProcess(env.DB, { id: "p1", name: "AP" });

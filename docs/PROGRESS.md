@@ -2271,6 +2271,116 @@ section for the full reasoning and tests.
   sql applied"* — all three, including migration `0152`'s own apply
   step, in one report.
 
+### Cost-Object Approval Hierarchy — Phase 2 (0452)
+- **Phase 2 of the plan 0451 started**, built on the operator's own
+  explicit approval to proceed once Phase 1 landed (*"yes, lets
+  move on"*), and on the operator's own settled answer to 0450's first
+  open question, given directly: *"I had envisaged that multiple
+  approval requirements for each line as a result of different cost
+  center, would spawn multiple tasks that could be completed in
+  parallel."* 0184's own literal *"parallel across cost objects"*
+  reading, not the mock-up's own tentative "highest-priority dimension
+  wins" assumption, which predated the operator settling the question
+  either way.
+- **The resolver, generalized without touching what it replaces** —
+  `approval-hierarchy.ts`. `resolveApprovalHierarchy` (singular) is
+  completely unchanged, still what every one of the ~15 existing,
+  meaningful tests in `approval-hierarchy.test.ts` calls, and still
+  what `workflow-engine.ts` falls back to via a one-element wrap for
+  every mode but Cost-Object. A new, parallel `resolveApprovalTargets`
+  is the plural entry point `workflow-engine.ts` now calls instead:
+  for Cost-Object mode, a new `resolveCostObjects` resolves **every
+  dimension that is both enabled in configuration and has a coded
+  value on the line**, independently — a dimension with no coded value
+  is skipped, not a failure; a line with nothing applicable to any
+  enabled dimension gets exactly the same single "no cost-object
+  information" fallback `resolveCostObject` (singular, still used
+  unchanged for the no-cost-object case) always gave. The generalized
+  chain walk (`resolveChainFor`) dispatches to the existing, untouched
+  `resolveApprovalChain` for `cost_centre`, and to a new walk over
+  `coding_list_entries` — same rule, same climb-while-uncovered,
+  stop-at-first-owner-whose-limit-covers, null limit is unlimited — for
+  the other three dimensions, "generalized, not rewritten," per 0450's
+  own design document's own stated principle.
+- **`workflow-engine.ts`'s task-creation loop, restructured to spawn
+  one task per resolved target, not one per line** — computes a
+  `targets` array (one entry for the ordinary single-team/user path,
+  one per resolved cost-object dimension for the new one), all sharing
+  the same `stage_visit_id` and `lineNumber`. All-or-nothing: any
+  unresolved dimension refuses the whole stage visit with a 409
+  (`approval_hierarchy_unresolved`), never partial task creation.
+  Needed **no change at all** to `onTaskCompleted`'s own advancement
+  gate — it already counts open tasks by `stage_visit_id` alone, with
+  no per-line or per-dimension distinction, so several parallel tasks
+  for one line already correctly block advancement until every one of
+  them is completed. Proven end to end, not just unit-level: a new
+  `workflow-engine.test.ts` describe block spawns a real two-dimension
+  line, completes one task and confirms the instance is still waiting,
+  then completes the second and confirms it actually advances — plus a
+  companion test confirming the all-or-nothing 409 creates zero tasks,
+  not "the ones that resolved."
+- **Migration `0077`**: the missing half of what Cost Centre already
+  has — `approval_limit` added to `coding_list_entries` (same nullable
+  `REAL`, same non-negative `CHECK` `cost_centres.approval_limit`
+  already carries) — and a new `cost_object_dimensions` table (one row
+  per dimension, `enabled`/`sequence`), seeded with only `cost_centre`
+  enabled — **zero behaviour change on deploy**, since nothing routes
+  differently until an operator turns a new dimension on deliberately.
+  `sequence` is explicitly documented as display order only, not
+  resolution priority — the mock-up's own "Priority" name predates the
+  operator settling that every enabled, coded dimension resolves in
+  parallel, not "first wins." Replayed clean:
+  `apply_migrations.py --replay-only`, 77 migrations, 174 standing
+  invariants, all held.
+- **`coding-list-route.ts` extended** with `approvalLimit` on the
+  three greenfield lists, mirroring `ledger-route.ts`'s own
+  `handleUpdateCostCentre` exactly — including its own existing quirk,
+  deliberately replicated rather than "fixed": an approval limit can
+  only be set in the same request that also names the owner, even if
+  the entry already has one from a prior call. `approval-config-
+  route.ts` extended too: `GET /approval-config` now also returns
+  `costObjectDimensions` (joined for display names); a new
+  `PUT /approval-config/cost-object-dimensions` validates an array of
+  `{listTypeId, enabled, sequence}`, refuses an unknown dimension
+  (`company_code` is not a valid one) or a duplicate, and only ever
+  updates the four seeded rows — never creates or deletes one.
+- **Both real screens from 0450's own mock-up, built — not a second
+  mock-up.** `ap-setup.js`'s Approval Hierarchy tab gains a real
+  **Cost-Object Priority** panel, shown only when Mode reads
+  Cost-Object, with its own copy corrected for what the operator
+  actually settled (every enabled, coded dimension raises its own
+  task, in parallel — not first-match-wins), and drag-to-reorder
+  reusing `processes.js`'s own stage-sequence drag control (0352)
+  rather than the mock-up's own bespoke up/down buttons and switch
+  styling, which nothing else in this app's real screens has. Every
+  toggle or reorder saves immediately, sending the full four-row array
+  — the same "replace, not merge" shape this tab's own mode form
+  already uses. `coding-lists.js`'s Project/Commodity Code/General
+  Ledger Code tables and forms gain the Approval Limit column and
+  field the mock-up proposed, in the same place Cost Centre's own
+  already sits — reusing that field's own existing string
+  (`apsetup.codingapprovallimit`) rather than a second copy of the
+  same word.
+- **All three of 0450's own open questions are now answered, not
+  reopened**: priority means all-enabled-and-coded-dimensions resolve
+  in parallel, confirmed directly by the operator and built exactly
+  that way; a line gets coded to a Project/Commodity Code/GL Code
+  through decision 0451's own Line Level Account Coding, the
+  precondition this Phase 2 work was always waiting on; and the
+  per-line-amount convention (a line's own net amount, never an
+  aggregate) is kept exactly as-is for every dimension a line
+  resolves, since this design never apportions one line's amount
+  across more than one cost object.
+- **Not built**: no Coding stage, no enforcement of a keyed value
+  against Account Coding's own lists, no `AP.Code` wiring — all three
+  are decision 0451's own named, separate, still-unbuilt scope,
+  untouched by this Phase 2 work, which only ever concerned routing
+  once a value already exists on a line.
+- **Built and tested, not yet pushed or deployed.** See decision 0452
+  for the full reasoning and the targeted verification this segment's
+  own known `vf-app` full-suite timeout (0448/0449/0451) required in
+  its place.
+
 ### Purchase orders and matching
 - Purchase order storage grounded in Peppol BIS Order Only 3.3, via UBL
   XML ingestion (0081) and CSV load (0370) — the same tables, the same
@@ -3537,14 +3647,15 @@ elsewhere.
 |---|---|
 | `vf-app` | 2618 baseline + 6 new this decision, not re-confirmed by a full run — see note below |
 | `vf-licence` | 320 |
-| `vf-ui` | 74 Worker · 1034 browser, all passing — see below |
+| `vf-ui` | 74 Worker · 1040 browser, all passing — see below |
 | `shared` | 295 passing, 3 known pre-existing failures |
 
 Both migration chains replay clean with every standing invariant
-holding — 76 migrations for `vf-app` (170 invariants); `vf-licence`'s
-own 152-migration chain has no equivalent Python replay, and is
-instead validated through `workers/vf-licence/test/setup.ts` +
-`string-coverage.test.ts`, both green as of decision 0451.
+holding — 77 migrations for `vf-app` (174 invariants, up from 76/170 —
+decision 0452's own migration `0077`); `vf-licence`'s own
+153-migration chain has no equivalent Python replay, and is instead
+validated through `workers/vf-licence/test/setup.ts` +
+`string-coverage.test.ts`, both green as of decision 0452.
 
 **Decision 0448's own `vf-app` count is not re-verified against the
 full, whole-repo suite** — this session's own tool timeout could not
@@ -3585,6 +3696,29 @@ confirmed by one unfiltered whole-suite run. The 2618 `vf-app` figure
 above is arithmetic (2618 + 6), not a fresh whole-suite confirmation —
 named as such rather than presented as measured, following 0380's own
 precedent for exactly this situation.
+
+**Decision 0452 hit the identical full-suite timeout** — the targeted
+run instead covered every file this decision's own production code
+touches: `test/approval-hierarchy.test.ts` **30/30** (21 pre-existing +
+9 new, exercising `resolveApprovalTargets`/`resolveCostObjects`
+directly), `test/workflow-engine.test.ts` **53/53** (51 pre-existing +
+2 new end-to-end multi-task-per-line tests), run together with
+`test/coding-list-route.test.ts`, `test/coding-list-csv-route.test.ts`,
+`test/accounting-frame.test.ts`, and `test/approval-config-route.test.ts`
+— **213/213** across all six files in one run.
+`migrations/apply_migrations.py --replay-only` clean — **77
+migrations, 174 invariants**. `workers/vf-licence`'s full suite
+**320/320** (unchanged in count — migration `0153` adds rows to the
+existing `ui_strings` table, not a new test file), including
+`string-coverage.test.ts` **10/10**, confirmed by one unfiltered
+whole-suite run. The `vf-app` figure above stays arithmetic, not a
+fresh whole-suite confirmation, the same 0451 precedent. The `vf-ui`
+browser figure moved from 1034 to **1040** (+6 — 1 in
+`coding-lists.test.ts`, 5 in `ap-setup.test.ts`, decision 0452's own
+Approval Limit field and Cost-Object Priority panel coverage),
+confirmed by an unfiltered whole-suite run (48 files); the
+`document-window.test.ts` unhandled-rejection flake is present at its
+identical baseline count (160 errors), unrelated to this decision.
 
 **`vf-ui` browser previously carried 4 known failures**, all in
 `test-browser/document-window.test.ts` — a long-documented,
@@ -3642,11 +3776,11 @@ fresh whole-suite pass, since only that one file changed.
 | Design Document 4 | Source and intake | Current |
 | `docs/design/extraction.md` | Extraction, with build record | Current |
 | `docs/design/operator-interface.md` | The screens, and what blocks them | Current |
-| `docs/design/mockups/` | Five screens as static HTML — four predating any build, plus one proposed addition to a live screen (decision 0450) | Current |
+| `docs/design/mockups/` | Five screens as static HTML — four predating any build; the fifth, the Cost-Object Priority panel and Account Coding's Approval Limit column (decision 0450), is now built for real (decision 0452) — the mock-up stays as the record of what was proposed, not the shipped screen | Current |
 | `docs/design/multi-authority-intake.md` | Non-EN-16931 authorities | Design only |
 | `docs/design/text-layer-extraction.md` | Reading a PDF's own text | Design only |
-| `docs/design/cost-object-approval-hierarchy.md` | Cost-Object Approval Hierarchy investigation (decision 0450) | Design only |
-| `docs/decisions/` | 451 decision records | Current |
+| `docs/design/cost-object-approval-hierarchy.md` | Cost-Object Approval Hierarchy investigation (decision 0450) — its proposed shape and three open questions are now built and answered by decision 0452 | Design only |
+| `docs/decisions/` | 452 decision records | Current |
 | `docs/decisions/SUPERSEDED.md` | Which records supersede which | **Read first** |
 
 Document 4's markdown source is at `docs/documents/`, with

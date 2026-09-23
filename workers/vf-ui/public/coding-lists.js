@@ -98,6 +98,17 @@ import { icon } from "/icons.js";
  * fetched for other pickers across the app) — nothing new to fetch
  * there at all, now that the table itself no longer needs to double as
  * that picker's own data source.
+ *
+ * **Approval Limit — decision 0452, the mock-up's own proposed column,
+ * now real.** Project, Commodity Code, and General Ledger Code gain
+ * the same field Cost Centre's own table and form have carried since
+ * 0444 — `coding-list-route.ts`'s own `EntryBody.approvalLimit`, always
+ * sent alongside the approver in the same request (this form, unlike
+ * Cost Centre's, already shows every field in both create and edit),
+ * so the route's own "a limit needs an owner in the same call" rule
+ * never surprises this screen. Reuses `apsetup.codingapprovallimit` —
+ * Cost Centre's own existing string — rather than a second copy of the
+ * same word.
  */
 
 const CODING_TABS = [
@@ -682,6 +693,14 @@ function openCodingEntryForm(listType, listLabelKey, existing, { entries, declar
     el("option", { value: "", text: t("roles.none") }),
     ...users.map((u) => el("option", { value: u.id, text: u.name, ...(u.id === existing?.approverUserId ? { selected: "selected" } : {}) })),
   ]);
+  // The missing half of what Cost Centre's own form already has —
+  // decision 0452. Same field, same "sent alongside the approver in
+  // the same request, always" shape `openCostCentreForm`'s own
+  // limitInput already established, here in both create and edit
+  // (this form, unlike Cost Centre's, already shows every field in
+  // both) — `coding-list-route.ts` refuses a limit with no owner in
+  // the same call, and this form always sends both together.
+  const limitInput = el("input", { type: "number", min: "0", value: existing?.approvalLimit ?? "" });
 
   const formRows = [
     el("label", { text: t("apsetup.codingid") }),
@@ -694,6 +713,8 @@ function openCodingEntryForm(listType, listLabelKey, existing, { entries, declar
     defaultCheckbox,
     el("label", { text: t("apsetup.codingapprover") }),
     approverPicker,
+    el("label", { text: t("apsetup.codingapprovallimit") }),
+    limitInput,
   ];
 
   const filterPickers = {};
@@ -718,6 +739,8 @@ function openCodingEntryForm(listType, listLabelKey, existing, { entries, declar
       for (const [filterListTypeId, picker] of Object.entries(filterPickers)) {
         filters[filterListTypeId] = picker.value || null;
       }
+      const limit = limitInput.value.trim();
+      const approvalLimit = limit === "" ? null : Number(limit);
       try {
         const response = existing
           ? await fetch(`/api/coding-lists/${encodeURIComponent(listType)}/${encodeURIComponent(existing.id)}`, {
@@ -728,6 +751,7 @@ function openCodingEntryForm(listType, listLabelKey, existing, { entries, declar
                 parentEntryId: parentPicker.value || null,
                 isDefault: defaultCheckbox.checked,
                 approverUserId: approverPicker.value || null,
+                approvalLimit,
                 filters,
               }),
             })
@@ -740,6 +764,7 @@ function openCodingEntryForm(listType, listLabelKey, existing, { entries, declar
                 parentEntryId: parentPicker.value || null,
                 isDefault: defaultCheckbox.checked,
                 approverUserId: approverPicker.value || null,
+                approvalLimit,
                 filters,
               }),
             });
@@ -777,6 +802,7 @@ function codingEntryRow(entry, declaredFilters, onClick) {
     el("td", { text: entry.name }),
     el("td", { class: "muted", text: entry.parentName ?? "—" }),
     el("td", { class: "muted", text: entry.approverName ?? "—" }),
+    el("td", { class: "muted", text: entry.approvalLimit ?? "—" }),
     el("td", { class: "muted", text: entry.isDefault ? t("roles.yes") : "—" }),
   ];
   for (const filterListTypeId of declaredFilters) {
@@ -818,7 +844,7 @@ async function openCodingEntryEditor(listType, titleKey, existing) {
 
 function codingListTab(listType, titleKey, subKey, emptyKey) {
   const state = tableState[listType];
-  const headers = ["apsetup.codingname", "apsetup.codingparent", "apsetup.codingapprover", "apsetup.codingdefault"];
+  const headers = ["apsetup.codingname", "apsetup.codingparent", "apsetup.codingapprover", "apsetup.codingapprovallimit", "apsetup.codingdefault"];
   for (const filterListTypeId of state.declaredFilters) {
     headers.push(`apsetup.codingtab.${filterListTypeId === "company_code" ? "companycode" : "commoditycode"}`);
   }

@@ -140,6 +140,7 @@ import accountCodingSearchAndPaginationStringsSql from "../migrations/0149_accou
 import orgCompanyCodeNamingAlignmentSql from "../migrations/0150_org_company_code_naming_alignment.sql?raw";
 import tasksSearchAndPaginationStringsSql from "../migrations/0151_tasks_search_and_pagination_strings.sql?raw";
 import lineLevelAccountCodingFieldLabelsSql from "../migrations/0152_line_level_account_coding_field_labels.sql?raw";
+import costObjectPriorityStringsSql from "../migrations/0153_cost_object_priority_strings.sql?raw";
 
 function stripSqlComments(sql: string): string {
   return sql
@@ -303,5 +304,6 @@ export async function applyTestSchema(): Promise<void> {
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(orgCompanyCodeNamingAlignmentSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(tasksSearchAndPaginationStringsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(lineLevelAccountCodingFieldLabelsSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(costObjectPriorityStringsSql)));
 
 }

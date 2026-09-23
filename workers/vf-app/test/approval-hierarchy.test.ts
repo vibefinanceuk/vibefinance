@@ -9,6 +9,7 @@ import {
   resolveSupervisorId,
   findLineCoder,
   resolveApprovalHierarchy,
+  resolveApprovalTargets,
 } from "../src/approval-hierarchy.js";
 
 /**
@@ -344,6 +345,211 @@ describe("resolveApprovalHierarchy — cost_object mode", () => {
       costCentreId: null,
     });
     expect(resolution).toMatchObject({ targetUserId: "bob" });
+  });
+});
+
+describe("resolveApprovalTargets — the plural entry point (decision 0452)", () => {
+  it("every mode but cost_object still wraps a single answer in a one-element array", async () => {
+    await env.DB.prepare("UPDATE org_approval_config SET default_approver_user_id = 'bob' WHERE id = 1").run();
+    const resolutions = await resolveApprovalTargets(env.DB, {
+      instanceId: "inv-1",
+      processId: "p1",
+      currentSequence: 2,
+      processVersion: 1,
+      lineNumber: 1,
+      unitId: null,
+      currency: "EUR",
+      amount: 1500,
+      costCentreId: null,
+    });
+    expect(resolutions).toHaveLength(1);
+    expect(resolutions[0]).toMatchObject({ targetUserId: "bob" });
+  });
+});
+
+describe("resolveApprovalTargets — cost_object mode, generalized across dimensions (decision 0452)", () => {
+  beforeEach(async () => {
+    await env.DB.prepare("UPDATE org_approval_config SET mode = 'cost_object' WHERE id = 1").run();
+    // coding_list_types and cost_object_dimensions are both seeded by
+    // migrations 0076/0077 themselves — 'project' already exists, and
+    // only cost_centre starts enabled.
+  });
+
+  it("only cost centre enabled and coded — exactly what resolveCostObject (singular) already did, unchanged", async () => {
+    await env.DB.prepare(
+      "INSERT INTO cost_centres (id, name, owner_user_id, approval_limit) VALUES ('cc1', 'Marketing', 'alice', 2000)"
+    ).run();
+
+    const resolutions = await resolveApprovalTargets(env.DB, {
+      instanceId: "inv-1",
+      processId: "p1",
+      currentSequence: 2,
+      processVersion: 1,
+      lineNumber: 1,
+      unitId: null,
+      currency: "EUR",
+      amount: 1500,
+      costCentreId: "cc1",
+    });
+    expect(resolutions).toEqual([{ targetUserId: "alice", reasoning: "cost centre chain: cc1." }]);
+  });
+
+  it("a dimension with no coded value on the line is not consulted, even when enabled", async () => {
+    await env.DB.prepare(
+      "UPDATE cost_object_dimensions SET enabled = 1 WHERE list_type_id = 'project'"
+    ).run();
+    await env.DB.prepare(
+      "INSERT INTO cost_centres (id, name, owner_user_id, approval_limit) VALUES ('cc1', 'Marketing', 'alice', 2000)"
+    ).run();
+
+    const resolutions = await resolveApprovalTargets(env.DB, {
+      instanceId: "inv-1",
+      processId: "p1",
+      currentSequence: 2,
+      processVersion: 1,
+      lineNumber: 1,
+      unitId: null,
+      currency: "EUR",
+      amount: 1500,
+      costCentreId: "cc1",
+      // No project value on this line — project stays not applicable.
+    });
+    expect(resolutions).toEqual([{ targetUserId: "alice", reasoning: "cost centre chain: cc1." }]);
+  });
+
+  it("an enabled dimension with a coded value raises its own chain over coding_list_entries", async () => {
+    await env.DB.prepare("UPDATE cost_object_dimensions SET enabled = 1 WHERE list_type_id = 'project'").run();
+    await env.DB.prepare(
+      "INSERT INTO coding_list_entries (list_type_id, id, name, approver_user_id, approval_limit) VALUES ('project', 'p1', 'Mjolner', 'bob', 5000)"
+    ).run();
+
+    const resolutions = await resolveApprovalTargets(env.DB, {
+      instanceId: "inv-1",
+      processId: "p1",
+      currentSequence: 2,
+      processVersion: 1,
+      lineNumber: 1,
+      unitId: null,
+      currency: "EUR",
+      amount: 1500,
+      costCentreId: null,
+      costObjectValues: { project: "p1" },
+    });
+    expect(resolutions).toEqual([{ targetUserId: "bob", reasoning: "project chain: p1." }]);
+  });
+
+  it("escalates via parent_entry_id when the immediate entry's own limit doesn't cover it", async () => {
+    await env.DB.prepare("UPDATE cost_object_dimensions SET enabled = 1 WHERE list_type_id = 'project'").run();
+    await env.DB.prepare(
+      "INSERT INTO coding_list_entries (list_type_id, id, name, approver_user_id, approval_limit) VALUES ('project', 'parent', 'Group', 'bob', NULL)"
+    ).run();
+    await env.DB.prepare(
+      "INSERT INTO coding_list_entries (list_type_id, id, name, approver_user_id, approval_limit, parent_entry_id) VALUES ('project', 'child', 'Team', 'alice', 100, 'parent')"
+    ).run();
+
+    const resolutions = await resolveApprovalTargets(env.DB, {
+      instanceId: "inv-1",
+      processId: "p1",
+      currentSequence: 2,
+      processVersion: 1,
+      lineNumber: 1,
+      unitId: null,
+      currency: "EUR",
+      amount: 5000, // over alice's 100 limit, uncapped for bob (NULL)
+      costCentreId: null,
+      costObjectValues: { project: "child" },
+    });
+    expect(resolutions).toEqual([{ targetUserId: "bob", reasoning: "project chain: child → parent." }]);
+  });
+
+  it("the operator's own envisaged design: two enabled, coded dimensions on one line raise two independent tasks", async () => {
+    await env.DB.prepare("UPDATE cost_object_dimensions SET enabled = 1 WHERE list_type_id = 'project'").run();
+    await env.DB.prepare(
+      "INSERT INTO cost_centres (id, name, owner_user_id, approval_limit) VALUES ('cc1', 'Marketing', 'alice', 2000)"
+    ).run();
+    await env.DB.prepare(
+      "INSERT INTO coding_list_entries (list_type_id, id, name, approver_user_id, approval_limit) VALUES ('project', 'p1', 'Mjolner', 'bob', 5000)"
+    ).run();
+
+    const resolutions = await resolveApprovalTargets(env.DB, {
+      instanceId: "inv-1",
+      processId: "p1",
+      currentSequence: 2,
+      processVersion: 1,
+      lineNumber: 1,
+      unitId: null,
+      currency: "EUR",
+      amount: 1500,
+      costCentreId: "cc1",
+      costObjectValues: { project: "p1" },
+    });
+    // Both, not the higher-priority one alone — 0184's own "parallel
+    // across cost objects" reading, settled by the operator directly.
+    expect(resolutions).toHaveLength(2);
+    expect(resolutions).toEqual(
+      expect.arrayContaining([
+        { targetUserId: "alice", reasoning: "cost centre chain: cc1." },
+        { targetUserId: "bob", reasoning: "project chain: p1." },
+      ])
+    );
+  });
+
+  it("a coded, enabled dimension whose chain runs out uncovered resolves to the Default Approver, independently of the other dimension", async () => {
+    await env.DB.prepare("UPDATE cost_object_dimensions SET enabled = 1 WHERE list_type_id = 'project'").run();
+    await env.DB.prepare("UPDATE org_approval_config SET default_approver_user_id = 'bob' WHERE id = 1").run();
+    await env.DB.prepare(
+      "INSERT INTO cost_centres (id, name, owner_user_id, approval_limit) VALUES ('cc1', 'Marketing', 'alice', 2000)"
+    ).run();
+    // A project entry with no approver at all — the chain runs out immediately.
+    await env.DB.prepare("INSERT INTO coding_list_entries (list_type_id, id, name) VALUES ('project', 'p1', 'Mjolner')").run();
+
+    const resolutions = await resolveApprovalTargets(env.DB, {
+      instanceId: "inv-1",
+      processId: "p1",
+      currentSequence: 2,
+      processVersion: 1,
+      lineNumber: 1,
+      unitId: null,
+      currency: "EUR",
+      amount: 1500,
+      costCentreId: "cc1",
+      costObjectValues: { project: "p1" },
+    });
+    expect(resolutions).toHaveLength(2);
+    expect(resolutions).toContainEqual({ targetUserId: "alice", reasoning: "cost centre chain: cc1." });
+    expect(resolutions.find((r) => "targetUserId" in r && r.targetUserId === "bob")).toBeTruthy();
+  });
+
+  it("no dimension is both enabled and coded — resolves to one default/unresolved result, same as before this decision", async () => {
+    await env.DB.prepare("UPDATE org_approval_config SET default_approver_user_id = 'bob' WHERE id = 1").run();
+
+    const resolutions = await resolveApprovalTargets(env.DB, {
+      instanceId: "inv-1",
+      processId: "p1",
+      currentSequence: 2,
+      processVersion: 1,
+      lineNumber: 1,
+      unitId: null,
+      currency: "EUR",
+      amount: 1500,
+      costCentreId: null,
+    });
+    expect(resolutions).toEqual([{ targetUserId: "bob", reasoning: "No cost-object information recorded for this line. Sent to the configured Default Approver." }]);
+  });
+
+  it("reports unresolved, not a guess, when no dimension applies and no Default Approver is configured", async () => {
+    const resolutions = await resolveApprovalTargets(env.DB, {
+      instanceId: "inv-1",
+      processId: "p1",
+      currentSequence: 2,
+      processVersion: 1,
+      lineNumber: 1,
+      unitId: null,
+      currency: "EUR",
+      amount: 1500,
+      costCentreId: null,
+    });
+    expect(resolutions).toEqual([{ unresolved: true, reason: "No cost-object information recorded for this line. No Default Approver is configured." }]);
   });
 });
 

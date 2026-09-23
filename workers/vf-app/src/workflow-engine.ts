@@ -10,7 +10,7 @@ import { applySetFieldActions, type FieldOverride } from "./set-field.js";
 import { resolveRuleSetForStage } from "./unit-config.js";
 import { loadActiveRuleSet } from "./rule-set-loader.js";
 import { handleCreateTask } from "./task-route.js";
-import { resolveApprovalHierarchy } from "./approval-hierarchy.js";
+import { resolveApprovalTargets, type ApprovalResolution } from "./approval-hierarchy.js";
 import type { RouteResult } from "./org-route.js";
 
 /**
@@ -640,19 +640,26 @@ export async function visitCurrentStage(
 
       /**
        * **A stage marked `uses_approval_hierarchy` resolves its own
-       * target — decision 0439.** Whatever team/user the rule names
-       * is ignored here, the same "the stage's own wins" shape
-       * `required_permission` above already established, not a second
-       * vocabulary a rule author could disagree with. The amount
-       * tested is the line's own net amount (BT-131) for a line-scope
-       * evaluation, or the invoice total (BT-112) for a header-scope
-       * one — whichever this evaluation's own facts carry.
+       * target(s) — decision 0439, generalized to more than one by
+       * decision 0452.** Whatever team/user the rule names is ignored
+       * here, the same "the stage's own wins" shape `required_permission`
+       * above already established, not a second vocabulary a rule
+       * author could disagree with. The amount tested is the line's
+       * own net amount (BT-131) for a line-scope evaluation, or the
+       * invoice total (BT-112) for a header-scope one — whichever this
+       * evaluation's own facts carry.
+       *
+       * **One task per resolved target, not one task per line** —
+       * decision 0452's own multi-dimension Cost-Object mode can
+       * resolve more than one, each raised independently and
+       * completable in parallel, per the operator's own envisaged
+       * design. Every other mode still resolves to exactly one, so
+       * this is a one-element loop for them — no behaviour change.
        */
-      let teamId = params.team;
-      let userId = params.user;
+      let targets: Array<{ teamId?: string; userId?: string }>;
       if (stage.uses_approval_hierarchy) {
         const amountRaw = lineNumber !== null ? taskFacts["BT-131"] : taskFacts["BT-112"];
-        const resolution = await resolveApprovalHierarchy(db, {
+        const resolutions = await resolveApprovalTargets(db, {
           instanceId: currentInstanceId,
           processId: stage.process_id,
           currentSequence: stage.sequence,
@@ -662,33 +669,48 @@ export async function visitCurrentStage(
           currency: typeof taskFacts["BT-5"] === "string" ? (taskFacts["BT-5"] as string) : null,
           amount: typeof amountRaw === "number" ? amountRaw : null,
           costCentreId: typeof taskFacts["BT-133"] === "string" ? (taskFacts["BT-133"] as string) : null,
+          costObjectValues: {
+            project: typeof taskFacts["coding.project"] === "string" ? (taskFacts["coding.project"] as string) : null,
+            commodity_code:
+              typeof taskFacts["coding.commodity_code"] === "string" ? (taskFacts["coding.commodity_code"] as string) : null,
+            gl_code: typeof taskFacts["coding.gl_code"] === "string" ? (taskFacts["coding.gl_code"] as string) : null,
+          },
         });
-        if ("unresolved" in resolution) {
+        // All-or-nothing: a line where even one applicable dimension
+        // could not resolve refuses the whole stage visit, the same
+        // discipline decision 0439 already applied to a single
+        // unresolved chain — never create some of a line's approval
+        // tasks and silently skip the rest.
+        const unresolved = resolutions.find((r) => "unresolved" in r);
+        if (unresolved && "reason" in unresolved) {
           return {
             status: 409,
-            body: { error: `approval hierarchy could not resolve a target for stage ${stage.id}: ${resolution.reason}`, reason: "approval_hierarchy_unresolved" },
+            body: { error: `approval hierarchy could not resolve a target for stage ${stage.id}: ${unresolved.reason}`, reason: "approval_hierarchy_unresolved" },
           };
         }
-        teamId = undefined;
-        userId = resolution.targetUserId;
+        targets = (resolutions as ApprovalResolution[]).map((r) => ({ userId: r.targetUserId }));
+      } else {
+        targets = [{ teamId: params.team as string | undefined, userId: params.user as string | undefined }];
       }
 
-      const createResult = await handleCreateTask(db, {
-        id: crypto.randomUUID(),
-        stageId: stage.id,
-        teamId,
-        userId,
-        requiredPermission: stage.required_permission ?? params.permission,
-      });
-      if (createResult.status !== 201) {
-        return { status: 500, body: { error: `assign_task fired an invalid task: ${JSON.stringify(createResult.body)}` } };
+      for (const { teamId, userId } of targets) {
+        const createResult = await handleCreateTask(db, {
+          id: crypto.randomUUID(),
+          stageId: stage.id,
+          teamId,
+          userId,
+          requiredPermission: stage.required_permission ?? params.permission,
+        });
+        if (createResult.status !== 201) {
+          return { status: 500, body: { error: `assign_task fired an invalid task: ${JSON.stringify(createResult.body)}` } };
+        }
+        const newTaskId = (createResult.body as { id: string }).id;
+        await db
+          .prepare("UPDATE tasks SET stage_visit_id = ?, line_number = ? WHERE id = ?")
+          .bind(visitId, lineNumber, newTaskId)
+          .run();
+        tasksCreated++;
       }
-      const newTaskId = (createResult.body as { id: string }).id;
-      await db
-        .prepare("UPDATE tasks SET stage_visit_id = ?, line_number = ? WHERE id = ?")
-        .bind(visitId, lineNumber, newTaskId)
-        .run();
-      tasksCreated++;
     }
 
     visitsThisCall.push({ stageId: stage.id, outcome: anyMatched ? "matched" : "no_match", tasksCreated });

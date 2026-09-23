@@ -81,6 +81,7 @@ import {
   handleDeleteSupervisorOverride,
   handleSetLimitOverride,
   handleDeleteLimitOverride,
+  handleSetCostObjectDimensions,
 } from "./approval-config-route.js";
 import {
   requirePermission,
@@ -2000,6 +2001,28 @@ export default {
         decodeURIComponent(limitOverrideMatch[2]),
         decodeURIComponent(limitOverrideMatch[3])
       );
+      return json(result.body, result.status);
+    }
+
+    /**
+     * **Cost-Object Priority — decision 0452.** Same tab, same gate,
+     * same shape as `/approval-config` PUT above; `costObjectDimensions`
+     * already rides along on the GET above, so only the write side is
+     * new here.
+     */
+    if (pathname === "/approval-config/cost-object-dimensions" && request.method === "PUT") {
+      const { db } = resolveTenant(request, env);
+      const auth = await requirePermission(db, request, "Admin.Configure", sessionContext(env));
+      if (!auth.authorized) {
+        return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
+      }
+      let body: unknown;
+      try {
+        body = await request.json();
+      } catch {
+        return json({ error: t("invalidJsonBody", resolveLocale(env.LOCALE)) }, 400);
+      }
+      const result = await handleSetCostObjectDimensions(db, body as Record<string, unknown>);
       return json(result.body, result.status);
     }
 

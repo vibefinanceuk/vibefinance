@@ -9,6 +9,7 @@ import {
   handleDeleteSupervisorOverride,
   handleSetLimitOverride,
   handleDeleteLimitOverride,
+  handleSetCostObjectDimensions,
 } from "../src/approval-config-route.js";
 
 /**
@@ -212,5 +213,90 @@ describe("handleDeleteLimitOverride", () => {
       .bind("alice", "acme-fr")
       .all<{ currency: string }>();
     expect(remaining.results.map((r) => r.currency)).toEqual(["USD"]);
+  });
+});
+
+describe("Cost-Object Priority — decision 0452", () => {
+  it("handleGetApprovalConfig carries all four dimensions, in the seeded default state", async () => {
+    const result = await handleGetApprovalConfig(env.DB);
+    expect(result.body.costObjectDimensions).toEqual([
+      { listTypeId: "cost_centre", name: "Cost Centre", enabled: true, sequence: 0 },
+      { listTypeId: "project", name: "Project", enabled: false, sequence: 1 },
+      { listTypeId: "commodity_code", name: "Commodity Code", enabled: false, sequence: 2 },
+      { listTypeId: "gl_code", name: "General Ledger Code", enabled: false, sequence: 3 },
+    ]);
+  });
+
+  it("400s an empty or missing dimensions array", async () => {
+    expect((await handleSetCostObjectDimensions(env.DB, {})).status).toBe(400);
+    expect((await handleSetCostObjectDimensions(env.DB, { dimensions: [] })).status).toBe(400);
+  });
+
+  it("422s a dimension this system does not know, including company_code", async () => {
+    for (const bad of ["company_code", "widget"]) {
+      const result = await handleSetCostObjectDimensions(env.DB, {
+        dimensions: [{ listTypeId: bad, enabled: true }],
+      });
+      expect(result.status, bad).toBe(422);
+    }
+  });
+
+  it("422s a non-boolean enabled", async () => {
+    const result = await handleSetCostObjectDimensions(env.DB, {
+      dimensions: [{ listTypeId: "project", enabled: "yes" }],
+    });
+    expect(result.status).toBe(422);
+  });
+
+  it("422s the same dimension named twice", async () => {
+    const result = await handleSetCostObjectDimensions(env.DB, {
+      dimensions: [
+        { listTypeId: "project", enabled: true },
+        { listTypeId: "project", enabled: false },
+      ],
+    });
+    expect(result.status).toBe(422);
+  });
+
+  it("turns a dimension on, and it persists", async () => {
+    const result = await handleSetCostObjectDimensions(env.DB, {
+      dimensions: [{ listTypeId: "project", enabled: true, sequence: 0 }],
+    });
+    expect(result.status).toBe(200);
+    const row = await env.DB.prepare("SELECT enabled, sequence FROM cost_object_dimensions WHERE list_type_id = 'project'").first<{
+      enabled: number;
+      sequence: number;
+    }>();
+    expect(row).toEqual({ enabled: 1, sequence: 0 });
+  });
+
+  it("never creates or deletes a row — a fifth, unknown dimension is refused, not inserted", async () => {
+    await handleSetCostObjectDimensions(env.DB, { dimensions: [{ listTypeId: "widget", enabled: true }] }).catch(() => {});
+    const count = await env.DB.prepare("SELECT count(*) AS n FROM cost_object_dimensions").first<{ n: number }>();
+    expect(count?.n).toBe(4);
+  });
+
+  it("takes order from the order dimensions were listed, the same convention field visibility uses", async () => {
+    await handleSetCostObjectDimensions(env.DB, {
+      dimensions: [
+        { listTypeId: "gl_code", enabled: true },
+        { listTypeId: "cost_centre", enabled: true },
+      ],
+    });
+    const rows = await env.DB.prepare(
+      "SELECT list_type_id, sequence FROM cost_object_dimensions WHERE list_type_id IN ('gl_code', 'cost_centre')"
+    ).all<{ list_type_id: string; sequence: number }>();
+    const glCode = rows.results.find((r) => r.list_type_id === "gl_code");
+    const costCentre = rows.results.find((r) => r.list_type_id === "cost_centre");
+    expect(glCode?.sequence).toBeLessThan(costCentre!.sequence);
+  });
+
+  it("leaves an unlisted dimension exactly as it was", async () => {
+    await handleSetCostObjectDimensions(env.DB, { dimensions: [{ listTypeId: "project", enabled: true }] });
+    const costCentre = await env.DB.prepare("SELECT enabled FROM cost_object_dimensions WHERE list_type_id = 'cost_centre'").first<{
+      enabled: number;
+    }>();
+    // Untouched — still the seeded default, enabled.
+    expect(costCentre?.enabled).toBe(1);
   });
 });

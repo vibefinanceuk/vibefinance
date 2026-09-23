@@ -177,6 +177,15 @@ export async function findLineCoder(
   return row?.completed_by ?? null;
 }
 
+/**
+ * The four cost-object dimensions a line can carry a budget holder
+ * from — decision 0452. `cost_centre` is the original, single
+ * dimension decision 0439 built; the other three are Account Coding's
+ * own greenfield lists, reachable on a line at all only since decision
+ * 0451's Line Level Account Coding gave them somewhere to be keyed.
+ */
+export type CostObjectDimension = "cost_centre" | "project" | "commodity_code" | "gl_code";
+
 export interface ResolveApprovalParams {
   instanceId: string;
   processId: string;
@@ -188,6 +197,18 @@ export interface ResolveApprovalParams {
   currency: string | null;
   amount: number | null;
   costCentreId: string | null;
+  /**
+   * Every dimension **besides** cost centre, and what this line was
+   * coded to for each, if anything — decision 0452. Optional, and
+   * absent means none: every caller and every test written before
+   * this decision never sets it, and gets exactly the cost-centre-only
+   * behaviour they always have, unchanged. Kept as a map alongside
+   * `costCentreId` rather than replacing it, the same additive
+   * discipline decision 0075's own header comment already applied to
+   * unit-scoped overrides — nothing already working had to change
+   * shape for this to exist.
+   */
+  costObjectValues?: Partial<Record<Exclude<CostObjectDimension, "cost_centre">, string | null>>;
 }
 
 /**
@@ -291,6 +312,14 @@ async function resolveCostObject(
  * The single entry point `workflow-engine.ts` calls for a stage
  * marked `uses_approval_hierarchy` — resolves the configured mode's
  * target, or explains why it could not.
+ *
+ * **Single-target, and unchanged since decision 0439.** Every mode but
+ * Cost-Object has only ever needed one answer, and every test written
+ * against this function keeps working exactly as it did. Cost-Object's
+ * own generalization to more than one dimension lives in
+ * `resolveApprovalTargets` below, not here — a stage that resolves
+ * through more than one cost-object dimension at once calls that one
+ * instead.
  */
 export async function resolveApprovalHierarchy(
   db: D1Database,
@@ -309,4 +338,174 @@ export async function resolveApprovalHierarchy(
         reasoning: `${config.mode} routing is not built yet. Sent to the configured Default Approver.`,
       }
     : { unresolved: true, reason: `${config.mode} routing is not built yet, and no Default Approver is configured.` };
+}
+
+/** Which vocabulary field a dimension's coded value comes from — for callers building `costObjectValues`, not used here. */
+export const COST_OBJECT_DIMENSION_FIELDS: Record<CostObjectDimension, string> = {
+  cost_centre: "BT-133",
+  project: "coding.project",
+  commodity_code: "coding.commodity_code",
+  gl_code: "coding.gl_code",
+};
+
+const COST_OBJECT_DIMENSION_LABELS: Record<CostObjectDimension, string> = {
+  cost_centre: "cost centre",
+  project: "project",
+  commodity_code: "commodity code",
+  gl_code: "GL code",
+};
+
+/** What this line was coded to, for one dimension — `costCentreId` for cost centre, `costObjectValues` for the other three. */
+function costObjectValueFor(params: ResolveApprovalParams, dimension: CostObjectDimension): string | null {
+  if (dimension === "cost_centre") return params.costCentreId;
+  return params.costObjectValues?.[dimension] ?? null;
+}
+
+/**
+ * Which dimensions are turned on, and in what order — decision 0452,
+ * `cost_object_dimensions` (migration `0077`). Order is display order
+ * for AP Setup's own Cost-Object Priority panel, **not** a resolution
+ * priority: every enabled, coded dimension is resolved, not only the
+ * first (see `resolveCostObjects`'s own comment on why).
+ */
+async function loadCostObjectDimensions(
+  db: D1Database
+): Promise<{ dimension: CostObjectDimension; enabled: boolean }[]> {
+  const rows = await db
+    .prepare("SELECT list_type_id, enabled FROM cost_object_dimensions ORDER BY sequence")
+    .all<{ list_type_id: CostObjectDimension; enabled: number }>();
+  return rows.results.map((r) => ({ dimension: r.list_type_id, enabled: r.enabled === 1 }));
+}
+
+/**
+ * **The same walk `resolveApprovalChain` already does for
+ * `cost_centres`, dispatched rather than rewritten** — decision 0450's
+ * design document's own stated shape. `cost_centres` keeps its own
+ * dedicated table and its own existing resolver, called unchanged;
+ * the other three dimensions share one generalized walk over
+ * `coding_list_entries`, filtered by `list_type_id`, using the exact
+ * same rule: climb while nobody's limit covers the amount, stop at
+ * the first owner whose does. A null limit approves anything, the
+ * same convention `cost_centres.approval_limit` already set; an entry
+ * with no approver escalates immediately, the same as a cost centre
+ * with none.
+ */
+async function resolveChainFor(
+  db: D1Database,
+  dimension: CostObjectDimension,
+  entryId: string,
+  amount: number
+): Promise<{ chain: { entryId: string; ownerUserId: string; limit: number | null }[]; covered: boolean }> {
+  if (dimension === "cost_centre") {
+    const result = await resolveApprovalChain(db, entryId, amount);
+    return {
+      covered: result.covered,
+      chain: result.chain.map((c) => ({ entryId: c.costCentreId, ownerUserId: c.ownerUserId, limit: c.limit })),
+    };
+  }
+
+  const chain: { entryId: string; ownerUserId: string; limit: number | null }[] = [];
+  const seen = new Set<string>();
+  let current: string | null = entryId;
+
+  while (current && !seen.has(current)) {
+    seen.add(current);
+
+    const row: { id: string; approver_user_id: string | null; approval_limit: number | null; parent_entry_id: string | null } | null =
+      await db
+        .prepare(
+          `SELECT id, approver_user_id, approval_limit, parent_entry_id
+           FROM coding_list_entries WHERE list_type_id = ? AND id = ?`
+        )
+        .bind(dimension, current)
+        .first();
+
+    if (!row) break;
+
+    if (row.approver_user_id) {
+      chain.push({ entryId: row.id, ownerUserId: row.approver_user_id, limit: row.approval_limit });
+      if (row.approval_limit === null || amount <= row.approval_limit) {
+        return { chain, covered: true };
+      }
+    }
+
+    current = row.parent_entry_id;
+  }
+
+  return { chain, covered: false };
+}
+
+/**
+ * **Cost-Object, generalized across every enabled dimension** —
+ * decision 0452, settled by the operator directly: *"I had envisaged
+ * that multiple approval requirements for each line as a result of
+ * different cost center, would spawn multiple tasks that could be
+ * completed in parallel."* This is 0184's own literal *"parallel
+ * across cost objects"* reading, not the "highest-priority dimension
+ * wins outright" one decision 0450's own mock-up assumed while the
+ * question was still open.
+ *
+ * **Every dimension that is both enabled in configuration and has a
+ * coded value on this line raises its own chain, independently.** A
+ * dimension with no coded value on the line is not consulted at all —
+ * not applicable to this line, not a failure to resolve. A line with
+ * nothing coded to any enabled dimension resolves exactly as
+ * `resolveCostObject` (singular, still what `resolveApprovalHierarchy`
+ * itself calls) always has: one "no cost-object information" result.
+ */
+async function resolveCostObjects(
+  db: D1Database,
+  config: ApprovalConfig,
+  params: ResolveApprovalParams
+): Promise<Array<ApprovalResolution | ApprovalUnresolved>> {
+  const toDefault = (reason: string): ApprovalResolution | ApprovalUnresolved =>
+    config.defaultApproverUserId
+      ? { targetUserId: config.defaultApproverUserId, reasoning: `${reason} Sent to the configured Default Approver.` }
+      : { unresolved: true, reason: `${reason} No Default Approver is configured.` };
+
+  const dimensions = await loadCostObjectDimensions(db);
+  const applicable = dimensions.filter((d) => d.enabled && costObjectValueFor(params, d.dimension) !== null);
+
+  if (applicable.length === 0) {
+    return [toDefault("No cost-object information recorded for this line.")];
+  }
+
+  const results: Array<ApprovalResolution | ApprovalUnresolved> = [];
+  for (const { dimension } of applicable) {
+    const entryId = costObjectValueFor(params, dimension)!;
+    const label = COST_OBJECT_DIMENSION_LABELS[dimension];
+    const result = await resolveChainFor(db, dimension, entryId, params.amount ?? 0);
+
+    if (result.covered && result.chain.length > 0) {
+      const last = result.chain[result.chain.length - 1];
+      const path = result.chain.map((c) => c.entryId).join(" → ");
+      results.push({ targetUserId: last.ownerUserId, reasoning: `${label} chain: ${path}.` });
+    } else {
+      const path = result.chain.map((c) => c.entryId).join(" → ");
+      results.push(toDefault(`The ${label} chain ran out uncovered: ${path || entryId}.`));
+    }
+  }
+  return results;
+}
+
+/**
+ * **The plural entry point** — decision 0452. `workflow-engine.ts`
+ * calls this, not `resolveApprovalHierarchy`, so a stage can spawn
+ * more than one approval task for a single line.
+ *
+ * Every mode but Cost-Object still resolves to exactly one target:
+ * this delegates to the existing, unchanged `resolveApprovalHierarchy`
+ * for those and wraps its single answer, rather than duplicating
+ * Employee-Supervisor/Manual/API here. Only Cost-Object mode can ever
+ * return more than one element.
+ */
+export async function resolveApprovalTargets(
+  db: D1Database,
+  params: ResolveApprovalParams
+): Promise<Array<ApprovalResolution | ApprovalUnresolved>> {
+  const config = await loadApprovalConfig(db);
+  if (config.mode === "cost_object") {
+    return resolveCostObjects(db, config, params);
+  }
+  return [await resolveApprovalHierarchy(db, params)];
 }

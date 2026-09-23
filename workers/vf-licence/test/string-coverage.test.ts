@@ -627,6 +627,15 @@ const KEYS_THE_INTERFACE_USES = [
   "apsetup.codingapprover",
   "apsetup.codingapprovallimit",
   "apsetup.codingentrysavefailed",
+  /**
+   * **Cost-Object Priority — decision 0452.** The Approval Hierarchy
+   * tab's own new panel, shown only when Approval mode is Cost-Object;
+   * turns decision 0450's mock-up into the real screen.
+   */
+  "apsetup.costobjectpriority",
+  "apsetup.costobjectprioritysub",
+  "apsetup.costobjectenable",
+  "apsetup.costobjectsavefailed",
 
   /**
    * **CSV Template and Load — decision 0445.** `coding-lists.js`'s own

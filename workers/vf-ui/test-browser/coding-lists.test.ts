@@ -424,8 +424,44 @@ describe("Project — a real hierarchy, decision 0444", () => {
       parentEntryId: "DE01MJO",
       isDefault: true,
       approverUserId: null,
+      approvalLimit: null,
       filters: {},
     });
+  });
+
+  it("sets an approval limit alongside the approver, in the same request — decision 0452", async () => {
+    await openApSetupAs(
+      { ...EMPTY_OVERVIEW, users: [{ id: "u1", name: "Bob" }] },
+      EMPTY_COST_CENTRES,
+      {
+        "/api/coding-lists/project": {
+          declaredFilters: [],
+          entries: [{ id: "p1", name: "Mjolner", isDefault: false, approverUserId: "u1", approverName: "Bob", parentEntryId: null, parentName: null, approvalLimit: 5000, filters: [] }],
+        },
+      },
+      { "PUT /api/coding-lists/project/p1": { ok: true, json: async () => ({}) } }
+    );
+    switchCodingSubTab("Project");
+    const listPanel = [...document.querySelectorAll(".panel")].at(-1);
+    // The Approval Limit column shows what's already there.
+    expect(listPanel?.querySelector("tbody tr")?.textContent).toContain("5000");
+
+    listPanel?.querySelector("tbody tr")?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await new Promise((r) => setTimeout(r, 0));
+
+    const approverSelect = document.querySelectorAll<HTMLSelectElement>(".editgrid select")[1];
+    approverSelect.value = "u1";
+    const limitInput = document.querySelector<HTMLInputElement>(".editgrid input[type=number]");
+    limitInput!.value = "7500";
+
+    const submit = [...document.querySelectorAll(".cardhead button")].find((b) => b.textContent?.includes("Save"));
+    await submit?.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    const putCall = fetchCalls().find(([url, init]) => url === "/api/coding-lists/project/p1" && (init as RequestInit)?.method === "PUT");
+    const body = JSON.parse((putCall?.[1] as RequestInit).body as string);
+    expect(body.approverUserId).toBe("u1");
+    expect(body.approvalLimit).toBe(7500);
   });
 });
 
@@ -508,6 +544,7 @@ describe("General Ledger Code — the two declared filters, decision 0444", () =
       parentEntryId: null,
       isDefault: false,
       approverUserId: null,
+      approvalLimit: null,
       filters: { company_code: "UK01", commodity_code: "10000000" },
     });
   });

@@ -237,6 +237,7 @@ describe("handleCreateCodingListEntry", () => {
       approverName: null,
       parentEntryId: null,
       parentName: null,
+      approvalLimit: null,
       filters: [],
     }]);
   });
@@ -287,6 +288,38 @@ describe("handleCreateCodingListEntry", () => {
     await seedUser();
     const result = await handleCreateCodingListEntry(env.DB, "project", { id: "p1", name: "P1", approverUserId: "approver-1" });
     expect(result.status).toBe(201);
+  });
+
+  // The missing half of what Cost Centre already has — decision 0452.
+  it("refuses a limit with nobody to hold it", async () => {
+    const result = await handleCreateCodingListEntry(env.DB, "project", { id: "p1", name: "P1", approvalLimit: 5000 });
+    expect(result.status).toBe(409);
+    expect((result.body as { reason: string }).reason).toBe("limit_without_owner");
+  });
+
+  it("400s a negative limit", async () => {
+    await seedUser();
+    const result = await handleCreateCodingListEntry(env.DB, "project", {
+      id: "p1",
+      name: "P1",
+      approverUserId: "approver-1",
+      approvalLimit: -1,
+    });
+    expect(result.status).toBe(400);
+  });
+
+  it("accepts a real limit alongside its owner", async () => {
+    await seedUser();
+    const result = await handleCreateCodingListEntry(env.DB, "project", {
+      id: "p1",
+      name: "P1",
+      approverUserId: "approver-1",
+      approvalLimit: 5000,
+    });
+    expect(result.status).toBe(201);
+    const listed = await handleListCodingListEntries(env.DB, "project");
+    const entry = (listed.body as { entries: { id: string; approvalLimit: number | null }[] }).entries.find((e) => e.id === "p1");
+    expect(entry?.approvalLimit).toBe(5000);
   });
 
   it("400s a filter this type does not declare", async () => {
@@ -342,6 +375,27 @@ describe("handleUpdateCodingListEntry", () => {
     await handleCreateCodingListEntry(env.DB, "project", { id: "b", name: "B", parentEntryId: "a" });
     const result = await handleUpdateCodingListEntry(env.DB, "project", "a", { parentEntryId: "b" });
     expect(result.status).toBe(409);
+  });
+
+  it("updates the limit alongside its owner — decision 0452", async () => {
+    await seedUser();
+    await handleCreateCodingListEntry(env.DB, "project", { id: "p1", name: "P1", approverUserId: "approver-1" });
+    const result = await handleUpdateCodingListEntry(env.DB, "project", "p1", {
+      approverUserId: "approver-1",
+      approvalLimit: 2500,
+    });
+    expect(result.status).toBe(200);
+    const row = await env.DB.prepare(
+      "SELECT approval_limit FROM coding_list_entries WHERE list_type_id = 'project' AND id = 'p1'"
+    ).first<{ approval_limit: number | null }>();
+    expect(row?.approval_limit).toBe(2500);
+  });
+
+  it("refuses a limit update with no owner in the same call", async () => {
+    await handleCreateCodingListEntry(env.DB, "project", { id: "p1", name: "P1" });
+    const result = await handleUpdateCodingListEntry(env.DB, "project", "p1", { approvalLimit: 2500 });
+    expect(result.status).toBe(409);
+    expect((result.body as { reason: string }).reason).toBe("limit_without_owner");
   });
 
   it("replaces filters wholesale, and clearing one means leaving it out", async () => {

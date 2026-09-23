@@ -86,6 +86,10 @@ const STRINGS = {
     "apsetup.codingapprover": "Approver",
     "apsetup.codingapprovallimit": "Approval limit",
     "apsetup.codingentrysavefailed": "Could not save that. Check the values and try again.",
+    "apsetup.costobjectpriority": "Cost-Object Priority",
+    "apsetup.costobjectprioritysub": "Shown because Approval mode is set to Cost-Object. Every dimension switched on here that is also coded on a line raises its own approval task, in parallel.",
+    "apsetup.costobjectenable": "Enable",
+    "apsetup.costobjectsavefailed": "Could not save the Cost-Object Priority list",
   },
 };
 
@@ -96,6 +100,7 @@ const EMPTY_CONFIG = {
   defaultApproverName: null,
   supervisorOverrides: [],
   limitOverrides: [],
+  costObjectDimensions: [],
 };
 const EMPTY_COST_CENTRES = { costCentres: [] };
 const EMPTY_CODING_LIST = { declaredFilters: [], entries: [] };
@@ -264,6 +269,137 @@ describe("Approval Hierarchy — the mode and Default Approver form", () => {
     // Just confirming the button exists and is wired to a real click handler —
     // the actual network call is covered by the route-level tests.
     expect(saveButton).toBeTruthy();
+  });
+});
+
+/**
+ * **Cost-Object Priority — decision 0452.** Turns decision 0450's own
+ * mock-up into the real panel: shown only in Cost-Object mode, a
+ * checkbox per dimension, and drag-to-reorder mirroring
+ * `processes.js`'s own stage-sequence drag control (decision 0352,
+ * covered directly in `processes.test.ts`) — the same
+ * dispatchEvent("dragstart"/"dragover"/"drop") pattern is reused here
+ * rather than a real DataTransfer, since jsdom's own support for that
+ * is incomplete and this app's own code never reads it either.
+ */
+describe("Approval Hierarchy — Cost-Object Priority (decision 0452)", () => {
+  const FOUR_DIMENSIONS = [
+    { listTypeId: "cost_centre", name: "Cost Centre", enabled: true, sequence: 0 },
+    { listTypeId: "project", name: "Project", enabled: false, sequence: 1 },
+    { listTypeId: "commodity_code", name: "Commodity Code", enabled: false, sequence: 2 },
+    { listTypeId: "gl_code", name: "General Ledger Code", enabled: false, sequence: 3 },
+  ];
+
+  function priorityPanel(): Element {
+    const panel = [...document.querySelectorAll(".panel")].find((p) => p.querySelector("h3")?.textContent === "Cost-Object Priority");
+    if (!panel) throw new Error(`no panel found for "Cost-Object Priority"`);
+    return panel;
+  }
+
+  it("is not shown at all in any mode but Cost-Object", async () => {
+    await openApSetupAs(["Admin.Configure"], EMPTY_OVERVIEW, { ...EMPTY_CONFIG, mode: "employee_supervisor", costObjectDimensions: FOUR_DIMENSIONS });
+    switchTab("Approval Hierarchy");
+    expect([...document.querySelectorAll(".panel h3")].some((h) => h.textContent === "Cost-Object Priority")).toBe(false);
+  });
+
+  it("lists all four dimensions, in sequence order, with their own enabled state — shown once Mode is Cost-Object", async () => {
+    await openApSetupAs(["Admin.Configure"], EMPTY_OVERVIEW, { ...EMPTY_CONFIG, mode: "cost_object", costObjectDimensions: FOUR_DIMENSIONS });
+    switchTab("Approval Hierarchy");
+
+    const panel = priorityPanel();
+    const rows = [...panel.querySelectorAll(".assignmentrow")];
+    expect(rows.map((r) => r.querySelector("span")?.textContent)).toEqual([
+      "1. Cost Centre",
+      "2. Project",
+      "3. Commodity Code",
+      "4. General Ledger Code",
+    ]);
+    expect(rows.every((r) => r.textContent?.includes("Enable"))).toBe(true);
+    const checkboxes = rows.map((r) => r.querySelector("input[type=checkbox]") as HTMLInputElement);
+    expect(checkboxes.map((c) => c.checked)).toEqual([true, false, false, false]);
+  });
+
+  it("toggling a dimension's own checkbox saves the full four-row array, with only that one flipped", async () => {
+    const puts: unknown[] = [];
+    await openApSetupAs(
+      ["Admin.Configure"],
+      EMPTY_OVERVIEW,
+      { ...EMPTY_CONFIG, mode: "cost_object", costObjectDimensions: FOUR_DIMENSIONS },
+      {
+        "PUT /api/approval-config/cost-object-dimensions": {
+          ok: true,
+          json: async () => {
+            return { configured: 4 };
+          },
+        },
+      }
+    );
+    switchTab("Approval Hierarchy");
+
+    const projectRow = [...priorityPanel().querySelectorAll(".assignmentrow")].find((r) => r.textContent?.includes("Project"));
+    const checkbox = projectRow?.querySelector("input[type=checkbox]") as HTMLInputElement;
+    checkbox.checked = true;
+    checkbox.dispatchEvent(new Event("change"));
+    await new Promise((r) => setTimeout(r, 0));
+
+    const calls = (fetch as unknown as { mock: { calls: [string, RequestInit][] } }).mock.calls;
+    const put = calls.find(([url, init]) => url === "/api/approval-config/cost-object-dimensions" && init?.method === "PUT");
+    expect(put).toBeTruthy();
+    expect(JSON.parse(put![1].body as string)).toEqual({
+      dimensions: [
+        { listTypeId: "cost_centre", enabled: true, sequence: 0 },
+        { listTypeId: "project", enabled: true, sequence: 1 },
+        { listTypeId: "commodity_code", enabled: false, sequence: 2 },
+        { listTypeId: "gl_code", enabled: false, sequence: 3 },
+      ],
+    });
+  });
+
+  it("marks every row draggable, and dropping the first onto the last sends the whole new order, re-sequenced from 0", async () => {
+    await openApSetupAs(
+      ["Admin.Configure"],
+      EMPTY_OVERVIEW,
+      { ...EMPTY_CONFIG, mode: "cost_object", costObjectDimensions: FOUR_DIMENSIONS },
+      { "PUT /api/approval-config/cost-object-dimensions": { ok: true, json: async () => ({ configured: 4 }) } }
+    );
+    switchTab("Approval Hierarchy");
+
+    const rows = [...priorityPanel().querySelectorAll(".assignmentrow")] as HTMLElement[];
+    expect(rows.every((r) => r.getAttribute("draggable") === "true")).toBe(true);
+
+    rows[0].dispatchEvent(new Event("dragstart", { bubbles: true }));
+    rows[3].dispatchEvent(new Event("dragover", { bubbles: true, cancelable: true }));
+    rows[3].dispatchEvent(new Event("drop", { bubbles: true, cancelable: true }));
+    await new Promise((r) => setTimeout(r, 0));
+
+    const calls = (fetch as unknown as { mock: { calls: [string, RequestInit][] } }).mock.calls;
+    const put = calls.find(([url, init]) => url === "/api/approval-config/cost-object-dimensions" && init?.method === "PUT");
+    expect(JSON.parse(put![1].body as string)).toEqual({
+      dimensions: [
+        { listTypeId: "project", enabled: false, sequence: 0 },
+        { listTypeId: "commodity_code", enabled: false, sequence: 1 },
+        { listTypeId: "gl_code", enabled: false, sequence: 2 },
+        { listTypeId: "cost_centre", enabled: true, sequence: 3 },
+      ],
+    });
+  });
+
+  it("a failed save shows the panel's own error", async () => {
+    await openApSetupAs(
+      ["Admin.Configure"],
+      EMPTY_OVERVIEW,
+      { ...EMPTY_CONFIG, mode: "cost_object", costObjectDimensions: FOUR_DIMENSIONS },
+      { "PUT /api/approval-config/cost-object-dimensions": { ok: false, status: 422, json: async () => ({ error: "no" }) } }
+    );
+    switchTab("Approval Hierarchy");
+
+    const projectRow = [...priorityPanel().querySelectorAll(".assignmentrow")].find((r) => r.textContent?.includes("Project"));
+    const checkbox = projectRow?.querySelector("input[type=checkbox]") as HTMLInputElement;
+    checkbox.checked = true;
+    checkbox.dispatchEvent(new Event("change"));
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(document.querySelector(".warn")?.textContent).toContain("no");
   });
 });
 

@@ -421,9 +421,134 @@ function limitOverridesSection(problem) {
   ]);
 }
 
+// **Which dimension a drag started on — decision 0452, the same
+// module-level-variable shape `processes.js`'s own `draggedStageId`
+// already uses for stage reordering (decision 0352), for the same
+// reason: jsdom's own DataTransfer support is incomplete, and drag
+// source and drop target are always this one page.
+let draggedDimensionId = null;
+
+/**
+ * **Cost-Object Priority — decision 0452.** Turns decision 0450's own
+ * mock-up (`docs/design/mockups/cost-object-approval.html`) into the
+ * real panel: a checkbox and drag-to-reorder per dimension, the same
+ * `.assignmentrow` layout and direction-aware drop `processes.js`'s
+ * own `stageChevrons()` already established for reordering process
+ * stages (decision 0352) — reused rather than the mock-up's own
+ * bespoke `.priorow`/`.switch` CSS, which nothing else in this app's
+ * real screens has. Calls the new
+ * `PUT /approval-config/cost-object-dimensions`
+ * (`handleSetCostObjectDimensions`) with the full four-row array every
+ * time, the same "replace, not merge" shape `modeForm`'s own doc
+ * comment already establishes for this screen's other config forms.
+ *
+ * **Shown only when Mode is Cost-Object** — the mock-up's own
+ * condition, kept: the panel is meaningless in any other mode, since
+ * nothing reads `cost_object_dimensions` unless `resolveApprovalTargets`
+ * is actually dispatching to `resolveCostObjects`.
+ *
+ * **"Priority" stays the panel's own name; the sub-copy is what
+ * changed.** The mock-up's own wording ("the highest-priority
+ * dimension... wins; the rest are not consulted") was written before
+ * the operator settled the open question the design doc raised — the
+ * real answer, confirmed directly: every enabled, coded dimension
+ * raises its own task, in parallel. `sequence` is display order only,
+ * exactly as migration 0077's own header comment states; there is
+ * deliberately no "walk-through" example here the way the mock-up had
+ * one, since a single ordered path is no longer the true story.
+ *
+ * **Each toggle or reorder saves immediately** — no separate Save
+ * button, the same "acts the moment you click it" shape this tab's own
+ * override rows already use for Add/Remove.
+ */
+function costObjectPriorityPanel(problem) {
+  if (config.mode !== "cost_object") return null;
+
+  const dimensions = config.costObjectDimensions ?? [];
+
+  const save = async (next) => {
+    problem.textContent = "";
+    try {
+      const response = await fetch("/api/approval-config/cost-object-dimensions", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          dimensions: next.map((d, i) => ({ listTypeId: d.listTypeId, enabled: d.enabled, sequence: i })),
+        }),
+      });
+      if (!response.ok) {
+        problem.textContent = (await response.json()).error ?? t("apsetup.costobjectsavefailed");
+        return;
+      }
+      await load();
+      render();
+    } catch {
+      problem.textContent = t("apsetup.costobjectsavefailed");
+    }
+  };
+
+  const rows = dimensions.map((dimension, i) => {
+    const enableCheckbox = el("input", {
+      type: "checkbox",
+      id: `costobjectenable-${dimension.listTypeId}`,
+      ...(dimension.enabled ? { checked: "checked" } : {}),
+    });
+    enableCheckbox.onchange = () => {
+      const next = dimensions.map((d) => ({ ...d }));
+      next[i].enabled = enableCheckbox.checked;
+      save(next);
+    };
+
+    return el(
+      "div",
+      {
+        class: "assignmentrow",
+        draggable: "true",
+        ondragstart: () => {
+          draggedDimensionId = dimension.listTypeId;
+        },
+        ondragover: (e) => e.preventDefault(),
+        ondrop: (e) => {
+          e.preventDefault();
+          if (!draggedDimensionId || draggedDimensionId === dimension.listTypeId) return;
+          // Direction-aware, the same reasoning `processes.js`'s own
+          // stage-reorder drop handler already gives: dropping onto a
+          // target reads as "move it to about here."
+          const sourceIndex = dimensions.findIndex((d) => d.listTypeId === draggedDimensionId);
+          const targetIndex = dimensions.findIndex((d) => d.listTypeId === dimension.listTypeId);
+          const dragged = dimensions[sourceIndex];
+          const order = dimensions.filter((d) => d.listTypeId !== draggedDimensionId);
+          const filteredTargetIndex = order.findIndex((d) => d.listTypeId === dimension.listTypeId);
+          const insertAt = sourceIndex < targetIndex ? filteredTargetIndex + 1 : filteredTargetIndex;
+          order.splice(insertAt, 0, dragged);
+          draggedDimensionId = null;
+          save(order);
+        },
+      },
+      [
+        el("span", { text: `${i + 1}. ${dimension.name}` }),
+        el("label", { for: `costobjectenable-${dimension.listTypeId}`, class: "sm muted", text: t("apsetup.costobjectenable") }),
+        enableCheckbox,
+      ]
+    );
+  });
+
+  return el("div", { class: "panel" }, [
+    el("div", { class: "cardhead" }, [el("h3", { text: t("apsetup.costobjectpriority") })]),
+    el("p", { class: "muted sm", text: t("apsetup.costobjectprioritysub") }),
+    el("div", { class: "assignmentlist" }, rows),
+  ]);
+}
+
 function approvalHierarchyTab() {
   const problem = el("div", { class: "warn" });
-  return el("div", {}, [modeForm(problem), supervisorOverridesSection(problem), limitOverridesSection(problem)]);
+  const priorityPanel = costObjectPriorityPanel(problem);
+  return el("div", {}, [
+    modeForm(problem),
+    ...(priorityPanel ? [priorityPanel] : []),
+    supervisorOverridesSection(problem),
+    limitOverridesSection(problem),
+  ]);
 }
 
 function tabBar() {

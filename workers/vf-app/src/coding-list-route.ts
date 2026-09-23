@@ -39,6 +39,7 @@ interface EntryRow {
   approver_name: string | null;
   parent_entry_id: string | null;
   parent_name: string | null;
+  approval_limit: number | null;
 }
 
 /**
@@ -266,7 +267,7 @@ export async function handleListCodingListEntries(
   const rows = await db
     .prepare(
       `SELECT e.id, e.name, e.is_default, e.approver_user_id, a.name AS approver_name,
-              e.parent_entry_id, p.name AS parent_name
+              e.parent_entry_id, p.name AS parent_name, e.approval_limit
        ${joins}
        WHERE e.list_type_id = ? ${search_.sql}
        ORDER BY e.name
@@ -284,6 +285,7 @@ export async function handleListCodingListEntries(
       approverName: r.approver_name,
       parentEntryId: r.parent_entry_id,
       parentName: r.parent_name,
+      approvalLimit: r.approval_limit,
       filters: await entryFiltersFor(db, listType, r.id),
     }))
   );
@@ -309,6 +311,7 @@ interface EntryBody {
   parentEntryId?: unknown;
   isDefault?: unknown;
   approverUserId?: unknown;
+  approvalLimit?: unknown;
   filters?: unknown;
 }
 
@@ -376,15 +379,36 @@ export async function handleCreateCodingListEntry(db: D1Database, listType: stri
     if (!approver) return { status: 404, body: { error: `user ${approverUserId} does not exist` } };
   }
 
+  // The missing half of what Cost Centre already has — decision 0452.
+  // Same rule `handleUpdateCostCentre` already applies: a limit with no
+  // owner is a number nobody can act on.
+  const approvalLimit = body.approvalLimit;
+  if (approvalLimit !== undefined && approvalLimit !== null) {
+    if (typeof approvalLimit !== "number" || approvalLimit < 0) {
+      return { status: 400, body: { error: "approvalLimit must be a number of 0 or more" } };
+    }
+    if (!approverUserId) {
+      return { status: 409, body: { error: "an approval limit needs an owner", reason: "limit_without_owner" } };
+    }
+  }
+
   const filtersResult = await validateFilters(db, listType, body.filters);
   if (!filtersResult.ok) return { status: filtersResult.status, body: { error: filtersResult.error } };
 
   await db
     .prepare(
-      `INSERT INTO coding_list_entries (list_type_id, id, name, is_default, approver_user_id, parent_entry_id)
-       VALUES (?, ?, ?, ?, ?, ?)`
+      `INSERT INTO coding_list_entries (list_type_id, id, name, is_default, approver_user_id, parent_entry_id, approval_limit)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`
     )
-    .bind(listType, id, name, body.isDefault ? 1 : 0, (approverUserId as string) || null, (parentEntryId as string) || null)
+    .bind(
+      listType,
+      id,
+      name,
+      body.isDefault ? 1 : 0,
+      (approverUserId as string) || null,
+      (parentEntryId as string) || null,
+      (approvalLimit as number | null | undefined) ?? null
+    )
     .run();
 
   await replaceFilters(db, listType, id, filtersResult.value);
@@ -409,7 +433,8 @@ export async function handleUpdateCodingListEntry(
   if (!existing) return { status: 404, body: { error: `${listType} ${entryId} does not exist` } };
 
   const hasAnyField =
-    "name" in body || "parentEntryId" in body || "approverUserId" in body || "isDefault" in body || "filters" in body;
+    "name" in body || "parentEntryId" in body || "approverUserId" in body || "isDefault" in body ||
+    "approvalLimit" in body || "filters" in body;
   if (!hasAnyField) return { status: 400, body: { error: "nothing to change" } };
 
   const name = "name" in body ? body.name : undefined;
@@ -444,6 +469,21 @@ export async function handleUpdateCodingListEntry(
     if (!approver) return { status: 404, body: { error: `user ${approverUserId} does not exist` } };
   }
 
+  // The missing half of what Cost Centre already has — decision 0452,
+  // mirroring `handleUpdateCostCentre`'s own rule exactly, including
+  // its own shape: an approval limit is only ever set in the same call
+  // that also names the owner, whether or not one was set earlier.
+  const approvalLimit = "approvalLimit" in body ? body.approvalLimit : undefined;
+  if (approvalLimit !== undefined && approvalLimit !== null) {
+    if (typeof approvalLimit !== "number" || approvalLimit < 0) {
+      return { status: 400, body: { error: "approvalLimit must be a number of 0 or more" } };
+    }
+    const owner = approverUserId !== undefined ? approverUserId : null;
+    if (!owner) {
+      return { status: 409, body: { error: "an approval limit needs an owner", reason: "limit_without_owner" } };
+    }
+  }
+
   const isDefault = "isDefault" in body ? body.isDefault : undefined;
 
   const sets: string[] = [];
@@ -463,6 +503,10 @@ export async function handleUpdateCodingListEntry(
   if (isDefault !== undefined) {
     sets.push("is_default = ?");
     values.push(isDefault ? 1 : 0);
+  }
+  if (approvalLimit !== undefined) {
+    sets.push("approval_limit = ?");
+    values.push(approvalLimit);
   }
 
   if (sets.length > 0) {

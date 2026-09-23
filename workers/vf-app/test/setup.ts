@@ -81,6 +81,7 @@ import agreedPaymentMeansPlaceholderSql from "../../../migrations/0073_agreed_pa
 // here for the same reason.
 import approvalHierarchySql from "../../../migrations/0075_approval_hierarchy.sql?raw";
 import accountCodingListsSql from "../../../migrations/0076_account_coding_lists.sql?raw";
+import costObjectApprovalHierarchySql from "../../../migrations/0077_cost_object_approval_hierarchy.sql?raw";
 
 // Another known divergence from production, on top of the one below:
 // D1's exec() splits its input by newline and executes each non-empty
@@ -182,6 +183,10 @@ const TABLES_IN_DROP_ORDER = ["document_comments", "process_stage_versions", "in
   "coding_list_entry_filters",
   "coding_list_entries",
   "coding_list_type_filters",
+  // Cost-Object Approval Hierarchy generalization (decision 0452) —
+  // references coding_list_types(id) too, so before it, the same rule
+  // as its Account Coding siblings above.
+  "cost_object_dimensions",
   "coding_list_types",
   "org_authority_limits",
   "org_spend_limits",
@@ -305,6 +310,7 @@ export async function applyTestSchema(): Promise<void> {
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(agreedPaymentMeansPlaceholderSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(approvalHierarchySql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(accountCodingListsSql)));
+  await env.DB.exec(toOneStatementPerLine(stripSqlComments(costObjectApprovalHierarchySql)));
 }
 
 /**
