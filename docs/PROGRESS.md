@@ -2603,8 +2603,10 @@ section for the full reasoning and tests.
   true count at that decision's own tip is 1052/1052, a transcription
   error rather than a real gap in what shipped. Corrected in decision
   0457's own doc, `HANDOVER.md`, and here.
-- **Built and tested, not yet pushed** — no `vf-app` change; touches
-  `vf-ui` and one new `vf-licence` migration (`0156`) — see decision
+- **Confirmed pushed and deployed** — the operator's own report,
+  *"deployed and pushed"*, including migration `0156`'s own separate
+  `apply_migrations.py --remote` run against `vf-licence-poc` — no
+  `vf-app` change; touches `vf-ui` and `vf-licence` — see decision
   0458 for the full reasoning and verification.
 
 ### Purchase orders and matching

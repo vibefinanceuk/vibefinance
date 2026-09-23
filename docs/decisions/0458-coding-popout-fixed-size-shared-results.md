@@ -1,8 +1,10 @@
 # 0458 — The Coding Pop-out Is a Fixed Size, With One Shared Results Area
 
-**Status: built and tested, not yet pushed.** This session has no push
-access — delivered as a bundle (`origin/main..main`), built on top of
-decision 0457's own commit, for the operator to apply and push.
+**Status: confirmed pushed, deployed, and migration applied.**
+`origin/main` fetched directly reads `1d8c423`, matching this
+session's own commit exactly, and the operator confirmed `wrangler
+deploy` run for `vf-ui`, plus migration `0156` applied via
+`apply_migrations.py --remote` against `vf-licence-poc`.
 
 ---
 
@@ -159,12 +161,10 @@ decision touches only plain `.js`/`.css` files, no TypeScript.
 
 ## Still to do, operator side
 
-- `wrangler deploy` for `vf-ui` (the rewritten `viewer.js` and
-  `app.css`).
-- `apply_migrations.py --remote --database vf-licence-poc
-  --migrations-dir workers/vf-licence/migrations` for `vf-licence`
-  (migration `0156`) — until this runs, the results area's own label
-  will show its raw string key instead of "Results for".
+All done — `wrangler deploy` confirmed for `vf-ui`, and migration
+`0156` confirmed applied to `vf-licence-poc` via `apply_migrations.py
+--remote`, both in the operator's own single report: *"deployed and
+pushed."*
 
 Worth a look once live, on a real screen rather than jsdom: whether
 640px is the right fixed height in practice, and whether two columns
