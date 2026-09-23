@@ -657,6 +657,9 @@ const KEYS_THE_INTERFACE_USES = [
   "viewer.coding.suggested",
   // The Coding pop-out's shared results area — decision 0458.
   "viewer.coding.resultsfor",
+  // A filtered field's own empty result names what narrowed it —
+  // decision 0459.
+  "viewer.coding.nomatchesscoped",
 
   /**
    * **CSV Template and Load — decision 0445.** `coding-lists.js`'s own

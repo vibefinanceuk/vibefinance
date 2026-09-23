@@ -3949,7 +3949,9 @@ describe("the invoice-line Coding pop-out (decision 0453)", () => {
     "viewer.coding.noteditable": "Not editable at this stage",
     "viewer.coding.suggested": "Suggested from this supplier's own history — review before saving.",
     "viewer.coding.resultsfor": "Results for",
+    "viewer.coding.nomatchesscoped": "Narrowed by:",
     "apsetup.codingtab.companycode": "Org / Company Code",
+    "apsetup.codingtab.commoditycode": "Commodity Code",
     "field.bt-133": "Cost centre",
     "field.coding.project": "Project",
     "field.coding.commodity_code": "Commodity code",
@@ -4399,6 +4401,92 @@ describe("the invoice-line Coding pop-out (decision 0453)", () => {
       const listText = document.querySelector(".codingresultslist")?.textContent ?? "";
       expect(listText).toContain("Mjolner");
       expect(listText).not.toContain("Engineering West");
+    });
+  });
+
+  /**
+   * **Auto-focus, pre-load, and naming what narrowed an empty
+   * result — decision 0459.** The operator's own live follow-up once
+   * 0458 shipped: *"Could we auto-focus on the Cost Center and pre-
+   * load the screen with values for that field... Also - I see no rows
+   * returned for General Ledger, even though it seems to be
+   * populated."* The last part traced to intended behaviour (decision
+   * 0355's own "a missing filter is not everything," restated at the
+   * entry level by `coding-list-route.test.ts`'s own coverage) rather
+   * than a bug — what was actually missing was the pop-out saying why.
+   */
+  describe("auto-focus, pre-load, and naming what narrowed an empty result (decision 0459)", () => {
+    it("focuses the Cost Centre search box the moment the pop-out opens, before anybody clicks into it", async () => {
+      stub({
+        "/api/org/cost-centres": { costCentres: [{ id: "cc1", name: "Marketing", filters: [] }], total: 1, page: 1, pageSize: 50 },
+      });
+      await openAndClickCoding();
+      await new Promise((r) => setTimeout(r, 0));
+
+      const searchBoxes = [...document.querySelectorAll(".popout .searchbox")] as HTMLInputElement[];
+      expect(document.activeElement).toBe(searchBoxes[0]);
+    });
+
+    it("shows the Cost Centre field's own first page of results on open, with nothing typed", async () => {
+      stub({
+        "/api/org/cost-centres": { costCentres: [{ id: "cc1", name: "Marketing", filters: [] }], total: 1, page: 1, pageSize: 50 },
+      });
+      await openAndClickCoding();
+      await new Promise((r) => setTimeout(r, 0));
+
+      expect(document.querySelector(".codingresultslabel")?.textContent).toBe("Results for Cost centre");
+      expect(document.querySelector(".codingresultslist")?.textContent).toContain("Marketing");
+    });
+
+    it("does not preload any other field — only the one auto-focused", async () => {
+      const calls: string[] = [];
+      stub(
+        { "/api/org/cost-centres": { costCentres: [{ id: "cc1", name: "Marketing", filters: [] }], total: 1, page: 1, pageSize: 50 } },
+        calls
+      );
+      await openAndClickCoding();
+      await new Promise((r) => setTimeout(r, 0));
+
+      expect(calls.some((c) => c.startsWith("/api/coding-lists/project"))).toBe(false);
+    });
+
+    it("a plain empty result, with no active filter, states no matches and nothing more", async () => {
+      stub({
+        "/api/org/cost-centres": { costCentres: [], total: 0, page: 1, pageSize: 50 },
+      });
+      await openAndClickCoding();
+      await new Promise((r) => setTimeout(r, 0));
+
+      const listText = document.querySelector(".codingresultslist")?.textContent ?? "";
+      expect(listText).toBe("Nothing on file matches that.");
+    });
+
+    it("names the active filter on a scoped field's own empty result, so it reads as narrowed rather than broken", async () => {
+      stub({
+        "/api/field-visibility": {
+          fields: [
+            ...CODING_FIELDS.fields,
+            { field: "coding.gl_code", visibility: "edit", type: "text", line: true, description: "general ledger code" },
+          ],
+        },
+        "/api/org/cost-centres": { costCentres: [{ id: "cc1", name: "Marketing", filters: [] }], total: 1, page: 1, pageSize: 50 },
+        "/api/coding-lists/gl_code": { entries: [], declaredFilters: ["company_code", "commodity_code"], total: 0, page: 1, pageSize: 25 },
+      });
+      await openAndClickCoding();
+      await new Promise((r) => setTimeout(r, 0));
+
+      // Commodity Code stays `read` here (unchanged from `CODING_FIELDS`),
+      // so it renders no search box of its own — Cost Centre, Project,
+      // General Ledger Code are the three actually searchable fields.
+      const searchBoxes = [...document.querySelectorAll(".popout .searchbox")] as HTMLInputElement[];
+      const glBox = searchBoxes[2];
+      glBox.value = "anything";
+      glBox.oninput?.(new Event("input"));
+      await new Promise((r) => setTimeout(r, 0));
+
+      const listText = document.querySelector(".codingresultslist")?.textContent ?? "";
+      expect(listText).toContain("Nothing on file matches that.");
+      expect(listText).toContain("Narrowed by: Org / Company Code");
     });
   });
 });

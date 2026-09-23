@@ -2609,6 +2609,34 @@ section for the full reasoning and tests.
   `vf-app` change; touches `vf-ui` and `vf-licence` — see decision
   0458 for the full reasoning and verification.
 
+### Auto-focus, pre-load, one column again, and the General Ledger Code report (0459)
+- **The operator's own live follow-up**, once 0458 shipped: *"Could we
+  auto-focus on the Cost Center and pre-load the screen with values
+  for that field... I would prefer 1 listed set of results rather than
+  scrolling the results across two panels... I see no rows returned
+  for General Ledger, even though it seems to be populated."*
+- **Cost Centre auto-focuses and pre-loads** — its own search box takes
+  real focus the instant the pop-out opens, and shows its own first
+  page of results with nothing typed, the same request the server
+  already serves for an empty search string.
+- **Back to one column** — decision 0458's own 2-column grid reported
+  as harder to follow than one list scrolling straight down; reverted,
+  the now-redundant narrow-screen media query removed with it.
+- **General Ledger Code's own zero rows, traced, not fixed as a code
+  bug** — an entry with no Company Code/Commodity Code filter value
+  set at all does not match a filtered search, on purpose, per decision
+  0355's own "a missing filter is not everything" and a dedicated
+  existing test for the entry-level case of the same rule. Almost
+  certainly a data gap (those entries never scoped under AP Setup),
+  not a defect — needs the operator to confirm, since this session
+  cannot read the live database.
+- **What actually was missing**: the pop-out's own silence about why a
+  scoped field came back empty. Now shows a second line — "Narrowed
+  by: `<active filters>`" — via one new string, migration `0157`.
+- **Built and committed, not yet confirmed pushed/deployed** — touches
+  `vf-ui` and `vf-licence` only; no `vf-app` change — see decision
+  0459 for the full reasoning and verification.
+
 ### Purchase orders and matching
 - Purchase order storage grounded in Peppol BIS Order Only 3.3, via UBL
   XML ingestion (0081) and CSV load (0370) — the same tables, the same
@@ -3874,22 +3902,22 @@ elsewhere.
 | Package | Tests |
 |---|---|
 | `vf-app` | **2733/2733**, confirmed by one unfiltered whole-repo run (114 files) — decision 0457's own new `coding-suggestions.test.ts` (9) plus 3 new in `index.test.ts`, on top of the 2618 baseline + 6 (0451) + 11 (0452) + 23 (0453) + 5 (0454) + 3 (0455) + 9 (0456). First full-suite-confirmed count since decision 0447 — every count from 0448 through 0456 was arithmetic or a targeted-file run only, since this session's own tool timeout previously could not complete a full run; this run finally did (≈857s). |
-| `vf-licence` | **320/320**, confirmed by one unfiltered whole-repo run (21 files) — decisions 0457's and 0458's own migrations `0155`/`0156` each add rows to the existing `ui_strings` table, neither a new test file. |
-| `vf-ui` | 74 Worker (unchanged) · **1056/1056 browser**, confirmed by one unfiltered whole-repo run (48 files) — 1048 (decision 0453's own baseline) + 4 (decision 0457, the coding-suggestions pre-fill/note behaviour) + 4 (decision 0458, the fixed-size pop-out and shared results area); the pre-existing `document-window.test.ts` unhandled-rejection flake is unchanged at 160 non-fatal errors, none a failing assertion. *(Decision 0457's own contribution was originally recorded as 12 new against a miscounted 1060/1060 total — corrected here; see decision 0457's own doc for the correction.)* |
+| `vf-licence` | **320/320**, confirmed by one unfiltered whole-repo run (21 files) — decisions 0457's, 0458's, and 0459's own migrations `0155`/`0156`/`0157` each add rows to the existing `ui_strings` table, none a new test file. |
+| `vf-ui` | 74 Worker (unchanged) · **1061/1061 browser**, confirmed by one unfiltered whole-repo run (48 files) — 1048 (decision 0453's own baseline) + 4 (decision 0457, the coding-suggestions pre-fill/note behaviour) + 4 (decision 0458, the fixed-size pop-out and shared results area) + 5 (decision 0459, auto-focus/pre-load/scoped-empty-result coverage); the pre-existing `document-window.test.ts` unhandled-rejection flake is unchanged at 160 non-fatal errors, none a failing assertion. *(Decision 0457's own contribution was originally recorded as 12 new against a miscounted 1060/1060 total — corrected here; see decision 0457's own doc for the correction.)* |
 | `shared` | 295 passing, 3 known pre-existing failures |
 
 Both migration chains replay clean with every standing invariant
 holding — 77 migrations for `vf-app` (174 invariants, up from 76/170 —
-decision 0452's own migration `0077`; decisions 0453 through 0458
-added no new `vf-app` migration); `vf-licence`'s own 156-migration
+decision 0452's own migration `0077`; decisions 0453 through 0459
+added no new `vf-app` migration); `vf-licence`'s own 157-migration
 chain (up from 154 — decision 0457's own migration `0155`, decision
-0458's own migration `0156`) replays clean via `apply_migrations.py
---replay-only` (156 migrations, all assertions held) and is also
-validated through `workers/vf-licence/test/setup.ts` +
-`string-coverage.test.ts`, both green — `test/setup.ts` needed a fix
-at decision 0457 (having never been wired up past migration `0154`)
-and was kept current for `0156` in the same pass this decision made
-anyway.
+0458's own migration `0156`, decision 0459's own migration `0157`)
+replays clean via `apply_migrations.py --replay-only` (157 migrations,
+all assertions held) and is also validated through
+`workers/vf-licence/test/setup.ts` + `string-coverage.test.ts`, both
+green — `test/setup.ts` needed a fix at decision 0457 (having never
+been wired up past migration `0154`) and was kept current for `0156`
+and `0157` in the same pass each of those decisions made anyway.
 
 **Decision 0448's own `vf-app` count is not re-verified against the
 full, whole-repo suite** — this session's own tool timeout could not
@@ -4036,7 +4064,7 @@ fresh whole-suite pass, since only that one file changed.
 | `docs/design/multi-authority-intake.md` | Non-EN-16931 authorities | Design only |
 | `docs/design/text-layer-extraction.md` | Reading a PDF's own text | Design only |
 | `docs/design/cost-object-approval-hierarchy.md` | Cost-Object Approval Hierarchy investigation (decision 0450) — its proposed shape and three open questions are now built and answered by decision 0452 | Design only |
-| `docs/decisions/` | 458 decision records | Current |
+| `docs/decisions/` | 459 decision records | Current |
 | `docs/decisions/SUPERSEDED.md` | Which records supersede which | **Read first** |
 
 Document 4's markdown source is at `docs/documents/`, with

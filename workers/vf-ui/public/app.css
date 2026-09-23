@@ -1987,21 +1987,24 @@
   }
   .codingresultslabel { min-height: 1.2em; margin-bottom: 6px; }
   /*
-    **Two columns, unwrapped rows** — the operator's own ask, so more
-    results are visible at once than one column of wrapping name-then-
-    code text allowed. `.resultname` truncates with an ellipsis rather
-    than wrapping; the full name is still on the button's own `title`.
-    `.resultid` never shrinks — it's short, and the whole reason
-    somebody is searching is often to read the code back.
+    **One column, unwrapped rows** — decision 0459, reversing 0458's own
+    two-column layout: reported live as harder to scan than a single
+    list ("I would prefer 1 listed set of results rather than scrolling
+    the results across two panels"). `overflow-y: auto` (unchanged from
+    0458) keeps the scrollbar this now makes more likely to be needed,
+    a single column holding fewer rows per screen height than two did.
+    `.resultname` still truncates with an ellipsis rather than wrapping
+    — the full name is still on the button's own `title` — and
+    `.resultid` still never shrinks, since reading the code back is
+    often the point of searching at all.
   */
   .codingresultslist {
     flex: 1;
     min-height: 0;
     overflow-y: auto;
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 2px 16px;
-    align-content: start;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
   }
   .codingresultslist .searchresult {
     display: flex;
@@ -2018,10 +2021,6 @@
     white-space: nowrap;
   }
   .codingresultslist .resultid { flex: none; white-space: nowrap; }
-  .codingresultsempty { grid-column: 1 / -1; }
-  @media (max-width: 620px) {
-    .codingresultslist { grid-template-columns: 1fr; }
-  }
 
   /*
     **Every card's own title, and a rule beneath it** — decision 0396,

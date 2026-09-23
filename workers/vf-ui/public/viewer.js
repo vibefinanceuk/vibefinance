@@ -861,6 +861,18 @@ const CODING_PICKER_FIELDS = [
 ];
 
 /**
+ * A `filterKeys` entry's own display label — decision 0459, so a
+ * filtered field's own "no matches" note (`searchableEntryPicker`'s
+ * `scopeNote`) can name what narrowed it in words a person already
+ * reads elsewhere (AP Setup's own Account Coding tab uses these same
+ * two keys).
+ */
+const FILTER_FIELD_LABEL_KEYS = {
+  company_code: "apsetup.codingtab.companycode",
+  commodity_code: "apsetup.codingtab.commoditycode",
+};
+
+/**
  * One read, for whichever of the four lists a picker asks about —
  * decision 0453. Cost Centre's own richer route returns
  * `{costCentres: [...]}`; the other three's shared route returns
@@ -963,8 +975,23 @@ function codingResultsController(resultsLabel, resultsList) {
  * the input and its clear button; what it finds is shown in the
  * pop-out's one shared area instead, labelled with `fieldLabel` so
  * it's unambiguous which field a click there will fill.
+ *
+ * **`preload`, decision 0459** — the operator's own ask, so the first
+ * field (Cost Centre) shows something the instant the pop-out opens
+ * rather than only once somebody has typed two characters. Runs the
+ * exact same search a person would get from an empty box — the server
+ * already treats a blank `search` as "no search clause," so this is
+ * the list's own first page, not a second code path to keep in sync.
+ *
+ * **`scopeNote`, decision 0459** — read live at search time, the same
+ * reason `filters()` itself is a closure rather than a value: a field
+ * whose results come back empty because it is narrowed by another
+ * field (General Ledger Code, by Company Code and Commodity Code)
+ * should say so, rather than look identical to a field with no
+ * narrowing at all that simply has no matching entries. Returns the
+ * currently-active filter labels, or an empty array for none.
  */
-function searchableEntryPicker({ current, hint, fetchResults, resolveCurrent, onChoose, fieldLabel, results }) {
+function searchableEntryPicker({ current, hint, fetchResults, resolveCurrent, onChoose, fieldLabel, results, preload = false, scopeNote = () => [] }) {
   const input = el("input", { type: "text", class: "searchbox", placeholder: hint, value: current ?? "" });
   const clearButton = el("button", {
     class: "rm",
@@ -987,17 +1014,18 @@ function searchableEntryPicker({ current, hint, fetchResults, resolveCurrent, on
       });
   }
 
-  input.oninput = async () => {
-    const q = input.value;
-    if (q.trim().length < 2) {
-      results.clear(results.next());
-      return;
-    }
+  const runSearch = async (q) => {
     const token = results.next();
     try {
       const found = await fetchResults(q);
       if (found.length === 0) {
-        results.show(token, fieldLabel, [el("div", { class: "codingresultsempty muted", text: t("viewer.coding.nomatches") })]);
+        const activeScopes = scopeNote();
+        results.show(token, fieldLabel, [
+          el("div", { class: "codingresultsempty muted", text: t("viewer.coding.nomatches") }),
+          ...(activeScopes.length
+            ? [el("div", { class: "codingresultsempty muted sm", text: `${t("viewer.coding.nomatchesscoped")} ${activeScopes.join(", ")}` })]
+            : []),
+        ]);
         return;
       }
       results.show(
@@ -1020,6 +1048,17 @@ function searchableEntryPicker({ current, hint, fetchResults, resolveCurrent, on
       results.show(token, fieldLabel, [el("div", { class: "codingresultsempty warn", text: t("viewer.coding.searchfailed") })]);
     }
   };
+
+  input.oninput = () => {
+    const q = input.value;
+    if (q.trim().length < 2) {
+      results.clear(results.next());
+      return;
+    }
+    runSearch(q);
+  };
+
+  if (preload) runSearch("");
 
   return el("div", { class: "codingsearch" }, [input, clearButton]);
 }
@@ -1085,6 +1124,14 @@ async function openLineCodingPopout(line) {
   const resultsList = el("div", { class: "codingresultslist" });
   const results = codingResultsController(resultsLabel, resultsList);
 
+  // The box a person lands in the moment the pop-out opens — decision
+  // 0459: *"Could we auto-focus on the Cost Center and pre-load the
+  // screen with values for that field."* Cost Centre is always the
+  // first editable field when it is shown at all, so it is filled in
+  // once the field loop below finds it, and focused once the pop-out
+  // is actually in the document (a detached element cannot take focus).
+  let costCentreInput = null;
+
   const fieldRows = CODING_PICKER_FIELDS.flatMap((spec) => {
     const fieldLabel = t(`field.${spec.field.toLowerCase()}`);
     const label = el("label", { text: fieldLabel });
@@ -1127,6 +1174,12 @@ async function openLineCodingPopout(line) {
       fetchResults: (q) => fetchCodingEntries(spec.listType, q, filters()),
       fieldLabel,
       results,
+      // Cost Centre only — decision 0459: shows its own first page the
+      // instant the pop-out opens, rather than waiting on a keystroke.
+      preload: spec.field === "BT-133",
+      // Read live, same reason `filters()` above is — which of this
+      // field's own declared filters is actually set right now.
+      scopeNote: () => spec.filterKeys.filter((key) => filters()[key]).map((key) => t(FILTER_FIELD_LABEL_KEYS[key] ?? key)),
       onChoose: (item) => {
         chosen[spec.field] = item?.id ?? null;
         line[spec.field] = item?.id ?? "";
@@ -1139,6 +1192,7 @@ async function openLineCodingPopout(line) {
         }
       },
     });
+    if (spec.field === "BT-133") costCentreInput = picker.querySelector(".searchbox");
     return suggestedNote ? [label, el("div", {}, [picker, suggestedNote])] : [label, picker];
   });
 
@@ -1174,6 +1228,9 @@ async function openLineCodingPopout(line) {
     if (e.target === backdrop) close();
   };
   document.body.append(backdrop);
+  // Only takes effect once the element is actually in the document —
+  // decision 0459.
+  costCentreInput?.focus();
 }
 
 function renderLines() {
