@@ -1946,35 +1946,37 @@
     0458 moved that to one shared area below every field, so this is
     just the box and its clear button.
 
-    **Narrowed to 2/3 of its own column — decision 0460**, the
-    operator's own ask, rather than the full `.editgrid` column width
-    every other row here still uses. `width` on the grid itself, not
-    just the input inside it, so the clear button narrows along with
-    the box rather than drifting off to the right of a now-shorter one.
+    **`width: 100%` of one shared column — decision 0461**, not its
+    own stated fraction any more. Decision 0460's `66.6667%` here and
+    `.codingcompanycode`'s own separate `66.6667%` below were two
+    copies of the same number; reported live as visibly out of step
+    with each other (see `--codingfield-w` on `.popout.codingpopout`
+    below, the one place that number is stated now) once they had.
+    `width` still lives on the grid itself, not just the input inside
+    it, so the clear button narrows along with the box.
   */
   .codingsearch {
     display: grid;
     grid-template-columns: 1fr 28px;
     gap: 4px;
     align-items: start;
-    width: 66.6667%;
+    width: 100%;
   }
   .codingsearch .searchbox { margin: 0; }
 
   /*
-    **Org / Company Code, matched to the fields beneath it — decision
-    0460.** Reported live as visibly inconsistent: the generic
-    `.readonly` rule (decision 0402) is 32px tall with no border, a
-    real `<input>` here is 38px with one, and `.codingsearch` above
-    just narrowed to 2/3 width while this plain `.readonly` div still
-    spans the whole column. Restated at the same two properties, not
-    given a border to match — decision 0402's own point was that a
-    locked field should read as flatter than an editable one, which
-    this keeps.
+    **Org / Company Code, matched to the fields beneath it** — decision
+    0460's own ask, restated by decision 0461: the generic `.readonly`
+    rule (decision 0402) is 32px tall with no border, a real `<input>`
+    here is 38px with one. `min-height` still restates that one number
+    — `.readonly` is shared far too widely to touch its own default —
+    but `width` is now `100%` of the same `--codingfield-w` column
+    `.codingsearch` above resolves to, rather than its own separate
+    copy of `66.6667%`, so the two cannot read differently again.
   */
   .popout.codingpopout .codingcompanycode {
     min-height: 38px;
-    width: 66.6667%;
+    width: 100%;
   }
 
   /*
@@ -1991,14 +1993,35 @@
     Only one field's results show at a time — whichever was searched
     most recently, per `codingResultsController` in `viewer.js` — so a
     shared area is unambiguous rather than a loss of information.
+
+    **The pop-out's own width, computed rather than fixed — decision
+    0461.** Decision 0458 set this to 900px for a two-column results
+    grid; decision 0459 already put that grid back to one column, and
+    decision 0460 narrowed the boxes inside without ever revisiting
+    this, so Close (pinned to the pop-out's own edge by `.cardhead`'s
+    `justify-content: space-between`) sat well past where the boxes
+    actually ended — reported live, with a screenshot, and worked out
+    first as a mock-up (`docs/design/mockups/line-coding-popout-widths.html`)
+    rather than guessed and re-shipped. `--codingfield-label-w` and
+    `--codingfield-w` are the only two numbers stated anywhere in this
+    component now; the pop-out's own width is their sum plus its
+    padding and the grid's own gap, so Close lands on the box's own
+    right edge as an arithmetic consequence, not a second measurement
+    someone has to keep matching by hand. Chosen live, from the
+    mock-up's own slider: 190px / 320px.
   */
   .popout.codingpopout {
-    width: min(900px, 100%);
+    --codingfield-label-w: 190px;
+    --codingfield-w: 320px;
+    width: min(calc(16px + var(--codingfield-label-w) + 14px + var(--codingfield-w) + 16px), 100%);
     height: min(640px, 85vh);
     display: flex;
     flex-direction: column;
   }
-  .popout.codingpopout .editgrid { flex: none; }
+  .popout.codingpopout .editgrid {
+    flex: none;
+    grid-template-columns: var(--codingfield-label-w) 1fr;
+  }
   .codingresults {
     flex: 1;
     min-height: 0;

@@ -2682,6 +2682,38 @@ section for the full reasoning and tests.
   mock up rather than build straight to a fix — see
   `docs/design/mockups/line-coding-popout-widths.html`.
 
+### One box width drives the Coding pop-out, not three copies of it (0461)
+- **The root cause behind all three of 0460's own live reports** — the
+  search boxes' own `66.6667%`, the Org / Company Code box's own
+  separate `66.6667%`, and the pop-out's own `900px` (a decision-0458
+  leftover, sized for a two-column results grid decision 0459 already
+  removed) were three independent numbers, not one relationship — so
+  narrowing two of them left the third exactly where it was, and
+  Close, pinned to it, landed nowhere near the boxes any more.
+- **`--codingfield-label-w`/`--codingfield-w`, stated once** on
+  `.popout.codingpopout` — the grid's own label column, the search
+  boxes, the read-only Org / Company Code box (both now `width: 100%`
+  of the same column instead of each stating its own fraction), and
+  the pop-out's own width (their sum plus padding and gap) all read
+  from these two custom properties now, so they cannot drift apart the
+  way three separate numbers just did.
+- **190px / 320px** — chosen live, from the mock-up's own slider
+  (`docs/design/mockups/line-coding-popout-widths.html`), watching how
+  a genuinely long Commodity Code value read inside it. Wider than
+  decision 0460's own `66.6667%` resolved to in isolation (~285px),
+  but the pop-out itself shrinks from 900px to 556px — the report was
+  about the pop-out reading too wide as a whole, and that's most of
+  what changes here.
+- **Verified against the real, unmodified `app.css`** — not just the
+  mock-up's own reproduction of it — rendered headless in the dark
+  theme to confirm Close lands directly above the box's own right
+  edge and Org / Company Code matches the search boxes in both width
+  and height.
+- **Built and committed, not yet confirmed deployed** — CSS only,
+  touches `vf-ui`'s `app.css` alone; no `viewer.js` change, no
+  migration, no new string key — see decision 0461 for the full
+  reasoning and verification.
+
 ### Purchase orders and matching
 - Purchase order storage grounded in Peppol BIS Order Only 3.3, via UBL
   XML ingestion (0081) and CSV load (0370) — the same tables, the same
@@ -4109,7 +4141,7 @@ fresh whole-suite pass, since only that one file changed.
 | `docs/design/multi-authority-intake.md` | Non-EN-16931 authorities | Design only |
 | `docs/design/text-layer-extraction.md` | Reading a PDF's own text | Design only |
 | `docs/design/cost-object-approval-hierarchy.md` | Cost-Object Approval Hierarchy investigation (decision 0450) — its proposed shape and three open questions are now built and answered by decision 0452 | Design only |
-| `docs/decisions/` | 460 decision records | Current |
+| `docs/decisions/` | 461 decision records | Current |
 | `docs/decisions/SUPERSEDED.md` | Which records supersede which | **Read first** |
 
 Document 4's markdown source is at `docs/documents/`, with
