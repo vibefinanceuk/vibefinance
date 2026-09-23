@@ -3,7 +3,11 @@
 **Status: built and tested, not yet pushed.** This session has no push
 access — delivered as a bundle (`origin/main..main`) for the operator
 to apply and push. Built on top of `bef7414` (decision 0454's own
-confirmation commit); this session's own tip commit is `6e4f615`.
+confirmation commit); the code change itself is commit `7afe624`,
+followed by two small documentation-only touch-ups. See HANDOVER.md
+for this session's exact current tip once delivered — no further edit
+to this line is planned, to avoid this file chasing its own commit
+hash across each documentation commit that follows it.
 
 ---
 
