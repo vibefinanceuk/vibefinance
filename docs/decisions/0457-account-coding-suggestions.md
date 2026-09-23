@@ -1,8 +1,10 @@
 # 0457 — Account Coding Suggestions, Phase 1: A Frequency-Based Default From the Supplier's Own History
 
-**Status: built and tested, not yet pushed.** This session has no push
-access — delivered as a bundle (`origin/main..main`), built on top of
-decision 0456's own tip commit, for the operator to apply and push.
+**Status: confirmed pushed, deployed, and migration applied.**
+`origin/main` fetched directly reads `2b4c520`, matching this
+session's own commit exactly, and the operator confirmed `wrangler
+deploy` run for `vf-app` and `vf-ui`, plus migration `0155` applied
+via `apply_migrations.py --remote` against `vf-licence-poc`.
 
 ---
 
@@ -153,18 +155,10 @@ monorepo, unrelated to this decision and unchanged by it.
 
 ## Still to do, operator side
 
-Unlike decisions 0455/0456 (pure `vf-app` backend fixes), this touches
-all three of `vf-app`, `vf-ui`, and `vf-licence`, plus a new migration:
-
-- `wrangler deploy` for `vf-app` (the new `coding-suggestions.ts` and
-  `index.ts`'s new route).
-- `wrangler deploy` for `vf-ui` (the rewritten `viewer.js`).
-- `apply_migrations.py --remote --database vf-licence-poc
-  --migrations-dir workers/vf-licence/migrations` for `vf-licence`
-  (migration `0155`) — following this project's own now well-
-  established habit: a deploy and a migration apply are two separate
-  steps, and skipping the second means the new note under a suggested
-  field shows its raw string key instead of real text.
+All done — `wrangler deploy` confirmed for both `vf-app` and `vf-ui`,
+and migration `0155` confirmed applied to `vf-licence-poc` via
+`apply_migrations.py --remote`, all in the operator's own single
+report: *"pushed and deployed."*
 
 Worth watching once live: whether `MIN_SAMPLE_SIZE`/`MIN_CONFIDENCE`
 feel right in practice, and whether the "no confirmed-vs-suggested

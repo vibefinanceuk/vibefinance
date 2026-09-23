@@ -2513,8 +2513,9 @@ section for the full reasoning and tests.
   Coding fields had a `field_visibility` row at all) found and fixed
   directly against the live database during the same conversation,
   not through a code change.
-- **Built and tested, not yet pushed** — see decision 0455 for the
-  full reasoning and verification.
+- **Confirmed pushed and deployed** — the operator's own report,
+  *"pushed and deployed"* — see decision 0455 for the full reasoning
+  and verification.
 
 ### AP.Code Can View and Work an Entire Coding Task (0456)
 - **Found while wiring an unrelated new route, checking out of habit
@@ -2533,8 +2534,9 @@ section for the full reasoning and tests.
   only the routes actually on the Coding path were touched; no
   equivalent audit for `AP.Match`, which wasn't reported and might
   have the same class of gap.
-- **Built and tested, not yet pushed** — see decision 0456 for the
-  full reasoning and verification.
+- **Confirmed pushed and deployed** — the operator's own report,
+  *"pushed and deployed"* — see decision 0456 for the full reasoning
+  and verification.
 
 ### Account Coding Suggestions, Phase 1: a Frequency-Based Default (0457)
 - **The operator's own ask**: *"I would like to introduce in the future
@@ -2564,9 +2566,11 @@ section for the full reasoning and tests.
   a real gap worth raising if audit-of-review ever matters; no
   explicit-Accept step (considered, rejected as needless friction for
   Phase 1); no Phase 2 learned model; nothing for Matching.
-- **Built and tested, not yet pushed** — touches `vf-app`, `vf-ui`,
-  and `vf-licence` (one new migration, `0155`) — see decision 0457 for
-  the full reasoning and verification.
+- **Confirmed pushed and deployed** — the operator's own report,
+  *"pushed and deployed"*, including migration `0155`'s own separate
+  `apply_migrations.py --remote` run against `vf-licence-poc` — touches
+  `vf-app`, `vf-ui`, and `vf-licence` — see decision 0457 for the full
+  reasoning and verification.
 
 ### Purchase orders and matching
 - Purchase order storage grounded in Peppol BIS Order Only 3.3, via UBL

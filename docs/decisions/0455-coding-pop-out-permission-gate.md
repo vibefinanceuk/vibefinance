@@ -1,13 +1,10 @@
 # 0455 — The Coding Pop-out's Search Routes Now Also Accept AP.Code
 
-**Status: built and tested, not yet pushed.** This session has no push
-access — delivered as a bundle (`origin/main..main`) for the operator
-to apply and push. Built on top of `bef7414` (decision 0454's own
-confirmation commit); the code change itself is commit `7afe624`,
-followed by two small documentation-only touch-ups. See HANDOVER.md
-for this session's exact current tip once delivered — no further edit
-to this line is planned, to avoid this file chasing its own commit
-hash across each documentation commit that follows it.
+**Status: confirmed pushed and deployed.** `origin/main` fetched
+directly reads `2b4c520` (this decision's own code is commit `7afe624`,
+carried forward through decisions 0456 and 0457's own commits on top),
+and the operator confirmed `wrangler deploy` run for `vf-app` — the
+only worker this decision touched. No migration to apply.
 
 ---
 

@@ -1,8 +1,11 @@
 # 0456 — AP.Code Can View and Work an Entire Coding Task, Not Just Search and Claim It
 
-**Status: built and tested, not yet pushed.** This session has no push
-access — delivered as a bundle (`origin/main..main`), built on top of
-decision 0455's own tip commit, for the operator to apply and push.
+**Status: confirmed pushed and deployed.** `origin/main` fetched
+directly reads `2b4c520` (this decision's own code is commit `dee4151`,
+built on top of decision 0455's own tip commit, carried forward
+through decision 0457's own commit on top), and the operator confirmed
+`wrangler deploy` run for `vf-app` — the only worker this decision
+touched. No migration to apply.
 
 ---
 
