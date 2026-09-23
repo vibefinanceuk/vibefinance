@@ -2439,6 +2439,52 @@ section for the full reasoning and tests.
   operator's own report. See decision 0453 for the full reasoning and
   verification.
 
+### Completing a Task No Longer Strands an Invoice on the Next Stage (0454)
+- **Found live, worked through in conversation rather than filed as a
+  ticket first**: an invoice sat at Matching, `Waiting`, nothing in
+  Tasks, no error banner, no way to move it — even with the right
+  permission and team membership both confirmed. Traced through the
+  invoice's own Activity tab to one person-driven event immediately
+  before it went quiet: *"Alice McDonald completed Validation."*
+- **A second cascade existed alongside `visitCurrentStage`, and only
+  one of the two actually evaluates a stage for real.**
+  `onTaskCompleted` (called only when a person completes a task) never
+  loaded facts, by design, and used to stop dead — silently, no task,
+  no error, nothing recorded — the instant its cascade reached a stage
+  with *any* `rule_set_id` attached, including one pointing at a rule
+  set with no live rules in it. `visitCurrentStage` itself (intake,
+  and the `/visit` route) already handled that case correctly, which
+  is why only invoices needing a person to clear a task upstream — not
+  the routine, straight-through majority — were ever at risk.
+- **`onTaskCompleted` now reports where it stopped** instead of
+  returning `void` — a new `needsEvaluationAt: {instanceId, stageId}`
+  on its result, set exactly when its cascade reaches a rule-bearing
+  stage. Its own database writes are unchanged; this is a reported
+  handoff where there used to be a silent one.
+- **`index.ts`'s new `followUpAfterTaskCompletion`** picks up that
+  handoff at the same call site decision 0019 already uses to avoid a
+  circular import — loads the invoice's real header facts and real
+  stored lines (`loadStoredInvoiceLines`, new, invoice-facts-route.ts
+  — the same conversion `handleGetInvoice`'s own advisory validation
+  call already did inline, pulled out rather than duplicated), and
+  makes the one genuine `visitCurrentStage` call the stage actually
+  needed — the same call the engine's own comment already said was
+  required, but that nothing in the product had ever actually made.
+  Invoice-only, deliberately, the same boundary `intake-capture-
+  route.ts`'s own equivalent block already draws.
+- **A genuine refusal is now visible, not newly silent again** — a
+  `workflow.stageError` fact written on a real 409/422 from the
+  follow-up visit (an org a stage requires but the invoice still
+  lacks, say), reusing decision 0435's own mechanism and the viewer's
+  own existing banner verbatim.
+- **Not built**: no retroactive fix for an invoice already stranded
+  before this shipped (the existing `/process-instances/:id/visit`
+  route is the documented way to clear one by hand); no UI change —
+  a customer still cannot tell "no rule set" from "a rule set with
+  nothing in it" from the Processes screen itself.
+- **Status: built and tested, not yet pushed.** See decision 0454 for
+  the full reasoning and verification.
+
 ### Purchase orders and matching
 - Purchase order storage grounded in Peppol BIS Order Only 3.3, via UBL
   XML ingestion (0081) and CSV load (0370) — the same tables, the same
@@ -3703,19 +3749,19 @@ elsewhere.
 
 | Package | Tests |
 |---|---|
-| `vf-app` | 2618 baseline + 6 (0451) + 11 (0452) + 23 (0453) = **2658**, arithmetic, not re-confirmed by a full run — see note below |
+| `vf-app` | 2618 baseline + 6 (0451) + 11 (0452) + 23 (0453) + 5 (0454) = **2663**, arithmetic, not re-confirmed by a full run — see note below |
 | `vf-licence` | 320 |
 | `vf-ui` | 74 Worker · 1048 browser, all passing — see below |
 | `shared` | 295 passing, 3 known pre-existing failures |
 
 Both migration chains replay clean with every standing invariant
 holding — 77 migrations for `vf-app` (174 invariants, up from 76/170 —
-decision 0452's own migration `0077`; decision 0453 added no new
-`vf-app` migration); `vf-licence`'s own 154-migration chain (up from
-153 — decision 0453's own migration `0154`) has no equivalent Python
-replay, and is instead validated through
-`workers/vf-licence/test/setup.ts` + `string-coverage.test.ts`, both
-green as of decision 0453.
+decision 0452's own migration `0077`; decisions 0453 and 0454 added
+no new `vf-app` migration); `vf-licence`'s own 154-migration chain (up
+from 153 — decision 0453's own migration `0154`; decision 0454 added
+none) has no equivalent Python replay, and is instead validated
+through `workers/vf-licence/test/setup.ts` + `string-coverage.test.ts`,
+both green as of decision 0453.
 
 **Decision 0448's own `vf-app` count is not re-verified against the
 full, whole-repo suite** — this session's own tool timeout could not
@@ -3862,7 +3908,7 @@ fresh whole-suite pass, since only that one file changed.
 | `docs/design/multi-authority-intake.md` | Non-EN-16931 authorities | Design only |
 | `docs/design/text-layer-extraction.md` | Reading a PDF's own text | Design only |
 | `docs/design/cost-object-approval-hierarchy.md` | Cost-Object Approval Hierarchy investigation (decision 0450) — its proposed shape and three open questions are now built and answered by decision 0452 | Design only |
-| `docs/decisions/` | 453 decision records | Current |
+| `docs/decisions/` | 454 decision records | Current |
 | `docs/decisions/SUPERSEDED.md` | Which records supersede which | **Read first** |
 
 Document 4's markdown source is at `docs/documents/`, with

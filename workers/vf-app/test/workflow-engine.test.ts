@@ -253,7 +253,11 @@ describe("visitCurrentStage — a stage marked uses_approval_hierarchy resolves 
     const codingTask = await env.DB.prepare("SELECT id FROM tasks WHERE stage_id = 'coding'").first<{ id: string }>();
     await handleClaimTask(env.DB, codingTask!.id, "alice");
     await handleCompleteTask(env.DB, codingTask!.id, "alice");
-    await onTaskCompleted(env.DB, codingTask!.id); // advances to 'approval', stops there — a real rule set needs real facts
+    // Advances to 'approval', stops there — a real rule set needs real
+    // facts this function never has (decision 0454's own reported
+    // handoff, not a silent one).
+    const cascade = await onTaskCompleted(env.DB, codingTask!.id);
+    expect(cascade.needsEvaluationAt).toEqual({ instanceId, stageId: "approval" });
 
     const advanced = await env.DB.prepare("SELECT current_stage_id FROM process_instances WHERE id = ?").bind(instanceId).first();
     expect(advanced).toEqual({ current_stage_id: "approval" });

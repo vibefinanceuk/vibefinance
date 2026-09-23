@@ -1503,6 +1503,247 @@ describe("process instances and stage visits, through the real router (decision 
     expect(instanceRow).toEqual({ status: "completed", current_stage_id: "s3" });
   });
 
+  describe("completing a task no longer strands the instance on the stage it lands on next — decision 0454", () => {
+    /**
+     * Reproduces exactly what was found live: a person clears a task,
+     * the instance lands on the next stage, and — before this decision —
+     * that was the end of it if the stage had any rule_set_id at all,
+     * whether or not that rule set actually had a live rule to fire.
+     * `onTaskCompleted` (workflow-engine.ts) never loaded facts and so
+     * never could evaluate it; now it reports where it stopped, and
+     * `index.ts`'s own `followUpAfterTaskCompletion` loads the real
+     * invoice and finishes the job with a genuine `visitCurrentStage`
+     * call, the same one `/process-instances/:id/visit` already uses.
+     */
+    async function seedProcessAndTeam(): Promise<void> {
+      await SELF.fetch("https://example.com/processes", { method: "POST", headers: authHeaders(), body: JSON.stringify({ id: "p1", name: "AP" }) });
+      await env.DB.prepare("INSERT INTO org_units (id, name) VALUES ('u1', 'Acme France') ON CONFLICT(id) DO NOTHING").run();
+      await SELF.fetch("https://example.com/org/teams", { method: "POST", headers: authHeaders(), body: JSON.stringify({ id: "ap-team", name: "AP team", unitId: "u1" }) });
+      await SELF.fetch("https://example.com/org/teams/ap-team/members", {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({ userId: "test-user" }),
+      });
+    }
+
+    it("a stage whose rule set has no live rules is evaluated and fallen through, not parked on forever", async () => {
+      await seedProcessAndTeam();
+      await seedActivatedRuleSet("rs-approval", {
+        conditions: { field: "BT-112", operator: "greater_than", value: 1000 },
+        actions: [{ type: "assign_task", params: { team: "ap-team", permission: "AP.Approve" } }],
+      });
+      // The exact shape reported live: a real rule_set_id, genuinely
+      // no rules in it — never null, so a customer's own "Matching"
+      // or "Coding" stage showing no rules in the Rules screen still
+      // has this attached underneath, and used to be exactly as stuck
+      // as one that needed a real task.
+      await env.DB.prepare("INSERT INTO rule_sets (id, name, mode, status) VALUES ('rs-empty', 'empty', 'first_match', 'active')").run();
+
+      await SELF.fetch("https://example.com/processes/p1/stages", { method: "POST", headers: authHeaders(), body: JSON.stringify({ id: "s1", name: "Received", sequence: 1 }) });
+      await SELF.fetch("https://example.com/processes/p1/stages", { method: "POST", headers: authHeaders(), body: JSON.stringify({ id: "s2", name: "Approval", sequence: 2, ruleSetId: "rs-approval" }) });
+      await SELF.fetch("https://example.com/processes/p1/stages", { method: "POST", headers: authHeaders(), body: JSON.stringify({ id: "s3", name: "Matching", sequence: 3, ruleSetId: "rs-empty" }) });
+      await SELF.fetch("https://example.com/processes/p1/stages", { method: "POST", headers: authHeaders(), body: JSON.stringify({ id: "s4", name: "Payment-eligible", sequence: 4 }) });
+
+      const invoiceRes = await SELF.fetch("https://example.com/invoices", {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({ id: "inv-454-a", facts: { "BT-112": 3000 } }),
+      });
+      expect(invoiceRes.status).toBe(201);
+
+      const createRes = await SELF.fetch("https://example.com/processes/p1/instances", {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({ subjectType: "invoice", subjectId: "inv-454-a" }),
+      });
+      const instanceId = (await createRes.json() as { id: string }).id;
+
+      const visitRes = await SELF.fetch(`https://example.com/process-instances/${instanceId}/visit`, {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({ facts: {} }),
+      });
+      expect((await visitRes.json() as { currentStageId: string }).currentStageId).toBe("s2");
+
+      const taskRow = await env.DB.prepare("SELECT id FROM tasks WHERE stage_id = 's2'").first<{ id: string }>();
+      await SELF.fetch(`https://example.com/tasks/${taskRow!.id}/claim`, { method: "POST", headers: authHeaders() });
+      const completeRes = await SELF.fetch(`https://example.com/tasks/${taskRow!.id}/complete`, { method: "POST", headers: authHeaders() });
+      expect(completeRes.status).toBe(200);
+
+      // Before decision 0454: current_stage_id === 's3', status
+      // 'in_progress', forever — no task, no error, nothing to see.
+      const instanceRow = await env.DB.prepare("SELECT status, current_stage_id FROM process_instances WHERE id = ?").bind(instanceId).first();
+      expect(instanceRow).toEqual({ status: "completed", current_stage_id: "s4" });
+    });
+
+    it("a stage whose rule set genuinely fires gets a real task, not a silent stop", async () => {
+      await seedProcessAndTeam();
+      await seedActivatedRuleSet("rs-validation", {
+        conditions: { field: "BT-112", operator: "greater_than", value: -1 },
+        actions: [{ type: "assign_task", params: { team: "ap-team", permission: "AP.Validate" } }],
+      });
+      await seedActivatedRuleSet("rs-matching", {
+        conditions: { field: "BT-112", operator: "greater_than", value: 5000 },
+        actions: [{ type: "assign_task", params: { team: "ap-team", permission: "AP.Match" } }],
+      });
+
+      await SELF.fetch("https://example.com/processes/p1/stages", { method: "POST", headers: authHeaders(), body: JSON.stringify({ id: "s1", name: "Validation", sequence: 1, ruleSetId: "rs-validation" }) });
+      await SELF.fetch("https://example.com/processes/p1/stages", { method: "POST", headers: authHeaders(), body: JSON.stringify({ id: "s2", name: "Matching", sequence: 2, ruleSetId: "rs-matching" }) });
+      await SELF.fetch("https://example.com/processes/p1/stages", { method: "POST", headers: authHeaders(), body: JSON.stringify({ id: "s3", name: "Payment-eligible", sequence: 3 }) });
+
+      await SELF.fetch("https://example.com/invoices", {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({ id: "inv-454-b", facts: { "BT-112": 9000 } }),
+      });
+      const createRes = await SELF.fetch("https://example.com/processes/p1/instances", {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({ subjectType: "invoice", subjectId: "inv-454-b" }),
+      });
+      const instanceId = (await createRes.json() as { id: string }).id;
+      await SELF.fetch(`https://example.com/process-instances/${instanceId}/visit`, { method: "POST", headers: authHeaders(), body: JSON.stringify({ facts: {} }) });
+
+      const validationTask = await env.DB.prepare("SELECT id FROM tasks WHERE stage_id = 's1'").first<{ id: string }>();
+      await SELF.fetch(`https://example.com/tasks/${validationTask!.id}/claim`, { method: "POST", headers: authHeaders() });
+      await SELF.fetch(`https://example.com/tasks/${validationTask!.id}/complete`, { method: "POST", headers: authHeaders() });
+
+      // Matching's own rule fires for real (9000 > 5000) — a genuine
+      // task now exists there, proving a real evaluation ran rather
+      // than the instance simply landing on s2 and stopping.
+      const instanceRow = await env.DB.prepare("SELECT status, current_stage_id FROM process_instances WHERE id = ?").bind(instanceId).first();
+      expect(instanceRow).toEqual({ status: "in_progress", current_stage_id: "s2" });
+      const matchingTask = await env.DB.prepare(
+        "SELECT owner_team_id, required_permission FROM tasks WHERE stage_id = 's2'"
+      ).first<{ owner_team_id: string; required_permission: string }>();
+      expect(matchingTask).toEqual({ owner_team_id: "ap-team", required_permission: "AP.Match" });
+    });
+
+    it("loads the invoice's own real, stored lines for a line-scope follow-up evaluation — not none", async () => {
+      await seedProcessAndTeam();
+      await seedActivatedRuleSet("rs-validation2", {
+        conditions: { field: "BT-112", operator: "greater_than", value: -1 },
+        actions: [{ type: "assign_task", params: { team: "ap-team", permission: "AP.Validate" } }],
+      });
+      // Line-scope, and only fires for a line coded to 'cc1' — a fact
+      // `onTaskCompleted` never had access to at all before this
+      // decision, let alone a per-line one.
+      await seedActivatedRuleSet("rs-coding", {
+        conditions: { field: "BT-133", operator: "is", value: "cc1" },
+        actions: [{ type: "assign_task", params: { team: "ap-team", permission: "AP.Code" } }],
+      });
+      await SELF.fetch("https://example.com/processes/p1/stages", { method: "POST", headers: authHeaders(), body: JSON.stringify({ id: "s1", name: "Validation", sequence: 1, ruleSetId: "rs-validation2" }) });
+      await SELF.fetch("https://example.com/processes/p1/stages", {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({ id: "s2", name: "Coding", sequence: 2, ruleSetId: "rs-coding", evaluationScope: "line" }),
+      });
+      await SELF.fetch("https://example.com/processes/p1/stages", { method: "POST", headers: authHeaders(), body: JSON.stringify({ id: "s3", name: "Payment-eligible", sequence: 3 }) });
+
+      await SELF.fetch("https://example.com/invoices", {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({
+          id: "inv-454-c",
+          facts: { "BT-112": 500 },
+          lines: [{ lineNumber: 1, facts: { "BT-131": 500, "BT-133": "cc1" } }],
+        }),
+      });
+      const createRes = await SELF.fetch("https://example.com/processes/p1/instances", {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({ subjectType: "invoice", subjectId: "inv-454-c" }),
+      });
+      const instanceId = (await createRes.json() as { id: string }).id;
+      await SELF.fetch(`https://example.com/process-instances/${instanceId}/visit`, { method: "POST", headers: authHeaders(), body: JSON.stringify({ facts: {} }) });
+
+      const validationTask = await env.DB.prepare("SELECT id FROM tasks WHERE stage_id = 's1'").first<{ id: string }>();
+      await SELF.fetch(`https://example.com/tasks/${validationTask!.id}/claim`, { method: "POST", headers: authHeaders() });
+      await SELF.fetch(`https://example.com/tasks/${validationTask!.id}/complete`, { method: "POST", headers: authHeaders() });
+
+      const instanceRow = await env.DB.prepare("SELECT current_stage_id FROM process_instances WHERE id = ?").bind(instanceId).first();
+      expect(instanceRow).toEqual({ current_stage_id: "s2" });
+      const codingTask = await env.DB.prepare(
+        "SELECT owner_team_id, line_number FROM tasks WHERE stage_id = 's2'"
+      ).first<{ owner_team_id: string; line_number: number }>();
+      expect(codingTask).toEqual({ owner_team_id: "ap-team", line_number: 1 });
+    });
+
+    it("records workflow.stageError when the follow-up visit itself refuses, instead of a new silent dead end", async () => {
+      await seedProcessAndTeam();
+      await seedActivatedRuleSet("rs-approval2", {
+        conditions: { field: "BT-112", operator: "greater_than", value: 1000 },
+        actions: [{ type: "assign_task", params: { team: "ap-team", permission: "AP.Approve" } }],
+      });
+      await env.DB.prepare("INSERT INTO rule_sets (id, name, mode, status) VALUES ('rs-empty2', 'empty', 'first_match', 'active')").run();
+
+      await SELF.fetch("https://example.com/processes/p1/stages", { method: "POST", headers: authHeaders(), body: JSON.stringify({ id: "s1", name: "Received", sequence: 1 }) });
+      await SELF.fetch("https://example.com/processes/p1/stages", { method: "POST", headers: authHeaders(), body: JSON.stringify({ id: "s2", name: "Approval", sequence: 2, ruleSetId: "rs-approval2" }) });
+      await SELF.fetch("https://example.com/processes/p1/stages", { method: "POST", headers: authHeaders(), body: JSON.stringify({ id: "s3", name: "Needs-Org", sequence: 3, ruleSetId: "rs-empty2" }) });
+      await env.DB.prepare("UPDATE process_stages SET requires_org = 1 WHERE id = 's3'").run();
+
+      // No org_unit_id — nothing ever assigned one.
+      await SELF.fetch("https://example.com/invoices", {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({ id: "inv-454-d", facts: { "BT-112": 3000 } }),
+      });
+      const createRes = await SELF.fetch("https://example.com/processes/p1/instances", {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({ subjectType: "invoice", subjectId: "inv-454-d" }),
+      });
+      const instanceId = (await createRes.json() as { id: string }).id;
+      await SELF.fetch(`https://example.com/process-instances/${instanceId}/visit`, { method: "POST", headers: authHeaders(), body: JSON.stringify({ facts: {} }) });
+
+      const approvalTask = await env.DB.prepare("SELECT id FROM tasks WHERE stage_id = 's2'").first<{ id: string }>();
+      await SELF.fetch(`https://example.com/tasks/${approvalTask!.id}/claim`, { method: "POST", headers: authHeaders() });
+      await SELF.fetch(`https://example.com/tasks/${approvalTask!.id}/complete`, { method: "POST", headers: authHeaders() });
+
+      // Still genuinely stuck — an org guard refusal is not something
+      // this decision resolves on its own — but now visible, the same
+      // way decision 0435 already made the intake path's own refusal
+      // visible, instead of a second flavour of silent dead end.
+      const instanceRow = await env.DB.prepare("SELECT current_stage_id FROM process_instances WHERE id = ?").bind(instanceId).first();
+      expect(instanceRow).toEqual({ current_stage_id: "s3" });
+      const header = await env.DB.prepare("SELECT facts_json FROM invoice_headers WHERE id = 'inv-454-d'").first<{ facts_json: string }>();
+      const facts = JSON.parse(header!.facts_json) as Record<string, unknown>;
+      expect(facts["workflow.stageError"]).toContain("requires an organisational unit");
+    });
+
+    it("a non-invoice subject stays exactly as parked as before — the engine still never guesses its facts", async () => {
+      await seedProcessAndTeam();
+      await seedActivatedRuleSet("rs-approval3", {
+        conditions: { field: "BT-112", operator: "greater_than", value: 1000 },
+        actions: [{ type: "assign_task", params: { team: "ap-team", permission: "AP.Approve" } }],
+      });
+      await env.DB.prepare("INSERT INTO rule_sets (id, name, mode, status) VALUES ('rs-empty3', 'empty', 'first_match', 'active')").run();
+      await SELF.fetch("https://example.com/processes/p1/stages", { method: "POST", headers: authHeaders(), body: JSON.stringify({ id: "s1", name: "Received", sequence: 1 }) });
+      await SELF.fetch("https://example.com/processes/p1/stages", { method: "POST", headers: authHeaders(), body: JSON.stringify({ id: "s2", name: "Approval", sequence: 2, ruleSetId: "rs-approval3" }) });
+      await SELF.fetch("https://example.com/processes/p1/stages", { method: "POST", headers: authHeaders(), body: JSON.stringify({ id: "s3", name: "Matching", sequence: 3, ruleSetId: "rs-empty3" }) });
+
+      const createRes = await SELF.fetch("https://example.com/processes/p1/instances", {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({ subjectType: "expense", subjectId: "exp-454" }),
+      });
+      const instanceId = (await createRes.json() as { id: string }).id;
+      await SELF.fetch(`https://example.com/process-instances/${instanceId}/visit`, { method: "POST", headers: authHeaders(), body: JSON.stringify({ facts: { "BT-112": 3000 } }) });
+
+      const approvalTask = await env.DB.prepare("SELECT id FROM tasks WHERE stage_id = 's2'").first<{ id: string }>();
+      await SELF.fetch(`https://example.com/tasks/${approvalTask!.id}/claim`, { method: "POST", headers: authHeaders() });
+      const completeRes = await SELF.fetch(`https://example.com/tasks/${approvalTask!.id}/complete`, { method: "POST", headers: authHeaders() });
+      expect(completeRes.status).toBe(200);
+
+      // Parked at s3, exactly as onTaskCompleted alone would leave any
+      // subject it cannot load facts for — no crash, no incorrect
+      // guess, the same deliberate boundary as before, just no longer
+      // mistaken for the invoice case this decision actually fixes.
+      const instanceRow = await env.DB.prepare("SELECT current_stage_id FROM process_instances WHERE id = ?").bind(instanceId).first();
+      expect(instanceRow).toEqual({ current_stage_id: "s3" });
+    });
+  });
+
   it("401s visiting a stage with no credentials at all", async () => {
     await SELF.fetch("https://example.com/processes", { method: "POST", headers: authHeaders(), body: JSON.stringify({ id: "p1", name: "AP" }) });
     await SELF.fetch("https://example.com/processes/p1/stages", { method: "POST", headers: authHeaders(), body: JSON.stringify({ id: "s1", name: "Received", sequence: 1 }) });

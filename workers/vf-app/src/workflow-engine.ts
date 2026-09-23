@@ -752,20 +752,56 @@ export async function visitCurrentStage(
 }
 
 /**
+ * What `onTaskCompleted` learned, for its caller to act on —
+ * decision 0454.
+ *
+ * This function never loads facts for a subject (workflow-engine.ts's
+ * own long-standing, deliberate boundary — the engine is subject-
+ * agnostic, and nothing here assumes what a given subject_type's
+ * facts even look like). So the moment its cascade reaches a stage
+ * that genuinely needs a real, fact-aware evaluation to go further,
+ * it cannot finish the job itself — it reports exactly where it
+ * stopped instead, so a caller that DOES know how to load facts for
+ * this subject (index.ts, which already does for the `/visit` route)
+ * can make the one call — `visitCurrentStage`, with real facts — that
+ * stage actually needs.
+ */
+export interface TaskCompletionCascadeResult {
+  /** Absent when the cascade ran to completion, or is still blocked on other open tasks at the same visit — nothing further for the caller to do. */
+  needsEvaluationAt?: { instanceId: string; stageId: string };
+}
+
+/**
  * Called after a task completes (task-route.ts) — checks whether it
  * was the last open task for its stage visit, and if so, advances the
- * owning instance. Cascades only through automatic stages (no facts
- * available here to evaluate a real rule set) and stops, still
- * `in_progress`, at the first stage that actually needs one — a
- * deliberate scope boundary, not a gap: further progress from there
- * requires an explicit visitCurrentStage call with real facts.
+ * owning instance. Cascades through every genuinely automatic stage
+ * (`rule_set_id IS NULL` — no facts are needed to know nothing there
+ * could ever block it) and stops, still `in_progress`, the moment it
+ * reaches a stage that has one attached — reporting that stage back
+ * via `needsEvaluationAt` rather than silently leaving the instance
+ * parked there.
+ *
+ * **Not a guess about whether that rule set has any live rules in
+ * it.** Before decision 0454, this stopped and returned regardless —
+ * the caller had no way to learn it had happened, and a stage whose
+ * rule set turned out to hold no rules at all (so a real evaluation
+ * would have advanced straight past it) was stranded exactly as hard
+ * as one that genuinely needed a task. Found live: an invoice needed
+ * a person to clear a Validation task, and once they did, it sat at
+ * the very next stage indefinitely — no task, no error, nothing
+ * anywhere to explain it, because nothing had ever actually evaluated
+ * that stage. Every invoice that validated cleanly, with no task ever
+ * raised, never touched this path at all — it cascaded through the
+ * identical stage correctly, via the intake call's own
+ * `visitCurrentStage`, which does load real facts. Only the ones that
+ * needed a person to clear a task anywhere upstream were at risk.
  */
-export async function onTaskCompleted(db: D1Database, taskId: string): Promise<void> {
+export async function onTaskCompleted(db: D1Database, taskId: string): Promise<TaskCompletionCascadeResult> {
   const task = await db
     .prepare("SELECT stage_visit_id FROM tasks WHERE id = ?")
     .bind(taskId)
     .first<{ stage_visit_id: string | null }>();
-  if (!task?.stage_visit_id) return;
+  if (!task?.stage_visit_id) return {};
 
   const openCount = await db
     // 'open', not `completed_by IS NULL` — decision 0075. A returned or
@@ -774,25 +810,25 @@ export async function onTaskCompleted(db: D1Database, taskId: string): Promise<v
     .prepare("SELECT count(*) AS n FROM tasks WHERE stage_visit_id = ? AND status = 'open'")
     .bind(task.stage_visit_id)
     .first<{ n: number }>();
-  if ((openCount?.n ?? 0) > 0) return;
+  if ((openCount?.n ?? 0) > 0) return {};
 
   const visit = await db
     .prepare("SELECT process_instance_id, stage_id FROM stage_visits WHERE id = ?")
     .bind(task.stage_visit_id)
     .first<{ process_instance_id: string; stage_id: string }>();
-  if (!visit) return;
+  if (!visit) return {};
 
   const instance = await db
     .prepare("SELECT id, status, process_version FROM process_instances WHERE id = ?")
     .bind(visit.process_instance_id)
     .first<{ id: string; status: string; process_version: number }>();
-  if (!instance || instance.status !== "in_progress") return;
+  if (!instance || instance.status !== "in_progress") return {};
 
   const stage = await db
     .prepare("SELECT id, process_id, sequence FROM process_stages WHERE id = ?")
     .bind(visit.stage_id)
     .first<StageRow>();
-  if (!stage) return;
+  if (!stage) return {};
 
   let currentSequence = stage.sequence;
   for (let i = 0; i < MAX_STAGES_PER_VISIT; i++) {
@@ -802,7 +838,7 @@ export async function onTaskCompleted(db: D1Database, taskId: string): Promise<v
         .prepare("UPDATE process_instances SET status = 'completed', updated_at = ? WHERE id = ?")
         .bind(new Date().toISOString(), instance.id)
         .run();
-      return;
+      return {};
     }
     currentSequence = next.sequence;
     await db
@@ -810,13 +846,17 @@ export async function onTaskCompleted(db: D1Database, taskId: string): Promise<v
       .bind(next.id, new Date().toISOString(), instance.id)
       .run();
     if (next.rule_set_id) {
-      // Stop here — this stage needs real facts to evaluate, which
-      // this function deliberately never has.
-      return;
+      // Stop here — this function never loads facts for a subject, so
+      // it cannot evaluate a real rule set itself. Reported, not
+      // silently swallowed (decision 0454) — see the caller in
+      // index.ts, which follows up with a genuine visitCurrentStage
+      // call using real facts.
+      return { needsEvaluationAt: { instanceId: instance.id, stageId: next.id } };
     }
     await db
       .prepare("INSERT INTO stage_visits (id, process_instance_id, stage_id, outcome, created_at) VALUES (?, ?, ?, 'automatic', strftime('%Y-%m-%d %H:%M:%f', 'now'))")
       .bind(crypto.randomUUID(), instance.id, next.id)
       .run();
   }
+  return {};
 }

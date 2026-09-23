@@ -141,6 +141,42 @@ async function computeDuplicateConfidence(
  * because something similar arrives later. The later submission is
  * the one whose score reflects the match.
  */
+
+/**
+ * An invoice's stored lines, in the raw BT-* shape a rule actually
+ * evaluates against — the same conversion `handleGetInvoice` below
+ * already does inline for its own advisory `poMerged` call
+ * (`{...lineFacts, lineNumber}`, built from each row's `facts_json`,
+ * never the `amount`/`description`/`cost_centre` convenience columns
+ * alongside it), pulled out here so a second caller can load real
+ * lines without duplicating that shape by hand — decision 0454.
+ *
+ * Built for `index.ts`'s own follow-up stage visit after a task
+ * completes: `onTaskCompleted` (workflow-engine.ts) never loads facts
+ * for any subject, by design, so the caller that already knows how to
+ * load an invoice's facts for the `/visit` route is where a real,
+ * per-line evaluation has to be assembled from storage instead of
+ * evaluating a line-scope stage against none.
+ */
+export async function loadStoredInvoiceLines(
+  db: D1Database,
+  invoiceId: string
+): Promise<Array<InvoiceFacts & { lineNumber: number }>> {
+  const lineRows = await db
+    .prepare("SELECT line_number, facts_json FROM invoice_lines WHERE invoice_id = ? ORDER BY line_number")
+    .bind(invoiceId)
+    .all<{ line_number: number; facts_json: string }>();
+  return lineRows.results.map((row) => {
+    let lineFacts: Record<string, unknown> = {};
+    try {
+      lineFacts = JSON.parse(row.facts_json || "{}") as Record<string, unknown>;
+    } catch {
+      // A line whose facts will not parse has none to evaluate with.
+    }
+    return { ...(lineFacts as InvoiceFacts), lineNumber: row.line_number };
+  });
+}
+
 export async function handleUpsertInvoice(db: D1Database, body: UpsertInvoiceBody): Promise<RouteResult> {
   const { id, supplierVatId, currency, issueDate, totalWithVat, mandateChannel, invoiceNumber, facts, lines } = body;
   if (typeof id !== "string" || !id) {

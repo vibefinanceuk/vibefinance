@@ -101,7 +101,7 @@ import {
   handleRemoveTeamMember,
   handleUpdateTeam,
 } from "./team-route.js";
-import { handleUpsertInvoice, mergeStructuredInvoiceFacts , handleGetInvoice } from "./invoice-facts-route.js";
+import { handleUpsertInvoice, mergeStructuredInvoiceFacts , handleGetInvoice, loadStoredInvoiceLines } from "./invoice-facts-route.js";
 import { mergePoMatchFacts } from "./po-matching.js";
 import { handleUpsertExpenseReport } from "./expense-facts-route.js";
 import {
@@ -658,6 +658,90 @@ function r2Storage(bucket: R2Bucket): PendingDocumentStorage {
       return new Uint8Array(await object.arrayBuffer());
     },
   };
+}
+
+/**
+ * The follow-up `onTaskCompleted` itself cannot make — decision 0454.
+ *
+ * `onTaskCompleted`'s own cascade (workflow-engine.ts) only ever
+ * advances through genuinely automatic stages; the moment completing
+ * a task lands an instance on one that has a rule set attached — even
+ * one with no live rules in it today — it used to just stop there,
+ * silently, forever: no task, no error, `current_stage_id` pointing
+ * at a stage nothing had ever actually evaluated. Found live: an
+ * invoice needed a person to clear a Validation task, and once they
+ * did, it sat at the very next stage indefinitely, invisible
+ * everywhere, because nothing had ever made the one call that stage
+ * genuinely needed. Every invoice that validated cleanly, with no
+ * task ever raised, never touched this gap at all — it reached the
+ * identical stage via the intake call's own `visitCurrentStage`,
+ * which does load real facts and correctly advances past a rule set
+ * that turns out to hold nothing. Only the ones that needed a person
+ * to clear a task anywhere upstream were at risk.
+ *
+ * Loads real facts and lines for the invoice this instance is about,
+ * the same way the `/visit` route below already does for a caller
+ * supplying none of its own (header `facts_json` plus the structured
+ * columns, merged), except lines are loaded from storage here rather
+ * than left absent — `loadStoredInvoiceLines` (invoice-facts-route.ts)
+ * — since this caller has no request body to omit them from and a
+ * line-scope stage evaluated against none would silently skip every
+ * per-line rule. Records the same `workflow.stageError` fact decision
+ * 0435 already gives the intake path if the resulting visit itself
+ * refuses (an org still unplaced, a rule naming an undeclared
+ * permission) — a genuine configuration problem stays visible rather
+ * than trading one silent dead end for another.
+ *
+ * Invoice-only, deliberately, the same boundary intake-capture-
+ * route.ts's own equivalent block already draws: the engine stays
+ * subject-agnostic, and nothing here assumes what a non-invoice
+ * subject's facts even look like.
+ */
+async function followUpAfterTaskCompletion(db: D1Database, instanceId: string): Promise<void> {
+  const instanceRow = await db
+    .prepare("SELECT subject_type, subject_id FROM process_instances WHERE id = ?")
+    .bind(instanceId)
+    .first<{ subject_type: string; subject_id: string }>();
+  if (instanceRow?.subject_type !== "invoice") return;
+
+  const headerRow = await db
+    .prepare(
+      `SELECT facts_json, supplier_vat_id, currency, issue_date, total_with_vat,
+              mandate_channel, invoice_number, duplicate_confidence
+       FROM invoice_headers WHERE id = ?`
+    )
+    .bind(instanceRow.subject_id)
+    .first<{
+      facts_json: string;
+      supplier_vat_id: string | null;
+      currency: string | null;
+      issue_date: string | null;
+      total_with_vat: number | null;
+      mandate_channel: string | null;
+      invoice_number: string | null;
+      duplicate_confidence: number | null;
+    }>();
+  if (!headerRow) return;
+
+  let facts = JSON.parse(headerRow.facts_json) as InvoiceFacts;
+  facts = mergeStructuredInvoiceFacts(facts, headerRow);
+  const storedLines = await loadStoredInvoiceLines(db, instanceRow.subject_id);
+  const poMerged = await mergePoMatchFacts(db, facts, storedLines);
+
+  const result = await visitCurrentStage(db, instanceId, poMerged.headerFacts, poMerged.lines);
+
+  // Decision 0435's own reasoning, restated for this path: a visit
+  // that errors out is not the same as one with nothing to say.
+  if (result.status >= 400) {
+    await db
+      .prepare(
+        `UPDATE invoice_headers
+         SET facts_json = json_set(facts_json, '$."workflow.stageError"', ?)
+         WHERE id = ?`
+      )
+      .bind((result.body as { error?: string })?.error ?? "the stage visit failed", instanceRow.subject_id)
+      .run();
+  }
 }
 
 export default {
@@ -4366,7 +4450,10 @@ export default {
       // task-route.ts and workflow-engine.ts (the engine already
       // imports handleCreateTask the other way).
       if (completeTaskMatch && result.status === 200) {
-        await onTaskCompleted(db, taskId);
+        const cascade = await onTaskCompleted(db, taskId);
+        if (cascade.needsEvaluationAt) {
+          await followUpAfterTaskCompletion(db, cascade.needsEvaluationAt.instanceId);
+        }
       }
       return json(result.body, result.status);
     }
