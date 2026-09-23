@@ -653,6 +653,8 @@ const KEYS_THE_INTERFACE_USES = [
   "viewer.coding.searchfailed",
   "viewer.coding.clear",
   "viewer.coding.noteditable",
+  // Account Coding suggestions — decision 0457.
+  "viewer.coding.suggested",
 
   /**
    * **CSV Template and Load — decision 0445.** `coding-lists.js`'s own

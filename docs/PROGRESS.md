@@ -2536,6 +2536,38 @@ section for the full reasoning and tests.
 - **Built and tested, not yet pushed** — see decision 0456 for the
   full reasoning and verification.
 
+### Account Coding Suggestions, Phase 1: a Frequency-Based Default (0457)
+- **The operator's own ask**: *"I would like to introduce in the future
+  an autocode feature, which defaults these values based on AI -
+  learning"* — approved for Phase 1 with *"yes please"*.
+- **A pure aggregation module (`coding-suggestions.ts`), not a rule**:
+  groups the existing `keyed_fields` history by value, scoped to the
+  invoice's own supplier, for each of the four Account Coding fields.
+  No new capture mechanism — `keyed_fields` already recorded every
+  person-keyed value. Deliberately not a rule-engine `set_field`
+  action: a frequency default isn't deterministic or human-approved
+  the way a rule is, and this also sidesteps the earlier-found
+  limitation that `set_field` outcomes don't persist at line scope.
+- **Thresholds against false confidence**: at least 3 prior keyed
+  values for that supplier and field, and the top value must be at
+  least half of what's been keyed, or nothing is suggested at all.
+- **A new route**, `GET /invoices/:id/coding-suggestions`, gated the
+  same as the routes beside it (`Admin.Configure`/`AP.Validate`/
+  `AP.Code`).
+- **The pop-out (`viewer.js`)**: an existing value on the line always
+  wins. A field with none and a qualifying suggestion is pre-filled
+  immediately — so Save persists it with no extra click — shown with a
+  visible "suggested, review before saving" note that disappears the
+  moment a person makes any real choice for that field.
+- **Not built**: no way for `keyed_fields` to distinguish "reviewed and
+  agreed" from "left as the suggestion, never looked at" — flagged as
+  a real gap worth raising if audit-of-review ever matters; no
+  explicit-Accept step (considered, rejected as needless friction for
+  Phase 1); no Phase 2 learned model; nothing for Matching.
+- **Built and tested, not yet pushed** — touches `vf-app`, `vf-ui`,
+  and `vf-licence` (one new migration, `0155`) — see decision 0457 for
+  the full reasoning and verification.
+
 ### Purchase orders and matching
 - Purchase order storage grounded in Peppol BIS Order Only 3.3, via UBL
   XML ingestion (0081) and CSV load (0370) — the same tables, the same
@@ -3800,19 +3832,21 @@ elsewhere.
 
 | Package | Tests |
 |---|---|
-| `vf-app` | 2618 baseline + 6 (0451) + 11 (0452) + 23 (0453) + 5 (0454) + 3 (0455) + 9 (0456) = **2675**, arithmetic, not re-confirmed by a full run — see note below |
-| `vf-licence` | 320 |
-| `vf-ui` | 74 Worker · 1048 browser, all passing — see below |
+| `vf-app` | **2733/2733**, confirmed by one unfiltered whole-repo run (114 files) — decision 0457's own new `coding-suggestions.test.ts` (9) plus 3 new in `index.test.ts`, on top of the 2618 baseline + 6 (0451) + 11 (0452) + 23 (0453) + 5 (0454) + 3 (0455) + 9 (0456). First full-suite-confirmed count since decision 0447 — every count from 0448 through 0456 was arithmetic or a targeted-file run only, since this session's own tool timeout previously could not complete a full run; this run finally did (≈857s). |
+| `vf-licence` | **320/320**, confirmed by one unfiltered whole-repo run (21 files) — decision 0457's own migration `0155` adds rows to the existing `ui_strings` table, not a new test file. |
+| `vf-ui` | 74 Worker (unchanged) · **1060/1060 browser**, confirmed by one unfiltered whole-repo run (48 files) — 1048 + 12 new (4 in `viewer.test.ts` for the coding-suggestions pre-fill/note behaviour, plus the pre-existing `document-window.test.ts` unhandled-rejection flake's own room, unchanged at 160 non-fatal errors, none a failing assertion). |
 | `shared` | 295 passing, 3 known pre-existing failures |
 
 Both migration chains replay clean with every standing invariant
 holding — 77 migrations for `vf-app` (174 invariants, up from 76/170 —
-decision 0452's own migration `0077`; decisions 0453 and 0454 added
-no new `vf-app` migration); `vf-licence`'s own 154-migration chain (up
-from 153 — decision 0453's own migration `0154`; decision 0454 added
-none) has no equivalent Python replay, and is instead validated
-through `workers/vf-licence/test/setup.ts` + `string-coverage.test.ts`,
-both green as of decision 0453.
+decision 0452's own migration `0077`; decisions 0453 through 0457
+added no new `vf-app` migration); `vf-licence`'s own 155-migration
+chain (up from 154 — decision 0457's own migration `0155`) replays
+clean via `apply_migrations.py --replay-only` (155 migrations, all
+assertions held) and is also validated through `workers/vf-licence/
+test/setup.ts` + `string-coverage.test.ts`, both green — `test/
+setup.ts` itself needed a fix this decision, having never been wired
+up past migration `0154`.
 
 **Decision 0448's own `vf-app` count is not re-verified against the
 full, whole-repo suite** — this session's own tool timeout could not
@@ -3959,7 +3993,7 @@ fresh whole-suite pass, since only that one file changed.
 | `docs/design/multi-authority-intake.md` | Non-EN-16931 authorities | Design only |
 | `docs/design/text-layer-extraction.md` | Reading a PDF's own text | Design only |
 | `docs/design/cost-object-approval-hierarchy.md` | Cost-Object Approval Hierarchy investigation (decision 0450) — its proposed shape and three open questions are now built and answered by decision 0452 | Design only |
-| `docs/decisions/` | 456 decision records | Current |
+| `docs/decisions/` | 457 decision records | Current |
 | `docs/decisions/SUPERSEDED.md` | Which records supersede which | **Read first** |
 
 Document 4's markdown source is at `docs/documents/`, with

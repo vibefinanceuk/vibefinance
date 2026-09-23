@@ -142,6 +142,7 @@ import tasksSearchAndPaginationStringsSql from "../migrations/0151_tasks_search_
 import lineLevelAccountCodingFieldLabelsSql from "../migrations/0152_line_level_account_coding_field_labels.sql?raw";
 import costObjectPriorityStringsSql from "../migrations/0153_cost_object_priority_strings.sql?raw";
 import lineCodingPopoutStringsSql from "../migrations/0154_line_coding_popout_strings.sql?raw";
+import codingSuggestionStringSql from "../migrations/0155_coding_suggestion_string.sql?raw";
 
 function stripSqlComments(sql: string): string {
   return sql
@@ -307,5 +308,6 @@ export async function applyTestSchema(): Promise<void> {
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(lineLevelAccountCodingFieldLabelsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(costObjectPriorityStringsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(lineCodingPopoutStringsSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(codingSuggestionStringSql)));
 
 }

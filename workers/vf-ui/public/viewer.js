@@ -889,6 +889,26 @@ async function fetchCodingEntries(listType, search, filters = {}) {
 }
 
 /**
+ * Account Coding suggestions for the invoice currently open — decision
+ * 0457, Phase 1 of the autocode idea the operator raised. One call per
+ * pop-out open, not per field: the route already computes all four at
+ * once. Failure is silent and falls back to no suggestions at all —
+ * the pop-out is fully usable without this, exactly as it was before
+ * this decision, so a suggestion that can't be fetched should never
+ * block the person from coding the line by hand.
+ */
+async function fetchCodingSuggestions() {
+  try {
+    const response = await fetch(`/api/invoices/${encodeURIComponent(current.subject.id)}/coding-suggestions`);
+    if (!response.ok) return {};
+    const body = await response.json();
+    return body.suggestions ?? {};
+  } catch {
+    return {};
+  }
+}
+
+/**
  * A single search-as-you-type field, embedded in a form rather than
  * `openSearch()`'s own full pop-out — decision 0453. **Not a second
  * copy of that debounce-free "only the newest answer counts" guard**;
@@ -988,9 +1008,31 @@ function searchableEntryPicker({ current, hint, fetchResults, resolveCurrent, on
  * writes to, so the page's own existing Save button persists it,
  * exactly the way it already persists every other line field.
  */
-function openLineCodingPopout(line) {
+async function openLineCodingPopout(line) {
+  const suggestions = await fetchCodingSuggestions();
+
   const chosen = {};
-  for (const spec of CODING_PICKER_FIELDS) chosen[spec.field] = line[spec.field] || null;
+  // Which fields are showing a suggestion nobody has confirmed yet —
+  // cleared the moment a person actually chooses anything for that
+  // field, whether that turns out to be the same value or a
+  // different one. Never silently promoted to a real choice: the
+  // person still has to act, the same "advisory, not automatic"
+  // posture every other automated thing in this product already
+  // takes (a compiled rule needs activation, a stage error is
+  // surfaced rather than acted on).
+  const stillSuggested = {};
+  for (const spec of CODING_PICKER_FIELDS) {
+    const existing = line[spec.field] || null;
+    const suggestion = suggestions[spec.field];
+    if (existing) {
+      chosen[spec.field] = existing;
+    } else if (suggestion) {
+      chosen[spec.field] = suggestion.value;
+      stillSuggested[spec.field] = true;
+    } else {
+      chosen[spec.field] = null;
+    }
+  }
 
   const companyCodeRow = [
     el("label", { text: t("apsetup.codingtab.companycode") }),
@@ -1022,6 +1064,10 @@ function openLineCodingPopout(line) {
         spec.filterKeys.map((key) => [key, key === "company_code" ? stored.orgUnitId : chosen["coding.commodity_code"]])
       );
 
+    const suggestedNote = stillSuggested[spec.field]
+      ? el("div", { class: "muted sm", id: `codingsuggested-${spec.field}`, text: t("viewer.coding.suggested") })
+      : null;
+
     const picker = searchableEntryPicker({
       current: chosen[spec.field],
       hint: t("viewer.coding.searchhint"),
@@ -1035,10 +1081,27 @@ function openLineCodingPopout(line) {
       onChoose: (item) => {
         chosen[spec.field] = item?.id ?? null;
         line[spec.field] = item?.id ?? "";
+        // A real choice, so the suggestion note no longer applies —
+        // even re-choosing the same value is now the person's own
+        // decision, not the default they hadn't looked at yet.
+        if (stillSuggested[spec.field]) {
+          delete stillSuggested[spec.field];
+          document.getElementById(`codingsuggested-${spec.field}`)?.remove();
+        }
       },
     });
-    return [label, picker];
+    return suggestedNote ? [label, el("div", {}, [picker, suggestedNote])] : [label, picker];
   });
+
+  // A pre-filled suggestion is written into `line` immediately, the
+  // same way an already-keyed value already was — Save persists
+  // whatever `line[spec.field]` holds regardless of how it got there
+  // (this function's own doc comment). Written here rather than
+  // inside the loop above so it happens exactly once, after every
+  // field's own current-vs-suggested state is settled.
+  for (const field of Object.keys(stillSuggested)) {
+    line[field] = chosen[field];
+  }
 
   const close = () => {
     backdrop.remove();

@@ -2518,6 +2518,71 @@ describe("Viewing and working an invoice while holding only AP.Code — decision
   });
 });
 
+/**
+ * **`GET /invoices/:id/coding-suggestions`, through the real router —
+ * decision 0457.** Gated the same as the rest of the Coding pop-out's
+ * own path; the aggregation itself is covered directly in
+ * `coding-suggestions.test.ts`, so this only proves the route wiring
+ * and the permission gate.
+ */
+describe("GET /invoices/:id/coding-suggestions, through the real router (decision 0457)", () => {
+  it("401s with no credentials", async () => {
+    const res = await SELF.fetch("https://example.com/invoices/inv-0457-x/coding-suggestions");
+    expect(res.status).toBe(401);
+  });
+
+  it("403s a real user holding none of the three permissions", async () => {
+    await SELF.fetch("https://example.com/invoices", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ id: "inv-0457-1", facts: {} }),
+    });
+    const key = await seedUserWithPermissions(["AP.Supplier"]);
+    const res = await SELF.fetch("https://example.com/invoices/inv-0457-1/coding-suggestions", {
+      headers: { Authorization: `Bearer ${key}` },
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("works for AP.Code alone and returns a real, aggregated suggestion", async () => {
+    // The aggregation itself is covered directly, against every edge
+    // case, in coding-suggestions.test.ts — this seeds keyed_fields
+    // history the same minimal way that file does, so this test can
+    // stay focused on proving the HTTP route actually returns it,
+    // rather than also having to correctly drive a full stage-gated
+    // POST /invoices/:id/key call (process instance, editable-field
+    // resolution, and all) just to produce one row of history.
+    await env.DB.prepare("INSERT INTO org_users (id, email, name) VALUES (?, ?, ?)")
+      .bind("u-0457", "u-0457@acme.com", "Test Coder")
+      .run();
+    for (const invoiceId of ["inv-0457-h1", "inv-0457-h2", "inv-0457-h3"]) {
+      await SELF.fetch("https://example.com/invoices", {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({ id: invoiceId, supplierVatId: "DE-0457", facts: {} }),
+      });
+      await env.DB.prepare(
+        "INSERT INTO keyed_fields (id, invoice_id, field, new_value, keyed_by, line_number) VALUES (?, ?, 'BT-133', ?, 'u-0457', 1)"
+      )
+        .bind(crypto.randomUUID(), invoiceId, JSON.stringify("cc-0457"))
+        .run();
+    }
+    await SELF.fetch("https://example.com/invoices", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ id: "inv-0457-target", supplierVatId: "DE-0457", facts: {} }),
+    });
+    const key = await seedUserWithPermissions(["AP.Code"]);
+    const res = await SELF.fetch("https://example.com/invoices/inv-0457-target/coding-suggestions", {
+      headers: { Authorization: `Bearer ${key}` },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { suggestions: Record<string, { value: string; sampleSize: number }> };
+    expect(body.suggestions["BT-133"]?.value).toBe("cc-0457");
+    expect(body.suggestions["BT-133"]?.sampleSize).toBe(3);
+  });
+});
+
 describe("supplier history, through the real router (decision 0032)", () => {
   it("returns a real supplier's history through the real HTTP route", async () => {
     await SELF.fetch("https://example.com/invoices", {

@@ -3947,6 +3947,7 @@ describe("the invoice-line Coding pop-out (decision 0453)", () => {
     "viewer.coding.searchfailed": "We could not reach the service to search.",
     "viewer.coding.clear": "Clear",
     "viewer.coding.noteditable": "Not editable at this stage",
+    "viewer.coding.suggested": "Suggested from this supplier's own history — review before saving.",
     "apsetup.codingtab.companycode": "Org / Company Code",
     "field.bt-133": "Cost centre",
     "field.coding.project": "Project",
@@ -3991,6 +3992,7 @@ describe("the invoice-line Coding pop-out (decision 0453)", () => {
           "/api/invoices/inv-1/pages": { pages: [] },
           "/api/documents/inv-1/activity": { items: [] },
           "/api/invoices/inv-1/key": { ok: true },
+          "/api/invoices/inv-1/coding-suggestions": { suggestions: {} },
           ...routes,
         };
         if (path in base) return { ok: true, json: async () => base[path] } as Response;
@@ -4169,5 +4171,113 @@ describe("the invoice-line Coding pop-out (decision 0453)", () => {
     const afterCommodity = calls.find((c) => c.startsWith("/api/coding-lists/gl_code?") && c.includes("search=plant2"));
     expect(afterCommodity).toContain("filter.company_code=UK01");
     expect(afterCommodity).toContain("filter.commodity_code=com-1");
+  });
+
+  /**
+   * **Account Coding suggestions — decision 0457.** A field with no
+   * existing value is pre-filled from `/coding-suggestions` and shown
+   * with a visible "suggested" note, so the person sees a default
+   * without having to have already trusted it.
+   */
+  it("pre-fills a field that has no existing value from a coding suggestion, with a visible note", async () => {
+    stub({
+      "/api/invoices/inv-1/coding-suggestions": {
+        suggestions: { "coding.project": { value: "proj-9", confidence: 0.8, sampleSize: 5 } },
+      },
+      "/api/coding-lists/project": {
+        entries: [{ id: "proj-9", name: "Mjolner Refit", filters: [] }],
+        declaredFilters: [],
+        total: 1,
+        page: 1,
+        pageSize: 50,
+      },
+    });
+    await openAndClickCoding();
+    await new Promise((r) => setTimeout(r, 0));
+
+    const searchBoxes = [...document.querySelectorAll(".popout .searchbox")] as HTMLInputElement[];
+    const projectBox = searchBoxes[1]; // Cost Centre, then Project, per CODING_PICKER_FIELDS' own order
+    expect(projectBox.value).toBe("Mjolner Refit");
+
+    const note = document.getElementById("codingsuggested-coding.project");
+    expect(note?.textContent).toBe("Suggested from this supplier's own history — review before saving.");
+  });
+
+  it("Save persists a pre-filled suggestion even without an explicit click, the same as any other keyed value", async () => {
+    const bodies: { path: string; body: unknown }[] = [];
+    stub(
+      {
+        "/api/invoices/inv-1/coding-suggestions": {
+          suggestions: { "coding.project": { value: "proj-9", confidence: 0.8, sampleSize: 5 } },
+        },
+        "/api/coding-lists/project": {
+          entries: [{ id: "proj-9", name: "Mjolner Refit", filters: [] }],
+          declaredFilters: [],
+          total: 1,
+          page: 1,
+          pageSize: 50,
+        },
+      },
+      [],
+      bodies
+    );
+    await openAndClickCoding();
+    await new Promise((r) => setTimeout(r, 0));
+
+    (document.querySelector(".popout .actionlink") as HTMLButtonElement).click();
+    const saveButton = [...document.querySelectorAll(".actionlink span")].find((s) => s.textContent === "Save")?.closest("button");
+    (saveButton as HTMLButtonElement).click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    const keyPost = bodies.find((b) => b.path === "/api/invoices/inv-1/key");
+    const line = (keyPost?.body as { lines: { facts: Record<string, unknown> }[] })?.lines?.[0];
+    expect(line?.facts["coding.project"]).toBe("proj-9");
+  });
+
+  it("choosing a value for a suggested field — even the same one — clears the suggested note, since it's now the person's own choice", async () => {
+    stub({
+      "/api/invoices/inv-1/coding-suggestions": {
+        suggestions: { "coding.project": { value: "proj-9", confidence: 0.8, sampleSize: 5 } },
+      },
+      "/api/coding-lists/project": {
+        entries: [{ id: "proj-9", name: "Mjolner Refit", filters: [] }],
+        declaredFilters: [],
+        total: 1,
+        page: 1,
+        pageSize: 50,
+      },
+    });
+    await openAndClickCoding();
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(document.getElementById("codingsuggested-coding.project")).not.toBeNull();
+
+    const searchBoxes = [...document.querySelectorAll(".popout .searchbox")] as HTMLInputElement[];
+    const projectBox = searchBoxes[1];
+    projectBox.value = "mjol";
+    projectBox.oninput?.(new Event("input"));
+    await new Promise((r) => setTimeout(r, 0));
+
+    const result = [...document.querySelectorAll(".popout .searchresult")].find((r) => r.textContent?.includes("Mjolner Refit"));
+    (result as HTMLButtonElement).click();
+
+    expect(document.getElementById("codingsuggested-coding.project")).toBeNull();
+  });
+
+  it("a field that already has a value on the line is never overwritten by a suggestion", async () => {
+    // Cost Centre (BT-133) already has "cc1" on the stubbed line — a
+    // suggestion for it must not replace or flag that existing value.
+    stub({
+      "/api/invoices/inv-1/coding-suggestions": {
+        suggestions: { "BT-133": { value: "cc-other", confidence: 0.9, sampleSize: 10 } },
+      },
+    });
+    await openAndClickCoding();
+    await new Promise((r) => setTimeout(r, 0));
+
+    const searchBoxes = [...document.querySelectorAll(".popout .searchbox")] as HTMLInputElement[];
+    const costCentreBox = searchBoxes[0];
+    expect(costCentreBox.value).toBe("cc1");
+    expect(document.getElementById("codingsuggested-BT-133")).toBeNull();
   });
 });

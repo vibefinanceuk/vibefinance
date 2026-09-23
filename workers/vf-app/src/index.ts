@@ -74,6 +74,7 @@ import {
   handleUpdateCodingListEntry,
 } from "./coding-list-route.js";
 import { handleGetCodingListCsvFormat, handleLoadCodingListCsv } from "./coding-list-csv-route.js";
+import { handleCodingSuggestions } from "./coding-suggestions.js";
 import {
   handleGetApprovalConfig,
   handleUpdateApprovalConfig,
@@ -3856,6 +3857,30 @@ export default {
         // is ignored entirely — see the spoofed-identity test.
         auth.user.id
       );
+      return json(result.body, result.status);
+    }
+
+    /**
+     * **Account Coding suggestions — decision 0457, Phase 1 of the
+     * autocode idea the operator raised.** Read-only, and gated the
+     * same as everything else on the Coding pop-out's own path
+     * (`Admin.Configure`, `AP.Validate`, or `AP.Code` — decisions
+     * 0453/0455/0456): this is a person keying a line, asking for a
+     * default, not configuring anything.
+     */
+    const codingSuggestionsMatch = pathname.match(/^\/invoices\/([^/]+)\/coding-suggestions$/);
+    if (codingSuggestionsMatch && request.method === "GET") {
+      const { db } = resolveTenant(request, env);
+      const auth = await requireAnyPermission(
+        db,
+        request,
+        ["Admin.Configure", "AP.Validate", "AP.Code"],
+        sessionContext(env)
+      );
+      if (!auth.authorized) {
+        return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
+      }
+      const result = await handleCodingSuggestions(db, codingSuggestionsMatch[1]);
       return json(result.body, result.status);
     }
 
