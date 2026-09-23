@@ -1,9 +1,13 @@
 # 0452 — Cost-Object Approval Hierarchy, Phase 2
 
-**Status: built and tested, not yet pushed or deployed.** No
-confirmation has been reported yet — this decision has not been
-through the two-stage delivery cycle every prior one in this project
-has.
+**Status: confirmed pushed, deployed, and both migrations applied.**
+`origin/main` fetched directly reads `7e2d4ed`, matching this
+session's own commit exactly. Migration `0077`
+(`vf-app-poc`, `checksum ebcafbc088a3...`) and migration `0153`
+(`vf-licence-poc`, `checksum 71fd6f98e007...`) are both confirmed
+applied, from the operator's own `apply_migrations.py --remote`
+output. `wrangler deploy` for both `vf-app` and `vf-licence` is
+confirmed run, separately from push and migrations.
 
 ---
 

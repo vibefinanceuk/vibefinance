@@ -2376,10 +2376,15 @@ section for the full reasoning and tests.
   are decision 0451's own named, separate, still-unbuilt scope,
   untouched by this Phase 2 work, which only ever concerned routing
   once a value already exists on a line.
-- **Built and tested, not yet pushed or deployed.** See decision 0452
-  for the full reasoning and the targeted verification this segment's
-  own known `vf-app` full-suite timeout (0448/0449/0451) required in
-  its place.
+- **Confirmed pushed, deployed, and both migrations applied** —
+  `origin/main` fetched directly reads `7e2d4ed`, matching this
+  session's own commit exactly. Migration `0077` (`vf-app-poc`) and
+  migration `0153` (`vf-licence-poc`) both confirmed applied from the
+  operator's own `apply_migrations.py --remote` output; `wrangler
+  deploy` confirmed run for both `vf-app` and `vf-licence`. See
+  decision 0452 for the full reasoning and the targeted verification
+  this segment's own known `vf-app` full-suite timeout
+  (0448/0449/0451) required in its place.
 
 ### Purchase orders and matching
 - Purchase order storage grounded in Peppol BIS Order Only 3.3, via UBL
