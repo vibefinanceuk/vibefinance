@@ -2745,6 +2745,36 @@ section for the full reasoning and tests.
   property plus a doc comment; no migration, no new string key — see
   decision 0462 for the full reasoning and verification.
 
+### The duplicate-invoice bar was set above what an incremented invoice number can ever clear (0463)
+- **Reported live**: *"the Potential Duplicate Invoices shows as Empty
+  even though I'd sent in the exact same invoice many times, with an
+  increment on the invoice number only."*
+- **Not a query bug — the scoring design itself**, already named as an
+  open gap back in decision 0028. `duplicate_confidence` weights an
+  exact invoice number match `0.6`, an exact total `0.25`, an exact
+  issue date `0.15`. Same supplier + same total + same date, only the
+  number changed, scores exactly `0.4` — proven by an existing test
+  that already asserted that number, not a guess. All three screens
+  that read it (`dashboard-route.ts`'s card, `fraud-duplicates-route.ts`'s
+  own table, `documents-route.ts`'s filter) filtered at `>= 0.5`, so
+  `0.4` never once cleared the bar.
+- **Two real decisions, put to the operator rather than assumed**: fix
+  by lowering the threshold or by reweighting the score (reweighting
+  changes what any customer's own rule against `invoice.duplicate_confidence`
+  evaluates to — a real blast radius, since that field is in the
+  closed rule vocabulary); and whether to backfill already-submitted
+  invoices (unnecessary if the threshold moves, since a lowered `0.4`
+  bar already clears their existing stored score with no rescore).
+  **Operator chose: lower the threshold, no backfill.**
+- **One shared constant** — `POSSIBLE_DUPLICATE_THRESHOLD = 0.4` in
+  `invoice-history.ts`, imported by all three consumers instead of
+  each restating `0.5` — the identical single-source-of-truth lesson
+  decisions 0461/0462 learned in CSS, applied here in SQL.
+  `computeDuplicateConfidence()` itself untouched.
+- **Built and committed, not yet confirmed deployed** — `vf-app` only;
+  no migration, no new string key — see decision 0463 for the full
+  reasoning and verification.
+
 ### Purchase orders and matching
 - Purchase order storage grounded in Peppol BIS Order Only 3.3, via UBL
   XML ingestion (0081) and CSV load (0370) — the same tables, the same
@@ -4009,7 +4039,7 @@ elsewhere.
 
 | Package | Tests |
 |---|---|
-| `vf-app` | **2733/2733**, confirmed by one unfiltered whole-repo run (114 files) — decision 0457's own new `coding-suggestions.test.ts` (9) plus 3 new in `index.test.ts`, on top of the 2618 baseline + 6 (0451) + 11 (0452) + 23 (0453) + 5 (0454) + 3 (0455) + 9 (0456). First full-suite-confirmed count since decision 0447 — every count from 0448 through 0456 was arithmetic or a targeted-file run only, since this session's own tool timeout previously could not complete a full run; this run finally did (≈857s). |
+| `vf-app` | **2733/2733** as of the last full-repo run (decision 0457); decision 0463 adds 1 more test in `fraud-duplicates.test.ts` (**2734** by arithmetic — not re-confirmed by a fresh full-repo run, the same tool-timeout limitation decisions 0448–0456 already documented). The 7 files touching `duplicate_confidence` anywhere in the suite were run together directly instead: `test/fraud-duplicates.test.ts`, `test/dashboard.test.ts`, `test/documents.test.ts`, `test/invoice-facts-route.test.ts`, `test/invoice-history.test.ts`, `test/ap-assistant.test.ts`, `test/index.test.ts` — **395/395**. |
 | `vf-licence` | **320/320**, confirmed by one unfiltered whole-repo run (21 files) — decisions 0457's, 0458's, and 0459's own migrations `0155`/`0156`/`0157` each add rows to the existing `ui_strings` table, none a new test file. |
 | `vf-ui` | 74 Worker (unchanged) · **1066/1066 browser**, confirmed by one unfiltered whole-repo run (48 files) — 1048 (decision 0453's own baseline) + 4 (decision 0457, the coding-suggestions pre-fill/note behaviour) + 4 (decision 0458, the fixed-size pop-out and shared results area) + 5 (decision 0459, auto-focus/pre-load/scoped-empty-result coverage) + 5 (decision 0460, focus-on-any-field/no-minimum-length coverage); the pre-existing `document-window.test.ts` unhandled-rejection flake is unchanged at 160 non-fatal errors, none a failing assertion. *(Decision 0457's own contribution was originally recorded as 12 new against a miscounted 1060/1060 total — corrected here; see decision 0457's own doc for the correction.)* |
 | `shared` | 295 passing, 3 known pre-existing failures |
@@ -4172,7 +4202,7 @@ fresh whole-suite pass, since only that one file changed.
 | `docs/design/multi-authority-intake.md` | Non-EN-16931 authorities | Design only |
 | `docs/design/text-layer-extraction.md` | Reading a PDF's own text | Design only |
 | `docs/design/cost-object-approval-hierarchy.md` | Cost-Object Approval Hierarchy investigation (decision 0450) — its proposed shape and three open questions are now built and answered by decision 0452 | Design only |
-| `docs/decisions/` | 462 decision records | Current |
+| `docs/decisions/` | 463 decision records | Current |
 | `docs/decisions/SUPERSEDED.md` | Which records supersede which | **Read first** |
 
 Document 4's markdown source is at `docs/documents/`, with

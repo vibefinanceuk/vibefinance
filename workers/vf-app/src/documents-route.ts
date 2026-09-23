@@ -1,5 +1,6 @@
 import type { RouteResult } from "./examples-route.js";
 import { mondayOfThisWeek } from "./dates.js";
+import { POSSIBLE_DUPLICATE_THRESHOLD } from "./invoice-history.js";
 
 /**
  * Every document that has arrived — decision 0164.
@@ -193,6 +194,10 @@ export async function handleListDocuments(
    * but clicking through to Documents kept showing nothing. Reads
    * `h.duplicate_confidence` directly now, the same column 0410
    * pointed the tile's own count at.
+   *
+   * **`>= 0.5` lowered to `POSSIBLE_DUPLICATE_THRESHOLD` (`0.4`) —
+   * decision 0463**, imported from `invoice-history.ts` rather than
+   * stated again here — see that constant's own doc comment for why.
    */
   const unplacedOnly = params.get("unplaced") === "1";
   const duplicatesOnly = params.get("duplicates") === "1";
@@ -313,7 +318,7 @@ export async function handleListDocuments(
            OR (?3 = 0 OR h.org_unit_id IN (SELECT value FROM json_each(?4)))
          )
          AND (?5 = 0 OR (h.org_unit_id IS NULL AND json_extract(h.facts_json, '$."org.unplaced"') IS NOT NULL))
-         AND (?6 = 0 OR h.duplicate_confidence >= 0.5)
+         AND (?6 = 0 OR h.duplicate_confidence >= ${POSSIBLE_DUPLICATE_THRESHOLD})
          AND (?7 IS NULL OR (i.current_stage_id = ?7 AND i.status = 'in_progress'))
          AND (?15 IS NULL OR (i.current_stage_id IN (SELECT value FROM json_each(?15)) AND i.status = 'in_progress'))
          AND (

@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { applyTestSchema } from "./setup.js";
 import { handlePossibleDuplicates, type PossibleDuplicatesReport } from "../src/fraud-duplicates-route.js";
 import { generateApiKey, hashApiKey } from "../src/user-auth.js";
+import { POSSIBLE_DUPLICATE_THRESHOLD } from "../src/invoice-history.js";
+import { handleUpsertInvoice } from "../src/invoice-facts-route.js";
 
 /**
  * Potential duplicate invoices — decision 0420, the first vertical
@@ -152,18 +154,52 @@ describe("the route's own permission gate (decision 0420)", () => {
 });
 
 describe("reads the stored score, not a new detection system (decision 0420)", () => {
-  it("includes an invoice at or above the same 0.5 threshold the Dashboard's own card already uses", async () => {
-    await invoice({ confidence: 0.5, total: 100, currency: "GBP" });
+  it("includes an invoice at or above the same POSSIBLE_DUPLICATE_THRESHOLD the Dashboard's own card already uses", async () => {
+    await invoice({ confidence: POSSIBLE_DUPLICATE_THRESHOLD, total: 100, currency: "GBP" });
 
     const body = (await handlePossibleDuplicates(env.DB)).body as PossibleDuplicatesReport;
     expect(body.invoices).toHaveLength(1);
   });
 
   it("excludes an invoice below the threshold", async () => {
-    await invoice({ confidence: 0.49, total: 100, currency: "GBP" });
+    await invoice({ confidence: POSSIBLE_DUPLICATE_THRESHOLD - 0.01, total: 100, currency: "GBP" });
 
     const body = (await handlePossibleDuplicates(env.DB)).body as PossibleDuplicatesReport;
     expect(body.invoices).toEqual([]);
+  });
+
+  /**
+   * **The live report this decision fixed — decision 0463.** The same
+   * invoice resubmitted with only its own invoice number incremented:
+   * same supplier, same total, same date. `computeDuplicateConfidence()`
+   * scores this `0.4` (`0.25` total + `0.15` date, no invoice-number
+   * match) — proven directly against the real scoring function, not
+   * assumed, and now above `POSSIBLE_DUPLICATE_THRESHOLD` where it
+   * used to sit just below the old `0.5` bar.
+   */
+  it("a same-supplier, same-total, same-date invoice with only the invoice number changed now shows up", async () => {
+    const supplierVatId = "GB-DUP-TEST";
+    await handleUpsertInvoice(env.DB, {
+      id: "dup-live-1",
+      supplierVatId,
+      invoiceNumber: "INV-1001",
+      totalWithVat: 4250,
+      currency: "GBP",
+      issueDate: "2026-09-01",
+      facts: {},
+    });
+    await handleUpsertInvoice(env.DB, {
+      id: "dup-live-2",
+      supplierVatId,
+      invoiceNumber: "INV-1002", // incremented, everything else identical
+      totalWithVat: 4250,
+      currency: "GBP",
+      issueDate: "2026-09-01",
+      facts: {},
+    });
+
+    const body = (await handlePossibleDuplicates(env.DB)).body as PossibleDuplicatesReport;
+    expect(body.invoices.map((i) => i.invoiceNumber)).toContain("INV-1002");
   });
 
   it("is empty, not an error, when nothing has been flagged", async () => {

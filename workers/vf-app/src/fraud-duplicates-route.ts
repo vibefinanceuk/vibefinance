@@ -1,5 +1,6 @@
 import { unitsWherePermitted, scopedToChosenOrg, unitClause } from "./enforce.js";
 import type { RouteResult } from "./org-route.js";
+import { POSSIBLE_DUPLICATE_THRESHOLD } from "./invoice-history.js";
 
 /**
  * Potential duplicate invoices — decision 0420, the first vertical
@@ -16,11 +17,14 @@ import type { RouteResult } from "./org-route.js";
  * invoice is submitted, by `computeDuplicateConfidence()`
  * (`invoice-facts-route.ts`) — weighted matching on invoice number,
  * total, and issue date against every other invoice on file from the
- * same supplier. This route reads that same column, the same `>= 0.5`
- * threshold the Dashboard's own `possible_duplicates` card already
- * uses (`dashboard-route.ts`) — not a new or different bar, so a
- * customer does not see two disagreeing counts of "how many
- * duplicates" on two different screens.
+ * same supplier. This route reads that same column, gated at the
+ * same `POSSIBLE_DUPLICATE_THRESHOLD` (`invoice-history.ts`) the
+ * Dashboard's own `possible_duplicates` card and the Documents
+ * screen's own `duplicates` filter already use — one shared constant,
+ * not a separately-stated copy of the same number in three files, so
+ * a customer does not see two disagreeing counts of "how many
+ * duplicates" on two different screens. Lowered from `0.5` to `0.4`
+ * by decision 0463 — see that constant's own doc comment for why.
  *
  * **A table, not a pair.** `duplicate_confidence` is a scalar on the
  * invoice that scored it — the specific invoice(s) it was scored
@@ -90,7 +94,7 @@ export async function handlePossibleDuplicates(
               COALESCE(sup.name, json_extract(h.facts_json, '$."BT-27"')) AS supplier_name
        FROM invoice_headers h
        LEFT JOIN suppliers sup ON sup.id = h.supplier_id
-       WHERE h.duplicate_confidence >= 0.5 ${clause.sql}
+       WHERE h.duplicate_confidence >= ${POSSIBLE_DUPLICATE_THRESHOLD} ${clause.sql}
        ORDER BY h.duplicate_confidence DESC, h.issue_date DESC`
     )
     .bind(...clause.binds)

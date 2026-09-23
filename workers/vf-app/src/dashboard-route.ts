@@ -2,6 +2,7 @@ import { unitsWherePermitted, scopedToChosenOrg, unitClause, type Scope } from "
 import type { RouteResult } from "./org-route.js";
 import { handleListMyTasks } from "./task-list-route.js";
 import { mondayOfThisWeek } from "./dates.js";
+import { POSSIBLE_DUPLICATE_THRESHOLD } from "./invoice-history.js";
 
 /**
  * What a person should do next — decision 0240.
@@ -538,11 +539,19 @@ async function possibleDuplicates(db: D1Database, scope: Scope) {
    * `json_extract`, so it read NULL and counted zero for every
    * invoice, regardless of what its own `duplicate_confidence` column
    * actually held.
+   *
+   * **`>= 0.5` lowered to `POSSIBLE_DUPLICATE_THRESHOLD` (`0.4`) —
+   * decision 0463.** Reported live: the same invoice resubmitted with
+   * only its own invoice number changed scored `0.4`, not `0.5`, and
+   * never counted here. See that constant's own doc comment
+   * (`invoice-history.ts`) for the full reasoning — imported rather
+   * than stated again, so this card and `fraud-duplicates-route.ts`'s
+   * own table cannot quietly disagree about where the bar sits.
    */
   const row = await db
     .prepare(
       `SELECT count(*) AS n FROM invoice_headers h
-       WHERE h.duplicate_confidence >= 0.5
+       WHERE h.duplicate_confidence >= ${POSSIBLE_DUPLICATE_THRESHOLD}
          ${clause.sql}`
     )
     .bind(...clause.binds)

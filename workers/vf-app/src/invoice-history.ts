@@ -35,6 +35,48 @@ export interface SimilarInvoiceCandidate {
 }
 
 /**
+ * **The bar every screen uses to call `duplicate_confidence` a
+ * possible duplicate — decision 0463, lowered from decision 0028's
+ * original `0.5`.** `computeDuplicateConfidence()` (`invoice-facts-
+ * route.ts`) weights an exact invoice number match at `0.6`, an exact
+ * total at `0.25`, and an exact issue date at `0.15`. Reported live:
+ * the same invoice resubmitted with only its own invoice number
+ * incremented — same supplier, same total, same date — scored `0.4`
+ * (`0.25 + 0.15`) and never once cleared the original `0.5` bar, on
+ * any of the three screens that read it (`dashboard-route.ts`'s
+ * `possible_duplicates` card, `fraud-duplicates-route.ts`'s own
+ * table, `documents-route.ts`'s `duplicates` filter) — proven by an
+ * existing test asserting that exact `0.4`, not a guess. Decision
+ * 0028 had already named this as a real, open gap: "a reasonable
+ * future enhancement if false negatives... turn out to matter in
+ * practice." `0.4` is the deliberate choice, not `0.45` or anything
+ * else in between — it is exactly the score a matching total and date
+ * alone produce, so that combination (arguably the stronger fraud
+ * signal for *this* pattern — a supplier essentially never issues two
+ * genuinely different invoices for the identical amount on the
+ * identical date) is what newly crosses the bar. An invoice number
+ * match alone (`0.6`) already cleared `0.5` before this and still
+ * does; nothing about that case changes.
+ *
+ * **Deliberately a threshold change, not a reweighting of
+ * `computeDuplicateConfidence()` itself.** `invoice.duplicate_confidence`
+ * is a real field in the closed rule vocabulary (decision 0028) — a
+ * customer can and does write their own rule condition against it,
+ * with their own chosen threshold. Reweighting the score would change
+ * what every existing customer rule evaluates to; moving only the
+ * three built-in screens' own display bar cannot, since the score
+ * itself is untouched. It also means every invoice already on file
+ * needs no backfill: a `0.4` already stored (this exact report's own
+ * repeated test invoices among them) clears the new bar the moment it
+ * is read, without a rescore.
+ *
+ * One constant, imported everywhere it's compared against, rather
+ * than three files independently stating the same number — the exact
+ * drift decision 0461/0462 found the hard way, in CSS rather than SQL.
+ */
+export const POSSIBLE_DUPLICATE_THRESHOLD = 0.4;
+
+/**
  * Finds every other invoice on file from the same supplier — the
  * targeted lookup decision 0028's own duplicate-confidence scoring
  * already needed. Extracted here, and decision 0028's own logic
