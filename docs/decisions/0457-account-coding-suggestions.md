@@ -140,12 +140,17 @@ visible; `Save` persisting a pre-filled suggestion with no explicit
 click; choosing any value — including the same one — clearing the
 note; and a field that already has a value on the line never
 overwritten or flagged by a suggestion. Full whole-repo browser suite
-run unfiltered afterward — **1060/1060 passing across 48 files** (1048
-+ 12 new: 4 here plus, per the file's own comment, the room already
-counted for `document-window.test.ts`'s pre-existing unhandled-
-rejection flake, confirmed present at its identical baseline count of
-160 non-fatal errors and reconfirmed via `git stash` as unrelated to
-this decision — none of them a failing assertion).
+run unfiltered afterward — **1052/1052 passing across 48 files** (1048
++ 4 new); the pre-existing `document-window.test.ts` unhandled-
+rejection flake is present at its identical baseline count of 160
+non-fatal errors, reconfirmed via `git stash` as unrelated to this
+decision — none of them a failing assertion.
+
+**Correction, decision 0458:** this count was originally recorded as
+1060/1060 (1048 + 12 new), which was wrong — a transcription error
+while writing this document, not a real discrepancy in what was tested
+or shipped. Re-checked directly at decision 0458's own baseline check:
+the true count at this decision's own tip is 1052, as corrected above.
 
 `npx tsc --noEmit`: zero errors in `coding-suggestions.ts` or the
 `index.ts` route wiring; the two new test files each surface the same

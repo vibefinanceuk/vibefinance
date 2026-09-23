@@ -3948,6 +3948,7 @@ describe("the invoice-line Coding pop-out (decision 0453)", () => {
     "viewer.coding.clear": "Clear",
     "viewer.coding.noteditable": "Not editable at this stage",
     "viewer.coding.suggested": "Suggested from this supplier's own history — review before saving.",
+    "viewer.coding.resultsfor": "Results for",
     "apsetup.codingtab.companycode": "Org / Company Code",
     "field.bt-133": "Cost centre",
     "field.coding.project": "Project",
@@ -4279,5 +4280,125 @@ describe("the invoice-line Coding pop-out (decision 0453)", () => {
     const costCentreBox = searchBoxes[0];
     expect(costCentreBox.value).toBe("cc1");
     expect(document.getElementById("codingsuggested-BT-133")).toBeNull();
+  });
+
+  /**
+   * **A fixed-size pop-out with one shared results area — decision
+   * 0458.** Reported live from a mock-up: each field's own results
+   * used to grow and shrink the whole pop-out on every keystroke.
+   */
+  describe("the pop-out's own size and its shared results area (decision 0458)", () => {
+    it("is a fixed-size pop-out, with the results area a sibling of the field grid, not nested inside it", async () => {
+      stub({});
+      await openAndClickCoding();
+
+      const popout = document.querySelector(".popout");
+      expect(popout?.classList.contains("codingpopout")).toBe(true);
+      expect(document.querySelector(".popout.codingpopout > .editgrid")).not.toBeNull();
+      expect(document.querySelector(".popout.codingpopout > .codingresults")).not.toBeNull();
+    });
+
+    it("has exactly one results list for all four fields, not one each", async () => {
+      stub({});
+      await openAndClickCoding();
+      expect(document.querySelectorAll(".codingresultslist").length).toBe(1);
+    });
+
+    it("labels the shared results area with whichever field was searched, and switching fields replaces what it shows", async () => {
+      stub({
+        "/api/org/cost-centres": { costCentres: [{ id: "cc9", name: "Engineering West", filters: [] }], total: 1, page: 1, pageSize: 50 },
+        "/api/coding-lists/project": { entries: [{ id: "proj-1", name: "Mjolner", filters: [] }], declaredFilters: [], total: 1, page: 1, pageSize: 50 },
+      });
+      await openAndClickCoding();
+      await new Promise((r) => setTimeout(r, 0));
+
+      const searchBoxes = [...document.querySelectorAll(".popout .searchbox")] as HTMLInputElement[];
+      const costCentreBox = searchBoxes[0];
+      const projectBox = searchBoxes[1];
+
+      costCentreBox.value = "eng";
+      costCentreBox.oninput?.(new Event("input"));
+      await new Promise((r) => setTimeout(r, 0));
+      expect(document.querySelector(".codingresultslabel")?.textContent).toBe("Results for Cost centre");
+      expect(document.querySelector(".codingresultslist")?.textContent).toContain("Engineering West");
+
+      projectBox.value = "mjol";
+      projectBox.oninput?.(new Event("input"));
+      await new Promise((r) => setTimeout(r, 0));
+      expect(document.querySelector(".codingresultslabel")?.textContent).toBe("Results for Project");
+      const listText = document.querySelector(".codingresultslist")?.textContent ?? "";
+      expect(listText).toContain("Mjolner");
+      expect(listText).not.toContain("Engineering West");
+    });
+
+    it("a slower search from a field the person has since left does not overwrite a faster one from the field they moved to", async () => {
+      let resolveCostCentres: (() => void) | undefined;
+      const costCentresGate = new Promise<void>((resolve) => {
+        resolveCostCentres = resolve;
+      });
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (url: string) => {
+          const path = String(url).split("?")[0];
+          const base: Record<string, unknown> = {
+            "/api/ui-strings": { locale: "en", strings: CODING_STRINGS },
+            "/api/code-lists": { fields: {} },
+            "/api/field-visibility": CODING_FIELDS,
+            "/api/invoices/inv-1": {
+              facts: {},
+              lines: [{ lineNumber: 1, facts: { "BT-131": 100, "BT-133": "cc1" } }],
+              validation: { passed: true, checked: [], failures: [] },
+              supplier: null,
+              buyer: { unitId: "UK01", unitName: "Acme UK", entityName: "Acme UK", vatId: "GB1" },
+              orgUnitId: "UK01",
+            },
+            "/api/invoices/inv-1/document-url": { url: null },
+            "/api/invoices/inv-1/progress": { inProcess: false, stages: [] },
+            "/api/invoices/inv-1/pages": { pages: [] },
+            "/api/documents/inv-1/activity": { items: [] },
+            "/api/invoices/inv-1/key": { ok: true },
+            "/api/invoices/inv-1/coding-suggestions": { suggestions: {} },
+            "/api/coding-lists/project": { entries: [{ id: "proj-1", name: "Mjolner", filters: [] }], declaredFilters: [], total: 1, page: 1, pageSize: 50 },
+          };
+          if (path === "/api/org/cost-centres") {
+            // Never resolves until the test explicitly lets it — the
+            // slow search a person has already typed past.
+            await costCentresGate;
+            return { ok: true, json: async () => ({ costCentres: [{ id: "cc9", name: "Engineering West", filters: [] }], total: 1, page: 1, pageSize: 50 }) } as Response;
+          }
+          if (path in base) return { ok: true, json: async () => base[path] } as Response;
+          throw new Error(`no stub for ${path}`);
+        })
+      );
+
+      await openAndClickCoding();
+      await new Promise((r) => setTimeout(r, 0));
+
+      const searchBoxes = [...document.querySelectorAll(".popout .searchbox")] as HTMLInputElement[];
+      const costCentreBox = searchBoxes[0];
+      const projectBox = searchBoxes[1];
+
+      // Typed into Cost Centre first — its own fetch is now in flight,
+      // gated open, waiting.
+      costCentreBox.value = "eng";
+      costCentreBox.oninput?.(new Event("input"));
+      await new Promise((r) => setTimeout(r, 0));
+
+      // Left for Project before Cost Centre's own fetch ever resolved
+      // — Project's fetch isn't gated, so it resolves first.
+      projectBox.value = "mjol";
+      projectBox.oninput?.(new Event("input"));
+      await new Promise((r) => setTimeout(r, 0));
+      expect(document.querySelector(".codingresultslabel")?.textContent).toBe("Results for Project");
+
+      // Only now does Cost Centre's own slow answer arrive — a stale
+      // token, and must not clobber what Project already put there.
+      resolveCostCentres?.();
+      await new Promise((r) => setTimeout(r, 0));
+      expect(document.querySelector(".codingresultslabel")?.textContent).toBe("Results for Project");
+      const listText = document.querySelector(".codingresultslist")?.textContent ?? "";
+      expect(listText).toContain("Mjolner");
+      expect(listText).not.toContain("Engineering West");
+    });
   });
 });

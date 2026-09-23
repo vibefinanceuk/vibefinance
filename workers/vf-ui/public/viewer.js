@@ -909,6 +909,42 @@ async function fetchCodingSuggestions() {
 }
 
 /**
+ * **One results area, shared by every field in the pop-out** —
+ * decision 0458. Before this, each field owned its own results list,
+ * so the pop-out's own size grew and shrank on every keystroke —
+ * reported live, from a mock-up, as unwanted flex. Now there is one
+ * `resultsList`/`resultsLabel` pair, and whichever field was searched
+ * most recently owns it.
+ *
+ * **`next()`/token, not a per-field "only the newest answer counts"
+ * guard** — the previous per-field version (each picker kept its own
+ * `latest` counter) is no longer enough once the results area is
+ * shared: a slow fetch from a field the person has since left could
+ * otherwise land after a fast fetch from the field they moved to and
+ * silently overwrite it. Every field asks this controller for a token
+ * before it starts fetching and presents that same token when it's
+ * ready to show or clear; a token that is no longer the newest one
+ * issued is a stale answer and is dropped, regardless of which field
+ * it came from.
+ */
+function codingResultsController(resultsLabel, resultsList) {
+  let generation = 0;
+  return {
+    next: () => ++generation,
+    show(token, fieldLabel, children) {
+      if (token !== generation) return;
+      resultsLabel.textContent = `${t("viewer.coding.resultsfor")} ${fieldLabel}`;
+      resultsList.replaceChildren(...children);
+    },
+    clear(token) {
+      if (token !== generation) return;
+      resultsLabel.textContent = "";
+      resultsList.replaceChildren();
+    },
+  };
+}
+
+/**
  * A single search-as-you-type field, embedded in a form rather than
  * `openSearch()`'s own full pop-out — decision 0453. **Not a second
  * copy of that debounce-free "only the newest answer counts" guard**;
@@ -921,17 +957,22 @@ async function fetchCodingSuggestions() {
  * already-keyed raw id into a readable name for the box to start
  * with — the same "shown, not silently dropped" courtesy `codeInput`
  * already gives a BT-130 unit code the active list does not know.
+ *
+ * `fieldLabel` and `results` (a `codingResultsController`) are new in
+ * decision 0458 — this field no longer owns its own results list, only
+ * the input and its clear button; what it finds is shown in the
+ * pop-out's one shared area instead, labelled with `fieldLabel` so
+ * it's unambiguous which field a click there will fill.
  */
-function searchableEntryPicker({ current, hint, fetchResults, resolveCurrent, onChoose }) {
+function searchableEntryPicker({ current, hint, fetchResults, resolveCurrent, onChoose, fieldLabel, results }) {
   const input = el("input", { type: "text", class: "searchbox", placeholder: hint, value: current ?? "" });
-  const results = el("div", { class: "searchresults" });
   const clearButton = el("button", {
     class: "rm",
     text: "×",
     title: t("viewer.coding.clear"),
     onclick: () => {
       input.value = "";
-      results.replaceChildren();
+      results.clear(results.next());
       onChoose(null);
     },
   });
@@ -946,43 +987,41 @@ function searchableEntryPicker({ current, hint, fetchResults, resolveCurrent, on
       });
   }
 
-  let latest = 0;
   input.oninput = async () => {
     const q = input.value;
-    const mine = ++latest;
     if (q.trim().length < 2) {
-      results.replaceChildren();
+      results.clear(results.next());
       return;
     }
+    const token = results.next();
     try {
       const found = await fetchResults(q);
-      if (mine !== latest) return;
       if (found.length === 0) {
-        results.replaceChildren(el("div", { class: "muted", text: t("viewer.coding.nomatches") }));
+        results.show(token, fieldLabel, [el("div", { class: "codingresultsempty muted", text: t("viewer.coding.nomatches") })]);
         return;
       }
-      results.replaceChildren(
-        ...found.map((item) => {
-          const row = el("button", { class: "searchresult" }, [
-            el("div", { text: item.name }),
-            el("div", { class: "muted", text: item.id }),
+      results.show(
+        token,
+        fieldLabel,
+        found.map((item) => {
+          const row = el("button", { class: "searchresult", title: item.name }, [
+            el("span", { class: "resultname", text: item.name }),
+            el("span", { class: "resultid muted", text: item.id }),
           ]);
           row.onclick = () => {
             input.value = item.name;
-            results.replaceChildren();
+            results.clear(results.next());
             onChoose(item);
           };
           return row;
         })
       );
     } catch {
-      if (mine === latest) {
-        results.replaceChildren(el("div", { class: "warn", text: t("viewer.coding.searchfailed") }));
-      }
+      results.show(token, fieldLabel, [el("div", { class: "codingresultsempty warn", text: t("viewer.coding.searchfailed") })]);
     }
   };
 
-  return el("div", { class: "codingsearch" }, [input, clearButton, results]);
+  return el("div", { class: "codingsearch" }, [input, clearButton]);
 }
 
 /**
@@ -1039,8 +1078,16 @@ async function openLineCodingPopout(line) {
     el("div", { class: "readonly", text: stored.buyer?.entityName ?? "—" }),
   ];
 
+  // One shared results area for all four pickers — decision 0458. See
+  // `codingResultsController`'s own doc comment for why a shared area
+  // needs a generation token rather than each field's own guard.
+  const resultsLabel = el("div", { class: "codingresultslabel muted sm" });
+  const resultsList = el("div", { class: "codingresultslist" });
+  const results = codingResultsController(resultsLabel, resultsList);
+
   const fieldRows = CODING_PICKER_FIELDS.flatMap((spec) => {
-    const label = el("label", { text: t(`field.${spec.field.toLowerCase()}`) });
+    const fieldLabel = t(`field.${spec.field.toLowerCase()}`);
+    const label = el("label", { text: fieldLabel });
     const resolved = lineFields.find((f) => f.field === spec.field);
 
     if (!resolved || resolved.visibility !== "edit") {
@@ -1078,6 +1125,8 @@ async function openLineCodingPopout(line) {
           }
         : null,
       fetchResults: (q) => fetchCodingEntries(spec.listType, q, filters()),
+      fieldLabel,
+      results,
       onChoose: (item) => {
         chosen[spec.field] = item?.id ?? null;
         line[spec.field] = item?.id ?? "";
@@ -1112,12 +1161,13 @@ async function openLineCodingPopout(line) {
     renderLines();
   };
   const backdrop = el("div", { class: "backdrop" }, [
-    el("div", { class: "popout" }, [
+    el("div", { class: "popout codingpopout" }, [
       el("div", { class: "cardhead" }, [
         el("h3", { text: t("viewer.coding.heading") }),
         actionLink("close", { onclick: close }),
       ]),
       el("div", { class: "editgrid" }, [...companyCodeRow, ...fieldRows]),
+      el("div", { class: "codingresults" }, [resultsLabel, resultsList]),
     ]),
   ]);
   backdrop.onclick = (e) => {

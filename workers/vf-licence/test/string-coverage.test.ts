@@ -655,6 +655,8 @@ const KEYS_THE_INTERFACE_USES = [
   "viewer.coding.noteditable",
   // Account Coding suggestions — decision 0457.
   "viewer.coding.suggested",
+  // The Coding pop-out's shared results area — decision 0458.
+  "viewer.coding.resultsfor",
 
   /**
    * **CSV Template and Load — decision 0445.** `coding-lists.js`'s own

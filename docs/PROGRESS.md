@@ -2572,6 +2572,41 @@ section for the full reasoning and tests.
   `vf-app`, `vf-ui`, and `vf-licence` — see decision 0457 for the full
   reasoning and verification.
 
+### The Coding Pop-out Is a Fixed Size, With One Shared Results Area (0458)
+- **The operator's own ask**, from a mock-up: *"Could we make the
+  pop-out fixed size? So it does not flex according to the number of
+  items returned in the list... each field acts as a search whose
+  results are served up in a contain section at the bottom of the
+  pop-out... multiple columns and unwrapped text to maximise the
+  number of visible rows."*
+- **`.popout.codingpopout`**: a fixed width and height
+  (`min(900px,100%)` × `min(640px,85vh)`), flex layout so the always-
+  five-row field grid never changes size and a new results section
+  below it fills whatever's left, scrolling internally instead of
+  resizing the pop-out.
+- **One shared results area, not four** — each field's own search box
+  no longer carries its own results list; whichever field was searched
+  most recently owns the one shared area, labelled "Results for
+  `<field>`" so a click is never ambiguous.
+- **Two columns, unwrapped rows** — each result is name and code side
+  by side on one line, not stacked on two; the name truncates with an
+  ellipsis (full text still on `title`) rather than wrapping, the code
+  never truncates.
+- **The one real correctness risk in sharing the area**: a slow search
+  from a field the person has since left could otherwise resolve after
+  a fast one from the field they moved to and silently overwrite it.
+  Fixed with a generation token shared by all four fields — only the
+  newest search's own answer is ever shown, whichever field it came
+  from.
+- **A documentation correction made along the way**: decision 0457's
+  own recorded `vf-ui` browser test count (1060/1060) was wrong — the
+  true count at that decision's own tip is 1052/1052, a transcription
+  error rather than a real gap in what shipped. Corrected in decision
+  0457's own doc, `HANDOVER.md`, and here.
+- **Built and tested, not yet pushed** — no `vf-app` change; touches
+  `vf-ui` and one new `vf-licence` migration (`0156`) — see decision
+  0458 for the full reasoning and verification.
+
 ### Purchase orders and matching
 - Purchase order storage grounded in Peppol BIS Order Only 3.3, via UBL
   XML ingestion (0081) and CSV load (0370) — the same tables, the same
@@ -3837,20 +3872,22 @@ elsewhere.
 | Package | Tests |
 |---|---|
 | `vf-app` | **2733/2733**, confirmed by one unfiltered whole-repo run (114 files) — decision 0457's own new `coding-suggestions.test.ts` (9) plus 3 new in `index.test.ts`, on top of the 2618 baseline + 6 (0451) + 11 (0452) + 23 (0453) + 5 (0454) + 3 (0455) + 9 (0456). First full-suite-confirmed count since decision 0447 — every count from 0448 through 0456 was arithmetic or a targeted-file run only, since this session's own tool timeout previously could not complete a full run; this run finally did (≈857s). |
-| `vf-licence` | **320/320**, confirmed by one unfiltered whole-repo run (21 files) — decision 0457's own migration `0155` adds rows to the existing `ui_strings` table, not a new test file. |
-| `vf-ui` | 74 Worker (unchanged) · **1060/1060 browser**, confirmed by one unfiltered whole-repo run (48 files) — 1048 + 12 new (4 in `viewer.test.ts` for the coding-suggestions pre-fill/note behaviour, plus the pre-existing `document-window.test.ts` unhandled-rejection flake's own room, unchanged at 160 non-fatal errors, none a failing assertion). |
+| `vf-licence` | **320/320**, confirmed by one unfiltered whole-repo run (21 files) — decisions 0457's and 0458's own migrations `0155`/`0156` each add rows to the existing `ui_strings` table, neither a new test file. |
+| `vf-ui` | 74 Worker (unchanged) · **1056/1056 browser**, confirmed by one unfiltered whole-repo run (48 files) — 1048 (decision 0453's own baseline) + 4 (decision 0457, the coding-suggestions pre-fill/note behaviour) + 4 (decision 0458, the fixed-size pop-out and shared results area); the pre-existing `document-window.test.ts` unhandled-rejection flake is unchanged at 160 non-fatal errors, none a failing assertion. *(Decision 0457's own contribution was originally recorded as 12 new against a miscounted 1060/1060 total — corrected here; see decision 0457's own doc for the correction.)* |
 | `shared` | 295 passing, 3 known pre-existing failures |
 
 Both migration chains replay clean with every standing invariant
 holding — 77 migrations for `vf-app` (174 invariants, up from 76/170 —
-decision 0452's own migration `0077`; decisions 0453 through 0457
-added no new `vf-app` migration); `vf-licence`'s own 155-migration
-chain (up from 154 — decision 0457's own migration `0155`) replays
-clean via `apply_migrations.py --replay-only` (155 migrations, all
-assertions held) and is also validated through `workers/vf-licence/
-test/setup.ts` + `string-coverage.test.ts`, both green — `test/
-setup.ts` itself needed a fix this decision, having never been wired
-up past migration `0154`.
+decision 0452's own migration `0077`; decisions 0453 through 0458
+added no new `vf-app` migration); `vf-licence`'s own 156-migration
+chain (up from 154 — decision 0457's own migration `0155`, decision
+0458's own migration `0156`) replays clean via `apply_migrations.py
+--replay-only` (156 migrations, all assertions held) and is also
+validated through `workers/vf-licence/test/setup.ts` +
+`string-coverage.test.ts`, both green — `test/setup.ts` needed a fix
+at decision 0457 (having never been wired up past migration `0154`)
+and was kept current for `0156` in the same pass this decision made
+anyway.
 
 **Decision 0448's own `vf-app` count is not re-verified against the
 full, whole-repo suite** — this session's own tool timeout could not
@@ -3997,7 +4034,7 @@ fresh whole-suite pass, since only that one file changed.
 | `docs/design/multi-authority-intake.md` | Non-EN-16931 authorities | Design only |
 | `docs/design/text-layer-extraction.md` | Reading a PDF's own text | Design only |
 | `docs/design/cost-object-approval-hierarchy.md` | Cost-Object Approval Hierarchy investigation (decision 0450) — its proposed shape and three open questions are now built and answered by decision 0452 | Design only |
-| `docs/decisions/` | 457 decision records | Current |
+| `docs/decisions/` | 458 decision records | Current |
 | `docs/decisions/SUPERSEDED.md` | Which records supersede which | **Read first** |
 
 Document 4's markdown source is at `docs/documents/`, with

@@ -1940,11 +1940,11 @@
   /*
     **One searchable field, embedded in a form** — decision 0453, the
     invoice-line Coding pop-out's own four pickers. `openSearch()`'s
-    own `.searchbox`/`.searchresults`/`.searchresult` are reused
-    unchanged for the input and its own dropdown; this only adds the
-    small grid around them so a clear ("×") button sits beside the box
-    rather than under it, and the results list spans both columns
-    rather than being squeezed into the narrower one.
+    own `.searchbox` is reused unchanged for the input; this only adds
+    the small grid around it so a clear ("×") button sits beside the
+    box rather than under it. **No results list of its own** — decision
+    0458 moved that to one shared area below every field, so this is
+    just the box and its clear button.
   */
   .codingsearch {
     display: grid;
@@ -1953,7 +1953,75 @@
     align-items: start;
   }
   .codingsearch .searchbox { margin: 0; }
-  .codingsearch .searchresults { grid-column: 1 / -1; margin-bottom: 0; }
+
+  /*
+    **The Coding pop-out is a fixed size, and its search results are
+    one shared area, not one per field — decision 0458.** Reported
+    live, from a mock-up: each field's own results used to grow that
+    field's row, so the whole pop-out reflowed — grew and shrank — on
+    every keystroke. Now `.codingpopout` fixes the pop-out's own
+    height; `.editgrid` (always exactly five rows: Org/Company Code
+    plus the four pickers) never changes size, and `.codingresults`
+    fills whatever height is left below it and scrolls internally
+    instead of pushing the pop-out's own edges around.
+
+    Only one field's results show at a time — whichever was searched
+    most recently, per `codingResultsController` in `viewer.js` — so a
+    shared area is unambiguous rather than a loss of information.
+  */
+  .popout.codingpopout {
+    width: min(900px, 100%);
+    height: min(640px, 85vh);
+    display: flex;
+    flex-direction: column;
+  }
+  .popout.codingpopout .editgrid { flex: none; }
+  .codingresults {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    border-top: 0.5px solid var(--border);
+    padding-top: 10px;
+    margin-top: 6px;
+  }
+  .codingresultslabel { min-height: 1.2em; margin-bottom: 6px; }
+  /*
+    **Two columns, unwrapped rows** — the operator's own ask, so more
+    results are visible at once than one column of wrapping name-then-
+    code text allowed. `.resultname` truncates with an ellipsis rather
+    than wrapping; the full name is still on the button's own `title`.
+    `.resultid` never shrinks — it's short, and the whole reason
+    somebody is searching is often to read the code back.
+  */
+  .codingresultslist {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2px 16px;
+    align-content: start;
+  }
+  .codingresultslist .searchresult {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    border-bottom: none;
+    padding: 5px 4px;
+  }
+  .codingresultslist .resultname {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .codingresultslist .resultid { flex: none; white-space: nowrap; }
+  .codingresultsempty { grid-column: 1 / -1; }
+  @media (max-width: 620px) {
+    .codingresultslist { grid-template-columns: 1fr; }
+  }
 
   /*
     **Every card's own title, and a rule beneath it** — decision 0396,
