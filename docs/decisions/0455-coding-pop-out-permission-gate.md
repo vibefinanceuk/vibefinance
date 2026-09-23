@@ -1,8 +1,9 @@
 # 0455 — The Coding Pop-out's Search Routes Now Also Accept AP.Code
 
-**Status: built and tested, not yet pushed.** Commit not yet bundled
-at the time this file was written — see HANDOVER.md for the exact
-commit hash once delivered.
+**Status: built and tested, not yet pushed.** This session has no push
+access — delivered as a bundle (`origin/main..main`) for the operator
+to apply and push. Built on top of `bef7414` (decision 0454's own
+confirmation commit), this session's own commit is `7afe624`.
 
 ---
 
