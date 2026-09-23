@@ -1,7 +1,9 @@
 # 0460 — Every Field Searches on Focus, No Minimum Before Typing Counts, Narrower Boxes
 
-**Status: built.** Not yet confirmed pushed and deployed — awaiting
-the operator's own report. No migration — no new string key.
+**Status: confirmed pushed and deployed.** `origin/main` fetched
+directly reads `52e3d23`, matching this session's own commit exactly,
+and the operator confirmed `wrangler deploy` run for `vf-ui`. No
+migration — no new string key, so nothing further to apply.
 
 ---
 
@@ -121,4 +123,33 @@ unsurprising, since this decision touches no TypeScript.
 
 ## Still to do, operator side
 
-`wrangler deploy` for `vf-ui` — no migration to apply this time.
+All done — `wrangler deploy` confirmed for `vf-ui`, no migration to
+apply this time, both in the operator's own single report: *"deployed
+and pushed."*
+
+## Live afterward: the narrowing itself wasn't right
+
+Reported directly, with a screenshot, once this was live: *"the box is
+still too wide. The Close button needs to be above the right edge of
+the box containing the Org / Company Code. The Org / Company code box
+is also still wide and taller than the boxes beneath it."*
+
+All three trace to the same root cause: `.codingsearch`'s own
+`66.6667%` and `.codingcompanycode`'s own `66.6667%`/`38px` are two
+separately-stated copies of what should be one number, and the
+pop-out itself stayed the 900px decision 0458 sized it to (for a
+two-column results grid decision 0459 already put back to one column)
+rather than shrinking along with the boxes inside it — so Close, still
+pinned to that 900px edge, was never going to land above a box that
+had just narrowed to a fraction of it.
+
+Asked to mock up rather than build straight to a fix — *"can you mock
+up, instead of build, so we can get this right"*. See
+`docs/design/mockups/line-coding-popout-widths.html`: a "Current"
+replica reproducing the report (including a dashed line marking the
+Org / Company Code box's own right edge against Close, well short of
+it) beside a "Proposed" version where one shared box width drives the
+search boxes, the Org / Company Code box, and the pop-out's own width
+together — a slider, so the right number can be found live rather than
+guessed and re-shipped. The fix this becomes is decision 0461, once
+the operator says what that number is.

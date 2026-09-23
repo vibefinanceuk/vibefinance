@@ -2666,9 +2666,21 @@ section for the full reasoning and tests.
 - **Narrower, and matched** — search boxes now 2/3 of their own column
   width; the read-only Org / Company Code box matched to the same
   height and width via a new `codingcompanycode` class.
-- **Built and committed, not yet confirmed deployed** — touches
+- **Confirmed pushed and deployed** — `origin/main` fetched directly
+  reads `52e3d23`, matching this session's own commit exactly, and the
+  operator confirmed `wrangler deploy` run for `vf-ui`. Touches
   `vf-ui` only; no migration, no new string key — see decision 0460
   for the full reasoning and verification.
+- **Live, the narrowing itself was reported not yet right** — the box
+  is still too wide, Close doesn't sit above the box's own right edge
+  (the pop-out stayed 900px wide, a leftover from decision 0458's own
+  two-column results grid that decision 0459 already removed, while
+  only the boxes inside it narrowed), and Org / Company Code is still
+  both wider and taller than the boxes beneath it (its own width and
+  height are a second, separately-stated copy of the same two numbers
+  the search boxes use, and two copies of a number drift). Asked to
+  mock up rather than build straight to a fix — see
+  `docs/design/mockups/line-coding-popout-widths.html`.
 
 ### Purchase orders and matching
 - Purchase order storage grounded in Peppol BIS Order Only 3.3, via UBL

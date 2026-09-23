@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Line coding pop-out — width &amp; Close alignment — VibeFinance mock-up</title>
+<style>
+  :root {
+    /* The real app.css dark-mode tokens (workers/vf-ui/public/tokens.css),
+       reproduced here so this file opens standalone — this is a mock-up,
+       not a build, see docs/design/mockups/README.md's own reasoning for
+       the pattern. Dan's own screenshot was dark mode, so this is dark
+       mode only; the shipped fix would of course keep both. */
+    --surface-0: #0d1626;
+    --surface-1: #141f33;
+    --surface-2: #1b2941;
+    --text-primary: #e8eef7;
+    --text-secondary: #9dabc0;
+    --text-muted: #6f7e94;
+    --border: rgba(232, 238, 247, 0.12);
+    --border-strong: rgba(232, 238, 247, 0.22);
+    --bg-accent: #123a66;
+    --text-accent: #9fc9f2;
+    --border-accent: #378add;
+    --brand-fill: #0f6e56;
+    --radius: 8px;
+    --font-sans: Calibri, "Segoe UI", -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
+    --text-sm: 12px;
+    --text-base: 14px;
+    --text-lg: 16px;
+    --step-1: 15px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background: var(--surface-0);
+    font: var(--text-base)/1.5 var(--font-sans);
+    color: var(--text-primary);
+    padding: 32px 20px 90px;
+  }
+  .wrap { max-width: 1040px; margin: 0 auto; }
+  h1 { font-size: 20px; margin: 0 0 6px; }
+  .lede { color: var(--text-secondary); font-size: var(--text-base); max-width: 680px; margin: 0 0 10px; }
+  .issues { margin: 0 0 30px; padding-left: 20px; color: var(--text-secondary); font-size: var(--text-base); max-width: 680px; }
+  .issues li { margin: 3px 0; }
+  .issues b { color: var(--text-primary); }
+
+  section.demo { margin-bottom: 46px; }
+  .demolabel {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    font-size: var(--text-sm); color: var(--text-secondary); margin-bottom: 12px;
+  }
+  .tag {
+    font-size: 10px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+    padding: 3px 8px; border-radius: 999px;
+  }
+  .tag.current { color: var(--text-muted); border: 1px solid var(--border-strong); }
+  .tag.proposed { color: var(--text-accent); border: 1px solid var(--border-accent); background: var(--bg-accent); }
+
+  .stage {
+    background:
+      radial-gradient(120% 90% at 50% -10%, color-mix(in oklab, var(--brand-fill) 10%, transparent), transparent 65%),
+      var(--surface-0);
+    border: 1px dashed var(--border-strong);
+    border-radius: var(--radius);
+    padding: 30px;
+    display: flex;
+    justify-content: center;
+    overflow-x: auto;
+  }
+
+  .controls {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    margin: 0 0 16px; font-size: var(--text-sm); color: var(--text-secondary);
+    background: var(--surface-1); border: 0.5px solid var(--border); border-radius: var(--radius);
+    padding: 10px 14px;
+  }
+  .controls .field { display: flex; align-items: center; gap: 8px; }
+  .controls input[type=range] { width: 200px; accent-color: var(--brand-fill); }
+  .controls output { color: var(--text-primary); font-variant-numeric: tabular-nums; min-width: 44px; display: inline-block; }
+  .controls .sep { width: 0.5px; align-self: stretch; background: var(--border-strong); margin: 0 4px; }
+
+  /* ---- Replica of the real app.css component classes ---- */
+  .popout {
+    background: var(--surface-2);
+    border: 0.5px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px;
+  }
+  .cardhead { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+  .cardhead > h3 { margin: 0; font-size: var(--text-lg); }
+  .actionlink {
+    display: flex; flex-direction: column; align-items: center; gap: 5px;
+    min-width: 62px; padding: 9px 6px; border: 0.5px solid transparent; border-radius: var(--radius);
+    background: transparent; color: var(--text-secondary); font-size: var(--text-sm); line-height: 1.2;
+    cursor: pointer; font-family: inherit;
+  }
+  .actionlink:hover { background: var(--surface-1); color: var(--text-primary); }
+  .actionlink svg { width: 20px; height: 20px; }
+
+  .editgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 14px; margin: 10px 0; }
+  .editgrid > label { color: var(--text-muted); align-self: end; font-size: var(--text-base); }
+
+  input.searchbox, .readonly {
+    font-size: var(--step-1);
+    padding: 8px 11px;
+    border-radius: var(--radius);
+    font-family: inherit;
+  }
+  input.searchbox {
+    background: var(--surface-1); border: 0.5px solid var(--border); color: var(--text-primary);
+    width: 100%; min-height: 38px;
+  }
+  input.searchbox::placeholder { color: var(--text-muted); }
+  .readonly {
+    min-height: 32px;
+    color: var(--text-secondary);
+    background: var(--surface-0);
+    font-variant-numeric: tabular-nums;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  button.rm {
+    min-height: 28px; width: 28px; padding: 0; color: var(--text-muted);
+    background: transparent; border: 0.5px solid transparent; border-radius: var(--radius);
+    cursor: pointer; font: inherit;
+  }
+  button.rm:hover { color: var(--text-primary); }
+
+  .codingresults { border-top: 0.5px solid var(--border); padding-top: 10px; margin-top: 6px; }
+  .codingresultslabel { min-height: 1.2em; margin-bottom: 6px; font-size: var(--text-sm); color: var(--text-muted); }
+  .codingresultslist { display: flex; flex-direction: column; gap: 2px; }
+  .searchresult {
+    display: flex; align-items: baseline; gap: 6px; padding: 5px 4px;
+    background: none; border: none; width: 100%; text-align: left; font: inherit; color: inherit; cursor: pointer;
+    border-radius: 4px;
+  }
+  .searchresult:hover { background: var(--surface-1); }
+  .resultname { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .resultid { flex: none; white-space: nowrap; color: var(--text-muted); }
+
+  /* ==== CURRENT — decision 0460 as shipped, `52e3d23` ==== */
+  .popout.current { width: min(900px, 100%); position: relative; }
+  .popout.current .codingsearch {
+    display: grid; grid-template-columns: 1fr 28px; gap: 4px; align-items: start; width: 66.6667%;
+  }
+  .popout.current .codingcompanycode { width: 66.6667%; min-height: 38px; }
+  .edgemark {
+    position: absolute; top: 0; bottom: 16px; width: 0;
+    border-left: 1px dashed var(--border-accent);
+    pointer-events: none;
+  }
+  .edgemark span {
+    position: absolute; top: -20px; right: 0; transform: translateX(50%);
+    font-size: 10px; color: var(--text-accent); white-space: nowrap;
+    background: var(--surface-2); padding: 0 4px;
+  }
+
+  /* ==== PROPOSED — one number drives the box, the grid, and the
+     pop-out's own width, so Close, the boxes, and Org / Company Code
+     cannot drift apart the way three separately-stated copies of
+     "66.6667%" and "38px" just did. ==== */
+  .popout.proposed {
+    width: calc(16px + var(--label-w) + 14px + var(--box-w) + 16px);
+  }
+  .popout.proposed .editgrid { grid-template-columns: var(--label-w) 1fr; }
+  .popout.proposed .codingsearch {
+    display: grid; grid-template-columns: 1fr 28px; gap: 4px; align-items: start; width: 100%;
+  }
+  .popout.proposed .codingcompanycode { width: 100%; min-height: 38px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Line coding pop-out — box width &amp; Close alignment</h1>
+  <p class="lede">
+    Live feedback on decision 0460, once it shipped. A mock-up, not a
+    build — the ask was to get the numbers right first.
+  </p>
+  <ul class="issues">
+    <li><b>The box is still too wide.</b> 2/3 of a column that is
+    itself half the pop-out is still most of the pop-out.</li>
+    <li><b>Close doesn't sit above the box's own right edge.</b> The
+    pop-out stayed 900px wide — decision 0458's own width, sized for a
+    two-column results grid decision 0459 already put back to one
+    column — while only the boxes inside it narrowed, so Close is
+    pinned to an outer edge nothing else reaches any more.</li>
+    <li><b>Org / Company Code is still wider and taller than the boxes
+    beneath it.</b> It has its own copy of the same two numbers
+    (<code>66.6667%</code>, <code>38px</code>) rather than sharing the
+    boxes' own source — two copies of a number drift.</li>
+  </ul>
+
+  <section class="demo">
+    <div class="demolabel"><span class="tag current">Current — live</span> decision 0460 as shipped (<code>52e3d23</code>)</div>
+    <div class="stage">
+      <div class="popout current" id="currentPopout">
+        <div class="cardhead">
+          <h3>Line coding</h3>
+          <button class="actionlink" type="button">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6 6 18"/></svg>
+            <span>Close</span>
+          </button>
+        </div>
+        <div class="editgrid">
+          <label>Org / Company Code</label>
+          <div class="readonly codingcompanycode">Acme Group</div>
+
+          <label>Cost centre</label>
+          <div class="codingsearch">
+            <input class="searchbox" type="text" placeholder="Type to search" />
+            <button class="rm" type="button">×</button>
+          </div>
+
+          <label>Project</label>
+          <div class="codingsearch">
+            <input class="searchbox" type="text" placeholder="Type to search" />
+            <button class="rm" type="button">×</button>
+          </div>
+
+          <label>Commodity code</label>
+          <div class="codingsearch">
+            <input class="searchbox" type="text" value="Management &amp; Business Professionals Services" />
+            <button class="rm" type="button">×</button>
+          </div>
+
+          <label>General ledger code</label>
+          <div class="codingsearch">
+            <input class="searchbox" type="text" value="Apparel" />
+            <button class="rm" type="button">×</button>
+          </div>
+        </div>
+        <div class="codingresults">
+          <div class="codingresultslabel">Results for Cost centre</div>
+          <div class="codingresultslist">
+            <button class="searchresult" type="button"><span class="resultname">/GloBiz Programme</span><span class="resultid">USX80001</span></button>
+            <button class="searchresult" type="button"><span class="resultname">/Local IT department</span><span class="resultid">UK150001</span></button>
+            <button class="searchresult" type="button"><span class="resultname">/Local procurement</span><span class="resultid">UK230001</span></button>
+            <button class="searchresult" type="button"><span class="resultname">/Sales support</span><span class="resultid">UKW20001</span></button>
+            <button class="searchresult" type="button"><span class="resultname">Engineering</span><span class="resultid">CC-100</span></button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="demo">
+    <div class="demolabel">
+      <span class="tag proposed">Proposed</span>
+      one box width drives everything — drag to find the right number, then say what it should be
+    </div>
+    <div class="controls">
+      <div class="field">
+        <label for="boxw">Box width</label>
+        <input type="range" id="boxw" min="180" max="380" value="260" step="4" />
+        <output id="boxwout">260px</output>
+      </div>
+      <div class="sep"></div>
+      <div class="field">
+        <label for="labelw">Label column</label>
+        <input type="range" id="labelw" min="120" max="200" value="150" step="2" />
+        <output id="labelwout">150px</output>
+      </div>
+      <div class="sep"></div>
+      <div class="field">
+        <output id="popoutwout" style="font-weight:600;">pop-out: 442px</output>
+      </div>
+    </div>
+    <div class="stage">
+      <div class="popout proposed" id="proposedPopout" style="--box-w:260px; --label-w:150px;">
+        <div class="cardhead">
+          <h3>Line coding</h3>
+          <button class="actionlink" type="button">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6 6 18"/></svg>
+            <span>Close</span>
+          </button>
+        </div>
+        <div class="editgrid">
+          <label>Org / Company Code</label>
+          <div class="readonly codingcompanycode">Acme Group</div>
+
+          <label>Cost centre</label>
+          <div class="codingsearch">
+            <input class="searchbox" type="text" placeholder="Type to search" />
+            <button class="rm" type="button">×</button>
+          </div>
+
+          <label>Project</label>
+          <div class="codingsearch">
+            <input class="searchbox" type="text" placeholder="Type to search" />
+            <button class="rm" type="button">×</button>
+          </div>
+
+          <label>Commodity code</label>
+          <div class="codingsearch">
+            <input class="searchbox" type="text" value="Management &amp; Business Professionals Services" />
+            <button class="rm" type="button">×</button>
+          </div>
+
+          <label>General ledger code</label>
+          <div class="codingsearch">
+            <input class="searchbox" type="text" value="Apparel" />
+            <button class="rm" type="button">×</button>
+          </div>
+        </div>
+        <div class="codingresults">
+          <div class="codingresultslabel">Results for Cost centre</div>
+          <div class="codingresultslist">
+            <button class="searchresult" type="button"><span class="resultname">/GloBiz Programme</span><span class="resultid">USX80001</span></button>
+            <button class="searchresult" type="button"><span class="resultname">/Local IT department</span><span class="resultid">UK150001</span></button>
+            <button class="searchresult" type="button"><span class="resultname">/Local procurement</span><span class="resultid">UK230001</span></button>
+            <button class="searchresult" type="button"><span class="resultname">/Sales support</span><span class="resultid">UKW20001</span></button>
+            <button class="searchresult" type="button"><span class="resultname">Engineering</span><span class="resultid">CC-100</span></button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="lede" style="margin-top:14px;">
+      What changed structurally, not just cosmetically: the search
+      boxes and the Org / Company Code box both read <code>width:
+      100%</code> of the same grid column, instead of each stating its
+      own <code>66.6667%</code> — so they cannot drift apart the way
+      they just did. The pop-out's own width is <em>computed from</em>
+      that column plus the label column and padding, rather than fixed
+      at 900px independently — so Close, which sits at the pop-out's
+      own right edge, lands directly above the box's own right edge as
+      a consequence of the arithmetic, not a second number tuned by
+      hand to match it.
+    </p>
+  </section>
+
+  <p class="lede">
+    Move the sliders until this reads right, then say the two numbers
+    (or just "narrower"/"wider") and it becomes decision 0461.
+  </p>
+</div>
+<script>
+  const boxw = document.getElementById('boxw');
+  const labelw = document.getElementById('labelw');
+  const pop = document.getElementById('proposedPopout');
+  const boxwout = document.getElementById('boxwout');
+  const labelwout = document.getElementById('labelwout');
+  const popoutwout = document.getElementById('popoutwout');
+  function sync() {
+    pop.style.setProperty('--box-w', boxw.value + 'px');
+    pop.style.setProperty('--label-w', labelw.value + 'px');
+    boxwout.textContent = boxw.value + 'px';
+    labelwout.textContent = labelw.value + 'px';
+    const total = 16 + Number(labelw.value) + 14 + Number(boxw.value) + 16;
+    popoutwout.textContent = 'pop-out: ' + total + 'px';
+  }
+  boxw.addEventListener('input', sync);
+  labelw.addEventListener('input', sync);
+  sync();
+
+  // A dashed line at the "current" box's own right edge, so the gap to
+  // Close is something to look at rather than something to compute.
+  function markCurrentEdge() {
+    const host = document.getElementById('currentPopout');
+    host.querySelectorAll('.edgemark').forEach((n) => n.remove());
+    const box = host.querySelector('.codingcompanycode');
+    if (!box) return;
+    const hostRect = host.getBoundingClientRect();
+    const boxRect = box.getBoundingClientRect();
+    const mark = document.createElement('div');
+    mark.className = 'edgemark';
+    mark.style.left = (boxRect.right - hostRect.left) + 'px';
+    mark.innerHTML = '<span>box’s right edge</span>';
+    host.appendChild(mark);
+  }
+  markCurrentEdge();
+  window.addEventListener('resize', markCurrentEdge);
+</script>
+</body>
+</html>
