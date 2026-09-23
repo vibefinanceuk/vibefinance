@@ -2946,7 +2946,15 @@ export default {
       const { db } = resolveTenant(request, env);
       const auth = await authenticatePerson(db, request, env);
       if (!auth.user) return json({ error: auth.reason }, 401);
-      if (!(await hasPermission(db, auth.user.id, "AP.Validate"))) {
+      // `AP.Validate` OR `AP.Code` — decision 0456. This is the route
+      // the viewer opens an invoice with; an `AP.Code`-only person
+      // (the Coding stage's own required permission) could claim a
+      // Coding task and then not be able to open the invoice it was
+      // raised against at all.
+      if (
+        !(await hasPermission(db, auth.user.id, "AP.Validate")) &&
+        !(await hasPermission(db, auth.user.id, "AP.Code"))
+      ) {
         return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
       }
 
@@ -2965,7 +2973,13 @@ export default {
       if (!auth.user) {
         return json({ error: auth.reason }, 401);
       }
-      if (!(await hasPermission(db, auth.user.id, "AP.Validate"))) {
+      // `AP.Validate` OR `AP.Code` — decision 0456, same reasoning as
+      // `GET /invoices/:id` above: coding a line means being able to
+      // see the document it came from.
+      if (
+        !(await hasPermission(db, auth.user.id, "AP.Validate")) &&
+        !(await hasPermission(db, auth.user.id, "AP.Code"))
+      ) {
         return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
       }
       /**
@@ -3068,7 +3082,12 @@ export default {
       if (!auth.user) {
         return json({ error: auth.reason }, 401);
       }
-      if (!(await hasPermission(db, auth.user.id, "AP.Validate"))) {
+      // `AP.Validate` OR `AP.Code` — decision 0456, same reasoning as
+      // `GET /invoices/:id` above.
+      if (
+        !(await hasPermission(db, auth.user.id, "AP.Validate")) &&
+        !(await hasPermission(db, auth.user.id, "AP.Code"))
+      ) {
         return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
       }
       const pages = await listRetainedPages(db, listPagesMatch[1]);
@@ -3089,7 +3108,12 @@ export default {
       if (!auth.user) {
         return json({ error: auth.reason }, 401);
       }
-      if (!(await hasPermission(db, auth.user.id, "AP.Validate"))) {
+      // `AP.Validate` OR `AP.Code` — decision 0456, same reasoning as
+      // `GET /invoices/:id` above.
+      if (
+        !(await hasPermission(db, auth.user.id, "AP.Validate")) &&
+        !(await hasPermission(db, auth.user.id, "AP.Code"))
+      ) {
         return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
       }
       if (!env.DOCUMENT_URL_SECRET) {
@@ -3345,7 +3369,13 @@ export default {
       const auth = await authenticatePerson(db, request, env);
       if (!auth.user) return json({ error: auth.reason }, 401);
       // Anybody who may look at an invoice may see where it has been.
-      if (!(await hasPermission(db, auth.user.id, "AP.Review"))) {
+      // `AP.Code` added — decision 0456: the Coding stage's own
+      // required permission was missing from this "anybody" the same
+      // way it was missing from `GET /invoices/:id` itself.
+      if (
+        !(await hasPermission(db, auth.user.id, "AP.Review")) &&
+        !(await hasPermission(db, auth.user.id, "AP.Code"))
+      ) {
         return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
       }
 
@@ -3794,7 +3824,22 @@ export default {
       if (!auth.user) {
         return json({ error: auth.reason }, 401);
       }
-      if (!(await hasPermission(db, auth.user.id, "AP.Validate"))) {
+      /**
+       * **`AP.Validate` OR `AP.Code` — decision 0456.** This route was
+       * `AP.Validate`-only, which decision 0453's own read-side gate on
+       * the pop-out's search routes already generalized from once
+       * before this was noticed. Decision 0455 widened those search
+       * routes to also accept `AP.Code`, but missed this one — the
+       * route the pop-out's own Save button actually calls. Without
+       * this, decision 0455 alone would have let an `AP.Code`-only
+       * person search and choose values, then 403 the moment they
+       * tried to save them — worse than before, since the failure
+       * would land one step later, after real work.
+       */
+      if (
+        !(await hasPermission(db, auth.user.id, "AP.Validate")) &&
+        !(await hasPermission(db, auth.user.id, "AP.Code"))
+      ) {
         return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
       }
       let body: unknown;

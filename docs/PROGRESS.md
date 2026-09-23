@@ -2516,6 +2516,26 @@ section for the full reasoning and tests.
 - **Built and tested, not yet pushed** — see decision 0455 for the
   full reasoning and verification.
 
+### AP.Code Can View and Work an Entire Coding Task (0456)
+- **Found while wiring an unrelated new route, checking out of habit
+  whether decision 0455's own fix was complete**: it wasn't. Six more
+  routes on the ordinary Coding-task path — `GET /invoices/:id` (the
+  route the viewer opens an invoice with), its document and page
+  routes, `/progress`, and `POST /invoices/:id/key` (the pop-out's own
+  Save button) — were still gated `AP.Validate` or `AP.Review` alone.
+  An `AP.Code`-only person could see the queue and claim a task, then
+  find every next step forbidden; worst case, they could search and
+  choose values (decision 0455's own fix) and only 403 on Save, after
+  real work.
+- **All six widened the same way**: `AP.Code` added alongside whatever
+  each route already accepted, nothing removed.
+- **Not built**: no audit of every other permission gate in the file —
+  only the routes actually on the Coding path were touched; no
+  equivalent audit for `AP.Match`, which wasn't reported and might
+  have the same class of gap.
+- **Built and tested, not yet pushed** — see decision 0456 for the
+  full reasoning and verification.
+
 ### Purchase orders and matching
 - Purchase order storage grounded in Peppol BIS Order Only 3.3, via UBL
   XML ingestion (0081) and CSV load (0370) — the same tables, the same
@@ -3780,7 +3800,7 @@ elsewhere.
 
 | Package | Tests |
 |---|---|
-| `vf-app` | 2618 baseline + 6 (0451) + 11 (0452) + 23 (0453) + 5 (0454) + 3 (0455) = **2666**, arithmetic, not re-confirmed by a full run — see note below |
+| `vf-app` | 2618 baseline + 6 (0451) + 11 (0452) + 23 (0453) + 5 (0454) + 3 (0455) + 9 (0456) = **2675**, arithmetic, not re-confirmed by a full run — see note below |
 | `vf-licence` | 320 |
 | `vf-ui` | 74 Worker · 1048 browser, all passing — see below |
 | `shared` | 295 passing, 3 known pre-existing failures |
@@ -3939,7 +3959,7 @@ fresh whole-suite pass, since only that one file changed.
 | `docs/design/multi-authority-intake.md` | Non-EN-16931 authorities | Design only |
 | `docs/design/text-layer-extraction.md` | Reading a PDF's own text | Design only |
 | `docs/design/cost-object-approval-hierarchy.md` | Cost-Object Approval Hierarchy investigation (decision 0450) — its proposed shape and three open questions are now built and answered by decision 0452 | Design only |
-| `docs/decisions/` | 455 decision records | Current |
+| `docs/decisions/` | 456 decision records | Current |
 | `docs/decisions/SUPERSEDED.md` | Which records supersede which | **Read first** |
 
 Document 4's markdown source is at `docs/documents/`, with

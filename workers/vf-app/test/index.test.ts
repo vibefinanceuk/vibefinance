@@ -2383,6 +2383,141 @@ describe("Account Coding's read routes — Admin.Configure, AP.Validate, or AP.C
   });
 });
 
+/**
+ * **An `AP.Code`-only person can view and work an entire Coding
+ * task, not just search and claim it — decision 0456.** Decision 0455
+ * widened the pop-out's own search routes; this found four more
+ * routes the same person needs on the ordinary path (open the
+ * invoice, see the underlying document, see its own progress, save
+ * what was keyed) that were still gated on `AP.Validate` or
+ * `AP.Review` alone, unchanged since before `AP.Code` was a real,
+ * task-bearing permission.
+ */
+describe("Viewing and working an invoice while holding only AP.Code — decision 0456", () => {
+  it("GET /invoices/:id now also works for AP.Code alone", async () => {
+    await SELF.fetch("https://example.com/invoices", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ id: "inv-0456-1", facts: {} }),
+    });
+    const key = await seedUserWithPermissions(["AP.Code"]);
+    const res = await SELF.fetch("https://example.com/invoices/inv-0456-1", {
+      headers: { Authorization: `Bearer ${key}` },
+    });
+    expect(res.status).toBe(200);
+  });
+
+  it("GET /invoices/:id still refuses a real user holding neither permission", async () => {
+    await SELF.fetch("https://example.com/invoices", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ id: "inv-0456-1b", facts: {} }),
+    });
+    const key = await seedUserWithPermissions(["AP.Review"]);
+    const res = await SELF.fetch("https://example.com/invoices/inv-0456-1b", {
+      headers: { Authorization: `Bearer ${key}` },
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("POST /invoices/:id/document-url no longer 403s for AP.Code alone", async () => {
+    await SELF.fetch("https://example.com/invoices", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ id: "inv-0456-2", facts: {} }),
+    });
+    const key = await seedUserWithPermissions(["AP.Code"]);
+    const res = await SELF.fetch("https://example.com/invoices/inv-0456-2/document-url", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${key}` },
+    });
+    expect(res.status).not.toBe(403);
+  });
+
+  it("GET /invoices/:id/pages now also works for AP.Code alone", async () => {
+    await SELF.fetch("https://example.com/invoices", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ id: "inv-0456-3", facts: {} }),
+    });
+    const key = await seedUserWithPermissions(["AP.Code"]);
+    const res = await SELF.fetch("https://example.com/invoices/inv-0456-3/pages", {
+      headers: { Authorization: `Bearer ${key}` },
+    });
+    expect(res.status).toBe(200);
+  });
+
+  it("POST /invoices/:id/pages/:n/document-url no longer 403s for AP.Code alone", async () => {
+    await SELF.fetch("https://example.com/invoices", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ id: "inv-0456-4", facts: {} }),
+    });
+    const key = await seedUserWithPermissions(["AP.Code"]);
+    const res = await SELF.fetch("https://example.com/invoices/inv-0456-4/pages/1/document-url", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${key}` },
+    });
+    expect(res.status).not.toBe(403);
+  });
+
+  it("GET /invoices/:id/progress now also works for AP.Code alone", async () => {
+    await SELF.fetch("https://example.com/invoices", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ id: "inv-0456-5", facts: {} }),
+    });
+    const key = await seedUserWithPermissions(["AP.Code"]);
+    const res = await SELF.fetch("https://example.com/invoices/inv-0456-5/progress", {
+      headers: { Authorization: `Bearer ${key}` },
+    });
+    expect(res.status).toBe(200);
+  });
+
+  it("GET /invoices/:id/progress still refuses a real user holding neither permission", async () => {
+    await SELF.fetch("https://example.com/invoices", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ id: "inv-0456-5b", facts: {} }),
+    });
+    const key = await seedUserWithPermissions(["AP.Supplier"]);
+    const res = await SELF.fetch("https://example.com/invoices/inv-0456-5b/progress", {
+      headers: { Authorization: `Bearer ${key}` },
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("POST /invoices/:id/key now also works for AP.Code alone", async () => {
+    await SELF.fetch("https://example.com/invoices", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ id: "inv-0456-6", facts: {} }),
+    });
+    const key = await seedUserWithPermissions(["AP.Code"]);
+    const res = await SELF.fetch("https://example.com/invoices/inv-0456-6/key", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${key}`, "content-type": "application/json" },
+      body: JSON.stringify({ fields: { "BT-133": "cc-live-1" } }),
+    });
+    expect(res.status).not.toBe(403);
+  });
+
+  it("POST /invoices/:id/key still refuses a real user holding neither permission", async () => {
+    await SELF.fetch("https://example.com/invoices", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ id: "inv-0456-6b", facts: {} }),
+    });
+    const key = await seedUserWithPermissions(["AP.Supplier"]);
+    const res = await SELF.fetch("https://example.com/invoices/inv-0456-6b/key", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${key}`, "content-type": "application/json" },
+      body: JSON.stringify({ fields: { "BT-133": "cc-live-1" } }),
+    });
+    expect(res.status).toBe(403);
+  });
+});
+
 describe("supplier history, through the real router (decision 0032)", () => {
   it("returns a real supplier's history through the real HTTP route", async () => {
     await SELF.fetch("https://example.com/invoices", {
