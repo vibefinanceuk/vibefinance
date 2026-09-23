@@ -1,6 +1,12 @@
 # 0451 — Line Level Account Coding
 
-**Status: built, tested, not yet confirmed pushed or deployed.**
+**Status: confirmed pushed, deployed, and migration `0152` applied.**
+`origin/main` fetched directly reads `c25ff2b`, matching this
+session's own commit exactly, and the operator confirmed with
+*"pushed and deployed and sql applied."* All three in one report —
+the code, the deploy, and the migration's own separate apply step —
+rather than the two- or three-part sequence earlier decisions in this
+project needed.
 
 ---
 

@@ -2265,8 +2265,11 @@ section for the full reasoning and tests.
   since building that ahead of a resolver ready to use the values would
   be plumbing that does nothing. That resolver generalization is Phase
   2, not this decision.
-- **Not yet confirmed pushed** — built and tested, delivered as its own
-  decision (`docs/decisions/0451-line-level-account-coding.md`).
+- **Confirmed pushed, deployed, and applied** — `origin/main` fetched
+  directly reads `c25ff2b`, matching this session's own commit
+  exactly, and the operator confirmed with *"pushed and deployed and
+  sql applied"* — all three, including migration `0152`'s own apply
+  step, in one report.
 
 ### Purchase orders and matching
 - Purchase order storage grounded in Peppol BIS Order Only 3.3, via UBL
