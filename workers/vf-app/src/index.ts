@@ -2260,18 +2260,29 @@ export default {
     if (pathname === "/org/cost-centres" && request.method === "GET") {
       const { db } = resolveTenant(request, env);
       /**
-       * **`Admin.Configure` OR `AP.Validate` — decision 0453.** This
-       * route was built for the Account Coding tab alone, gated the
-       * same as the rest of AP Setup. The invoice-line Coding pop-out
-       * reads the exact same list to search Cost Centre while keying a
-       * line, and the person doing that keying holds `AP.Validate` —
-       * the same permission `POST /invoices/:id/key` itself already
-       * requires — not `Admin.Configure`, which is for configuring the
-       * list, not using it. Widened rather than forked: a second,
-       * near-identical read route would drift from this one the
-       * moment either changed.
+       * **`Admin.Configure`, `AP.Validate`, or `AP.Code` — decision
+       * 0453, widened by decision 0455.** This route was built for the
+       * Account Coding tab alone, gated the same as the rest of AP
+       * Setup. The invoice-line Coding pop-out reads the exact same
+       * list to search Cost Centre while keying a line — decision 0453
+       * assumed that person always held `AP.Validate` (the same
+       * permission `POST /invoices/:id/key` itself requires), which was
+       * true the whole time Coding's own rule set was empty and nothing
+       * actually reached this stage with a task. Decision 0454 fixed
+       * that stall, and the first rule seeded into the now-live Coding
+       * stage requires `AP.Code`, not `AP.Validate` — so a person
+       * holding only `AP.Code` (the permission this route's own callers
+       * are actually gated on today) was left unable to search the
+       * lists their own task needs. Widened again, same reasoning as
+       * before: a second, near-identical read route would drift from
+       * this one the moment any of the three changed.
        */
-      const auth = await requireAnyPermission(db, request, ["Admin.Configure", "AP.Validate"], sessionContext(env));
+      const auth = await requireAnyPermission(
+        db,
+        request,
+        ["Admin.Configure", "AP.Validate", "AP.Code"],
+        sessionContext(env)
+      );
       if (!auth.authorized) {
         return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
       }
@@ -2303,9 +2314,15 @@ export default {
       const match = pathname.match(/^\/coding-lists\/([^/]+)$/);
       if (match && request.method === "GET") {
         const { db } = resolveTenant(request, env);
-        // `Admin.Configure` OR `AP.Validate` — decision 0453, same
-        // reasoning as `/org/cost-centres` GET just above.
-        const auth = await requireAnyPermission(db, request, ["Admin.Configure", "AP.Validate"], sessionContext(env));
+        // `Admin.Configure`, `AP.Validate`, or `AP.Code` — decision
+        // 0453, widened by decision 0455, same reasoning as
+        // `/org/cost-centres` GET just above.
+        const auth = await requireAnyPermission(
+          db,
+          request,
+          ["Admin.Configure", "AP.Validate", "AP.Code"],
+          sessionContext(env)
+        );
         if (!auth.authorized) {
           return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
         }

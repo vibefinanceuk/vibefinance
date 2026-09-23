@@ -2491,6 +2491,31 @@ section for the full reasoning and tests.
   retroactively. See decision 0454 for the full reasoning and
   verification.
 
+### The Coding Pop-out's Search Routes Now Also Accept AP.Code (0455)
+- **Found live, immediately after 0454 and the operator's own first
+  real Coding rule**: a person with a claimed Coding task could open
+  the invoice-line Coding pop-out (decision 0453), but its lookup
+  routes — `GET /org/cost-centres` and `GET /coding-lists/:type` —
+  were still gated `Admin.Configure OR AP.Validate`. That was a
+  correct read of the product when decision 0453 was written: Coding's
+  own rule set was empty, so no `AP.Code`-only task had ever existed,
+  and every real keyer held `AP.Validate` too. It stopped being true
+  the moment Coding got a real rule requiring `AP.Code` specifically —
+  a person who could see the queue and claim the task could still get
+  a 403 searching any of the pop-out's four fields.
+- **Widened once more, same shape as decision 0453's own widening**:
+  both routes now accept `Admin.Configure`, `AP.Validate`, or
+  `AP.Code`. Neither route's write sibling changed — still
+  `Admin.Configure`-only, the same line decision 0453 already drew
+  between searching a list and configuring what it contains.
+- **Not built**: no change to which fields render editable in the
+  pop-out — that was a separate, real gap (none of the four Account
+  Coding fields had a `field_visibility` row at all) found and fixed
+  directly against the live database during the same conversation,
+  not through a code change.
+- **Built and tested, not yet pushed** — see decision 0455 for the
+  full reasoning and verification.
+
 ### Purchase orders and matching
 - Purchase order storage grounded in Peppol BIS Order Only 3.3, via UBL
   XML ingestion (0081) and CSV load (0370) — the same tables, the same
@@ -3755,7 +3780,7 @@ elsewhere.
 
 | Package | Tests |
 |---|---|
-| `vf-app` | 2618 baseline + 6 (0451) + 11 (0452) + 23 (0453) + 5 (0454) = **2663**, arithmetic, not re-confirmed by a full run — see note below |
+| `vf-app` | 2618 baseline + 6 (0451) + 11 (0452) + 23 (0453) + 5 (0454) + 3 (0455) = **2666**, arithmetic, not re-confirmed by a full run — see note below |
 | `vf-licence` | 320 |
 | `vf-ui` | 74 Worker · 1048 browser, all passing — see below |
 | `shared` | 295 passing, 3 known pre-existing failures |
@@ -3914,7 +3939,7 @@ fresh whole-suite pass, since only that one file changed.
 | `docs/design/multi-authority-intake.md` | Non-EN-16931 authorities | Design only |
 | `docs/design/text-layer-extraction.md` | Reading a PDF's own text | Design only |
 | `docs/design/cost-object-approval-hierarchy.md` | Cost-Object Approval Hierarchy investigation (decision 0450) — its proposed shape and three open questions are now built and answered by decision 0452 | Design only |
-| `docs/decisions/` | 454 decision records | Current |
+| `docs/decisions/` | 455 decision records | Current |
 | `docs/decisions/SUPERSEDED.md` | Which records supersede which | **Read first** |
 
 Document 4's markdown source is at `docs/documents/`, with

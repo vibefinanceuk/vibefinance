@@ -2245,15 +2245,19 @@ describe("cost centres, through the real router (decision 0031)", () => {
 
 /**
  * **`GET /org/cost-centres` and `GET /coding-lists/:type` — `Admin.
- * Configure` OR `AP.Validate`, decision 0453.** Built for the Account
- * Coding tab (`Admin.Configure`) alone; the invoice-line Coding
- * pop-out now reads the same two routes with `AP.Validate` instead,
- * the same permission `POST /invoices/:id/key` already requires. Both
- * routes' own write siblings (POST/PUT) are untouched — still
- * `Admin.Configure` only, unexercised here since nothing about them
- * changed.
+ * Configure`, `AP.Validate`, or `AP.Code`, decisions 0453/0455.**
+ * Built for the Account Coding tab (`Admin.Configure`) alone; the
+ * invoice-line Coding pop-out reads the same two routes to search
+ * while keying a line. Decision 0453 widened this to `AP.Validate`
+ * (the permission `POST /invoices/:id/key` requires) — true for every
+ * keyer at the time, since Coding's own rule set was empty and no
+ * `AP.Code`-only task had ever existed. Decision 0454 fixed that
+ * stall and decision 0455's own seeded Coding rule requires `AP.Code`
+ * specifically, so this widens once more to match. Both routes' own
+ * write siblings (POST/PUT) are untouched — still `Admin.Configure`
+ * only, unexercised here since nothing about them changed.
  */
-describe("Account Coding's read routes — Admin.Configure OR AP.Validate, decision 0453", () => {
+describe("Account Coding's read routes — Admin.Configure, AP.Validate, or AP.Code, decisions 0453/0455", () => {
   it("GET /org/cost-centres 401s with no credentials", async () => {
     const res = await SELF.fetch("https://example.com/org/cost-centres");
     expect(res.status).toBe(401);
@@ -2277,6 +2281,14 @@ describe("Account Coding's read routes — Admin.Configure OR AP.Validate, decis
 
   it("GET /org/cost-centres now also works for AP.Validate alone", async () => {
     const key = await seedUserWithPermissions(["AP.Validate"]);
+    const res = await SELF.fetch("https://example.com/org/cost-centres", {
+      headers: { Authorization: `Bearer ${key}` },
+    });
+    expect(res.status).toBe(200);
+  });
+
+  it("GET /org/cost-centres now also works for AP.Code alone — decision 0455", async () => {
+    const key = await seedUserWithPermissions(["AP.Code"]);
     const res = await SELF.fetch("https://example.com/org/cost-centres", {
       headers: { Authorization: `Bearer ${key}` },
     });
@@ -2310,6 +2322,24 @@ describe("Account Coding's read routes — Admin.Configure OR AP.Validate, decis
       headers: { Authorization: `Bearer ${key}` },
     });
     expect(res.status).toBe(200);
+  });
+
+  it("GET /coding-lists/:type now also works for AP.Code alone — decision 0455", async () => {
+    const key = await seedUserWithPermissions(["AP.Code"]);
+    const res = await SELF.fetch("https://example.com/coding-lists/project", {
+      headers: { Authorization: `Bearer ${key}` },
+    });
+    expect(res.status).toBe(200);
+  });
+
+  it("POST /coding-lists/:type still refuses AP.Code alone — only the read side widened", async () => {
+    const key = await seedUserWithPermissions(["AP.Code"]);
+    const res = await SELF.fetch("https://example.com/coding-lists/project", {
+      method: "POST",
+      headers: { ...{ Authorization: `Bearer ${key}` }, "content-type": "application/json" },
+      body: JSON.stringify({ id: "p-live-2", name: "Live Project 2" }),
+    });
+    expect(res.status).toBe(403);
   });
 
   it("POST /coding-lists/:type still refuses AP.Validate alone — only the read side widened", async () => {
