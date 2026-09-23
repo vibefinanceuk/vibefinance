@@ -2431,8 +2431,13 @@ section for the full reasoning and tests.
   accessible"* earlier — this pop-out is a consumer of
   `field_visibility`, never a writer of it), no Coding stage, no
   `AP.Code` wiring.
-- **Status: built and tested, not yet pushed.** See decision 0453 for
-  the full reasoning and verification.
+- **Confirmed pushed, deployed, and migration applied** — `origin/main`
+  fetched directly reads `ccbbc82`, matching this session's own commit
+  exactly. `wrangler deploy` confirmed run for all three workers this
+  decision touched — `vf-app`, `vf-ui`, and `vf-licence` — and migration
+  `0154` (`vf-licence-poc`, 7 keys × en/de) confirmed applied, per the
+  operator's own report. See decision 0453 for the full reasoning and
+  verification.
 
 ### Purchase orders and matching
 - Purchase order storage grounded in Peppol BIS Order Only 3.3, via UBL

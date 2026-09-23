@@ -1,13 +1,11 @@
 # 0453 — Invoice-Line Coding Pop-Out
 
-**Status: built and tested, not yet pushed.** No commit from this
-decision exists on `origin/main` yet — this is the "built, tested, not
-yet confirmed" half of the two-stage pattern every decision in this
-project follows once operator confirmation is required. The docs-only
-confirmation commit follows once push, deploy (`vf-app`, `vf-ui`, and
-`vf-licence` — all three changed), and migration `0154`
-(`vf-licence-poc`) are each independently confirmed, exactly as
-decisions 0451 and 0452 required before them.
+**Status: confirmed pushed, deployed, and migration applied.**
+`origin/main` fetched directly reads `ccbbc82`, matching this session's
+own commit exactly. `wrangler deploy` confirmed run for all three
+workers this decision touched — `vf-app`, `vf-ui`, and `vf-licence` —
+and migration `0154` (`vf-licence-poc`) confirmed separately applied,
+per the operator's own report.
 
 ---
 
