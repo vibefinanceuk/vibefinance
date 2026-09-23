@@ -1,8 +1,15 @@
 # 0459 — Auto-Focus, Pre-Load, One Column Again, and What "No Rows for General Ledger" Actually Was
 
-**Status: built.** Not yet confirmed pushed and deployed, and migration
-`0157` not yet confirmed separately applied — awaiting the operator's
-own report.
+**Status: confirmed pushed, deployed, and migration applied.**
+`origin/main` fetched directly reads `e02f187`, matching this
+session's own commit exactly, and the operator confirmed `wrangler
+deploy` run for `vf-ui`, plus migration `0157` applied via
+`apply_migrations.py --remote` against `vf-licence-poc`.
+
+The one open item this decision raised is still genuinely open: has
+General Ledger Code's own entries actually been given Company Code /
+Commodity Code values under AP Setup → Account Coding? See "Still to
+do, operator side," below.
 
 ---
 
@@ -165,15 +172,21 @@ files, no TypeScript.
 
 ## Still to do, operator side
 
-`wrangler deploy` for `vf-ui`, and migration `0157` applied to
-`vf-licence-poc` via `apply_migrations.py --remote`, same as every
-prior decision in this table.
+The deploy and migration apply are done — `wrangler deploy` confirmed
+for `vf-ui`, and migration `0157` confirmed applied to `vf-licence-poc`
+via `apply_migrations.py --remote`, both in the operator's own single
+report: *"deployed and pushed."*
 
-**And a real question only the operator can answer**: do General
+**The real question this decision raised is still open**: do General
 Ledger Code's own entries in AP Setup → Account Coding actually have
 Company Code (and, where relevant, Commodity Code) values set under
-their own "Filter by" columns? If not, that's the fix for the original
-report — filling those in, not a code change. If they *do* have those
-values set and the pop-out still returns nothing once this deploys,
-that would mean the diagnosis above is wrong and there's a second,
-real bug still to find — worth reporting back explicitly either way.
+their own "Filter by" columns? Now that the pop-out names what
+narrowed an empty result, the operator's own next search there should
+say directly whether that's the cause — either "Narrowed by: Org /
+Company Code" confirms the diagnosis (fix: fill those values in, no
+code change needed), or a plain "Nothing on file matches that." with
+no second line, on an entry the operator knows should be scoped and
+findable, would mean this decision's own diagnosis was wrong and
+there's a second, real bug still to find. Worth a direct look and a
+report back either way — not assumed resolved just because the code
+shipped.

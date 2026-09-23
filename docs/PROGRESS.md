@@ -2633,9 +2633,15 @@ section for the full reasoning and tests.
 - **What actually was missing**: the pop-out's own silence about why a
   scoped field came back empty. Now shows a second line — "Narrowed
   by: `<active filters>`" — via one new string, migration `0157`.
-- **Built and committed, not yet confirmed pushed/deployed** — touches
-  `vf-ui` and `vf-licence` only; no `vf-app` change — see decision
-  0459 for the full reasoning and verification.
+- **Confirmed pushed and deployed** — the operator's own report,
+  *"deployed and pushed"*, including migration `0157`'s own separate
+  `apply_migrations.py --remote` run against `vf-licence-poc` — no
+  `vf-app` change; touches `vf-ui` and `vf-licence` — see decision
+  0459 for the full reasoning and verification. **Still genuinely
+  open**: whether General Ledger Code's own entries actually have
+  Company Code/Commodity Code values set — the pop-out's own new
+  "Narrowed by:" note should now say directly, on the operator's own
+  next look.
 
 ### Purchase orders and matching
 - Purchase order storage grounded in Peppol BIS Order Only 3.3, via UBL
