@@ -3,7 +3,7 @@
 **Status: built and tested, not yet pushed.** This session has no push
 access — delivered as a bundle (`origin/main..main`) for the operator
 to apply and push. Built on top of `bef7414` (decision 0454's own
-confirmation commit), this session's own commit is `7afe624`.
+confirmation commit); this session's own tip commit is `6e4f615`.
 
 ---
 
