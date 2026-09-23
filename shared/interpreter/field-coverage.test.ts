@@ -43,6 +43,12 @@ const DELIBERATELY_UNMAPPED: Record<string, string> = {
     "document-level allowances — a repeated, nested group with its own reason codes, amounts and tax categories, not a path-to-scalar mapping. No rule has needed them.",
   "BG-21":
     "document-level charges — the same shape as BG-20, and the same reasoning.",
+  "coding.project":
+    "no Peppol/EN 16931 BT code exists for this — set only by a person, during the Coding stage, never by document parsing (decision 0451).",
+  "coding.commodity_code":
+    "no Peppol/EN 16931 BT code exists for this — set only by a person, during the Coding stage, never by document parsing (decision 0451).",
+  "coding.gl_code":
+    "no Peppol/EN 16931 BT code exists for this — set only by a person, during the Coding stage, never by document parsing (decision 0451).",
 };
 
 function fieldsPopulatedByUblParser(): Set<string> {

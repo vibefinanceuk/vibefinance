@@ -68,6 +68,24 @@ export const INVOICE_FIELDS = [
   "BT-154", // New — item description (cac:Item/cbc:Description)
   "BG-20", // allowances
   "BG-21", // charges
+  // Line Level Account Coding, decision 0451. Not EN 16931 Business
+  // Terms — no BT code exists for any of these, because nothing in
+  // the standard anticipates a buyer coding a line to their own
+  // Account Coding lists (decisions 0444/0446). Kept in this array
+  // rather than DERIVED_FIELDS because they are not computed by the
+  // platform either: a person sets them, the same way BT-133 itself
+  // is both parsed and human-correctable, and the same "invented
+  // field, closed vocabulary, one source of truth" precedent
+  // po.matched and friends already set — except those are computed,
+  // and these are keyed. Named to match `coding_list_types.list_type`
+  // exactly (`project`, `commodity_code`, `gl_code`) so the field name
+  // and the list it draws its values from never drift apart. Cost
+  // Centre and Company Code are deliberately absent here: Cost Centre
+  // already has BT-133, and Company Code is not yet a line-level
+  // coding target of its own.
+  "coding.project",
+  "coding.commodity_code",
+  "coding.gl_code",
 ] as const;
 
 // Fields the platform derives — never mistaken for something the
@@ -158,6 +176,13 @@ export const INVOICE_LINE_FIELDS: readonly string[] = [
   "BT-152",
   "BT-153",
   "BT-154",
+  // Line Level Account Coding, decision 0451 — see INVOICE_FIELDS'
+  // own comment on these three. Line-scope for the same reason
+  // BT-133 is: a coding value belongs to the line it was keyed
+  // against, never the invoice as a whole.
+  "coding.project",
+  "coding.commodity_code",
+  "coding.gl_code",
 ];
 
 export const INVOICE_FIELD_TYPES: Record<string, FieldType> = {
@@ -196,6 +221,9 @@ export const INVOICE_FIELD_TYPES: Record<string, FieldType> = {
   "BT-133": "text", // cost centre reference — a code, not a quantity
   "BT-151": "text", // VAT category code
   "BT-152": "number", // VAT rate, a percentage
+  "coding.project": "text", // a coding_list_entries code, not a quantity
+  "coding.commodity_code": "text",
+  "coding.gl_code": "text",
   direction: "text",
   "party.first_document": "boolean",
   "po.matched": "boolean",
@@ -369,6 +397,9 @@ export const FIELD_DESCRIPTIONS: Record<InvoiceField, string> = {
   "BT-152": "VAT rate",
   "BG-20": "allowances",
   "BG-21": "charges",
+  "coding.project": "the Project this line was coded to, from Account Coding's Project list — keyed by a person during the Coding stage, never parsed from the document. No EN 16931 Business Term exists for this.",
+  "coding.commodity_code": "the Commodity Code this line was coded to, from Account Coding's Commodity Code list — keyed by a person during the Coding stage, never parsed from the document. No EN 16931 Business Term exists for this.",
+  "coding.gl_code": "the General Ledger Code this line was coded to, from Account Coding's GL Code list — keyed by a person during the Coding stage, never parsed from the document. No EN 16931 Business Term exists for this.",
 };
 
 export const DERIVED_FIELD_DESCRIPTIONS: Record<DerivedField, string> = {

@@ -2,6 +2,7 @@ import { env } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
 import { applyTestSchema } from "./setup.js";
 import { handleKeyInvoiceFields } from "../src/key-fields-route.js";
+import { handleSetFieldVisibility } from "../src/field-visibility-route.js";
 
 /**
  * An invoice at a stage that permits keying — decision 0164.
@@ -438,6 +439,76 @@ describe("a keyed line is visible to a rule (decision 0109)", () => {
       "SELECT count(*) AS n FROM keyed_fields WHERE invoice_id = 'inv-facts3' AND field = 'line.1.BT-131'"
     ).first<{ n: number }>();
     expect(count?.n).toBe(1);
+  });
+});
+
+describe("Line Level Account Coding — keying a line to something other than a cost centre (decision 0451)", () => {
+  // BT-133 is the only cost-object dimension a line can carry today;
+  // these three (coding.project, coding.commodity_code, coding.gl_code)
+  // are the same shape, declared for the first time this decision. No
+  // route change was made to reach this — the point of the test.
+  it("refuses coding.project until a customer configures it editable, the same as any field nobody chose to show", async () => {
+    await seedInvoice("inv-coding-refused", {});
+    const result = await handleKeyInvoiceFields(
+      env.DB,
+      "inv-coding-refused",
+      { facts: {}, lines: [{ lineNumber: 1, facts: { "coding.project": "PRJ-100" } }] } as never,
+      "u-dan"
+    );
+    expect(result.status).toBe(403);
+    expect((result.body as { reason: string }).reason).toBe("not_editable_here");
+  });
+
+  it("stores a line coded to a project, a commodity code, and a GL code, once editable", async () => {
+    await handleSetFieldVisibility(env.DB, {
+      fields: [
+        { field: "coding.project", visibility: "edit" },
+        { field: "coding.commodity_code", visibility: "edit" },
+        { field: "coding.gl_code", visibility: "edit" },
+      ],
+    });
+    await seedInvoice("inv-coding", {});
+    const result = await handleKeyInvoiceFields(
+      env.DB,
+      "inv-coding",
+      {
+        facts: {},
+        lines: [
+          {
+            lineNumber: 1,
+            facts: { "coding.project": "PRJ-100", "coding.commodity_code": "CC-42", "coding.gl_code": "GL-6000" },
+          },
+        ],
+      } as never,
+      "u-dan"
+    );
+    expect(result.status).toBe(200);
+
+    const row = await env.DB.prepare(
+      "SELECT facts_json FROM invoice_lines WHERE invoice_id = 'inv-coding' AND line_number = 1"
+    ).first<{ facts_json: string }>();
+    const facts = JSON.parse(row!.facts_json);
+    expect(facts["coding.project"]).toBe("PRJ-100");
+    expect(facts["coding.commodity_code"]).toBe("CC-42");
+    expect(facts["coding.gl_code"]).toBe("GL-6000");
+  });
+
+  it("records who coded the line, in the same keyed trail BT-133 would use", async () => {
+    await handleSetFieldVisibility(env.DB, {
+      fields: [{ field: "coding.project", visibility: "edit" }],
+    });
+    await seedInvoice("inv-coding-trail", {});
+    await handleKeyInvoiceFields(
+      env.DB,
+      "inv-coding-trail",
+      { facts: {}, lines: [{ lineNumber: 1, facts: { "coding.project": "PRJ-100" } }] } as never,
+      "u-dan"
+    );
+
+    const rows = await env.DB.prepare(
+      "SELECT field FROM keyed_fields WHERE invoice_id = 'inv-coding-trail' ORDER BY field"
+    ).all<{ field: string }>();
+    expect(rows.results.map((r: { field: string }) => r.field)).toContain("line.1.coding.project");
   });
 });
 

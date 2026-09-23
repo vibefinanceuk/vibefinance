@@ -129,6 +129,44 @@ describe("the customer's own baseline", () => {
   });
 });
 
+describe("Line Level Account Coding's fields need no route change (decision 0451)", () => {
+  // The three new fields (coding.project, coding.commodity_code,
+  // coding.gl_code) are declared in the vocabulary and nowhere else —
+  // this is the proof that the generic mechanism BT-133 already
+  // proved out reaches a field it has never seen, with no code change
+  // to this route.
+  it("is hidden by default, the same as BT-133", async () => {
+    const fields = await resolveFieldVisibility(env.DB, null);
+    for (const code of ["coding.project", "coding.commodity_code", "coding.gl_code"]) {
+      expect(find(fields, code)?.visibility, code).toBe("hidden");
+      expect(find(fields, code)?.decidedBy, code).toBe("default");
+    }
+  });
+
+  it("becomes editable once a customer configures it, tagged as a line field", async () => {
+    await handleSetFieldVisibility(env.DB, {
+      fields: [{ field: "coding.project", visibility: "edit" }],
+    });
+
+    const fields = await resolveFieldVisibility(env.DB, null);
+    expect(find(fields, "coding.project")?.visibility).toBe("edit");
+    expect(find(fields, "coding.project")?.decidedBy).toBe("customer");
+    expect(find(fields, "coding.project")?.line).toBe(true);
+  });
+
+  it("can be restricted back to read-only at a stage, the same as any other field", async () => {
+    await handleSetFieldVisibility(env.DB, {
+      fields: [{ field: "coding.gl_code", visibility: "edit" }],
+    });
+    await handleSetStageFieldVisibility(env.DB, "approval", {
+      fields: [{ field: "coding.gl_code", visibility: "read" }],
+    });
+
+    const fields = await resolveFieldVisibility(env.DB, "approval");
+    expect(find(fields, "coding.gl_code")?.visibility).toBe("read");
+  });
+});
+
 describe("a stage may restrict, never grant", () => {
   it("makes an editable field read-only at Approval", async () => {
     // "Approvers should approve data, not edit data." An approver who

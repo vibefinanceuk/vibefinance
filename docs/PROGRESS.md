@@ -2222,6 +2222,52 @@ section for the full reasoning and tests.
   confirming the docs landed on `main`, not any running code going
   live.
 
+### Line Level Account Coding (0451)
+- **Phase 1 of the Cost-Object Approval Hierarchy plan** — judged, not
+  directly asked. The operator's own question, answered inside 0450's
+  own follow-up round: *"We already have a Coding stage in the
+  Standard AP process, where coding will take place. We have not built
+  the Line Level Account Coding feature yet. Does it make sense to do
+  that before the Cost Center approval routing."* Yes: 0450's own
+  design document already named a line coded to a Project, Commodity
+  Code, or GL Code as the precondition for routing on any of them, and
+  nothing could put such a value on a line at all before this.
+- **The capture mechanism already existed, for a field nobody had
+  declared** — checked directly, not assumed. `key-fields-route.ts`,
+  `field-visibility-route.ts`, and `viewer.js`'s own line table are all
+  generic over the closed vocabulary; BT-133 was never special-cased,
+  it was just the only field anyone had ever declared this way.
+- **Built**: three new vocabulary fields — `coding.project`,
+  `coding.commodity_code`, `coding.gl_code`
+  (`shared/interpreter/vocabulary.ts`) — added to `INVOICE_FIELDS`,
+  `INVOICE_LINE_FIELDS`, `INVOICE_FIELD_TYPES`, `FIELD_DESCRIPTIONS`,
+  named to match `coding_list_types.list_type` exactly; exempted in
+  `field-coverage.test.ts`'s `DELIBERATELY_UNMAPPED` with a stated
+  reason (no EN 16931 Business Term exists — keyed by a person, never
+  parsed); a new `ui_strings` migration, `0152`, for the three
+  `field.coding.*` labels (en/de), the same `field.bt-133` precedent
+  migration `0020` set.
+- **Proven, not just declared**: new tests in
+  `workers/vf-app/test/field-visibility.test.ts` (hidden by default,
+  becomes editable and tagged `line: true` once configured, can be
+  restricted back to read-only at a stage) and
+  `workers/vf-app/test/key-fields.test.ts` (refused until configured
+  editable; then a line can actually be keyed to a project, a
+  commodity code, and a GL code together, stored in the line's own
+  facts, recorded in `keyed_fields` the same way `line.1.BT-131`
+  already is) — six new tests, all green.
+- **Not built**: no Coding stage (the operator's own live one, created
+  at runtime, is invisible to this repo and this session); no
+  enforcement of a keyed value against Account Coding's own lists
+  (free text today, the same status 0031/0076 already left BT-133 in);
+  no approval routing — nothing in `approval-hierarchy.ts` or
+  `workflow-engine.ts` reads any of the three new fields, deliberately,
+  since building that ahead of a resolver ready to use the values would
+  be plumbing that does nothing. That resolver generalization is Phase
+  2, not this decision.
+- **Not yet confirmed pushed** — built and tested, delivered as its own
+  decision (`docs/decisions/0451-line-level-account-coding.md`).
+
 ### Purchase orders and matching
 - Purchase order storage grounded in Peppol BIS Order Only 3.3, via UBL
   XML ingestion (0081) and CSV load (0370) — the same tables, the same
@@ -3486,16 +3532,16 @@ elsewhere.
 
 | Package | Tests |
 |---|---|
-| `vf-app` | 2618 (as of decision 0447's own full-suite run — see note below) |
+| `vf-app` | 2618 baseline + 6 new this decision, not re-confirmed by a full run — see note below |
 | `vf-licence` | 320 |
 | `vf-ui` | 74 Worker · 1034 browser, all passing — see below |
 | `shared` | 295 passing, 3 known pre-existing failures |
 
 Both migration chains replay clean with every standing invariant
 holding — 76 migrations for `vf-app` (170 invariants); `vf-licence`'s
-own 151-migration chain has no equivalent Python replay, and is
+own 152-migration chain has no equivalent Python replay, and is
 instead validated through `workers/vf-licence/test/setup.ts` +
-`string-coverage.test.ts`, both green as of decision 0449.
+`string-coverage.test.ts`, both green as of decision 0451.
 
 **Decision 0448's own `vf-app` count is not re-verified against the
 full, whole-repo suite** — this session's own tool timeout could not
@@ -3517,6 +3563,25 @@ reflects decision 0447's own last confirmed full-suite baseline. The
 `vf-ui` browser figure moved from 1022 to **1034** (+12 in
 `tasks.test.ts`, decision 0449's own search/pagination coverage),
 confirmed by an unfiltered whole-suite run.
+
+**Decision 0451 hit the identical full-suite timeout** — every file
+anywhere in the codebase importing `INVOICE_FIELDS`,
+`INVOICE_LINE_FIELDS`, `INVOICE_FIELD_TYPES`, or `FIELD_DESCRIPTIONS`
+was found (ten files, checked directly rather than assumed clear) and
+run individually instead: `shared/interpreter/field-coverage.test.ts`
+4/4, `shared/interpreter/vocabulary.test.ts` +
+`shared/standards/code-lists.test.ts` 37/37 together,
+`workers/vf-app/test/field-visibility.test.ts` +
+`test/key-fields.test.ts` **76/76** (70 pre-existing + 6 new),
+`test/ar-process.test.ts` + `test/expense-process.test.ts` 9/9,
+`workers/vf-ui/test-browser/compose.test.ts` 32/32,
+`workers/vf-licence`'s full suite **320/320** (unchanged in count —
+migration `0152` adds rows to the existing `ui_strings` table, not a
+new test file), including `string-coverage.test.ts` **10/10**,
+confirmed by one unfiltered whole-suite run. The 2618 `vf-app` figure
+above is arithmetic (2618 + 6), not a fresh whole-suite confirmation —
+named as such rather than presented as measured, following 0380's own
+precedent for exactly this situation.
 
 **`vf-ui` browser previously carried 4 known failures**, all in
 `test-browser/document-window.test.ts` — a long-documented,
@@ -3578,7 +3643,7 @@ fresh whole-suite pass, since only that one file changed.
 | `docs/design/multi-authority-intake.md` | Non-EN-16931 authorities | Design only |
 | `docs/design/text-layer-extraction.md` | Reading a PDF's own text | Design only |
 | `docs/design/cost-object-approval-hierarchy.md` | Cost-Object Approval Hierarchy investigation (decision 0450) | Design only |
-| `docs/decisions/` | 450 decision records | Current |
+| `docs/decisions/` | 451 decision records | Current |
 | `docs/decisions/SUPERSEDED.md` | Which records supersede which | **Read first** |
 
 Document 4's markdown source is at `docs/documents/`, with
