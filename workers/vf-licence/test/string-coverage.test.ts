@@ -638,6 +638,23 @@ const KEYS_THE_INTERFACE_USES = [
   "apsetup.costobjectsavefailed",
 
   /**
+   * **The invoice-line Coding pop-out — decision 0453.** The icon that
+   * opens it (`action.coding`) and its own chrome
+   * (`viewer.coding.*`) — every field label inside it is reused from
+   * elsewhere (`apsetup.codingtab.companycode`, `field.bt-133`,
+   * `field.coding.project`, `field.coding.commodity_code`,
+   * `field.coding.gl_code`, all already listed above), so only the
+   * pop-out's own new strings are added here.
+   */
+  "action.coding",
+  "viewer.coding.heading",
+  "viewer.coding.searchhint",
+  "viewer.coding.nomatches",
+  "viewer.coding.searchfailed",
+  "viewer.coding.clear",
+  "viewer.coding.noteditable",
+
+  /**
    * **CSV Template and Load — decision 0445.** `coding-lists.js`'s own
    * new `csvLoaderPanel()`/`csvFormatReference()`/`csvOutcome()`.
    * The Template/Load buttons themselves were re-pointed at

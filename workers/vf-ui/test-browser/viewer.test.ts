@@ -3928,3 +3928,246 @@ describe("the Back button matches the other topbar actions (decision 0284)", () 
     expect(closed).toBe(true);
   });
 });
+
+/**
+ * **The invoice-line Coding pop-out — decision 0453.** The operator's
+ * own ask: *"a pop-out, that is accessible from a Coding icon on the
+ * invoice line... show the Org / Company Code and optional Cost
+ * Center or Project, then provide the linked Commodity and General
+ * Ledger Code. Each should expose a searchable drop-down that searches
+ * across the already created Account Coding lists."*
+ */
+describe("the invoice-line Coding pop-out (decision 0453)", () => {
+  const CODING_STRINGS = {
+    ...STRINGS.strings,
+    "action.coding": "Coding",
+    "viewer.coding.heading": "Line coding",
+    "viewer.coding.searchhint": "Type to search",
+    "viewer.coding.nomatches": "Nothing on file matches that.",
+    "viewer.coding.searchfailed": "We could not reach the service to search.",
+    "viewer.coding.clear": "Clear",
+    "viewer.coding.noteditable": "Not editable at this stage",
+    "apsetup.codingtab.companycode": "Org / Company Code",
+    "field.bt-133": "Cost centre",
+    "field.coding.project": "Project",
+    "field.coding.commodity_code": "Commodity code",
+    "field.coding.gl_code": "General ledger code",
+  };
+
+  // Cost Centre and Project both `edit`; Commodity Code `read` (visible
+  // but not editable here); General Ledger Code absent entirely — the
+  // real resolver's own way of saying "hidden" (`field-visibility-
+  // route.ts` never returns a hidden field at all).
+  const CODING_FIELDS = {
+    fields: [
+      { field: "BT-131", visibility: "edit", type: "number", line: true, description: "line net" },
+      { field: "BT-133", visibility: "edit", type: "text", line: true, description: "cost centre" },
+      { field: "coding.project", visibility: "edit", type: "text", line: true, description: "project" },
+      { field: "coding.commodity_code", visibility: "read", type: "text", line: true, description: "commodity code" },
+    ],
+  };
+
+  function stub(routes: Record<string, unknown>, calls: string[] = [], bodies: { path: string; body: unknown }[] = []) {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        calls.push(String(url));
+        const path = String(url).split("?")[0];
+        if (init?.body) bodies.push({ path, body: JSON.parse(init.body as string) });
+        const base: Record<string, unknown> = {
+          "/api/ui-strings": { locale: "en", strings: CODING_STRINGS },
+          "/api/code-lists": { fields: {} },
+          "/api/field-visibility": CODING_FIELDS,
+          "/api/invoices/inv-1": {
+            facts: {},
+            lines: [{ lineNumber: 1, facts: { "BT-131": 100, "BT-133": "cc1" } }],
+            validation: { passed: true, checked: [], failures: [] },
+            supplier: null,
+            buyer: { unitId: "UK01", unitName: "Acme UK", entityName: "Acme UK", vatId: "GB1" },
+            orgUnitId: "UK01",
+          },
+          "/api/invoices/inv-1/document-url": { url: null },
+          "/api/invoices/inv-1/progress": { inProcess: false, stages: [] },
+          "/api/invoices/inv-1/pages": { pages: [] },
+          "/api/documents/inv-1/activity": { items: [] },
+          "/api/invoices/inv-1/key": { ok: true },
+          ...routes,
+        };
+        if (path in base) return { ok: true, json: async () => base[path] } as Response;
+        throw new Error(`no stub for ${path}`);
+      })
+    );
+    return { calls, bodies };
+  }
+
+  async function openAndClickCoding() {
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    await openViewer(TASK, () => {});
+    await new Promise((r) => setTimeout(r, 0));
+
+    (document.querySelector('button[title="Coding"]') as HTMLButtonElement).click();
+    await new Promise((r) => setTimeout(r, 0));
+  }
+
+  it("shows a Coding icon on the line regardless of edit permission — viewing is not editing", async () => {
+    stub({});
+    await openAndClickCoding();
+    // Opened at all: the click above found the button and the
+    // pop-out it opens is on the page.
+    expect(document.querySelector(".popout")).not.toBeNull();
+    expect(document.querySelector(".popout h3")?.textContent).toBe("Line coding");
+  });
+
+  it("shows the invoice's own Company Code, read-only", async () => {
+    stub({});
+    await openAndClickCoding();
+
+    const rows = [...document.querySelectorAll(".popout .editgrid > *")];
+    const labelIndex = rows.findIndex((r) => r.textContent === "Org / Company Code");
+    expect(labelIndex).toBeGreaterThanOrEqual(0);
+    expect(rows[labelIndex + 1]?.textContent).toBe("Acme UK");
+  });
+
+  it("resolves the line's own already-keyed Cost Centre to its name", async () => {
+    stub({
+      "/api/org/cost-centres": { costCentres: [{ id: "cc1", name: "Marketing", filters: [] }], total: 1, page: 1, pageSize: 50 },
+    });
+    await openAndClickCoding();
+    await new Promise((r) => setTimeout(r, 0)); // the resolveCurrent() lookup
+
+    const costCentreBox = document.querySelectorAll(".popout .searchbox")[0] as HTMLInputElement;
+    expect(costCentreBox.value).toBe("Marketing");
+  });
+
+  it("a field not configured editable at this stage shows read-only, with a note it isn't editable here", async () => {
+    stub({});
+    await openAndClickCoding();
+
+    const rowsText = document.querySelector(".popout .editgrid")?.textContent ?? "";
+    // General Ledger Code — absent from field-visibility entirely.
+    expect(rowsText).toContain("Not editable at this stage");
+  });
+
+  it("a field configured read (visible but not editable) shows its value without that note", async () => {
+    stub({});
+    await openAndClickCoding();
+
+    const rows = [...document.querySelectorAll(".popout .editgrid > *")];
+    const commodityLabelIndex = rows.findIndex((r) => r.textContent === "Commodity code");
+    const commodityValueBlock = rows[commodityLabelIndex + 1];
+    expect(commodityValueBlock?.textContent).not.toContain("Not editable at this stage");
+  });
+
+  it("searches Project as the operator types, and choosing one reaches the Save payload", async () => {
+    const calls: string[] = [];
+    const bodies: { path: string; body: unknown }[] = [];
+    stub(
+      {
+        "/api/org/cost-centres": { costCentres: [{ id: "cc1", name: "Marketing", filters: [] }], total: 1, page: 1, pageSize: 50 },
+        "/api/coding-lists/project": { entries: [{ id: "proj-1", name: "Mjolner", filters: [] }], declaredFilters: [], total: 1, page: 1, pageSize: 50 },
+      },
+      calls,
+      bodies
+    );
+    await openAndClickCoding();
+    await new Promise((r) => setTimeout(r, 0));
+
+    const searchBoxes = [...document.querySelectorAll(".popout .searchbox")] as HTMLInputElement[];
+    const projectBox = searchBoxes[1]; // Cost Centre, then Project, per CODING_PICKER_FIELDS' own order
+    projectBox.value = "mjol";
+    projectBox.oninput?.(new Event("input"));
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(calls.some((c) => c.startsWith("/api/coding-lists/project?") && c.includes("search=mjol"))).toBe(true);
+
+    const result = [...document.querySelectorAll(".popout .searchresult")].find((r) => r.textContent?.includes("Mjolner"));
+    (result as HTMLButtonElement).click();
+
+    // Close the pop-out, then Save the document — the pop-out itself
+    // never calls /key; the page's own existing Save button does,
+    // reading the same `line["coding.project"]` this choice set.
+    (document.querySelector(".popout .actionlink") as HTMLButtonElement).click();
+
+    const saveButton = [...document.querySelectorAll(".actionlink span")].find((s) => s.textContent === "Save")?.closest("button");
+    (saveButton as HTMLButtonElement).click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    const keyPost = bodies.find((b) => b.path === "/api/invoices/inv-1/key");
+    const line = (keyPost?.body as { lines: { facts: Record<string, unknown> }[] })?.lines?.[0];
+    expect(line?.facts["coding.project"]).toBe("proj-1");
+  });
+
+  it("clearing a chosen value removes it from what Save sends", async () => {
+    const calls: string[] = [];
+    const bodies: { path: string; body: unknown }[] = [];
+    stub(
+      { "/api/org/cost-centres": { costCentres: [{ id: "cc1", name: "Marketing", filters: [] }], total: 1, page: 1, pageSize: 50 } },
+      calls,
+      bodies
+    );
+    await openAndClickCoding();
+    await new Promise((r) => setTimeout(r, 0));
+
+    const clearButtons = document.querySelectorAll(".popout .codingsearch button.rm");
+    (clearButtons[0] as HTMLButtonElement).click(); // Cost Centre's own clear button
+
+    (document.querySelector(".popout .actionlink") as HTMLButtonElement).click();
+
+    const saveButton = [...document.querySelectorAll(".actionlink span")].find((s) => s.textContent === "Save")?.closest("button");
+    (saveButton as HTMLButtonElement).click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    const keyPost = bodies.find((b) => b.path === "/api/invoices/inv-1/key");
+    const line = (keyPost?.body as { lines: { facts: Record<string, unknown> }[] })?.lines?.[0];
+    expect(line?.facts["BT-133"]).toBeUndefined();
+  });
+
+  it("General Ledger Code's picker is linked to Company Code always, and to Commodity Code once chosen", async () => {
+    const calls: string[] = [];
+    stub(
+      {
+        "/api/field-visibility": {
+          fields: [
+            ...CODING_FIELDS.fields.map((f) => (f.field === "coding.commodity_code" ? { ...f, visibility: "edit" } : f)),
+            { field: "coding.gl_code", visibility: "edit", type: "text", line: true, description: "general ledger code" },
+          ],
+        },
+        "/api/org/cost-centres": { costCentres: [{ id: "cc1", name: "Marketing", filters: [] }], total: 1, page: 1, pageSize: 50 },
+        "/api/coding-lists/commodity_code": { entries: [{ id: "com-1", name: "Live Plant Material", filters: [] }], declaredFilters: [], total: 1, page: 1, pageSize: 50 },
+        "/api/coding-lists/gl_code": { entries: [{ id: "gl-1", name: "Plant Suppliers", filters: [] }], declaredFilters: ["company_code", "commodity_code"], total: 1, page: 1, pageSize: 50 },
+      },
+      calls
+    );
+    await openAndClickCoding();
+    await new Promise((r) => setTimeout(r, 0));
+
+    const searchBoxes = [...document.querySelectorAll(".popout .searchbox")] as HTMLInputElement[];
+    // Cost Centre, Project, Commodity Code, General Ledger Code — the
+    // order `CODING_PICKER_FIELDS` itself declares.
+    const commodityBox = searchBoxes[2];
+    const glBox = searchBoxes[3];
+
+    glBox.value = "plant";
+    glBox.oninput?.(new Event("input"));
+    await new Promise((r) => setTimeout(r, 0));
+    const beforeCommodity = calls.find((c) => c.startsWith("/api/coding-lists/gl_code?") && c.includes("search=plant"));
+    expect(beforeCommodity).toContain("filter.company_code=UK01");
+    expect(beforeCommodity).not.toContain("filter.commodity_code=");
+
+    commodityBox.value = "live";
+    commodityBox.oninput?.(new Event("input"));
+    await new Promise((r) => setTimeout(r, 0));
+    const commodityResult = [...document.querySelectorAll(".popout .searchresult")].find((r) => r.textContent?.includes("Live Plant Material"));
+    (commodityResult as HTMLButtonElement).click();
+
+    calls.length = 0;
+    glBox.value = "plant2";
+    glBox.oninput?.(new Event("input"));
+    await new Promise((r) => setTimeout(r, 0));
+    const afterCommodity = calls.find((c) => c.startsWith("/api/coding-lists/gl_code?") && c.includes("search=plant2"));
+    expect(afterCommodity).toContain("filter.company_code=UK01");
+    expect(afterCommodity).toContain("filter.commodity_code=com-1");
+  });
+});

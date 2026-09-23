@@ -220,6 +220,50 @@ function codingListSearchClause(search: string | null): { sql: string; binds: un
 }
 
 /**
+ * **Narrow to entries whose own declared filter values match** — the
+ * invoice-line Coding pop-out's own need (decision 0453), the
+ * "linked Commodity and General Ledger Code" the operator asked for:
+ * General Ledger Code declares `company_code` and `commodity_code`
+ * (migration 0076), so its own picker should only offer entries
+ * actually scoped to the Company Code and Commodity Code already
+ * chosen, not the entire list.
+ *
+ * **Only keys this type actually declares are applied** — a caller
+ * passing a filter this type does not declare has that key silently
+ * ignored rather than 400ed, the same "a read endpoint degrades, a
+ * write endpoint refuses" split `handleListCodingListEntries`'s own
+ * `all` bypass already draws; `validateFilters` (above) stays the one
+ * place an unknown filter is a hard error, for the write path where
+ * silently ignoring it would mean the caller's own filter was quietly
+ * never saved.
+ *
+ * One `EXISTS` clause per applied filter, against
+ * `coding_list_entry_filters` directly — the same table
+ * `entryFiltersFor` already reads per row, just tested rather than
+ * fetched here.
+ */
+function codingListFilterClause(
+  declared: string[],
+  filters: Record<string, string> | null
+): { sql: string; binds: unknown[] } {
+  if (!filters) return { sql: "", binds: [] };
+  const applied = Object.entries(filters).filter(([k, v]) => declared.includes(k) && v);
+  if (applied.length === 0) return { sql: "", binds: [] };
+  const sql = applied
+    .map(
+      () =>
+        ` AND EXISTS (
+          SELECT 1 FROM coding_list_entry_filters cf
+          WHERE cf.owner_list_type_id = e.list_type_id AND cf.owner_entry_id = e.id
+            AND cf.filter_list_type_id = ? AND cf.filter_entry_id = ?
+        )`
+    )
+    .join("");
+  const binds = applied.flatMap(([k, v]) => [k, v]);
+  return { sql, binds };
+}
+
+/**
  * Search and real pagination — decision 0446, the operator's own
  * follow-up ask once Account Coding (0444) and its CSV load (0445)
  * existed: *"I would like to see the table for... the new tables in
@@ -235,6 +279,10 @@ function codingListSearchClause(search: string | null): { sql: string; binds: un
  * lazily right before that form opens rather than kept in memory for
  * the whole screen visit. A picker needs every possible value to
  * choose from, not a page of them; the table itself never sets this.
+ *
+ * **`filters` narrows to matching entries only** — decision 0453, see
+ * `codingListFilterClause` above. Additive: every existing caller
+ * passes nothing and gets exactly the old, unfiltered behaviour.
  */
 export async function handleListCodingListEntries(
   db: D1Database,
@@ -242,13 +290,16 @@ export async function handleListCodingListEntries(
   search: string | null = null,
   pageParam: string | null = null,
   pageSizeParam: string | null = null,
-  all = false
+  all = false,
+  filters: Record<string, string> | null = null
 ): Promise<RouteResult> {
   if (!isCodingListType(listType)) {
     return { status: 404, body: { error: `unknown coding list ${listType}` } };
   }
 
+  const declared = await declaredFiltersFor(db, listType);
   const search_ = codingListSearchClause(search);
+  const filter_ = codingListFilterClause(declared, filters);
   const page = normalizePage(pageParam);
   const pageSize = normalizePageSize(pageSizeParam);
   const offset = (page - 1) * pageSize;
@@ -260,8 +311,8 @@ export async function handleListCodingListEntries(
   const totalRow = all
     ? null
     : await db
-        .prepare(`SELECT count(*) AS n ${joins} WHERE e.list_type_id = ? ${search_.sql}`)
-        .bind(listType, ...search_.binds)
+        .prepare(`SELECT count(*) AS n ${joins} WHERE e.list_type_id = ? ${search_.sql} ${filter_.sql}`)
+        .bind(listType, ...search_.binds, ...filter_.binds)
         .first<{ n: number }>();
 
   const rows = await db
@@ -269,11 +320,11 @@ export async function handleListCodingListEntries(
       `SELECT e.id, e.name, e.is_default, e.approver_user_id, a.name AS approver_name,
               e.parent_entry_id, p.name AS parent_name, e.approval_limit
        ${joins}
-       WHERE e.list_type_id = ? ${search_.sql}
+       WHERE e.list_type_id = ? ${search_.sql} ${filter_.sql}
        ORDER BY e.name
        ${all ? "" : "LIMIT ? OFFSET ?"}`
     )
-    .bind(listType, ...search_.binds, ...(all ? [] : [pageSize, offset]))
+    .bind(listType, ...search_.binds, ...filter_.binds, ...(all ? [] : [pageSize, offset]))
     .all<EntryRow>();
 
   const entries = await Promise.all(
@@ -296,7 +347,7 @@ export async function handleListCodingListEntries(
     status: 200,
     body: {
       listType,
-      declaredFilters: await declaredFiltersFor(db, listType),
+      declaredFilters: declared,
       entries,
       total,
       page: all ? 1 : page,

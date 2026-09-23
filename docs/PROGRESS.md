@@ -2386,6 +2386,54 @@ section for the full reasoning and tests.
   this segment's own known `vf-app` full-suite timeout
   (0448/0449/0451) required in its place.
 
+### Invoice-Line Coding Pop-Out (0453)
+- **The operator's own ask**, directly: *"a pop-out, that is accessible
+  from a Coding icon on the invoice line... show the Org / Company Code
+  and optional Cost Center or Project, then provide the linked
+  Commodity and General Ledger Code. Each should expose a searchable
+  drop-down that searches across the already created Account Coding
+  lists."* Closes 0451's own named gap — the routing and storage both
+  Phase 1 and Phase 2 built had no UI to actually put a value on a line
+  by searching, only a plain free-text cell.
+- **A permission gap found and fixed, not assumed.** `GET /org/cost-
+  centres` and `GET /coding-lists/:type` were both gated
+  `Admin.Configure` — right for the Account Coding tab that built them,
+  wrong for the person keying an invoice line, who holds `AP.Validate`
+  instead. A new `requireAnyPermission` in `enforce.ts` widens both to
+  accept either, additively — `requirePermission`'s own 25+ other
+  callers untouched, and both routes' own `POST`/`PUT` write sides stay
+  `Admin.Configure`-only.
+- **"Linked" reuses migration 0076's own declared filters, not a new
+  mechanism.** A new, optional `filters` parameter on
+  `handleListCodingListEntries` and `handleListCostCentresDetailed`
+  narrows a read to entries matching a chosen filter value — General
+  Ledger Code (filtered by Company Code and Commodity Code) and Cost
+  Centre (filtered by Company Code) are the two lists migration 0076
+  already declared filters for; the pop-out's own General Ledger Code
+  picker reads both live, at fetch time, so choosing a Commodity Code
+  narrows it on the very next keystroke.
+- **`viewer.js`'s new `openLineCodingPopout`** — a Coding icon on every
+  invoice line, always shown (viewing a line's own coding is not an
+  edit, the same reasoning "Header Fields" already carries), opening a
+  pop-out with Company Code read-only (from `stored.buyer.entityName`,
+  already held client-side — no new read needed for it), and Cost
+  Centre/Project/Commodity Code/General Ledger Code each a new
+  search-as-you-type `searchableEntryPicker`. **Additive, not a
+  replacement**, for the line table's own existing plain-text cell —
+  both read and write the identical in-memory `line[field]`, so either
+  entry point works and the page's own existing Save button persists
+  whichever one a person used, unchanged.
+- **Not built**: no enforcement that a keyed value actually exists in
+  the list (0451's own still-open gap; this pop-out makes the right
+  path the easy one, it does not close off the free-text one), no UI to
+  flip a field's own visibility from hidden to `edit` (still the same
+  gap named while answering *"Is there a UI at the Coding stage that is
+  accessible"* earlier — this pop-out is a consumer of
+  `field_visibility`, never a writer of it), no Coding stage, no
+  `AP.Code` wiring.
+- **Status: built and tested, not yet pushed.** See decision 0453 for
+  the full reasoning and verification.
+
 ### Purchase orders and matching
 - Purchase order storage grounded in Peppol BIS Order Only 3.3, via UBL
   XML ingestion (0081) and CSV load (0370) — the same tables, the same
@@ -3650,17 +3698,19 @@ elsewhere.
 
 | Package | Tests |
 |---|---|
-| `vf-app` | 2618 baseline + 6 new this decision, not re-confirmed by a full run — see note below |
+| `vf-app` | 2618 baseline + 6 (0451) + 11 (0452) + 23 (0453) = **2658**, arithmetic, not re-confirmed by a full run — see note below |
 | `vf-licence` | 320 |
-| `vf-ui` | 74 Worker · 1040 browser, all passing — see below |
+| `vf-ui` | 74 Worker · 1048 browser, all passing — see below |
 | `shared` | 295 passing, 3 known pre-existing failures |
 
 Both migration chains replay clean with every standing invariant
 holding — 77 migrations for `vf-app` (174 invariants, up from 76/170 —
-decision 0452's own migration `0077`); `vf-licence`'s own
-153-migration chain has no equivalent Python replay, and is instead
-validated through `workers/vf-licence/test/setup.ts` +
-`string-coverage.test.ts`, both green as of decision 0452.
+decision 0452's own migration `0077`; decision 0453 added no new
+`vf-app` migration); `vf-licence`'s own 154-migration chain (up from
+153 — decision 0453's own migration `0154`) has no equivalent Python
+replay, and is instead validated through
+`workers/vf-licence/test/setup.ts` + `string-coverage.test.ts`, both
+green as of decision 0453.
 
 **Decision 0448's own `vf-app` count is not re-verified against the
 full, whole-repo suite** — this session's own tool timeout could not
@@ -3725,6 +3775,28 @@ confirmed by an unfiltered whole-suite run (48 files); the
 `document-window.test.ts` unhandled-rejection flake is present at its
 identical baseline count (160 errors), unrelated to this decision.
 
+**Decision 0453 hit the identical full-suite timeout** — the targeted
+run instead covered every file this decision's own production code
+touches: `test/enforce.test.ts` **18/18** (5 new, `requireAnyPermission`
+directly), `test/coding-list-route.test.ts` (5 new, the new `filters`
+param narrowing a read), `test/accounting-frame.test.ts` (3 new, the
+same for Cost Centre's own table), `test/index.test.ts` (10 new,
+through the real router), run together with
+`test/cost-centre-route.test.ts`, `test/coding-list-csv-route.test.ts`,
+`test/key-fields.test.ts`, and `test/field-visibility.test.ts` —
+**342/342** across all eight files in one run. No new `vf-app`
+migration. `workers/vf-licence`'s full suite **320/320** (unchanged in
+count — migration `0154` adds rows to the existing `ui_strings` table,
+not a new test file), including `string-coverage.test.ts` **10/10**,
+confirmed by one unfiltered whole-suite run. The `vf-app` figure above
+stays arithmetic, not a fresh whole-suite confirmation, the same
+0451/0452 precedent. The `vf-ui` browser figure moved from 1040 to
+**1048** (+8, a new "the invoice-line Coding pop-out" describe block in
+`viewer.test.ts`), confirmed by an unfiltered whole-suite run (48
+files); the `document-window.test.ts` unhandled-rejection flake is
+present at its identical baseline count (160 errors), unrelated to
+this decision.
+
 **`vf-ui` browser previously carried 4 known failures**, all in
 `test-browser/document-window.test.ts` — a long-documented,
 pre-existing unhandled-rejection flake around the XML preview path,
@@ -3785,7 +3857,7 @@ fresh whole-suite pass, since only that one file changed.
 | `docs/design/multi-authority-intake.md` | Non-EN-16931 authorities | Design only |
 | `docs/design/text-layer-extraction.md` | Reading a PDF's own text | Design only |
 | `docs/design/cost-object-approval-hierarchy.md` | Cost-Object Approval Hierarchy investigation (decision 0450) — its proposed shape and three open questions are now built and answered by decision 0452 | Design only |
-| `docs/decisions/` | 452 decision records | Current |
+| `docs/decisions/` | 453 decision records | Current |
 | `docs/decisions/SUPERSEDED.md` | Which records supersede which | **Read first** |
 
 Document 4's markdown source is at `docs/documents/`, with

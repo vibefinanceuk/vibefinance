@@ -2,7 +2,7 @@ import { env } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
 import { applyTestSchema } from "./setup.js";
 import { hashApiKey } from "../src/user-auth.js";
-import { hasPermission, requirePermission, isWithinScope } from "../src/enforce.js";
+import { hasPermission, requirePermission, requireAnyPermission, isWithinScope } from "../src/enforce.js";
 
 async function seedUser(id: string, apiKey: string): Promise<void> {
   const hash = await hashApiKey(apiKey);
@@ -95,6 +95,51 @@ describe("requirePermission — the combined check", () => {
 
     const resultB = await requirePermission(env.DB, requestWithBearer("key-b"), "AP.Approve");
     expect(resultB).toEqual({ authorized: false, status: 403 });
+  });
+});
+
+/**
+ * **"Either of these" — decision 0453.** A second entry point beside
+ * `requirePermission`, for the read routes the Account Coding tab and
+ * the invoice-line Coding pop-out now both reach — `Admin.Configure`
+ * for the tab, `AP.Validate` for the pop-out, either sufficient.
+ */
+describe("requireAnyPermission — decision 0453", () => {
+  it("401s when there is no valid key at all", async () => {
+    const result = await requireAnyPermission(env.DB, requestWithBearer("not-a-real-key"), ["Admin.Configure", "AP.Validate"]);
+    expect(result).toEqual({ authorized: false, status: 401 });
+  });
+
+  it("403s a real, authenticated user who holds neither permission", async () => {
+    await seedUser("usr1", "key1");
+    await seedRole("r1", ["Admin.RuleManagement"]);
+    await assignRole("usr1", "r1");
+    const result = await requireAnyPermission(env.DB, requestWithBearer("key1"), ["Admin.Configure", "AP.Validate"]);
+    expect(result).toEqual({ authorized: false, status: 403 });
+  });
+
+  it("authorizes a user holding only the first permission listed", async () => {
+    await seedUser("usr1", "key1");
+    await seedRole("r1", ["Admin.Configure"]);
+    await assignRole("usr1", "r1");
+    const result = await requireAnyPermission(env.DB, requestWithBearer("key1"), ["Admin.Configure", "AP.Validate"]);
+    expect(result.authorized).toBe(true);
+  });
+
+  it("authorizes a user holding only the second permission listed — order does not decide it", async () => {
+    await seedUser("usr1", "key1");
+    await seedRole("r1", ["AP.Validate"]);
+    await assignRole("usr1", "r1");
+    const result = await requireAnyPermission(env.DB, requestWithBearer("key1"), ["Admin.Configure", "AP.Validate"]);
+    expect(result.authorized).toBe(true);
+  });
+
+  it("authorizes a user holding both", async () => {
+    await seedUser("usr1", "key1");
+    await seedRole("r1", ["Admin.Configure", "AP.Validate"]);
+    await assignRole("usr1", "r1");
+    const result = await requireAnyPermission(env.DB, requestWithBearer("key1"), ["Admin.Configure", "AP.Validate"]);
+    expect(result.authorized).toBe(true);
   });
 });
 

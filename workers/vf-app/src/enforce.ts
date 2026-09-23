@@ -259,6 +259,46 @@ export async function requirePermission(
 }
 
 /**
+ * May this caller do this, OR that — decision 0453.
+ *
+ * **A second entry point, not a widened `requirePermission`.** Every
+ * one of `requirePermission`'s own 25+ callers passes a single
+ * permission and means it as a single permission; broadening its own
+ * parameter to `Permission | Permission[]` would be correct but
+ * unnecessary churn across all of them for the sake of the two or
+ * three call sites that actually need "either of these." Same
+ * authentication path, same `AuthorizationResult` shape — only the
+ * check itself differs, so the two stay trivially easy to tell apart
+ * at a call site rather than one doing double duty.
+ *
+ * First use: the Account Coding read routes (`/org/cost-centres`,
+ * `/coding-lists/:type`, both GET), built for `Admin.Configure` alone
+ * and now also read by the invoice-line Coding pop-out, whose own
+ * caller holds `AP.Validate` instead — the same permission
+ * `POST /invoices/:id/key` already requires for keying the very
+ * values this read supports choosing.
+ */
+export async function requireAnyPermission(
+  db: D1Database,
+  request: Request,
+  permissions: Permission[],
+  session?: SessionContext
+): Promise<AuthorizationResult> {
+  const user = session
+    ? (await authenticateUserOrSession(db, request, session.publicKeyJwk, session.environmentId)).user
+    : await authenticateUser(db, request);
+  if (!user) {
+    return { authorized: false, status: 401 };
+  }
+  for (const permission of permissions) {
+    if (await hasPermission(db, user.id, permission)) {
+      return { authorized: true, user };
+    }
+  }
+  return { authorized: false, status: 403 };
+}
+
+/**
  * Every permission this person holds, across all their roles — decision
  * 0095.
  *

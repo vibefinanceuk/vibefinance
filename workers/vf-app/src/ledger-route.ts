@@ -1,5 +1,5 @@
 import type { RouteResult } from "./org-route.js";
-import { entryFiltersFor, validateFilters, replaceFilters } from "./coding-list-route.js";
+import { entryFiltersFor, validateFilters, replaceFilters, declaredFiltersFor } from "./coding-list-route.js";
 
 /**
  * The accounting frame — decision 0195.
@@ -321,6 +321,34 @@ function costCentreSearchClause(search: string | null): { sql: string; binds: un
 }
 
 /**
+ * **Narrow to cost centres whose own declared filter values match** —
+ * the same `codingListFilterClause` in `coding-list-route.ts` builds
+ * for the three greenfield lists, restated here rather than shared
+ * directly since Cost Centre's own owner id column is `c.id`, not the
+ * generic `e.id` the other function's query aliases.
+ */
+function costCentreFilterClause(
+  declared: string[],
+  filters: Record<string, string> | null
+): { sql: string; binds: unknown[] } {
+  if (!filters) return { sql: "", binds: [] };
+  const applied = Object.entries(filters).filter(([k, v]) => declared.includes(k) && v);
+  if (applied.length === 0) return { sql: "", binds: [] };
+  const sql = applied
+    .map(
+      () =>
+        ` AND EXISTS (
+          SELECT 1 FROM coding_list_entry_filters cf
+          WHERE cf.owner_list_type_id = 'cost_centre' AND cf.owner_entry_id = c.id
+            AND cf.filter_list_type_id = ? AND cf.filter_entry_id = ?
+        )`
+    )
+    .join("");
+  const binds = applied.flatMap(([k, v]) => [k, v]);
+  return { sql, binds };
+}
+
+/**
  * **The Cost Centre management screen's own read** — decision 0444.
  * `/org/overview`'s own `costCentres` stays the lightweight `{id,
  * name}` picker list every other screen already reads (Access's own
@@ -335,14 +363,22 @@ function costCentreSearchClause(search: string | null): { sql: string; binds: un
  * route, there is no `all` bypass here: nothing needs Cost Centre's
  * own full list any more, now that the parent picker reads
  * `/org/overview`'s own lightweight list instead.
+ *
+ * **`filters` — decision 0453**, the invoice-line Coding pop-out's own
+ * need: narrow to cost centres scoped to the Company Code already
+ * known for the invoice. Additive, same as
+ * `handleListCodingListEntries`'s own.
  */
 export async function handleListCostCentresDetailed(
   db: D1Database,
   search: string | null = null,
   pageParam: string | null = null,
-  pageSizeParam: string | null = null
+  pageSizeParam: string | null = null,
+  filters: Record<string, string> | null = null
 ): Promise<RouteResult> {
+  const declared = await declaredFiltersFor(db, "cost_centre");
   const search_ = costCentreSearchClause(search);
+  const filter_ = costCentreFilterClause(declared, filters);
   const page = normalizePage(pageParam);
   const pageSize = normalizePageSize(pageSizeParam);
   const offset = (page - 1) * pageSize;
@@ -353,8 +389,8 @@ export async function handleListCostCentresDetailed(
        LEFT JOIN org_users u ON u.id = c.owner_user_id`;
 
   const totalRow = await db
-    .prepare(`SELECT count(*) AS n ${joins} WHERE 1 = 1 ${search_.sql}`)
-    .bind(...search_.binds)
+    .prepare(`SELECT count(*) AS n ${joins} WHERE 1 = 1 ${search_.sql} ${filter_.sql}`)
+    .bind(...search_.binds, ...filter_.binds)
     .first<{ n: number }>();
 
   const rows = await db
@@ -363,11 +399,11 @@ export async function handleListCostCentresDetailed(
               c.parent_cost_centre_id, p.name AS parent_name,
               c.owner_user_id, u.name AS owner_name, c.approval_limit
        ${joins}
-       WHERE 1 = 1 ${search_.sql}
+       WHERE 1 = 1 ${search_.sql} ${filter_.sql}
        ORDER BY c.name
        LIMIT ? OFFSET ?`
     )
-    .bind(...search_.binds, pageSize, offset)
+    .bind(...search_.binds, ...filter_.binds, pageSize, offset)
     .all<CostCentreDetailRow>();
 
   const costCentres = await Promise.all(

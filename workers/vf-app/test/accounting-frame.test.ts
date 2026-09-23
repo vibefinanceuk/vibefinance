@@ -444,3 +444,41 @@ describe("real, server-side pagination for Cost Centre — decision 0446", () =>
     expect(body.total).toBe(1);
   });
 });
+
+/**
+ * **`filters` narrows to matching cost centres only** — decision 0453,
+ * the invoice-line Coding pop-out's own Cost Centre picker, scoped to
+ * the Company Code already known for the invoice. The same
+ * `codingListFilterClause`/`filters` mechanism `coding-list-
+ * route.test.ts`'s own "filters param" describe block proves for the
+ * three greenfield lists, restated here since Cost Centre keeps its
+ * own dedicated table and query.
+ */
+describe("filters param — narrowing a read to matching cost centres only, decision 0453", () => {
+  it("returns only cost centres whose own company-code filter matches the value given", async () => {
+    await env.DB.prepare("INSERT INTO org_units (id, name) VALUES ('UK01', 'Acme UK'), ('DE01', 'Acme DE')").run();
+    await env.DB.prepare("INSERT INTO cost_centres (id, name) VALUES ('cc-uk', 'UK cost centre'), ('cc-de', 'DE cost centre')").run();
+    await handleUpdateCostCentre(env.DB, "cc-uk", { filters: { company_code: "UK01" } });
+    await handleUpdateCostCentre(env.DB, "cc-de", { filters: { company_code: "DE01" } });
+
+    const result = await handleListCostCentresDetailed(env.DB, null, null, null, { company_code: "UK01" });
+    expect((result.body as { costCentres: { id: string }[] }).costCentres.map((c) => c.id)).toEqual(["cc-uk"]);
+  });
+
+  it("combines with search, both narrowing together", async () => {
+    await env.DB.prepare("INSERT INTO org_units (id, name) VALUES ('UK01', 'Acme UK')").run();
+    await env.DB.prepare("INSERT INTO cost_centres (id, name) VALUES ('cc1', 'IT department'), ('cc2', 'Marketing department')").run();
+    await handleUpdateCostCentre(env.DB, "cc1", { filters: { company_code: "UK01" } });
+    await handleUpdateCostCentre(env.DB, "cc2", { filters: { company_code: "UK01" } });
+
+    const result = await handleListCostCentresDetailed(env.DB, "IT", null, null, { company_code: "UK01" });
+    expect((result.body as { costCentres: { id: string }[] }).costCentres.map((c) => c.id)).toEqual(["cc1"]);
+  });
+
+  it("a cost centre with no filter value set at all does not match a filtered read", async () => {
+    await env.DB.prepare("INSERT INTO org_units (id, name) VALUES ('UK01', 'Acme UK')").run();
+    await env.DB.prepare("INSERT INTO cost_centres (id, name) VALUES ('cc1', 'Unscoped')").run();
+    const result = await handleListCostCentresDetailed(env.DB, null, null, null, { company_code: "UK01" });
+    expect((result.body as { costCentres: unknown[] }).costCentres).toEqual([]);
+  });
+});

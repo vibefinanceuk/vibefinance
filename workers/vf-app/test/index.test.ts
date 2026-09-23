@@ -2002,6 +2002,116 @@ describe("cost centres, through the real router (decision 0031)", () => {
   });
 });
 
+/**
+ * **`GET /org/cost-centres` and `GET /coding-lists/:type` — `Admin.
+ * Configure` OR `AP.Validate`, decision 0453.** Built for the Account
+ * Coding tab (`Admin.Configure`) alone; the invoice-line Coding
+ * pop-out now reads the same two routes with `AP.Validate` instead,
+ * the same permission `POST /invoices/:id/key` already requires. Both
+ * routes' own write siblings (POST/PUT) are untouched — still
+ * `Admin.Configure` only, unexercised here since nothing about them
+ * changed.
+ */
+describe("Account Coding's read routes — Admin.Configure OR AP.Validate, decision 0453", () => {
+  it("GET /org/cost-centres 401s with no credentials", async () => {
+    const res = await SELF.fetch("https://example.com/org/cost-centres");
+    expect(res.status).toBe(401);
+  });
+
+  it("GET /org/cost-centres 403s a real user holding neither permission", async () => {
+    const key = await seedUserWithPermissions(["AP.Review"]);
+    const res = await SELF.fetch("https://example.com/org/cost-centres", {
+      headers: { Authorization: `Bearer ${key}` },
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("GET /org/cost-centres still works for Admin.Configure alone — no regression", async () => {
+    const key = await seedUserWithPermissions(["Admin.Configure"]);
+    const res = await SELF.fetch("https://example.com/org/cost-centres", {
+      headers: { Authorization: `Bearer ${key}` },
+    });
+    expect(res.status).toBe(200);
+  });
+
+  it("GET /org/cost-centres now also works for AP.Validate alone", async () => {
+    const key = await seedUserWithPermissions(["AP.Validate"]);
+    const res = await SELF.fetch("https://example.com/org/cost-centres", {
+      headers: { Authorization: `Bearer ${key}` },
+    });
+    expect(res.status).toBe(200);
+  });
+
+  it("GET /coding-lists/:type 401s with no credentials", async () => {
+    const res = await SELF.fetch("https://example.com/coding-lists/project");
+    expect(res.status).toBe(401);
+  });
+
+  it("GET /coding-lists/:type 403s a real user holding neither permission", async () => {
+    const key = await seedUserWithPermissions(["AP.Review"]);
+    const res = await SELF.fetch("https://example.com/coding-lists/project", {
+      headers: { Authorization: `Bearer ${key}` },
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("GET /coding-lists/:type still works for Admin.Configure alone — no regression", async () => {
+    const key = await seedUserWithPermissions(["Admin.Configure"]);
+    const res = await SELF.fetch("https://example.com/coding-lists/project", {
+      headers: { Authorization: `Bearer ${key}` },
+    });
+    expect(res.status).toBe(200);
+  });
+
+  it("GET /coding-lists/:type now also works for AP.Validate alone", async () => {
+    const key = await seedUserWithPermissions(["AP.Validate"]);
+    const res = await SELF.fetch("https://example.com/coding-lists/project", {
+      headers: { Authorization: `Bearer ${key}` },
+    });
+    expect(res.status).toBe(200);
+  });
+
+  it("POST /coding-lists/:type still refuses AP.Validate alone — only the read side widened", async () => {
+    const key = await seedUserWithPermissions(["AP.Validate"]);
+    const res = await SELF.fetch("https://example.com/coding-lists/project", {
+      method: "POST",
+      headers: { ...{ Authorization: `Bearer ${key}` }, "content-type": "application/json" },
+      body: JSON.stringify({ id: "p-live-1", name: "Live Project" }),
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("filter.<type>=<id> narrows a real GET /coding-lists/:type response through the real router", async () => {
+    await SELF.fetch("https://example.com/org/units", {
+      method: "POST",
+      headers: { ...authHeaders(), "content-type": "application/json" },
+      body: JSON.stringify({ id: "UK01", name: "Acme UK", kind: "legal_entity" }),
+    });
+    await SELF.fetch("https://example.com/org/units", {
+      method: "POST",
+      headers: { ...authHeaders(), "content-type": "application/json" },
+      body: JSON.stringify({ id: "DE01", name: "Acme DE", kind: "legal_entity" }),
+    });
+    await SELF.fetch("https://example.com/coding-lists/gl_code", {
+      method: "POST",
+      headers: { ...authHeaders(), "content-type": "application/json" },
+      body: JSON.stringify({ id: "g-uk", name: "UK ledger", filters: { company_code: "UK01" } }),
+    });
+    await SELF.fetch("https://example.com/coding-lists/gl_code", {
+      method: "POST",
+      headers: { ...authHeaders(), "content-type": "application/json" },
+      body: JSON.stringify({ id: "g-de", name: "DE ledger", filters: { company_code: "DE01" } }),
+    });
+
+    const res = await SELF.fetch("https://example.com/coding-lists/gl_code?filter.company_code=UK01", {
+      headers: authHeaders(),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { entries: { id: string }[] };
+    expect(body.entries.map((e) => e.id)).toEqual(["g-uk"]);
+  });
+});
+
 describe("supplier history, through the real router (decision 0032)", () => {
   it("returns a real supplier's history through the real HTTP route", async () => {
     await SELF.fetch("https://example.com/invoices", {

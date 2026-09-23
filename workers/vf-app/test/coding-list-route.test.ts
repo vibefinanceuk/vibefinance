@@ -410,3 +410,64 @@ describe("handleUpdateCodingListEntry", () => {
     expect(entry.filters).toEqual([{ filterListTypeId: "company_code", filterEntryId: "UK01", filterEntryName: "Acme UK" }]);
   });
 });
+
+/**
+ * **Narrowing a read to matching entries only** — decision 0453, the
+ * invoice-line Coding pop-out's own "linked Commodity and General
+ * Ledger Code": a General Ledger Code picker scoped by the Company
+ * Code and Commodity Code already chosen elsewhere in the pop-out.
+ * Additive — every test above this block passes no `filters` argument
+ * at all and is untouched by any of this.
+ */
+describe("filters param — narrowing a read to matching entries only, decision 0453", () => {
+  it("returns only entries whose own declared filter matches the value given", async () => {
+    await seedUnit("UK01", "Acme UK");
+    await seedUnit("DE01", "Acme DE");
+    await handleCreateCodingListEntry(env.DB, "gl_code", { id: "g1", name: "UK ledger", filters: { company_code: "UK01" } });
+    await handleCreateCodingListEntry(env.DB, "gl_code", { id: "g2", name: "DE ledger", filters: { company_code: "DE01" } });
+
+    const result = await handleListCodingListEntries(env.DB, "gl_code", null, null, null, false, { company_code: "UK01" });
+    expect((result.body as { entries: { id: string }[] }).entries.map((e) => e.id)).toEqual(["g1"]);
+  });
+
+  it("combines with search — decision 0446's own param, both narrow together", async () => {
+    await seedUnit();
+    await handleCreateCodingListEntry(env.DB, "gl_code", { id: "g1", name: "Plant Suppliers", filters: { company_code: "UK01" } });
+    await handleCreateCodingListEntry(env.DB, "gl_code", { id: "g2", name: "Office Supplies", filters: { company_code: "UK01" } });
+
+    const result = await handleListCodingListEntries(env.DB, "gl_code", "plant", null, null, false, { company_code: "UK01" });
+    expect((result.body as { entries: { id: string }[] }).entries.map((e) => e.id)).toEqual(["g1"]);
+  });
+
+  it("stacks two filters — an entry must match both to be returned", async () => {
+    await seedUnit();
+    await handleCreateCodingListEntry(env.DB, "commodity_code", { id: "c1", name: "Commodity 1" });
+    await handleCreateCodingListEntry(env.DB, "commodity_code", { id: "c2", name: "Commodity 2" });
+    await handleCreateCodingListEntry(env.DB, "gl_code", { id: "g1", name: "Matches both", filters: { company_code: "UK01", commodity_code: "c1" } });
+    await handleCreateCodingListEntry(env.DB, "gl_code", { id: "g2", name: "Wrong commodity", filters: { company_code: "UK01", commodity_code: "c2" } });
+
+    const result = await handleListCodingListEntries(env.DB, "gl_code", null, null, null, false, {
+      company_code: "UK01",
+      commodity_code: "c1",
+    });
+    expect((result.body as { entries: { id: string }[] }).entries.map((e) => e.id)).toEqual(["g1"]);
+  });
+
+  it("a filter key this type does not declare is silently ignored, not an error", async () => {
+    await handleCreateCodingListEntry(env.DB, "project", { id: "p1", name: "P1" });
+    // project declares no filters at all — a company_code filter here
+    // would 400 on the write side (validateFilters); on this read
+    // side it is simply not applied, per this function's own doc
+    // comment.
+    const result = await handleListCodingListEntries(env.DB, "project", null, null, null, false, { company_code: "UK01" });
+    expect(result.status).toBe(200);
+    expect((result.body as { entries: { id: string }[] }).entries.map((e) => e.id)).toEqual(["p1"]);
+  });
+
+  it("an entry with no filter value set at all does not match a filtered read", async () => {
+    await seedUnit();
+    await handleCreateCodingListEntry(env.DB, "gl_code", { id: "g1", name: "Unscoped" });
+    const result = await handleListCodingListEntries(env.DB, "gl_code", null, null, null, false, { company_code: "UK01" });
+    expect((result.body as { entries: unknown[] }).entries).toEqual([]);
+  });
+});

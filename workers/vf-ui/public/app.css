@@ -1938,6 +1938,24 @@
   .searchresult:hover { background: var(--surface-1); }
 
   /*
+    **One searchable field, embedded in a form** — decision 0453, the
+    invoice-line Coding pop-out's own four pickers. `openSearch()`'s
+    own `.searchbox`/`.searchresults`/`.searchresult` are reused
+    unchanged for the input and its own dropdown; this only adds the
+    small grid around them so a clear ("×") button sits beside the box
+    rather than under it, and the results list spans both columns
+    rather than being squeezed into the narrower one.
+  */
+  .codingsearch {
+    display: grid;
+    grid-template-columns: 1fr 28px;
+    gap: 4px;
+    align-items: start;
+  }
+  .codingsearch .searchbox { margin: 0; }
+  .codingsearch .searchresults { grid-column: 1 / -1; margin-bottom: 0; }
+
+  /*
     **Every card's own title, and a rule beneath it** — decision 0396,
     the second of the four pieces borrowed from
     e-invoicingcompliancecorner.com and agreed with the operator: the
@@ -2748,10 +2766,19 @@
 
   .linetable .readonly { padding: 3px 6px; min-height: 30px; }
   .linetable th:first-child, .linetable td:first-child { width: 30px; }
-  .linetable th:last-child, .linetable td:last-child { width: 34px; }
+  /*
+    **Widened from 34px to 62px — decision 0453.** This column held
+    only the "×" remove button; it now also holds the new Coding icon
+    button beside it, always shown (see `lineRow`'s own comment on
+    why), so the column needs room for two 28px buttons rather than
+    one.
+  */
+  .linetable th:last-child, .linetable td:last-child { width: 62px; }
   /* BT-130 is a three-character UN/ECE code, so its column is narrow. */
   .linetable td.short { width: 70px; }
   .linetable th:nth-child(4) { width: 70px; }
+
+  .lineactions { display: flex; gap: 4px; justify-content: flex-end; }
 
   button.rm {
     min-height: 28px;
@@ -2760,6 +2787,9 @@
     color: var(--text-muted);
     border-color: transparent;
   }
+  /* The new Coding icon button — decision 0453, the "×" glyph's own
+     sibling in `.rm` styling but an SVG rather than text. */
+  button.rm svg { width: 16px; height: 16px; }
 
   .linefoot { display: flex; align-items: center; gap: 12px; }
 

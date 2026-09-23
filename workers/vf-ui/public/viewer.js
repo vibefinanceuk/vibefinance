@@ -797,7 +797,21 @@ function lineRow(line, index) {
 
   return el("tr", {}, [
     ...lineFields.map(cell),
-    el("td", {}, [
+    el("td", { class: "lineactions" }, [
+      /**
+       * **Always shown, not gated on `canEditAnything`** — decision
+       * 0453, the same reasoning `headerSummary()`'s own "Header
+       * Fields" action already carries: looking up a line's own coding
+       * is not an edit, so it stays reachable on a read-only stage too
+       * (the pop-out itself still refuses to change anything nothing
+       * configured editable permits, the same as every field already
+       * does — see `openLineCodingPopout`).
+       */
+      (() => {
+        const button = el("button", { class: "rm", title: t("action.coding"), onclick: () => openLineCodingPopout(line) });
+        button.append(icon("coding"));
+        return button;
+      })(),
       /**
        * **Structure, not a field** — decision 0144.
        *
@@ -822,6 +836,231 @@ function lineRow(line, index) {
         : []),
     ]),
   ]);
+}
+
+/**
+ * **The Coding pop-out's own four fields — decision 0453.** Cost
+ * Centre keeps its own dedicated table and route (`ledger-route.ts`'s
+ * `handleListCostCentresDetailed`); Project, Commodity Code, and
+ * General Ledger Code share the generic one (`coding-list-route.ts`'s
+ * `handleListCodingListEntries`) — `listType` says which, so
+ * `fetchCodingEntries` (below) can tell without a second lookup.
+ *
+ * `filterKeys` is exactly `coding_list_type_filters`'s own declared
+ * shape (migration 0076): General Ledger Code is the only field
+ * "linked" to two others; Project and Commodity Code declare no
+ * filter at all and are offered unnarrowed, the same as their own
+ * AP Setup picker (`coding-lists.js`'s `openCodingEntryForm`) already
+ * does.
+ */
+const CODING_PICKER_FIELDS = [
+  { field: "BT-133", listType: "cost_centre", filterKeys: [] },
+  { field: "coding.project", listType: "project", filterKeys: [] },
+  { field: "coding.commodity_code", listType: "commodity_code", filterKeys: [] },
+  { field: "coding.gl_code", listType: "gl_code", filterKeys: ["company_code", "commodity_code"] },
+];
+
+/**
+ * One read, for whichever of the four lists a picker asks about —
+ * decision 0453. Cost Centre's own richer route returns
+ * `{costCentres: [...]}`; the other three's shared route returns
+ * `{entries: [...]}` — normalised here to the one shape a picker
+ * actually needs, `{id, name}[]`, so `searchableEntryPicker` itself
+ * never has to know which kind of list it is showing.
+ *
+ * **Read-only, `AP.Validate`-gated on the server** (decision 0453's
+ * own widening of both routes' own permission check) — this is a
+ * person keying a line, not configuring Account Coding, so it never
+ * calls either route's own `Admin.Configure`-only write side.
+ */
+async function fetchCodingEntries(listType, search, filters = {}) {
+  const params = new URLSearchParams({ search, pageSize: "25" });
+  for (const [key, value] of Object.entries(filters)) {
+    if (value) params.set(`filter.${key}`, value);
+  }
+  const url =
+    listType === "cost_centre"
+      ? `/api/org/cost-centres?${params}`
+      : `/api/coding-lists/${listType}?${params}`;
+  const response = await fetch(url);
+  if (!response.ok) throw new Error();
+  const body = await response.json();
+  return (listType === "cost_centre" ? body.costCentres : body.entries).map((e) => ({ id: e.id, name: e.name }));
+}
+
+/**
+ * A single search-as-you-type field, embedded in a form rather than
+ * `openSearch()`'s own full pop-out — decision 0453. **Not a second
+ * copy of that debounce-free "only the newest answer counts" guard**;
+ * restated here because `openSearch` itself always closes the whole
+ * pop-out and reopens the document on a choice (right for changing the
+ * Seller or Buyer, wrong here — choosing a Cost Centre should not
+ * close a form with three more fields still to fill in).
+ *
+ * `resolveCurrent`, called once at build time, turns the line's own
+ * already-keyed raw id into a readable name for the box to start
+ * with — the same "shown, not silently dropped" courtesy `codeInput`
+ * already gives a BT-130 unit code the active list does not know.
+ */
+function searchableEntryPicker({ current, hint, fetchResults, resolveCurrent, onChoose }) {
+  const input = el("input", { type: "text", class: "searchbox", placeholder: hint, value: current ?? "" });
+  const results = el("div", { class: "searchresults" });
+  const clearButton = el("button", {
+    class: "rm",
+    text: "×",
+    title: t("viewer.coding.clear"),
+    onclick: () => {
+      input.value = "";
+      results.replaceChildren();
+      onChoose(null);
+    },
+  });
+
+  if (current && resolveCurrent) {
+    resolveCurrent()
+      .then((match) => {
+        if (match) input.value = match.name;
+      })
+      .catch(() => {
+        // The raw id stays in the box — shown, not silently dropped.
+      });
+  }
+
+  let latest = 0;
+  input.oninput = async () => {
+    const q = input.value;
+    const mine = ++latest;
+    if (q.trim().length < 2) {
+      results.replaceChildren();
+      return;
+    }
+    try {
+      const found = await fetchResults(q);
+      if (mine !== latest) return;
+      if (found.length === 0) {
+        results.replaceChildren(el("div", { class: "muted", text: t("viewer.coding.nomatches") }));
+        return;
+      }
+      results.replaceChildren(
+        ...found.map((item) => {
+          const row = el("button", { class: "searchresult" }, [
+            el("div", { text: item.name }),
+            el("div", { class: "muted", text: item.id }),
+          ]);
+          row.onclick = () => {
+            input.value = item.name;
+            results.replaceChildren();
+            onChoose(item);
+          };
+          return row;
+        })
+      );
+    } catch {
+      if (mine === latest) {
+        results.replaceChildren(el("div", { class: "warn", text: t("viewer.coding.searchfailed") }));
+      }
+    }
+  };
+
+  return el("div", { class: "codingsearch" }, [input, clearButton, results]);
+}
+
+/**
+ * **The invoice-line Coding pop-out** — decision 0453, the operator's
+ * own ask: *"a pop-out, that is accessible from a Coding icon on the
+ * invoice line... show the Org / Company Code and optional Cost
+ * Center or Project, then provide the linked Commodity and General
+ * Ledger Code. Each should expose a searchable drop-down that searches
+ * across the already created Account Coding lists."*
+ *
+ * **Additive, not a replacement** for the line table's own generic
+ * inline `<input>` (see `cell()`) — decided in the decision doc
+ * itself rather than here: both read and write the exact same
+ * `line[spec.field]`, so either entry point works and neither can
+ * drift from the other. A field not configured `edit` at this stage
+ * renders read-only here too, the same rule `cell()` already applies
+ * — this pop-out has no route of its own into a field's own
+ * visibility, only into its value.
+ *
+ * **`Save` reads `line[spec.field]` the moment it runs, from
+ * anywhere** — this pop-out never calls `/key` itself. Choosing a
+ * value here sets the same in-memory field the inline cell already
+ * writes to, so the page's own existing Save button persists it,
+ * exactly the way it already persists every other line field.
+ */
+function openLineCodingPopout(line) {
+  const chosen = {};
+  for (const spec of CODING_PICKER_FIELDS) chosen[spec.field] = line[spec.field] || null;
+
+  const companyCodeRow = [
+    el("label", { text: t("apsetup.codingtab.companycode") }),
+    el("div", { class: "readonly", text: stored.buyer?.entityName ?? "—" }),
+  ];
+
+  const fieldRows = CODING_PICKER_FIELDS.flatMap((spec) => {
+    const label = el("label", { text: t(`field.${spec.field.toLowerCase()}`) });
+    const resolved = lineFields.find((f) => f.field === spec.field);
+
+    if (!resolved || resolved.visibility !== "edit") {
+      return [
+        label,
+        el("div", {}, [
+          el("div", { class: "readonly", text: line[spec.field] || "—" }),
+          ...(resolved?.visibility === "read"
+            ? []
+            : [el("div", { class: "muted sm", text: t("viewer.coding.noteditable") })]),
+        ]),
+      ];
+    }
+
+    // Read live, at fetch time, not captured once — a later field's
+    // own choice (Commodity Code) has to reach General Ledger Code's
+    // own filter even though it is chosen after this closure is
+    // built.
+    const filters = () =>
+      Object.fromEntries(
+        spec.filterKeys.map((key) => [key, key === "company_code" ? stored.orgUnitId : chosen["coding.commodity_code"]])
+      );
+
+    const picker = searchableEntryPicker({
+      current: chosen[spec.field],
+      hint: t("viewer.coding.searchhint"),
+      resolveCurrent: chosen[spec.field]
+        ? async () => {
+            const found = await fetchCodingEntries(spec.listType, chosen[spec.field]);
+            return found.find((e) => e.id === chosen[spec.field]) ?? null;
+          }
+        : null,
+      fetchResults: (q) => fetchCodingEntries(spec.listType, q, filters()),
+      onChoose: (item) => {
+        chosen[spec.field] = item?.id ?? null;
+        line[spec.field] = item?.id ?? "";
+      },
+    });
+    return [label, picker];
+  });
+
+  const close = () => {
+    backdrop.remove();
+    // So the line table's own inline cell (if this same field is also
+    // shown there) reflects what was just chosen here — both read and
+    // write the identical `line[spec.field]`, per this function's own
+    // doc comment.
+    renderLines();
+  };
+  const backdrop = el("div", { class: "backdrop" }, [
+    el("div", { class: "popout" }, [
+      el("div", { class: "cardhead" }, [
+        el("h3", { text: t("viewer.coding.heading") }),
+        actionLink("close", { onclick: close }),
+      ]),
+      el("div", { class: "editgrid" }, [...companyCodeRow, ...fieldRows]),
+    ]),
+  ]);
+  backdrop.onclick = (e) => {
+    if (e.target === backdrop) close();
+  };
+  document.body.append(backdrop);
 }
 
 function renderLines() {

@@ -85,6 +85,7 @@ import {
 } from "./approval-config-route.js";
 import {
   requirePermission,
+  requireAnyPermission,
   permissionsFor,
   unitsFor,
   hasPermission,
@@ -422,6 +423,26 @@ function json(body: unknown, status = 200, extraHeaders: Record<string, string> 
     status,
     headers: { "content-type": "application/json", ...extraHeaders },
   });
+}
+
+/**
+ * **`filter.<type>=<id>` query params, collected into the object
+ * `handleListCodingListEntries`/`handleListCostCentresDetailed`'s own
+ * `filters` parameter expects** — decision 0453. `null` when none are
+ * present, so an unfiltered caller's own generated SQL is byte-for-byte
+ * what it always was (`codingListFilterClause`/`costCentreFilterClause`
+ * both already treat `null` and `{}` as "no filter" identically, but
+ * `null` is what every pre-existing call site not passing the new
+ * parameter at all already implicitly sends).
+ */
+function filtersFromQuery(url: URL): Record<string, string> | null {
+  const filters: Record<string, string> = {};
+  for (const [key, value] of url.searchParams.entries()) {
+    if (key.startsWith("filter.") && value) {
+      filters[key.slice("filter.".length)] = value;
+    }
+  }
+  return Object.keys(filters).length > 0 ? filters : null;
 }
 
 /**
@@ -2154,17 +2175,31 @@ export default {
      */
     if (pathname === "/org/cost-centres" && request.method === "GET") {
       const { db } = resolveTenant(request, env);
-      const auth = await requirePermission(db, request, "Admin.Configure", sessionContext(env));
+      /**
+       * **`Admin.Configure` OR `AP.Validate` — decision 0453.** This
+       * route was built for the Account Coding tab alone, gated the
+       * same as the rest of AP Setup. The invoice-line Coding pop-out
+       * reads the exact same list to search Cost Centre while keying a
+       * line, and the person doing that keying holds `AP.Validate` —
+       * the same permission `POST /invoices/:id/key` itself already
+       * requires — not `Admin.Configure`, which is for configuring the
+       * list, not using it. Widened rather than forked: a second,
+       * near-identical read route would drift from this one the
+       * moment either changed.
+       */
+      const auth = await requireAnyPermission(db, request, ["Admin.Configure", "AP.Validate"], sessionContext(env));
       if (!auth.authorized) {
         return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
       }
       // search / page / pageSize — decision 0446, the same treatment
-      // decision 0376 already gave Purchase Orders.
+      // decision 0376 already gave Purchase Orders. filter.<type> —
+      // decision 0453, the Coding pop-out's own "linked" narrowing.
       const result = await handleListCostCentresDetailed(
         db,
         url.searchParams.get("search"),
         url.searchParams.get("page"),
-        url.searchParams.get("pageSize")
+        url.searchParams.get("pageSize"),
+        filtersFromQuery(url)
       );
       return json(result.body, result.status);
     }
@@ -2184,7 +2219,9 @@ export default {
       const match = pathname.match(/^\/coding-lists\/([^/]+)$/);
       if (match && request.method === "GET") {
         const { db } = resolveTenant(request, env);
-        const auth = await requirePermission(db, request, "Admin.Configure", sessionContext(env));
+        // `Admin.Configure` OR `AP.Validate` — decision 0453, same
+        // reasoning as `/org/cost-centres` GET just above.
+        const auth = await requireAnyPermission(db, request, ["Admin.Configure", "AP.Validate"], sessionContext(env));
         if (!auth.authorized) {
           return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
         }
@@ -2193,14 +2230,15 @@ export default {
         // is set only by a create/edit form's own lazy fetch of every
         // entry, to populate a parent picker (or, for General Ledger
         // Code, its Commodity Code filter picker) — never by the table
-        // itself.
+        // itself. filter.<type> — decision 0453.
         const result = await handleListCodingListEntries(
           db,
           decodeURIComponent(match[1]),
           url.searchParams.get("search"),
           url.searchParams.get("page"),
           url.searchParams.get("pageSize"),
-          url.searchParams.get("all") === "1"
+          url.searchParams.get("all") === "1",
+          filtersFromQuery(url)
         );
         return json(result.body, result.status);
       }

@@ -325,6 +325,17 @@ export const ICONS = {
    */
   publish:
     '<path d="M12 21V11m0 0-4 4m4-4 4 4M4 7V4h16v3"/>',
+  /**
+   * **A tag, checked off — decision 0453.** `awaitingerp`'s own empty
+   * tag (above) means "nothing written here yet"; this one draws the
+   * same tag shape with a checkmark instead of a blank dot, for the
+   * opposite state a line's own Coding pop-out opens onto — a place
+   * classification values (Cost Centre, Project, Commodity Code,
+   * General Ledger Code) get attached to a line, distinct from
+   * `headerfields`'s own lined-rectangle document icon.
+   */
+  coding:
+    '<path d="M3 12 12 3h6a3 3 0 0 1 3 3v6l-9 9-9-9z"/><path d="M10.5 12.5l2 2 4-4"/>',
 };
 
 export function icon(name) {
