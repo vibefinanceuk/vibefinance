@@ -2482,8 +2482,14 @@ section for the full reasoning and tests.
   route is the documented way to clear one by hand); no UI change —
   a customer still cannot tell "no rule set" from "a rule set with
   nothing in it" from the Processes screen itself.
-- **Status: built and tested, not yet pushed.** See decision 0454 for
-  the full reasoning and verification.
+- **Confirmed pushed and deployed** — `origin/main` fetched directly
+  reads `93b4568`, matching this session's own commit exactly.
+  `wrangler deploy` confirmed run for `vf-app`, the only worker this
+  decision touched; no migration to apply. The specific invoice this
+  was found on still needs the one-off `/process-instances/:id/visit`
+  call to clear, since this decision fixes the path going forward, not
+  retroactively. See decision 0454 for the full reasoning and
+  verification.
 
 ### Purchase orders and matching
 - Purchase order storage grounded in Peppol BIS Order Only 3.3, via UBL

@@ -1,7 +1,11 @@
 # 0454 — Completing a Task No Longer Strands an Invoice on the Next Stage
 
-**Status: built and tested, not yet pushed.** See "Still to do, operator
-side" below.
+**Status: confirmed pushed and deployed.** `origin/main` fetched
+directly reads `93b4568`, matching this session's own commit exactly,
+and the operator confirmed `wrangler deploy` run for `vf-app` — the
+only worker this decision touched. No migration to apply. The one
+open item is the specific invoice this was found on, still parked at
+Matching — see "Still to do, operator side" below.
 
 ---
 
@@ -169,9 +173,8 @@ No `vf-ui` or `vf-licence` change — this decision touches only
 
 ## Still to do, operator side
 
-Push and deploy `vf-app` (no other worker touched, no new migration).
-Once deployed, the specific invoice this was found on is still parked
-at Matching — that part needs the one-off, already-existing
-`/process-instances/:id/visit` call to clear (or, more simply, any
-further task completion anywhere else in the system will now correctly
-carry every future invoice past a stage like this on its own).
+**Push and deploy confirmed** — `origin/main` reads `93b4568`,
+`vf-app` deployed. The specific invoice this was found on is still
+parked at Matching — this decision fixes the path going forward, not
+retroactively — and needs the one-off, already-existing
+`/process-instances/:id/visit` call to clear it directly.
