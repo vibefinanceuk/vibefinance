@@ -1,7 +1,19 @@
 # 0461 — One Box Width Drives the Coding Pop-out, Not Three Separate Copies of It
 
-**Status: built.** Not yet confirmed pushed and deployed — awaiting
-the operator's own report. No migration — `vf-ui` only.
+**Status: confirmed pushed and deployed, then found incomplete.**
+`origin/main` fetched directly reads `1b64da3`, which contains this
+decision's own commit; the operator confirmed `wrangler deploy` run
+for `vf-ui`. Live, the Org / Company Code box was still wider than
+the search boxes and spilled past the pop-out's own edge — this
+decision's `width: 100%` was right in principle but never actually
+took effect the way intended, for a reason this decision didn't know
+to look for. See decision 0462: `.readonly` is a `<div>`, and
+`box-sizing: border-box` — which every real `<input>` already has,
+via `tokens.css` — never reached it, so its own padding added itself
+on top of the `100%` rather than counting inside it. The
+`--codingfield-label-w`/`--codingfield-w` structure this decision
+introduced is still exactly right and is what decision 0462 builds on;
+only the one box-model gap was missing. No migration — `vf-ui` only.
 
 ---
 
@@ -134,4 +146,6 @@ No `vf-app`/`vf-licence` change, no new migration, no new string —
 
 ## Still to do, operator side
 
-`wrangler deploy` for `vf-ui` — no migration to apply this time.
+All done — `wrangler deploy` confirmed for `vf-ui`, no migration to
+apply this time. See decision 0462 for the follow-up fix this
+decision's own report needed.

@@ -1,7 +1,9 @@
 # 0462 — `.readonly` Is a `<div>`, Not an `<input>`, and `box-sizing` Never Reached It
 
-**Status: built.** Not yet confirmed pushed and deployed — awaiting
-the operator's own report. No migration — `vf-ui` only.
+**Status: confirmed pushed and deployed.** `origin/main` fetched
+directly reads `1b64da3`, matching this session's own commit exactly,
+and the operator confirmed with *"deployed and pushed."* No
+migration — `vf-ui` only.
 
 ---
 
@@ -94,4 +96,6 @@ change, since there is still nothing live for a shared rule to fix.
 
 ## Still to do, operator side
 
-`wrangler deploy` for `vf-ui` — no migration to apply this time.
+All done — `wrangler deploy` confirmed for `vf-ui`, no migration to
+apply this time, in the operator's own single report: *"deployed and
+pushed."*

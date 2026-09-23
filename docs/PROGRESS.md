@@ -2706,15 +2706,15 @@ section for the full reasoning and tests.
   what changes here.
 - **Rendered against the real, unmodified `app.css`**, not just the
   mock-up's own reproduction of it, and read as right by eye — Close
-  landed directly above the box's own right edge. **Confirmed
-  deployed, and reported live as still wrong** — see decision 0462
-  just below: the screenshot check here only looked, it never measured
-  the actual geometry, and `.popout`'s own `overflow: auto` was
-  quietly clipping the Org / Company Code box's own overflow at the
-  pop-out's edge rather than showing it, in an unscrolled screenshot.
-  Touches `vf-ui`'s `app.css` alone; no `viewer.js` change, no
-  migration, no new string key — see decision 0461 for the full
-  reasoning.
+  landed directly above the box's own right edge. **Confirmed pushed
+  and deployed, and first reported live as still wrong** — see
+  decision 0462 just below: the screenshot check here only looked, it
+  never measured the actual geometry, and `.popout`'s own
+  `overflow: auto` was quietly clipping the Org / Company Code box's
+  own overflow at the pop-out's edge rather than showing it, in an
+  unscrolled screenshot. Touches `vf-ui`'s `app.css` alone; no
+  `viewer.js` change, no migration, no new string key — see decision
+  0461 for the full reasoning.
 
 ### `.readonly` is a `<div>`, and `box-sizing` never reached it (0462)
 - **Reported live, with two screenshots, once 0461 deployed**:
@@ -2739,7 +2739,9 @@ section for the full reasoning and tests.
   real, unmodified files: identical left and right edges, and
   `.popout.scrollWidth === .popout.clientWidth` — no overflow, the
   exact failure just reported.
-- **Built and committed, not yet confirmed deployed** — CSS only, one
+- **Confirmed pushed and deployed** — `origin/main` fetched directly
+  reads `1b64da3`, matching this session's own commit exactly, and the
+  operator confirmed with *"deployed and pushed."* CSS only, one
   property plus a doc comment; no migration, no new string key — see
   decision 0462 for the full reasoning and verification.
 
