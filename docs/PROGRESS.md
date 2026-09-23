@@ -2215,10 +2215,12 @@ section for the full reasoning and tests.
   only bear on what happens once a line can carry a budget holder from
   more than one cost-object dimension at once.
 - **Confirmed pushed** — `origin/main` fetched directly reads
-  `6e996c9`, matching this session's own commit exactly, and the
-  operator confirmed with *"deployed and pushed."* Nothing here was
-  ever deployable; read as confirming the docs landed on `main`, not
-  any running code going live.
+  `4083d21`, matching this session's own commit exactly, and the
+  operator confirmed with *"deployed and pushed,"* then, separately,
+  *"pushed"* again once this decision's own docs-only confirmation
+  commit landed too. Nothing here was ever deployable; read as
+  confirming the docs landed on `main`, not any running code going
+  live.
 
 ### Purchase orders and matching
 - Purchase order storage grounded in Peppol BIS Order Only 3.3, via UBL
@@ -3572,10 +3574,11 @@ fresh whole-suite pass, since only that one file changed.
 | Design Document 4 | Source and intake | Current |
 | `docs/design/extraction.md` | Extraction, with build record | Current |
 | `docs/design/operator-interface.md` | The screens, and what blocks them | Current |
-| `docs/design/mockups/` | Four screens as static HTML | Current |
+| `docs/design/mockups/` | Five screens as static HTML — four predating any build, plus one proposed addition to a live screen (decision 0450) | Current |
 | `docs/design/multi-authority-intake.md` | Non-EN-16931 authorities | Design only |
 | `docs/design/text-layer-extraction.md` | Reading a PDF's own text | Design only |
-| `docs/decisions/` | 446 decision records | Current |
+| `docs/design/cost-object-approval-hierarchy.md` | Cost-Object Approval Hierarchy investigation (decision 0450) | Design only |
+| `docs/decisions/` | 450 decision records | Current |
 | `docs/decisions/SUPERSEDED.md` | Which records supersede which | **Read first** |
 
 Document 4's markdown source is at `docs/documents/`, with
