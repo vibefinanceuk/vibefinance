@@ -943,6 +943,13 @@ function codingResultsController(resultsLabel, resultsList) {
   let generation = 0;
   return {
     next: () => ++generation,
+    // Reads the current token without minting a new one — decision
+    // 0460's own `onfocus` uses this to tell "nothing else has
+    // searched since I was asked to" from "somebody moved on while I
+    // was waiting," the one case the token guard below cannot catch by
+    // itself: a *new*, genuinely-latest request triggered late by a
+    // stale event, not a slow answer to an old one.
+    peek: () => generation,
     show(token, fieldLabel, children) {
       if (token !== generation) return;
       resultsLabel.textContent = `${t("viewer.coding.resultsfor")} ${fieldLabel}`;
@@ -976,12 +983,27 @@ function codingResultsController(resultsLabel, resultsList) {
  * pop-out's one shared area instead, labelled with `fieldLabel` so
  * it's unambiguous which field a click there will fill.
  *
- * **`preload`, decision 0459** — the operator's own ask, so the first
- * field (Cost Centre) shows something the instant the pop-out opens
- * rather than only once somebody has typed two characters. Runs the
- * exact same search a person would get from an empty box — the server
- * already treats a blank `search` as "no search clause," so this is
- * the list's own first page, not a second code path to keep in sync.
+ * **Every field shows its own first 25 the moment it gets focus, not
+ * only once somebody has typed — decision 0460.** The operator's own
+ * ask: *"automatically show the first 25 available rows, when a Line
+ * coding element has focus, limited by what is already typed into the
+ * box, but if nothing is typed simply show available fields."*
+ * `runSearch` is the one place that happens, called with whatever the
+ * box already holds (`input.value` — empty, or partially typed) both
+ * from `onfocus` and from `oninput`, so focusing and typing are the
+ * same code path rather than two that could drift apart. This also
+ * replaces decision 0459's own dedicated `preload` flag, which only
+ * ever covered Cost Centre on the pop-out's own initial open — that
+ * case still works exactly as before, since `openLineCodingPopout`'s
+ * own `.focus()` call on that field dispatches a real `focus` event,
+ * which this now already handles generally. **No minimum length any
+ * more** — a single typed character, or none, both now search
+ * (a blank query is exactly the list's own first page, the same
+ * request the server already serves for "no search clause").
+ * `onfocus` also waits for `resolveCurrent`'s own rename (below) to
+ * settle first, so a field opened already holding a value never has a
+ * fleeting moment where it searches on the raw id still sitting in the
+ * box rather than the name about to replace it there.
  *
  * **`scopeNote`, decision 0459** — read live at search time, the same
  * reason `filters()` itself is a closure rather than a value: a field
@@ -991,28 +1013,8 @@ function codingResultsController(resultsLabel, resultsList) {
  * narrowing at all that simply has no matching entries. Returns the
  * currently-active filter labels, or an empty array for none.
  */
-function searchableEntryPicker({ current, hint, fetchResults, resolveCurrent, onChoose, fieldLabel, results, preload = false, scopeNote = () => [] }) {
+function searchableEntryPicker({ current, hint, fetchResults, resolveCurrent, onChoose, fieldLabel, results, scopeNote = () => [] }) {
   const input = el("input", { type: "text", class: "searchbox", placeholder: hint, value: current ?? "" });
-  const clearButton = el("button", {
-    class: "rm",
-    text: "×",
-    title: t("viewer.coding.clear"),
-    onclick: () => {
-      input.value = "";
-      results.clear(results.next());
-      onChoose(null);
-    },
-  });
-
-  if (current && resolveCurrent) {
-    resolveCurrent()
-      .then((match) => {
-        if (match) input.value = match.name;
-      })
-      .catch(() => {
-        // The raw id stays in the box — shown, not silently dropped.
-      });
-  }
 
   const runSearch = async (q) => {
     const token = results.next();
@@ -1049,16 +1051,48 @@ function searchableEntryPicker({ current, hint, fetchResults, resolveCurrent, on
     }
   };
 
-  input.oninput = () => {
-    const q = input.value;
-    if (q.trim().length < 2) {
-      results.clear(results.next());
-      return;
-    }
-    runSearch(q);
-  };
+  const clearButton = el("button", {
+    class: "rm",
+    text: "×",
+    title: t("viewer.coding.clear"),
+    onclick: () => {
+      input.value = "";
+      onChoose(null);
+      // Empty now, so the same "nothing typed" rule applies as a fresh
+      // focus would — the field's own first page, not a blanked panel.
+      runSearch("");
+    },
+  });
 
-  if (preload) runSearch("");
+  // **Resolved before the box's own first focus-triggered search reads
+  // it — decision 0460.** Without this, Cost Centre's own auto-focus
+  // (decision 0459) can fire while this is still in flight, and
+  // `onfocus` below would search on the raw id sitting in the box
+  // rather than the name the person is about to see replace it — a
+  // narrower, coincidental result rather than the field's own genuine
+  // first page.
+  const currentResolved =
+    current && resolveCurrent
+      ? resolveCurrent()
+          .then((match) => {
+            if (match) input.value = match.name;
+          })
+          .catch(() => {
+            // The raw id stays in the box — shown, not silently dropped.
+          })
+      : Promise.resolve();
+
+  input.oninput = () => runSearch(input.value);
+  input.onfocus = async () => {
+    const seenGeneration = results.peek();
+    await currentResolved;
+    // Something else has already searched while this was waiting on
+    // `currentResolved` — the person moved on before it settled, so
+    // this focus event is stale and must not now issue the "newest"
+    // request and steal the results area back.
+    if (results.peek() !== seenGeneration) return;
+    runSearch(input.value);
+  };
 
   return el("div", { class: "codingsearch" }, [input, clearButton]);
 }
@@ -1114,7 +1148,13 @@ async function openLineCodingPopout(line) {
 
   const companyCodeRow = [
     el("label", { text: t("apsetup.codingtab.companycode") }),
-    el("div", { class: "readonly", text: stored.buyer?.entityName ?? "—" }),
+    // `codingcompanycode`, decision 0460 — matched in `app.css` to the
+    // same height and width as the four searchable fields beneath it,
+    // reported live as visibly inconsistent otherwise (a plain
+    // `.readonly` box is both shorter, decision 0402's own 32px vs. a
+    // real input's 38px, and full column width where the search boxes
+    // below are now only 2/3 of it).
+    el("div", { class: "readonly codingcompanycode", text: stored.buyer?.entityName ?? "—" }),
   ];
 
   // One shared results area for all four pickers — decision 0458. See
@@ -1174,9 +1214,6 @@ async function openLineCodingPopout(line) {
       fetchResults: (q) => fetchCodingEntries(spec.listType, q, filters()),
       fieldLabel,
       results,
-      // Cost Centre only — decision 0459: shows its own first page the
-      // instant the pop-out opens, rather than waiting on a keystroke.
-      preload: spec.field === "BT-133",
       // Read live, same reason `filters()` above is — which of this
       // field's own declared filters is actually set right now.
       scopeNote: () => spec.filterKeys.filter((key) => filters()[key]).map((key) => t(FILTER_FIELD_LABEL_KEYS[key] ?? key)),

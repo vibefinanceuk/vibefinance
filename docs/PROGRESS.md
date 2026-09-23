@@ -2643,6 +2643,33 @@ section for the full reasoning and tests.
   "Narrowed by:" note should now say directly, on the operator's own
   next look.
 
+### Every field's own first page on focus, narrower boxes (0460)
+- **The operator's own live follow-up**, once 0459 shipped: *"can we
+  automatically show the first 25 available rows, when a Line coding
+  element has focus, limited by what is already type into the box, but
+  if nothing is type simply show available fields... The width of the
+  box can also be reduced, probably to 2/3 of the visible width. Can
+  you update the Org / Company Code field so that it is the same
+  height and width as the fields beneath it."*
+- **Every field, not just Cost Centre** — `onfocus` now runs the same
+  search `oninput` does, so any of the four fields shows its own first
+  page (or whatever's already in the box, filtered) the instant it's
+  focused, generalizing decision 0459's own Cost Centre-only preload
+  rather than keeping it as a separate special case.
+- **No minimum length any more** — a single character, or none, both
+  search immediately; clearing a box now re-shows its own first page
+  instead of leaving the results panel blank.
+- **A reopened race, closed** — waiting for an already-keyed field's
+  own name lookup to resolve before searching on focus reopens the
+  exact kind of stale-answer race decision 0458 closed once; fixed
+  with one more read (`peek()`) on the same results controller.
+- **Narrower, and matched** — search boxes now 2/3 of their own column
+  width; the read-only Org / Company Code box matched to the same
+  height and width via a new `codingcompanycode` class.
+- **Built and committed, not yet confirmed deployed** — touches
+  `vf-ui` only; no migration, no new string key — see decision 0460
+  for the full reasoning and verification.
+
 ### Purchase orders and matching
 - Purchase order storage grounded in Peppol BIS Order Only 3.3, via UBL
   XML ingestion (0081) and CSV load (0370) — the same tables, the same
@@ -3909,7 +3936,7 @@ elsewhere.
 |---|---|
 | `vf-app` | **2733/2733**, confirmed by one unfiltered whole-repo run (114 files) — decision 0457's own new `coding-suggestions.test.ts` (9) plus 3 new in `index.test.ts`, on top of the 2618 baseline + 6 (0451) + 11 (0452) + 23 (0453) + 5 (0454) + 3 (0455) + 9 (0456). First full-suite-confirmed count since decision 0447 — every count from 0448 through 0456 was arithmetic or a targeted-file run only, since this session's own tool timeout previously could not complete a full run; this run finally did (≈857s). |
 | `vf-licence` | **320/320**, confirmed by one unfiltered whole-repo run (21 files) — decisions 0457's, 0458's, and 0459's own migrations `0155`/`0156`/`0157` each add rows to the existing `ui_strings` table, none a new test file. |
-| `vf-ui` | 74 Worker (unchanged) · **1061/1061 browser**, confirmed by one unfiltered whole-repo run (48 files) — 1048 (decision 0453's own baseline) + 4 (decision 0457, the coding-suggestions pre-fill/note behaviour) + 4 (decision 0458, the fixed-size pop-out and shared results area) + 5 (decision 0459, auto-focus/pre-load/scoped-empty-result coverage); the pre-existing `document-window.test.ts` unhandled-rejection flake is unchanged at 160 non-fatal errors, none a failing assertion. *(Decision 0457's own contribution was originally recorded as 12 new against a miscounted 1060/1060 total — corrected here; see decision 0457's own doc for the correction.)* |
+| `vf-ui` | 74 Worker (unchanged) · **1066/1066 browser**, confirmed by one unfiltered whole-repo run (48 files) — 1048 (decision 0453's own baseline) + 4 (decision 0457, the coding-suggestions pre-fill/note behaviour) + 4 (decision 0458, the fixed-size pop-out and shared results area) + 5 (decision 0459, auto-focus/pre-load/scoped-empty-result coverage) + 5 (decision 0460, focus-on-any-field/no-minimum-length coverage); the pre-existing `document-window.test.ts` unhandled-rejection flake is unchanged at 160 non-fatal errors, none a failing assertion. *(Decision 0457's own contribution was originally recorded as 12 new against a miscounted 1060/1060 total — corrected here; see decision 0457's own doc for the correction.)* |
 | `shared` | 295 passing, 3 known pre-existing failures |
 
 Both migration chains replay clean with every standing invariant
@@ -4070,7 +4097,7 @@ fresh whole-suite pass, since only that one file changed.
 | `docs/design/multi-authority-intake.md` | Non-EN-16931 authorities | Design only |
 | `docs/design/text-layer-extraction.md` | Reading a PDF's own text | Design only |
 | `docs/design/cost-object-approval-hierarchy.md` | Cost-Object Approval Hierarchy investigation (decision 0450) — its proposed shape and three open questions are now built and answered by decision 0452 | Design only |
-| `docs/decisions/` | 459 decision records | Current |
+| `docs/decisions/` | 460 decision records | Current |
 | `docs/decisions/SUPERSEDED.md` | Which records supersede which | **Read first** |
 
 Document 4's markdown source is at `docs/documents/`, with

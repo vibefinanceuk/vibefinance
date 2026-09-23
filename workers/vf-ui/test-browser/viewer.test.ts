@@ -4489,4 +4489,144 @@ describe("the invoice-line Coding pop-out (decision 0453)", () => {
       expect(listText).toContain("Narrowed by: Org / Company Code");
     });
   });
+
+  /**
+   * **Every field's own first page on focus, no minimum before typing
+   * counts, and the Org / Company Code box matched to the fields below
+   * it — decision 0460.** The operator's own live follow-up: *"can we
+   * automatically show the first 25 available rows, when a Line coding
+   * element has focus, limited by what is already type into the box,
+   * but if nothing is type simply show available fields. Automatically
+   * update the list as typing occurs. The width of the box can also be
+   * reduced, probably to 2/3 of the visible width. Can you update the
+   * Org / Company Code field so that it is the same height and width
+   * as the fields beneath it."*
+   */
+  describe("every field's own first page on focus, and no minimum before typing counts (decision 0460)", () => {
+    it("shows any field's own first page the moment it is focused, not only the one auto-focused on open", async () => {
+      stub({
+        "/api/org/cost-centres": { costCentres: [{ id: "cc1", name: "Marketing", filters: [] }], total: 1, page: 1, pageSize: 50 },
+        "/api/coding-lists/project": { entries: [{ id: "proj-1", name: "Mjolner", filters: [] }], declaredFilters: [], total: 1, page: 1, pageSize: 50 },
+      });
+      await openAndClickCoding();
+      await new Promise((r) => setTimeout(r, 0));
+
+      const searchBoxes = [...document.querySelectorAll(".popout .searchbox")] as HTMLInputElement[];
+      const projectBox = searchBoxes[1];
+      projectBox.focus();
+      await new Promise((r) => setTimeout(r, 0));
+
+      expect(document.querySelector(".codingresultslabel")?.textContent).toBe("Results for Project");
+      expect(document.querySelector(".codingresultslist")?.textContent).toContain("Mjolner");
+    });
+
+    it("a single typed character already updates the shared results — no two-character minimum any more", async () => {
+      const calls: string[] = [];
+      stub(
+        { "/api/org/cost-centres": { costCentres: [{ id: "cc1", name: "Marketing", filters: [] }], total: 1, page: 1, pageSize: 50 } },
+        calls
+      );
+      await openAndClickCoding();
+      await new Promise((r) => setTimeout(r, 0));
+      calls.length = 0;
+
+      const costCentreBox = document.querySelectorAll(".popout .searchbox")[0] as HTMLInputElement;
+      costCentreBox.value = "m";
+      costCentreBox.oninput?.(new Event("input"));
+      await new Promise((r) => setTimeout(r, 0));
+
+      expect(calls.some((c) => c.startsWith("/api/org/cost-centres") && c.includes("search=m"))).toBe(true);
+      expect(document.querySelector(".codingresultslist")?.textContent).toContain("Marketing");
+    });
+
+    it("clearing a field's own box shows its first page again, rather than leaving the results panel blank", async () => {
+      stub({
+        "/api/org/cost-centres": { costCentres: [{ id: "cc1", name: "Marketing", filters: [] }], total: 1, page: 1, pageSize: 50 },
+      });
+      await openAndClickCoding();
+      await new Promise((r) => setTimeout(r, 0));
+
+      const clearButtons = document.querySelectorAll(".popout .codingsearch button.rm");
+      (clearButtons[0] as HTMLButtonElement).click(); // Cost Centre's own clear button
+      await new Promise((r) => setTimeout(r, 0));
+
+      expect(document.querySelector(".codingresultslabel")?.textContent).toBe("Results for Cost centre");
+      expect(document.querySelector(".codingresultslist")?.textContent).toContain("Marketing");
+    });
+
+    it("the Org / Company Code field carries the class matched to the fields beneath it", async () => {
+      stub({});
+      await openAndClickCoding();
+
+      expect(document.querySelector(".popout .codingcompanycode")).not.toBeNull();
+    });
+
+    it("a late-resolving already-keyed field does not steal the results area back from wherever the person has since moved on", async () => {
+      // The exact same shape as decision 0458's own race test, but
+      // exercising the *other* source of a stale, late request this
+      // decision introduces: `resolveCurrent`'s own rename lookup,
+      // gated open here, still in flight when the person has already
+      // moved on to Project by the time it finally settles.
+      let resolveCostCentres: (() => void) | undefined;
+      const costCentresGate = new Promise<void>((resolve) => {
+        resolveCostCentres = resolve;
+      });
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (url: string) => {
+          const path = String(url).split("?")[0];
+          const base: Record<string, unknown> = {
+            "/api/ui-strings": { locale: "en", strings: CODING_STRINGS },
+            "/api/code-lists": { fields: {} },
+            "/api/field-visibility": CODING_FIELDS,
+            "/api/invoices/inv-1": {
+              facts: {},
+              lines: [{ lineNumber: 1, facts: { "BT-131": 100, "BT-133": "cc1" } }],
+              validation: { passed: true, checked: [], failures: [] },
+              supplier: null,
+              buyer: { unitId: "UK01", unitName: "Acme UK", entityName: "Acme UK", vatId: "GB1" },
+              orgUnitId: "UK01",
+            },
+            "/api/invoices/inv-1/document-url": { url: null },
+            "/api/invoices/inv-1/progress": { inProcess: false, stages: [] },
+            "/api/invoices/inv-1/pages": { pages: [] },
+            "/api/documents/inv-1/activity": { items: [] },
+            "/api/invoices/inv-1/key": { ok: true },
+            "/api/invoices/inv-1/coding-suggestions": { suggestions: {} },
+            "/api/coding-lists/project": { entries: [{ id: "proj-1", name: "Mjolner", filters: [] }], declaredFilters: [], total: 1, page: 1, pageSize: 50 },
+          };
+          if (path === "/api/org/cost-centres") {
+            // Cost Centre already has "cc1" keyed on the stubbed line,
+            // so `resolveCurrent`'s own lookup fires immediately on
+            // open — gated here, so it is still unresolved by the time
+            // the person has moved on to Project.
+            await costCentresGate;
+            return { ok: true, json: async () => ({ costCentres: [{ id: "cc9", name: "Engineering West", filters: [] }], total: 1, page: 1, pageSize: 50 }) } as Response;
+          }
+          if (path in base) return { ok: true, json: async () => base[path] } as Response;
+          throw new Error(`no stub for ${path}`);
+        })
+      );
+
+      await openAndClickCoding();
+      await new Promise((r) => setTimeout(r, 0));
+
+      const searchBoxes = [...document.querySelectorAll(".popout .searchbox")] as HTMLInputElement[];
+      const projectBox = searchBoxes[1];
+      projectBox.value = "mjol";
+      projectBox.oninput?.(new Event("input"));
+      await new Promise((r) => setTimeout(r, 0));
+      expect(document.querySelector(".codingresultslabel")?.textContent).toBe("Results for Project");
+
+      // Only now does Cost Centre's own gated `resolveCurrent` lookup
+      // settle — its own deferred, once-focused search must not fire
+      // and clobber what Project already put there.
+      resolveCostCentres?.();
+      await new Promise((r) => setTimeout(r, 0));
+      expect(document.querySelector(".codingresultslabel")?.textContent).toBe("Results for Project");
+      const listText = document.querySelector(".codingresultslist")?.textContent ?? "";
+      expect(listText).toContain("Mjolner");
+      expect(listText).not.toContain("Engineering West");
+    });
+  });
 });
