@@ -66,6 +66,7 @@ import {
   handleListUnits,
   handleGetOrgOverview,
   handlePlaceInvoice,
+  handleSearchUsers,
 } from "./org-route.js";
 import { handleCreateCostCentre } from "./cost-centre-route.js";
 import {
@@ -153,6 +154,7 @@ import {
 } from "./load-suppliers.js";
 import { handleListDocuments } from "./documents-route.js";
 import { handleGetActivity, handlePostComment } from "./activity-route.js";
+import { handleAddCollaborator, handleListCollaborators, isInvoiceCollaborator } from "./invoice-collaborators-route.js";
 import {
   handleListLedgers,
   handleCreateLedger,
@@ -494,6 +496,23 @@ function sessionContext(env: Env): SessionContext {
 function authenticatePerson(db: D1Database, request: Request, env: Env) {
   const { publicKeyJwk, environmentId } = sessionContext(env);
   return authenticateUserOrSession(db, request, publicKeyJwk, environmentId);
+}
+
+/**
+ * **The per-record half of "Add person to conversation" — decision
+ * 0470.** `Procurement.Collaborate` alone is not enough (it says
+ * nothing about which invoice), and being listed in
+ * `invoice_collaborators` alone is not enough either (that table has
+ * no bearing on somebody who never held the permission an admin would
+ * have had to grant deliberately) — both together are what decision
+ * 0468 itself specified: "view an invoice you've been added to."
+ * Every route below that accepts a Business User widens its existing
+ * AP-staff check with this, the same "OR" shape decision 0456 already
+ * used to add `AP.Code` alongside `AP.Validate`.
+ */
+async function canViewInvoiceAsCollaborator(db: D1Database, userId: string, invoiceId: string): Promise<boolean> {
+  if (!(await hasPermission(db, userId, "Procurement.Collaborate"))) return false;
+  return isInvoiceCollaborator(db, invoiceId, userId);
 }
 
 async function handleEvaluate(request: Request, env: Env): Promise<Response> {
@@ -2446,6 +2465,27 @@ export default {
       return json(result.body, result.status);
     }
 
+    /**
+     * A small name/email search over every active user — decision
+     * 0470, built for "Add person to conversation"'s own picker
+     * (`invoice-collaborators-route.ts`). `AP.Review`, the same
+     * permission `/documents/:id/activity` itself requires: whoever
+     * can already see a document is who may search for someone to
+     * invite into its conversation — deliberately not
+     * `Admin.UserManagement`/`Admin.Configure`, which is
+     * `handleGetOrgOverview`'s own, much wider-gated, much
+     * richer-fielded screen just above.
+     */
+    if (pathname === "/org/users/search" && request.method === "GET") {
+      const { db } = resolveTenant(request, env);
+      const auth = await requirePermission(db, request, "AP.Review", sessionContext(env));
+      if (!auth.authorized) {
+        return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
+      }
+      const result = await handleSearchUsers(db, url.searchParams.get("q"));
+      return json(result.body, result.status);
+    }
+
     if (pathname === "/org/users" && request.method === "POST") {
       const { db } = resolveTenant(request, env);
 
@@ -2951,10 +2991,13 @@ export default {
       // the viewer opens an invoice with; an `AP.Code`-only person
       // (the Coding stage's own required permission) could claim a
       // Coding task and then not be able to open the invoice it was
-      // raised against at all.
+      // raised against at all. Widened again by decision 0470: a
+      // Business User added to this invoice's conversation needs to
+      // open it too, the same route the viewer always has.
       if (
         !(await hasPermission(db, auth.user.id, "AP.Validate")) &&
-        !(await hasPermission(db, auth.user.id, "AP.Code"))
+        !(await hasPermission(db, auth.user.id, "AP.Code")) &&
+        !(await canViewInvoiceAsCollaborator(db, auth.user.id, getInvoiceMatch[1]))
       ) {
         return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
       }
@@ -2976,10 +3019,12 @@ export default {
       }
       // `AP.Validate` OR `AP.Code` — decision 0456, same reasoning as
       // `GET /invoices/:id` above: coding a line means being able to
-      // see the document it came from.
+      // see the document it came from. Widened by decision 0470, same
+      // reasoning as `GET /invoices/:id` above.
       if (
         !(await hasPermission(db, auth.user.id, "AP.Validate")) &&
-        !(await hasPermission(db, auth.user.id, "AP.Code"))
+        !(await hasPermission(db, auth.user.id, "AP.Code")) &&
+        !(await canViewInvoiceAsCollaborator(db, auth.user.id, docUrlMatch[1]))
       ) {
         return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
       }
@@ -3084,10 +3129,12 @@ export default {
         return json({ error: auth.reason }, 401);
       }
       // `AP.Validate` OR `AP.Code` — decision 0456, same reasoning as
-      // `GET /invoices/:id` above.
+      // `GET /invoices/:id` above. Widened by decision 0470, same
+      // reasoning as `GET /invoices/:id` above.
       if (
         !(await hasPermission(db, auth.user.id, "AP.Validate")) &&
-        !(await hasPermission(db, auth.user.id, "AP.Code"))
+        !(await hasPermission(db, auth.user.id, "AP.Code")) &&
+        !(await canViewInvoiceAsCollaborator(db, auth.user.id, listPagesMatch[1]))
       ) {
         return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
       }
@@ -3110,10 +3157,12 @@ export default {
         return json({ error: auth.reason }, 401);
       }
       // `AP.Validate` OR `AP.Code` — decision 0456, same reasoning as
-      // `GET /invoices/:id` above.
+      // `GET /invoices/:id` above. Widened by decision 0470, same
+      // reasoning as `GET /invoices/:id` above.
       if (
         !(await hasPermission(db, auth.user.id, "AP.Validate")) &&
-        !(await hasPermission(db, auth.user.id, "AP.Code"))
+        !(await hasPermission(db, auth.user.id, "AP.Code")) &&
+        !(await canViewInvoiceAsCollaborator(db, auth.user.id, pageUrlMatch[1]))
       ) {
         return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
       }
@@ -3372,10 +3421,12 @@ export default {
       // Anybody who may look at an invoice may see where it has been.
       // `AP.Code` added — decision 0456: the Coding stage's own
       // required permission was missing from this "anybody" the same
-      // way it was missing from `GET /invoices/:id` itself.
+      // way it was missing from `GET /invoices/:id` itself. Widened by
+      // decision 0470, same reasoning as `GET /invoices/:id` above.
       if (
         !(await hasPermission(db, auth.user.id, "AP.Review")) &&
-        !(await hasPermission(db, auth.user.id, "AP.Code"))
+        !(await hasPermission(db, auth.user.id, "AP.Code")) &&
+        !(await canViewInvoiceAsCollaborator(db, auth.user.id, progressMatch[1]))
       ) {
         return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
       }
@@ -3422,13 +3473,21 @@ export default {
      * visibility.** "Internal only for honest dialogue between
      * colleagues" was the operator's own scope; nobody who cannot see
      * a document has a reason to see or comment on its history.
+     * **Widened by decision 0470**: a Business User added to this
+     * invoice's own conversation is exactly the "honest dialogue
+     * between colleagues" this was always scoped to — `Procurement.*`
+     * is a colleague's own permission namespace (decision 0468),
+     * not an external one.
      */
     const activityMatch = pathname.match(/^\/documents\/([^/]+)\/activity$/);
     if (activityMatch && request.method === "GET") {
       const { db } = resolveTenant(request, env);
       const auth = await authenticatePerson(db, request, env);
       if (!auth.user) return json({ error: auth.reason }, 401);
-      if (!(await hasPermission(db, auth.user.id, "AP.Review"))) {
+      if (
+        !(await hasPermission(db, auth.user.id, "AP.Review")) &&
+        !(await canViewInvoiceAsCollaborator(db, auth.user.id, activityMatch[1]))
+      ) {
         return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
       }
 
@@ -3442,7 +3501,13 @@ export default {
       const locale = resolveLocale(env.LOCALE);
       const auth = await authenticatePerson(db, request, env);
       if (!auth.user) return json({ error: auth.reason }, 401);
-      if (!(await hasPermission(db, auth.user.id, "AP.Review"))) {
+      // `AP.Review`, widened by decision 0470 — same reasoning as
+      // `GET /documents/:id/activity` just above: posting to the
+      // conversation is exactly what `Procurement.Collaborate` names.
+      if (
+        !(await hasPermission(db, auth.user.id, "AP.Review")) &&
+        !(await canViewInvoiceAsCollaborator(db, auth.user.id, commentsMatch[1]))
+      ) {
         return json({ error: t("forbidden", locale) }, 403);
       }
       let commentBody: unknown;
@@ -3453,6 +3518,53 @@ export default {
       }
 
       const result = await handlePostComment(db, commentsMatch[1], auth.user.id, commentBody, locale);
+      return json(result.body, result.status);
+    }
+
+    /**
+     * "Add person to conversation" itself — decision 0470.
+     * `AP.Review`, matching this pair's own sibling routes just above:
+     * inviting someone into a document's conversation is the same
+     * kind of action as reading or posting to it, gated the same way.
+     * Deliberately not widened to a collaborator themselves — nothing
+     * in decision 0468's own scope has a Business User inviting
+     * anyone else in; that stays AP staff's own action for now.
+     */
+    const collaboratorsMatch = pathname.match(/^\/documents\/([^/]+)\/collaborators$/);
+    if (collaboratorsMatch && request.method === "GET") {
+      const { db } = resolveTenant(request, env);
+      const auth = await authenticatePerson(db, request, env);
+      if (!auth.user) return json({ error: auth.reason }, 401);
+      if (
+        !(await hasPermission(db, auth.user.id, "AP.Review")) &&
+        !(await canViewInvoiceAsCollaborator(db, auth.user.id, collaboratorsMatch[1]))
+      ) {
+        return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
+      }
+
+      const result = await handleListCollaborators(db, collaboratorsMatch[1]);
+      return json(result.body, result.status);
+    }
+    if (collaboratorsMatch && request.method === "POST") {
+      const { db } = resolveTenant(request, env);
+      const locale = resolveLocale(env.LOCALE);
+      const auth = await authenticatePerson(db, request, env);
+      if (!auth.user) return json({ error: auth.reason }, 401);
+      if (!(await hasPermission(db, auth.user.id, "AP.Review"))) {
+        return json({ error: t("forbidden", locale) }, 403);
+      }
+      let body: unknown;
+      try {
+        body = await request.json();
+      } catch {
+        return json({ error: t("invalidJsonBody", locale) }, 400);
+      }
+      const result = await handleAddCollaborator(
+        db,
+        collaboratorsMatch[1],
+        (body as Record<string, unknown> | null)?.userId,
+        auth.user.id
+      );
       return json(result.body, result.status);
     }
 

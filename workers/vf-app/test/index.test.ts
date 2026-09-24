@@ -76,6 +76,27 @@ function authHeaders(): Record<string, string> {
   return { Authorization: `Bearer ${authorizedApiKey}` };
 }
 
+/**
+ * **The same shape as `seedUserWithPermissions` above, plus the id** —
+ * decision 0470's own "Add person to conversation" tests need to add
+ * this exact person as a collaborator on a specific invoice, which
+ * takes a real `userId`, not only a bearer key.
+ */
+async function seedUserWithPermissionsAndId(permissions: string[]): Promise<{ id: string; apiKey: string }> {
+  const id = crypto.randomUUID();
+  const apiKey = generateApiKey();
+  const hash = await hashApiKey(apiKey);
+  await env.DB.prepare("INSERT INTO org_users (id, email, name, api_key_hash) VALUES (?, ?, ?, ?)")
+    .bind(id, `${id}@example.com`, "Limited User", hash)
+    .run();
+  const roleId = crypto.randomUUID();
+  await env.DB.prepare("INSERT INTO org_roles (id, name, permissions_json) VALUES (?, ?, ?)")
+    .bind(roleId, "Limited Role", JSON.stringify(permissions))
+    .run();
+  await env.DB.prepare("INSERT INTO org_user_roles (user_id, role_id) VALUES (?, ?)").bind(id, roleId).run();
+  return { id, apiKey };
+}
+
 beforeEach(async () => {
   await applyTestSchema();
   await seedActiveLicence();
@@ -2513,6 +2534,191 @@ describe("Viewing and working an invoice while holding only AP.Code — decision
       method: "POST",
       headers: { Authorization: `Bearer ${key}`, "content-type": "application/json" },
       body: JSON.stringify({ fields: { "BT-133": "cc-live-1" } }),
+    });
+    expect(res.status).toBe(403);
+  });
+});
+
+/**
+ * **"Add person to conversation" — decision 0468's own picture, built
+ * in decision 0470.** A `Procurement.Collaborate` holder listed in
+ * `invoice_collaborators` for one specific invoice can now reach the
+ * same routes `AP.Validate`/`AP.Code` already open — `GET
+ * /invoices/:id` and its document/pages/progress siblings, plus
+ * `/documents/:id/activity` and `/documents/:id/comments` — for that
+ * invoice alone, never any other. `POST /documents/:id/collaborators`
+ * itself stays `AP.Review`-only throughout.
+ */
+describe("'Add person to conversation' — Procurement.Collaborate, per-invoice (decision 0470)", () => {
+  it("POST /documents/:id/collaborators adds a real collaborator, gated on AP.Review", async () => {
+    await SELF.fetch("https://example.com/invoices", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ id: "inv-0470-1", facts: {} }),
+    });
+    const biz = await seedUserWithPermissionsAndId(["Procurement.Collaborate"]);
+
+    const res = await SELF.fetch("https://example.com/documents/inv-0470-1/collaborators", {
+      method: "POST",
+      headers: { ...authHeaders(), "content-type": "application/json" },
+      body: JSON.stringify({ userId: biz.id }),
+    });
+    expect(res.status).toBe(200);
+
+    const row = await env.DB.prepare(
+      "SELECT 1 FROM invoice_collaborators WHERE invoice_id = ? AND user_id = ?"
+    )
+      .bind("inv-0470-1", biz.id)
+      .first();
+    expect(row).toBeTruthy();
+  });
+
+  it("POST /documents/:id/collaborators refuses a Procurement.Collaborate-only caller — inviting stays AP.Review's own action", async () => {
+    await SELF.fetch("https://example.com/invoices", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ id: "inv-0470-2", facts: {} }),
+    });
+    const biz = await seedUserWithPermissionsAndId(["Procurement.Collaborate"]);
+    const other = await seedUserWithPermissionsAndId(["Procurement.Collaborate"]);
+
+    const res = await SELF.fetch("https://example.com/documents/inv-0470-2/collaborators", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${biz.apiKey}`, "content-type": "application/json" },
+      body: JSON.stringify({ userId: other.id }),
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("a Procurement.Collaborate holder who was added can now open the invoice, its document, its pages, and its progress", async () => {
+    await SELF.fetch("https://example.com/invoices", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ id: "inv-0470-3", facts: {} }),
+    });
+    const biz = await seedUserWithPermissionsAndId(["Procurement.Collaborate"]);
+    await SELF.fetch("https://example.com/documents/inv-0470-3/collaborators", {
+      method: "POST",
+      headers: { ...authHeaders(), "content-type": "application/json" },
+      body: JSON.stringify({ userId: biz.id }),
+    });
+    const headers = { Authorization: `Bearer ${biz.apiKey}` };
+
+    const invoice = await SELF.fetch("https://example.com/invoices/inv-0470-3", { headers });
+    expect(invoice.status).toBe(200);
+
+    const docUrl = await SELF.fetch("https://example.com/invoices/inv-0470-3/document-url", {
+      method: "POST",
+      headers,
+    });
+    expect(docUrl.status).not.toBe(403);
+
+    const pages = await SELF.fetch("https://example.com/invoices/inv-0470-3/pages", { headers });
+    expect(pages.status).toBe(200);
+
+    const progress = await SELF.fetch("https://example.com/invoices/inv-0470-3/progress", { headers });
+    expect(progress.status).toBe(200);
+  });
+
+  it("a Procurement.Collaborate holder who was added can read the activity feed and post a comment", async () => {
+    await SELF.fetch("https://example.com/invoices", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ id: "inv-0470-4", facts: {} }),
+    });
+    const biz = await seedUserWithPermissionsAndId(["Procurement.Collaborate"]);
+    await SELF.fetch("https://example.com/documents/inv-0470-4/collaborators", {
+      method: "POST",
+      headers: { ...authHeaders(), "content-type": "application/json" },
+      body: JSON.stringify({ userId: biz.id }),
+    });
+    const headers = { Authorization: `Bearer ${biz.apiKey}` };
+
+    const activity = await SELF.fetch("https://example.com/documents/inv-0470-4/activity", { headers });
+    expect(activity.status).toBe(200);
+
+    const comment = await SELF.fetch("https://example.com/documents/inv-0470-4/comments", {
+      method: "POST",
+      headers: { ...headers, "content-type": "application/json" },
+      body: JSON.stringify({ body: "Looks right to me." }),
+    });
+    expect(comment.status).toBe(201);
+  });
+
+  it("still 403s a Procurement.Collaborate holder who was never added to this invoice", async () => {
+    await SELF.fetch("https://example.com/invoices", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ id: "inv-0470-5", facts: {} }),
+    });
+    const biz = await seedUserWithPermissionsAndId(["Procurement.Collaborate"]);
+    const headers = { Authorization: `Bearer ${biz.apiKey}` };
+
+    const res = await SELF.fetch("https://example.com/invoices/inv-0470-5", { headers });
+    expect(res.status).toBe(403);
+  });
+
+  it("still 403s a real collaborator who was never granted Procurement.Collaborate — the permission and the invitation are both required", async () => {
+    await SELF.fetch("https://example.com/invoices", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ id: "inv-0470-6", facts: {} }),
+    });
+    // AP.Supplier: a real, granted permission that is simply not this one.
+    const biz = await seedUserWithPermissionsAndId(["AP.Supplier"]);
+    await SELF.fetch("https://example.com/documents/inv-0470-6/collaborators", {
+      method: "POST",
+      headers: { ...authHeaders(), "content-type": "application/json" },
+      body: JSON.stringify({ userId: biz.id }),
+    });
+    const headers = { Authorization: `Bearer ${biz.apiKey}` };
+
+    const res = await SELF.fetch("https://example.com/invoices/inv-0470-6", { headers });
+    expect(res.status).toBe(403);
+  });
+
+  it("does not leak access to a second invoice the same collaborator was never added to", async () => {
+    await SELF.fetch("https://example.com/invoices", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ id: "inv-0470-7a", facts: {} }),
+    });
+    await SELF.fetch("https://example.com/invoices", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ id: "inv-0470-7b", facts: {} }),
+    });
+    const biz = await seedUserWithPermissionsAndId(["Procurement.Collaborate"]);
+    await SELF.fetch("https://example.com/documents/inv-0470-7a/collaborators", {
+      method: "POST",
+      headers: { ...authHeaders(), "content-type": "application/json" },
+      body: JSON.stringify({ userId: biz.id }),
+    });
+    const headers = { Authorization: `Bearer ${biz.apiKey}` };
+
+    const allowed = await SELF.fetch("https://example.com/invoices/inv-0470-7a", { headers });
+    expect(allowed.status).toBe(200);
+    const refused = await SELF.fetch("https://example.com/invoices/inv-0470-7b", { headers });
+    expect(refused.status).toBe(403);
+  });
+
+  it("GET /org/users/search finds an active user by name, gated on AP.Review", async () => {
+    await SELF.fetch("https://example.com/org/users", {
+      method: "POST",
+      headers: { ...authHeaders(), "content-type": "application/json" },
+      body: JSON.stringify({ id: "usr-0470-search", email: "priya.search@example.com", name: "Priya Search" }),
+    });
+
+    const res = await SELF.fetch("https://example.com/org/users/search?q=Priya", { headers: authHeaders() });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { users: { id: string; name: string }[] };
+    expect(body.users.map((u) => u.id)).toContain("usr-0470-search");
+  });
+
+  it("GET /org/users/search 403s a caller without AP.Review", async () => {
+    const key = await seedUserWithPermissions(["AP.Supplier"]);
+    const res = await SELF.fetch("https://example.com/org/users/search?q=a", {
+      headers: { Authorization: `Bearer ${key}` },
     });
     expect(res.status).toBe(403);
   });

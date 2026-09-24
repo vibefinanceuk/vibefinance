@@ -2987,6 +2987,41 @@ section for the full reasoning and tests.
   untouched here.
 - Full reasoning and verification counts in decision 0469.
 
+### "Add person to conversation" — Phase 2 built (0470)
+- **`invoice_collaborators`/`Procurement.Collaborate`, real now** —
+  both existed since decision 0469, reserved; this phase is what
+  enforces them. `invoice-collaborators-route.ts` (new):
+  `handleAddCollaborator` (silent no-op on a duplicate add, not a 409
+  — migration 0078's own design comment, resolved against
+  `handleSetSupervisorOverride`'s own identical-shape precedent, not
+  `handleAddTeamMember`'s), `handleListCollaborators`, and
+  `isInvoiceCollaborator`, the per-record check five widened routes
+  now share via one new `canViewInvoiceAsCollaborator` helper —
+  **the first per-record access check this codebase has ever needed.**
+- **Five existing routes widened**, additive only: `GET /invoices/:id`
+  and its `document-url`/`pages`/`pages/:n/document-url`/`progress`
+  siblings, plus `/documents/:id/activity` and
+  `/documents/:id/comments`. Decision 0468's own "view an invoice
+  you've been added to" named more than the chat alone — a Business
+  User needs to open the invoice itself first.
+- **Two new routes**: `POST`/`GET /documents/:id/collaborators` (the
+  invite and its roster, `AP.Review`-gated to add, widened to view);
+  `GET /org/users/search` (`org-route.ts`'s new `handleSearchUsers`,
+  `AP.Review`-gated, active users only) — a small, purpose-built
+  picker, deliberately not `handleGetOrgOverview`'s own much wider
+  admin-only screen.
+- **`collaborators.js`** (new, `vf-ui`): the Timeline / Chat tab's own
+  roster bar above `activity.js`'s feed. Its search box is a stable
+  DOM node, reused while the panel stays open rather than rebuilt per
+  keystroke the way this codebase's usual "rebuild the whole content
+  node" convention would — confirmed that convention would otherwise
+  drop focus mid-word. Five new `ui_strings` keys (migration 0158,
+  `vf-licence`).
+- **Not built**: removing a collaborator (no route asked for this
+  yet); `Procurement.Approve` (a Business User completing their own
+  approval task) — still reserved, genuinely separate scope.
+- Full reasoning and verification counts in decision 0470.
+
 ### Purchase orders and matching
 - Purchase order storage grounded in Peppol BIS Order Only 3.3, via UBL
   XML ingestion (0081) and CSV load (0370) — the same tables, the same

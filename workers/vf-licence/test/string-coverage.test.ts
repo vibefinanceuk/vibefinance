@@ -660,6 +660,13 @@ const KEYS_THE_INTERFACE_USES = [
   // A filtered field's own empty result names what narrowed it —
   // decision 0459.
   "viewer.coding.nomatchesscoped",
+  // "Add person to conversation" — decision 0470's own
+  // `collaborators.js`.
+  "activity.addperson",
+  "activity.addpersonsearch",
+  "activity.addpersonnomatches",
+  "activity.addpersonfailed",
+  "activity.collaborators",
 
   /**
    * **CSV Template and Load — decision 0445.** `coding-lists.js`'s own

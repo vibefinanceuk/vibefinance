@@ -156,19 +156,24 @@ const AR_PERMISSIONS = ["AR.Validate", "AR.Approve", "AR.Issue", "AR.Remind", "A
 const SUPPLIER_MAINTENANCE_PERMISSIONS = ["Supplier.Maintain"] as const;
 
 /**
- * **Business User — decision 0468, reserved, no route enforces either
- * yet.** A Business User is not AP staff: someone who requested goods
- * or services (on a PO or off it) and needs a narrow way in, not the
- * run of AP.* permissions. Split into two, the same way this codebase
- * already splits `AP.Validate` from `AP.Approve` rather than one blob:
+ * **Business User — decision 0468, `Procurement.Approve` still
+ * reserved.** A Business User is not AP staff: someone who requested
+ * goods or services (on a PO or off it) and needs a narrow way in, not
+ * the run of AP.* permissions. Split into two, the same way this
+ * codebase already splits `AP.Validate` from `AP.Approve` rather than
+ * one blob:
  *
  * - `Procurement.Collaborate` — view an invoice you were explicitly
  *   added to (via "Add person to conversation") and post to its chat.
  *   Deliberately not derived from PO ownership; `invoice_collaborators`
- *   is what this checks once a route exists.
+ *   (decision 0470's own `invoice-collaborators-route.ts`) is what
+ *   this checks, real and enforced on five routes now — `GET
+ *   /invoices/:id` and its document/pages/progress siblings, plus
+ *   `/documents/:id/activity` and `/documents/:id/comments`.
  * - `Procurement.Approve` — hold and complete an approval task, the
  *   operator's own example being a Non-PO invoice routed to its
- *   requester.
+ *   requester. Still reserved — genuinely separate, later-phase scope,
+ *   named as such in decision 0468 itself.
  *
  * Grantable independently or together, like any other role. A separate
  * namespace from `AP.*`, the same "namespaced by business role, not by
@@ -316,7 +321,7 @@ export const PERMISSION_DESCRIPTIONS: Record<Permission, string> = {
 
   "Supplier.Maintain": "Validate a new or changed supplier record",
 
-  "Procurement.Collaborate": "View an invoice you've been added to, and post to its chat — reserved, no route yet",
+  "Procurement.Collaborate": "View an invoice you've been added to, and post to its chat — decision 0470",
   "Procurement.Approve": "Hold and complete an approval task, e.g. a Non-PO invoice routed to its requester — reserved, no route yet",
 
   "Admin.Configure": "Configure sources, ledgers, cost centres, and other setup screens",

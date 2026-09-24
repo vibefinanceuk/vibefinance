@@ -15,6 +15,7 @@ import { el, frame, topbar, refreshTask } from "/tasks.js";
 import { icon } from "/icons.js";
 import { processRow } from "/process-row.js";
 import { buildActivityTab } from "/activity.js";
+import { buildCollaboratorsControl } from "/collaborators.js";
 import { pageViewer } from "/page-renderer.js";
 
 let current = null;
@@ -1546,6 +1547,7 @@ export function buildDocTabs(invoiceId) {
    */
 
   const { content: timelineContent, countBadge } = buildActivityTab(invoiceId);
+  const { content: collaboratorsContent } = buildCollaboratorsControl(invoiceId);
 
   /**
    * **The unreadable-document note now lives here, not beneath the
@@ -1560,11 +1562,19 @@ export function buildDocTabs(invoiceId) {
    * load, post, and error — a banner appended straight into it would
    * be wiped out the moment the eager load finishes. The wrapper is
    * the stable node; `activity.js` never touches it.
+   *
+   * **`collaboratorsContent` sits above both** — "Add person to
+   * conversation" (decision 0470) is about who is in this document's
+   * own conversation at all, ahead of the unreadable-document alert
+   * (about the document) and the feed (what happened in it).
+   * `collaborators.js` owns and updates it the same self-contained way
+   * `activity.js` owns `timelineContent`.
    */
   const timelinePane = el(
     "div",
     {},
     [
+      collaboratorsContent,
       !stored.intake || stored.intake.readable
         ? null
         : el("div", { class: "systemalert" }, [

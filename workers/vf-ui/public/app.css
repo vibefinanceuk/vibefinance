@@ -2779,6 +2779,51 @@
   .activitypost:hover { border-color: var(--text-accent); }
   .activityfoot { font-size: var(--text-sm); color: var(--text-muted); padding: 6px 14px 10px; }
 
+  /*
+    "Add person to conversation" — decision 0470. `collaborators.js`'s
+    own roster-and-search bar, sitting above `.activityfeed` the same
+    way the unreadable-document banner already does (`viewer.js`'s own
+    `timelinePane` wrapper) — a standing row about who is here, not a
+    timestamped event mixed into the feed below it.
+  */
+  .collabbar {
+    display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
+    padding: 10px 14px; border-bottom: 0.5px solid var(--border);
+  }
+  .collabchips { display: flex; flex-wrap: wrap; gap: 6px; flex: 1 1 auto; }
+  .collabchip {
+    display: flex; align-items: center; gap: 6px;
+    background: var(--surface-1); border-radius: 999px; padding: 3px 10px 3px 3px;
+    font-size: var(--text-sm); color: var(--text-primary);
+  }
+  .collabchip .activityavatar { width: 20px; height: 20px; font-size: 10px; }
+  .collabaddbtn {
+    background: none; border: 0.5px solid var(--border); border-radius: 999px;
+    padding: 5px 12px; color: var(--text-muted); font-size: var(--text-sm); cursor: pointer;
+    display: flex; align-items: center; gap: 6px; flex: 0 0 auto;
+  }
+  .collabaddbtn:hover { border-color: var(--text-accent); color: var(--text-primary); }
+  .collabaddbtn svg { width: 14px; height: 14px; }
+  .collabsearch { flex: 1 1 100%; position: relative; }
+  .collabsearch input {
+    width: 100%; box-sizing: border-box; border: 0.5px solid var(--border); border-radius: 8px;
+    background: var(--surface-0, var(--surface-2)); color: var(--text-primary);
+    font: inherit; font-size: var(--text-sm); padding: 7px 10px;
+  }
+  .collabsearch input:focus { outline: none; border-color: var(--text-accent); }
+  .collabsearchresults {
+    margin-top: 4px; border: 0.5px solid var(--border); border-radius: 8px;
+    background: var(--surface-1); max-height: 180px; overflow-y: auto;
+  }
+  .collabsearchresult {
+    display: block; width: 100%; box-sizing: border-box; text-align: left;
+    background: none; border: 0; border-bottom: 0.5px solid var(--border);
+    padding: 7px 10px; font: inherit; font-size: var(--text-sm); color: var(--text-primary); cursor: pointer;
+  }
+  .collabsearchresult:last-child { border-bottom: 0; }
+  .collabsearchresult:hover { background: var(--surface-2); }
+  .collabsearchresult .muted { font-size: var(--text-sm); }
+
   #shell { width: auto; padding: 0; }
 
   #shell header {

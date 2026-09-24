@@ -571,6 +571,39 @@ export async function handleGetOrgOverview(
   };
 }
 
+/**
+ * A small, name/email search over `org_users` — decision 0470, built
+ * for the "Add person to conversation" picker
+ * (`invoice-collaborators-route.ts`). **Not** `handleGetOrgOverview`
+ * above: that route is gated on `Admin.Configure`/
+ * `Admin.UserManagement` and returns every administrative field this
+ * screen owns, the wrong shape and the wrong gate for an ordinary AP
+ * clerk who can already see a document (`AP.Review`, the same
+ * permission `/documents/:id/activity` itself requires) looking for
+ * one person to invite into its conversation. `status = 'active'` —
+ * the same convention `user-auth.ts` already applies when resolving a
+ * live person — an inactive account is not someone a conversation
+ * should be able to reach.
+ */
+export async function handleSearchUsers(db: D1Database, query: string | null): Promise<RouteResult> {
+  const q = (query ?? "").trim();
+  if (!q) {
+    return { status: 200, body: { users: [] } };
+  }
+
+  const rows = await db
+    .prepare(
+      `SELECT id, name, email FROM org_users
+       WHERE status = 'active' AND (name LIKE ? OR email LIKE ?)
+       ORDER BY name ASC
+       LIMIT 20`
+    )
+    .bind(`%${q}%`, `%${q}%`)
+    .all<{ id: string; name: string; email: string }>();
+
+  return { status: 200, body: { users: rows.results } };
+}
+
 interface CreateUserBody {
   id?: unknown;
   email?: unknown;

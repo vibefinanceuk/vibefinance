@@ -16,6 +16,7 @@ import {
   handleSetAuthorityLimit,
   handleSetSpendLimit,
   handleSetProfile,
+  handleSearchUsers,
 } from "../src/org-route.js";
 import { authenticateUser, generateApiKey, hashApiKey } from "../src/user-auth.js";
 import { PERMISSIONS, PERMISSION_DESCRIPTIONS } from "../src/permissions.js";
@@ -1134,6 +1135,54 @@ describe("handleGetOrgOverview, scoped for a delegated administrator (decision 0
     const result = await handleGetOrgOverview(env.DB);
     const body = result.body as { units: { id: string }[] };
     expect(body.units.map((u) => u.id).sort()).toEqual(["de", "fr"]);
+  });
+});
+
+describe("handleSearchUsers — decision 0470, built for the 'Add person to conversation' picker", () => {
+  it("is empty for a blank query, without touching the database", async () => {
+    const result = await handleSearchUsers(env.DB, "");
+    expect(result.status).toBe(200);
+    expect(result.body).toEqual({ users: [] });
+  });
+
+  it("is empty for a null query", async () => {
+    const result = await handleSearchUsers(env.DB, null);
+    expect(result.status).toBe(200);
+    expect(result.body).toEqual({ users: [] });
+  });
+
+  it("matches on name", async () => {
+    await handleCreateUser(env.DB, { id: "usr1", email: "priya@acme.com", name: "Priya Patel" });
+    await handleCreateUser(env.DB, { id: "usr2", email: "sam@acme.com", name: "Sam Iyer" });
+
+    const result = await handleSearchUsers(env.DB, "Priya");
+    const body = result.body as { users: { id: string; name: string; email: string }[] };
+    expect(body.users).toEqual([{ id: "usr1", name: "Priya Patel", email: "priya@acme.com" }]);
+  });
+
+  it("matches on email, case-insensitively — the same LIKE behaviour SQLite already gives every other search here", async () => {
+    await handleCreateUser(env.DB, { id: "usr1", email: "priya@acme.com", name: "Priya Patel" });
+
+    const result = await handleSearchUsers(env.DB, "PRIYA@ACME");
+    const body = result.body as { users: { id: string }[] };
+    expect(body.users.map((u) => u.id)).toEqual(["usr1"]);
+  });
+
+  it("excludes a disabled user — the same 'status = active' convention user-auth.ts already applies", async () => {
+    await handleCreateUser(env.DB, { id: "usr1", email: "priya@acme.com", name: "Priya Patel" });
+    await env.DB.prepare("UPDATE org_users SET status = 'disabled' WHERE id = 'usr1'").run();
+
+    const result = await handleSearchUsers(env.DB, "Priya");
+    expect((result.body as { users: unknown[] }).users).toEqual([]);
+  });
+
+  it("orders results by name", async () => {
+    await handleCreateUser(env.DB, { id: "usr1", email: "sam.match@acme.com", name: "Sam Match" });
+    await handleCreateUser(env.DB, { id: "usr2", email: "amy.match@acme.com", name: "Amy Match" });
+
+    const result = await handleSearchUsers(env.DB, "Match");
+    const body = result.body as { users: { name: string }[] };
+    expect(body.users.map((u) => u.name)).toEqual(["Amy Match", "Sam Match"]);
   });
 });
 
