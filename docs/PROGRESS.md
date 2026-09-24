@@ -2883,6 +2883,37 @@ section for the full reasoning and tests.
   reading of "route to PO Buyer" is correct. Full reasoning appended
   to `docs/design/two-way-matching-exceptions.md`; see decision 0466.
 
+### Three named resolutions confirm the notify-only reading (0467)
+- Three resolutions named directly: a PO corrected and reloaded
+  outside VibeFinance (exception clears); proceeding with payment
+  regardless, Business User confirming in Chat; returning to supplier,
+  Business User confirming in Chat. **All three map onto mechanisms
+  that already exist, fully built** — good news, checked one at a
+  time, not assumed. PO reload: `po-matching.ts` already recomputes
+  fresh every evaluation (0081/0370); the already-created task still
+  needs an AP holder to complete it, now trivially. Proceed anyway:
+  *is* ordinary task completion — decision 0064 already found
+  "completion is completion," nothing checks the matching facts at
+  completion time, and nothing needs to. Return to supplier: maps
+  exactly onto `AP.ReturnToSupplier` (decision 0075, `return-route.ts`)
+  — real, enforced infrastructure, not a placeholder — whose own
+  `checkStanding()` already refuses a read-and-comment-only Business
+  User from invoking it directly.
+- **0466's tension resolved**: a Business User never performs the
+  system action for any named resolution. "Route to PO Buyer" means
+  bring them into the conversation, not hand them a task —
+  `assign_task { role: "po_buyer" }` is withdrawn as a proposal; the
+  per-invoice ownership check already proposed for Chat is what that
+  routing option actually needs.
+- **One new gap surfaced**: nothing tells a Business User an invoice
+  needs their attention — the ownership check gives them the right to
+  look, not a reason to, and `notify`'s own delivery (email) is
+  unbuilt. First version: check back yourself, not notified.
+- **Not built**: still documentation only. Two questions remain open —
+  where a Non-PO requester is captured, and whether real notification
+  is wanted for a first version. Full reasoning in
+  `docs/design/two-way-matching-exceptions.md`; see decision 0467.
+
 ### Purchase orders and matching
 - Purchase order storage grounded in Peppol BIS Order Only 3.3, via UBL
   XML ingestion (0081) and CSV load (0370) — the same tables, the same

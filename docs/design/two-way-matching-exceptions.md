@@ -476,6 +476,70 @@ Two honest readings, not assumed either way:
 `notify`) gets built either way** — the two readings produce a
 genuinely different feature.
 
+## The tension, answered — three named resolutions, and all three confirm the notify-only reading
+
+*"There are limited actions that a Business User can perform in the
+system. Resolutions should include 1) Changing the PO, outside of
+VibeFinance. PO Changes uploaded to VibeFinance and matching exception
+clears 2) Decision to proceed with payment, regardless of exception —
+Business User to confirm in Chat 3) Return to supplier — Business User
+to confirm in Chat."*
+
+Checked one at a time against the code, and this is genuinely good
+news: **all three map onto mechanisms that already exist, fully
+built**, not placeholders:
+
+1. **The PO is corrected outside VibeFinance and reloaded.** Nothing
+   new — `po-matching.ts` already recomputes header and line facts
+   fresh on every evaluation, from decision 0081/0370's own PO
+   CSV/XML load. Once the corrected order lands, `po.line_matched`
+   (and the new split facts) simply read `true` on the next
+   evaluation. **The already-created task still needs completing** —
+   nothing auto-closes a task because the fact it was raised against
+   later changed — but that is an AP-held holder completing an
+   ordinary, now-trivially-agreeing task, unchanged.
+2. **Proceed with payment regardless, confirmed in chat.** This *is*
+   ordinary task completion, exactly as it already works — decision
+   0064 found this directly: *"Completion is completion... someone who
+   reviews [it] and thinks it wrong has no way to say so through the
+   task — they complete it and the instance advances."* Nothing checks
+   `po.line_matched` at completion time today, and nothing needs to.
+   The Business User's chat confirmation is a **process input**, read
+   by the AP holder before they complete the task — not a system gate,
+   unless a later decision asks for one.
+3. **Return to supplier, confirmed in chat.** Maps exactly onto
+   `AP.ReturnToSupplier` (decision 0075, `return-route.ts`) — real,
+   enforced infrastructure since it shipped, not a reserved-but-unused
+   permission the way `AP.Match` was. Checked directly:
+   `checkStanding()` already requires the actor to hold
+   `AP.ReturnToSupplier` **and** the task's own `required_permission`
+   **and** be holding the task itself (or `AP.ReturnAny`) — a
+   read-and-comment-only Business User could not invoke this
+   themselves even if given the chance to, which is exactly consistent
+   with "confirm in Chat" rather than "execute the return."
+
+**This resolves the tension cleanly, in favour of the first reading**:
+a Business User never performs the system action for any of the three
+resolutions. "Route to PO Buyer" means **bring them into the
+conversation**, not hand them a task. `assign_task { role: "po_buyer"
+}` is not needed for a first version at all — the task itself still
+goes to AP (via the AP Team / Other routing options), and what "PO
+Buyer" routing actually needs to do is make sure that invoice's own
+Business User can see and post to its chat, which is exactly the
+per-invoice ownership check already proposed above for Chat access.
+`notify`'s own per-invoice lookup may still be worth building, as a
+prompt rather than a requirement — see the open question below.
+
+**One real gap this surfaces, not named before**: nothing today tells
+a Business User an invoice needs their attention. The per-invoice
+ownership check gives them the *right* to look; it does not make them
+*look*. `notify` exists in the action vocabulary already but its own
+delivery mechanism is unbuilt — email, this codebase's own stated
+blocker for several other things, is still item 7 in `HANDOVER.md`'s
+own gap list. For a first version, a Business User would need to check
+back on their own invoices rather than being told — worth naming
+plainly rather than implying a notification exists where one does not.
+
 ## What was not built
 
 Everything above is investigation and this document, including the
@@ -484,11 +548,15 @@ operator's own answers and what they imply. No new
 `purchase_orders`, no requester field on `invoice_headers`, no new
 `Procurement.*` permission, no per-invoice ownership check anywhere,
 no `po.line_reference_found`/`po.line_price_matched`/
-`po.line_quantity_matched` vocabulary entries, no `assign_task { role
-}` resolution, no change to `po-matching.ts` or `validation.ts`, no
-route, and `ap-setup.js`'s Matching tab is untouched — still the same
-placeholder decision 0440 left it as. No mock-up was built this time,
-since none was asked for; happy to produce one (in the same style as
-`docs/design/mockups/cost-object-approval.html`) once the newly open
-questions above have answers, so it mocks up something real rather
+`po.line_quantity_matched`/`po.line_unit_mismatch` vocabulary entries,
+no change to `po-matching.ts` or `validation.ts`, no route, and
+`ap-setup.js`'s Matching tab is untouched — still the same placeholder
+decision 0440 left it as. `assign_task { role: "po_buyer" }` is no
+longer proposed at all, now that all three named resolutions confirm a
+Business User never performs the system action themselves — the
+per-invoice ownership check for Chat is what "route to PO Buyer"
+actually needs. No mock-up was built this time, since none was asked
+for; happy to produce one (in the same style as
+`docs/design/mockups/cost-object-approval.html`) now that every open
+question above has an answer, so it mocks up something real rather
 than guessing at the configuration shape.
