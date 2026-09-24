@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 24 September 2026 (decision 0476). A living document: what
+Last updated 24 September 2026 (decision 0477). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,35 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### "PO line not found" vs. an ordinary non-PO invoice (0477)
+- **Reported live**: after actually authoring decision 0474's own
+  "Standard rule: PO line not found," the operator asked directly
+  whether a wholly non-PO invoice would get caught by it instead of
+  reaching Coding. Traced through the code: **yes, it would have** —
+  `po.line_reference_found` (and `po.line_matched`) read `false` for
+  both a real matching exception and an ordinary non-PO invoice with no
+  `BT-13` at all, and `assign_task` blocks stage progression.
+- **The other three standard rules don't share this bug** —
+  `po.line_price_matched`/`po.line_quantity_matched`/`po.line_unit_mismatch`
+  are left genuinely *absent*, not `false`, when there's no PO line to
+  compare against, and an absent fact never fires an `is`/`is_not`
+  condition. Only the two facts decision 0466 deliberately made "false,
+  never absent" have the ambiguity.
+- **Fixed at the suggested-sentence level, not with a new fact.**
+  `BT-13` is already a real, `is_present`-testable vocabulary field —
+  `STANDARD_MATCHING_RULES`'s own `po_line_not_found` suggested sentence
+  now reads *"If the invoice has a purchase order reference and a
+  purchase order line cannot be found..."* A new header-level fact was
+  considered and rejected — nothing it would add that `BT-13 is_present`
+  doesn't already say directly.
+- `DERIVED_FIELD_DESCRIPTIONS` for both facts corrected too — this is
+  what the compiler's own model is shown, not only documentation.
+- **Not retroactive**: the operator's own already-compiled rule, built
+  from the old suggested sentence, keeps the ambiguity until they
+  re-author it by hand.
+- `shared`/`vf-app` only — no migration, no `vf-ui`/`vf-licence` change.
+- Full reasoning and verification counts in decision 0477.
 
 ### Removing a collaborator — `AP.Manager` (0476)
 - **Decision 0470's own named-but-deferred gap**, built here: a "x" on

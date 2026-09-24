@@ -54,6 +54,27 @@ interface UpdateMatchingConfigBody {
  * same table) that this tab looks for by exact name, across every
  * stage in the org, since AP Setup has no single "the Matching stage"
  * of its own.
+ *
+ * **"PO line not found"'s own suggested sentence now guards on BT-13
+ * — decision 0477, reported live.** `po.line_reference_found` is
+ * `false` both for a real matching exception (a PO invoice whose line
+ * genuinely could not be found) and for an ordinary, wholly non-PO
+ * invoice (no BT-13 at all) — the operator's own words: *"I expect
+ * that Non-PO invoice will stop in the Coding queue... [not] bypass
+ * the matching queue."* Without the guard, an operator who compiled
+ * the suggested sentence verbatim would route every non-PO invoice
+ * into an AP Matching task instead, since `assign_task` blocks stage
+ * progression. No new fact needed — `BT-13` ("purchase order
+ * reference") is already a real, `is_present`-testable vocabulary
+ * field; the other three suggested sentences below need no equivalent
+ * fix, since their own facts (`po.line_price_matched`,
+ * `po.line_quantity_matched`, `po.line_unit_mismatch`) are left
+ * genuinely *absent*, not `false`, when there is no PO line to
+ * compare against — `evaluateCondition`'s own `is`/`is_not` never
+ * fire on an absent fact, so those three already leave a non-PO
+ * invoice alone. Only `po.line_reference_found`/`po.line_matched` are
+ * deliberately "false, never absent" (decision 0466's own design), the
+ * one property that makes this specific ambiguity possible.
  */
 export const STANDARD_MATCHING_RULES = [
   {
@@ -61,7 +82,7 @@ export const STANDARD_MATCHING_RULES = [
     name: "Standard rule: PO line not found",
     fact: "po.line_reference_found",
     suggestedSentence:
-      "If a purchase order line cannot be found for an invoice line, assign a task to the AP Matching team requiring AP.Match.",
+      "If the invoice has a purchase order reference and a purchase order line cannot be found for an invoice line, assign a task to the AP Matching team requiring AP.Match.",
   },
   {
     key: "price_mismatch",
