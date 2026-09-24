@@ -3584,10 +3584,17 @@ things are inside a rendered document, and both need same-origin
 delivery first — the operator chose to do them together rather than
 build pagination with a mechanism annotation would replace.
 
-**Coding — where a line is charged.** `invoice_lines.cost_centre` has
-existed since 0007 and `BT-133` since 0031, and **nothing assigns one**
-(0225, 0226). The largest gap, and the one the operator's own correction
-pointed at.
+**~~Coding — where a line is charged.~~ Built** (0451–0463).
+`invoice_lines.cost_centre` has existed since 0007 and `BT-133` since
+0031; a line now assigns one through Line Level Account Coding (0451)
+— three new vocabulary fields (`coding.project`,
+`coding.commodity_code`, `coding.gl_code`) alongside it, a dedicated
+pop-out to key them (0453, refined through 0461/0462),
+frequency-based suggestions (0457–0459), and both `AP.Validate` and
+`AP.Code` able to work the stage (0455, 0456). Cost-object approval
+routing resolves all four dimensions in parallel (0452), see below.
+**What's still open**: a keyed value is free text, not validated
+against Account Coding's own configured lists.
 
 **The supplier fields nothing reads.** Terms, hold, match option and
 tolerances load and display, and **no process consults any of them**

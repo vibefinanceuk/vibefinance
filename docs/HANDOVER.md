@@ -4,7 +4,7 @@
 18 September (four times), updated 19 September (thirty-two times),
 updated 20 September (twenty-two times), updated 21 September
 (twenty-five times), updated 22 September (fifteen times), updated
-23 September (thirty-five times), updated 24 September (once).**
+23 September (thirty-five times), updated 24 September (twice).**
 
 **For a session starting cold.** Where things stand, what needs a
 decision rather than work, what to do next, and the habits this project
@@ -2712,10 +2712,16 @@ person could not already reach some other way.
 
 **An invoice bills a company** (decision 0226), matched on its buyer
 VAT id or electronic address. **Which department bears the cost is a
-line-level question** and is not built — decision 0225 named three
-things that were sharing the word *business unit*, and decision 0226
-settled the first. The Coding stage, where a line is charged to a cost
-centre or GL code, **does not exist**.
+line-level question, and it is built now** (decisions 0451–0463) —
+decision 0225 named three things that were sharing the word *business
+unit*, and decision 0226 settled the first. A line is coded to a cost
+centre and to three new dimensions (Project, Commodity Code, General
+Ledger Code) through a dedicated pop-out, reachable by `AP.Validate`
+and `AP.Code` alike (0453, 0455, 0456), with search, pagination and a
+frequency-based default (0457–0459). Cost-object approval routing
+walks all four dimensions in parallel once a line carries them (0452).
+**Still open**: a keyed value is free text, not checked against
+Account Coding's own configured lists.
 
 **The supplier mirror is built end to end** (decisions 0207–0219): a CSV
 loads from the customer's ERP, an arriving invoice matches on the
@@ -3508,8 +3514,9 @@ membership; task assignment still names a team by id directly, with
 nothing narrowing which teams a given screen offers based on the org
 a task or document belongs to.
 
-**1. Cost object approval** (decisions 0184, 0195) — **update (0440):
-selectable from the screen now, still not the default mode.**
+**1. Cost object approval** (decisions 0184, 0195) — **update (0452):
+built for Cost-Object mode, resolving all four dimensions in
+parallel.**
 
 A **ledger** exists (Oracle's word; SAP's *controlling area*), legal
 entities account in one, and a cost centre hangs beneath it with a
@@ -3517,21 +3524,25 @@ parent, an owner and a limit. `resolveApprovalChain` walks it in
 decision 0184's **Limit** mode — decision 0439's own
 `approval-hierarchy.ts` is the first thing that calls it, wired to
 `assign_task` through a new stage flag (`uses_approval_hierarchy`) and
-a new customer-wide setting (`org_approval_config.mode`). **Decision
-0440 built the screen** — AP Setup's Approval Hierarchy tab now has a
-real mode picker, so an operator can select `cost_object` there without
-direct SQL. The operator's own first mode to build was
-Employee-Supervisor, so that is still what `org_approval_config`
-defaults to until somebody changes it. **What's still missing**: a
-screen for a cost centre's own owner/limit — decision 0440 built CRUD
-for the *Employee-Supervisor* override tables only
-(`org_user_supervisor_overrides`, `org_authority_limit_overrides`).
-Checked directly rather than assumed: `handleUpdateCostCentre`
-(`ledger-route.ts`) already accepts `ownerUserId`/`approvalLimit` and
-is wired to `PUT /cost-centres/:id` in `index.ts` — a real route
-already exists, it is simply not called from anywhere in `vf-ui` yet.
-Manual and API modes also still have no resolver — both fall straight
-to the Default Approver, or report unresolved.
+a new customer-wide setting (`org_approval_config.mode`). Decision
+0440 built the mode picker and CRUD for the *Employee-Supervisor*
+override tables only. **Decision 0452 (Phase 2) closed the rest of
+it**: Line Level Account Coding (0451) gave a line somewhere to carry
+a Project, Commodity Code or General Ledger Code value in the first
+place, and the resolver generalized to use it —
+`resolveApprovalTargets` walks every dimension that is both enabled
+(`cost_object_dimensions`, migration 0077) and coded on the line,
+independently, spawning one task per resolved dimension, all gating
+the same stage visit's advancement together (an unresolved dimension
+refuses the whole stage visit rather than creating a partial set of
+tasks). Both real screens are built: a Cost-Object Priority panel on
+AP Setup's Approval Hierarchy tab (enable/reorder per dimension), and
+an Approval Limit column/field on each of the three greenfield
+Account Coding lists, the same place Cost Centre's own already sits.
+**What's still missing**: Manual and API modes still have no resolver
+— both fall straight to the Default Approver, or report unresolved —
+and a coded value on any of the four dimensions is still free text,
+not checked against Account Coding's own configured lists.
 
 *The original design note:* Cost object approval (decision 0184) — **designed, not built.**
 An invoice line finds its approvers from its cost centre, and how many
@@ -3712,17 +3723,27 @@ field can carry its Business Term — an annotation anchored to `BT-48`
 survives re-rendering, zoom and translation, where a coordinate on an
 image does not.
 
-**4. Coding — where a line is charged.** **The largest gap, and the one
-the operator's own correction pointed at** (decisions 0225, 0226).
+**4. Coding — where a line is charged.** — **update (0451–0463):
+built.** The gap decisions 0225/0226 named, and the operator's own
+correction pointed at.
 
 An invoice bills a company; **which department bears the cost is
 per-line**, and routinely split — *"a purchase for stationery is booked
 across multiple departments, cost centers and GL codes."*
 
 `invoice_lines.cost_centre` has existed since decision 0007 and
-`BT-133` since decision 0031. **Nothing assigns one.** A PO would carry
-it, and without a PO the Coding stage does — and that stage does not
-exist.
+`BT-133` since decision 0031. **A line now assigns one** — Line Level
+Account Coding (0451) added three more vocabulary fields alongside it
+(`coding.project`, `coding.commodity_code`, `coding.gl_code`), keyed
+through a dedicated pop-out (0453, refined through 0461/0462) that
+`AP.Validate` and `AP.Code` can both reach (0455, 0456), with search,
+pagination and a frequency-based default (0457–0459). Cost-object
+approval routing (item 1, above) walks all four dimensions in
+parallel once a line carries them (0452). **What's still open**: a
+keyed value is free text, not checked against Account Coding's own
+configured lists — the same gap item 1 names; and whether a PO line
+(item 10, above) should carry or inherit coding of its own is still
+unaddressed.
 
 **5. A rule that reads the supplier fields.** All of them are now facts
 a rule can test — hold (decision 0230), terms, match option and
