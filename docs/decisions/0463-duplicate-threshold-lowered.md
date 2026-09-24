@@ -1,7 +1,9 @@
 # 0463 — The Duplicate-Invoice Bar Was Set Above What a Changed Invoice Number Alone Can Ever Score
 
-**Status: built.** Not yet confirmed pushed and deployed — awaiting
-the operator's own report. No migration — `vf-app` only.
+**Status: confirmed pushed and deployed.** `origin/main` fetched
+directly reads `e6f4604`, matching this session's own commit exactly,
+and the operator confirmed with *"deployed and pushed."* No
+migration — `vf-app` only.
 
 ---
 
@@ -148,4 +150,6 @@ No `vf-ui`/`vf-licence` change, no new migration, no new string —
 
 ## Still to do, operator side
 
-`wrangler deploy` for `vf-app` — no migration to apply this time.
+All done — `wrangler deploy` confirmed for `vf-app`, no migration to
+apply this time, in the operator's own single report: *"deployed and
+pushed."*

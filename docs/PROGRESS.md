@@ -2771,8 +2771,10 @@ section for the full reasoning and tests.
   each restating `0.5` — the identical single-source-of-truth lesson
   decisions 0461/0462 learned in CSS, applied here in SQL.
   `computeDuplicateConfidence()` itself untouched.
-- **Built and committed, not yet confirmed deployed** — `vf-app` only;
-  no migration, no new string key — see decision 0463 for the full
+- **Confirmed pushed and deployed** — `origin/main` fetched directly
+  reads `e6f4604`, matching this session's own commit exactly, and the
+  operator confirmed with *"deployed and pushed."* `vf-app` only; no
+  migration, no new string key — see decision 0463 for the full
   reasoning and verification.
 
 ### Purchase orders and matching
