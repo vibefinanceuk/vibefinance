@@ -2987,6 +2987,26 @@ section for the full reasoning and tests.
   untouched here.
 - Full reasoning and verification counts in decision 0469.
 
+### Matching Tab: the proxy never carried its own new routes (0473)
+- **The exact gap decision 0441 already fixed once, for this same
+  screen.** `GET`/`PUT /matching-config` (decision 0472) were real and
+  tested in `vf-app`, never added to `vf-ui`'s own explicit proxy
+  allowlist (`PROXIED_TO_INSTANCE`, `workers/vf-ui/src/index.ts`) — so
+  the fetch was refused before `vf-app` ever saw it, reported live as
+  *"AP Setup could not be loaded."*
+- **Not caught for the identical reason decision 0441 already
+  diagnosed**: this session ran `vf-ui`'s browser test suite
+  repeatedly but never the package's own full `test` script (plain +
+  browser), the exact habit 0441's own closing section asked future
+  sessions to follow.
+- **A second, related gap found while fixing this one**: `PUT
+  /approval-config/cost-object-dimensions` (decision 0452) was also
+  missing from the same allowlist — no live report, found by checking
+  the file directly.
+- `vf-ui`-only fix — two new allowlist entries, three new test-list
+  entries. Nothing in `vf-app`/`vf-licence` changed.
+- Full reasoning and verification counts in decision 0473.
+
 ### The real AP Setup Matching tab (0472)
 - **`org_matching_config`, reachable from a screen for the first
   time** — the org-wide default `amountTolerancePct`/

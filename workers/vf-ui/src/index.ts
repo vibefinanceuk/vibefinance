@@ -408,6 +408,28 @@ const PROXIED_TO_INSTANCE: RegExp[] = [
   /^\/coding-lists\/[^/]+$/,
   /^\/coding-lists\/[^/]+\/[^/]+$/,
   /**
+   * **AP Setup's own Cost-Object Priority panel — decision 0452.** The
+   * exact same gap decision 0440 found above, for `/approval-config`
+   * itself: `PUT /approval-config/cost-object-dimensions` was real in
+   * `vf-app` and tested there, but never added to this list — found
+   * directly by checking this file against every AP Setup write route
+   * it should be forwarding, not assumed from a real report, while
+   * fixing decision 0472's own identical miss just below. Nothing on
+   * this list is a wildcard broad enough to already cover it.
+   */
+  /^\/approval-config\/cost-object-dimensions$/,
+  /**
+   * **AP Setup's own Matching tab — decision 0472.** The exact same
+   * gap decision 0440's own comment above already documents more than
+   * a dozen times over: `GET`/`PUT /matching-config` were real and
+   * tested in `vf-app`, and this proxy answered `{"error":"not
+   * found"}` before `vf-app` ever saw either one, reported live as
+   * *"AP Setup could not be loaded"* — the identical symptom, the
+   * identical cause, missed here even after decision 0440's own
+   * writeup named this file directly as the place to check first.
+   */
+  /^\/matching-config$/,
+  /**
    * **CSV Template and Load — decision 0445.** `GET .../csv-format`
    * and `POST .../csv-load` both have the same two-segment shape as
    * `/coding-lists/:type/:id` directly above (`mayProxy` tests only

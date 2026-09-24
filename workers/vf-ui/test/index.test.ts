@@ -526,6 +526,21 @@ describe("the proxy carries every path a screen calls (decision 0131)", () => {
     ["GET", "/api/coding-lists/project"],
     ["POST", "/api/coding-lists/project"],
     ["PUT", "/api/coding-lists/project/p-1"],
+    /**
+     * AP Setup's own Cost-Object Priority panel — decision 0452. Found
+     * missing here while fixing decision 0472's own identical miss
+     * just below, not from a real report — `PUT
+     * /approval-config/cost-object-dimensions` was real and tested in
+     * `vf-app`, never on this list.
+     */
+    ["PUT", "/api/approval-config/cost-object-dimensions"],
+    /**
+     * AP Setup's own Matching tab — decision 0472. Reported live as
+     * "AP Setup could not be loaded" — the identical symptom decision
+     * 0440 already named this whole block after, missed again here.
+     */
+    ["GET", "/api/matching-config"],
+    ["PUT", "/api/matching-config"],
   ];
 
   it("carries all of them", async () => {
