@@ -17,11 +17,16 @@ import { accountCodingTab, loadCodingListCsvFormats, loadAccountCodingTables } f
  * there), inline "Set"/"Remove" actions rather than a second pop-out
  * component, and the same `problem` div for inline errors.
  *
- * **Matching and Account Coding are real placeholder tabs**, the same
- * shape `ap-analytics.js`'s own `placeholderCard()` already gives an
- * unbuilt tab — both are genuinely greenfield (decision 0439's own
- * "What is not built" section), not a screen deferred by mistake.
+ * **Matching is live — decision 0472.** The org-wide default tolerance
+ * and quantity-matching toggle `org_matching_config` has held since
+ * migration `0078` (decisions 0465/0468/0469), reachable only by
+ * direct SQL until now — this tab is `matching-config-route.ts`'s own
+ * front end, one form, one Save, the same shape `modeForm` below
+ * already established for Approval Hierarchy's own mode/Default
+ * Approver pair. No supplier-specific override lives here; this is the
+ * fallback every supplier without one of their own falls back to.
  *
+
  * **Approval Hierarchy is live**: the mode (Employee-Supervisor /
  * Cost-Object / Manual / API) and Default Approver decision 0439's own
  * resolver already reads, plus CRUD for the two override tables that
@@ -61,6 +66,7 @@ const TABS = [
 let units = [];
 let users = [];
 let config = null;
+let matchingConfig = null;
 let activeTab = null;
 let costCentreNames = [];
 
@@ -96,13 +102,15 @@ async function load() {
     // whole screen (loadCodingListCsvFormats() leaves a null entry per
     // failed type, loadAccountCodingTables() leaves that one table's
     // `freshTableState()` defaults — empty rows, `total: 0` — in place).
-    const [[overviewResponse, configResponse]] = await Promise.all([
-      Promise.all([fetch("/api/org/overview"), fetch("/api/approval-config")]),
+    const [[overviewResponse, configResponse, matchingConfigResponse]] = await Promise.all([
+      Promise.all([fetch("/api/org/overview"), fetch("/api/approval-config"), fetch("/api/matching-config")]),
       loadCodingListCsvFormats(),
       loadAccountCodingTables(),
     ]);
-    if (!overviewResponse.ok || !configResponse.ok) {
-      console.error(`AP Setup load failed: overview ${overviewResponse.status}, config ${configResponse.status}`);
+    if (!overviewResponse.ok || !configResponse.ok || !matchingConfigResponse.ok) {
+      console.error(
+        `AP Setup load failed: overview ${overviewResponse.status}, config ${configResponse.status}, matching config ${matchingConfigResponse.status}`
+      );
       return false;
     }
     const overview = await overviewResponse.json();
@@ -110,6 +118,7 @@ async function load() {
     users = overview.users ?? [];
     costCentreNames = overview.costCentres ?? [];
     config = await configResponse.json();
+    matchingConfig = await matchingConfigResponse.json();
     return true;
   } catch (err) {
     console.error("AP Setup load failed", err);
@@ -117,10 +126,77 @@ async function load() {
   }
 }
 
-function placeholderCard(labelKey) {
+/**
+ * **The Matching tab — decision 0472.** One form, one Save, the exact
+ * same "replace, not merge" shape `modeForm` below already uses: all
+ * three fields submit together, so a save can never leave one field's
+ * old value silently in place. Percentages are entered as plain
+ * numbers (`5` means 5%), matching the units `org_matching_config`
+ * itself is stored in and `po-matching.ts`'s own doc comments already
+ * describe them by.
+ *
+ * **No supplier-specific override here** — `supplier.amountTolerancePct`/
+ * `quantityTolerancePct` still supersede this org-wide default when a
+ * supplier has its own, unchanged by this tab existing (decision 0468's
+ * own scoping: this tab configures the fallback only).
+ */
+function matchingConfigTab(problem) {
+  const amountInput = el("input", { type: "number", min: "0", step: "0.01" });
+  amountInput.value = String(matchingConfig.amountTolerancePct);
+  const quantityInput = el("input", { type: "number", min: "0", step: "0.01" });
+  quantityInput.value = String(matchingConfig.quantityTolerancePct);
+  const enabledCheckbox = el("input", {
+    type: "checkbox",
+    id: "quantitymatchingenabled",
+    ...(matchingConfig.quantityMatchingEnabled ? { checked: "checked" } : {}),
+  });
+
+  const form = el("div", { class: "editgrid" }, [
+    el("label", { text: t("apsetup.amounttolerance") }),
+    amountInput,
+    el("label", { text: t("apsetup.quantitytolerance") }),
+    quantityInput,
+    el("label", { for: "quantitymatchingenabled", text: t("apsetup.quantitymatchingenabled") }),
+    enabledCheckbox,
+  ]);
+
+  const save = actionLink("save", {
+    primary: true,
+    onclick: async () => {
+      problem.textContent = "";
+      const amountTolerancePct = Number(amountInput.value);
+      const quantityTolerancePct = Number(quantityInput.value);
+      if (!Number.isFinite(amountTolerancePct) || amountTolerancePct < 0 || !Number.isFinite(quantityTolerancePct) || quantityTolerancePct < 0) {
+        problem.textContent = t("apsetup.savematchingfailed");
+        return;
+      }
+      try {
+        const response = await fetch("/api/matching-config", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            amountTolerancePct,
+            quantityTolerancePct,
+            quantityMatchingEnabled: enabledCheckbox.checked,
+          }),
+        });
+        if (!response.ok) {
+          problem.textContent = (await response.json()).error ?? t("apsetup.savematchingfailed");
+          return;
+        }
+        await load();
+        render();
+      } catch {
+        problem.textContent = t("apsetup.savematchingfailed");
+      }
+    },
+  });
+
   return el("div", { class: "panel" }, [
-    el("div", { class: "cardhead" }, [el("h3", { text: t(labelKey) })]),
-    el("p", { class: "muted", text: t("apsetup.notbuilt") }),
+    el("div", { class: "cardhead" }, [el("h3", { text: t("apsetup.matching") }), el("div", { class: "statebuttons" }, [save])]),
+    el("p", { class: "muted sm", text: t("apsetup.matchingsub") }),
+    form,
+    problem,
   ]);
 }
 
@@ -575,7 +651,7 @@ function render() {
   if (!activeTab) activeTab = TABS[0].key;
 
   const activeSection = {
-    matching: () => placeholderCard("apsetup.matching"),
+    matching: () => matchingConfigTab(el("div", { class: "warn" })),
     coding: () =>
       accountCodingTab({
         units,

@@ -85,6 +85,7 @@ import {
   handleDeleteLimitOverride,
   handleSetCostObjectDimensions,
 } from "./approval-config-route.js";
+import { handleGetMatchingConfig, handleUpdateMatchingConfig } from "./matching-config-route.js";
 import {
   requirePermission,
   requireAnyPermission,
@@ -2126,6 +2127,40 @@ export default {
         decodeURIComponent(limitOverrideMatch[2]),
         decodeURIComponent(limitOverrideMatch[3])
       );
+      return json(result.body, result.status);
+    }
+
+    /**
+     * **AP Setup's own Matching tab — decision 0472.** Same
+     * `Admin.Configure` gate every other AP Setup route already uses;
+     * `handleGetMatchingConfig`/`handleUpdateMatchingConfig` are this
+     * tab's own read/write half of `org_matching_config`, the same
+     * "singleton, read whole, written whole" shape `/approval-config`
+     * above already established.
+     */
+    if (pathname === "/matching-config" && request.method === "GET") {
+      const { db } = resolveTenant(request, env);
+      const auth = await requirePermission(db, request, "Admin.Configure", sessionContext(env));
+      if (!auth.authorized) {
+        return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
+      }
+      const result = await handleGetMatchingConfig(db);
+      return json(result.body, result.status);
+    }
+
+    if (pathname === "/matching-config" && request.method === "PUT") {
+      const { db } = resolveTenant(request, env);
+      const auth = await requirePermission(db, request, "Admin.Configure", sessionContext(env));
+      if (!auth.authorized) {
+        return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
+      }
+      let body: unknown;
+      try {
+        body = await request.json();
+      } catch {
+        return json({ error: t("invalidJsonBody", resolveLocale(env.LOCALE)) }, 400);
+      }
+      const result = await handleUpdateMatchingConfig(db, body as Record<string, unknown>);
       return json(result.body, result.status);
     }
 

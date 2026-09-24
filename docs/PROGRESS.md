@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 22 September 2026. A living document: what is built, what
+Last updated 24 September 2026. A living document: what is built, what
 is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,40 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### The real AP Setup Matching tab (0472)
+- **`org_matching_config`, reachable from a screen for the first
+  time** — the org-wide default `amountTolerancePct`/
+  `quantityTolerancePct`/`quantityMatchingEnabled` has held since
+  migration 0078 (decisions 0465/0468/0469), read on every
+  `mergePoMatchFacts` call, but only ever writable by direct SQL until
+  now. `matching-config-route.ts` (new): `handleGetMatchingConfig`
+  reuses `po-matching.ts`'s own `getOrgMatchingConfig` directly;
+  `handleUpdateMatchingConfig` writes all three fields together, 422
+  on a missing, negative, or wrong-typed one — the same "replace, not
+  merge" discipline `/approval-config` already holds for its own
+  singleton.
+- **AP Setup's Matching tab is no longer a placeholder**:
+  `matchingConfigTab()` (`ap-setup.js`) replaces
+  `placeholderCard("apsetup.matching")` — one form, one Save,
+  percentages entered as plain numbers (5 means 5%). No
+  supplier-specific override lives here; `supplier.amountTolerancePct`/
+  `quantityTolerancePct` still supersede this org-wide default when a
+  supplier has its own, unchanged by this tab existing.
+- **A real regression caught and fixed along the way**:
+  `coding-lists.test.ts` also opens `ap-setup.js` (to reach Account
+  Coding) through its own separate stub setup, which had never needed
+  to stub `/api/matching-config` before this decision made that fetch
+  load-blocking. Found by running the full `vf-ui` browser suite (32/32
+  → 1/32 in that file), fixed by adding the new route to that file's
+  own helper and its three hand-rolled inline stub blocks, confirmed
+  back to 32/32.
+- **One new `ui_strings` migration**, `0160` (five keys, en/de,
+  `vf-licence`).
+- **Not built**: standard-rule checkboxes, `AP.Match`'s own
+  route-widening, removing a collaborator — all still separately named,
+  later-phase or open gaps, untouched here.
+- Full reasoning and verification counts in decision 0472.
 
 ### The Business Approver role (0471)
 - **`Procurement.Approve`, real now** — decision 0469 built the

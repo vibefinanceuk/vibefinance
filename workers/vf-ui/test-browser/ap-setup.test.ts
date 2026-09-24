@@ -5,14 +5,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
  *
  * *"Under a new side menu option, I would like to establish AP
  * Configuration options... Matching, Account Coding and Approval
- * Hierarchy setup screens in tabs."* Matching stays a real placeholder
- * tab — still genuinely greenfield (decision 0439's own "What is not
- * built"). Approval Hierarchy is live: the mode and Default Approver
- * decision 0439's own resolver already reads, plus CRUD for the two
- * unit-scoped override tables. **Account Coding is live too, as of
- * decision 0444** — its own content is covered in depth in
- * `coding-lists.test.ts`; this file only covers that it renders at
- * all, from AP Setup's own tab bar.
+ * Hierarchy setup screens in tabs."* Approval Hierarchy is live: the
+ * mode and Default Approver decision 0439's own resolver already
+ * reads, plus CRUD for the two unit-scoped override tables. **Account
+ * Coding is live too, as of decision 0444** — its own content is
+ * covered in depth in `coding-lists.test.ts`; this file only covers
+ * that it renders at all, from AP Setup's own tab bar. **Matching is
+ * live too, as of decision 0472** — the org-wide default tolerance and
+ * quantity-matching toggle `org_matching_config` has held since
+ * migration 0078, now with a real form.
  */
 
 function mountShell() {
@@ -90,6 +91,11 @@ const STRINGS = {
     "apsetup.costobjectprioritysub": "Shown because Approval mode is set to Cost-Object. Every dimension switched on here that is also coded on a line raises its own approval task, in parallel.",
     "apsetup.costobjectenable": "Enable",
     "apsetup.costobjectsavefailed": "Could not save the Cost-Object Priority list",
+    "apsetup.matchingsub": "The org-wide default tolerance, used whenever a supplier has no tolerance of its own configured.",
+    "apsetup.amounttolerance": "Amount tolerance (%)",
+    "apsetup.quantitytolerance": "Quantity tolerance (%)",
+    "apsetup.quantitymatchingenabled": "Compare quantity at all",
+    "apsetup.savematchingfailed": "Could not save the matching configuration",
   },
 };
 
@@ -102,6 +108,7 @@ const EMPTY_CONFIG = {
   limitOverrides: [],
   costObjectDimensions: [],
 };
+const EMPTY_MATCHING_CONFIG = { amountTolerancePct: 0, quantityTolerancePct: 0, quantityMatchingEnabled: true };
 const EMPTY_COST_CENTRES = { costCentres: [] };
 const EMPTY_CODING_LIST = { declaredFilters: [], entries: [] };
 
@@ -151,6 +158,7 @@ async function openApSetupAs(
     "/api/tasks": { tasks: [], counts: {} },
     "/api/org/overview": overview,
     "/api/approval-config": config,
+    "/api/matching-config": EMPTY_MATCHING_CONFIG,
     "/api/org/cost-centres": EMPTY_COST_CENTRES,
     "/api/coding-lists/project": EMPTY_CODING_LIST,
     "/api/coding-lists/commodity_code": EMPTY_CODING_LIST,
@@ -208,17 +216,81 @@ describe("the screen opens at all", () => {
     await openApSetupAs(["Admin.Configure"]);
     const activeTab = document.querySelector(".tabbar button.active");
     expect(activeTab?.textContent).toBe("Matching");
-    expect(document.querySelector(".panel")?.textContent).toContain("Not built yet");
+    expect(document.querySelector(".panel")?.textContent).toContain("Amount tolerance");
   });
 });
 
-describe("Matching stays a real placeholder tab; Account Coding is now built — decision 0444", () => {
-  it("Matching still shows the not-built placeholder", async () => {
+/**
+ * **The Matching tab — decision 0472.** One form, one Save, the exact
+ * same shape the Approval Hierarchy tab's own mode/Default Approver
+ * form already established, tested the same way that form's own
+ * describe block is (`openApSetupAs`, `switchTab`, and a real fetch
+ * assertion on the save).
+ */
+describe("Matching — the org-wide tolerance and quantity-matching toggle form (decision 0472)", () => {
+  it("defaults to 0 / 0 / on when nothing has been configured yet", async () => {
     await openApSetupAs(["Admin.Configure"]);
-    switchTab("Matching");
-    expect(document.querySelector(".panel")?.textContent).toContain("Not built yet");
+
+    const numberInputs = [...document.querySelectorAll(".editgrid input[type=number]")] as HTMLInputElement[];
+    expect(numberInputs.map((i) => i.value)).toEqual(["0", "0"]);
+    const checkbox = document.querySelector(".editgrid input[type=checkbox]") as HTMLInputElement;
+    expect(checkbox.checked).toBe(true);
   });
 
+  it("shows the configured tolerances and toggle already filled in", async () => {
+    await openApSetupAs(["Admin.Configure"], EMPTY_OVERVIEW, EMPTY_CONFIG, {
+      "/api/matching-config": { amountTolerancePct: 5, quantityTolerancePct: 2.5, quantityMatchingEnabled: false },
+    });
+    switchTab("Matching");
+
+    const numberInputs = [...document.querySelectorAll(".editgrid input[type=number]")] as HTMLInputElement[];
+    expect(numberInputs.map((i) => i.value)).toEqual(["5", "2.5"]);
+    const checkbox = document.querySelector(".editgrid input[type=checkbox]") as HTMLInputElement;
+    expect(checkbox.checked).toBe(false);
+  });
+
+  it("saves all three fields together", async () => {
+    await openApSetupAs(["Admin.Configure"], EMPTY_OVERVIEW, EMPTY_CONFIG, {
+      "PUT /api/matching-config": {
+        ok: true,
+        json: async () => ({ amountTolerancePct: 3, quantityTolerancePct: 1, quantityMatchingEnabled: false }),
+      },
+    });
+
+    const [amountInput, quantityInput] = [...document.querySelectorAll(".editgrid input[type=number]")] as HTMLInputElement[];
+    amountInput.value = "3";
+    quantityInput.value = "1";
+    const checkbox = document.querySelector(".editgrid input[type=checkbox]") as HTMLInputElement;
+    checkbox.checked = false;
+
+    const saveButton = [...document.querySelectorAll("button")].find((b) => b.textContent?.includes("Save"));
+    saveButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await new Promise((r) => setTimeout(r, 0));
+
+    const calls = (fetch as unknown as { mock: { calls: [string, RequestInit][] } }).mock.calls;
+    const put = calls.find(([url, init]) => url === "/api/matching-config" && init?.method === "PUT");
+    expect(put).toBeTruthy();
+    expect(JSON.parse(put![1].body as string)).toEqual({
+      amountTolerancePct: 3,
+      quantityTolerancePct: 1,
+      quantityMatchingEnabled: false,
+    });
+  });
+
+  it("shows a real problem message, not a silent failure, when the save fails", async () => {
+    await openApSetupAs(["Admin.Configure"], EMPTY_OVERVIEW, EMPTY_CONFIG, {
+      "PUT /api/matching-config": { ok: false, status: 500, json: async () => ({ error: "amountTolerancePct must be a number, 0 or greater" }) },
+    });
+
+    const saveButton = [...document.querySelectorAll("button")].find((b) => b.textContent?.includes("Save"));
+    saveButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(document.querySelector(".warn")?.textContent).toBe("amountTolerancePct must be a number, 0 or greater");
+  });
+});
+
+describe("Account Coding — decision 0444", () => {
   it("Account Coding shows its own five sub-tabs, defaulting to Org / Company Code", async () => {
     await openApSetupAs(["Admin.Configure"]);
     switchTab("Account Coding");

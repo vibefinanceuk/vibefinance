@@ -639,6 +639,17 @@ const KEYS_THE_INTERFACE_USES = [
   "apsetup.costobjectprioritysub",
   "apsetup.costobjectenable",
   "apsetup.costobjectsavefailed",
+  /**
+   * **The Matching tab — decision 0472.** Stops being a placeholder:
+   * the org-wide default tolerance and quantity-matching toggle
+   * `org_matching_config` has held since migration 0078 gets a real
+   * form.
+   */
+  "apsetup.matchingsub",
+  "apsetup.amounttolerance",
+  "apsetup.quantitytolerance",
+  "apsetup.quantitymatchingenabled",
+  "apsetup.savematchingfailed",
 
   /**
    * **The invoice-line Coding pop-out — decision 0453.** The icon that
