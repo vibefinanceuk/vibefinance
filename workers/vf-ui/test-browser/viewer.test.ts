@@ -864,6 +864,40 @@ describe("the document pop-out window (decision 0384, phase 4)", () => {
     }
   });
 
+  /**
+   * **`.c-process` can hold up to three panels, and each one used to
+   * claim the whole row's height for itself — decision 0479.**
+   * Reported live, against a screenshot: popped out, the "Here
+   * because" and "Document open in a separate window" cards were much
+   * too tall, and the process timeline visibly overlaid the row
+   * beneath it. `app.css`'s own layout is untestable here (jsdom
+   * computes no grid or flexbox), so what this checks is the actual
+   * rule text: a banner panel keeps its own natural height, only the
+   * last panel — `progressRow()`, whenever it renders — grows to fill
+   * the rest, and `.c-header`'s own panel now stretches to match
+   * `.c-parties` in either direction, not only the one first covered
+   * by decision 0393.
+   */
+  it("shares .c-process's stretched height across however many panels it holds, rather than each one claiming it whole (decision 0479)", async () => {
+    const css = (await import("virtual:stylesheets")).default["app.css"];
+    const processRule = css.slice(
+      css.indexOf("#viewer .columns.docpoppedout .c-process {"),
+      css.indexOf("The notice itself, shrunk from a box built to fill the whole")
+    );
+
+    expect(processRule).toContain("display: flex");
+    expect(processRule).toContain("flex-direction: column");
+    expect(processRule).toMatch(/\.c-process > \.panel \{[^}]*flex: 0 0 auto/);
+    expect(processRule).toMatch(/\.c-process > \.panel:last-child \{[^}]*flex: 1 1 auto/);
+    expect(processRule).toContain("min-height: 0");
+  });
+
+  it("stretches the Invoice Header panel to match a taller Parties column, not only the other way around (decision 0479)", async () => {
+    const css = (await import("virtual:stylesheets")).default["app.css"];
+
+    expect(css).toContain("#viewer .columns.docpoppedout .c-header > .panel {\n    height: 100%;\n    box-sizing: border-box;\n  }");
+  });
+
   it("retargets the already-open pop-out to a different task, rather than opening a second window — the operator's own answer", async () => {
     const handle = fakeWindow();
     vi.stubGlobal("open", vi.fn(() => handle));

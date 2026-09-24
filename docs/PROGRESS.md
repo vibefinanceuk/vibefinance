@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 24 September 2026 (decision 0478). A living document: what
+Last updated 24 September 2026 (decision 0479). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,41 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### `.c-process` shares its stretched height, instead of every panel claiming it whole (0479)
+- **Reported live**, cautiously, right after 0478 had already been
+  confirmed working: *"I've noticed a page orientation issue. which
+  might be new, but not sure."* Two screenshots and a precise
+  description followed: the "Here because" and "Document open in a
+  separate window" cards too tall and misaligned, the process timeline
+  seeming to overlay the Seller/Buyer row, and the Invoice Header card
+  not matching the Seller/Buyer height.
+- **A real bug, and 0478's own doing** — not user error. The popped-out
+  layout's `#viewer .columns.docpoppedout .c-process > .panel { height:
+  100%; }` (decisions 0392/0393) was written for exactly one panel
+  (`progressRow()`, or `workflowErrorPanel()` in its place). 0478's
+  `reasonLinePanel()` made `.c-process` commonly hold two or three
+  panels at once, and the old rule gave *each one* the row's full
+  height — stacked, overflowing the row by up to 200–300%, which is
+  what read as the timeline "overlaying" the row beneath it.
+- **Fixed with flex, not a second height rule**: `.c-process` becomes a
+  flex column; banner panels (`workflowErrorPanel`, `reasonLinePanel`)
+  keep their own natural height at `flex: 0 0 auto`; only the last
+  panel — always `progressRow()` when present — grows to fill the rest
+  at `flex: 1 1 auto; min-height: 0`. With one panel this reproduces
+  the old behavior exactly.
+- **A related, independently pre-existing gap found in the same
+  screenshot**: decision 0393's `height: 100%` fix for `.c-parties`
+  only ever covered Header-taller-than-Parties, the one direction
+  observed at the time. A Seller card long enough to need it (an
+  unmatched-supplier notice plus several fields) made Parties the
+  taller side for the first time — fixed with the symmetric rule on
+  `.c-header > .panel`.
+- Verified visually, not just argued about: a standalone Playwright
+  screenshot harness reproduced the exact bug on the already-pushed
+  CSS and confirmed it gone on the fix, across the one-, two-, and
+  three-panel cases.
+- Full reasoning and verification counts in decision 0479.
 
 ### "Here because" — why a task landed on you (0478)
 - **Reported live**, against a real `assign_task` permission bug, then

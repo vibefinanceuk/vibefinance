@@ -2456,9 +2456,48 @@
    * fills the row exactly the same way regardless of which side that
    * turns out to be.
    */
+  /**
+   * **A blanket `height: 100%` on every panel only ever worked because
+   * there was only ever one — decision 0478 broke that assumption.**
+   * Reported live, against a screenshot: popped out, the two cards at
+   * the top ("Here because" and "Document open in a separate window")
+   * were much too tall and misaligned, and the process timeline
+   * visibly overlaid the Seller/Buyer row beneath it.
+   *
+   * The cause: `.c-process` can now hold up to three panels
+   * (`workflowErrorPanel()`, `reasonLinePanel()`, `progressRow()`),
+   * and the original rule below gave *each* of them `height: 100%` —
+   * each one independently claiming the *row's* full height rather
+   * than sharing it, so their stacked total overflowed the row by as
+   * much as 200%, and that overflow is exactly what rendered as an
+   * overlay onto the next grid row down. `workflowErrorPanel()` alone
+   * could already have triggered this (a genuine stage error plus an
+   * in-progress instance both render), but `openTaskReason` — present
+   * on most open tasks, not only a rare engine failure — is what made
+   * it common enough to notice.
+   *
+   * **Fixed with flex, not a second height rule.** `.c-process` is
+   * already stretched to the row's real height by `#viewer .columns`'s
+   * own `align-items: stretch` (decision 0393's comment above confirms
+   * this already happens, for `.c-parties`) — nothing here needs to
+   * *give* it that height, only to *share* it correctly among however
+   * many panels it holds. A banner (error or reason) keeps its own
+   * natural, compact height; only the last panel — `progressRow()`,
+   * whenever it renders, exactly like before — grows to fill whatever
+   * room is left. With a single panel (the only case this ever ran in
+   * before), `flex: 1` on it reproduces the old `height: 100%` exactly.
+   */
+  #viewer .columns.docpoppedout .c-process {
+    display: flex;
+    flex-direction: column;
+  }
   #viewer .columns.docpoppedout .c-process > .panel {
-    height: 100%;
     box-sizing: border-box;
+    flex: 0 0 auto;
+  }
+  #viewer .columns.docpoppedout .c-process > .panel:last-child {
+    flex: 1 1 auto;
+    min-height: 0;
   }
   /**
    * **The notice itself, shrunk from a box built to fill the whole
@@ -2596,6 +2635,26 @@
    */
   #viewer .columns.docpoppedout .c-parties > .parties {
     height: 100%;
+  }
+
+  /**
+   * **The same fix, the other direction.** Decision 0393's own comment
+   * above only ever covered Header being the *taller* of the two —
+   * that was the direction actually observed and reported at the
+   * time. Reported live since: with a Seller card long enough to need
+   * it (an unmatched-supplier notice plus several editable fields),
+   * `.c-parties` is now the taller side, and nothing told `.c-header`'s
+   * own panel to stretch to match it — the identical "a block
+   * element's `auto` height is content-based regardless of how tall
+   * its parent has become" gap, just on the side that happened not to
+   * be hit yet. Same fix, same reasoning: `height: 100%` is read as
+   * `auto` during row sizing (so it cannot itself inflate the row) and
+   * only resolves once the grid's own `align-items: stretch` has
+   * settled the real row height.
+   */
+  #viewer .columns.docpoppedout .c-header > .panel {
+    height: 100%;
+    box-sizing: border-box;
   }
 
   @media (max-width: 1100px) {
