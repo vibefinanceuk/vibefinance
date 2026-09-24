@@ -26,7 +26,16 @@ import { accountCodingTab, loadCodingListCsvFormats, loadAccountCodingTables } f
  * Approver pair. No supplier-specific override lives here; this is the
  * fallback every supplier without one of their own falls back to.
  *
-
+ * **Standard matching rules — decision 0474.** A second panel on the
+ * same tab, `standardMatchingRulesPanel`: checkboxes that only
+ * enable/disable a rule that already exists, reusing the existing
+ * `PUT /rules/:id/enabled` route (decision 0155) directly — no new
+ * write path, and nothing here compiles or activates a rule. Creating
+ * one of the four standard rules for the first time stays ordinary
+ * rule authoring on whichever stage's own Rules screen the operator
+ * picks; the "never auto-promote a generated rule" gate every rule in
+ * this system has always had is untouched.
+ *
  * **Approval Hierarchy is live**: the mode (Employee-Supervisor /
  * Cost-Object / Manual / API) and Default Approver decision 0439's own
  * resolver already reads, plus CRUD for the two override tables that
@@ -67,6 +76,7 @@ let units = [];
 let users = [];
 let config = null;
 let matchingConfig = null;
+let standardRules = [];
 let activeTab = null;
 let costCentreNames = [];
 
@@ -102,14 +112,19 @@ async function load() {
     // whole screen (loadCodingListCsvFormats() leaves a null entry per
     // failed type, loadAccountCodingTables() leaves that one table's
     // `freshTableState()` defaults — empty rows, `total: 0` — in place).
-    const [[overviewResponse, configResponse, matchingConfigResponse]] = await Promise.all([
-      Promise.all([fetch("/api/org/overview"), fetch("/api/approval-config"), fetch("/api/matching-config")]),
+    const [[overviewResponse, configResponse, matchingConfigResponse, standardRulesResponse]] = await Promise.all([
+      Promise.all([
+        fetch("/api/org/overview"),
+        fetch("/api/approval-config"),
+        fetch("/api/matching-config"),
+        fetch("/api/matching-config/standard-rules"),
+      ]),
       loadCodingListCsvFormats(),
       loadAccountCodingTables(),
     ]);
-    if (!overviewResponse.ok || !configResponse.ok || !matchingConfigResponse.ok) {
+    if (!overviewResponse.ok || !configResponse.ok || !matchingConfigResponse.ok || !standardRulesResponse.ok) {
       console.error(
-        `AP Setup load failed: overview ${overviewResponse.status}, config ${configResponse.status}, matching config ${matchingConfigResponse.status}`
+        `AP Setup load failed: overview ${overviewResponse.status}, config ${configResponse.status}, matching config ${matchingConfigResponse.status}, standard rules ${standardRulesResponse.status}`
       );
       return false;
     }
@@ -119,6 +134,7 @@ async function load() {
     costCentreNames = overview.costCentres ?? [];
     config = await configResponse.json();
     matchingConfig = await matchingConfigResponse.json();
+    standardRules = (await standardRulesResponse.json()).standardRules ?? [];
     return true;
   } catch (err) {
     console.error("AP Setup load failed", err);
@@ -196,6 +212,98 @@ function matchingConfigTab(problem) {
     el("div", { class: "cardhead" }, [el("h3", { text: t("apsetup.matching") }), el("div", { class: "statebuttons" }, [save])]),
     el("p", { class: "muted sm", text: t("apsetup.matchingsub") }),
     form,
+    problem,
+  ]);
+}
+
+/**
+ * **Standard matching rules — decision 0474.** The operator's own
+ * original suggestion, settled narrower than first read: a checkbox
+ * here only enables/disables a rule that already exists — it never
+ * compiles or activates one. Creating a standard rule for the first
+ * time is unchanged, ordinary rule authoring on whichever stage's own
+ * Rules screen the operator picks (write the suggested sentence,
+ * compile, confirm every generated example, activate) — the same
+ * "never auto-promote a generated rule" gate every rule here has
+ * always had.
+ *
+ * **Each of the four canonical names can have zero, one, or more than
+ * one match** — `matching-config-route.ts`'s own
+ * `handleGetStandardMatchingRules` looks across every stage in the
+ * org, since this tab has no single "the Matching stage" the way a
+ * stage's own Rules screen does. Zero shows the suggested sentence as
+ * a starting point; more than one shows a row per match, each toggled
+ * independently, never one silently picked over the other.
+ *
+ * **Only `live`/`paused` are interactive.** A `draft`/
+ * `awaiting_confirmation` rule has never been activated — flipping
+ * `enabled` on one would change nothing a person could see, since
+ * `stateOf` (`rules-list-route.ts`) only ever reads "live" once
+ * `approved_at` is set. Shown disabled, with the reason, rather than a
+ * checkbox that quietly does nothing when clicked.
+ */
+function standardMatchingRulesPanel(problem) {
+  const rows = standardRules.flatMap((standard) => {
+    if (standard.matches.length === 0) {
+      return [
+        el("div", { class: "assignmentrow" }, [
+          el("div", {}, [
+            el("span", { text: standard.name }),
+            el("p", { class: "muted sm", text: t("apsetup.standardrulenotcreated") }),
+            el("p", { class: "muted sm", text: `${t("apsetup.standardrulesuggested")} "${standard.suggestedSentence}"` }),
+          ]),
+        ]),
+      ];
+    }
+
+    return standard.matches.map((match, index) => {
+      const interactive = match.state === "live" || match.state === "paused";
+      const checkboxId = `standardrule-${standard.key}-${index}`;
+      const checkbox = el("input", {
+        type: "checkbox",
+        id: checkboxId,
+        ...(match.enabled ? { checked: "checked" } : {}),
+        ...(interactive ? {} : { disabled: "disabled" }),
+      });
+      if (interactive) {
+        checkbox.onchange = async () => {
+          problem.textContent = "";
+          try {
+            const response = await fetch(`/api/rules/${encodeURIComponent(match.ruleId)}/enabled`, {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ enabled: checkbox.checked }),
+            });
+            if (!response.ok) {
+              problem.textContent = (await response.json()).error ?? t("apsetup.standardrulesavefailed");
+              checkbox.checked = !checkbox.checked;
+              return;
+            }
+            await load();
+            render();
+          } catch {
+            problem.textContent = t("apsetup.standardrulesavefailed");
+            checkbox.checked = !checkbox.checked;
+          }
+        };
+      }
+
+      return el("div", { class: "assignmentrow" }, [
+        el("div", {}, [
+          el("label", { for: checkboxId, text: `${standard.name} — ${match.stageName ?? "?"} (${match.processName ?? "?"})` }),
+          ...(interactive
+            ? []
+            : [el("p", { class: "muted sm", text: t("apsetup.standardrulepending") })]),
+        ]),
+        checkbox,
+      ]);
+    });
+  });
+
+  return el("div", { class: "panel" }, [
+    el("div", { class: "cardhead" }, [el("h3", { text: t("apsetup.standardrules") })]),
+    el("p", { class: "muted sm", text: t("apsetup.standardrulessub") }),
+    el("div", { class: "assignmentlist" }, rows),
     problem,
   ]);
 }
@@ -651,7 +759,11 @@ function render() {
   if (!activeTab) activeTab = TABS[0].key;
 
   const activeSection = {
-    matching: () => matchingConfigTab(el("div", { class: "warn" })),
+    matching: () =>
+      el("div", {}, [
+        matchingConfigTab(el("div", { class: "warn" })),
+        standardMatchingRulesPanel(el("div", { class: "warn" })),
+      ]),
     coding: () =>
       accountCodingTab({
         units,

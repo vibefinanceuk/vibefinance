@@ -1,7 +1,7 @@
 # VibeFinance — Progress and Status
 
-Last updated 24 September 2026. A living document: what is built, what
-is not, and what is known to be uncertain.
+Last updated 24 September 2026 (decision 0474). A living document: what
+is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
 anything is the way it is. This is the map.
@@ -2986,6 +2986,41 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Standard matching rules — enable/disable checkboxes (0474)
+- **The checkbox only enables/disables a rule that already exists** —
+  settled directly by the operator, narrower than either option
+  offered: *"Check box only used for activating / deactivating existing
+  compiled rules."* No `/rules/compile`, no `/rules/examples/:id/
+  confirm`, no `/rules/:id/versions/:v/activate` reachable from this
+  feature at all. Creating one of the four standard rules for the first
+  time is unchanged, ordinary rule authoring on whichever stage's own
+  Rules screen the operator picks.
+- **Reuses `PUT /rules/:id/enabled`** (decision 0155) directly — no new
+  write route. New read route, `GET /matching-config/standard-rules`
+  (`handleGetStandardMatchingRules`), a closed lookup over exactly four
+  canonical `rules.name` values — never a broader "every rule" fallback,
+  the same discipline decision 0355 already established for this exact
+  failure mode.
+- **A standard rule is identified by name, not a new column or table**
+  — decision 0465's own governing principle: no new rule mechanism, no
+  parallel path around the compiler. A name authored on more than one
+  stage shows every match as its own row, never one silently picked.
+- **`stateOf` exported**, narrowed to a structural parameter type, so
+  the new lookup's differently-shaped row reuses the same `"live" |
+  "paused" | "awaiting_confirmation" | "draft"` classification
+  (decision 0149) rather than a second copy. Only `live`/`paused`
+  matches get an interactive checkbox on the tab itself; `draft`/
+  `awaiting_confirmation` show disabled with the reason.
+- **One new `ui_strings` migration**, `0161` (six keys, en/de,
+  `vf-licence`).
+- The lesson decision 0473 wrote down was followed this time: the new
+  route's proxy-allowlist entry and its `CALLED_BY_A_SCREEN` test
+  landed in the same pass as the route itself, and the package's full
+  `npm test` script ran before calling this done.
+- **Not built**: `AP.Match`'s own route-widening, removing a
+  collaborator — both still separately named, untouched here.
+- Full reasoning and verification counts in decision 0474.
 
 ### Matching Tab: the proxy never carried its own new routes (0473)
 - **The exact gap decision 0441 already fixed once, for this same

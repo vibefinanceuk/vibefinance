@@ -430,6 +430,15 @@ const PROXIED_TO_INSTANCE: RegExp[] = [
    */
   /^\/matching-config$/,
   /**
+   * **Standard matching rules — decision 0474.** `GET
+   * /matching-config/standard-rules` is a sibling read route of the
+   * one directly above, added at the same time as the frontend that
+   * calls it rather than after a live report — the exact category of
+   * gap decision 0473 fixed for `/matching-config` itself. `/^\/matching-config$/`
+   * does not match the longer path, so this needs its own entry.
+   */
+  /^\/matching-config\/standard-rules$/,
+  /**
    * **CSV Template and Load — decision 0445.** `GET .../csv-format`
    * and `POST .../csv-load` both have the same two-segment shape as
    * `/coding-lists/:type/:id` directly above (`mayProxy` tests only

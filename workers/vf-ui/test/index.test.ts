@@ -541,6 +541,11 @@ describe("the proxy carries every path a screen calls (decision 0131)", () => {
      */
     ["GET", "/api/matching-config"],
     ["PUT", "/api/matching-config"],
+    /**
+     * Standard matching rules — decision 0474. Added alongside the
+     * allowlist entry itself this time, not after a live report.
+     */
+    ["GET", "/api/matching-config/standard-rules"],
   ];
 
   it("carries all of them", async () => {

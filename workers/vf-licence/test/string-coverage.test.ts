@@ -652,6 +652,18 @@ const KEYS_THE_INTERFACE_USES = [
   "apsetup.savematchingfailed",
 
   /**
+   * **Standard matching rules — decision 0474.** A second panel on the
+   * same Matching tab: checkboxes that enable/disable a standard rule
+   * that already exists. Never compiles or activates one.
+   */
+  "apsetup.standardrules",
+  "apsetup.standardrulessub",
+  "apsetup.standardrulenotcreated",
+  "apsetup.standardrulesuggested",
+  "apsetup.standardrulepending",
+  "apsetup.standardrulesavefailed",
+
+  /**
    * **The invoice-line Coding pop-out — decision 0453.** The icon that
    * opens it (`action.coding`) and its own chrome
    * (`viewer.coding.*`) — every field label inside it is reused from

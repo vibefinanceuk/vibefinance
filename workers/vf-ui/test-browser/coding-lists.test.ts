@@ -140,6 +140,14 @@ const EMPTY_CONFIG = {
 const EMPTY_COST_CENTRES = { costCentres: [] };
 const EMPTY_CODING_LIST = { declaredFilters: [], entries: [] };
 const EMPTY_MATCHING_CONFIG = { amountTolerancePct: 0, quantityTolerancePct: 0, quantityMatchingEnabled: true };
+/**
+ * **Standard matching rules — decision 0474.** `load()` gained a 4th
+ * required fetch; this file's own separate `openApSetupAs` (and every
+ * inline `vi.stubGlobal("fetch", ...)` block below) needs the same
+ * stub `ap-setup.test.ts` already carries, or every test in this file
+ * fails the same way `/api/matching-config` itself once did.
+ */
+const EMPTY_STANDARD_RULES = { standardRules: [] };
 
 /**
  * A CSV format response, decision 0445 — the same base fields every
@@ -202,6 +210,7 @@ async function openApSetupAs(
     "/api/org/overview": overview,
     "/api/approval-config": EMPTY_CONFIG,
     "/api/matching-config": EMPTY_MATCHING_CONFIG,
+    "/api/matching-config/standard-rules": EMPTY_STANDARD_RULES,
     "/api/org/cost-centres": costCentres,
     "/api/coding-lists/project": EMPTY_CODING_LIST,
     "/api/coding-lists/commodity_code": EMPTY_CODING_LIST,
@@ -600,6 +609,7 @@ describe("searching and paginating a coding list — decision 0446", () => {
         if (path === "/api/org/overview") return { ok: true, json: async () => EMPTY_OVERVIEW } as Response;
         if (path === "/api/approval-config") return { ok: true, json: async () => EMPTY_CONFIG } as Response;
         if (path === "/api/matching-config") return { ok: true, json: async () => EMPTY_MATCHING_CONFIG } as Response;
+        if (path === "/api/matching-config/standard-rules") return { ok: true, json: async () => EMPTY_STANDARD_RULES } as Response;
         if (path === "/api/org/cost-centres") return { ok: true, json: async () => EMPTY_COST_CENTRES } as Response;
         if (path.endsWith("/csv-format")) return { ok: true, json: async () => csvFormat(path.split("/")[3]) } as Response;
         if (path === "/api/coding-lists/commodity_code") return { ok: true, json: async () => EMPTY_CODING_LIST } as Response;
@@ -706,6 +716,7 @@ describe("searching and paginating a coding list — decision 0446", () => {
         if (path === "/api/org/overview") return { ok: true, json: async () => EMPTY_OVERVIEW } as Response;
         if (path === "/api/approval-config") return { ok: true, json: async () => EMPTY_CONFIG } as Response;
         if (path === "/api/matching-config") return { ok: true, json: async () => EMPTY_MATCHING_CONFIG } as Response;
+        if (path === "/api/matching-config/standard-rules") return { ok: true, json: async () => EMPTY_STANDARD_RULES } as Response;
         if (path === "/api/org/cost-centres") return { ok: true, json: async () => EMPTY_COST_CENTRES } as Response;
         if (path.endsWith("/csv-format")) return { ok: true, json: async () => csvFormat(path.split("/")[3]) } as Response;
         if (path === "/api/coding-lists/commodity_code") return { ok: true, json: async () => EMPTY_CODING_LIST } as Response;
@@ -781,6 +792,7 @@ describe("a create/edit form's own pickers see every entry, not just the current
         if (path === "/api/org/overview") return { ok: true, json: async () => EMPTY_OVERVIEW } as Response;
         if (path === "/api/approval-config") return { ok: true, json: async () => EMPTY_CONFIG } as Response;
         if (path === "/api/matching-config") return { ok: true, json: async () => EMPTY_MATCHING_CONFIG } as Response;
+        if (path === "/api/matching-config/standard-rules") return { ok: true, json: async () => EMPTY_STANDARD_RULES } as Response;
         if (path === "/api/org/cost-centres") return { ok: true, json: async () => EMPTY_COST_CENTRES } as Response;
         if (path.endsWith("/csv-format")) return { ok: true, json: async () => csvFormat(path.split("/")[3]) } as Response;
         if (path === "/api/coding-lists/commodity_code") return { ok: true, json: async () => EMPTY_CODING_LIST } as Response;
@@ -895,6 +907,7 @@ describe("CSV Template and Load — decision 0445", () => {
         if (path === "/api/org/overview") return { ok: true, json: async () => EMPTY_OVERVIEW } as Response;
         if (path === "/api/approval-config") return { ok: true, json: async () => EMPTY_CONFIG } as Response;
         if (path === "/api/matching-config") return { ok: true, json: async () => EMPTY_MATCHING_CONFIG } as Response;
+        if (path === "/api/matching-config/standard-rules") return { ok: true, json: async () => EMPTY_STANDARD_RULES } as Response;
         if (path === "/api/org/cost-centres") return { ok: true, json: async () => EMPTY_COST_CENTRES } as Response;
         if (path === "/api/coding-lists/cost_centre/csv-format") return { ok: true, json: async () => csvFormat("cost_centre", ["company_code"]) } as Response;
         if (path === "/api/coding-lists/project/csv-format") return { ok: true, json: async () => csvFormat("project") } as Response;
@@ -981,6 +994,7 @@ describe("CSV Template and Load — decision 0445", () => {
       "/api/org/overview": EMPTY_OVERVIEW,
       "/api/approval-config": EMPTY_CONFIG,
       "/api/matching-config": EMPTY_MATCHING_CONFIG,
+      "/api/matching-config/standard-rules": EMPTY_STANDARD_RULES,
       "/api/org/cost-centres": EMPTY_COST_CENTRES,
       "/api/coding-lists/project": EMPTY_CODING_LIST,
       "/api/coding-lists/commodity_code": EMPTY_CODING_LIST,

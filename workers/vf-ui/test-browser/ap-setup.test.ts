@@ -96,6 +96,12 @@ const STRINGS = {
     "apsetup.quantitytolerance": "Quantity tolerance (%)",
     "apsetup.quantitymatchingenabled": "Compare quantity at all",
     "apsetup.savematchingfailed": "Could not save the matching configuration",
+    "apsetup.standardrules": "Standard matching rules",
+    "apsetup.standardrulessub": "Turn a standard matching rule on or off. Authoring one for the first time is done on its own stage's Rules screen, the same way as any rule.",
+    "apsetup.standardrulenotcreated": "Not yet created.",
+    "apsetup.standardrulesuggested": "Suggested sentence:",
+    "apsetup.standardrulepending": "Compiled but not yet activated — review and activate it on its own stage's Rules screen before it can be turned on or off here.",
+    "apsetup.standardrulesavefailed": "Could not update that rule",
   },
 };
 
@@ -109,6 +115,22 @@ const EMPTY_CONFIG = {
   costObjectDimensions: [],
 };
 const EMPTY_MATCHING_CONFIG = { amountTolerancePct: 0, quantityTolerancePct: 0, quantityMatchingEnabled: true };
+/**
+ * **Standard matching rules — decision 0474.** The four canonical
+ * names, matching `STANDARD_MATCHING_RULES` in
+ * `matching-config-route.ts`, with no matches yet — the same "every
+ * standard rule accounted for, nothing found" shape
+ * `handleGetStandardMatchingRules` itself returns before anything has
+ * been authored.
+ */
+const EMPTY_STANDARD_RULES = {
+  standardRules: [
+    { key: "po_line_not_found", name: "Standard rule: PO line not found", fact: "po.line_reference_found", suggestedSentence: "If a purchase order line cannot be found for an invoice line, assign a task to the AP Matching team requiring AP.Match.", matches: [] },
+    { key: "price_mismatch", name: "Standard rule: Price mismatch", fact: "po.line_price_matched", suggestedSentence: "If a line's price does not match its purchase order line, assign a task to the AP Matching team requiring AP.Match.", matches: [] },
+    { key: "quantity_mismatch", name: "Standard rule: Quantity mismatch", fact: "po.line_quantity_matched", suggestedSentence: "If a line's quantity does not match its purchase order line, assign a task to the AP Matching team requiring AP.Match.", matches: [] },
+    { key: "unit_mismatch", name: "Standard rule: Unit of measure mismatch", fact: "po.line_unit_mismatch", suggestedSentence: "If a line's unit of measure does not match its purchase order line, assign a task to the AP Matching team requiring AP.Match.", matches: [] },
+  ],
+};
 const EMPTY_COST_CENTRES = { costCentres: [] };
 const EMPTY_CODING_LIST = { declaredFilters: [], entries: [] };
 
@@ -159,6 +181,7 @@ async function openApSetupAs(
     "/api/org/overview": overview,
     "/api/approval-config": config,
     "/api/matching-config": EMPTY_MATCHING_CONFIG,
+    "/api/matching-config/standard-rules": EMPTY_STANDARD_RULES,
     "/api/org/cost-centres": EMPTY_COST_CENTRES,
     "/api/coding-lists/project": EMPTY_CODING_LIST,
     "/api/coding-lists/commodity_code": EMPTY_CODING_LIST,
@@ -287,6 +310,176 @@ describe("Matching — the org-wide tolerance and quantity-matching toggle form 
     await new Promise((r) => setTimeout(r, 0));
 
     expect(document.querySelector(".warn")?.textContent).toBe("amountTolerancePct must be a number, 0 or greater");
+  });
+});
+
+/**
+ * **Standard matching rules — decision 0474.** The panel below the
+ * Matching tab's own tolerance form: checkboxes that only enable or
+ * disable a rule that already exists — reusing `PUT /api/rules/:id/
+ * enabled` (decision 0155) directly, never `/rules/compile` or
+ * `/rules/:id/versions/:v/activate`. Covers the not-yet-created state,
+ * the live/paused toggle, draft/awaiting_confirmation shown disabled,
+ * and more than one match shown as separate rows — the same four
+ * shapes `handleGetStandardMatchingRules`'s own route tests already
+ * cover server-side.
+ */
+describe("Matching — standard matching rules (decision 0474)", () => {
+  function standardRulesPanel(): Element {
+    const panel = [...document.querySelectorAll(".panel")].find((p) => p.querySelector("h3")?.textContent === "Standard matching rules");
+    if (!panel) throw new Error(`no panel found for "Standard matching rules"`);
+    return panel;
+  }
+
+  it("shows all four canonical rules as not-yet-created, with their own suggested sentence, when none exist", async () => {
+    await openApSetupAs(["Admin.Configure"]);
+
+    const panel = standardRulesPanel();
+    expect(panel.textContent).toContain("Standard rule: PO line not found");
+    expect(panel.textContent).toContain("Standard rule: Price mismatch");
+    expect(panel.textContent).toContain("Standard rule: Quantity mismatch");
+    expect(panel.textContent).toContain("Standard rule: Unit of measure mismatch");
+    expect(panel.textContent).toContain("Not yet created.");
+    expect(panel.textContent).toContain("If a purchase order line cannot be found for an invoice line");
+    // Nothing to toggle yet.
+    expect(panel.querySelectorAll("input[type=checkbox]").length).toBe(0);
+  });
+
+  it("a live rule's checkbox is checked and interactive; unchecking it calls PUT /rules/:id/enabled with enabled: false", async () => {
+    await openApSetupAs(["Admin.Configure"], EMPTY_OVERVIEW, EMPTY_CONFIG, {
+      "/api/matching-config/standard-rules": {
+        standardRules: [
+          { ...EMPTY_STANDARD_RULES.standardRules[0], matches: [] },
+          {
+            ...EMPTY_STANDARD_RULES.standardRules[1],
+            matches: [{ ruleId: "r-price", stageName: "Matching", processName: "AP", enabled: true, state: "live" }],
+          },
+          { ...EMPTY_STANDARD_RULES.standardRules[2], matches: [] },
+          { ...EMPTY_STANDARD_RULES.standardRules[3], matches: [] },
+        ],
+      },
+      "PUT /api/rules/r-price/enabled": { ok: true, json: async () => ({ id: "r-price", enabled: false }) },
+    });
+
+    const panel = standardRulesPanel();
+    const checkbox = panel.querySelector("input[type=checkbox]") as HTMLInputElement;
+    expect(checkbox.checked).toBe(true);
+    expect(checkbox.disabled).toBe(false);
+
+    checkbox.checked = false;
+    checkbox.dispatchEvent(new Event("change"));
+    await new Promise((r) => setTimeout(r, 0));
+
+    const calls = (fetch as unknown as { mock: { calls: [string, RequestInit][] } }).mock.calls;
+    const put = calls.find(([url, init]) => url === "/api/rules/r-price/enabled" && init?.method === "PUT");
+    expect(put).toBeTruthy();
+    expect(JSON.parse(put![1].body as string)).toEqual({ enabled: false });
+  });
+
+  it("a paused rule's checkbox is unchecked but still interactive — re-checking it calls the same route with enabled: true", async () => {
+    await openApSetupAs(["Admin.Configure"], EMPTY_OVERVIEW, EMPTY_CONFIG, {
+      "/api/matching-config/standard-rules": {
+        standardRules: [
+          {
+            ...EMPTY_STANDARD_RULES.standardRules[0],
+            matches: [{ ruleId: "r-paused", stageName: "Matching", processName: "AP", enabled: false, state: "paused" }],
+          },
+          { ...EMPTY_STANDARD_RULES.standardRules[1], matches: [] },
+          { ...EMPTY_STANDARD_RULES.standardRules[2], matches: [] },
+          { ...EMPTY_STANDARD_RULES.standardRules[3], matches: [] },
+        ],
+      },
+      "PUT /api/rules/r-paused/enabled": { ok: true, json: async () => ({ id: "r-paused", enabled: true }) },
+    });
+
+    const panel = standardRulesPanel();
+    const checkbox = panel.querySelector("input[type=checkbox]") as HTMLInputElement;
+    expect(checkbox.checked).toBe(false);
+    expect(checkbox.disabled).toBe(false);
+
+    checkbox.checked = true;
+    checkbox.dispatchEvent(new Event("change"));
+    await new Promise((r) => setTimeout(r, 0));
+
+    const calls = (fetch as unknown as { mock: { calls: [string, RequestInit][] } }).mock.calls;
+    const put = calls.find(([url, init]) => url === "/api/rules/r-paused/enabled" && init?.method === "PUT");
+    expect(JSON.parse(put![1].body as string)).toEqual({ enabled: true });
+  });
+
+  it("draft and awaiting_confirmation matches show disabled, with an explanatory note, never a checkbox that quietly does nothing", async () => {
+    await openApSetupAs(["Admin.Configure"], EMPTY_OVERVIEW, EMPTY_CONFIG, {
+      "/api/matching-config/standard-rules": {
+        standardRules: [
+          {
+            ...EMPTY_STANDARD_RULES.standardRules[0],
+            matches: [{ ruleId: "r-draft", stageName: "Matching", processName: "AP", enabled: true, state: "draft" }],
+          },
+          {
+            ...EMPTY_STANDARD_RULES.standardRules[1],
+            matches: [{ ruleId: "r-awaiting", stageName: "Matching", processName: "AP", enabled: true, state: "awaiting_confirmation" }],
+          },
+          { ...EMPTY_STANDARD_RULES.standardRules[2], matches: [] },
+          { ...EMPTY_STANDARD_RULES.standardRules[3], matches: [] },
+        ],
+      },
+    });
+
+    const panel = standardRulesPanel();
+    const checkboxes = [...panel.querySelectorAll("input[type=checkbox]")] as HTMLInputElement[];
+    expect(checkboxes).toHaveLength(2);
+    expect(checkboxes.every((c) => c.disabled)).toBe(true);
+    expect(panel.textContent).toContain("Compiled but not yet activated");
+  });
+
+  it("more than one match for the same standard rule shows a separate row per match, each toggled independently", async () => {
+    await openApSetupAs(["Admin.Configure"], EMPTY_OVERVIEW, EMPTY_CONFIG, {
+      "/api/matching-config/standard-rules": {
+        standardRules: [
+          { ...EMPTY_STANDARD_RULES.standardRules[0], matches: [] },
+          {
+            ...EMPTY_STANDARD_RULES.standardRules[1],
+            matches: [
+              { ruleId: "r-eu", stageName: "Matching", processName: "AP Europe", enabled: true, state: "live" },
+              { ruleId: "r-us", stageName: "Matching", processName: "AP US", enabled: false, state: "paused" },
+            ],
+          },
+          { ...EMPTY_STANDARD_RULES.standardRules[2], matches: [] },
+          { ...EMPTY_STANDARD_RULES.standardRules[3], matches: [] },
+        ],
+      },
+    });
+
+    const panel = standardRulesPanel();
+    expect(panel.textContent).toContain("AP Europe");
+    expect(panel.textContent).toContain("AP US");
+    const checkboxes = [...panel.querySelectorAll("input[type=checkbox]")] as HTMLInputElement[];
+    expect(checkboxes.map((c) => c.checked)).toEqual([true, false]);
+  });
+
+  it("shows a real problem message, not a silent failure, when the toggle save fails — and reverts the checkbox", async () => {
+    await openApSetupAs(["Admin.Configure"], EMPTY_OVERVIEW, EMPTY_CONFIG, {
+      "/api/matching-config/standard-rules": {
+        standardRules: [
+          {
+            ...EMPTY_STANDARD_RULES.standardRules[0],
+            matches: [{ ruleId: "r-price", stageName: "Matching", processName: "AP", enabled: true, state: "live" }],
+          },
+          { ...EMPTY_STANDARD_RULES.standardRules[1], matches: [] },
+          { ...EMPTY_STANDARD_RULES.standardRules[2], matches: [] },
+          { ...EMPTY_STANDARD_RULES.standardRules[3], matches: [] },
+        ],
+      },
+      "PUT /api/rules/r-price/enabled": { ok: false, status: 500, json: async () => ({ error: "Could not update that rule" }) },
+    });
+
+    const panel = standardRulesPanel();
+    const checkbox = panel.querySelector("input[type=checkbox]") as HTMLInputElement;
+    checkbox.checked = false;
+    checkbox.dispatchEvent(new Event("change"));
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(panel.querySelector(".warn")?.textContent).toBe("Could not update that rule");
+    expect((standardRulesPanel().querySelector("input[type=checkbox]") as HTMLInputElement).checked).toBe(true);
   });
 });
 

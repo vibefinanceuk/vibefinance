@@ -85,7 +85,11 @@ import {
   handleDeleteLimitOverride,
   handleSetCostObjectDimensions,
 } from "./approval-config-route.js";
-import { handleGetMatchingConfig, handleUpdateMatchingConfig } from "./matching-config-route.js";
+import {
+  handleGetMatchingConfig,
+  handleUpdateMatchingConfig,
+  handleGetStandardMatchingRules,
+} from "./matching-config-route.js";
 import {
   requirePermission,
   requireAnyPermission,
@@ -2161,6 +2165,23 @@ export default {
         return json({ error: t("invalidJsonBody", resolveLocale(env.LOCALE)) }, 400);
       }
       const result = await handleUpdateMatchingConfig(db, body as Record<string, unknown>);
+      return json(result.body, result.status);
+    }
+
+    /**
+     * **AP Setup's own "Standard matching rules" panel — decision 0474.**
+     * Same `Admin.Configure` gate every other AP Setup route already
+     * uses. Read-only: toggling one uses the existing `PUT
+     * /rules/:ruleId/enabled` route (decision 0155) directly — no new
+     * write path, since these are ordinary rules, not a new kind.
+     */
+    if (pathname === "/matching-config/standard-rules" && request.method === "GET") {
+      const { db } = resolveTenant(request, env);
+      const auth = await requirePermission(db, request, "Admin.Configure", sessionContext(env));
+      if (!auth.authorized) {
+        return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
+      }
+      const result = await handleGetStandardMatchingRules(db);
       return json(result.body, result.status);
     }
 

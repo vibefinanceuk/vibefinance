@@ -38,8 +38,19 @@ interface RuleRow {
  * **Four words, not four columns.** The database records `enabled`,
  * `approved_at`, an effective window and a count of confirmed
  * examples; a person wants to know whether it is running.
+ *
+ * **Exported — decision 0474.** AP Setup's own standard-matching-rules
+ * lookup (`matching-config-route.ts`) needed the identical four-word
+ * classification for a differently-shaped row (no stage/process join
+ * of its own), so this takes the minimal shape both callers can supply
+ * rather than either duplicating the four `if`s or forcing the second
+ * caller's row into `RuleRow`'s own fuller shape.
  */
-function stateOf(row: RuleRow): "live" | "paused" | "awaiting_confirmation" | "draft" {
+export function stateOf(row: {
+  approved_at: string | null;
+  enabled: number;
+  examples_total: number;
+}): "live" | "paused" | "awaiting_confirmation" | "draft" {
   // Approved and switched on is the only state that acts on an invoice.
   if (row.approved_at && row.enabled === 1) return "live";
 
