@@ -3054,6 +3054,77 @@ describe("the nav's own new permission gates (decision 0276)", () => {
     expect(res.status).toBe(403);
   });
 
+  /**
+   * **A Business Approver's own way into their tasks — decision 0471.**
+   * `Procurement.Approve` alone (never `AP.TaskView`) still opens
+   * `GET /tasks`, settled directly by the operator: *"It should be a
+   * task allocated in the Tasks list for the Approval user. They
+   * should have access to a list of items that they own, and nothing
+   * more."* These prove both halves: the gate opens, and `ownership`
+   * is forced to "mine" regardless of what was asked for.
+   */
+  describe("GET /tasks for a Business Approver — Procurement.Approve alone (decision 0471)", () => {
+    async function seedApprovalTask(ownerUserId: string | null, teamId: string | null): Promise<void> {
+      await env.DB.prepare("INSERT INTO processes (id, name) VALUES ('p1', 'AP')").run();
+      await env.DB.prepare(
+        "INSERT INTO process_stages (id, process_id, name, sequence) VALUES ('approval', 'p1', 'Approval', 1)"
+      ).run();
+      await env.DB.prepare(
+        "INSERT INTO tasks (id, stage_id, owner_team_id, owner_user_id, required_permission) VALUES (?, 'approval', ?, ?, 'Procurement.Approve')"
+      )
+        .bind(crypto.randomUUID(), teamId, ownerUserId)
+        .run();
+    }
+
+    it("succeeds with only Procurement.Approve, and returns the task assigned to them", async () => {
+      const biz = await seedUserWithPermissionsAndId(["Procurement.Approve"]);
+      await seedApprovalTask(biz.id, null);
+
+      const res = await SELF.fetch("https://example.com/tasks", {
+        headers: { Authorization: `Bearer ${biz.apiKey}` },
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { tasks: Array<{ ownership: string; requiredPermission: string }> };
+      expect(body.tasks).toHaveLength(1);
+      expect(body.tasks[0]).toMatchObject({ ownership: "mine", requiredPermission: "Procurement.Approve" });
+    });
+
+    it("ignores an ownership=available request server-side, forcing 'mine' regardless of what was asked for", async () => {
+      const biz = await seedUserWithPermissionsAndId(["Procurement.Approve"]);
+      await seedApprovalTask(biz.id, null);
+
+      const res = await SELF.fetch("https://example.com/tasks?ownership=available", {
+        headers: { Authorization: `Bearer ${biz.apiKey}` },
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { tasks: Array<{ ownership: string }> };
+      // Asking for "available" does not empty the list and does not
+      // relabel their own task — the server ignores the query
+      // parameter entirely for this narrower grant and always answers
+      // with "mine."
+      expect(body.tasks).toHaveLength(1);
+      expect(body.tasks[0].ownership).toBe("mine");
+    });
+
+    it("never surfaces another person's task, even one requiring the same permission", async () => {
+      const biz = await seedUserWithPermissionsAndId(["Procurement.Approve"]);
+      const other = await seedUserWithPermissionsAndId(["Procurement.Approve"]);
+      await seedApprovalTask(other.id, null);
+
+      const res = await SELF.fetch("https://example.com/tasks", {
+        headers: { Authorization: `Bearer ${biz.apiKey}` },
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { tasks: unknown[] };
+      expect(body.tasks).toHaveLength(0);
+    });
+
+    it("AP.TaskView still opens the full screen, unaffected by this narrower grant", async () => {
+      const res = await SELF.fetch("https://example.com/tasks?ownership=available", { headers: authHeaders() });
+      expect(res.status).toBe(200);
+    });
+  });
+
   it("GET /suppliers succeeds with AP.Supplier", async () => {
     const res = await SELF.fetch("https://example.com/suppliers", { headers: authHeaders() });
     expect(res.status).toBe(200);

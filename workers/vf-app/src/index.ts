@@ -3311,8 +3311,25 @@ export default {
        * way `Admin.Configure` already gates whether somebody can see
        * Sources before anything about which sources they could see is
        * relevant.
+       *
+       * **Widened for a Business Approver — decision 0471.** A person
+       * holding only `Procurement.Approve` (never `AP.TaskView`) still
+       * needs to find the Non-PO invoice(s) routed to them, since
+       * that's the only way into the Invoice Viewer's own Approve
+       * button today (settled directly by the operator: *"It should be
+       * a task allocated in the Tasks list for the Approval user. They
+       * should have access to a list of items that they own, and
+       * nothing more."*). `AP.TaskView` still opens the full screen —
+       * every stage, every team's pool; `Procurement.Approve` alone
+       * opens it too, but `ownership` is forced to `"mine"` below
+       * regardless of what was asked for, so this narrower gate can
+       * never surface a team's pool of AP work, only tasks actually
+       * assigned to this person by name — which is exactly what
+       * Non-PO Business Approver routing ever creates for them.
        */
-      if (!(await hasPermission(db, auth.user.id, "AP.TaskView"))) {
+      const mayViewAllTasks = await hasPermission(db, auth.user.id, "AP.TaskView");
+      const mayViewOwnApprovals = !mayViewAllTasks && (await hasPermission(db, auth.user.id, "Procurement.Approve"));
+      if (!mayViewAllTasks && !mayViewOwnApprovals) {
         return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
       }
 
@@ -3334,9 +3351,12 @@ export default {
         currentOrgUnitId: url.searchParams.get("org") ?? undefined,
         // Only the three real values. An unrecognised one is ignored
         // rather than returning nothing, because a filter nobody asked
-        // for should not empty a queue.
-        ownership:
-          ownership === "mine" || ownership === "available" || ownership === "locked"
+        // for should not empty a queue. A Business Approver's own
+        // "nothing more" is enforced here, not left to the query
+        // string: whatever was asked for, they only ever get "mine."
+        ownership: mayViewOwnApprovals
+          ? "mine"
+          : ownership === "mine" || ownership === "available" || ownership === "locked"
             ? ownership
             : undefined,
         limit: Number(url.searchParams.get("limit")) || undefined,

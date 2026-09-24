@@ -126,43 +126,38 @@ async function orgGuard(
 }
 
 /**
- * **Non-PO Approval routing's own "who" — decisions 0468/0469.** Feeds
- * `resolveApprovalHierarchy`/`resolveApprovalTargets`'s
- * `requesterUserId`, which only ever matters when
- * `org_approval_config.route_non_po_to_requester` is on and the
- * invoice carries no PO reference — this always runs regardless, the
- * same "compute it, let the resolver decide whether it applies"
- * shape `costCentreId`/`costObjectValues` already get at the call site
- * below, rather than this module trying to guess when the toggle is on.
+ * **Non-PO Approval routing's own "who" — decisions 0468/0469/0471.**
+ * Feeds `resolveApprovalTargets`'s `collaboratorUserIds`, which only
+ * ever matters when `org_approval_config.route_non_po_to_requester` is
+ * on and the invoice carries no PO reference — this always runs
+ * regardless, the same "compute it, let the resolver decide whether it
+ * applies" shape `costCentreId`/`costObjectValues` already get at the
+ * call site below, rather than this module trying to guess when the
+ * toggle is on.
  *
- * **No route yet lets anyone be added as a collaborator** — the
- * "Add person to conversation" UI is later-phase scope (decision
- * 0468's own "what was not built") — so `invoice_collaborators` is
- * empty for every invoice today, and this returns null in production
- * until that ships. Not a placeholder to revisit before it's useful:
- * the query itself is correct now, and simply has nothing to find yet.
- *
- * **Earliest-added collaborator, when more than one exists.** Nothing
- * in `invoice_collaborators` (migration 0078) distinguishes a primary
- * requester from anyone else added to collaborate — the table records
- * only who was added and when. Ordering by `added_at` picks whoever
- * was added first as a reasonable default rather than an arbitrary
- * one; a dedicated "primary requester" flag is worth adding later if
- * real usage shows more than one collaborator is common and the first
- * one added is often the wrong pick, not before there is any usage to
- * judge that against.
+ * **Every collaborator, not just the earliest one — decision 0471.**
+ * Decision 0469 read this back as a single "requester" (`ORDER BY
+ * added_at ASC LIMIT 1`), a reasonable default before there was any
+ * real usage to judge it against. The operator's own instruction for
+ * Business Approver routing needs the whole list instead: *"all users
+ * who require to provide approval should be added as collaborators"* —
+ * `resolveNonPoApprovers` (`approval-hierarchy.ts`) is what actually
+ * narrows this down, by checking which of them hold
+ * `Procurement.Approve`, so this function's own job stays simple: name
+ * everyone who was added, in the order they were, and let the resolver
+ * decide who among them is really a Business Approver.
  */
-async function resolveInvoiceRequester(
+async function resolveInvoiceCollaboratorIds(
   db: D1Database,
   instance: { subject_type: string; subject_id: string }
-): Promise<string | null> {
-  if (instance.subject_type !== "invoice") return null;
+): Promise<string[]> {
+  if (instance.subject_type !== "invoice") return [];
 
-  const row = await db
-    .prepare("SELECT user_id FROM invoice_collaborators WHERE invoice_id = ? ORDER BY added_at ASC LIMIT 1")
+  const rows = await db
+    .prepare("SELECT user_id FROM invoice_collaborators WHERE invoice_id = ? ORDER BY added_at ASC")
     .bind(instance.subject_id)
-    .first<{ user_id: string }>();
-  return row?.user_id ?? null;
+    .all<{ user_id: string }>();
+  return rows.results.map((r) => r.user_id);
 }
 
 export async function handleCreateProcessInstance(
@@ -644,13 +639,13 @@ export async function visitCurrentStage(
       }
     }
 
-    // Non-PO Approval routing's own "who" — decisions 0468/0469. One
-    // invoice, one requester (or none), for the whole visit — computed
-    // once here rather than once per pendingTaskActions entry below,
-    // since it never varies within a single stage visit the way a
-    // line's own cost centre or coding can. Only worth the query at
+    // Non-PO Approval routing's own "who" — decisions 0468/0469/0471.
+    // One invoice, one collaborator list, for the whole visit —
+    // computed once here rather than once per pendingTaskActions entry
+    // below, since it never varies within a single stage visit the way
+    // a line's own cost centre or coding can. Only worth the query at
     // all when this stage could actually use it.
-    const requesterUserId = stage.uses_approval_hierarchy ? await resolveInvoiceRequester(db, instance) : null;
+    const collaboratorUserIds = stage.uses_approval_hierarchy ? await resolveInvoiceCollaboratorIds(db, instance) : [];
 
     // assign_task — spawn a real task for each one, tied to this
     // visit and, for a line-scope evaluation, to the specific line
@@ -704,7 +699,7 @@ export async function visitCurrentStage(
        * design. Every other mode still resolves to exactly one, so
        * this is a one-element loop for them — no behaviour change.
        */
-      let targets: Array<{ teamId?: string; userId?: string }>;
+      let targets: Array<{ teamId?: string; userId?: string; requiredPermission?: string }>;
       if (stage.uses_approval_hierarchy) {
         const amountRaw = lineNumber !== null ? taskFacts["BT-131"] : taskFacts["BT-112"];
         const resolutions = await resolveApprovalTargets(db, {
@@ -723,12 +718,12 @@ export async function visitCurrentStage(
               typeof taskFacts["coding.commodity_code"] === "string" ? (taskFacts["coding.commodity_code"] as string) : null,
             gl_code: typeof taskFacts["coding.gl_code"] === "string" ? (taskFacts["coding.gl_code"] as string) : null,
           },
-          // Non-PO Approval routing — decisions 0468/0469. Only ever
-          // changes anything when org_approval_config's own toggle is
-          // on; see resolveNonPoRequester's own comment in
+          // Non-PO Approval routing — decisions 0468/0469/0471. Only
+          // ever changes anything when org_approval_config's own
+          // toggle is on; see resolveNonPoApprovers's own comment in
           // approval-hierarchy.ts.
           poReferenced: typeof taskFacts["BT-13"] === "string" && taskFacts["BT-13"].trim() !== "",
-          requesterUserId,
+          collaboratorUserIds,
         });
         // All-or-nothing: a line where even one applicable dimension
         // could not resolve refuses the whole stage visit, the same
@@ -742,18 +737,28 @@ export async function visitCurrentStage(
             body: { error: `approval hierarchy could not resolve a target for stage ${stage.id}: ${unresolved.reason}`, reason: "approval_hierarchy_unresolved" },
           };
         }
-        targets = (resolutions as ApprovalResolution[]).map((r) => ({ userId: r.targetUserId }));
+        targets = (resolutions as ApprovalResolution[]).map((r) => ({
+          userId: r.targetUserId,
+          requiredPermission: r.requiredPermission,
+        }));
       } else {
         targets = [{ teamId: params.team as string | undefined, userId: params.user as string | undefined }];
       }
 
-      for (const { teamId, userId } of targets) {
+      for (const { teamId, userId, requiredPermission } of targets) {
         const createResult = await handleCreateTask(db, {
           id: crypto.randomUUID(),
           stageId: stage.id,
           teamId,
           userId,
-          requiredPermission: stage.required_permission ?? params.permission,
+          // **A resolution's own permission wins when it names one —
+          // decision 0471.** Falls back to the stage's declared
+          // permission exactly as before for every resolver that
+          // doesn't (Employee-Supervisor, Cost-Object, Manual, API,
+          // and the non-approval-hierarchy branch above, none of which
+          // ever set `requiredPermission` on their own resolution) —
+          // additive, not a behaviour change for any of them.
+          requiredPermission: requiredPermission ?? stage.required_permission ?? params.permission,
         });
         if (createResult.status !== 201) {
           return { status: 500, body: { error: `assign_task fired an invalid task: ${JSON.stringify(createResult.body)}` } };

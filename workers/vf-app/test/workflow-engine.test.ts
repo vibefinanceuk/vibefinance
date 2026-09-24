@@ -298,7 +298,7 @@ describe("visitCurrentStage — a stage marked uses_approval_hierarchy resolves 
   });
 });
 
-describe("visitCurrentStage — Non-PO Approval routing feeds resolveApprovalHierarchy its requester (decisions 0468/0469)", () => {
+describe("visitCurrentStage — Non-PO Approval routing feeds resolveApprovalTargets its collaborators (decisions 0468/0469/0471)", () => {
   async function seedApprovalStage(): Promise<{ instanceId: string }> {
     await handleCreateProcess(env.DB, { id: "p1", name: "AP" });
     await handleCreateUser(env.DB, { id: "alice", email: "alice@acme.com", name: "Alice" });
@@ -319,21 +319,95 @@ describe("visitCurrentStage — Non-PO Approval routing feeds resolveApprovalHie
     return { instanceId: (created.body as { id: string }).id };
   }
 
-  it("routes to the invoice's own collaborator once added, toggle on, and the invoice carries no BT-13", async () => {
+  /** A real Business Approver grant — the same org_roles/org_user_roles shape every other permission test in this codebase uses. */
+  async function grantProcurementApprove(userId: string): Promise<void> {
+    const roleId = crypto.randomUUID();
+    await env.DB.prepare("INSERT INTO org_roles (id, name, permissions_json) VALUES (?, ?, ?)")
+      .bind(roleId, "Business Approver", JSON.stringify(["Procurement.Approve"]))
+      .run();
+    await env.DB.prepare("INSERT INTO org_user_roles (user_id, role_id) VALUES (?, ?)").bind(userId, roleId).run();
+  }
+
+  it("routes to a collaborator once added and granted Procurement.Approve, toggle on, and the invoice carries no BT-13", async () => {
     const { instanceId } = await seedApprovalStage();
     await env.DB.prepare("UPDATE org_approval_config SET route_non_po_to_requester = 1 WHERE id = 1").run();
     await env.DB.prepare(
       "INSERT INTO invoice_collaborators (invoice_id, user_id, added_by) VALUES ('inv-1', 'carol', 'alice')"
     ).run();
+    await grantProcurementApprove("carol");
 
     // No BT-13 at all on either the header or line facts — a genuinely
     // Non-PO invoice.
     await visitCurrentStage(env.DB, instanceId, { "BT-5": "EUR" }, [{ lineNumber: 1, "BT-131": 200, "BT-5": "EUR" }]);
 
+    // **The task's own required_permission is Procurement.Approve, not
+    // the stage's usual AP.Approve** — the fix for the gap decision
+    // 0470 left open: without this, Carol could never complete a task
+    // routed to her.
     const approvalTask = await env.DB.prepare(
-      "SELECT owner_team_id, owner_user_id FROM tasks WHERE stage_id = 'approval'"
-    ).first<{ owner_team_id: string | null; owner_user_id: string | null }>();
-    expect(approvalTask).toEqual({ owner_team_id: null, owner_user_id: "carol" });
+      "SELECT owner_team_id, owner_user_id, required_permission FROM tasks WHERE stage_id = 'approval'"
+    ).first<{ owner_team_id: string | null; owner_user_id: string | null; required_permission: string }>();
+    expect(approvalTask).toEqual({ owner_team_id: null, owner_user_id: "carol", required_permission: "Procurement.Approve" });
+  });
+
+  it("does not route to a collaborator who was added but never granted Procurement.Approve — falls to the configured mode instead", async () => {
+    const { instanceId } = await seedApprovalStage();
+    await env.DB.prepare("UPDATE org_approval_config SET route_non_po_to_requester = 1, default_approver_user_id = 'alice' WHERE id = 1").run();
+    await env.DB.prepare(
+      "INSERT INTO invoice_collaborators (invoice_id, user_id, added_by) VALUES ('inv-1', 'carol', 'alice')"
+    ).run();
+    // Carol is a collaborator (Procurement.Collaborate, in real usage)
+    // but was never granted Procurement.Approve.
+
+    await visitCurrentStage(env.DB, instanceId, { "BT-5": "EUR" }, [{ lineNumber: 1, "BT-131": 200, "BT-5": "EUR" }]);
+
+    const approvalTask = await env.DB.prepare(
+      "SELECT owner_user_id, required_permission FROM tasks WHERE stage_id = 'approval'"
+    ).first<{ owner_user_id: string | null; required_permission: string }>();
+    expect(approvalTask).toEqual({ owner_user_id: "alice", required_permission: "AP.Approve" });
+  });
+
+  it("routes one task per qualifying Business Approver, and the stage only advances once every one of them has completed theirs (decision 0471, unanimous)", async () => {
+    const { instanceId } = await seedApprovalStage();
+    await env.DB.prepare("UPDATE org_approval_config SET route_non_po_to_requester = 1 WHERE id = 1").run();
+    await handleCreateUser(env.DB, { id: "dave", email: "dave@acme.com", name: "Dave" });
+    await env.DB.prepare(
+      "INSERT INTO invoice_collaborators (invoice_id, user_id, added_by) VALUES ('inv-1', 'carol', 'alice')"
+    ).run();
+    await env.DB.prepare(
+      "INSERT INTO invoice_collaborators (invoice_id, user_id, added_by) VALUES ('inv-1', 'dave', 'alice')"
+    ).run();
+    await grantProcurementApprove("carol");
+    await grantProcurementApprove("dave");
+
+    await visitCurrentStage(env.DB, instanceId, { "BT-5": "EUR" }, [{ lineNumber: 1, "BT-131": 200, "BT-5": "EUR" }]);
+
+    const tasks = await env.DB.prepare(
+      "SELECT id, owner_user_id, required_permission, stage_visit_id FROM tasks WHERE stage_id = 'approval' ORDER BY owner_user_id"
+    ).all<{ id: string; owner_user_id: string; required_permission: string; stage_visit_id: string }>();
+    expect(tasks.results).toHaveLength(2);
+    expect(tasks.results.map((t) => t.owner_user_id)).toEqual(["carol", "dave"]);
+    expect(tasks.results.every((t) => t.required_permission === "Procurement.Approve")).toBe(true);
+    // Both tasks share one stage visit — decision 0452's own
+    // multi-target shape — so completing only one is not enough.
+    const [carolTask, daveTask] = tasks.results;
+    expect(carolTask.stage_visit_id).toBe(daveTask.stage_visit_id);
+
+    // Completing only Carol's leaves Dave's open — the instance does
+    // not advance. Same stage_visit_id-scoped gate onTaskCompleted
+    // already uses, no change needed for this to work.
+    await handleCompleteTask(env.DB, carolTask.id, "carol");
+    await onTaskCompleted(env.DB, carolTask.id);
+    const afterOne = await env.DB.prepare("SELECT current_stage_id FROM process_instances WHERE id = ?").bind(instanceId).first();
+    expect(afterOne).toEqual({ current_stage_id: "approval" });
+
+    // Completing Dave's too — both Business Approvers required, unanimous.
+    await handleCompleteTask(env.DB, daveTask.id, "dave");
+    await onTaskCompleted(env.DB, daveTask.id);
+    const afterBoth = await env.DB.prepare("SELECT status FROM process_instances WHERE id = ?").bind(instanceId).first();
+    // No stage after 'approval' in this fixture — the instance
+    // completes, proving the gate actually released.
+    expect(afterBoth).toEqual({ status: "completed" });
   });
 
   it("does not route to a collaborator when the invoice carries a PO reference, toggle or not", async () => {
@@ -342,6 +416,7 @@ describe("visitCurrentStage — Non-PO Approval routing feeds resolveApprovalHie
     await env.DB.prepare(
       "INSERT INTO invoice_collaborators (invoice_id, user_id, added_by) VALUES ('inv-1', 'carol', 'alice')"
     ).run();
+    await grantProcurementApprove("carol");
 
     await visitCurrentStage(env.DB, instanceId, { "BT-5": "EUR", "BT-13": "PO-1" }, [
       { lineNumber: 1, "BT-131": 200, "BT-5": "EUR" },
@@ -358,8 +433,7 @@ describe("visitCurrentStage — Non-PO Approval routing feeds resolveApprovalHie
   it("no collaborator added yet: routes exactly as it always has, toggle on or not", async () => {
     const { instanceId } = await seedApprovalStage();
     await env.DB.prepare("UPDATE org_approval_config SET route_non_po_to_requester = 1, default_approver_user_id = 'alice' WHERE id = 1").run();
-    // No invoice_collaborators row at all — the honest state of every
-    // invoice today, since no route yet adds one.
+    // No invoice_collaborators row at all.
 
     const result = await visitCurrentStage(env.DB, instanceId, { "BT-5": "EUR" }, [
       { lineNumber: 1, "BT-131": 200, "BT-5": "EUR" },

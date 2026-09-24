@@ -1503,6 +1503,19 @@ function taskActionButtons(task, onClose) {
           // With nothing to save, the first thing the task offers is
           // what somebody came to do.
           primary: !canEditAnything && index === 0,
+          /**
+           * **"Approve," not the generic "Complete" — decision 0471.**
+           * Still the same action and the same route
+           * (`POST /tasks/:id/complete`) every stage already uses —
+           * only the label changes, the same `label` override decision
+           * 0374 already added `actionLink` for Purchase Orders' own
+           * "Load CSV"/"CSV Template." A Business Approver's task
+           * always carries `requiredPermission: "Procurement.Approve"`
+           * (`approval-hierarchy.ts`'s own `resolveNonPoApprovers`),
+           * so this reads directly off data the task already has,
+           * rather than guessing from the stage's name.
+           */
+          label: a === "complete" && task.requiredPermission === "Procurement.Approve" ? t("action.approve") : undefined,
         })
       ),
   ];

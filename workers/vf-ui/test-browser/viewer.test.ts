@@ -51,6 +51,18 @@ function stubFetch(routes: Record<string, unknown>, posted: string[] = []) {
       if (/^\/api\/invoices\/[^/]+\/pages$/.test(path)) {
         return { ok: true, json: async () => ({ pages: [] }) } as Response;
       }
+      /**
+       * **The same default the pages route gets, for the same
+       * reason — decision 0471.** `collaborators.js` (decision 0470)
+       * fetches this the moment the Timeline / Chat tab builds, for
+       * every task that carries an invoice subject — infrastructure
+       * almost none of these tests are actually about, the same as
+       * `/pages` above. A `routes` entry for the same path still
+       * overrides it, for the tests genuinely about collaborators.
+       */
+      if (/^\/api\/documents\/[^/]+\/collaborators$/.test(path)) {
+        return { ok: true, json: async () => ({ collaborators: [] }) } as Response;
+      }
       throw new Error(`no stub for ${path} — add one, or the test proves nothing`);
     })
   );
@@ -127,6 +139,7 @@ const STRINGS = {
     "action.save": "Save",
     "action.claim": "Claim",
     "action.complete": "Complete",
+    "action.approve": "Approve",
     "action.release": "Release",
     "action.discard": "Discard",
     "action.return_to_supplier": "To supplier",
@@ -664,6 +677,28 @@ describe("the action row (decision 0122)", () => {
     const labels = [...document.querySelectorAll(".actionlink span")].map((n) => n.textContent);
     expect(labels).toContain("Complete");
     expect(labels).not.toContain("Release");
+  });
+
+  it("labels the complete action 'Approve' for a Business Approver's task (decision 0471)", async () => {
+    // Same action, same route (POST /tasks/:id/complete) — only the
+    // label differs, read off the task's own requiredPermission rather
+    // than guessed from the stage's name.
+    stubFetch(OPEN);
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    await openViewer({ ...TASK, actions: ["complete"], requiredPermission: "Procurement.Approve" }, () => {});
+
+    const labels = [...document.querySelectorAll(".actionlink span")].map((n) => n.textContent);
+    expect(labels).toContain("Approve");
+    expect(labels).not.toContain("Complete");
+  });
+
+  it("keeps the generic 'Complete' label for every task that isn't a Business Approver's", async () => {
+    await openWith(["complete"]);
+    const labels = [...document.querySelectorAll(".actionlink span")].map((n) => n.textContent);
+    expect(labels).toContain("Complete");
+    expect(labels).not.toContain("Approve");
   });
 
   it("marks one action as the dominant one", async () => {

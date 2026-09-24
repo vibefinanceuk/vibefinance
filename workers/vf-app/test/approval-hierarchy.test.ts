@@ -587,7 +587,40 @@ describe("resolveApprovalHierarchy — manual and api modes are named but not bu
   });
 });
 
-describe("Non-PO Approval routing — decisions 0468/0469, additive ahead of whichever mode is configured", () => {
+describe("resolveApprovalHierarchy — no longer checks Non-PO routing (decision 0471)", () => {
+  it("ignores collaboratorUserIds entirely and goes straight to mode dispatch, toggle on or off", async () => {
+    // The single-target contract can't represent "route to more than
+    // one Business Approver," so decision 0471 moved this check into
+    // resolveApprovalTargets alone — reached directly, this function
+    // now behaves as if Non-PO routing did not exist at all.
+    await env.DB.prepare("UPDATE org_approval_config SET route_non_po_to_requester = 1, default_approver_user_id = 'bob' WHERE id = 1").run();
+    const roleId = crypto.randomUUID();
+    await env.DB.prepare("INSERT INTO org_roles (id, name, permissions_json) VALUES (?, ?, ?)")
+      .bind(roleId, "Business Approver", JSON.stringify(["Procurement.Approve"]))
+      .run();
+    await env.DB.prepare("INSERT INTO org_user_roles (user_id, role_id) VALUES ('alice', ?)").bind(roleId).run();
+
+    const resolution = await resolveApprovalHierarchy(env.DB, {
+      instanceId: "inv-1",
+      processId: "p1",
+      currentSequence: 2,
+      processVersion: 1,
+      lineNumber: 1,
+      unitId: null,
+      currency: "EUR",
+      amount: 1500,
+      costCentreId: null,
+      poReferenced: false,
+      collaboratorUserIds: ["alice"],
+    });
+    // employee_supervisor mode, no line coder seeded — falls straight
+    // to Default Approver, never to alice, even though she genuinely
+    // holds Procurement.Approve and the toggle is on.
+    expect(resolution).toMatchObject({ targetUserId: "bob" });
+  });
+});
+
+describe("Non-PO Approval routing — decisions 0468/0469/0471, resolveApprovalTargets only, additive ahead of whichever mode is configured", () => {
   const baseParams = {
     instanceId: "inv-1",
     processId: "p1",
@@ -600,81 +633,136 @@ describe("Non-PO Approval routing — decisions 0468/0469, additive ahead of whi
     costCentreId: null,
   };
 
-  it("off by default: a Non-PO invoice with a known requester still falls through to the configured mode", async () => {
+  /** A real role grant, the same shape every other permission test in this codebase uses — hasPermission reads org_roles/org_user_roles, not a flag on the user. */
+  async function grantProcurementApprove(userId: string): Promise<void> {
+    const roleId = crypto.randomUUID();
+    await env.DB.prepare("INSERT INTO org_roles (id, name, permissions_json) VALUES (?, ?, ?)")
+      .bind(roleId, "Business Approver", JSON.stringify(["Procurement.Approve"]))
+      .run();
+    await env.DB.prepare("INSERT INTO org_user_roles (user_id, role_id) VALUES (?, ?)").bind(userId, roleId).run();
+  }
+
+  it("off by default: a Non-PO invoice with a qualifying collaborator still falls through to the configured mode", async () => {
     // No toggle flip at all — the migration's own default.
     await env.DB.prepare("UPDATE org_approval_config SET default_approver_user_id = 'bob' WHERE id = 1").run();
-    const resolution = await resolveApprovalHierarchy(env.DB, {
+    await grantProcurementApprove("alice");
+    const resolutions = await resolveApprovalTargets(env.DB, {
       ...baseParams,
       poReferenced: false,
-      requesterUserId: "alice",
+      collaboratorUserIds: ["alice"],
     });
     // employee_supervisor mode, no line coder seeded — falls to Default
-    // Approver exactly as it would with the two new fields absent.
-    expect(resolution).toMatchObject({ targetUserId: "bob" });
+    // Approver exactly as it would with collaboratorUserIds absent.
+    expect(resolutions).toHaveLength(1);
+    expect(resolutions[0]).toMatchObject({ targetUserId: "bob" });
   });
 
-  it("routes straight to the requester once the toggle is on, the invoice is Non-PO, and a requester is known", async () => {
+  it("routes to every collaborator who holds Procurement.Approve, once the toggle is on and the invoice is Non-PO", async () => {
     await env.DB.prepare("UPDATE org_approval_config SET route_non_po_to_requester = 1 WHERE id = 1").run();
-    const resolution = await resolveApprovalHierarchy(env.DB, {
+    await handleCreateUser(env.DB, { id: "carol", email: "carol@acme.com", name: "Carol" });
+    await grantProcurementApprove("alice");
+    await grantProcurementApprove("carol");
+
+    const resolutions = await resolveApprovalTargets(env.DB, {
       ...baseParams,
       poReferenced: false,
-      requesterUserId: "alice",
+      collaboratorUserIds: ["alice", "carol"],
     });
-    expect(resolution).toEqual({
-      targetUserId: "alice",
-      reasoning: "This invoice carries no purchase order reference; routed directly to its own requester.",
+    // Both, in parallel — decision 0452's own multi-target shape — each
+    // carrying its own requiredPermission override, the fix for the
+    // gap decision 0470 left open.
+    expect(resolutions).toEqual([
+      {
+        targetUserId: "alice",
+        reasoning: expect.stringContaining("Business Approver"),
+        requiredPermission: "Procurement.Approve",
+      },
+      {
+        targetUserId: "carol",
+        reasoning: expect.stringContaining("Business Approver"),
+        requiredPermission: "Procurement.Approve",
+      },
+    ]);
+  });
+
+  it("skips a collaborator who was added but never granted Procurement.Approve — only whoever actually holds it is routed", async () => {
+    await env.DB.prepare("UPDATE org_approval_config SET route_non_po_to_requester = 1 WHERE id = 1").run();
+    await handleCreateUser(env.DB, { id: "carol", email: "carol@acme.com", name: "Carol" });
+    await grantProcurementApprove("alice");
+    // Carol is a collaborator (view/comment only, via Procurement.Collaborate
+    // in real usage) but never a Business Approver.
+
+    const resolutions = await resolveApprovalTargets(env.DB, {
+      ...baseParams,
+      poReferenced: false,
+      collaboratorUserIds: ["alice", "carol"],
     });
+    expect(resolutions).toEqual([
+      { targetUserId: "alice", reasoning: expect.any(String), requiredPermission: "Procurement.Approve" },
+    ]);
   });
 
   it("a PO-referenced invoice still uses the configured mode, toggle on or not", async () => {
     await env.DB.prepare("UPDATE org_approval_config SET route_non_po_to_requester = 1, default_approver_user_id = 'bob' WHERE id = 1").run();
-    const resolution = await resolveApprovalHierarchy(env.DB, {
+    await grantProcurementApprove("alice");
+    const resolutions = await resolveApprovalTargets(env.DB, {
       ...baseParams,
       poReferenced: true,
-      requesterUserId: "alice",
+      collaboratorUserIds: ["alice"],
     });
     // employee_supervisor mode, no line coder seeded for this instance
-    // — falls to Default Approver, never to the requester, because
-    // this invoice carries a PO reference.
-    expect(resolution).toMatchObject({ targetUserId: "bob" });
+    // — falls to Default Approver, never to alice, because this
+    // invoice carries a PO reference.
+    expect(resolutions).toHaveLength(1);
+    expect(resolutions[0]).toMatchObject({ targetUserId: "bob" });
   });
 
-  it("no requester known: falls through even with the toggle on and no PO reference", async () => {
+  it("no collaborators known: falls through even with the toggle on and no PO reference", async () => {
     await env.DB.prepare("UPDATE org_approval_config SET route_non_po_to_requester = 1, default_approver_user_id = 'bob' WHERE id = 1").run();
-    const resolution = await resolveApprovalHierarchy(env.DB, {
+    const resolutions = await resolveApprovalTargets(env.DB, {
       ...baseParams,
       poReferenced: false,
-      requesterUserId: null,
+      collaboratorUserIds: [],
     });
-    expect(resolution).toMatchObject({ targetUserId: "bob" });
+    expect(resolutions).toHaveLength(1);
+    expect(resolutions[0]).toMatchObject({ targetUserId: "bob" });
   });
 
-  it("applies under resolveApprovalTargets too, including when cost_object mode is configured", async () => {
+  it("collaborators known, but none hold Procurement.Approve: falls through the same way", async () => {
+    await env.DB.prepare("UPDATE org_approval_config SET route_non_po_to_requester = 1, default_approver_user_id = 'bob' WHERE id = 1").run();
+    // alice is a collaborator but was never granted the role.
+    const resolutions = await resolveApprovalTargets(env.DB, {
+      ...baseParams,
+      poReferenced: false,
+      collaboratorUserIds: ["alice"],
+    });
+    expect(resolutions).toHaveLength(1);
+    expect(resolutions[0]).toMatchObject({ targetUserId: "bob" });
+  });
+
+  it("pre-empts cost_object mode's own multi-dimension walk entirely, same precedence as decision 0469", async () => {
     await env.DB.prepare(
       "UPDATE org_approval_config SET mode = 'cost_object', route_non_po_to_requester = 1 WHERE id = 1"
     ).run();
+    await grantProcurementApprove("alice");
     const resolutions = await resolveApprovalTargets(env.DB, {
       ...baseParams,
       costCentreId: "does-not-matter-here",
       poReferenced: false,
-      requesterUserId: "alice",
+      collaboratorUserIds: ["alice"],
     });
-    // A single target, not one per cost-object dimension — the
-    // requester pre-empts Cost-Object's own multi-dimension walk
-    // entirely rather than running alongside it.
+    // A single target, not one per cost-object dimension.
     expect(resolutions).toEqual([
-      {
-        targetUserId: "alice",
-        reasoning: "This invoice carries no purchase order reference; routed directly to its own requester.",
-      },
+      { targetUserId: "alice", reasoning: expect.any(String), requiredPermission: "Procurement.Approve" },
     ]);
   });
 
   it("every field absent (every caller written before this decision) behaves exactly as before", async () => {
     await env.DB.prepare("UPDATE org_approval_config SET route_non_po_to_requester = 1, default_approver_user_id = 'bob' WHERE id = 1").run();
-    // poReferenced/requesterUserId simply omitted, the same shape every
-    // pre-existing test in this file already uses.
-    const resolution = await resolveApprovalHierarchy(env.DB, baseParams);
-    expect(resolution).toMatchObject({ targetUserId: "bob" });
+    // poReferenced/collaboratorUserIds simply omitted, the same shape
+    // every pre-existing test in this file already uses.
+    const resolutions = await resolveApprovalTargets(env.DB, baseParams);
+    expect(resolutions).toHaveLength(1);
+    expect(resolutions[0]).toMatchObject({ targetUserId: "bob" });
   });
 });

@@ -1,5 +1,6 @@
 import { unitLineage } from "./unit-config.js";
 import { resolveApprovalChain } from "./ledger-route.js";
+import { hasPermission } from "./enforce.js";
 
 /**
  * Who approves an invoice, resolved at the moment a task is created —
@@ -22,6 +23,25 @@ import { resolveApprovalChain } from "./ledger-route.js";
 export interface ApprovalResolution {
   targetUserId: string;
   reasoning: string;
+  /**
+   * **The task's own permission, when a resolution needs a different
+   * one than the stage's default — decision 0471.** Optional, and
+   * absent means exactly what it always has: `workflow-engine.ts`
+   * falls back to `stage.required_permission` unchanged, the same as
+   * every resolution produced before this field existed.
+   *
+   * A Business Approver (`Procurement.Approve`) never holds an
+   * Approval stage's usual `AP.Approve`, so a task created with the
+   * stage's own default would be one they could never complete —
+   * exactly the gap decision 0470 left `Procurement.Approve` reserved
+   * over. This is the resolver's own system-computed override, not a
+   * rule author's input the way `assign_task`'s `params.permission`
+   * is — decision 0200's "the stage's own wins" still refuses a *rule*
+   * that disagrees with the stage; it says nothing about a resolver
+   * choosing a different, correct permission for the specific person
+   * it found.
+   */
+  requiredPermission?: string;
 }
 
 export interface ApprovalUnresolved {
@@ -239,15 +259,25 @@ export interface ResolveApprovalParams {
    */
   poReferenced?: boolean;
   /**
-   * The invoice's own requester, if one is known — resolved by the
+   * Every collaborator on this invoice, if any — resolved by the
    * caller from `invoice_collaborators` (decision 0468), not looked up
-   * here. `null`/absent means none is known yet, which is the honest,
-   * expected state for every invoice today: no route yet lets anyone
-   * be added as a collaborator (that is later-phase scope), so this
-   * stays empty in production until that ships, and the toggle it
-   * feeds stays inert until then regardless of its own setting.
+   * here, in the order they were added. `undefined`/empty means none
+   * is known, the honest state for any invoice nobody has been added
+   * to yet.
+   *
+   * **Renamed from `requesterUserId` (singular) — decision 0471.**
+   * Decision 0469 built this as "the earliest-added collaborator,
+   * treated as the requester." The operator's own instruction for
+   * Business Approver routing was different: *"For Non-PO invoices all
+   * users who require to provide approval should be added as
+   * collaborators. When they approve they are approving their own
+   * capacity, based on the invoice line(s) they are responsible for."*
+   * That is every qualifying collaborator, not the first one added, so
+   * `resolveNonPoApprovers` below now takes the whole list and filters
+   * it to whoever actually holds `Procurement.Approve`, rather than
+   * this module guessing which one is "the" requester.
    */
-  requesterUserId?: string | null;
+  collaboratorUserIds?: string[];
 }
 
 /**
@@ -348,59 +378,99 @@ async function resolveCostObject(
 }
 
 /**
- * **Non-PO Approval routing — decisions 0468/0469, migration 0078.**
- * Additive, checked *before* dispatching to whichever mode is
+ * **Non-PO Approval routing — decisions 0468/0469/0471, migration
+ * 0078.** Additive, checked *before* dispatching to whichever mode is
  * configured — not a fifth `ApprovalMode`, which would incorrectly
  * imply replacing Employee-Supervisor/Cost-Object customer-wide rather
  * than pre-empting them for the one invoice shape they were never
  * meant to route (no purchase order to derive a cost object or a
  * coding chain from in the first place).
  *
- * Resolves only when all three hold: the toggle is on, the invoice
- * carries no PO reference, and a requester is already known. Any one
- * missing falls through to the caller's own mode dispatch unchanged —
- * this never itself produces `unresolved`, since "nothing to route to
- * yet" here just means "let the configured mode try instead," not a
- * failure worth refusing the stage visit over.
+ * **Every collaborator who holds `Procurement.Approve`, not "the"
+ * requester — decision 0471, settled directly by the operator:**
+ * *"For Non-PO invoices all users who require to provide approval
+ * should be added as collaborators. When they approve they are
+ * approving their own capacity, based on the invoice line(s) they are
+ * responsible for."* Decision 0469 picked the earliest-added
+ * collaborator as a stand-in "requester"; this replaces that guess
+ * with the actual, checkable fact — a Business Approver is whoever was
+ * added to the conversation *and* granted the role, and every one of
+ * them is routed a task, in parallel (decision 0452's own multi-target
+ * precedent), each completing it "in their own capacity."
  *
- * **Applied at every entry point, not just one** — `resolveApprovalHierarchy`
- * and `resolveApprovalTargets` both call this first, so a Non-PO
- * invoice with a known requester routes to them the same way
- * regardless of which entry point a caller uses, including under
- * Cost-Object mode's own multi-dimension path.
+ * **Resolves to a non-empty array only when all of: the toggle is on,
+ * the invoice carries no PO reference, at least one collaborator is
+ * known, and at least one of them holds `Procurement.Approve`.** Any
+ * one missing falls through to the caller's own mode dispatch
+ * unchanged (returns `null`) — this never itself produces
+ * `unresolved`, the same "nothing to route to yet just means let the
+ * configured mode try instead" discipline decision 0469 already
+ * established, now including "collaborators exist, but none of them
+ * are actually Business Approvers" as one more honest gap that falls
+ * through rather than refusing the whole stage visit.
+ *
+ * **Every qualifying resolution carries its own `requiredPermission`
+ * of `Procurement.Approve`** — the fix for the gap decision 0470 left
+ * open: without this, a task routed here would inherit the Approval
+ * stage's usual `AP.Approve` and be uncompletable by the very person
+ * it was created for.
+ *
+ * **Async, unlike its decision-0469 predecessor** — checking who
+ * "actually holds" the permission needs `hasPermission`, a per-user
+ * database read `resolveNonPoRequester` never needed when it only had
+ * to pick the earliest row.
  */
-function resolveNonPoRequester(config: ApprovalConfig, params: ResolveApprovalParams): ApprovalResolution | null {
+async function resolveNonPoApprovers(
+  db: D1Database,
+  config: ApprovalConfig,
+  params: ResolveApprovalParams
+): Promise<ApprovalResolution[] | null> {
   if (!config.routeNonPoToRequester) return null;
   if (params.poReferenced) return null;
-  if (!params.requesterUserId) return null;
+  const candidates = params.collaboratorUserIds ?? [];
+  if (candidates.length === 0) return null;
 
-  return {
-    targetUserId: params.requesterUserId,
-    reasoning: "This invoice carries no purchase order reference; routed directly to its own requester.",
-  };
+  const approvers: ApprovalResolution[] = [];
+  for (const userId of candidates) {
+    if (await hasPermission(db, userId, "Procurement.Approve")) {
+      approvers.push({
+        targetUserId: userId,
+        reasoning:
+          "This invoice carries no purchase order reference; routed to a Business Approver added to its conversation, approving in their own capacity.",
+        requiredPermission: "Procurement.Approve",
+      });
+    }
+  }
+  return approvers.length > 0 ? approvers : null;
 }
 
 /**
  * The single entry point `workflow-engine.ts` calls for a stage
- * marked `uses_approval_hierarchy` — resolves the configured mode's
- * target, or explains why it could not.
+ * marked `uses_approval_hierarchy` when it needs exactly one answer —
+ * resolves the configured mode's target, or explains why it could
+ * not.
  *
- * **Single-target, and unchanged since decision 0439.** Every mode but
- * Cost-Object has only ever needed one answer, and every test written
- * against this function keeps working exactly as it did. Cost-Object's
- * own generalization to more than one dimension lives in
- * `resolveApprovalTargets` below, not here — a stage that resolves
- * through more than one cost-object dimension at once calls that one
- * instead.
+ * **Single-target, and unchanged since decision 0439 for every mode it
+ * still handles.** Cost-Object's own generalization to more than one
+ * dimension lives in `resolveApprovalTargets` below, not here — a
+ * stage that resolves through more than one cost-object dimension at
+ * once calls that one instead.
+ *
+ * **No longer checks Non-PO routing — decision 0471.** `resolveNonPoApprovers`
+ * can resolve to more than one target, which this function's own
+ * single-answer contract cannot represent; `resolveApprovalTargets`
+ * checks it first and only reaches this function once Non-PO routing
+ * has already decided it does not apply (toggle off, PO referenced, or
+ * no qualifying Business Approver). Reached directly — as the tests
+ * below still do — this simply skips straight to mode dispatch, the
+ * correct answer whenever Non-PO routing was never going to fire
+ * anyway.
  */
 export async function resolveApprovalHierarchy(
   db: D1Database,
   params: ResolveApprovalParams
 ): Promise<ApprovalResolution | ApprovalUnresolved> {
   const config = await loadApprovalConfig(db);
-
-  const nonPo = resolveNonPoRequester(config, params);
-  if (nonPo) return nonPo;
 
   if (config.mode === "employee_supervisor") return resolveEmployeeSupervisor(db, config, params);
   if (config.mode === "cost_object") return resolveCostObject(db, config, params);
@@ -564,15 +634,22 @@ async function resolveCostObjects(
 }
 
 /**
- * **The plural entry point** — decision 0452. `workflow-engine.ts`
+ * **The plural entry point** — decisions 0452/0471. `workflow-engine.ts`
  * calls this, not `resolveApprovalHierarchy`, so a stage can spawn
  * more than one approval task for a single line.
  *
- * Every mode but Cost-Object still resolves to exactly one target:
- * this delegates to the existing, unchanged `resolveApprovalHierarchy`
+ * **The one place Non-PO routing is now checked — decision 0471.**
+ * `resolveApprovalHierarchy` no longer checks it at all (it cannot
+ * represent more than one target), so this is not "checked here too,"
+ * it is checked *only* here, ahead of every mode including Cost-Object
+ * — a Business Approver-routed invoice pre-empts Cost-Object's own
+ * multi-dimension walk entirely rather than running alongside it, the
+ * same precedence decision 0469 already established.
+ *
+ * Every mode but Cost-Object and Non-PO still resolves to exactly one
+ * target: this delegates to the existing `resolveApprovalHierarchy`
  * for those and wraps its single answer, rather than duplicating
- * Employee-Supervisor/Manual/API here. Only Cost-Object mode can ever
- * return more than one element.
+ * Employee-Supervisor/Manual/API here.
  */
 export async function resolveApprovalTargets(
   db: D1Database,
@@ -580,12 +657,8 @@ export async function resolveApprovalTargets(
 ): Promise<Array<ApprovalResolution | ApprovalUnresolved>> {
   const config = await loadApprovalConfig(db);
 
-  // Checked here too, not only inside resolveApprovalHierarchy below —
-  // Cost-Object mode never reaches that function (resolveCostObjects
-  // is called directly), and a Non-PO invoice with a known requester
-  // should route to them the same way under any configured mode.
-  const nonPo = resolveNonPoRequester(config, params);
-  if (nonPo) return [nonPo];
+  const nonPo = await resolveNonPoApprovers(db, config, params);
+  if (nonPo) return nonPo;
 
   if (config.mode === "cost_object") {
     return resolveCostObjects(db, config, params);

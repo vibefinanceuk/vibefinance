@@ -55,9 +55,11 @@ export async function handleAddCollaborator(
  * Who is already in an invoice's conversation — the "Add person" panel's
  * own list, and (once a UI needs it) who a `Procurement.Collaborate`
  * holder shares the conversation with. Ordered the same way
- * `resolveInvoiceRequester` (`workflow-engine.ts`, decision 0469) reads
- * this table — earliest-added first — so the two stay consistent about
- * what "first" means here.
+ * `resolveInvoiceCollaboratorIds` (`workflow-engine.ts`, decisions
+ * 0469/0471) reads this table — earliest-added first — so the two stay
+ * consistent about ordering, even though decision 0471 no longer
+ * treats "first" as special (every Business Approver among them is
+ * routed a task, not only the earliest).
  */
 export async function handleListCollaborators(db: D1Database, invoiceId: string): Promise<RouteResult> {
   const invoice = await db.prepare("SELECT id FROM invoice_headers WHERE id = ?").bind(invoiceId).first();

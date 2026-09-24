@@ -2987,6 +2987,56 @@ section for the full reasoning and tests.
   untouched here.
 - Full reasoning and verification counts in decision 0469.
 
+### The Business Approver role (0471)
+- **`Procurement.Approve`, real now** — decision 0469 built the
+  plumbing (`invoice_collaborators`, the permission itself, a
+  single-target Non-PO resolver) and deliberately left it reserved;
+  this decision is what lets a Business Approver actually complete a
+  task. Settled directly by the operator: unanimous completion when
+  more than one is routed, every collaborator holding the role (not
+  only the earliest-added), and entry via the existing Tasks list
+  rather than a new screen.
+- **The gap that made `Procurement.Approve` uncompletable**: every
+  task inherited its stage's own `required_permission`
+  (`AP.Approve`), regardless of who resolved the target.
+  `ApprovalResolution` gained an optional `requiredPermission`
+  override, carried through `workflow-engine.ts`'s task-creation loop,
+  falling back to the stage's own permission when absent — additive,
+  every other resolver unchanged.
+- **`resolveNonPoRequester` (single target) replaced by
+  `resolveNonPoApprovers`** (`approval-hierarchy.ts`): every invoice
+  collaborator who holds `Procurement.Approve`, not only the
+  earliest-added, each routed their own task in parallel, all sharing
+  one `stage_visit_id` — decision 0452's own multi-target gate already
+  enforces unanimous completion with zero further changes.
+  `resolveApprovalHierarchy` (singular) no longer checks Non-PO
+  routing at all, since it cannot represent more than one target;
+  `resolveApprovalTargets` (plural) is the only entry point that does.
+- **`GET /tasks` widened**, not rebuilt: `Procurement.Approve` alone
+  now opens it (previously `AP.TaskView`-only), with `ownership`
+  forced to `"mine"` server-side for this narrower grant — the
+  existing query already restricted to a person's own tasks, so
+  nothing else needed to change for "a list of items they own, and
+  nothing more."
+- **The Invoice Viewer's Approve button reuses the existing `complete`
+  action and route** (`POST /tasks/:id/complete`) — only the label
+  changes, to "Approve," read directly off the task's own
+  `requiredPermission`. No decline/reject path — Approve-only, as
+  asked.
+- **One new `ui_strings` key**, `action.approve` (migration 0159,
+  `vf-licence`). Two pre-existing `vf-ui` test-infrastructure bugs
+  found and fixed along the way (a missing `vitest.browser.config.ts`
+  alias for `collaborators.js` that failed 232 of `viewer.test.ts`'s
+  261 tests at import time, and a missing default fetch stub for the
+  collaborators route) — both decision 0470's own gaps, only surfaced
+  once this decision's own tests were the first to actually exercise
+  that file successfully. A broader, similar gap across ~15-20 other
+  inline fetch mocks in the same two test files is flagged, not fixed.
+- **Not built**: a separate "My Approvals" screen (the operator named
+  Tasks itself); per-line approval-target tracking; a decline/reject
+  action; removing a collaborator (still decision 0470's own open gap).
+- Full reasoning and verification counts in decision 0471.
+
 ### "Add person to conversation" — Phase 2 built (0470)
 - **`invoice_collaborators`/`Procurement.Collaborate`, real now** —
   both existed since decision 0469, reserved; this phase is what

@@ -156,12 +156,11 @@ const AR_PERMISSIONS = ["AR.Validate", "AR.Approve", "AR.Issue", "AR.Remind", "A
 const SUPPLIER_MAINTENANCE_PERMISSIONS = ["Supplier.Maintain"] as const;
 
 /**
- * **Business User — decision 0468, `Procurement.Approve` still
- * reserved.** A Business User is not AP staff: someone who requested
- * goods or services (on a PO or off it) and needs a narrow way in, not
- * the run of AP.* permissions. Split into two, the same way this
- * codebase already splits `AP.Validate` from `AP.Approve` rather than
- * one blob:
+ * **Business User — decisions 0468/0470/0471, both halves now real.**
+ * A Business User is not AP staff: someone who requested goods or
+ * services (on a PO or off it) and needs a narrow way in, not the run
+ * of AP.* permissions. Split into two, the same way this codebase
+ * already splits `AP.Validate` from `AP.Approve` rather than one blob:
  *
  * - `Procurement.Collaborate` — view an invoice you were explicitly
  *   added to (via "Add person to conversation") and post to its chat.
@@ -170,10 +169,17 @@ const SUPPLIER_MAINTENANCE_PERMISSIONS = ["Supplier.Maintain"] as const;
  *   this checks, real and enforced on five routes now — `GET
  *   /invoices/:id` and its document/pages/progress siblings, plus
  *   `/documents/:id/activity` and `/documents/:id/comments`.
- * - `Procurement.Approve` — hold and complete an approval task, the
- *   operator's own example being a Non-PO invoice routed to its
- *   requester. Still reserved — genuinely separate, later-phase scope,
- *   named as such in decision 0468 itself.
+ * - `Procurement.Approve` — hold and complete an approval task —
+ *   decision 0471, the **Business Approver** role. A Non-PO invoice
+ *   with `org_approval_config.route_non_po_to_requester` on routes one
+ *   task per invoice collaborator who holds this permission, each
+ *   completing it "in their own capacity" (the operator's own words) —
+ *   the Approve button on the Invoice Viewer, and every one routed
+ *   must complete theirs before the Approval stage advances (decision
+ *   0452's own unanimous, all-open-tasks gate, unchanged). Reachable
+ *   via `GET /tasks`, scoped to exactly this person's own named-user
+ *   tasks even without `AP.TaskView` — see the route's own comment in
+ *   `index.ts`.
  *
  * Grantable independently or together, like any other role. A separate
  * namespace from `AP.*`, the same "namespaced by business role, not by
@@ -322,7 +328,7 @@ export const PERMISSION_DESCRIPTIONS: Record<Permission, string> = {
   "Supplier.Maintain": "Validate a new or changed supplier record",
 
   "Procurement.Collaborate": "View an invoice you've been added to, and post to its chat — decision 0470",
-  "Procurement.Approve": "Hold and complete an approval task, e.g. a Non-PO invoice routed to its requester — reserved, no route yet",
+  "Procurement.Approve": "Business Approver — hold and complete an approval task, e.g. a Non-PO invoice routed to its collaborators — decision 0471",
 
   "Admin.Configure": "Configure sources, ledgers, cost centres, and other setup screens",
   "Admin.UserManagement": "Create people, and assign or revoke their roles",

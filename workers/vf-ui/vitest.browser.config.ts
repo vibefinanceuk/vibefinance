@@ -131,6 +131,18 @@ export default defineConfig({
       "/coding-lists.js": resolve(__dirname, "public/coding-lists.js"),
       "/readback.js": resolve(__dirname, "public/readback.js"),
       "/activity.js": resolve(__dirname, "public/activity.js"),
+      /**
+       * **Missed by decision 0470, caught while building decision
+       * 0471** — `collaborators.js` was added and imported by
+       * `viewer.js` (`import { buildCollaboratorsControl } from
+       * "/collaborators.js"`) without an alias here, which fails
+       * every test in `viewer.test.ts` at import time rather than
+       * only whichever test actually exercises it — the same "this
+       * whole file has never been executed by anything" gap this
+       * config's own header comment already named as the reason it
+       * exists.
+       */
+      "/collaborators.js": resolve(__dirname, "public/collaborators.js"),
       "/page-renderer.js": resolve(__dirname, "public/page-renderer.js"),
       "/document-window.js": resolve(__dirname, "public/document-window.js"),
       // Resolved so Vite's static import analysis is satisfied, not so

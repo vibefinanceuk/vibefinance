@@ -558,6 +558,9 @@ const KEYS_THE_INTERFACE_USES = [
   "action.release",
   "action.key",
   "action.complete",
+  // The Business Approver's own label for the same complete action —
+  // decision 0471, viewer.js's taskActionButtons.
+  "action.approve",
   "action.return",
   "action.return_to_supplier",
   "action.discard",
