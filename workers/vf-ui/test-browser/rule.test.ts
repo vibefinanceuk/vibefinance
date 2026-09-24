@@ -45,6 +45,11 @@ const STRINGS = {
     "rule.rename": "Rename",
     "rule.namethis": "Name this rule",
     "rule.unnamed": "Not yet named",
+    "rule.germanname": "German name",
+    "rule.setgermanname": "Set German name",
+    "rule.editgermanname": "Edit German name",
+    "rule.germannameprompt": "German name for this rule (leave blank to remove it)",
+    "rule.nogermanname": "Shown in German as its own name, unchanged",
     "rulestate.live": "Live",
     "rulestate.paused": "Paused",
     "rulestate.awaiting_confirmation": "To confirm",
@@ -384,5 +389,84 @@ describe("a rule's own name (decision 0266)", () => {
     await new Promise((r) => setTimeout(r, 0));
 
     expect(calls.some((c) => c.includes("/name"))).toBe(false);
+  });
+});
+
+describe("a rule's own name in German (decision 0478)", () => {
+  it("offers nothing until the rule has an English name to translate", async () => {
+    await open(ruleWith({ name: null }));
+    expect(document.body.textContent).not.toContain("German name");
+  });
+
+  it("invites setting one, when the rule is named but untranslated", async () => {
+    await open(ruleWith({ name: "Supplier Not Matching in ERP", nameTranslations: [] }));
+    expect(document.body.textContent).toContain("Shown in German as its own name, unchanged");
+    const labels = [...document.querySelectorAll("button")].map((b) => b.textContent);
+    expect(labels).toContain("Set German name");
+  });
+
+  it("shows the existing translation, and offers to edit rather than set it", async () => {
+    await open(
+      ruleWith({
+        name: "Supplier Not Matching in ERP",
+        nameTranslations: [{ locale: "de", name: "Lieferant stimmt nicht mit ERP überein" }],
+      })
+    );
+    expect(document.body.textContent).toContain("German name: Lieferant stimmt nicht mit ERP überein");
+    const labels = [...document.querySelectorAll("button")].map((b) => b.textContent);
+    expect(labels).toContain("Edit German name");
+  });
+
+  it("sends the new German name via PUT to the locale-specific route, and reloads", async () => {
+    const calls: string[] = [];
+    vi.stubGlobal("prompt", () => "Lieferant stimmt nicht mit ERP überein");
+    const bodies: unknown[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        const path = String(url).split("?")[0];
+        if (init?.method === "PUT") {
+          calls.push(path);
+          bodies.push(init.body ? JSON.parse(init.body as string) : null);
+        }
+        const routes: Record<string, unknown> = {
+          "/api/ui-strings": STRINGS,
+          "/api/field-visibility": FIELDS,
+          "/api/rules/r-1": ruleWith({ name: "Supplier Not Matching in ERP", nameTranslations: [] }),
+          "/api/rules/r-1/name-translations/de": {
+            ruleId: "r-1",
+            locale: "de",
+            name: "Lieferant stimmt nicht mit ERP überein",
+          },
+        };
+        if (!(path in routes)) throw new Error(`no stub for ${path}`);
+        return { ok: true, json: async () => routes[path] } as Response;
+      })
+    );
+
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openRule } = await import("/rule.js");
+    await openRule("r-1");
+    await new Promise((r) => setTimeout(r, 0));
+
+    const setButton = [...document.querySelectorAll("button")].find((b) => b.textContent === "Set German name");
+    (setButton as HTMLButtonElement).click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(calls).toContain("/api/rules/r-1/name-translations/de");
+    expect(bodies[0]).toEqual({ name: "Lieferant stimmt nicht mit ERP überein" });
+  });
+
+  it("does nothing when the prompt is cancelled", async () => {
+    vi.stubGlobal("prompt", () => null);
+    const calls: string[] = [];
+    await open(ruleWith({ name: "Supplier Not Matching in ERP", nameTranslations: [] }), calls);
+
+    const setButton = [...document.querySelectorAll("button")].find((b) => b.textContent === "Set German name");
+    (setButton as HTMLButtonElement).click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(calls.some((c) => c.includes("/name-translations/"))).toBe(false);
   });
 });

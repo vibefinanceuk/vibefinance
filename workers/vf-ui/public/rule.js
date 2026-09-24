@@ -256,6 +256,43 @@ async function rename() {
   render();
 }
 
+/**
+ * A rule's own display name in German — decision 0478.
+ *
+ * **German only**, matching `strings.js`'s own `LANGUAGES` — the same
+ * reasoning that keeps the other four `SUPPORTED_LOCALES` off the
+ * language picker applies here: a control for a locale nobody can
+ * switch to is a menu that does nothing.
+ *
+ * `window.prompt`, matching `rename()` just above — the same minimal
+ * pattern. Unlike `rename()`, an EMPTY answer is meaningful here
+ * rather than a cancel: it clears the translation (the route deletes
+ * the row), which is different from "chose blank" the way `rename()`
+ * itself can never be, since a rule can go unnamed but this can go
+ * back to showing the rule's own name unchanged. Only an actual Cancel
+ * (`null`) does nothing.
+ */
+async function renameTranslation() {
+  const existing = rule.nameTranslations?.find((tr) => tr.locale === "de")?.name ?? "";
+  const name = window.prompt(t("rule.germannameprompt"), existing);
+  if (name === null) return;
+
+  const response = await fetch(`/api/rules/${encodeURIComponent(rule.id)}/name-translations/de`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name: name.trim() }),
+  });
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    note(body.error ?? t("rules.failed"));
+    return;
+  }
+
+  await load(rule.id);
+  render();
+}
+
 function render() {
   const shell = document.getElementById("shell");
   if (!shell) return;
@@ -279,6 +316,32 @@ function render() {
             : el("span", { class: "muted", text: t("rule.unnamed") }),
           el("button", { class: "sm", onclick: rename, text: rule.name ? t("rule.rename") : t("rule.namethis") }),
         ]),
+
+        /**
+         * **The rule's own name in German, or that it has none yet** —
+         * decision 0478. Only shown once the rule has an English name
+         * to translate — the same "name it first" ordering `rename()`
+         * already imposes, since a translation of nothing is nothing.
+         */
+        ...(rule.name
+          ? [
+              el("div", { class: "rulenamerow sm muted" }, [
+                el("span", {
+                  text: (() => {
+                    const de = rule.nameTranslations?.find((tr) => tr.locale === "de")?.name;
+                    return de ? `${t("rule.germanname")}: ${de}` : t("rule.nogermanname");
+                  })(),
+                }),
+                el("button", {
+                  class: "sm",
+                  onclick: renameTranslation,
+                  text: rule.nameTranslations?.some((tr) => tr.locale === "de")
+                    ? t("rule.editgermanname")
+                    : t("rule.setgermanname"),
+                }),
+              ]),
+            ]
+          : []),
 
         /**
          * The examples, and the gate — decision 0157.

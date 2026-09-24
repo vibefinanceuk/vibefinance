@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 24 September 2026 (decision 0477). A living document: what
+Last updated 24 September 2026 (decision 0478). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,45 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### "Here because" — why a task landed on you (0478)
+- **Reported live**, against a real `assign_task` permission bug, then
+  broadened into a product question: *"for a user who retrieves that
+  task, it is difficult to initially tell why it has been routed to
+  that stage... Something like 'This item has been routed to you
+  because of a business rule being triggered - <Rule Name>.'"*
+  A mockup of two placements was shown directly before any code; the
+  operator chose Option A, a slim line above the stage progress bar.
+- **A rule's own name is translatable; the sentence it compiles from is
+  not.** The four standard matching rules translate through the
+  ordinary `ui_strings` table by their own stable `key`; a customer's
+  own authored rule name gets a new table, `rule_name_translations`
+  (one row per `rule_id`/`locale`) — two mechanisms, not one, because
+  one is a closed, code-known vocabulary and the other is runtime data.
+- **A real, pre-existing gap found and fixed alongside this**:
+  `evaluateRuleSet` has always paired a fired action with the rule that
+  fired it (`attributedActions`); `workflow-engine.ts`'s own
+  `assign_task` handling read the older, unattributed list instead, so
+  no task anywhere had ever recorded which rule raised it. Fixed here —
+  `tasks.rule_id`, nullable for the same reason `stage_visit_id` is
+  (a manually-raised task has no rule).
+- **Deliberately separate from `workflowErrorPanel`** (decision 0435):
+  that names an engine failure; this names an ordinary, working rule
+  outcome. Conflating them would make routine routing look like a
+  fault.
+- `GET /invoices/:id` now takes a per-request `?locale=` — unlike
+  `resolveLocale(env.LOCALE)` used everywhere else in `vf-app` for
+  backend error messages, this is read by whoever has the invoice open
+  right now, the same per-viewer locale every UI string already
+  resolves against.
+- `rule.js` gained a German-only translation control beside its
+  existing rename affordance — German only because it's the only
+  locale the language picker actually offers (decision 0302); a
+  control for a `SUPPORTED_LOCALES` entry nobody can switch into would
+  be a menu that does nothing.
+- Not retroactive: a task raised before this shipped has no `rule_id`
+  and shows no reason line, same as a manually-raised one always will.
+- Full reasoning and verification counts in decision 0478.
 
 ### "PO line not found" vs. an ordinary non-PO invoice (0477)
 - **Reported live**: after actually authoring decision 0474's own

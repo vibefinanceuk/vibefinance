@@ -10,7 +10,7 @@
  * `docs/design/mockups/key-from-document.html`.
  */
 
-import { t } from "/strings.js";
+import { t, currentLocale } from "/strings.js";
 import { el, frame, topbar, refreshTask } from "/tasks.js";
 import { icon } from "/icons.js";
 import { processRow } from "/process-row.js";
@@ -121,6 +121,62 @@ function workflowErrorPanel() {
   ]);
 }
 
+/**
+ * "Here because" — decision 0478. What a viewer sees instead of having
+ * to open the Timeline to learn why a document landed on them.
+ *
+ * **Deliberately separate from `workflowErrorPanel()` just above.**
+ * That one names an engine failure — something is stuck because it
+ * broke. This one names an ordinary, working rule outcome — something
+ * is here because it was meant to be. Conflating the two would make
+ * routine routing look like a fault, which is exactly the confusion
+ * this was built to remove.
+ *
+ * The rule's own name was already resolved server-side for this
+ * viewer's own locale (`loadInvoice`'s own `?locale=`,
+ * `invoice-facts-route.ts`'s `currentOpenTaskReason`) — except for one
+ * of the four standard matching rules, whose name is looked up here
+ * instead, through the ordinary `t()` string table, by its stable
+ * `standardKey`. That split matches the backend's own: a code-known
+ * constant is translated like any other UI label; a customer's own
+ * authored rule name is translated through the row the backend
+ * already picked for this locale.
+ *
+ * The full sentence, when expanded, is shown exactly as authored —
+ * **never translated**, in whatever language the rule's own author
+ * wrote it in. Decision 0478's own distinction: a rule's *name* is
+ * translatable; the sentence is the author's own words.
+ */
+function reasonLinePanel() {
+  const reason = stored.openTaskReason;
+  if (!reason) return null;
+
+  const name = reason.standardKey ? t(`matching.standardrule.${reason.standardKey}.name`) : reason.name;
+
+  const row = el("div", { class: "reasonline-row" }, [
+    el("span", { class: "reasonline-label", text: t("invoice.reasonline.label") }),
+    el("b", { text: name }),
+  ]);
+
+  const children = [row];
+
+  if (reason.sourceText) {
+    const detail = el("div", { class: "reasonline-detail", hidden: "" }, [el("span", { text: reason.sourceText })]);
+    const expand = el("button", {
+      class: "linky",
+      type: "button",
+      text: t("invoice.reasonline.expand"),
+      onclick: () => {
+        detail.hidden = !detail.hidden;
+      },
+    });
+    row.append(expand);
+    children.push(detail);
+  }
+
+  return el("div", { class: "panel reasonline" }, children);
+}
+
 function progressRow() {
   if (!progress.inProcess || progress.stages.length === 0) return null;
 
@@ -170,7 +226,14 @@ export async function loadInvoice(invoiceId) {
   exceptions = [];
   confirms = [];
   try {
-    const response = await fetch(`/api/invoices/${encodeURIComponent(invoiceId)}`);
+    // `?locale=` — decision 0478. The viewer's own language picker
+    // (currentLocale(), decision 0302/0412), not vf-app's own
+    // per-deployment LOCALE var: `openTaskReason`'s rule name is read
+    // by whoever has this invoice open right now, not fixed per
+    // customer the way a backend error message is.
+    const response = await fetch(
+      `/api/invoices/${encodeURIComponent(invoiceId)}?locale=${encodeURIComponent(currentLocale())}`
+    );
     if (!response.ok) return;
     const body = await response.json();
     stored = {
@@ -193,6 +256,11 @@ export async function loadInvoice(invoiceId) {
       buyerUnplaced: body.buyerUnplaced ?? null,
       // Why processing stopped, where it did — decision 0435.
       workflowStageError: body.workflowStageError ?? null,
+      // Why THIS task is on THIS stage right now — decision 0478.
+      // Deliberately separate from workflowStageError above: that one
+      // names an engine failure, this one names an ordinary, working
+      // rule outcome.
+      openTaskReason: body.openTaskReason ?? null,
       /**
        * **Which unit this document belongs to** — decision 0198, and
        * kept because it decides which fields may be edited (decision
@@ -2921,7 +2989,7 @@ export async function openViewer(task, onClose) {
   // beneath both rather than confined to this column. (Decision
   // 0392 above changes what those areas are once popped out.)
   columnsEl.append(
-    el("div", { class: "c-process" }, [workflowErrorPanel(), progressRow()].filter(Boolean)),
+    el("div", { class: "c-process" }, [workflowErrorPanel(), reasonLinePanel(), progressRow()].filter(Boolean)),
     el("div", { class: "c-document" }, [
       documentPanel(task, setDocPoppedOut),
       exceptionPanel(),

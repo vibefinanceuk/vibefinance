@@ -340,6 +340,10 @@ const PROXIED_TO_INSTANCE: RegExp[] = [
   /^\/rules\/[^/]+$/,
   /^\/rules\/[^/]+\/enabled$/,
   /^\/rules\/[^/]+\/name$/,
+  // A rule's own display name in one other locale (decision 0478) —
+  // same nesting convention as /name just above, one path segment
+  // deeper for which locale.
+  /^\/rules\/[^/]+\/name-translations\/[^/]+$/,
   // Writing a rule (decision 0153).
   /^\/rules\/compile$/,
   /^\/rules\/[^/]+\/versions\/[0-9]+\/examples$/,

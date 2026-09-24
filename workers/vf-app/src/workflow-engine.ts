@@ -436,7 +436,22 @@ export async function visitCurrentStage(
     const routeTargets = new Set<string>();
     const orgTargets = new Set<string>();
     const stepStatements: D1PreparedStatement[] = [];
-    const pendingTaskActions: Array<{ params: Record<string, unknown>; lineNumber: number | null; facts: InvoiceFacts }> = [];
+    const pendingTaskActions: Array<{
+      params: Record<string, unknown>;
+      lineNumber: number | null;
+      facts: InvoiceFacts;
+      /**
+       * Which rule's own `assign_task` this is — decision 0478, the
+       * "why is this task here" banner. `evaluateRuleSet`'s
+       * `attributedActions` already carries this alongside every
+       * action; only the older, unattributed `actions` array was ever
+       * read here before, discarding it before a task was even
+       * created. Nullable in principle (a future non-rule caller of
+       * `handleCreateTask` has none), never actually null on this
+       * path — every entry here came from a rule that matched.
+       */
+      ruleId: string;
+    }> = [];
     // Every field a rule changed, recorded so an auditor can ask what
     // this invoice said before a rule touched it (decision 0049).
     const allOverrides: FieldOverride[] = [];
@@ -492,7 +507,7 @@ export async function visitCurrentStage(
       for (const action of result.actions.filter((a) => a.type === "assign_org")) {
         orgTargets.add((action.params?.org as string) ?? "");
       }
-      for (const action of result.actions.filter((a) => a.type === "assign_task")) {
+      for (const attributed of result.attributedActions.filter((a) => a.action.type === "assign_task")) {
         /**
          * **The evaluation's own facts travel with the action** —
          * decision 0439. A line-scope evaluation's facts already
@@ -502,11 +517,19 @@ export async function visitCurrentStage(
          * alone. Needed only when this stage resolves through the
          * Approval Hierarchy rather than a rule-named team/user — see
          * the assign_task loop below.
+         *
+         * **`attributedActions`, not `actions`** — decision 0478.
+         * Reading the flat, unattributed list here was never wrong for
+         * anything this stage actually DID (both carry the same
+         * `assign_task` params), only for what it could later SAY: a
+         * task created from `actions` alone has no way back to the
+         * rule that raised it once this call returns.
          */
         pendingTaskActions.push({
-          params: (action.params ?? {}) as Record<string, unknown>,
+          params: (attributed.action.params ?? {}) as Record<string, unknown>,
           lineNumber: evaluation.lineNumber,
           facts: evaluation.facts,
+          ruleId: attributed.ruleId,
         });
       }
     }
@@ -654,7 +677,7 @@ export async function visitCurrentStage(
     // can genuinely need different approvers. Now safe: the
     // stage_visits row this references was already inserted above.
     let tasksCreated = 0;
-    for (const { params, lineNumber, facts: taskFacts } of pendingTaskActions) {
+    for (const { params, lineNumber, facts: taskFacts, ruleId } of pendingTaskActions) {
       /**
        * **The stage's own, where it declares one** — decision 0200.
        *
@@ -765,8 +788,13 @@ export async function visitCurrentStage(
         }
         const newTaskId = (createResult.body as { id: string }).id;
         await db
-          .prepare("UPDATE tasks SET stage_visit_id = ?, line_number = ? WHERE id = ?")
-          .bind(visitId, lineNumber, newTaskId)
+          // rule_id — decision 0478. Set here, not in handleCreateTask
+          // itself, the same reason stage_visit_id and line_number
+          // already are: that function is also the manual/API task
+          // creation path (task-route.ts's own POST /tasks), which has
+          // no rule and must not be made to invent one.
+          .prepare("UPDATE tasks SET stage_visit_id = ?, line_number = ?, rule_id = ? WHERE id = ?")
+          .bind(visitId, lineNumber, ruleId, newTaskId)
           .run();
         tasksCreated++;
       }

@@ -1,5 +1,5 @@
 import type { RouteResult } from "./examples-route.js";
-import { t } from "./i18n.js";
+import { t, SUPPORTED_LOCALES } from "./i18n.js";
 import type { Locale } from "./i18n.js";
 
 /**
@@ -326,6 +326,16 @@ export async function handleGetRule(db: D1Database, ruleId: string): Promise<Rou
     return { status: 404, body: { error: `rule ${ruleId} does not exist` } };
   }
 
+  // Every per-locale display name this rule has — decision 0478.
+  // Read alongside the rule's own authored name (already selected
+  // above) rather than fetched separately, so the screen that lets an
+  // operator manage a rule's translations has, in one call, both what
+  // to show as the default and what to offer editing per locale.
+  const nameTranslations = await db
+    .prepare("SELECT locale, name FROM rule_name_translations WHERE rule_id = ? ORDER BY locale")
+    .bind(ruleId)
+    .all<{ locale: string; name: string }>();
+
   const versions = await db
     .prepare(
       `SELECT v.version, v.source_text, v.compiled_json, v.approved_by, v.approved_at,
@@ -359,6 +369,7 @@ export async function handleGetRule(db: D1Database, ruleId: string): Promise<Rou
       enabled: rule.enabled === 1,
       stageId: rule.stage_id,
       stageName: rule.stage_name,
+      nameTranslations: nameTranslations.results.map((r) => ({ locale: r.locale, name: r.name })),
       versions: versions.results.map((v) => ({
         version: v.version,
         sourceText: v.source_text,
@@ -421,4 +432,56 @@ export async function handleRenameRule(
   await db.prepare("UPDATE rules SET name = ? WHERE id = ?").bind(newName.trim(), ruleId).run();
 
   return { status: 200, body: { ruleId, name: newName.trim() } };
+}
+
+/**
+ * A rule's own display name in one other locale — decision 0478.
+ * Modeled directly on `handleRenameRule` just above (validate, confirm
+ * the rule exists, write one row, return) — this is the same operation
+ * one locale at a time rather than the one `rules.name` every viewer
+ * sees regardless of their own language.
+ *
+ * A blank/whitespace-only name DELETES the row rather than storing an
+ * empty string — the same "no row here means show the real thing
+ * unchanged" contract `currentOpenTaskReason` (invoice-facts-route.ts)
+ * already reads by; an operator clearing the field is asking for the
+ * fallback, not for a blank to be shown.
+ */
+export async function handleSetRuleNameTranslation(
+  db: D1Database,
+  ruleId: string,
+  targetLocale: string,
+  newName: unknown,
+  locale: Locale = "en"
+): Promise<RouteResult> {
+  if (!(SUPPORTED_LOCALES as readonly string[]).includes(targetLocale)) {
+    return { status: 400, body: { error: t("unsupportedLocale", locale, { locale: targetLocale }) } };
+  }
+  if (typeof newName !== "string") {
+    return { status: 400, body: { error: t("ruleNameMustBeString", locale) } };
+  }
+
+  const rule = await db.prepare("SELECT id FROM rules WHERE id = ?").bind(ruleId).first();
+  if (!rule) {
+    return { status: 404, body: { error: t("ruleDoesNotExist", locale, { ruleId }) } };
+  }
+
+  const trimmed = newName.trim();
+  if (!trimmed) {
+    await db
+      .prepare("DELETE FROM rule_name_translations WHERE rule_id = ? AND locale = ?")
+      .bind(ruleId, targetLocale)
+      .run();
+    return { status: 200, body: { ruleId, locale: targetLocale, name: null } };
+  }
+
+  await db
+    .prepare(
+      `INSERT INTO rule_name_translations (rule_id, locale, name) VALUES (?, ?, ?)
+       ON CONFLICT (rule_id, locale) DO UPDATE SET name = excluded.name`
+    )
+    .bind(ruleId, targetLocale, trimmed)
+    .run();
+
+  return { status: 200, body: { ruleId, locale: targetLocale, name: trimmed } };
 }

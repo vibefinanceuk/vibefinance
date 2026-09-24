@@ -83,6 +83,7 @@ import approvalHierarchySql from "../../../migrations/0075_approval_hierarchy.sq
 import accountCodingListsSql from "../../../migrations/0076_account_coding_lists.sql?raw";
 import costObjectApprovalHierarchySql from "../../../migrations/0077_cost_object_approval_hierarchy.sql?raw";
 import matchingExceptionsAndBusinessUserSql from "../../../migrations/0078_matching_exceptions_and_business_user.sql?raw";
+import taskRuleAttributionAndNameTranslationsSql from "../../../migrations/0079_task_rule_attribution_and_name_translations.sql?raw";
 
 // Another known divergence from production, on top of the one below:
 // D1's exec() splits its input by newline and executes each non-empty
@@ -170,6 +171,10 @@ const TABLES_IN_DROP_ORDER = ["document_comments",
   "supplier_loads",
   "invoice_run_steps",
   "invoice_runs",
+  // Task Rule Attribution and Name Translations (decision 0478) —
+  // references rules(id), so before it, the same rule as every other
+  // child table in this list.
+  "rule_name_translations",
   "rule_examples",
   "rule_versions",
   "rules",
@@ -320,6 +325,7 @@ export async function applyTestSchema(): Promise<void> {
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(accountCodingListsSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(costObjectApprovalHierarchySql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(matchingExceptionsAndBusinessUserSql)));
+  await env.DB.exec(toOneStatementPerLine(stripSqlComments(taskRuleAttributionAndNameTranslationsSql)));
 }
 
 /**

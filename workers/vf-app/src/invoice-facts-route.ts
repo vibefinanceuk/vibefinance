@@ -6,6 +6,8 @@ import { unitLineage } from "./unit-config.js";
 import { findSimilarInvoices } from "./invoice-history.js";
 import { preferredDocumentType, documentTypeInfo } from "./document-storage.js";
 import { mergePoMatchFacts } from "./po-matching.js";
+import { STANDARD_MATCHING_RULES } from "./matching-config-route.js";
+import type { Locale } from "./i18n.js";
 
 /**
  * Persists invoice header and line facts — see docs/decisions/
@@ -286,6 +288,67 @@ export async function handleUpsertInvoice(db: D1Database, body: UpsertInvoiceBod
 }
 
 /**
+ * "Here because" — decision 0478. What a viewer sees instead of having
+ * to open the Timeline to find out why a document landed on them.
+ *
+ * Reads the invoice's own currently-open task, via the same
+ * `tasks -> stage_visits -> process_instances` join `task-list-route.ts`
+ * already established, rather than inventing a second path — a task
+ * this invoice's viewer would also see listed if they went looking.
+ * `rule_id IS NOT NULL` excludes a task raised directly via the
+ * manual/API path (decision 0079's own reasoning for the column being
+ * nullable): that task genuinely has no rule to name, not a lookup
+ * that failed.
+ *
+ * The four standard matching rules resolve through the ordinary,
+ * code-known string table (by their stable `key`); every other rule is
+ * a customer's own authored text, resolved through
+ * `rule_name_translations` for the requested locale, falling back to
+ * the name its author actually typed — never a blank, the same "no
+ * row here means show the real thing unchanged" shape decision 0200
+ * already gave `process_stages.required_permission`.
+ */
+async function currentOpenTaskReason(
+  db: D1Database,
+  invoiceId: string,
+  locale: Locale
+): Promise<{ ruleId: string; standardKey: string | null; name: string; sourceText: string | null } | null> {
+  const row = await db
+    .prepare(
+      `SELECT r.id AS rule_id, r.name AS rule_name, rv.source_text AS source_text,
+              rnt.name AS translated_name
+       FROM tasks t
+       JOIN stage_visits v ON v.id = t.stage_visit_id
+       JOIN process_instances pi ON pi.id = v.process_instance_id
+       JOIN rules r ON r.id = t.rule_id
+       LEFT JOIN rule_versions rv ON rv.rule_id = r.id
+         AND rv.version = (SELECT MAX(version) FROM rule_versions WHERE rule_id = r.id)
+       LEFT JOIN rule_name_translations rnt ON rnt.rule_id = r.id AND rnt.locale = ?
+       WHERE pi.subject_type = 'invoice' AND pi.subject_id = ?
+         AND t.status = 'open' AND t.rule_id IS NOT NULL
+       ORDER BY t.created_at DESC
+       LIMIT 1`
+    )
+    .bind(locale, invoiceId)
+    .first<{ rule_id: string; rule_name: string; source_text: string | null; translated_name: string | null }>();
+
+  if (!row) return null;
+
+  const standard = STANDARD_MATCHING_RULES.find((r) => r.name === row.rule_name);
+
+  return {
+    ruleId: row.rule_id,
+    // The frontend resolves this via `t()` in the standard-rule
+    // vocabulary, the same code-known keys `matching-config-route.ts`
+    // already exposes — not this table, and not row.translated_name,
+    // which a standard rule never has a reason to have a row for.
+    standardKey: standard?.key ?? null,
+    name: standard ? standard.name : row.translated_name ?? row.rule_name,
+    sourceText: row.source_text,
+  };
+}
+
+/**
  * One invoice, with its facts and lines — decision 0120.
  *
  * **There was no way to read an invoice.** It could be keyed, placed,
@@ -298,7 +361,11 @@ export async function handleUpsertInvoice(db: D1Database, body: UpsertInvoiceBod
  * and re-enter, and it's empty again."* The save worked. Nothing read
  * it back.
  */
-export async function handleGetInvoice(db: D1Database, invoiceId: string): Promise<RouteResult> {
+export async function handleGetInvoice(
+  db: D1Database,
+  invoiceId: string,
+  locale: Locale = "en"
+): Promise<RouteResult> {
   const invoice = await db
     .prepare(
       `SELECT id, supplier_vat_id, currency, issue_date, total_with_vat, facts_json,
@@ -565,6 +632,16 @@ export async function handleGetInvoice(db: D1Database, invoiceId: string): Promi
        * "why, not just that" reasoning as buyerUnplaced just above.
        */
       workflowStageError: facts["workflow.stageError"] ?? null,
+      /**
+       * Why *this* invoice is on *this* stage right now — decision
+       * 0478. Deliberately separate from workflowStageError just
+       * above: that one names an engine failure (something is stuck
+       * because it broke); this one names an ordinary, working rule
+       * outcome (something is here because it was meant to be).
+       * Conflating the two would make a routine routing look like a
+       * fault.
+       */
+      openTaskReason: await currentOpenTaskReason(db, invoiceId, locale),
       supplier: matchedSupplier
         ? {
             ...matchedSupplier,

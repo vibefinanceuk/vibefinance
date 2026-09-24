@@ -705,6 +705,142 @@ describe("reading an invoice back (decision 0120)", () => {
   });
 });
 
+describe("why this task is here (decision 0478)", () => {
+  /**
+   * `seedInvoice` already leaves a `process_instances` row at stage
+   * `validation` (`pi-<id>`). This adds the one open, rule-attributed
+   * task `currentOpenTaskReason` (invoice-facts-route.ts) actually
+   * reads — a real `stage_visits` row, a real `tasks` row pointing at
+   * it with `rule_id` set, and the rule/version it names.
+   */
+  async function seedOpenTaskForRule(
+    invoiceId: string,
+    ruleId: string,
+    ruleName: string,
+    sourceText: string,
+    { status = "open" as string } = {}
+  ): Promise<void> {
+    await env.DB.prepare("INSERT INTO rule_sets (id, name, mode, status) VALUES ('rs-x', 'x', 'first_match', 'active') ON CONFLICT(id) DO NOTHING").run();
+    await env.DB.prepare("INSERT INTO rules (id, rule_set_id, sort_order, enabled, name) VALUES (?, 'rs-x', 0, 1, ?)")
+      .bind(ruleId, ruleName)
+      .run();
+    await env.DB.prepare(
+      `INSERT INTO rule_versions (rule_id, version, source_text, compiled_json, compiled_by, approved_by, approved_at)
+       VALUES (?, 1, ?, '{}', 'test-model', 'u-dan', '2026-01-01')`
+    )
+      .bind(ruleId, sourceText)
+      .run();
+
+    const stageVisitId = `sv-${invoiceId}`;
+    await env.DB.prepare("INSERT INTO stage_visits (id, process_instance_id, stage_id, outcome) VALUES (?, ?, 'validation', 'blocked')")
+      .bind(stageVisitId, `pi-${invoiceId}`)
+      .run();
+    await env.DB.prepare(
+      `INSERT INTO tasks (id, stage_id, owner_team_id, required_permission, stage_visit_id, status, rule_id)
+       VALUES (?, 'validation', 'team-x', 'AP.Review', ?, ?, ?)`
+    )
+      .bind(`task-${invoiceId}`, stageVisitId, status, ruleId)
+      .run();
+  }
+
+  beforeEach(async () => {
+    await env.DB.prepare("INSERT INTO org_units (id, name) VALUES ('u1', 'Acme') ON CONFLICT(id) DO NOTHING").run();
+    await env.DB.prepare("INSERT INTO org_teams (id, name, unit_id) VALUES ('team-x', 'AP Team', 'u1') ON CONFLICT(id) DO NOTHING").run();
+  });
+
+  it("is null when the invoice has no open, rule-attributed task", async () => {
+    await seedInvoice("inv-noreason", {});
+    const { handleGetInvoice } = await import("../src/invoice-facts-route.js");
+    const body = (await handleGetInvoice(env.DB, "inv-noreason")).body as { openTaskReason: unknown };
+    expect(body.openTaskReason).toBeNull();
+  });
+
+  it("names the rule that raised the current open task, with its raw sentence", async () => {
+    await seedInvoice("inv-reason", {});
+    await seedOpenTaskForRule(
+      "inv-reason",
+      "rule-supplier",
+      "Supplier Not Matching in ERP",
+      "If the supplier is not matching in the ERP, assign a task to the AP team requiring AP.Review permission."
+    );
+
+    const { handleGetInvoice } = await import("../src/invoice-facts-route.js");
+    const body = (await handleGetInvoice(env.DB, "inv-reason")).body as {
+      openTaskReason: { ruleId: string; standardKey: string | null; name: string; sourceText: string | null } | null;
+    };
+    expect(body.openTaskReason).toEqual({
+      ruleId: "rule-supplier",
+      standardKey: null,
+      name: "Supplier Not Matching in ERP",
+      sourceText: "If the supplier is not matching in the ERP, assign a task to the AP team requiring AP.Review permission.",
+    });
+  });
+
+  it("resolves a custom rule's translated name for the requested locale", async () => {
+    await seedInvoice("inv-reason-de", {});
+    await seedOpenTaskForRule(
+      "inv-reason-de",
+      "rule-supplier-2",
+      "Supplier Not Matching in ERP",
+      "If the supplier is not matching in the ERP, assign a task to the AP team requiring AP.Review permission."
+    );
+    await env.DB.prepare("INSERT INTO rule_name_translations (rule_id, locale, name) VALUES ('rule-supplier-2', 'de', 'Lieferant stimmt nicht mit ERP überein')").run();
+
+    const { handleGetInvoice } = await import("../src/invoice-facts-route.js");
+    const bodyDe = (await handleGetInvoice(env.DB, "inv-reason-de", "de")).body as { openTaskReason: { name: string } };
+    expect(bodyDe.openTaskReason.name).toBe("Lieferant stimmt nicht mit ERP überein");
+
+    // No row for English — falls back to the rule's own authored name,
+    // never a blank.
+    const bodyEn = (await handleGetInvoice(env.DB, "inv-reason-de", "en")).body as { openTaskReason: { name: string } };
+    expect(bodyEn.openTaskReason.name).toBe("Supplier Not Matching in ERP");
+  });
+
+  it("exposes the stable key for one of the four standard matching rules, instead of a translation row", async () => {
+    await seedInvoice("inv-standard", {});
+    await seedOpenTaskForRule(
+      "inv-standard",
+      "rule-standard",
+      "Standard rule: PO line not found",
+      "If the invoice has a purchase order reference and a purchase order line cannot be found for an invoice line, assign a task to the AP Matching team requiring AP.Match."
+    );
+
+    const { handleGetInvoice } = await import("../src/invoice-facts-route.js");
+    const body = (await handleGetInvoice(env.DB, "inv-standard")).body as {
+      openTaskReason: { standardKey: string | null; name: string };
+    };
+    expect(body.openTaskReason.standardKey).toBe("po_line_not_found");
+    expect(body.openTaskReason.name).toBe("Standard rule: PO line not found");
+  });
+
+  it("ignores a completed task — only the currently open one names a reason", async () => {
+    await seedInvoice("inv-done", {});
+    await seedOpenTaskForRule("inv-done", "rule-done", "Old reason", "old sentence", { status: "completed" });
+
+    const { handleGetInvoice } = await import("../src/invoice-facts-route.js");
+    const body = (await handleGetInvoice(env.DB, "inv-done")).body as { openTaskReason: unknown };
+    expect(body.openTaskReason).toBeNull();
+  });
+
+  it("ignores a task raised directly via the manual/API path (no rule to name)", async () => {
+    await seedInvoice("inv-manual", {});
+    const stageVisitId = "sv-inv-manual";
+    await env.DB.prepare("INSERT INTO stage_visits (id, process_instance_id, stage_id, outcome) VALUES (?, 'pi-inv-manual', 'validation', 'blocked')")
+      .bind(stageVisitId)
+      .run();
+    await env.DB.prepare(
+      `INSERT INTO tasks (id, stage_id, owner_team_id, required_permission, stage_visit_id, status)
+       VALUES ('task-inv-manual', 'validation', 'team-x', 'AP.Review', ?, 'open')`
+    )
+      .bind(stageVisitId)
+      .run();
+
+    const { handleGetInvoice } = await import("../src/invoice-facts-route.js");
+    const body = (await handleGetInvoice(env.DB, "inv-manual")).body as { openTaskReason: unknown };
+    expect(body.openTaskReason).toBeNull();
+  });
+});
+
 describe("the PO three-way-match reaches the exceptions list on read-back (decision 0400)", () => {
   /**
    * `validation.ts`'s own `po_mismatch` check is unit-tested against

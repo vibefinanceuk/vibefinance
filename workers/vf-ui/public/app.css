@@ -1861,6 +1861,37 @@
     border-radius: 0 var(--radius) var(--radius) 0;
   }
 
+  /*
+    "Here because" — decision 0478. A slim card, not a warning: this
+    names an ordinary, working rule outcome, so it deliberately does
+    NOT borrow .needsattention's warning-colored left border — that
+    border means "something broke," and this is the opposite claim.
+  */
+  .panel.reasonline {
+    padding: 10px 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .reasonline-row {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 6px;
+    font-size: var(--text-base);
+    color: var(--text-primary);
+  }
+  .reasonline-label { color: var(--text-secondary); }
+  .reasonline-row .linky { font-size: var(--text-sm); }
+  .reasonline-detail {
+    font-size: var(--text-sm);
+    color: var(--text-secondary);
+    background: var(--surface-1);
+    border-radius: var(--radius);
+    padding: 8px 10px;
+  }
+  .reasonline-detail[hidden] { display: none; }
+
   /* A button that reads as a link, because it opens rather than acts. */
   .linky {
     background: none;

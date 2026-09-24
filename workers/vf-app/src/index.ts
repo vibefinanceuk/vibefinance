@@ -143,6 +143,7 @@ import {
   handleGetRule,
   handleSetRuleEnabled,
   handleRenameRule,
+  handleSetRuleNameTranslation,
 } from "./rules-list-route.js";
 import { handleInvoiceProgress } from "./invoice-progress-route.js";
 import { handleSetSourceOrg } from "./source-route.js";
@@ -3071,7 +3072,16 @@ export default {
         return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
       }
 
-      const result = await handleGetInvoice(db, getInvoiceMatch[1]);
+      // Per-request, not per-deployment — decision 0478. Unlike
+      // `resolveLocale(env.LOCALE)` just above (this Worker's own
+      // fixed backend-message language), `openTaskReason`'s rule name
+      // is read by whoever has this invoice open right now, in
+      // whichever of the two languages their own language picker is
+      // set to (strings.js's `currentLocale()`, sent as `?locale=`)
+      // — the same per-viewer locale every UI string this session has
+      // added already resolves against, just reused here for a field
+      // vf-app itself renders instead of one vf-licence serves.
+      const result = await handleGetInvoice(db, getInvoiceMatch[1], resolveLocale(url.searchParams.get("locale")));
       return json(result.body, result.status);
     }
 
@@ -3785,6 +3795,39 @@ export default {
         db,
         ruleNameMatch[1],
         (nameBody as Record<string, unknown> | null)?.name,
+        locale
+      );
+      return json(result.body, result.status);
+    }
+
+    /**
+     * A rule's own display name in one OTHER locale — decision 0478.
+     * `Admin.RuleManagement`, same reasoning as the plain-name route
+     * just above: setting how a rule reads is rule authorship. The
+     * locale being written is a path segment (which language), not a
+     * body field, matching this codebase's own convention for a
+     * resource nested one level below its parent (e.g. `/rules/:id/enabled`).
+     */
+    const ruleNameTranslationMatch = pathname.match(/^\/rules\/([^/]+)\/name-translations\/([^/]+)$/);
+    if (ruleNameTranslationMatch && request.method === "PUT") {
+      const { db } = resolveTenant(request, env);
+      const locale = resolveLocale(env.LOCALE);
+      const auth = await requirePermission(db, request, "Admin.RuleManagement", sessionContext(env));
+      if (!auth.authorized) {
+        return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", locale) }, auth.status);
+      }
+      let translationBody: unknown;
+      try {
+        translationBody = await request.json();
+      } catch {
+        return json({ error: t("invalidJsonBody", locale) }, 400);
+      }
+
+      const result = await handleSetRuleNameTranslation(
+        db,
+        ruleNameTranslationMatch[1],
+        ruleNameTranslationMatch[2],
+        (translationBody as Record<string, unknown> | null)?.name,
         locale
       );
       return json(result.body, result.status);

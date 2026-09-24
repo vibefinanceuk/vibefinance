@@ -41,7 +41,8 @@ export type MessageKey =
   | "ruleDoesNotExist"
   | "commentBodyRequired"
   | "ruleDoesNotExistInRuleSet"
-  | "invoiceDoesNotExist";
+  | "invoiceDoesNotExist"
+  | "unsupportedLocale";
 
 type MessageParams = Record<string, string | number>;
 
@@ -249,6 +250,19 @@ const MESSAGES: Record<MessageKey, Record<Locale, string>> = {
     es: "La factura {invoiceId} no existe",
     it: "La fattura {invoiceId} non esiste",
     nl: "Factuur {invoiceId} bestaat niet",
+  },
+  // Decision 0478 — a rule's per-locale display name is written to a
+  // specific locale named in the URL path, unlike every other locale
+  // in this file (which pick the response's own language). A typo'd
+  // path segment is a client error worth naming plainly, the same
+  // "closed vocabulary, refused loudly" discipline as ruleRejectedByVocabulary.
+  unsupportedLocale: {
+    en: "locale {locale} is not supported",
+    de: "Sprache {locale} wird nicht unterstützt",
+    fr: "la langue {locale} n'est pas prise en charge",
+    es: "el idioma {locale} no es compatible",
+    it: "la lingua {locale} non è supportata",
+    nl: "taal {locale} wordt niet ondersteund",
   },
 };
 

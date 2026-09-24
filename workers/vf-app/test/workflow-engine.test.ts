@@ -7,7 +7,7 @@ import { handleCreateTeam, handleAddTeamMember } from "../src/team-route.js";
 import { handleCreateUser } from "../src/org-route.js";
 import { handleClaimTask, handleCompleteTask } from "../src/task-route.js";
 
-async function seedRuleSet(id: string, compiledJson: Record<string, unknown>): Promise<void> {
+async function seedRuleSet(id: string, compiledJson: Record<string, unknown>): Promise<string> {
   await env.DB.prepare("INSERT INTO rule_sets (id, name, mode, status) VALUES (?, ?, ?, ?)")
     .bind(id, "test", "first_match", "active")
     .run();
@@ -19,6 +19,7 @@ async function seedRuleSet(id: string, compiledJson: Record<string, unknown>): P
   )
     .bind(ruleId, "test rule", JSON.stringify(compiledJson), "test-model", "alice", "2026-01-01T00:00:00.000Z", "2026-01-01T00:00:00.000Z")
     .run();
+  return ruleId;
 }
 
 beforeEach(async () => {
@@ -137,20 +138,20 @@ describe("visitCurrentStage — real rule evaluation", () => {
 });
 
 describe("visitCurrentStage — assign_task blocks advancement", () => {
-  async function seedBlockingSetup(): Promise<{ instanceId: string }> {
+  async function seedBlockingSetup(): Promise<{ instanceId: string; ruleId: string }> {
     await handleCreateProcess(env.DB, { id: "p1", name: "AP" });
     await env.DB.prepare("INSERT INTO org_units (id, name) VALUES ('u1', 'Acme France') ON CONFLICT(id) DO NOTHING").run();
     await handleCreateTeam(env.DB, { id: "team1", name: "AP Team", unitId: "u1" });
     await handleCreateUser(env.DB, { id: "usr1", email: "a@b.com", name: "Alice" });
     await handleAddTeamMember(env.DB, "team1", "usr1");
-    await seedRuleSet("rs1", {
+    const ruleId = await seedRuleSet("rs1", {
       conditions: { field: "BT-112", operator: "greater_than", value: 1000 },
       actions: [{ type: "assign_task", params: { team: "team1", permission: "AP.Approve" } }],
     });
     await handleCreateStage(env.DB, "p1", { id: "s1", name: "Approval", sequence: 1, ruleSetId: "rs1" });
     await handleCreateStage(env.DB, "p1", { id: "s2", name: "Payment-eligible", sequence: 2 });
     const created = await handleCreateProcessInstance(env.DB, "p1", { subjectType: "invoice", subjectId: "inv-1" });
-    return { instanceId: (created.body as { id: string }).id };
+    return { instanceId: (created.body as { id: string }).id, ruleId };
   }
 
   it("a fired assign_task creates a real task and blocks the instance at this stage", async () => {
@@ -165,6 +166,27 @@ describe("visitCurrentStage — assign_task blocks advancement", () => {
     expect(taskRow?.owner_team_id).toBe("team1");
     expect(taskRow?.required_permission).toBe("AP.Approve");
     expect(taskRow?.stage_visit_id).toBeTruthy();
+  });
+
+  it("stamps the created task with the id of the rule that actually fired (decision 0478)", async () => {
+    const { instanceId, ruleId } = await seedBlockingSetup();
+    await visitCurrentStage(env.DB, instanceId, { "BT-112": 3000 });
+
+    const taskRow = await env.DB.prepare("SELECT rule_id FROM tasks WHERE stage_id = 's1'").first<{ rule_id: string | null }>();
+    expect(taskRow?.rule_id).toBe(ruleId);
+  });
+
+  it("leaves rule_id null for a task raised directly via the manual/API path, not through a fired rule", async () => {
+    await handleCreateProcess(env.DB, { id: "p1", name: "AP" });
+    await handleCreateStage(env.DB, "p1", { id: "s1", name: "Approval", sequence: 1 });
+    await env.DB.prepare("INSERT INTO org_units (id, name) VALUES ('u1', 'Acme France') ON CONFLICT(id) DO NOTHING").run();
+    await handleCreateTeam(env.DB, { id: "team1", name: "AP Team", unitId: "u1" });
+
+    const { handleCreateTask } = await import("../src/task-route.js");
+    await handleCreateTask(env.DB, { id: "manual-task", stageId: "s1", teamId: "team1", requiredPermission: "AP.Approve" });
+
+    const taskRow = await env.DB.prepare("SELECT rule_id FROM tasks WHERE id = 'manual-task'").first<{ rule_id: string | null }>();
+    expect(taskRow?.rule_id).toBeNull();
   });
 
   it("the critical property: completing the last open task for a visit advances the instance automatically", async () => {

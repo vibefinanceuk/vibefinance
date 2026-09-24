@@ -8,6 +8,7 @@ import {
   handleGetRule,
   handleSetRuleEnabled,
   handleRenameRule,
+  handleSetRuleNameTranslation,
 } from "../src/rules-list-route.js";
 
 /**
@@ -472,5 +473,63 @@ describe("a rule's own name (decision 0266)", () => {
     await addRule("r1", "flag anything over 10000");
     const result = await handleRenameRule(env.DB, "r1", undefined);
     expect(result.status).toBe(400);
+  });
+});
+
+describe("a rule's own name in one other locale (decision 0478)", () => {
+  beforeEach(async () => {
+    await applyTestSchema();
+    await seed();
+  });
+
+  it("writes a translation, and the detail route returns it", async () => {
+    await addRule("r1", "flag anything over 10000", { name: "Supplier Not Matching in ERP" });
+    const result = await handleSetRuleNameTranslation(env.DB, "r1", "de", "Lieferant stimmt nicht mit ERP überein");
+    expect(result.status).toBe(200);
+    expect(result.body).toEqual({ ruleId: "r1", locale: "de", name: "Lieferant stimmt nicht mit ERP überein" });
+
+    const body = (await handleGetRule(env.DB, "r1")).body as {
+      nameTranslations: { locale: string; name: string }[];
+    };
+    expect(body.nameTranslations).toEqual([{ locale: "de", name: "Lieferant stimmt nicht mit ERP überein" }]);
+  });
+
+  it("overwrites an existing translation for the same locale, rather than duplicating it", async () => {
+    await addRule("r1", "flag anything over 10000", { name: "Old" });
+    await handleSetRuleNameTranslation(env.DB, "r1", "de", "Erste Version");
+    await handleSetRuleNameTranslation(env.DB, "r1", "de", "Zweite Version");
+
+    const rows = await env.DB.prepare("SELECT locale, name FROM rule_name_translations WHERE rule_id = 'r1'").all();
+    expect(rows.results).toEqual([{ locale: "de", name: "Zweite Version" }]);
+  });
+
+  it("a blank name deletes the translation rather than storing an empty string", async () => {
+    await addRule("r1", "flag anything over 10000", { name: "Old" });
+    await handleSetRuleNameTranslation(env.DB, "r1", "de", "Something");
+    const result = await handleSetRuleNameTranslation(env.DB, "r1", "de", "   ");
+    expect(result.status).toBe(200);
+
+    const row = await env.DB.prepare("SELECT * FROM rule_name_translations WHERE rule_id = 'r1' AND locale = 'de'").first();
+    expect(row).toBeNull();
+  });
+
+  it("400s for a locale this deployment does not support", async () => {
+    await addRule("r1", "flag anything over 10000", { name: "Old" });
+    const result = await handleSetRuleNameTranslation(env.DB, "r1", "xx", "Anything");
+    expect(result.status).toBe(400);
+
+    const row = await env.DB.prepare("SELECT count(*) AS n FROM rule_name_translations").first<{ n: number }>();
+    expect(row?.n).toBe(0);
+  });
+
+  it("404s for a rule that does not exist", async () => {
+    const result = await handleSetRuleNameTranslation(env.DB, "nope", "de", "Anything");
+    expect(result.status).toBe(404);
+  });
+
+  it("a rule with no translation for the requested locale returns an empty list, not an error", async () => {
+    await addRule("r1", "flag anything over 10000", { name: "Only English" });
+    const body = (await handleGetRule(env.DB, "r1")).body as { nameTranslations: unknown[] };
+    expect(body.nameTranslations).toEqual([]);
   });
 });

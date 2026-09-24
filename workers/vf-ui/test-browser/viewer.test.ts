@@ -111,6 +111,9 @@ const STRINGS = {
     "suppliers.pay": "Payment",
     "suppliers.sameorg": "Same org as this invoice",
     "viewer.workflow.stageerror": "This invoice stopped moving because of a processing error:",
+    "invoice.reasonline.label": "Here because:",
+    "invoice.reasonline.expand": "click for details",
+    "matching.standardrule.po_line_not_found.name": "Standard rule: PO line not found",
     "action.changebuyer": "Change Buyer",
     "action.changeseller": "Change Seller",
     "viewer.noexceptions": "Nothing to resolve.",
@@ -2589,6 +2592,108 @@ describe("a workflow stage error is shown, not silently absorbed (decision 0435)
 
     const banners = [...document.querySelectorAll(".panel.needsattention .warn")].map((w) => w.textContent);
     expect(banners.some((t) => t?.includes("processing error"))).toBe(false);
+  });
+});
+
+describe("why this task is here (decision 0478)", () => {
+  async function open(body: Record<string, unknown>) {
+    stubFetch({
+      "/api/ui-strings": STRINGS,
+      "/api/code-lists": { fields: {} },
+      "/api/field-visibility": FIELDS,
+      "/api/invoices/inv-1": {
+        facts: {},
+        lines: [],
+        validation: { passed: true, checked: [], failures: [] },
+        ...body,
+      },
+      "/api/documents/inv-1/activity": { events: [] },
+    });
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    await openViewer(TASK, () => {});
+    await new Promise((r) => setTimeout(r, 0));
+  }
+
+  it("shows nothing when the invoice has no open task reason — the ordinary case", async () => {
+    await open({ openTaskReason: null });
+    expect(document.querySelector(".panel.reasonline")).toBeNull();
+  });
+
+  it("names a custom rule, already resolved to this viewer's own locale by the server", async () => {
+    await open({
+      openTaskReason: {
+        ruleId: "rule-supplier",
+        standardKey: null,
+        name: "Supplier Not Matching in ERP",
+        sourceText: "If the supplier is not matching in the ERP, assign a task to the AP team requiring AP.Review permission.",
+      },
+    });
+
+    const row = document.querySelector(".panel.reasonline .reasonline-row");
+    expect(row?.textContent).toContain("Here because:");
+    expect(row?.textContent).toContain("Supplier Not Matching in ERP");
+  });
+
+  it("resolves a standard matching rule's name through t(), by its stable key", async () => {
+    await open({
+      openTaskReason: {
+        ruleId: "rule-standard",
+        standardKey: "po_line_not_found",
+        // Deliberately different from the t() string below — proves
+        // the frontend actually looked the name up by standardKey
+        // rather than just echoing what the server sent.
+        name: "some other name the server happened to send",
+        sourceText: "the sentence",
+      },
+    });
+
+    const row = document.querySelector(".panel.reasonline .reasonline-row");
+    expect(row?.textContent).toContain("Standard rule: PO line not found");
+    expect(row?.textContent).not.toContain("some other name");
+  });
+
+  it("keeps the full sentence hidden until asked for, and shows it exactly as authored — never translated", async () => {
+    await open({
+      openTaskReason: {
+        ruleId: "rule-supplier",
+        standardKey: null,
+        name: "Supplier Not Matching in ERP",
+        sourceText: "If the supplier is not matching in the ERP, assign a task to the AP team requiring AP.Review permission.",
+      },
+    });
+
+    const detail = document.querySelector(".reasonline-detail") as HTMLElement;
+    expect(detail.hidden).toBe(true);
+
+    const expand = [...document.querySelectorAll(".panel.reasonline button")].find((b) =>
+      b.textContent?.includes("click for details")
+    ) as HTMLButtonElement;
+    expand.click();
+
+    expect(detail.hidden).toBe(false);
+    expect(detail.textContent).toContain(
+      "If the supplier is not matching in the ERP, assign a task to the AP team requiring AP.Review permission."
+    );
+  });
+
+  it("is visually distinct from workflowErrorPanel — both can be present without colliding", async () => {
+    await open({
+      workflowStageError: "assign_task fired an invalid task",
+      openTaskReason: {
+        ruleId: "rule-supplier",
+        standardKey: null,
+        name: "Supplier Not Matching in ERP",
+        sourceText: null,
+      },
+    });
+
+    expect(document.querySelector(".panel.needsattention .warn")).not.toBeNull();
+    expect(document.querySelector(".panel.reasonline")).not.toBeNull();
+    // Not the same element, and the reason line does not borrow the
+    // warning styling — it names an ordinary outcome, not a fault.
+    expect(document.querySelector(".panel.reasonline.needsattention")).toBeNull();
   });
 });
 
