@@ -2540,6 +2540,129 @@ describe("Viewing and working an invoice while holding only AP.Code — decision
 });
 
 /**
+ * **Viewing and working an invoice while holding only AP.Match —
+ * decision 0475.** The identical gap decision 0456 already fixed once
+ * for AP.Code, this time for the permission decision 0474's own
+ * standard-matching-rule checkboxes actually raise tasks against.
+ * `POST /invoices/:id/key` is deliberately NOT covered here — decision
+ * 0467 already found resolving a matching exception is ordinary task
+ * completion or `AP.ReturnToSupplier`, never a route that writes keyed
+ * facts, so there is nothing on that path for `AP.Match` to need,
+ * unlike `AP.Code`'s own Coding pop-out Save button. The coding-list
+ * search routes (`/org/cost-centres`, `/coding-lists/:type`) are
+ * likewise out of scope — Matching never searches those lists.
+ */
+describe("Viewing and working an invoice while holding only AP.Match — decision 0475", () => {
+  it("GET /invoices/:id now also works for AP.Match alone", async () => {
+    await SELF.fetch("https://example.com/invoices", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ id: "inv-0475-1", facts: {} }),
+    });
+    const key = await seedUserWithPermissions(["AP.Match"]);
+    const res = await SELF.fetch("https://example.com/invoices/inv-0475-1", {
+      headers: { Authorization: `Bearer ${key}` },
+    });
+    expect(res.status).toBe(200);
+  });
+
+  it("GET /invoices/:id still refuses a real user holding neither permission", async () => {
+    await SELF.fetch("https://example.com/invoices", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ id: "inv-0475-1b", facts: {} }),
+    });
+    const key = await seedUserWithPermissions(["AP.Review"]);
+    const res = await SELF.fetch("https://example.com/invoices/inv-0475-1b", {
+      headers: { Authorization: `Bearer ${key}` },
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("POST /invoices/:id/document-url no longer 403s for AP.Match alone", async () => {
+    await SELF.fetch("https://example.com/invoices", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ id: "inv-0475-2", facts: {} }),
+    });
+    const key = await seedUserWithPermissions(["AP.Match"]);
+    const res = await SELF.fetch("https://example.com/invoices/inv-0475-2/document-url", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${key}` },
+    });
+    expect(res.status).not.toBe(403);
+  });
+
+  it("GET /invoices/:id/pages now also works for AP.Match alone", async () => {
+    await SELF.fetch("https://example.com/invoices", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ id: "inv-0475-3", facts: {} }),
+    });
+    const key = await seedUserWithPermissions(["AP.Match"]);
+    const res = await SELF.fetch("https://example.com/invoices/inv-0475-3/pages", {
+      headers: { Authorization: `Bearer ${key}` },
+    });
+    expect(res.status).toBe(200);
+  });
+
+  it("POST /invoices/:id/pages/:n/document-url no longer 403s for AP.Match alone", async () => {
+    await SELF.fetch("https://example.com/invoices", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ id: "inv-0475-4", facts: {} }),
+    });
+    const key = await seedUserWithPermissions(["AP.Match"]);
+    const res = await SELF.fetch("https://example.com/invoices/inv-0475-4/pages/1/document-url", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${key}` },
+    });
+    expect(res.status).not.toBe(403);
+  });
+
+  it("GET /invoices/:id/progress now also works for AP.Match alone", async () => {
+    await SELF.fetch("https://example.com/invoices", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ id: "inv-0475-5", facts: {} }),
+    });
+    const key = await seedUserWithPermissions(["AP.Match"]);
+    const res = await SELF.fetch("https://example.com/invoices/inv-0475-5/progress", {
+      headers: { Authorization: `Bearer ${key}` },
+    });
+    expect(res.status).toBe(200);
+  });
+
+  it("GET /invoices/:id/progress still refuses a real user holding neither permission", async () => {
+    await SELF.fetch("https://example.com/invoices", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ id: "inv-0475-5b", facts: {} }),
+    });
+    const key = await seedUserWithPermissions(["AP.Supplier"]);
+    const res = await SELF.fetch("https://example.com/invoices/inv-0475-5b/progress", {
+      headers: { Authorization: `Bearer ${key}` },
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("POST /invoices/:id/key still refuses AP.Match alone — deliberately out of scope, see this block's own doc comment", async () => {
+    await SELF.fetch("https://example.com/invoices", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ id: "inv-0475-6", facts: {} }),
+    });
+    const key = await seedUserWithPermissions(["AP.Match"]);
+    const res = await SELF.fetch("https://example.com/invoices/inv-0475-6/key", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${key}`, "content-type": "application/json" },
+      body: JSON.stringify({ fields: { "BT-133": "cc-live-1" } }),
+    });
+    expect(res.status).toBe(403);
+  });
+});
+
+/**
  * **"Add person to conversation" — decision 0468's own picture, built
  * in decision 0470.** A `Procurement.Collaborate` holder listed in
  * `invoice_collaborators` for one specific invoice can now reach the

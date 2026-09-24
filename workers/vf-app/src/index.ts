@@ -3049,10 +3049,18 @@ export default {
       // Coding task and then not be able to open the invoice it was
       // raised against at all. Widened again by decision 0470: a
       // Business User added to this invoice's conversation needs to
-      // open it too, the same route the viewer always has.
+      // open it too, the same route the viewer always has. Widened
+      // again by decision 0475: `AP.Match` had the identical gap —
+      // decision 0474's own standard-matching-rule checkboxes raise
+      // real tasks requiring `AP.Match` (`matching-config-route.ts`'s
+      // `STANDARD_MATCHING_RULES`), and an `AP.Match`-only holder could
+      // claim one and then not open the invoice it was raised against,
+      // the exact failure decision 0456 already fixed once for
+      // `AP.Code`.
       if (
         !(await hasPermission(db, auth.user.id, "AP.Validate")) &&
         !(await hasPermission(db, auth.user.id, "AP.Code")) &&
+        !(await hasPermission(db, auth.user.id, "AP.Match")) &&
         !(await canViewInvoiceAsCollaborator(db, auth.user.id, getInvoiceMatch[1]))
       ) {
         return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
@@ -3076,10 +3084,14 @@ export default {
       // `AP.Validate` OR `AP.Code` — decision 0456, same reasoning as
       // `GET /invoices/:id` above: coding a line means being able to
       // see the document it came from. Widened by decision 0470, same
-      // reasoning as `GET /invoices/:id` above.
+      // reasoning as `GET /invoices/:id` above. Widened again by
+      // decision 0475: matching a line means being able to see the
+      // document it came from too — same reasoning as `AP.Match` on
+      // `GET /invoices/:id`.
       if (
         !(await hasPermission(db, auth.user.id, "AP.Validate")) &&
         !(await hasPermission(db, auth.user.id, "AP.Code")) &&
+        !(await hasPermission(db, auth.user.id, "AP.Match")) &&
         !(await canViewInvoiceAsCollaborator(db, auth.user.id, docUrlMatch[1]))
       ) {
         return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
@@ -3186,10 +3198,13 @@ export default {
       }
       // `AP.Validate` OR `AP.Code` — decision 0456, same reasoning as
       // `GET /invoices/:id` above. Widened by decision 0470, same
-      // reasoning as `GET /invoices/:id` above.
+      // reasoning as `GET /invoices/:id` above. Widened again by
+      // decision 0475, same `AP.Match` reasoning as `GET /invoices/:id`
+      // above.
       if (
         !(await hasPermission(db, auth.user.id, "AP.Validate")) &&
         !(await hasPermission(db, auth.user.id, "AP.Code")) &&
+        !(await hasPermission(db, auth.user.id, "AP.Match")) &&
         !(await canViewInvoiceAsCollaborator(db, auth.user.id, listPagesMatch[1]))
       ) {
         return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
@@ -3214,10 +3229,13 @@ export default {
       }
       // `AP.Validate` OR `AP.Code` — decision 0456, same reasoning as
       // `GET /invoices/:id` above. Widened by decision 0470, same
-      // reasoning as `GET /invoices/:id` above.
+      // reasoning as `GET /invoices/:id` above. Widened again by
+      // decision 0475, same `AP.Match` reasoning as `GET /invoices/:id`
+      // above.
       if (
         !(await hasPermission(db, auth.user.id, "AP.Validate")) &&
         !(await hasPermission(db, auth.user.id, "AP.Code")) &&
+        !(await hasPermission(db, auth.user.id, "AP.Match")) &&
         !(await canViewInvoiceAsCollaborator(db, auth.user.id, pageUrlMatch[1]))
       ) {
         return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
@@ -3499,9 +3517,13 @@ export default {
       // required permission was missing from this "anybody" the same
       // way it was missing from `GET /invoices/:id` itself. Widened by
       // decision 0470, same reasoning as `GET /invoices/:id` above.
+      // Widened again by decision 0475: `AP.Match` was missing from
+      // this "anybody" the identical way, same reasoning as `AP.Match`
+      // on `GET /invoices/:id` above.
       if (
         !(await hasPermission(db, auth.user.id, "AP.Review")) &&
         !(await hasPermission(db, auth.user.id, "AP.Code")) &&
+        !(await hasPermission(db, auth.user.id, "AP.Match")) &&
         !(await canViewInvoiceAsCollaborator(db, auth.user.id, progressMatch[1]))
       ) {
         return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);

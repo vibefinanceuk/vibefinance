@@ -11,28 +11,34 @@
  * A permission may exist here before any route actually enforces it —
  * each category below says plainly which of its entries are real
  * today versus a forward-looking placeholder for functionality that
- * doesn't exist yet (AR entirely, AP.Match, AP.Code). What is NOT
- * allowed is the reverse: a route checking a permission string that
- * isn't listed here at all — that direction is what keeps this a
- * closed, reviewable vocabulary rather than free text a role could
- * grant itself. Same discipline as INVOICE_PROFILES in profiles.ts and
- * the rule interpreter's own closed vocabulary.
+ * doesn't exist yet (AR entirely, AP.Analysis). What is NOT allowed is
+ * the reverse: a route checking a permission string that isn't listed
+ * here at all — that direction is what keeps this a closed, reviewable
+ * vocabulary rather than free text a role could grant itself. Same
+ * discipline as INVOICE_PROFILES in profiles.ts and the rule
+ * interpreter's own closed vocabulary.
  */
 
 /**
  * Accounts Payable — the side of the business this product actually
  * handles today (validating and processing invoices a customer
  * receives). Real, enforced right now: Validate, Approve, Review,
- * Dashboard, TaskView, Supplier, and — since decisions 0455/0456 — Code
- * (GL coding; widened onto document-open, task-search, key-fields and
- * activity/comment routes alongside AP.Validate). **Still not built:
- * Match (2-way match against a purchase order)** — the vocabulary and
- * schema for matching exceptions exist as of decisions 0464-0469, but
- * no route yet accepts `AP.Match` the way those routes accept
- * `AP.Code`; that route-widening is its own later phase, per decision
- * 0466's own note that it should get the same treatment. Analysis has
- * real data behind it (invoice_runs in D1) but no route reads it back
- * yet, so it's listed but unenforced.
+ * Dashboard, TaskView, Supplier, Code (since decisions 0455/0456 — GL
+ * coding; widened onto document-open/progress, cost-centre and
+ * coding-list search, and key-fields routes alongside AP.Validate),
+ * and — since decision 0475 — Match (2-way match against a purchase
+ * order; widened onto the same document-open/progress routes AP.Code
+ * already reached — `GET /invoices/:id`, `POST /invoices/:id/
+ * document-url`, `GET /invoices/:id/pages`, `POST /invoices/:id/pages/
+ * :n/document-url`, `GET /invoices/:id/progress` — since decision
+ * 0474's standard-matching-rule checkboxes raise real tasks requiring
+ * it). `AP.Match` does **not** reach the coding-list search or
+ * `/key` routes AP.Code does — decision 0467 already found that
+ * resolving a matching exception is ordinary task completion or
+ * `AP.ReturnToSupplier`, never a route that writes keyed facts, so
+ * there is nothing on that path for `AP.Match` to need. **Still not
+ * built: Analysis** — real data behind it (`invoice_runs` in D1) but
+ * no route reads it back yet, so it's listed but unenforced.
  */
 const AP_PERMISSIONS = [
   "AP.Validate",
@@ -298,7 +304,7 @@ export type Permission = (typeof PERMISSIONS)[number];
  */
 export const PERMISSION_DESCRIPTIONS: Record<Permission, string> = {
   "AP.Validate": "Confirm or correct an invoice's data at the Validation stage",
-  "AP.Match": "Two-way match against a purchase order — reserved; no route accepts it yet, unlike AP.Code",
+  "AP.Match": "Two-way match against a purchase order — the document-open and progress routes accept it alongside AP.Validate (decision 0475)",
   "AP.Code": "Assign GL/cost-centre coding to an invoice — the document-open, task-search, key-fields and activity routes accept it alongside AP.Validate",
   "AP.Approve": "Approve an invoice for payment",
   "AP.Review": "Review an invoice at the Review stage",

@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 24 September 2026 (decision 0474). A living document: what
+Last updated 24 September 2026 (decision 0475). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,30 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### AP.Match's own route-widening (0475)
+- **The exact gap decision 0456 already fixed once, for `AP.Code`.**
+  `AP.Match` was real in the closed permission vocabulary and written
+  into every one of decision 0474's own `STANDARD_MATCHING_RULES`
+  `assign_task` actions, but checked by zero routes — an `AP.Match`-
+  only holder could claim a matching task and then find every next
+  step forbidden.
+- **Five routes widened**, the identical shape and identical five
+  routes decision 0456 already established for `AP.Code`: `GET
+  /invoices/:id`, `POST /invoices/:id/document-url`, `GET /invoices/
+  :id/pages`, `POST /invoices/:id/pages/:n/document-url`, `GET
+  /invoices/:id/progress`.
+- **Deliberately narrower than `AP.Code`'s own widening, checked
+  directly rather than copied blindly**: `POST /invoices/:id/key`, the
+  coding-list search routes, and `GET /tasks` all left untouched —
+  decision 0467 already found resolving a matching exception never
+  writes keyed facts through `/key`, Matching never searches the
+  coding lists, and `AP.Match` shares `AP.Code`'s own operational
+  assumption that a role granting task-bearing AP work grants
+  `AP.TaskView` alongside it (unlike `Procurement.Approve`, decision
+  0471's deliberately narrower case).
+- `vf-app` only — no `vf-ui`/`vf-licence` change, no migration.
+- Full reasoning and verification counts in decision 0475.
 
 ### Standard matching rules — enable/disable checkboxes (0474)
 - **The checkbox only enables/disables a rule that already exists** —
