@@ -2914,6 +2914,41 @@ section for the full reasoning and tests.
   is wanted for a first version. Full reasoning in
   `docs/design/two-way-matching-exceptions.md`; see decision 0467.
 
+### Collaboration mechanism, and Approval-task scope for Business User (0468)
+- Two corrections to 0466/0467, not contradictions — each narrows what
+  those findings actually checked rather than overturning them.
+- **Access is explicit invitation, not derived ownership.** The
+  per-invoice ownership check (Procurement permission + matching the
+  PO's own `buyer_user_id`) is superseded by an "Add person to
+  conversation" action the operator named directly — genuinely new
+  storage, a new `invoice_collaborators` table (`invoice_id`,
+  `user_id`, `added_by`, `added_at`), checked to have no existing
+  precedent anywhere in this schema. Quietly removes the need for a
+  separate Non-PO requester field — whoever processes a Non-PO invoice
+  just adds its requester as a collaborator directly, same action
+  either way. `buyer_user_id` on `purchase_orders` is still worth
+  building — still real data, still asked for by name — but becomes a
+  default to pre-fill "add to conversation" with, not the access gate.
+- **"Business User" is an ordinary, general permission**, not
+  deliberately read-only — 0466/0467's finding stays true for the
+  three matching-exception resolutions specifically, but the
+  operator's own example (approving a Non-PO invoice) is a task a
+  Business User needs to complete. Split into two permissions matching
+  this codebase's own AP.Validate/AP.Approve pattern:
+  `Procurement.Collaborate` (view, comment) and `Procurement.Approve`
+  (hold and complete an approval task).
+- **Real, separate new scope surfaced**: routing an Approval task to
+  "whoever requested this invoice" needs a dynamic, per-invoice
+  resolution none of `approval-hierarchy.ts`'s four existing modes
+  provide today — the same *kind* of capability withdrawn for Matching
+  in 0467, potentially needed after all for Approval. **Approval-stage
+  scope, not Matching-stage scope** — named as adjacent, not folded in
+  silently.
+- **Not built**: still documentation only. One scoping question open:
+  is Non-PO Approval routing part of this build now, or later — no
+  other open questions remain. Full reasoning in
+  `docs/design/two-way-matching-exceptions.md`; see decision 0468.
+
 ### Purchase orders and matching
 - Purchase order storage grounded in Peppol BIS Order Only 3.3, via UBL
   XML ingestion (0081) and CSV load (0370) — the same tables, the same

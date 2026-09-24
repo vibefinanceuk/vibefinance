@@ -540,23 +540,87 @@ own gap list. For a first version, a Business User would need to check
 back on their own invoices rather than being told — worth naming
 plainly rather than implying a notification exists where one does not.
 
+## Two corrections — the "notify-only" conclusion was narrower than it read
+
+*"Business User can have assigned tasks, for Approval of Non-PO
+invoices for example. I foresee expanding the Timeline / Chat to
+include functionality to 'Add person to conversation', which would
+permit the addition of a business user to 'Collaborate' on an
+invoice."*
+
+Two real, separate corrections to what came before, not a
+contradiction of the checked findings — each checked findings stays
+true for what it actually checked, and this narrows what those
+findings were ever claiming:
+
+**1. Access is by explicit invitation to an invoice, not derived
+ownership.** The per-invoice ownership check proposed above (does this
+person hold `Procurement.*` **and** match the invoice's own PO
+`buyer_user_id`) is **superseded by a better, more general
+mechanism**: an explicit **"Add person to conversation"** action,
+recorded per invoice, that anyone already able to act on the invoice
+can use to bring in a named business user. This is genuinely new
+storage — nothing today records who has been invited to collaborate
+on anything (checked: no `collaborator`/`participant`/`watcher`/
+`invoice_shares` concept exists anywhere in this schema) — the same
+shape `document_comments` (0267) already is: new information with no
+other source to derive it from. A new `invoice_collaborators` table
+(`invoice_id`, `user_id`, `added_by`, `added_at`) is what "Chat access"
+actually checks against, not a derived match on the PO's own buyer.
+
+**This also quietly simplifies the Non-PO case**: a separate
+`invoice_headers.requested_by_user_id` column is no longer needed to
+give a Non-PO invoice's own requester access — whoever processes that
+invoice simply adds them as a collaborator directly, the same action
+either way, PO or not. `purchase_orders.buyer_user_id` (still
+proposed, still real data the operator asked for by name) becomes a
+**sensible default to pre-fill "add to conversation" with**, not the
+access gate itself — a suggestion, not a source of truth.
+
+**2. "Business User" is an ordinary, general permission — not
+deliberately read-only.** Decisions 0466/0467 found, correctly, that
+none of the three named *matching-exception* resolutions has a
+Business User performing the system action. That finding was scoped
+to those three resolutions, and stays true for them. It was never a
+design constraint that a Business User's permission *can't* hold or
+complete a task — and the operator's own example, approving a Non-PO
+invoice, is a task a Business User needs to actually complete, the
+same as any AP permission holder completing any other task.
+
+This means the single `Procurement.Respond` permission first proposed
+is the wrong shape — **two permissions, matching this codebase's own
+pattern of splitting AP's own verbs** (`AP.Validate` vs. `AP.Approve`,
+never one blob): `Procurement.Collaborate` (view an invoice you've
+been added to, post to its chat — what Chat access needs) and
+`Procurement.Approve` (hold and complete an approval task) — a role
+can be given one, the other, or both, the same as any other role here.
+
+**And this opens a real, separate piece of new scope: routing an
+Approval task to "whoever requested this invoice."** Checked directly:
+nothing in `approval-hierarchy.ts` resolves to a dynamic, per-invoice
+person today — its four modes (Employee-Supervisor, Cost-Object,
+Manual, API) all resolve through a configured hierarchy or a Default
+Approver, none of them "the requester, whoever that is for this one
+invoice." This is exactly the *kind* of per-invoice dynamic
+`assign_task` target this document proposed and then withdrew for
+Matching (0467) — not wasted, just aimed at the wrong stage. For
+**Approval**, it may be needed after all — either as a fifth thing the
+existing resolver can walk to, or as an independent rule capability
+outside the approval-hierarchy mechanism entirely. **This is Approval
+stage scope, not Matching stage scope** — genuinely adjacent to this
+investigation, not the same piece of work, and worth its own explicit
+decision on how far to take it now versus later.
+
 ## What was not built
 
 Everything above is investigation and this document, including the
-operator's own answers and what they imply. No new
-`org_matching_config` (or equivalent) table, no `buyer_user_id` on
-`purchase_orders`, no requester field on `invoice_headers`, no new
-`Procurement.*` permission, no per-invoice ownership check anywhere,
-no `po.line_reference_found`/`po.line_price_matched`/
+operator's own answers, corrections, and what they imply. No
+`invoice_collaborators` table, no "Add person to conversation" route
+or UI, no `buyer_user_id` on `purchase_orders`, no `Procurement.*`
+permissions of either shape, no `org_matching_config` (or equivalent)
+table, no `po.line_reference_found`/`po.line_price_matched`/
 `po.line_quantity_matched`/`po.line_unit_mismatch` vocabulary entries,
-no change to `po-matching.ts` or `validation.ts`, no route, and
-`ap-setup.js`'s Matching tab is untouched — still the same placeholder
-decision 0440 left it as. `assign_task { role: "po_buyer" }` is no
-longer proposed at all, now that all three named resolutions confirm a
-Business User never performs the system action themselves — the
-per-invoice ownership check for Chat is what "route to PO Buyer"
-actually needs. No mock-up was built this time, since none was asked
-for; happy to produce one (in the same style as
-`docs/design/mockups/cost-object-approval.html`) now that every open
-question above has an answer, so it mocks up something real rather
-than guessing at the configuration shape.
+no change to `po-matching.ts`, `validation.ts`, or
+`approval-hierarchy.ts`, no route, and `ap-setup.js`'s Matching tab is
+untouched — still the same placeholder decision 0440 left it as. No
+mock-up was built this time, since none was asked for.
