@@ -256,32 +256,44 @@ work should land until a real PO Buyer exists.
 
 ---
 
-## What this leaves open — the operator's to decide before any of it is built
+## What this leaves open — all six now answered
 
 - **Is quantity matching wanted at all for every org, or should it be
-  an on/off toggle** — a real, common 2-way-match configuration, not
-  named in the original request but surfaced by the research above.
+  an on/off toggle?** — **Answered: yes**, an on/off toggle. Build it.
 - **Is an org-wide default tolerance wanted independent of this
-  feature** — today's silent 0% for any supplier without an explicit
-  tolerance is arguably already a bug, not a design choice, and worth
-  a decision on its own regardless of what else gets built here.
+  feature?** — **Answered: yes**, configurable org-wide, **superseded
+  by a vendor-specific tolerance** when one is set — exactly the
+  most-specific-wins override shape proposed above and already used
+  three times elsewhere in this codebase.
 - **Does "PO Buyer" as a real routing target matter enough to build
-  the schema for it now**, or is a named team (AP Matching /
-  Procurement) enough for a first version — the same "what's genuinely
-  new schema, not yet built" question Cost-Object Approval Hierarchy
-  asked about a project code's own origin.
-- **Should "PO line not found" be its own exception/rule, distinct
-  from "found but disagreed"** — recommended above, not assumed; it
-  changes what "PO Line Not Matched" means and may need re-authoring
-  rather than leaving as-is.
-- **Should unit-of-measure mismatch become its own surfaced exception**
-  rather than silently skipping the quantity check — a real gap the
-  research surfaced that the original request didn't ask about
-  directly.
-- **Does `AP.Match` need the same route-widening `AP.Code` got** (0455/
-  0456) before this is usable end to end, or is routing tasks to
-  `AP.Validate` holders acceptable for a first version — a real,
-  separate, and fairly small piece of follow-on engineering either way.
+  the schema for it now?** — **Answered: yes.** Build it now, not
+  deferred to a later version. Scope given directly alongside the
+  answer: *"this would be a user setup in the users section, with
+  permissions. They can view an invoice, comment on invoices."* This
+  settles decision 0465's own open question about how far Business
+  User access goes, at least for a first version — **view and comment,
+  not necessarily resolving a task themselves** — narrower than "can
+  do everything AP can," and exactly the two capabilities (reading the
+  comment thread, posting to it) decision 0465 already named as
+  needing the new per-invoice ownership check.
+- **Should "PO line not found" be its own exception/rule?** —
+  **Answered: yes.** `po.line_reference_found` ships as its own fact,
+  distinct from `po.line_price_matched`/`po.line_quantity_matched`,
+  exactly as proposed above.
+- **Should unit-of-measure mismatch become its own surfaced
+  exception?** — **Answered: yes.** A new fact is needed for this —
+  not named in the original vocabulary-split proposal above, which
+  only split price and quantity. Call it `po.line_unit_mismatch`:
+  `true` when both sides carry a unit and they disagree, `false`
+  when they agree or either side has none. This is what today silently
+  makes the quantity check skip rather than fail; splitting it out
+  means quantity matching can go back to only ever meaning "quantity
+  compared and agreed," with the unit disagreement surfaced honestly
+  as its own thing rather than hidden inside a pass.
+- **Does `AP.Match` need the same route-widening `AP.Code` got?** —
+  **Answered: yes.** Build it now, not deferred — the same routes
+  decisions 0455/0456 widened for `AP.Code` (document open, task
+  search) get `AP.Match` added alongside `AP.Validate`/`AP.Code`.
 
 ## The operator's own answers, and what each implies
 
@@ -403,26 +415,66 @@ own stored parameter, the same *kind* of per-invoice resolution
 do for cost-object approval, generalized to a new purpose rather than
 invented from nothing.
 
-## What this newly leaves open — beyond the six questions already named
+## What this newly leaves open
 
-- **Where the non-PO requester reference is captured.** Nothing in
-  intake or validation asks "who requested this" today for an invoice
-  with no PO. Is it keyed by a person at Validation, inferred from
-  somewhere else entirely, or left unset (and the "Other" routing
-  option used) until a real mechanism exists?
-- **How wide "Business User" access should be.** Every invoice naming
-  them as buyer/requester, full stop — or only while an exception
-  involving them is open, closing again once resolved? The per-invoice
-  ownership check is new either way; this decides its exact shape.
-- **Whether a Business User needs anything beyond Chat.** The request
-  names "managing exceptions, confirming goods and service received" —
-  which reads as more than commenting: potentially resolving a task
-  themselves (which would mean `assign_task { role: "po_buyer" }`
-  tasks need to be *workable*, not just visible, by a Business User —
-  a further, real permission-enforcement question, the same shape
-  `AP.Match` itself is already in) versus only being consulted via
-  chat while an AP-held task stays the thing that actually advances
-  the invoice.
+- **Where the non-PO requester reference is captured — still open.**
+  Nothing in intake or validation asks "who requested this" today for
+  an invoice with no PO. Is it keyed by a person at Validation,
+  inferred from somewhere else entirely, or left unset (and the
+  "Other" routing option used) until a real mechanism exists?
+- **How wide "Business User" access should be — answered, for a first
+  version.** *"They can view an invoice, comment on invoices"* — given
+  with no qualifier about an exception being open, read as **every
+  invoice naming them as buyer/requester, full stop**, not scoped to
+  only while a matching exception is active. The per-invoice ownership
+  check below is built to that shape.
+- **Whether a Business User needs anything beyond Chat — answered, for
+  a first version.** *"They can view an invoice, comment on
+  invoices"* names exactly those two capabilities and no others —
+  **not** resolving a task themselves. `assign_task { role: "po_buyer"
+  }` tasks (0465) still need to be genuinely workable by *somebody*,
+  but that stays AP's own task, worked through the AP Team / Other
+  routing options; a Business User's own role is read-and-comment, not
+  task resolution, unless a later decision widens it.
+
+## A tension the two answers above create, surfaced rather than silently resolved
+
+**If "PO Buyer" is a selectable target in the per-exception routing
+drop-down (0465, question 3), and a Business User can only view and
+comment, not resolve a task (just above) — who actually completes a
+task routed to "PO Buyer"?** `assign_task` creates a real task with a
+`required_permission`; completing one has always meant holding that
+permission (`onTaskCompleted`'s own gate, unchanged by anything
+proposed here). A Business User holding only a read-and-comment
+`Procurement.*` permission could see the task's invoice and discuss it
+in chat, but could not check it off — the same "reserved but not
+enforced" shape `AP.Match` itself was already in.
+
+Two honest readings, not assumed either way:
+
+- **"Route to PO Buyer" means bring them into the conversation, not
+  hand them the task.** The task itself still goes to an AP-held
+  permission (`AP.Match`, most likely) — practically, this reads as
+  "AP Team," with the Business User cc'd via chat for their input,
+  which would make "PO Buyer" a *notification* target, not a distinct
+  `assign_task` target, and the new `assign_task { role: "po_buyer" }`
+  resolution mode (0465) would not be needed for a first version at
+  all — `notify { target: "po_buyer" }` (a resolution the existing
+  `notify` action would need the same kind of new per-invoice lookup
+  for) might be the more accurate shape.
+- **A Business User is meant to actually resolve the task**, and the
+  answer just above ("view an invoice, comment on invoices") was
+  describing the minimum, not the ceiling — in which case the
+  `Procurement.*` permission this document proposes needs to carry
+  real task-completion rights for matching-exception tasks
+  specifically, not only read-and-comment, and `onTaskCompleted`'s own
+  gate needs nothing changed (it already just checks the permission),
+  but the permission itself needs to mean more than this document has
+  proposed so far.
+
+**Worth a direct answer before `assign_task { role: "po_buyer" }` (or
+`notify`) gets built either way** — the two readings produce a
+genuinely different feature.
 
 ## What was not built
 

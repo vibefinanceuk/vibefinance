@@ -2859,6 +2859,30 @@ section for the full reasoning and tests.
   screen. Four further open questions named — full reasoning appended
   to `docs/design/two-way-matching-exceptions.md`; see decision 0465.
 
+### The remaining six questions, answered — and a tension surfaced (0466)
+- All six of 0464's open questions answered **yes**: quantity matching
+  as an on/off toggle; an org-wide default tolerance, superseded by a
+  vendor-specific one when set; PO Buyer worth building now, scoped
+  directly as *"a user setup in the users section, with permissions.
+  They can view an invoice, comment on invoices"*; "PO line not found"
+  as its own exception; unit-of-measure mismatch as its own exception
+  (new fact needed: `po.line_unit_mismatch`); and the same
+  route-widening `AP.Code` got, for `AP.Match`.
+- **A real tension, surfaced rather than assumed either way**: 0465's
+  own routing drop-down names "PO Buyer" as a target a task can route
+  *to*, but completing a task has always meant holding its
+  `required_permission` — and a read-and-comment-only Business User
+  cannot hold that. Two readings, genuinely different features: "PO
+  Buyer" means *notify them, AP still resolves it* (so `notify` needs
+  the new per-invoice lookup, not `assign_task { role }`), or a
+  Business User is meant to actually resolve the task (so
+  `Procurement.*` needs real completion rights for this one task type,
+  beyond read-and-comment). Not decided here.
+- **Not built**: still documentation only. Two questions remain open —
+  where a Non-PO invoice's own requester is captured, and which
+  reading of "route to PO Buyer" is correct. Full reasoning appended
+  to `docs/design/two-way-matching-exceptions.md`; see decision 0466.
+
 ### Purchase orders and matching
 - Purchase order storage grounded in Peppol BIS Order Only 3.3, via UBL
   XML ingestion (0081) and CSV load (0370) — the same tables, the same
