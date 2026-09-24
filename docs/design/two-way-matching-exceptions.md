@@ -283,15 +283,160 @@ work should land until a real PO Buyer exists.
   `AP.Validate` holders acceptable for a first version — a real,
   separate, and fairly small piece of follow-on engineering either way.
 
+## The operator's own answers, and what each implies
+
+Three direct answers, received after this document's first draft.
+Restated precisely, then checked against the code the same way
+everything above was — each is more than configuration; each names
+real, specific new work.
+
+**1. The PO Buyer is a real business user, not a placeholder.**
+*"The PO Buyer is a real business user, who has requested the goods
+or service on the PO, and we would want to engage them in the process
+for managing exceptions, confirming goods and service received, etc.
+The user would need to be someone setup in the system and be a
+'Business User' role for engaging in dialogue (via chat) on specific
+invoices relating to a PO, or indeed who have been responsible for
+buying goods and services 'off-PO', which result in Non-PO invoices.
+I foresee that a Person Reference field would need to be added to the
+PO information that we hold, that should be an actual person in the
+users database."*
+
+This settles the open question from the first draft — worth building,
+not deferred — and names three separate pieces, checked one at a time:
+
+- **A Person Reference field on `purchase_orders`.** Straightforward:
+  a nullable `buyer_user_id REAL NOT NULL REFERENCES org_users(id)` —
+  the same shape `cost_centres.owner_user_id` already is — sourced from
+  wherever POs are loaded from (0370's CSV/XML ingestion), the same way
+  `originator_reference` already is. Confirmed no such column exists
+  today, on either `purchase_orders` or `invoice_headers`.
+- **A Person Reference for a Non-PO invoice is a genuinely separate
+  piece, not the same field.** A Non-PO invoice has no `purchase_orders`
+  row to attach a buyer to — the operator's own phrase, "off-PO,"
+  names the gap directly. This needs its own place to live, most
+  naturally on `invoice_headers` itself (a `requested_by_user_id`,
+  keyed at whatever point in intake/validation a person becomes
+  knowable — today nothing captures "who asked for this" for a
+  non-PO invoice at all). **Two fields, two different tables, not
+  one** — conflating them would silently lose the distinction the
+  operator's own two examples draw.
+- **"Business User" is a new role, and needs a new permission
+  namespace, not a spot in `AP.*`.** Every existing `AP.*` permission
+  (`permissions.ts`) is Accounts Payable staff work — validating,
+  matching, coding, approving, reviewing. A business user who happens
+  to have raised a PO is not AP staff and should not need an AP
+  permission to talk about their own invoice. The precedent already in
+  this codebase is `Supplier.Maintain` — "a separate namespace...
+  matching decision 0333's own 'namespaced by business role, not by
+  route.'" A `Procurement.*` (or similarly named) category, with
+  something like `Procurement.Respond`, is the same move, not a new
+  one.
+- **"Engaging in dialogue via chat" needs more than a permission —
+  it needs a genuinely new *kind* of access check.** The comment
+  thread already exists (`document_comments`, decision 0267) and
+  already works — but both reading (`GET /documents/:id/activity`) and
+  posting (`POST /documents/:id/comments`) are gated on one flat
+  permission, `AP.Review`, checked the same way for every invoice in
+  the org: *"internal only for honest dialogue between colleagues"* —
+  colleagues meant AP staff when that was written. Every permission
+  check anywhere in this codebase today is that shape: **do you hold
+  this permission, full stop** — never **do you hold this permission
+  *for this specific record***. A business user should see and
+  comment on invoices that name *them* as the buyer or requester, and
+  no others — which is a per-invoice ownership check, not a role
+  grant. Nothing in this codebase does that yet, for anything. This is
+  the single largest new mechanism this answer implies, not a
+  configuration detail.
+
+**2. Typical exceptions as configurable, toggleable rules.** *"The
+Typical exceptions need to be captured, perhaps as rules in the rule
+configuration. Perhaps we also consider a check-box in the AP Setup
+screen to enable, or disable standard matching rules?"*
+
+Checked against how rules actually work here: **every rule in this
+system is already the same shape** — a sentence a person writes
+(`rule_versions.source_text`), compiled against the closed vocabulary,
+and a person activates it (`approved_by`, never auto-promoted). Every
+rule already carries its own `enabled` flag (`rules.enabled`, decision
+0001, unused by nothing — a real column since the very first
+migration). There is no separate concept anywhere of a "system" or
+"built-in" rule distinct from a customer-authored one, and building
+one would be a real departure from decision 0031's own governing
+principle — "the vocabulary is closed, and that is the feature,"
+applied to rules meaning exactly one thing, a sentence a customer
+wrote.
+
+**The simpler reading fits what's already here**: ship a small set of
+**pre-written sentences** for the new facts this document already
+proposes (`po.line_price_matched`, `po.line_quantity_matched`,
+`po.line_reference_found`) — starter text like *"If a line's price
+does not match its purchase order line, assign a task to the AP
+Matching team requiring AP.Match"* — that Matching's own AP Setup tab
+offers as one-click checkboxes. Checking one runs the existing
+compile-and-activate pipeline exactly as if the operator had typed it
+and pressed activate; unchecking one disables the resulting rule via
+the `enabled` flag that already exists. **No new rule mechanism, no
+parallel path around the compiler** — the checkbox is a shortcut into
+infrastructure that is already there, not a second kind of rule.
+
+**3. A routing drop-down per exception: AP Team / PO Buyer / Other.**
+*"For each matching exception, we could configure a drop-down stating
+whether the resolution is the AP Team, or PO buyer, or Other (where a
+specific user or team can be specified)."*
+
+Two of the three options are what `assign_task` already does —
+**"AP Team"** and **"Other: a specific user or team"** both resolve to
+a literal `{ team: "<id>" }` or `{ user: "<id>" }`, exactly the shape
+`assign_task` has taken since decision 0019. **"PO Buyer" is not**:
+it can't be a literal id chosen once in AP Setup, because it means a
+different person on every invoice — whoever's Person Reference (above)
+that invoice's own PO carries. `assign_task`'s params
+(`ACTION_DESCRIPTIONS`, `shared/interpreter/vocabulary.ts`) are always
+a literal team-or-user id today; nothing resolves a target *from the
+invoice being evaluated*. This needs a genuinely new action shape —
+something like `assign_task { role: "po_buyer" }` — resolved by the
+workflow engine at evaluation time by reading the invoice's own linked
+PO (or the new non-PO requester field) rather than trusting a rule's
+own stored parameter, the same *kind* of per-invoice resolution
+`resolveApprovalTargets`/`resolveCostObjects` (decision 0452) already
+do for cost-object approval, generalized to a new purpose rather than
+invented from nothing.
+
+## What this newly leaves open — beyond the six questions already named
+
+- **Where the non-PO requester reference is captured.** Nothing in
+  intake or validation asks "who requested this" today for an invoice
+  with no PO. Is it keyed by a person at Validation, inferred from
+  somewhere else entirely, or left unset (and the "Other" routing
+  option used) until a real mechanism exists?
+- **How wide "Business User" access should be.** Every invoice naming
+  them as buyer/requester, full stop — or only while an exception
+  involving them is open, closing again once resolved? The per-invoice
+  ownership check is new either way; this decides its exact shape.
+- **Whether a Business User needs anything beyond Chat.** The request
+  names "managing exceptions, confirming goods and service received" —
+  which reads as more than commenting: potentially resolving a task
+  themselves (which would mean `assign_task { role: "po_buyer" }`
+  tasks need to be *workable*, not just visible, by a Business User —
+  a further, real permission-enforcement question, the same shape
+  `AP.Match` itself is already in) versus only being consulted via
+  chat while an AP-held task stays the thing that actually advances
+  the invoice.
+
 ## What was not built
 
-Everything above is investigation and this document. No new
-`org_matching_config` (or equivalent) table, no `po.line_reference_found`/
-`po.line_price_matched`/`po.line_quantity_matched` vocabulary entries,
-no change to `po-matching.ts` or `validation.ts`, no route, and
-`ap-setup.js`'s Matching tab is untouched — still the same placeholder
-decision 0440 left it as. No mock-up was built this time, since none
-was asked for; happy to produce one (in the same style as
-`docs/design/mockups/cost-object-approval.html`) once the open
+Everything above is investigation and this document, including the
+operator's own answers and what they imply. No new
+`org_matching_config` (or equivalent) table, no `buyer_user_id` on
+`purchase_orders`, no requester field on `invoice_headers`, no new
+`Procurement.*` permission, no per-invoice ownership check anywhere,
+no `po.line_reference_found`/`po.line_price_matched`/
+`po.line_quantity_matched` vocabulary entries, no `assign_task { role
+}` resolution, no change to `po-matching.ts` or `validation.ts`, no
+route, and `ap-setup.js`'s Matching tab is untouched — still the same
+placeholder decision 0440 left it as. No mock-up was built this time,
+since none was asked for; happy to produce one (in the same style as
+`docs/design/mockups/cost-object-approval.html`) once the newly open
 questions above have answers, so it mocks up something real rather
 than guessing at the configuration shape.

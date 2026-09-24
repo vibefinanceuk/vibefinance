@@ -2820,6 +2820,45 @@ section for the full reasoning and tests.
   Full reasoning, sourced research, and every open question in
   `docs/design/two-way-matching-exceptions.md`; see decision 0464.
 
+### The PO Buyer, standard rules, and per-exception routing, answered (0465)
+- The operator's own direct answers to three of 0464's open questions:
+  the PO Buyer is a real business user, not a placeholder; typical
+  exceptions should be captured as toggleable rules; and each
+  exception should route via a drop-down (AP Team / PO Buyer / Other).
+  Each answer checked against the code for what it actually requires,
+  not assumed to be configuration alone.
+- **The PO Buyer is three separate pieces**: a `buyer_user_id` on
+  `purchase_orders` (straightforward, no such column exists); a
+  **separate** requester field for Non-PO invoices, which have no PO
+  row to attach a buyer to at all; and a new **`Procurement.*`-style
+  permission namespace** for "Business User" — not a slot in `AP.*`,
+  the same "namespaced by business role, not by route" precedent
+  `Supplier.Maintain` already set. **The largest piece**: chat access
+  needs a genuinely new **per-invoice ownership check** — every
+  permission check in this codebase today asks "do you hold this
+  permission," never "do you hold it for this specific record," and
+  `document_comments` (0267) is gated on one flat `AP.Review` today,
+  "internal... between colleagues" meaning AP staff.
+- **"Standard rules" fit existing infrastructure with no new
+  mechanism**: every rule is already a compiled, explicitly-activated
+  sentence with its own `enabled` flag (decision 0001). Pre-written
+  starter sentences offered as one-click AP Setup checkboxes, running
+  the existing compile-and-activate pipeline, is the simpler reading —
+  not a parallel "system rule" path, which would cut against decision
+  0031's own closed-vocabulary principle.
+- **Two of three routing options already exist; "PO Buyer" is
+  genuinely new**: "AP Team" and "Other" are both `assign_task {
+  team }`/`{ user }`, unchanged. "PO Buyer" needs a new action shape —
+  `assign_task { role: "po_buyer" }`, resolved per-invoice at
+  evaluation time — the same *kind* of dynamic resolution
+  `resolveApprovalTargets`/`resolveCostObjects` (0452) already do,
+  generalized rather than invented.
+- **Not built**: no `buyer_user_id` column, no non-PO requester field,
+  no new permission, no per-invoice ownership check, no new rule
+  mechanism, no `assign_task { role }` resolution, no route, no
+  screen. Four further open questions named — full reasoning appended
+  to `docs/design/two-way-matching-exceptions.md`; see decision 0465.
+
 ### Purchase orders and matching
 - Purchase order storage grounded in Peppol BIS Order Only 3.3, via UBL
   XML ingestion (0081) and CSV load (0370) — the same tables, the same
