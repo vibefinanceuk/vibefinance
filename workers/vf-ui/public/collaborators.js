@@ -32,6 +32,18 @@ import { icon } from "/icons.js";
  * input and its results container are created once, the moment the
  * panel opens, and reused for as long as it stays open; only the
  * results underneath it are swapped in and out as answers arrive.
+ *
+ * **Removing a collaborator — decision 0476.** A small "x" on every
+ * chip, calling `DELETE /documents/:id/collaborators/:userId`, gated
+ * server-side on the new `AP.Manager` permission — deliberately
+ * narrower than the `AP.Review` that can add one, per the operator's
+ * own instruction. Shown on every chip regardless of who is looking,
+ * matching this file's own stated habit just above for the Add
+ * button: never hide a control the caller cannot use, let the real
+ * 403 answer for itself. No confirmation step — the same "acts the
+ * moment you click it" discipline `ap-setup.js`'s own override rows
+ * already use for their own Remove buttons, and reversible the same
+ * way: the person can be added right back.
  */
 
 let collaborators = null;
@@ -43,6 +55,7 @@ let searchResults = [];
 let searching = false;
 let searchError = null;
 let addError = null;
+let removeError = null;
 let searchGeneration = 0;
 let searchInputNode = null;
 let searchResultsNode = null;
@@ -57,6 +70,7 @@ function reset() {
   searching = false;
   searchError = null;
   addError = null;
+  removeError = null;
   searchGeneration = 0;
   searchInputNode = null;
   searchResultsNode = null;
@@ -116,6 +130,28 @@ async function addPerson(invoiceId, userId, content) {
   // **Reload rather than append locally** — the same read-after-write
   // discipline `activity.js`'s own `post()` already uses: the server's
   // own `addedBy`/`addedAt` are what render, not a client guess.
+  await load(invoiceId, content);
+}
+
+/**
+ * Removing a collaborator — decision 0476. Server-gated on
+ * `AP.Manager`; a caller without it gets the same real `forbidden`
+ * response this file already surfaces for a refused add.
+ */
+async function removePerson(invoiceId, userId, content) {
+  removeError = null;
+  const response = await fetch(
+    `/api/documents/${encodeURIComponent(invoiceId)}/collaborators/${encodeURIComponent(userId)}`,
+    { method: "DELETE" }
+  );
+
+  if (!response.ok) {
+    removeError = t("activity.removepersonfailed");
+    renderContent(content, invoiceId);
+    return;
+  }
+
+  // Reload rather than filter locally — same discipline as addPerson().
   await load(invoiceId, content);
 }
 
@@ -220,6 +256,15 @@ function renderContent(content, invoiceId) {
           el("span", { class: "collabchip" }, [
             el("span", { class: "activityavatar", text: initials(c.userName) }),
             el("span", { text: c.userName }),
+            el(
+              "button",
+              {
+                class: "collabchipremove",
+                title: t("activity.removeperson"),
+                onclick: () => removePerson(invoiceId, c.userId, content),
+              },
+              [icon("close")]
+            ),
           ])
         )
   );
@@ -254,6 +299,7 @@ function renderContent(content, invoiceId) {
     ...[
       loadError ? el("div", { class: "warn sm", text: loadError }) : null,
       addError ? el("div", { class: "warn sm", text: addError }) : null,
+      removeError ? el("div", { class: "warn sm", text: removeError }) : null,
       el("div", { class: "collabbar" }, [chips, addButton, searchPanel].filter(Boolean)),
     ].filter(Boolean)
   );

@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 24 September 2026 (decision 0475). A living document: what
+Last updated 24 September 2026 (decision 0476). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,32 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Removing a collaborator — `AP.Manager` (0476)
+- **Decision 0470's own named-but-deferred gap**, built here: a "x" on
+  every chip in `collaborators.js`'s own roster bar, calling a new
+  `DELETE /documents/:id/collaborators/:userId`.
+- **Gated on a brand-new `AP.Manager` permission, deliberately narrower
+  than the `AP.Review` that adds one** — the operator's own instruction.
+  Confirmed first that "AP Manager" is not a real permission or seeded
+  role anywhere in this codebase (only ever an illustrative role *name*
+  in docs/tests) before adding one, rather than guessing.
+- **404s on removing someone never added**, matching
+  `handleRemoveTeamMember`'s own precedent — not `handleAddCollaborator`'s
+  no-op-not-409, a genuinely different table shape.
+- **Two real, pre-existing gaps found and fixed alongside this one,
+  neither this decision's own scope**: `GET`/`POST
+  /documents/:id/collaborators` (decision 0470) had never been added to
+  the vf-ui proxy allowlist at all — closed here in the same pass as
+  the new route, the exact recurring class of gap decisions 0418–0431,
+  0441, 0473, and 0474 keep finding. `collaborators.js` itself carried
+  zero dedicated browser-test coverage since 0470 shipped — four new
+  tests added here, scoped to this decision's own removal behavior
+  only, not backfilled for the pre-existing Add-person flow.
+- No cascade to a task already routed to a removed collaborator
+  (deliberate — a task is resolved once, not a live join against the
+  roster). No confirmation dialog, no self-removal carve-out.
+- Full reasoning and verification counts in decision 0476.
 
 ### AP.Match's own route-widening (0475)
 - **The exact gap decision 0456 already fixed once, for `AP.Code`.**

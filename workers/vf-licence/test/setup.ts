@@ -149,6 +149,7 @@ import addPersonToConversationStringsSql from "../migrations/0158_add_person_to_
 import businessApproverApproveActionStringSql from "../migrations/0159_business_approver_approve_action_string.sql?raw";
 import matchingTabStringsSql from "../migrations/0160_matching_tab_strings.sql?raw";
 import standardMatchingRulesStringsSql from "../migrations/0161_standard_matching_rules_strings.sql?raw";
+import removeCollaboratorStringsSql from "../migrations/0162_remove_collaborator_strings.sql?raw";
 
 function stripSqlComments(sql: string): string {
   return sql
@@ -321,5 +322,6 @@ export async function applyTestSchema(): Promise<void> {
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(businessApproverApproveActionStringSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(matchingTabStringsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(standardMatchingRulesStringsSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(removeCollaboratorStringsSql)));
 
 }

@@ -2848,6 +2848,131 @@ describe("'Add person to conversation' — Procurement.Collaborate, per-invoice 
 });
 
 /**
+ * **Removing a collaborator — decision 0468's own named-but-deferred
+ * gap, built in decision 0476.** `DELETE /documents/:id/collaborators/
+ * :userId`, gated on the new `AP.Manager` permission — deliberately
+ * narrower than the `AP.Review` that can add one, per the operator's
+ * own instruction.
+ */
+describe("Removing a collaborator — AP.Manager, per-invoice (decision 0476)", () => {
+  it("DELETE /documents/:id/collaborators/:userId removes a real collaborator, gated on AP.Manager", async () => {
+    await SELF.fetch("https://example.com/invoices", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ id: "inv-0476-1", facts: {} }),
+    });
+    const biz = await seedUserWithPermissionsAndId(["Procurement.Collaborate"]);
+    await SELF.fetch("https://example.com/documents/inv-0476-1/collaborators", {
+      method: "POST",
+      headers: { ...authHeaders(), "content-type": "application/json" },
+      body: JSON.stringify({ userId: biz.id }),
+    });
+    const managerKey = await seedUserWithPermissions(["AP.Manager"]);
+
+    const res = await SELF.fetch(`https://example.com/documents/inv-0476-1/collaborators/${biz.id}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${managerKey}` },
+    });
+    expect(res.status).toBe(200);
+
+    const row = await env.DB.prepare("SELECT 1 FROM invoice_collaborators WHERE invoice_id = ? AND user_id = ?")
+      .bind("inv-0476-1", biz.id)
+      .first();
+    expect(row).toBeNull();
+  });
+
+  it("refuses an AP.Review-only caller — removing is deliberately narrower than adding", async () => {
+    await SELF.fetch("https://example.com/invoices", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ id: "inv-0476-2", facts: {} }),
+    });
+    const biz = await seedUserWithPermissionsAndId(["Procurement.Collaborate"]);
+    await SELF.fetch("https://example.com/documents/inv-0476-2/collaborators", {
+      method: "POST",
+      headers: { ...authHeaders(), "content-type": "application/json" },
+      body: JSON.stringify({ userId: biz.id }),
+    });
+    // A real, scoped AP.Review holder — the same person able to add a
+    // collaborator (per the describe block above) — not authHeaders()
+    // itself, which holds every permission in this suite's own setup
+    // and would trivially also hold AP.Manager.
+    const reviewerKey = await seedUserWithPermissions(["AP.Review"]);
+    const res = await SELF.fetch(`https://example.com/documents/inv-0476-2/collaborators/${biz.id}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${reviewerKey}` },
+    });
+    expect(res.status).toBe(403);
+
+    const row = await env.DB.prepare("SELECT 1 FROM invoice_collaborators WHERE invoice_id = ? AND user_id = ?")
+      .bind("inv-0476-2", biz.id)
+      .first();
+    expect(row).toBeTruthy();
+  });
+
+  it("refuses a collaborator themselves, even one holding Procurement.Collaborate", async () => {
+    await SELF.fetch("https://example.com/invoices", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ id: "inv-0476-3", facts: {} }),
+    });
+    const biz = await seedUserWithPermissionsAndId(["Procurement.Collaborate"]);
+    await SELF.fetch("https://example.com/documents/inv-0476-3/collaborators", {
+      method: "POST",
+      headers: { ...authHeaders(), "content-type": "application/json" },
+      body: JSON.stringify({ userId: biz.id }),
+    });
+
+    const res = await SELF.fetch(`https://example.com/documents/inv-0476-3/collaborators/${biz.id}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${biz.apiKey}` },
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("404s removing someone who was never a collaborator on this invoice", async () => {
+    await SELF.fetch("https://example.com/invoices", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ id: "inv-0476-4", facts: {} }),
+    });
+    const managerKey = await seedUserWithPermissions(["AP.Manager"]);
+
+    const res = await SELF.fetch("https://example.com/documents/inv-0476-4/collaborators/nobody-here", {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${managerKey}` },
+    });
+    expect(res.status).toBe(404);
+  });
+
+  it("removing a collaborator revokes their invoice access immediately", async () => {
+    await SELF.fetch("https://example.com/invoices", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ id: "inv-0476-5", facts: {} }),
+    });
+    const biz = await seedUserWithPermissionsAndId(["Procurement.Collaborate"]);
+    await SELF.fetch("https://example.com/documents/inv-0476-5/collaborators", {
+      method: "POST",
+      headers: { ...authHeaders(), "content-type": "application/json" },
+      body: JSON.stringify({ userId: biz.id }),
+    });
+    const bizHeaders = { Authorization: `Bearer ${biz.apiKey}` };
+    const before = await SELF.fetch("https://example.com/invoices/inv-0476-5", { headers: bizHeaders });
+    expect(before.status).toBe(200);
+
+    const managerKey = await seedUserWithPermissions(["AP.Manager"]);
+    await SELF.fetch(`https://example.com/documents/inv-0476-5/collaborators/${biz.id}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${managerKey}` },
+    });
+
+    const after = await SELF.fetch("https://example.com/invoices/inv-0476-5", { headers: bizHeaders });
+    expect(after.status).toBe(403);
+  });
+});
+
+/**
  * **`GET /invoices/:id/coding-suggestions`, through the real router —
  * decision 0457.** Gated the same as the rest of the Coding pop-out's
  * own path; the aggregation itself is covered directly in

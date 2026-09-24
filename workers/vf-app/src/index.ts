@@ -159,7 +159,12 @@ import {
 } from "./load-suppliers.js";
 import { handleListDocuments } from "./documents-route.js";
 import { handleGetActivity, handlePostComment } from "./activity-route.js";
-import { handleAddCollaborator, handleListCollaborators, isInvoiceCollaborator } from "./invoice-collaborators-route.js";
+import {
+  handleAddCollaborator,
+  handleListCollaborators,
+  handleRemoveCollaborator,
+  isInvoiceCollaborator,
+} from "./invoice-collaborators-route.js";
 import {
   handleListLedgers,
   handleCreateLedger,
@@ -3627,6 +3632,9 @@ export default {
      * Deliberately not widened to a collaborator themselves — nothing
      * in decision 0468's own scope has a Business User inviting
      * anyone else in; that stays AP staff's own action for now.
+     * Removing one is a real, separate route just below — `AP.Manager`,
+     * deliberately narrower than this pair's own `AP.Review` (decision
+     * 0476).
      */
     const collaboratorsMatch = pathname.match(/^\/documents\/([^/]+)\/collaborators$/);
     if (collaboratorsMatch && request.method === "GET") {
@@ -3663,6 +3671,27 @@ export default {
         (body as Record<string, unknown> | null)?.userId,
         auth.user.id
       );
+      return json(result.body, result.status);
+    }
+
+    /**
+     * Removing a collaborator — decision 0476. `AP.Manager`, not
+     * `AP.Review` — deliberately narrower than the pair just above,
+     * per the operator's own instruction: someone who can invite a
+     * person into a conversation should not automatically be able to
+     * remove one. Not widened to a collaborator themselves, same as
+     * the invite route above.
+     */
+    const removeCollaboratorMatch = pathname.match(/^\/documents\/([^/]+)\/collaborators\/([^/]+)$/);
+    if (removeCollaboratorMatch && request.method === "DELETE") {
+      const { db } = resolveTenant(request, env);
+      const locale = resolveLocale(env.LOCALE);
+      const auth = await authenticatePerson(db, request, env);
+      if (!auth.user) return json({ error: auth.reason }, 401);
+      if (!(await hasPermission(db, auth.user.id, "AP.Manager"))) {
+        return json({ error: t("forbidden", locale) }, 403);
+      }
+      const result = await handleRemoveCollaborator(db, removeCollaboratorMatch[1], removeCollaboratorMatch[2]);
       return json(result.body, result.status);
     }
 

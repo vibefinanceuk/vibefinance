@@ -316,6 +316,22 @@ const PROXIED_TO_INSTANCE: RegExp[] = [
   // The activity panel — decision 0267.
   /^\/documents\/[^/]+\/activity$/,
   /^\/documents\/[^/]+\/comments$/,
+  /**
+   * **The collaborators roster — decision 0470, closed here rather
+   * than by a real request failing.** `GET`/`POST
+   * /documents/:id/collaborators` have existed in `vf-app` since
+   * decision 0470 and were never added to this list either — the
+   * exact class of gap decision 0212 first named and decisions
+   * 0418–0431, 0441, 0473 and 0474 have each found again since,
+   * caught here before `collaborators.js`'s own roster bar or "Add
+   * person to conversation" panel could hit it live.
+   *
+   * **Removing one — decision 0476.** `DELETE
+   * /documents/:id/collaborators/:userId`, added in the same pass as
+   * the route itself this time, per that same repeated lesson.
+   */
+  /^\/documents\/[^/]+\/collaborators$/,
+  /^\/documents\/[^/]+\/collaborators\/[^/]+$/,
   // Where an invoice has been (decision 0151).
   /^\/invoices\/[^/]+\/progress$/,
   /^\/rules\/stages$/,

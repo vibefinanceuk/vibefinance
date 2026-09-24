@@ -178,6 +178,9 @@ const STRINGS = {
     "activity.rulefired": "Business rule \u2018{rule}\u2019 fired: {actions}",
     "activity.timelinetab": "Timeline / Chat",
     "activity.systemalert": "System Alert",
+    // Removing a collaborator — decision 0476.
+    "activity.removeperson": "Remove from conversation",
+    "activity.removepersonfailed": "Could not remove that person. Try again.",
   },
 };
 
@@ -3680,6 +3683,121 @@ describe("the document/timeline tabs (decision 0269)", () => {
     await openViewer(TASK, () => {});
 
     expect(document.body.innerHTML).not.toContain(">null<");
+  });
+});
+
+describe("removing a collaborator (decision 0476)", () => {
+  /**
+   * `collaborators.js` itself has carried no dedicated coverage here
+   * since it was built (decision 0470) — only the generic empty-roster
+   * default `stubFetch()`'s own comment above already explains. These
+   * four are scoped to decision 0476's own new behavior: the "x" on
+   * each chip, a successful removal reloading the roster, a refused
+   * one surfacing the real error without touching the roster, and the
+   * button rendering unconditionally — this file's own established
+   * habit of testing what was just built, not only what already broke
+   * live, the same as decisions 0198, 0387, and most of the describe
+   * blocks above.
+   */
+  function timelineTabButton() {
+    return [...document.querySelectorAll(".doctab")].find((b) => b.textContent?.includes("Timeline / Chat"));
+  }
+
+  /**
+   * A roster that starts with one collaborator and empties once the
+   * remove button's own `DELETE` call succeeds — what `removePerson()`
+   * itself relies on, since it reloads rather than filters locally
+   * (the same read-after-write discipline `addPerson()` already uses).
+   * `deleteOk: false` instead answers the `DELETE` with a 403, the same
+   * shape the real route gives a caller without `AP.Manager`.
+   */
+  function stubWithRoster(deleteOk: boolean) {
+    let removed = false;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        const path = String(url).split("?")[0];
+        const method = init?.method ?? "GET";
+        if (path === "/api/documents/inv-1/collaborators" && method === "GET") {
+          return {
+            ok: true,
+            json: async () => ({ collaborators: removed ? [] : [{ userId: "u-1", userName: "Alex Alvarez" }] }),
+          } as Response;
+        }
+        if (path === "/api/documents/inv-1/collaborators/u-1" && method === "DELETE") {
+          if (!deleteOk) return { ok: false, status: 403, json: async () => ({ error: "forbidden" }) } as Response;
+          removed = true;
+          return { ok: true, json: async () => ({}) } as Response;
+        }
+        const routes: Record<string, unknown> = {
+          "/api/code-lists": { fields: {} },
+          "/api/ui-strings": STRINGS,
+          "/api/field-visibility": FIELDS,
+          "/api/invoices/inv-1": { facts: {}, lines: [], validation: { passed: true, checked: [], failures: [] } },
+          "/api/invoices/inv-1/progress": { visits: [] },
+          "/api/documents/inv-1/activity": { items: [] },
+        };
+        if (path in routes) return { ok: true, json: async () => routes[path] } as Response;
+        if (/^\/api\/invoices\/[^/]+\/pages$/.test(path)) {
+          return { ok: true, json: async () => ({ pages: [] }) } as Response;
+        }
+        throw new Error(`no stub for ${method} ${path} — add one, or the test proves nothing`);
+      })
+    );
+  }
+
+  async function openOnTimeline() {
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    await openViewer(TASK, () => {});
+    await new Promise((r) => setTimeout(r, 0));
+    (timelineTabButton() as HTMLButtonElement).click();
+    await new Promise((r) => setTimeout(r, 0));
+  }
+
+  it("renders a remove button on every collaborator chip", async () => {
+    stubWithRoster(true);
+    await openOnTimeline();
+
+    const chip = document.querySelector(".collabchip");
+    expect(chip?.textContent).toContain("Alex Alvarez");
+    expect(chip?.querySelector(".collabchipremove")).not.toBeNull();
+  });
+
+  it("removing a collaborator reloads the roster — the chip is gone, not just hidden", async () => {
+    stubWithRoster(true);
+    await openOnTimeline();
+    expect(document.querySelectorAll(".collabchip").length).toBe(1);
+
+    (document.querySelector(".collabchipremove") as HTMLButtonElement).click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(document.querySelectorAll(".collabchip").length).toBe(0);
+  });
+
+  it("shows the real error inline and leaves the chip in place when removal is refused", async () => {
+    stubWithRoster(false);
+    await openOnTimeline();
+
+    (document.querySelector(".collabchipremove") as HTMLButtonElement).click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(document.querySelectorAll(".collabchip").length).toBe(1);
+    expect(document.body.textContent).toContain("Could not remove that person. Try again.");
+  });
+
+  it("shows the remove button unconditionally — the server, not the client, is the real gate", async () => {
+    // **No client-side permission check here at all.** `collaborators.js`'s
+    // own doc comment states the discipline directly: never hide a
+    // control the caller cannot use. This test exists so a future
+    // change that adds client-side gating (say, checking `whoami`'s
+    // own permission list before rendering the button) gets caught the
+    // moment it changes this behavior, not discovered live.
+    stubWithRoster(true);
+    await openOnTimeline();
+
+    expect(document.querySelector(".collabchipremove")).not.toBeNull();
   });
 });
 

@@ -546,6 +546,20 @@ describe("the proxy carries every path a screen calls (decision 0131)", () => {
      * allowlist entry itself this time, not after a live report.
      */
     ["GET", "/api/matching-config/standard-rules"],
+    /**
+     * The collaborators roster — decision 0470, `collaborators.js`'s
+     * own "Add person to conversation" panel. Never added here at the
+     * time, the exact gap this whole block exists to catch — found
+     * now, alongside decision 0476's own removal route just below,
+     * rather than by a live report.
+     */
+    ["GET", "/api/documents/inv-1/collaborators"],
+    ["POST", "/api/documents/inv-1/collaborators"],
+    /**
+     * Removing a collaborator — decision 0476. Added alongside the
+     * allowlist entry itself this time, not after a live report.
+     */
+    ["DELETE", "/api/documents/inv-1/collaborators/u-1"],
   ];
 
   it("carries all of them", async () => {

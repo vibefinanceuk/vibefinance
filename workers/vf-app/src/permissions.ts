@@ -36,9 +36,13 @@
  * `/key` routes AP.Code does — decision 0467 already found that
  * resolving a matching exception is ordinary task completion or
  * `AP.ReturnToSupplier`, never a route that writes keyed facts, so
- * there is nothing on that path for `AP.Match` to need. **Still not
- * built: Analysis** — real data behind it (`invoice_runs` in D1) but
- * no route reads it back yet, so it's listed but unenforced.
+ * there is nothing on that path for `AP.Match` to need. And — since
+ * decision 0476 — Manager (removing a collaborator from an invoice's
+ * conversation, `DELETE /documents/:id/collaborators/:userId`;
+ * deliberately narrower than `AP.Review`, which can add one but not
+ * remove one). **Still not built: Analysis** — real data behind it
+ * (`invoice_runs` in D1) but no route reads it back yet, so it's
+ * listed but unenforced.
  */
 const AP_PERMISSIONS = [
   "AP.Validate",
@@ -132,6 +136,28 @@ const AP_PERMISSIONS = [
    * the way their screens already are, never more.
    */
   "AP.Assistant",
+  /**
+   * **Reserved since decision 0468, real since decision 0476.**
+   * Removing a collaborator — decision 0470 built "Add person to
+   * conversation" gated on `AP.Review`, the same as the rest of that
+   * pair's own sibling routes, and deliberately left removal unbuilt.
+   * The operator's own instruction when asking for removal: restrict
+   * it to a manager-level permission, narrower than ordinary
+   * `AP.Review` — someone who can add a person to a conversation
+   * should not automatically be able to remove one, since removal can
+   * cut a legitimate collaborator off an invoice they may still need.
+   * A new, dedicated permission rather than reusing `AP.TaskManage` or
+   * `AP.ReturnAny` (both genuinely different manager-override
+   * capabilities, not this one) — the same "namespaced by what it
+   * actually does, not folded into the nearest existing grant"
+   * discipline this file already follows throughout. Not derived from
+   * any role's own name: this codebase's routes only ever check a
+   * permission a role happens to grant, never a role's name itself
+   * (roles are entirely operator-defined bundles, decision 0199) — an
+   * operator who already has an "AP Manager" role of their own simply
+   * adds this permission to it via the Access screen.
+   */
+  "AP.Manager",
 ] as const;
 
 /**
@@ -319,6 +345,7 @@ export const PERMISSION_DESCRIPTIONS: Record<Permission, string> = {
   "AP.FraudReview": "See the AP Analytics screen's Fraud Prevention tab",
   "AP.TaskManage": "See and release every user's tasks, not just your own",
   "AP.Assistant": "Ask the AP Analytics screen's Talk to an AP Expert tab a question — each answer still scoped by whatever else you hold",
+  "AP.Manager": "Remove a collaborator from an invoice's conversation — decision 0476, deliberately narrower than the AP.Review that can add one",
 
   "AR.Validate": "Accounts Receivable — not yet built",
   "AR.Approve": "Accounts Receivable — not yet built",

@@ -4,12 +4,14 @@ import { applyTestSchema } from "./setup.js";
 import {
   handleAddCollaborator,
   handleListCollaborators,
+  handleRemoveCollaborator,
   isInvoiceCollaborator,
 } from "../src/invoice-collaborators-route.js";
 
 /**
  * "Add person to conversation" — decision 0468's own picture, built in
- * decision 0470.
+ * decision 0470. Removing one — decision 0468's own named-but-deferred
+ * gap, built in decision 0476.
  */
 
 async function seedUser(id: string, name: string) {
@@ -144,6 +146,60 @@ describe("handleListCollaborators", () => {
     expect(collaborators.map((c) => c.userId)).toEqual(["biz-1", "biz-2"]);
     expect(collaborators[0].userName).toBe("Priya");
     expect(collaborators[0].addedByName).toBe("Alex");
+  });
+});
+
+describe("handleRemoveCollaborator", () => {
+  it("404s for a document that does not exist", async () => {
+    const result = await handleRemoveCollaborator(env.DB, "nope", "biz-1");
+    expect(result.status).toBe(404);
+  });
+
+  it("404s removing someone who was never a collaborator — matching handleRemoveTeamMember's own precedent, not handleAddCollaborator's own no-op", async () => {
+    await seedInvoice("inv-1");
+    const result = await handleRemoveCollaborator(env.DB, "inv-1", "biz-1");
+    expect(result.status).toBe(404);
+  });
+
+  it("removes a real collaborator", async () => {
+    await seedInvoice("inv-1");
+    await seedUser("ap-1", "Alex");
+    await seedUser("biz-1", "Priya");
+    await handleAddCollaborator(env.DB, "inv-1", "biz-1", "ap-1");
+    expect(await isInvoiceCollaborator(env.DB, "inv-1", "biz-1")).toBe(true);
+
+    const result = await handleRemoveCollaborator(env.DB, "inv-1", "biz-1");
+    expect(result.status).toBe(200);
+    expect(result.body).toEqual({ invoiceId: "inv-1", userId: "biz-1" });
+    expect(await isInvoiceCollaborator(env.DB, "inv-1", "biz-1")).toBe(false);
+  });
+
+  it("removing someone from one invoice leaves their collaboration on a second invoice untouched", async () => {
+    await seedInvoice("inv-1");
+    await seedInvoice("inv-2");
+    await seedUser("ap-1", "Alex");
+    await seedUser("biz-1", "Priya");
+    await handleAddCollaborator(env.DB, "inv-1", "biz-1", "ap-1");
+    await handleAddCollaborator(env.DB, "inv-2", "biz-1", "ap-1");
+
+    await handleRemoveCollaborator(env.DB, "inv-1", "biz-1");
+
+    expect(await isInvoiceCollaborator(env.DB, "inv-1", "biz-1")).toBe(false);
+    expect(await isInvoiceCollaborator(env.DB, "inv-2", "biz-1")).toBe(true);
+  });
+
+  it("removing one collaborator leaves a second collaborator on the same invoice untouched", async () => {
+    await seedInvoice("inv-1");
+    await seedUser("ap-1", "Alex");
+    await seedUser("biz-1", "Priya");
+    await seedUser("biz-2", "Sam");
+    await handleAddCollaborator(env.DB, "inv-1", "biz-1", "ap-1");
+    await handleAddCollaborator(env.DB, "inv-1", "biz-2", "ap-1");
+
+    await handleRemoveCollaborator(env.DB, "inv-1", "biz-1");
+
+    expect(await isInvoiceCollaborator(env.DB, "inv-1", "biz-1")).toBe(false);
+    expect(await isInvoiceCollaborator(env.DB, "inv-1", "biz-2")).toBe(true);
   });
 });
 

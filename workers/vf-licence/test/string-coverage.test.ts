@@ -693,6 +693,10 @@ const KEYS_THE_INTERFACE_USES = [
   "activity.addpersonnomatches",
   "activity.addpersonfailed",
   "activity.collaborators",
+  // Removing a collaborator — decision 0476's own extension of the
+  // same `collaborators.js`, the "x" on each chip.
+  "activity.removeperson",
+  "activity.removepersonfailed",
 
   /**
    * **CSV Template and Load — decision 0445.** `coding-lists.js`'s own
