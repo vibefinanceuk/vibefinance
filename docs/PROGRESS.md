@@ -2777,6 +2777,49 @@ section for the full reasoning and tests.
   migration, no new string key — see decision 0463 for the full
   reasoning and verification.
 
+### Two-way matching exceptions — investigation (0464)
+- The operator's own next target once Coding and Cost-Object Approval
+  landed: *"I'd like to tackle PO matching next in the Matching
+  stage."* An investigation, not a build — what typical AP departments
+  treat as 2-way match exceptions, how they're typically resolved, and
+  direct answers to the operator's own five questions about how
+  Matching should be configured in AP Setup.
+- **What already exists, found rather than assumed**: matching itself
+  runs today (0081/0370) with already-supplier-specific tolerance
+  (0209) but no org-wide default — a supplier with nothing set reads
+  as exact-match-required, silently. The rule vocabulary sees one
+  collapsed `po.line_matched` boolean per line; a rule cannot tell "no
+  order line found" from "found, disagreed on price" from "found,
+  disagreed on quantity." `AP.Match` already exists in the closed
+  permission vocabulary and is enforced by no route — the same state
+  `AP.Code` was in before 0455/0456. Routing to a **team** needs no new
+  capability; routing to "the **PO Buyer**" does — `purchase_orders`
+  has no person, only a party identifier. The **Matching tab in AP
+  Setup already exists**, as a placeholder, since 0440.
+- **Proposed vocabulary split** (not built): `po.line_reference_found`,
+  `po.line_price_matched`, `po.line_quantity_matched` — generalizing
+  `po.line_matched` rather than replacing it, so every existing rule
+  and test that depends on it keeps working unchanged, the same
+  "generalized, not rewritten" treatment 0452 gave the approval
+  resolver.
+- **Six questions named as genuinely open**: whether quantity matching
+  should be toggleable per org/supplier; whether an org-wide default
+  tolerance is wanted now, independent of this feature (today's silent
+  0% looks like a bug rather than a choice); whether "PO Buyer" is
+  worth building the schema for now or a named team suffices for a
+  first version; whether "PO line not found" should be its own
+  exception, distinct from "found but disagreed"; whether a
+  unit-of-measure mismatch should become its own surfaced exception
+  rather than silently skipping the quantity check; and whether
+  `AP.Match` needs the same route-widening `AP.Code` got before this
+  is usable end to end.
+- **Not built**: no `org_matching_config` (or equivalent) table, no
+  new derived-field vocabulary entries, no change to `po-matching.ts`
+  or `validation.ts`, no route, and `ap-setup.js`'s Matching tab is
+  byte-for-byte unchanged. No mock-up this time — none was asked for.
+  Full reasoning, sourced research, and every open question in
+  `docs/design/two-way-matching-exceptions.md`; see decision 0464.
+
 ### Purchase orders and matching
 - Purchase order storage grounded in Peppol BIS Order Only 3.3, via UBL
   XML ingestion (0081) and CSV load (0370) — the same tables, the same
