@@ -82,6 +82,7 @@ import agreedPaymentMeansPlaceholderSql from "../../../migrations/0073_agreed_pa
 import approvalHierarchySql from "../../../migrations/0075_approval_hierarchy.sql?raw";
 import accountCodingListsSql from "../../../migrations/0076_account_coding_lists.sql?raw";
 import costObjectApprovalHierarchySql from "../../../migrations/0077_cost_object_approval_hierarchy.sql?raw";
+import matchingExceptionsAndBusinessUserSql from "../../../migrations/0078_matching_exceptions_and_business_user.sql?raw";
 
 // Another known divergence from production, on top of the one below:
 // D1's exec() splits its input by newline and executes each non-empty
@@ -126,7 +127,14 @@ function toOneStatementPerLine(sql: string): string {
 // first (children before parents, for the foreign keys) so each test
 // gets a genuinely clean schema regardless of what the pool does or
 // does not reset.
-const TABLES_IN_DROP_ORDER = ["document_comments", "process_stage_versions", "inbound_email_events", "stage_field_visibility", "field_visibility", 
+const TABLES_IN_DROP_ORDER = ["document_comments",
+  // Matching Exceptions and Business User (decision 0468/migration
+  // 0078) — references invoice_headers and org_users, so it sits here
+  // with document_comments, the other table dropped early for exactly
+  // that reason. org_matching_config carries no foreign key at all, so
+  // its own drop order genuinely does not matter; kept alongside its
+  // own migration's sibling table for a reader's sake, not correctness.
+  "invoice_collaborators", "org_matching_config", "process_stage_versions", "inbound_email_events", "stage_field_visibility", "field_visibility",
   "purchase_order_lines",
   "purchase_orders",
   "org_settings",
@@ -311,6 +319,7 @@ export async function applyTestSchema(): Promise<void> {
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(approvalHierarchySql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(accountCodingListsSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(costObjectApprovalHierarchySql)));
+  await env.DB.exec(toOneStatementPerLine(stripSqlComments(matchingExceptionsAndBusinessUserSql)));
 }
 
 /**

@@ -298,6 +298,81 @@ describe("visitCurrentStage — a stage marked uses_approval_hierarchy resolves 
   });
 });
 
+describe("visitCurrentStage — Non-PO Approval routing feeds resolveApprovalHierarchy its requester (decisions 0468/0469)", () => {
+  async function seedApprovalStage(): Promise<{ instanceId: string }> {
+    await handleCreateProcess(env.DB, { id: "p1", name: "AP" });
+    await handleCreateUser(env.DB, { id: "alice", email: "alice@acme.com", name: "Alice" });
+    await handleCreateUser(env.DB, { id: "carol", email: "carol@acme.com", name: "Carol" });
+    // Automatic — no rule set, so Coding spawns nothing and the call
+    // cascades straight through to Approval, the same shape the 409
+    // test above already uses for a resolver with no starting point.
+    await handleCreateStage(env.DB, "p1", { id: "coding", name: "Coding", sequence: 1 });
+    await seedRuleSet("rs-approval", {
+      conditions: { field: "BT-131", operator: "greater_than", value: -1 },
+      actions: [{ type: "assign_task", params: { team: "decoy-team", permission: "AP.Approve" } }],
+    });
+    await handleCreateStage(env.DB, "p1", { id: "approval", name: "Approval", sequence: 2, ruleSetId: "rs-approval", evaluationScope: "line" });
+    await env.DB.prepare("UPDATE process_stages SET uses_approval_hierarchy = 1 WHERE id = 'approval'").run();
+
+    await env.DB.prepare("INSERT INTO invoice_headers (id, facts_json) VALUES ('inv-1', '{}')").run();
+    const created = await handleCreateProcessInstance(env.DB, "p1", { subjectType: "invoice", subjectId: "inv-1" });
+    return { instanceId: (created.body as { id: string }).id };
+  }
+
+  it("routes to the invoice's own collaborator once added, toggle on, and the invoice carries no BT-13", async () => {
+    const { instanceId } = await seedApprovalStage();
+    await env.DB.prepare("UPDATE org_approval_config SET route_non_po_to_requester = 1 WHERE id = 1").run();
+    await env.DB.prepare(
+      "INSERT INTO invoice_collaborators (invoice_id, user_id, added_by) VALUES ('inv-1', 'carol', 'alice')"
+    ).run();
+
+    // No BT-13 at all on either the header or line facts — a genuinely
+    // Non-PO invoice.
+    await visitCurrentStage(env.DB, instanceId, { "BT-5": "EUR" }, [{ lineNumber: 1, "BT-131": 200, "BT-5": "EUR" }]);
+
+    const approvalTask = await env.DB.prepare(
+      "SELECT owner_team_id, owner_user_id FROM tasks WHERE stage_id = 'approval'"
+    ).first<{ owner_team_id: string | null; owner_user_id: string | null }>();
+    expect(approvalTask).toEqual({ owner_team_id: null, owner_user_id: "carol" });
+  });
+
+  it("does not route to a collaborator when the invoice carries a PO reference, toggle or not", async () => {
+    const { instanceId } = await seedApprovalStage();
+    await env.DB.prepare("UPDATE org_approval_config SET route_non_po_to_requester = 1, default_approver_user_id = 'alice' WHERE id = 1").run();
+    await env.DB.prepare(
+      "INSERT INTO invoice_collaborators (invoice_id, user_id, added_by) VALUES ('inv-1', 'carol', 'alice')"
+    ).run();
+
+    await visitCurrentStage(env.DB, instanceId, { "BT-5": "EUR", "BT-13": "PO-1" }, [
+      { lineNumber: 1, "BT-131": 200, "BT-5": "EUR" },
+    ]);
+
+    // Falls to the configured Default Approver (employee_supervisor,
+    // no line coder), never to Carol — this invoice names a PO.
+    const approvalTask = await env.DB.prepare(
+      "SELECT owner_user_id FROM tasks WHERE stage_id = 'approval'"
+    ).first<{ owner_user_id: string | null }>();
+    expect(approvalTask?.owner_user_id).toBe("alice");
+  });
+
+  it("no collaborator added yet: routes exactly as it always has, toggle on or not", async () => {
+    const { instanceId } = await seedApprovalStage();
+    await env.DB.prepare("UPDATE org_approval_config SET route_non_po_to_requester = 1, default_approver_user_id = 'alice' WHERE id = 1").run();
+    // No invoice_collaborators row at all — the honest state of every
+    // invoice today, since no route yet adds one.
+
+    const result = await visitCurrentStage(env.DB, instanceId, { "BT-5": "EUR" }, [
+      { lineNumber: 1, "BT-131": 200, "BT-5": "EUR" },
+    ]);
+    expect(result.status).not.toBe(409);
+
+    const approvalTask = await env.DB.prepare(
+      "SELECT owner_user_id FROM tasks WHERE stage_id = 'approval'"
+    ).first<{ owner_user_id: string | null }>();
+    expect(approvalTask?.owner_user_id).toBe("alice");
+  });
+});
+
 describe("visitCurrentStage — Cost-Object mode spawns one task per resolved dimension, completable in parallel (decision 0452)", () => {
   it("a line coded to two enabled dimensions raises two Approval tasks; the stage only advances once both are done", async () => {
     await handleCreateProcess(env.DB, { id: "p1", name: "AP" });

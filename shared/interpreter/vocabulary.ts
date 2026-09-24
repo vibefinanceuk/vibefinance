@@ -112,6 +112,27 @@ export const DERIVED_FIELDS = [
   // different failures, and collapsing them into one number would lose
   // which one actually happened.
   "po.line_quantity_variance_pct",
+  /**
+   * **Generalizing po.line_matched, not replacing it — decisions
+   * 0464/0466.** `po.line_matched` stays exactly what it always was
+   * (amount AND quantity, within tolerance), so every existing rule
+   * and test that depends on it keeps working unchanged. These three
+   * split what it collapses, so a rule can react to each differently:
+   * a task routed for a price disagreement is a different team's
+   * problem than one routed because the order line could not be found
+   * at all.
+   */
+  "po.line_reference_found",
+  "po.line_price_matched",
+  "po.line_quantity_matched",
+  /**
+   * **The gap 0466 named directly**: a unit-code mismatch between the
+   * invoice and the order line used to make the quantity check simply
+   * skip — reading identically to "quantity agreed" to any rule
+   * testing po.line_quantity_matched. This is that disagreement,
+   * surfaced honestly rather than hidden inside a pass.
+   */
+  "po.line_unit_mismatch",
   "mandate.channel",
   "validation.passed",
   "validation.failures",
@@ -231,6 +252,10 @@ export const INVOICE_FIELD_TYPES: Record<string, FieldType> = {
   "po.line_matched": "boolean",
   "po.line_variance_pct": "number",
   "po.line_quantity_variance_pct": "number",
+  "po.line_reference_found": "boolean",
+  "po.line_price_matched": "boolean",
+  "po.line_quantity_matched": "boolean",
+  "po.line_unit_mismatch": "boolean",
   "mandate.channel": "text",
   "validation.passed": "boolean",
   "validation.failures": "text",
@@ -413,6 +438,14 @@ export const DERIVED_FIELD_DESCRIPTIONS: Record<DerivedField, string> = {
     "percentage variance between this line's own amount and the amount on the purchase order line BT-132 references. Absent where no corresponding purchase order line was found, since there is nothing to compare against.",
   "po.line_quantity_variance_pct":
     "percentage variance between this line's own quantity and the quantity on the purchase order line BT-132 references. Kept apart from po.line_variance_pct for the same reason supplier.quantityTolerancePct is kept apart from supplier.amountTolerancePct. Absent where no corresponding purchase order line was found, or where either side has no quantity recorded.",
+  "po.line_reference_found":
+    "true if BT-132 points at a purchase order line that actually exists. Splits 'nothing to compare against' from 'compared and disagreed' — po.line_matched is false in both cases, but a rule routing 'PO line not found' to a different team than a price or quantity dispute needs to tell them apart. False, never absent, so a rule can test it directly.",
+  "po.line_price_matched":
+    "true if this line's own amount is within tolerance of the purchase order line BT-132 references, using the supplier's own tolerance when set, otherwise the org-wide default. Absent, like po.line_variance_pct, where no corresponding purchase order line was found.",
+  "po.line_quantity_matched":
+    "true if this line's own quantity is within tolerance of the purchase order line BT-132 references — or if quantity matching is disabled org-wide, or either side has no quantity recorded, since there is nothing to disagree about. This is the same 'nothing to compare, so no failure' reading po.line_matched itself already gives quantity today; po.line_unit_mismatch is what this quietly used to hide.",
+  "po.line_unit_mismatch":
+    "true if both the invoice line and the purchase order line carry a unit code (BT-130 and its PO-line counterpart) and they disagree. This is the gap decision 0466 named directly: today a unit mismatch makes the quantity check simply skip, reading identically to 'quantity agreed' to any rule testing po.line_quantity_matched. False, not absent, whenever both sides carry a unit — so a rule can act on it without also having to test for absence.",
   // Enriched with real example values, per decision 0023's "Intake"
   // convention — a free string, deliberately not a closed enum (see
   // that decision for why enforcement was explicitly declined). The

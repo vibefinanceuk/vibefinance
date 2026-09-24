@@ -23,10 +23,16 @@
  * Accounts Payable — the side of the business this product actually
  * handles today (validating and processing invoices a customer
  * receives). Real, enforced right now: Validate, Approve, Review,
- * Dashboard, TaskView, Supplier. Not built at all yet: Match (3-way
- * match against PO/goods receipt), Code (GL coding). Analysis has real
- * data behind it (invoice_runs in D1) but no route reads it back yet,
- * so it's listed but unenforced.
+ * Dashboard, TaskView, Supplier, and — since decisions 0455/0456 — Code
+ * (GL coding; widened onto document-open, task-search, key-fields and
+ * activity/comment routes alongside AP.Validate). **Still not built:
+ * Match (2-way match against a purchase order)** — the vocabulary and
+ * schema for matching exceptions exist as of decisions 0464-0469, but
+ * no route yet accepts `AP.Match` the way those routes accept
+ * `AP.Code`; that route-widening is its own later phase, per decision
+ * 0466's own note that it should get the same treatment. Analysis has
+ * real data behind it (invoice_runs in D1) but no route reads it back
+ * yet, so it's listed but unenforced.
  */
 const AP_PERMISSIONS = [
   "AP.Validate",
@@ -150,6 +156,29 @@ const AR_PERMISSIONS = ["AR.Validate", "AR.Approve", "AR.Issue", "AR.Remind", "A
 const SUPPLIER_MAINTENANCE_PERMISSIONS = ["Supplier.Maintain"] as const;
 
 /**
+ * **Business User — decision 0468, reserved, no route enforces either
+ * yet.** A Business User is not AP staff: someone who requested goods
+ * or services (on a PO or off it) and needs a narrow way in, not the
+ * run of AP.* permissions. Split into two, the same way this codebase
+ * already splits `AP.Validate` from `AP.Approve` rather than one blob:
+ *
+ * - `Procurement.Collaborate` — view an invoice you were explicitly
+ *   added to (via "Add person to conversation") and post to its chat.
+ *   Deliberately not derived from PO ownership; `invoice_collaborators`
+ *   is what this checks once a route exists.
+ * - `Procurement.Approve` — hold and complete an approval task, the
+ *   operator's own example being a Non-PO invoice routed to its
+ *   requester.
+ *
+ * Grantable independently or together, like any other role. A separate
+ * namespace from `AP.*`, the same "namespaced by business role, not by
+ * route" reasoning `Supplier.Maintain` above already follows — this is
+ * a business user's own function, not AP work that happened to touch
+ * an invoice.
+ */
+const PROCUREMENT_PERMISSIONS = ["Procurement.Collaborate", "Procurement.Approve"] as const;
+
+/**
  * Expense management — added alongside decision 0022's expense field
  * vocabulary, the same "add now, unused, clearly flagged" precedent
  * as AR_PERMISSIONS above. No route in this system approves or
@@ -232,6 +261,7 @@ export const PERMISSIONS = [
   ...AR_PERMISSIONS,
   ...EXPENSE_PERMISSIONS,
   ...SUPPLIER_MAINTENANCE_PERMISSIONS,
+  ...PROCUREMENT_PERMISSIONS,
   ...ADMIN_PERMISSIONS,
   ...SYSTEM_PERMISSIONS,
 ] as const;
@@ -257,8 +287,8 @@ export type Permission = (typeof PERMISSIONS)[number];
  */
 export const PERMISSION_DESCRIPTIONS: Record<Permission, string> = {
   "AP.Validate": "Confirm or correct an invoice's data at the Validation stage",
-  "AP.Match": "Three-way match against a purchase order — not yet built",
-  "AP.Code": "Assign GL/cost-centre coding to an invoice — not yet built",
+  "AP.Match": "Two-way match against a purchase order — reserved; no route accepts it yet, unlike AP.Code",
+  "AP.Code": "Assign GL/cost-centre coding to an invoice — the document-open, task-search, key-fields and activity routes accept it alongside AP.Validate",
   "AP.Approve": "Approve an invoice for payment",
   "AP.Review": "Review an invoice at the Review stage",
   "AP.Analysis": "See the AP Analytics screen's Operational and Financial Performance tabs",
@@ -285,6 +315,9 @@ export const PERMISSION_DESCRIPTIONS: Record<Permission, string> = {
   "Expense.Review": "Expense management — not yet built",
 
   "Supplier.Maintain": "Validate a new or changed supplier record",
+
+  "Procurement.Collaborate": "View an invoice you've been added to, and post to its chat — reserved, no route yet",
+  "Procurement.Approve": "Hold and complete an approval task, e.g. a Non-PO invoice routed to its requester — reserved, no route yet",
 
   "Admin.Configure": "Configure sources, ledgers, cost centres, and other setup screens",
   "Admin.UserManagement": "Create people, and assign or revoke their roles",

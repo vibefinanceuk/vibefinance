@@ -2949,6 +2949,44 @@ section for the full reasoning and tests.
   other open questions remain. Full reasoning in
   `docs/design/two-way-matching-exceptions.md`; see decision 0468.
 
+### Matching Exceptions and Business User collaboration — Phase 1 built (0469)
+- **Schema**: migration 0078 — `buyer_user_id` on `purchase_orders`;
+  `invoice_collaborators` ("Add person to conversation"'s own backing
+  table); `org_matching_config` singleton (org-wide default tolerance,
+  superseded by a supplier-specific one when set; a
+  `quantity_matching_enabled` toggle); `org_approval_config.
+  route_non_po_to_requester`. Zero behaviour change on deploy — every
+  new default preserves exactly what already happens today.
+- **A real, silent gap fixed**: a supplier with no configured tolerance
+  used to fall back to a hard-coded `?? 0` (exact match), decided or
+  not. Now falls back to the org-wide default, itself `0` until an
+  operator sets it.
+- **Four split vocabulary facts** — `po.line_reference_found`,
+  `po.line_price_matched`, `po.line_quantity_matched`,
+  `po.line_unit_mismatch` — generalizing, not replacing,
+  `po.line_matched` (completely unchanged). A rule can now tell "PO
+  line not found" apart from a price or quantity disagreement, and see
+  a unit mismatch that used to silently read as "quantity agreed."
+- **`Procurement.Collaborate`/`Procurement.Approve`** added, reserved —
+  no route yet, the same starting state `AP.Match`/`AP.Code` both had.
+  `AP.Code`'s own stale "not yet built" comments (months out of date
+  since decisions 0455/0456) corrected in the same pass.
+- **Non-PO Approval routing built**: additive, ahead of whichever mode
+  (Employee-Supervisor, Cost-Object, Manual, API) is configured, in
+  both `resolveApprovalHierarchy` and `resolveApprovalTargets` —
+  checked in both, since Cost-Object mode bypasses the singular
+  resolver entirely. Resolves only when the toggle is on, the invoice
+  carries no PO reference, and a requester is already known via
+  `invoice_collaborators`; any one missing falls through unchanged.
+  `workflow-engine.ts` wired to feed it real values — genuinely
+  correct and dormant in production today, since no route yet lets
+  anyone be added as a collaborator.
+- **Not built**: the real AP Setup Matching tab UI, "Add person to
+  conversation"'s own route/UI, standard-rule checkboxes, `AP.Match`'s
+  own route-widening. All named later-phase scope by decision 0468,
+  untouched here.
+- Full reasoning and verification counts in decision 0469.
+
 ### Purchase orders and matching
 - Purchase order storage grounded in Peppol BIS Order Only 3.3, via UBL
   XML ingestion (0081) and CSV load (0370) — the same tables, the same

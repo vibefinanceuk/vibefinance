@@ -34,18 +34,29 @@ export type ApprovalMode = "employee_supervisor" | "cost_object" | "manual" | "a
 interface ApprovalConfig {
   mode: ApprovalMode;
   defaultApproverUserId: string | null;
+  /**
+   * Non-PO Approval routing — decisions 0468/0469, migration 0078.
+   * Off by default: a customer already relying on Employee-Supervisor
+   * or Cost-Object routing for their Non-PO invoices sees no change
+   * until this is turned on deliberately.
+   */
+  routeNonPoToRequester: boolean;
 }
 
 /** The one, customer-wide setting — decision 0439's own answer to "where does the choice live." */
 export async function loadApprovalConfig(db: D1Database): Promise<ApprovalConfig> {
   const row = await db
-    .prepare("SELECT mode, default_approver_user_id FROM org_approval_config WHERE id = 1")
-    .first<{ mode: ApprovalMode; default_approver_user_id: string | null }>();
+    .prepare("SELECT mode, default_approver_user_id, route_non_po_to_requester FROM org_approval_config WHERE id = 1")
+    .first<{ mode: ApprovalMode; default_approver_user_id: string | null; route_non_po_to_requester: number | null }>();
   // The row is inserted by its own migration and never deleted (the
   // CHECK (id = 1) primary key forbids a second one) — this fallback
   // is belt-and-braces for a database this resolver's own tests build
   // by hand, not a real path in production.
-  return { mode: row?.mode ?? "employee_supervisor", defaultApproverUserId: row?.default_approver_user_id ?? null };
+  return {
+    mode: row?.mode ?? "employee_supervisor",
+    defaultApproverUserId: row?.default_approver_user_id ?? null,
+    routeNonPoToRequester: row?.route_non_po_to_requester === 1,
+  };
 }
 
 /**
@@ -209,6 +220,34 @@ export interface ResolveApprovalParams {
    * shape for this to exist.
    */
   costObjectValues?: Partial<Record<Exclude<CostObjectDimension, "cost_centre">, string | null>>;
+  /**
+   * Non-PO Approval routing — decisions 0468/0469. Optional, and
+   * absent reads the same as `false`/`null`: every caller and every
+   * test written before this decision never sets either of the two
+   * fields below and gets exactly the mode-dispatch behaviour they
+   * always have, unchanged — the same additive discipline
+   * `costObjectValues` above already established for this interface.
+   *
+   * **Deliberately two separate facts, not one.** Whether an invoice
+   * carries a PO reference (BT-13) is a fact about the invoice, known
+   * the moment its facts are assembled; who its requester is (if
+   * anyone has been added via "Add person to conversation") is a fact
+   * about `invoice_collaborators`, looked up separately. Neither
+   * implies the other, and collapsing them into one caller-computed
+   * boolean would hide which one was actually missing when routing
+   * falls through to the configured mode instead.
+   */
+  poReferenced?: boolean;
+  /**
+   * The invoice's own requester, if one is known — resolved by the
+   * caller from `invoice_collaborators` (decision 0468), not looked up
+   * here. `null`/absent means none is known yet, which is the honest,
+   * expected state for every invoice today: no route yet lets anyone
+   * be added as a collaborator (that is later-phase scope), so this
+   * stays empty in production until that ships, and the toggle it
+   * feeds stays inert until then regardless of its own setting.
+   */
+  requesterUserId?: string | null;
 }
 
 /**
@@ -309,6 +348,39 @@ async function resolveCostObject(
 }
 
 /**
+ * **Non-PO Approval routing — decisions 0468/0469, migration 0078.**
+ * Additive, checked *before* dispatching to whichever mode is
+ * configured — not a fifth `ApprovalMode`, which would incorrectly
+ * imply replacing Employee-Supervisor/Cost-Object customer-wide rather
+ * than pre-empting them for the one invoice shape they were never
+ * meant to route (no purchase order to derive a cost object or a
+ * coding chain from in the first place).
+ *
+ * Resolves only when all three hold: the toggle is on, the invoice
+ * carries no PO reference, and a requester is already known. Any one
+ * missing falls through to the caller's own mode dispatch unchanged —
+ * this never itself produces `unresolved`, since "nothing to route to
+ * yet" here just means "let the configured mode try instead," not a
+ * failure worth refusing the stage visit over.
+ *
+ * **Applied at every entry point, not just one** — `resolveApprovalHierarchy`
+ * and `resolveApprovalTargets` both call this first, so a Non-PO
+ * invoice with a known requester routes to them the same way
+ * regardless of which entry point a caller uses, including under
+ * Cost-Object mode's own multi-dimension path.
+ */
+function resolveNonPoRequester(config: ApprovalConfig, params: ResolveApprovalParams): ApprovalResolution | null {
+  if (!config.routeNonPoToRequester) return null;
+  if (params.poReferenced) return null;
+  if (!params.requesterUserId) return null;
+
+  return {
+    targetUserId: params.requesterUserId,
+    reasoning: "This invoice carries no purchase order reference; routed directly to its own requester.",
+  };
+}
+
+/**
  * The single entry point `workflow-engine.ts` calls for a stage
  * marked `uses_approval_hierarchy` — resolves the configured mode's
  * target, or explains why it could not.
@@ -326,6 +398,9 @@ export async function resolveApprovalHierarchy(
   params: ResolveApprovalParams
 ): Promise<ApprovalResolution | ApprovalUnresolved> {
   const config = await loadApprovalConfig(db);
+
+  const nonPo = resolveNonPoRequester(config, params);
+  if (nonPo) return nonPo;
 
   if (config.mode === "employee_supervisor") return resolveEmployeeSupervisor(db, config, params);
   if (config.mode === "cost_object") return resolveCostObject(db, config, params);
@@ -504,6 +579,14 @@ export async function resolveApprovalTargets(
   params: ResolveApprovalParams
 ): Promise<Array<ApprovalResolution | ApprovalUnresolved>> {
   const config = await loadApprovalConfig(db);
+
+  // Checked here too, not only inside resolveApprovalHierarchy below —
+  // Cost-Object mode never reaches that function (resolveCostObjects
+  // is called directly), and a Non-PO invoice with a known requester
+  // should route to them the same way under any configured mode.
+  const nonPo = resolveNonPoRequester(config, params);
+  if (nonPo) return [nonPo];
+
   if (config.mode === "cost_object") {
     return resolveCostObjects(db, config, params);
   }

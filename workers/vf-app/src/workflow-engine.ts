@@ -125,6 +125,46 @@ async function orgGuard(
   };
 }
 
+/**
+ * **Non-PO Approval routing's own "who" — decisions 0468/0469.** Feeds
+ * `resolveApprovalHierarchy`/`resolveApprovalTargets`'s
+ * `requesterUserId`, which only ever matters when
+ * `org_approval_config.route_non_po_to_requester` is on and the
+ * invoice carries no PO reference — this always runs regardless, the
+ * same "compute it, let the resolver decide whether it applies"
+ * shape `costCentreId`/`costObjectValues` already get at the call site
+ * below, rather than this module trying to guess when the toggle is on.
+ *
+ * **No route yet lets anyone be added as a collaborator** — the
+ * "Add person to conversation" UI is later-phase scope (decision
+ * 0468's own "what was not built") — so `invoice_collaborators` is
+ * empty for every invoice today, and this returns null in production
+ * until that ships. Not a placeholder to revisit before it's useful:
+ * the query itself is correct now, and simply has nothing to find yet.
+ *
+ * **Earliest-added collaborator, when more than one exists.** Nothing
+ * in `invoice_collaborators` (migration 0078) distinguishes a primary
+ * requester from anyone else added to collaborate — the table records
+ * only who was added and when. Ordering by `added_at` picks whoever
+ * was added first as a reasonable default rather than an arbitrary
+ * one; a dedicated "primary requester" flag is worth adding later if
+ * real usage shows more than one collaborator is common and the first
+ * one added is often the wrong pick, not before there is any usage to
+ * judge that against.
+ */
+async function resolveInvoiceRequester(
+  db: D1Database,
+  instance: { subject_type: string; subject_id: string }
+): Promise<string | null> {
+  if (instance.subject_type !== "invoice") return null;
+
+  const row = await db
+    .prepare("SELECT user_id FROM invoice_collaborators WHERE invoice_id = ? ORDER BY added_at ASC LIMIT 1")
+    .bind(instance.subject_id)
+    .first<{ user_id: string }>();
+  return row?.user_id ?? null;
+}
+
 export async function handleCreateProcessInstance(
   db: D1Database,
   processId: string,
@@ -604,6 +644,14 @@ export async function visitCurrentStage(
       }
     }
 
+    // Non-PO Approval routing's own "who" — decisions 0468/0469. One
+    // invoice, one requester (or none), for the whole visit — computed
+    // once here rather than once per pendingTaskActions entry below,
+    // since it never varies within a single stage visit the way a
+    // line's own cost centre or coding can. Only worth the query at
+    // all when this stage could actually use it.
+    const requesterUserId = stage.uses_approval_hierarchy ? await resolveInvoiceRequester(db, instance) : null;
+
     // assign_task — spawn a real task for each one, tied to this
     // visit and, for a line-scope evaluation, to the specific line
     // responsible. Each matching line spawns its own separate task —
@@ -675,6 +723,12 @@ export async function visitCurrentStage(
               typeof taskFacts["coding.commodity_code"] === "string" ? (taskFacts["coding.commodity_code"] as string) : null,
             gl_code: typeof taskFacts["coding.gl_code"] === "string" ? (taskFacts["coding.gl_code"] as string) : null,
           },
+          // Non-PO Approval routing — decisions 0468/0469. Only ever
+          // changes anything when org_approval_config's own toggle is
+          // on; see resolveNonPoRequester's own comment in
+          // approval-hierarchy.ts.
+          poReferenced: typeof taskFacts["BT-13"] === "string" && taskFacts["BT-13"].trim() !== "",
+          requesterUserId,
         });
         // All-or-nothing: a line where even one applicable dimension
         // could not resolve refuses the whole stage visit, the same

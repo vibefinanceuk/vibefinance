@@ -2,7 +2,7 @@ import { env } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
 import { applyTestSchema } from "./setup.js";
 import { handleIngestPurchaseOrder } from "../src/purchase-order-route.js";
-import { computePoMatch, computePoLineMatch, mergePoMatchFacts } from "../src/po-matching.js";
+import { computePoMatch, computePoLineMatch, mergePoMatchFacts, getOrgMatchingConfig } from "../src/po-matching.js";
 
 const ORDER = `<?xml version="1.0" encoding="UTF-8"?>
 <Order xmlns="urn:oasis:names:specification:ubl:schema:xsd:Order-2"
@@ -96,7 +96,15 @@ describe("computePoLineMatch — line level", () => {
     // one-to-one means guessing by position could report a match that
     // is not real.
     const result = await computePoLineMatch(env.DB, header, { "BT-129": 100, "BT-131": 600 });
-    expect(result).toEqual({ matched: false, variancePct: undefined, quantityVariancePct: undefined });
+    expect(result).toEqual({
+      matched: false,
+      variancePct: undefined,
+      quantityVariancePct: undefined,
+      referenceFound: false,
+      priceMatched: undefined,
+      quantityMatched: undefined,
+      unitMismatch: false,
+    });
   });
 
   it("is not matched when the header itself carries no BT-13", async () => {
@@ -106,7 +114,15 @@ describe("computePoLineMatch — line level", () => {
 
   it("is not matched when BT-132 references a line the order does not have", async () => {
     const result = await computePoLineMatch(env.DB, header, { "BT-132": "99", "BT-131": 600 });
-    expect(result).toEqual({ matched: false, variancePct: undefined, quantityVariancePct: undefined });
+    expect(result).toEqual({
+      matched: false,
+      variancePct: undefined,
+      quantityVariancePct: undefined,
+      referenceFound: false,
+      priceMatched: undefined,
+      quantityMatched: undefined,
+      unitMismatch: false,
+    });
   });
 
   it("matches a line whose amount and quantity agree exactly with its order line", async () => {
@@ -116,7 +132,15 @@ describe("computePoLineMatch — line level", () => {
       "BT-130": "EA",
       "BT-131": 600,
     });
-    expect(result).toEqual({ matched: true, variancePct: 0, quantityVariancePct: 0 });
+    expect(result).toEqual({
+      matched: true,
+      variancePct: 0,
+      quantityVariancePct: 0,
+      referenceFound: true,
+      priceMatched: true,
+      quantityMatched: true,
+      unitMismatch: false,
+    });
   });
 
   it("correctly picks the second order line, not just the first", async () => {
@@ -162,6 +186,114 @@ describe("computePoLineMatch — line level", () => {
     expect(result.matched).toBe(true);
     expect(result.quantityVariancePct).toBeUndefined();
   });
+
+  describe("the four split facts — decisions 0464/0466, generalizing po.line_matched without changing it", () => {
+    it("po.line_unit_mismatch is true exactly when both sides carry a unit and disagree", async () => {
+      const mismatched = await computePoLineMatch(env.DB, header, {
+        "BT-132": "1",
+        "BT-129": 100,
+        "BT-130": "BOX",
+        "BT-131": 600,
+      });
+      expect(mismatched.unitMismatch).toBe(true);
+      // Still true regardless of matched — a unit disagreement is a
+      // fact about the line, not a verdict on it.
+      expect(mismatched.matched).toBe(true);
+
+      const oneSideOnly = await computePoLineMatch(env.DB, header, { "BT-132": "1", "BT-131": 600 });
+      expect(oneSideOnly.unitMismatch).toBe(false);
+
+      const agree = await computePoLineMatch(env.DB, header, {
+        "BT-132": "1",
+        "BT-129": 100,
+        "BT-130": "EA",
+        "BT-131": 600,
+      });
+      expect(agree.unitMismatch).toBe(false);
+    });
+
+    it("po.line_reference_found is false without a real order line, true once one is located", async () => {
+      const noRef = await computePoLineMatch(env.DB, header, { "BT-131": 600 });
+      expect(noRef.referenceFound).toBe(false);
+      expect(noRef.priceMatched).toBeUndefined();
+      expect(noRef.quantityMatched).toBeUndefined();
+
+      const notFound = await computePoLineMatch(env.DB, header, { "BT-132": "99", "BT-131": 600 });
+      expect(notFound.referenceFound).toBe(false);
+
+      const found = await computePoLineMatch(env.DB, header, { "BT-132": "1", "BT-131": 600 });
+      expect(found.referenceFound).toBe(true);
+    });
+
+    it("po.line_price_matched and po.line_quantity_matched split what po.line_matched collapses", async () => {
+      const priceOnly = await computePoLineMatch(
+        env.DB,
+        { ...header, "supplier.quantityTolerancePct": 5 },
+        { "BT-132": "1", "BT-129": 120, "BT-130": "EA", "BT-131": 600 }
+      );
+      expect(priceOnly.matched).toBe(false);
+      expect(priceOnly.priceMatched).toBe(true);
+      expect(priceOnly.quantityMatched).toBe(false);
+    });
+
+    it("respects the org-wide default tolerance when no supplier-specific one is set", async () => {
+      await env.DB.prepare("UPDATE org_matching_config SET amount_tolerance_pct = 5, quantity_tolerance_pct = 5 WHERE id = 1").run();
+      // computePoLineMatch reads org config only when it's handed one —
+      // mergePoMatchFacts is what fetches it in production; a direct
+      // call, as every test in this file makes, has to fetch and pass
+      // it explicitly the same way.
+      const orgConfig = await getOrgMatchingConfig(env.DB);
+      expect(orgConfig).toEqual({ amountTolerancePct: 5, quantityTolerancePct: 5, quantityMatchingEnabled: true });
+
+      // 10% over on price, 20% over on quantity — within the new 5%?
+      // No — this confirms the org default is actually being read, not
+      // silently ignored.
+      const overTolerance = await computePoLineMatch(
+        env.DB,
+        header,
+        { "BT-132": "1", "BT-129": 120, "BT-130": "EA", "BT-131": 660 },
+        orgConfig
+      );
+      expect(overTolerance.priceMatched).toBe(false);
+      expect(overTolerance.quantityMatched).toBe(false);
+
+      // Within the new 5% org default.
+      const withinTolerance = await computePoLineMatch(
+        env.DB,
+        header,
+        { "BT-132": "1", "BT-129": 103, "BT-130": "EA", "BT-131": 630 },
+        orgConfig
+      );
+      expect(withinTolerance.priceMatched).toBe(true);
+      expect(withinTolerance.quantityMatched).toBe(true);
+
+      // A supplier-specific tolerance still supersedes the org default.
+      const supplierOverride = await computePoLineMatch(
+        env.DB,
+        { ...header, "supplier.amountTolerancePct": 0 },
+        { "BT-132": "1", "BT-131": 630 },
+        orgConfig
+      );
+      expect(supplierOverride.priceMatched).toBe(false);
+    });
+
+    it("org-wide quantity_matching_enabled=0 turns quantity checking off entirely", async () => {
+      await env.DB.prepare("UPDATE org_matching_config SET quantity_matching_enabled = 0 WHERE id = 1").run();
+      const orgConfig = await getOrgMatchingConfig(env.DB);
+      // A wild quantity variance that would otherwise fail is simply
+      // not checked at all — quantityMatched reads true, the same
+      // "nothing to disagree about" reading absence already gets.
+      const result = await computePoLineMatch(
+        env.DB,
+        header,
+        { "BT-132": "1", "BT-129": 99999, "BT-130": "EA", "BT-131": 600 },
+        orgConfig
+      );
+      expect(result.quantityMatched).toBe(true);
+      expect(result.quantityVariancePct).toBeUndefined();
+      expect(result.matched).toBe(true);
+    });
+  });
 });
 
 describe("mergePoMatchFacts — the single entry point every caller uses", () => {
@@ -192,5 +324,43 @@ describe("mergePoMatchFacts — the single entry point every caller uses", () =>
     ]);
     expect(result.lines[0]["po.line_matched"]).toBe(true);
     expect(result.lines[0]["po.line_variance_pct"]).toBeCloseTo(10);
+  });
+
+  it("merges the four split facts onto every line, alongside the unchanged po.line_matched", async () => {
+    const result = await mergePoMatchFacts(
+      env.DB,
+      { "BT-13": "PO-500", "BT-112": 1000 },
+      [
+        { lineNumber: 1, "BT-132": "1", "BT-129": 100, "BT-130": "BOX", "BT-131": 600 },
+        { lineNumber: 2, "BT-132": "9", "BT-131": 999 }, // no such order line
+      ]
+    );
+    expect(result.lines[0]["po.line_reference_found"]).toBe(true);
+    expect(result.lines[0]["po.line_price_matched"]).toBe(true);
+    // Unit mismatch (BOX vs. the order's EA) leaves quantity untested,
+    // the same "nothing comparable" reading po.line_matched itself
+    // already gives — and surfaces as its own fact rather than hiding.
+    expect(result.lines[0]["po.line_quantity_matched"]).toBe(true);
+    expect(result.lines[0]["po.line_unit_mismatch"]).toBe(true);
+    expect(result.lines[0]["po.line_matched"]).toBe(true);
+
+    expect(result.lines[1]["po.line_reference_found"]).toBe(false);
+    expect(result.lines[1]["po.line_price_matched"]).toBeUndefined();
+    expect(result.lines[1]["po.line_quantity_matched"]).toBeUndefined();
+    expect(result.lines[1]["po.line_unit_mismatch"]).toBe(false);
+    expect(result.lines[1]["po.line_matched"]).toBe(false);
+  });
+
+  it("reads the org-wide default tolerance itself, not just when called directly", async () => {
+    // The production path — mergePoMatchFacts is what every real
+    // caller uses, so the org default has to actually reach it, not
+    // just the direct computePoLineMatch calls this file's other tests
+    // pass it to explicitly.
+    await env.DB.prepare("UPDATE org_matching_config SET amount_tolerance_pct = 5 WHERE id = 1").run();
+    const result = await mergePoMatchFacts(env.DB, { "BT-13": "PO-500" }, [
+      { lineNumber: 1, "BT-132": "1", "BT-131": 630 }, // 5% over, no supplier tolerance set
+    ]);
+    expect(result.lines[0]["po.line_price_matched"]).toBe(true);
+    expect(result.lines[0]["po.line_matched"]).toBe(true);
   });
 });
