@@ -1516,6 +1516,83 @@ async function runAction(name, task, onClose) {
 }
 
 /**
+ * Reassign — decision 0489. A small, dedicated picker, not the generic
+ * comment-and-OK/Cancel modal the operator described (that is its own,
+ * later decision in the agreed sequence) — the same `.backdrop`/
+ * `.popout` shape every other pop-out on this screen already uses
+ * (`openSupplierSearch`'s own new-seller card, the Account Coding
+ * pop-out).
+ *
+ * **Candidates come from the server, not a client-side guess** — `GET
+ * /tasks/:id/reassign-candidates` returns exactly who
+ * `handleReassignTask` will actually accept (a member of the task's
+ * own team who also holds its `required_permission`), the same
+ * "computed by the server, not inferred by the client" discipline
+ * `task.actions` itself already follows for which buttons even appear.
+ */
+async function openReassignPicker(task, onClose) {
+  const response = await fetch(`/api/tasks/${encodeURIComponent(task.id)}/reassign-candidates`);
+  if (!response.ok) {
+    note(t("viewer.actionfailed"));
+    return;
+  }
+  const candidates = (await response.json()).candidates ?? [];
+  if (candidates.length === 0) {
+    note(t("action.reassign.nonefound"));
+    return;
+  }
+
+  const close = () => backdrop.remove();
+  const labeled = (labelKey, input) => el("div", { class: "kf" }, [el("label", { text: t(labelKey) }), input]);
+
+  const select = el(
+    "select",
+    {},
+    candidates.map((c) => el("option", { value: c.id, text: c.email ? `${c.name} (${c.email})` : c.name }))
+  );
+  const commentBox = el("textarea", { placeholder: t("activity.placeholder") });
+  const errorBox = el("div", { class: "warn sm", hidden: "hidden" });
+
+  const doReassign = async () => {
+    errorBox.hidden = true;
+    const response = await fetch(`/api/tasks/${encodeURIComponent(task.id)}/reassign`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ targetUserId: select.value, comment: commentBox.value.trim() || undefined }),
+    });
+    if (!response.ok) {
+      const failure = await response.json().catch(() => ({}));
+      errorBox.hidden = false;
+      errorBox.textContent = failure.error ?? t("viewer.actionfailed");
+      return;
+    }
+    close();
+    // Handed to somebody else — this screen has nothing left to show,
+    // the same "finished or moved" close every other action already
+    // takes at the end of runAction() above.
+    onClose();
+  };
+
+  const stateButtons = el("div", { class: "statebuttons" }, [
+    actionLink("reassign", { onclick: doReassign, primary: true }),
+    actionLink("close", { onclick: close }),
+  ]);
+
+  const box = el("div", { class: "popout" }, [
+    el("div", { class: "cardhead" }, [el("h3", { text: t("action.reassign") }), stateButtons]),
+    labeled("action.reassign.wholabel", select),
+    labeled("action.reassign.commentlabel", commentBox),
+    errorBox,
+  ]);
+
+  const backdrop = el("div", { class: "backdrop" }, [box]);
+  backdrop.onclick = (e) => {
+    if (e.target === backdrop) close();
+  };
+  document.body.append(backdrop);
+}
+
+/**
  * One action: icon above its label, in a row — decision 0122.
  *
  * **Still the server's decision** which appear (decision 0103). Giving
@@ -1614,7 +1691,12 @@ function taskActionButtons(task, onClose) {
       .filter((a) => a !== "key")
       .map((a, index) =>
         actionLink(a, {
-          onclick: () => runAction(a, task, onClose),
+          // **Reassign opens its own small picker instead of `runAction`'s
+          // plain-text-reason prompt — decision 0489.** It needs a real
+          // person chosen from a real list, not a free-text string; the
+          // generic comment-and-OK/Cancel modal that would eventually
+          // replace this dedicated picker is its own, later decision.
+          onclick: () => (a === "reassign" ? openReassignPicker(task, onClose) : runAction(a, task, onClose)),
           // With nothing to save, the first thing the task offers is
           // what somebody came to do.
           primary: !canEditAnything && index === 0,

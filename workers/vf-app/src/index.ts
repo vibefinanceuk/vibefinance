@@ -210,7 +210,7 @@ import { getSupplierHistory } from "./invoice-history.js";
 import { handleCreateCustomField, handleListCustomFields, loadCustomFields } from "./custom-field-route.js";
 import { handleUploadDocument, handleRetrieveDocument, handleMintDocumentUrl } from "./document-route.js";
 import { handleCreateProcessInstance, onTaskCompleted, visitCurrentStage } from "./workflow-engine.js";
-import { handleClaimTask, handleCompleteTask, handleCreateTask, handleReleaseTask } from "./task-route.js";
+import { handleClaimTask, handleCompleteTask, handleCreateTask, handleReleaseTask, handleReassignTask, handleReassignCandidates } from "./task-route.js";
 import type { Permission } from "./permissions.js";
 import { handleRotateUserKey } from "./user-rotate-key-route.js";
 
@@ -4804,6 +4804,51 @@ export default {
       return json(result.body, result.status);
     }
 
+    // Who a task can be reassigned to — decision 0489. Read before the
+    // picker even opens, so the list a person chooses from is exactly
+    // who the POST below will actually accept.
+    const reassignCandidatesMatch = pathname.match(/^\/tasks\/([^/]+)\/reassign-candidates$/);
+    if (reassignCandidatesMatch && request.method === "GET") {
+      const { db } = resolveTenant(request, env);
+      const auth = await authenticatePerson(db, request, env);
+      if (!auth.user) return json({ error: auth.reason }, 401);
+
+      const result = await handleReassignCandidates(db, reassignCandidatesMatch[1], auth.user);
+      return json(result.body, result.status);
+    }
+
+    // Reassign — decision 0489. `targetUserId` is mandatory, so this
+    // follows /return's own strict-body shape rather than /claim's and
+    // /release's lenient one (a missing or unparsable body is a real
+    // 400 here, not a silently-unset optional field).
+    const reassignTaskMatch = pathname.match(/^\/tasks\/([^/]+)\/reassign$/);
+    if (reassignTaskMatch && request.method === "POST") {
+      const { db } = resolveTenant(request, env);
+      const locale = resolveLocale(env.LOCALE);
+      const auth = await authenticatePerson(db, request, env);
+      if (!auth.user) return json({ error: auth.reason }, 401);
+
+      let body: unknown;
+      try {
+        body = await request.json();
+      } catch {
+        return json({ error: t("invalidJsonBody", locale) }, 400);
+      }
+      const targetUserId = (body as Record<string, unknown> | null)?.targetUserId;
+      if (typeof targetUserId !== "string" || !targetUserId) {
+        return json({ error: "targetUserId (a string) is required" }, 400);
+      }
+      const comment = (body as Record<string, unknown> | null)?.comment;
+
+      const result = await handleReassignTask(
+        db,
+        reassignTaskMatch[1],
+        auth.user,
+        targetUserId,
+        typeof comment === "string" ? comment : null
+      );
+      return json(result.body, result.status);
+    }
 
     const claimTaskMatch = pathname.match(/^\/tasks\/([^/]+)\/claim$/);
     const completeTaskMatch = pathname.match(/^\/tasks\/([^/]+)\/complete$/);

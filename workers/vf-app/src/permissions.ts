@@ -103,6 +103,14 @@ const AP_PERMISSIONS = [
   // leaves the task exactly where it is and merely makes it available
   // again. Bundling them would mean anybody who can unlock a task can
   // also send documents backwards through the workflow.
+  //
+  // **Also the override for Reassign — decision 0489.** Handing a task
+  // you hold directly to a named colleague is the same shape of action
+  // as releasing it (an ownership change, task stays exactly where it
+  // is), so it earns the same two-tier permission model release
+  // already has: your own claim needs nothing beyond holding it, and
+  // AP.TaskManage is what lets a manager do it to a task somebody else
+  // holds — or one nobody has claimed yet.
   "AP.TaskManage",
   /**
    * **Reserved since decision 0417, real since decision 0420.** The
@@ -343,7 +351,7 @@ export const PERMISSION_DESCRIPTIONS: Record<Permission, string> = {
   "AP.ReturnAny": "Return any invoice, even one someone else owns",
   "AP.Discard": "Discard a document that cannot be processed",
   "AP.FraudReview": "See the AP Analytics screen's Fraud Prevention tab",
-  "AP.TaskManage": "See and release every user's tasks, not just your own",
+  "AP.TaskManage": "See, release, and reassign every user's tasks, not just your own",
   "AP.Assistant": "Ask the AP Analytics screen's Talk to an AP Expert tab a question — each answer still scoped by whatever else you hold",
   "AP.Manager": "Remove a collaborator from an invoice's conversation — decision 0476, deliberately narrower than the AP.Review that can add one",
 

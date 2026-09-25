@@ -61,19 +61,25 @@ async function seedOpenTask(taskId: string, visitId: string, stageId: string) {
     .run();
 }
 
-/** A row in the one genuinely new table decision 0488 adds. */
+/**
+ * A row in the one genuinely new table decisions 0488/0489 add.
+ * `targetUserId` is meaningful only for `reassign` — the one fact
+ * that action carries that claim/release do not (migration 0084's own
+ * standing invariant).
+ */
 async function recordTaskAction(
   eventId: string,
   taskId: string,
-  action: "claim" | "release",
+  action: "claim" | "release" | "reassign",
   actorId: string,
   at: string,
-  comment: string | null = null
+  comment: string | null = null,
+  targetUserId: string | null = null
 ) {
   await env.DB.prepare(
-    "INSERT INTO task_action_events (id, task_id, action, actor_id, at, comment) VALUES (?, ?, ?, ?, ?, ?)"
+    "INSERT INTO task_action_events (id, task_id, action, actor_id, at, comment, target_user_id) VALUES (?, ?, ?, ?, ?, ?, ?)"
   )
-    .bind(eventId, taskId, action, actorId, at, comment)
+    .bind(eventId, taskId, action, actorId, at, comment, targetUserId)
     .run();
 }
 
@@ -403,6 +409,27 @@ describe("task actions — claim/release/return/discard (decision 0488)", () => 
       action: "release",
       userName: "Priya Patel",
       comment: "Handing this to Sam.",
+    });
+  });
+
+  it("carries a reassign, naming who it went to", async () => {
+    await seedInvoice("inv-1");
+    await seedStage("coding", "Coding");
+    await seedUser("u-priya", "Priya Patel");
+    await seedUser("u-sam", "Sam Okafor");
+    await seedVisit("v-1", "inv-1", "coding", "2026-09-01 09:00:00");
+    await seedOpenTask("t-1", "v-1", "coding");
+    await recordTaskAction("e-1", "t-1", "reassign", "u-priya", "2026-09-01 09:15:00", "She knows this supplier.", "u-sam");
+
+    const result = await handleGetActivity(env.DB, "inv-1");
+    const items = (result.body as { items: Record<string, unknown>[] }).items;
+    expect(items.find((i) => i.kind === "action_taken")).toEqual({
+      kind: "action_taken",
+      at: "2026-09-01 09:15:00",
+      action: "reassign",
+      userName: "Priya Patel",
+      comment: "She knows this supplier.",
+      targetUserName: "Sam Okafor",
     });
   });
 

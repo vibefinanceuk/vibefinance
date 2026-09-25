@@ -1390,6 +1390,84 @@ describe("task routes, through the real router (decision 0018)", () => {
       expect(res.status).toBe(200);
     });
   });
+
+  describe("Reassign — decision 0489", () => {
+    it("lists a colleague who holds the task's own permission as a candidate", async () => {
+      const { taskId } = await seedProcessStageAndTeamTask();
+      const colleague = await seedUserWithPermissionsAndId(["AP.Approve"]);
+      await SELF.fetch("https://example.com/org/teams/team1/members", {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({ userId: colleague.id }),
+      });
+      await SELF.fetch(`https://example.com/tasks/${taskId}/claim`, { method: "POST", headers: authHeaders() });
+
+      const res = await SELF.fetch(`https://example.com/tasks/${taskId}/reassign-candidates`, {
+        headers: authHeaders(),
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { candidates: { id: string }[] };
+      expect(body.candidates.map((c) => c.id)).toEqual([colleague.id]);
+    });
+
+    it("hands a claimed task directly to a named colleague, and writes the Timeline entry", async () => {
+      const { taskId } = await seedProcessStageAndTeamTask();
+      const colleague = await seedUserWithPermissionsAndId(["AP.Approve"]);
+      await SELF.fetch("https://example.com/org/teams/team1/members", {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({ userId: colleague.id }),
+      });
+      await SELF.fetch(`https://example.com/tasks/${taskId}/claim`, { method: "POST", headers: authHeaders() });
+
+      const res = await SELF.fetch(`https://example.com/tasks/${taskId}/reassign`, {
+        method: "POST",
+        headers: { ...authHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({ targetUserId: colleague.id, comment: "She knows this supplier." }),
+      });
+      expect(res.status).toBe(200);
+
+      const row = await env.DB.prepare("SELECT claimed_by FROM tasks WHERE id = ?").bind(taskId).first();
+      expect(row).toEqual({ claimed_by: colleague.id });
+
+      const event = await env.DB.prepare(
+        "SELECT action, target_user_id, comment FROM task_action_events WHERE task_id = ? AND action = 'reassign'"
+      )
+        .bind(taskId)
+        .first();
+      expect(event).toEqual({ action: "reassign", target_user_id: colleague.id, comment: "She knows this supplier." });
+    });
+
+    it("403s a colleague without AP.TaskManage trying to reassign somebody else's claim", async () => {
+      const { taskId } = await seedProcessStageAndTeamTask();
+      const colleague = await seedUserWithPermissionsAndId(["AP.Approve"]);
+      await SELF.fetch("https://example.com/org/teams/team1/members", {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({ userId: colleague.id }),
+      });
+      await SELF.fetch(`https://example.com/tasks/${taskId}/claim`, { method: "POST", headers: authHeaders() });
+
+      const limitedKey = await seedUserWithPermissions(["AP.Approve"]);
+      const res = await SELF.fetch(`https://example.com/tasks/${taskId}/reassign`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${limitedKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ targetUserId: colleague.id }),
+      });
+      expect(res.status).toBe(403);
+    });
+
+    it("400s when targetUserId is missing from the body", async () => {
+      const { taskId } = await seedProcessStageAndTeamTask();
+      await SELF.fetch(`https://example.com/tasks/${taskId}/claim`, { method: "POST", headers: authHeaders() });
+      const res = await SELF.fetch(`https://example.com/tasks/${taskId}/reassign`, {
+        method: "POST",
+        headers: { ...authHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      expect(res.status).toBe(400);
+    });
+  });
 });
 
 describe("intake channels, through the real router (decision 0024)", () => {

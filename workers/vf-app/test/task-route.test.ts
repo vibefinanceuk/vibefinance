@@ -1,7 +1,7 @@
 import { env } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
 import { applyTestSchema } from "./setup.js";
-import { handleClaimTask, handleCompleteTask, handleCreateTask , handleReleaseTask } from "../src/task-route.js";
+import { handleClaimTask, handleCompleteTask, handleCreateTask , handleReleaseTask, handleReassignTask, handleReassignCandidates } from "../src/task-route.js";
 import { handleCreateUser } from "../src/org-route.js";
 import { handleAddTeamMember, handleCreateTeam } from "../src/team-route.js";
 import { handleCreateProcess, handleCreateStage } from "../src/process-route.js";
@@ -350,5 +350,219 @@ describe("releasing a claim (decision 0104)", () => {
       "UPDATE tasks SET status = 'completed', completed_by = 'alice', claimed_by = NULL WHERE id = 't'"
     ).run();
     expect((await handleReleaseTask(env.DB, "t", asUser("alice"))).status).toBe(409);
+  });
+});
+
+describe("reassigning a task (decision 0489)", () => {
+  // The exact same fixture releasing a claim uses above — task 't', on
+  // team 'ap', requiring AP.Validate, with alice/sarah/mo all members.
+  async function seedClaimed(claimedBy: string | null = "alice") {
+    await env.DB.prepare("INSERT INTO org_users (id, email, name) VALUES ('alice','a@x.com','Alice')").run();
+    await env.DB.prepare("INSERT INTO org_users (id, email, name) VALUES ('sarah','s@x.com','Sarah')").run();
+    await env.DB.prepare("INSERT INTO org_users (id, email, name) VALUES ('mo','m@x.com','Mo')").run();
+    await env.DB.prepare("INSERT INTO org_units (id, name) VALUES ('u1', 'Acme France')").run();
+    await env.DB.prepare("INSERT INTO org_teams (id, name, unit_id) VALUES ('ap','AP','u1')").run();
+    for (const u of ["alice", "sarah", "mo"]) {
+      await env.DB.prepare("INSERT INTO org_team_members (team_id, user_id) VALUES ('ap', ?)").bind(u).run();
+    }
+    await env.DB.prepare("INSERT INTO processes (id, name) VALUES ('p','P')").run();
+    await env.DB.prepare(
+      "INSERT INTO process_stages (id, process_id, name, sequence) VALUES ('s','p','S',1)"
+    ).run();
+    await env.DB.prepare(
+      "INSERT INTO tasks (id, stage_id, owner_team_id, required_permission, claimed_by, claimed_at) VALUES ('t','s','ap','AP.Validate',?, ?)"
+    )
+      .bind(claimedBy, claimedBy ? "2026-09-01 09:00:00" : null)
+      .run();
+  }
+
+  async function grant(userId: string, permissions: string[]) {
+    await env.DB.prepare("INSERT INTO org_roles (id, name, permissions_json) VALUES (?, ?, ?)")
+      .bind(`r-${userId}`, userId, JSON.stringify(permissions))
+      .run();
+    await env.DB.prepare("INSERT INTO org_user_roles (user_id, role_id) VALUES (?, ?)")
+      .bind(userId, `r-${userId}`)
+      .run();
+  }
+
+  const asUser = (id: string) => ({ id, email: `${id}@x.com`, name: id });
+
+  it("lets a person hand their own claim directly to a colleague who holds the permission", async () => {
+    await seedClaimed("alice");
+    await grant("sarah", ["AP.Validate"]);
+
+    const result = await handleReassignTask(env.DB, "t", asUser("alice"), "sarah");
+    expect(result.status).toBe(200);
+    const row = await env.DB.prepare("SELECT claimed_by FROM tasks WHERE id = 't'").first<{ claimed_by: string }>();
+    expect(row?.claimed_by).toBe("sarah");
+  });
+
+  it("refuses a colleague without AP.TaskManage reassigning somebody else's claim", async () => {
+    await seedClaimed("alice");
+    await grant("mo", ["AP.Validate"]);
+
+    const result = await handleReassignTask(env.DB, "t", asUser("sarah"), "mo");
+    expect(result.status).toBe(403);
+    expect(String((result.body as { detail: string }).detail)).toContain("AP.TaskManage");
+  });
+
+  it("lets a manager reassign a colleague's claim", async () => {
+    await seedClaimed("alice");
+    await grant("mo", ["AP.TaskManage"]);
+    await grant("sarah", ["AP.Validate"]);
+
+    const result = await handleReassignTask(env.DB, "t", asUser("mo"), "sarah");
+    expect(result.status).toBe(200);
+    expect((result.body as { viaOverride: boolean }).viaOverride).toBe(true);
+  });
+
+  it("lets a manager reassign a task nobody has claimed yet", async () => {
+    await seedClaimed(null);
+    await grant("mo", ["AP.TaskManage"]);
+    await grant("sarah", ["AP.Validate"]);
+
+    const result = await handleReassignTask(env.DB, "t", asUser("mo"), "sarah");
+    expect(result.status).toBe(200);
+    const row = await env.DB.prepare("SELECT claimed_by FROM tasks WHERE id = 't'").first<{ claimed_by: string }>();
+    expect(row?.claimed_by).toBe("sarah");
+  });
+
+  it("says handing your own claim onward is not an override", async () => {
+    await seedClaimed("alice");
+    await grant("alice", ["AP.TaskManage"]);
+    await grant("sarah", ["AP.Validate"]);
+
+    const body = (await handleReassignTask(env.DB, "t", asUser("alice"), "sarah")).body as { viaOverride: boolean };
+    expect(body.viaOverride).toBe(false);
+  });
+
+  it("records who did it, who it went to, and who held it before", async () => {
+    await seedClaimed("alice");
+    await grant("mo", ["AP.TaskManage"]);
+    await grant("sarah", ["AP.Validate"]);
+
+    const body = (await handleReassignTask(env.DB, "t", asUser("mo"), "sarah")).body as Record<string, unknown>;
+    expect(body.reassignedBy).toBe("mo");
+    expect(body.reassignedTo).toBe("sarah");
+    expect(body.previousHolder).toBe("alice");
+  });
+
+  it("writes a task_action_events row naming who it went to", async () => {
+    await seedClaimed("alice");
+    await grant("sarah", ["AP.Validate"]);
+    await handleReassignTask(env.DB, "t", asUser("alice"), "sarah", "She knows this supplier.");
+
+    const row = await env.DB.prepare(
+      "SELECT action, actor_id, target_user_id, comment FROM task_action_events WHERE task_id = 't'"
+    ).first();
+    expect(row).toEqual({
+      action: "reassign",
+      actor_id: "alice",
+      target_user_id: "sarah",
+      comment: "She knows this supplier.",
+    });
+  });
+
+  it("404s a task that does not exist", async () => {
+    await seedClaimed("alice");
+    await grant("sarah", ["AP.Validate"]);
+    expect((await handleReassignTask(env.DB, "nope", asUser("alice"), "sarah")).status).toBe(404);
+  });
+
+  it("400s a named-user task — there is no team to draw a colleague from", async () => {
+    await seedClaimed("alice");
+    await env.DB.prepare("UPDATE tasks SET owner_team_id = NULL, owner_user_id = 'alice' WHERE id = 't'").run();
+    await grant("sarah", ["AP.Validate"]);
+    expect((await handleReassignTask(env.DB, "t", asUser("alice"), "sarah")).status).toBe(400);
+  });
+
+  it("404s a target user who does not exist", async () => {
+    await seedClaimed("alice");
+    expect((await handleReassignTask(env.DB, "t", asUser("alice"), "nobody")).status).toBe(404);
+  });
+
+  it("400s a target who is not a member of the task's own team", async () => {
+    await seedClaimed("alice");
+    await env.DB.prepare("INSERT INTO org_users (id, email, name) VALUES ('outsider','o@x.com','Outsider')").run();
+    await grant("outsider", ["AP.Validate"]);
+    expect((await handleReassignTask(env.DB, "t", asUser("alice"), "outsider")).status).toBe(400);
+  });
+
+  it("400s a target who is on the team but does not hold the task's own required permission", async () => {
+    await seedClaimed("alice");
+    // mo is on the team (seedClaimed) but was never granted AP.Validate.
+    expect((await handleReassignTask(env.DB, "t", asUser("alice"), "mo")).status).toBe(400);
+  });
+
+  it("refuses to reassign a completed task", async () => {
+    await seedClaimed("alice");
+    await grant("sarah", ["AP.Validate"]);
+    await env.DB.prepare(
+      "UPDATE tasks SET status = 'completed', completed_by = 'alice', claimed_by = NULL WHERE id = 't'"
+    ).run();
+    expect((await handleReassignTask(env.DB, "t", asUser("alice"), "sarah")).status).toBe(409);
+  });
+});
+
+describe("who a task can be reassigned to (decision 0489)", () => {
+  async function seedClaimed(claimedBy: string | null = "alice") {
+    await env.DB.prepare("INSERT INTO org_users (id, email, name) VALUES ('alice','a@x.com','Alice')").run();
+    await env.DB.prepare("INSERT INTO org_users (id, email, name) VALUES ('sarah','s@x.com','Sarah')").run();
+    await env.DB.prepare("INSERT INTO org_users (id, email, name) VALUES ('mo','m@x.com','Mo')").run();
+    await env.DB.prepare("INSERT INTO org_units (id, name) VALUES ('u1', 'Acme France')").run();
+    await env.DB.prepare("INSERT INTO org_teams (id, name, unit_id) VALUES ('ap','AP','u1')").run();
+    for (const u of ["alice", "sarah", "mo"]) {
+      await env.DB.prepare("INSERT INTO org_team_members (team_id, user_id) VALUES ('ap', ?)").bind(u).run();
+    }
+    await env.DB.prepare("INSERT INTO processes (id, name) VALUES ('p','P')").run();
+    await env.DB.prepare(
+      "INSERT INTO process_stages (id, process_id, name, sequence) VALUES ('s','p','S',1)"
+    ).run();
+    await env.DB.prepare(
+      "INSERT INTO tasks (id, stage_id, owner_team_id, required_permission, claimed_by, claimed_at) VALUES ('t','s','ap','AP.Validate',?, ?)"
+    )
+      .bind(claimedBy, claimedBy ? "2026-09-01 09:00:00" : null)
+      .run();
+  }
+
+  async function grant(userId: string, permissions: string[]) {
+    await env.DB.prepare("INSERT INTO org_roles (id, name, permissions_json) VALUES (?, ?, ?)")
+      .bind(`r-${userId}`, userId, JSON.stringify(permissions))
+      .run();
+    await env.DB.prepare("INSERT INTO org_user_roles (user_id, role_id) VALUES (?, ?)")
+      .bind(userId, `r-${userId}`)
+      .run();
+  }
+
+  const asUser = (id: string) => ({ id, email: `${id}@x.com`, name: id });
+
+  it("lists a teammate who holds the permission, and excludes the current holder and one who lacks it", async () => {
+    await seedClaimed("alice");
+    await grant("sarah", ["AP.Validate"]);
+    // mo is on the team but was never granted AP.Validate.
+
+    const result = await handleReassignCandidates(env.DB, "t", asUser("alice"));
+    expect(result.status).toBe(200);
+    expect((result.body as { candidates: { id: string }[] }).candidates.map((c) => c.id)).toEqual(["sarah"]);
+  });
+
+  it("403s a colleague without AP.TaskManage asking about somebody else's claim", async () => {
+    await seedClaimed("alice");
+    const result = await handleReassignCandidates(env.DB, "t", asUser("sarah"));
+    expect(result.status).toBe(403);
+  });
+
+  it("lets a manager see candidates for a task nobody holds yet", async () => {
+    await seedClaimed(null);
+    await grant("mo", ["AP.TaskManage"]);
+    await grant("sarah", ["AP.Validate"]);
+
+    const result = await handleReassignCandidates(env.DB, "t", asUser("mo"));
+    expect(result.status).toBe(200);
+    expect((result.body as { candidates: { id: string }[] }).candidates.map((c) => c.id)).toEqual(["sarah"]);
+  });
+
+  it("404s a task that does not exist", async () => {
+    expect((await handleReassignCandidates(env.DB, "nope", asUser("alice"))).status).toBe(404);
   });
 });

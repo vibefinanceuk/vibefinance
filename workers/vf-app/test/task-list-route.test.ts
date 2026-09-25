@@ -486,14 +486,15 @@ describe("releasing appears where it applies (decision 0104)", () => {
     expect((await list("alice"))[0].actions).not.toContain("release");
   });
 
-  it("offers a manager release on a colleague's locked task, and nothing else", async () => {
-    // The recovery path for a lock that never expires -- and the only
-    // thing anybody may do to somebody else's work.
+  it("offers a manager release and reassign on a colleague's locked task, and nothing else", async () => {
+    // The recovery path for a lock that never expires -- and, since
+    // decision 0489, the same manager standing also lets it be handed
+    // directly to somebody else instead of back to the pool.
     await grant("sarah", ["AP.Validate", "AP.TaskManage"]);
     await seedInstance("inv-1", "validation", "v-1");
     await seedTask("t-1", "validation", "v-1", { team: "ap" }, "alice");
 
-    expect((await list("sarah"))[0].actions).toEqual(["release"]);
+    expect((await list("sarah"))[0].actions).toEqual(["release", "reassign"]);
   });
 
   it("offers a colleague without AP.TaskManage nothing at all", async () => {

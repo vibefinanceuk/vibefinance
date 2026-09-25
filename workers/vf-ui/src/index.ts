@@ -167,6 +167,9 @@ const PROXIED_TO_INSTANCE: RegExp[] = [
   /^\/tasks\/[^/]+\/return$/,
   /^\/tasks\/[^/]+\/return-to-supplier$/,
   /^\/tasks\/[^/]+\/discard$/,
+  // Reassign — decision 0489.
+  /^\/tasks\/[^/]+\/reassign$/,
+  /^\/tasks\/[^/]+\/reassign-candidates$/,
   // What the Validation viewer needs (decision 0106): the keyed values,
   // and a short-lived signed URL for the retained original.
   // Reading one invoice back, so the keying screen shows what it saved

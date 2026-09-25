@@ -155,6 +155,10 @@ const STRINGS = {
     "action.approve": "Approve",
     "action.release": "Release",
     "action.discard": "Discard",
+    "action.reassign": "Reassign",
+    "action.reassign.wholabel": "Reassign to",
+    "action.reassign.commentlabel": "Comment (optional)",
+    "action.reassign.nonefound": "Nobody else on this team can take this task.",
     "action.return_to_supplier": "To supplier",
     "action.return": "Return",
     "action.whyreason": "Give a reason.",
@@ -1328,6 +1332,162 @@ describe("the actions do something (decision 0138)", () => {
     click("Complete");
     await settle();
     expect(asked).toBe(false);
+  });
+
+  describe("reassigning from the picker (decision 0489)", () => {
+    /**
+     * Its own dedicated pop-out, not the generic comment-and-OK/Cancel
+     * modal (that is a later, separate decision in the agreed
+     * sequence) — so it gets its own fetch stub, one that also
+     * captures the POST body. `stubFetch` above only remembers which
+     * paths were posted to, and the whole point here is checking what
+     * `targetUserId` and `comment` the picker actually sent.
+     */
+    function stubReassign(
+      routes: Record<string, unknown> = {},
+      posted: string[] = [],
+      bodies: { path: string; body: unknown }[] = []
+    ) {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (url: string, init?: RequestInit) => {
+          const path = String(url).split("?")[0];
+          if (init?.method === "POST") {
+            posted.push(path);
+            if (init.body) bodies.push({ path, body: JSON.parse(String(init.body)) });
+          }
+          const base: Record<string, unknown> = { ...OPEN, ...routes };
+          if (path in base) return { ok: true, json: async () => base[path] } as Response;
+          if (/^\/api\/invoices\/[^/]+\/pages$/.test(path)) {
+            return { ok: true, json: async () => ({ pages: [] }) } as Response;
+          }
+          if (/^\/api\/documents\/[^/]+\/collaborators$/.test(path)) {
+            return { ok: true, json: async () => ({ collaborators: [] }) } as Response;
+          }
+          throw new Error(`no stub for ${path} — add one, or the test proves nothing`);
+        })
+      );
+    }
+
+    async function openWithReassign(
+      routes: Record<string, unknown> = {},
+      posted: string[] = [],
+      bodies: { path: string; body: unknown }[] = []
+    ) {
+      stubReassign(routes, posted, bodies);
+      const { loadStrings } = await import("/strings.js");
+      await loadStrings();
+      const { openViewer } = await import("/viewer.js");
+      await openViewer({ ...TASK, actions: ["key", "complete", "reassign"] }, () => {});
+      await new Promise((r) => setTimeout(r, 0));
+    }
+
+    const CANDIDATES = {
+      candidates: [
+        { id: "u-2", name: "Priya Shah", email: "priya@example.com" },
+        { id: "u-3", name: "Sam Okafor", email: null },
+      ],
+    };
+
+    it("lists the server's own candidates, not a client guess", async () => {
+      // `handleReassignCandidates` computes exactly who the POST would
+      // accept; the picker just renders what it's given.
+      await openWithReassign({ "/api/tasks/t-1/reassign-candidates": CANDIDATES });
+      click("Reassign");
+      await settle();
+
+      const popout = document.querySelector(".popout");
+      expect(popout).not.toBeNull();
+      const options = [...popout!.querySelectorAll("select option")].map((o) => o.textContent);
+      expect(options).toEqual(["Priya Shah (priya@example.com)", "Sam Okafor"]);
+    });
+
+    it("says so instead of opening an empty picker when nobody is eligible", async () => {
+      await openWithReassign({ "/api/tasks/t-1/reassign-candidates": { candidates: [] } });
+      click("Reassign");
+      await settle();
+
+      expect(document.querySelector(".popout")).toBeNull();
+      expect(document.getElementById("viewer-note")?.textContent).toBe(
+        "Nobody else on this team can take this task."
+      );
+    });
+
+    it("posts the chosen target and comment, and closes the picker on success", async () => {
+      const posted: string[] = [];
+      const bodies: { path: string; body: unknown }[] = [];
+      await openWithReassign(
+        { "/api/tasks/t-1/reassign-candidates": CANDIDATES, "/api/tasks/t-1/reassign": {} },
+        posted,
+        bodies
+      );
+      click("Reassign");
+      await settle();
+
+      (document.querySelector(".popout select") as HTMLSelectElement).value = "u-3";
+      (document.querySelector(".popout textarea") as HTMLTextAreaElement).value = "Out of office this week";
+      (document.querySelector(".popout .actionlink") as HTMLButtonElement).click();
+      await settle();
+
+      expect(posted).toContain("/api/tasks/t-1/reassign");
+      expect(bodies).toContainEqual({
+        path: "/api/tasks/t-1/reassign",
+        body: { targetUserId: "u-3", comment: "Out of office this week" },
+      });
+      // Handed to somebody else — the same "nothing left to show" close
+      // every other action already takes at the end of runAction().
+      expect(document.querySelector(".popout")).toBeNull();
+    });
+
+    it("sends no comment field when none was typed, not an empty string", async () => {
+      const posted: string[] = [];
+      const bodies: { path: string; body: unknown }[] = [];
+      await openWithReassign(
+        { "/api/tasks/t-1/reassign-candidates": CANDIDATES, "/api/tasks/t-1/reassign": {} },
+        posted,
+        bodies
+      );
+      click("Reassign");
+      await settle();
+
+      // Default target (first option), comment left blank.
+      (document.querySelector(".popout .actionlink") as HTMLButtonElement).click();
+      await settle();
+
+      expect(bodies[0]?.body).toEqual({ targetUserId: "u-2" });
+      expect(bodies[0]?.body).not.toHaveProperty("comment");
+    });
+
+    it("shows the server's error and leaves the picker open to try again", async () => {
+      await openWithReassign({ "/api/tasks/t-1/reassign-candidates": CANDIDATES });
+      click("Reassign");
+      await settle();
+
+      // Override just the POST route to fail, since the stub above
+      // returns ok:true for anything listed — a second stubGlobal call
+      // replaces the mock outright for this one test, the same move
+      // the supplier-search "shows a save error inline" test above
+      // makes for /api/suppliers.
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (url: string) => {
+          const path = String(url).split("?")[0];
+          if (path === "/api/tasks/t-1/reassign") {
+            return { ok: false, json: async () => ({ error: "no longer yours to reassign" }) } as Response;
+          }
+          throw new Error(`no stub for ${path} in the failure override`);
+        })
+      );
+
+      (document.querySelector(".popout .actionlink") as HTMLButtonElement).click();
+      await settle();
+
+      const errorBox = document.querySelector(".popout .warn") as HTMLElement;
+      expect(errorBox.hidden).toBe(false);
+      expect(errorBox.textContent).toBe("no longer yours to reassign");
+      // Still open — a failure is something to fix, not to start over from.
+      expect(document.querySelector(".popout")).not.toBeNull();
+    });
   });
 });
 

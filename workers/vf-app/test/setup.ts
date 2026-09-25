@@ -88,6 +88,7 @@ import taskSystemReasonSql from "../../../migrations/0080_task_system_reason.sql
 import stageOffersFieldRestrictionsSql from "../../../migrations/0081_stage_offers_field_restrictions.sql?raw";
 import stageActionsSql from "../../../migrations/0082_stage_actions.sql?raw";
 import taskActionEventsSql from "../../../migrations/0083_task_action_events.sql?raw";
+import taskActionEventsReassignSql from "../../../migrations/0084_task_action_events_reassign.sql?raw";
 
 // Another known divergence from production, on top of the one below:
 // D1's exec() splits its input by newline and executes each non-empty
@@ -341,6 +342,7 @@ export async function applyTestSchema(): Promise<void> {
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(stageOffersFieldRestrictionsSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(stageActionsSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(taskActionEventsSql)));
+  await env.DB.exec(toOneStatementPerLine(stripSqlComments(taskActionEventsReassignSql)));
 }
 
 /**

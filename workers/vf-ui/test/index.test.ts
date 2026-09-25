@@ -198,11 +198,12 @@ describe("the task list is reachable, and only what it needs", () => {
     // The point of a list rather than a prefix: /tasks/:id/anything is
     // not automatically reachable because /tasks is.
     //
-    // **The example changed.** It used `complete`, which decision 0138
-    // then listed — a test whose example becomes real is a test that
-    // fails for being right about the old world. The claim survives;
-    // only the path had to be one nobody has listed.
-    const res = await SELF.fetch("https://ui.example.com/api/tasks/abc/reassign", { method: "POST" });
+    // **The example changed, twice now.** It used `complete`, which
+    // decision 0138 then listed, then `reassign`, which decision 0489
+    // listed in turn — a test whose example becomes real is a test
+    // that fails for being right about the old world. The claim
+    // survives; only the path had to be one nobody has listed yet.
+    const res = await SELF.fetch("https://ui.example.com/api/tasks/abc/frobnicate", { method: "POST" });
     expect(res.status).toBe(404);
   });
 });
@@ -358,6 +359,9 @@ describe("the proxy carries every path a screen calls (decision 0131)", () => {
     ["POST", "/api/tasks/t-1/return"],
     ["POST", "/api/tasks/t-1/return-to-supplier"],
     ["POST", "/api/tasks/t-1/discard"],
+    // Reassign — decision 0489.
+    ["GET", "/api/tasks/t-1/reassign-candidates"],
+    ["POST", "/api/tasks/t-1/reassign"],
     // The two that were missing.
     ["PATCH", "/api/sources/s-1"],
     ["DELETE", "/api/sources/s-1"],

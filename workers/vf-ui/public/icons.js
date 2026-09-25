@@ -328,6 +328,11 @@ export const ICONS = {
   // A closed padlock, the mirror of release.
   claim:
     '<path d="M6 11h12v9H6zM9 11V7a3 3 0 0 1 6 0v4"/>',
+  // An arrow handed directly to a person — decision 0489. Not the
+  // padlock pair above: reassigning does not lock or unlock anything,
+  // it hands the task straight to somebody named.
+  reassign:
+    '<circle cx="17" cy="7" r="3"/><path d="M13 18a4 4 0 0 1 8 0"/><path d="M3 11h7m0 0-3-3m3 3-3 3"/>',
   /**
    * **Up, out of a tray — decision 0349.** The visual mirror of
    * `save`/`create`'s own down-arrow-into-a-tray: those persist what

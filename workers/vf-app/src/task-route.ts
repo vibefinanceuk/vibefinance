@@ -2,6 +2,7 @@ import type { AuthenticatedUser } from "./user-auth.js";
 import { hasPermission } from "./enforce.js";
 import type { RouteResult } from "./org-route.js";
 import { isKnownPermission } from "./permissions.js";
+import type { Permission } from "./permissions.js";
 
 /**
  * Tasks — see docs/decisions/0018-process-definitions-and-tasks.md.
@@ -265,6 +266,191 @@ export async function handleReleaseTask(
       releasedBy: user.id,
       previousHolder: task.claimed_by,
       viaOverride: !ownClaim,
+    },
+  };
+}
+
+interface ReassignTaskRow {
+  claimed_by: string | null;
+  status: string;
+  owner_team_id: string | null;
+  required_permission: string;
+}
+
+/**
+ * The same two-tier standing `handleReleaseTask` already checks:
+ * holding the task yourself needs nothing further, and `AP.TaskManage`
+ * is the override for anybody else's (or nobody's) claim. Shared by
+ * the candidates listing and the reassign itself so the two can never
+ * silently disagree about who is allowed to act.
+ */
+async function reassignStanding(
+  db: D1Database,
+  user: AuthenticatedUser,
+  task: Pick<ReassignTaskRow, "claimed_by">
+): Promise<{ ok: true; viaOverride: boolean } | { ok: false }> {
+  const ownClaim = task.claimed_by === user.id;
+  if (ownClaim) return { ok: true, viaOverride: false };
+  const mayManage = await hasPermission(db, user.id, "AP.TaskManage");
+  return mayManage ? { ok: true, viaOverride: true } : { ok: false };
+}
+
+/**
+ * Who a task can be reassigned to, right now — decision 0489.
+ *
+ * **Computed by the server, not guessed by the client** — the same
+ * discipline `task-list-route.ts`'s own `actionsFor` already applies
+ * to which buttons appear at all. A member of the task's own team who
+ * does not also hold its `required_permission` is not offered: naming
+ * them here would just move the stuck-task problem this feature exists
+ * to solve onto whoever picks them.
+ */
+export async function handleReassignCandidates(
+  db: D1Database,
+  taskId: string,
+  user: AuthenticatedUser
+): Promise<RouteResult> {
+  const task = await db
+    .prepare("SELECT claimed_by, status, owner_team_id, required_permission FROM tasks WHERE id = ?")
+    .bind(taskId)
+    .first<ReassignTaskRow>();
+  if (!task) return { status: 404, body: { error: `task ${taskId} does not exist` } };
+  if (!task.owner_team_id) {
+    return { status: 400, body: { error: "task is not team-owned — a named-user task cannot be reassigned" } };
+  }
+
+  const standing = await reassignStanding(db, user, task);
+  if (!standing.ok) {
+    return {
+      status: 403,
+      body: {
+        error: task.claimed_by ? "this task is claimed by somebody else" : "claim this task before reassigning it",
+        detail: "AP.TaskManage is required to reassign a task you do not hold",
+      },
+    };
+  }
+
+  const members = await db
+    .prepare(
+      `SELECT u.id, u.name, u.email
+       FROM org_team_members m
+       JOIN org_users u ON u.id = m.user_id
+       WHERE m.team_id = ? AND u.id != ?
+       ORDER BY u.name`
+    )
+    .bind(task.owner_team_id, task.claimed_by ?? "")
+    .all<{ id: string; name: string; email: string }>();
+
+  const candidates: { id: string; name: string; email: string }[] = [];
+  for (const member of members.results) {
+    if (await hasPermission(db, member.id, task.required_permission as Permission)) {
+      candidates.push(member);
+    }
+  }
+
+  return { status: 200, body: { candidates } };
+}
+
+/**
+ * Reassign — decision 0489, the second step of the agreed Coding-pilot
+ * sequence. Hands a task directly to a named colleague, rather than
+ * releasing it back to the pool and waiting for somebody to pick it up.
+ *
+ * **The exact same two-tier permission model as `handleReleaseTask`
+ * just above, not a new one.** Handing a task you hold to somebody
+ * else is the same shape of act as letting go of it — the task's
+ * ownership changes, its stage does not — so it earns the same
+ * standing: your own claim needs nothing beyond holding it, and
+ * `AP.TaskManage` is what lets a manager do it to a task somebody else
+ * holds, or one nobody has claimed yet (permissions.ts's own comment
+ * on `AP.TaskManage` says so directly).
+ *
+ * **The target must both belong to the task's own team, and hold the
+ * task's own `required_permission`.** Team membership alone is not
+ * enough — decision 0010's whole architecture keeps team membership
+ * and permission-holding separate, and hand a Validation task to
+ * somebody without `AP.Validate` would create exactly the stuck task
+ * this feature exists to prevent, just for a different reason.
+ */
+export async function handleReassignTask(
+  db: D1Database,
+  taskId: string,
+  user: AuthenticatedUser,
+  targetUserId: string,
+  comment?: string | null
+): Promise<RouteResult> {
+  const task = await db
+    .prepare("SELECT claimed_by, status, owner_team_id, required_permission FROM tasks WHERE id = ?")
+    .bind(taskId)
+    .first<ReassignTaskRow>();
+
+  if (!task) return { status: 404, body: { error: `task ${taskId} does not exist` } };
+  if (task.status !== "open") {
+    return { status: 409, body: { error: `task ${taskId} is ${task.status}` } };
+  }
+  if (!task.owner_team_id) {
+    return { status: 400, body: { error: "task is not team-owned — a named-user task cannot be reassigned" } };
+  }
+
+  const targetExists = await db.prepare("SELECT id FROM org_users WHERE id = ?").bind(targetUserId).first();
+  if (!targetExists) {
+    return { status: 404, body: { error: `user ${targetUserId} does not exist` } };
+  }
+  const targetOnTeam = await db
+    .prepare("SELECT 1 FROM org_team_members WHERE team_id = ? AND user_id = ?")
+    .bind(task.owner_team_id, targetUserId)
+    .first();
+  if (!targetOnTeam) {
+    return { status: 400, body: { error: "the chosen user is not a member of the team that owns this task" } };
+  }
+  if (!(await hasPermission(db, targetUserId, task.required_permission as Permission))) {
+    return {
+      status: 400,
+      body: { error: `the chosen user does not hold ${task.required_permission}, which this task requires` },
+    };
+  }
+
+  const standing = await reassignStanding(db, user, task);
+  if (!standing.ok) {
+    return {
+      status: 403,
+      body: {
+        error: task.claimed_by ? "this task is claimed by somebody else" : "claim this task before reassigning it",
+        detail: "AP.TaskManage is required to reassign a task you do not hold",
+      },
+    };
+  }
+
+  const now = new Date().toISOString();
+  // Atomic, and race-safe the same way claim/complete/release already
+  // are: the WHERE clause matches the exact previous holder this
+  // decision was checked against, not just the task id.
+  const result = await db
+    .prepare("UPDATE tasks SET claimed_by = ?, claimed_at = ? WHERE id = ? AND status = 'open' AND claimed_by IS ?")
+    .bind(targetUserId, now, taskId, task.claimed_by)
+    .run();
+  if (result.meta.changes === 0) {
+    return { status: 409, body: { error: "task changed underneath this action — try again" } };
+  }
+
+  // decision 0489: `target_user_id` is what lets the Timeline say who
+  // it went to — the one fact this action carries that claim/release
+  // do not.
+  await db
+    .prepare(
+      "INSERT INTO task_action_events (id, task_id, action, actor_id, at, comment, target_user_id) VALUES (?, ?, 'reassign', ?, ?, ?, ?)"
+    )
+    .bind(crypto.randomUUID(), taskId, user.id, now, comment ?? null, targetUserId)
+    .run();
+
+  return {
+    status: 200,
+    body: {
+      taskId,
+      reassignedBy: user.id,
+      reassignedTo: targetUserId,
+      previousHolder: task.claimed_by,
+      viaOverride: standing.viaOverride,
     },
   };
 }

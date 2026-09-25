@@ -141,16 +141,17 @@ async function stageCompletedEvents(db: D1Database, invoiceId: string): Promise<
 async function taskActionEvents(db: D1Database, invoiceId: string): Promise<ActivityItem[]> {
   const rows = await db
     .prepare(
-      `SELECT e.action, e.at, e.comment, u.name AS user_name
+      `SELECT e.action, e.at, e.comment, u.name AS user_name, tu.name AS target_user_name
        FROM task_action_events e
        JOIN tasks t ON t.id = e.task_id
        JOIN stage_visits v ON v.id = t.stage_visit_id
        JOIN process_instances pi ON pi.id = v.process_instance_id
        JOIN org_users u ON u.id = e.actor_id
+       LEFT JOIN org_users tu ON tu.id = e.target_user_id
        WHERE pi.subject_type = 'invoice' AND pi.subject_id = ?`
     )
     .bind(invoiceId)
-    .all<{ action: string; at: string; comment: string | null; user_name: string }>();
+    .all<{ action: string; at: string; comment: string | null; user_name: string; target_user_name: string | null }>();
 
   return rows.results.map((r) => ({
     kind: "action_taken",
@@ -158,6 +159,10 @@ async function taskActionEvents(db: D1Database, invoiceId: string): Promise<Acti
     action: r.action,
     userName: r.user_name,
     comment: r.comment,
+    // Decision 0489: only a reassign ever carries one — the CHECK
+    // constraint on task_action_events.target_user_id already
+    // guarantees that.
+    targetUserName: r.target_user_name ?? undefined,
   }));
 }
 

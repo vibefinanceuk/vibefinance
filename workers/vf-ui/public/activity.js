@@ -109,10 +109,11 @@ function ruleFiredLine(item) {
 }
 
 /**
- * A button/action taken — decision 0488. `item.action` is the same
- * closed vocabulary `task-route.ts`/`return-route.ts`/`icons.js`
- * already share (`claim`, `release`, `return`, `return_to_supplier`,
- * `discard`), so it doubles as the icon lookup key in `itemRow` below.
+ * A button/action taken — decisions 0488 and 0489. `item.action` is
+ * the same closed vocabulary `task-route.ts`/`return-route.ts`/
+ * `icons.js` already share (`claim`, `release`, `return`,
+ * `return_to_supplier`, `discard`, `reassign`), so it doubles as the
+ * icon lookup key in `itemRow` below.
  */
 function actionTakenLine(item) {
   const who = item.userName;
@@ -127,6 +128,8 @@ function actionTakenLine(item) {
       return t("activity.returnedtosupplier").replace("{who}", who);
     case "discard":
       return t("activity.discarded").replace("{who}", who);
+    case "reassign":
+      return t("activity.reassigned").replace("{who}", who).replace("{target}", item.targetUserName ?? "");
     default:
       return "";
   }

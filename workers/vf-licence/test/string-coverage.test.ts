@@ -162,6 +162,12 @@ const KEYS_THE_INTERFACE_USES = [
   "activity.returned",
   "activity.returnedtosupplier",
   "activity.discarded",
+  // Decision 0489 — Reassign.
+  "action.reassign",
+  "action.reassign.wholabel",
+  "action.reassign.commentlabel",
+  "action.reassign.nonefound",
+  "activity.reassigned",
   "rule.notrunning",
   "rule.approvedby",
   "compose.newversion",

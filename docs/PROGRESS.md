@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 25 September 2026 (decision 0488). A living document: what
+Last updated 25 September 2026 (decision 0489). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,37 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Reassign (0489)
+- **Asked live**, second of the five-step Coding-pilot sequence agreed
+  after 0487 — handing a task to a named colleague, not just releasing
+  it back to the pool.
+- **No new permission.** Reuses Release's own two-tier standing
+  exactly: a person's own claim needs nothing extra, `AP.TaskManage` is
+  the override for someone else's claim or an unclaimed task.
+  `reassignStanding()` factors this out of `task-route.ts` so the
+  candidates route and the action route can never silently disagree
+  about who is allowed to act.
+- **The target must independently hold the task's own
+  `required_permission`**, not just team membership — decision 0010's
+  own separation of the two facts about a person applies here too.
+  `GET /tasks/:id/reassign-candidates` computes the eligible set
+  server-side (team member ∩ permission holder, excluding the current
+  claimant), the same "server decides, client doesn't infer"
+  discipline `task.actions` itself already follows.
+- **A dedicated `.backdrop`/`.popout` picker**, not the generic
+  comment-and-OK/Cancel modal — that modal is still its own later,
+  separate decision in the sequence, and choosing *who* needs a
+  `<select>`, not a text box.
+- **`task_action_events` widened, not a new table** (migration 0084):
+  the `action` CHECK now includes `'reassign'`, plus a nullable
+  `target_user_id` column — the same rebuild-the-table pattern
+  migration 0033 used, exactly the widening decision 0488 said this
+  table was built to accept later.
+- **Not built**: the generic comment modal, Route To Approver's
+  manual-approver picker, Return To Seller's reason/email dropdowns —
+  unchanged from 0488's own scope.
+- Full reasoning and verification counts in decision 0489.
 
 ### Timeline/Chat audit entries for task actions (0488)
 - **Asked live**, as part of decision 0487's own larger, deferred ask:

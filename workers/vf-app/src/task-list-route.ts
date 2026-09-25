@@ -55,7 +55,8 @@ export type TaskAction =
   | "discard"
   | "claim"
   | "complete"
-  | "release";
+  | "release"
+  | "reassign";
 
 export interface TaskRow {
   id: string;
@@ -177,13 +178,21 @@ function actionsFor(
   // nothing can be acted on until it is this person's.
   if (ownership === "locked") {
     // Nothing can be done to somebody else's work — except released,
-    // by a manager (decision 0104). That is the whole recovery path
-    // for a lock that never expires.
-    return permissions.has("AP.TaskManage") ? ["release"] : [];
+    // by a manager (decision 0104), or handed directly to somebody
+    // else, by the same manager permission (decision 0489: reassign
+    // is the same shape of act as release, just to a named person
+    // instead of back to the pool).
+    return permissions.has("AP.TaskManage") ? ["release", "reassign"] : [];
   }
   if (ownership === "available") {
-    // The one thing a person can do with a task they have not taken.
-    return permissions.has(row.required_permission) ? ["claim"] : [];
+    // The one thing an ordinary person can do with a task they have
+    // not taken is claim it. A manager can additionally hand it
+    // straight to somebody specific without claiming it themselves
+    // first — decision 0489.
+    const actions: TaskAction[] = [];
+    if (permissions.has(row.required_permission)) actions.push("claim");
+    if (permissions.has("AP.TaskManage")) actions.push("reassign");
+    return actions;
   }
 
   // Theirs. Every action below additionally requires the stage's own
@@ -191,10 +200,14 @@ function actionsFor(
   if (!permissions.has(row.required_permission)) return [];
 
   const actions: TaskAction[] = ["complete"];
-  // Only a CLAIM can be released. A task assigned to a person directly
-  // has none — it is theirs by assignment, and putting it back would
-  // mean returning it to nobody.
-  if (row.claimed_by) actions.push("release");
+  // Only a CLAIM can be released, or reassigned (decision 0489, the
+  // same guard as release for the same reason) — a task assigned to a
+  // person directly has neither: it is theirs by assignment, and
+  // handing it elsewhere would mean assigning somebody else's task.
+  if (row.claimed_by) {
+    actions.push("release");
+    actions.push("reassign");
+  }
   // Keying belongs to Validation, and is gated on AP.Validate
   // (decision 0071) rather than on the stage's name.
   if (permissions.has("AP.Validate")) actions.push("key");
