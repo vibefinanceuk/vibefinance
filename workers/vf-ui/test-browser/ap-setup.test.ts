@@ -102,6 +102,18 @@ const STRINGS = {
     "apsetup.standardrulesuggested": "Suggested sentence:",
     "apsetup.standardrulepending": "Compiled but not yet activated — review and activate it on its own stage's Rules screen before it can be turned on or off here.",
     "apsetup.standardrulesavefailed": "Could not update that rule",
+    "apsetup.stagerestrictions": "Stage Restrictions",
+    "apsetup.stagerestrictions.sub": "What a stage leaves editable beyond its own rule set.",
+    "apsetup.stagerestrictions.process": "Process",
+    "apsetup.stagerestrictions.noprocess": "No process configured yet.",
+    "apsetup.stagerestrictions.fieldsheading": "Account Coding editable here",
+    "apsetup.stagerestrictions.fieldshint": "Unchecked hides the field at this stage entirely.",
+    "apsetup.stagerestrictions.hiddeneverywhere": "Hidden for everyone — set on the Account Coding tab first.",
+    "apsetup.stagerestrictions.savefailed": "Could not save that restriction. Try again.",
+    "field.coding.project": "Project",
+    "field.coding.commodity_code": "Commodity code",
+    "field.coding.gl_code": "General ledger code",
+    "processes.automatic": "Automatic",
   },
 };
 
@@ -872,5 +884,263 @@ describe("Approval Hierarchy — the override lists sit below their own add-row 
     switchTab("Approval Hierarchy");
 
     expect(panelFor("Supervisor overrides").textContent).not.toContain("matching.");
+  });
+});
+
+/**
+ * **Stage Restrictions — decision 0483.** Reported live: Account
+ * Coding was showing up as editable on the Validation stage, when
+ * nobody had asked for that. The route behind this tab
+ * (`PUT /processes/stages/:id/field-visibility`) already existed and
+ * is already covered end to end in `field-visibility.test.ts`; these
+ * tests cover the screen on top of it — what a checkbox shows, what a
+ * toggle actually sends, and that it never clobbers a restriction
+ * this tab does not itself render a checkbox for.
+ *
+ * Every scenario here uses a single-stage process. `stubFetch`'s own
+ * key scheme strips the query string off a GET, so two stages would
+ * collapse onto the one stubbed `/api/field-visibility` response —
+ * a real limit of the shared harness, not of the screen; the multi-
+ * stage "restricting one stage leaves another untouched" case is
+ * already proven server-side, in `field-visibility.test.ts`'s own "can
+ * hide at one stage what is editable at another".
+ */
+describe("Stage Restrictions (decision 0483)", () => {
+  const ONE_PROCESS = { processes: [{ id: "ap", name: "AP", version: 1, stageCount: 1 }] };
+  const ONE_STAGE_DETAIL = {
+    id: "ap",
+    name: "AP",
+    version: 1,
+    stages: [{ id: "validation", name: "Validation", sequence: 1, ruleSetId: "rs1", ruleSetName: "Validation Rules", evaluationScope: "header" }],
+    draft: null,
+  };
+
+  function codingField(field: string, visibility: "edit" | "read" | "hidden", decidedBy: "default" | "customer" | "stage") {
+    return { field, visibility, description: field, type: "text", line: true, sortOrder: 0, decidedBy };
+  }
+
+  function stageRestrictionsRoutes(fields: unknown[], extra: Record<string, unknown> = {}) {
+    return {
+      "/api/processes": ONE_PROCESS,
+      "/api/processes/ap": ONE_STAGE_DETAIL,
+      "/api/field-visibility": { stageId: "validation", fields, derived: {} },
+      ...extra,
+    };
+  }
+
+  function stagePanel(): Element {
+    const panel = [...document.querySelectorAll(".panel")].find((p) => p.querySelector("h3")?.textContent === "Validation");
+    if (!panel) throw new Error(`no panel found for stage "Validation"`);
+    return panel;
+  }
+
+  it("shows the stage's own rule set name beside its title", async () => {
+    await openApSetupAs(["Admin.Configure"], EMPTY_OVERVIEW, EMPTY_CONFIG, stageRestrictionsRoutes([]));
+    switchTab("Stage Restrictions");
+
+    expect(stagePanel().textContent).toContain("Validation Rules");
+  });
+
+  it("says Automatic when a stage carries no rule set", async () => {
+    await openApSetupAs(
+      ["Admin.Configure"],
+      EMPTY_OVERVIEW,
+      EMPTY_CONFIG,
+      stageRestrictionsRoutes([], {
+        "/api/processes/ap": { ...ONE_STAGE_DETAIL, stages: [{ ...ONE_STAGE_DETAIL.stages[0], ruleSetId: null, ruleSetName: null }] },
+      })
+    );
+    switchTab("Stage Restrictions");
+
+    expect(stagePanel().textContent).toContain("Automatic");
+  });
+
+  it("checks all three Account Coding fields when nothing restricts them at this stage", async () => {
+    await openApSetupAs(
+      ["Admin.Configure"],
+      EMPTY_OVERVIEW,
+      EMPTY_CONFIG,
+      stageRestrictionsRoutes([
+        codingField("coding.project", "edit", "customer"),
+        codingField("coding.commodity_code", "edit", "customer"),
+        codingField("coding.gl_code", "edit", "customer"),
+      ])
+    );
+    switchTab("Stage Restrictions");
+
+    const panel = stagePanel();
+    expect(panel.textContent).toContain("Project");
+    expect(panel.textContent).toContain("Commodity code");
+    expect(panel.textContent).toContain("General ledger code");
+    const boxes = [...panel.querySelectorAll("input[type=checkbox]")] as HTMLInputElement[];
+    expect(boxes.length).toBe(3);
+    expect(boxes.every((b) => b.checked)).toBe(true);
+    expect(boxes.every((b) => !b.disabled)).toBe(true);
+  });
+
+  it("unchecks the field this stage itself restricts to hidden", async () => {
+    await openApSetupAs(
+      ["Admin.Configure"],
+      EMPTY_OVERVIEW,
+      EMPTY_CONFIG,
+      stageRestrictionsRoutes([
+        codingField("coding.project", "hidden", "stage"),
+        codingField("coding.commodity_code", "edit", "customer"),
+        codingField("coding.gl_code", "edit", "customer"),
+      ])
+    );
+    switchTab("Stage Restrictions");
+
+    const panel = stagePanel();
+    const projectRow = [...panel.querySelectorAll(".assignmentrow")].find((r) => r.textContent?.includes("Project"));
+    const checkbox = projectRow?.querySelector("input[type=checkbox]") as HTMLInputElement;
+    expect(checkbox.checked).toBe(false);
+    expect(checkbox.disabled).toBe(false);
+  });
+
+  it("shows a hidden-everywhere field as disabled, with an explanation, rather than a checkbox that could never do anything", async () => {
+    await openApSetupAs(
+      ["Admin.Configure"],
+      EMPTY_OVERVIEW,
+      EMPTY_CONFIG,
+      stageRestrictionsRoutes([
+        codingField("coding.project", "hidden", "default"),
+        codingField("coding.commodity_code", "edit", "customer"),
+        codingField("coding.gl_code", "edit", "customer"),
+      ])
+    );
+    switchTab("Stage Restrictions");
+
+    const panel = stagePanel();
+    const projectRow = [...panel.querySelectorAll(".assignmentrow")].find((r) => r.textContent?.includes("Project"));
+    expect(projectRow?.textContent).toContain("Hidden for everyone — set on the Account Coding tab first.");
+    const checkbox = projectRow?.querySelector("input[type=checkbox]") as HTMLInputElement;
+    expect(checkbox.disabled).toBe(true);
+  });
+
+  it("unchecking a field PUTs a stage restriction hiding it, preserving a restriction on a field this tab does not render", async () => {
+    await openApSetupAs(
+      ["Admin.Configure"],
+      EMPTY_OVERVIEW,
+      EMPTY_CONFIG,
+      stageRestrictionsRoutes(
+        [
+          codingField("coding.project", "edit", "customer"),
+          codingField("coding.commodity_code", "edit", "customer"),
+          codingField("coding.gl_code", "edit", "customer"),
+          // Not one of this tab's own three — a restriction set some
+          // other way (the raw API, or a future screen) that this
+          // save must not silently undo.
+          { field: "BT-112", visibility: "read", description: "Total with VAT", type: "number", line: false, sortOrder: 0, decidedBy: "stage" },
+        ],
+        {
+          "PUT /api/processes/stages/validation/field-visibility": {
+            ok: true,
+            json: async () => ({ stageId: "validation", restrictions: 2 }),
+          },
+        }
+      )
+    );
+    switchTab("Stage Restrictions");
+
+    const panel = stagePanel();
+    const projectRow = [...panel.querySelectorAll(".assignmentrow")].find((r) => r.textContent?.includes("Project"));
+    const checkbox = projectRow?.querySelector("input[type=checkbox]") as HTMLInputElement;
+    checkbox.checked = false;
+    checkbox.dispatchEvent(new Event("change"));
+    await new Promise((r) => setTimeout(r, 0));
+
+    const calls = (fetch as unknown as { mock: { calls: [string, RequestInit][] } }).mock.calls;
+    const put = calls.find(
+      ([url, init]) => url === "/api/processes/stages/validation/field-visibility" && init?.method === "PUT"
+    );
+    expect(put).toBeTruthy();
+    const putBody = JSON.parse(put![1].body as string);
+    expect(putBody).toEqual({
+      fields: expect.arrayContaining([
+        { field: "BT-112", visibility: "read" },
+        { field: "coding.project", visibility: "hidden" },
+      ]),
+    });
+    expect((putBody as { fields: unknown[] }).fields).toHaveLength(2);
+  });
+
+  it("re-checking a restricted field PUTs it removed, leaving other restrictions in place", async () => {
+    await openApSetupAs(
+      ["Admin.Configure"],
+      EMPTY_OVERVIEW,
+      EMPTY_CONFIG,
+      stageRestrictionsRoutes(
+        [
+          codingField("coding.project", "hidden", "stage"),
+          codingField("coding.commodity_code", "edit", "customer"),
+          codingField("coding.gl_code", "edit", "customer"),
+        ],
+        {
+          "PUT /api/processes/stages/validation/field-visibility": {
+            ok: true,
+            json: async () => ({ stageId: "validation", restrictions: 0 }),
+          },
+        }
+      )
+    );
+    switchTab("Stage Restrictions");
+
+    const panel = stagePanel();
+    const projectRow = [...panel.querySelectorAll(".assignmentrow")].find((r) => r.textContent?.includes("Project"));
+    const checkbox = projectRow?.querySelector("input[type=checkbox]") as HTMLInputElement;
+    expect(checkbox.checked).toBe(false);
+    checkbox.checked = true;
+    checkbox.dispatchEvent(new Event("change"));
+    await new Promise((r) => setTimeout(r, 0));
+
+    const calls = (fetch as unknown as { mock: { calls: [string, RequestInit][] } }).mock.calls;
+    const put = calls.find(
+      ([url, init]) => url === "/api/processes/stages/validation/field-visibility" && init?.method === "PUT"
+    );
+    expect(put).toBeTruthy();
+    expect(JSON.parse(put![1].body as string)).toEqual({ fields: [] });
+  });
+
+  it("shows a real error and reverts the checkbox when the save fails", async () => {
+    await openApSetupAs(
+      ["Admin.Configure"],
+      EMPTY_OVERVIEW,
+      EMPTY_CONFIG,
+      stageRestrictionsRoutes(
+        [
+          codingField("coding.project", "edit", "customer"),
+          codingField("coding.commodity_code", "edit", "customer"),
+          codingField("coding.gl_code", "edit", "customer"),
+        ],
+        {
+          "PUT /api/processes/stages/validation/field-visibility": {
+            ok: false,
+            status: 422,
+            json: async () => ({ error: "a stage may restrict to read or hidden, never grant edit" }),
+          },
+        }
+      )
+    );
+    switchTab("Stage Restrictions");
+
+    const panel = stagePanel();
+    const projectRow = [...panel.querySelectorAll(".assignmentrow")].find((r) => r.textContent?.includes("Project"));
+    const checkbox = projectRow?.querySelector("input[type=checkbox]") as HTMLInputElement;
+    checkbox.checked = false;
+    checkbox.dispatchEvent(new Event("change"));
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(checkbox.checked).toBe(true);
+    expect(document.body.textContent).toContain("a stage may restrict to read or hidden, never grant edit");
+  });
+
+  it("shows no process configured, rather than an error, when the tenant has none yet", async () => {
+    await openApSetupAs(["Admin.Configure"], EMPTY_OVERVIEW, EMPTY_CONFIG, {
+      "/api/processes": { processes: [] },
+    });
+    switchTab("Stage Restrictions");
+
+    expect(document.body.textContent).toContain("No process configured yet.");
   });
 });

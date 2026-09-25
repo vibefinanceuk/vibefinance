@@ -1262,6 +1262,34 @@
   }
 
   /*
+    **Stage Restrictions — decision 0483.** A stage's own rule set
+    name (or "Automatic," when it has none), beside the stage's own
+    title in a `.cardhead` — read-only, unlike `.chip`'s own clickable
+    pill this could otherwise have reused, so no `cursor: pointer` and
+    no `.on` state.
+  */
+  .stagebadge {
+    font-size: var(--text-sm);
+    color: var(--text-muted);
+    background: var(--surface-1);
+    border: 0.5px solid var(--border);
+    border-radius: 999px;
+    padding: 3px 10px;
+    white-space: nowrap;
+  }
+
+  /* A small heading above a group of rows within a panel — the same
+     job `.permissiongroup h4` already does, generalised for reuse
+     rather than copied a second time for Stage Restrictions. */
+  .sectionlabel {
+    color: var(--text-muted);
+    font-size: var(--text-sm);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin: 14px 0 4px;
+  }
+
+  /*
     **The one-time API key display — decision 0328.** Monospace so
     the characters are unambiguous to copy correctly; read-only, not
     disabled, so the value can still be selected and copied.

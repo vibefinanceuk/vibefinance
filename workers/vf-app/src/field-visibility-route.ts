@@ -315,9 +315,9 @@ export async function resolveFieldVisibility(
 /**
  * What a screen asks for: the fields to show, at one stage.
  *
- * Hidden fields are **omitted rather than returned as hidden**. A
- * client that received them could render them by mistake, and there is
- * nothing a screen can do with a field it must not show.
+ * Hidden fields are **omitted rather than returned as hidden**, by
+ * default. A client that received them could render them by mistake,
+ * and there is nothing a screen can do with a field it must not show.
  */
 export async function handleFieldVisibility(
   db: D1Database,
@@ -333,7 +333,18 @@ export async function handleFieldVisibility(
    * screen. Safe, and a trap: a person types into a box the system will
    * refuse.
    */
-  unitId: string | null = null
+  unitId: string | null = null,
+  /**
+   * **The one, explicit exception to "hidden is omitted" — decision
+   * 0483.** A screen for *configuring* a stage's own restrictions
+   * needs to see the field it is about to hide, or a person could
+   * never uncheck it again once it disappeared from what this route
+   * returns. Defaults `false` so every existing caller — the invoice
+   * viewer, `compose.js`, `rule.js` — is unaffected; only the new
+   * Stage Restrictions screen passes `true`, and it renders a
+   * checkbox, never a value.
+   */
+  includeHidden = false
 ): Promise<RouteResult> {
   const all = await resolveFieldVisibility(db, stageId, unitId);
   return {
@@ -341,7 +352,7 @@ export async function handleFieldVisibility(
     body: {
       stageId,
       // Already in reading order: the resolver sorts (decision 0171).
-      fields: all.filter((f) => f.visibility !== "hidden"),
+      fields: includeHidden ? all : all.filter((f) => f.visibility !== "hidden"),
       /**
        * What a derived field is called — decision 0159.
        *

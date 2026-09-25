@@ -70,6 +70,7 @@ const TABS = [
   { key: "matching", labelKey: "apsetup.matching" },
   { key: "coding", labelKey: "apsetup.coding" },
   { key: "approvalhierarchy", labelKey: "apsetup.approvalhierarchy" },
+  { key: "stagerestrictions", labelKey: "apsetup.stagerestrictions" },
 ];
 
 let units = [];
@@ -79,6 +80,37 @@ let matchingConfig = null;
 let standardRules = [];
 let activeTab = null;
 let costCentreNames = [];
+
+/**
+ * **Stage Restrictions — decision 0483.** Reported live: Account
+ * Coding was showing up as editable on the Validation stage, when
+ * nobody had asked for that — "Coding should only happen in the
+ * Coding stage." Tracing it: `coding.project`/`coding.commodity_code`/
+ * `coding.gl_code` are ordinary vocabulary fields, resolved through
+ * the same customer/stage field-visibility system every other field
+ * already uses (`field-visibility-route.ts`) — and a route to
+ * restrict them per stage (`PUT /processes/stages/:id/field-visibility`)
+ * has existed since decision 0143/0196, fully tested, with no screen
+ * ever built on top of it. This tab is that screen — narrowly, for
+ * Account Coding's own three fields, not a general "restrict any
+ * field" picker, which is a bigger screen for a day something asks
+ * for it.
+ *
+ * **A second, real business reason, not just tidiness** — the
+ * operator's own follow-up: a company that outsources document
+ * capture and data entry needs Validation done by people who must
+ * never be able to code a line, since Account Coding is an AP-team
+ * decision. A stage restriction is exactly the right shape for that:
+ * it never touches what the Coding stage itself can do, only adds a
+ * ceiling at Validation.
+ */
+let stageRestrictionsProcesses = [];
+let stageRestrictionsProcessId = null;
+let stageRestrictionsDetail = null;
+/** stageId -> the 3 coding fields' own `ResolvedField`s at that stage. */
+let stageFieldVisibility = {};
+
+const CODING_RESTRICTION_FIELDS = ["coding.project", "coding.commodity_code", "coding.gl_code"];
 
 /**
  * **Search over the two override lists, entirely client-side —
@@ -121,6 +153,10 @@ async function load() {
       ]),
       loadCodingListCsvFormats(),
       loadAccountCodingTables(),
+      // Its own corner, same as the two calls above — a processes list
+      // that fails to load leaves the Stage Restrictions tab showing
+      // its own empty state rather than taking down every other tab.
+      loadStageRestrictions(),
     ]);
     if (!overviewResponse.ok || !configResponse.ok || !matchingConfigResponse.ok || !standardRulesResponse.ok) {
       console.error(
@@ -140,6 +176,193 @@ async function load() {
     console.error("AP Setup load failed", err);
     return false;
   }
+}
+
+/**
+ * **Which process's stages this tab is showing, and their field
+ * restrictions** — loaded eagerly, the same "ready by the time
+ * render() runs" discipline `loadCodingListCsvFormats()`/
+ * `loadAccountCodingTables()` already established alongside it.
+ *
+ * Defaults to the first process in the list. Real tenants overwhelmingly
+ * run one invoice process; `processes.js` already lets a person manage
+ * several, so this tab offers the same picker rather than assuming
+ * there is only one, without building a second copy of that screen.
+ */
+async function loadStageRestrictions(processId) {
+  try {
+    const listResponse = await fetch("/api/processes");
+    if (!listResponse.ok) {
+      stageRestrictionsProcesses = [];
+      stageRestrictionsDetail = null;
+      stageFieldVisibility = {};
+      return;
+    }
+    stageRestrictionsProcesses = (await listResponse.json()).processes ?? [];
+
+    stageRestrictionsProcessId =
+      processId ?? (stageRestrictionsProcesses.some((p) => p.id === stageRestrictionsProcessId)
+        ? stageRestrictionsProcessId
+        : stageRestrictionsProcesses[0]?.id ?? null);
+
+    if (!stageRestrictionsProcessId) {
+      stageRestrictionsDetail = null;
+      stageFieldVisibility = {};
+      return;
+    }
+
+    const detailResponse = await fetch(`/api/processes/${encodeURIComponent(stageRestrictionsProcessId)}`);
+    stageRestrictionsDetail = detailResponse.ok ? await detailResponse.json() : null;
+    stageFieldVisibility = {};
+    if (!stageRestrictionsDetail) return;
+
+    await Promise.all(
+      stageRestrictionsDetail.stages.map(async (stage) => {
+        const response = await fetch(`/api/field-visibility?stage=${encodeURIComponent(stage.id)}&includeHidden=1`);
+        const body = response.ok ? await response.json() : { fields: [] };
+        stageFieldVisibility[stage.id] = (body.fields ?? []).filter((f) => CODING_RESTRICTION_FIELDS.includes(f.field));
+      })
+    );
+  } catch (err) {
+    console.error("Stage Restrictions load failed", err);
+    stageRestrictionsDetail = null;
+    stageFieldVisibility = {};
+  }
+}
+
+/**
+ * **Every stage-level restriction already on this stage, refetched
+ * fresh — preserved, not overwritten.** The route replaces a stage's
+ * own restrictions wholesale (`PUT /processes/stages/:id/field-
+ * visibility`), so a save from this tab has to resend everything
+ * already restricted there, not only the one checkbox somebody just
+ * touched — otherwise ticking one Account Coding field back on would
+ * silently un-restrict every other field a customer or a future
+ * screen had restricted at that same stage.
+ *
+ * Read again here rather than trusted from the last render: two
+ * people could have this tab open at once, and a save is not the
+ * moment to act on a stale read.
+ */
+async function currentStageRestrictions(stageId) {
+  const response = await fetch(`/api/field-visibility?stage=${encodeURIComponent(stageId)}&includeHidden=1`);
+  if (!response.ok) throw new Error(`could not read the current restrictions for stage ${stageId}`);
+  const fields = (await response.json()).fields ?? [];
+  return fields.filter((f) => f.decidedBy === "stage").map((f) => ({ field: f.field, visibility: f.visibility }));
+}
+
+async function setCodingRestrictedAtStage(stageId, field, restrict) {
+  const fields = (await currentStageRestrictions(stageId)).filter((f) => f.field !== field);
+  if (restrict) fields.push({ field, visibility: "hidden" });
+
+  return fetch(`/api/processes/stages/${encodeURIComponent(stageId)}/field-visibility`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ fields }),
+  });
+}
+
+/**
+ * **One panel per stage, three checkboxes each — decision 0483.**
+ * `standardMatchingRulesPanel`'s own auto-save-on-toggle shape,
+ * reused rather than a Save button: a restriction is a single fact,
+ * not a form with several fields that need to land together.
+ */
+function stageRestrictionsTab(problem) {
+  const intro = el("p", { class: "muted sm", text: t("apsetup.stagerestrictions.sub") });
+
+  const processPicker =
+    stageRestrictionsProcesses.length > 1
+      ? el("div", { class: "cardhead processpicker" }, [
+          el("label", { text: t("apsetup.stagerestrictions.process") }),
+          (() => {
+            const select = el(
+              "select",
+              {},
+              stageRestrictionsProcesses.map((p) =>
+                el("option", {
+                  value: p.id,
+                  text: p.name,
+                  ...(p.id === stageRestrictionsProcessId ? { selected: "selected" } : {}),
+                })
+              )
+            );
+            select.onchange = async () => {
+              await loadStageRestrictions(select.value);
+              render();
+            };
+            return select;
+          })(),
+        ])
+      : null;
+
+  if (!stageRestrictionsDetail) {
+    return el("div", {}, [
+      intro,
+      ...(processPicker ? [processPicker] : []),
+      el("p", { class: "muted", text: t("apsetup.stagerestrictions.noprocess") }),
+    ]);
+  }
+
+  const stagePanels = stageRestrictionsDetail.stages.map((stage) => {
+    const fields = stageFieldVisibility[stage.id] ?? [];
+
+    const rows = CODING_RESTRICTION_FIELDS.map((field) => {
+      const resolved = fields.find((f) => f.field === field);
+      const label = t(`field.${field}`);
+      const checkboxId = `stagerestrict-${stage.id}-${field}`;
+
+      // Hidden for everyone already, and not because of this stage —
+      // nothing here to restrict further, so the row explains rather
+      // than offering a checkbox that could never do anything.
+      if (resolved?.visibility === "hidden" && resolved.decidedBy !== "stage") {
+        return el("div", { class: "assignmentrow" }, [
+          el("div", {}, [
+            el("span", { text: label }),
+            el("p", { class: "muted sm", text: `${t("apsetup.stagerestrictions.hiddeneverywhere")}` }),
+          ]),
+          el("input", { type: "checkbox", disabled: "disabled" }),
+        ]);
+      }
+
+      const checked = resolved ? resolved.visibility !== "hidden" : true;
+      const checkbox = el("input", { type: "checkbox", id: checkboxId, ...(checked ? { checked: "checked" } : {}) });
+      checkbox.onchange = async () => {
+        problem.textContent = "";
+        const restrict = !checkbox.checked;
+        try {
+          const response = await setCodingRestrictedAtStage(stage.id, field, restrict);
+          if (!response.ok) {
+            problem.textContent = (await response.json()).error ?? t("apsetup.stagerestrictions.savefailed");
+            checkbox.checked = !checkbox.checked;
+            return;
+          }
+          await loadStageRestrictions(stageRestrictionsProcessId);
+          render();
+        } catch {
+          problem.textContent = t("apsetup.stagerestrictions.savefailed");
+          checkbox.checked = !checkbox.checked;
+        }
+      };
+
+      return el("div", { class: "assignmentrow" }, [
+        el("label", { for: checkboxId, text: label }),
+        checkbox,
+      ]);
+    });
+
+    return el("div", { class: "panel" }, [
+      el("div", { class: "cardhead" }, [
+        el("h3", { text: stage.name }),
+        el("span", { class: "stagebadge", text: stage.ruleSetName ?? t("processes.automatic") }),
+      ]),
+      el("div", { class: "sectionlabel", text: t("apsetup.stagerestrictions.fieldsheading") }),
+      el("div", { class: "assignmentlist" }, rows),
+      el("p", { class: "muted sm", text: t("apsetup.stagerestrictions.fieldshint") }),
+    ]);
+  });
+
+  return el("div", {}, [intro, ...(processPicker ? [processPicker] : []), ...stagePanels, problem]);
 }
 
 /**
@@ -772,6 +995,7 @@ function render() {
         rerender: render,
       }),
     approvalhierarchy: () => approvalHierarchyTab(),
+    stagerestrictions: () => stageRestrictionsTab(el("div", { class: "warn" })),
   }[activeTab]();
 
   shell.replaceChildren(

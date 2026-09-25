@@ -3964,7 +3964,9 @@ export default {
         url.searchParams.get("stage"),
         // Which unit is asking — decision 0198. Absent means the
         // group's answer, which is what every caller got before.
-        url.searchParams.get("unit")
+        url.searchParams.get("unit"),
+        // The Stage Restrictions screen's own opt-in — decision 0483.
+        url.searchParams.get("includeHidden") === "1"
       );
       return json(result.body, result.status);
     }

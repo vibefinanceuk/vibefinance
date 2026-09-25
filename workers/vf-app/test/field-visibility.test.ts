@@ -241,6 +241,46 @@ describe("what a screen receives", () => {
   });
 });
 
+describe("includeHidden — the Stage Restrictions screen's own exception (decision 0483)", () => {
+  it("still omits hidden fields when not asked for, the same as every other caller", async () => {
+    const result = await handleFieldVisibility(env.DB, null);
+    const fields = (result.body as { fields: ResolvedField[] }).fields;
+    expect(fields.some((f) => f.field === "BT-3")).toBe(false);
+  });
+
+  it("returns a hidden field, with its decidedBy, once asked for by name", async () => {
+    const result = await handleFieldVisibility(env.DB, null, null, true);
+    const fields = (result.body as { fields: ResolvedField[] }).fields;
+    const bt3 = find(fields, "BT-3");
+    expect(bt3?.visibility).toBe("hidden");
+    expect(bt3?.decidedBy).toBe("default");
+  });
+
+  it("says a stage's own restriction hid it, not the default", async () => {
+    // Account Coding's own case: editable customer-wide, hidden at one
+    // stage only — a screen configuring that stage needs to tell the
+    // two apart, since only one of them is this stage's own to undo.
+    await handleSetFieldVisibility(env.DB, { fields: [{ field: "coding.gl_code", visibility: "edit" }] });
+    await handleSetStageFieldVisibility(env.DB, "validation", {
+      fields: [{ field: "coding.gl_code", visibility: "hidden" }],
+    });
+
+    const atValidation = find(
+      ((await handleFieldVisibility(env.DB, "validation", null, true)).body as { fields: ResolvedField[] }).fields,
+      "coding.gl_code"
+    );
+    expect(atValidation?.visibility).toBe("hidden");
+    expect(atValidation?.decidedBy).toBe("stage");
+
+    const atApproval = find(
+      ((await handleFieldVisibility(env.DB, "approval", null, true)).body as { fields: ResolvedField[] }).fields,
+      "coding.gl_code"
+    );
+    expect(atApproval?.visibility).toBe("edit");
+    expect(atApproval?.decidedBy).toBe("customer");
+  });
+});
+
 describe("the parties are visible by default (decision 0115)", () => {
   /**
    * A seller and buyer panel showing two fields each would be a panel

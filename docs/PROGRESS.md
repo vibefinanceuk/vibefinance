@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 25 September 2026 (decision 0482). A living document: what
+Last updated 25 September 2026 (decision 0483). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,31 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Stage Restrictions tab — Account Coding restricted per stage (0483)
+- **Reported live**: Account Coding fields showing editable on the
+  Validation stage, unexpectedly — "Coding should only happen in the
+  Coding stage." A wider design conversation followed, settling on two
+  pieces: this restriction (built) and an optional second rule set a
+  stage can also evaluate, for matching-style checks (agreed design,
+  deferred to its own decision).
+- **The route already existed, fully tested, with no screen on top of
+  it** — `PUT /processes/stages/:id/field-visibility` (decision
+  0143/0196). `coding.project`/`coding.commodity_code`/`coding.gl_code`
+  are ordinary vocabulary fields on the same customer/stage
+  field-visibility system every other field uses; restricting them per
+  stage needed a screen, not new backend.
+- **The real business case, from the operator directly**: a company
+  that outsources document capture and data entry needs Validation
+  done by people who must never be able to code a line — an AP-team
+  decision, not a data-accuracy one.
+- **Built**: a fourth AP Setup tab, Stage Restrictions — one panel per
+  stage, three auto-saving checkboxes for Account Coding, preserving
+  any other stage-level restriction already set (re-read fresh at save
+  time, never trusted from the last render). `handleFieldVisibility`
+  gained an opt-in `includeHidden` parameter so this admin screen can
+  see a field it is about to hide — every existing caller unaffected.
+- Full reasoning and verification counts in decision 0483.
 
 ### Seller card: VAT, address, and postcode never populated (0482)
 - **Reported live**: "the seller VAT no, or the address and postcode
