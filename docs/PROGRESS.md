@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 25 September 2026 (decision 0485). A living document: what
+Last updated 25 September 2026 (decision 0486). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,30 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### `/invoices/:id/key` never checked the claim (0486)
+- **Reported live**: Account Coding on a non-PO invoice in the Coding
+  queue saved successfully although the item had not been claimed.
+- **The exact gap decision 0403 flagged but left explicitly
+  unverified**: that decision closed the client-side claim check for
+  the line table (`cell()` joining `!canEditAnything`) and said in its
+  own "What is not built" section that whether the save route itself
+  refused an unclaimed edit sent directly "was not investigated as
+  part of this decision." It did not. `handleKeyInvoiceFields`
+  (`key-fields-route.ts`) — the one route every keyed value saves
+  through, including the Coding pop-out's three fields — checked only
+  permission scope and stage-configured field visibility, never task
+  ownership.
+- **A working claim concept already exists** (`handleCompleteTask`'s
+  own inline `task.owner_user_id`/`task.claimed_by` check,
+  `task-route.ts`); this route was simply never wired into it.
+- **Fixed on both sides**: `handleKeyInvoiceFields` now refuses (403,
+  `reason: "not_claimed"`) when an open task exists at the invoice's
+  current stage and does not belong to the caller — scoped to when a
+  task exists, not requiring one, so every pre-existing no-task test
+  case is unchanged. `openLineCodingPopout` (`viewer.js`) now joins
+  `!canEditAnything`, the same join `cell()` already makes.
+- Full reasoning and verification counts in decision 0486.
 
 ### Which stages the Stage Restrictions screen even offers (0485)
 - **Reported live**, testing 0484's deploy: Intake and Payment Eligible

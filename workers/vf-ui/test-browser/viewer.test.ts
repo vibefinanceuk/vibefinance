@@ -4568,11 +4568,11 @@ describe("the invoice-line Coding pop-out (decision 0453)", () => {
     return { calls, bodies };
   }
 
-  async function openAndClickCoding() {
+  async function openAndClickCoding(task: Record<string, unknown> = TASK) {
     const { loadStrings } = await import("/strings.js");
     await loadStrings();
     const { openViewer } = await import("/viewer.js");
-    await openViewer(TASK, () => {});
+    await openViewer(task, () => {});
     await new Promise((r) => setTimeout(r, 0));
 
     (document.querySelector('button[title="Coding"]') as HTMLButtonElement).click();
@@ -5190,6 +5190,80 @@ describe("the invoice-line Coding pop-out (decision 0453)", () => {
       const listText = document.querySelector(".codingresultslist")?.textContent ?? "";
       expect(listText).toContain("Mjolner");
       expect(listText).not.toContain("Engineering West");
+    });
+  });
+
+  /**
+   * **`canEditAnything` reaching this pop-out — decision 0486.**
+   * Reported live: Account Coding on a non-PO invoice in the Coding
+   * queue saved even though the item had not been claimed. This
+   * pop-out never joined `canEditAnything` at all — every field inside
+   * only ever checked the stage's own configured visibility, the same
+   * gap decision 0403 already closed for the line table proper.
+   */
+  describe("a task that is not the caller's — decision 0486", () => {
+    it("shows a stage-editable field as read-only when the task is claimed by someone else", async () => {
+      stub({});
+      await openAndClickCoding({ ...TASK, ownership: "locked", actions: [] });
+
+      const rows = [...document.querySelectorAll(".popout .editgrid > *")];
+      const labelIndex = rows.findIndex((r) => r.textContent === "Project");
+      expect(labelIndex).toBeGreaterThanOrEqual(0);
+      // A readonly value box, not a live searchable picker.
+      expect(rows[labelIndex + 1]?.querySelector(".readonly")).not.toBeNull();
+      expect(rows[labelIndex + 1]?.querySelector(".searchbox")).toBeNull();
+    });
+
+    it("shows the same field as read-only when the task sits unclaimed, available to anyone", async () => {
+      stub({});
+      await openAndClickCoding({ ...TASK, ownership: "available", actions: ["claim"] });
+
+      const rows = [...document.querySelectorAll(".popout .editgrid > *")];
+      const labelIndex = rows.findIndex((r) => r.textContent === "Project");
+      expect(rows[labelIndex + 1]?.querySelector(".searchbox")).toBeNull();
+    });
+
+    it("does not show the not-editable-here note for a field that is only unclaimed, not stage-restricted", async () => {
+      // The note ("Not editable at this stage") is about the stage's
+      // own configuration, not about whose task this is — a claimed-
+      // by-someone-else field should read simply as its value, not
+      // claim a stage restriction that was never set.
+      stub({});
+      await openAndClickCoding({ ...TASK, ownership: "locked", actions: [] });
+
+      const rows = [...document.querySelectorAll(".popout .editgrid > *")];
+      const labelIndex = rows.findIndex((r) => r.textContent === "Project");
+      expect(rows[labelIndex + 1]?.textContent).not.toContain("Not editable at this stage");
+    });
+
+    it("still shows the Coding button and opens the pop-out — looking is not editing", async () => {
+      stub({});
+      await openAndClickCoding({ ...TASK, ownership: "locked", actions: [] });
+
+      expect(document.querySelector(".popout")).not.toBeNull();
+    });
+
+    it("still shows a field the stage has not configured editable as read-only, unaffected by ownership", async () => {
+      // Commodity Code is `visibility: "read"` regardless of who has
+      // the task — this decision must not change that case's own
+      // behaviour, only add the ownership check beside it.
+      stub({});
+      await openAndClickCoding({ ...TASK, ownership: "locked", actions: [] });
+
+      const rows = [...document.querySelectorAll(".popout .editgrid > *")];
+      const commodityLabelIndex = rows.findIndex((r) => r.textContent === "Commodity code");
+      expect(rows[commodityLabelIndex + 1]?.textContent).not.toContain("Not editable at this stage");
+    });
+
+    it("allows the live picker once the task is claimed by the caller — unchanged, pre-existing behaviour", async () => {
+      stub({
+        "/api/org/cost-centres": { costCentres: [{ id: "cc1", name: "Marketing", filters: [] }], total: 1, page: 1, pageSize: 50 },
+      });
+      await openAndClickCoding({ ...TASK, ownership: "mine" });
+
+      const rows = [...document.querySelectorAll(".popout .editgrid > *")];
+      const labelIndex = rows.findIndex((r) => r.textContent === "Project");
+      expect(rows[labelIndex + 1]?.querySelector(".searchbox")).not.toBeNull();
     });
   });
 });

@@ -109,6 +109,126 @@ describe("keying facts a document would not give up", () => {
   });
 });
 
+/**
+ * **Editing belongs to whoever has this task claimed — decision 0486.**
+ *
+ * Reported live: Account Coding on a non-PO invoice in the Coding
+ * queue saved successfully although the item had not been claimed by
+ * the caller. `seedInvoice()` above deliberately seeds no task at all
+ * (an intentional simplification of every test above this block), so
+ * this is the one place a real open task is put on the invoice, to
+ * prove the gap this decision closes and that it closes only that gap.
+ */
+describe("a task must be claimed by you to key against it — decision 0486", () => {
+  async function seedOpenTask(
+    invoiceId: string,
+    owner: { teamId?: string; userId?: string; claimedBy?: string }
+  ) {
+    await env.DB.prepare(
+      `INSERT INTO stage_visits (id, process_instance_id, stage_id, outcome)
+       VALUES (?, ?, 'validation', 'automatic')`
+    )
+      .bind(`sv-${invoiceId}`, `pi-${invoiceId}`)
+      .run();
+    await env.DB.prepare(
+      `INSERT INTO tasks (id, stage_id, owner_team_id, owner_user_id, required_permission, claimed_by, stage_visit_id)
+       VALUES (?, 'validation', ?, ?, 'AP.Code', ?, ?)`
+    )
+      .bind(
+        `t-${invoiceId}`,
+        owner.teamId ?? null,
+        owner.userId ?? null,
+        owner.claimedBy ?? null,
+        `sv-${invoiceId}`
+      )
+      .run();
+  }
+
+  async function seedTeam() {
+    await env.DB.prepare(
+      "INSERT OR IGNORE INTO org_units (id, name) VALUES ('u1', 'Acme France')"
+    ).run();
+    await env.DB.prepare(
+      "INSERT OR IGNORE INTO org_teams (id, name, unit_id) VALUES ('team1', 'AP Team', 'u1')"
+    ).run();
+  }
+
+  it("refuses a team task nobody has claimed yet", async () => {
+    await seedInvoice("inv-1");
+    await seedTeam();
+    await seedOpenTask("inv-1", { teamId: "team1" });
+
+    const result = await handleKeyInvoiceFields(env.DB, "inv-1", { facts: { "BT-112": 100 } }, "u-dan");
+    expect(result.status).toBe(403);
+    expect((result.body as { reason: string }).reason).toBe("not_claimed");
+
+    // Refused, not silently dropped — the fact itself is unchanged.
+    const row = await env.DB.prepare("SELECT facts_json FROM invoice_headers WHERE id = 'inv-1'").first<{
+      facts_json: string;
+    }>();
+    expect(JSON.parse(row!.facts_json)["BT-112"]).toBeUndefined();
+  });
+
+  it("refuses a team task claimed by somebody else — the exact bug reported", async () => {
+    await seedInvoice("inv-1");
+    await seedTeam();
+    await seedOpenTask("inv-1", { teamId: "team1", claimedBy: "u-sarah" });
+
+    const result = await handleKeyInvoiceFields(env.DB, "inv-1", { facts: { "BT-112": 100 } }, "u-dan");
+    expect(result.status).toBe(403);
+    expect((result.body as { error: string }).error).toBe("this task is not claimed by you");
+  });
+
+  it("allows a team task the caller has claimed", async () => {
+    await seedInvoice("inv-1");
+    await seedTeam();
+    await seedOpenTask("inv-1", { teamId: "team1", claimedBy: "u-dan" });
+
+    const result = await handleKeyInvoiceFields(env.DB, "inv-1", { facts: { "BT-112": 100 } }, "u-dan");
+    expect(result.status).toBe(200);
+  });
+
+  it("refuses a named-user task belonging to somebody else", async () => {
+    await seedInvoice("inv-1");
+    await seedOpenTask("inv-1", { userId: "u-sarah" });
+
+    const result = await handleKeyInvoiceFields(env.DB, "inv-1", { facts: { "BT-112": 100 } }, "u-dan");
+    expect(result.status).toBe(403);
+  });
+
+  it("allows a named-user task belonging to the caller, with no claim step needed", async () => {
+    await seedInvoice("inv-1");
+    await seedOpenTask("inv-1", { userId: "u-dan" });
+
+    const result = await handleKeyInvoiceFields(env.DB, "inv-1", { facts: { "BT-112": 100 } }, "u-dan");
+    expect(result.status).toBe(200);
+  });
+
+  it("still allows keying when no task at all is open — unchanged, pre-existing behaviour", async () => {
+    // Every test above `describe("a task must be claimed...")` relies
+    // on exactly this: `seedInvoice()` puts the invoice in a process
+    // with no task at all, and keying has always succeeded there. This
+    // decision closes the gap where a real task exists and is not the
+    // caller's — it does not newly require a task to exist at all.
+    await seedInvoice("inv-1");
+    const result = await handleKeyInvoiceFields(env.DB, "inv-1", { facts: { "BT-112": 100 } }, "u-dan");
+    expect(result.status).toBe(200);
+  });
+
+  it("stops counting a task once it is completed, whoever claimed it", async () => {
+    // status = 'open' is part of the same query that finds a task to
+    // check ownership against — a completed task, even one somebody
+    // else claimed, must not go on blocking the invoice forever.
+    await seedInvoice("inv-1");
+    await seedTeam();
+    await seedOpenTask("inv-1", { teamId: "team1", claimedBy: "u-sarah" });
+    await env.DB.prepare("UPDATE tasks SET status = 'completed', completed_by = 'u-sarah' WHERE id = 't-inv-1'").run();
+
+    const result = await handleKeyInvoiceFields(env.DB, "inv-1", { facts: { "BT-112": 100 } }, "u-dan");
+    expect(result.status).toBe(200);
+  });
+});
+
 describe("who keyed a value", () => {
   it("records the caller against every field", async () => {
     await seedInvoice("inv-1");

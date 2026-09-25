@@ -887,9 +887,11 @@ function lineRow(line, index) {
        * 0453, the same reasoning `headerSummary()`'s own "Header
        * Fields" action already carries: looking up a line's own coding
        * is not an edit, so it stays reachable on a read-only stage too
-       * (the pop-out itself still refuses to change anything nothing
-       * configured editable permits, the same as every field already
-       * does — see `openLineCodingPopout`).
+       * (the pop-out itself refuses to change anything a stage has not
+       * configured editable, or that the caller has not claimed the
+       * task for — decision 0486 closed the second half of that, which
+       * had been missing since this button was built — see
+       * `openLineCodingPopout`).
        */
       (() => {
         const button = el("button", { class: "rm", title: t("action.coding"), onclick: () => openLineCodingPopout(line) });
@@ -1261,12 +1263,22 @@ async function openLineCodingPopout(line) {
     const label = el("label", { text: fieldLabel });
     const resolved = lineFields.find((f) => f.field === spec.field);
 
-    if (!resolved || resolved.visibility !== "edit") {
+    /**
+     * **`canEditAnything` joins the field's own visibility here too** —
+     * decision 0486, the same join `cell()` (the line table proper)
+     * already makes and this pop-out never did. Reported live: Account
+     * Coding on an unclaimed Coding-queue invoice saved successfully.
+     * This pop-out's own trigger button stays visible regardless
+     * (decision 0453 — opening the lookup is harmless), but every
+     * field inside it now renders exactly as read-only as the rest of
+     * the line table does when the task is not the caller's.
+     */
+    if (!resolved || resolved.visibility !== "edit" || !canEditAnything) {
       return [
         label,
         el("div", {}, [
           el("div", { class: "readonly", text: line[spec.field] || "—" }),
-          ...(resolved?.visibility === "read"
+          ...(resolved?.visibility === "read" || (resolved?.visibility === "edit" && !canEditAnything)
             ? []
             : [el("div", { class: "muted sm", text: t("viewer.coding.noteditable") })]),
         ]),

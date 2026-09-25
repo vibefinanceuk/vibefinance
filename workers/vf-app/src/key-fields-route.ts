@@ -97,6 +97,56 @@ export async function handleKeyInvoiceFields(
     return { status: 404, body: { error: `invoice ${invoiceId} does not exist` } };
   }
 
+  /**
+   * **Editing belongs to whoever has this task claimed** — decision
+   * 0486, closing a gap decision 0403 flagged but never verified:
+   * *"whether the API also refuses [a line edit posted for an
+   * unclaimed document] sent directly was not investigated as part of
+   * this decision."* It did not — reported live, an unclaimed Coding
+   * task's Account Coding fields saved anyway.
+   *
+   * Mirrors `handleCompleteTask`'s own inline ownership check
+   * (`task-route.ts`): a named-user task is only ever that person's; a
+   * team task must be claimed, and only by the claimer.
+   *
+   * **Only enforced when an open task actually exists at this stage.**
+   * A document with none open at all (the Documents screen's own use
+   * of this viewer, decision 0167) was never task-gated by this route
+   * to begin with — the frontend already keeps that case read-only via
+   * `canEditAnything`, and this fix does not change it, matching every
+   * existing test here that keys a seeded invoice with no task row at
+   * all. What this closes is the case where a real, open task exists —
+   * sitting unclaimed, or claimed by somebody else — and this route let
+   * the save through regardless of who was asking.
+   */
+  if (instance) {
+    const openTasksHere = await db
+      .prepare(
+        `SELECT t.owner_user_id, t.claimed_by
+         FROM tasks t
+         JOIN stage_visits v ON v.id = t.stage_visit_id
+         JOIN process_instances pi ON pi.id = v.process_instance_id
+         WHERE pi.subject_type = 'invoice' AND pi.subject_id = ?
+           AND pi.current_stage_id = t.stage_id
+           AND t.status = 'open'`
+      )
+      .bind(invoiceId)
+      .all<{ owner_user_id: string | null; claimed_by: string | null }>();
+
+    const mine = openTasksHere.results.some(
+      (t) => t.owner_user_id === keyedBy || t.claimed_by === keyedBy
+    );
+    if (openTasksHere.results.length > 0 && !mine) {
+      return {
+        status: 403,
+        body: {
+          error: "this task is not claimed by you",
+          reason: "not_claimed",
+        },
+      };
+    }
+  }
+
   const supplied = body.facts;
   if (supplied === undefined || supplied === null || typeof supplied !== "object" || Array.isArray(supplied)) {
     return { status: 400, body: { error: "facts (an object) is required" } };
