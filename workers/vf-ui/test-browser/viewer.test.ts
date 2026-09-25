@@ -158,7 +158,7 @@ const STRINGS = {
     "action.reassign": "Reassign",
     "action.reassign.wholabel": "Reassign to",
     "action.reassign.commentlabel": "Comment (optional)",
-    "action.reassign.nonefound": "Nobody else on this team can take this task.",
+    "action.reassign.nonefound": "There are no eligible users to reassign.",
     "action.return_to_supplier": "To supplier",
     "action.return": "Return",
     "action.return.wholabel": "Return to",
@@ -953,17 +953,21 @@ describe("the document pop-out window (decision 0384, phase 4)", () => {
     expect(handle.location.href).toBe("/document-window.html?task=inv-1");
   });
 
-  it("shows a message and does not crash when the browser blocks the pop-up — as a pop-out alert requiring OK, not a discrete on-page note (decision 0492)", async () => {
+  it("shows a message and does not crash when the browser blocks the pop-up — as a centred pop-out alert requiring OK, with the warning-toned severity icon (decisions 0492, 0493)", async () => {
     vi.stubGlobal("open", vi.fn(() => null));
 
     await open();
     clickExpand();
 
-    const popout = document.querySelector(".popout");
+    const popout = document.querySelector(".popout.notealert");
     expect(popout).not.toBeNull();
     expect(document.getElementById("viewer-note")?.textContent).toContain(
       "Your browser blocked the pop-up window"
     );
+    // Warning-toned, not the success (Save) styling — a blocked pop-up
+    // is not good news.
+    const iconBox = popout!.querySelector(".notealert-icon") as HTMLElement;
+    expect(iconBox.className).not.toContain("success");
 
     // OK is the only way to dismiss it — clicking the backdrop itself
     // does nothing (unlike the reassign/return pickers, which do close
@@ -971,7 +975,7 @@ describe("the document pop-out window (decision 0384, phase 4)", () => {
     (document.querySelector(".backdrop") as HTMLElement).click();
     expect(document.querySelector(".popout")).not.toBeNull();
 
-    const ok = document.querySelector(".popout .actionlink") as HTMLButtonElement;
+    const ok = document.querySelector(".notealert-ok") as HTMLButtonElement;
     ok.click();
     expect(document.querySelector(".popout")).toBeNull();
   });
@@ -1425,30 +1429,30 @@ describe("the actions do something (decision 0138)", () => {
       expect(options).toEqual(["Priya Shah (priya@example.com)", "Sam Okafor"]);
     });
 
-    it("says so with a pop-out alert instead of opening an empty picker when nobody is eligible (decision 0492, superseding 0491's scrollIntoView)", async () => {
+    it("says so with a pop-out alert instead of opening an empty picker when nobody is eligible (decisions 0492/0493)", async () => {
       // **Reported live**: clicking Reassign on a task claimed by the
       // caller "did nothing." The message was always here — 0491 found
       // it was set correctly but scrolled off-screen, and fixed that by
-      // scrolling it into view. This decision replaces that entirely: a
-      // pop-out alert needs no scrolling, since there is nothing to
-      // miss — it appears in front of everything and stays until OK is
-      // clicked.
+      // scrolling it into view. Decision 0492 replaced that with a
+      // pop-out alert; decision 0493 reworded the message itself,
+      // reported live as "unhelpful" against the original "Nobody else
+      // on this team can take this task."
       await openWithReassign({ "/api/tasks/t-1/reassign-candidates": { candidates: [] } });
 
       click("Reassign");
       await settle();
 
       // Not the reassign picker itself — the picker never opens when
-      // there is nobody to reassign to — but a `.popout` all the same,
-      // this one carrying the alert.
-      const popout = document.querySelector(".popout");
+      // there is nobody to reassign to — but a `.popout.notealert` all
+      // the same, this one carrying the alert.
+      const popout = document.querySelector(".popout.notealert");
       expect(popout).not.toBeNull();
       expect(document.getElementById("viewer-note")?.textContent).toBe(
-        "Nobody else on this team can take this task."
+        "There are no eligible users to reassign."
       );
 
       // OK is the only way to dismiss it.
-      (popout!.querySelector(".actionlink") as HTMLButtonElement).click();
+      (popout!.querySelector(".notealert-ok") as HTMLButtonElement).click();
       expect(document.querySelector(".popout")).toBeNull();
     });
 
@@ -1610,19 +1614,20 @@ describe("the actions do something (decision 0138)", () => {
     it("says so with a pop-out alert instead of opening an empty picker when no target is configured (decision 0492)", async () => {
       // Same fix as Reassign's own equivalent test above, for the same
       // shared `note()` — Return's own "nothing configured" message goes
-      // through the same pop-out alert.
+      // through the same pop-out alert. Its own wording is unchanged by
+      // decision 0493, which reworded Reassign's message only.
       await openWithReturn({ "/api/tasks/t-1/return-targets": { targets: [] } });
 
       click("Return");
       await settle();
 
-      const popout = document.querySelector(".popout");
+      const popout = document.querySelector(".popout.notealert");
       expect(popout).not.toBeNull();
       expect(document.getElementById("viewer-note")?.textContent).toBe(
         "No return targets are configured for this stage."
       );
 
-      (popout!.querySelector(".actionlink") as HTMLButtonElement).click();
+      (popout!.querySelector(".notealert-ok") as HTMLButtonElement).click();
       expect(document.querySelector(".popout")).toBeNull();
     });
 
@@ -4008,6 +4013,67 @@ describe("the Invoice header card is a curated summary, with a pop-out for the r
     const list = document.querySelector(".hffields");
     expect(list).not.toBeNull();
     expect(list?.querySelector(".kf")).not.toBeNull();
+  });
+
+  /**
+   * **The one caller among nine that is not a problem — decision
+   * 0493.** Every other `note()` call reports something that stopped a
+   * person — nothing to reassign to, a blocked pop-up, a save that
+   * failed — and gets the amber `systemalert` triangle. A successful
+   * save is not one of those, and dressing it in the same warning
+   * colour would say something had gone wrong when it had not — so
+   * this checks the one caller that opts into `{ success: true }`
+   * actually renders differently, not just that the whole nine share
+   * one component.
+   */
+  it("shows the success-toned checkmark, not the warning triangle, when a save actually succeeds", async () => {
+    const withEditableExtra = {
+      fields: [...CURATED_FIELDS.fields, { field: "BT-23", visibility: "edit", type: "text", line: false }],
+    };
+    const posted: unknown[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        const path = String(url).split("?")[0];
+        if (init?.method === "POST" && path.endsWith("/key")) {
+          posted.push(JSON.parse(String(init.body)));
+        }
+        const bodies: Record<string, unknown> = {
+          "/api/ui-strings": STRINGS,
+          "/api/code-lists": { fields: {} },
+          "/api/field-visibility": withEditableExtra,
+          "/api/invoices/inv-1": { facts: {}, lines: [], validation: { passed: true, checked: [], failures: [] } },
+          "/api/invoices/inv-1/document-url": { url: null },
+          "/api/invoices/inv-1/progress": { inProcess: false, stages: [] },
+          "/api/invoices/inv-1/key": { facts: {} },
+        };
+        if (!(path in bodies)) throw new Error(`no stub for ${path}`);
+        return { ok: true, json: async () => bodies[path] } as Response;
+      })
+    );
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    await openViewer(TASK, () => {});
+    await new Promise((r) => setTimeout(r, 0));
+
+    const trigger = [...headerCard().querySelectorAll(".actionlink")].find(
+      (a) => a.querySelector("span")?.textContent === "Header Fields"
+    ) as HTMLButtonElement;
+    trigger.click();
+    await new Promise((r) => setTimeout(r, 0));
+    (document.getElementById("f-BT-23") as HTMLInputElement).value = "urn:example";
+
+    const save = [...document.querySelectorAll(".actionlink")].find(
+      (a) => a.querySelector("span")?.textContent === "Save"
+    ) as HTMLButtonElement;
+    save.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(posted).toHaveLength(1);
+    const popout = document.querySelector(".popout.notealert");
+    expect(popout).not.toBeNull();
+    expect(popout!.querySelector(".notealert-icon")?.className).toContain("success");
   });
 });
 

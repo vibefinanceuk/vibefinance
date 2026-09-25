@@ -838,6 +838,25 @@ async function showXmlPreview(invoiceId) {
  * show the same pop-out alert rather than five of them getting one
  * treatment and two getting another.
  *
+ * **Decision 0493 — redrawn, reported live against the first version:**
+ * *"It looks unaligned, ugly, and the message itself is unhelpful."*
+ * The first cut reused `.cardhead`/`.statebuttons`/`.actionlink`
+ * wholesale, borrowed from the Reassign/Return pickers — the wrong
+ * donor: `.actionlink` draws a small icon stacked above a label,
+ * built for a *row* of controls in a card header, and `.statebuttons`
+ * left it pinned to the row's own start rather than centred under a
+ * single sentence with nothing beside it to align against. Given a
+ * reference screenshot and *"in an appropriate colour scheme"*, this
+ * is its own layout now — `.popout.notealert` — centred, with a large
+ * severity icon on top (the `systemalert` triangle in `--bg-warning`/
+ * `--text-warning` for every caller but one, `done`'s own checkmark in
+ * `--bg-success`/`--text-success` for Save succeeding, since telling
+ * somebody their save worked in the same amber as "nothing to reassign
+ * to" would say something had gone wrong when nothing had), the
+ * message, and a plain centred "OK" pill — not another `.actionlink`,
+ * which would have drawn a second, smaller icon competing with the
+ * one above it.
+ *
  * **A fresh backdrop+popout each call, not a persistent box.** Unlike
  * the old bottom-of-grid div, nothing here is reused between calls —
  * the previous alert (if any) is long gone, dismissed by its own OK
@@ -848,15 +867,15 @@ async function showXmlPreview(invoiceId) {
  * region that changes underneath a person — it is new content that
  * should be announced the moment it appears. No click-outside-to-close
  * handler is attached: the OK button is deliberately the only way to
- * dismiss it, per the request above.
+ * dismiss it, per the request that started this.
  */
-function note(message) {
+function note(message, { success = false } = {}) {
   const close = () => backdrop.remove();
-  const box = el("div", { class: "popout" }, [
-    el("p", { id: "viewer-note", role: "alert", text: message }),
-    el("div", { class: "statebuttons" }, [
-      actionLink("done", { onclick: close, primary: true, label: t("action.ok") }),
-    ]),
+  const iconClass = success ? "notealert-icon success" : "notealert-icon";
+  const box = el("div", { class: "popout notealert" }, [
+    el("div", { class: iconClass }, [icon(success ? "done" : "systemalert")]),
+    el("p", { id: "viewer-note", role: "alert", class: "notealert-message", text: message }),
+    el("button", { class: "notealert-ok", onclick: close, text: t("action.ok") }),
   ]);
   const backdrop = el("div", { class: "backdrop" }, [box]);
   document.body.append(backdrop);
@@ -2269,7 +2288,7 @@ async function save(close) {
   // field that just started passing would stay unmarked until reload.
   confirms = body.validation?.confirms ?? [];
   renderExceptions();
-  note(t("viewer.saved"));
+  note(t("viewer.saved"), { success: true });
 
   if (close) close();
 }

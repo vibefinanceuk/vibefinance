@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 25 September 2026 (decision 0492). A living document: what
+Last updated 25 September 2026 (decision 0493). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,28 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### The pop-out alert, redrawn and reworded (0493)
+- **Reported live**, against 0492's first version: "It looks
+  unaligned, ugly, and the message itself is unhelpful" — plus a
+  reference screenshot, "in an appropriate colour scheme," and "use an
+  icon that is suitable and in line with the brand of this site."
+- 0492's first draft reused `.cardhead`/`.statebuttons`/`.actionlink`
+  from the Reassign/Return pickers — built for a row of controls in a
+  card header, not a single centred message. `note()`'s alert now has
+  its own shape (`.popout.notealert`): a large coloured icon on top, a
+  centred message, a plain centred OK pill — no borrowed heading, no
+  second icon competing with the first.
+- **Two tones**: `systemalert` (the app's own "worth noticing"
+  triangle, decision 0272) in the app's own warning colours for every
+  caller but Save succeeding, which gets `done`'s checkmark in the
+  app's own success colours instead — reusing existing, already
+  Day/Night-paired tokens throughout, not new ones.
+- **Reassign's own message reworded**: "Nobody else on this team can
+  take this task" → "There are no eligible users to reassign," via an
+  `UPDATE` migration (the row already existed). Return's own message
+  is unchanged.
+- Full reasoning and verification counts in decision 0493.
 
 ### `note()` as a pop-out alert, requiring OK (0492)
 - **Asked directly**, right after 0491 shipped (built, not yet

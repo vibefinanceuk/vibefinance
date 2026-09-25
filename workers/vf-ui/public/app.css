@@ -1990,6 +1990,63 @@
    * horizontal scroll doing its job.
    */
   .popout.wide { width: min(900px, 100%); }
+
+  /**
+   * **`note()`'s own pop-out alert — decision 0493.** Reported live
+   * against the first version (`.cardhead`/`.statebuttons`/
+   * `.actionlink`, borrowed from the Reassign/Return pickers):
+   * "It looks unaligned, ugly." Those three exist for a form or a
+   * list — a heading, then fields, then a row of actions along the
+   * bottom-left. An alert holds one sentence and one answer, so it
+   * gets its own narrower, centred shape rather than a card built for
+   * something wider with nothing to put in most of it.
+   */
+  .popout.notealert {
+    width: min(340px, 100%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+    padding: 28px 24px 24px;
+    text-align: center;
+  }
+  .notealert-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    background: var(--bg-warning);
+    color: var(--text-warning);
+  }
+  /*
+    **The one caller that is not a problem** — Save succeeding. Every
+    other message through here is a warning by nature (nothing to
+    reassign to, a blocked pop-up, a save that failed); dressing
+    "Saved" in the same amber triangle would tell a person something
+    had gone wrong when nothing had.
+  */
+  .notealert-icon.success { background: var(--bg-success); color: var(--text-success); }
+  .notealert-icon svg { width: 28px; height: 28px; }
+  .notealert-message { font-size: var(--text-lg); color: var(--text-primary); line-height: 1.4; margin: 0; }
+  .notealert-ok {
+    padding: 8px 28px;
+    border-radius: 999px;
+    border: 0.5px solid var(--border);
+    background: var(--surface-1);
+    color: var(--text-primary);
+    font-weight: 600;
+    font-size: var(--text-base);
+    cursor: pointer;
+  }
+  .notealert-ok:hover {
+    background: var(--bg-accent);
+    color: var(--text-accent);
+    border-color: var(--border-accent);
+  }
+
   .searchbox {
     width: 100%;
     margin: 8px 0;
