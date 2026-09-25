@@ -373,6 +373,19 @@ const PROXIED_TO_INSTANCE: RegExp[] = [
   /^\/processes\/[^/]+\/publish$/,
   // Making a stage read-only (decision 0143).
   /^\/processes\/stages\/[^/]+\/read-only$/,
+  /**
+   * **Restricting a field at a stage, decision 0483 — the exact same
+   * gap this list's own doc comment names, found again.** The route
+   * (`PUT /processes/stages/:id/field-visibility`) has existed in
+   * `vf-app` since decision 0143/0196 and was never added here; the
+   * new Stage Restrictions screen's every save 404'd through this
+   * proxy's own fallback, reported live as "not found" appearing at
+   * the bottom of the screen the moment any checkbox was toggled.
+   * `GET /field-visibility` (the plain, non-stage path above) was
+   * already on this list and worked throughout — only the stage-scoped
+   * write route was missing.
+   */
+  /^\/processes\/stages\/[^/]+\/field-visibility$/,
   /^\/processes\/[^/]+\/sources$/,
   /^\/sources\/[^/]+\/email$/,
   // Renaming and retiring one (decision 0130). **The bare path**, which

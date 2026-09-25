@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 25 September 2026 (decision 0483). A living document: what
+Last updated 25 September 2026 (decision 0484). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,28 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Stage Restrictions: the save route was never proxied (0484)
+- **Reported live**, testing 0483: unchecking any Account Coding
+  checkbox showed "not found" at the bottom of the screen.
+- **A real bug, and a named recurring class of bug**: `vf-ui` proxies
+  `/api/*` to `vf-app` through an explicit allowlist
+  (`PROXIED_TO_INSTANCE`), deliberately not a general forwarder.
+  `PUT /processes/stages/:id/field-visibility` — real and tested in
+  `vf-app` since decision 0143/0196 — was never added to it, so every
+  save 404'd through the proxy's own fallback before `vf-app` ever saw
+  the request. `GET /field-visibility` was already listed, which is
+  why the tab rendered correctly and only the save failed. This exact
+  list has caught the same shape of gap many times before (decisions
+  0212, 0319, 0324, 0418–0423, 0452, 0472, 0476).
+- **Missed for an ordinary reason**: neither the backend tests (call
+  the handler directly) nor the frontend browser tests (stub `fetch`)
+  exercise `vf-ui`'s own routing worker end to end — only `index.
+  test.ts`'s own `CALLED_BY_A_SCREEN` list does, and the new route
+  wasn't added there either.
+- **Fixed**: the pattern added to `PROXIED_TO_INSTANCE`, and the route
+  added to `CALLED_BY_A_SCREEN` alongside it.
+- Full reasoning and verification counts in decision 0484.
 
 ### Stage Restrictions tab — Account Coding restricted per stage (0483)
 - **Reported live**: Account Coding fields showing editable on the

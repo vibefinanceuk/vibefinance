@@ -560,6 +560,16 @@ describe("the proxy carries every path a screen calls (decision 0131)", () => {
      * allowlist entry itself this time, not after a live report.
      */
     ["DELETE", "/api/documents/inv-1/collaborators/u-1"],
+    /**
+     * Stage Restrictions — decision 0483. Reported live: unchecking
+     * any Account Coding checkbox showed "not found" at the bottom of
+     * the screen. The route (`PUT /processes/stages/:id/field-
+     * visibility`) was real and tested in `vf-app` since decision
+     * 0143/0196 — the exact recurring gap this whole block exists to
+     * catch, missed at the time this decision shipped the route's own
+     * first screen.
+     */
+    ["PUT", "/api/processes/stages/validation/field-visibility"],
   ];
 
   it("carries all of them", async () => {
