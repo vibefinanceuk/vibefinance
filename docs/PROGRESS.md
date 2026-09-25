@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 25 September 2026 (decision 0493). A living document: what
+Last updated 25 September 2026 (decision 0494). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,27 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### The supplier search pop-out's own actions, moved to the corner (0494)
+- **Reported live**: "There are two buttons on the pop-out, Record
+  this supplier from the invoice, and close. Please can these be moved
+  to the top right of the card / pop-out. Create an icon for the new
+  button, and abbreviate the text to Record New Supplier."
+- `openSearch()` (shared by Change Seller and Change Buyer, decision
+  0222) now opens with a `.cardhead` — heading left, actions right —
+  the same shape every other pop-out here already uses, instead of
+  Close alone in the corner and Record as a plain button below the
+  results.
+- **A genuinely new icon**, `recordsupplier` — a document with the
+  same offset "+" this app's own other "add" icons already use.
+  Deliberately not `newseller`'s person-and-plus, which already means
+  the *other* new-supplier action (`openNewSellerForm()`'s own blank
+  form) — reusing it here would have told the same story about two
+  different actions.
+- Label reworded via `UPDATE` migration: "Record this supplier from
+  the invoice" → "Record New Supplier," keeping decision 0233's own
+  choice of "Record," not "Create."
+- Full reasoning and verification counts in decision 0494.
 
 ### The pop-out alert, redrawn and reworded (0493)
 - **Reported live**, against 0492's first version: "It looks

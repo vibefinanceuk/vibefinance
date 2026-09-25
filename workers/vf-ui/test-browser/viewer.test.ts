@@ -109,6 +109,7 @@ const STRINGS = {
     "viewer.supplier.none": "This invoice has not been matched to a supplier.",
     "viewer.supplier.no_match": "No supplier on file matches this seller.",
     "viewer.supplier.newseller": "New Seller",
+    "viewer.supplier.record": "Record New Supplier",
     "viewer.supplier.newsellerheading": "Record a new seller",
     "viewer.supplier.newsellerhint": "Enter what the invoice itself tells you. A team will complete the setup with the ERP.",
     "viewer.supplier.namerequired": "Company name is required.",
@@ -3242,6 +3243,91 @@ describe("each party card carries its own action (decision 0228)", () => {
     await new Promise((r) => setTimeout(r, 0));
 
     expect(document.querySelector(".popout")).not.toBeNull();
+  });
+
+  /**
+   * **The pop-out's own top-right actions — decision 0494.** Reported
+   * live: "There are two buttons on the pop-out, Record this supplier
+   * from the invoice, and close. Please can these be moved to the top
+   * right of the card / pop-out." `openSearch()` is shared by both
+   * Change Seller and Change Buyer, so this checks the shape from
+   * Seller's own side, where `alsoOffer` actually exists.
+   */
+  it("carries Record New Supplier and Close in the pop-out's own cardhead, not a plain button below the results", async () => {
+    await open(MATCHED);
+
+    const sellerButton = [...document.querySelectorAll("button")].find((b) => b.textContent === "Change Seller");
+    (sellerButton as HTMLButtonElement).click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    const popout = document.querySelector(".popout") as HTMLElement;
+    const head = popout.querySelector(".cardhead");
+    expect(head).not.toBeNull();
+    const headButtons = [...head!.querySelectorAll(".actionlink span")].map((s) => s.textContent);
+    expect(headButtons).toEqual(["Record New Supplier", "Close"]);
+    // Not the old plain `.secondary` button below the results.
+    expect(popout.querySelector("button.secondary")).toBeNull();
+  });
+
+  it("posts the invoice's own facts and attaches the new supplier when Record New Supplier is clicked", async () => {
+    const calls: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        const path = String(url).split("?")[0];
+        calls.push(`${init?.method ?? "GET"} ${path}`);
+        const bodies: Record<string, unknown> = {
+          "/api/ui-strings": STRINGS,
+          "/api/code-lists": { fields: {} },
+          "/api/field-visibility": FIELDS,
+          "/api/invoices/inv-1": {
+            facts: { "BT-27": "New Co Ltd", "BT-31": "GB123", "BT-34": "0088:9999", "BT-40": "GB" },
+            lines: [],
+            ...MATCHED,
+            validation: { passed: true, checked: [], failures: [] },
+          },
+          "/api/invoices/inv-1/document-url": { url: null },
+          "/api/invoices/inv-1/progress": { inProcess: false, stages: [] },
+          "/api/suppliers": { id: "local:new-1" },
+          "/api/invoices/inv-1/supplier": { invoiceId: "inv-1", supplierId: "local:new-1" },
+        };
+        if (!(path in bodies)) throw new Error(`no stub for ${path}`);
+        return { ok: true, json: async () => bodies[path] } as Response;
+      })
+    );
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    await openViewer(TASK, () => {});
+    await new Promise((r) => setTimeout(r, 0));
+
+    const sellerButton = [...document.querySelectorAll("button")].find((b) => b.textContent === "Change Seller");
+    (sellerButton as HTMLButtonElement).click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    const record = [...document.querySelectorAll(".popout .actionlink")].find(
+      (a) => a.querySelector("span")?.textContent === "Record New Supplier"
+    ) as HTMLButtonElement;
+    record.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(calls).toContain("POST /api/suppliers");
+    expect(calls).toContain("PUT /api/invoices/inv-1/supplier");
+    // Attach happens after create, not before.
+    expect(calls.indexOf("POST /api/suppliers")).toBeLessThan(calls.indexOf("PUT /api/invoices/inv-1/supplier"));
+    expect(document.querySelector(".backdrop")).toBeFalsy();
+  });
+
+  it("offers no Record button on Change Buyer's own pop-out — only Close, since there is no alsoOffer there", async () => {
+    await open(MATCHED);
+
+    const buyerButton = [...document.querySelectorAll("button")].find((b) => b.textContent === "Change Buyer");
+    (buyerButton as HTMLButtonElement).click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    const head = document.querySelector(".popout .cardhead");
+    const headButtons = [...head!.querySelectorAll(".actionlink span")].map((s) => s.textContent);
+    expect(headButtons).toEqual(["Close"]);
   });
 });
 

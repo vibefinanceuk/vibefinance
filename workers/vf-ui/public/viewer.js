@@ -2586,20 +2586,26 @@ export async function openViewer(task, onClose) {
   function openSearch({ heading, hint, note, search, describe, choose, alsoOffer }) {
     const input = el("input", { type: "text", class: "searchbox", placeholder: hint });
     const results = el("div", { class: "searchresults" });
-    const box = el("div", { class: "popout" }, [
-      el("h3", { text: heading }),
-      el("p", { class: "muted", text: note }),
-      input,
-      results,
-      /**
-       * **An offer, not a default.** Somebody should look for the
-       * supplier before recording a second one — so this sits below the
-       * search rather than beside the heading.
-       */
+    const close = () => backdrop.remove();
+
+    /**
+     * **Top right, beside the heading — decision 0494.** Reported live:
+     * "There are two buttons on the pop-out... please can these be
+     * moved to the top right of the card." The same place every other
+     * pop-out's own actions already sit (`cardHead()`'s own Change
+     * Seller, decision 0228: "it might extend the card size if we
+     * place at the bottom right. There is space in the top right
+     * already") — this one just hadn't been built that way yet, with
+     * Record sitting as a plain `.secondary` button below the results
+     * and Close as the only thing in the corner.
+     */
+    const stateButtons = el("div", { class: "statebuttons" }, [
+      // **An offer, not a default.** Somebody should look for the
+      // supplier before recording a second one — reached only once a
+      // search has come up empty, never the first thing offered.
       alsoOffer
-        ? el("button", {
-            class: "secondary",
-            text: alsoOffer.label,
+        ? actionLink("recordsupplier", {
+            label: alsoOffer.label,
             onclick: async () => {
               try {
                 const response = await alsoOffer.run();
@@ -2619,13 +2625,17 @@ export async function openViewer(task, onClose) {
           })
         : null,
       // One icon for closing, everywhere (decision 0236).
-      actionLink("close"),
+      actionLink("close", { onclick: close }),
     ].filter(Boolean));
 
+    const box = el("div", { class: "popout" }, [
+      el("div", { class: "cardhead" }, [el("h3", { text: heading }), stateButtons]),
+      el("p", { class: "muted", text: note }),
+      input,
+      results,
+    ]);
+
     const backdrop = el("div", { class: "backdrop" }, [box]);
-    const close = () => backdrop.remove();
-    // The last button is Close; an offer may sit before it.
-    box.querySelectorAll("button")[box.querySelectorAll("button").length - 1].onclick = close;
     backdrop.onclick = (e) => {
       if (e.target === backdrop) close();
     };

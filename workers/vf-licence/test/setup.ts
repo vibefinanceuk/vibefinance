@@ -160,6 +160,7 @@ import reassignStringsSql from "../migrations/0169_reassign_strings.sql?raw";
 import returnTargetStringsSql from "../migrations/0170_return_target_strings.sql?raw";
 import noteOkStringSql from "../migrations/0171_note_ok_string.sql?raw";
 import reassignNonefoundWordingSql from "../migrations/0172_reassign_nonefound_wording.sql?raw";
+import recordSupplierButtonWordingSql from "../migrations/0173_record_supplier_button_wording.sql?raw";
 
 function stripSqlComments(sql: string): string {
   return sql
@@ -352,5 +353,6 @@ export async function applyTestSchema(): Promise<void> {
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(returnTargetStringsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(noteOkStringSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(reassignNonefoundWordingSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(recordSupplierButtonWordingSql)));
 
 }

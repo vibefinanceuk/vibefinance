@@ -158,6 +158,21 @@ export const ICONS = {
     '<path d="M13 20v-1.5a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4V20"/><circle cx="7.5" cy="6.5" r="3.5"/><path d="M18 8v6M15 11h6"/>',
 
   /**
+   * **A document, not a person — decision 0494.** `newseller` already
+   * means "record a supplier by hand" (`openNewSellerForm`'s own top
+   * right button, a blank-ish form a person fills in). This is the
+   * *other* new-supplier action, `openSearch`'s own `alsoOffer` inside
+   * the search pop-out — one click, no form, posting exactly what the
+   * invoice already said (`BT-27`/`BT-31`/`BT-34`/`BT-40`). Reusing
+   * `newseller`'s person-and-plus for a button that involves no typing
+   * at all would say the same thing about two different actions; this
+   * one is the document those facts came from, with the same
+   * offset-plus every other "add" icon on this screen already uses.
+   */
+  recordsupplier:
+    '<path d="M4 3h6l3 3v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/><path d="M10 3v3h3"/><path d="M5 10h5M5 13h3"/><path d="M18 8v6M15 11h6"/>',
+
+  /**
    * **The same shape as `newsupplier` — decision 0328.** Both mean
    * exactly the same thing, "add a person," and never appear on the
    * same screen, so the shared visual is a feature, not drift.
