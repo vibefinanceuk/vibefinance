@@ -1325,6 +1325,71 @@ describe("task routes, through the real router (decision 0018)", () => {
     });
     expect(res.status).toBe(404);
   });
+
+  describe("Timeline/Chat audit entries on claim and release — decision 0488", () => {
+    it("records a claim in task_action_events, with no comment when none is posted", async () => {
+      const { taskId } = await seedProcessStageAndTeamTask();
+      const res = await SELF.fetch(`https://example.com/tasks/${taskId}/claim`, {
+        method: "POST",
+        headers: authHeaders(),
+      });
+      expect(res.status).toBe(200);
+
+      const row = await env.DB.prepare(
+        "SELECT action, actor_id, comment FROM task_action_events WHERE task_id = ?"
+      )
+        .bind(taskId)
+        .first();
+      expect(row).toEqual({ action: "claim", actor_id: "test-user", comment: null });
+    });
+
+    it("records the comment posted alongside a claim", async () => {
+      const { taskId } = await seedProcessStageAndTeamTask();
+      const res = await SELF.fetch(`https://example.com/tasks/${taskId}/claim`, {
+        method: "POST",
+        headers: { ...authHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({ comment: "Picking this up now." }),
+      });
+      expect(res.status).toBe(200);
+
+      const row = await env.DB.prepare("SELECT comment FROM task_action_events WHERE task_id = ? AND action = 'claim'")
+        .bind(taskId)
+        .first<{ comment: string }>();
+      expect(row?.comment).toBe("Picking this up now.");
+    });
+
+    it("records a release, with its own comment, distinct from the claim it follows", async () => {
+      const { taskId } = await seedProcessStageAndTeamTask();
+      await SELF.fetch(`https://example.com/tasks/${taskId}/claim`, { method: "POST", headers: authHeaders() });
+
+      const res = await SELF.fetch(`https://example.com/tasks/${taskId}/release`, {
+        method: "POST",
+        headers: { ...authHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({ comment: "Wrong queue, sending it back." }),
+      });
+      expect(res.status).toBe(200);
+
+      const rows = await env.DB.prepare(
+        "SELECT action, comment FROM task_action_events WHERE task_id = ? ORDER BY at"
+      )
+        .bind(taskId)
+        .all<{ action: string; comment: string | null }>();
+      expect(rows.results).toEqual([
+        { action: "claim", comment: null },
+        { action: "release", comment: "Wrong queue, sending it back." },
+      ]);
+    });
+
+    it("still releases cleanly with no body at all — every pre-existing caller's own shape", async () => {
+      const { taskId } = await seedProcessStageAndTeamTask();
+      await SELF.fetch(`https://example.com/tasks/${taskId}/claim`, { method: "POST", headers: authHeaders() });
+      const res = await SELF.fetch(`https://example.com/tasks/${taskId}/release`, {
+        method: "POST",
+        headers: authHeaders(),
+      });
+      expect(res.status).toBe(200);
+    });
+  });
 });
 
 describe("intake channels, through the real router (decision 0024)", () => {
@@ -1522,6 +1587,78 @@ describe("process instances and stage visits, through the real router (decision 
       .bind(instanceId)
       .first();
     expect(instanceRow).toEqual({ status: "completed", current_stage_id: "s3" });
+  });
+
+  it("a claim/release/claim cycle on a real engine-created task shows its full history in the Timeline — decision 0488", async () => {
+    await seedActivatedRuleSet("rs-approval-2", {
+      conditions: { field: "BT-112", operator: "greater_than", value: 1000 },
+      actions: [{ type: "assign_task", params: { team: "ap-team-2", permission: "AP.Approve" } }],
+    });
+    await SELF.fetch("https://example.com/processes", { method: "POST", headers: authHeaders(), body: JSON.stringify({ id: "p2", name: "Standard AP 2" }) });
+    await SELF.fetch("https://example.com/processes/p2/stages", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ id: "s2a", name: "Received", sequence: 1 }),
+    });
+    await SELF.fetch("https://example.com/processes/p2/stages", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ id: "s2b", name: "Approval", sequence: 2, ruleSetId: "rs-approval-2" }),
+    });
+    await env.DB.prepare(
+      "INSERT INTO org_units (id, name) VALUES ('u2', 'Acme France 2') ON CONFLICT(id) DO NOTHING"
+    ).run();
+    await SELF.fetch("https://example.com/org/teams", { method: "POST", headers: authHeaders(), body: JSON.stringify({ id: "ap-team-2", name: "AP team 2", unitId: "u2" }) });
+    await SELF.fetch("https://example.com/org/teams/ap-team-2/members", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ userId: "test-user" }),
+    });
+
+    // The activity feed reads invoice_headers directly (decision 0267)
+    // — the process-instance machinery above never touches it, so this
+    // is seeded the same way activity-route.test.ts's own tests do.
+    await env.DB.prepare("INSERT INTO invoice_headers (id, facts_json) VALUES ('real-inv-timeline', '{}')").run();
+
+    const createRes = await SELF.fetch("https://example.com/processes/p2/instances", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ subjectType: "invoice", subjectId: "real-inv-timeline" }),
+    });
+    const instanceId = (await createRes.json() as { id: string }).id;
+    await SELF.fetch(`https://example.com/process-instances/${instanceId}/visit`, {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ facts: { "BT-112": 3000 } }),
+    });
+
+    const taskRow = await env.DB.prepare("SELECT id FROM tasks WHERE stage_id = 's2b'").first<{ id: string }>();
+    expect(taskRow).toBeTruthy();
+    const taskId = taskRow!.id;
+
+    await SELF.fetch(`https://example.com/tasks/${taskId}/claim`, {
+      method: "POST",
+      headers: { ...authHeaders(), "Content-Type": "application/json" },
+      body: JSON.stringify({ comment: "Looking at this now." }),
+    });
+    await SELF.fetch(`https://example.com/tasks/${taskId}/release`, {
+      method: "POST",
+      headers: { ...authHeaders(), "Content-Type": "application/json" },
+      body: JSON.stringify({ comment: "Need the PO first." }),
+    });
+    await SELF.fetch(`https://example.com/tasks/${taskId}/claim`, { method: "POST", headers: authHeaders() });
+
+    const activityRes = await SELF.fetch(`https://example.com/documents/real-inv-timeline/activity`, {
+      headers: authHeaders(),
+    });
+    expect(activityRes.status).toBe(200);
+    const items = ((await activityRes.json()) as { items: Record<string, unknown>[] }).items;
+    const actions = items.filter((i) => i.kind === "action_taken");
+    expect(actions.map((a) => [a.action, a.comment])).toEqual([
+      ["claim", "Looking at this now."],
+      ["release", "Need the PO first."],
+      ["claim", null],
+    ]);
   });
 
   describe("completing a task no longer strands the instance on the stage it lands on next — decision 0454", () => {

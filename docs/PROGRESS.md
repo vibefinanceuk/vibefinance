@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 25 September 2026 (decision 0487). A living document: what
+Last updated 25 September 2026 (decision 0488). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,37 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Timeline/Chat audit entries for task actions (0488)
+- **Asked live**, as part of decision 0487's own larger, deferred ask:
+  every button/action taken should update the Timeline/Chat with the
+  icon of the action, the actor's comment, their name, and a
+  timestamp. First of the five-step Coding-pilot sequence agreed after
+  0487 (`AskUserQuestion`: *"One stage, end to end, as a pilot"*).
+- **One new table, not five.** `task_action_events` (migration 0083)
+  is scoped to exactly `claim`/`release` — the only two actions with
+  no other durable trace, since both can cycle on the same task and
+  `tasks.claimed_by`/`claimed_at` only ever shows the latest cycle.
+  Complete, Return, Return To Supplier, and Discard are already fully
+  recorded on `tasks` itself and derive their Timeline entries read-
+  time, respecting `activity-route.ts`'s own stated "no duplicate
+  storage" principle (the same fault decisions 0236/0264 already
+  fixed once).
+- **The `cancelled` siblings a return produces are explicitly excluded**
+  from the derivation — a task moot because a colleague returned the
+  document is not that colleague's own action.
+- **One unified `"action_taken"` shape** in the activity feed for all
+  five actions, `action` being the same closed vocabulary
+  `task-route.ts`/`return-route.ts`/`icons.js` already share, so it
+  doubles as the icon lookup key. A `comment` column exists now,
+  written by `/claim`/`/release` when supplied, ready for the generic
+  comment modal — itself a later, separate decision in the sequence —
+  to fill in for every action.
+- **Not built**: the comment-and-OK/Cancel modal itself, Reassign,
+  Route To Approver's manual-approver picker, Return To Seller's
+  reason/email dropdowns — each its own later step in the agreed
+  sequence.
+- Full reasoning and verification counts in decision 0488.
 
 ### Complete can recheck the rule that raised the task (0487)
 - **Asked live**, about the Coding queue: clicking Complete should

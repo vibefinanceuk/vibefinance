@@ -108,12 +108,37 @@ function ruleFiredLine(item) {
   );
 }
 
+/**
+ * A button/action taken — decision 0488. `item.action` is the same
+ * closed vocabulary `task-route.ts`/`return-route.ts`/`icons.js`
+ * already share (`claim`, `release`, `return`, `return_to_supplier`,
+ * `discard`), so it doubles as the icon lookup key in `itemRow` below.
+ */
+function actionTakenLine(item) {
+  const who = item.userName;
+  switch (item.action) {
+    case "claim":
+      return t("activity.claimed").replace("{who}", who);
+    case "release":
+      return t("activity.released").replace("{who}", who);
+    case "return":
+      return t("activity.returned").replace("{who}", who).replace("{stage}", item.targetStageName ?? "");
+    case "return_to_supplier":
+      return t("activity.returnedtosupplier").replace("{who}", who);
+    case "discard":
+      return t("activity.discarded").replace("{who}", who);
+    default:
+      return "";
+  }
+}
+
 function systemMessage(item) {
   if (item.kind === "received") return t("activity.received");
   if (item.kind === "stage_completed") {
     return t("activity.stagecompleted").replace("{who}", item.userName).replace("{stage}", item.stageName);
   }
   if (item.kind === "rule_fired") return ruleFiredLine(item);
+  if (item.kind === "action_taken") return actionTakenLine(item);
   return "";
 }
 
@@ -137,6 +162,27 @@ function itemRow(item) {
         ]),
         el("div", { class: "activitybody", text: item.body }),
       ]),
+    ]);
+  }
+
+  if (item.kind === "action_taken") {
+    // **The icon of the button taken**, asked for live — the same
+    // closed vocabulary `icons.js` already draws for the action row
+    // itself, not a generic dot, so Reassign one day looks like
+    // Reassign here too rather than every action reading the same.
+    return el("div", { class: "activitysysline activityaction" }, [
+      el("span", { class: "activityactionicon" }, [icon(item.action)]),
+      el(
+        "div",
+        { class: "activityactionbody" },
+        [
+          el("div", { class: "activitymsgrow" }, [
+            el("span", { class: "activitymsg", text: systemMessage(item) }),
+            el("span", { class: "activitywhen", text: item.at }),
+          ]),
+          item.comment ? el("div", { class: "activityactioncomment", text: item.comment }) : null,
+        ].filter(Boolean)
+      ),
     ]);
   }
 

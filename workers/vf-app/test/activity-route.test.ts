@@ -51,6 +51,54 @@ async function seedVisit(visitId: string, invoiceId: string, stageId: string, cr
     .run();
 }
 
+/** An open task, hung off a real stage visit — decision 0488's own tests. */
+async function seedOpenTask(taskId: string, visitId: string, stageId: string) {
+  await env.DB.prepare(
+    `INSERT INTO tasks (id, stage_id, stage_visit_id, required_permission, status)
+     VALUES (?, ?, ?, 'AP.Validate', 'open')`
+  )
+    .bind(taskId, stageId, visitId)
+    .run();
+}
+
+/** A row in the one genuinely new table decision 0488 adds. */
+async function recordTaskAction(
+  eventId: string,
+  taskId: string,
+  action: "claim" | "release",
+  actorId: string,
+  at: string,
+  comment: string | null = null
+) {
+  await env.DB.prepare(
+    "INSERT INTO task_action_events (id, task_id, action, actor_id, at, comment) VALUES (?, ?, ?, ?, ?, ?)"
+  )
+    .bind(eventId, taskId, action, actorId, at, comment)
+    .run();
+}
+
+/**
+ * Return / return-to-supplier / discard, written the same way
+ * `endTaskAndSiblings` (return-route.ts) actually writes them —
+ * directly on `tasks`, nothing in `task_action_events`, since decision
+ * 0488 derives these three read-time rather than storing them twice.
+ */
+async function endTask(
+  taskId: string,
+  visitId: string,
+  stageId: string,
+  endedBy: string,
+  at: string,
+  opts: { status: "returned" | "discarded" | "cancelled"; reason: string; returnedToStageId?: string | null }
+) {
+  await seedOpenTask(taskId, visitId, stageId);
+  await env.DB.prepare(
+    `UPDATE tasks SET status = ?, ended_by = ?, ended_at = ?, end_reason = ?, returned_to_stage_id = ? WHERE id = ?`
+  )
+    .bind(opts.status, endedBy, at, opts.reason, opts.returnedToStageId ?? null, taskId)
+    .run();
+}
+
 async function completeTask(
   taskId: string,
   visitId: string,
@@ -316,6 +364,169 @@ describe("what the feed contains, per source (decision 0267)", () => {
     const result = await handleGetActivity(env.DB, "inv-1");
     const items = (result.body as { items: { kind: string }[] }).items;
     expect(items.map((i) => i.kind)).toEqual(["received", "rule_fired", "comment", "stage_completed"]);
+  });
+});
+
+describe("task actions — claim/release/return/discard (decision 0488)", () => {
+  it("carries a claim, with the actor's name and no comment", async () => {
+    await seedInvoice("inv-1");
+    await seedStage("coding", "Coding");
+    await seedUser("u-priya", "Priya Patel");
+    await seedVisit("v-1", "inv-1", "coding", "2026-09-01 09:00:00");
+    await seedOpenTask("t-1", "v-1", "coding");
+    await recordTaskAction("e-1", "t-1", "claim", "u-priya", "2026-09-01 09:05:00");
+
+    const result = await handleGetActivity(env.DB, "inv-1");
+    const items = (result.body as { items: Record<string, unknown>[] }).items;
+    expect(items.find((i) => i.kind === "action_taken")).toEqual({
+      kind: "action_taken",
+      at: "2026-09-01 09:05:00",
+      action: "claim",
+      userName: "Priya Patel",
+      comment: null,
+    });
+  });
+
+  it("carries a release, with its comment", async () => {
+    await seedInvoice("inv-1");
+    await seedStage("coding", "Coding");
+    await seedUser("u-priya", "Priya Patel");
+    await seedVisit("v-1", "inv-1", "coding", "2026-09-01 09:00:00");
+    await seedOpenTask("t-1", "v-1", "coding");
+    await recordTaskAction("e-1", "t-1", "release", "u-priya", "2026-09-01 09:10:00", "Handing this to Sam.");
+
+    const result = await handleGetActivity(env.DB, "inv-1");
+    const items = (result.body as { items: Record<string, unknown>[] }).items;
+    expect(items.find((i) => i.kind === "action_taken")).toEqual({
+      kind: "action_taken",
+      at: "2026-09-01 09:10:00",
+      action: "release",
+      userName: "Priya Patel",
+      comment: "Handing this to Sam.",
+    });
+  });
+
+  it("carries every claim/release cycle on the same task, not only the latest", async () => {
+    // The exact gap this decision's migration exists to close:
+    // tasks.claimed_by/claimed_at only ever shows the most recent
+    // cycle, and release leaves no trace there at all.
+    await seedInvoice("inv-1");
+    await seedStage("coding", "Coding");
+    await seedUser("u-priya", "Priya Patel");
+    await seedUser("u-sam", "Sam Okafor");
+    await seedVisit("v-1", "inv-1", "coding", "2026-09-01 09:00:00");
+    await seedOpenTask("t-1", "v-1", "coding");
+    await recordTaskAction("e-1", "t-1", "claim", "u-priya", "2026-09-01 09:05:00");
+    await recordTaskAction("e-2", "t-1", "release", "u-priya", "2026-09-01 09:10:00");
+    await recordTaskAction("e-3", "t-1", "claim", "u-sam", "2026-09-01 09:15:00");
+
+    const result = await handleGetActivity(env.DB, "inv-1");
+    const items = (result.body as { items: Record<string, unknown>[] }).items;
+    const actions = items.filter((i) => i.kind === "action_taken");
+    expect(actions.map((a) => [a.action, a.userName])).toEqual([
+      ["claim", "Priya Patel"],
+      ["release", "Priya Patel"],
+      ["claim", "Sam Okafor"],
+    ]);
+  });
+
+  it("derives a return-to-stage entry from tasks itself, naming the target stage", async () => {
+    await seedInvoice("inv-1");
+    await seedStage("validation", "Validation");
+    await seedStage("coding", "Coding", 2);
+    await seedUser("u-priya", "Priya Patel");
+    await seedVisit("v-1", "inv-1", "coding", "2026-09-01 09:00:00");
+    await endTask("t-1", "v-1", "coding", "u-priya", "2026-09-01 09:20:00", {
+      status: "returned",
+      reason: "PO amount does not match",
+      returnedToStageId: "validation",
+    });
+
+    const result = await handleGetActivity(env.DB, "inv-1");
+    const items = (result.body as { items: Record<string, unknown>[] }).items;
+    expect(items.find((i) => i.kind === "action_taken")).toEqual({
+      kind: "action_taken",
+      at: "2026-09-01 09:20:00",
+      action: "return",
+      userName: "Priya Patel",
+      comment: "PO amount does not match",
+      targetStageName: "Validation",
+    });
+  });
+
+  it("derives a return-to-supplier entry, with no target stage", async () => {
+    await seedInvoice("inv-1");
+    await seedStage("coding", "Coding");
+    await seedUser("u-priya", "Priya Patel");
+    await seedVisit("v-1", "inv-1", "coding", "2026-09-01 09:00:00");
+    await endTask("t-1", "v-1", "coding", "u-priya", "2026-09-01 09:20:00", {
+      status: "returned",
+      reason: "Wrong supplier entirely",
+      returnedToStageId: null,
+    });
+
+    const result = await handleGetActivity(env.DB, "inv-1");
+    const items = (result.body as { items: Record<string, unknown>[] }).items;
+    const item = items.find((i) => i.kind === "action_taken");
+    expect(item?.action).toBe("return_to_supplier");
+    expect(item?.targetStageName).toBeUndefined();
+  });
+
+  it("derives a discard entry", async () => {
+    await seedInvoice("inv-1");
+    await seedStage("coding", "Coding");
+    await seedUser("u-priya", "Priya Patel");
+    await seedVisit("v-1", "inv-1", "coding", "2026-09-01 09:00:00");
+    await endTask("t-1", "v-1", "coding", "u-priya", "2026-09-01 09:20:00", {
+      status: "discarded",
+      reason: "Duplicate of inv-0",
+      returnedToStageId: null,
+    });
+
+    const result = await handleGetActivity(env.DB, "inv-1");
+    const items = (result.body as { items: Record<string, unknown>[] }).items;
+    expect(items.find((i) => i.kind === "action_taken")?.action).toBe("discard");
+  });
+
+  /**
+   * **The `cancelled` siblings `endTaskAndSiblings` produces are not a
+   * person's own action** — a task moot because a sibling returned the
+   * document should not read as if the person holding it did
+   * something. Confirmed directly rather than assumed: `status IN
+   * ('returned', 'discarded')` is what excludes it here.
+   */
+  it("never surfaces a cancelled sibling task as its own action", async () => {
+    await seedInvoice("inv-1");
+    await seedStage("coding", "Coding");
+    await seedUser("u-priya", "Priya Patel");
+    await seedVisit("v-1", "inv-1", "coding", "2026-09-01 09:00:00");
+    await endTask("t-2", "v-1", "coding", "u-priya", "2026-09-01 09:20:00", {
+      status: "cancelled",
+      reason: "the document was returned from this stage",
+      returnedToStageId: null,
+    });
+
+    const result = await handleGetActivity(env.DB, "inv-1");
+    const items = (result.body as { items: Record<string, unknown>[] }).items;
+    expect(items.filter((i) => i.kind === "action_taken")).toHaveLength(0);
+  });
+
+  it("merges claim, release and return alongside every other source, in chronological order", async () => {
+    await seedInvoice("inv-1", "2026-09-01 08:00:00");
+    await seedStage("coding", "Coding");
+    await seedUser("u-priya", "Priya Patel");
+    await seedVisit("v-1", "inv-1", "coding", "2026-09-01 08:30:00");
+    await seedOpenTask("t-1", "v-1", "coding");
+    await recordTaskAction("e-1", "t-1", "claim", "u-priya", "2026-09-01 09:00:00");
+    await env.DB.prepare(
+      `UPDATE tasks SET status = 'returned', ended_by = 'u-priya', ended_at = '2026-09-01 09:30:00',
+              end_reason = 'Needs the seller to confirm the amount', returned_to_stage_id = NULL
+       WHERE id = 't-1'`
+    ).run();
+
+    const result = await handleGetActivity(env.DB, "inv-1");
+    const items = (result.body as { items: { kind: string }[] }).items;
+    expect(items.map((i) => i.kind)).toEqual(["received", "action_taken", "action_taken"]);
   });
 });
 

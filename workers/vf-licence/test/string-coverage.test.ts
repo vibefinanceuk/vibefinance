@@ -154,6 +154,14 @@ const KEYS_THE_INTERFACE_USES = [
   "activity.received",
   "activity.stagecompleted",
   "activity.rulefired",
+  // Decision 0488 — Timeline/Chat entries for claim/release/return/
+  // return-to-supplier/discard, derived (not stored) read-time by
+  // activity-route.ts's own taskActionEvents/taskEndedEvents.
+  "activity.claimed",
+  "activity.released",
+  "activity.returned",
+  "activity.returnedtosupplier",
+  "activity.discarded",
   "rule.notrunning",
   "rule.approvedby",
   "compose.newversion",

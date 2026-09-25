@@ -4787,7 +4787,20 @@ export default {
       const auth = await authenticatePerson(db, request, env);
       if (!auth.user) return json({ error: auth.reason }, 401);
 
-      const result = await handleReleaseTask(db, releaseTaskMatch[1], auth.user);
+      // decision 0488: same optional-comment shape as /claim just
+      // below — a missing or unparsable body is not an error, since
+      // every existing caller posts none.
+      let comment: string | null = null;
+      try {
+        const raw: unknown = await request.json();
+        if (raw && typeof raw === "object" && typeof (raw as Record<string, unknown>).comment === "string") {
+          comment = (raw as Record<string, unknown>).comment as string;
+        }
+      } catch {
+        // No body, or not JSON — comment stays unset.
+      }
+
+      const result = await handleReleaseTask(db, releaseTaskMatch[1], auth.user, comment);
       return json(result.body, result.status);
     }
 
@@ -4885,8 +4898,25 @@ export default {
         }
       }
 
+      // decision 0488: an optional `comment` — every existing caller
+      // (viewer.js's own runAction, and this suite's own tests) posts
+      // with no body at all, so a missing or unparsable body is not an
+      // error here the way it is for /return, whose reason is
+      // mandatory. The generic comment-and-OK/Cancel modal the
+      // operator described is a later, separate decision; this is
+      // just the column it will eventually fill in.
+      let comment: string | null = null;
+      try {
+        const raw: unknown = await request.json();
+        if (raw && typeof raw === "object" && typeof (raw as Record<string, unknown>).comment === "string") {
+          comment = (raw as Record<string, unknown>).comment as string;
+        }
+      } catch {
+        // No body, or not JSON — comment stays unset.
+      }
+
       const result = claimTaskMatch
-        ? await handleClaimTask(db, taskId, auth.user.id)
+        ? await handleClaimTask(db, taskId, auth.user.id, comment)
         : await handleCompleteTask(db, taskId, auth.user.id);
       // A successful completion may unblock the owning process
       // instance (decision 0019) — checked here, not inside

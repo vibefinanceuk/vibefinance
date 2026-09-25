@@ -88,7 +88,12 @@ interface TaskOwnershipRow {
  * works, just with the permission looked up per-task instead of
  * hardcoded per-route.
  */
-export async function handleClaimTask(db: D1Database, taskId: string, claimingUserId: string): Promise<RouteResult> {
+export async function handleClaimTask(
+  db: D1Database,
+  taskId: string,
+  claimingUserId: string,
+  comment?: string | null
+): Promise<RouteResult> {
   const task = await db
     .prepare("SELECT owner_team_id, owner_user_id, claimed_by, completed_by FROM tasks WHERE id = ?")
     .bind(taskId)
@@ -124,6 +129,15 @@ export async function handleClaimTask(db: D1Database, taskId: string, claimingUs
   if (result.meta.changes === 0) {
     return { status: 409, body: { error: "task was already claimed by someone else" } };
   }
+
+  // decision 0488: the first durable record of this claim cycle — see
+  // migrations/0083_task_action_events.sql for why claim/release (and
+  // only those two) get a genuinely new table rather than deriving
+  // from `tasks` the way stage_completed/return/discard already do.
+  await db
+    .prepare("INSERT INTO task_action_events (id, task_id, action, actor_id, at, comment) VALUES (?, ?, 'claim', ?, ?, ?)")
+    .bind(crypto.randomUUID(), taskId, claimingUserId, now, comment ?? null)
+    .run();
 
   return { status: 200, body: { taskId, claimedBy: claimingUserId, claimedAt: now } };
 }
@@ -194,7 +208,8 @@ export async function handleCompleteTask(
 export async function handleReleaseTask(
   db: D1Database,
   taskId: string,
-  user: AuthenticatedUser
+  user: AuthenticatedUser,
+  comment?: string | null
 ): Promise<RouteResult> {
   const task = await db
     .prepare("SELECT claimed_by, status, owner_team_id FROM tasks WHERE id = ?")
@@ -227,6 +242,15 @@ export async function handleReleaseTask(
   await db
     .prepare("UPDATE tasks SET claimed_by = NULL, claimed_at = NULL WHERE id = ? AND claimed_by = ?")
     .bind(taskId, task.claimed_by)
+    .run();
+
+  // decision 0488: recorded against the person who took the action
+  // (`user.id`) — a manager's override release is their own act, not
+  // the previous holder's, the same distinction `releasedBy` already
+  // draws in the response body below.
+  await db
+    .prepare("INSERT INTO task_action_events (id, task_id, action, actor_id, at, comment) VALUES (?, ?, 'release', ?, ?, ?)")
+    .bind(crypto.randomUUID(), taskId, user.id, new Date().toISOString(), comment ?? null)
     .run();
 
   return {

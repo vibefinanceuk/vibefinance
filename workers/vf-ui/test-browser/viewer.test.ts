@@ -189,6 +189,13 @@ const STRINGS = {
     "activity.received": "Invoice received",
     "activity.stagecompleted": "{who} completed {stage}",
     "activity.rulefired": "Business rule \u2018{rule}\u2019 fired: {actions}",
+    // Decision 0488 \u2014 Timeline entries for claim/release/return/
+    // return-to-supplier/discard.
+    "activity.claimed": "{who} claimed this task",
+    "activity.released": "{who} released this task",
+    "activity.returned": "{who} returned this to {stage}",
+    "activity.returnedtosupplier": "{who} returned this to the supplier",
+    "activity.discarded": "{who} discarded this task",
     "activity.timelinetab": "Timeline / Chat",
     "activity.systemalert": "System Alert",
     // Removing a collaborator — decision 0476.
@@ -3882,6 +3889,135 @@ describe("the document/timeline tabs (decision 0269)", () => {
 
     expect(document.body.textContent).toContain("Business rule \u2018Spend Threshold\u2019 fired: routed to AP Review");
     expect(document.body.textContent).not.toContain("(line");
+  });
+
+  /**
+   * **Decision 0488** — a button/action taken renders with the real
+   * action icon (`icons.js`'s own `claim` shape), not the generic
+   * `.activitydot` every other system line uses.
+   */
+  it("shows a claim with its own icon, not the generic system dot", async () => {
+    stubFetch({
+      ...BASE_ROUTES,
+      "/api/documents/inv-1/activity": {
+        items: [{ kind: "action_taken", at: "2026-09-01 09:05:00", action: "claim", userName: "Priya Patel", comment: null }],
+      },
+    });
+
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    await openViewer(TASK, () => {});
+    await new Promise((r) => setTimeout(r, 0));
+
+    (timelineTabButton() as HTMLButtonElement).click();
+
+    expect(document.body.textContent).toContain("Priya Patel claimed this task");
+    expect(document.querySelector(".activityaction .activityactionicon svg")).not.toBeNull();
+    expect(document.querySelectorAll(".activitysysline .activitydot")).toHaveLength(0);
+  });
+
+  it("shows a release's own comment underneath the message line", async () => {
+    stubFetch({
+      ...BASE_ROUTES,
+      "/api/documents/inv-1/activity": {
+        items: [
+          {
+            kind: "action_taken",
+            at: "2026-09-01 09:10:00",
+            action: "release",
+            userName: "Priya Patel",
+            comment: "Wrong queue, sending it back.",
+          },
+        ],
+      },
+    });
+
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    await openViewer(TASK, () => {});
+    await new Promise((r) => setTimeout(r, 0));
+
+    (timelineTabButton() as HTMLButtonElement).click();
+
+    expect(document.body.textContent).toContain("Priya Patel released this task");
+    expect(document.querySelector(".activityactioncomment")?.textContent).toBe("Wrong queue, sending it back.");
+  });
+
+  it("names the target stage on a return", async () => {
+    stubFetch({
+      ...BASE_ROUTES,
+      "/api/documents/inv-1/activity": {
+        items: [
+          {
+            kind: "action_taken",
+            at: "2026-09-01 09:20:00",
+            action: "return",
+            userName: "Priya Patel",
+            comment: "PO amount does not match",
+            targetStageName: "Validation",
+          },
+        ],
+      },
+    });
+
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    await openViewer(TASK, () => {});
+    await new Promise((r) => setTimeout(r, 0));
+
+    (timelineTabButton() as HTMLButtonElement).click();
+
+    expect(document.body.textContent).toContain("Priya Patel returned this to Validation");
+  });
+
+  it("says nothing about a target stage on a return to the supplier", async () => {
+    stubFetch({
+      ...BASE_ROUTES,
+      "/api/documents/inv-1/activity": {
+        items: [
+          {
+            kind: "action_taken",
+            at: "2026-09-01 09:20:00",
+            action: "return_to_supplier",
+            userName: "Priya Patel",
+            comment: "Wrong supplier entirely",
+          },
+        ],
+      },
+    });
+
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    await openViewer(TASK, () => {});
+    await new Promise((r) => setTimeout(r, 0));
+
+    (timelineTabButton() as HTMLButtonElement).click();
+
+    expect(document.body.textContent).toContain("Priya Patel returned this to the supplier");
+  });
+
+  it("shows a discard with no comment line when none was given", async () => {
+    stubFetch({
+      ...BASE_ROUTES,
+      "/api/documents/inv-1/activity": {
+        items: [{ kind: "action_taken", at: "2026-09-01 09:20:00", action: "discard", userName: "Priya Patel", comment: null }],
+      },
+    });
+
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    await openViewer(TASK, () => {});
+    await new Promise((r) => setTimeout(r, 0));
+
+    (timelineTabButton() as HTMLButtonElement).click();
+
+    expect(document.body.textContent).toContain("Priya Patel discarded this task");
+    expect(document.querySelector(".activityactioncomment")).toBeNull();
   });
 
   it("shows a comment with an avatar, not as a system line", async () => {

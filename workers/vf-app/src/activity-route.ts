@@ -22,7 +22,7 @@ import type { Locale } from "./i18n.js";
  */
 
 interface ActivityItem {
-  kind: "comment" | "received" | "stage_completed" | "rule_fired";
+  kind: "comment" | "received" | "stage_completed" | "rule_fired" | "action_taken";
   at: string;
   [key: string]: unknown;
 }
@@ -123,6 +123,88 @@ async function stageCompletedEvents(db: D1Database, invoiceId: string): Promise<
     at: r.at,
     stageName: r.stage_name,
     userName: r.user_name,
+  }));
+}
+
+/**
+ * Claim / release — decision 0488.
+ *
+ * **The one genuine new table this decision adds**, `task_action_
+ * events` (migration 0083) — see its own header comment for why only
+ * these two actions get durable storage while everything else here
+ * stays derived. Same invoice-scoping join every other derivation in
+ * this file already uses (`stage_visits` -> `process_instances`), so a
+ * task created directly via `POST /tasks` with no `stage_visit_id`
+ * (decision 0018's own pre-engine path) is silently excluded here the
+ * same way it already is from `stageCompletedEvents`.
+ */
+async function taskActionEvents(db: D1Database, invoiceId: string): Promise<ActivityItem[]> {
+  const rows = await db
+    .prepare(
+      `SELECT e.action, e.at, e.comment, u.name AS user_name
+       FROM task_action_events e
+       JOIN tasks t ON t.id = e.task_id
+       JOIN stage_visits v ON v.id = t.stage_visit_id
+       JOIN process_instances pi ON pi.id = v.process_instance_id
+       JOIN org_users u ON u.id = e.actor_id
+       WHERE pi.subject_type = 'invoice' AND pi.subject_id = ?`
+    )
+    .bind(invoiceId)
+    .all<{ action: string; at: string; comment: string | null; user_name: string }>();
+
+  return rows.results.map((r) => ({
+    kind: "action_taken",
+    at: r.at,
+    action: r.action,
+    userName: r.user_name,
+    comment: r.comment,
+  }));
+}
+
+/**
+ * Return / return-to-supplier / discard — decision 0488.
+ *
+ * **Derived, not stored** — each is already terminal and fully
+ * recorded on `tasks` itself (`ended_by`/`ended_at`/`end_reason`/
+ * `status`/`returned_to_stage_id`, decision 0075 and migrations 0031/
+ * 0033), exactly the principle this file's own header comment states.
+ * The three are told apart purely by `status` and whether
+ * `returned_to_stage_id` is set — `endTaskAndSiblings` (return-
+ * route.ts) is where all three, and the `cancelled` siblings a return
+ * produces, are actually written; `status IN ('returned', 'discarded')`
+ * is what excludes those siblings here, the same way a task simply
+ * moot from a return should not read as its own audit-trail action.
+ */
+async function taskEndedEvents(db: D1Database, invoiceId: string): Promise<ActivityItem[]> {
+  const rows = await db
+    .prepare(
+      `SELECT t.status, t.ended_at AS at, t.end_reason, t.returned_to_stage_id,
+              u.name AS user_name, s.name AS target_stage_name
+       FROM tasks t
+       JOIN stage_visits v ON v.id = t.stage_visit_id
+       JOIN process_instances pi ON pi.id = v.process_instance_id
+       JOIN org_users u ON u.id = t.ended_by
+       LEFT JOIN process_stages s ON s.id = t.returned_to_stage_id
+       WHERE pi.subject_type = 'invoice' AND pi.subject_id = ?
+         AND t.status IN ('returned', 'discarded')`
+    )
+    .bind(invoiceId)
+    .all<{
+      status: string;
+      at: string;
+      end_reason: string | null;
+      returned_to_stage_id: string | null;
+      user_name: string;
+      target_stage_name: string | null;
+    }>();
+
+  return rows.results.map((r) => ({
+    kind: "action_taken",
+    at: r.at,
+    action: r.status === "discarded" ? "discard" : r.returned_to_stage_id ? "return" : "return_to_supplier",
+    userName: r.user_name,
+    comment: r.end_reason,
+    targetStageName: r.returned_to_stage_id ? r.target_stage_name : undefined,
   }));
 }
 
@@ -261,15 +343,17 @@ export async function handleGetActivity(db: D1Database, invoiceId: string): Prom
     return { status: 404, body: { error: `document ${invoiceId} does not exist` } };
   }
 
-  const [received, stageCompletions, ruleFirings, comments] = await Promise.all([
+  const [received, stageCompletions, ruleFirings, comments, taskActions, taskEnded] = await Promise.all([
     receivedEvent(db, invoiceId),
     stageCompletedEvents(db, invoiceId),
     ruleFiredEvents(db, invoiceId),
     commentEvents(db, invoiceId),
+    taskActionEvents(db, invoiceId),
+    taskEndedEvents(db, invoiceId),
   ]);
 
-  const items = [...received, ...stageCompletions, ...ruleFirings, ...comments].sort((a, b) =>
-    a.at < b.at ? -1 : a.at > b.at ? 1 : 0
+  const items = [...received, ...stageCompletions, ...ruleFirings, ...comments, ...taskActions, ...taskEnded].sort(
+    (a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0)
   );
 
   return { status: 200, body: { items } };
