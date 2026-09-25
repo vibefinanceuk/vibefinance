@@ -179,6 +179,57 @@ export async function loadStoredInvoiceLines(
   });
 }
 
+/**
+ * An invoice's real, current facts — header and lines, live from
+ * storage, never a snapshot — decision 0487.
+ *
+ * **Consolidates a load that had already been written out twice.**
+ * `followUpAfterTaskCompletion` (index.ts) loads the header's
+ * `facts_json` plus its structured columns plus a PO match merge, and
+ * `POST /processes/instances/:id/visit`'s own fallback (index.ts, "a
+ * real gap, found while building decision 0370") does the same thing
+ * again for the same reason — a caller with no facts of its own still
+ * needs the real ones. Decision 0487's own re-check needed it a third
+ * time, which is the actual trigger for extracting it: three
+ * independent copies of "load facts_json, merge the structured
+ * columns, merge the PO match" is the same shape decision 0028 already
+ * refused to leave duplicated for `mergeStructuredInvoiceFacts` itself.
+ *
+ * `null` when the invoice does not exist — a header row is the one
+ * thing every caller here already required before doing anything with
+ * the result.
+ */
+export async function loadLiveInvoiceFacts(
+  db: D1Database,
+  invoiceId: string
+): Promise<{ facts: InvoiceFacts; lines: Array<InvoiceFacts & { lineNumber: number }> } | null> {
+  const headerRow = await db
+    .prepare(
+      `SELECT facts_json, supplier_vat_id, currency, issue_date, total_with_vat,
+              mandate_channel, invoice_number, duplicate_confidence
+       FROM invoice_headers WHERE id = ?`
+    )
+    .bind(invoiceId)
+    .first<{
+      facts_json: string;
+      supplier_vat_id: string | null;
+      currency: string | null;
+      issue_date: string | null;
+      total_with_vat: number | null;
+      mandate_channel: string | null;
+      invoice_number: string | null;
+      duplicate_confidence: number | null;
+    }>();
+  if (!headerRow) return null;
+
+  let facts = JSON.parse(headerRow.facts_json) as InvoiceFacts;
+  facts = mergeStructuredInvoiceFacts(facts, headerRow);
+  const storedLines = await loadStoredInvoiceLines(db, invoiceId);
+  const poMerged = await mergePoMatchFacts(db, facts, storedLines);
+
+  return { facts: poMerged.headerFacts, lines: poMerged.lines };
+}
+
 export async function handleUpsertInvoice(db: D1Database, body: UpsertInvoiceBody): Promise<RouteResult> {
   const { id, supplierVatId, currency, issueDate, totalWithVat, mandateChannel, invoiceNumber, facts, lines } = body;
   if (typeof id !== "string" || !id) {

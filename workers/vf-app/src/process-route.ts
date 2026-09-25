@@ -165,15 +165,25 @@ interface StageDetail {
    * second route only one of them would use.
    */
   offerFieldRestrictions: boolean;
+  /**
+   * Whether Complete, at this stage, refuses until the rule that
+   * raised the task no longer matches — decision 0487. `false` reads
+   * both "explicitly turned off" and "never configured," the same
+   * absence-means-default reasoning `stage_field_visibility` (0038)
+   * already established for its own sparse table.
+   */
+  reverifyRuleOnComplete: boolean;
 }
 
 async function stagesAtVersion(db: D1Database, processId: string, version: number): Promise<StageDetail[]> {
   const rows = await db
     .prepare(
-      `SELECT s.id, s.name, v.sequence, s.rule_set_id, r.name AS rule_set_name, s.evaluation_scope, s.offer_field_restrictions
+      `SELECT s.id, s.name, v.sequence, s.rule_set_id, r.name AS rule_set_name, s.evaluation_scope,
+              s.offer_field_restrictions, sa.reverify_rule_on_complete
        FROM process_stage_versions v
        JOIN process_stages s ON s.id = v.stage_id
        LEFT JOIN rule_sets r ON r.id = s.rule_set_id
+       LEFT JOIN stage_actions sa ON sa.stage_id = s.id AND sa.action = 'complete'
        WHERE v.process_id = ? AND v.version = ?
        ORDER BY v.sequence ASC`
     )
@@ -186,6 +196,7 @@ async function stagesAtVersion(db: D1Database, processId: string, version: numbe
       rule_set_name: string | null;
       evaluation_scope: string;
       offer_field_restrictions: number;
+      reverify_rule_on_complete: number | null;
     }>();
   return rows.results.map((r) => ({
     id: r.id,
@@ -195,6 +206,7 @@ async function stagesAtVersion(db: D1Database, processId: string, version: numbe
     ruleSetName: r.rule_set_name,
     evaluationScope: r.evaluation_scope,
     offerFieldRestrictions: r.offer_field_restrictions === 1,
+    reverifyRuleOnComplete: r.reverify_rule_on_complete === 1,
   }));
 }
 

@@ -108,7 +108,7 @@ import {
   handleRemoveTeamMember,
   handleUpdateTeam,
 } from "./team-route.js";
-import { handleUpsertInvoice, mergeStructuredInvoiceFacts , handleGetInvoice, loadStoredInvoiceLines } from "./invoice-facts-route.js";
+import { handleUpsertInvoice, mergeStructuredInvoiceFacts , handleGetInvoice, loadStoredInvoiceLines, loadLiveInvoiceFacts } from "./invoice-facts-route.js";
 import { mergePoMatchFacts } from "./po-matching.js";
 import { handleUpsertExpenseReport } from "./expense-facts-route.js";
 import {
@@ -197,6 +197,11 @@ import {
   handleSetStageReadOnly,
   handleSetStageOffersFieldRestrictions,
 } from "./field-visibility-route.js";
+import {
+  handleSetStageAction,
+  stageReverifiesRuleOnComplete,
+  ruleStillFiresForTask,
+} from "./stage-actions-route.js";
 import { handlePreflight, withCors } from "@vibefinance/shared";
 import { verifyDocumentToken, mintPageToken, verifyPageToken } from "./document-token.js";
 import { retrieveInvoiceDocument, renderXmlForDisplay } from "./document-storage.js";
@@ -736,31 +741,14 @@ async function followUpAfterTaskCompletion(db: D1Database, instanceId: string): 
     .first<{ subject_type: string; subject_id: string }>();
   if (instanceRow?.subject_type !== "invoice") return;
 
-  const headerRow = await db
-    .prepare(
-      `SELECT facts_json, supplier_vat_id, currency, issue_date, total_with_vat,
-              mandate_channel, invoice_number, duplicate_confidence
-       FROM invoice_headers WHERE id = ?`
-    )
-    .bind(instanceRow.subject_id)
-    .first<{
-      facts_json: string;
-      supplier_vat_id: string | null;
-      currency: string | null;
-      issue_date: string | null;
-      total_with_vat: number | null;
-      mandate_channel: string | null;
-      invoice_number: string | null;
-      duplicate_confidence: number | null;
-    }>();
-  if (!headerRow) return;
+  // Decision 0487 pulled the load-facts-header-plus-structured-plus-
+  // PO-match sequence that used to live inline here into
+  // `loadLiveInvoiceFacts` (invoice-facts-route.ts) — a third copy of
+  // the exact same load was about to exist otherwise.
+  const live = await loadLiveInvoiceFacts(db, instanceRow.subject_id);
+  if (!live) return;
 
-  let facts = JSON.parse(headerRow.facts_json) as InvoiceFacts;
-  facts = mergeStructuredInvoiceFacts(facts, headerRow);
-  const storedLines = await loadStoredInvoiceLines(db, instanceRow.subject_id);
-  const poMerged = await mergePoMatchFacts(db, facts, storedLines);
-
-  const result = await visitCurrentStage(db, instanceId, poMerged.headerFacts, poMerged.lines);
+  const result = await visitCurrentStage(db, instanceId, live.facts, live.lines);
 
   // Decision 0435's own reasoning, restated for this path: a visit
   // that errors out is not the same as one with nothing to say.
@@ -4040,6 +4028,33 @@ export default {
       return json(result.body, result.status);
     }
 
+    // What a stage's own action does — decision 0487. One row per
+    // (stage, action); see migrations/0082_stage_actions.sql for why
+    // this is a table rather than a column alongside read-only and
+    // offer-field-restrictions above.
+    const stageActionMatch = pathname.match(/^\/processes\/stages\/([^/]+)\/actions\/([^/]+)$/);
+    if (stageActionMatch && request.method === "PUT") {
+      const { db } = resolveTenant(request, env);
+      const auth = await requirePermission(db, request, "Admin.Configure", sessionContext(env));
+      if (!auth.authorized) {
+        return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
+      }
+      let actionBody: unknown;
+      try {
+        actionBody = await request.json();
+      } catch {
+        return json({ error: t("invalidJsonBody", resolveLocale(env.LOCALE)) }, 400);
+      }
+
+      const result = await handleSetStageAction(
+        db,
+        stageActionMatch[1],
+        stageActionMatch[2],
+        (actionBody as Record<string, unknown>) ?? {}
+      );
+      return json(result.body, result.status);
+    }
+
 
     if (stageVisMatch && request.method === "PUT") {
       const { db } = resolveTenant(request, env);
@@ -4794,7 +4809,7 @@ export default {
          * what decision 0144 warns about.
          */
         .prepare(
-          `SELECT t.required_permission, h.org_unit_id
+          `SELECT t.required_permission, t.stage_id, h.org_unit_id
            FROM tasks t
            LEFT JOIN stage_visits v ON v.id = t.stage_visit_id
            LEFT JOIN process_instances pi ON pi.id = v.process_instance_id
@@ -4803,7 +4818,7 @@ export default {
            WHERE t.id = ?`
         )
         .bind(taskId)
-        .first<{ required_permission: string }>();
+        .first<{ required_permission: string; stage_id: string }>();
       if (!taskRow) {
         return json({ error: `task ${taskId} does not exist` }, 404);
       }
@@ -4837,6 +4852,37 @@ export default {
         ))
       ) {
         return json({ error: t("forbidden", locale) }, 403);
+      }
+
+      /**
+       * **Decision 0487 — a stage may configure Complete to refuse
+       * until the rule that raised this task no longer matches.**
+       * Checked here, ahead of `handleCompleteTask`, rather than
+       * inside it, for the same reason the completion cascade a few
+       * lines below already lives here and not there: `task-route.ts`
+       * stays free of rule-evaluation and facts-loading imports, the
+       * same import-direction discipline the cascade's own comment
+       * already states.
+       *
+       * The cheap flag read runs first, unconditionally, so every
+       * stage that has not opted in — which is every stage today —
+       * pays one extra single-row SELECT and nothing more.
+       */
+      if (completeTaskMatch) {
+        const reverifies = await stageReverifiesRuleOnComplete(db, taskRow.stage_id);
+        if (reverifies) {
+          const reverify = await ruleStillFiresForTask(db, taskId);
+          if (reverify.blocked) {
+            return json(
+              {
+                error: t("completeBlockedRuleStillFires", locale, { rule: reverify.ruleName ?? "" }),
+                reason: "rule_still_fires",
+                ruleName: reverify.ruleName,
+              },
+              409
+            );
+          }
+        }
       }
 
       const result = claimTaskMatch

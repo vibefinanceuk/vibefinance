@@ -279,6 +279,22 @@ async function setStageOffersFieldRestrictions(stageId, offer) {
 }
 
 /**
+ * Whether Complete, at this stage, refuses until the rule that raised
+ * the task no longer matches — decision 0487. The general per-(stage,
+ * action) route (migrations/0082_stage_actions.sql); "complete" is the
+ * only action this screen offers a toggle for today, the same way
+ * this screen only ever configured Account Coding restrictions and
+ * not every field decision 0114 knows about.
+ */
+async function setStageReverifiesRuleOnComplete(stageId, reverify) {
+  return fetch(`/api/processes/stages/${encodeURIComponent(stageId)}/actions/complete`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ reverifyRuleOnComplete: reverify }),
+  });
+}
+
+/**
  * **One panel per stage, three checkboxes each — decision 0483.**
  * `standardMatchingRulesPanel`'s own auto-save-on-toggle shape,
  * reused rather than a Save button: a restriction is a single fact,
@@ -355,12 +371,49 @@ function stageRestrictionsTab(problem) {
       offerToggle,
     ]);
 
+    /**
+     * **What Complete does at this stage — decision 0487.** Independent
+     * of the Account Coding checkboxes above: an Approval stage that
+     * never offers field restrictions (it has no Account Coding fields
+     * to restrict) can still reasonably want its own Complete gated on
+     * the rule that raised it no longer matching, so this row is not
+     * nested inside the `offered` branch below.
+     */
+    const reverifyToggleId = `stagereverify-${stage.id}`;
+    const reverifyToggle = el("input", {
+      type: "checkbox",
+      id: reverifyToggleId,
+      ...(stage.reverifyRuleOnComplete ? { checked: "checked" } : {}),
+    });
+    reverifyToggle.onchange = async () => {
+      problem.textContent = "";
+      const reverify = reverifyToggle.checked;
+      try {
+        const response = await setStageReverifiesRuleOnComplete(stage.id, reverify);
+        if (!response.ok) {
+          problem.textContent = (await response.json()).error ?? t("apsetup.stagerestrictions.savefailed");
+          reverifyToggle.checked = !reverifyToggle.checked;
+          return;
+        }
+        await loadStageRestrictions(stageRestrictionsProcessId);
+        render();
+      } catch {
+        problem.textContent = t("apsetup.stagerestrictions.savefailed");
+        reverifyToggle.checked = !reverifyToggle.checked;
+      }
+    };
+    const reverifyToggleRow = el("div", { class: "assignmentrow" }, [
+      el("label", { for: reverifyToggleId, text: t("apsetup.stagerestrictions.reverifyoncomplete") }),
+      reverifyToggle,
+    ]);
+
     const fields = stageFieldVisibility[stage.id] ?? [];
 
     const body = !offered
       ? [
           el("p", { class: "muted sm", text: t("apsetup.stagerestrictions.notoffered") }),
           offerToggleRow,
+          reverifyToggleRow,
         ]
       : (() => {
           const rows = CODING_RESTRICTION_FIELDS.map((field) => {
@@ -413,6 +466,7 @@ function stageRestrictionsTab(problem) {
             el("div", { class: "assignmentlist" }, rows),
             el("p", { class: "muted sm", text: t("apsetup.stagerestrictions.fieldshint") }),
             offerToggleRow,
+            reverifyToggleRow,
           ];
         })();
 

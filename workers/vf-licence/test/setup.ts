@@ -154,6 +154,7 @@ import openTaskReasonStringsSql from "../migrations/0163_open_task_reason_string
 import newSellerAndErpReleaseStringsSql from "../migrations/0164_new_seller_and_erp_release_strings.sql?raw";
 import stageRestrictionsStringsSql from "../migrations/0165_stage_restrictions_strings.sql?raw";
 import stageOffersRestrictionsStringsSql from "../migrations/0166_stage_offers_restrictions_strings.sql?raw";
+import stageReverifyRuleStringsSql from "../migrations/0167_stage_reverify_rule_strings.sql?raw";
 
 function stripSqlComments(sql: string): string {
   return sql
@@ -340,5 +341,6 @@ export async function applyTestSchema(): Promise<void> {
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(newSellerAndErpReleaseStringsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(stageRestrictionsStringsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(stageOffersRestrictionsStringsSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(stageReverifyRuleStringsSql)));
 
 }

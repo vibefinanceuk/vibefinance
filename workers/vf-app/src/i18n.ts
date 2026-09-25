@@ -42,7 +42,8 @@ export type MessageKey =
   | "commentBodyRequired"
   | "ruleDoesNotExistInRuleSet"
   | "invoiceDoesNotExist"
-  | "unsupportedLocale";
+  | "unsupportedLocale"
+  | "completeBlockedRuleStillFires";
 
 type MessageParams = Record<string, string | number>;
 
@@ -263,6 +264,17 @@ const MESSAGES: Record<MessageKey, Record<Locale, string>> = {
     es: "el idioma {locale} no es compatible",
     it: "la lingua {locale} non è supportata",
     nl: "taal {locale} wordt niet ondersteund",
+  },
+  // Decision 0487 — a stage configured to reverify the rule that
+  // raised a task before Complete succeeds, and that rule still
+  // matches live facts.
+  completeBlockedRuleStillFires: {
+    en: 'the condition that raised this task ("{rule}") still holds — nothing has changed yet',
+    de: 'die Bedingung, die diese Aufgabe ausgelöst hat („{rule}“), gilt weiterhin — es hat sich noch nichts geändert',
+    fr: "la condition qui a déclenché cette tâche (« {rule} ») est toujours vraie — rien n'a encore changé",
+    es: 'la condición que generó esta tarea («{rule}») sigue siendo válida — todavía no ha cambiado nada',
+    it: 'la condizione che ha generato questa attività ("{rule}") è ancora valida — non è ancora cambiato nulla',
+    nl: 'de voorwaarde die deze taak heeft veroorzaakt („{rule}”) geldt nog steeds — er is nog niets veranderd',
   },
 };
 

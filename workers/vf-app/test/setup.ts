@@ -86,6 +86,7 @@ import matchingExceptionsAndBusinessUserSql from "../../../migrations/0078_match
 import taskRuleAttributionAndNameTranslationsSql from "../../../migrations/0079_task_rule_attribution_and_name_translations.sql?raw";
 import taskSystemReasonSql from "../../../migrations/0080_task_system_reason.sql?raw";
 import stageOffersFieldRestrictionsSql from "../../../migrations/0081_stage_offers_field_restrictions.sql?raw";
+import stageActionsSql from "../../../migrations/0082_stage_actions.sql?raw";
 
 // Another known divergence from production, on top of the one below:
 // D1's exec() splits its input by newline and executes each non-empty
@@ -158,6 +159,9 @@ const TABLES_IN_DROP_ORDER = ["document_comments",
   "tasks",
   "stage_visits",
   "process_instances",
+  // Decision 0487 (migration 0082) — references process_stages, same
+  // reasoning as stage_field_visibility above: dropped before it.
+  "stage_actions",
   "process_stages",
   "processes",
   "invoice_lines",
@@ -330,6 +334,7 @@ export async function applyTestSchema(): Promise<void> {
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(taskRuleAttributionAndNameTranslationsSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(taskSystemReasonSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(stageOffersFieldRestrictionsSql)));
+  await env.DB.exec(toOneStatementPerLine(stripSqlComments(stageActionsSql)));
 }
 
 /**

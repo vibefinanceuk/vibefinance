@@ -1461,6 +1461,26 @@ async function runAction(name, task, onClose) {
   if (!response.ok) {
     const failure = await response.json().catch(() => ({}));
     note(failure.error ?? t("viewer.actionfailed"));
+    /**
+     * **Decision 0487 — refused because the "here because" reason
+     * hasn't changed.** The banner (`reasonLinePanel()`) is already on
+     * screen, already naming the rule; the point of failure is that
+     * somebody looked at it and thought the underlying condition was
+     * resolved when it was not. A generic toast alone puts the answer
+     * in a place that vanishes on the next click — flashing the panel
+     * that already explains "why" draws the eye back to it instead of
+     * introducing a second, separate explanation.
+     */
+    if (failure.reason === "rule_still_fires") {
+      const panel = document.querySelector(".panel.reasonline");
+      if (panel) {
+        panel.classList.remove("reasonline-flash");
+        // Forces a reflow so re-adding the class restarts the
+        // animation on a second refused click in a row, not a no-op.
+        void panel.offsetWidth;
+        panel.classList.add("reasonline-flash");
+      }
+    }
     return;
   }
 

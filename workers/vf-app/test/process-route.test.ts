@@ -168,6 +168,31 @@ describe("handleGetProcess — decision 0349", () => {
     const body = result.body as { stages: { id: string; offerFieldRestrictions: boolean }[] };
     expect(body.stages[0]).toEqual(expect.objectContaining({ offerFieldRestrictions: false }));
   });
+
+  it("defaults a new stage to not reverifying its rule on Complete — decision 0487, sparse and off by default", async () => {
+    await handleCreateProcess(env.DB, { id: "p1", name: "Standard AP" });
+    await handleCreateStage(env.DB, "p1", { id: "s1", name: "Coding", sequence: 1 });
+
+    const result = await handleGetProcess(env.DB, "p1");
+    const body = result.body as { stages: { id: string; reverifyRuleOnComplete: boolean }[] };
+    expect(body.stages[0]).toEqual(expect.objectContaining({ reverifyRuleOnComplete: false }));
+  });
+
+  it("carries a stage turned on through to the read", async () => {
+    // Reads the same table `handleSetStageAction` writes to — a real,
+    // if minimal, end-to-end check that the two agree.
+    await handleCreateProcess(env.DB, { id: "p1", name: "Standard AP" });
+    await handleCreateStage(env.DB, "p1", { id: "s1", name: "Coding", sequence: 1 });
+    await env.DB
+      .prepare(
+        `INSERT INTO stage_actions (stage_id, action, reverify_rule_on_complete) VALUES ('s1', 'complete', 1)`
+      )
+      .run();
+
+    const result = await handleGetProcess(env.DB, "p1");
+    const body = result.body as { stages: { id: string; reverifyRuleOnComplete: boolean }[] };
+    expect(body.stages[0]).toEqual(expect.objectContaining({ reverifyRuleOnComplete: true }));
+  });
 });
 
 describe("handleStartDraft — decision 0353", () => {

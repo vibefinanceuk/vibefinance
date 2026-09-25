@@ -1920,6 +1920,20 @@
   }
   .reasonline-detail[hidden] { display: none; }
 
+  /**
+   * Decision 0487 — Complete refused because the reason above still
+   * holds. A couple of soft pulses using `--bg-warning` (tokens.css) —
+   * this project's own "look at this" tier (decision 0395), not
+   * `--bg-danger`: nothing failed, a person just needs to look again.
+   */
+  .reasonline-flash {
+    animation: reasonline-flash-pulse 0.5s ease-in-out 2;
+  }
+  @keyframes reasonline-flash-pulse {
+    0%, 100% { background: transparent; }
+    50% { background: var(--bg-warning); }
+  }
+
   /* A button that reads as a link, because it opens rather than acts. */
   .linky {
     background: none;

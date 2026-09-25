@@ -753,6 +753,8 @@ const KEYS_THE_INTERFACE_USES = [
   // Which stages the screen even offers a checkbox for — decision 0485.
   "apsetup.stagerestrictions.offerhere",
   "apsetup.stagerestrictions.notoffered",
+  // What Complete does at a stage — decision 0487.
+  "apsetup.stagerestrictions.reverifyoncomplete",
 ];
 
 /**

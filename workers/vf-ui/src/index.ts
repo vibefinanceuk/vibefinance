@@ -393,6 +393,12 @@ const PROXIED_TO_INSTANCE: RegExp[] = [
    * lesson.
    */
   /^\/processes\/stages\/[^/]+\/offer-field-restrictions$/,
+  /**
+   * What a stage's own action does — decision 0487. Added alongside
+   * the route itself, the same "in the same change, not after a live
+   * report" discipline decision 0484's own comment above states.
+   */
+  /^\/processes\/stages\/[^/]+\/actions\/[^/]+$/,
   /^\/processes\/[^/]+\/sources$/,
   /^\/sources\/[^/]+\/email$/,
   // Renaming and retiring one (decision 0130). **The bare path**, which

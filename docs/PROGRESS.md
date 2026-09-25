@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 25 September 2026 (decision 0486). A living document: what
+Last updated 25 September 2026 (decision 0487). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,43 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Complete can recheck the rule that raised the task (0487)
+- **Asked live**, about the Coding queue: clicking Complete should
+  confirm the condition that raised the task has actually been
+  resolved, by re-firing that rule against live facts, not just record
+  that somebody clicked a button.
+- **A new table, `stage_actions` (migration 0082) — one row per
+  (stage, action), not a column on `process_stages`.** Built this
+  shape rather than a scalar column because the same conversation
+  surfaced a much larger ask (see "Not built" below): several actions,
+  each wanting their own configured behaviour, which a column-per-
+  action shape would mean a fresh migration for every one added.
+  Sparse and off by default — nothing is enforced until an operator
+  opts a stage in.
+- **The exact rule VERSION that fired** (via `stage_visit_steps`, not
+  whichever version is active now), evaluated against always-live
+  facts (`loadLiveInvoiceFacts`, a new shared helper that also closed
+  a duplication — the same load had been written out twice already in
+  `index.ts`). Fails open — never blocks — whenever the exact thing to
+  re-check cannot be confidently pinned down (a `system_reason` task,
+  a task with no stage visit behind it, a missing `stage_visit_steps`
+  row, a non-invoice subject).
+- **Refusal reuses the existing "here because" banner** (decision
+  0478) rather than a new UI pattern — it flashes, and the task simply
+  stays open and claimed, which is the operator's own "reasserted and
+  available again" fallback, achieved by not completing it rather than
+  new machinery.
+- **Not built**: the much larger per-stage action/button system the
+  operator described in the same conversation — a real per-stage
+  action vocabulary, a comment-and-OK/Cancel modal with action-
+  specific extra fields (Reassign's user picker, Route To Approver's
+  conditional manual-approver picker, Return To Seller's reason and
+  email dropdowns), and a Timeline/Chat audit entry on every action.
+  This decision builds the rule-re-execution engine that system will
+  call into; the system itself is a separate, not-yet-scoped piece of
+  work.
+- Full reasoning and verification counts in decision 0487.
 
 ### `/invoices/:id/key` never checked the claim (0486)
 - **Reported live**: Account Coding on a non-PO invoice in the Coding

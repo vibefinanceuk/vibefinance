@@ -1779,6 +1779,103 @@ describe("process instances and stage visits, through the real router (decision 
     });
   });
 
+  describe("Complete can be configured to refuse until the rule that raised the task no longer matches — decision 0487", () => {
+    async function seedProcessAndTeam(): Promise<void> {
+      await SELF.fetch("https://example.com/processes", { method: "POST", headers: authHeaders(), body: JSON.stringify({ id: "p1", name: "AP" }) });
+      await env.DB.prepare("INSERT INTO org_units (id, name) VALUES ('u1', 'Acme France') ON CONFLICT(id) DO NOTHING").run();
+      await SELF.fetch("https://example.com/org/teams", { method: "POST", headers: authHeaders(), body: JSON.stringify({ id: "ap-team", name: "AP team", unitId: "u1" }) });
+      await SELF.fetch("https://example.com/org/teams/ap-team/members", {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({ userId: "test-user" }),
+      });
+    }
+
+    it("refuses Complete while the rule still matches, and stops refusing once it no longer does", async () => {
+      await seedProcessAndTeam();
+      await seedActivatedRuleSet("rs-coding", {
+        conditions: { field: "coding.gl_code", operator: "is_empty" },
+        actions: [{ type: "assign_task", params: { team: "ap-team", permission: "AP.Code" } }],
+      });
+      await SELF.fetch("https://example.com/processes/p1/stages", { method: "POST", headers: authHeaders(), body: JSON.stringify({ id: "s1", name: "Coding", sequence: 1, ruleSetId: "rs-coding" }) });
+      await SELF.fetch("https://example.com/processes/p1/stages", { method: "POST", headers: authHeaders(), body: JSON.stringify({ id: "s2", name: "Approval", sequence: 2 }) });
+
+      // The operator's own opt-in — off by default (migration 0082),
+      // on here so this test exercises the refusal at all.
+      const reverifyRes = await SELF.fetch("https://example.com/processes/stages/s1/actions/complete", {
+        method: "PUT",
+        headers: authHeaders(),
+        body: JSON.stringify({ reverifyRuleOnComplete: true }),
+      });
+      expect(reverifyRes.status).toBe(200);
+
+      await SELF.fetch("https://example.com/invoices", {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({ id: "inv-487-a", facts: {} }),
+      });
+      const createRes = await SELF.fetch("https://example.com/processes/p1/instances", {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({ subjectType: "invoice", subjectId: "inv-487-a" }),
+      });
+      const instanceId = (await createRes.json() as { id: string }).id;
+      await SELF.fetch(`https://example.com/process-instances/${instanceId}/visit`, { method: "POST", headers: authHeaders(), body: JSON.stringify({ facts: {} }) });
+
+      const task = await env.DB.prepare("SELECT id FROM tasks WHERE stage_id = 's1'").first<{ id: string }>();
+      await SELF.fetch(`https://example.com/tasks/${task!.id}/claim`, { method: "POST", headers: authHeaders() });
+
+      // Clicked Complete without actually coding the line — the
+      // condition that raised the task ("coding.gl_code" is_empty) is
+      // still true.
+      const refusedRes = await SELF.fetch(`https://example.com/tasks/${task!.id}/complete`, { method: "POST", headers: authHeaders() });
+      expect(refusedRes.status).toBe(409);
+      const refusedBody = await refusedRes.json() as { reason: string; ruleName: string | null };
+      expect(refusedBody.reason).toBe("rule_still_fires");
+
+      // Refused, not completed — still open, still claimed by the same
+      // person, free to try again once the real work is done.
+      const stillOpen = await env.DB.prepare("SELECT status, claimed_by FROM tasks WHERE id = ?").bind(task!.id).first();
+      expect(stillOpen).toEqual({ status: "open", claimed_by: "test-user" });
+
+      // Now actually coded — the condition genuinely resolved.
+      await env.DB.prepare(`UPDATE invoice_headers SET facts_json = json_set(facts_json, '$."coding.gl_code"', '6100') WHERE id = 'inv-487-a'`).run();
+
+      const succeedsRes = await SELF.fetch(`https://example.com/tasks/${task!.id}/complete`, { method: "POST", headers: authHeaders() });
+      expect(succeedsRes.status).toBe(200);
+    });
+
+    it("does not check anything for a stage that never opted in — the untouched, default case", async () => {
+      await seedProcessAndTeam();
+      await seedActivatedRuleSet("rs-coding-b", {
+        conditions: { field: "coding.gl_code", operator: "is_empty" },
+        actions: [{ type: "assign_task", params: { team: "ap-team", permission: "AP.Code" } }],
+      });
+      await SELF.fetch("https://example.com/processes/p1/stages", { method: "POST", headers: authHeaders(), body: JSON.stringify({ id: "s1", name: "Coding", sequence: 1, ruleSetId: "rs-coding-b" }) });
+      await SELF.fetch("https://example.com/processes/p1/stages", { method: "POST", headers: authHeaders(), body: JSON.stringify({ id: "s2", name: "Approval", sequence: 2 }) });
+      // No PUT .../actions/complete at all — the default, and every
+      // stage in this repo until an operator says otherwise.
+
+      await SELF.fetch("https://example.com/invoices", { method: "POST", headers: authHeaders(), body: JSON.stringify({ id: "inv-487-b", facts: {} }) });
+      const createRes = await SELF.fetch("https://example.com/processes/p1/instances", {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({ subjectType: "invoice", subjectId: "inv-487-b" }),
+      });
+      const instanceId = (await createRes.json() as { id: string }).id;
+      await SELF.fetch(`https://example.com/process-instances/${instanceId}/visit`, { method: "POST", headers: authHeaders(), body: JSON.stringify({ facts: {} }) });
+
+      const task = await env.DB.prepare("SELECT id FROM tasks WHERE stage_id = 's1'").first<{ id: string }>();
+      await SELF.fetch(`https://example.com/tasks/${task!.id}/claim`, { method: "POST", headers: authHeaders() });
+
+      // The rule's own condition is still true (never coded), and
+      // Complete still succeeds — exactly today's behaviour, since
+      // this stage never opted in.
+      const completeRes = await SELF.fetch(`https://example.com/tasks/${task!.id}/complete`, { method: "POST", headers: authHeaders() });
+      expect(completeRes.status).toBe(200);
+    });
+  });
+
   it("401s visiting a stage with no credentials at all", async () => {
     await SELF.fetch("https://example.com/processes", { method: "POST", headers: authHeaders(), body: JSON.stringify({ id: "p1", name: "AP" }) });
     await SELF.fetch("https://example.com/processes/p1/stages", { method: "POST", headers: authHeaders(), body: JSON.stringify({ id: "s1", name: "Received", sequence: 1 }) });
