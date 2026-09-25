@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 25 September 2026 (decision 0491). A living document: what
+Last updated 25 September 2026 (decision 0492). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2987,7 +2987,25 @@ section for the full reasoning and tests.
   untouched here.
 - Full reasoning and verification counts in decision 0469.
 
-### The viewer's own feedback note scrolls into view (0491)
+### `note()` as a pop-out alert, requiring OK (0492)
+- **Asked directly**, right after 0491 shipped (built, not yet
+  deployed): "would it be possible to alert it in a pop-out alert
+  message on the page, with OK as the only option to click and
+  acknowledge the message" — and, asked whether that meant just the
+  two "nothing available" messages or every message `note()` shows:
+  "Every message this note() function shows."
+- **Supersedes 0491's `scrollIntoView` fix**, before it ever shipped —
+  see `docs/decisions/SUPERSEDED.md`. A pop-out that blocks until OK is
+  clicked has nothing left off-screen to scroll to.
+- All nine `note()` callers — Save success/failure, "nothing to save,"
+  a blocked pop-up, the generic action-failed, and Reassign/Return's
+  own "nothing available" messages — now show the same `.backdrop`/
+  `.popout` alert, dismissed only by its own OK button. The message
+  still carries `id="viewer-note"`, and the old persistent placeholder
+  div is gone.
+- Full reasoning and verification counts in decision 0492.
+
+### The viewer's own feedback note scrolls into view (0491, superseded by 0492)
 - **Reported live**: "I cannot reassign an item when it is claimed by
   my user, but it works when not claimed." Reproduced directly in the
   operator's own browser (driven this session): the candidate list
@@ -2998,12 +3016,9 @@ section for the full reasoning and tests.
   very last row of the page's own grid, below Document/Parties/Header/
   Lines, so a topbar action clicked before scrolling left the message
   real but invisible. No backend bug at all.
-- **Fixed in `note()` itself**, not as a Reassign special case — Save's
-  own success/failure and the generic action-failed message share the
-  same box and the same risk. `scrollIntoView` is called after setting
-  the message, guarded with `?.` since jsdom (this suite's own test
-  environment) has no `scrollIntoView` at all.
-- Full reasoning and verification counts in decision 0491.
+- Committed but never pushed or deployed; its `scrollIntoView` fix was
+  replaced by 0492's pop-out alert before it ever shipped. See decision
+  0491's own first lines and `docs/decisions/SUPERSEDED.md`.
 
 ### Return-target stage configuration, and the AP Setup screen for it (0490)
 - **Asked live**, third of the five-step Coding-pilot sequence agreed

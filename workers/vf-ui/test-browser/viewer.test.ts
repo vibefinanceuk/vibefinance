@@ -165,6 +165,7 @@ const STRINGS = {
     "action.return.reasonlabel": "Reason",
     "action.return.nonefound": "No return targets are configured for this stage.",
     "action.whyreason": "Give a reason.",
+    "action.ok": "OK",
     "viewer.actionfailed": "That could not be done.",
     "progress.since": "here since {when}",
     "progress.revisited": "This invoice came back to this stage.",
@@ -952,15 +953,27 @@ describe("the document pop-out window (decision 0384, phase 4)", () => {
     expect(handle.location.href).toBe("/document-window.html?task=inv-1");
   });
 
-  it("shows a message and does not crash when the browser blocks the pop-up", async () => {
+  it("shows a message and does not crash when the browser blocks the pop-up — as a pop-out alert requiring OK, not a discrete on-page note (decision 0492)", async () => {
     vi.stubGlobal("open", vi.fn(() => null));
 
     await open();
     clickExpand();
 
+    const popout = document.querySelector(".popout");
+    expect(popout).not.toBeNull();
     expect(document.getElementById("viewer-note")?.textContent).toContain(
       "Your browser blocked the pop-up window"
     );
+
+    // OK is the only way to dismiss it — clicking the backdrop itself
+    // does nothing (unlike the reassign/return pickers, which do close
+    // on an outside click).
+    (document.querySelector(".backdrop") as HTMLElement).click();
+    expect(document.querySelector(".popout")).not.toBeNull();
+
+    const ok = document.querySelector(".popout .actionlink") as HTMLButtonElement;
+    ok.click();
+    expect(document.querySelector(".popout")).toBeNull();
   });
 });
 
@@ -1412,27 +1425,31 @@ describe("the actions do something (decision 0138)", () => {
       expect(options).toEqual(["Priya Shah (priya@example.com)", "Sam Okafor"]);
     });
 
-    it("says so instead of opening an empty picker when nobody is eligible — and scrolls it into view, not just into the DOM", async () => {
+    it("says so with a pop-out alert instead of opening an empty picker when nobody is eligible (decision 0492, superseding 0491's scrollIntoView)", async () => {
       // **Reported live**: clicking Reassign on a task claimed by the
-      // caller "did nothing." The message was always here — `.c-note`
-      // sits in the very last row of `.columns`'s own grid, below
-      // Lines, so a topbar action clicked before scrolling down left it
-      // real but invisible. jsdom (this suite's own environment) has
-      // no `scrollIntoView` at all, so the stub below is what lets this
-      // assertion exist; `note()`'s own `?.` call is what keeps every
-      // *other* test that calls it from throwing without one.
+      // caller "did nothing." The message was always here — 0491 found
+      // it was set correctly but scrolled off-screen, and fixed that by
+      // scrolling it into view. This decision replaces that entirely: a
+      // pop-out alert needs no scrolling, since there is nothing to
+      // miss — it appears in front of everything and stays until OK is
+      // clicked.
       await openWithReassign({ "/api/tasks/t-1/reassign-candidates": { candidates: [] } });
-      const scrollSpy = vi.fn();
-      (document.getElementById("viewer-note") as HTMLElement).scrollIntoView = scrollSpy;
 
       click("Reassign");
       await settle();
 
-      expect(document.querySelector(".popout")).toBeNull();
+      // Not the reassign picker itself — the picker never opens when
+      // there is nobody to reassign to — but a `.popout` all the same,
+      // this one carrying the alert.
+      const popout = document.querySelector(".popout");
+      expect(popout).not.toBeNull();
       expect(document.getElementById("viewer-note")?.textContent).toBe(
         "Nobody else on this team can take this task."
       );
-      expect(scrollSpy).toHaveBeenCalledTimes(1);
+
+      // OK is the only way to dismiss it.
+      (popout!.querySelector(".actionlink") as HTMLButtonElement).click();
+      expect(document.querySelector(".popout")).toBeNull();
     });
 
     it("posts the chosen target and comment, and closes the picker on success", async () => {
@@ -1590,22 +1607,23 @@ describe("the actions do something (decision 0138)", () => {
       expect(options).toEqual(["Coding — Coding team", "Matching — Matching team"]);
     });
 
-    it("says so instead of opening an empty picker when no target is configured — and scrolls it into view", async () => {
+    it("says so with a pop-out alert instead of opening an empty picker when no target is configured (decision 0492)", async () => {
       // Same fix as Reassign's own equivalent test above, for the same
-      // shared `note()` — Return's own "nothing configured" message sits
-      // in the identical bottom-of-page box.
+      // shared `note()` — Return's own "nothing configured" message goes
+      // through the same pop-out alert.
       await openWithReturn({ "/api/tasks/t-1/return-targets": { targets: [] } });
-      const scrollSpy = vi.fn();
-      (document.getElementById("viewer-note") as HTMLElement).scrollIntoView = scrollSpy;
 
       click("Return");
       await settle();
 
-      expect(document.querySelector(".popout")).toBeNull();
+      const popout = document.querySelector(".popout");
+      expect(popout).not.toBeNull();
       expect(document.getElementById("viewer-note")?.textContent).toBe(
         "No return targets are configured for this stage."
       );
-      expect(scrollSpy).toHaveBeenCalledTimes(1);
+
+      (popout!.querySelector(".actionlink") as HTMLButtonElement).click();
+      expect(document.querySelector(".popout")).toBeNull();
     });
 
     it("posts the chosen stage, its team, and the reason, and closes the picker on success", async () => {

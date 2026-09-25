@@ -1,8 +1,20 @@
 # 0491 — The viewer's own feedback note scrolls into view
 
-**Status: built and verified locally, not yet committed/pushed at the
-time of writing.** No push access from this session — delivered as a
-git bundle, per this repo's own established handover mechanism.
+**Status: committed (`473c2f7`), never pushed or deployed — and now
+superseded by decision 0492 before it ever shipped.**
+
+> **Superseded by decision 0492.** Asked directly, immediately after
+> this was delivered: *"Rather than show the message in a discrete
+> part of the page, would it be possible to alert it in a pop-out
+> alert message on the page, with OK as the only option to click and
+> acknowledge the message"* — for every caller of `note()`, not just
+> Reassign/Return. A pop-out requiring an explicit OK makes "scrolled
+> into view" moot: there is nothing left off-screen to scroll to. The
+> diagnosis below — what was reported, what was actually happening,
+> why it is the shared function's problem rather than any one caller's
+> — is unchanged and is what 0492 itself builds on; only the fix
+> (`scrollIntoView` vs. a pop-out) is replaced, and it never reached
+> production first.
 
 ---
 

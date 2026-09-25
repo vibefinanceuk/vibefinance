@@ -42,6 +42,7 @@ against the current system either.
 | Record | By | What changed |
 | --- | --- | --- |
 | **0094** — the bootstrap administrator was not needed | **0117** | True as far as it went, and it left the customer with **no administrator of their own**. The requester *is* the administrator; `signup_requests` already names them. |
+| **0491** — the viewer's own feedback note scrolls into view | **0492** | Diagnosed the report correctly and fixed it with `scrollIntoView`, committed but never pushed or deployed. Asked directly, before it ever shipped, to make it a pop-out alert with an OK button instead — for every caller of `note()`, not only the two that had been reported. A pop-out needs no scrolling; there is nothing left off-screen to find. |
 
 ---
 

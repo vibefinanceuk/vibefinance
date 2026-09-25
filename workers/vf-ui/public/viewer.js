@@ -812,33 +812,54 @@ async function showXmlPreview(invoiceId) {
 }
 
 /**
- * **Reported live: clicking Reassign on a task claimed by the caller
- * "did nothing."** It didn't — `openReassignPicker` correctly called
- * this with `action.reassign.nonefound` when the candidate list came
- * back empty (the caller is the only person on the team who holds the
- * permission, so excluding the current claimant leaves nobody). The
- * message landed in `#viewer-note`, which `.columns`'s own grid (in
- * `app.css`) deliberately places in the very last row, after Lines —
- * correct for `note()`'s other callers, which run after scrolling down
- * to edit a field, but Reassign and Return are topbar actions, clicked
- * from the very top of a page nobody has scrolled yet. The message was
- * real and present in the DOM the whole time; it was simply off-screen
- * below everything else on the page.
+ * **Supersedes decision 0491's `scrollIntoView` fix, before it ever
+ * shipped.** 0491 diagnosed a live report — "clicking Reassign on a
+ * task claimed by the caller did nothing" — as a visibility bug: the
+ * message (`action.reassign.nonefound`) really was being set into
+ * `#viewer-note`, but that box sat in `.c-note`, the very last row of
+ * `.columns`'s own grid, invisible below everything else on a page
+ * nobody had scrolled yet. 0491's fix scrolled the box into view.
  *
- * **Fixed here, once, for every caller** — not by special-casing
- * Reassign/Return — since Save's own success/failure note and the
- * generic `viewer.actionfailed` share the exact same box and the exact
- * same risk for anybody who clicks a topbar action before scrolling.
- * `scrollIntoView` is guarded (`?.`) because jsdom, this suite's own
- * test environment, does not implement it at all — calling it
- * unguarded would throw in every existing test that already calls
- * `note()`, not just new ones.
+ * **Asked for directly, immediately after**: *"Rather than show the
+ * message in a discrete part of the page, would it be possible to
+ * alert it in a pop-out alert message on the page, with OK as the only
+ * option to click and acknowledge the message"* — and, when asked
+ * whether that should cover only the two "nothing available" messages
+ * or every caller, the explicit answer was **"Every message this
+ * note() function shows."** A pop-out that requires an OK click makes
+ * "scrolled into view" moot — there is nothing left to scroll to, or
+ * to miss — so this replaces 0491's approach rather than sitting
+ * alongside it.
+ *
+ * **One shared function, one behaviour, for all nine callers** — Save
+ * succeeding or failing, "nothing to save," a blocked pop-up window,
+ * the generic `viewer.actionfailed`, and Reassign/Return's own
+ * "nothing available" messages all go through here, so all nine now
+ * show the same pop-out alert rather than five of them getting one
+ * treatment and two getting another.
+ *
+ * **A fresh backdrop+popout each call, not a persistent box.** Unlike
+ * the old bottom-of-grid div, nothing here is reused between calls —
+ * the previous alert (if any) is long gone, dismissed by its own OK
+ * click, before this one is ever built. The message element still
+ * carries `id="viewer-note"`, matching every existing test's own
+ * `document.getElementById("viewer-note")` assertion; `role="alert"`
+ * replaces the old `role="status"`, since this is no longer a passive
+ * region that changes underneath a person — it is new content that
+ * should be announced the moment it appears. No click-outside-to-close
+ * handler is attached: the OK button is deliberately the only way to
+ * dismiss it, per the request above.
  */
 function note(message) {
-  const box = document.getElementById("viewer-note");
-  if (!box) return;
-  box.textContent = message;
-  box.scrollIntoView?.({ block: "center", behavior: "smooth" });
+  const close = () => backdrop.remove();
+  const box = el("div", { class: "popout" }, [
+    el("p", { id: "viewer-note", role: "alert", text: message }),
+    el("div", { class: "statebuttons" }, [
+      actionLink("done", { onclick: close, primary: true, label: t("action.ok") }),
+    ]),
+  ]);
+  const backdrop = el("div", { class: "backdrop" }, [box]);
+  document.body.append(backdrop);
 }
 
 /**
@@ -3452,10 +3473,17 @@ export async function openViewer(task, onClose) {
       el("div", { class: "parties" }, [sellerPanel(), buyerPanel()].filter(Boolean)),
     ]),
     el("div", { class: "c-header" }, [headerSummary()].filter(Boolean)),
-    el("div", { class: "c-lines" }, [linePanel()].filter(Boolean)),
-    el("div", { class: "c-note" }, [
-      el("div", { class: "problem", id: "viewer-note", role: "status" }),
-    ])
+    el("div", { class: "c-lines" }, [linePanel()].filter(Boolean))
+    // No `.c-note` placeholder any more — decision 0492 replaced the
+    // persistent bottom-of-grid box `note()` used to fill with a
+    // fresh pop-out alert built fresh on each call (see `note()`'s own
+    // doc comment above). Keeping this div around would leave two
+    // elements sharing `id="viewer-note"`, and `getElementById` would
+    // find this dead one instead of the alert's own message. The
+    // named `"note"` grid-template-area in app.css is left in place —
+    // an unfilled named area contributes no row height, so it's inert,
+    // not wrong, and touching four separately-documented grid blocks
+    // for this is out of scope here.
   );
 
   shell.replaceChildren(

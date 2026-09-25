@@ -158,6 +158,7 @@ import stageReverifyRuleStringsSql from "../migrations/0167_stage_reverify_rule_
 import taskActionEventsStringsSql from "../migrations/0168_task_action_events_strings.sql?raw";
 import reassignStringsSql from "../migrations/0169_reassign_strings.sql?raw";
 import returnTargetStringsSql from "../migrations/0170_return_target_strings.sql?raw";
+import noteOkStringSql from "../migrations/0171_note_ok_string.sql?raw";
 
 function stripSqlComments(sql: string): string {
   return sql
@@ -348,5 +349,6 @@ export async function applyTestSchema(): Promise<void> {
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(taskActionEventsStringsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(reassignStringsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(returnTargetStringsSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(noteOkStringSql)));
 
 }

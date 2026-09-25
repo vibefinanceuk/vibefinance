@@ -173,6 +173,9 @@ const KEYS_THE_INTERFACE_USES = [
   "action.return.wholabel",
   "action.return.reasonlabel",
   "action.return.nonefound",
+  // Decision 0492 — note()'s own pop-out alert, the one label on its
+  // single dismiss button. Shared by all nine of note()'s callers.
+  "action.ok",
   "rule.notrunning",
   "rule.approvedby",
   "compose.newversion",
