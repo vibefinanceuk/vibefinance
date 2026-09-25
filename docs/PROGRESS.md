@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 25 September 2026 (decision 0490). A living document: what
+Last updated 25 September 2026 (decision 0491). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,24 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### The viewer's own feedback note scrolls into view (0491)
+- **Reported live**: "I cannot reassign an item when it is claimed by
+  my user, but it works when not claimed." Reproduced directly in the
+  operator's own browser (driven this session): the candidate list
+  really was empty (the operator is the only person on the team who
+  holds the permission, correctly excluded as the current claimant),
+  and `openReassignPicker` correctly called `note()` with "Nobody else
+  on this team can take this task" — but `#viewer-note` sits in the
+  very last row of the page's own grid, below Document/Parties/Header/
+  Lines, so a topbar action clicked before scrolling left the message
+  real but invisible. No backend bug at all.
+- **Fixed in `note()` itself**, not as a Reassign special case — Save's
+  own success/failure and the generic action-failed message share the
+  same box and the same risk. `scrollIntoView` is called after setting
+  the message, guarded with `?.` since jsdom (this suite's own test
+  environment) has no `scrollIntoView` at all.
+- Full reasoning and verification counts in decision 0491.
 
 ### Return-target stage configuration, and the AP Setup screen for it (0490)
 - **Asked live**, third of the five-step Coding-pilot sequence agreed

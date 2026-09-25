@@ -811,9 +811,34 @@ async function showXmlPreview(invoiceId) {
   );
 }
 
+/**
+ * **Reported live: clicking Reassign on a task claimed by the caller
+ * "did nothing."** It didn't — `openReassignPicker` correctly called
+ * this with `action.reassign.nonefound` when the candidate list came
+ * back empty (the caller is the only person on the team who holds the
+ * permission, so excluding the current claimant leaves nobody). The
+ * message landed in `#viewer-note`, which `.columns`'s own grid (in
+ * `app.css`) deliberately places in the very last row, after Lines —
+ * correct for `note()`'s other callers, which run after scrolling down
+ * to edit a field, but Reassign and Return are topbar actions, clicked
+ * from the very top of a page nobody has scrolled yet. The message was
+ * real and present in the DOM the whole time; it was simply off-screen
+ * below everything else on the page.
+ *
+ * **Fixed here, once, for every caller** — not by special-casing
+ * Reassign/Return — since Save's own success/failure note and the
+ * generic `viewer.actionfailed` share the exact same box and the exact
+ * same risk for anybody who clicks a topbar action before scrolling.
+ * `scrollIntoView` is guarded (`?.`) because jsdom, this suite's own
+ * test environment, does not implement it at all — calling it
+ * unguarded would throw in every existing test that already calls
+ * `note()`, not just new ones.
+ */
 function note(message) {
   const box = document.getElementById("viewer-note");
-  if (box) box.textContent = message;
+  if (!box) return;
+  box.textContent = message;
+  box.scrollIntoView?.({ block: "center", behavior: "smooth" });
 }
 
 /**

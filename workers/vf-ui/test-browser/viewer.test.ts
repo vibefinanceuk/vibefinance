@@ -1412,8 +1412,19 @@ describe("the actions do something (decision 0138)", () => {
       expect(options).toEqual(["Priya Shah (priya@example.com)", "Sam Okafor"]);
     });
 
-    it("says so instead of opening an empty picker when nobody is eligible", async () => {
+    it("says so instead of opening an empty picker when nobody is eligible — and scrolls it into view, not just into the DOM", async () => {
+      // **Reported live**: clicking Reassign on a task claimed by the
+      // caller "did nothing." The message was always here — `.c-note`
+      // sits in the very last row of `.columns`'s own grid, below
+      // Lines, so a topbar action clicked before scrolling down left it
+      // real but invisible. jsdom (this suite's own environment) has
+      // no `scrollIntoView` at all, so the stub below is what lets this
+      // assertion exist; `note()`'s own `?.` call is what keeps every
+      // *other* test that calls it from throwing without one.
       await openWithReassign({ "/api/tasks/t-1/reassign-candidates": { candidates: [] } });
+      const scrollSpy = vi.fn();
+      (document.getElementById("viewer-note") as HTMLElement).scrollIntoView = scrollSpy;
+
       click("Reassign");
       await settle();
 
@@ -1421,6 +1432,7 @@ describe("the actions do something (decision 0138)", () => {
       expect(document.getElementById("viewer-note")?.textContent).toBe(
         "Nobody else on this team can take this task."
       );
+      expect(scrollSpy).toHaveBeenCalledTimes(1);
     });
 
     it("posts the chosen target and comment, and closes the picker on success", async () => {
@@ -1578,8 +1590,14 @@ describe("the actions do something (decision 0138)", () => {
       expect(options).toEqual(["Coding — Coding team", "Matching — Matching team"]);
     });
 
-    it("says so instead of opening an empty picker when no target is configured", async () => {
+    it("says so instead of opening an empty picker when no target is configured — and scrolls it into view", async () => {
+      // Same fix as Reassign's own equivalent test above, for the same
+      // shared `note()` — Return's own "nothing configured" message sits
+      // in the identical bottom-of-page box.
       await openWithReturn({ "/api/tasks/t-1/return-targets": { targets: [] } });
+      const scrollSpy = vi.fn();
+      (document.getElementById("viewer-note") as HTMLElement).scrollIntoView = scrollSpy;
+
       click("Return");
       await settle();
 
@@ -1587,6 +1605,7 @@ describe("the actions do something (decision 0138)", () => {
       expect(document.getElementById("viewer-note")?.textContent).toBe(
         "No return targets are configured for this stage."
       );
+      expect(scrollSpy).toHaveBeenCalledTimes(1);
     });
 
     it("posts the chosen stage, its team, and the reason, and closes the picker on success", async () => {
