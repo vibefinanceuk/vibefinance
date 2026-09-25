@@ -1470,6 +1470,124 @@ describe("task routes, through the real router (decision 0018)", () => {
   });
 });
 
+describe("Where a task can be returned to, and returning it — decision 0490", () => {
+  /**
+   * A process instance and its stage-visit history are built directly
+   * on the DB, the same way this describe block's own sibling above
+   * builds its task with `POST /tasks` rather than the full
+   * rule-engine visit dance — what this decision is actually about is
+   * the return-targets and return routes themselves, not re-proving
+   * the workflow engine's own visit orchestration, which has its own
+   * dedicated tests elsewhere in this file.
+   */
+  async function seedApprovalHavingVisitedCoding(): Promise<{ taskId: string }> {
+    await env.DB.prepare(
+      "INSERT INTO org_units (id, name) VALUES ('u1', 'Acme France') ON CONFLICT(id) DO NOTHING"
+    ).run();
+    await SELF.fetch("https://example.com/processes", { method: "POST", headers: authHeaders(), body: JSON.stringify({ id: "p1", name: "AP" }) });
+    await SELF.fetch("https://example.com/processes/p1/stages", { method: "POST", headers: authHeaders(), body: JSON.stringify({ id: "s-coding", name: "Coding", sequence: 1 }) });
+    await SELF.fetch("https://example.com/processes/p1/stages", { method: "POST", headers: authHeaders(), body: JSON.stringify({ id: "s-approval", name: "Approval", sequence: 2 }) });
+    await env.DB.prepare("UPDATE process_stages SET required_permission = 'AP.Code' WHERE id = 's-coding'").run();
+    await env.DB.prepare("UPDATE process_stages SET required_permission = 'AP.Approve' WHERE id = 's-approval'").run();
+    await SELF.fetch("https://example.com/org/teams", { method: "POST", headers: authHeaders(), body: JSON.stringify({ id: "team-coding", name: "Coding team", unitId: "u1" }) });
+    await SELF.fetch("https://example.com/org/teams/team-coding/members", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ userId: "test-user" }),
+    });
+
+    await env.DB.prepare(
+      "INSERT INTO process_instances (id, process_id, subject_type, subject_id, current_stage_id, status) VALUES ('inst-490', 'p1', 'invoice', 'inv-490', 's-approval', 'in_progress')"
+    ).run();
+    await env.DB.prepare(
+      "INSERT INTO stage_visits (id, process_instance_id, stage_id, outcome) VALUES ('v-coding', 'inst-490', 's-coding', 'matched')"
+    ).run();
+    await env.DB.prepare(
+      "INSERT INTO stage_visits (id, process_instance_id, stage_id, outcome) VALUES ('v-approval', 'inst-490', 's-approval', 'matched')"
+    ).run();
+
+    const taskId = "task-490";
+    await env.DB.prepare(
+      "INSERT INTO tasks (id, stage_id, stage_visit_id, owner_user_id, required_permission) VALUES (?, 's-approval', 'v-approval', 'test-user', 'AP.Approve')"
+    )
+      .bind(taskId)
+      .run();
+    return { taskId };
+  }
+
+  it("401s return-targets with no credentials", async () => {
+    const { taskId } = await seedApprovalHavingVisitedCoding();
+    const res = await SELF.fetch(`https://example.com/tasks/${taskId}/return-targets`);
+    expect(res.status).toBe(401);
+  });
+
+  it("offers nothing until an operator configures a target", async () => {
+    const { taskId } = await seedApprovalHavingVisitedCoding();
+    const res = await SELF.fetch(`https://example.com/tasks/${taskId}/return-targets`, { headers: authHeaders() });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ targets: [] });
+  });
+
+  it("403s configuring a return target without Admin.Configure", async () => {
+    await seedApprovalHavingVisitedCoding();
+    const limitedKey = await seedUserWithPermissions(["AP.Approve"]);
+    const res = await SELF.fetch("https://example.com/processes/stages/s-approval/return-targets", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${limitedKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ targetStageId: "s-coding", teamId: "team-coding" }),
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("removes a configured return target", async () => {
+    await seedApprovalHavingVisitedCoding();
+    const addRes = await SELF.fetch("https://example.com/processes/stages/s-approval/return-targets", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ targetStageId: "s-coding", teamId: "team-coding" }),
+    });
+    const { id } = (await addRes.json()) as { id: string };
+
+    const delRes = await SELF.fetch(`https://example.com/processes/stages/return-targets/${id}`, {
+      method: "DELETE",
+      headers: authHeaders(),
+    });
+    expect(delRes.status).toBe(200);
+    const row = await env.DB.prepare("SELECT 1 FROM stage_return_targets WHERE id = ?").bind(id).first();
+    expect(row).toBeNull();
+  });
+
+  it("end to end: configure a target, the picker's own GET offers it, and returning through it gives the new task the target stage's own permission — the whole gap this decision closes", async () => {
+    const { taskId } = await seedApprovalHavingVisitedCoding();
+
+    const addRes = await SELF.fetch("https://example.com/processes/stages/s-approval/return-targets", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ targetStageId: "s-coding", teamId: "team-coding" }),
+    });
+    expect(addRes.status).toBe(201);
+
+    const targetsRes = await SELF.fetch(`https://example.com/tasks/${taskId}/return-targets`, { headers: authHeaders() });
+    expect(await targetsRes.json()).toEqual({
+      targets: [{ stageId: "s-coding", stageName: "Coding", teamId: "team-coding", teamName: "Coding team" }],
+    });
+
+    // Exactly the body openReturnPicker() sends: the chosen target's
+    // own stageId and teamId, plus the mandatory reason.
+    const returnRes = await SELF.fetch(`https://example.com/tasks/${taskId}/return`, {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ stageId: "s-coding", assignToTeam: "team-coding", reason: "GL code is wrong" }),
+    });
+    expect(returnRes.status).toBe(200);
+
+    const newTask = await env.DB
+      .prepare("SELECT owner_team_id, required_permission FROM tasks WHERE stage_id = 's-coding'")
+      .first();
+    expect(newTask).toEqual({ owner_team_id: "team-coding", required_permission: "AP.Code" });
+  });
+});
+
 describe("intake channels, through the real router (decision 0024)", () => {
   it("creates a channel through the real router", async () => {
     await SELF.fetch("https://example.com/processes", { method: "POST", headers: authHeaders(), body: JSON.stringify({ id: "ap-live", name: "Standard AP" }) });

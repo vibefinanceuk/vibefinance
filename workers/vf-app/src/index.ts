@@ -186,7 +186,7 @@ import { handleGetRetention, handleSetRetention, handleListBeyondRetention } fro
 import { handleCaptureFromSource } from "./source-capture-route.js";
 import { handleInboundEmail, handleListInboundEmail, type EmailMessage } from "./inbound-email.js";
 import { handleKeyInvoiceFields } from "./key-fields-route.js";
-import { handleReturnToStage, handleReturnToSupplier, handleDiscard } from "./return-route.js";
+import { handleReturnToStage, handleReturnToSupplier, handleDiscard, handleReturnTargets } from "./return-route.js";
 import { authenticateUserOrSession } from "./user-auth.js";
 import { handleListMyTasks } from "./task-list-route.js";
 import { FIELD_CODE_LISTS, isClosedList } from "@vibefinance/shared";
@@ -202,6 +202,7 @@ import {
   stageReverifiesRuleOnComplete,
   ruleStillFiresForTask,
 } from "./stage-actions-route.js";
+import { handleAddStageReturnTarget, handleRemoveStageReturnTarget } from "./stage-return-targets-route.js";
 import { handlePreflight, withCors } from "@vibefinance/shared";
 import { verifyDocumentToken, mintPageToken, verifyPageToken } from "./document-token.js";
 import { retrieveInvoiceDocument, renderXmlForDisplay } from "./document-storage.js";
@@ -3322,6 +3323,20 @@ export default {
       return json(result.body, result.status);
     }
 
+    // Where a task can be returned to, right now — decision 0490. Read
+    // before the picker opens, the same "exactly what the POST will
+    // accept" shape reassign-candidates already established above.
+    const returnTargetsMatch = pathname.match(/^\/tasks\/([^/]+)\/return-targets$/);
+    if (returnTargetsMatch && request.method === "GET") {
+      const { db } = resolveTenant(request, env);
+      const person = await authenticatePerson(db, request, env);
+      if (!person.user) {
+        return json({ error: t("unauthorized", resolveLocale(env.LOCALE)) }, 401);
+      }
+      const result = await handleReturnTargets(db, returnTargetsMatch[1], person.user);
+      return json(result.body, result.status);
+    }
+
     const discardMatch = pathname.match(/^\/tasks\/([^/]+)\/discard$/);
     if (discardMatch && request.method === "POST") {
       const { db } = resolveTenant(request, env);
@@ -4052,6 +4067,43 @@ export default {
         stageActionMatch[2],
         (actionBody as Record<string, unknown>) ?? {}
       );
+      return json(result.body, result.status);
+    }
+
+    // Where Return can send a document from this stage, and who
+    // receives it — decision 0490. `GET /processes/:id` already
+    // returns every configured target inline on each stage
+    // (`StageDetail.returnTargets`), so this route family only needs
+    // to add and remove one.
+    const addReturnTargetMatch = pathname.match(/^\/processes\/stages\/([^/]+)\/return-targets$/);
+    if (addReturnTargetMatch && request.method === "POST") {
+      const { db } = resolveTenant(request, env);
+      const auth = await requirePermission(db, request, "Admin.Configure", sessionContext(env));
+      if (!auth.authorized) {
+        return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
+      }
+      let addBody: unknown;
+      try {
+        addBody = await request.json();
+      } catch {
+        return json({ error: t("invalidJsonBody", resolveLocale(env.LOCALE)) }, 400);
+      }
+      const result = await handleAddStageReturnTarget(
+        db,
+        addReturnTargetMatch[1],
+        (addBody as Record<string, unknown>) ?? {}
+      );
+      return json(result.body, result.status);
+    }
+
+    const removeReturnTargetMatch = pathname.match(/^\/processes\/stages\/return-targets\/([^/]+)$/);
+    if (removeReturnTargetMatch && request.method === "DELETE") {
+      const { db } = resolveTenant(request, env);
+      const auth = await requirePermission(db, request, "Admin.Configure", sessionContext(env));
+      if (!auth.authorized) {
+        return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
+      }
+      const result = await handleRemoveStageReturnTarget(db, removeReturnTargetMatch[1]);
       return json(result.body, result.status);
     }
 

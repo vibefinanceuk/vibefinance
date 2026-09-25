@@ -220,6 +220,25 @@ export async function handleReturnToStage(
       .bind(visitId, instance.id, stageId),
   ]);
 
+  /**
+   * **The target stage's own declared permission, not the returning
+   * task's — decision 0490, a bug fixed in the same change that first
+   * made Return reachable at all.** Every other path that creates a
+   * task on stage entry resolves this the same way
+   * (`workflow-engine.ts`'s own `requiredPermission ?? stage.required_
+   * permission ?? params.permission`, decision 0471) — the stage a
+   * task sits at governs who may act on it, never the stage it came
+   * from. Falls back to the returning task's own permission only if
+   * the target genuinely has none declared, the same last-resort this
+   * codebase already uses elsewhere rather than leaving the column
+   * null.
+   */
+  const targetStage = await db
+    .prepare("SELECT required_permission FROM process_stages WHERE id = ?")
+    .bind(stageId)
+    .first<{ required_permission: string | null }>();
+  const newTaskRequiredPermission = targetStage?.required_permission ?? task.required_permission;
+
   const newTaskId = crypto.randomUUID();
   await db
     .prepare(
@@ -232,7 +251,7 @@ export async function handleReturnToStage(
       visitId,
       hasUser ? (assignToUser as string) : null,
       hasTeam ? (assignToTeam as string) : null,
-      task.required_permission
+      newTaskRequiredPermission
     )
     .run();
 
@@ -246,6 +265,69 @@ export async function handleReturnToStage(
       returnedToStage: stageId,
       reason: reason.trim(),
       newTaskId,
+    },
+  };
+}
+
+/**
+ * Where a task can be returned to, right now — decision 0490.
+ *
+ * **The intersection of two different things, computed server-side —
+ * the same "exactly what the POST will accept" discipline decision
+ * 0489's own `handleReassignCandidates` already established.**
+ * `stage_return_targets` is an operator's curated list of sensible
+ * destinations for this stage; the visited-stage check inside
+ * `handleReturnToStage` is the hard, load-bearing invariant (decision
+ * 0075) that a target configured but never actually visited by *this*
+ * document cannot be offered. Neither alone is the right list: every
+ * configured target would let somebody attempt a return the POST
+ * would then 422 on; every visited stage with no configured target
+ * would ask a person to invent a team to assign it to, which is
+ * exactly the gap this decision exists to close.
+ */
+export async function handleReturnTargets(
+  db: D1Database,
+  taskId: string,
+  user: AuthenticatedUser
+): Promise<RouteResult> {
+  const task = await loadOpenTask(db, taskId);
+  if (!task) return { status: 404, body: { error: `task ${taskId} does not exist` } };
+
+  const standing = await checkStanding(db, user, task, "AP.Return");
+  if (!standing.ok) return { status: standing.status, body: { error: standing.error } };
+
+  const instance = await db
+    .prepare(
+      `SELECT pi.id FROM process_instances pi
+       JOIN stage_visits v ON v.process_instance_id = pi.id
+       WHERE v.id = ?`
+    )
+    .bind(task.stage_visit_id)
+    .first<{ id: string }>();
+  if (!instance) return { status: 200, body: { targets: [] } };
+
+  const targets = await db
+    .prepare(
+      `SELECT rt.target_stage_id AS stage_id, ts.name AS stage_name, rt.team_id, tm.name AS team_name
+       FROM stage_return_targets rt
+       JOIN process_stages ts ON ts.id = rt.target_stage_id
+       JOIN org_teams tm ON tm.id = rt.team_id
+       JOIN stage_visits v ON v.process_instance_id = ? AND v.stage_id = rt.target_stage_id
+       WHERE rt.source_stage_id = ?
+       ORDER BY ts.name`
+    )
+    .bind(instance.id, task.stage_id)
+    .all<{ stage_id: string; stage_name: string; team_id: string; team_name: string }>();
+
+  return {
+    status: 200,
+    body: {
+      targets: targets.results.map((r) => ({
+        stageId: r.stage_id,
+        stageName: r.stage_name,
+        teamId: r.team_id,
+        teamName: r.team_name,
+      })),
     },
   };
 }

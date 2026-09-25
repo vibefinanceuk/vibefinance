@@ -170,6 +170,8 @@ const PROXIED_TO_INSTANCE: RegExp[] = [
   // Reassign — decision 0489.
   /^\/tasks\/[^/]+\/reassign$/,
   /^\/tasks\/[^/]+\/reassign-candidates$/,
+  // Where a task can be returned to, right now — decision 0490.
+  /^\/tasks\/[^/]+\/return-targets$/,
   // What the Validation viewer needs (decision 0106): the keyed values,
   // and a short-lived signed URL for the retained original.
   // Reading one invoice back, so the keying screen shows what it saved
@@ -402,6 +404,14 @@ const PROXIED_TO_INSTANCE: RegExp[] = [
    * report" discipline decision 0484's own comment above states.
    */
   /^\/processes\/stages\/[^/]+\/actions\/[^/]+$/,
+  /**
+   * Configuring where Return can send a document, and who receives
+   * it — decision 0490. Added in the same change that adds the routes
+   * themselves, the same "in the same change, not after a live
+   * report" discipline decision 0484's own comment above states.
+   */
+  /^\/processes\/stages\/[^/]+\/return-targets$/,
+  /^\/processes\/stages\/return-targets\/[^/]+$/,
   /^\/processes\/[^/]+\/sources$/,
   /^\/sources\/[^/]+\/email$/,
   // Renaming and retiring one (decision 0130). **The bare path**, which

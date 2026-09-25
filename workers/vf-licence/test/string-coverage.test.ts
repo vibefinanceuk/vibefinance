@@ -168,6 +168,11 @@ const KEYS_THE_INTERFACE_USES = [
   "action.reassign.commentlabel",
   "action.reassign.nonefound",
   "activity.reassigned",
+  // Decision 0490 — Return's own picker; the AP Setup section is
+  // listed alongside apsetup.stagerestrictions.* further down.
+  "action.return.wholabel",
+  "action.return.reasonlabel",
+  "action.return.nonefound",
   "rule.notrunning",
   "rule.approvedby",
   "compose.newversion",
@@ -769,6 +774,26 @@ const KEYS_THE_INTERFACE_USES = [
   "apsetup.stagerestrictions.notoffered",
   // What Complete does at a stage — decision 0487.
   "apsetup.stagerestrictions.reverifyoncomplete",
+  // Where Return can send a document from a stage, and who receives
+  // it — decision 0490.
+  "apsetup.stagerestrictions.returntargetsheading",
+  "apsetup.stagerestrictions.returntargetshint",
+  "apsetup.stagerestrictions.notargetsyet",
+  "apsetup.stagerestrictions.targetstage",
+  "apsetup.stagerestrictions.returnteam",
+  /**
+   * **`apsetup.add` and `roles.remove` — a pre-existing gap, found and
+   * closed here, the same "found mid-way through unrelated work"
+   * precedent decision 0485's own comment above already states.**
+   * Both are real, seeded strings (migrations 0096 and 0145) that
+   * `ap-setup.js`'s own supervisor- and limit-override sections have
+   * used since decision 0440/0442 — never added to this hand-kept
+   * list. Decision 0490's own new Return targets section reuses both
+   * directly for its add-row button and each configured row's own
+   * remove button, which is what surfaced the gap.
+   */
+  "apsetup.add",
+  "roles.remove",
 ];
 
 /**

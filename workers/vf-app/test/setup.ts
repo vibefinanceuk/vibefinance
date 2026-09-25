@@ -89,6 +89,7 @@ import stageOffersFieldRestrictionsSql from "../../../migrations/0081_stage_offe
 import stageActionsSql from "../../../migrations/0082_stage_actions.sql?raw";
 import taskActionEventsSql from "../../../migrations/0083_task_action_events.sql?raw";
 import taskActionEventsReassignSql from "../../../migrations/0084_task_action_events_reassign.sql?raw";
+import stageReturnTargetsSql from "../../../migrations/0085_stage_return_targets.sql?raw";
 
 // Another known divergence from production, on top of the one below:
 // D1's exec() splits its input by newline and executes each non-empty
@@ -168,6 +169,11 @@ const TABLES_IN_DROP_ORDER = ["document_comments",
   // Decision 0487 (migration 0082) — references process_stages, same
   // reasoning as stage_field_visibility above: dropped before it.
   "stage_actions",
+  // Decision 0490 (migration 0085) — references process_stages twice
+  // (source and target) and org_teams, so before both: earlier than
+  // process_stages right below, and earlier than org_teams further
+  // down this same list.
+  "stage_return_targets",
   "process_stages",
   "processes",
   "invoice_lines",
@@ -343,6 +349,7 @@ export async function applyTestSchema(): Promise<void> {
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(stageActionsSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(taskActionEventsSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(taskActionEventsReassignSql)));
+  await env.DB.exec(toOneStatementPerLine(stripSqlComments(stageReturnTargetsSql)));
 }
 
 /**

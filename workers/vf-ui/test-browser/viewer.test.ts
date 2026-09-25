@@ -161,6 +161,9 @@ const STRINGS = {
     "action.reassign.nonefound": "Nobody else on this team can take this task.",
     "action.return_to_supplier": "To supplier",
     "action.return": "Return",
+    "action.return.wholabel": "Return to",
+    "action.return.reasonlabel": "Reason",
+    "action.return.nonefound": "No return targets are configured for this stage.",
     "action.whyreason": "Give a reason.",
     "viewer.actionfailed": "That could not be done.",
     "progress.since": "here since {when}",
@@ -1311,11 +1314,18 @@ describe("the actions do something (decision 0138)", () => {
   it("treats an empty reason as no reason", async () => {
     // The server refuses one too, so sending it would be a round trip
     // to be told what the screen already knows.
+    //
+    // **`return_to_supplier`, not `return`** — decision 0490 moved
+    // Return to its own dedicated picker (see the describe block
+    // below), so `return` is no longer one of `ACTIONS_NEEDING_A_REASON`
+    // and no longer goes through `prompt()` at all. This test still
+    // covers the shared "blank prompt input treated as no reason"
+    // behaviour through the one other action left on that list.
     vi.stubGlobal("prompt", () => "   ");
     const posted: string[] = [];
-    await openTaskWith(["key", "return"], {}, posted);
+    await openTaskWith(["key", "return_to_supplier"], {}, posted);
 
-    click("Return");
+    click("To supplier");
     await settle();
     expect(posted.filter((p) => p.includes("/tasks/"))).toHaveLength(0);
   });
@@ -1486,6 +1496,184 @@ describe("the actions do something (decision 0138)", () => {
       expect(errorBox.hidden).toBe(false);
       expect(errorBox.textContent).toBe("no longer yours to reassign");
       // Still open — a failure is something to fix, not to start over from.
+      expect(document.querySelector(".popout")).not.toBeNull();
+    });
+  });
+
+  /**
+   * **Returning from the picker (decision 0490).** The same dedicated-
+   * picker shape `reassigning from the picker` above already
+   * established — its own stub that captures POST bodies, since the
+   * whole point is what `stageId`/`assignToTeam`/`reason` the picker
+   * actually sends.
+   *
+   * **This is what first made Return reachable at all**: `POST /tasks/
+   * :id/return` has required a `stageId` plus exactly one of
+   * `assignToUser`/`assignToTeam` since decision 0075, but nothing
+   * before this decision ever collected either — every Return click
+   * 400'd. Unlike Reassign's optional comment, the reason here is
+   * mandatory (decision 0075's own rule); rather than duplicate that
+   * validation client-side, the picker just lets the POST fail and
+   * shows the server's own message — covered below by leaving the
+   * reason blank and asserting on the server's own 400 text.
+   */
+  describe("returning from the picker (decision 0490)", () => {
+    function stubReturn(
+      routes: Record<string, unknown> = {},
+      posted: string[] = [],
+      bodies: { path: string; body: unknown }[] = []
+    ) {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (url: string, init?: RequestInit) => {
+          const path = String(url).split("?")[0];
+          if (init?.method === "POST") {
+            posted.push(path);
+            if (init.body) bodies.push({ path, body: JSON.parse(String(init.body)) });
+          }
+          const base: Record<string, unknown> = { ...OPEN, ...routes };
+          if (path in base) return { ok: true, json: async () => base[path] } as Response;
+          if (/^\/api\/invoices\/[^/]+\/pages$/.test(path)) {
+            return { ok: true, json: async () => ({ pages: [] }) } as Response;
+          }
+          if (/^\/api\/documents\/[^/]+\/collaborators$/.test(path)) {
+            return { ok: true, json: async () => ({ collaborators: [] }) } as Response;
+          }
+          throw new Error(`no stub for ${path} — add one, or the test proves nothing`);
+        })
+      );
+    }
+
+    async function openWithReturn(
+      routes: Record<string, unknown> = {},
+      posted: string[] = [],
+      bodies: { path: string; body: unknown }[] = []
+    ) {
+      stubReturn(routes, posted, bodies);
+      const { loadStrings } = await import("/strings.js");
+      await loadStrings();
+      const { openViewer } = await import("/viewer.js");
+      await openViewer({ ...TASK, actions: ["key", "complete", "return"] }, () => {});
+      await new Promise((r) => setTimeout(r, 0));
+    }
+
+    const TARGETS = {
+      targets: [
+        { stageId: "coding", stageName: "Coding", teamId: "team-coding", teamName: "Coding team" },
+        { stageId: "matching", stageName: "Matching", teamId: "team-matching", teamName: "Matching team" },
+      ],
+    };
+
+    it("lists the server's own targets, not a client guess", async () => {
+      // `handleReturnTargets` computes exactly the intersection the
+      // POST would actually accept; the picker just renders what it's
+      // given, the same as `openReassignPicker`'s own candidates.
+      await openWithReturn({ "/api/tasks/t-1/return-targets": TARGETS });
+      click("Return");
+      await settle();
+
+      const popout = document.querySelector(".popout");
+      expect(popout).not.toBeNull();
+      const options = [...popout!.querySelectorAll("select option")].map((o) => o.textContent);
+      expect(options).toEqual(["Coding — Coding team", "Matching — Matching team"]);
+    });
+
+    it("says so instead of opening an empty picker when no target is configured", async () => {
+      await openWithReturn({ "/api/tasks/t-1/return-targets": { targets: [] } });
+      click("Return");
+      await settle();
+
+      expect(document.querySelector(".popout")).toBeNull();
+      expect(document.getElementById("viewer-note")?.textContent).toBe(
+        "No return targets are configured for this stage."
+      );
+    });
+
+    it("posts the chosen stage, its team, and the reason, and closes the picker on success", async () => {
+      const posted: string[] = [];
+      const bodies: { path: string; body: unknown }[] = [];
+      await openWithReturn(
+        { "/api/tasks/t-1/return-targets": TARGETS, "/api/tasks/t-1/return": {} },
+        posted,
+        bodies
+      );
+      click("Return");
+      await settle();
+
+      (document.querySelector(".popout select") as HTMLSelectElement).value = "matching";
+      (document.querySelector(".popout textarea") as HTMLTextAreaElement).value = "GL code is wrong";
+      (document.querySelector(".popout .actionlink") as HTMLButtonElement).click();
+      await settle();
+
+      expect(posted).toContain("/api/tasks/t-1/return");
+      expect(bodies).toContainEqual({
+        path: "/api/tasks/t-1/return",
+        body: { stageId: "matching", assignToTeam: "team-matching", reason: "GL code is wrong" },
+      });
+      // Handed to another stage entirely — the same "nothing left to
+      // show" close every other action already takes at the end of
+      // runAction().
+      expect(document.querySelector(".popout")).toBeNull();
+    });
+
+    it("leaves the picker open and shows the server's own validation error when the reason is blank", async () => {
+      // No client-side check duplicates decision 0075's own rule — the
+      // picker sends whatever is typed, including nothing (the reason
+      // box is left untouched here), and shows exactly what the server
+      // says back. The failure comes from a second `stubGlobal` override
+      // (`stubReturn`'s own `routes` map always wraps its values as
+      // `ok: true`, the same shape `stubReassign` above uses, so a
+      // failing response is only ever simulated by replacing `fetch`
+      // outright — see the next test).
+      await openWithReturn({ "/api/tasks/t-1/return-targets": TARGETS });
+      click("Return");
+      await settle();
+
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (url: string) => {
+          const path = String(url).split("?")[0];
+          if (path === "/api/tasks/t-1/return") {
+            return { ok: false, json: async () => ({ error: "a reason is required" }) } as Response;
+          }
+          throw new Error(`no stub for ${path} in the failure override`);
+        })
+      );
+
+      (document.querySelector(".popout .actionlink") as HTMLButtonElement).click();
+      await settle();
+
+      const errorBox = document.querySelector(".popout .warn") as HTMLElement;
+      expect(errorBox.hidden).toBe(false);
+      expect(errorBox.textContent).toBe("a reason is required");
+      expect(document.querySelector(".popout")).not.toBeNull();
+    });
+
+    it("shows the server's error and leaves the picker open to try again", async () => {
+      await openWithReturn({ "/api/tasks/t-1/return-targets": TARGETS });
+      click("Return");
+      await settle();
+
+      // Override just the POST route to fail, the same move
+      // `openWithReassign`'s own equivalent test makes.
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (url: string) => {
+          const path = String(url).split("?")[0];
+          if (path === "/api/tasks/t-1/return") {
+            return { ok: false, json: async () => ({ error: "that stage is no longer part of this process" }) } as Response;
+          }
+          throw new Error(`no stub for ${path} in the failure override`);
+        })
+      );
+
+      (document.querySelector(".popout textarea") as HTMLTextAreaElement).value = "Wrong GL code";
+      (document.querySelector(".popout .actionlink") as HTMLButtonElement).click();
+      await settle();
+
+      const errorBox = document.querySelector(".popout .warn") as HTMLElement;
+      expect(errorBox.hidden).toBe(false);
+      expect(errorBox.textContent).toBe("that stage is no longer part of this process");
       expect(document.querySelector(".popout")).not.toBeNull();
     });
   });

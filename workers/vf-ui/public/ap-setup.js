@@ -295,6 +295,24 @@ async function setStageReverifiesRuleOnComplete(stageId, reverify) {
 }
 
 /**
+ * Where Return can send a document from this stage, and who receives
+ * it — decision 0490. See migrations/0085_stage_return_targets.sql
+ * for why this is its own small table (a list per stage) rather than
+ * a flag alongside `reverifyRuleOnComplete` above.
+ */
+async function addStageReturnTarget(stageId, targetStageId, teamId) {
+  return fetch(`/api/processes/stages/${encodeURIComponent(stageId)}/return-targets`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ targetStageId, teamId }),
+  });
+}
+
+async function removeStageReturnTarget(id) {
+  return fetch(`/api/processes/stages/return-targets/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
+/**
  * **One panel per stage, three checkboxes each — decision 0483.**
  * `standardMatchingRulesPanel`'s own auto-save-on-toggle shape,
  * reused rather than a Save button: a restriction is a single fact,
@@ -407,6 +425,93 @@ function stageRestrictionsTab(problem) {
       reverifyToggle,
     ]);
 
+    /**
+     * **Where Return can send a document from this stage, and who
+     * receives it — decision 0490.** Independent of the Account
+     * Coding checkboxes above, the same reason `reverifyToggleRow`
+     * already sits outside the `offered` branch: an Approval stage
+     * with no Account Coding fields to restrict can still want a
+     * curated list of where Return may send it back to.
+     *
+     * **The add-row form only appears once there is something to
+     * choose** — another stage in this process to name, and a team to
+     * hand it to. A single-stage process, or one with no teams yet,
+     * shows the (empty) list and nothing to add to it, rather than two
+     * pickers with nothing in either.
+     */
+    const otherStages = stageRestrictionsDetail.stages.filter((s) => s.id !== stage.id);
+    const teams = stageRestrictionsDetail.teams ?? [];
+    const hasAddOptions = otherStages.length > 0 && teams.length > 0;
+
+    const targetStagePicker = el("select", {}, otherStages.map((s) => el("option", { value: s.id, text: s.name })));
+    const teamPicker = el("select", {}, teams.map((tm) => el("option", { value: tm.id, text: tm.name })));
+
+    const addTargetBtn = actionLink("create", {
+      primary: true,
+      label: t("apsetup.add"),
+      onclick: async () => {
+        problem.textContent = "";
+        try {
+          const response = await addStageReturnTarget(stage.id, targetStagePicker.value, teamPicker.value);
+          if (!response.ok) {
+            problem.textContent = (await response.json()).error ?? t("apsetup.stagerestrictions.savefailed");
+            return;
+          }
+          await loadStageRestrictions(stageRestrictionsProcessId);
+          render();
+        } catch {
+          problem.textContent = t("apsetup.stagerestrictions.savefailed");
+        }
+      },
+    });
+
+    const targetRows = (stage.returnTargets ?? []).map((target) =>
+      el("div", { class: "assignmentrow" }, [
+        el("span", { text: `${target.targetStageName} — ${target.teamName}` }),
+        el("button", {
+          text: t("roles.remove"),
+          onclick: async () => {
+            problem.textContent = "";
+            try {
+              const response = await removeStageReturnTarget(target.id);
+              if (!response.ok) {
+                problem.textContent = (await response.json()).error ?? t("apsetup.stagerestrictions.savefailed");
+                return;
+              }
+              await loadStageRestrictions(stageRestrictionsProcessId);
+              render();
+            } catch {
+              problem.textContent = t("apsetup.stagerestrictions.savefailed");
+            }
+          },
+        }),
+      ])
+    );
+
+    // A flat array, not a wrapping div — the same shape the Account
+    // Coding fields section above returns, so `.sectionlabel`'s own
+    // top margin does the only spacing job needed between sections.
+    const returnTargetsSection = [
+      el("div", { class: "sectionlabel", text: t("apsetup.stagerestrictions.returntargetsheading") }),
+      el("p", { class: "muted sm", text: t("apsetup.stagerestrictions.returntargetshint") }),
+      el(
+        "div",
+        { class: "assignmentlist" },
+        targetRows.length > 0 ? targetRows : [el("p", { class: "muted sm", text: t("apsetup.stagerestrictions.notargetsyet") })]
+      ),
+      ...(hasAddOptions
+        ? [
+            el("div", { class: "editgrid" }, [
+              el("label", { text: t("apsetup.stagerestrictions.targetstage") }),
+              targetStagePicker,
+              el("label", { text: t("apsetup.stagerestrictions.returnteam") }),
+              teamPicker,
+            ]),
+            el("div", { class: "statebuttons" }, [addTargetBtn]),
+          ]
+        : []),
+    ];
+
     const fields = stageFieldVisibility[stage.id] ?? [];
 
     const body = !offered
@@ -414,6 +519,7 @@ function stageRestrictionsTab(problem) {
           el("p", { class: "muted sm", text: t("apsetup.stagerestrictions.notoffered") }),
           offerToggleRow,
           reverifyToggleRow,
+          ...returnTargetsSection,
         ]
       : (() => {
           const rows = CODING_RESTRICTION_FIELDS.map((field) => {
@@ -467,6 +573,7 @@ function stageRestrictionsTab(problem) {
             el("p", { class: "muted sm", text: t("apsetup.stagerestrictions.fieldshint") }),
             offerToggleRow,
             reverifyToggleRow,
+            ...returnTargetsSection,
           ];
         })();
 

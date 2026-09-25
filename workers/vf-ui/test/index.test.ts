@@ -586,6 +586,17 @@ describe("the proxy carries every path a screen calls (decision 0131)", () => {
      * just above.
      */
     ["PUT", "/api/processes/stages/validation/actions/complete"],
+    /**
+     * Return targets — decision 0490. Added alongside the allowlist
+     * entries themselves, the same discipline decisions 0484/0485/0487
+     * already established for this exact recurring gap: the picker's
+     * own `GET .../return-targets` and AP Setup's own add/remove routes
+     * were all real and tested in `vf-app` from the start, and each one
+     * still needed its own line here to actually be reachable.
+     */
+    ["GET", "/api/tasks/t-1/return-targets"],
+    ["POST", "/api/processes/stages/validation/return-targets"],
+    ["DELETE", "/api/processes/stages/return-targets/rt-1"],
   ];
 
   it("carries all of them", async () => {

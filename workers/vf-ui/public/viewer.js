@@ -1424,14 +1424,22 @@ function linePanel() {
 /**
  * What a task action needs, beyond a task id — decision 0138.
  *
- * **Returning and returning to a supplier need a reason.** Decision
- * 0075 made that a requirement rather than a courtesy: a document that
- * came back with no explanation is one the next person cannot act on.
+ * **Returning to a supplier needs a reason.** Decision 0075 made that
+ * a requirement rather than a courtesy: a document that came back
+ * with no explanation is one the next person cannot act on.
  *
  * Discarding needs one too (0078) — *"nothing goes back"*, so the
  * record of why is all there is.
+ *
+ * **Returning to a stage moved to its own picker — decision 0490.**
+ * It needs a real target stage and a real team, neither of which a
+ * bare prompt can collect (the route itself has required both since
+ * decision 0075; nothing before 0490 ever gathered them, so every
+ * Return click 400'd). `openReturnPicker` below collects its own
+ * reason inline, the same way Reassign's picker collects its own
+ * optional comment rather than going through this list.
  */
-const ACTIONS_NEEDING_A_REASON = ["return", "return_to_supplier", "discard"];
+const ACTIONS_NEEDING_A_REASON = ["return_to_supplier", "discard"];
 
 /**
  * Do something to this task.
@@ -1593,6 +1601,103 @@ async function openReassignPicker(task, onClose) {
 }
 
 /**
+ * Return — decision 0490. The same dedicated-picker shape Reassign's
+ * own `openReassignPicker` above already established, not the generic
+ * comment-and-OK/Cancel modal (still its own, later, separate decision
+ * in the agreed sequence).
+ *
+ * **This is what first made Return reachable at all.** The route
+ * (`POST /tasks/:id/return`) has required a `stageId` plus exactly one
+ * of `assignToUser`/`assignToTeam` since decision 0075; nothing before
+ * this decision ever collected either from a person — the old
+ * `runAction()` path only ever prompted for a reason, so every click
+ * 400'd. See migrations/0085_stage_return_targets.sql for why the
+ * choices offered are an operator-curated list per stage, not a raw
+ * pick from every stage this document happens to have visited.
+ *
+ * **Targets come from the server, not a client-side guess** — `GET
+ * /tasks/:id/return-targets` returns exactly the intersection
+ * `handleReturnToStage` will actually accept (an operator-configured
+ * target this specific document has actually visited), the same
+ * "computed by the server, not inferred by the client" discipline
+ * `openReassignPicker`'s own comment above already states.
+ *
+ * **The reason is required, unlike Reassign's optional comment** —
+ * decision 0075's own rule, unchanged. Left to the server's own 400 to
+ * enforce and this picker's own `errorBox` to show, rather than a
+ * second copy of that validation here: the same "let the server's
+ * message speak" shape the failure path below already uses for every
+ * other refusal.
+ */
+async function openReturnPicker(task, onClose) {
+  const response = await fetch(`/api/tasks/${encodeURIComponent(task.id)}/return-targets`);
+  if (!response.ok) {
+    note(t("viewer.actionfailed"));
+    return;
+  }
+  const targets = (await response.json()).targets ?? [];
+  if (targets.length === 0) {
+    note(t("action.return.nonefound"));
+    return;
+  }
+
+  const close = () => backdrop.remove();
+  const labeled = (labelKey, input) => el("div", { class: "kf" }, [el("label", { text: t(labelKey) }), input]);
+
+  // **One option per target stage, keyed by its own stageId** — the
+  // (source, target) pair is unique per stage (migration 0085's own
+  // index), so within one task's own candidate list a stageId already
+  // uniquely picks a row; no composite value needed on the option
+  // itself.
+  const select = el(
+    "select",
+    {},
+    targets.map((tgt) => el("option", { value: tgt.stageId, text: `${tgt.stageName} — ${tgt.teamName}` }))
+  );
+  const reasonBox = el("textarea", { placeholder: t("activity.placeholder") });
+  const errorBox = el("div", { class: "warn sm", hidden: "hidden" });
+
+  const doReturn = async () => {
+    errorBox.hidden = true;
+    const chosen = targets.find((tgt) => tgt.stageId === select.value);
+    const response = await fetch(`/api/tasks/${encodeURIComponent(task.id)}/return`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ stageId: chosen.stageId, assignToTeam: chosen.teamId, reason: reasonBox.value.trim() }),
+    });
+    if (!response.ok) {
+      const failure = await response.json().catch(() => ({}));
+      errorBox.hidden = false;
+      errorBox.textContent = failure.error ?? t("viewer.actionfailed");
+      return;
+    }
+    close();
+    // Handed to another stage entirely — this screen has nothing left
+    // to show, the same "finished or moved" close every other action
+    // already takes at the end of runAction() above.
+    onClose();
+  };
+
+  const stateButtons = el("div", { class: "statebuttons" }, [
+    actionLink("return", { onclick: doReturn, primary: true }),
+    actionLink("close", { onclick: close }),
+  ]);
+
+  const box = el("div", { class: "popout" }, [
+    el("div", { class: "cardhead" }, [el("h3", { text: t("action.return") }), stateButtons]),
+    labeled("action.return.wholabel", select),
+    labeled("action.return.reasonlabel", reasonBox),
+    errorBox,
+  ]);
+
+  const backdrop = el("div", { class: "backdrop" }, [box]);
+  backdrop.onclick = (e) => {
+    if (e.target === backdrop) close();
+  };
+  document.body.append(backdrop);
+}
+
+/**
  * One action: icon above its label, in a row — decision 0122.
  *
  * **Still the server's decision** which appear (decision 0103). Giving
@@ -1691,12 +1796,20 @@ function taskActionButtons(task, onClose) {
       .filter((a) => a !== "key")
       .map((a, index) =>
         actionLink(a, {
-          // **Reassign opens its own small picker instead of `runAction`'s
-          // plain-text-reason prompt — decision 0489.** It needs a real
-          // person chosen from a real list, not a free-text string; the
-          // generic comment-and-OK/Cancel modal that would eventually
-          // replace this dedicated picker is its own, later decision.
-          onclick: () => (a === "reassign" ? openReassignPicker(task, onClose) : runAction(a, task, onClose)),
+          // **Reassign and Return each open their own small picker
+          // instead of `runAction`'s plain-text-reason prompt —
+          // decisions 0489 and 0490.** Both need something a bare
+          // prompt cannot collect (a real person, or a real stage and
+          // team, chosen from a real list) rather than a free-text
+          // string; the generic comment-and-OK/Cancel modal that would
+          // eventually replace these dedicated pickers is its own,
+          // later decision.
+          onclick: () =>
+            a === "reassign"
+              ? openReassignPicker(task, onClose)
+              : a === "return"
+                ? openReturnPicker(task, onClose)
+                : runAction(a, task, onClose),
           // With nothing to save, the first thing the task offers is
           // what somebody came to do.
           primary: !canEditAnything && index === 0,

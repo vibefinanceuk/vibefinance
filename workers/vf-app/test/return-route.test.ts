@@ -1,7 +1,7 @@
 import { env } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
 import { applyTestSchema } from "./setup.js";
-import { handleReturnToStage, handleReturnToSupplier, handleDiscard } from "../src/return-route.js";
+import { handleReturnToStage, handleReturnToSupplier, handleDiscard, handleReturnTargets } from "../src/return-route.js";
 import type { AuthenticatedUser } from "../src/user-auth.js";
 
 const DAN: AuthenticatedUser = { id: "u-dan", email: "dan@acme.com", name: "Dan Y." };
@@ -190,6 +190,113 @@ describe("returning to an earlier stage", () => {
     ]) {
       expect((await handleReturnToStage(env.DB, taskId, body, DAN)).status).toBe(400);
     }
+  });
+
+  /**
+   * **Decision 0490 — a bug fixed in the same change that first made
+   * Return reachable at all.** The new task used to inherit the
+   * *returning* task's own `required_permission` (Approval's
+   * `AP.Approve`) regardless of what the *target* stage actually
+   * declares — every other path that creates a task on stage entry
+   * resolves this from the stage it lands at, never the stage it came
+   * from.
+   */
+  it("gives the new task the TARGET stage's own required_permission, not the returning task's", async () => {
+    const { taskId } = await atApproval();
+    await env.DB.prepare("UPDATE process_stages SET required_permission = 'AP.Code' WHERE id = 's-coding'").run();
+    await grant("u-dan", ["AP.Approve", "AP.Return"]);
+
+    await handleReturnToStage(
+      env.DB,
+      taskId,
+      { stageId: "s-coding", reason: "wrong code", assignToUser: "u-sarah" },
+      DAN
+    );
+
+    const newTask = await env.DB.prepare("SELECT required_permission FROM tasks WHERE stage_id = 's-coding'").first<{
+      required_permission: string;
+    }>();
+    expect(newTask?.required_permission).toBe("AP.Code");
+  });
+
+  it("falls back to the returning task's own permission when the target stage declares none", async () => {
+    // s-coding has no required_permission set in the fixture — the
+    // same "we don't know, so don't leave it null" last resort
+    // workflow-engine.ts's own task creation already uses.
+    const { taskId } = await atApproval();
+    await grant("u-dan", ["AP.Approve", "AP.Return"]);
+
+    await handleReturnToStage(
+      env.DB,
+      taskId,
+      { stageId: "s-coding", reason: "wrong code", assignToUser: "u-sarah" },
+      DAN
+    );
+
+    const newTask = await env.DB.prepare("SELECT required_permission FROM tasks WHERE stage_id = 's-coding'").first<{
+      required_permission: string;
+    }>();
+    expect(newTask?.required_permission).toBe("AP.Approve");
+  });
+});
+
+describe("where a task can be returned to (decision 0490)", () => {
+  async function configureTarget(sourceStageId: string, targetStageId: string, teamId = "team-coding") {
+    await env.DB.prepare(
+      "INSERT INTO stage_return_targets (id, source_stage_id, target_stage_id, team_id) VALUES (?, ?, ?, ?)"
+    )
+      .bind(`rt-${sourceStageId}-${targetStageId}`, sourceStageId, targetStageId, teamId)
+      .run();
+  }
+
+  it("offers a configured target the document has actually visited", async () => {
+    const { taskId } = await atApproval();
+    await configureTarget("s-approval", "s-coding");
+    await grant("u-dan", ["AP.Approve", "AP.Return"]);
+
+    const result = await handleReturnTargets(env.DB, taskId, DAN);
+    expect(result.status).toBe(200);
+    expect((result.body as { targets: { stageId: string; teamId: string }[] }).targets).toEqual([
+      { stageId: "s-coding", stageName: "Coding", teamId: "team-coding", teamName: "Coding" },
+    ]);
+  });
+
+  it("does not offer a configured target this document has never visited", async () => {
+    // s-review is defined for the process but this instance never
+    // passed through it — the same visited-only invariant
+    // handleReturnToStage itself enforces (decision 0075).
+    const { taskId } = await atApproval();
+    await configureTarget("s-approval", "s-review");
+    await grant("u-dan", ["AP.Approve", "AP.Return"]);
+
+    const result = await handleReturnTargets(env.DB, taskId, DAN);
+    expect((result.body as { targets: unknown[] }).targets).toEqual([]);
+  });
+
+  it("does not offer a visited stage nobody configured", async () => {
+    // s-validation was genuinely visited, but no operator has ever
+    // named it a return target from Approval — an unconfigured target
+    // is exactly the gap this decision closes, not a stage list to
+    // fall back to guessing from.
+    const { taskId } = await atApproval();
+    await grant("u-dan", ["AP.Approve", "AP.Return"]);
+
+    const result = await handleReturnTargets(env.DB, taskId, DAN);
+    expect((result.body as { targets: unknown[] }).targets).toEqual([]);
+  });
+
+  it("requires the same standing Return itself requires", async () => {
+    const { taskId } = await atApproval();
+    await configureTarget("s-approval", "s-coding");
+    await grant("u-dan", ["AP.Approve"]);
+
+    const result = await handleReturnTargets(env.DB, taskId, DAN);
+    expect(result.status).toBe(403);
+  });
+
+  it("404s for a task that does not exist", async () => {
+    const result = await handleReturnTargets(env.DB, "no-such-task", DAN);
+    expect(result.status).toBe(404);
   });
 });
 

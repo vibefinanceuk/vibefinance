@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 25 September 2026 (decision 0489). A living document: what
+Last updated 25 September 2026 (decision 0490). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,36 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Return-target stage configuration, and the AP Setup screen for it (0490)
+- **Asked live**, third of the five-step Coding-pilot sequence agreed
+  after 0487. Tracing it found Return had never actually worked from the
+  live UI: `POST /tasks/:id/return` has required a `stageId` plus an
+  assignee since decision 0075, but nothing ever collected either —
+  every click 400'd. This decision is what first makes it reachable.
+- **A second, real bug fixed along the way**: the target task's
+  `required_permission` was inherited from the *returning* stage rather
+  than resolved from the *target* stage, unlike every other task-creation
+  path in the codebase. Fixed with a lookup + fallback chain matching
+  `workflow-engine.ts`'s own precedent.
+- **New table `stage_return_targets`** (migration 0085) — a stage can
+  offer more than one return target, so a `stage_actions` column
+  wouldn't do. Targets name a team, matching `assign_task`'s own default.
+- **Server-computed candidate intersection**, the same philosophy 0489's
+  Reassign candidates used: `GET /tasks/:id/return-targets` intersects
+  the admin-configured list with the document's own actual visit history.
+- **A dedicated picker**, the same shape Reassign's own established —
+  reason is mandatory (unlike Reassign's optional comment), left to the
+  server's own 400 to enforce rather than duplicated client-side.
+- **AP Setup's Stage Restrictions tab** gained a "Return targets"
+  section per stage — configured list with Remove buttons, an add-row
+  form (target stage + team) shown only once both exist. The team list
+  rides on the already-`Admin.Configure`-gated `GET /processes/:id`
+  response rather than widening `/org/teams`'s own narrower auth.
+- **Not built**: the generic comment modal, Route To Approver's
+  manual-approver picker, Return To Seller's reason/email dropdowns —
+  unchanged from 0488/0489's own scope.
+- Full reasoning and verification counts in decision 0490.
 
 ### Reassign (0489)
 - **Asked live**, second of the five-step Coding-pilot sequence agreed

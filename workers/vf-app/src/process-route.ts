@@ -173,6 +173,15 @@ interface StageDetail {
    * already established for its own sparse table.
    */
   reverifyRuleOnComplete: boolean;
+  /**
+   * Where Return can send a document from this stage, and which team
+   * receives it — decision 0490. A list, not a single value: unlike
+   * `reverifyRuleOnComplete`, a stage can reasonably configure more
+   * than one (see migrations/0085_stage_return_targets.sql for why
+   * that ruled out a flat column here the way the other two fields
+   * above use).
+   */
+  returnTargets: { id: string; targetStageId: string; targetStageName: string; teamId: string; teamName: string }[];
 }
 
 async function stagesAtVersion(db: D1Database, processId: string, version: number): Promise<StageDetail[]> {
@@ -198,6 +207,45 @@ async function stagesAtVersion(db: D1Database, processId: string, version: numbe
       offer_field_restrictions: number;
       reverify_rule_on_complete: number | null;
     }>();
+
+  // **Fetched once for every stage in this version, not once per
+  // stage** — a fan-out `LEFT JOIN` above would multiply each stage's
+  // own row by however many targets it has, the same reason
+  // `activity-route.ts`'s own multi-kind reads run as separate queries
+  // merged in application code rather than one join.
+  const stageIds = rows.results.map((r) => r.id);
+  const returnTargetsByStage = new Map<
+    string,
+    { id: string; targetStageId: string; targetStageName: string; teamId: string; teamName: string }[]
+  >();
+  if (stageIds.length > 0) {
+    const placeholders = stageIds.map(() => "?").join(", ");
+    const targetRows = await db
+      .prepare(
+        `SELECT rt.id, rt.source_stage_id, rt.target_stage_id, ts.name AS target_stage_name,
+                rt.team_id, tm.name AS team_name
+         FROM stage_return_targets rt
+         JOIN process_stages ts ON ts.id = rt.target_stage_id
+         JOIN org_teams tm ON tm.id = rt.team_id
+         WHERE rt.source_stage_id IN (${placeholders})
+         ORDER BY ts.name`
+      )
+      .bind(...stageIds)
+      .all<{
+        id: string;
+        source_stage_id: string;
+        target_stage_id: string;
+        target_stage_name: string;
+        team_id: string;
+        team_name: string;
+      }>();
+    for (const t of targetRows.results) {
+      const list = returnTargetsByStage.get(t.source_stage_id) ?? [];
+      list.push({ id: t.id, targetStageId: t.target_stage_id, targetStageName: t.target_stage_name, teamId: t.team_id, teamName: t.team_name });
+      returnTargetsByStage.set(t.source_stage_id, list);
+    }
+  }
+
   return rows.results.map((r) => ({
     id: r.id,
     name: r.name,
@@ -207,6 +255,7 @@ async function stagesAtVersion(db: D1Database, processId: string, version: numbe
     evaluationScope: r.evaluation_scope,
     offerFieldRestrictions: r.offer_field_restrictions === 1,
     reverifyRuleOnComplete: r.reverify_rule_on_complete === 1,
+    returnTargets: returnTargetsByStage.get(r.id) ?? [],
   }));
 }
 
@@ -231,6 +280,17 @@ export async function handleGetProcess(db: D1Database, processId: string): Promi
   const draftVersion = process.version + 1;
   const draftStages = await stagesAtVersion(db, processId, draftVersion);
 
+  /**
+   * **Every team, for the Return targets picker — decision 0490.**
+   * Not fetched from `GET /org/teams`: that route only accepts
+   * `Admin.RoleManagement`/`Admin.UserManagement`, neither of which an
+   * AP Setup operator holding only `Admin.Configure` necessarily has —
+   * the same permission this whole route already requires, so the
+   * team list rides along on a read this screen calls regardless
+   * rather than opening (or widening) a second, separately-gated one.
+   */
+  const teams = await db.prepare("SELECT id, name FROM org_teams ORDER BY name").all<{ id: string; name: string }>();
+
   return {
     status: 200,
     body: {
@@ -239,6 +299,7 @@ export async function handleGetProcess(db: D1Database, processId: string): Promi
       version: process.version,
       stages: liveStages,
       draft: draftStages.length > 0 ? { version: draftVersion, stages: draftStages } : null,
+      teams: teams.results,
     },
   };
 }

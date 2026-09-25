@@ -112,6 +112,15 @@ const STRINGS = {
     "apsetup.stagerestrictions.savefailed": "Could not save that restriction. Try again.",
     "apsetup.stagerestrictions.offerhere": "Offer Account Coding restrictions for this stage",
     "apsetup.stagerestrictions.notoffered": "Not configurable here.",
+    "apsetup.stagerestrictions.reverifyoncomplete": "Re-check the rule before Complete",
+    "apsetup.stagerestrictions.returntargetsheading": "Return targets",
+    "apsetup.stagerestrictions.returntargetshint": "Where Return can send a document from this stage, and which team receives it. Only stages a document has actually visited are ever offered when returning it.",
+    "apsetup.stagerestrictions.notargetsyet": "No return targets configured for this stage yet.",
+    "apsetup.stagerestrictions.targetstage": "Target stage",
+    "apsetup.stagerestrictions.returnteam": "Team",
+    "action.return.wholabel": "Return to",
+    "action.return.reasonlabel": "Reason",
+    "action.return.nonefound": "No return targets are configured for this stage.",
     "field.coding.project": "Project",
     "field.coding.commodity_code": "Commodity code",
     "field.coding.gl_code": "General ledger code",
@@ -1311,6 +1320,224 @@ describe("Stage Restrictions (decision 0483)", () => {
 
       expect(toggle.checked).toBe(true);
       expect(document.body.textContent).toContain("offer (true or false) is required");
+    });
+  });
+
+  /**
+   * **Return targets — decision 0490.** The curated list `viewer.js`'s
+   * own Return picker reads from — sitting outside the `offered`
+   * branch, same reason as `reverifyToggleRow` right above it: a stage
+   * with no Account Coding fields to restrict can still want a place
+   * to send a document back to. The add-row form only appears once
+   * there is both another stage to name and a team to hand it to.
+   */
+  describe("Return targets — decision 0490", () => {
+    const TWO_STAGE_DETAIL = {
+      id: "ap",
+      name: "AP",
+      version: 1,
+      stages: [
+        { id: "validation", name: "Validation", sequence: 1, ruleSetId: "rs1", ruleSetName: "Validation Rules", evaluationScope: "header", returnTargets: [] },
+        { id: "coding", name: "Coding", sequence: 2, ruleSetId: null, ruleSetName: null, evaluationScope: "header", returnTargets: [] },
+      ],
+      draft: null,
+      teams: [{ id: "team-coding", name: "Coding team" }],
+    };
+
+    function panelNamed(name: string): Element {
+      const panel = [...document.querySelectorAll(".panel")].find((p) => p.querySelector("h3")?.textContent === name);
+      if (!panel) throw new Error(`no panel found for stage "${name}"`);
+      return panel;
+    }
+
+    it("shows the empty-list message and no add-row form on a single-stage process", async () => {
+      await openApSetupAs(["Admin.Configure"], EMPTY_OVERVIEW, EMPTY_CONFIG, stageRestrictionsRoutes([]));
+      switchTab("Stage Restrictions");
+
+      const panel = stagePanel();
+      expect(panel.textContent).toContain("No return targets configured for this stage yet.");
+      expect(panel.querySelector(".editgrid")).toBeNull();
+    });
+
+    it("hides the add-row form when there are other stages but no teams configured yet", async () => {
+      await openApSetupAs(
+        ["Admin.Configure"],
+        EMPTY_OVERVIEW,
+        EMPTY_CONFIG,
+        stageRestrictionsRoutes([], { "/api/processes/ap": { ...TWO_STAGE_DETAIL, teams: [] } })
+      );
+      switchTab("Stage Restrictions");
+
+      const panel = panelNamed("Validation");
+      expect(panel.textContent).toContain("No return targets configured for this stage yet.");
+      expect(panel.querySelector(".editgrid")).toBeNull();
+    });
+
+    it("shows the add-row form, offering every other stage and every team, once both exist", async () => {
+      await openApSetupAs(
+        ["Admin.Configure"],
+        EMPTY_OVERVIEW,
+        EMPTY_CONFIG,
+        stageRestrictionsRoutes([], { "/api/processes/ap": TWO_STAGE_DETAIL })
+      );
+      switchTab("Stage Restrictions");
+
+      const panel = panelNamed("Validation");
+      const selects = [...panel.querySelectorAll(".editgrid select")] as HTMLSelectElement[];
+      expect(selects.length).toBe(2);
+      // Validation's own picker offers Coding — the other stage — never itself.
+      expect([...selects[0].options].map((o) => o.textContent)).toEqual(["Coding"]);
+      expect([...selects[1].options].map((o) => o.textContent)).toEqual(["Coding team"]);
+    });
+
+    it("shows a configured target with its stage and team name, and a Remove button", async () => {
+      await openApSetupAs(
+        ["Admin.Configure"],
+        EMPTY_OVERVIEW,
+        EMPTY_CONFIG,
+        stageRestrictionsRoutes([], {
+          "/api/processes/ap": {
+            ...TWO_STAGE_DETAIL,
+            stages: [
+              {
+                ...TWO_STAGE_DETAIL.stages[0],
+                returnTargets: [{ id: "rt1", targetStageId: "coding", targetStageName: "Coding", teamId: "team-coding", teamName: "Coding team" }],
+              },
+              TWO_STAGE_DETAIL.stages[1],
+            ],
+          },
+        })
+      );
+      switchTab("Stage Restrictions");
+
+      const panel = panelNamed("Validation");
+      const row = [...panel.querySelectorAll(".assignmentrow")].find((r) => r.textContent?.includes("Coding — Coding team"));
+      expect(row).toBeTruthy();
+      expect(row?.querySelector("button")?.textContent).toBe("Remove");
+    });
+
+    it("adding a target POSTs the chosen stage and team, then reloads the list", async () => {
+      await openApSetupAs(
+        ["Admin.Configure"],
+        EMPTY_OVERVIEW,
+        EMPTY_CONFIG,
+        stageRestrictionsRoutes([], {
+          "/api/processes/ap": TWO_STAGE_DETAIL,
+          "POST /api/processes/stages/validation/return-targets": {
+            ok: true,
+            status: 201,
+            json: async () => ({
+              id: "rt1",
+              sourceStageId: "validation",
+              targetStageId: "coding",
+              targetStageName: "Coding",
+              teamId: "team-coding",
+              teamName: "Coding team",
+            }),
+          },
+        })
+      );
+      switchTab("Stage Restrictions");
+
+      const panel = panelNamed("Validation");
+      const selects = [...panel.querySelectorAll(".editgrid select")] as HTMLSelectElement[];
+      selects[0].value = "coding";
+      selects[1].value = "team-coding";
+      const addButton = [...panel.querySelectorAll(".statebuttons .actionlink")].find((b) => b.textContent?.includes("Add"));
+      await addButton?.click();
+      await new Promise((r) => setTimeout(r, 0));
+
+      const calls = (fetch as unknown as { mock: { calls: [string, RequestInit][] } }).mock.calls;
+      const post = calls.find(([url, init]) => url === "/api/processes/stages/validation/return-targets" && init?.method === "POST");
+      expect(post).toBeTruthy();
+      expect(JSON.parse(post![1].body as string)).toEqual({ targetStageId: "coding", teamId: "team-coding" });
+    });
+
+    it("removing a target DELETEs it by id, then reloads the list", async () => {
+      await openApSetupAs(
+        ["Admin.Configure"],
+        EMPTY_OVERVIEW,
+        EMPTY_CONFIG,
+        stageRestrictionsRoutes([], {
+          "/api/processes/ap": {
+            ...TWO_STAGE_DETAIL,
+            stages: [
+              {
+                ...TWO_STAGE_DETAIL.stages[0],
+                returnTargets: [{ id: "rt1", targetStageId: "coding", targetStageName: "Coding", teamId: "team-coding", teamName: "Coding team" }],
+              },
+              TWO_STAGE_DETAIL.stages[1],
+            ],
+          },
+          "DELETE /api/processes/stages/return-targets/rt1": { ok: true, json: async () => ({ id: "rt1" }) },
+        })
+      );
+      switchTab("Stage Restrictions");
+
+      const panel = panelNamed("Validation");
+      const removeButton = [...panel.querySelectorAll(".assignmentrow button")].find((b) => b.textContent === "Remove");
+      await removeButton?.click();
+      await new Promise((r) => setTimeout(r, 0));
+
+      const calls = (fetch as unknown as { mock: { calls: [string, RequestInit][] } }).mock.calls;
+      expect(calls.some(([url, init]) => url === "/api/processes/stages/return-targets/rt1" && init?.method === "DELETE")).toBe(true);
+    });
+
+    it("shows a real error, and leaves the add-row form usable, when adding a target fails", async () => {
+      await openApSetupAs(
+        ["Admin.Configure"],
+        EMPTY_OVERVIEW,
+        EMPTY_CONFIG,
+        stageRestrictionsRoutes([], {
+          "/api/processes/ap": TWO_STAGE_DETAIL,
+          "POST /api/processes/stages/validation/return-targets": {
+            ok: false,
+            status: 409,
+            json: async () => ({ error: "that pair is already configured" }),
+          },
+        })
+      );
+      switchTab("Stage Restrictions");
+
+      const panel = panelNamed("Validation");
+      const addButton = [...panel.querySelectorAll(".statebuttons .actionlink")].find((b) => b.textContent?.includes("Add"));
+      await addButton?.click();
+      await new Promise((r) => setTimeout(r, 0));
+
+      expect(document.body.textContent).toContain("that pair is already configured");
+    });
+
+    it("shows a real error when removing a target fails", async () => {
+      await openApSetupAs(
+        ["Admin.Configure"],
+        EMPTY_OVERVIEW,
+        EMPTY_CONFIG,
+        stageRestrictionsRoutes([], {
+          "/api/processes/ap": {
+            ...TWO_STAGE_DETAIL,
+            stages: [
+              {
+                ...TWO_STAGE_DETAIL.stages[0],
+                returnTargets: [{ id: "rt1", targetStageId: "coding", targetStageName: "Coding", teamId: "team-coding", teamName: "Coding team" }],
+              },
+              TWO_STAGE_DETAIL.stages[1],
+            ],
+          },
+          "DELETE /api/processes/stages/return-targets/rt1": {
+            ok: false,
+            status: 404,
+            json: async () => ({ error: "no return target rt1" }),
+          },
+        })
+      );
+      switchTab("Stage Restrictions");
+
+      const panel = panelNamed("Validation");
+      const removeButton = [...panel.querySelectorAll(".assignmentrow button")].find((b) => b.textContent === "Remove");
+      await removeButton?.click();
+      await new Promise((r) => setTimeout(r, 0));
+
+      expect(document.body.textContent).toContain("no return target rt1");
     });
   });
 });

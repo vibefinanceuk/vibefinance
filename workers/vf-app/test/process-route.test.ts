@@ -193,6 +193,47 @@ describe("handleGetProcess — decision 0349", () => {
     const body = result.body as { stages: { id: string; reverifyRuleOnComplete: boolean }[] };
     expect(body.stages[0]).toEqual(expect.objectContaining({ reverifyRuleOnComplete: true }));
   });
+
+  it("defaults a new stage to no configured return targets — decision 0490, sparse", async () => {
+    await handleCreateProcess(env.DB, { id: "p1", name: "Standard AP" });
+    await handleCreateStage(env.DB, "p1", { id: "s1", name: "Approval", sequence: 1 });
+
+    const result = await handleGetProcess(env.DB, "p1");
+    const body = result.body as { stages: { id: string; returnTargets: unknown[] }[] };
+    expect(body.stages[0].returnTargets).toEqual([]);
+  });
+
+  it("carries a configured return target through to the read, with its names resolved", async () => {
+    await handleCreateProcess(env.DB, { id: "p1", name: "Standard AP" });
+    await handleCreateStage(env.DB, "p1", { id: "s1", name: "Approval", sequence: 1 });
+    await handleCreateStage(env.DB, "p1", { id: "s2", name: "Coding", sequence: 2 });
+    await env.DB.prepare("INSERT INTO org_units (id, name) VALUES ('u1', 'Acme France')").run();
+    await env.DB.prepare("INSERT INTO org_teams (id, name, unit_id) VALUES ('team-coding', 'Coding', 'u1')").run();
+    await env.DB
+      .prepare("INSERT INTO stage_return_targets (id, source_stage_id, target_stage_id, team_id) VALUES ('rt1', 's1', 's2', 'team-coding')")
+      .run();
+
+    const result = await handleGetProcess(env.DB, "p1");
+    const body = result.body as {
+      stages: { id: string; returnTargets: { id: string; targetStageId: string; targetStageName: string; teamId: string; teamName: string }[] }[];
+    };
+    const approval = body.stages.find((s) => s.id === "s1");
+    expect(approval?.returnTargets).toEqual([
+      { id: "rt1", targetStageId: "s2", targetStageName: "Coding", teamId: "team-coding", teamName: "Coding" },
+    ]);
+    // Coding itself has none configured from it.
+    expect(body.stages.find((s) => s.id === "s2")?.returnTargets).toEqual([]);
+  });
+
+  it("returns every org team alongside the stages — the picker's own team list", async () => {
+    await handleCreateProcess(env.DB, { id: "p1", name: "Standard AP" });
+    await env.DB.prepare("INSERT INTO org_units (id, name) VALUES ('u1', 'Acme France')").run();
+    await env.DB.prepare("INSERT INTO org_teams (id, name, unit_id) VALUES ('team-coding', 'Coding', 'u1')").run();
+
+    const result = await handleGetProcess(env.DB, "p1");
+    const body = result.body as { teams: { id: string; name: string }[] };
+    expect(body.teams).toEqual([{ id: "team-coding", name: "Coding" }]);
+  });
 });
 
 describe("handleStartDraft — decision 0353", () => {
