@@ -2038,6 +2038,17 @@ describe("New Seller — a genuinely new supplier, recorded by hand (decision 04
     expect(document.body.textContent).not.toContain("This invoice names a purchase order");
   });
 
+  it("carries its own icon, and sits beside Change Seller in the same card — reported live", async () => {
+    await open({ "supplier.unmatchedReason": "no_match" });
+
+    const newSellerButton = [...document.querySelectorAll("button")].find((b) => b.textContent === "New Seller");
+    const changeSellerButton = [...document.querySelectorAll("button")].find((b) => b.textContent === "Change Seller");
+    expect(newSellerButton?.querySelector("svg")).toBeTruthy();
+    expect(changeSellerButton).toBeTruthy();
+    // Same .cardhead, not two separate rows.
+    expect(newSellerButton?.closest(".cardhead")).toBe(changeSellerButton?.closest(".cardhead"));
+  });
+
   it("hides the New Seller button and shows the PO-anomaly warning instead when the invoice names a purchase order", async () => {
     await open({ "supplier.unmatchedReason": "no_match", "BT-13": "PO-4471" });
 
@@ -2068,6 +2079,41 @@ describe("New Seller — a genuinely new supplier, recorded by hand (decision 04
     expect(inputs.map((i) => i.value)).toContain("Acme Foods Ltd");
     expect(inputs.map((i) => i.value)).toContain("GB998877");
     expect(inputs.map((i) => i.value)).toContain("GB");
+  });
+
+  it("Save and Close sit top right of the pop-out, beside its heading, and Save carries an icon", async () => {
+    await open({ "supplier.unmatchedReason": "no_match" });
+
+    const openButton = [...document.querySelectorAll("button")].find((b) => b.textContent === "New Seller");
+    openButton?.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    const saveButton = [...document.querySelectorAll(".popout button")].find((b) => b.textContent === "Save");
+    const closeButton = [...document.querySelectorAll(".popout button")].find((b) => b.textContent === "Close");
+    expect(saveButton?.querySelector("svg")).toBeTruthy();
+    expect(saveButton?.closest(".cardhead")).toBeTruthy();
+    expect(closeButton?.closest(".cardhead")).toBe(saveButton?.closest(".cardhead"));
+  });
+
+  it("Close actually closes the pop-out — previously disabled and inert, reported live", async () => {
+    // The previous version called actionLink("close") with no
+    // onclick, which actionLink treats as "nothing to do" and marks
+    // disabled — a disabled button never dispatches a click at all,
+    // so a handler patched on afterwards was never reachable. Wired
+    // directly now, the same way every other pop-out's Close already
+    // is.
+    await open({ "supplier.unmatchedReason": "no_match" });
+
+    const openButton = [...document.querySelectorAll("button")].find((b) => b.textContent === "New Seller");
+    openButton?.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    const closeButton = [...document.querySelectorAll(".popout button")].find((b) => b.textContent === "Close");
+    expect(closeButton?.disabled).toBe(false);
+    closeButton?.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(document.querySelector(".backdrop")).toBeFalsy();
   });
 
   it("refuses to save with no company name, and calls nothing", async () => {

@@ -2541,7 +2541,9 @@ export async function openViewer(task, onClose) {
 
     const labeled = (labelKey, input) => el("div", { class: "kf" }, [el("label", { text: t(labelKey) }), input]);
 
-    const save = async () => {
+    const close = () => backdrop.remove();
+
+    const doSave = async () => {
       const name = nameInput.value.trim();
       if (!name) {
         errorBox.hidden = false;
@@ -2594,8 +2596,33 @@ export async function openViewer(task, onClose) {
       }
     };
 
+    /**
+     * **Save and Close, top right of the pop-out — reported live**:
+     * both moved up beside the heading, the same `.cardhead` /
+     * `.statebuttons` shape every other pop-out on this screen already
+     * uses for its own Save/Close pair (`access.js`'s org and role
+     * forms, `coding-lists.js`'s own edit pop-out) — this one was
+     * simply built before that convention was reached for here.
+     * `actionLink("save", ...)` carries its own icon for free, the
+     * same shared glyph every other Save button already shows.
+     *
+     * **`close` wired directly, not patched on afterwards.** The
+     * previous version called `actionLink("close")` with no `onclick`
+     * at all, which `actionLink` treats as "nothing to do" and marks
+     * `disabled` — then tried to attach a handler after the fact by
+     * querying the DOM for the last `<button>`. A disabled button
+     * never dispatches a click at all, `onclick` or not, so the
+     * handler was reachable and never ran — reported live as "the
+     * Close button does not work." Passed straight into `actionLink`
+     * now, the same way every other pop-out's own Close already does.
+     */
+    const stateButtons = el("div", { class: "statebuttons" }, [
+      actionLink("save", { onclick: doSave, primary: true }),
+      actionLink("close", { onclick: close }),
+    ]);
+
     const box = el("div", { class: "popout" }, [
-      el("h3", { text: t("viewer.supplier.newsellerheading") }),
+      el("div", { class: "cardhead" }, [el("h3", { text: t("viewer.supplier.newsellerheading") }), stateButtons]),
       el("p", { class: "muted", text: t("viewer.supplier.newsellerhint") }),
       labeled("viewer.supplier.name", nameInput),
       labeled("viewer.supplier.vat", vatInput),
@@ -2605,14 +2632,9 @@ export async function openViewer(task, onClose) {
       labeled("viewer.supplier.postcode", postalInput),
       labeled("viewer.supplier.country", countryInput),
       errorBox,
-      el("button", { class: "primary", text: t("viewer.supplier.save"), onclick: save }),
-      // One icon for closing, everywhere (decision 0236).
-      actionLink("close"),
     ]);
 
     const backdrop = el("div", { class: "backdrop" }, [box]);
-    const close = () => backdrop.remove();
-    box.querySelectorAll("button")[box.querySelectorAll("button").length - 1].onclick = close;
     backdrop.onclick = (e) => {
       if (e.target === backdrop) close();
     };
@@ -2858,8 +2880,29 @@ export async function openViewer(task, onClose) {
        * way to act on it rather than only search for a record that was
        * never going to be found.
        */
+      /**
+       * **New Seller moved up beside Change Seller, in the same card
+       * — reported live.** Not `cardHead()`, which only ever renders
+       * one action: the same `.cardhead` / `.statebuttons` two-button
+       * shape `suppliers.js`'s own Load / New supplier header already
+       * uses (decision 0300), gated behind `canEditAnything` the same
+       * way `cardHead()` itself already gates Change Seller — a task
+       * nobody may edit gets neither button, not one of the two.
+       */
+      const headerActions = canEditAnything
+        ? [
+            actionLink("changeseller", { onclick: () => openSupplierSearch() }),
+            ...(hasPoReference
+              ? []
+              : [actionLink("newseller", { label: t("viewer.supplier.newseller"), onclick: () => openNewSellerForm() })]),
+          ]
+        : [];
+
       return el("div", { class: "panel needsattention" }, [
-        cardHead(t("viewer.seller"), "changeseller", () => openSupplierSearch()),
+        el("div", { class: "cardhead" }, [
+          el("h3", { text: t("viewer.seller") }),
+          ...(headerActions.length > 0 ? [el("div", { class: "statebuttons" }, headerActions)] : []),
+        ]),
         el("div", {
           class: "warn",
           text: hasPoReference ? t("viewer.supplier.pounidentified") : t(`viewer.supplier.${why ?? "none"}`),
@@ -2867,14 +2910,6 @@ export async function openViewer(task, onClose) {
         shown.length > 0
           ? el("div", { class: "vfields" }, shown.map((spec) => field(spec, existing)))
           : null,
-        hasPoReference
-          ? null
-          : el("button", {
-              class: "linky",
-              type: "button",
-              text: t("viewer.supplier.newseller"),
-              onclick: () => openNewSellerForm(),
-            }),
       ].filter(Boolean));
     }
 

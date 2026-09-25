@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 25 September 2026 (decision 0480). A living document: what
+Last updated 25 September 2026 (decision 0481). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,25 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### New Seller cosmetics, and a real Close bug fixed (0481)
+- **Reported live**, right after testing 0480's own invoices: the New
+  Seller button should carry an icon and sit beside Change Seller in
+  the same card; the pop-out's own Save and Close should move to its
+  top right, Save with an icon; and Close did not work at all.
+- **A genuine bug, not just unstyled** — the pop-out's Close button
+  was built with no `onclick`, which `actionLink()` treats as
+  "nothing to do" and marks `disabled`; a handler patched on
+  afterwards by querying the DOM never ran, because a disabled button
+  never dispatches a click regardless. Wired directly now.
+- Both cosmetic requests built from conventions already in this
+  codebase rather than new ones — `suppliers.js`'s own two-button
+  card header (decision 0300) for Change Seller/New Seller together,
+  and `access.js`/`coding-lists.js`'s own pop-out `.cardhead` for
+  Save/Close top right. New `newseller` icon, same shape as
+  `newsupplier`/`newperson` under its own key (decision 0328's
+  established reuse convention).
+- Full reasoning and verification counts in decision 0481.
 
 ### May not leave the last checkpoint without a supplier the ERP knows, and New Seller (0480)
 - **The operator's own request**: at validation, the Seller and Buyer
