@@ -1,0 +1,31 @@
+-- 0081_stage_offers_field_restrictions.sql
+-- Decision 0485 — which stages the Stage Restrictions screen (decision
+-- 0483) even offers a checkbox for.
+--
+-- Reported live, testing 0483: Intake ("only used transitionary so
+-- that invoices can be extracted from a source") and Payment Eligible
+-- ("another queue pending delivery to the ERP and cannot be retrieved
+-- from") were both showing Account Coding restriction checkboxes,
+-- when neither stage can ever have a person keying a line at all.
+-- Approval and AP Review are the opposite case — restricting there is
+-- a real business decision (segregation of duties; coding should be
+-- locked once approved) — so the fix is not to hide the screen's
+-- content by inferring which stages "look" automatic, which risks
+-- hiding a stage that genuinely needs configuring one day. It is an
+-- explicit, one-time choice, the same lesson decision 0484 just
+-- taught this project the hard way about an inferred list silently
+-- missing a real route.
+--
+-- **Defaults to offered (1), not restricted (0)** — the field-
+-- visibility system's own `UNCONFIGURED = hidden` reasoning run in
+-- reverse: nothing currently visible in the Stage Restrictions screen
+-- should silently disappear the moment this migration lands. An
+-- operator turns it off for the stages that do not apply, once, the
+-- same "a person activated this" discipline every other opt-out in
+-- this schema already follows.
+ALTER TABLE process_stages ADD COLUMN offer_field_restrictions INTEGER NOT NULL DEFAULT 1
+  CHECK (offer_field_restrictions IN (0, 1));
+
+-- Point-in-time: every stage still offers it, until an operator says
+-- otherwise through the new screen affordance.
+-- ASSERT: SELECT count(*) FROM process_stages WHERE offer_field_restrictions = 0 == 0

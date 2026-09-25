@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 25 September 2026 (decision 0484). A living document: what
+Last updated 25 September 2026 (decision 0485). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,37 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Which stages the Stage Restrictions screen even offers (0485)
+- **Reported live**, testing 0484's deploy: Intake and Payment Eligible
+  showed an Account Coding checkbox despite neither stage ever having a
+  person key a line — *"makes me wonder whether the default case
+  should be off, or perhaps we limit the stages where this can be
+  configured in the screen?"*
+- **Two options weighed**: flipping the field-visibility default to
+  off (rejected — the restrict-only invariant exists precisely so a
+  screen never has to grant `edit` before it can configure anything,
+  and it would silently change every existing stage's behaviour) vs.
+  an explicit per-stage flag (chosen via `AskUserQuestion`) over an
+  inferred heuristic from `rule_set_id`/`required_permission` (neither
+  reliably signals "no person can ever key a line here," and guessing
+  wrong risks hiding a stage that genuinely needs configuring, such as
+  Approval or AP Review).
+- **Built**: `process_stages.offer_field_restrictions` (migration
+  0081, default 1 — nothing visible today disappears on deploy), a new
+  `handleSetStageOffersFieldRestrictions` route mirroring
+  `handleSetStageReadOnly`, surfaced on `StageDetail`, and the
+  Stage Restrictions tab now branches each panel between the existing
+  checkboxes and a "not configurable here" explanation, with its own
+  toggle either way.
+- **A pre-existing, unrelated gap found and fixed alongside this one**:
+  `vf-licence/test/setup.ts` had never applied migrations 0163–0165 in
+  its test schema, invisibly, because `string-coverage.test.ts`'s own
+  key list never had decision 0483's strings added either. Both fixed.
+- **Added the `vf-ui` proxy allowlist entry in the same change this
+  time** — decision 0484's own lesson, applied before shipping rather
+  than after a live report.
+- Full reasoning and verification counts in decision 0485.
 
 ### Stage Restrictions: the save route was never proxied (0484)
 - **Reported live**, testing 0483: unchecking any Account Coding

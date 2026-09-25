@@ -153,12 +153,24 @@ interface StageDetail {
   ruleSetId: string | null;
   ruleSetName: string | null;
   evaluationScope: string;
+  /**
+   * Whether the Stage Restrictions screen (decision 0483) offers this
+   * stage at all — decision 0485. A stage a person can never open for
+   * keying (an intake queue, a terminal ERP-delivery queue) showing a
+   * checkbox that can only ever mean "restrict" is worse than
+   * clutter: it invites believing a stage is secured that was never
+   * reachable, while a genuine risk sits in the same long list and is
+   * easy to miss. Carried here, on the same read `processes.js` and
+   * the Stage Restrictions tab already both call, rather than a
+   * second route only one of them would use.
+   */
+  offerFieldRestrictions: boolean;
 }
 
 async function stagesAtVersion(db: D1Database, processId: string, version: number): Promise<StageDetail[]> {
   const rows = await db
     .prepare(
-      `SELECT s.id, s.name, v.sequence, s.rule_set_id, r.name AS rule_set_name, s.evaluation_scope
+      `SELECT s.id, s.name, v.sequence, s.rule_set_id, r.name AS rule_set_name, s.evaluation_scope, s.offer_field_restrictions
        FROM process_stage_versions v
        JOIN process_stages s ON s.id = v.stage_id
        LEFT JOIN rule_sets r ON r.id = s.rule_set_id
@@ -173,6 +185,7 @@ async function stagesAtVersion(db: D1Database, processId: string, version: numbe
       rule_set_id: string | null;
       rule_set_name: string | null;
       evaluation_scope: string;
+      offer_field_restrictions: number;
     }>();
   return rows.results.map((r) => ({
     id: r.id,
@@ -181,6 +194,7 @@ async function stagesAtVersion(db: D1Database, processId: string, version: numbe
     ruleSetId: r.rule_set_id,
     ruleSetName: r.rule_set_name,
     evaluationScope: r.evaluation_scope,
+    offerFieldRestrictions: r.offer_field_restrictions === 1,
   }));
 }
 

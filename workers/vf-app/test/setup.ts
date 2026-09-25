@@ -85,6 +85,7 @@ import costObjectApprovalHierarchySql from "../../../migrations/0077_cost_object
 import matchingExceptionsAndBusinessUserSql from "../../../migrations/0078_matching_exceptions_and_business_user.sql?raw";
 import taskRuleAttributionAndNameTranslationsSql from "../../../migrations/0079_task_rule_attribution_and_name_translations.sql?raw";
 import taskSystemReasonSql from "../../../migrations/0080_task_system_reason.sql?raw";
+import stageOffersFieldRestrictionsSql from "../../../migrations/0081_stage_offers_field_restrictions.sql?raw";
 
 // Another known divergence from production, on top of the one below:
 // D1's exec() splits its input by newline and executes each non-empty
@@ -328,6 +329,7 @@ export async function applyTestSchema(): Promise<void> {
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(matchingExceptionsAndBusinessUserSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(taskRuleAttributionAndNameTranslationsSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(taskSystemReasonSql)));
+  await env.DB.exec(toOneStatementPerLine(stripSqlComments(stageOffersFieldRestrictionsSql)));
 }
 
 /**

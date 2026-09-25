@@ -263,6 +263,22 @@ async function setCodingRestrictedAtStage(stageId, field, restrict) {
 }
 
 /**
+ * Whether this stage's panel even offers Account Coding checkboxes —
+ * decision 0485. A property of the stage itself (`process_stages
+ * .offer_field_restrictions`), set once by an operator for a stage
+ * that can never have a person keying a line (Intake, Payment
+ * Eligible) or, in the other direction, turned back on for a stage
+ * that does.
+ */
+async function setStageOffersFieldRestrictions(stageId, offer) {
+  return fetch(`/api/processes/stages/${encodeURIComponent(stageId)}/offer-field-restrictions`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ offer }),
+  });
+}
+
+/**
  * **One panel per stage, three checkboxes each — decision 0483.**
  * `standardMatchingRulesPanel`'s own auto-save-on-toggle shape,
  * reused rather than a Save button: a restriction is a single fact,
@@ -305,60 +321,107 @@ function stageRestrictionsTab(problem) {
   }
 
   const stagePanels = stageRestrictionsDetail.stages.map((stage) => {
+    // **Which stages this screen even offers a checkbox for —
+    // decision 0485.** `undefined` reads as offered: an older cached
+    // process read, or a stage row this field somehow missed, behaves
+    // like the column's own default rather than silently disappearing.
+    const offered = stage.offerFieldRestrictions !== false;
+
+    const offerToggleId = `stageoffer-${stage.id}`;
+    const offerToggle = el("input", {
+      type: "checkbox",
+      id: offerToggleId,
+      ...(offered ? { checked: "checked" } : {}),
+    });
+    offerToggle.onchange = async () => {
+      problem.textContent = "";
+      const offer = offerToggle.checked;
+      try {
+        const response = await setStageOffersFieldRestrictions(stage.id, offer);
+        if (!response.ok) {
+          problem.textContent = (await response.json()).error ?? t("apsetup.stagerestrictions.savefailed");
+          offerToggle.checked = !offerToggle.checked;
+          return;
+        }
+        await loadStageRestrictions(stageRestrictionsProcessId);
+        render();
+      } catch {
+        problem.textContent = t("apsetup.stagerestrictions.savefailed");
+        offerToggle.checked = !offerToggle.checked;
+      }
+    };
+    const offerToggleRow = el("div", { class: "assignmentrow" }, [
+      el("label", { for: offerToggleId, text: t("apsetup.stagerestrictions.offerhere") }),
+      offerToggle,
+    ]);
+
     const fields = stageFieldVisibility[stage.id] ?? [];
 
-    const rows = CODING_RESTRICTION_FIELDS.map((field) => {
-      const resolved = fields.find((f) => f.field === field);
-      const label = t(`field.${field}`);
-      const checkboxId = `stagerestrict-${stage.id}-${field}`;
+    const body = !offered
+      ? [
+          el("p", { class: "muted sm", text: t("apsetup.stagerestrictions.notoffered") }),
+          offerToggleRow,
+        ]
+      : (() => {
+          const rows = CODING_RESTRICTION_FIELDS.map((field) => {
+            const resolved = fields.find((f) => f.field === field);
+            const label = t(`field.${field}`);
+            const checkboxId = `stagerestrict-${stage.id}-${field}`;
 
-      // Hidden for everyone already, and not because of this stage —
-      // nothing here to restrict further, so the row explains rather
-      // than offering a checkbox that could never do anything.
-      if (resolved?.visibility === "hidden" && resolved.decidedBy !== "stage") {
-        return el("div", { class: "assignmentrow" }, [
-          el("div", {}, [
-            el("span", { text: label }),
-            el("p", { class: "muted sm", text: `${t("apsetup.stagerestrictions.hiddeneverywhere")}` }),
-          ]),
-          el("input", { type: "checkbox", disabled: "disabled" }),
-        ]);
-      }
+            // Hidden for everyone already, and not because of this
+            // stage — nothing here to restrict further, so the row
+            // explains rather than offering a checkbox that could
+            // never do anything.
+            if (resolved?.visibility === "hidden" && resolved.decidedBy !== "stage") {
+              return el("div", { class: "assignmentrow" }, [
+                el("div", {}, [
+                  el("span", { text: label }),
+                  el("p", { class: "muted sm", text: `${t("apsetup.stagerestrictions.hiddeneverywhere")}` }),
+                ]),
+                el("input", { type: "checkbox", disabled: "disabled" }),
+              ]);
+            }
 
-      const checked = resolved ? resolved.visibility !== "hidden" : true;
-      const checkbox = el("input", { type: "checkbox", id: checkboxId, ...(checked ? { checked: "checked" } : {}) });
-      checkbox.onchange = async () => {
-        problem.textContent = "";
-        const restrict = !checkbox.checked;
-        try {
-          const response = await setCodingRestrictedAtStage(stage.id, field, restrict);
-          if (!response.ok) {
-            problem.textContent = (await response.json()).error ?? t("apsetup.stagerestrictions.savefailed");
-            checkbox.checked = !checkbox.checked;
-            return;
-          }
-          await loadStageRestrictions(stageRestrictionsProcessId);
-          render();
-        } catch {
-          problem.textContent = t("apsetup.stagerestrictions.savefailed");
-          checkbox.checked = !checkbox.checked;
-        }
-      };
+            const checked = resolved ? resolved.visibility !== "hidden" : true;
+            const checkbox = el("input", { type: "checkbox", id: checkboxId, ...(checked ? { checked: "checked" } : {}) });
+            checkbox.onchange = async () => {
+              problem.textContent = "";
+              const restrict = !checkbox.checked;
+              try {
+                const response = await setCodingRestrictedAtStage(stage.id, field, restrict);
+                if (!response.ok) {
+                  problem.textContent = (await response.json()).error ?? t("apsetup.stagerestrictions.savefailed");
+                  checkbox.checked = !checkbox.checked;
+                  return;
+                }
+                await loadStageRestrictions(stageRestrictionsProcessId);
+                render();
+              } catch {
+                problem.textContent = t("apsetup.stagerestrictions.savefailed");
+                checkbox.checked = !checkbox.checked;
+              }
+            };
 
-      return el("div", { class: "assignmentrow" }, [
-        el("label", { for: checkboxId, text: label }),
-        checkbox,
-      ]);
-    });
+            return el("div", { class: "assignmentrow" }, [
+              el("label", { for: checkboxId, text: label }),
+              checkbox,
+            ]);
+          });
+
+          return [
+            el("div", { class: "sectionlabel", text: t("apsetup.stagerestrictions.fieldsheading") }),
+            el("div", { class: "assignmentlist" }, rows),
+            el("p", { class: "muted sm", text: t("apsetup.stagerestrictions.fieldshint") }),
+            offerToggleRow,
+          ];
+        })();
 
     return el("div", { class: "panel" }, [
       el("div", { class: "cardhead" }, [
         el("h3", { text: stage.name }),
         el("span", { class: "stagebadge", text: stage.ruleSetName ?? t("processes.automatic") }),
       ]),
-      el("div", { class: "sectionlabel", text: t("apsetup.stagerestrictions.fieldsheading") }),
-      el("div", { class: "assignmentlist" }, rows),
-      el("p", { class: "muted sm", text: t("apsetup.stagerestrictions.fieldshint") }),
+      ...body,
     ]);
   });
 

@@ -110,6 +110,8 @@ const STRINGS = {
     "apsetup.stagerestrictions.fieldshint": "Unchecked hides the field at this stage entirely.",
     "apsetup.stagerestrictions.hiddeneverywhere": "Hidden for everyone — set on the Account Coding tab first.",
     "apsetup.stagerestrictions.savefailed": "Could not save that restriction. Try again.",
+    "apsetup.stagerestrictions.offerhere": "Offer Account Coding restrictions for this stage",
+    "apsetup.stagerestrictions.notoffered": "Not configurable here.",
     "field.coding.project": "Project",
     "field.coding.commodity_code": "Commodity code",
     "field.coding.gl_code": "General ledger code",
@@ -972,7 +974,10 @@ describe("Stage Restrictions (decision 0483)", () => {
     expect(panel.textContent).toContain("Project");
     expect(panel.textContent).toContain("Commodity code");
     expect(panel.textContent).toContain("General ledger code");
-    const boxes = [...panel.querySelectorAll("input[type=checkbox]")] as HTMLInputElement[];
+    // Scoped to the three field checkboxes — decision 0485 added a
+    // fourth checkbox to this same panel (the "offer this stage here"
+    // toggle), which is not one of this test's own three fields.
+    const boxes = [...panel.querySelectorAll("input[type=checkbox][id^=stagerestrict-]")] as HTMLInputElement[];
     expect(boxes.length).toBe(3);
     expect(boxes.every((b) => b.checked)).toBe(true);
     expect(boxes.every((b) => !b.disabled)).toBe(true);
@@ -1142,5 +1147,170 @@ describe("Stage Restrictions (decision 0483)", () => {
     switchTab("Stage Restrictions");
 
     expect(document.body.textContent).toContain("No process configured yet.");
+  });
+
+  describe("which stages the screen even offers — decision 0485", () => {
+    // A stage row the process detail is silent about behaves like the
+    // column's own default (offered), matching every fixture above
+    // this block, none of which set `offerFieldRestrictions` at all.
+    it("offers a stage the detail is silent about, same as before this decision", async () => {
+      await openApSetupAs(["Admin.Configure"], EMPTY_OVERVIEW, EMPTY_CONFIG, stageRestrictionsRoutes([]));
+      switchTab("Stage Restrictions");
+
+      const panel = stagePanel();
+      expect(panel.querySelectorAll("input[type=checkbox][id^=stagerestrict-]").length).toBe(3);
+    });
+
+    it("shows the field checkboxes and a checked toggle for a stage offered here", async () => {
+      await openApSetupAs(
+        ["Admin.Configure"],
+        EMPTY_OVERVIEW,
+        EMPTY_CONFIG,
+        stageRestrictionsRoutes([
+          codingField("coding.project", "edit", "customer"),
+          codingField("coding.commodity_code", "edit", "customer"),
+          codingField("coding.gl_code", "edit", "customer"),
+        ], {
+          "/api/processes/ap": {
+            ...ONE_STAGE_DETAIL,
+            stages: [{ ...ONE_STAGE_DETAIL.stages[0], offerFieldRestrictions: true }],
+          },
+        })
+      );
+      switchTab("Stage Restrictions");
+
+      const panel = stagePanel();
+      expect(panel.querySelectorAll("input[type=checkbox][id^=stagerestrict-]").length).toBe(3);
+      const toggle = panel.querySelector(`input[id^="stageoffer-"]`) as HTMLInputElement;
+      expect(toggle.checked).toBe(true);
+    });
+
+    it("shows an explanation and no field checkboxes for a stage not offered here, with an unchecked toggle", async () => {
+      await openApSetupAs(
+        ["Admin.Configure"],
+        EMPTY_OVERVIEW,
+        EMPTY_CONFIG,
+        stageRestrictionsRoutes([], {
+          "/api/processes/ap": {
+            ...ONE_STAGE_DETAIL,
+            stages: [{ ...ONE_STAGE_DETAIL.stages[0], offerFieldRestrictions: false }],
+          },
+        })
+      );
+      switchTab("Stage Restrictions");
+
+      const panel = stagePanel();
+      expect(panel.querySelectorAll("input[type=checkbox][id^=stagerestrict-]").length).toBe(0);
+      expect(panel.textContent).toContain("Not configurable here.");
+      const toggle = panel.querySelector(`input[id^="stageoffer-"]`) as HTMLInputElement;
+      expect(toggle.checked).toBe(false);
+    });
+
+    it("turning the toggle off PUTs offer:false to the new route", async () => {
+      await openApSetupAs(
+        ["Admin.Configure"],
+        EMPTY_OVERVIEW,
+        EMPTY_CONFIG,
+        stageRestrictionsRoutes(
+          [
+            codingField("coding.project", "edit", "customer"),
+            codingField("coding.commodity_code", "edit", "customer"),
+            codingField("coding.gl_code", "edit", "customer"),
+          ],
+          {
+            "/api/processes/ap": {
+              ...ONE_STAGE_DETAIL,
+              stages: [{ ...ONE_STAGE_DETAIL.stages[0], offerFieldRestrictions: true }],
+            },
+            "PUT /api/processes/stages/validation/offer-field-restrictions": {
+              ok: true,
+              json: async () => ({ stageId: "validation", offerFieldRestrictions: false }),
+            },
+          }
+        )
+      );
+      switchTab("Stage Restrictions");
+
+      const panel = stagePanel();
+      const toggle = panel.querySelector(`input[id^="stageoffer-"]`) as HTMLInputElement;
+      toggle.checked = false;
+      toggle.dispatchEvent(new Event("change"));
+      await new Promise((r) => setTimeout(r, 0));
+
+      const calls = (fetch as unknown as { mock: { calls: [string, RequestInit][] } }).mock.calls;
+      const put = calls.find(
+        ([url, init]) => url === "/api/processes/stages/validation/offer-field-restrictions" && init?.method === "PUT"
+      );
+      expect(put).toBeTruthy();
+      expect(JSON.parse(put![1].body as string)).toEqual({ offer: false });
+    });
+
+    it("turning the toggle back on PUTs offer:true", async () => {
+      await openApSetupAs(
+        ["Admin.Configure"],
+        EMPTY_OVERVIEW,
+        EMPTY_CONFIG,
+        stageRestrictionsRoutes([], {
+          "/api/processes/ap": {
+            ...ONE_STAGE_DETAIL,
+            stages: [{ ...ONE_STAGE_DETAIL.stages[0], offerFieldRestrictions: false }],
+          },
+          "PUT /api/processes/stages/validation/offer-field-restrictions": {
+            ok: true,
+            json: async () => ({ stageId: "validation", offerFieldRestrictions: true }),
+          },
+        })
+      );
+      switchTab("Stage Restrictions");
+
+      const panel = stagePanel();
+      const toggle = panel.querySelector(`input[id^="stageoffer-"]`) as HTMLInputElement;
+      toggle.checked = true;
+      toggle.dispatchEvent(new Event("change"));
+      await new Promise((r) => setTimeout(r, 0));
+
+      const calls = (fetch as unknown as { mock: { calls: [string, RequestInit][] } }).mock.calls;
+      const put = calls.find(
+        ([url, init]) => url === "/api/processes/stages/validation/offer-field-restrictions" && init?.method === "PUT"
+      );
+      expect(put).toBeTruthy();
+      expect(JSON.parse(put![1].body as string)).toEqual({ offer: true });
+    });
+
+    it("shows a real error and reverts the toggle when the save fails", async () => {
+      await openApSetupAs(
+        ["Admin.Configure"],
+        EMPTY_OVERVIEW,
+        EMPTY_CONFIG,
+        stageRestrictionsRoutes(
+          [
+            codingField("coding.project", "edit", "customer"),
+            codingField("coding.commodity_code", "edit", "customer"),
+            codingField("coding.gl_code", "edit", "customer"),
+          ],
+          {
+            "/api/processes/ap": {
+              ...ONE_STAGE_DETAIL,
+              stages: [{ ...ONE_STAGE_DETAIL.stages[0], offerFieldRestrictions: true }],
+            },
+            "PUT /api/processes/stages/validation/offer-field-restrictions": {
+              ok: false,
+              status: 400,
+              json: async () => ({ error: "offer (true or false) is required" }),
+            },
+          }
+        )
+      );
+      switchTab("Stage Restrictions");
+
+      const panel = stagePanel();
+      const toggle = panel.querySelector(`input[id^="stageoffer-"]`) as HTMLInputElement;
+      toggle.checked = false;
+      toggle.dispatchEvent(new Event("change"));
+      await new Promise((r) => setTimeout(r, 0));
+
+      expect(toggle.checked).toBe(true);
+      expect(document.body.textContent).toContain("offer (true or false) is required");
+    });
   });
 });

@@ -146,6 +146,28 @@ describe("handleGetProcess — decision 0349", () => {
     expect(body.draft?.version).toBe(2);
     expect(body.draft?.stages.map((s) => s.id)).toEqual(["s1", "s2"]);
   });
+
+  it("defaults a new stage to offering field restrictions — decision 0485", async () => {
+    await handleCreateProcess(env.DB, { id: "p1", name: "Standard AP" });
+    await handleCreateStage(env.DB, "p1", { id: "s1", name: "Validation", sequence: 1 });
+
+    const result = await handleGetProcess(env.DB, "p1");
+    const body = result.body as { stages: { id: string; offerFieldRestrictions: boolean }[] };
+    expect(body.stages[0]).toEqual(expect.objectContaining({ offerFieldRestrictions: true }));
+  });
+
+  it("carries a stage turned off through to the read", async () => {
+    // Reads the same column `handleSetStageOffersFieldRestrictions`
+    // writes; a real, if minimal, end-to-end check that the two agree
+    // on what "off" means.
+    await handleCreateProcess(env.DB, { id: "p1", name: "Standard AP" });
+    await handleCreateStage(env.DB, "p1", { id: "intake", name: "Intake", sequence: 1 });
+    await env.DB.prepare("UPDATE process_stages SET offer_field_restrictions = 0 WHERE id = 'intake'").run();
+
+    const result = await handleGetProcess(env.DB, "p1");
+    const body = result.body as { stages: { id: string; offerFieldRestrictions: boolean }[] };
+    expect(body.stages[0]).toEqual(expect.objectContaining({ offerFieldRestrictions: false }));
+  });
 });
 
 describe("handleStartDraft — decision 0353", () => {

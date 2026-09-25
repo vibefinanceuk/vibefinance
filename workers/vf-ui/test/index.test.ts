@@ -570,6 +570,12 @@ describe("the proxy carries every path a screen calls (decision 0131)", () => {
      * first screen.
      */
     ["PUT", "/api/processes/stages/validation/field-visibility"],
+    /**
+     * Whether the Stage Restrictions screen even offers a stage —
+     * decision 0485. Added alongside the allowlist entry itself, not
+     * after a live report — decision 0484 was the lesson.
+     */
+    ["PUT", "/api/processes/stages/validation/offer-field-restrictions"],
   ];
 
   it("carries all of them", async () => {

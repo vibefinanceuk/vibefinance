@@ -195,6 +195,7 @@ import {
   handleSetFieldVisibility,
   handleSetStageFieldVisibility,
   handleSetStageReadOnly,
+  handleSetStageOffersFieldRestrictions,
 } from "./field-visibility-route.js";
 import { handlePreflight, withCors } from "@vibefinance/shared";
 import { verifyDocumentToken, mintPageToken, verifyPageToken } from "./document-token.js";
@@ -4009,6 +4010,32 @@ export default {
         db,
         stageReadOnlyMatch[1],
         (roBody as Record<string, unknown> | null)?.readOnly
+      );
+      return json(result.body, result.status);
+    }
+
+    // Whether the Stage Restrictions screen even offers this stage —
+    // decision 0485.
+    const stageOffersRestrictionsMatch = pathname.match(
+      /^\/processes\/stages\/([^/]+)\/offer-field-restrictions$/
+    );
+    if (stageOffersRestrictionsMatch && request.method === "PUT") {
+      const { db } = resolveTenant(request, env);
+      const auth = await requirePermission(db, request, "Admin.Configure", sessionContext(env));
+      if (!auth.authorized) {
+        return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
+      }
+      let offerBody: unknown;
+      try {
+        offerBody = await request.json();
+      } catch {
+        return json({ error: t("invalidJsonBody", resolveLocale(env.LOCALE)) }, 400);
+      }
+
+      const result = await handleSetStageOffersFieldRestrictions(
+        db,
+        stageOffersRestrictionsMatch[1],
+        (offerBody as Record<string, unknown> | null)?.offer
       );
       return json(result.body, result.status);
     }

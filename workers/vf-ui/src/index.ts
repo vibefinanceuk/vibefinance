@@ -386,6 +386,13 @@ const PROXIED_TO_INSTANCE: RegExp[] = [
    * write route was missing.
    */
   /^\/processes\/stages\/[^/]+\/field-visibility$/,
+  /**
+   * Whether the Stage Restrictions screen even offers a stage —
+   * decision 0485. Added in the same change that adds the route
+   * itself, not after a live report this time — decision 0484 was the
+   * lesson.
+   */
+  /^\/processes\/stages\/[^/]+\/offer-field-restrictions$/,
   /^\/processes\/[^/]+\/sources$/,
   /^\/sources\/[^/]+\/email$/,
   // Renaming and retiring one (decision 0130). **The bare path**, which

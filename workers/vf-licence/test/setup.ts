@@ -150,6 +150,10 @@ import businessApproverApproveActionStringSql from "../migrations/0159_business_
 import matchingTabStringsSql from "../migrations/0160_matching_tab_strings.sql?raw";
 import standardMatchingRulesStringsSql from "../migrations/0161_standard_matching_rules_strings.sql?raw";
 import removeCollaboratorStringsSql from "../migrations/0162_remove_collaborator_strings.sql?raw";
+import openTaskReasonStringsSql from "../migrations/0163_open_task_reason_strings.sql?raw";
+import newSellerAndErpReleaseStringsSql from "../migrations/0164_new_seller_and_erp_release_strings.sql?raw";
+import stageRestrictionsStringsSql from "../migrations/0165_stage_restrictions_strings.sql?raw";
+import stageOffersRestrictionsStringsSql from "../migrations/0166_stage_offers_restrictions_strings.sql?raw";
 
 function stripSqlComments(sql: string): string {
   return sql
@@ -323,5 +327,18 @@ export async function applyTestSchema(): Promise<void> {
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(matchingTabStringsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(standardMatchingRulesStringsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(removeCollaboratorStringsSql)));
+  /**
+   * **Migrations 0163–0165 were never added here** — found while
+   * wiring in 0166 (decision 0485) and fixed alongside it, the same
+   * "found again, fixed this time" discipline decision 0484 applied to
+   * `vf-ui`'s own proxy allowlist. Left the test schema without these
+   * three migrations' strings; nothing failed because none of their
+   * new keys were added to `string-coverage.test.ts`'s own hand-kept
+   * list either, so the gap was invisible to that check too.
+   */
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(openTaskReasonStringsSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(newSellerAndErpReleaseStringsSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(stageRestrictionsStringsSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(stageOffersRestrictionsStringsSql)));
 
 }

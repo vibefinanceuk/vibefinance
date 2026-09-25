@@ -539,3 +539,43 @@ export async function handleSetStageReadOnly(
     },
   };
 }
+
+/**
+ * Whether the Stage Restrictions screen (decision 0483) offers this
+ * stage at all — decision 0485.
+ *
+ * A property of the stage, not something inferred from `rule_set_id`
+ * or `required_permission`: neither reliably signals "no person can
+ * ever key a line at this stage," and guessing wrong either hides a
+ * stage that genuinely needs configuring one day, or — the bug this
+ * was built to fix — offers a checkbox on a stage (Intake, Payment
+ * Eligible) that can never have anything to restrict.
+ */
+export async function handleSetStageOffersFieldRestrictions(
+  db: D1Database,
+  stageId: string,
+  offer: unknown
+): Promise<RouteResult> {
+  if (typeof offer !== "boolean") {
+    return { status: 400, body: { error: "offer (true or false) is required" } };
+  }
+
+  const stage = await db
+    .prepare("SELECT id, name FROM process_stages WHERE id = ?")
+    .bind(stageId)
+    .first<{ id: string; name: string }>();
+
+  if (!stage) {
+    return { status: 404, body: { error: `stage ${stageId} does not exist` } };
+  }
+
+  await db
+    .prepare("UPDATE process_stages SET offer_field_restrictions = ? WHERE id = ?")
+    .bind(offer ? 1 : 0, stageId)
+    .run();
+
+  return {
+    status: 200,
+    body: { stageId, offerFieldRestrictions: offer },
+  };
+}

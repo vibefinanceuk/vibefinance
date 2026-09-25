@@ -733,6 +733,26 @@ const KEYS_THE_INTERFACE_USES = [
    */
   "apsetup.codingsearchplaceholder",
   "apsetup.codingnomatches",
+
+  /**
+   * **Stage Restrictions — decisions 0483 and 0485.** Never added when
+   * 0483 shipped (migration 0165 was itself missing from `setup.ts`
+   * until 0485 found and fixed both gaps together, below) — added now
+   * rather than left for the next person to re-discover, matching
+   * decision 0444's own precedent for a pre-existing gap found mid-way
+   * through unrelated work.
+   */
+  "apsetup.stagerestrictions",
+  "apsetup.stagerestrictions.sub",
+  "apsetup.stagerestrictions.process",
+  "apsetup.stagerestrictions.noprocess",
+  "apsetup.stagerestrictions.fieldsheading",
+  "apsetup.stagerestrictions.fieldshint",
+  "apsetup.stagerestrictions.hiddeneverywhere",
+  "apsetup.stagerestrictions.savefailed",
+  // Which stages the screen even offers a checkbox for — decision 0485.
+  "apsetup.stagerestrictions.offerhere",
+  "apsetup.stagerestrictions.notoffered",
 ];
 
 /**
