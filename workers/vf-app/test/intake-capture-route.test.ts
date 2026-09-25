@@ -36,7 +36,14 @@ describe("handleCaptureIntake", () => {
 
   it("a genuinely successful capture: stores facts, creates an instance, visits it, and records an accepted event — all as one call", async () => {
     await seedProcessWithChannel("p2", "ic2", "Email");
-    const result = await handleCaptureIntake(env.DB, "ic2", { id: "inv-cap-1", facts: {} });
+    // supplier.matched/.awaitingErp: this test is about capture
+    // mechanics, not supplier identification — a matched, releasable
+    // supplier keeps decision 0480's own ERP-release gate out of the
+    // way once this instance cascades to completion.
+    const result = await handleCaptureIntake(env.DB, "ic2", {
+      id: "inv-cap-1",
+      facts: { "supplier.matched": true, "supplier.awaitingErp": false },
+    });
     expect(result.status).toBe(201);
     const body = result.body as { instanceId: string; processId: string };
     expect(body.processId).toBe("p2");
@@ -74,8 +81,14 @@ describe("handleCaptureIntake", () => {
   it("Intake stays content-agnostic: a thin document with missing fields still becomes an instance and advances normally — content quality is Validate's job, not Intake's", async () => {
     await seedProcessWithChannel("p5", "ic5", "Email");
     // No supplierVatId, no invoiceNumber, no totalWithVat at all — a
-    // genuinely thin document.
-    const result = await handleCaptureIntake(env.DB, "ic5", { id: "inv-thin", facts: {} });
+    // genuinely thin document. supplier.matched/.awaitingErp are given
+    // anyway, same reason as above: unrelated to what this test means
+    // to exercise, and otherwise decision 0480's own gate blocks the
+    // very "advances all the way through" this test asserts.
+    const result = await handleCaptureIntake(env.DB, "ic5", {
+      id: "inv-thin",
+      facts: { "supplier.matched": true, "supplier.awaitingErp": false },
+    });
     expect(result.status).toBe(201);
     const body = result.body as { instanceId: string };
     const instance = await env.DB.prepare("SELECT status FROM process_instances WHERE id = ?").bind(body.instanceId).first();
@@ -120,7 +133,15 @@ describe("handleCaptureIntake", () => {
     expect(thinInstance).toEqual({ status: "in_progress", current_stage_id: "validate" });
 
     // Complete: supplierVatId present -> BT-31 not empty -> sails through.
-    const completeResult = await handleCaptureIntake(env.DB, "ic6", { id: "inv-complete", supplierVatId: "DE123", facts: {} });
+    // supplier.matched/.awaitingErp given for the same reason as the
+    // other facts-agnostic tests in this file — "validate" is this
+    // process's own last stage, so decision 0480's gate would
+    // otherwise fire here too, unrelated to what this test checks.
+    const completeResult = await handleCaptureIntake(env.DB, "ic6", {
+      id: "inv-complete",
+      supplierVatId: "DE123",
+      facts: { "supplier.matched": true, "supplier.awaitingErp": false },
+    });
     const completeBody = completeResult.body as { instanceId: string };
     const completeInstance = await env.DB.prepare("SELECT status FROM process_instances WHERE id = ?").bind(completeBody.instanceId).first();
     expect(completeInstance).toEqual({ status: "completed" });
@@ -209,7 +230,15 @@ const SAMPLE_UBL_INVOICE = `<?xml version="1.0" encoding="UTF-8"?>
 describe("handleCaptureUblXml (decision 0030)", () => {
   it("a genuine UBL document is parsed and captured through the exact same orchestration as JSON capture", async () => {
     await seedProcessWithChannel("px1", "icx1", "EDI");
-    const result = await handleCaptureUblXml(env.DB, "icx1", SAMPLE_UBL_INVOICE);
+    // supplier.matched/.awaitingErp via decision 0434's own enrichFacts
+    // hook: this test is about XML parsing, not supplier
+    // identification, and a matched, releasable supplier keeps
+    // decision 0480's own ERP-release gate out of the way once this
+    // instance cascades to completion.
+    const result = await handleCaptureUblXml(env.DB, "icx1", SAMPLE_UBL_INVOICE, undefined, async () => ({
+      "supplier.matched": true,
+      "supplier.awaitingErp": false,
+    }));
     expect(result.status).toBe(201);
 
     // The real, structured columns were genuinely populated from the
@@ -340,7 +369,11 @@ describe("po.matched / po.line_matched reach real rule evaluation through captur
 
     const result = await handleCaptureIntake(env.DB, "icppo1", {
       id: "inv-ppo-1",
-      facts: { "BT-13": "PO-CAP-1", "BT-112": 600 },
+      // supplier.matched/.awaitingErp: this test is about Matching, not
+      // supplier identification — a matched, releasable supplier keeps
+      // decision 0480's own ERP-release gate out of the way once this
+      // instance clears Matching automatically and cascades on.
+      facts: { "BT-13": "PO-CAP-1", "BT-112": 600, "supplier.matched": true, "supplier.awaitingErp": false },
       lines: [{ lineNumber: 1, "BT-132": "1", "BT-129": 10, "BT-130": "EA", "BT-131": 600 }],
     });
     expect(result.status).toBe(201);

@@ -212,7 +212,13 @@ describe("a stage can require an org", () => {
     // the thing that supplies it.
     await seedProcess(true);
     await seedOrgRule("acme-fr", "111222333");
-    const facts = { "BT-49": "111222333" };
+    // This process's own "approval" stage has no rule_set_id, so the
+    // visit cascades straight through to completion — landing on
+    // decision 0480's own ERP-release gate, unrelated to what this
+    // test is actually about. Given a matched, releasable supplier so
+    // that gate stays out of the way; org placement is what this test
+    // means to exercise.
+    const facts = { "BT-49": "111222333", "supplier.matched": true, "supplier.awaitingErp": false };
     const instanceId = await seedInvoice("inv-8", facts);
 
     const result = await visitCurrentStage(env.DB, instanceId, facts as never);
@@ -223,9 +229,12 @@ describe("a stage can require an org", () => {
     // Default false, so every process that existed before behaves
     // exactly as it did.
     await seedProcess(false);
-    const instanceId = await seedInvoice("inv-9", {});
+    // Same decision 0480 gate as the test above — a releasable
+    // supplier keeps it out of the way of what this test checks.
+    const facts = { "supplier.matched": true, "supplier.awaitingErp": false };
+    const instanceId = await seedInvoice("inv-9", facts);
 
-    const result = await visitCurrentStage(env.DB, instanceId, {} as never);
+    const result = await visitCurrentStage(env.DB, instanceId, facts as never);
     expect(result.status).toBeLessThan(400);
   });
 });
@@ -371,7 +380,12 @@ describe("placing an invoice by hand (decision 0111)", () => {
     const { handlePlaceInvoice } = await import("../src/org-route.js");
     await handlePlaceInvoice(env.DB, "inv-unblocked", "acme-uk");
 
-    const unblocked = await visitCurrentStage(env.DB, instanceId, {} as never);
+    // Once unblocked here, the visit cascades straight through
+    // "approval" (no rule_set_id) to completion — landing on decision
+    // 0480's own ERP-release gate, unrelated to what this test is
+    // about. A releasable supplier keeps it out of the way.
+    const facts = { "supplier.matched": true, "supplier.awaitingErp": false };
+    const unblocked = await visitCurrentStage(env.DB, instanceId, facts as never);
     expect(unblocked.status).toBeLessThan(400);
   });
 });

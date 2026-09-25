@@ -1,0 +1,51 @@
+-- 0080_task_system_reason.sql
+-- "Why is this task here", for a task nothing authored — decision 0480.
+-- Additive, zero behaviour change on deploy.
+
+-- **A task the workflow engine itself created, not a rule** —
+-- decision 0480's own ERP-release gate. Decision 0478's `tasks.rule_id`
+-- already answers "why is this task here" for a rule's own
+-- `assign_task`; this answers the same question for the one case that
+-- has no rule at all, because the whole point of this gate is that it
+-- must not depend on one. A closed, code-known vocabulary — not
+-- customer data, so it lives here rather than in `rule_name_translations`
+-- or the runtime `ui_strings` table, the same reasoning decision 0478's
+-- own comment already gives for keeping the four standard matching
+-- rules apart from a customer's own rule names.
+--
+-- Three reasons, one for each way a Non-PO or PO invoice can reach the
+-- release gate without a supplier the ERP can be told about:
+--
+-- 'supplier_unidentified' — nothing was matched at all: no local
+--   record, no ERP one either. The New Seller case — self-service is
+--   offered here, and only here, because there is genuinely nothing on
+--   file yet to conflict with.
+-- 'supplier_awaiting_erp' — a real, locally-recorded supplier already
+--   exists (decision 0231, most often because someone already used the
+--   New Seller path above), and the ERP has not given it an identifier
+--   yet. No self-service left to offer: the record exists, only the
+--   ERP side is missing.
+-- 'po_supplier_unidentified' — the anomalous case: this invoice names a
+--   purchase order, and by the operator's own stated invariant a
+--   purchase order cannot exist for a supplier that was never set up —
+--   so an invoice reaching this gate with a PO reference and no
+--   supplier attached at all is neither of the above, and is not
+--   offered the same self-service path either.
+--
+-- Mutually exclusive with `rule_id` by construction (the code path that
+-- sets one never sets the other), not enforced here as a CHECK: a task
+-- predating both columns has neither, which is the same "additive,
+-- never assumed" shape `stage_visit_id` (0009) already established.
+ALTER TABLE tasks ADD COLUMN system_reason TEXT
+  CHECK (system_reason IS NULL OR system_reason IN ('supplier_unidentified', 'supplier_awaiting_erp', 'po_supplier_unidentified'));
+
+-- Point-in-time: no task has one yet.
+-- ASSERT: SELECT count(*) FROM tasks WHERE system_reason IS NOT NULL == 0
+
+-- Standing invariant: never both — a task the engine raised for this
+-- reason was never also raised by a rule, and a rule never fires this
+-- reason. If both are ever set, "why is this task here" would have two
+-- disagreeing answers, which is exactly what decision 0478 already
+-- refused to let happen for locale alone; the same discipline applies
+-- to the reason itself.
+-- ASSERT ALWAYS: SELECT count(*) FROM tasks WHERE rule_id IS NOT NULL AND system_reason IS NOT NULL == 0

@@ -108,6 +108,16 @@ const STRINGS = {
     "viewer.supplier.country": "Country",
     "viewer.supplier.none": "This invoice has not been matched to a supplier.",
     "viewer.supplier.no_match": "No supplier on file matches this seller.",
+    "viewer.supplier.newseller": "New Seller",
+    "viewer.supplier.newsellerheading": "Record a new seller",
+    "viewer.supplier.newsellerhint": "Enter what the invoice itself tells you. A team will complete the setup with the ERP.",
+    "viewer.supplier.namerequired": "Company name is required.",
+    "viewer.supplier.save": "Save",
+    "viewer.supplier.savefailed": "Could not save this supplier. Try again.",
+    "viewer.supplier.pounidentified": "This invoice names a purchase order but no supplier could be matched. A purchase order cannot exist for a supplier that was never set up — this needs investigation, not a new record.",
+    "workflow.systemreason.supplier_unidentified.name": "Awaiting a new supplier record",
+    "workflow.systemreason.supplier_awaiting_erp.name": "Awaiting an ERP identifier for this supplier",
+    "workflow.systemreason.po_supplier_unidentified.name": "Purchase order references a supplier that was never set up",
     "suppliers.pay": "Payment",
     "suppliers.sameorg": "Same org as this invoice",
     "viewer.workflow.stageerror": "This invoice stopped moving because of a processing error:",
@@ -1978,6 +1988,221 @@ describe("one Seller card, not two (decision 0220)", () => {
     const headings = [...document.querySelectorAll("h3")].map((h) => h.textContent);
     expect(headings.filter((h) => h === "Seller")).toHaveLength(1);
     expect(document.body.textContent).toContain("No supplier on file matches");
+  });
+});
+
+describe("New Seller — a genuinely new supplier, recorded by hand (decision 0480)", () => {
+  /**
+   * The operator's own words: *"If the seller cannot be found, and it
+   * is a new invoice, we should provide a New Seller, so that the
+   * user can Enter in the Company Name, Tax ID, E-mail address, and
+   * Address."* But not for a PO invoice — *"an invoice with an
+   * unidentified supplier should not happen"* there, confirmed via
+   * AskUserQuestion as a distinct anomaly with no self-service.
+   */
+  function stub(facts: Record<string, unknown>, posted: string[] = []) {
+    return stubFetch(
+      {
+        "/api/ui-strings": STRINGS,
+        "/api/code-lists": { fields: {} },
+        "/api/field-visibility": FIELDS,
+        "/api/invoices/inv-1": {
+          facts,
+          lines: [],
+          supplier: null,
+          validation: { passed: true, checked: [], failures: [] },
+        },
+        "/api/invoices/inv-1/document-url": { url: null },
+        "/api/invoices/inv-1/progress": { inProcess: false, stages: [] },
+      },
+      posted
+    );
+  }
+
+  async function open(facts: Record<string, unknown>) {
+    const posted: string[] = [];
+    stub(facts, posted);
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    await openViewer(TASK, () => {});
+    await new Promise((r) => setTimeout(r, 0));
+    return posted;
+  }
+
+  it("offers the New Seller button for a Non-PO invoice with no supplier matched", async () => {
+    await open({ "supplier.unmatchedReason": "no_match" });
+
+    const button = [...document.querySelectorAll("button")].find((b) => b.textContent === "New Seller");
+    expect(button).toBeTruthy();
+    expect(document.body.textContent).not.toContain("This invoice names a purchase order");
+  });
+
+  it("hides the New Seller button and shows the PO-anomaly warning instead when the invoice names a purchase order", async () => {
+    await open({ "supplier.unmatchedReason": "no_match", "BT-13": "PO-4471" });
+
+    const button = [...document.querySelectorAll("button")].find((b) => b.textContent === "New Seller");
+    expect(button).toBeFalsy();
+    expect(document.body.textContent).toContain(
+      "This invoice names a purchase order but no supplier could be matched"
+    );
+  });
+
+  it("treats a blank PO reference the same as none at all", async () => {
+    // A field present but empty — decision 0480's own check trims it,
+    // the same way `hasPoReference` in viewer.js reads it.
+    await open({ "supplier.unmatchedReason": "no_match", "BT-13": "   " });
+
+    const button = [...document.querySelectorAll("button")].find((b) => b.textContent === "New Seller");
+    expect(button).toBeTruthy();
+  });
+
+  it("prefills the form from what the document itself says (BT-27, BT-31, BT-40)", async () => {
+    await open({ "supplier.unmatchedReason": "no_match", "BT-27": "Acme Foods Ltd", "BT-31": "GB998877", "BT-40": "GB" });
+
+    const button = [...document.querySelectorAll("button")].find((b) => b.textContent === "New Seller");
+    button?.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    const inputs = [...document.querySelectorAll(".popout input")] as HTMLInputElement[];
+    expect(inputs.map((i) => i.value)).toContain("Acme Foods Ltd");
+    expect(inputs.map((i) => i.value)).toContain("GB998877");
+    expect(inputs.map((i) => i.value)).toContain("GB");
+  });
+
+  it("refuses to save with no company name, and calls nothing", async () => {
+    const posted = await open({ "supplier.unmatchedReason": "no_match" });
+
+    const openButton = [...document.querySelectorAll("button")].find((b) => b.textContent === "New Seller");
+    openButton?.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    const saveButton = [...document.querySelectorAll(".popout button")].find((b) => b.textContent === "Save");
+    saveButton?.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(document.body.textContent).toContain("Company name is required.");
+    expect(posted).not.toContain("/api/suppliers");
+  });
+
+  it("saves the new supplier, then attaches it to this invoice, then refreshes", async () => {
+    // A bespoke stub, not the shared `stubFetch` helper — that one
+    // only records POSTs in `posted`, and attaching a supplier is a
+    // PUT (matching `handleSetInvoiceSupplier`'s own route). Every
+    // call, any method, is recorded here instead.
+    const calls: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        const path = String(url).split("?")[0];
+        calls.push(`${init?.method ?? "GET"} ${path}`);
+        const bodies: Record<string, unknown> = {
+          "/api/ui-strings": STRINGS,
+          "/api/code-lists": { fields: {} },
+          "/api/field-visibility": FIELDS,
+          "/api/invoices/inv-1": {
+            facts: { "supplier.unmatchedReason": "no_match" },
+            lines: [],
+            supplier: null,
+            validation: { passed: true, checked: [], failures: [] },
+          },
+          "/api/invoices/inv-1/document-url": { url: null },
+          "/api/invoices/inv-1/progress": { inProcess: false, stages: [] },
+          "/api/documents/inv-1/activity": { items: [] },
+          "/api/suppliers": { id: "local:new-1" },
+          "/api/invoices/inv-1/supplier": { invoiceId: "inv-1", supplierId: "local:new-1" },
+        };
+        if (!(path in bodies)) throw new Error(`no stub for ${path}`);
+        return { ok: true, json: async () => bodies[path] } as Response;
+      })
+    );
+
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    await openViewer(TASK, () => {});
+    await new Promise((r) => setTimeout(r, 0));
+
+    const openButton = [...document.querySelectorAll("button")].find((b) => b.textContent === "New Seller");
+    openButton?.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    const nameInput = document.querySelector(".popout input") as HTMLInputElement;
+    nameInput.value = "Brand New Co";
+    const saveButton = [...document.querySelectorAll(".popout button")].find((b) => b.textContent === "Save");
+    saveButton?.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(calls).toContain("POST /api/suppliers");
+    expect(calls).toContain("PUT /api/invoices/inv-1/supplier");
+    // Attach happens after create, not before — the id used to attach
+    // only exists once the create response has come back.
+    expect(calls.indexOf("POST /api/suppliers")).toBeLessThan(calls.indexOf("PUT /api/invoices/inv-1/supplier"));
+    // The popout is gone — closed and the viewer reopened, same as
+    // openSupplierSearch's own choose handler.
+    expect(document.querySelector(".backdrop")).toBeFalsy();
+  });
+
+  it("shows a save error inline and leaves the form open rather than closing on failure", async () => {
+    stubFetch({
+      "/api/ui-strings": STRINGS,
+      "/api/code-lists": { fields: {} },
+      "/api/field-visibility": FIELDS,
+      "/api/invoices/inv-1": {
+        facts: { "supplier.unmatchedReason": "no_match" },
+        lines: [],
+        supplier: null,
+        validation: { passed: true, checked: [], failures: [] },
+      },
+      "/api/invoices/inv-1/document-url": { url: null },
+      "/api/invoices/inv-1/progress": { inProcess: false, stages: [] },
+    });
+    // Override /api/suppliers specifically to fail, since stubFetch's
+    // routes map returns ok:true for anything listed — a second
+    // stubGlobal call replaces the mock outright for this one test.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        const path = String(url).split("?")[0];
+        if (path === "/api/suppliers") {
+          return { ok: false, json: async () => ({ error: "a supplier with ERP identifier already exists" }) } as Response;
+        }
+        const bodies: Record<string, unknown> = {
+          "/api/ui-strings": STRINGS,
+          "/api/code-lists": { fields: {} },
+          "/api/field-visibility": FIELDS,
+          "/api/invoices/inv-1": {
+            facts: { "supplier.unmatchedReason": "no_match" },
+            lines: [],
+            supplier: null,
+            validation: { passed: true, checked: [], failures: [] },
+          },
+          "/api/invoices/inv-1/document-url": { url: null },
+          "/api/invoices/inv-1/progress": { inProcess: false, stages: [] },
+        };
+        if (!(path in bodies)) throw new Error(`no stub for ${path}`);
+        return { ok: true, json: async () => bodies[path] } as Response;
+      })
+    );
+
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    await openViewer(TASK, () => {});
+    await new Promise((r) => setTimeout(r, 0));
+
+    const openButton = [...document.querySelectorAll("button")].find((b) => b.textContent === "New Seller");
+    openButton?.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    const nameInput = document.querySelector(".popout input") as HTMLInputElement;
+    nameInput.value = "Brand New Co";
+    const saveButton = [...document.querySelectorAll(".popout button")].find((b) => b.textContent === "Save");
+    saveButton?.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(document.body.textContent).toContain("a supplier with ERP identifier already exists");
+    expect(document.querySelector(".popout")).toBeTruthy();
   });
 });
 

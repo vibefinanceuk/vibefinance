@@ -934,6 +934,45 @@ describe("choosing one by hand (decision 0222)", () => {
     expect(row?.who).toBe("alice");
   });
 
+  it("refreshes every supplier-derived fact, not just supplier.matched — found while tracing decision 0480", async () => {
+    // 40118 (Northwind) was loaded from the ERP feed, so it already
+    // carries a real erp_identifier — attach it and every derived
+    // fact (not just .matched) should reflect that live record.
+    await env.DB.prepare("UPDATE suppliers SET on_hold = 1, match_option = 'two_way' WHERE id = '40118'").run();
+
+    await handleSetInvoiceSupplier(env.DB, "inv-1", "40118", "alice");
+
+    const row = await env.DB
+      .prepare(
+        `SELECT json_extract(facts_json, '$."supplier.awaitingErp"') AS awaitingErp,
+                json_extract(facts_json, '$."supplier.onHold"') AS onHold,
+                json_extract(facts_json, '$."supplier.matchOption"') AS matchOption
+         FROM invoice_headers WHERE id = 'inv-1'`
+      )
+      .first<{ awaitingErp: number; onHold: number; matchOption: string }>();
+
+    expect(row?.awaitingErp).toBe(0);
+    expect(row?.onHold).toBe(1);
+    expect(row?.matchOption).toBe("two_way");
+  });
+
+  it("sets supplier.awaitingErp when the chosen supplier has no ERP identifier of its own (decision 0231's local records)", async () => {
+    // A local:… supplier created via decision 0231's New Seller path
+    // has no erp_identifier until a team completes ERP setup — the
+    // exact case decision 0480's gate exists to catch.
+    await env.DB.prepare(
+      `INSERT INTO suppliers (id, erp_identifier, name, status, on_hold, match_option)
+       VALUES ('local:1', NULL, 'New Co', 'active', 0, 'none')`
+    ).run();
+
+    await handleSetInvoiceSupplier(env.DB, "inv-1", "local:1", "alice");
+
+    const row = await env.DB
+      .prepare(`SELECT json_extract(facts_json, '$."supplier.awaitingErp"') AS awaitingErp FROM invoice_headers WHERE id = 'inv-1'`)
+      .first<{ awaitingErp: number }>();
+    expect(row?.awaitingErp).toBe(1);
+  });
+
   it("refuses an inactive supplier", async () => {
     // **One the ERP no longer has** (decision 0208) would produce a
     // payment instruction the ERP refuses — caught here rather than at

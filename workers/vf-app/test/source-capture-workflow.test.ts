@@ -63,6 +63,12 @@ describe("a Validation-stage rule testing supplier.unmatchedReason (decision 043
     });
     await env.DB.prepare("INSERT INTO org_units (id, name) VALUES ('u1', 'Acme UK') ON CONFLICT(id) DO NOTHING").run();
     await handleCreateTeam(env.DB, { id: "team1", name: "AP Team", unitId: "u1" });
+    // decision 0480's own ERP-release gate, hardcoded to this team —
+    // real production data (confirmed via live query) already has it;
+    // this file's own "s-payment-eligible" is exactly the automatic,
+    // terminal stage that gate fires in front of, for any invoice this
+    // suite drives that far without a matched, ERP-linked supplier.
+    await handleCreateTeam(env.DB, { id: "ap-team", name: "AP Team", unitId: "u1" });
     await handleCreateStage(env.DB, "p-workflow", { id: "s-validation", name: "Validation", sequence: 1, ruleSetId: "rs-validation" });
     await handleCreateStage(env.DB, "p-workflow", { id: "s-payment-eligible", name: "Payment-eligible", sequence: 2 });
 
@@ -121,20 +127,38 @@ describe("a Validation-stage rule testing supplier.unmatchedReason (decision 043
     expect(taskCount?.n).toBe(0);
   });
 
-  it("does not block when nothing matches at all (no_match, not ambiguous_site)", async () => {
-    // No suppliers loaded at all -> no_match, a different reason this
+  it("this rule does not block when nothing matches at all (no_match, not ambiguous_site) — decision 0480's own gate still does", async () => {
+    // No suppliers loaded at all -> no_match, a different reason THIS
     // rule was deliberately scoped not to flag (decision 0433's own
     // answer: only ambiguous_site, no_identifier/no_match already have
-    // decision 0222's amber ribbon).
+    // decision 0222's amber ribbon). But an invoice with no supplier
+    // matched at all still cannot reach payment-eligible un-vetted —
+    // that is decision 0480's own, separate, hardcoded gate, and this
+    // is exactly the case it exists for: a Non-PO invoice naming a
+    // supplier nobody has ever recorded, the New Seller case.
     const result = await handleCaptureFromSource(env.DB, "src-mail", ublWithSupplierVat("INV-UNKNOWN-1", "GB999999999"), fakeModel);
     expect(result.status).toBe(201);
     const invoiceId = (result.body as { id: string }).id;
 
     const instanceRow = await env.DB
-      .prepare("SELECT status FROM process_instances WHERE subject_type = 'invoice' AND subject_id = ?")
+      .prepare("SELECT status, current_stage_id FROM process_instances WHERE subject_type = 'invoice' AND subject_id = ?")
       .bind(invoiceId)
-      .first<{ status: string }>();
-    expect(instanceRow).toEqual({ status: "completed" });
+      .first<{ status: string; current_stage_id: string }>();
+    expect(instanceRow).toEqual({ status: "in_progress", current_stage_id: "s-validation" });
+
+    const taskRow = await env.DB
+      .prepare("SELECT stage_id, required_permission, system_reason, rule_id FROM tasks WHERE owner_team_id = 'ap-team'")
+      .first<{ stage_id: string; required_permission: string; system_reason: string; rule_id: string | null }>();
+    // "s-validation" declares no required_permission of its own here
+    // (unlike the real ap-live process's Validation stage), so
+    // erpReleaseGuard's own fallback applies — see its comment on why
+    // AP.Review, not the stage's own name.
+    expect(taskRow).toEqual({
+      stage_id: "s-validation",
+      required_permission: "AP.Review",
+      system_reason: "supplier_unidentified",
+      rule_id: null,
+    });
   });
 });
 

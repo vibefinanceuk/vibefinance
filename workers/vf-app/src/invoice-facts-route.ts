@@ -312,27 +312,77 @@ async function currentOpenTaskReason(
   db: D1Database,
   invoiceId: string,
   locale: Locale
-): Promise<{ ruleId: string; standardKey: string | null; name: string; sourceText: string | null } | null> {
+): Promise<{
+  ruleId: string | null;
+  standardKey: string | null;
+  systemReason: string | null;
+  name: string;
+  sourceText: string | null;
+} | null> {
+  // Two kinds of open task, one banner — decision 0478's own rule-
+  // attributed kind, and decision 0480's engine-created kind (no rule
+  // behind it at all: `t.rule_id` and `t.system_reason` are mutually
+  // exclusive by construction, migration 0080's own comment). A UNION
+  // rather than two queries, so "most recent open task, whichever kind
+  // it is" stays one ORDER BY / LIMIT rather than this function
+  // guessing which table to check first.
   const row = await db
     .prepare(
-      `SELECT r.id AS rule_id, r.name AS rule_name, rv.source_text AS source_text,
-              rnt.name AS translated_name
-       FROM tasks t
-       JOIN stage_visits v ON v.id = t.stage_visit_id
-       JOIN process_instances pi ON pi.id = v.process_instance_id
-       JOIN rules r ON r.id = t.rule_id
-       LEFT JOIN rule_versions rv ON rv.rule_id = r.id
-         AND rv.version = (SELECT MAX(version) FROM rule_versions WHERE rule_id = r.id)
-       LEFT JOIN rule_name_translations rnt ON rnt.rule_id = r.id AND rnt.locale = ?
-       WHERE pi.subject_type = 'invoice' AND pi.subject_id = ?
-         AND t.status = 'open' AND t.rule_id IS NOT NULL
-       ORDER BY t.created_at DESC
+      `SELECT rule_id, rule_name, source_text, translated_name, system_reason, created_at FROM (
+         SELECT r.id AS rule_id, r.name AS rule_name, rv.source_text AS source_text,
+                rnt.name AS translated_name, NULL AS system_reason, t.created_at AS created_at
+         FROM tasks t
+         JOIN stage_visits v ON v.id = t.stage_visit_id
+         JOIN process_instances pi ON pi.id = v.process_instance_id
+         JOIN rules r ON r.id = t.rule_id
+         LEFT JOIN rule_versions rv ON rv.rule_id = r.id
+           AND rv.version = (SELECT MAX(version) FROM rule_versions WHERE rule_id = r.id)
+         LEFT JOIN rule_name_translations rnt ON rnt.rule_id = r.id AND rnt.locale = ?
+         WHERE pi.subject_type = 'invoice' AND pi.subject_id = ?
+           AND t.status = 'open' AND t.rule_id IS NOT NULL
+         UNION ALL
+         SELECT NULL AS rule_id, NULL AS rule_name, NULL AS source_text,
+                NULL AS translated_name, t.system_reason AS system_reason, t.created_at AS created_at
+         FROM tasks t
+         JOIN stage_visits v ON v.id = t.stage_visit_id
+         JOIN process_instances pi ON pi.id = v.process_instance_id
+         WHERE pi.subject_type = 'invoice' AND pi.subject_id = ?
+           AND t.status = 'open' AND t.system_reason IS NOT NULL
+       )
+       ORDER BY created_at DESC
        LIMIT 1`
     )
-    .bind(locale, invoiceId)
-    .first<{ rule_id: string; rule_name: string; source_text: string | null; translated_name: string | null }>();
+    .bind(locale, invoiceId, invoiceId)
+    .first<{
+      rule_id: string | null;
+      rule_name: string | null;
+      source_text: string | null;
+      translated_name: string | null;
+      system_reason: string | null;
+    }>();
 
   if (!row) return null;
+
+  if (row.system_reason) {
+    return {
+      ruleId: null,
+      standardKey: null,
+      // The frontend resolves this via `t()` in a small, code-known
+      // vocabulary too (migrations/0164), the same "platform constant,
+      // not customer data" reasoning `standardKey` already gets — see
+      // reasonLinePanel's own comment for why this needed a distinct
+      // field rather than reusing `standardKey` itself: the two
+      // namespaces (`matching.standardrule.*` and
+      // `workflow.systemreason.*`) mean different things and
+      // `reasonLinePanel` must not translate one as the other.
+      systemReason: row.system_reason,
+      // English fallback for a locale this key has no row for yet —
+      // never actually shown once migration 0164 lands, same as
+      // row.rule_name below.
+      name: row.system_reason,
+      sourceText: null,
+    };
+  }
 
   const standard = STANDARD_MATCHING_RULES.find((r) => r.name === row.rule_name);
 
@@ -343,7 +393,8 @@ async function currentOpenTaskReason(
     // already exposes — not this table, and not row.translated_name,
     // which a standard rule never has a reason to have a row for.
     standardKey: standard?.key ?? null,
-    name: standard ? standard.name : row.translated_name ?? row.rule_name,
+    systemReason: null,
+    name: standard ? standard.name : row.translated_name ?? row.rule_name ?? "",
     sourceText: row.source_text,
   };
 }

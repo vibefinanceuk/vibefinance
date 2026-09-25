@@ -766,11 +766,12 @@ describe("why this task is here (decision 0478)", () => {
 
     const { handleGetInvoice } = await import("../src/invoice-facts-route.js");
     const body = (await handleGetInvoice(env.DB, "inv-reason")).body as {
-      openTaskReason: { ruleId: string; standardKey: string | null; name: string; sourceText: string | null } | null;
+      openTaskReason: { ruleId: string; standardKey: string | null; systemReason: string | null; name: string; sourceText: string | null } | null;
     };
     expect(body.openTaskReason).toEqual({
       ruleId: "rule-supplier",
       standardKey: null,
+      systemReason: null,
       name: "Supplier Not Matching in ERP",
       sourceText: "If the supplier is not matching in the ERP, assign a task to the AP team requiring AP.Review permission.",
     });
@@ -838,6 +839,76 @@ describe("why this task is here (decision 0478)", () => {
     const { handleGetInvoice } = await import("../src/invoice-facts-route.js");
     const body = (await handleGetInvoice(env.DB, "inv-manual")).body as { openTaskReason: unknown };
     expect(body.openTaskReason).toBeNull();
+  });
+
+  /**
+   * Decision 0480's own kind of open task: raised by `erpReleaseGuard`
+   * itself, never a rule — `rule_id` is null and `system_reason` is
+   * set instead, migration 0080's own mutual exclusion.
+   */
+  async function seedOpenTaskForSystemReason(invoiceId: string, systemReason: string): Promise<void> {
+    const stageVisitId = `sv-${invoiceId}`;
+    await env.DB.prepare("INSERT INTO stage_visits (id, process_instance_id, stage_id, outcome) VALUES (?, ?, 'validation', 'blocked')")
+      .bind(stageVisitId, `pi-${invoiceId}`)
+      .run();
+    await env.DB.prepare(
+      `INSERT INTO tasks (id, stage_id, owner_team_id, required_permission, stage_visit_id, status, system_reason)
+       VALUES (?, 'validation', 'team-x', 'AP.Review', ?, 'open', ?)`
+    )
+      .bind(`task-${invoiceId}`, stageVisitId, systemReason)
+      .run();
+  }
+
+  it("surfaces an engine-created task's system_reason, with no rule behind it", async () => {
+    await seedInvoice("inv-sysreason", {});
+    await seedOpenTaskForSystemReason("inv-sysreason", "supplier_unidentified");
+
+    const { handleGetInvoice } = await import("../src/invoice-facts-route.js");
+    const body = (await handleGetInvoice(env.DB, "inv-sysreason")).body as {
+      openTaskReason: { ruleId: string | null; standardKey: string | null; systemReason: string | null; name: string; sourceText: string | null } | null;
+    };
+    expect(body.openTaskReason).toEqual({
+      ruleId: null,
+      standardKey: null,
+      systemReason: "supplier_unidentified",
+      name: "supplier_unidentified",
+      sourceText: null,
+    });
+  });
+
+  it("distinguishes all three of decision 0480's system reasons", async () => {
+    for (const reason of ["supplier_unidentified", "supplier_awaiting_erp", "po_supplier_unidentified"]) {
+      const invoiceId = `inv-sys-${reason}`;
+      await seedInvoice(invoiceId, {});
+      await seedOpenTaskForSystemReason(invoiceId, reason);
+
+      const { handleGetInvoice } = await import("../src/invoice-facts-route.js");
+      const body = (await handleGetInvoice(env.DB, invoiceId)).body as { openTaskReason: { systemReason: string } };
+      expect(body.openTaskReason.systemReason).toBe(reason);
+    }
+  });
+
+  it("picks the most recently created open task, rule-attributed or system-raised, whichever it is", async () => {
+    await seedInvoice("inv-both-kinds", {});
+    await seedOpenTaskForRule("inv-both-kinds", "rule-first", "First reason", "first sentence");
+    // A later task at a different stage_visit — created_at is what
+    // orders them, not which UNION branch they came from.
+    await env.DB.prepare("UPDATE tasks SET created_at = '2026-01-01T00:00:00.000Z' WHERE id = 'task-inv-both-kinds'").run();
+    const stageVisitId2 = "sv2-inv-both-kinds";
+    await env.DB.prepare("INSERT INTO stage_visits (id, process_instance_id, stage_id, outcome) VALUES (?, 'pi-inv-both-kinds', 'validation', 'blocked')")
+      .bind(stageVisitId2)
+      .run();
+    await env.DB.prepare(
+      `INSERT INTO tasks (id, stage_id, owner_team_id, required_permission, stage_visit_id, status, system_reason, created_at)
+       VALUES ('task2-inv-both-kinds', 'validation', 'team-x', 'AP.Review', ?, 'open', 'supplier_awaiting_erp', '2026-06-01T00:00:00.000Z')`
+    )
+      .bind(stageVisitId2)
+      .run();
+
+    const { handleGetInvoice } = await import("../src/invoice-facts-route.js");
+    const body = (await handleGetInvoice(env.DB, "inv-both-kinds")).body as { openTaskReason: { systemReason: string | null; ruleId: string | null } };
+    expect(body.openTaskReason.systemReason).toBe("supplier_awaiting_erp");
+    expect(body.openTaskReason.ruleId).toBeNull();
   });
 });
 

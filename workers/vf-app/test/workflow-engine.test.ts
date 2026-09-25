@@ -1310,3 +1310,156 @@ describe("visitCurrentStage refuses to re-visit a stage waiting on people (decis
     expect(after.status).not.toBe(409);
   });
 });
+
+describe("erpReleaseGuard — may not leave the last real checkpoint without a supplier the ERP knows (decision 0480)", () => {
+  // A single automatic stage with no rule set: `next` is null, so this
+  // is exactly "the hand-off out of the last real checkpoint" the
+  // guard exists for, without needing a second stage to make it so.
+  async function seedGatedProcess(requiredPermission?: string): Promise<void> {
+    await handleCreateProcess(env.DB, { id: "p1", name: "AP" });
+    await handleCreateStage(env.DB, "p1", { id: "s1", name: "Review", sequence: 1 });
+    // handleCreateStage has no requiredPermission param of its own (only
+    // a rule's assign_task sets one, via params.permission) — set the
+    // column directly, the same way the stage's declared permission
+    // would already be sitting there in a real deployment.
+    if (requiredPermission) {
+      await env.DB.prepare("UPDATE process_stages SET required_permission = ? WHERE id = 's1'").bind(requiredPermission).run();
+    }
+  }
+
+  async function seedApTeam(): Promise<void> {
+    await env.DB.prepare("INSERT INTO org_units (id, name) VALUES ('u1', 'Acme UK') ON CONFLICT(id) DO NOTHING").run();
+    await handleCreateTeam(env.DB, { id: "ap-team", name: "AP Team", unitId: "u1" });
+  }
+
+  async function startInvoice(id: string, facts: Record<string, unknown> = {}): Promise<string> {
+    await env.DB.prepare("INSERT INTO invoice_headers (id, facts_json) VALUES (?, '{}')").bind(id).run();
+    const created = await handleCreateProcessInstance(env.DB, "p1", { subjectType: "invoice", subjectId: id });
+    const instanceId = (created.body as { id: string }).id;
+    return instanceId;
+  }
+
+  it("lets a releasable invoice straight through — supplier matched, not awaiting an ERP identifier", async () => {
+    await seedGatedProcess();
+    await seedApTeam();
+    const instanceId = await startInvoice("inv-ok");
+
+    const result = await visitCurrentStage(env.DB, instanceId, {
+      "supplier.matched": true,
+      "supplier.awaitingErp": false,
+    });
+
+    expect(result.status).toBe(200);
+    expect((result.body as { status: string }).status).toBe("completed");
+    const taskCount = await env.DB.prepare(
+      "SELECT count(*) AS n FROM tasks t JOIN stage_visits v ON v.id = t.stage_visit_id WHERE v.process_instance_id = ?"
+    )
+      .bind(instanceId)
+      .first<{ n: number }>();
+    expect(taskCount?.n).toBe(0);
+  });
+
+  it("blocks a matched supplier still awaiting an ERP identifier — system_reason supplier_awaiting_erp", async () => {
+    await seedGatedProcess();
+    await seedApTeam();
+    const instanceId = await startInvoice("inv-awaiting-erp");
+
+    const result = await visitCurrentStage(env.DB, instanceId, {
+      "supplier.matched": true,
+      "supplier.awaitingErp": true,
+    });
+
+    expect(result.status).toBe(200);
+    expect((result.body as { status: string }).status).toBe("in_progress");
+    const instanceRow = await env.DB.prepare("SELECT status, current_stage_id FROM process_instances WHERE id = ?")
+      .bind(instanceId)
+      .first();
+    expect(instanceRow).toEqual({ status: "in_progress", current_stage_id: "s1" });
+
+    const taskRow = await env.DB
+      .prepare("SELECT owner_team_id, required_permission, system_reason, rule_id FROM tasks WHERE stage_id = 's1'")
+      .first();
+    expect(taskRow).toEqual({
+      owner_team_id: "ap-team",
+      required_permission: "AP.Review",
+      system_reason: "supplier_awaiting_erp",
+      rule_id: null,
+    });
+  });
+
+  it("falls back to the stage's own required_permission when it declares one", async () => {
+    await seedGatedProcess("AP.Approve");
+    await seedApTeam();
+    const instanceId = await startInvoice("inv-perm");
+
+    await visitCurrentStage(env.DB, instanceId, { "supplier.matched": true, "supplier.awaitingErp": true });
+
+    const taskRow = await env.DB.prepare("SELECT required_permission FROM tasks WHERE stage_id = 's1'").first();
+    expect(taskRow).toEqual({ required_permission: "AP.Approve" });
+  });
+
+  it("blocks a Non-PO invoice with no supplier matched at all — system_reason supplier_unidentified, the New Seller case", async () => {
+    await seedGatedProcess();
+    await seedApTeam();
+    const instanceId = await startInvoice("inv-no-supplier");
+
+    const result = await visitCurrentStage(env.DB, instanceId, {});
+
+    expect((result.body as { status: string }).status).toBe("in_progress");
+    const taskRow = await env.DB.prepare("SELECT system_reason FROM tasks WHERE stage_id = 's1'").first();
+    expect(taskRow).toEqual({ system_reason: "supplier_unidentified" });
+  });
+
+  it("blocks a PO invoice with no supplier matched distinctly — system_reason po_supplier_unidentified, no self-service", async () => {
+    await seedGatedProcess();
+    await seedApTeam();
+    const instanceId = await startInvoice("inv-po-anomaly");
+
+    const result = await visitCurrentStage(env.DB, instanceId, { "BT-13": "PO-4471" });
+
+    expect((result.body as { status: string }).status).toBe("in_progress");
+    const taskRow = await env.DB.prepare("SELECT system_reason FROM tasks WHERE stage_id = 's1'").first();
+    expect(taskRow).toEqual({ system_reason: "po_supplier_unidentified" });
+  });
+
+  it("does not gate a subject that is not an invoice at all", async () => {
+    await seedGatedProcess();
+    await seedApTeam();
+    const created = await handleCreateProcessInstance(env.DB, "p1", { subjectType: "expense", subjectId: "exp-1" });
+    const instanceId = (created.body as { id: string }).id;
+
+    const result = await visitCurrentStage(env.DB, instanceId, {});
+
+    expect((result.body as { status: string }).status).toBe("completed");
+  });
+
+  it("does not gate an invoice id with no invoice_headers row (the existence check)", async () => {
+    // Belt and braces: a synthetic or not-yet-written invoice should
+    // never be blocked on a supplier it has no record of at all.
+    await seedGatedProcess();
+    await seedApTeam();
+    const created = await handleCreateProcessInstance(env.DB, "p1", { subjectType: "invoice", subjectId: "ghost-inv" });
+    const instanceId = (created.body as { id: string }).id;
+
+    const result = await visitCurrentStage(env.DB, instanceId, {});
+
+    expect((result.body as { status: string }).status).toBe("completed");
+  });
+
+  it("leaves exactly one task, and a second visit is refused (decision 0072's own re-visit guard, reused)", async () => {
+    await seedGatedProcess();
+    await seedApTeam();
+    const instanceId = await startInvoice("inv-idempotent");
+    await visitCurrentStage(env.DB, instanceId, {});
+
+    const again = await visitCurrentStage(env.DB, instanceId, {});
+    expect(again.status).toBe(409);
+
+    const taskCount = await env.DB.prepare(
+      "SELECT count(*) AS n FROM tasks t JOIN stage_visits v ON v.id = t.stage_visit_id WHERE v.process_instance_id = ?"
+    )
+      .bind(instanceId)
+      .first<{ n: number }>();
+    expect(taskCount?.n).toBe(1);
+  });
+});

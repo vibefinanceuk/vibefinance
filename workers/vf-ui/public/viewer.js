@@ -146,12 +146,27 @@ function workflowErrorPanel() {
  * **never translated**, in whatever language the rule's own author
  * wrote it in. Decision 0478's own distinction: a rule's *name* is
  * translatable; the sentence is the author's own words.
+ *
+ * **A third case, decision 0480**: a task the engine itself raised,
+ * with no rule and no sentence behind it at all (the ERP-release
+ * gate). `reason.systemReason` names which of a small, code-known set
+ * — translated the same way `standardKey` already is, through the
+ * ordinary string table, just a different namespace
+ * (`workflow.systemreason.*` vs `matching.standardrule.*`) since the
+ * two mean different things. `reason.sourceText` is always absent
+ * here (nothing was authored to expand), so the "click for details"
+ * affordance below never appears for this case — no special-casing
+ * needed there.
  */
 function reasonLinePanel() {
   const reason = stored.openTaskReason;
   if (!reason) return null;
 
-  const name = reason.standardKey ? t(`matching.standardrule.${reason.standardKey}.name`) : reason.name;
+  const name = reason.standardKey
+    ? t(`matching.standardrule.${reason.standardKey}.name`)
+    : reason.systemReason
+      ? t(`workflow.systemreason.${reason.systemReason}.name`)
+      : reason.name;
 
   const row = el("div", { class: "reasonline-row" }, [
     el("span", { class: "reasonline-label", text: t("invoice.reasonline.label") }),
@@ -2484,6 +2499,129 @@ export async function openViewer(task, onClose) {
   }
 
   /**
+   * Recording a genuinely new seller, by hand — decision 0480.
+   *
+   * **Additive, not a replacement for `openSupplierSearch()` above.**
+   * That one finds a real, already-existing supplier that automatic
+   * matching missed — decision 0222's own case. This one is for the
+   * operator's own request: *"If the seller cannot be found, and it
+   * is a new invoice, we should provide a New Seller, so that the
+   * user can Enter in the Company Name, Tax ID, E-mail address, and
+   * Address."* Both stay on screen: `sellerPanel()`'s "Change" link
+   * still opens the search, and this is its own separate button,
+   * because the two answer different questions — "is this supplier
+   * already on file somewhere?" versus "record a supplier that
+   * genuinely is not."
+   *
+   * **Pre-filled from the document, like the search popout's own
+   * `alsoOffer`** — BT-27 (name), BT-31 (VAT id), BT-40 (country) — but
+   * this form also takes email and address by hand, which the
+   * search popout's `alsoOffer` never asked for even though the
+   * backend has always accepted them (`handleCreateSupplier`,
+   * load-suppliers.ts) — the operator's own words named exactly these
+   * fields, and BT-34 (electronic address) is not the same thing as an
+   * email address so it is not offered here as one.
+   *
+   * **No PO fork here** — `sellerPanel()`'s own caller already decided
+   * this button exists at all, gated on `!hasPoReference`. This
+   * function does not re-check it, the same "the caller decided,
+   * this just does the one thing" shape `openSupplierSearch()` above
+   * already has.
+   */
+  function openNewSellerForm() {
+    const facts = stored.facts ?? {};
+    const nameInput = el("input", { type: "text", value: facts["BT-27"] ?? "" });
+    const vatInput = el("input", { type: "text", value: facts["BT-31"] ?? "" });
+    const emailInput = el("input", { type: "email", value: "" });
+    const addressLineInput = el("input", { type: "text", value: "" });
+    const cityInput = el("input", { type: "text", value: "" });
+    const postalInput = el("input", { type: "text", value: "" });
+    const countryInput = el("input", { type: "text", value: facts["BT-40"] ?? "" });
+    const errorBox = el("div", { class: "warn", hidden: "" });
+
+    const labeled = (labelKey, input) => el("div", { class: "kf" }, [el("label", { text: t(labelKey) }), input]);
+
+    const save = async () => {
+      const name = nameInput.value.trim();
+      if (!name) {
+        errorBox.hidden = false;
+        errorBox.textContent = t("viewer.supplier.namerequired");
+        return;
+      }
+      try {
+        const response = await fetch("/api/suppliers", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name,
+            vatId: vatInput.value.trim() || undefined,
+            email: emailInput.value.trim() || undefined,
+            addressLine: addressLineInput.value.trim() || undefined,
+            city: cityInput.value.trim() || undefined,
+            postalCode: postalInput.value.trim() || undefined,
+            country: countryInput.value.trim() || undefined,
+          }),
+        });
+        if (!response.ok) {
+          const body = await response.json();
+          errorBox.hidden = false;
+          errorBox.textContent = body.error ?? t("viewer.supplier.savefailed");
+          return;
+        }
+        const { id } = await response.json();
+        // And attach this invoice to it, which is why we are here —
+        // the same two-step shape openSupplierSearch's own alsoOffer
+        // already uses.
+        const attach = await fetch(`/api/invoices/${encodeURIComponent(current.subject.id)}/supplier`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ supplierId: id }),
+        });
+        if (!attach.ok) {
+          const body = await attach.json();
+          errorBox.hidden = false;
+          errorBox.textContent = body.error ?? t("viewer.supplier.savefailed");
+          return;
+        }
+        close();
+        // Reopen on the same task, so the card redraws with the
+        // supplier now attached — the same refresh openSupplierSearch
+        // and openSearch's own `choose` handler already do.
+        await openViewer(current, onClose);
+      } catch {
+        errorBox.hidden = false;
+        errorBox.textContent = t("viewer.supplier.savefailed");
+      }
+    };
+
+    const box = el("div", { class: "popout" }, [
+      el("h3", { text: t("viewer.supplier.newsellerheading") }),
+      el("p", { class: "muted", text: t("viewer.supplier.newsellerhint") }),
+      labeled("viewer.supplier.name", nameInput),
+      labeled("viewer.supplier.vat", vatInput),
+      labeled("viewer.supplier.email", emailInput),
+      labeled("viewer.supplier.street", addressLineInput),
+      labeled("viewer.supplier.city", cityInput),
+      labeled("viewer.supplier.postcode", postalInput),
+      labeled("viewer.supplier.country", countryInput),
+      errorBox,
+      el("button", { class: "primary", text: t("viewer.supplier.save"), onclick: save }),
+      // One icon for closing, everywhere (decision 0236).
+      actionLink("close"),
+    ]);
+
+    const backdrop = el("div", { class: "backdrop" }, [box]);
+    const close = () => backdrop.remove();
+    box.querySelectorAll("button")[box.querySelectorAll("button").length - 1].onclick = close;
+    backdrop.onclick = (e) => {
+      if (e.target === backdrop) close();
+    };
+
+    document.body.append(backdrop);
+    nameInput.focus();
+  }
+
+  /**
    * Finding one of our own units by hand — decision 0224.
    *
    * **The same pop-out as decision 0222's**, with a different endpoint
@@ -2695,6 +2833,19 @@ export async function openViewer(task, onClose) {
       const why = stored.facts?.["supplier.unmatchedReason"];
 
       /**
+       * **A PO invoice with no supplier matched is a distinct anomaly,
+       * not an ordinary new supplier — decision 0480.** The operator's
+       * own words: *"For PO Invoices, an invoice with an unidentified
+       * supplier should not happen... for a PO to be approved and
+       * released, the Supplier would need to have been setup first."*
+       * Confirmed via AskUserQuestion: no self-service here — the New
+       * Seller button below is offered only when this invoice names no
+       * purchase order at all, so registering a company never papers
+       * over what is actually a data problem needing investigation.
+       */
+      const hasPoReference = !!(stored.facts?.["BT-13"] ?? "").toString().trim();
+
+      /**
        * **An amber ribbon, like decision 0161's unreadable notice** —
        * whose own words fit this exactly: *"nothing went wrong, and
        * there is something for a person to do."*
@@ -2702,14 +2853,28 @@ export async function openViewer(task, onClose) {
        * An unmatched supplier is not an error. The document may be from
        * a genuinely new supplier, and leaving it is a real answer —
        * decision 0222's *"the user can just leave it, to be picked up
-       * later in AP Review."*
+       * later in AP Review."* Decision 0480 gives that a real deadline
+       * now (the ERP-release gate), and, for the Non-PO case, a direct
+       * way to act on it rather than only search for a record that was
+       * never going to be found.
        */
       return el("div", { class: "panel needsattention" }, [
         cardHead(t("viewer.seller"), "changeseller", () => openSupplierSearch()),
-        el("div", { class: "warn", text: t(`viewer.supplier.${why ?? "none"}`) }),
+        el("div", {
+          class: "warn",
+          text: hasPoReference ? t("viewer.supplier.pounidentified") : t(`viewer.supplier.${why ?? "none"}`),
+        }),
         shown.length > 0
           ? el("div", { class: "vfields" }, shown.map((spec) => field(spec, existing)))
           : null,
+        hasPoReference
+          ? null
+          : el("button", {
+              class: "linky",
+              type: "button",
+              text: t("viewer.supplier.newseller"),
+              onclick: () => openNewSellerForm(),
+            }),
       ].filter(Boolean));
     }
 

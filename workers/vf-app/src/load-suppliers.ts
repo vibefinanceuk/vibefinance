@@ -998,9 +998,22 @@ export async function handleSetInvoiceSupplier(
   if (!invoice) return { status: 404, body: { error: `invoice ${invoiceId} does not exist` } };
 
   const supplier = await db
-    .prepare("SELECT id, status FROM suppliers WHERE id = ?")
+    .prepare(
+      `SELECT id, status, on_hold, erp_identifier, payment_terms, match_option,
+              amount_tolerance_pct, quantity_tolerance_pct
+       FROM suppliers WHERE id = ?`
+    )
     .bind(supplierId)
-    .first<{ id: string; status: string }>();
+    .first<{
+      id: string;
+      status: string;
+      on_hold: number;
+      erp_identifier: string | null;
+      payment_terms: string | null;
+      match_option: string | null;
+      amount_tolerance_pct: number | null;
+      quantity_tolerance_pct: number | null;
+    }>();
   if (!supplier) {
     return { status: 404, body: { error: `supplier ${supplierId} does not exist` } };
   }
@@ -1018,18 +1031,54 @@ export async function handleSetInvoiceSupplier(
     };
   }
 
+  /**
+   * **Every supplier-derived fact, not just `supplier.matched`** —
+   * found while tracing decision 0480's own ERP-release gate. This
+   * route previously set `supplier.matched` alone and left
+   * `supplier.awaitingErp`, `.onHold`, `.paymentTerms`, `.matchOption`
+   * and both tolerances exactly as they were before — which, for an
+   * invoice that had been unmatched, means `false`/`null`: the same
+   * "nothing matched" defaults `buildIntakeEnricher`
+   * (`source-capture-route.ts`) computes at intake. Attaching a
+   * supplier by hand never ran that computation again, so a newly
+   * attached supplier awaiting its own ERP identifier read as
+   * `supplier.awaitingErp: false` — exactly wrong, and exactly the
+   * fact decision 0480's gate depends on. Mirrors
+   * `buildIntakeEnricher`'s own computation deliberately — decision
+   * 0434's comment on that function already says the two must be kept
+   * parallel.
+   */
   await db
     .prepare(
       `UPDATE invoice_headers
        SET supplier_id = ?,
            facts_json = json_remove(
              json_set(
-               json_set(facts_json, '$."supplier.matched"', 1),
-               '$."supplier.chosenBy"', ?),
-             '$."supplier.unmatchedReason"')
+               facts_json,
+               '$."supplier.matched"', 1,
+               '$."supplier.chosenBy"', ?,
+               '$."supplier.onHold"', ? ,
+               '$."supplier.awaitingErp"', ?,
+               '$."supplier.paymentTerms"', ?,
+               '$."supplier.matchOption"', ?,
+               '$."supplier.amountTolerancePct"', ?,
+               '$."supplier.quantityTolerancePct"', ?
+             ),
+             '$."supplier.unmatchedReason"'
+           )
        WHERE id = ?`
     )
-    .bind(supplierId, chosenBy, invoiceId)
+    .bind(
+      supplierId,
+      chosenBy,
+      supplier.on_hold === 1 ? 1 : 0,
+      supplier.erp_identifier ? 0 : 1,
+      supplier.payment_terms,
+      supplier.match_option ?? "none",
+      supplier.amount_tolerance_pct,
+      supplier.quantity_tolerance_pct,
+      invoiceId
+    )
     .run();
 
   return { status: 200, body: { invoiceId, supplierId } };

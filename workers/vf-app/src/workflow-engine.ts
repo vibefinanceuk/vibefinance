@@ -126,6 +126,168 @@ async function orgGuard(
 }
 
 /**
+ * May this invoice leave its last real checkpoint before release —
+ * decision 0480.
+ *
+ * **Hardcoded, not rule-driven, deliberately.** Every other gate in
+ * this engine is a tenant-authored rule reading a fact this module
+ * computed — and that is exactly what failed the incident this
+ * decision answers: a live rule meant to test `supplier.matched`
+ * compiled with an extra clause that made it unsatisfiable for the
+ * common case, and a stale `route_to` that named a display label
+ * rather than a real stage id, both silently, for months. "An invoice
+ * cannot be released to the ERP without a supplier the ERP can
+ * actually be told about" is treated as too consequential to depend on
+ * a rule a person authored in English and a model compiled — the same
+ * reasoning `orgGuard` above already applied to "an invoice cannot
+ * finish without an organisational unit."
+ *
+ * **Reads `facts["supplier.*"]`, not a live join — reversed from this
+ * decision's own first draft, on what real tests caught.** A live
+ * join looked like the safer choice on paper: `handleSetInvoiceSupplier`
+ * really did leave stale facts behind (fixed alongside this decision,
+ * load-suppliers.ts), so "read the database, not a snapshot" sounded
+ * like the fix that generalizes. It does not. Decision 0434's own
+ * documented choice is that `buildIntakeEnricher` (source-capture-
+ * route.ts) computes `supplier.matched`/`supplier.awaitingErp` and
+ * hands them to THIS SAME cascading visit — the durable
+ * `invoice_headers.supplier_id` write happens afterward, once capture
+ * returns, on purpose ("a cascading visit can carry a fresh instance
+ * clean through Validation, Matching, Coding and Approval to
+ * `completed` in that one call"). A live join here would read that
+ * column before decision 0434's own write ever ran, and block every
+ * single invoice on its first, cleanest capture — confirmed by
+ * running this exact change against the real test suite, not assumed.
+ * `facts` is the value every rule at every earlier stage in this same
+ * visit already evaluated against; reading anything else would make
+ * this gate disagree with the rules it exists to backstop. The actual
+ * fix for staleness was never "stop trusting facts" — it was
+ * `handleSetInvoiceSupplier` keeping them in sync on every mutation,
+ * which decision 0434's own `followUpAfterTaskCompletion` path
+ * (index.ts) already depends on for exactly this reason.
+ *
+ * `facts["supplier.matched"]`/`.awaitingErp"]` are read loosely
+ * (`!!value`), not `=== true`: `buildIntakeEnricher` writes real JS
+ * booleans, but a value that reached `facts_json` via `json_set`
+ * (`handleSetInvoiceSupplier`) is SQLite's own `1`/`0` once round-tripped
+ * through `JSON.parse` — the same looseness the rule engine's own
+ * condition evaluator already has to tolerate for the same reason.
+ *
+ * **Fires only at the hand-off out of the last checkpoint** — the
+ * caller checks this, not the function: called only when the stage
+ * about to be entered is automatic (`rule_set_id IS NULL`, nothing
+ * left that could ever block this invoice again) or there is no next
+ * stage at all. Deliberately not hardcoded to any stage name or id —
+ * this tenant's process happens to land it precisely on `review` ->
+ * `payment-eligible`, but nothing here assumes that shape.
+ *
+ * **Three distinct reasons** (migrations/0080's own vocabulary), the
+ * PO/Non-PO split per the operator's own two confirmed AskUserQuestion
+ * answers: a Non-PO invoice matching nothing at all is the ordinary
+ * New Seller case (`supplier_unidentified`); a Non-PO invoice already
+ * matched to a real, locally-recorded supplier still awaiting its ERP
+ * identifier has nothing left to self-serve (`supplier_awaiting_erp`);
+ * a PO invoice reaching this gate with no supplier at all is the
+ * anomaly the operator said "should not happen" and gets no
+ * self-service path either (`po_supplier_unidentified`) — PO-ness read
+ * from BT-13, the same field `resolveInvoiceCollaboratorIds`'s own
+ * caller already reads for Non-PO Approval routing.
+ *
+ * Returns the number of tasks it created — 0 or 1, the same shape the
+ * rule-bearing branch's own `tasksCreated` already returns, so the
+ * caller can fold it into the same blocking decision without a
+ * separate code path — or a `RouteResult` if it could not even do
+ * that much (its own `handleCreateTask` call was refused), for the
+ * caller to return as-is. Never throws: every other failure path in
+ * this module returns a `RouteResult` rather than an unhandled
+ * exception, and a safety net whose own plumbing failure could crash
+ * the very capture/task pipeline it is meant to protect would be a
+ * worse outcome than the bug it exists to catch. Decision 0435's own
+ * capture-route handling already treats a >=400 `RouteResult` from a
+ * stage visit as "recorded on the invoice as `workflow.stageError`,
+ * never a failed capture" — this reuses exactly that path rather than
+ * inventing a second way to fail.
+ */
+async function erpReleaseGuard(
+  db: D1Database,
+  stage: StageRow,
+  next: StageRow | null,
+  instance: { subject_type: string; subject_id: string },
+  facts: InvoiceFacts,
+  visitId: string
+): Promise<number | RouteResult> {
+  if (instance.subject_type !== "invoice") return 0;
+  // Defense-in-depth: every call site already checks this before
+  // calling, the same "never assume the caller checked" discipline
+  // orgGuard's own callers follow — but a guard that trusts its
+  // caller for its own firing condition is one refactor away from
+  // firing at the wrong hand-off.
+  if (next && next.rule_set_id) return 0;
+
+  // No invoice_headers row at all — subject_type "invoice" names the
+  // engine's own generic subject typing (decision 0015), not a
+  // guarantee that a real invoice record exists (this module never
+  // assumes how a subject_type is backed, the same boundary `orgGuard`
+  // and the header-fact loaders above already respect). Existence
+  // only, deliberately the cheapest possible query: the actual
+  // matched/awaitingErp answer comes from `facts` just below, not from
+  // here, per this function's own comment above.
+  const exists = await db.prepare("SELECT 1 FROM invoice_headers WHERE id = ?").bind(instance.subject_id).first();
+  if (!exists) return 0;
+
+  // A supplier is attached and the ERP already knows it — releasable.
+  // decisions 0209/0231's own two claims, read exactly as any rule
+  // testing them would.
+  const matched = !!facts["supplier.matched"];
+  const awaitingErp = !!facts["supplier.awaitingErp"];
+  if (matched && !awaitingErp) return 0;
+
+  // Three distinct reasons, migrations/0080's own vocabulary — which
+  // one names what a human (or a "New Seller" button) should actually
+  // do next, not just "supplier problem":
+  //   - a PO invoice with no supplier matched is the anomaly the
+  //     operator said "should not happen" — no self-service;
+  //   - a Non-PO invoice with no supplier matched at all is the
+  //     ordinary New Seller case — nothing on file to conflict with;
+  //   - `matched && awaitingErp` (the only way past the `return 0`
+  //     above) means a real local record already exists and is
+  //     mid-onboarding — no self-service left to offer, since the
+  //     record itself is not the gap.
+  const poNumber = typeof facts["BT-13"] === "string" ? facts["BT-13"].trim() : "";
+  const systemReason = matched
+    ? "supplier_awaiting_erp"
+    : poNumber !== ""
+      ? "po_supplier_unidentified"
+      : "supplier_unidentified";
+
+  const createResult = await handleCreateTask(db, {
+    id: crypto.randomUUID(),
+    stageId: stage.id,
+    teamId: "ap-team",
+    // Falls back to AP.Review, not the stage's own name — the stage
+    // handing off here can structurally be any stage in principle, but
+    // the reason a task lands here is always "the ERP cannot be told
+    // about this supplier yet," which is AP Review's own remit per the
+    // operator's own words: "this is the final stage before releasing
+    // to the ERP system."
+    requiredPermission: stage.required_permission ?? "AP.Review",
+  });
+  if (createResult.status !== 201) {
+    return {
+      status: 500,
+      body: { error: `erpReleaseGuard could not create its own task: ${JSON.stringify(createResult.body)}` },
+    };
+  }
+  const taskId = (createResult.body as { id: string }).id;
+  await db
+    .prepare("UPDATE tasks SET stage_visit_id = ?, system_reason = ? WHERE id = ?")
+    .bind(visitId, systemReason, taskId)
+    .run();
+
+  return 1;
+}
+
+/**
  * **Non-PO Approval routing's own "who" — decisions 0468/0469/0471.**
  * Feeds `resolveApprovalTargets`'s `collaboratorUserIds`, which only
  * ever matters when `org_approval_config.route_non_po_to_requester` is
@@ -387,16 +549,34 @@ export async function visitCurrentStage(
       if (refusal) return refusal;
 
 
-      // Automatic stage — nothing to evaluate, nothing that could
-      // spawn a task. Record the visit and always advance.
+      // Automatic stage — nothing to evaluate, nothing a RULE could
+      // spawn. Record the visit and always advance, unless decision
+      // 0480's own hardcoded gate blocks it first.
       const visitId = crypto.randomUUID();
       await db
         .prepare("INSERT INTO stage_visits (id, process_instance_id, stage_id, outcome, created_at) VALUES (?, ?, ?, 'automatic', strftime('%Y-%m-%d %H:%M:%f', 'now'))")
         .bind(visitId, currentInstanceId, stage.id)
         .run();
-      visitsThisCall.push({ stageId: stage.id, outcome: "automatic", tasksCreated: 0 });
 
       const next = await nextStageInSequence(db, stage.process_id, stage.sequence, instance.process_version);
+
+      // decision 0480 — same hand-off guard as the rule-bearing branch
+      // below. An automatic stage the invoice is entering now was
+      // itself the previous hand-off's own "next" and so was already
+      // checked once; this checks the one ahead of IT, the same
+      // structural rule applied at every hand-off rather than assumed
+      // to already be covered by an earlier one.
+      const erpGuardResult =
+        !next || !next.rule_set_id ? await erpReleaseGuard(db, stage, next, instance, facts, visitId) : 0;
+      if (typeof erpGuardResult !== "number") return erpGuardResult;
+      const erpTasksCreated = erpGuardResult;
+
+      visitsThisCall.push({ stageId: stage.id, outcome: "automatic", tasksCreated: erpTasksCreated });
+
+      if (erpTasksCreated > 0) {
+        return { status: 200, body: { instanceId: currentInstanceId, status: "in_progress", currentStageId: stage.id, visits: visitsThisCall, correctedFacts } };
+      }
+
       if (!next) {
         await db
           .prepare("UPDATE process_instances SET status = 'completed', updated_at = ? WHERE id = ?")
@@ -800,9 +980,8 @@ export async function visitCurrentStage(
       }
     }
 
-    visitsThisCall.push({ stageId: stage.id, outcome: anyMatched ? "matched" : "no_match", tasksCreated });
-
     if (tasksCreated > 0) {
+      visitsThisCall.push({ stageId: stage.id, outcome: anyMatched ? "matched" : "no_match", tasksCreated });
       // Blocked — real, open tasks now exist for this visit. The
       // instance stays here until they're all completed (see
       // onTaskCompleted below), never advances on its own.
@@ -821,6 +1000,23 @@ export async function visitCurrentStage(
     } else {
       next = await nextStageInSequence(db, stage.process_id, stage.sequence, instance.process_version);
     }
+
+    // decision 0480: an invoice cannot leave its last real checkpoint —
+    // the hand-off into an automatic stage, or off the end of the
+    // process entirely — without a supplier the ERP can be told about.
+    // See erpReleaseGuard's own comment for why this is hardcoded
+    // rather than another tenant rule.
+    const erpGuardResult =
+      !next || !next.rule_set_id ? await erpReleaseGuard(db, stage, next, instance, facts, visitId) : 0;
+    if (typeof erpGuardResult !== "number") return erpGuardResult;
+    const erpTasksCreated = erpGuardResult;
+
+    visitsThisCall.push({ stageId: stage.id, outcome: anyMatched ? "matched" : "no_match", tasksCreated: erpTasksCreated });
+
+    if (erpTasksCreated > 0) {
+      return { status: 200, body: { instanceId: currentInstanceId, status: "in_progress", currentStageId: stage.id, visits: visitsThisCall, correctedFacts } };
+    }
+
     if (!next) {
       await db
         .prepare("UPDATE process_instances SET status = 'completed', updated_at = ? WHERE id = ?")

@@ -1588,6 +1588,20 @@ describe("process instances and stage visits, through the real router (decision 
 
       const taskRow = await env.DB.prepare("SELECT id FROM tasks WHERE stage_id = 's2'").first<{ id: string }>();
       await SELF.fetch(`https://example.com/tasks/${taskRow!.id}/claim`, { method: "POST", headers: authHeaders() });
+      // supplier.matched/.awaitingErp, on the invoice's own stored
+      // facts — decision 0454's own followUpAfterTaskCompletion reads
+      // facts_json directly, not the /complete request body. This
+      // test is about a stage whose rule set has nothing live in it,
+      // not about supplier identification — a matched, releasable
+      // supplier keeps decision 0480's own separate ERP-release gate
+      // out of the way of what this test means to prove (that it
+      // reaches s4 at all, not that it completes unconditionally once
+      // there).
+      await env.DB
+        .prepare(
+          `UPDATE invoice_headers SET facts_json = json_set(facts_json, '$."supplier.matched"', 1, '$."supplier.awaitingErp"', 0) WHERE id = 'inv-454-a'`
+        )
+        .run();
       const completeRes = await SELF.fetch(`https://example.com/tasks/${taskRow!.id}/complete`, { method: "POST", headers: authHeaders() });
       expect(completeRes.status).toBe(200);
 
@@ -1882,6 +1896,13 @@ describe("per-line evaluation, through the real router (decision 0027)", () => {
     await env.DB.prepare(
       "INSERT INTO org_units (id, name, kind, vat_id) VALUES ('acme-visit', 'Acme', 'legal_entity', 'GB123456789')"
     ).run();
+    // This invoice names a PO but matches no supplier at all —
+    // decision 0480's own ERP-release gate fires once this single-
+    // stage process's rule (a bare `flag`, no assign_task) creates no
+    // task of its own, and needs a real team to raise its own.
+    await env.DB.prepare(
+      "INSERT INTO org_teams (id, name, unit_id) VALUES ('ap-team', 'AP Team', 'acme-visit')"
+    ).run();
     await SELF.fetch("https://example.com/purchase-orders", {
       method: "POST",
       headers: authHeaders(),
@@ -1986,10 +2007,15 @@ describe("intake capture, through the real router (decision 0029)", () => {
       body: JSON.stringify({ id: "ic-live-1", name: "Email" }),
     });
 
+    // supplier.matched/.awaitingErp: this test is about capture
+    // mechanics through the real HTTP route, not supplier
+    // identification — a matched, releasable supplier keeps decision
+    // 0480's own ERP-release gate out of the way once this instance
+    // cascades to completion.
     const res = await SELF.fetch("https://example.com/intake-channels/ic-live-1/capture", {
       method: "POST",
       headers: authHeaders(),
-      body: JSON.stringify({ id: "cap-live-1", facts: {} }),
+      body: JSON.stringify({ id: "cap-live-1", facts: { "supplier.matched": true, "supplier.awaitingErp": false } }),
     });
     expect(res.status).toBe(201);
     const body = (await res.json()) as { instanceId: string; processId: string };
@@ -2087,6 +2113,16 @@ describe("real UBL XML capture, through the real router (decision 0030)", () => 
       headers: authHeaders(),
       body: JSON.stringify({ id: "ic-xml-1", name: "EDI" }),
     });
+    // This route (capture-xml) parses the document alone — no
+    // enrichFacts hook, unlike the real source-capture pipeline — so
+    // supplier.matched is never computed here at all. Decision 0480's
+    // own ERP-release gate correctly reads that as "not releasable"
+    // and raises a real task; a real team for it to land on, so this
+    // test shows that outcome rather than an unrelated 500.
+    await env.DB.prepare(
+      "INSERT INTO org_units (id, name) VALUES ('u-xml-1', 'Acme') ON CONFLICT(id) DO NOTHING"
+    ).run();
+    await env.DB.prepare("INSERT INTO org_teams (id, name, unit_id) VALUES ('ap-team', 'AP Team', 'u-xml-1')").run();
 
     const res = await SELF.fetch("https://example.com/intake-channels/ic-xml-1/capture-xml", {
       method: "POST",
@@ -2099,8 +2135,16 @@ describe("real UBL XML capture, through the real router (decision 0030)", () => 
     const header = await env.DB.prepare("SELECT id, supplier_vat_id, total_with_vat FROM invoice_headers").first();
     expect(header).toEqual({ id: body.id, supplier_vat_id: "DE111222333", total_with_vat: 640 });
 
-    const instance = await env.DB.prepare("SELECT status FROM process_instances WHERE id = ?").bind(body.instanceId).first();
-    expect(instance).toEqual({ status: "completed" });
+    // Not "completed" — decision 0480's own gate blocked it, since
+    // this route never computed a supplier match to release against.
+    const instance = await env.DB
+      .prepare("SELECT status FROM process_instances WHERE id = ?")
+      .bind(body.instanceId)
+      .first();
+    expect(instance).toEqual({ status: "in_progress" });
+
+    const task = await env.DB.prepare("SELECT system_reason FROM tasks WHERE owner_team_id = 'ap-team'").first();
+    expect(task).toEqual({ system_reason: "supplier_unidentified" });
   });
 
   it("an explicit ?id= query parameter overrides the generated id", async () => {

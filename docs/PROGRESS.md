@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 24 September 2026 (decision 0479). A living document: what
+Last updated 25 September 2026 (decision 0480). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,46 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### May not leave the last checkpoint without a supplier the ERP knows, and New Seller (0480)
+- **The operator's own request**: at validation, the Seller and Buyer
+  should be identified; if the seller cannot be found on a new,
+  Non-PO invoice, a New Seller form lets a person record the Company
+  Name, Tax ID, e-mail, and Address by hand — but the invoice may
+  still not reach the ERP until a real ERP identifier exists for that
+  supplier. A PO invoice with no supplier matched at all should not
+  happen and gets no such form — a data problem to investigate, not a
+  new record to create.
+- **`erpReleaseGuard()` (`workflow-engine.ts`)** — a hardcoded,
+  structurally generic gate (not tied to any stage name) firing
+  wherever an invoice is about to leave the last stage that still has
+  a rule set behind it. For this tenant's own process shape that lands
+  on `review → payment-eligible`. Reads `supplier.matched` /
+  `supplier.awaitingErp` from **facts**, not a live database join —
+  reversed from the decision's own first draft once real tests showed
+  a live read always sees a stale `supplier_id` during a fresh
+  capture's own cascading visit (decision 0434's own architecture).
+  Three mutually-exclusive reasons: `supplier_unidentified` (nothing
+  matched — New Seller offered), `supplier_awaiting_erp` (a real local
+  record exists, decision 0231, awaiting its ERP id), and
+  `po_supplier_unidentified` (a PO invoice with no supplier at all —
+  blocked distinctly, no self-service).
+- **New Seller form (`viewer.js`)** — a second, additive button beside
+  decision 0222's existing supplier search, pre-filled from BT-27/BT-31/BT-40,
+  posting to `/api/suppliers` then attaching via `PUT /invoices/:id/supplier`.
+  Hidden whenever the invoice carries a purchase order reference
+  (BT-13), replaced with a distinct warning instead.
+- **`currentOpenTaskReason` (`invoice-facts-route.ts`)** — decision
+  0478's own "Here because" banner extended with a `UNION ALL`
+  covering this kind of task too (no rule behind it, `system_reason`
+  instead), so the banner now covers every open task, not only a
+  rule-fired one.
+- **Found along the way**: `handleSetInvoiceSupplier` (decision 0222's
+  attach-by-hand route) previously refreshed `supplier.matched` alone,
+  leaving `.awaitingErp` and every other supplier-derived fact at
+  their old, often wrong defaults — fixed to refresh all of them in
+  one update, mirroring `buildIntakeEnricher`'s own computation.
+- Full reasoning and verification counts in decision 0480.
 
 ### `.c-process` shares its stretched height, instead of every panel claiming it whole (0479)
 - **Reported live**, cautiously, right after 0478 had already been
