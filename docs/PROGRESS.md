@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 25 September 2026 (decision 0481). A living document: what
+Last updated 25 September 2026 (decision 0482). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,28 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Seller card: VAT, address, and postcode never populated (0482)
+- **Reported live**: "the seller VAT no, or the address and postcode
+  are never populated in the supplier card... the buyer card seems
+  okay."
+- **A real, pre-existing bug** (predating this session by two weeks):
+  `handleGetInvoice`'s `supplier:` response spread the raw D1 row
+  straight through under its own SQL column names (`vat_id`,
+  `address_line`, `postal_code`, `erp_identifier`, `is_pay_site`,
+  `on_hold`, `hold_reason`), while `sellerPanel()` (`viewer.js`) has
+  always read camelCase — the same treatment `buyer` a few lines above
+  has always been given explicitly. `city`/`country` happened to match
+  either way, which is exactly why only VAT/address/postcode read as
+  missing while the buyer card, already correctly mapped, looked fine.
+  Every other camelCase field on the seller card (the ERP/site
+  sub-line, the "pay site" tag, the on-hold warning) was silently
+  affected too, though not reported.
+- **The existing tests had enshrined the bug as the contract** — three
+  assertions in `load-suppliers.test.ts` checked the wrong,
+  snake_case field names as if they were correct, which is exactly why
+  this went uncaught. Corrected alongside the fix.
+- Full reasoning and verification counts in decision 0482.
 
 ### New Seller cosmetics, and a real Close bug fixed (0481)
 - **Reported live**, right after testing 0480's own invoices: the New

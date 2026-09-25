@@ -720,10 +720,26 @@ describe("what the viewer is told about the supplier (decision 0219)", () => {
     expect(supplier.name).toBe("Acme Payments");
     expect(supplier.email).toBe("ap@acme.example");
     expect(supplier.city).toBe("London");
+    /**
+     * **camelCase, not the raw SQL column names — a real bug found
+     * live**, reported as "the seller VAT no, or the address and
+     * postcode are never populated." The response used to spread the
+     * D1 row straight through (`erp_site_identifier`, `is_pay_site`,
+     * ...), which this test itself asserted as if it were the
+     * contract — exactly why the bug went uncaught: `viewer.js` has
+     * always read `s.erpSiteIdentifier`/`s.isPaySite`, camelCase, the
+     * same names `buyer` was already mapped to. Also covers
+     * `vatId`/`addressLine`/`postalCode`, the fields actually reported
+     * missing — `city`/`country` happened to match either way, which
+     * is why only those three silently never rendered.
+     */
+    expect(supplier.vatId).toBe("GB1");
+    expect(supplier.addressLine).toBe("PO Box 44");
+    expect(supplier.postalCode).toBe("EC2V 7HH");
     // **Which site, and why this one** — the reason it reached this
     // record rather than one of its siblings.
-    expect(supplier.erp_site_identifier).toBe("PAY-UK");
-    expect(supplier.is_pay_site).toBe(1);
+    expect(supplier.erpSiteIdentifier).toBe("PAY-UK");
+    expect(supplier.isPaySite).toBe(1);
   });
 
   it("says null where nothing was matched", async () => {
@@ -747,8 +763,8 @@ describe("what the viewer is told about the supplier (decision 0219)", () => {
     const result = await handleGetInvoice(env.DB, "inv-1");
     const supplier = (result.body as { supplier: Record<string, unknown> }).supplier;
 
-    expect(supplier.on_hold).toBe(1);
-    expect(supplier.hold_reason).toBe("Under dispute");
+    expect(supplier.onHold).toBe(1);
+    expect(supplier.holdReason).toBe("Under dispute");
   });
 });
 

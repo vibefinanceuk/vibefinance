@@ -693,9 +693,41 @@ export async function handleGetInvoice(
        * fault.
        */
       openTaskReason: await currentOpenTaskReason(db, invoiceId, locale),
+      /**
+       * **Mapped field by field, not spread — a real bug found live.**
+       * `...matchedSupplier` was passing the D1 row straight through
+       * under its own SQL column names (`vat_id`, `address_line`,
+       * `postal_code`, `erp_identifier`, `is_pay_site`, `on_hold`,
+       * `hold_reason`, ...), while `sellerPanel()` (`viewer.js`) has
+       * always read `s.vatId`, `s.addressLine`, `s.postalCode`, and so
+       * on — camelCase, the same names `buyer` below has always been
+       * mapped to explicitly. `city` and `country` happened to match
+       * either way (no case change needed), which is exactly why VAT
+       * number, address, and postcode silently never rendered while
+       * city and country did — reported live as "the seller VAT no, or
+       * the address and postcode are never populated... even if the
+       * information exists in the database... the buyer card seems
+       * okay." It was: `buyer` was already built this way, `supplier`
+       * never had been.
+       */
       supplier: matchedSupplier
         ? {
-            ...matchedSupplier,
+            erpIdentifier: matchedSupplier.erp_identifier ?? null,
+            erpSiteIdentifier: matchedSupplier.erp_site_identifier ?? null,
+            name: matchedSupplier.name ?? null,
+            vatId: matchedSupplier.vat_id ?? null,
+            electronicAddress: matchedSupplier.electronic_address ?? null,
+            email: matchedSupplier.email ?? null,
+            phone: matchedSupplier.phone ?? null,
+            addressLine: matchedSupplier.address_line ?? null,
+            city: matchedSupplier.city ?? null,
+            postalCode: matchedSupplier.postal_code ?? null,
+            country: matchedSupplier.country ?? null,
+            isPaySite: matchedSupplier.is_pay_site,
+            isProcurementSite: matchedSupplier.is_procurement_site,
+            onHold: matchedSupplier.on_hold,
+            holdReason: matchedSupplier.hold_reason ?? null,
+            paymentTerms: matchedSupplier.payment_terms ?? null,
             /**
              * **The country as a person reads it** — decision 0221.
              *
