@@ -3659,6 +3659,52 @@
     margin-bottom: 4px;
   }
 
+  /**
+   * **Breathing room between stacked fields in a pop-out — decision
+   * 0497.** Asked for directly, against Reassign's and Route To
+   * Approver's own pickers: "insert a little space between the user
+   * selection drop-down, and the title of the comments box." `.kf`
+   * itself has no margin of its own (`.newsource`/`.hffields` above
+   * give it one only in their own scoped layouts), so two stacked
+   * `.kf` fields in a plain `.popout` sat flush against each other.
+   * Scoped to `.popout` alone so this does not reach `.newsource`'s
+   * own already-spaced flex row or `.hffields`'s own bordered rows.
+   */
+  .popout .kf + .kf {
+    margin-top: 16px;
+  }
+
+  /**
+   * **A comment box that looks like the rest of the form, and is
+   * tall enough to write in — decision 0497.** The global text-input
+   * rule above (`input:not([type="checkbox"]):not([type="radio"]),
+   * select`) never included `textarea`, so every comment box built
+   * from `labeled()` — Reassign's own, Return's mandatory reason, and
+   * now Route To Approver's — rendered as a bare, browser-default box:
+   * no border radius, no focus ring, and a default height too short
+   * to write a real sentence into. Reported live, against exactly
+   * this shape: "please can you make the comments box fixed height,
+   * and taller than it is now." `resize: none` because "fixed height"
+   * was the operator's own word for it, not merely a taller default.
+   */
+  .kf textarea {
+    width: 100%;
+    height: 140px;
+    resize: none;
+    font: inherit;
+    font-size: var(--step-1);
+    background: var(--surface-1);
+    border: 0.5px solid var(--border);
+    border-radius: var(--radius);
+    padding: 8px 11px;
+    color: var(--text-primary);
+    transition: border-color 120ms ease;
+  }
+  .kf textarea:focus {
+    outline: none;
+    border-color: var(--brand-fill);
+  }
+
   .vfoot {
     display: flex;
     align-items: center;

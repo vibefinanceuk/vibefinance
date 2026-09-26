@@ -146,7 +146,21 @@ export async function handleClaimTask(
 export async function handleCompleteTask(
   db: D1Database,
   taskId: string,
-  completingUserId: string
+  completingUserId: string,
+  // decision 0497: Route To Approver's own optional comment, asked for
+  // directly — "similar to the Reassign box." Both are read here
+  // rather than in `index.ts`, matching where claim/reassign already
+  // write their own `task_action_events` row, but neither is written
+  // unless `targetUserId` is present: a plain Complete (every stage
+  // that isn't Route To Approver, today and always) sends neither and
+  // must stay exactly as it already reads in the Timeline — one
+  // `stage_completed` line, nothing else. `comment` alone, with no
+  // `targetUserId`, is not a real caller today (Route To Approver's
+  // picker always sends both together) and is treated the same way:
+  // silently not written, rather than inventing a new question ("was
+  // this really a route?") nobody has asked.
+  comment?: string | null,
+  targetUserId?: string
 ): Promise<RouteResult> {
   const task = await db
     .prepare("SELECT owner_team_id, owner_user_id, claimed_by, completed_by FROM tasks WHERE id = ?")
@@ -188,6 +202,19 @@ export async function handleCompleteTask(
     .run();
   if (result.meta.changes === 0) {
     return { status: 409, body: { error: "task was already completed" } };
+  }
+
+  // decision 0497: the same shape decision 0489 already gave
+  // reassign — `target_user_id` is what lets the Timeline say who it
+  // went to, and its presence is exactly the signal that this
+  // completion was a routing decision rather than an ordinary one.
+  if (targetUserId) {
+    await db
+      .prepare(
+        "INSERT INTO task_action_events (id, task_id, action, actor_id, at, comment, target_user_id) VALUES (?, ?, 'route_to_approver', ?, ?, ?, ?)"
+      )
+      .bind(crypto.randomUUID(), taskId, completingUserId, now, comment ?? null, targetUserId)
+      .run();
   }
 
   return { status: 200, body: { taskId, completedBy: completingUserId, completedAt: now } };

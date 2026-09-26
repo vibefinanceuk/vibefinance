@@ -231,6 +231,63 @@ describe("handleCompleteTask", () => {
     const result = await handleCompleteTask(env.DB, "t1", "usr1");
     expect(result.status).toBe(409);
   });
+
+  /**
+   * Decision 0497 — Route To Approver's own optional comment, the same
+   * shape decision 0489's own reassign test just above already checks.
+   * `targetUserId` is what gates the write: it is the one fact that
+   * tells this completion apart from every ordinary one.
+   */
+  it("writes a task_action_events row naming who it was routed to, when targetUserId is given", async () => {
+    const stageId = await seedStage();
+    await handleCreateUser(env.DB, { id: "usr1", email: "a@b.com", name: "Alice" });
+    await handleCreateUser(env.DB, { id: "usr2", email: "b@b.com", name: "Bob" });
+    await handleCreateTask(env.DB, { id: "t1", stageId, userId: "usr1", requiredPermission: "AP.Approve" });
+    await handleCompleteTask(env.DB, "t1", "usr1", "Please check the VAT rate.", "usr2");
+
+    const row = await env.DB.prepare(
+      "SELECT action, actor_id, target_user_id, comment FROM task_action_events WHERE task_id = 't1'"
+    ).first();
+    expect(row).toEqual({
+      action: "route_to_approver",
+      actor_id: "usr1",
+      target_user_id: "usr2",
+      comment: "Please check the VAT rate.",
+    });
+  });
+
+  it("writes no task_action_events row for an ordinary completion — no targetUserId, no comment, no row", async () => {
+    const stageId = await seedStage();
+    await handleCreateUser(env.DB, { id: "usr1", email: "a@b.com", name: "Alice" });
+    await handleCreateTask(env.DB, { id: "t1", stageId, userId: "usr1", requiredPermission: "AP.Approve" });
+    await handleCompleteTask(env.DB, "t1", "usr1");
+
+    const row = await env.DB.prepare("SELECT * FROM task_action_events WHERE task_id = 't1'").first();
+    expect(row).toBeNull();
+  });
+
+  it("a comment with no targetUserId is not written either — not a real caller today, treated the same as neither", async () => {
+    const stageId = await seedStage();
+    await handleCreateUser(env.DB, { id: "usr1", email: "a@b.com", name: "Alice" });
+    await handleCreateTask(env.DB, { id: "t1", stageId, userId: "usr1", requiredPermission: "AP.Approve" });
+    await handleCompleteTask(env.DB, "t1", "usr1", "a stray comment with nobody chosen");
+
+    const row = await env.DB.prepare("SELECT * FROM task_action_events WHERE task_id = 't1'").first();
+    expect(row).toBeNull();
+  });
+
+  it("targetUserId with no comment writes the row with a null comment", async () => {
+    const stageId = await seedStage();
+    await handleCreateUser(env.DB, { id: "usr1", email: "a@b.com", name: "Alice" });
+    await handleCreateUser(env.DB, { id: "usr2", email: "b@b.com", name: "Bob" });
+    await handleCreateTask(env.DB, { id: "t1", stageId, userId: "usr1", requiredPermission: "AP.Approve" });
+    await handleCompleteTask(env.DB, "t1", "usr1", null, "usr2");
+
+    const row = await env.DB.prepare(
+      "SELECT action, target_user_id, comment FROM task_action_events WHERE task_id = 't1'"
+    ).first();
+    expect(row).toEqual({ action: "route_to_approver", target_user_id: "usr2", comment: null });
+  });
 });
 
 describe("releasing a claim (decision 0104)", () => {

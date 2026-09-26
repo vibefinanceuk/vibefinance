@@ -1860,7 +1860,7 @@ describe("process instances and stage visits, through the real router (decision 
     const completeRes = await SELF.fetch(`https://example.com/tasks/${codingTask!.id}/complete`, {
       method: "POST",
       headers: { ...authHeaders(), "Content-Type": "application/json" },
-      body: JSON.stringify({ targetUserId: "test-user" }),
+      body: JSON.stringify({ targetUserId: "test-user", comment: "Please check the VAT rate." }),
     });
     expect(completeRes.status).toBe(200);
 
@@ -1868,6 +1868,19 @@ describe("process instances and stage visits, through the real router (decision 
       .prepare("SELECT owner_team_id, owner_user_id, required_permission FROM tasks WHERE stage_id = 'approval'")
       .first<{ owner_team_id: string | null; owner_user_id: string | null; required_permission: string }>();
     expect(approvalTask).toEqual({ owner_team_id: null, owner_user_id: "test-user", required_permission: "AP.Approve" });
+
+    // Decision 0497 — the comment posted alongside targetUserId, all
+    // the way through the real HTTP router this time, not just the
+    // handler tested directly in task-route.test.ts.
+    const event = await env.DB
+      .prepare("SELECT action, target_user_id, comment FROM task_action_events WHERE task_id = ? AND action = 'route_to_approver'")
+      .bind(codingTask!.id)
+      .first();
+    expect(event).toEqual({
+      action: "route_to_approver",
+      target_user_id: "test-user",
+      comment: "Please check the VAT rate.",
+    });
   });
 
   it("a targetUserId posted for an ordinary complete (no Approval Hierarchy stage ahead) is silently ignored, same as any other stray field", async () => {
@@ -1935,6 +1948,22 @@ describe("process instances and stage visits, through the real router (decision 
       .prepare("SELECT owner_team_id, owner_user_id FROM tasks WHERE stage_id = 's2p'")
       .first<{ owner_team_id: string | null; owner_user_id: string | null }>();
     expect(approvalTask).toEqual({ owner_team_id: "ap-team-plain", owner_user_id: null });
+
+    // Decision 0497 — `handleCompleteTask` writes its own event purely
+    // from the request it received (`targetUserId` was posted), before
+    // and independent of the cascade above ever running — the same
+    // "recorded because it was asked, not because it worked" shape
+    // Reassign's own event already has. A real operator can never
+    // reach this exact combination (Route To Approver's button is only
+    // ever offered when the next stage genuinely uses Approval
+    // Hierarchy — task-list-route.ts's own gate), so this is a
+    // deliberately theoretical edge case, checked here rather than
+    // left to be discovered as a surprise.
+    const event = await env.DB
+      .prepare("SELECT action, target_user_id FROM task_action_events WHERE task_id = ? AND action = 'route_to_approver'")
+      .bind(receivedTask!.id)
+      .first();
+    expect(event).toEqual({ action: "route_to_approver", target_user_id: "dana" });
   });
 
   it("a claim/release/claim cycle on a real engine-created task shows its full history in the Timeline — decision 0488", async () => {

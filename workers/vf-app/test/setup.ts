@@ -90,6 +90,7 @@ import stageActionsSql from "../../../migrations/0082_stage_actions.sql?raw";
 import taskActionEventsSql from "../../../migrations/0083_task_action_events.sql?raw";
 import taskActionEventsReassignSql from "../../../migrations/0084_task_action_events_reassign.sql?raw";
 import stageReturnTargetsSql from "../../../migrations/0085_stage_return_targets.sql?raw";
+import taskActionEventsRouteToApproverSql from "../../../migrations/0086_task_action_events_route_to_approver.sql?raw";
 
 // Another known divergence from production, on top of the one below:
 // D1's exec() splits its input by newline and executes each non-empty
@@ -350,6 +351,7 @@ export async function applyTestSchema(): Promise<void> {
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(taskActionEventsSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(taskActionEventsReassignSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(stageReturnTargetsSql)));
+  await env.DB.exec(toOneStatementPerLine(stripSqlComments(taskActionEventsRouteToApproverSql)));
 }
 
 /**

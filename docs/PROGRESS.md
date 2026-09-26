@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 26 September 2026 (decision 0496). A living document: what
+Last updated 26 September 2026 (decision 0497). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,29 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Route To Approver's own optional comment, and picker spacing (0497)
+- **Reported live**, with a mock-up screenshot of the Reassign picker:
+  "add an optional comment box to the Route To Approver box, similar
+  to the Reassign box... insert a little space between the user
+  selection drop-down, and the title of the comments box... make the
+  comments box fixed height, and taller than it is now."
+- Decision 0495 deliberately shipped without one — `handleCompleteTask`
+  (what the picker posts to) didn't store a comment at all, and a box
+  that silently discarded it would have been worse than none. That gap
+  is what this decision closes: `task_action_events` widened again
+  (migration 0086, the same rebuild-the-table pattern reassign's own
+  migration 0084 used) for a new `route_to_approver` action, written
+  only when `targetUserId` is present — so plain "Complete" everywhere
+  else in the app, which sends neither field, is untouched.
+- New Timeline/Chat line, the same shape Reassign's own already has:
+  "{who} routed this to {target}," comment underneath.
+- `.popout .kf + .kf` (spacing) and `.kf textarea` (bordered, fixed
+  140px height, `resize: none`) both scoped to the shared classes, not
+  duplicated per picker — reaching Reassign and Route To Approver at
+  once, and, as a side effect, Return's own reason box and the
+  new-supplier form too, which shared the identical gap.
+- Full reasoning and verification counts in decision 0497.
 
 ### Route To Approver's own candidates route, missing from `vf-ui`'s proxy allowlist (0496)
 - Found by the operator smoke-testing 0495 live: the button rendered,

@@ -1782,11 +1782,14 @@ async function openReturnPicker(task, onClose) {
  * for the same idea, because completing this task is exactly what
  * triggers the cascade a chosen approver needs to reach.
  *
- * **No comment field.** Unlike Reassign's optional one,
- * `handleCompleteTask` does not accept or store a comment at all today
- * (decision 0488's own note: "just the column it will eventually fill
- * in") — offering a box that silently did nothing would be worse than
- * not offering one.
+ * **An optional comment, decision 0497 — asked for directly: "add an
+ * optional comment box to the Route To Approver box, similar to the
+ * Reassign box."** Posted alongside `targetUserId` on the same
+ * `/complete` call; `handleCompleteTask` only writes it (as its own
+ * `route_to_approver` Timeline line, the same shape Reassign's own
+ * comment already takes) when a `targetUserId` came with it — so a
+ * plain Complete elsewhere in the app, which never sends either field,
+ * stays completely unaffected.
  *
  * **Candidates come from the server, not a client-side guess** — `GET
  * /tasks/:id/route-to-approver-candidates` returns exactly who
@@ -1815,6 +1818,7 @@ async function openRouteToApproverPicker(task, onClose) {
     {},
     candidates.map((c) => el("option", { value: c.id, text: c.email ? `${c.name} (${c.email})` : c.name }))
   );
+  const commentBox = el("textarea", { placeholder: t("activity.placeholder") });
   const errorBox = el("div", { class: "warn sm", hidden: "hidden" });
 
   const doRoute = async () => {
@@ -1822,7 +1826,7 @@ async function openRouteToApproverPicker(task, onClose) {
     const response = await fetch(`/api/tasks/${encodeURIComponent(task.id)}/complete`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ targetUserId: select.value }),
+      body: JSON.stringify({ targetUserId: select.value, comment: commentBox.value.trim() || undefined }),
     });
     if (!response.ok) {
       const failure = await response.json().catch(() => ({}));
@@ -1845,6 +1849,7 @@ async function openRouteToApproverPicker(task, onClose) {
   const box = el("div", { class: "popout" }, [
     el("div", { class: "cardhead" }, [el("h3", { text: t("action.route_to_approver") }), stateButtons]),
     labeled("action.route_to_approver.wholabel", select),
+    labeled("action.route_to_approver.commentlabel", commentBox),
     errorBox,
   ]);
 

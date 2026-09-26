@@ -159,9 +159,9 @@ async function taskActionEvents(db: D1Database, invoiceId: string): Promise<Acti
     action: r.action,
     userName: r.user_name,
     comment: r.comment,
-    // Decision 0489: only a reassign ever carries one — the CHECK
-    // constraint on task_action_events.target_user_id already
-    // guarantees that.
+    // Decisions 0489 and 0497: only reassign and route_to_approver
+    // ever carry one — the CHECK constraint on task_action_events'
+    // own invariant (migration 0086) already guarantees that.
     targetUserName: r.target_user_name ?? undefined,
   }));
 }

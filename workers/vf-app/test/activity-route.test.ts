@@ -62,15 +62,15 @@ async function seedOpenTask(taskId: string, visitId: string, stageId: string) {
 }
 
 /**
- * A row in the one genuinely new table decisions 0488/0489 add.
- * `targetUserId` is meaningful only for `reassign` — the one fact
- * that action carries that claim/release do not (migration 0084's own
- * standing invariant).
+ * A row in the one genuinely new table decisions 0488/0489/0497 add.
+ * `targetUserId` is meaningful only for `reassign` and
+ * `route_to_approver` — the one fact those two actions carry that
+ * claim/release do not (migration 0086's own standing invariant).
  */
 async function recordTaskAction(
   eventId: string,
   taskId: string,
-  action: "claim" | "release" | "reassign",
+  action: "claim" | "release" | "reassign" | "route_to_approver",
   actorId: string,
   at: string,
   comment: string | null = null,
@@ -429,6 +429,40 @@ describe("task actions — claim/release/return/discard (decision 0488)", () => 
       action: "reassign",
       userName: "Priya Patel",
       comment: "She knows this supplier.",
+      targetUserName: "Sam Okafor",
+    });
+  });
+
+  /**
+   * Decision 0497 — the same shape as the reassign test directly
+   * above, for the second (and, per migration 0086's own standing
+   * invariant, only other) action that ever names a target user.
+   */
+  it("carries a route_to_approver, naming who it was routed to", async () => {
+    await seedInvoice("inv-1");
+    await seedStage("coding", "Coding");
+    await seedUser("u-priya", "Priya Patel");
+    await seedUser("u-sam", "Sam Okafor");
+    await seedVisit("v-1", "inv-1", "coding", "2026-09-01 09:00:00");
+    await seedOpenTask("t-1", "v-1", "coding");
+    await recordTaskAction(
+      "e-1",
+      "t-1",
+      "route_to_approver",
+      "u-priya",
+      "2026-09-01 09:15:00",
+      "Please check the VAT rate.",
+      "u-sam"
+    );
+
+    const result = await handleGetActivity(env.DB, "inv-1");
+    const items = (result.body as { items: Record<string, unknown>[] }).items;
+    expect(items.find((i) => i.kind === "action_taken")).toEqual({
+      kind: "action_taken",
+      at: "2026-09-01 09:15:00",
+      action: "route_to_approver",
+      userName: "Priya Patel",
+      comment: "Please check the VAT rate.",
       targetUserName: "Sam Okafor",
     });
   });

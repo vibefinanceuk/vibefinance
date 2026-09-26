@@ -5023,9 +5023,10 @@ export default {
       // (viewer.js's own runAction, and this suite's own tests) posts
       // with no body at all, so a missing or unparsable body is not an
       // error here the way it is for /return, whose reason is
-      // mandatory. The generic comment-and-OK/Cancel modal the
-      // operator described is a later, separate decision; this is
-      // just the column it will eventually fill in.
+      // mandatory. Used by `handleClaimTask` from the start; for
+      // `completeTaskMatch` it went unused until decision 0497 gave it
+      // somewhere to go — see `handleCompleteTask`'s own comment for
+      // why that's gated on `targetUserId` rather than unconditional.
       //
       // decision 0495: an optional `targetUserId`, read the same
       // lenient way — Route To Approver's own picker is the only
@@ -5047,7 +5048,7 @@ export default {
 
       const result = claimTaskMatch
         ? await handleClaimTask(db, taskId, auth.user.id, comment)
-        : await handleCompleteTask(db, taskId, auth.user.id);
+        : await handleCompleteTask(db, taskId, auth.user.id, comment, targetUserId);
       // A successful completion may unblock the owning process
       // instance (decision 0019) — checked here, not inside
       // handleCompleteTask itself, to avoid a circular import between

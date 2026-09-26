@@ -180,6 +180,10 @@ const KEYS_THE_INTERFACE_USES = [
   "action.route_to_approver",
   "action.route_to_approver.wholabel",
   "action.route_to_approver.nonefound",
+  // Decision 0497 — Route To Approver's own optional comment, and its
+  // Timeline/Chat line.
+  "action.route_to_approver.commentlabel",
+  "activity.routedtoapprover",
   "rule.notrunning",
   "rule.approvedby",
   "compose.newversion",

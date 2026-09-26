@@ -167,6 +167,7 @@ const STRINGS = {
     "action.return.nonefound": "No return targets are configured for this stage.",
     "action.route_to_approver": "Route To Approver",
     "action.route_to_approver.wholabel": "Route to",
+    "action.route_to_approver.commentlabel": "Comment (optional)",
     "action.route_to_approver.nonefound": "Nobody is set up to approve this yet.",
     "action.whyreason": "Give a reason.",
     "action.ok": "OK",
@@ -1829,7 +1830,17 @@ describe("the actions do something (decision 0138)", () => {
       expect(document.querySelector(".popout")).toBeNull();
     });
 
-    it("carries no comment field at all — handleCompleteTask does not accept or store one", async () => {
+    /**
+     * **An optional comment, decision 0497** — asked for directly:
+     * "add an optional comment box to the Route To Approver box,
+     * similar to the Reassign box." Replaces the earlier "carries no
+     * comment field at all" test, which checked the exact opposite
+     * fact on purpose (`handleCompleteTask` accepted no comment at
+     * all until this decision gave it somewhere to go — see
+     * `handleCompleteTask`'s own comment in `task-route.ts`). The two
+     * tests below mirror Reassign's own pair immediately above.
+     */
+    it("posts the chosen target and comment, and closes the picker on success", async () => {
       const posted: string[] = [];
       const bodies: { path: string; body: unknown }[] = [];
       await openWithRouteToApprover(
@@ -1840,12 +1851,39 @@ describe("the actions do something (decision 0138)", () => {
       click("Route To Approver");
       await settle();
 
-      expect(document.querySelector(".popout textarea")).toBeNull();
+      (document.querySelector(".popout select") as HTMLSelectElement).value = "u-3";
+      (document.querySelector(".popout textarea") as HTMLTextAreaElement).value = "Please check the VAT rate.";
+      (document.querySelector(".popout .actionlink") as HTMLButtonElement).click();
+      await settle();
 
+      expect(posted).toContain("/api/tasks/t-1/complete");
+      expect(bodies).toContainEqual({
+        path: "/api/tasks/t-1/complete",
+        body: { targetUserId: "u-3", comment: "Please check the VAT rate." },
+      });
+      // Completed and routed on — the same "nothing left to show"
+      // close every other action already takes at the end of
+      // runAction().
+      expect(document.querySelector(".popout")).toBeNull();
+    });
+
+    it("sends no comment field when none was typed, not an empty string", async () => {
+      const posted: string[] = [];
+      const bodies: { path: string; body: unknown }[] = [];
+      await openWithRouteToApprover(
+        { "/api/tasks/t-1/route-to-approver-candidates": CANDIDATES, "/api/tasks/t-1/complete": {} },
+        posted,
+        bodies
+      );
+      click("Route To Approver");
+      await settle();
+
+      // Default target (first option), comment left blank.
       (document.querySelector(".popout .actionlink") as HTMLButtonElement).click();
       await settle();
 
       expect(bodies[0]?.body).toEqual({ targetUserId: "u-2" });
+      expect(bodies[0]?.body).not.toHaveProperty("comment");
     });
 
     it("shows the server's error and leaves the picker open to try again", async () => {
