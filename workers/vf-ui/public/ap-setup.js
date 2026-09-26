@@ -860,17 +860,22 @@ function stageRestrictionsTab(problem) {
    * where it already was in the list.
    *
    * **Sized to how many stages actually landed in the run — decision
-   * 0507's own follow-up.** Reported live, against a real org's own
-   * data: most of its stages turned out not to be adjacent offered
-   * ones, so a run of exactly one got wrapped in a `repeat(3, ...)`
-   * grid anyway — a single 1/3-width card floating beside two empty
-   * columns, "some cards are wide, some are full width... some are
-   * narrow." A run of one is never wrapped in a grid at all (full
-   * width, the same as a transitionary stage's own row); a run of two
-   * gets `.stagegrid-2` (two equal columns, nothing left empty); three
-   * or more gets the full three-column grid, where a short trailing
-   * row is the same ordinary "last row not full" a card grid anywhere
-   * else already reads as normal, not broken.
+   * 0507's own follow-up (0508), then corrected again (0509).**
+   * Reported live, against a real org's own data: most of its stages
+   * turned out not to be adjacent offered ones, so a run of exactly
+   * one got wrapped in a `repeat(3, ...)` grid anyway — a single
+   * 1/3-width card floating beside two empty columns, "some cards are
+   * wide, some are full width... some are narrow" (0508's bug). 0508
+   * fixed that by unwrapping a run of one to a plain full-width panel
+   * — which removed the dead space but also threw away the whole
+   * point of the original `/design` brief: "1/3 screen width." A run
+   * of one now gets `.stagegrid-1` instead — still a narrow,
+   * left-aligned card capped to roughly a grid column's width, just
+   * with no reserved-but-empty columns beside it. A run of two gets
+   * `.stagegrid-2` (two equal columns, nothing left empty); three or
+   * more gets the full three-column grid, where a short trailing row
+   * is the same ordinary "last row not full" a card grid anywhere else
+   * already reads as normal, not broken.
    */
   const sections = [];
   let currentGrid = null;
@@ -890,8 +895,7 @@ function stageRestrictionsTab(problem) {
   });
   const stageSections = sections.map((section) => {
     if (!Array.isArray(section)) return section;
-    if (section.length === 1) return section[0];
-    const modifier = section.length === 2 ? " stagegrid-2" : "";
+    const modifier = section.length === 1 ? " stagegrid-1" : section.length === 2 ? " stagegrid-2" : "";
     return el("div", { class: `stagegrid${modifier}` }, section);
   });
 

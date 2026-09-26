@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 26 September 2026 (decision 0508). A living document: what
+Last updated 26 September 2026 (decision 0509). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,28 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Lone offered stages stay narrow (0509)
+- A second look at decision 0508, once its bundle was confirmed pushed
+  and deployed and screenshots of the result were shown: "This result
+  is a regression from the original design." 0508 killed the dead
+  grid-column bug by making a lone offered stage full width again —
+  which also quietly threw away the "1/3 screen width" the original
+  `/design` brief and the approved mock-up both asked for, since the
+  real org's two offered stages (Validation, Coding) aren't adjacent.
+- Confirmed directly with the user (given two consecutive misses on
+  the same screen) that a lone offered stage should stay narrow and
+  left-aligned, not go full width.
+- A run of exactly one offered stage now gets `.stagegrid-1`: a
+  single-column grid capped to roughly a three-column grid's own
+  column width, left-aligned, with nothing reserved-but-empty beside
+  it — narrow like the design, without the dead space 0508 was fixing.
+  Widens in step with the 2-item/3+-item shapes at the existing
+  breakpoints, dropping the cap entirely at 900px like they do.
+- No change to which stages offer restrictions, or to the 2-item /
+  3+-item grid shapes from 0507/0508 — this only touches the 1-item
+  case.
+- Full reasoning and verification counts in decision 0509.
 
 ### Stage grids sized to their actual run length (0508)
 - A regression from decision 0507, reported live with screenshots
