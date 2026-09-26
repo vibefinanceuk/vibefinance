@@ -553,8 +553,8 @@ describe("resolveApprovalTargets — cost_object mode, generalized across dimens
   });
 });
 
-describe("resolveApprovalHierarchy — manual and api modes are named but not built", () => {
-  it("manual mode falls to the Default Approver, never fakes a resolution", async () => {
+describe("resolveApprovalHierarchy — api is named but not built; manual resolves only from a human's own choice (decision 0495)", () => {
+  it("manual mode with nobody manually selected falls to the Default Approver, never fakes a resolution", async () => {
     await env.DB.prepare("UPDATE org_approval_config SET mode = 'manual', default_approver_user_id = 'bob' WHERE id = 1").run();
     const resolution = await resolveApprovalHierarchy(env.DB, {
       instanceId: "inv-1",
@@ -568,6 +568,22 @@ describe("resolveApprovalHierarchy — manual and api modes are named but not bu
       costCentreId: null,
     });
     expect(resolution).toMatchObject({ targetUserId: "bob" });
+  });
+
+  it("manual mode with nobody manually selected and no Default Approver reports unresolved", async () => {
+    await env.DB.prepare("UPDATE org_approval_config SET mode = 'manual', default_approver_user_id = NULL WHERE id = 1").run();
+    const resolution = await resolveApprovalHierarchy(env.DB, {
+      instanceId: "inv-1",
+      processId: "p1",
+      currentSequence: 2,
+      processVersion: 1,
+      lineNumber: 1,
+      unitId: null,
+      currency: "EUR",
+      amount: 1500,
+      costCentreId: null,
+    });
+    expect(resolution).toMatchObject({ unresolved: true });
   });
 
   it("api mode with no Default Approver reports unresolved rather than guessing", async () => {
@@ -584,6 +600,84 @@ describe("resolveApprovalHierarchy — manual and api modes are named but not bu
       costCentreId: null,
     });
     expect(resolution).toMatchObject({ unresolved: true });
+  });
+});
+
+describe("resolveApprovalHierarchy — Route To Approver's own manual selection (decision 0495)", () => {
+  it("uses the manually selected approver directly, over any configured Default Approver", async () => {
+    await env.DB.prepare("UPDATE org_approval_config SET mode = 'manual', default_approver_user_id = 'bob' WHERE id = 1").run();
+    const resolution = await resolveApprovalHierarchy(env.DB, {
+      instanceId: "inv-1",
+      processId: "p1",
+      currentSequence: 2,
+      processVersion: 1,
+      lineNumber: 1,
+      unitId: null,
+      currency: "EUR",
+      amount: 1500,
+      costCentreId: null,
+      manualTargetUserId: "alice",
+    });
+    expect(resolution).toMatchObject({ targetUserId: "alice" });
+  });
+
+  it("reports unresolved when the manually selected user does not exist, rather than trusting the caller blindly", async () => {
+    await env.DB.prepare("UPDATE org_approval_config SET mode = 'manual', default_approver_user_id = 'bob' WHERE id = 1").run();
+    const resolution = await resolveApprovalHierarchy(env.DB, {
+      instanceId: "inv-1",
+      processId: "p1",
+      currentSequence: 2,
+      processVersion: 1,
+      lineNumber: 1,
+      unitId: null,
+      currency: "EUR",
+      amount: 1500,
+      costCentreId: null,
+      manualTargetUserId: "nobody-by-this-id",
+    });
+    expect(resolution).toMatchObject({ unresolved: true });
+  });
+
+  it("ignores manualTargetUserId entirely outside Manual mode — the operator's own words: 'otherwise, no selection of an approver'", async () => {
+    // employee_supervisor is the default mode straight off applyTestSchema
+    // — no explicit UPDATE needed, which is itself part of the point:
+    // this is what an ordinary customer's config already looks like.
+    await handleCreateProcess(env.DB, { id: "p1", name: "AP" });
+    await handleCreateStage(env.DB, "p1", { id: "coding", name: "Coding", sequence: 1, evaluationScope: "line" });
+    await handleCreateStage(env.DB, "p1", { id: "approval", name: "Approval", sequence: 2, evaluationScope: "line" });
+    const created = await handleCreateProcessInstance(env.DB, "p1", { subjectType: "invoice", subjectId: "inv-1" });
+    const instanceId = (created.body as { id: string }).id;
+    const visitId = crypto.randomUUID();
+    await env.DB.prepare(
+      "INSERT INTO stage_visits (id, process_instance_id, stage_id, outcome, created_at) VALUES (?, ?, 'coding', 'matched', datetime('now'))"
+    )
+      .bind(visitId, instanceId)
+      .run();
+    await env.DB.prepare(
+      `INSERT INTO tasks (id, stage_id, stage_visit_id, owner_user_id, required_permission, line_number, completed_by, completed_at)
+       VALUES (?, 'coding', ?, 'alice', 'AP.Code', 1, 'alice', datetime('now'))`
+    )
+      .bind(crypto.randomUUID(), visitId)
+      .run();
+    await env.DB.prepare("INSERT INTO org_authority_limits (user_id, currency, max_amount) VALUES ('alice', 'EUR', 2000)").run();
+
+    // Alice coded the line and her own limit covers it — the
+    // Employee-Supervisor chain's own, correct answer. A manual
+    // approver ("bob") is offered anyway; this mode has its own chain
+    // and must not notice it at all.
+    const resolution = await resolveApprovalHierarchy(env.DB, {
+      instanceId,
+      processId: "p1",
+      currentSequence: 2,
+      processVersion: 1,
+      lineNumber: 1,
+      unitId: null,
+      currency: "EUR",
+      amount: 1500,
+      costCentreId: null,
+      manualTargetUserId: "bob",
+    });
+    expect(resolution).toMatchObject({ targetUserId: "alice" });
   });
 });
 

@@ -212,6 +212,7 @@ import { handleCreateCustomField, handleListCustomFields, loadCustomFields } fro
 import { handleUploadDocument, handleRetrieveDocument, handleMintDocumentUrl } from "./document-route.js";
 import { handleCreateProcessInstance, onTaskCompleted, visitCurrentStage } from "./workflow-engine.js";
 import { handleClaimTask, handleCompleteTask, handleCreateTask, handleReleaseTask, handleReassignTask, handleReassignCandidates } from "./task-route.js";
+import { handleRouteToApproverCandidates } from "./route-to-approver-route.js";
 import type { Permission } from "./permissions.js";
 import { handleRotateUserKey } from "./user-rotate-key-route.js";
 
@@ -735,7 +736,14 @@ function r2Storage(bucket: R2Bucket): PendingDocumentStorage {
  * subject-agnostic, and nothing here assumes what a non-invoice
  * subject's facts even look like.
  */
-async function followUpAfterTaskCompletion(db: D1Database, instanceId: string): Promise<void> {
+async function followUpAfterTaskCompletion(
+  db: D1Database,
+  instanceId: string,
+  // Route To Approver — decision 0495. Passed straight through to
+  // `visitCurrentStage`; see that function's own comment on
+  // `manualApproverUserId` for what it actually changes.
+  manualApproverUserId?: string
+): Promise<void> {
   const instanceRow = await db
     .prepare("SELECT subject_type, subject_id FROM process_instances WHERE id = ?")
     .bind(instanceId)
@@ -749,7 +757,7 @@ async function followUpAfterTaskCompletion(db: D1Database, instanceId: string): 
   const live = await loadLiveInvoiceFacts(db, instanceRow.subject_id);
   if (!live) return;
 
-  const result = await visitCurrentStage(db, instanceId, live.facts, live.lines);
+  const result = await visitCurrentStage(db, instanceId, live.facts, live.lines, false, undefined, manualApproverUserId);
 
   // Decision 0435's own reasoning, restated for this path: a visit
   // that errors out is not the same as one with nothing to say.
@@ -4869,6 +4877,22 @@ export default {
       return json(result.body, result.status);
     }
 
+    // Who a task can be routed to for approval — decision 0495, the
+    // same "read before the picker opens" shape reassign-candidates
+    // above already established. Empty, or 400, whenever the next
+    // stage does not resolve through Approval Hierarchy at all, or
+    // does but the org is not currently configured for Manual mode —
+    // see `handleRouteToApproverCandidates`'s own comment.
+    const routeToApproverCandidatesMatch = pathname.match(/^\/tasks\/([^/]+)\/route-to-approver-candidates$/);
+    if (routeToApproverCandidatesMatch && request.method === "GET") {
+      const { db } = resolveTenant(request, env);
+      const auth = await authenticatePerson(db, request, env);
+      if (!auth.user) return json({ error: auth.reason }, 401);
+
+      const result = await handleRouteToApproverCandidates(db, routeToApproverCandidatesMatch[1], auth.user);
+      return json(result.body, result.status);
+    }
+
     // Reassign — decision 0489. `targetUserId` is mandatory, so this
     // follows /return's own strict-body shape rather than /claim's and
     // /release's lenient one (a missing or unparsable body is a real
@@ -5002,14 +5026,23 @@ export default {
       // mandatory. The generic comment-and-OK/Cancel modal the
       // operator described is a later, separate decision; this is
       // just the column it will eventually fill in.
+      //
+      // decision 0495: an optional `targetUserId`, read the same
+      // lenient way — Route To Approver's own picker is the only
+      // caller that ever sends one, and every existing caller that
+      // posts without it is completely unaffected.
       let comment: string | null = null;
+      let targetUserId: string | undefined;
       try {
         const raw: unknown = await request.json();
         if (raw && typeof raw === "object" && typeof (raw as Record<string, unknown>).comment === "string") {
           comment = (raw as Record<string, unknown>).comment as string;
         }
+        if (raw && typeof raw === "object" && typeof (raw as Record<string, unknown>).targetUserId === "string") {
+          targetUserId = (raw as Record<string, unknown>).targetUserId as string;
+        }
       } catch {
-        // No body, or not JSON — comment stays unset.
+        // No body, or not JSON — comment/targetUserId stay unset.
       }
 
       const result = claimTaskMatch
@@ -5023,7 +5056,14 @@ export default {
       if (completeTaskMatch && result.status === 200) {
         const cascade = await onTaskCompleted(db, taskId);
         if (cascade.needsEvaluationAt) {
-          await followUpAfterTaskCompletion(db, cascade.needsEvaluationAt.instanceId);
+          // `targetUserId` only ever changes anything when the stage
+          // this cascades into resolves through Approval Hierarchy AND
+          // the org is configured for Manual mode — see
+          // `visitCurrentStage`'s own `manualApproverUserId` comment.
+          // A stray value posted for an ordinary complete (no such
+          // stage ahead) is silently ignored, the same as every other
+          // optional field this route already tolerates.
+          await followUpAfterTaskCompletion(db, cascade.needsEvaluationAt.instanceId, targetUserId);
         }
       }
       return json(result.body, result.status);

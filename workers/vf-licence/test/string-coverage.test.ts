@@ -176,6 +176,10 @@ const KEYS_THE_INTERFACE_USES = [
   // Decision 0492 — note()'s own pop-out alert, the one label on its
   // single dismiss button. Shared by all nine of note()'s callers.
   "action.ok",
+  // Decision 0495 — Route To Approver's own picker.
+  "action.route_to_approver",
+  "action.route_to_approver.wholabel",
+  "action.route_to_approver.nonefound",
   "rule.notrunning",
   "rule.approvedby",
   "compose.newversion",

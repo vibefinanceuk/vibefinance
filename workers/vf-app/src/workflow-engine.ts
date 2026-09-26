@@ -375,7 +375,17 @@ export async function handleCreateProcessInstance(
   return { status: 201, body: { id, processId, subjectType, subjectId, currentStageId: firstStage.id, status: "in_progress" } };
 }
 
-async function nextStageInSequence(
+/**
+ * **Exported since decision 0495** — Route To Approver's own
+ * candidate-list route (`handleRouteToApproverCandidates`,
+ * `task-route.ts`) needs to know, from the task someone is completing
+ * right now, whether the stage it leads to is one Approval Hierarchy
+ * will resolve — the identical question this function's own callers
+ * below already ask when actually advancing. One query, not a second
+ * copy of it living in `task-list-route.ts`/`task-route.ts` that could
+ * drift from what completing the task will actually do.
+ */
+export async function nextStageInSequence(
   db: D1Database,
   processId: string,
   currentSequence: number,
@@ -392,9 +402,15 @@ async function nextStageInSequence(
        * A stage removed in v2 is simply absent from v2's membership,
        * so an invoice on v1 still visits it and one on v2 does not —
        * without deleting a row six tables reference.
+       *
+       * **`uses_approval_hierarchy` added — decision 0495.** Every
+       * existing caller below reads it the same way the top-level
+       * stage fetch inside the main loop already does; adding it here
+       * is not a new fact, only the first caller that needed to know
+       * it about the NEXT stage rather than the current one.
        */
       `SELECT s.id, s.process_id, v.sequence, s.rule_set_id, s.evaluation_scope, s.requires_org,
-              s.required_permission
+              s.required_permission, s.uses_approval_hierarchy
        FROM process_stage_versions v
        JOIN process_stages s ON s.id = v.stage_id
        WHERE v.process_id = ? AND v.version = ? AND v.sequence > ?
@@ -425,7 +441,26 @@ export async function visitCurrentStage(
   // linesTruncated: this module never assumes how to load
   // configuration for a given subject_type. Defaults to the platform
   // tolerance so every existing caller is unchanged.
-  validationSettings?: ValidationSettings
+  validationSettings?: ValidationSettings,
+  /**
+   * **Route To Approver's own choice — decision 0495.** Threaded all
+   * the way from `POST /tasks/:id/complete`'s own `targetUserId`
+   * through `index.ts`'s `followUpAfterTaskCompletion`, down to here.
+   * Passed to every `resolveApprovalTargets` call this visit makes
+   * (below); it changes anything only where `org_approval_config`'s
+   * own mode is `"manual"` — see `resolveApprovalHierarchy`'s own
+   * comment on why supplying it otherwise is silently ignored, per
+   * the operator's own words.
+   *
+   * **Applied to the first approval-hierarchy stage this cascade
+   * meets, not every one.** A single call completing one task and
+   * cascading through more than one Approval stage in a row is not a
+   * shape this process model has ever produced, but the guard exists
+   * so one person's own choice for the stage they were actually
+   * shown never silently reapplies to a second, unrelated one further
+   * down the same cascade.
+   */
+  manualApproverUserId?: string
 ): Promise<RouteResult> {
   // Validation runs once, up front, and its results become real
   // derived facts every stage then sees — decision 0044.
@@ -504,6 +539,9 @@ export async function visitCurrentStage(
   let afterValidation: { passed: boolean; failures: string[] } | undefined;
   const currentInstanceId = instance.id;
   let currentStageId = instance.current_stage_id;
+  // Route To Approver — decision 0495. See `manualApproverUserId`'s
+  // own parameter comment above for why this is consumed once.
+  let manualApproverConsumed = false;
 
   for (let i = 0; i < MAX_STAGES_PER_VISIT; i++) {
     const stage = await db
@@ -927,7 +965,13 @@ export async function visitCurrentStage(
           // approval-hierarchy.ts.
           poReferenced: typeof taskFacts["BT-13"] === "string" && taskFacts["BT-13"].trim() !== "",
           collaboratorUserIds,
+          // Route To Approver — decision 0495. Consumed once: the
+          // first approval-hierarchy stage this cascade meets, never
+          // a second one further down the same visit — see this
+          // function's own parameter comment for why.
+          manualTargetUserId: manualApproverConsumed ? undefined : manualApproverUserId,
         });
+        manualApproverConsumed = true;
         // All-or-nothing: a line where even one applicable dimension
         // could not resolve refuses the whole stage visit, the same
         // discipline decision 0439 already applied to a single

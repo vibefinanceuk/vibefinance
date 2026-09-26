@@ -12,12 +12,16 @@ import { hasPermission } from "./enforce.js";
  * through `unitLineage()`, most-specific-wins, exactly the walk rule
  * sets and field visibility already use.
  *
- * **Only Employee-Supervisor and Cost-Object actually resolve
- * anything.** Manual and API are named in `org_approval_config`'s own
- * vocabulary so the setting is complete, not grown one migration at a
- * time (the same choice permissions.ts already made for `AP.Match`
- * and `AP.Code`) — but neither has a resolver yet, and selecting
- * either here reports that plainly rather than faking a result.
+ * **Employee-Supervisor and Cost-Object resolve automatically; Manual
+ * resolves from a human's own choice — decision 0495.** API is still
+ * named only in `org_approval_config`'s own vocabulary so the setting
+ * stays complete, not grown one migration at a time (the same choice
+ * permissions.ts already made for `AP.Match` and `AP.Code`) — no
+ * resolver, reported plainly rather than faked. Manual is different:
+ * it has no chain or hierarchy to walk by design (the operator's own
+ * words, "no selection of an approver" for the other two modes, imply
+ * exactly the opposite for this one), so its "resolution" is Route To
+ * Approver's own picker, threaded in as `manualTargetUserId`.
  */
 
 export interface ApprovalResolution {
@@ -278,6 +282,26 @@ export interface ResolveApprovalParams {
    * this module guessing which one is "the" requester.
    */
   collaboratorUserIds?: string[];
+  /**
+   * **Route To Approver — decision 0495.** The operator's own
+   * clarification: *"Route to Approver should allow manual selection
+   * of an approver, if the AP Setup Approval Hierarchy is set to
+   * Manual. Otherwise, no selection of an approver, and follow the
+   * employee-supervisor or cost-center model."* So this is read only
+   * when `config.mode === "manual"` — supplying it while the org runs
+   * Employee-Supervisor or Cost-Object changes nothing, the same
+   * additive discipline every other optional field on this interface
+   * already keeps. It is the one place a human, rather than a
+   * resolver, supplies the answer.
+   *
+   * Set by `workflow-engine.ts`'s `visitCurrentStage`, threaded all
+   * the way from the operator's own choice on `POST
+   * /tasks/:id/complete`'s `targetUserId` — see that route's own
+   * comment for the full path, and `handleRouteToApproverCandidates`
+   * (`task-route.ts`) for where the candidate list it was chosen from
+   * comes from.
+   */
+  manualTargetUserId?: string;
 }
 
 /**
@@ -475,14 +499,53 @@ export async function resolveApprovalHierarchy(
   if (config.mode === "employee_supervisor") return resolveEmployeeSupervisor(db, config, params);
   if (config.mode === "cost_object") return resolveCostObject(db, config, params);
 
-  // manual / api — named in the vocabulary (org_approval_config's own
-  // CHECK), not built. Never faked as a resolved result.
+  /**
+   * **Manual — decision 0495, the gap this decision fills.** Built
+   * only for the one case the operator described: a human chose an
+   * approver, via Route To Approver's own picker, and that choice
+   * arrives here as `manualTargetUserId`. Existence is checked —
+   * mirroring `handleReassignTask`'s own `targetExists` guard — since
+   * this is the one path where the "who" came from a request body
+   * rather than a query this module trusts. Holding the resulting
+   * task's `required_permission` is deliberately NOT checked here: no
+   * other `assign_task` target (a rule's own `params.user`, an
+   * Employee-Supervisor chain's own escalation) is validated against
+   * it at creation time either — `POST /tasks/:id/complete`'s own
+   * `hasPermission` check is where that has always been enforced, the
+   * same gate a wrongly-chosen approver would meet trying to complete
+   * anything else.
+   *
+   * A `manualTargetUserId` supplied while `config.mode` is something
+   * other than `"manual"` is never read — the operator's own words:
+   * *"Otherwise, no selection of an approver."*
+   */
+  if (config.mode === "manual" && params.manualTargetUserId) {
+    const exists = await db.prepare("SELECT id FROM org_users WHERE id = ?").bind(params.manualTargetUserId).first();
+    if (exists) {
+      return { targetUserId: params.manualTargetUserId, reasoning: "Routed to the manually selected approver." };
+    }
+    return { unresolved: true, reason: `the manually selected approver ${params.manualTargetUserId} does not exist` };
+  }
+
+  // manual (no selection supplied) / api — named in the vocabulary
+  // (org_approval_config's own CHECK). api is still entirely unbuilt;
+  // manual now has a real resolver above, reached only when a human
+  // actually supplied one. Neither is ever faked as a resolved result.
   return config.defaultApproverUserId
     ? {
         targetUserId: config.defaultApproverUserId,
-        reasoning: `${config.mode} routing is not built yet. Sent to the configured Default Approver.`,
+        reasoning:
+          config.mode === "manual"
+            ? "No approver was manually selected. Sent to the configured Default Approver."
+            : `${config.mode} routing is not built yet. Sent to the configured Default Approver.`,
       }
-    : { unresolved: true, reason: `${config.mode} routing is not built yet, and no Default Approver is configured.` };
+    : {
+        unresolved: true,
+        reason:
+          config.mode === "manual"
+            ? "no approver was manually selected, and no Default Approver is configured"
+            : `${config.mode} routing is not built yet, and no Default Approver is configured.`,
+      };
 }
 
 /** Which vocabulary field a dimension's coded value comes from — for callers building `costObjectValues`, not used here. */

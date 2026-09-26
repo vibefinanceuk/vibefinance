@@ -1763,6 +1763,99 @@ async function openReturnPicker(task, onClose) {
 }
 
 /**
+ * Route To Approver — decision 0495, the last of the agreed
+ * Coding-pilot sequence. The same dedicated-picker shape Reassign and
+ * Return already established, not the generic comment-and-OK/Cancel
+ * modal.
+ *
+ * **Only ever offered at all when it would do something.** The
+ * server (`task.actions`) already decided this button exists only
+ * because completing this exact task cascades into a stage that
+ * resolves through Approval Hierarchy while the org is configured for
+ * Manual mode — see `handleRouteToApproverCandidates`'s own comment.
+ * Outside that, plain `complete` is what shows instead, unchanged.
+ *
+ * **Completing IS choosing — there is no second click.** Unlike
+ * Reassign and Return, this never calls a dedicated action route:
+ * picking a name here submits the ordinary `POST /tasks/:id/complete`
+ * with `targetUserId` set, the same field name Reassign already uses
+ * for the same idea, because completing this task is exactly what
+ * triggers the cascade a chosen approver needs to reach.
+ *
+ * **No comment field.** Unlike Reassign's optional one,
+ * `handleCompleteTask` does not accept or store a comment at all today
+ * (decision 0488's own note: "just the column it will eventually fill
+ * in") — offering a box that silently did nothing would be worse than
+ * not offering one.
+ *
+ * **Candidates come from the server, not a client-side guess** — `GET
+ * /tasks/:id/route-to-approver-candidates` returns exactly who
+ * `resolveApprovalHierarchy`'s own manual branch will actually accept
+ * (everyone org-wide holding the next stage's own `required_
+ * permission`), the same "computed by the server" discipline
+ * `openReassignPicker`'s own comment above already states.
+ */
+async function openRouteToApproverPicker(task, onClose) {
+  const response = await fetch(`/api/tasks/${encodeURIComponent(task.id)}/route-to-approver-candidates`);
+  if (!response.ok) {
+    note(t("viewer.actionfailed"));
+    return;
+  }
+  const candidates = (await response.json()).candidates ?? [];
+  if (candidates.length === 0) {
+    note(t("action.route_to_approver.nonefound"));
+    return;
+  }
+
+  const close = () => backdrop.remove();
+  const labeled = (labelKey, input) => el("div", { class: "kf" }, [el("label", { text: t(labelKey) }), input]);
+
+  const select = el(
+    "select",
+    {},
+    candidates.map((c) => el("option", { value: c.id, text: c.email ? `${c.name} (${c.email})` : c.name }))
+  );
+  const errorBox = el("div", { class: "warn sm", hidden: "hidden" });
+
+  const doRoute = async () => {
+    errorBox.hidden = true;
+    const response = await fetch(`/api/tasks/${encodeURIComponent(task.id)}/complete`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ targetUserId: select.value }),
+    });
+    if (!response.ok) {
+      const failure = await response.json().catch(() => ({}));
+      errorBox.hidden = false;
+      errorBox.textContent = failure.error ?? t("viewer.actionfailed");
+      return;
+    }
+    close();
+    // Completed, and routed on — this screen has nothing left to
+    // show, the same "finished or moved" close every other action
+    // already takes at the end of runAction() above.
+    onClose();
+  };
+
+  const stateButtons = el("div", { class: "statebuttons" }, [
+    actionLink("route_to_approver", { onclick: doRoute, primary: true }),
+    actionLink("close", { onclick: close }),
+  ]);
+
+  const box = el("div", { class: "popout" }, [
+    el("div", { class: "cardhead" }, [el("h3", { text: t("action.route_to_approver") }), stateButtons]),
+    labeled("action.route_to_approver.wholabel", select),
+    errorBox,
+  ]);
+
+  const backdrop = el("div", { class: "backdrop" }, [box]);
+  backdrop.onclick = (e) => {
+    if (e.target === backdrop) close();
+  };
+  document.body.append(backdrop);
+}
+
+/**
  * One action: icon above its label, in a row — decision 0122.
  *
  * **Still the server's decision** which appear (decision 0103). Giving
@@ -1861,12 +1954,13 @@ function taskActionButtons(task, onClose) {
       .filter((a) => a !== "key")
       .map((a, index) =>
         actionLink(a, {
-          // **Reassign and Return each open their own small picker
-          // instead of `runAction`'s plain-text-reason prompt —
-          // decisions 0489 and 0490.** Both need something a bare
-          // prompt cannot collect (a real person, or a real stage and
-          // team, chosen from a real list) rather than a free-text
-          // string; the generic comment-and-OK/Cancel modal that would
+          // **Reassign, Return and Route To Approver each open their
+          // own small picker instead of `runAction`'s plain-text-
+          // reason prompt — decisions 0489, 0490 and 0495.** Each
+          // needs something a bare prompt cannot collect (a real
+          // person, a real stage and team, or a real approver — all
+          // chosen from a real list) rather than a free-text string;
+          // the generic comment-and-OK/Cancel modal that would
           // eventually replace these dedicated pickers is its own,
           // later decision.
           onclick: () =>
@@ -1874,7 +1968,9 @@ function taskActionButtons(task, onClose) {
               ? openReassignPicker(task, onClose)
               : a === "return"
                 ? openReturnPicker(task, onClose)
-                : runAction(a, task, onClose),
+                : a === "route_to_approver"
+                  ? openRouteToApproverPicker(task, onClose)
+                  : runAction(a, task, onClose),
           // With nothing to save, the first thing the task offers is
           // what somebody came to do.
           primary: !canEditAnything && index === 0,

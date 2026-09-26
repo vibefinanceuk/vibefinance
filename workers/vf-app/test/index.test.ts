@@ -1785,6 +1785,158 @@ describe("process instances and stage visits, through the real router (decision 
     expect(instanceRow).toEqual({ status: "completed", current_stage_id: "s3" });
   });
 
+  it("Route To Approver — decision 0495: a targetUserId posted to /complete routes the resulting Approval task to that exact person, not the rule's own decoy team", async () => {
+    await seedActivatedRuleSet("rs-coding-manual", {
+      conditions: { field: "BT-112", operator: "greater_than", value: -1 },
+      actions: [{ type: "assign_task", params: { team: "coding-team", permission: "AP.Code" } }],
+    });
+    await seedActivatedRuleSet("rs-approval-manual", {
+      conditions: { field: "BT-112", operator: "greater_than", value: -1 },
+      actions: [{ type: "assign_task", params: { team: "decoy-team", permission: "AP.Approve" } }],
+    });
+    await env.DB.prepare("INSERT INTO org_units (id, name) VALUES ('u-manual', 'Acme France') ON CONFLICT(id) DO NOTHING").run();
+    await SELF.fetch("https://example.com/org/teams", { method: "POST", headers: authHeaders(), body: JSON.stringify({ id: "coding-team", name: "Coding team", unitId: "u-manual" }) });
+    await SELF.fetch("https://example.com/org/teams/coding-team/members", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ userId: "test-user" }),
+    });
+    await SELF.fetch("https://example.com/processes", { method: "POST", headers: authHeaders(), body: JSON.stringify({ id: "p-manual", name: "Manual AP" }) });
+    await SELF.fetch("https://example.com/processes/p-manual/stages", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ id: "coding", name: "Coding", sequence: 1, ruleSetId: "rs-coding-manual" }),
+    });
+    await SELF.fetch("https://example.com/processes/p-manual/stages", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ id: "approval", name: "Approval", sequence: 2, ruleSetId: "rs-approval-manual" }),
+    });
+    await env.DB.prepare("UPDATE process_stages SET uses_approval_hierarchy = 1, required_permission = 'AP.Approve' WHERE id = 'approval'").run();
+    await env.DB.prepare("UPDATE org_approval_config SET mode = 'manual' WHERE id = 1").run();
+    await env.DB.prepare(
+      "INSERT INTO org_users (id, email, name) VALUES ('dana', 'dana@example.com', 'Dana')"
+    ).run();
+    // followUpAfterTaskCompletion (the cascade /complete triggers)
+    // loads the invoice's own real, stored facts — unlike the
+    // explicit /process-instances/:id/visit call below, which takes
+    // facts inline. A real /invoices row is required for the cascade
+    // this test's own /complete call triggers to find anything at all.
+    await SELF.fetch("https://example.com/invoices", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ id: "real-inv-manual", facts: { "BT-112": 3000 } }),
+    });
+
+    const createRes = await SELF.fetch("https://example.com/processes/p-manual/instances", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ subjectType: "invoice", subjectId: "real-inv-manual" }),
+    });
+    const instanceId = (await createRes.json() as { id: string }).id;
+    await SELF.fetch(`https://example.com/process-instances/${instanceId}/visit`, {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ facts: { "BT-112": 3000 } }),
+    });
+
+    const codingTask = await env.DB.prepare("SELECT id FROM tasks WHERE stage_id = 'coding'").first<{ id: string }>();
+    await SELF.fetch(`https://example.com/tasks/${codingTask!.id}/claim`, { method: "POST", headers: authHeaders() });
+
+    // The candidates route, exercised through the real router too —
+    // proof the button a person would actually click reflects the
+    // same list this test then posts against.
+    const candidatesRes = await SELF.fetch(`https://example.com/tasks/${codingTask!.id}/route-to-approver-candidates`, {
+      headers: authHeaders(),
+    });
+    expect(candidatesRes.status).toBe(200);
+    const candidates = ((await candidatesRes.json()) as { candidates: { id: string }[] }).candidates;
+    // test-user holds every known permission (seedFullyAuthorizedUser),
+    // Dana holds none — so test-user, not Dana, is the real candidate
+    // list here. Posted below anyway, to prove the server does not
+    // merely trust whichever id a client sends.
+    expect(candidates.map((c) => c.id)).toEqual(["test-user"]);
+
+    const completeRes = await SELF.fetch(`https://example.com/tasks/${codingTask!.id}/complete`, {
+      method: "POST",
+      headers: { ...authHeaders(), "Content-Type": "application/json" },
+      body: JSON.stringify({ targetUserId: "test-user" }),
+    });
+    expect(completeRes.status).toBe(200);
+
+    const approvalTask = await env.DB
+      .prepare("SELECT owner_team_id, owner_user_id, required_permission FROM tasks WHERE stage_id = 'approval'")
+      .first<{ owner_team_id: string | null; owner_user_id: string | null; required_permission: string }>();
+    expect(approvalTask).toEqual({ owner_team_id: null, owner_user_id: "test-user", required_permission: "AP.Approve" });
+  });
+
+  it("a targetUserId posted for an ordinary complete (no Approval Hierarchy stage ahead) is silently ignored, same as any other stray field", async () => {
+    await seedActivatedRuleSet("rs-received-plain", {
+      conditions: { field: "BT-112", operator: "greater_than", value: -1 },
+      actions: [{ type: "assign_task", params: { team: "ap-team-plain", permission: "AP.Validate" } }],
+    });
+    await seedActivatedRuleSet("rs-plain-complete", {
+      conditions: { field: "BT-112", operator: "greater_than", value: -1 },
+      actions: [{ type: "assign_task", params: { team: "ap-team-plain", permission: "AP.Approve" } }],
+    });
+    await SELF.fetch("https://example.com/processes", { method: "POST", headers: authHeaders(), body: JSON.stringify({ id: "p-plain", name: "Plain AP" }) });
+    await SELF.fetch("https://example.com/processes/p-plain/stages", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ id: "s1p", name: "Received", sequence: 1, ruleSetId: "rs-received-plain" }),
+    });
+    await SELF.fetch("https://example.com/processes/p-plain/stages", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ id: "s2p", name: "Approval", sequence: 2, ruleSetId: "rs-plain-complete" }),
+    });
+    await env.DB.prepare("INSERT INTO org_units (id, name) VALUES ('u1p', 'Acme France') ON CONFLICT(id) DO NOTHING").run();
+    await SELF.fetch("https://example.com/org/teams", { method: "POST", headers: authHeaders(), body: JSON.stringify({ id: "ap-team-plain", name: "AP team", unitId: "u1p" }) });
+    await SELF.fetch("https://example.com/org/teams/ap-team-plain/members", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ userId: "test-user" }),
+    });
+    await env.DB.prepare("INSERT INTO org_users (id, email, name) VALUES ('dana', 'dana@example.com', 'Dana')").run();
+    // followUpAfterTaskCompletion (the cascade /complete triggers)
+    // loads the invoice's own real, stored facts — unlike the
+    // explicit /process-instances/:id/visit call other tests use,
+    // which takes facts inline. A real /invoices row is required for
+    // the cascade to find anything to load at all.
+    await SELF.fetch("https://example.com/invoices", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ id: "real-inv-plain", facts: { "BT-112": 3000 } }),
+    });
+
+    const createRes = await SELF.fetch("https://example.com/processes/p-plain/instances", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ subjectType: "invoice", subjectId: "real-inv-plain" }),
+    });
+    const instanceId = (await createRes.json() as { id: string }).id;
+    await SELF.fetch(`https://example.com/process-instances/${instanceId}/visit`, {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ facts: { "BT-112": 3000 } }),
+    });
+
+    const receivedTask = await env.DB.prepare("SELECT id FROM tasks WHERE stage_id = 's1p'").first<{ id: string }>();
+    await SELF.fetch(`https://example.com/tasks/${receivedTask!.id}/claim`, { method: "POST", headers: authHeaders() });
+    await SELF.fetch(`https://example.com/tasks/${receivedTask!.id}/complete`, {
+      method: "POST",
+      headers: { ...authHeaders(), "Content-Type": "application/json" },
+      body: JSON.stringify({ targetUserId: "dana" }),
+    });
+
+    // The rule's own team wins — 's2p' never uses Approval Hierarchy
+    // at all, so the stray targetUserId is never even consulted.
+    const approvalTask = await env.DB
+      .prepare("SELECT owner_team_id, owner_user_id FROM tasks WHERE stage_id = 's2p'")
+      .first<{ owner_team_id: string | null; owner_user_id: string | null }>();
+    expect(approvalTask).toEqual({ owner_team_id: "ap-team-plain", owner_user_id: null });
+  });
+
   it("a claim/release/claim cycle on a real engine-created task shows its full history in the Timeline — decision 0488", async () => {
     await seedActivatedRuleSet("rs-approval-2", {
       conditions: { field: "BT-112", operator: "greater_than", value: 1000 },

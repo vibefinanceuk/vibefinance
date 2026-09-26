@@ -165,6 +165,9 @@ const STRINGS = {
     "action.return.wholabel": "Return to",
     "action.return.reasonlabel": "Reason",
     "action.return.nonefound": "No return targets are configured for this stage.",
+    "action.route_to_approver": "Route To Approver",
+    "action.route_to_approver.wholabel": "Route to",
+    "action.route_to_approver.nonefound": "Nobody is set up to approve this yet.",
     "action.whyreason": "Give a reason.",
     "action.ok": "OK",
     "viewer.actionfailed": "That could not be done.",
@@ -1717,6 +1720,156 @@ describe("the actions do something (decision 0138)", () => {
       const errorBox = document.querySelector(".popout .warn") as HTMLElement;
       expect(errorBox.hidden).toBe(false);
       expect(errorBox.textContent).toBe("that stage is no longer part of this process");
+      expect(document.querySelector(".popout")).not.toBeNull();
+    });
+  });
+
+  describe("routing to an approver from the picker (decision 0495)", () => {
+    /**
+     * Its own dedicated pop-out, the same shape Reassign's and
+     * Return's own already established. Unlike either of those, there
+     * is no separate action route to capture a POST body for — picking
+     * a name here posts straight to `/complete`, so this stub only
+     * needs to remember what body that specific POST carried.
+     */
+    function stubRouteToApprover(
+      routes: Record<string, unknown> = {},
+      posted: string[] = [],
+      bodies: { path: string; body: unknown }[] = []
+    ) {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (url: string, init?: RequestInit) => {
+          const path = String(url).split("?")[0];
+          if (init?.method === "POST") {
+            posted.push(path);
+            if (init.body) bodies.push({ path, body: JSON.parse(String(init.body)) });
+          }
+          const base: Record<string, unknown> = { ...OPEN, ...routes };
+          if (path in base) return { ok: true, json: async () => base[path] } as Response;
+          if (/^\/api\/invoices\/[^/]+\/pages$/.test(path)) {
+            return { ok: true, json: async () => ({ pages: [] }) } as Response;
+          }
+          if (/^\/api\/documents\/[^/]+\/collaborators$/.test(path)) {
+            return { ok: true, json: async () => ({ collaborators: [] }) } as Response;
+          }
+          throw new Error(`no stub for ${path} — add one, or the test proves nothing`);
+        })
+      );
+    }
+
+    async function openWithRouteToApprover(
+      routes: Record<string, unknown> = {},
+      posted: string[] = [],
+      bodies: { path: string; body: unknown }[] = []
+    ) {
+      stubRouteToApprover(routes, posted, bodies);
+      const { loadStrings } = await import("/strings.js");
+      await loadStrings();
+      const { openViewer } = await import("/viewer.js");
+      // The server offers this INSTEAD of "complete" — decision 0495's
+      // own actionsFor gate — so the fixture reflects that, not both.
+      await openViewer({ ...TASK, actions: ["key", "route_to_approver"] }, () => {});
+      await new Promise((r) => setTimeout(r, 0));
+    }
+
+    const CANDIDATES = {
+      candidates: [
+        { id: "u-2", name: "Priya Shah", email: "priya@example.com" },
+        { id: "u-3", name: "Sam Okafor", email: null },
+      ],
+    };
+
+    it("lists the server's own candidates, not a client guess", async () => {
+      await openWithRouteToApprover({ "/api/tasks/t-1/route-to-approver-candidates": CANDIDATES });
+      click("Route To Approver");
+      await settle();
+
+      const popout = document.querySelector(".popout");
+      expect(popout).not.toBeNull();
+      const options = [...popout!.querySelectorAll("select option")].map((o) => o.textContent);
+      expect(options).toEqual(["Priya Shah (priya@example.com)", "Sam Okafor"]);
+    });
+
+    it("says so with a pop-out alert instead of opening an empty picker when nobody is eligible", async () => {
+      await openWithRouteToApprover({ "/api/tasks/t-1/route-to-approver-candidates": { candidates: [] } });
+      click("Route To Approver");
+      await settle();
+
+      const popout = document.querySelector(".popout.notealert");
+      expect(popout).not.toBeNull();
+      expect(document.getElementById("viewer-note")?.textContent).toBe(
+        "Nobody is set up to approve this yet."
+      );
+
+      (popout!.querySelector(".notealert-ok") as HTMLButtonElement).click();
+      expect(document.querySelector(".popout")).toBeNull();
+    });
+
+    it("posts the chosen target to /complete, not a separate route, and closes the picker on success", async () => {
+      const posted: string[] = [];
+      const bodies: { path: string; body: unknown }[] = [];
+      await openWithRouteToApprover(
+        { "/api/tasks/t-1/route-to-approver-candidates": CANDIDATES, "/api/tasks/t-1/complete": {} },
+        posted,
+        bodies
+      );
+      click("Route To Approver");
+      await settle();
+
+      (document.querySelector(".popout select") as HTMLSelectElement).value = "u-3";
+      (document.querySelector(".popout .actionlink") as HTMLButtonElement).click();
+      await settle();
+
+      expect(posted).toContain("/api/tasks/t-1/complete");
+      expect(bodies).toContainEqual({ path: "/api/tasks/t-1/complete", body: { targetUserId: "u-3" } });
+      // Completed and routed on — the same "nothing left to show"
+      // close every other action already takes at the end of
+      // runAction().
+      expect(document.querySelector(".popout")).toBeNull();
+    });
+
+    it("carries no comment field at all — handleCompleteTask does not accept or store one", async () => {
+      const posted: string[] = [];
+      const bodies: { path: string; body: unknown }[] = [];
+      await openWithRouteToApprover(
+        { "/api/tasks/t-1/route-to-approver-candidates": CANDIDATES, "/api/tasks/t-1/complete": {} },
+        posted,
+        bodies
+      );
+      click("Route To Approver");
+      await settle();
+
+      expect(document.querySelector(".popout textarea")).toBeNull();
+
+      (document.querySelector(".popout .actionlink") as HTMLButtonElement).click();
+      await settle();
+
+      expect(bodies[0]?.body).toEqual({ targetUserId: "u-2" });
+    });
+
+    it("shows the server's error and leaves the picker open to try again", async () => {
+      await openWithRouteToApprover({ "/api/tasks/t-1/route-to-approver-candidates": CANDIDATES });
+      click("Route To Approver");
+      await settle();
+
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (url: string) => {
+          const path = String(url).split("?")[0];
+          if (path === "/api/tasks/t-1/complete") {
+            return { ok: false, json: async () => ({ error: "task is already completed" }) } as Response;
+          }
+          throw new Error(`no stub for ${path} in the failure override`);
+        })
+      );
+
+      (document.querySelector(".popout .actionlink") as HTMLButtonElement).click();
+      await settle();
+
+      const errorBox = document.querySelector(".popout .warn") as HTMLElement;
+      expect(errorBox.hidden).toBe(false);
+      expect(errorBox.textContent).toBe("task is already completed");
       expect(document.querySelector(".popout")).not.toBeNull();
     });
   });

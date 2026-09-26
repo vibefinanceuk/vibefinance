@@ -1,5 +1,7 @@
 import { unitsBeneath } from "./enforce.js";
 import type { RouteResult } from "./org-route.js";
+import { nextStageInSequence } from "./workflow-engine.js";
+import { loadApprovalConfig } from "./approval-hierarchy.js";
 
 /**
  * Listing a person's tasks — decision 0103.
@@ -56,7 +58,16 @@ export type TaskAction =
   | "claim"
   | "complete"
   | "release"
-  | "reassign";
+  | "reassign"
+  /**
+   * Complete, but pick who it goes to — decision 0495. Offered
+   * INSTEAD OF `complete`, never alongside it, and only when
+   * completing this exact task would cascade into a stage that
+   * resolves through Approval Hierarchy while the org is configured
+   * for Manual mode — see `routeToApproverOffered` below. Every other
+   * task keeps seeing plain `complete`, unchanged.
+   */
+  | "route_to_approver";
 
 export interface TaskRow {
   id: string;
@@ -119,6 +130,15 @@ interface Raw {
   owner_name: string | null;
   created_at: string;
   instance_id: string | null;
+  /**
+   * This task's own stage sequence and process version — decision
+   * 0495. Only fetched for the `routeToApproverOffered` lookahead
+   * below, alongside `process_id` above; `null` for anything not part
+   * of a real process instance (nothing today, but `s`/`pi` are both
+   * LEFT JOINs).
+   */
+  stage_sequence: number | null;
+  process_version: number | null;
   subject_type: string | null;
   subject_id: string | null;
   supplier_vat_id: string | null;
@@ -172,7 +192,16 @@ function ownershipOf(row: Raw, userId: string): Ownership {
 function actionsFor(
   row: Raw,
   ownership: Ownership,
-  permissions: Set<string>
+  permissions: Set<string>,
+  /**
+   * **Decision 0495.** `true` only when completing THIS task cascades
+   * into a stage that resolves through Approval Hierarchy while the
+   * org is configured for Manual mode — computed by
+   * `routeToApproverOffered` below, once per distinct (process,
+   * stage, version) rather than re-derived per row. Swaps `complete`
+   * for `route_to_approver`; every other action is unaffected.
+   */
+  offerRouteToApprover = false
 ): TaskAction[] {
   // Locked by somebody else, or belonging to a team but not yet taken:
   // nothing can be acted on until it is this person's.
@@ -199,7 +228,7 @@ function actionsFor(
   // permission, which is what the task itself demands.
   if (!permissions.has(row.required_permission)) return [];
 
-  const actions: TaskAction[] = ["complete"];
+  const actions: TaskAction[] = [offerRouteToApprover ? "route_to_approver" : "complete"];
   // Only a CLAIM can be released, or reassigned (decision 0489, the
   // same guard as release for the same reason) — a task assigned to a
   // person directly has neither: it is theirs by assignment, and
@@ -215,6 +244,29 @@ function actionsFor(
   if (permissions.has("AP.ReturnToSupplier")) actions.push("return_to_supplier");
   if (permissions.has("AP.Discard")) actions.push("discard");
   return actions;
+}
+
+/**
+ * Whether completing a task should offer Route To Approver instead of
+ * plain Complete — decision 0495.
+ *
+ * **Cached by the caller, not by this function.** Every task on the
+ * same stage, in the same process version, gets the identical
+ * answer — a list can easily hold forty rows on three or four
+ * distinct stages between them, and asking `nextStageInSequence`
+ * forty times for what is at most four real questions would be the
+ * same "computed once, and only where it is needed" waste
+ * `visitCurrentStage`'s own `collaboratorUserIds` comment already
+ * warns against.
+ */
+async function routeToApproverOffered(
+  db: D1Database,
+  processId: string,
+  stageSequence: number,
+  processVersion: number
+): Promise<boolean> {
+  const next = await nextStageInSequence(db, processId, stageSequence, processVersion);
+  return Boolean(next?.uses_approval_hierarchy);
 }
 
 export interface TaskListOptions {
@@ -582,9 +634,9 @@ export async function handleListMyTasks(
          claimer.email AS claimed_by_email,
          owner.email AS owner_email,
          owner.name AS owner_name,
-         s.name AS stage_name, s.process_id,
+         s.name AS stage_name, s.process_id, s.sequence AS stage_sequence,
          v.process_instance_id AS instance_id,
-         pi.subject_type, pi.subject_id,
+         pi.subject_type, pi.subject_id, pi.process_version,
          h.supplier_vat_id, h.currency, h.issue_date, h.total_with_vat, h.facts_json,
          h.org_unit_id
        ${joins}
@@ -598,8 +650,34 @@ export async function handleListMyTasks(
     .bind(...baseBinds, options.ownership ?? null, limit, offset)
     .all<Raw>();
 
-  const tasks: TaskRow[] = rows.results.map((row) => {
+  /**
+   * **Read once, only if it could possibly matter — decision 0495.**
+   * Route To Approver never applies at all unless the org is
+   * configured for Manual mode, so a customer on Employee-Supervisor
+   * or Cost-Object (every customer today) pays no extra query here.
+   * Further narrowed to "at least one row this person could complete"
+   * before it is even considered — a manager looking only at Locked
+   * or Available work triggers nothing further.
+   */
+  const anyMine = rows.results.some((row) => ownershipOf(row, userId) === "mine");
+  const approvalMode = anyMine ? (await loadApprovalConfig(db)).mode : null;
+  const routeToApproverCache = new Map<string, boolean>();
+
+  const tasks: TaskRow[] = [];
+  for (const row of rows.results) {
     const ownership = ownershipOf(row, userId);
+
+    let offerRouteToApprover = false;
+    if (approvalMode === "manual" && ownership === "mine" && row.process_id && row.stage_sequence !== null && row.process_version !== null) {
+      const cacheKey = `${row.process_id}|${row.stage_sequence}|${row.process_version}`;
+      if (!routeToApproverCache.has(cacheKey)) {
+        routeToApproverCache.set(
+          cacheKey,
+          await routeToApproverOffered(db, row.process_id, row.stage_sequence, row.process_version)
+        );
+      }
+      offerRouteToApprover = routeToApproverCache.get(cacheKey) ?? false;
+    }
 
     const task: TaskRow = {
       id: row.id,
@@ -609,7 +687,7 @@ export async function handleListMyTasks(
       requiredPermission: row.required_permission,
       orgUnitId: row.org_unit_id,
       ownership,
-      actions: actionsFor(row, ownership, permissions),
+      actions: actionsFor(row, ownership, permissions, offerRouteToApprover),
       createdAt: row.created_at,
       instanceId: row.instance_id,
       /**
@@ -699,8 +777,8 @@ export async function handleListMyTasks(
       };
     }
 
-    return task;
-  });
+    tasks.push(task);
+  }
 
   /**
    * **Work somebody may not do is work they should not be shown** —

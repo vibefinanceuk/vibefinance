@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 25 September 2026 (decision 0494). A living document: what
+Last updated 26 September 2026 (decision 0495). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,39 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Route To Approver, conditional on Manual mode (0495)
+- **Reported live**, arriving as a direct correction to a research
+  pass's own first conclusion: "Route to Approver should allow manual
+  selection of an approver, if the AP Setup Approval Hierarchy is set
+  to Manual. Otherwise, no selection of an approver, and follow the
+  employee-supervisor or cost-center model."
+- The fifth and last item of the Coding-pilot sequence (0487): Timeline
+  entries (0488), Reassign (0489), Return-target configuration (0490),
+  a generic comment modal (never built — Reassign/Return each got a
+  dedicated picker instead), Route To Approver.
+- Resolution already happens exactly once, synchronously, the moment
+  the PRIOR stage's task is completed (`visitCurrentStage`'s own
+  `assign_task` → Approval Hierarchy dispatch, unchanged since 0439) —
+  so "Route To Approver" is offered on that prior task and **replaces
+  `complete`**, never sits beside it, exactly when the next stage uses
+  Approval Hierarchy and the org is on Manual mode right now.
+- Picking a name doesn't post to a new route — it posts the ordinary
+  `POST /tasks/:id/complete` with an added `targetUserId`, the same
+  field name Reassign already uses, threaded through to
+  `resolveApprovalHierarchy`'s new manual branch and consumed once per
+  cascade.
+- Candidates are every org-wide holder of the next stage's own
+  `required_permission` — settled directly with the operator, since
+  Manual mode has no unit or hierarchy to scope a picker by. One
+  `json_each` query against role permissions, not a per-user
+  `hasPermission` loop.
+- No comment field (`handleCompleteTask` doesn't store one today,
+  unchanged); no re-validation that the chosen approver holds the
+  resulting task's permission at resolution time (consistent with
+  every other `assign_task` target — `POST /complete`'s own gate is
+  where that's always been enforced).
+- Full reasoning and verification counts in decision 0495.
 
 ### The supplier search pop-out's own actions, moved to the corner (0494)
 - **Reported live**: "There are two buttons on the pop-out, Record

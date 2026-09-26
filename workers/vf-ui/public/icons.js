@@ -349,6 +349,18 @@ export const ICONS = {
   reassign:
     '<circle cx="17" cy="7" r="3"/><path d="M13 18a4 4 0 0 1 8 0"/><path d="M3 11h7m0 0-3-3m3 3-3 3"/>',
   /**
+   * **A person, with a checkmark badge — decision 0495.** Not
+   * `reassign`'s own arrow-into-a-person: Route To Approver hands
+   * nothing over and unlocks nothing, it names who Approval Hierarchy
+   * should treat as chosen, the same "confirming this is settled"
+   * meaning `done`'s own checkmark already carries, composed onto a
+   * person the same way `recordsupplier`'s own document-plus-badge
+   * already composes onto a document — the app's own established
+   * "base shape + offset badge" convention, not a new one.
+   */
+  route_to_approver:
+    '<circle cx="9" cy="7" r="3"/><path d="M4 19a5 5 0 0 1 10 0"/><path d="M16 15l2 2 4-4"/>',
+  /**
    * **Up, out of a tray — decision 0349.** The visual mirror of
    * `save`/`create`'s own down-arrow-into-a-tray: those persist what
    * is on screen; this sends a draft out to become the live version,

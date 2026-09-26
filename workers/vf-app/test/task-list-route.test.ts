@@ -370,6 +370,57 @@ describe("what a person may do with a task (decision 0103)", () => {
   });
 });
 
+describe("route_to_approver replaces complete when it applies — decision 0495", () => {
+  it("offers route_to_approver instead of complete when the next stage needs Manual approval routing", async () => {
+    await env.DB.prepare("UPDATE process_stages SET uses_approval_hierarchy = 1, required_permission = 'AP.Approve' WHERE id = 'approval'").run();
+    await env.DB.prepare("UPDATE org_approval_config SET mode = 'manual' WHERE id = 1").run();
+    await grant("alice", ["AP.Validate"]);
+    await seedInstance("inv-1", "validation", "v-1");
+    await seedTask("t-1", "validation", "v-1", { user: "alice" });
+
+    const actions = (await list("alice"))[0].actions;
+    expect(actions).toContain("route_to_approver");
+    expect(actions).not.toContain("complete");
+  });
+
+  it("offers plain complete, unchanged, when the org is not configured for Manual mode", async () => {
+    await env.DB.prepare("UPDATE process_stages SET uses_approval_hierarchy = 1, required_permission = 'AP.Approve' WHERE id = 'approval'").run();
+    // employee_supervisor is applyTestSchema's own default.
+    await grant("alice", ["AP.Validate"]);
+    await seedInstance("inv-1", "validation", "v-1");
+    await seedTask("t-1", "validation", "v-1", { user: "alice" });
+
+    const actions = (await list("alice"))[0].actions;
+    expect(actions).toContain("complete");
+    expect(actions).not.toContain("route_to_approver");
+  });
+
+  it("offers plain complete, unchanged, when the next stage does not use Approval Hierarchy at all", async () => {
+    await env.DB.prepare("UPDATE org_approval_config SET mode = 'manual' WHERE id = 1").run();
+    await grant("alice", ["AP.Validate"]);
+    await seedInstance("inv-1", "validation", "v-1");
+    await seedTask("t-1", "validation", "v-1", { user: "alice" });
+
+    const actions = (await list("alice"))[0].actions;
+    expect(actions).toContain("complete");
+    expect(actions).not.toContain("route_to_approver");
+  });
+
+  it("never offers route_to_approver on a task that is not yet theirs (available/locked)", async () => {
+    await env.DB.prepare("UPDATE process_stages SET uses_approval_hierarchy = 1, required_permission = 'AP.Approve' WHERE id = 'approval'").run();
+    await env.DB.prepare("UPDATE org_approval_config SET mode = 'manual' WHERE id = 1").run();
+    await grant("alice", ["AP.Validate"]);
+    await grant("sarah", ["AP.Validate"]);
+    await seedInstance("inv-1", "validation", "v-1");
+    // Unclaimed team task — "available" to both, "mine" to neither.
+    await seedTask("t-1", "validation", "v-1", { team: "ap" });
+
+    const actions = (await list("alice"))[0].actions;
+    expect(actions).toEqual(["claim"]);
+    expect(actions).not.toContain("route_to_approver");
+  });
+});
+
 describe("filtering, because a real queue is not thirty rows", () => {
   async function seedAcross() {
     await grant("alice", ["AP.Validate", "AP.Approve"]);

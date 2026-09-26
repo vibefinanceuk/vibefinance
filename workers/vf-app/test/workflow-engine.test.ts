@@ -320,6 +320,79 @@ describe("visitCurrentStage — a stage marked uses_approval_hierarchy resolves 
   });
 });
 
+describe("visitCurrentStage — manualApproverUserId, decision 0495's own Route To Approver threading", () => {
+  async function seedManualApprovalStage(): Promise<{ instanceId: string }> {
+    await handleCreateProcess(env.DB, { id: "p1", name: "AP" });
+    await handleCreateUser(env.DB, { id: "alice", email: "alice@acme.com", name: "Alice" });
+    await handleCreateUser(env.DB, { id: "dana", email: "dana@acme.com", name: "Dana" });
+    await env.DB.prepare("UPDATE org_approval_config SET mode = 'manual' WHERE id = 1").run();
+    // Automatic — no rule set, so Coding spawns nothing and the call
+    // cascades straight through to Approval, the same shape the other
+    // describe blocks in this file already use for a resolver with no
+    // starting point of its own.
+    await handleCreateStage(env.DB, "p1", { id: "coding", name: "Coding", sequence: 1 });
+    await seedRuleSet("rs-approval", {
+      conditions: { field: "BT-131", operator: "greater_than", value: -1 },
+      actions: [{ type: "assign_task", params: { team: "decoy-team", permission: "AP.Approve" } }],
+    });
+    await handleCreateStage(env.DB, "p1", { id: "approval", name: "Approval", sequence: 2, ruleSetId: "rs-approval", evaluationScope: "line" });
+    await env.DB.prepare("UPDATE process_stages SET uses_approval_hierarchy = 1 WHERE id = 'approval'").run();
+
+    const created = await handleCreateProcessInstance(env.DB, "p1", { subjectType: "invoice", subjectId: "inv-1" });
+    return { instanceId: (created.body as { id: string }).id };
+  }
+
+  it("routes to the manually chosen approver, ignoring the decoy team the rule itself names", async () => {
+    const { instanceId } = await seedManualApprovalStage();
+    const lines = [{ lineNumber: 1, "BT-131": 5000, "BT-5": "EUR" }];
+
+    await visitCurrentStage(env.DB, instanceId, { "BT-5": "EUR" }, lines, false, undefined, "dana");
+
+    const approvalTask = await env.DB
+      .prepare("SELECT owner_team_id, owner_user_id, required_permission FROM tasks WHERE stage_id = 'approval'")
+      .first<{ owner_team_id: string | null; owner_user_id: string | null; required_permission: string }>();
+    expect(approvalTask).toEqual({ owner_team_id: null, owner_user_id: "dana", required_permission: "AP.Approve" });
+  });
+
+  it("409s exactly as before when nobody was manually chosen and no Default Approver is configured", async () => {
+    const { instanceId } = await seedManualApprovalStage();
+    const lines = [{ lineNumber: 1, "BT-131": 5000, "BT-5": "EUR" }];
+
+    const result = await visitCurrentStage(env.DB, instanceId, { "BT-5": "EUR" }, lines);
+    expect(result.status).toBe(409);
+  });
+
+  it("ignores an unrelated manualApproverUserId when the stage does not use Approval Hierarchy at all", async () => {
+    await handleCreateProcess(env.DB, { id: "p2", name: "Simple" });
+    await handleCreateUser(env.DB, { id: "dana", email: "dana@acme.com", name: "Dana" });
+    await env.DB.prepare("INSERT INTO org_units (id, name) VALUES ('u1', 'Acme France') ON CONFLICT(id) DO NOTHING").run();
+    await handleCreateTeam(env.DB, { id: "decoy-team", name: "Decoy", unitId: "u1" });
+    await seedRuleSet("rs-plain", {
+      conditions: { field: "BT-131", operator: "greater_than", value: -1 },
+      actions: [{ type: "assign_task", params: { team: "decoy-team", permission: "AP.Approve" } }],
+    });
+    await handleCreateStage(env.DB, "p2", { id: "plain", name: "Plain", sequence: 1, ruleSetId: "rs-plain", evaluationScope: "line" });
+    const created = await handleCreateProcessInstance(env.DB, "p2", { subjectType: "invoice", subjectId: "inv-2" });
+    const instanceId = (created.body as { id: string }).id;
+
+    await visitCurrentStage(
+      env.DB,
+      instanceId,
+      { "BT-5": "EUR" },
+      [{ lineNumber: 1, "BT-131": 5000, "BT-5": "EUR" }],
+      false,
+      undefined,
+      "dana"
+    );
+
+    // The rule's own team still wins — no uses_approval_hierarchy
+    // flag on this stage means manualApproverUserId is never even
+    // looked at.
+    const task = await env.DB.prepare("SELECT owner_team_id, owner_user_id FROM tasks WHERE stage_id = 'plain'").first();
+    expect(task).toEqual({ owner_team_id: "decoy-team", owner_user_id: null });
+  });
+});
+
 describe("visitCurrentStage — Non-PO Approval routing feeds resolveApprovalTargets its collaborators (decisions 0468/0469/0471)", () => {
   async function seedApprovalStage(): Promise<{ instanceId: string }> {
     await handleCreateProcess(env.DB, { id: "p1", name: "AP" });
