@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 26 September 2026 (decision 0506). A living document: what
+Last updated 26 September 2026 (decision 0507). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,34 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Stage Restrictions as a 3-column grid (0507)
+- Reported live, from a `/design` mock-up made against the real
+  screen's own content: with Standard AP selected, seven full-width
+  stage cards stacked "gets very deep in the browser page," and could
+  "potentially be 1/3 screen width."
+- Every stage that offers Account Coding restrictions (migration 0081:
+  Validation, Matching, Coding, Approval, AP Review in the real
+  process) now sits in a 3-column grid instead of a full-width column;
+  a transitionary stage that doesn't (Intake, Payment Eligible) stays
+  full width, condensed to one row — its explanation and its three
+  toggles (decisions 0485/0487/0502) beside each other rather than
+  stacked. Grouped by scanning stage order rather than split into two
+  fixed lists, so a transitionary stage anywhere in the sequence still
+  breaks the grid in the right place.
+- A stage's own editable-field checkboxes (decision 0483) now wrap as
+  chips instead of one full-width row each — three short labels never
+  needed a row apiece, and a grid card a third of the screen's width
+  has even less room to give them one.
+- **Add return target (decision 0490) moved from an always-open inline
+  form to a picker** — the same `.backdrop`/`.popout` shape `viewer.js`
+  already uses for Discard and Return — freeing the space a 1/3-width
+  card no longer has for a two-select-plus-button form sitting open by
+  default. Behaviour is unchanged: same route, same reload on success,
+  same real error shown inline (in the picker now) on failure.
+- No server-side change — this is a pure layout/interaction pass over
+  data the screen already had.
+- Full reasoning and verification counts in decision 0507.
 
 ### `.vtimeline` respects `hidden` again (0506)
 - A regression from decision 0504, minutes earlier: giving

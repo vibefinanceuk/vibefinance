@@ -467,6 +467,69 @@ function returnReasonsTab(problem) {
   ]);
 }
 
+/**
+ * **Add return target — decision 0507.** The same minimal
+ * `.backdrop`/`.popout` shape `viewer.js`'s own Discard and Return
+ * pickers already use (`openDiscardPicker`), in place of the inline
+ * two-select-plus-button form that used to sit, always visible, inside
+ * every stage's own card. That form is what a 1/3-width grid card no
+ * longer has room for — this is the space decision 0507 freed up.
+ *
+ * Behaviour is unchanged from the form it replaces: still
+ * `addStageReturnTarget`, still reloads the stage list on success,
+ * still leaves the picker open with a real, server-given error on
+ * failure — decision 0490's own "leaves the add-row form usable" now
+ * means the picker rather than the row.
+ */
+function openReturnTargetPicker(stage, otherStages, teams, problem) {
+  const close = () => backdrop.remove();
+
+  const targetStagePicker = el("select", {}, otherStages.map((s) => el("option", { value: s.id, text: s.name })));
+  const teamPicker = el("select", {}, teams.map((tm) => el("option", { value: tm.id, text: tm.name })));
+  const errorBox = el("div", { class: "warn sm", hidden: "hidden" });
+
+  const doAdd = async () => {
+    errorBox.hidden = true;
+    try {
+      const response = await addStageReturnTarget(stage.id, targetStagePicker.value, teamPicker.value);
+      if (!response.ok) {
+        errorBox.hidden = false;
+        errorBox.textContent = (await response.json()).error ?? t("apsetup.stagerestrictions.savefailed");
+        return;
+      }
+      close();
+      problem.textContent = "";
+      await loadStageRestrictions(stageRestrictionsProcessId);
+      render();
+    } catch {
+      errorBox.hidden = false;
+      errorBox.textContent = t("apsetup.stagerestrictions.savefailed");
+    }
+  };
+
+  const stateButtons = el("div", { class: "statebuttons" }, [
+    actionLink("create", { label: t("apsetup.add"), onclick: doAdd, primary: true }),
+    actionLink("close", { onclick: close }),
+  ]);
+
+  const box = el("div", { class: "popout" }, [
+    el("div", { class: "cardhead" }, [el("h3", { text: t("apsetup.stagerestrictions.returntargetsheading") }), stateButtons]),
+    el("div", { class: "editgrid" }, [
+      el("label", { text: t("apsetup.stagerestrictions.targetstage") }),
+      targetStagePicker,
+      el("label", { text: t("apsetup.stagerestrictions.returnteam") }),
+      teamPicker,
+    ]),
+    errorBox,
+  ]);
+
+  const backdrop = el("div", { class: "backdrop" }, [box]);
+  backdrop.onclick = (e) => {
+    if (e.target === backdrop) close();
+  };
+  document.body.append(backdrop);
+}
+
 function stageRestrictionsTab(problem) {
   const intro = el("p", { class: "muted sm", text: t("apsetup.stagerestrictions.sub") });
 
@@ -630,28 +693,6 @@ function stageRestrictionsTab(problem) {
     const teams = stageRestrictionsDetail.teams ?? [];
     const hasAddOptions = otherStages.length > 0 && teams.length > 0;
 
-    const targetStagePicker = el("select", {}, otherStages.map((s) => el("option", { value: s.id, text: s.name })));
-    const teamPicker = el("select", {}, teams.map((tm) => el("option", { value: tm.id, text: tm.name })));
-
-    const addTargetBtn = actionLink("create", {
-      primary: true,
-      label: t("apsetup.add"),
-      onclick: async () => {
-        problem.textContent = "";
-        try {
-          const response = await addStageReturnTarget(stage.id, targetStagePicker.value, teamPicker.value);
-          if (!response.ok) {
-            problem.textContent = (await response.json()).error ?? t("apsetup.stagerestrictions.savefailed");
-            return;
-          }
-          await loadStageRestrictions(stageRestrictionsProcessId);
-          render();
-        } catch {
-          problem.textContent = t("apsetup.stagerestrictions.savefailed");
-        }
-      },
-    });
-
     const targetRows = (stage.returnTargets ?? []).map((target) =>
       el("div", { class: "assignmentrow" }, [
         el("span", { text: `${target.targetStageName} — ${target.teamName}` }),
@@ -678,6 +719,12 @@ function stageRestrictionsTab(problem) {
     // A flat array, not a wrapping div — the same shape the Account
     // Coding fields section above returns, so `.sectionlabel`'s own
     // top margin does the only spacing job needed between sections.
+    //
+    // **The add-row form is now a picker, not an always-open form —
+    // decision 0507.** `otherStages`/`teams` are re-read fresh at click
+    // time (`openReturnTargetPicker`'s own arguments), same values this
+    // closure already computed above; nothing about when the picker is
+    // even offered has changed.
     const returnTargetsSection = [
       el("div", { class: "sectionlabel", text: t("apsetup.stagerestrictions.returntargetsheading") }),
       el("p", { class: "muted sm", text: t("apsetup.stagerestrictions.returntargetshint") }),
@@ -688,25 +735,37 @@ function stageRestrictionsTab(problem) {
       ),
       ...(hasAddOptions
         ? [
-            el("div", { class: "editgrid" }, [
-              el("label", { text: t("apsetup.stagerestrictions.targetstage") }),
-              targetStagePicker,
-              el("label", { text: t("apsetup.stagerestrictions.returnteam") }),
-              teamPicker,
+            el("div", { class: "statebuttons" }, [
+              actionLink("create", {
+                label: t("apsetup.add"),
+                onclick: () => openReturnTargetPicker(stage, otherStages, teams, problem),
+              }),
             ]),
-            el("div", { class: "statebuttons" }, [addTargetBtn]),
           ]
         : []),
     ];
 
     const fields = stageFieldVisibility[stage.id] ?? [];
 
+    /**
+     * **A transitionary stage's own condensed row — decision 0507.**
+     * Intake and Payment Eligible (migration 0081) never had a fields
+     * section at all — this branch already skipped straight to the
+     * three toggles — so the only room to save here is giving them one
+     * line instead of three: name, badge and the "not configurable"
+     * explanation stay in `.cardhead`/inline, and the toggles that
+     * still apply regardless of `offered` (decisions 0485/0487/0502)
+     * sit beside them rather than stacked beneath. Return targets
+     * (decision 0490) are unchanged — a transitionary stage can still
+     * be a real place to send a document back to, and that section is
+     * shared with the `offered` branch below rather than duplicated.
+     */
     const body = !offered
       ? [
-          el("p", { class: "muted sm", text: t("apsetup.stagerestrictions.notoffered") }),
-          offerToggleRow,
-          reverifyToggleRow,
-          discardToggleRow,
+          el("div", { class: "stageslimrow" }, [
+            el("p", { class: "muted sm", text: t("apsetup.stagerestrictions.notoffered") }),
+            el("div", { class: "stageslimtoggles" }, [offerToggleRow, reverifyToggleRow, discardToggleRow]),
+          ]),
           ...returnTargetsSection,
         ]
       : (() => {
@@ -720,7 +779,10 @@ function stageRestrictionsTab(problem) {
             // explains rather than offering a checkbox that could
             // never do anything.
             if (resolved?.visibility === "hidden" && resolved.decidedBy !== "stage") {
-              return el("div", { class: "assignmentrow" }, [
+              // `fieldhidden` widens this one row to the chip row's
+              // full width (below) — its own hint line needs the room
+              // a same-width chip does not have.
+              return el("div", { class: "assignmentrow fieldhidden" }, [
                 el("div", {}, [
                   el("span", { text: label }),
                   el("p", { class: "muted sm", text: `${t("apsetup.stagerestrictions.hiddeneverywhere")}` }),
@@ -755,9 +817,16 @@ function stageRestrictionsTab(problem) {
             ]);
           });
 
+          // **Wrapping chips, not one full-width row per field —
+          // decision 0507.** Three short labels never needed a row
+          // each; a grid card a third of the screen's width has even
+          // less room to give them one. Each row keeps its own
+          // `.assignmentrow` class and `stagerestrict-` id — nothing
+          // about what a field row *is* changed, only the container
+          // that used to stack them.
           return [
             el("div", { class: "sectionlabel", text: t("apsetup.stagerestrictions.fieldsheading") }),
-            el("div", { class: "assignmentlist" }, rows),
+            el("div", { class: "stagefields" }, rows),
             el("p", { class: "muted sm", text: t("apsetup.stagerestrictions.fieldshint") }),
             offerToggleRow,
             reverifyToggleRow,
@@ -766,7 +835,7 @@ function stageRestrictionsTab(problem) {
           ];
         })();
 
-    return el("div", { class: "panel" }, [
+    return el("div", { class: offered ? "panel" : "panel stageslim" }, [
       el("div", { class: "cardhead" }, [
         el("h3", { text: stage.name }),
         el("span", { class: "stagebadge", text: stage.ruleSetName ?? t("processes.automatic") }),
@@ -775,7 +844,41 @@ function stageRestrictionsTab(problem) {
     ]);
   });
 
-  return el("div", {}, [intro, ...(processPicker ? [processPicker] : []), ...stagePanels, problem]);
+  /**
+   * **A 3-column grid for every stage that offers Account Coding
+   * restrictions, full width for the ones that don't — decision 0507.**
+   * Reported live, from the operator's own screenshot after `/design`
+   * mocked this up: "the configuration cards on display here... could
+   * potentially be 1/3 screen width... 7 stages which gets very deep."
+   *
+   * Grouped rather than split into two fixed lists, so stage order
+   * (`stageRestrictionsDetail.stages`, already sequence order) is never
+   * disturbed: consecutive offered stages share one grid, and a
+   * transitionary stage — Intake, Payment Eligible, migration 0081 —
+   * breaks it and sits full width on its own `.stageslim` row, exactly
+   * where it already was in the list.
+   */
+  const sections = [];
+  let currentGrid = null;
+  stageRestrictionsDetail.stages.forEach((stage, i) => {
+    const offered = stage.offerFieldRestrictions !== false;
+    const panel = stagePanels[i];
+    if (offered) {
+      if (!currentGrid) {
+        currentGrid = [];
+        sections.push(currentGrid);
+      }
+      currentGrid.push(panel);
+    } else {
+      currentGrid = null;
+      sections.push(panel);
+    }
+  });
+  const stageSections = sections.map((section) =>
+    Array.isArray(section) ? el("div", { class: "stagegrid" }, section) : section
+  );
+
+  return el("div", {}, [intro, ...(processPicker ? [processPicker] : []), ...stageSections, problem]);
 }
 
 /**

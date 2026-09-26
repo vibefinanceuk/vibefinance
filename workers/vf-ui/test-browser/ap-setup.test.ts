@@ -1450,6 +1450,142 @@ describe("Stage Restrictions (decision 0483)", () => {
   });
 
   /**
+   * **The 3-column grid — decision 0507.** Reported live, from the
+   * operator's own screenshot after `/design` mocked this up: "the
+   * configuration cards on display here... could potentially be 1/3
+   * screen width... 7 stages which gets very deep." A stage that
+   * offers Account Coding restrictions becomes a grid item; a
+   * transitionary one (`offerFieldRestrictions: false`, migration
+   * 0081 — Intake, Payment Eligible in the real process) stays full
+   * width, since it has too little content to earn a third of a row.
+   */
+  describe("The 3-column grid — decision 0507", () => {
+    const MIXED_STAGES_DETAIL = {
+      id: "ap",
+      name: "AP",
+      version: 1,
+      stages: [
+        {
+          id: "intake",
+          name: "Intake",
+          sequence: 1,
+          ruleSetId: null,
+          ruleSetName: null,
+          evaluationScope: "header",
+          offerFieldRestrictions: false,
+          returnTargets: [],
+        },
+        {
+          id: "validation",
+          name: "Validation",
+          sequence: 2,
+          ruleSetId: "rs1",
+          ruleSetName: "Validation Rules",
+          evaluationScope: "header",
+          offerFieldRestrictions: true,
+          returnTargets: [],
+        },
+        {
+          id: "matching",
+          name: "Matching",
+          sequence: 3,
+          ruleSetId: null,
+          ruleSetName: null,
+          evaluationScope: "header",
+          offerFieldRestrictions: true,
+          returnTargets: [],
+        },
+        {
+          id: "payment-eligible",
+          name: "Payment Eligible",
+          sequence: 4,
+          ruleSetId: null,
+          ruleSetName: null,
+          evaluationScope: "header",
+          offerFieldRestrictions: false,
+          returnTargets: [],
+        },
+      ],
+      draft: null,
+    };
+
+    function stagePanelNamed(name: string): Element {
+      const panel = [...document.querySelectorAll(".panel")].find((p) => p.querySelector("h3")?.textContent === name);
+      if (!panel) throw new Error(`no panel found for stage "${name}"`);
+      return panel;
+    }
+
+    it("groups consecutive offered stages into one grid, and gives each transitionary stage a full-width row of its own", async () => {
+      await openApSetupAs(["Admin.Configure"], EMPTY_OVERVIEW, EMPTY_CONFIG, {
+        "/api/processes": ONE_PROCESS,
+        "/api/processes/ap": MIXED_STAGES_DETAIL,
+        "/api/field-visibility": { stageId: "validation", fields: [], derived: {} },
+      });
+      switchTab("Stage Restrictions");
+
+      const intake = stagePanelNamed("Intake");
+      const validation = stagePanelNamed("Validation");
+      const matching = stagePanelNamed("Matching");
+      const paymentEligible = stagePanelNamed("Payment Eligible");
+
+      expect(intake.classList.contains("stageslim")).toBe(true);
+      expect(paymentEligible.classList.contains("stageslim")).toBe(true);
+      expect(validation.classList.contains("stageslim")).toBe(false);
+      expect(matching.classList.contains("stageslim")).toBe(false);
+
+      // Validation and Matching are consecutive offered stages, so they
+      // share one grid — the same element, not two separate ones.
+      expect(validation.parentElement).toBe(matching.parentElement);
+      expect(validation.parentElement?.classList.contains("stagegrid")).toBe(true);
+
+      // A transitionary stage sits outside any grid — full width, in
+      // its own place in the page, not pulled into a 1/3-width column.
+      expect(intake.parentElement?.classList.contains("stagegrid")).toBe(false);
+      expect(paymentEligible.parentElement?.classList.contains("stagegrid")).toBe(false);
+    });
+
+    it("puts an offered stage's editable fields in a wrapping chip row, not one row each", async () => {
+      await openApSetupAs(
+        ["Admin.Configure"],
+        EMPTY_OVERVIEW,
+        EMPTY_CONFIG,
+        stageRestrictionsRoutes([
+          codingField("coding.project", "edit", "customer"),
+          codingField("coding.commodity_code", "edit", "customer"),
+          codingField("coding.gl_code", "edit", "customer"),
+        ])
+      );
+      switchTab("Stage Restrictions");
+
+      const panel = stagePanel();
+      const chips = panel.querySelector(".stagefields");
+      expect(chips).toBeTruthy();
+      expect(chips?.querySelectorAll(".assignmentrow").length).toBe(3);
+    });
+
+    it("puts a transitionary stage's three toggles on one row beside its explanation, rather than stacked beneath it", async () => {
+      await openApSetupAs(
+        ["Admin.Configure"],
+        EMPTY_OVERVIEW,
+        EMPTY_CONFIG,
+        stageRestrictionsRoutes([], {
+          "/api/processes/ap": {
+            ...ONE_STAGE_DETAIL,
+            stages: [{ ...ONE_STAGE_DETAIL.stages[0], offerFieldRestrictions: false }],
+          },
+        })
+      );
+      switchTab("Stage Restrictions");
+
+      const panel = stagePanel();
+      expect(panel.classList.contains("stageslim")).toBe(true);
+      const toggles = panel.querySelector(".stageslimtoggles");
+      expect(toggles).toBeTruthy();
+      expect(toggles?.querySelectorAll("input[type=checkbox]").length).toBe(3);
+    });
+  });
+
+  /**
    * **Return targets — decision 0490.** The curated list `viewer.js`'s
    * own Return picker reads from — sitting outside the `offered`
    * branch, same reason as `reverifyToggleRow` right above it: a stage
@@ -1499,7 +1635,7 @@ describe("Stage Restrictions (decision 0483)", () => {
       expect(panel.querySelector(".editgrid")).toBeNull();
     });
 
-    it("shows the add-row form, offering every other stage and every team, once both exist", async () => {
+    it("opens a picker offering every other stage and every team, once both exist", async () => {
       await openApSetupAs(
         ["Admin.Configure"],
         EMPTY_OVERVIEW,
@@ -1509,7 +1645,14 @@ describe("Stage Restrictions (decision 0483)", () => {
       switchTab("Stage Restrictions");
 
       const panel = panelNamed("Validation");
-      const selects = [...panel.querySelectorAll(".editgrid select")] as HTMLSelectElement[];
+      const openButton = [...panel.querySelectorAll(".statebuttons .actionlink")].find((b) => b.textContent?.includes("Add"));
+      (openButton as HTMLButtonElement).click();
+
+      // The picker lives in its own `.backdrop`/`.popout`, decision
+      // 0507's own replacement for the inline two-select-plus-button
+      // form this used to sit inside the panel as — the same shape
+      // `viewer.js`'s own Discard and Return pickers already use.
+      const selects = [...document.querySelectorAll(".popout .editgrid select")] as HTMLSelectElement[];
       expect(selects.length).toBe(2);
       // Validation's own picker offers Coding — the other stage — never itself.
       expect([...selects[0].options].map((o) => o.textContent)).toEqual(["Coding"]);
@@ -1566,10 +1709,13 @@ describe("Stage Restrictions (decision 0483)", () => {
       switchTab("Stage Restrictions");
 
       const panel = panelNamed("Validation");
-      const selects = [...panel.querySelectorAll(".editgrid select")] as HTMLSelectElement[];
+      const openButton = [...panel.querySelectorAll(".statebuttons .actionlink")].find((b) => b.textContent?.includes("Add"));
+      (openButton as HTMLButtonElement).click();
+
+      const selects = [...document.querySelectorAll(".popout .editgrid select")] as HTMLSelectElement[];
       selects[0].value = "coding";
       selects[1].value = "team-coding";
-      const addButton = [...panel.querySelectorAll(".statebuttons .actionlink")].find((b) => b.textContent?.includes("Add"));
+      const addButton = [...document.querySelectorAll(".popout .statebuttons .actionlink")].find((b) => b.textContent?.includes("Add"));
       await addButton?.click();
       await new Promise((r) => setTimeout(r, 0));
 
@@ -1577,6 +1723,9 @@ describe("Stage Restrictions (decision 0483)", () => {
       const post = calls.find(([url, init]) => url === "/api/processes/stages/validation/return-targets" && init?.method === "POST");
       expect(post).toBeTruthy();
       expect(JSON.parse(post![1].body as string)).toEqual({ targetStageId: "coding", teamId: "team-coding" });
+      // The picker closes on success, the same way every other pop-out
+      // on this screen already does (`openDiscardPicker`, viewer.js).
+      expect(document.querySelector(".backdrop")).toBeNull();
     });
 
     it("removing a target DELETEs it by id, then reloads the list", async () => {
@@ -1609,7 +1758,7 @@ describe("Stage Restrictions (decision 0483)", () => {
       expect(calls.some(([url, init]) => url === "/api/processes/stages/return-targets/rt1" && init?.method === "DELETE")).toBe(true);
     });
 
-    it("shows a real error, and leaves the add-row form usable, when adding a target fails", async () => {
+    it("shows a real error, and leaves the picker usable, when adding a target fails", async () => {
       await openApSetupAs(
         ["Admin.Configure"],
         EMPTY_OVERVIEW,
@@ -1626,11 +1775,20 @@ describe("Stage Restrictions (decision 0483)", () => {
       switchTab("Stage Restrictions");
 
       const panel = panelNamed("Validation");
-      const addButton = [...panel.querySelectorAll(".statebuttons .actionlink")].find((b) => b.textContent?.includes("Add"));
+      const openButton = [...panel.querySelectorAll(".statebuttons .actionlink")].find((b) => b.textContent?.includes("Add"));
+      (openButton as HTMLButtonElement).click();
+
+      const addButton = [...document.querySelectorAll(".popout .statebuttons .actionlink")].find((b) => b.textContent?.includes("Add"));
       await addButton?.click();
       await new Promise((r) => setTimeout(r, 0));
 
-      expect(document.body.textContent).toContain("that pair is already configured");
+      // Same shape as `openDiscardPicker`'s own failure test
+      // (viewer.test.ts): the error shows inside the popout itself, and
+      // the popout stays open rather than closing on a failed save.
+      const errorBox = document.querySelector(".popout .warn") as HTMLElement;
+      expect(errorBox.hidden).toBe(false);
+      expect(errorBox.textContent).toBe("that pair is already configured");
+      expect(document.querySelector(".backdrop")).not.toBeNull();
     });
 
     it("shows a real error when removing a target fails", async () => {
@@ -1665,6 +1823,45 @@ describe("Stage Restrictions (decision 0483)", () => {
 
       expect(document.body.textContent).toContain("no return target rt1");
     });
+  });
+});
+
+/**
+ * **The Stage Restrictions grid's own CSS — decision 0507.** jsdom
+ * applies no real CSS (`vitest.browser.config.ts`), so — the same
+ * pattern `viewer.test.ts`'s own decision 0479/0504/0506 tests already
+ * use — these read `app.css`'s raw text via `virtual:stylesheets`
+ * rather than asserting on computed styles.
+ */
+describe("The Stage Restrictions grid's own CSS — decision 0507", () => {
+  it("lays the grid out as three equal columns, narrowing at smaller widths", async () => {
+    const css = (await import("virtual:stylesheets")).default["app.css"];
+    const gridRule = css.slice(css.indexOf(".stagegrid {"), css.indexOf(".stagegrid {") + 400);
+
+    expect(gridRule).toContain("display: grid;");
+    expect(gridRule).toContain("grid-template-columns: repeat(3, minmax(0, 1fr));");
+    expect(css).toContain(".stagegrid > .panel { margin-bottom: 0; }");
+    expect(css).toMatch(/@media \(max-width: 1400px\) \{\s*\.stagegrid \{ grid-template-columns: repeat\(2, minmax\(0, 1fr\)\); \}/);
+    expect(css).toMatch(/@media \(max-width: 900px\) \{\s*\.stagegrid \{ grid-template-columns: minmax\(0, 1fr\); \}/);
+  });
+
+  it("wraps a stage's editable-field checkboxes as a flexible row of chips", async () => {
+    const css = (await import("virtual:stylesheets")).default["app.css"];
+    const rule = css.slice(css.indexOf(".stagefields {"), css.indexOf(".stagefields {") + 300);
+
+    expect(rule).toContain("display: flex;");
+    expect(rule).toContain("flex-wrap: wrap;");
+    expect(css).toContain(".stagefields .assignmentrow {");
+    expect(css).toContain(".stagefields .fieldhidden { flex-basis: 100%; }");
+  });
+
+  it("puts a transitionary stage's three toggles on one flexible row", async () => {
+    const css = (await import("virtual:stylesheets")).default["app.css"];
+    const rule = css.slice(css.indexOf(".stageslimtoggles {"), css.indexOf(".stageslimtoggles {") + 200);
+
+    expect(rule).toContain("display: flex;");
+    expect(rule).toContain("flex-wrap: wrap;");
+    expect(css).toContain(".stageslimtoggles .assignmentrow {");
   });
 });
 

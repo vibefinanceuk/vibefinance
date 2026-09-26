@@ -1368,6 +1368,92 @@
   }
 
   /*
+    **Stage Restrictions as a 3-column grid — decision 0507.** Reported
+    live, from the operator's own screenshot after `/design` mocked it
+    up: "the configuration cards on display here... could potentially
+    be 1/3 screen width... 7 stages which gets very deep in the browser
+    page." Every stage that offers Account Coding restrictions
+    (`.panel`, unchanged) becomes a grid item instead of a full-width
+    block in a column; a stage that does not (`.stageslim`, below)
+    stays full width — grouping it into the grid would leave two of
+    its three columns empty for the sake of one condensed row.
+
+    **`.stagegrid > .panel { margin-bottom: 0 }`, the same rule
+    `.parties > .panel` already gives its own grid (decision 0179)** —
+    a panel's own bottom margin is right for a stack and wrong once the
+    grid's own `gap` is already spacing every card.
+  */
+  .stagegrid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 14px;
+    margin: 0 0 14px;
+  }
+  .stagegrid > .panel { margin-bottom: 0; }
+
+  @media (max-width: 1400px) {
+    .stagegrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+  @media (max-width: 900px) {
+    .stagegrid { grid-template-columns: minmax(0, 1fr); }
+  }
+
+  /*
+    **A transitionary stage's own condensed row — decision 0507.**
+    Intake and Payment Eligible (migration 0081) offer no Account
+    Coding fields at all — `apsetup.stagerestrictions.notoffered` was,
+    until now, still given a whole panel's worth of vertical stacking
+    to say so. The explanation and the three toggles that still apply
+    regardless of `offerFieldRestrictions` (decisions 0485/0487/0502)
+    now share one flexible row instead.
+  */
+  .panel.stageslim { padding: 12px 18px; }
+  .panel.stageslim > .cardhead { margin-bottom: 6px; }
+  .stageslimrow {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px 24px;
+  }
+  .stageslimrow > p { margin: 0; flex: 1 1 240px; }
+  .stageslimtoggles {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 4px 20px;
+  }
+  .stageslimtoggles .assignmentrow {
+    border-bottom: none;
+    padding: 0;
+    width: auto;
+  }
+
+  /*
+    **Editable-field checkboxes as wrapping chips, not one full-width
+    row each — decision 0507.** Three short labels (Project, Commodity
+    code, General ledger code) never needed a whole row apiece; a grid
+    card a third of the screen's width has even less reason to give
+    them one. Each row keeps `.assignmentrow` and its own
+    `stagerestrict-` id — only the container that used to stack them
+    changed, so nothing that finds a field by that row already breaks.
+  */
+  .stagefields {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 18px;
+    margin: 6px 0 4px;
+  }
+  .stagefields .assignmentrow {
+    border-bottom: none;
+    padding: 2px 0;
+    width: auto;
+  }
+  /* A field hidden everywhere carries its own hint line beneath the
+     label — the one field row here that still needs the chip row's
+     full width rather than sharing a line with its neighbours. */
+  .stagefields .fieldhidden { flex-basis: 100%; }
+
+  /*
     **The one-time API key display — decision 0328.** Monospace so
     the characters are unambiguous to copy correctly; read-only, not
     disabled, so the value can still be selected and copied.
