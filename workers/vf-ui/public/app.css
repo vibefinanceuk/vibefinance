@@ -1368,20 +1368,32 @@
   }
 
   /*
-    **Stage Restrictions as a 3-column grid — decision 0507.** Reported
-    live, from the operator's own screenshot after `/design` mocked it
-    up: "the configuration cards on display here... could potentially
-    be 1/3 screen width... 7 stages which gets very deep in the browser
-    page." Every stage that offers Account Coding restrictions
-    (`.panel`, unchanged) becomes a grid item instead of a full-width
-    block in a column; a stage that does not (`.stageslim`, below)
-    stays full width — grouping it into the grid would leave two of
-    its three columns empty for the sake of one condensed row.
+    **Stage Restrictions as one shared 3-column grid — decision 0507,
+    rebuilt as 0510.** Reported live, from the operator's own
+    screenshot after `/design` mocked it up: "the configuration cards
+    on display here... could potentially be 1/3 screen width... 7
+    stages which gets very deep in the browser page."
 
-    **`.stagegrid > .panel { margin-bottom: 0 }`, the same rule
-    `.parties > .panel` already gives its own grid (decision 0179)** —
-    a panel's own bottom margin is right for a stack and wrong once the
-    grid's own `gap` is already spacing every card.
+    **0507 through 0509 only put a stage that offers Account Coding
+    restrictions in the grid**, leaving a transitionary one
+    (`.stageslim`, below) full width — each round re-litigating how to
+    size a run of offered stages that had no adjacent partner, because
+    a lone card never shares a row with anything regardless of its own
+    width. **0510 drops the distinction entirely**: every stage card,
+    `.panel` or `.stageslim` alike, is a plain grid item here, in
+    stage order, with nothing sorted by `offerFieldRestrictions` for
+    layout purposes any more (`ap-setup.js` no longer branches on it
+    when building this list) — asked for directly, once the alternating
+    "Intake is wide, Validation is narrow, Matching is wide, Coding is
+    narrow" look of the run-based version, achieving no depth reduction
+    for a real org whose offered stages never landed next to each
+    other, was pointed out live against the deployed result.
+
+    **`.stagegrid > .panel { margin-bottom: 0 }` and its `.stageslim`
+    twin below**, the same rule `.parties > .panel` already gives its
+    own grid (decision 0179) — a card's own bottom margin is right for
+    a stack and wrong once the grid's own `gap` is already spacing
+    every card.
   */
   .stagegrid {
     display: grid;
@@ -1391,52 +1403,24 @@
   }
   .stagegrid > .panel { margin-bottom: 0; }
 
-  /*
-    **Sized to how many stages actually landed in it — decision 0507's
-    own follow-up (0508), corrected again (0509).** A run of exactly
-    two gets `.stagegrid-2` instead of the bare three-column grid, so
-    both columns are actually used rather than one filled and one
-    empty.
-
-    A run of exactly one gets `.stagegrid-1`: 0508 first tried
-    unwrapping it to a plain full-width `.panel` to kill the dead
-    columns a lone card left beside it ("some cards are wide, some are
-    full width... some are narrow," reported live against a real org's
-    own data) — but that also abandoned the original `/design` brief's
-    own ask, "1/3 screen width." `.stagegrid-1` keeps the card narrow
-    and left-aligned — `max-width` capped to a three-column grid's own
-    column width, rather than a grid with reserved-but-empty tracks
-    beside it. The higher-specificity `1400px`/`900px` rules below
-    widen it in step with the other shapes' own breakpoints, then drop
-    the cap entirely at `900px` — the same width every other shape
-    collapses to there.
-  */
-  .stagegrid.stagegrid-1 {
-    grid-template-columns: minmax(0, 1fr);
-    max-width: calc((100% - 28px) / 3);
-  }
-  .stagegrid.stagegrid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-
   @media (max-width: 1400px) {
     .stagegrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-    .stagegrid.stagegrid-1 { max-width: calc((100% - 14px) / 2); }
   }
   @media (max-width: 900px) {
-    .stagegrid,
-    .stagegrid.stagegrid-2 {
-      grid-template-columns: minmax(0, 1fr);
-    }
-    .stagegrid.stagegrid-1 { max-width: none; }
+    .stagegrid { grid-template-columns: minmax(0, 1fr); }
   }
 
   /*
-    **A transitionary stage's own condensed row — decision 0507.**
-    Intake and Payment Eligible (migration 0081) offer no Account
-    Coding fields at all — `apsetup.stagerestrictions.notoffered` was,
-    until now, still given a whole panel's worth of vertical stacking
-    to say so. The explanation and the three toggles that still apply
-    regardless of `offerFieldRestrictions` (decisions 0485/0487/0502)
-    now share one flexible row instead.
+    **A transitionary stage's own condensed content — decision 0507,
+    now a grid item like every other stage card (0510).** Intake and
+    Payment Eligible (migration 0081) offer no Account Coding fields at
+    all — `apsetup.stagerestrictions.notoffered` was, until 0507, given
+    a whole panel's worth of vertical stacking to say so. The
+    explanation and the three toggles that still apply regardless of
+    `offerFieldRestrictions` (decisions 0485/0487/0502) share one
+    flexible row instead, which wraps onto two lines rather than one
+    at the narrower width a `.stagegrid` column gives it — still far
+    less than the four stacked lines this replaced.
   */
   .panel.stageslim { padding: 12px 18px; }
   .panel.stageslim > .cardhead { margin-bottom: 6px; }

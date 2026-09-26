@@ -845,59 +845,38 @@ function stageRestrictionsTab(problem) {
   });
 
   /**
-   * **A grid for every *run* of consecutive stages that offer Account
-   * Coding restrictions, full width for the ones that don't — decision
-   * 0507.** Reported live, from the operator's own screenshot after
-   * `/design` mocked this up: "the configuration cards on display
-   * here... could potentially be 1/3 screen width... 7 stages which
-   * gets very deep."
+   * **Every stage card in one shared grid — decision 0510, replacing
+   * 0507/0508/0509's own run-by-run grouping.** Reported live, from
+   * the operator's own screenshot after `/design` mocked this up: "the
+   * configuration cards on display here... could potentially be 1/3
+   * screen width... 7 stages which gets very deep."
    *
-   * Grouped rather than split into two fixed lists, so stage order
-   * (`stageRestrictionsDetail.stages`, already sequence order) is never
-   * disturbed: consecutive offered stages share one grid, and a
-   * transitionary stage — Intake, Payment Eligible, migration 0081 —
-   * breaks it and sits full width on its own `.stageslim` row, exactly
-   * where it already was in the list.
+   * Three rounds of grouping-by-"offered"-run (0507's 3-column grid
+   * for consecutive offered stages with transitionary ones breaking
+   * it full width; 0508 and 0509 each re-sizing a lone run's own grid)
+   * all missed the same thing: a stage sitting alone in its own run
+   * never shares a row with anything else, so narrowing it never saves
+   * a single row of page height — the entire reason "1/3 width" was
+   * asked for in the first place. Against Acme-production's real data
+   * (Validation and Coding the only two offered stages, neither
+   * adjacent to the other), that made every offered stage a floating
+   * narrow card between full-width transitionary rows — "Intake is
+   * wide, Validation is narrow, Matching is wide, Coding is narrow" —
+   * with no depth saved and a look nothing like the mock-up's own
+   * grouped columns.
    *
-   * **Sized to how many stages actually landed in the run — decision
-   * 0507's own follow-up (0508), then corrected again (0509).**
-   * Reported live, against a real org's own data: most of its stages
-   * turned out not to be adjacent offered ones, so a run of exactly
-   * one got wrapped in a `repeat(3, ...)` grid anyway — a single
-   * 1/3-width card floating beside two empty columns, "some cards are
-   * wide, some are full width... some are narrow" (0508's bug). 0508
-   * fixed that by unwrapping a run of one to a plain full-width panel
-   * — which removed the dead space but also threw away the whole
-   * point of the original `/design` brief: "1/3 screen width." A run
-   * of one now gets `.stagegrid-1` instead — still a narrow,
-   * left-aligned card capped to roughly a grid column's width, just
-   * with no reserved-but-empty columns beside it. A run of two gets
-   * `.stagegrid-2` (two equal columns, nothing left empty); three or
-   * more gets the full three-column grid, where a short trailing row
-   * is the same ordinary "last row not full" a card grid anywhere else
-   * already reads as normal, not broken.
+   * Asked directly, given three misses on the same screen: every stage
+   * card — offered or transitionary, `.panel` or `.stageslim` — now
+   * goes into one `.stagegrid`, in stage order, with no per-run
+   * grouping or "offered" branch at all. A short card (a transitionary
+   * stage's single explanatory line plus its three toggles) fits a
+   * narrow column just as well as a long one wraps its own content;
+   * CSS grid wraps all seven into rows of three (fewer as the screen
+   * narrows) the same way any card grid wraps an incomplete trailing
+   * row — normal, not broken, and consistent whether a stage offers
+   * restrictions or not.
    */
-  const sections = [];
-  let currentGrid = null;
-  stageRestrictionsDetail.stages.forEach((stage, i) => {
-    const offered = stage.offerFieldRestrictions !== false;
-    const panel = stagePanels[i];
-    if (offered) {
-      if (!currentGrid) {
-        currentGrid = [];
-        sections.push(currentGrid);
-      }
-      currentGrid.push(panel);
-    } else {
-      currentGrid = null;
-      sections.push(panel);
-    }
-  });
-  const stageSections = sections.map((section) => {
-    if (!Array.isArray(section)) return section;
-    const modifier = section.length === 1 ? " stagegrid-1" : section.length === 2 ? " stagegrid-2" : "";
-    return el("div", { class: `stagegrid${modifier}` }, section);
-  });
+  const stageSections = [el("div", { class: "stagegrid" }, stagePanels)];
 
   return el("div", {}, [intro, ...(processPicker ? [processPicker] : []), ...stageSections, problem]);
 }

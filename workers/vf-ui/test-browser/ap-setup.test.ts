@@ -1450,82 +1450,29 @@ describe("Stage Restrictions (decision 0483)", () => {
   });
 
   /**
-   * **The grid — decision 0507, sized to its own run across two
-   * follow-ups (0508, 0509).** Reported live, from the operator's own
-   * screenshot after `/design` mocked this up: "the configuration
-   * cards on display here... could potentially be 1/3 screen width...
-   * 7 stages which gets very deep." A stage that offers Account Coding
-   * restrictions becomes a grid item; a transitionary one
-   * (`offerFieldRestrictions: false`, migration 0081 — Intake, Payment
-   * Eligible in the real process) stays full width, since it has too
-   * little content to earn a third of a row.
+   * **The grid — decision 0507, rebuilt as one shared grid in 0510.**
+   * Reported live, from the operator's own screenshot after `/design`
+   * mocked this up: "the configuration cards on display here... could
+   * potentially be 1/3 screen width... 7 stages which gets very deep."
    *
-   * **Then reported live again, against a real org's own data**: most
-   * of its stages were not adjacent offered ones, so a run of exactly
-   * one landed in a `repeat(3, ...)` grid anyway — one 1/3-width card
-   * beside two empty columns. "Some cards are wide, some are full
-   * width... some are narrow." 0508 unwrapped a run of one to a plain
-   * full-width panel — no more dead columns, but also no more 1/3
-   * width, which was the entire point of the original brief. 0509
-   * gives it `.stagegrid-1` instead: still capped to roughly a grid
-   * column's width, left-aligned, just with nothing reserved-but-empty
-   * beside it. A run of two gets `.stagegrid-2` rather than a
-   * three-column grid with one column always empty.
+   * 0507 through 0509 each put only a stage that offers Account Coding
+   * restrictions into the grid, leaving a transitionary one full width
+   * — and re-litigated, twice, how to size a run of offered stages
+   * with no adjacent partner, because a lone card never shares a row
+   * with anything regardless of its own width. **0510 drops the
+   * distinction**: every stage card, offered or transitionary, is a
+   * plain item in one `.stagegrid`, in stage order — asked for
+   * directly once the deployed result's "Intake is wide, Validation is
+   * narrow, Matching is wide, Coding is narrow" alternation, achieving
+   * no depth reduction for a real org whose offered stages never sat
+   * next to each other, was pointed out live.
    */
-  describe("The grid — decision 0507", () => {
-    const MIXED_STAGES_DETAIL = {
-      id: "ap",
-      name: "AP",
-      version: 1,
-      stages: [
-        {
-          id: "intake",
-          name: "Intake",
-          sequence: 1,
-          ruleSetId: null,
-          ruleSetName: null,
-          evaluationScope: "header",
-          offerFieldRestrictions: false,
-          returnTargets: [],
-        },
-        {
-          id: "validation",
-          name: "Validation",
-          sequence: 2,
-          ruleSetId: "rs1",
-          ruleSetName: "Validation Rules",
-          evaluationScope: "header",
-          offerFieldRestrictions: true,
-          returnTargets: [],
-        },
-        {
-          id: "matching",
-          name: "Matching",
-          sequence: 3,
-          ruleSetId: null,
-          ruleSetName: null,
-          evaluationScope: "header",
-          offerFieldRestrictions: true,
-          returnTargets: [],
-        },
-        {
-          id: "payment-eligible",
-          name: "Payment Eligible",
-          sequence: 4,
-          ruleSetId: null,
-          ruleSetName: null,
-          evaluationScope: "header",
-          offerFieldRestrictions: false,
-          returnTargets: [],
-        },
-      ],
-      draft: null,
-    };
-
-    // Validation and Coding each offered alone, with a transitionary
-    // stage on every side — the exact shape a real org's own data
-    // turned out to have, and what actually reproduced "some cards are
-    // narrow."
+  describe("The grid — decision 0507, one shared grid as of 0510", () => {
+    // The real Acme-production shape, confirmed live: Validation and
+    // Coding are the only two stages that offer restrictions, and
+    // neither is adjacent to the other — what originally broke 0507's
+    // run-based grid, and what showed 0509's per-run narrowing still
+    // saved no depth for this shape.
     const SCATTERED_STAGES_DETAIL = {
       id: "ap",
       name: "AP",
@@ -1546,39 +1493,7 @@ describe("Stage Restrictions (decision 0483)", () => {
       return panel;
     }
 
-    it("groups consecutive offered stages into a 2-column grid, and gives each transitionary stage a full-width row of its own", async () => {
-      await openApSetupAs(["Admin.Configure"], EMPTY_OVERVIEW, EMPTY_CONFIG, {
-        "/api/processes": ONE_PROCESS,
-        "/api/processes/ap": MIXED_STAGES_DETAIL,
-        "/api/field-visibility": { stageId: "validation", fields: [], derived: {} },
-      });
-      switchTab("Stage Restrictions");
-
-      const intake = stagePanelNamed("Intake");
-      const validation = stagePanelNamed("Validation");
-      const matching = stagePanelNamed("Matching");
-      const paymentEligible = stagePanelNamed("Payment Eligible");
-
-      expect(intake.classList.contains("stageslim")).toBe(true);
-      expect(paymentEligible.classList.contains("stageslim")).toBe(true);
-      expect(validation.classList.contains("stageslim")).toBe(false);
-      expect(matching.classList.contains("stageslim")).toBe(false);
-
-      // Validation and Matching are consecutive offered stages, so they
-      // share one grid — the same element, not two separate ones — and
-      // since there are exactly two of them, it's the 2-column variant,
-      // not the bare 3-column grid with a column always empty.
-      expect(validation.parentElement).toBe(matching.parentElement);
-      expect(validation.parentElement?.classList.contains("stagegrid")).toBe(true);
-      expect(validation.parentElement?.classList.contains("stagegrid-2")).toBe(true);
-
-      // A transitionary stage sits outside any grid — full width, in
-      // its own place in the page, not pulled into a 1/3-width column.
-      expect(intake.parentElement?.classList.contains("stagegrid")).toBe(false);
-      expect(paymentEligible.parentElement?.classList.contains("stagegrid")).toBe(false);
-    });
-
-    it("gives an offered stage its own narrow, left-aligned grid when it isn't adjacent to another one — 1/3 width, not full width, not a lone card with dead columns beside it", async () => {
+    it("puts every stage card — offered or transitionary alike — into the same grid, in stage order, regardless of adjacency", async () => {
       await openApSetupAs(["Admin.Configure"], EMPTY_OVERVIEW, EMPTY_CONFIG, {
         "/api/processes": ONE_PROCESS,
         "/api/processes/ap": SCATTERED_STAGES_DETAIL,
@@ -1592,23 +1507,29 @@ describe("Stage Restrictions (decision 0483)", () => {
       const coding = stagePanelNamed("Coding");
       const approval = stagePanelNamed("Approval");
 
-      // Validation and Coding each offer restrictions, but neither sits
-      // next to another offered stage — so each gets its own
-      // `.stagegrid.stagegrid-1`, not the bare 3-column grid (which
-      // would leave two columns empty) and not a plain full-width
-      // panel (which would abandon the original "1/3 width" brief).
-      expect(validation.parentElement?.classList.contains("stagegrid")).toBe(true);
-      expect(validation.parentElement?.classList.contains("stagegrid-1")).toBe(true);
-      expect(coding.parentElement?.classList.contains("stagegrid")).toBe(true);
-      expect(coding.parentElement?.classList.contains("stagegrid-1")).toBe(true);
-      // Each in its own grid, not sharing one with the other.
-      expect(validation.parentElement).not.toBe(coding.parentElement);
+      // Content still differs by whether the stage offers restrictions
+      // (decision 0507, unchanged) — only where each card is laid out
+      // changes here.
+      expect(intake.classList.contains("stageslim")).toBe(true);
+      expect(matching.classList.contains("stageslim")).toBe(true);
+      expect(approval.classList.contains("stageslim")).toBe(true);
+      expect(validation.classList.contains("stageslim")).toBe(false);
+      expect(coding.classList.contains("stageslim")).toBe(false);
 
-      // The transitionary stages around them are still full width,
-      // outside any grid — unchanged from before.
-      expect(intake.parentElement?.classList.contains("stagegrid")).toBe(false);
-      expect(matching.parentElement?.classList.contains("stagegrid")).toBe(false);
-      expect(approval.parentElement?.classList.contains("stagegrid")).toBe(false);
+      // Every one of the five sits in exactly one shared `.stagegrid`
+      // — not sorted into a grid for offered stages and a separate
+      // full-width slot for transitionary ones.
+      const grid = intake.parentElement;
+      expect(grid?.classList.contains("stagegrid")).toBe(true);
+      expect(validation.parentElement).toBe(grid);
+      expect(matching.parentElement).toBe(grid);
+      expect(coding.parentElement).toBe(grid);
+      expect(approval.parentElement).toBe(grid);
+
+      // Stage order is preserved within that shared grid — the DOM
+      // order CSS grid wraps into rows, not resorted by type.
+      const order = [...grid!.children].map((el) => el.querySelector("h3")?.textContent);
+      expect(order).toEqual(["Intake", "Validation", "Matching", "Coding", "Approval"]);
     });
 
     it("puts an offered stage's editable fields in a wrapping chip row, not one row each", async () => {
@@ -1894,14 +1815,15 @@ describe("Stage Restrictions (decision 0483)", () => {
 });
 
 /**
- * **The Stage Restrictions grid's own CSS — decision 0507, through
- * 0509.** jsdom applies no real CSS (`vitest.browser.config.ts`), so —
- * the same pattern `viewer.test.ts`'s own decision 0479/0504/0506
- * tests already use — these read `app.css`'s raw text via
- * `virtual:stylesheets` rather than asserting on computed styles.
+ * **The Stage Restrictions grid's own CSS — decision 0507, rebuilt as
+ * one shared grid in 0510.** jsdom applies no real CSS
+ * (`vitest.browser.config.ts`), so — the same pattern
+ * `viewer.test.ts`'s own decision 0479/0504/0506 tests already use —
+ * these read `app.css`'s raw text via `virtual:stylesheets` rather
+ * than asserting on computed styles.
  */
 describe("The Stage Restrictions grid's own CSS — decision 0507", () => {
-  it("lays a full (3+) grid out as three equal columns, narrowing at smaller widths", async () => {
+  it("lays every stage card out as three equal columns, narrowing at smaller widths, with no run-based modifier classes any more", async () => {
     const css = (await import("virtual:stylesheets")).default["app.css"];
     const gridRule = css.slice(css.indexOf(".stagegrid {"), css.indexOf(".stagegrid {") + 400);
 
@@ -1909,33 +1831,13 @@ describe("The Stage Restrictions grid's own CSS — decision 0507", () => {
     expect(gridRule).toContain("grid-template-columns: repeat(3, minmax(0, 1fr));");
     expect(css).toContain(".stagegrid > .panel { margin-bottom: 0; }");
     expect(css).toMatch(/@media \(max-width: 1400px\) \{\s*\.stagegrid \{ grid-template-columns: repeat\(2, minmax\(0, 1fr\)\); \}/);
-  });
+    expect(css).toMatch(/@media \(max-width: 900px\) \{\s*\.stagegrid \{ grid-template-columns: minmax\(0, 1fr\); \}/);
 
-  it("gives a 2-item grid two columns, not three with one always empty — decision 0507's own follow-up", async () => {
-    const css = (await import("virtual:stylesheets")).default["app.css"];
-
-    expect(css).toContain(".stagegrid.stagegrid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }");
-    // Both the bare 3-column grid and the 2-column variant collapse to
-    // one column on a narrow screen — the same rule, naming both.
-    const narrowRule = css.slice(css.indexOf("@media (max-width: 900px)"), css.indexOf("@media (max-width: 900px)") + 260);
-    expect(narrowRule).toContain(".stagegrid,");
-    expect(narrowRule).toContain(".stagegrid.stagegrid-2 {");
-    expect(narrowRule).toContain("grid-template-columns: minmax(0, 1fr);");
-  });
-
-  it("keeps a lone offered stage narrow and left-aligned instead of full width — decision 0509", async () => {
-    const css = (await import("virtual:stylesheets")).default["app.css"];
-
-    // Capped to roughly a three-column grid's own column width, not a
-    // grid with two reserved-but-empty tracks beside it, and not a
-    // plain full-width panel (0508's own overcorrection).
-    expect(css).toContain(".stagegrid.stagegrid-1 {\n    grid-template-columns: minmax(0, 1fr);\n    max-width: calc((100% - 28px) / 3);\n  }");
-    // Widens in step with the other shapes at 1400px...
-    expect(css).toMatch(/@media \(max-width: 1400px\) \{[\s\S]*?\.stagegrid\.stagegrid-1 \{ max-width: calc\(\(100% - 14px\) \/ 2\); \}/);
-    // ...and drops the cap entirely at 900px, the same width every
-    // other shape collapses to there.
-    const narrowRule = css.slice(css.indexOf("@media (max-width: 900px)"), css.indexOf("@media (max-width: 900px)") + 260);
-    expect(narrowRule).toContain(".stagegrid.stagegrid-1 { max-width: none; }");
+    // 0507 through 0509's own per-run sizing classes are gone —
+    // decision 0510 puts every stage card in the one shared grid
+    // instead, so there is nothing left to size by run length.
+    expect(css).not.toContain("stagegrid-1");
+    expect(css).not.toContain("stagegrid-2");
   });
 
   it("wraps a stage's editable-field checkboxes as a flexible row of chips", async () => {

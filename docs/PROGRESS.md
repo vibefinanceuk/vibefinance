@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 26 September 2026 (decision 0509). A living document: what
+Last updated 26 September 2026 (decision 0510). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,35 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### One shared grid for every stage card (0510)
+- Reported live, once decision 0509's deployed result was actually
+  looked at: "Intake is wide, Validation is narrow, Matching is wide,
+  Coding is narrow." Asked directly what to do about it, given three
+  rounds of "fixed" already: "Make all cards narrow, a third of
+  available space on the screen."
+- Root cause, missed by all three prior rounds: only a stage that
+  offers Account Coding restrictions ever went in the grid, so a
+  transitionary stage always stayed full width. In the real process,
+  the two offered stages (Validation, Coding) are never adjacent to
+  each other or to each other's own kind under that rule — so no
+  offered stage ever shared a row with anything, meaning narrowing it
+  saved zero page depth, the entire point of the original `/design`
+  brief, while still looking inconsistent.
+- Every stage card — offered or transitionary — is now a plain item in
+  one shared `.stagegrid`, in stage order, with no more branching on
+  `offerFieldRestrictions` for layout. The real 7-stage process now
+  renders in 3 rows instead of 7, every card the same width, no run-
+  based sizing classes left to maintain.
+- **Verified before shipping, not after**: built a throwaway visual
+  harness rendering the real `ap-setup.js` code against the actual
+  Acme-production stage shape with the real `app.css`, screenshotted
+  with a real headless browser — validated against the live
+  screenshots first, then used to confirm this decision's own result
+  before writing it up, rather than asking the operator to check again.
+- No change to any stage's own content (decisions 0483/0485/0487/0490
+  /0502/0507), no server-side change, no new migration.
+- Full reasoning and verification counts in decision 0510.
 
 ### Lone offered stages stay narrow (0509)
 - A second look at decision 0508, once its bundle was confirmed pushed
