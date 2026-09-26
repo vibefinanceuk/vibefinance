@@ -1175,7 +1175,24 @@
     color: var(--text-muted);
     align-self: end;
   }
-  .editgrid > input { width: 100%; }
+  .editgrid > input:not([type="checkbox"]) { width: 100%; }
+  /*
+    **The same bug decision 0282 already fixed once, in a different
+    grid.** Return Reasons' own "Active" checkbox (decision 0498) sits
+    directly inside `.editgrid`, and the rule above stretched it to
+    fill its whole grid column — reported live from a screenshot: "the
+    check box on return reasons seems kinda large." Same fix, same
+    reasoning: a bare, unstyled checkbox is a different size on every
+    browser and platform, so it gets a deliberate size rather than
+    whatever the browser renders, sized against the label's own
+    `--text-sm` beside it.
+  */
+  .editgrid > input[type="checkbox"] {
+    width: 14px;
+    height: 14px;
+    margin: 0 8px 0 0;
+    vertical-align: middle;
+  }
   /*
     **Selects, not just inputs — decision 0341.** `orgPicker`,
     `managerPicker`, `costCentrePicker`, and now the currency dropdown

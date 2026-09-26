@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 26 September 2026 (decision 0498). A living document: what
+Last updated 26 September 2026 (decision 0499). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,18 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Return Reasons' own "Active" checkbox, stretched by `.editgrid`'s own width rule (0499)
+- Reported live from screenshots, right after 0498 went live: "The
+  check box on return reasons seems kinda large." `.editgrid > input {
+  width: 100%; }` had no checkbox exclusion, so the native checkbox
+  stretched to fill its grid column — the same bug decision 0282
+  already fixed once, for `.columnlist`'s own checkboxes.
+- Fixed at the shared `.editgrid` rule itself (14×14px, matching
+  0282's own values), not per-screen — also fixes two pre-existing,
+  never-reported instances of the identical bug in `coding-lists.js`
+  and Account Coding's own number-limit checkbox.
+- Full reasoning and verification counts in decision 0499.
 
 ### Return To Supplier: reasons, a comment, and a real email (0498)
 - **Reported live**, framed as analysis first: reasons for audit,
