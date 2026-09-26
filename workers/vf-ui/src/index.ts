@@ -172,6 +172,20 @@ const PROXIED_TO_INSTANCE: RegExp[] = [
   /^\/tasks\/[^/]+\/reassign-candidates$/,
   // Where a task can be returned to, right now — decision 0490.
   /^\/tasks\/[^/]+\/return-targets$/,
+  /**
+   * **Route To Approver's own candidate picker — decision 0495,
+   * fixed in 0496 — the exact same gap this file's own comments
+   * already document more than a dozen times over.** `GET
+   * /tasks/:id/route-to-approver-candidates` was real and tested in
+   * `vf-app` from decision 0495 onward, and never added to this
+   * list — the button rendered (task-list data, itself proxied
+   * through the plain `/tasks` entry above, was unaffected) and did
+   * nothing when clicked, this proxy answering `{"error":"not
+   * found"}` before `vf-app` ever saw the request. `POST
+   * /tasks/:id/complete`, which the picker's own confirm step posts
+   * to, needed no new entry — it already existed on this list.
+   */
+  /^\/tasks\/[^/]+\/route-to-approver-candidates$/,
   // What the Validation viewer needs (decision 0106): the keyed values,
   // and a short-lived signed URL for the retained original.
   // Reading one invoice back, so the keying screen shows what it saved

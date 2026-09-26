@@ -597,6 +597,15 @@ describe("the proxy carries every path a screen calls (decision 0131)", () => {
     ["GET", "/api/tasks/t-1/return-targets"],
     ["POST", "/api/processes/stages/validation/return-targets"],
     ["DELETE", "/api/processes/stages/return-targets/rt-1"],
+    /**
+     * Route To Approver's own candidate picker — decision 0495,
+     * fixed in 0496. Reported live: the button rendered and clicking
+     * it produced "That could not be done," a plain 404 from this
+     * proxy rather than any of `vf-app`'s own reasons for refusing
+     * it — the exact symptom this list exists to catch before a real
+     * operator hits it.
+     */
+    ["GET", "/api/tasks/t-1/route-to-approver-candidates"],
   ];
 
   it("carries all of them", async () => {

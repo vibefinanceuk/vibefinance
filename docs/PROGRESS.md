@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 26 September 2026 (decision 0495). A living document: what
+Last updated 26 September 2026 (decision 0496). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,25 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Route To Approver's own candidates route, missing from `vf-ui`'s proxy allowlist (0496)
+- Found by the operator smoke-testing 0495 live: the button rendered,
+  but clicking it showed "That could not be done" immediately, no
+  picker ever opening. DevTools confirmed a bare 404 from `GET
+  /api/tasks/:id/route-to-approver-candidates` — not a JSON error from
+  `vf-app`, a plain 404 from in front of it.
+- `vf-ui`'s own `/api/*` proxy is an explicit allowlist, not a general
+  forwarder (decision 0097's own lesson) — and this exact class of gap
+  has recurred more than a dozen times since (0212, 0319, 0415, 0440,
+  0472, 0483, 0487, 0490...): a route real and tested in `vf-app`,
+  never added to this second list. Decision 0495 added the route and
+  built the whole feature around it, but never added it here.
+- One line added to `PROXIED_TO_INSTANCE`, one line added to the
+  proxy's own `CALLED_BY_A_SCREEN` regression test — the same test
+  that would have caught this in 0495 itself had it been added there.
+  `POST /tasks/:id/complete` (what the picker's own confirm step calls)
+  needed nothing — it already existed on the list.
+- Full reasoning and verification counts in decision 0496.
 
 ### Route To Approver, conditional on Manual mode (0495)
 - **Reported live**, arriving as a direct correction to a research
