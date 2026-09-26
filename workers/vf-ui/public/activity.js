@@ -242,7 +242,6 @@ function renderContent(content, countBadge, invoiceId) {
       error ? el("div", { class: "warn sm", text: error }) : null,
       feed,
       el("div", { class: "activityinput" }, [box, postButton]),
-      el("div", { class: "activityfoot", text: t("activity.internalonly") }),
     ].filter(Boolean)
   );
 }

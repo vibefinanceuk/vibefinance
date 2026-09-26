@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 26 September 2026 (decision 0502). A living document: what
+Last updated 26 September 2026 (decision 0503). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,15 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### The activity panel drops its "Internal only" footer (0503)
+- Removed on request: the sentence at the foot of the Timeline/Chat
+  panel reading "Internal only — not visible to the supplier."
+- The design itself is untouched — `document_comments` (decision 0267)
+  has no supplier-facing column or visibility flag to begin with, so
+  nothing about *whether* a comment reaches a supplier changes; only
+  the on-screen reminder saying so is gone.
+- Full reasoning and verification counts in decision 0503.
 
 ### Discard gets a real picker, a stage restriction, and a Timeline check (0502)
 - Four questions reported live, once decision 0501's own fix was

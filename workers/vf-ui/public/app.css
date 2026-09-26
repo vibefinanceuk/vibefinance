@@ -3061,7 +3061,6 @@
   }
   .activitypost svg { width: 16px; height: 16px; }
   .activitypost:hover { border-color: var(--text-accent); }
-  .activityfoot { font-size: var(--text-sm); color: var(--text-muted); padding: 6px 14px 10px; }
 
   /*
     "Add person to conversation" — decision 0470. `collaborators.js`'s

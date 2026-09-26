@@ -148,7 +148,6 @@ const KEYS_THE_INTERFACE_USES = [
   "activity.empty",
   "activity.placeholder",
   "activity.post",
-  "activity.internalonly",
   "activity.loadfailed",
   "activity.postfailed",
   "activity.received",
