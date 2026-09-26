@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 26 September 2026 (decision 0497). A living document: what
+Last updated 26 September 2026 (decision 0498). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,39 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Return To Supplier: reasons, a comment, and a real email (0498)
+- **Reported live**, framed as analysis first: reasons for audit,
+  a comment for the supplier, showing the communication path (supplier
+  email, or the invoice's own — deferred), an AP-team CC checkbox, and
+  whether a new Archive stage was needed so a returned item stops
+  sitting in Payment-eligible.
+- The Archive-stage question was already answered: decision 0055
+  section 7's two terminal instance statuses (`returned_manually` /
+  `archived`) already take a returned invoice out of every stage
+  without inventing one — communicated back and confirmed as a
+  non-issue, no code change needed.
+- **Supersedes one sentence of decision 0055 section 7** — "the system
+  does not send anything back to the sender" — the moment an AP-team CC
+  checkbox was asked for, since a checkbox to copy an email only makes
+  sense once an email is genuinely being sent. See SUPERSEDED.md.
+  Resend chosen over Cloudflare's own native Email Service (Beta,
+  Workers-Paid-only, destination-restricted); confirmed directly before
+  building. `vf-app` is still on `workers.dev` (0189), so Resend's
+  webhook posts to it directly — deliberately never added to `vf-ui`'s
+  proxy allowlist, since that proxy needs a session cookie a webhook
+  cannot supply.
+- The terminal transition always succeeds regardless of the email's own
+  outcome — a missing supplier email or an unconfigured deployment
+  still returns the invoice cleanly; `supplier_return_emails` records
+  exactly what happened (`queued`/`sent`/`delivered`/`bounced`/
+  `complained`/`delayed`/`send_failed`), forward-only via the webhook so
+  a late out-of-order event can never regress a later status.
+- Reasons are a real, auditable table (`supplier_return_reasons`,
+  never-delete-only-deactivate, the same convention `suppliers` and
+  Discard already use), editable from a new AP Setup tab alongside the
+  AP team's own email address.
+- Full reasoning and verification counts in decision 0498.
 
 ### Route To Approver's own optional comment, and picker spacing (0497)
 - **Reported live**, with a mock-up screenshot of the Reassign picker:

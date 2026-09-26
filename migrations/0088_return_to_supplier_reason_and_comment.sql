@@ -1,0 +1,35 @@
+-- 0088_return_to_supplier_reason_and_comment.sql
+-- Decision 0498 — the categorised reason and the supplier-facing
+-- comment, recorded on the instance itself.
+--
+-- **`process_instances.status`, unlike `task_action_events.action`,
+-- carries no CHECK constraint** (confirmed by reading migration 0009
+-- directly before writing this) — 'returned_manually' already lives
+-- there as a plain string since decision 0055, so neither new column
+-- below needs the rebuild-the-table dance migration 0086 needed for a
+-- CHECK-constrained enum. A plain ALTER TABLE ADD COLUMN is enough.
+--
+-- **On the instance, not the task.** Decision 0055 already made Return
+-- To Supplier an instance-level terminal act (`returned_manually`), not
+-- a task-level one — `endTaskAndSiblings` ends the task and its
+-- siblings, but the reason a document left the process belongs to the
+-- process instance itself, the same place `end_reason` already lives.
+--
+-- `return_reason_id` is nullable so a document returned before this
+-- migration (there are none in production yet, but the column itself
+-- must not demand a value retroactively) reads as "no categorised
+-- reason recorded" rather than failing to load. `ON DELETE` is
+-- deliberately omitted — `supplier_return_reasons` rows are never
+-- deleted (0087's own header), only deactivated, so a dangling
+-- reference can never occur.
+ALTER TABLE process_instances ADD COLUMN return_reason_id TEXT REFERENCES supplier_return_reasons(id);
+
+-- The free-text box for the supplier's own eyes (point 2 of five) —
+-- deliberately a SEPARATE column from the categorised reason and from
+-- `end_reason` (which keeps recording the reason's own label text, so
+-- every existing reader of `end_reason` — the derived Timeline line in
+-- `activity-route.ts`, in particular — needs no change at all). A
+-- report grouping by `return_reason_id` should not have to parse a
+-- sentence to find the category; a supplier reading their own comment
+-- should not have to see the internal reason id shown back to them.
+ALTER TABLE process_instances ADD COLUMN supplier_comment TEXT;

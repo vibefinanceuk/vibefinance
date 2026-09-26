@@ -91,6 +91,10 @@ import taskActionEventsSql from "../../../migrations/0083_task_action_events.sql
 import taskActionEventsReassignSql from "../../../migrations/0084_task_action_events_reassign.sql?raw";
 import stageReturnTargetsSql from "../../../migrations/0085_stage_return_targets.sql?raw";
 import taskActionEventsRouteToApproverSql from "../../../migrations/0086_task_action_events_route_to_approver.sql?raw";
+import supplierReturnReasonsSql from "../../../migrations/0087_supplier_return_reasons.sql?raw";
+import returnToSupplierReasonAndCommentSql from "../../../migrations/0088_return_to_supplier_reason_and_comment.sql?raw";
+import orgSettingsApTeamEmailSql from "../../../migrations/0089_org_settings_ap_team_email.sql?raw";
+import supplierReturnEmailsSql from "../../../migrations/0090_supplier_return_emails.sql?raw";
 
 // Another known divergence from production, on top of the one below:
 // D1's exec() splits its input by newline and executes each non-empty
@@ -160,6 +164,11 @@ const TABLES_IN_DROP_ORDER = ["document_comments",
   "expense_reports",
   "intake_channels",
   "stage_visit_steps",
+  // Decision 0498 (migration 0090) — references process_instances,
+  // tasks, suppliers, and org_users, so before all four: earliest of
+  // this group, the same "children before every parent" rule this
+  // whole list already follows.
+  "supplier_return_emails",
   // Decision 0488 (migration 0083) — references tasks(id) and
   // org_users(id), so before both, the same "children before parents"
   // rule this whole list already follows.
@@ -167,6 +176,10 @@ const TABLES_IN_DROP_ORDER = ["document_comments",
   "tasks",
   "stage_visits",
   "process_instances",
+  // Decision 0498 (migration 0087/0088) — process_instances.return_
+  // reason_id references this, so dropped only after process_instances
+  // itself, right above.
+  "supplier_return_reasons",
   // Decision 0487 (migration 0082) — references process_stages, same
   // reasoning as stage_field_visibility above: dropped before it.
   "stage_actions",
@@ -352,6 +365,10 @@ export async function applyTestSchema(): Promise<void> {
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(taskActionEventsReassignSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(stageReturnTargetsSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(taskActionEventsRouteToApproverSql)));
+  await env.DB.exec(toOneStatementPerLine(stripSqlComments(supplierReturnReasonsSql)));
+  await env.DB.exec(toOneStatementPerLine(stripSqlComments(returnToSupplierReasonAndCommentSql)));
+  await env.DB.exec(toOneStatementPerLine(stripSqlComments(orgSettingsApTeamEmailSql)));
+  await env.DB.exec(toOneStatementPerLine(stripSqlComments(supplierReturnEmailsSql)));
 }
 
 /**

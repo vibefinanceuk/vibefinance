@@ -184,6 +184,20 @@ const KEYS_THE_INTERFACE_USES = [
   // Timeline/Chat line.
   "action.route_to_approver.commentlabel",
   "activity.routedtoapprover",
+  // Decision 0498 — Return To Supplier's own picker: reason, comment,
+  // the address it will go to, and the CC checkbox.
+  "action.return_to_supplier.nonefound",
+  "action.return_to_supplier.reasonlabel",
+  "action.return_to_supplier.commentlabel",
+  "action.return_to_supplier.willgoto",
+  "action.return_to_supplier.noemail",
+  "action.return_to_supplier.ccapteam",
+  "activity.email.sent",
+  "activity.email.delivered",
+  "activity.email.bounced",
+  "activity.email.complained",
+  "activity.email.delayed",
+  "activity.email.send_failed",
   "rule.notrunning",
   "rule.approvedby",
   "compose.newversion",
@@ -792,6 +806,18 @@ const KEYS_THE_INTERFACE_USES = [
   "apsetup.stagerestrictions.notargetsyet",
   "apsetup.stagerestrictions.targetstage",
   "apsetup.stagerestrictions.returnteam",
+  // Decision 0498 — the Return Reasons tab: the reasons list itself
+  // and the AP team's own email address.
+  "apsetup.returnreasons",
+  "apsetup.returnreasons.sub",
+  "apsetup.returnreasons.active",
+  "apsetup.returnreasons.newid",
+  "apsetup.returnreasons.newlabel",
+  "apsetup.returnreasons.idandlabelrequired",
+  "apsetup.returnreasons.savefailed",
+  "apsetup.returnreasons.apteamemail",
+  "apsetup.returnreasons.apteamemailsub",
+  "apsetup.returnreasons.apteamemailplaceholder",
   /**
    * **`apsetup.add` and `roles.remove` — a pre-existing gap, found and
    * closed here, the same "found mid-way through unrelated work"

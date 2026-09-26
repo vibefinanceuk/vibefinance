@@ -606,6 +606,20 @@ describe("the proxy carries every path a screen calls (decision 0131)", () => {
      * operator hits it.
      */
     ["GET", "/api/tasks/t-1/route-to-approver-candidates"],
+    /**
+     * Return To Supplier's own reason list and settings — decision
+     * 0498. Added at the same time as the routes themselves this time
+     * (see `PROXIED_TO_INSTANCE`'s own comment in `src/index.ts`).
+     * Deliberately NOT `/api/webhooks/resend` — that one is reached
+     * directly from Resend, never through this proxy.
+     */
+    ["GET", "/api/return-reasons"],
+    ["GET", "/api/return-email-settings"],
+    ["GET", "/api/admin/return-reasons"],
+    ["POST", "/api/admin/return-reasons"],
+    ["PATCH", "/api/admin/return-reasons/duplicate_invoice"],
+    ["GET", "/api/admin/ap-team-email"],
+    ["PUT", "/api/admin/ap-team-email"],
   ];
 
   it("carries all of them", async () => {
@@ -622,6 +636,17 @@ describe("the proxy carries every path a screen calls (decision 0131)", () => {
         "Add the path to PROXIED_INSTANCE_PATHS in workers/vf-ui/src/index.ts, " +
         "or the button that calls it will silently do nothing."
     ).toEqual([]);
+  });
+
+  it("does NOT proxy Resend's own webhook — decision 0498, deliberately", async () => {
+    // The opposite assertion from every path above: this one must stay
+    // a 404 through this proxy. Resend calls vf-app directly at its own
+    // workers.dev address; this route requires no session and would
+    // never survive `handleProxy`'s own 401-on-no-cookie check or its
+    // header allowlist (only Content-Type is forwarded — Resend's own
+    // svix-id/svix-timestamp/svix-signature headers never would be).
+    const res = await SELF.fetch("https://ui.example.com/api/webhooks/resend", { method: "POST" });
+    expect(res.status).toBe(404);
   });
 });
 

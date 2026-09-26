@@ -186,6 +186,23 @@ const PROXIED_TO_INSTANCE: RegExp[] = [
    * to, needed no new entry — it already existed on this list.
    */
   /^\/tasks\/[^/]+\/route-to-approver-candidates$/,
+  /**
+   * **Return To Supplier's own reason list and settings — decision
+   * 0498.** Added at the same time as the routes themselves this
+   * time, precisely because the recurring gap this file's own
+   * comments already document more than a dozen times is always the
+   * same mistake: building the `vf-app` route and forgetting this
+   * list. `/return-reasons` is what the picker's own dropdown fetches;
+   * the two `/admin/...` routes are the admin screen managing that
+   * list and the AP team's own email address. `POST /webhooks/resend`
+   * is deliberately NOT here — see `resend-webhook-route.ts`'s own
+   * header comment in `vf-app` for why that one is reached directly.
+   */
+  /^\/return-reasons$/,
+  /^\/return-email-settings$/,
+  /^\/admin\/return-reasons$/,
+  /^\/admin\/return-reasons\/[^/]+$/,
+  /^\/admin\/ap-team-email$/,
   // What the Validation viewer needs (decision 0106): the keyed values,
   // and a short-lived signed URL for the retained original.
   // Reading one invoice back, so the keying screen shows what it saved

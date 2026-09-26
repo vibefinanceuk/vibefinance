@@ -161,6 +161,12 @@ const STRINGS = {
     "action.reassign.commentlabel": "Comment (optional)",
     "action.reassign.nonefound": "There are no eligible users to reassign.",
     "action.return_to_supplier": "To supplier",
+    "action.return_to_supplier.nonefound": "There are no return reasons configured.",
+    "action.return_to_supplier.reasonlabel": "Reason",
+    "action.return_to_supplier.commentlabel": "Comment for the supplier",
+    "action.return_to_supplier.willgoto": "This will be emailed to",
+    "action.return_to_supplier.noemail": "No email address on file for this supplier.",
+    "action.return_to_supplier.ccapteam": "Copy our AP team",
     "action.return": "Return",
     "action.return.wholabel": "Return to",
     "action.return.reasonlabel": "Reason",
@@ -1290,15 +1296,27 @@ describe("the actions do something (decision 0138)", () => {
     // `return_to_supplier` is the action; `return-to-supplier` is the
     // route. Getting this wrong is a 404 that looks like a permission
     // problem.
+    //
+    // **No longer a `prompt()` — decision 0498** moved this action to
+    // its own dedicated picker, the same shape Reassign, Return and
+    // Route To Approver already use (see the describe block below for
+    // its full coverage). This test still exists to pin the one fact
+    // its name promises: the underscore in the action name becomes a
+    // hyphen in the route it posts to.
     const posted: string[] = [];
     await openTaskWith(
       ["key", "return_to_supplier"],
-      { "/api/tasks/t-1/return-to-supplier": {} },
+      {
+        "/api/return-reasons": { reasons: [{ id: "duplicate_invoice", label: "Duplicate invoice" }] },
+        "/api/return-email-settings": { configured: false },
+        "/api/tasks/t-1/return-to-supplier": {},
+      },
       posted
     );
 
-    vi.stubGlobal("prompt", () => "Wrong supplier");
     click("To supplier");
+    await settle();
+    (document.querySelector(".popout .actionlink") as HTMLButtonElement).click();
     await settle();
     expect(posted).toContain("/api/tasks/t-1/return-to-supplier");
   });
@@ -1337,17 +1355,18 @@ describe("the actions do something (decision 0138)", () => {
     // The server refuses one too, so sending it would be a round trip
     // to be told what the screen already knows.
     //
-    // **`return_to_supplier`, not `return`** — decision 0490 moved
-    // Return to its own dedicated picker (see the describe block
-    // below), so `return` is no longer one of `ACTIONS_NEEDING_A_REASON`
-    // and no longer goes through `prompt()` at all. This test still
+    // **`discard`, not `return` or `return_to_supplier`** — decision
+    // 0490 moved Return to its own dedicated picker, and decision 0498
+    // did the same for Return To Supplier (see the describe blocks
+    // below for both), so neither is `ACTIONS_NEEDING_A_REASON` any
+    // more and neither goes through `prompt()` at all. This test still
     // covers the shared "blank prompt input treated as no reason"
-    // behaviour through the one other action left on that list.
+    // behaviour through the one action left on that list.
     vi.stubGlobal("prompt", () => "   ");
     const posted: string[] = [];
-    await openTaskWith(["key", "return_to_supplier"], {}, posted);
+    await openTaskWith(["key", "discard"], {}, posted);
 
-    click("To supplier");
+    click("Discard");
     await settle();
     expect(posted.filter((p) => p.includes("/tasks/"))).toHaveLength(0);
   });
@@ -1908,6 +1927,208 @@ describe("the actions do something (decision 0138)", () => {
       const errorBox = document.querySelector(".popout .warn") as HTMLElement;
       expect(errorBox.hidden).toBe(false);
       expect(errorBox.textContent).toBe("task is already completed");
+      expect(document.querySelector(".popout")).not.toBeNull();
+    });
+  });
+
+  describe("returning to the supplier from the picker (decision 0498)", () => {
+    /**
+     * Its own dedicated pop-out, the same shape Reassign, Return and
+     * Route To Approver already established: reasons instead of
+     * candidates, a comment for the supplier's own eyes, the address
+     * it will actually go to (read from `stored.supplier`, no new
+     * fetch), and — only when an AP team address is configured at
+     * all — a checkbox to copy it in.
+     */
+    const REASONS = {
+      reasons: [
+        { id: "duplicate_invoice", label: "Duplicate invoice" },
+        { id: "goods_not_received", label: "Goods or services not received" },
+      ],
+    };
+
+    function stubReturnToSupplier(
+      routes: Record<string, unknown> = {},
+      posted: string[] = [],
+      bodies: { path: string; body: unknown }[] = []
+    ) {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (url: string, init?: RequestInit) => {
+          const path = String(url).split("?")[0];
+          if (init?.method === "POST") {
+            posted.push(path);
+            if (init.body) bodies.push({ path, body: JSON.parse(String(init.body)) });
+          }
+          const base: Record<string, unknown> = {
+            ...OPEN,
+            "/api/return-reasons": REASONS,
+            "/api/return-email-settings": { configured: false },
+            ...routes,
+          };
+          if (path in base) return { ok: true, json: async () => base[path] } as Response;
+          if (/^\/api\/invoices\/[^/]+\/pages$/.test(path)) {
+            return { ok: true, json: async () => ({ pages: [] }) } as Response;
+          }
+          if (/^\/api\/documents\/[^/]+\/collaborators$/.test(path)) {
+            return { ok: true, json: async () => ({ collaborators: [] }) } as Response;
+          }
+          throw new Error(`no stub for ${path} — add one, or the test proves nothing`);
+        })
+      );
+    }
+
+    async function openWithReturnToSupplier(
+      routes: Record<string, unknown> = {},
+      posted: string[] = [],
+      bodies: { path: string; body: unknown }[] = []
+    ) {
+      stubReturnToSupplier(routes, posted, bodies);
+      const { loadStrings } = await import("/strings.js");
+      await loadStrings();
+      const { openViewer } = await import("/viewer.js");
+      await openViewer({ ...TASK, actions: ["key", "return_to_supplier"] }, () => {});
+      await new Promise((r) => setTimeout(r, 0));
+    }
+
+    it("lists the server's own reasons, not a client guess", async () => {
+      await openWithReturnToSupplier();
+      click("To supplier");
+      await settle();
+
+      const popout = document.querySelector(".popout");
+      expect(popout).not.toBeNull();
+      const options = [...popout!.querySelectorAll("select option")].map((o) => o.textContent);
+      expect(options).toEqual(["Duplicate invoice", "Goods or services not received"]);
+    });
+
+    it("says so with a pop-out alert instead of opening an empty picker when no reasons are configured", async () => {
+      await openWithReturnToSupplier({ "/api/return-reasons": { reasons: [] } });
+      click("To supplier");
+      await settle();
+
+      const popout = document.querySelector(".popout.notealert");
+      expect(popout).not.toBeNull();
+      expect(document.getElementById("viewer-note")?.textContent).toBe(
+        "There are no return reasons configured."
+      );
+
+      (popout!.querySelector(".notealert-ok") as HTMLButtonElement).click();
+      expect(document.querySelector(".popout")).toBeNull();
+    });
+
+    it("shows the supplier's own email as the address this will go to", async () => {
+      await openWithReturnToSupplier({
+        "/api/invoices/inv-1": {
+          facts: {},
+          lines: [],
+          validation: { passed: true, checked: [], failures: [] },
+          supplier: { name: "Acme Payments", email: "payments@acme.example" },
+        },
+      });
+      click("To supplier");
+      await settle();
+
+      expect(document.querySelector(".popout")?.textContent).toContain(
+        "This will be emailed to payments@acme.example"
+      );
+    });
+
+    it("says so when the supplier has no email on file, rather than hiding the line", async () => {
+      await openWithReturnToSupplier();
+      click("To supplier");
+      await settle();
+
+      expect(document.querySelector(".popout")?.textContent).toContain(
+        "No email address on file for this supplier."
+      );
+    });
+
+    it("offers no AP-team checkbox when no AP team address is configured", async () => {
+      await openWithReturnToSupplier({ "/api/return-email-settings": { configured: false } });
+      click("To supplier");
+      await settle();
+
+      expect(document.querySelector(".popout")?.textContent).not.toContain("Copy our AP team");
+      expect(document.querySelector(".popout input[type=checkbox]")).toBeNull();
+    });
+
+    it("offers the AP-team checkbox once an address is configured", async () => {
+      await openWithReturnToSupplier({ "/api/return-email-settings": { configured: true } });
+      click("To supplier");
+      await settle();
+
+      expect(document.querySelector(".popout")?.textContent).toContain("Copy our AP team");
+      expect(document.querySelector(".popout input[type=checkbox]")).not.toBeNull();
+    });
+
+    it("posts the chosen reason, comment and CC flag, and closes the picker on success", async () => {
+      const posted: string[] = [];
+      const bodies: { path: string; body: unknown }[] = [];
+      await openWithReturnToSupplier(
+        { "/api/return-email-settings": { configured: true }, "/api/tasks/t-1/return-to-supplier": {} },
+        posted,
+        bodies
+      );
+      click("To supplier");
+      await settle();
+
+      (document.querySelector(".popout select") as HTMLSelectElement).value = "goods_not_received";
+      (document.querySelector(".popout textarea") as HTMLTextAreaElement).value = "Nothing arrived on our dock.";
+      (document.querySelector(".popout input[type=checkbox]") as HTMLInputElement).click();
+      (document.querySelector(".popout .actionlink") as HTMLButtonElement).click();
+      await settle();
+
+      expect(posted).toContain("/api/tasks/t-1/return-to-supplier");
+      expect(bodies).toContainEqual({
+        path: "/api/tasks/t-1/return-to-supplier",
+        body: { reasonId: "goods_not_received", comment: "Nothing arrived on our dock.", ccApTeam: true },
+      });
+      // The instance has ended — nothing left to show, the same
+      // "finished or moved" close every other action already takes at
+      // the end of runAction() above.
+      expect(document.querySelector(".popout")).toBeNull();
+    });
+
+    it("sends no comment field when none was typed, not an empty string", async () => {
+      const posted: string[] = [];
+      const bodies: { path: string; body: unknown }[] = [];
+      await openWithReturnToSupplier({ "/api/tasks/t-1/return-to-supplier": {} }, posted, bodies);
+      click("To supplier");
+      await settle();
+
+      // Default reason (first option), comment left blank, no AP team
+      // checkbox at all (not configured by default).
+      (document.querySelector(".popout .actionlink") as HTMLButtonElement).click();
+      await settle();
+
+      expect(bodies[0]?.body).toEqual({ reasonId: "duplicate_invoice" });
+      expect(bodies[0]?.body).not.toHaveProperty("comment");
+      expect(bodies[0]?.body).not.toHaveProperty("ccApTeam");
+    });
+
+    it("shows the server's error and leaves the picker open to try again", async () => {
+      await openWithReturnToSupplier();
+      click("To supplier");
+      await settle();
+
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (url: string) => {
+          const path = String(url).split("?")[0];
+          if (path === "/api/tasks/t-1/return-to-supplier") {
+            return { ok: false, json: async () => ({ error: "reason is no longer active" }) } as Response;
+          }
+          throw new Error(`no stub for ${path} in the failure override`);
+        })
+      );
+
+      (document.querySelector(".popout .actionlink") as HTMLButtonElement).click();
+      await settle();
+
+      const errorBox = document.querySelector(".popout .warn") as HTMLElement;
+      expect(errorBox.hidden).toBe(false);
+      expect(errorBox.textContent).toBe("reason is no longer active");
       expect(document.querySelector(".popout")).not.toBeNull();
     });
   });

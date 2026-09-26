@@ -187,6 +187,18 @@ import { handleCaptureFromSource } from "./source-capture-route.js";
 import { handleInboundEmail, handleListInboundEmail, type EmailMessage } from "./inbound-email.js";
 import { handleKeyInvoiceFields } from "./key-fields-route.js";
 import { handleReturnToStage, handleReturnToSupplier, handleDiscard, handleReturnTargets } from "./return-route.js";
+import {
+  handleListActiveReturnReasons,
+  handleListAllReturnReasons,
+  handleCreateReturnReason,
+  handleUpdateReturnReason,
+} from "./return-reasons-route.js";
+import {
+  handleGetApTeamEmail,
+  handleSetApTeamEmail,
+  handleGetApTeamEmailAvailability,
+} from "./ap-team-email-route.js";
+import { handleResendWebhook } from "./resend-webhook-route.js";
 import { authenticateUserOrSession } from "./user-auth.js";
 import { handleListMyTasks } from "./task-list-route.js";
 import { FIELD_CODE_LISTS, isClosedList } from "@vibefinance/shared";
@@ -244,6 +256,29 @@ export interface Env {
    * unauthenticated link to a customer's invoice.
    */
   DOCUMENT_URL_SECRET?: string;
+  /**
+   * Decision 0498 — Resend, for Return To Supplier's own email. Set
+   * via `wrangler secret put RESEND_API_KEY`, never a var, the same
+   * `VF_LICENCE_API_KEY` discipline above. Its absence does not block
+   * a return — `handleReturnToSupplier` degrades to recording
+   * `send_failed` with a plain "not configured" detail rather than
+   * refusing the terminal act itself.
+   */
+  RESEND_API_KEY?: string;
+  /**
+   * The verified sending address — a plain var, not a secret (it is
+   * not sensitive; it is printed on every email this deployment
+   * sends). Must be on a domain Resend has verified via DNS (SPF/
+   * DKIM/DMARC) for this customer's deployment.
+   */
+  RESEND_FROM_ADDRESS?: string;
+  /**
+   * Verifies Resend's own delivery-status webhook
+   * (`resend-webhook-route.ts`) — the `whsec_...` value Resend's
+   * dashboard shows when the webhook endpoint is configured. Set via
+   * `wrangler secret put RESEND_WEBHOOK_SECRET`.
+   */
+  RESEND_WEBHOOK_SECRET?: string;
   /**
    * Overrides the vision model used for image extraction (decision
    * 0043). Config rather than code deliberately: choosing the right
@@ -3386,7 +3421,117 @@ export default {
       } catch {
         return json({ error: t("invalidJsonBody", resolveLocale(env.LOCALE)) }, 400);
       }
-      const result = await handleReturnToSupplier(db, returnSupplierMatch[1], (body ?? {}) as Record<string, unknown>, auth);
+      const result = await handleReturnToSupplier(db, returnSupplierMatch[1], (body ?? {}) as Record<string, unknown>, auth, {
+        apiKey: env.RESEND_API_KEY ?? null,
+        fromAddress: env.RESEND_FROM_ADDRESS ?? null,
+      });
+      return json(result.body, result.status);
+    }
+
+    // The active reason list — decision 0498, point 1 of five. Read by
+    // anyone who can reach the Return To Supplier button at all; it
+    // names no supplier and no amount.
+    if (pathname === "/return-reasons" && request.method === "GET") {
+      const { db } = resolveTenant(request, env);
+      const person = await authenticatePerson(db, request, env);
+      if (!person.user) return json({ error: t("unauthorized", resolveLocale(env.LOCALE)) }, 401);
+      const result = await handleListActiveReturnReasons(db);
+      return json(result.body, result.status);
+    }
+
+    // The admin screen's own list and writes — every reason, active or
+    // not, and `Admin.Configure` gated the same way `/sources/:id/org`
+    // already is for a setup action with no per-invoice consequence.
+    if (pathname === "/admin/return-reasons" && request.method === "GET") {
+      const { db } = resolveTenant(request, env);
+      const auth = await requirePermission(db, request, "Admin.Configure", sessionContext(env));
+      if (!auth.authorized) return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
+      const result = await handleListAllReturnReasons(db);
+      return json(result.body, result.status);
+    }
+    if (pathname === "/admin/return-reasons" && request.method === "POST") {
+      const { db } = resolveTenant(request, env);
+      const auth = await requirePermission(db, request, "Admin.Configure", sessionContext(env));
+      if (!auth.authorized) return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
+      let body: unknown;
+      try {
+        body = await request.json();
+      } catch {
+        return json({ error: t("invalidJsonBody", resolveLocale(env.LOCALE)) }, 400);
+      }
+      const result = await handleCreateReturnReason(db, (body ?? {}) as Record<string, unknown>);
+      return json(result.body, result.status);
+    }
+    const updateReturnReasonMatch = pathname.match(/^\/admin\/return-reasons\/([^/]+)$/);
+    if (updateReturnReasonMatch && request.method === "PATCH") {
+      const { db } = resolveTenant(request, env);
+      const auth = await requirePermission(db, request, "Admin.Configure", sessionContext(env));
+      if (!auth.authorized) return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
+      let body: unknown;
+      try {
+        body = await request.json();
+      } catch {
+        return json({ error: t("invalidJsonBody", resolveLocale(env.LOCALE)) }, 400);
+      }
+      const result = await handleUpdateReturnReason(db, updateReturnReasonMatch[1], (body ?? {}) as Record<string, unknown>);
+      return json(result.body, result.status);
+    }
+
+    // Whether the picker should offer its own CC checkbox — the
+    // narrow, non-sensitive fact behind Admin.Configure's own gate.
+    if (pathname === "/return-email-settings" && request.method === "GET") {
+      const { db } = resolveTenant(request, env);
+      const person = await authenticatePerson(db, request, env);
+      if (!person.user) return json({ error: t("unauthorized", resolveLocale(env.LOCALE)) }, 401);
+      const result = await handleGetApTeamEmailAvailability(db);
+      return json(result.body, result.status);
+    }
+
+    // The AP team's own email address — decision 0498, point 4 of
+    // five. Same `Admin.Configure` gate as the reasons list above.
+    if (pathname === "/admin/ap-team-email" && request.method === "GET") {
+      const { db } = resolveTenant(request, env);
+      const auth = await requirePermission(db, request, "Admin.Configure", sessionContext(env));
+      if (!auth.authorized) return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
+      const result = await handleGetApTeamEmail(db);
+      return json(result.body, result.status);
+    }
+    if (pathname === "/admin/ap-team-email" && request.method === "PUT") {
+      const { db } = resolveTenant(request, env);
+      const auth = await requirePermission(db, request, "Admin.Configure", sessionContext(env));
+      if (!auth.authorized) return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
+      let body: unknown;
+      try {
+        body = await request.json();
+      } catch {
+        return json({ error: t("invalidJsonBody", resolveLocale(env.LOCALE)) }, 400);
+      }
+      const result = await handleSetApTeamEmail(db, (body ?? {}) as Record<string, unknown>);
+      return json(result.body, result.status);
+    }
+
+    /**
+     * **Resend's own webhook — reached directly, never through `vf-ui`.**
+     * See `resend-webhook-route.ts`'s own header comment for why this
+     * deliberately has no session check and is not on `vf-ui`'s `/api/*`
+     * allowlist. `resolveTenant` still applies — each customer's own
+     * deployment verifies against its own `RESEND_WEBHOOK_SECRET` and
+     * updates its own database, the same per-customer isolation every
+     * other route here already has.
+     */
+    if (pathname === "/webhooks/resend" && request.method === "POST") {
+      const { db } = resolveTenant(request, env);
+      const rawBody = await request.text();
+      const result = await handleResendWebhook(
+        db,
+        env.RESEND_WEBHOOK_SECRET ?? null,
+        {
+          id: request.headers.get("svix-id"),
+          timestamp: request.headers.get("svix-timestamp"),
+          signature: request.headers.get("svix-signature"),
+        },
+        rawBody
+      );
       return json(result.body, result.status);
     }
 

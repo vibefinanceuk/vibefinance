@@ -181,15 +181,28 @@ async function taskActionEvents(db: D1Database, invoiceId: string): Promise<Acti
  * moot from a return should not read as its own audit-trail action.
  */
 async function taskEndedEvents(db: D1Database, invoiceId: string): Promise<ActivityItem[]> {
+  // The most recent attempt, not "a" join. Decision 0498's own design
+  // writes exactly one supplier_return_emails row per return, but the
+  // LEFT JOIN below is written defensively rather than assumed
+  // one-to-one — a correlated MAX(created_at) rather than a bare join
+  // on process_instance_id, so a future second attempt (a resend, say)
+  // could never silently duplicate this Timeline line.
   const rows = await db
     .prepare(
       `SELECT t.status, t.ended_at AS at, t.end_reason, t.returned_to_stage_id,
-              u.name AS user_name, s.name AS target_stage_name
+              u.name AS user_name, s.name AS target_stage_name,
+              pi.supplier_comment,
+              e.status AS email_status, e.to_address AS email_to_address
        FROM tasks t
        JOIN stage_visits v ON v.id = t.stage_visit_id
        JOIN process_instances pi ON pi.id = v.process_instance_id
        JOIN org_users u ON u.id = t.ended_by
        LEFT JOIN process_stages s ON s.id = t.returned_to_stage_id
+       LEFT JOIN supplier_return_emails e
+         ON e.process_instance_id = pi.id
+        AND e.created_at = (
+              SELECT MAX(created_at) FROM supplier_return_emails WHERE process_instance_id = pi.id
+            )
        WHERE pi.subject_type = 'invoice' AND pi.subject_id = ?
          AND t.status IN ('returned', 'discarded')`
     )
@@ -201,6 +214,9 @@ async function taskEndedEvents(db: D1Database, invoiceId: string): Promise<Activ
       returned_to_stage_id: string | null;
       user_name: string;
       target_stage_name: string | null;
+      supplier_comment: string | null;
+      email_status: string | null;
+      email_to_address: string | null;
     }>();
 
   return rows.results.map((r) => ({
@@ -210,6 +226,12 @@ async function taskEndedEvents(db: D1Database, invoiceId: string): Promise<Activ
     userName: r.user_name,
     comment: r.end_reason,
     targetStageName: r.returned_to_stage_id ? r.target_stage_name : undefined,
+    // Decision 0498 — only ever present on a return_to_supplier row;
+    // undefined (not rendered) for return/discard, which never write
+    // either column.
+    supplierComment: r.returned_to_stage_id === null && r.status === "returned" ? (r.supplier_comment ?? undefined) : undefined,
+    emailStatus: r.returned_to_stage_id === null && r.status === "returned" ? (r.email_status ?? undefined) : undefined,
+    emailToAddress: r.returned_to_stage_id === null && r.status === "returned" ? (r.email_to_address ?? undefined) : undefined,
   }));
 }
 

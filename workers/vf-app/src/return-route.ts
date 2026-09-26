@@ -2,6 +2,7 @@ import type { RouteResult } from "./org-route.js";
 import type { AuthenticatedUser } from "./user-auth.js";
 import { hasPermission } from "./enforce.js";
 import type { Permission } from "./permissions.js";
+import { sendEmailViaResend } from "./resend-client.js";
 
 /**
  * Returning a document — decision 0075.
@@ -15,7 +16,12 @@ import type { Permission } from "./permissions.js";
  *   - **to a stage** — backwards, to somewhere already visited, with a
  *     task for a named person. The document comes forward again.
  *   - **to the supplier** — out of the process entirely, into a
- *     terminal state. The system sends nothing.
+ *     terminal state. **Decision 0498 supersedes this line's own last
+ *     four words** — "the system sends nothing" was true from 0075
+ *     until Return To Supplier gained a real, audited reason, a
+ *     supplier-facing comment, and an actual email via Resend. See
+ *     `handleReturnToSupplier`'s own doc comment below and
+ *     `docs/decisions/SUPERSEDED.md`.
  */
 
 interface TaskRow {
@@ -333,28 +339,52 @@ export async function handleReturnTargets(
 }
 
 export interface ReturnToSupplierBody {
-  reason?: unknown;
+  reasonId?: unknown;
+  comment?: unknown;
+  ccApTeam?: unknown;
 }
 
 /**
- * The document leaves the process.
+ * Config the caller resolves from `env` and hands in, the same
+ * discipline `handleMintDocumentUrl`'s own `env.DOCUMENT_URL_SECRET`
+ * parameter already follows — this file takes plain values, never the
+ * `Env` object itself, so it stays testable without a Worker runtime.
+ * Both null when Resend has not been configured for this deployment
+ * yet (no `wrangler secret put RESEND_API_KEY`/`RESEND_FROM_ADDRESS`
+ * var set) — the return still completes; only the email attempt is
+ * skipped, recorded as `send_failed` with a plain reason rather than
+ * silently pretending to have sent something.
+ */
+export interface OutboundEmailConfig {
+  apiKey: string | null;
+  fromAddress: string | null;
+}
+
+/**
+ * The document leaves the process, and — decision 0498, superseding
+ * decision 0055 section 5.3/7's own "the system sends nothing" for
+ * this one specific claim — a real email now goes to the supplier.
  *
- * **The system sends nothing.** Decision 0055 section 5.3 records why: a
- * genuine return path belongs to the source instance rather than the
- * document — an email arrival has a sender, an SFTP drop may have only
- * a filename — so making the capability conditional on arrival mechanism
- * would mean it working differently depending on configuration a user
- * cannot see.
+ * **Everything else about 0055 section 7 stands.** This is still an
+ * instance-level terminal state (`returned_manually`), not a new stage
+ * — that reasoning had nothing to do with whether an email got sent,
+ * and nothing here changes it.
  *
- * This records that a person took responsibility, and the contact
- * happens outside. A button claiming to email a supplier and sometimes
- * unable to is worse than an honest record.
+ * **The terminal transition never depends on the email succeeding.**
+ * Ending the task and the instance is the load-bearing act (decision
+ * 0075's own "responsibility was taken"); the email is best-effort
+ * reporting on top of it, in `supplier_return_emails`, one row per
+ * attempt. A Resend outage, a missing address, or Resend not being
+ * configured at all should never leave an invoice stuck partway
+ * through a return — the same "a stuck workflow is worse than an
+ * honest gap in the record" instinct 0055 itself was written from.
  */
 export async function handleReturnToSupplier(
   db: D1Database,
   taskId: string,
   body: ReturnToSupplierBody,
-  user: AuthenticatedUser
+  user: AuthenticatedUser,
+  emailConfig: OutboundEmailConfig
 ): Promise<RouteResult> {
   const task = await loadOpenTask(db, taskId);
   if (!task) return { status: 404, body: { error: `task ${taskId} does not exist` } };
@@ -368,34 +398,61 @@ export async function handleReturnToSupplier(
   const standing = await checkStanding(db, user, task, "AP.ReturnToSupplier");
   if (!standing.ok) return { status: standing.status, body: { error: standing.error } };
 
-  const { reason } = body;
-  if (typeof reason !== "string" || reason.trim() === "") {
-    return { status: 400, body: { error: "reason is required" } };
+  const { reasonId, comment, ccApTeam } = body;
+  if (typeof reasonId !== "string" || !reasonId) {
+    return { status: 400, body: { error: "reasonId is required" } };
+  }
+  if (comment !== undefined && typeof comment !== "string") {
+    return { status: 400, body: { error: "comment, if present, must be a string" } };
+  }
+  if (ccApTeam !== undefined && typeof ccApTeam !== "boolean") {
+    return { status: 400, body: { error: "ccApTeam, if present, must be a boolean" } };
+  }
+  const commentText = typeof comment === "string" && comment.trim() !== "" ? comment.trim() : null;
+
+  const reasonRow = await db
+    .prepare("SELECT id, label FROM supplier_return_reasons WHERE id = ? AND active = 1")
+    .bind(reasonId)
+    .first<{ id: string; label: string }>();
+  if (!reasonRow) {
+    return { status: 422, body: { error: `${reasonId} is not a recognised, active return reason` } };
   }
 
   const instance = await db
     .prepare(
-      `SELECT pi.id, pi.status FROM process_instances pi
+      `SELECT pi.id, pi.status, pi.subject_id FROM process_instances pi
        JOIN stage_visits v ON v.process_instance_id = pi.id WHERE v.id = ?`
     )
     .bind(task.stage_visit_id)
-    .first<{ id: string; status: string }>();
+    .first<{ id: string; status: string; subject_id: string }>();
   if (!instance) return { status: 409, body: { error: "this task is not attached to a process instance" } };
   if (instance.status !== "in_progress") {
     return { status: 409, body: { error: `process instance ${instance.id} is already ${instance.status}` } };
   }
 
-  await endTaskAndSiblings(db, task, user.id, reason.trim(), null);
+  await endTaskAndSiblings(db, task, user.id, reasonRow.label, null);
 
   const now = new Date().toISOString();
   await db
     .prepare(
       `UPDATE process_instances
-       SET status = 'returned_manually', ended_by = ?, ended_at = ?, end_reason = ?, updated_at = ?
+       SET status = 'returned_manually', ended_by = ?, ended_at = ?, end_reason = ?,
+           return_reason_id = ?, supplier_comment = ?, updated_at = ?
        WHERE id = ?`
     )
-    .bind(user.id, now, reason.trim(), now, instance.id)
+    .bind(user.id, now, reasonRow.label, reasonRow.id, commentText, now, instance.id)
     .run();
+
+  const emailOutcome = await attemptSupplierEmail(db, {
+    instanceId: instance.id,
+    invoiceId: instance.subject_id,
+    taskId: task.id,
+    reasonLabel: reasonRow.label,
+    comment: commentText,
+    ccApTeam: ccApTeam === true,
+    createdBy: user.id,
+    emailConfig,
+  });
 
   return {
     status: 200,
@@ -405,10 +462,172 @@ export async function handleReturnToSupplier(
       viaOverride: standing.viaOverride,
       instanceId: instance.id,
       instanceStatus: "returned_manually",
-      reason: reason.trim(),
-      note: "the system has sent nothing — contact with the supplier happens outside it",
+      reasonId: reasonRow.id,
+      reason: reasonRow.label,
+      comment: commentText,
+      email: emailOutcome,
     },
   };
+}
+
+interface AttemptSupplierEmailArgs {
+  instanceId: string;
+  invoiceId: string;
+  taskId: string;
+  reasonLabel: string;
+  comment: string | null;
+  ccApTeam: boolean;
+  createdBy: string;
+  emailConfig: OutboundEmailConfig;
+}
+
+interface SupplierEmailOutcome {
+  attempted: boolean;
+  status: "queued" | "sent" | "send_failed";
+  detail: string | null;
+  toAddress: string | null;
+  ccAddress: string | null;
+}
+
+/**
+ * Best-effort, and recorded either way. `supplier_return_emails` gets
+ * exactly one row from this function every time it runs — there is no
+ * path through here that ends the return without also leaving a
+ * record of what was, or was not, attempted about the email.
+ */
+async function attemptSupplierEmail(
+  db: D1Database,
+  args: AttemptSupplierEmailArgs
+): Promise<SupplierEmailOutcome> {
+  const supplier = await db
+    .prepare(
+      `SELECT s.id, s.email FROM invoice_headers h
+       JOIN suppliers s ON s.id = h.supplier_id
+       WHERE h.id = ?`
+    )
+    .bind(args.invoiceId)
+    .first<{ id: string; email: string | null }>();
+
+  const toAddress = supplier?.email ?? null;
+  let ccAddress: string | null = null;
+  if (args.ccApTeam) {
+    const settings = await db
+      .prepare("SELECT ap_team_email FROM org_settings WHERE id = 1")
+      .first<{ ap_team_email: string | null }>();
+    ccAddress = settings?.ap_team_email ?? null;
+  }
+
+  const id = crypto.randomUUID();
+  const now = new Date().toISOString();
+  const subject = `Invoice returned — ${args.reasonLabel}`;
+  const bodyLines = [
+    `This invoice has been returned to you.`,
+    ``,
+    `Reason: ${args.reasonLabel}`,
+    ...(args.comment ? [``, args.comment] : []),
+  ];
+  const text = bodyLines.join("\n");
+
+  if (!toAddress) {
+    await db
+      .prepare(
+        `INSERT INTO supplier_return_emails
+           (id, process_instance_id, task_id, supplier_id, to_address, cc_address, subject, body,
+            status, status_detail, created_by, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'send_failed', ?, ?, ?)`
+      )
+      .bind(
+        id,
+        args.instanceId,
+        args.taskId,
+        supplier?.id ?? null,
+        "",
+        ccAddress,
+        subject,
+        text,
+        "no email address on file for this supplier",
+        args.createdBy,
+        now
+      )
+      .run();
+    return { attempted: false, status: "send_failed", detail: "no email address on file for this supplier", toAddress: null, ccAddress };
+  }
+
+  if (!args.emailConfig.apiKey || !args.emailConfig.fromAddress) {
+    await db
+      .prepare(
+        `INSERT INTO supplier_return_emails
+           (id, process_instance_id, task_id, supplier_id, to_address, cc_address, subject, body,
+            status, status_detail, created_by, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'send_failed', ?, ?, ?)`
+      )
+      .bind(
+        id,
+        args.instanceId,
+        args.taskId,
+        supplier?.id ?? null,
+        toAddress,
+        ccAddress,
+        subject,
+        text,
+        "email sending is not configured for this deployment",
+        args.createdBy,
+        now
+      )
+      .run();
+    return {
+      attempted: false,
+      status: "send_failed",
+      detail: "email sending is not configured for this deployment",
+      toAddress,
+      ccAddress,
+    };
+  }
+
+  const result = await sendEmailViaResend(args.emailConfig.apiKey, {
+    from: args.emailConfig.fromAddress,
+    to: toAddress,
+    cc: ccAddress,
+    subject,
+    text,
+  });
+
+  if (result.ok) {
+    await db
+      .prepare(
+        `INSERT INTO supplier_return_emails
+           (id, process_instance_id, task_id, supplier_id, to_address, cc_address, subject, body,
+            provider_message_id, status, created_by, created_at, sent_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'sent', ?, ?, ?)`
+      )
+      .bind(
+        id,
+        args.instanceId,
+        args.taskId,
+        supplier?.id ?? null,
+        toAddress,
+        ccAddress,
+        subject,
+        text,
+        result.messageId,
+        args.createdBy,
+        now,
+        now
+      )
+      .run();
+    return { attempted: true, status: "sent", detail: null, toAddress, ccAddress };
+  }
+
+  await db
+    .prepare(
+      `INSERT INTO supplier_return_emails
+         (id, process_instance_id, task_id, supplier_id, to_address, cc_address, subject, body,
+          status, status_detail, created_by, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'send_failed', ?, ?, ?)`
+    )
+    .bind(id, args.instanceId, args.taskId, supplier?.id ?? null, toAddress, ccAddress, subject, text, result.error, args.createdBy, now)
+    .run();
+  return { attempted: true, status: "send_failed", detail: result.error, toAddress, ccAddress };
 }
 
 export interface DiscardBody {

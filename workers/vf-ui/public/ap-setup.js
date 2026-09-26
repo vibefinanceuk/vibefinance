@@ -71,6 +71,7 @@ const TABS = [
   { key: "coding", labelKey: "apsetup.coding" },
   { key: "approvalhierarchy", labelKey: "apsetup.approvalhierarchy" },
   { key: "stagerestrictions", labelKey: "apsetup.stagerestrictions" },
+  { key: "returnreasons", labelKey: "apsetup.returnreasons" },
 ];
 
 let units = [];
@@ -80,6 +81,13 @@ let matchingConfig = null;
 let standardRules = [];
 let activeTab = null;
 let costCentreNames = [];
+// Decision 0498's own tab — return reasons and the AP team's email
+// address. Its own corner, loaded the same non-blocking way
+// `loadStageRestrictions()` already is below: a failed fetch leaves
+// this tab showing its own empty state rather than taking down every
+// other tab on the screen.
+let returnReasons = [];
+let apTeamEmail = null;
 
 /**
  * **Stage Restrictions — decision 0483.** Reported live: Account
@@ -157,6 +165,7 @@ async function load() {
       // that fails to load leaves the Stage Restrictions tab showing
       // its own empty state rather than taking down every other tab.
       loadStageRestrictions(),
+      loadReturnReasonsTab(),
     ]);
     if (!overviewResponse.ok || !configResponse.ok || !matchingConfigResponse.ok || !standardRulesResponse.ok) {
       console.error(
@@ -318,6 +327,116 @@ async function removeStageReturnTarget(id) {
  * reused rather than a Save button: a restriction is a single fact,
  * not a form with several fields that need to land together.
  */
+/**
+ * Return reasons and the AP team's own email address — decision 0498,
+ * points 1 and 4 of five. A flat list, not the Account Coding
+ * framework's hierarchy (`coding-lists.js`) — that shape has no use
+ * here, and `supplier_return_reasons` was deliberately built as its
+ * own simple table (migration 0087) rather than a sixth coding-list
+ * type.
+ */
+async function loadReturnReasonsTab() {
+  try {
+    const [reasonsResponse, emailResponse] = await Promise.all([
+      fetch("/api/admin/return-reasons"),
+      fetch("/api/admin/ap-team-email"),
+    ]);
+    returnReasons = reasonsResponse.ok ? ((await reasonsResponse.json()).reasons ?? []) : [];
+    apTeamEmail = emailResponse.ok ? ((await emailResponse.json()).apTeamEmail ?? null) : null;
+  } catch (err) {
+    console.error("Return reasons tab load failed", err);
+    returnReasons = [];
+    apTeamEmail = null;
+  }
+}
+
+function returnReasonsTab(problem) {
+  const rows = returnReasons.map((reason) => {
+    const labelInput = el("input", { type: "text", value: reason.label });
+    const activeCheckbox = el("input", {
+      type: "checkbox",
+      id: `returnreasonactive-${reason.id}`,
+      ...(reason.active ? { checked: "checked" } : {}),
+    });
+    const save = async () => {
+      problem.textContent = "";
+      const response = await fetch(`/api/admin/return-reasons/${encodeURIComponent(reason.id)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ label: labelInput.value.trim(), active: activeCheckbox.checked }),
+      });
+      if (!response.ok) {
+        problem.textContent = (await response.json().catch(() => ({}))).error ?? t("apsetup.returnreasons.savefailed");
+        return;
+      }
+      await loadReturnReasonsTab();
+      render();
+    };
+    return el("div", { class: "editgrid" }, [
+      labelInput,
+      el("label", { for: `returnreasonactive-${reason.id}`, class: "sm muted", text: t("apsetup.returnreasons.active") }),
+      activeCheckbox,
+      actionLink("save", { onclick: save }),
+    ]);
+  });
+
+  const newId = el("input", { type: "text", placeholder: t("apsetup.returnreasons.newid") });
+  const newLabel = el("input", { type: "text", placeholder: t("apsetup.returnreasons.newlabel") });
+  const addReason = async () => {
+    problem.textContent = "";
+    if (!newId.value.trim() || !newLabel.value.trim()) {
+      problem.textContent = t("apsetup.returnreasons.idandlabelrequired");
+      return;
+    }
+    const response = await fetch("/api/admin/return-reasons", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: newId.value.trim(), label: newLabel.value.trim() }),
+    });
+    if (!response.ok) {
+      problem.textContent = (await response.json().catch(() => ({}))).error ?? t("apsetup.returnreasons.savefailed");
+      return;
+    }
+    await loadReturnReasonsTab();
+    render();
+  };
+
+  const apTeamEmailInput = el("input", { type: "text", value: apTeamEmail ?? "", placeholder: t("apsetup.returnreasons.apteamemailplaceholder") });
+  const saveApTeamEmail = async () => {
+    problem.textContent = "";
+    const response = await fetch("/api/admin/ap-team-email", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ apTeamEmail: apTeamEmailInput.value.trim() || null }),
+    });
+    if (!response.ok) {
+      problem.textContent = (await response.json().catch(() => ({}))).error ?? t("apsetup.returnreasons.savefailed");
+      return;
+    }
+    await loadReturnReasonsTab();
+    render();
+  };
+
+  return el("div", {}, [
+    problem,
+    el("div", { class: "panel" }, [
+      el("div", { class: "cardhead" }, [el("h3", { text: t("apsetup.returnreasons") })]),
+      el("p", { class: "muted sm", text: t("apsetup.returnreasons.sub") }),
+      ...rows,
+      el("div", { class: "editgrid" }, [
+        newId,
+        newLabel,
+        actionLink("create", { label: t("apsetup.add"), onclick: addReason }),
+      ]),
+    ]),
+    el("div", { class: "panel" }, [
+      el("div", { class: "cardhead" }, [el("h3", { text: t("apsetup.returnreasons.apteamemail") })]),
+      el("p", { class: "muted sm", text: t("apsetup.returnreasons.apteamemailsub") }),
+      el("div", { class: "editgrid" }, [apTeamEmailInput, actionLink("save", { onclick: saveApTeamEmail })]),
+    ]),
+  ]);
+}
+
 function stageRestrictionsTab(problem) {
   const intro = el("p", { class: "muted sm", text: t("apsetup.stagerestrictions.sub") });
 
@@ -1220,6 +1339,7 @@ function render() {
       }),
     approvalhierarchy: () => approvalHierarchyTab(),
     stagerestrictions: () => stageRestrictionsTab(el("div", { class: "warn" })),
+    returnreasons: () => returnReasonsTab(el("div", { class: "warn" })),
   }[activeTab]();
 
   shell.replaceChildren(

@@ -26,7 +26,12 @@
           "y": "okr43t1WZRRR27D1U_M2Ao18PjA6Fuk19NSuJ0MCijg",
           "crv": "P-256"
     },
-    "ENVIRONMENT_ID": "test-environment"
+    "ENVIRONMENT_ID": "test-environment",
+    // A test-only value, same reasoning as the keypair above — public
+    // on purpose, verifies nothing real. Lets index.test.ts exercise
+    // `/webhooks/resend` through the real router (decision 0498),
+    // rather than only unit-testing `handleResendWebhook` directly.
+    "RESEND_WEBHOOK_SECRET": "whsec_dGVzdC1vbmx5LXNlY3JldC1kby1ub3QtdXNl"
   },
 
   "compatibility_date": "2026-08-01",

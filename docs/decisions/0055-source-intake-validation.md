@@ -9,6 +9,18 @@ rather than a design question: `extraction.confidence` was set as a
 fact and never declared, so the confidence rules in section 10 could
 not be written at all. Everything else here remains proposed.
 
+> **Superseded in part by decision 0498.** Section 7's "Rejection is
+> recorded, not transmitted" — specifically the sentence "**The system
+> does not send anything back to the sender**" and the paragraph
+> around it claiming "any contact with the sender happens outside the
+> system" — no longer holds for the manual Return To Supplier action
+> on a task: decision 0498 built a real outbound email through Resend
+> for exactly that transition. Everything else in section 7 stands
+> unchanged, including the two terminal states themselves
+> (`returned_manually` / `archived`) and the reasoning for keeping them
+> at instance-status level rather than inventing a stage — 0498 reused
+> both without changing either.
+
 ---
 
 ## 1. What prompted this

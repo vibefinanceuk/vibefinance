@@ -1,0 +1,18 @@
+-- 0089_org_settings_ap_team_email.sql
+-- Decision 0498 — point 4 of five: "a check box to copy email to
+-- senders AP team email address." Nothing anywhere in the schema
+-- named a team, or the organisation as a whole, an email address to
+-- send as or be copied on — confirmed by searching before writing
+-- this migration.
+--
+-- **On `org_settings`, not `org_teams`.** A per-team address was
+-- considered and set aside: `org_teams` is about which people can act
+-- on which tasks (decision 0016), an idea that has nothing to do with
+-- an outbound mailbox, and the operator's own request named "senders
+-- AP team email address" in the singular, organisation-wide sense —
+-- the same "one deployment, one row" reasoning migration 0032 already
+-- gives `retention_years`. Nullable: the CC checkbox this enables
+-- (`viewer.js`) simply stays unavailable until an operator sets one,
+-- rather than the migration inventing a placeholder address nobody
+-- chose.
+ALTER TABLE org_settings ADD COLUMN ap_team_email TEXT;

@@ -101,6 +101,25 @@
     "ENVIRONMENT_ID": "Acme-production",
     "LOCALE": "en",
 
+    /*
+      Decision 0498 — Return To Supplier's own outbound address. A var,
+      not a secret: it is printed on every email this deployment sends,
+      the same reasoning INGESTION_DOMAIN above already gives.
+
+      **Must be verified in Resend (SPF/DKIM/DMARC DNS records added to
+      this domain) before sending will actually work** — until then,
+      `handleReturnToSupplier` records `send_failed` with Resend's own
+      refusal rather than pretending to have sent anything.
+
+      Two secrets complete the setup, set via `wrangler secret put`
+      (never here — see index.ts's own Env doc comments):
+        RESEND_API_KEY         — from the Resend dashboard
+        RESEND_WEBHOOK_SECRET  — shown when the webhook endpoint
+          (https://vf-app.vibefinance.workers.dev/webhooks/resend) is
+          configured in Resend's own dashboard
+    */
+    "RESEND_FROM_ADDRESS": "ap-noreply@vibefinance-ai.com",
+
     // Which web origins may READ this Worker's responses (decision
     // 0098). Names the shared UI — the same value for every customer,
     // which writes down something already true: each customer's

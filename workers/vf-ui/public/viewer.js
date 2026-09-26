@@ -1494,7 +1494,10 @@ function linePanel() {
  * with no explanation is one the next person cannot act on.
  *
  * Discarding needs one too (0078) — *"nothing goes back"*, so the
- * record of why is all there is.
+ * record of why is all there is. **Still a bare prompt, deliberately**
+ * — the operator was asked directly whether this pass should upgrade
+ * Discard's identical prompt() alongside Return To Supplier's own, and
+ * chose to keep this scoped to the button actually reported on.
  *
  * **Returning to a stage moved to its own picker — decision 0490.**
  * It needs a real target stage and a real team, neither of which a
@@ -1503,8 +1506,13 @@ function linePanel() {
  * Return click 400'd). `openReturnPicker` below collects its own
  * reason inline, the same way Reassign's picker collects its own
  * optional comment rather than going through this list.
+ *
+ * **Return To Supplier moved to its own picker too — decision 0498.**
+ * A free-text prompt could never collect a real, active reason id, a
+ * separate supplier-facing comment, or the CC choice — `open
+ * ReturnToSupplierPicker` below.
  */
-const ACTIONS_NEEDING_A_REASON = ["return_to_supplier", "discard"];
+const ACTIONS_NEEDING_A_REASON = ["discard"];
 
 /**
  * Do something to this task.
@@ -1763,6 +1771,111 @@ async function openReturnPicker(task, onClose) {
 }
 
 /**
+ * Return To Supplier — decision 0498. The document leaves the process
+ * entirely (decision 0055/0075's own terminal act), so this picker
+ * gathers everything that act now needs in one screen: an audited
+ * reason, a comment for the supplier's own eyes, the address it will
+ * actually go to, and an optional CC to the AP team.
+ *
+ * **The supplier's email comes from `stored.supplier` already in
+ * memory — no new fetch.** `loadInvoice()` already resolves the
+ * matched supplier onto every open document (decision 0219); this
+ * picker only reads what is already there, the same "communication
+ * path" the operator asked to see, point 3 of five. `null` renders as
+ * a plain "no email on file" line rather than an empty field, which
+ * `handleReturnToSupplier` already treats the same way server-side.
+ *
+ * **The CC checkbox only appears when there is somewhere for it to go**
+ * — `GET /return-email-settings` reports only whether an AP team
+ * address is configured at all (never the address itself, which
+ * belongs to the admin screen's own `Admin.Configure` gate), so an
+ * unconfigured deployment shows no checkbox rather than one that would
+ * silently do nothing when ticked.
+ */
+async function openReturnToSupplierPicker(task, onClose) {
+  const [reasonsResponse, settingsResponse] = await Promise.all([
+    fetch("/api/return-reasons"),
+    fetch("/api/return-email-settings"),
+  ]);
+  if (!reasonsResponse.ok) {
+    note(t("viewer.actionfailed"));
+    return;
+  }
+  const reasons = (await reasonsResponse.json()).reasons ?? [];
+  const apTeamConfigured = settingsResponse.ok ? Boolean((await settingsResponse.json()).configured) : false;
+  if (reasons.length === 0) {
+    note(t("action.return_to_supplier.nonefound"));
+    return;
+  }
+
+  const close = () => backdrop.remove();
+  const labeled = (labelKey, input) => el("div", { class: "kf" }, [el("label", { text: t(labelKey) }), input]);
+
+  const select = el(
+    "select",
+    {},
+    reasons.map((r) => el("option", { value: r.id, text: r.label }))
+  );
+  const commentBox = el("textarea", { placeholder: t("activity.placeholder") });
+  const supplierEmail = stored.supplier?.email ?? null;
+  const emailLine = el("div", { class: "muted sm" }, [
+    el("span", { text: supplierEmail ? `${t("action.return_to_supplier.willgoto")} ${supplierEmail}` : t("action.return_to_supplier.noemail") }),
+  ]);
+  const ccCheckbox = el("input", { type: "checkbox" });
+  const errorBox = el("div", { class: "warn sm", hidden: "hidden" });
+
+  const doReturn = async () => {
+    errorBox.hidden = true;
+    const response = await fetch(`/api/tasks/${encodeURIComponent(task.id)}/return-to-supplier`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        reasonId: select.value,
+        comment: commentBox.value.trim() || undefined,
+        ccApTeam: apTeamConfigured ? ccCheckbox.checked : undefined,
+      }),
+    });
+    if (!response.ok) {
+      const failure = await response.json().catch(() => ({}));
+      errorBox.hidden = false;
+      errorBox.textContent = failure.error ?? t("viewer.actionfailed");
+      return;
+    }
+    close();
+    // The instance has ended — this screen has nothing left to show,
+    // the same "finished or moved" close every other action already
+    // takes at the end of runAction() above.
+    onClose();
+  };
+
+  const stateButtons = el("div", { class: "statebuttons" }, [
+    actionLink("return_to_supplier", { onclick: doReturn, primary: true }),
+    actionLink("close", { onclick: close }),
+  ]);
+
+  const box = el("div", { class: "popout" }, [
+    el("div", { class: "cardhead" }, [el("h3", { text: t("action.return_to_supplier") }), stateButtons]),
+    labeled("action.return_to_supplier.reasonlabel", select),
+    emailLine,
+    labeled("action.return_to_supplier.commentlabel", commentBox),
+    ...(apTeamConfigured
+      ? [
+          el("div", { class: "kf" }, [
+            el("label", {}, [ccCheckbox, el("span", { text: t("action.return_to_supplier.ccapteam") })]),
+          ]),
+        ]
+      : []),
+    errorBox,
+  ]);
+
+  const backdrop = el("div", { class: "backdrop" }, [box]);
+  backdrop.onclick = (e) => {
+    if (e.target === backdrop) close();
+  };
+  document.body.append(backdrop);
+}
+
+/**
  * Route To Approver — decision 0495, the last of the agreed
  * Coding-pilot sequence. The same dedicated-picker shape Reassign and
  * Return already established, not the generic comment-and-OK/Cancel
@@ -1975,7 +2088,9 @@ function taskActionButtons(task, onClose) {
                 ? openReturnPicker(task, onClose)
                 : a === "route_to_approver"
                   ? openRouteToApproverPicker(task, onClose)
-                  : runAction(a, task, onClose),
+                  : a === "return_to_supplier"
+                    ? openReturnToSupplierPicker(task, onClose)
+                    : runAction(a, task, onClose),
           // With nothing to save, the first thing the task offers is
           // what somebody came to do.
           primary: !canEditAnything && index === 0,

@@ -163,6 +163,7 @@ import reassignNonefoundWordingSql from "../migrations/0172_reassign_nonefound_w
 import recordSupplierButtonWordingSql from "../migrations/0173_record_supplier_button_wording.sql?raw";
 import routeToApproverStringsSql from "../migrations/0174_route_to_approver_strings.sql?raw";
 import routeToApproverCommentSql from "../migrations/0175_route_to_approver_comment.sql?raw";
+import returnToSupplierPickerStringsSql from "../migrations/0176_return_to_supplier_picker_strings.sql?raw";
 
 function stripSqlComments(sql: string): string {
   return sql
@@ -358,5 +359,6 @@ export async function applyTestSchema(): Promise<void> {
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(recordSupplierButtonWordingSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(routeToApproverStringsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(routeToApproverCommentSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(returnToSupplierPickerStringsSql)));
 
 }

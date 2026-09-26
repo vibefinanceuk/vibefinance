@@ -378,31 +378,62 @@ describe("who may return", () => {
   });
 });
 
+// No secrets configured — the shape most tests use, since a return must
+// never depend on Resend being reachable (decision 0498's own "the
+// terminal transition never depends on the email succeeding").
+const NO_EMAIL_CONFIG = { apiKey: null, fromAddress: null };
+
 describe("returning to the supplier", () => {
   it("ends the instance in returned_manually, recording who and why", async () => {
     const { instanceId, taskId } = await atApproval();
     await grant("u-dan", ["AP.Approve", "AP.ReturnToSupplier"]);
 
-    const result = await handleReturnToSupplier(env.DB, taskId, { reason: "duplicate of INV-1001" }, DAN);
+    const result = await handleReturnToSupplier(
+      env.DB,
+      taskId,
+      { reasonId: "duplicate_invoice", comment: "please resend as a credit note" },
+      DAN,
+      NO_EMAIL_CONFIG
+    );
     expect(result.status).toBe(200);
 
     const instance = await env.DB.prepare(
-      "SELECT status, ended_by, end_reason FROM process_instances WHERE id = ?"
+      "SELECT status, ended_by, end_reason, return_reason_id, supplier_comment FROM process_instances WHERE id = ?"
     )
       .bind(instanceId)
       .first<Record<string, string>>();
     expect(instance?.status).toBe("returned_manually");
     expect(instance?.ended_by).toBe("u-dan");
-    expect(instance?.end_reason).toBe("duplicate of INV-1001");
+    // end_reason keeps recording the reason's own label text — decision
+    // 0498's own "zero change to every existing reader" design, since
+    // activity-route.ts's derived Timeline line already reads this
+    // column for return/discard.
+    expect(instance?.end_reason).toBe("Duplicate invoice");
+    expect(instance?.return_reason_id).toBe("duplicate_invoice");
+    expect(instance?.supplier_comment).toBe("please resend as a credit note");
   });
 
-  it("says plainly that nothing was sent", async () => {
-    // A button claiming to email a supplier and sometimes unable to is
-    // worse than an honest record.
+  it("refuses an unrecognised or inactive reason id", async () => {
     const { taskId } = await atApproval();
     await grant("u-dan", ["AP.Approve", "AP.ReturnToSupplier"]);
-    const result = await handleReturnToSupplier(env.DB, taskId, { reason: "duplicate" }, DAN);
-    expect(String((result.body as { note: string }).note)).toContain("sent nothing");
+    const result = await handleReturnToSupplier(env.DB, taskId, { reasonId: "not-a-real-reason" }, DAN, NO_EMAIL_CONFIG);
+    expect(result.status).toBe(422);
+    expect(String((result.body as { error: string }).error)).toContain("not-a-real-reason");
+  });
+
+  it("requires reasonId — a bare comment is not enough", async () => {
+    const { taskId } = await atApproval();
+    await grant("u-dan", ["AP.Approve", "AP.ReturnToSupplier"]);
+    const result = await handleReturnToSupplier(env.DB, taskId, { comment: "no reason given" }, DAN, NO_EMAIL_CONFIG);
+    expect(result.status).toBe(400);
+  });
+
+  it("treats a deactivated reason the same as one that never existed", async () => {
+    const { taskId } = await atApproval();
+    await env.DB.prepare("UPDATE supplier_return_reasons SET active = 0 WHERE id = 'other'").run();
+    await grant("u-dan", ["AP.Approve", "AP.ReturnToSupplier"]);
+    const result = await handleReturnToSupplier(env.DB, taskId, { reasonId: "other" }, DAN, NO_EMAIL_CONFIG);
+    expect(result.status).toBe(422);
   });
 
   it("refuses a manager holding AP.ReturnAny but not AP.ReturnToSupplier", async () => {
@@ -410,9 +441,80 @@ describe("returning to the supplier", () => {
     // always requires somebody to hold the terminal permission.
     const { taskId } = await atApproval();
     await grant("u-mgr", ["AP.Return", "AP.ReturnAny"]);
-    const result = await handleReturnToSupplier(env.DB, taskId, { reason: "duplicate" }, MGR);
+    const result = await handleReturnToSupplier(env.DB, taskId, { reasonId: "duplicate_invoice" }, MGR, NO_EMAIL_CONFIG);
     expect(result.status).toBe(403);
     expect(String((result.body as { error: string }).error)).toContain("AP.ReturnToSupplier");
+  });
+
+  describe("the outbound email — decision 0498", () => {
+    it("still ends the instance, and records why nothing was sent, when Resend is not configured", async () => {
+      const { taskId } = await atApproval();
+      await grant("u-dan", ["AP.Approve", "AP.ReturnToSupplier"]);
+      // A real supplier with a real email, so the "not configured" path
+      // is the one actually exercised — otherwise "no supplier email"
+      // would win first, and this test would prove nothing about
+      // configuration at all.
+      await env.DB.prepare("INSERT INTO suppliers (id, name, email) VALUES ('sup-1', 'Acme Supplies', 'ap@acmesupplies.com')").run();
+      await env.DB.prepare("INSERT INTO invoice_headers (id, facts_json, supplier_id) VALUES ('inv-1', '{}', 'sup-1')").run();
+      const result = await handleReturnToSupplier(env.DB, taskId, { reasonId: "duplicate_invoice" }, DAN, NO_EMAIL_CONFIG);
+      expect(result.status).toBe(200);
+      const email = (result.body as { email: { status: string; detail: string | null } }).email;
+      expect(email.status).toBe("send_failed");
+      expect(email.detail).toContain("not configured");
+
+      const row = await env.DB.prepare("SELECT status, status_detail FROM supplier_return_emails WHERE task_id = ?")
+        .bind(taskId)
+        .first<{ status: string; status_detail: string }>();
+      expect(row?.status).toBe("send_failed");
+      expect(row?.status_detail).toContain("not configured");
+    });
+
+    it("records why nothing was sent when the supplier has no email on file", async () => {
+      // atApproval()'s own invoice ('inv-1') has no invoice_headers row
+      // at all, so the supplier join finds nothing — the same "honest
+      // gap" as a supplier record with a null email column.
+      const { taskId } = await atApproval();
+      await grant("u-dan", ["AP.Approve", "AP.ReturnToSupplier"]);
+      const result = await handleReturnToSupplier(
+        env.DB,
+        taskId,
+        { reasonId: "duplicate_invoice" },
+        DAN,
+        { apiKey: "fake-key", fromAddress: "ap@example.com" }
+      );
+      const email = (result.body as { email: { status: string; detail: string | null } }).email;
+      expect(email.status).toBe("send_failed");
+      expect(email.detail).toContain("no email address on file");
+    });
+
+    it("never asks Resend anything when ccApTeam is requested but no AP team address is configured", async () => {
+      // org_settings.ap_team_email is null by default (migration 0089)
+      // — the checkbox, if a caller sent it anyway, has nothing to add.
+      const { taskId } = await atApproval();
+      await grant("u-dan", ["AP.Approve", "AP.ReturnToSupplier"]);
+      const result = await handleReturnToSupplier(
+        env.DB,
+        taskId,
+        { reasonId: "duplicate_invoice", ccApTeam: true },
+        DAN,
+        NO_EMAIL_CONFIG
+      );
+      const email = (result.body as { email: { ccAddress: string | null } }).email;
+      expect(email.ccAddress).toBeNull();
+    });
+
+    it("rejects a non-boolean ccApTeam", async () => {
+      const { taskId } = await atApproval();
+      await grant("u-dan", ["AP.Approve", "AP.ReturnToSupplier"]);
+      const result = await handleReturnToSupplier(
+        env.DB,
+        taskId,
+        { reasonId: "duplicate_invoice", ccApTeam: "yes" },
+        DAN,
+        NO_EMAIL_CONFIG
+      );
+      expect(result.status).toBe(400);
+    });
   });
 });
 

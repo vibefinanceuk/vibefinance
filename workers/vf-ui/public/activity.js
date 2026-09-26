@@ -137,6 +137,18 @@ function actionTakenLine(item) {
   }
 }
 
+/**
+ * Decision 0498 — what happened to the email, if anything, in words.
+ * Only ever present on a `return_to_supplier` item (`activity-route.ts`
+ * only populates `emailStatus` there); `undefined` renders nothing,
+ * the same "no key, no line" convention every other optional field on
+ * this item already follows.
+ */
+function emailStatusLine(item) {
+  if (item.action !== "return_to_supplier" || !item.emailStatus) return null;
+  return t(`activity.email.${item.emailStatus}`).replace("{to}", item.emailToAddress ?? "");
+}
+
 function systemMessage(item) {
   if (item.kind === "received") return t("activity.received");
   if (item.kind === "stage_completed") {
@@ -186,6 +198,11 @@ function itemRow(item) {
             el("span", { class: "activitywhen", text: item.at }),
           ]),
           item.comment ? el("div", { class: "activityactioncomment", text: item.comment }) : null,
+          // Decision 0498 — the supplier-facing comment (separate from
+          // the reason above) and what happened to the email, both
+          // only ever present on a return_to_supplier item.
+          item.supplierComment ? el("div", { class: "activityactioncomment", text: item.supplierComment }) : null,
+          emailStatusLine(item) ? el("div", { class: "activityactioncomment muted sm", text: emailStatusLine(item) }) : null,
         ].filter(Boolean)
       ),
     ]);

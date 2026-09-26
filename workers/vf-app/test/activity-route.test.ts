@@ -531,6 +531,61 @@ describe("task actions — claim/release/return/discard (decision 0488)", () => 
     const item = items.find((i) => i.kind === "action_taken");
     expect(item?.action).toBe("return_to_supplier");
     expect(item?.targetStageName).toBeUndefined();
+    // Neither column exists yet on this instance — decision 0498's own
+    // fields render as absent, not as null or empty strings.
+    expect(item?.supplierComment).toBeUndefined();
+    expect(item?.emailStatus).toBeUndefined();
+  });
+
+  it("carries decision 0498's own supplier comment and email status on a return-to-supplier entry", async () => {
+    await seedInvoice("inv-1");
+    await seedStage("coding", "Coding");
+    await seedUser("u-priya", "Priya Patel");
+    await seedVisit("v-1", "inv-1", "coding", "2026-09-01 09:00:00");
+    await endTask("t-1", "v-1", "coding", "u-priya", "2026-09-01 09:20:00", {
+      status: "returned",
+      reason: "Duplicate invoice",
+      returnedToStageId: null,
+    });
+    await env.DB.prepare("UPDATE process_instances SET supplier_comment = ? WHERE id = 'pi-v-1'")
+      .bind("please resend as a credit note")
+      .run();
+    await env.DB.prepare(
+      `INSERT INTO supplier_return_emails
+         (id, process_instance_id, task_id, to_address, subject, body, status, created_by)
+       VALUES ('email-1', 'pi-v-1', 't-1', 'supplier@example.com', 'subj', 'body', 'delivered', 'u-priya')`
+    ).run();
+
+    const result = await handleGetActivity(env.DB, "inv-1");
+    const items = (result.body as { items: Record<string, unknown>[] }).items;
+    const item = items.find((i) => i.kind === "action_taken");
+    expect(item?.supplierComment).toBe("please resend as a credit note");
+    expect(item?.emailStatus).toBe("delivered");
+    expect(item?.emailToAddress).toBe("supplier@example.com");
+  });
+
+  it("never carries the supplier comment or email status on an ordinary return-to-a-stage entry", async () => {
+    // Both columns live on process_instances, so a stray value there
+    // must never leak onto a "return" item just because it shares the
+    // same instance.
+    await seedInvoice("inv-1");
+    await seedStage("validation", "Validation");
+    await seedStage("coding", "Coding", 2);
+    await seedUser("u-priya", "Priya Patel");
+    await seedVisit("v-1", "inv-1", "coding", "2026-09-01 09:00:00");
+    await endTask("t-1", "v-1", "coding", "u-priya", "2026-09-01 09:20:00", {
+      status: "returned",
+      reason: "PO amount does not match",
+      returnedToStageId: "validation",
+    });
+    await env.DB.prepare("UPDATE process_instances SET supplier_comment = 'unrelated' WHERE id = 'pi-v-1'").run();
+
+    const result = await handleGetActivity(env.DB, "inv-1");
+    const items = (result.body as { items: Record<string, unknown>[] }).items;
+    const item = items.find((i) => i.kind === "action_taken");
+    expect(item?.action).toBe("return");
+    expect(item?.supplierComment).toBeUndefined();
+    expect(item?.emailStatus).toBeUndefined();
   });
 
   it("derives a discard entry", async () => {

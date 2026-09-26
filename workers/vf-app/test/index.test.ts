@@ -1588,6 +1588,130 @@ describe("Where a task can be returned to, and returning it — decision 0490", 
   });
 });
 
+describe("Return To Supplier's own new routes, through the real router (decision 0498)", () => {
+  it("GET /return-reasons returns the seeded active list to any authenticated person", async () => {
+    const key = await seedUserWithPermissions(["AP.TaskView"]);
+    const res = await SELF.fetch("https://example.com/return-reasons", { headers: { Authorization: `Bearer ${key}` } });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { reasons: { id: string }[] };
+    expect(body.reasons.length).toBeGreaterThan(0);
+  });
+
+  it("GET /return-email-settings reports unconfigured by default, to any authenticated person", async () => {
+    const key = await seedUserWithPermissions(["AP.TaskView"]);
+    const res = await SELF.fetch("https://example.com/return-email-settings", {
+      headers: { Authorization: `Bearer ${key}` },
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ configured: false });
+  });
+
+  it("gates the admin reasons list and the AP team email on Admin.Configure", async () => {
+    const limitedKey = await seedUserWithPermissions(["AP.TaskView"]);
+    expect(
+      (await SELF.fetch("https://example.com/admin/return-reasons", { headers: { Authorization: `Bearer ${limitedKey}` } })).status
+    ).toBe(403);
+    expect(
+      (await SELF.fetch("https://example.com/admin/ap-team-email", { headers: { Authorization: `Bearer ${limitedKey}` } })).status
+    ).toBe(403);
+
+    const adminKey = await seedUserWithPermissions(["Admin.Configure"]);
+    expect(
+      (await SELF.fetch("https://example.com/admin/return-reasons", { headers: { Authorization: `Bearer ${adminKey}` } })).status
+    ).toBe(200);
+
+    const putRes = await SELF.fetch("https://example.com/admin/ap-team-email", {
+      method: "PUT",
+      headers: { Authorization: `Bearer ${adminKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ apTeamEmail: "ap-team@acme.com" }),
+    });
+    expect(putRes.status).toBe(200);
+    const getRes = await SELF.fetch("https://example.com/admin/ap-team-email", {
+      headers: { Authorization: `Bearer ${adminKey}` },
+    });
+    expect(await getRes.json()).toEqual({ apTeamEmail: "ap-team@acme.com" });
+  });
+
+  it("completes a return through the real router, recording the categorised reason", async () => {
+    const { id: userId, apiKey } = await seedUserWithPermissionsAndId(["AP.Approve", "AP.ReturnToSupplier"]);
+
+    await env.DB.prepare("INSERT INTO processes (id, name) VALUES ('p-498', 'AP')").run();
+    await env.DB.prepare(
+      "INSERT INTO process_stages (id, process_id, name, sequence) VALUES ('s-approval-498', 'p-498', 'Approval', 1)"
+    ).run();
+    await env.DB.prepare(
+      "INSERT INTO process_instances (id, process_id, subject_type, subject_id, current_stage_id, status) VALUES ('inst-498', 'p-498', 'invoice', 'inv-498', 's-approval-498', 'in_progress')"
+    ).run();
+    await env.DB.prepare(
+      "INSERT INTO stage_visits (id, process_instance_id, stage_id, outcome) VALUES ('v-498', 'inst-498', 's-approval-498', 'matched')"
+    ).run();
+    await env.DB.prepare(
+      "INSERT INTO tasks (id, stage_id, stage_visit_id, owner_user_id, required_permission) VALUES ('t-498', 's-approval-498', 'v-498', ?, 'AP.Approve')"
+    )
+      .bind(userId)
+      .run();
+
+    const res = await SELF.fetch("https://example.com/tasks/t-498/return-to-supplier", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ reasonId: "duplicate_invoice", comment: "see attached credit note request" }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { instanceStatus: string; email: { status: string } };
+    expect(body.instanceStatus).toBe("returned_manually");
+    expect(body.email.status).toBe("send_failed"); // no RESEND_API_KEY configured in the test env
+
+    const instance = await env.DB.prepare("SELECT return_reason_id, supplier_comment FROM process_instances WHERE id = 'inst-498'").first();
+    expect(instance).toEqual({ return_reason_id: "duplicate_invoice", supplier_comment: "see attached credit note request" });
+  });
+
+  it("verifies Resend's own webhook through the real router, using the test-only secret in wrangler.test.jsonc", async () => {
+    await env.DB.prepare("INSERT INTO org_users (id, email, name) VALUES ('u-webhook-498', 'w@acme.com', 'W')").run();
+    await env.DB.prepare("INSERT INTO processes (id, name) VALUES ('p-webhook-498', 'AP')").run();
+    await env.DB.prepare(
+      "INSERT INTO process_stages (id, process_id, name, sequence) VALUES ('s-webhook-498', 'p-webhook-498', 'Approval', 1)"
+    ).run();
+    await env.DB.prepare(
+      "INSERT INTO process_instances (id, process_id, subject_type, subject_id, current_stage_id, status) VALUES ('inst-webhook-498', 'p-webhook-498', 'invoice', 'inv-webhook-498', 's-webhook-498', 'returned_manually')"
+    ).run();
+    await env.DB.prepare(
+      "INSERT INTO tasks (id, stage_id, required_permission, status) VALUES ('t-webhook-498', 's-webhook-498', 'AP.Approve', 'returned')"
+    ).run();
+    await env.DB.prepare(
+      `INSERT INTO supplier_return_emails
+         (id, process_instance_id, task_id, to_address, subject, body, provider_message_id, status, created_by)
+       VALUES ('email-498', 'inst-webhook-498', 't-webhook-498', 'supplier@example.com', 's', 'b', 'msg-498', 'sent', 'u-webhook-498')`
+    ).run();
+
+    const rawSecret = Uint8Array.from(atob("dGVzdC1vbmx5LXNlY3JldC1kby1ub3QtdXNl"), (c) => c.charCodeAt(0));
+    const key = await crypto.subtle.importKey("raw", rawSecret, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+    const body = JSON.stringify({ type: "email.delivered", data: { email_id: "msg-498" } });
+    const mac = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(`evt-498.1700000000.${body}`));
+    let binary = "";
+    for (const b of new Uint8Array(mac)) binary += String.fromCharCode(b);
+    const signature = btoa(binary);
+
+    const badRes = await SELF.fetch("https://example.com/webhooks/resend", {
+      method: "POST",
+      headers: { "svix-id": "evt-498", "svix-timestamp": "1700000000", "svix-signature": "v1,not-valid" },
+      body,
+    });
+    expect(badRes.status).toBe(401);
+
+    const goodRes = await SELF.fetch("https://example.com/webhooks/resend", {
+      method: "POST",
+      headers: { "svix-id": "evt-498", "svix-timestamp": "1700000000", "svix-signature": `v1,${signature}` },
+      body,
+    });
+    expect(goodRes.status).toBe(200);
+
+    const row = await env.DB.prepare("SELECT status FROM supplier_return_emails WHERE id = 'email-498'").first<{
+      status: string;
+    }>();
+    expect(row?.status).toBe("delivered");
+  });
+});
+
 describe("intake channels, through the real router (decision 0024)", () => {
   it("creates a channel through the real router", async () => {
     await SELF.fetch("https://example.com/processes", { method: "POST", headers: authHeaders(), body: JSON.stringify({ id: "ap-live", name: "Standard AP" }) });
