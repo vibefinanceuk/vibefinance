@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 26 September 2026 (decision 0507). A living document: what
+Last updated 26 September 2026 (decision 0508). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,26 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Stage grids sized to their actual run length (0508)
+- A regression from decision 0507, reported live with screenshots
+  against real production data (org "Acme-production"): "some cards
+  are wide, some are full width," "some are narrow."
+- Root cause: 0507's grid assumed the intended shape of Standard AP's
+  five configurable stages sitting adjacent to one another. Real
+  per-org configuration (via the existing `offerToggleRow`, decision
+  0485) had only two of seven stages actually offering restrictions,
+  and they weren't adjacent — each landed alone in a fixed 3-column
+  grid, occupying a third of the row with two-thirds left empty.
+- Fixed by sizing each grid to the number of stages actually in its
+  run rather than always assuming three: a run of 1 gets no grid at
+  all (full width, like a standalone slim stage); a run of 2 gets a
+  new 2-column `.stagegrid-2`; a run of 3+ keeps the original 3-column
+  grid.
+- No change to which stages offer restrictions, or to anything else
+  decision 0507 built — this is a sizing fix reacting to configuration
+  the screen already respected but 0507's own tests never exercised.
+- Full reasoning and verification counts in decision 0508.
 
 ### Stage Restrictions as a 3-column grid (0507)
 - Reported live, from a `/design` mock-up made against the real

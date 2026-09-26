@@ -1391,11 +1391,29 @@
   }
   .stagegrid > .panel { margin-bottom: 0; }
 
+  /*
+    **Sized to how many stages actually landed in it — decision 0507's
+    own follow-up.** A run of exactly one offered stage is never given
+    this class at all (`ap-setup.js` renders it as a plain full-width
+    `.panel` instead, the same as a transitionary stage) — a lone card
+    a third of the row wide, with two empty columns beside it, is what
+    was reported live against a real org's own data: "some cards are
+    wide, some are full width... some are narrow." A run of exactly two
+    gets `.stagegrid-2` instead of the bare three-column grid, so both
+    columns are actually used rather than one filled and one empty. The
+    higher-specificity `900px` rule below still collapses either shape
+    to one column on a narrow screen.
+  */
+  .stagegrid.stagegrid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
   @media (max-width: 1400px) {
     .stagegrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   }
   @media (max-width: 900px) {
-    .stagegrid { grid-template-columns: minmax(0, 1fr); }
+    .stagegrid,
+    .stagegrid.stagegrid-2 {
+      grid-template-columns: minmax(0, 1fr);
+    }
   }
 
   /*
