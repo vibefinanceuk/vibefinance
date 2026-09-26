@@ -326,6 +326,14 @@ function costCentreSearchClause(search: string | null): { sql: string; binds: un
  * for the three greenfield lists, restated here rather than shared
  * directly since Cost Centre's own owner id column is `c.id`, not the
  * generic `e.id` the other function's query aliases.
+ *
+ * **Lenient, unlike the other three — decision 0511.** A cost centre
+ * with no value at all for a dimension being filtered on still matches:
+ * the Coding pop-out only began narrowing Cost Centre by company code
+ * at 0511, and cost centres nobody had linked to a company must not
+ * vanish from it. `coding-validation.ts`'s `LENIENT_FILTER_LISTS` is
+ * the same rule on the save side, so the picker never offers a value
+ * the save then refuses.
  */
 function costCentreFilterClause(
   declared: string[],
@@ -337,14 +345,21 @@ function costCentreFilterClause(
   const sql = applied
     .map(
       () =>
-        ` AND EXISTS (
-          SELECT 1 FROM coding_list_entry_filters cf
-          WHERE cf.owner_list_type_id = 'cost_centre' AND cf.owner_entry_id = c.id
-            AND cf.filter_list_type_id = ? AND cf.filter_entry_id = ?
+        ` AND (
+          EXISTS (
+            SELECT 1 FROM coding_list_entry_filters cf
+            WHERE cf.owner_list_type_id = 'cost_centre' AND cf.owner_entry_id = c.id
+              AND cf.filter_list_type_id = ? AND cf.filter_entry_id = ?
+          )
+          OR NOT EXISTS (
+            SELECT 1 FROM coding_list_entry_filters cf
+            WHERE cf.owner_list_type_id = 'cost_centre' AND cf.owner_entry_id = c.id
+              AND cf.filter_list_type_id = ?
+          )
         )`
     )
     .join("");
-  const binds = applied.flatMap(([k, v]) => [k, v]);
+  const binds = applied.flatMap(([k, v]) => [k, v, k]);
   return { sql, binds };
 }
 

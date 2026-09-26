@@ -959,7 +959,14 @@ function lineRow(line, index) {
        * `openLineCodingPopout`).
        */
       (() => {
-        const button = el("button", { class: "rm", title: t("action.coding"), onclick: () => openLineCodingPopout(line) });
+        const button = el("button", {
+          // `codingbtn` — decision 0511: what `markOne` marks when this
+          // line's coding is not on Account Coding's own lists, since
+          // the coding fields themselves live in the pop-out, not here.
+          class: "rm codingbtn",
+          title: t("action.coding"),
+          onclick: () => openLineCodingPopout(line),
+        });
         button.append(icon("coding"));
         return button;
       })(),
@@ -999,13 +1006,21 @@ function lineRow(line, index) {
  *
  * `filterKeys` is exactly `coding_list_type_filters`'s own declared
  * shape (migration 0076): General Ledger Code is the only field
- * "linked" to two others; Project and Commodity Code declare no
- * filter at all and are offered unnarrowed, the same as their own
- * AP Setup picker (`coding-lists.js`'s `openCodingEntryForm`) already
- * does.
+ * "linked" to two others, Cost Centre to company code alone (decision
+ * 0511 — until then this list said `[]` for it, contradicting 0453's
+ * own record); Project and Commodity Code declare no filter at all and
+ * are offered unnarrowed, the same as their own AP Setup picker
+ * (`coding-lists.js`'s `openCodingEntryForm`) already does.
+ *
+ * **The save route enforces the same links** (decision 0511,
+ * `coding-validation.ts`) — so a value this picker would not offer is
+ * refused, and one it does offer never is.
  */
 const CODING_PICKER_FIELDS = [
-  { field: "BT-133", listType: "cost_centre", filterKeys: [] },
+  // Decision 0511: narrowed by company code at last, as 0453 said it
+  // was and migration 0076 declares. Leniently — `ledger-route.ts`
+  // still offers a cost centre linked to no company at all.
+  { field: "BT-133", listType: "cost_centre", filterKeys: ["company_code"] },
   { field: "coding.project", listType: "project", filterKeys: [] },
   { field: "coding.commodity_code", listType: "commodity_code", filterKeys: [] },
   { field: "coding.gl_code", listType: "gl_code", filterKeys: ["company_code", "commodity_code"] },
@@ -2437,6 +2452,12 @@ function markFields() {
     node.classList.remove("danger", "warning", "ok");
     node.removeAttribute("title");
   }
+  // The coding button keeps its own label as its title — reset to it,
+  // never removed (decision 0511).
+  for (const button of document.querySelectorAll("#lines .codingbtn.danger")) {
+    button.classList.remove("danger");
+    button.title = t("action.coding");
+  }
   for (const dot of document.querySelectorAll(".kf-dot")) dot.remove();
 
   /**
@@ -2486,6 +2507,25 @@ function markOne(entry, severity, reason) {
     // the old single-tier `.failing` class too; it went unnoticed
     // because nothing before this change screenshotted a line cell.
     const rows = document.querySelectorAll("#lines tr");
+
+    /**
+     * **A line whose coding is not on the lists — decision 0511.** The
+     * four coding fields live in the Coding pop-out, not the line
+     * table, so a marked cell would be invisible; the line's own Coding
+     * button is where somebody goes to fix it, so that is what is
+     * marked. Only for `account_coding` — any other check naming BT-133
+     * is about the cell, and the cell is marked below as ever.
+     */
+    if (entry.check === "account_coding" && severity === "danger" && CODING_PICKER_FIELDS.some((f) => f.field === code)) {
+      for (const [n, row] of rows.entries()) {
+        if (entry.line && entry.line !== n + 1) continue;
+        const button = row.querySelector(".codingbtn");
+        if (!button) continue;
+        button.classList.add("danger");
+        button.title = `${t("action.coding")} — ${reason}`;
+      }
+    }
+
     const index = lineFields.findIndex((f) => f.field === code);
     if (index >= 0) {
       for (const [n, row] of rows.entries()) {
@@ -2507,6 +2547,31 @@ function renderExceptions() {
       : [el("div", { class: "exrow muted", text: t("viewer.noexceptions") })])
   );
   markFields();
+}
+
+/**
+ * A refused coding save, in the reader's own language — decision 0511.
+ *
+ * The route's own `error` is an English sentence for a `curl`; the
+ * structured `invalid` list beside it is what this screen reads, the
+ * same reason decision 0119 stopped building English here. `null` for
+ * any other refusal, which keeps its existing message.
+ */
+function codingRefusalText(body) {
+  if (body?.reason !== "invalid_coding" || !Array.isArray(body.invalid) || body.invalid.length === 0) return null;
+  return [
+    t("viewer.coding.invalid"),
+    ...body.invalid.map((p) =>
+      [
+        p.line ? `${t("viewer.online")} ${p.line}` : null,
+        t(`field.${String(p.field).toLowerCase()}`),
+        `"${p.value}"`,
+        t(`viewer.coding.invalid.${p.reason}`),
+      ]
+        .filter(Boolean)
+        .join(" · ")
+    ),
+  ].join("\n");
 }
 
 async function save(close) {
@@ -2570,7 +2635,7 @@ async function save(close) {
 
   const body = await response.json().catch(() => ({}));
   if (!response.ok) {
-    note(body.error ?? t("viewer.savefailed"));
+    note(codingRefusalText(body) ?? body.error ?? t("viewer.savefailed"));
     return;
   }
 

@@ -1,4 +1,5 @@
 import { unitLineage } from "./unit-config.js";
+import { CodingLookupCache } from "./coding-validation.js";
 import { resolveApprovalChain } from "./ledger-route.js";
 import { hasPermission } from "./enforce.js";
 
@@ -679,9 +680,24 @@ async function resolveCostObjects(
   }
 
   const results: Array<ApprovalResolution | ApprovalUnresolved> = [];
+  const lookups = new CodingLookupCache(db);
   for (const { dimension } of applicable) {
     const entryId = costObjectValueFor(params, dimension)!;
     const label = COST_OBJECT_DIMENSION_LABELS[dimension];
+
+    /**
+     * **Not on the list is its own answer — decision 0511.** Until now
+     * a value Account Coding does not hold walked a chain of nothing and
+     * read *"the chain ran out uncovered"* — indistinguishable from an
+     * amount beyond every limit, so a mistyped or supplier-supplied code
+     * reached the Default Approver with the wrong reason attached. Still
+     * the Default Approver (a line must go somewhere), but now saying
+     * why.
+     */
+    if (!(await lookups.exists(dimension, entryId))) {
+      results.push(toDefault(`The ${label} value ${entryId} is not on the Account Coding list.`));
+      continue;
+    }
     const result = await resolveChainFor(db, dimension, entryId, params.amount ?? 0);
 
     if (result.covered && result.chain.length > 0) {

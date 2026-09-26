@@ -1,4 +1,5 @@
 import type { RouteResult } from "./org-route.js";
+import { checkLineCoding } from "./coding-validation.js";
 
 /**
  * Frequency-based Account Coding defaults — decision 0456, Phase 1 of
@@ -131,9 +132,9 @@ export async function suggestCodingValues(
 
 export async function handleCodingSuggestions(db: D1Database, invoiceId: string): Promise<RouteResult> {
   const header = await db
-    .prepare("SELECT supplier_vat_id FROM invoice_headers WHERE id = ?")
+    .prepare("SELECT supplier_vat_id, org_unit_id FROM invoice_headers WHERE id = ?")
     .bind(invoiceId)
-    .first<{ supplier_vat_id: string | null }>();
+    .first<{ supplier_vat_id: string | null; org_unit_id: string | null }>();
   if (!header) {
     return { status: 404, body: { error: `invoice ${invoiceId} does not exist` } };
   }
@@ -145,5 +146,19 @@ export async function handleCodingSuggestions(db: D1Database, invoiceId: string)
   }
 
   const suggestions = await suggestCodingValues(db, header.supplier_vat_id);
+
+  /**
+   * **Never suggest what the save would refuse — decision 0511.** A
+   * suggestion is pre-filled and saved with no further click (0457), so
+   * a value keyed before Account Coding was enforced — or since removed
+   * from a list, or linked to another company — would otherwise block
+   * the whole save it was meant to speed up. Checked as one line, so a
+   * suggested General Ledger Code is tested against the Commodity Code
+   * suggested beside it.
+   */
+  const asLine = Object.fromEntries(Object.entries(suggestions).map(([field, s]) => [field, s!.value]));
+  for (const problem of await checkLineCoding(db, header.org_unit_id, asLine)) {
+    delete suggestions[problem.field as CodingSuggestionField];
+  }
   return { status: 200, body: { suggestions } };
 }

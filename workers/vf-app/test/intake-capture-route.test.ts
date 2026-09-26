@@ -410,3 +410,81 @@ describe("po.matched / po.line_matched reach real rule evaluation through captur
     expect(task?.owner_team_id).toBe("matching-team");
   });
 });
+
+describe("coding.line_invalid reaches real rule evaluation through capture — decision 0511", () => {
+  // The flag half of 0511, end to end: a supplier's own BT-133 that is
+  // not on the buyer's cost-centre list is kept, never refused, and a
+  // line-scope rule at the next stage genuinely sees it.
+  async function seedCodingCheckProcess(processId: string, channelId: string): Promise<void> {
+    await handleCreateProcess(env.DB, { id: processId, name: "AP with a coding check" });
+    await handleCreateStage(env.DB, processId, { id: `${processId}-intake`, name: "Intake", sequence: 1 });
+    await env.DB.prepare("INSERT INTO rule_sets (id, name, mode, status) VALUES (?, ?, ?, ?)")
+      .bind(`${processId}-rs`, "hold bad coding", "first_match", "active")
+      .run();
+    const ruleId = crypto.randomUUID();
+    await env.DB.prepare("INSERT INTO rules (id, rule_set_id, sort_order, enabled) VALUES (?, ?, 0, 1)")
+      .bind(ruleId, `${processId}-rs`)
+      .run();
+    await env.DB.prepare(
+      `INSERT INTO rule_versions (rule_id, version, source_text, compiled_json, compiled_by, approved_by, approved_at, effective_from)
+       VALUES (?, 1, ?, ?, ?, ?, ?, ?)`
+    )
+      .bind(
+        ruleId,
+        "if a line's cost centre is not on our list, send it to the coding team",
+        JSON.stringify({
+          conditions: { field: "coding.line_invalid", operator: "contains", value: "BT-133" },
+          actions: [{ type: "assign_task", params: { team: "coding-team", permission: "AP.Validate" } }],
+        }),
+        "test-model",
+        "alice",
+        "2026-01-01T00:00:00.000Z",
+        "2026-01-01T00:00:00.000Z"
+      )
+      .run();
+    await handleCreateStage(env.DB, processId, {
+      id: `${processId}-coding`,
+      name: "Coding",
+      sequence: 2,
+      ruleSetId: `${processId}-rs`,
+      evaluationScope: "line",
+    });
+    await env.DB.prepare("INSERT INTO org_units (id, name) VALUES ('u1', 'Acme France') ON CONFLICT(id) DO NOTHING").run();
+    await handleCreateTeam(env.DB, { id: "coding-team", name: "Coding Team", unitId: "u1" });
+    await handleCreateIntakeChannel(env.DB, processId, { id: channelId, name: "EDI" });
+    await env.DB.prepare("INSERT INTO cost_centres (id, name) VALUES ('cc-known', 'Marketing')").run();
+  }
+
+  it("a supplier's BT-133 not on the list is stored as sent, and a line-scope rule acts on it", async () => {
+    await seedCodingCheckProcess("pcc1", "iccc1");
+    const result = await handleCaptureIntake(env.DB, "iccc1", {
+      id: "inv-cc-1",
+      facts: { "BT-112": 100, "supplier.matched": true, "supplier.awaitingErp": false },
+      lines: [{ lineNumber: 1, "BT-131": 100, "BT-133": "SUPPLIER-REF-9" }],
+    });
+    expect(result.status).toBe(201);
+
+    const line = await env.DB.prepare("SELECT facts_json FROM invoice_lines WHERE invoice_id = 'inv-cc-1'").first<{
+      facts_json: string;
+    }>();
+    const stored = JSON.parse(line!.facts_json);
+    expect(stored["BT-133"]).toBe("SUPPLIER-REF-9");
+    // Computed, never stored — the list can gain the entry later.
+    expect(stored["coding.line_invalid"]).toBeUndefined();
+
+    const task = await env.DB.prepare("SELECT owner_team_id FROM tasks").first<{ owner_team_id: string }>();
+    expect(task?.owner_team_id).toBe("coding-team");
+  });
+
+  it("a BT-133 that is on the list does not trip the same rule", async () => {
+    await seedCodingCheckProcess("pcc2", "iccc2");
+    const result = await handleCaptureIntake(env.DB, "iccc2", {
+      id: "inv-cc-2",
+      facts: { "BT-112": 100, "supplier.matched": true, "supplier.awaitingErp": false },
+      lines: [{ lineNumber: 1, "BT-131": 100, "BT-133": "cc-known" }],
+    });
+    expect(result.status).toBe(201);
+    const tasks = await env.DB.prepare("SELECT count(*) AS n FROM tasks").first<{ n: number }>();
+    expect(tasks?.n).toBe(0);
+  });
+});

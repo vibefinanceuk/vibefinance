@@ -5792,7 +5792,13 @@ describe("the invoice-line Coding pop-out (decision 0453)", () => {
           "/api/invoices/inv-1/coding-suggestions": { suggestions: {} },
           ...routes,
         };
-        if (path in base) return { ok: true, json: async () => base[path] } as Response;
+        // `{ __notOk: body }` — a refused response (decision 0511's own
+        // coding refusal is the first test here to need one).
+        const value = base[path];
+        if (value && typeof value === "object" && "__notOk" in value) {
+          return { ok: false, json: async () => (value as { __notOk: unknown }).__notOk } as Response;
+        }
+        if (path in base) return { ok: true, json: async () => value } as Response;
         throw new Error(`no stub for ${path}`);
       })
     );
@@ -5968,6 +5974,108 @@ describe("the invoice-line Coding pop-out (decision 0453)", () => {
     const afterCommodity = calls.find((c) => c.startsWith("/api/coding-lists/gl_code?") && c.includes("search=plant2"));
     expect(afterCommodity).toContain("filter.company_code=UK01");
     expect(afterCommodity).toContain("filter.commodity_code=com-1");
+  });
+
+  /**
+   * **Decision 0511.** Cost Centre is narrowed by company code at last
+   * (0453 said it was; `CODING_PICKER_FIELDS` never did), a line whose
+   * coding is not on the lists marks its own Coding button, and a
+   * refused save is told in the reader's language rather than the
+   * route's English.
+   */
+  it("narrows Cost Centre's own picker by the invoice's company code (decision 0511)", async () => {
+    const calls: string[] = [];
+    stub(
+      {
+        "/api/org/cost-centres": { costCentres: [{ id: "cc1", name: "Marketing", filters: [] }], total: 1, page: 1, pageSize: 50 },
+        "/api/coding-lists/project": { entries: [], declaredFilters: [], total: 0, page: 1, pageSize: 50 },
+      },
+      calls
+    );
+    await openAndClickCoding();
+    await new Promise((r) => setTimeout(r, 0));
+
+    // The pop-out's own first-page preload (decision 0459) — not the
+    // `search=cc1` lookup that resolves the already-keyed value's own
+    // name, which stays unfiltered so whatever is stored still reads.
+    const preload = calls.find((c) => c.startsWith("/api/org/cost-centres?") && !c.includes("search=cc1"));
+    expect(preload).toContain("filter.company_code=UK01");
+    const resolve = calls.find((c) => c.startsWith("/api/org/cost-centres?") && c.includes("search=cc1"));
+    expect(resolve).not.toContain("filter.company_code=");
+  });
+
+  it("marks a line's Coding button when its coding is not on the Account Coding lists, and says why on hover (decision 0511)", async () => {
+    stub({
+      "/api/invoices/inv-1": {
+        facts: {},
+        lines: [
+          { lineNumber: 1, facts: { "BT-131": 100, "BT-133": "SUPPLIER-REF" } },
+          { lineNumber: 2, facts: { "BT-131": 50, "BT-133": "cc1" } },
+        ],
+        validation: {
+          passed: false,
+          checked: ["account_coding"],
+          failures: ["account_coding"],
+          involves: [{ check: "account_coding", fields: ["BT-133"], line: 1, value: "SUPPLIER-REF", severity: "danger" }],
+        },
+        supplier: null,
+        buyer: { unitId: "UK01", unitName: "Acme UK", entityName: "Acme UK", vatId: "GB1" },
+        orgUnitId: "UK01",
+      },
+      "/api/ui-strings": {
+        locale: "en",
+        strings: { ...CODING_STRINGS, "check.account_coding": "Not on the Account Coding lists" },
+      },
+    });
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    await openViewer(TASK, () => {});
+    await new Promise((r) => setTimeout(r, 0));
+
+    const buttons = [...document.querySelectorAll("#lines .codingbtn")] as HTMLButtonElement[];
+    expect(buttons).toHaveLength(2);
+    expect(buttons[0].classList.contains("danger")).toBe(true);
+    expect(buttons[0].title).toBe("Coding — Not on the Account Coding lists");
+    expect(buttons[1].classList.contains("danger")).toBe(false);
+    expect(buttons[1].title).toBe("Coding");
+  });
+
+  it("tells a refused coding save in the reader's own strings, one line per problem (decision 0511)", async () => {
+    stub({
+      "/api/ui-strings": {
+        locale: "en",
+        strings: {
+          ...CODING_STRINGS,
+          "viewer.online": "line",
+          "viewer.coding.invalid": "Not saved. These coding values are not on the Account Coding lists:",
+          "viewer.coding.invalid.wrong_commodity": "is not linked to the line's Commodity Code",
+        },
+      },
+      "/api/invoices/inv-1/key": {
+        __notOk: {
+          error: "Account Coding values not accepted: line 1 coding.gl_code \"GL-7000\" is not linked to the line's Commodity Code",
+          reason: "invalid_coding",
+          invalid: [{ line: 1, field: "coding.gl_code", value: "GL-7000", reason: "wrong_commodity" }],
+        },
+      },
+    });
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    await openViewer(TASK, () => {});
+    await new Promise((r) => setTimeout(r, 0));
+
+    const saveButton = [...document.querySelectorAll(".actionlink")].find(
+      (a) => a.querySelector("span")?.textContent === "Save"
+    ) as HTMLButtonElement;
+    saveButton.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(document.getElementById("viewer-note")?.textContent).toBe(
+      "Not saved. These coding values are not on the Account Coding lists:\n" +
+        'line 1 · General ledger code · "GL-7000" · is not linked to the line\'s Commodity Code'
+    );
   });
 
   /**
@@ -6245,8 +6353,18 @@ describe("the invoice-line Coding pop-out (decision 0453)", () => {
     });
 
     it("a plain empty result, with no active filter, states no matches and nothing more", async () => {
+      // Decision 0511 narrows Cost Centre by company code, so "no active
+      // filter" now means an invoice not yet placed in any org.
       stub({
         "/api/org/cost-centres": { costCentres: [], total: 0, page: 1, pageSize: 50 },
+        "/api/invoices/inv-1": {
+          facts: {},
+          lines: [{ lineNumber: 1, facts: { "BT-131": 100, "BT-133": "cc1" } }],
+          validation: { passed: true, checked: [], failures: [] },
+          supplier: null,
+          buyer: null,
+          orgUnitId: null,
+        },
       });
       await openAndClickCoding();
       await new Promise((r) => setTimeout(r, 0));

@@ -3,6 +3,7 @@ import { parseUblInvoice, UblParseError } from "@vibefinance/shared";
 import type { RouteResult } from "./org-route.js";
 import { handleUpsertInvoice, mergeStructuredInvoiceFacts } from "./invoice-facts-route.js";
 import { mergePoMatchFacts } from "./po-matching.js";
+import { mergeCodingValidityForInvoice } from "./coding-validation.js";
 import { handleCreateProcessInstance, visitCurrentStage } from "./workflow-engine.js";
 import { extractEmbeddedInvoiceXml, looksLikePdf, PdfExtractionError } from "./pdf-attachment.js";
 import { extractInvoiceFromImage, extractInvoiceFromImages, mergePageResults, sniffImageType, ExtractionRefusal, type ExtractionModel } from "./extraction.js";
@@ -199,7 +200,7 @@ export async function handleCaptureIntake(db: D1Database, channelId: string, bod
   // answer, not the one true at capture.
   const poMerged = await mergePoMatchFacts(db, structuredFacts, canonicalLines ?? []);
   let mergedFacts = poMerged.headerFacts;
-  const lines = canonicalLines ? poMerged.lines : undefined;
+  let lines = canonicalLines ? poMerged.lines : undefined;
   // Org placement / supplier matching / anything else a caller can only
   // derive from this document's own facts — decision 0434. Same
   // reasoning as po.matched just above, given to a caller-supplied hook
@@ -209,6 +210,12 @@ export async function handleCaptureIntake(db: D1Database, channelId: string, bod
   if (typeof enrichFacts === "function") {
     mergedFacts = { ...mergedFacts, ...(await enrichFacts(mergedFacts)) };
   }
+  // coding.line_invalid — decision 0511. After enrichFacts, not
+  // beside po.* above: the company code a Cost Centre or General
+  // Ledger Code is checked against is the org that hook has only just
+  // placed this invoice in. A supplier's own BT-133 is flagged here,
+  // never refused — the invoice is what the document said.
+  if (lines) lines = await mergeCodingValidityForInvoice(db, id, lines);
   // The channel's own currency tolerance reaches validation here —
   // decision 0057. Every capture path (XML, hybrid PDF, image,
   // multi-page finalise) converges on this function, so loading it

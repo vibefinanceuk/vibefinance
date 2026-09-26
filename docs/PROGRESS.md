@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 26 September 2026 (decision 0510). A living document: what
+Last updated 26 September 2026 (decision 0511). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2987,6 +2987,37 @@ section for the full reasoning and tests.
   untouched here.
 - Full reasoning and verification counts in decision 0469.
 
+### Coding values checked against Account Coding's own lists (0511)
+- The Handover's first "Suggested next piece": a keyed coding value
+  was free text as far as the server knew. The pop-out only ever
+  offered real entries, but `POST /invoices/:id/key` stored whatever
+  it was sent, and a UBL invoice's own `cbc:AccountingCost` reached
+  BT-133 unchecked. Cost-Object routing then read an unknown value as
+  "the chain ran out uncovered" — the Default Approver, with the wrong
+  reason.
+- **Refused on save** (the operator's choice): a 422
+  `invalid_coding` naming line, field, value and reason
+  (`not_on_list`, `wrong_company`, `wrong_commodity`), checked before
+  anything is written — only for values the save actually changes,
+  so an untouched, already-flagged supplier value never blocks an
+  unrelated correction.
+- **Links enforced**: General Ledger Code strictly (company code and
+  Commodity Code, the picker's existing reading); Cost Centre by
+  company code **leniently** — a cost centre with no company code set
+  stays valid everywhere. The pop-out never actually narrowed Cost
+  Centre by company, despite 0453's own record saying it did; it does
+  now, with the same lenient rule in `ledger-route.ts`.
+- **Flagged on arrival** (the operator's choice): new derived line
+  fact `coding.line_invalid`, computed live wherever `po.*` already
+  is; a new `account_coding` validation check (danger); the line's
+  Coding button marked on screen; approval routing now says "not on
+  the Account Coding list". Suggestions (0457) drop anything the save
+  would refuse.
+- `vf-licence` migration `0179` (5 strings × en/de) — **apply it
+  separately**. No `vf-app` migration.
+- Full reasoning, what was not built, and a read-only query for
+  checking live data in decision 0511.
+
 ### One shared grid for every stage card (0510)
 - Reported live, once decision 0509's deployed result was actually
   looked at: "Intake is wide, Validation is narrow, Matching is wide,
@@ -4855,8 +4886,9 @@ pop-out to key them (0453, refined through 0461/0462),
 frequency-based suggestions (0457–0459), and both `AP.Validate` and
 `AP.Code` able to work the stage (0455, 0456). Cost-object approval
 routing resolves all four dimensions in parallel (0452), see below.
-**What's still open**: a keyed value is free text, not validated
-against Account Coding's own configured lists.
+**Checked against Account Coding's own lists since 0511**: a keyed
+value not on them is refused, and a supplier's own that is not is
+flagged (`coding.line_invalid`).
 
 **The supplier fields nothing reads.** Terms, hold, match option and
 tolerances load and display, and **no process consults any of them**

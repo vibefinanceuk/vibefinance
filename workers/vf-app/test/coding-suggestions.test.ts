@@ -104,9 +104,49 @@ describe("handleCodingSuggestions", () => {
       await keyLine(invoiceId, 1, "coding.commodity_code", "comm-7");
     }
     await seedInvoice("inv-h-target", "DE-h");
+    // Decision 0511: a suggestion must be on Account Coding's own list.
+    await env.DB.prepare("INSERT INTO coding_list_entries (list_type_id, id, name) VALUES ('commodity_code', 'comm-7', 'Stationery')").run();
     const result = await handleCodingSuggestions(env.DB, "inv-h-target");
     expect(result.status).toBe(200);
     const body = result.body as { suggestions: Record<string, { value: string }> };
     expect(body.suggestions["coding.commodity_code"].value).toBe("comm-7");
+  });
+
+  /**
+   * **Decision 0511.** A suggestion is saved with no further click, so
+   * one the save route would refuse — keyed before Account Coding was
+   * enforced, or linked to another company — must never be offered.
+   */
+  it("drops a suggestion that is not on the Account Coding list, keeping the ones that are (decision 0511)", async () => {
+    for (const invoiceId of ["inv-j1", "inv-j2", "inv-j3"]) {
+      await seedInvoice(invoiceId, "DE-j");
+      await keyLine(invoiceId, 1, "coding.project", "PRJ-GONE");
+      await keyLine(invoiceId, 1, "coding.commodity_code", "comm-7");
+    }
+    await seedInvoice("inv-j-target", "DE-j");
+    await env.DB.prepare("INSERT INTO coding_list_entries (list_type_id, id, name) VALUES ('commodity_code', 'comm-7', 'Stationery')").run();
+
+    const result = await handleCodingSuggestions(env.DB, "inv-j-target");
+    const body = result.body as { suggestions: Record<string, { value: string }> };
+    expect(Object.keys(body.suggestions)).toEqual(["coding.commodity_code"]);
+  });
+
+  it("drops a suggested Cost Centre linked only to a different company than this invoice's (decision 0511)", async () => {
+    await env.DB.prepare("INSERT INTO org_units (id, name) VALUES ('UK01', 'Acme UK'), ('DE01', 'Acme DE')").run();
+    await env.DB.prepare("INSERT INTO cost_centres (id, name) VALUES ('cc-de', 'DE Marketing')").run();
+    await env.DB.prepare(
+      "INSERT INTO coding_list_entry_filters (owner_list_type_id, owner_entry_id, filter_list_type_id, filter_entry_id) VALUES ('cost_centre', 'cc-de', 'company_code', 'DE01')"
+    ).run();
+    for (const invoiceId of ["inv-k1", "inv-k2", "inv-k3"]) {
+      await seedInvoice(invoiceId, "DE-k");
+      await keyLine(invoiceId, 1, "BT-133", "cc-de");
+    }
+    await env.DB.prepare("INSERT INTO invoice_headers (id, supplier_vat_id, facts_json, org_unit_id) VALUES ('inv-k-uk', 'DE-k', '{}', 'UK01')").run();
+    await env.DB.prepare("INSERT INTO invoice_headers (id, supplier_vat_id, facts_json, org_unit_id) VALUES ('inv-k-de', 'DE-k', '{}', 'DE01')").run();
+
+    const uk = (await handleCodingSuggestions(env.DB, "inv-k-uk")).body as { suggestions: Record<string, unknown> };
+    const de = (await handleCodingSuggestions(env.DB, "inv-k-de")).body as { suggestions: Record<string, { value: string }> };
+    expect(uk.suggestions["BT-133"]).toBeUndefined();
+    expect(de.suggestions["BT-133"].value).toBe("cc-de");
   });
 });

@@ -166,6 +166,7 @@ import routeToApproverCommentSql from "../migrations/0175_route_to_approver_comm
 import returnToSupplierPickerStringsSql from "../migrations/0176_return_to_supplier_picker_strings.sql?raw";
 import docstatusReturnedArchivedSql from "../migrations/0177_docstatus_returned_archived.sql?raw";
 import discardPickerAndStageRestrictionStringsSql from "../migrations/0178_discard_picker_and_stage_restriction_strings.sql?raw";
+import accountCodingValidityStringsSql from "../migrations/0179_account_coding_validity_strings.sql?raw";
 
 function stripSqlComments(sql: string): string {
   return sql
@@ -364,5 +365,6 @@ export async function applyTestSchema(): Promise<void> {
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(returnToSupplierPickerStringsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(docstatusReturnedArchivedSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(discardPickerAndStageRestrictionStringsSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(accountCodingValidityStringsSql)));
 
 }

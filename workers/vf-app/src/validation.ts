@@ -83,6 +83,12 @@ export const VALIDATION_CHECKS = [
   // the same way every other fact this module reads is already on
   // `facts`/`lines` by the time it runs.
   "po_mismatch",
+  // Decision 0511 — a line coded to a value Account Coding does not
+  // hold (or holds for a different company or Commodity Code). Reads
+  // coding.line_invalid off each line; like po_mismatch it never
+  // computes anything itself — coding-validation.ts's
+  // mergeCodingValidityFacts is merged in by the caller first.
+  "account_coding",
 ] as const;
 export type ValidationCheck = (typeof VALIDATION_CHECKS)[number];
 
@@ -442,6 +448,17 @@ export function validateInvoiceFacts(
   }
   for (const entry of poConfirms) confirms.push(entry);
 
+  // Account Coding — decision 0511. `danger`, not `warning`: it is a
+  // claim checked against the customer's own configured lists and found
+  // not to be there, which is exactly what 0400 reserved `danger` for —
+  // and approval routing reads these values.
+  const coding = accountCodingFailures(lines ?? []);
+  if (coding.checked) checked.push("account_coding");
+  if (coding.failures.length > 0) {
+    failures.push("account_coding");
+    for (const entry of coding.failures) involves.push(entry);
+  }
+
   return {
     passed: failures.length === 0,
     failures,
@@ -501,4 +518,41 @@ export function mergeRevalidationFacts(facts: InvoiceFacts, result: ValidationRe
     "validation.passedAfterRules": result.passed,
     "validation.failuresAfterRules": result.failures.join(","),
   };
+}
+
+/**
+ * The `account_coding` check on its own — decision 0511.
+ *
+ * Exported because keying's own advisory verdict
+ * (`key-fields-route.ts`) is built from raw stored rows rather than
+ * parsed line facts, and adds this check's result to that verdict
+ * directly rather than reshaping what every other check there reads.
+ *
+ * **Checked only on lines something actually looked at**:
+ * `coding.line_invalid` absent means the caller never computed it, and
+ * that is "not checked", not "passed" — the same distinction
+ * `po_mismatch` draws on `po.variance_pct`.
+ */
+export function accountCodingFailures(lines: readonly LineForValidation[]): {
+  checked: boolean;
+  failures: ValidationFailure[];
+} {
+  let checked = false;
+  const failures: ValidationFailure[] = [];
+  for (const [index, line] of lines.entries()) {
+    const flagged = (line as Record<string, unknown>)["coding.line_invalid"];
+    if (typeof flagged !== "string") continue;
+    checked = true;
+    const fields = flagged.split(",").filter(Boolean);
+    if (fields.length === 0) continue;
+    const lineNumber = Number((line as Record<string, unknown>).lineNumber) || index + 1;
+    failures.push({
+      check: "account_coding",
+      fields,
+      line: lineNumber,
+      value: fields.map((f) => String((line as Record<string, unknown>)[f] ?? "")).join(", "),
+      severity: "danger",
+    });
+  }
+  return { checked, failures };
 }

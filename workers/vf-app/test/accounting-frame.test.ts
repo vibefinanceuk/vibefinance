@@ -475,9 +475,28 @@ describe("filters param — narrowing a read to matching cost centres only, deci
     expect((result.body as { costCentres: { id: string }[] }).costCentres.map((c) => c.id)).toEqual(["cc1"]);
   });
 
-  it("a cost centre with no filter value set at all does not match a filtered read", async () => {
+  /**
+   * **Reversed by decision 0511**, the operator's own choice. This
+   * read is what the Coding pop-out narrows Cost Centre by, and 0511
+   * is the first decision that actually passes it a company code: a
+   * cost centre nobody has linked to any company must stay offered for
+   * every company rather than vanish, or live cost centres loaded
+   * before anybody linked them would disappear from the pop-out.
+   */
+  it("a cost centre with no company code set at all still matches a filtered read (decision 0511)", async () => {
     await env.DB.prepare("INSERT INTO org_units (id, name) VALUES ('UK01', 'Acme UK')").run();
     await env.DB.prepare("INSERT INTO cost_centres (id, name) VALUES ('cc1', 'Unscoped')").run();
+    const result = await handleListCostCentresDetailed(env.DB, null, null, null, { company_code: "UK01" });
+    expect((result.body as { costCentres: { id: string }[] }).costCentres.map((c) => c.id)).toEqual(["cc1"]);
+  });
+
+  it("a cost centre linked only to a different company does not match (decision 0511)", async () => {
+    await env.DB.prepare("INSERT INTO org_units (id, name) VALUES ('UK01', 'Acme UK'), ('DE01', 'Acme DE')").run();
+    await env.DB.prepare("INSERT INTO cost_centres (id, name) VALUES ('cc-de', 'Germany only')").run();
+    await env.DB.prepare(
+      `INSERT INTO coding_list_entry_filters (owner_list_type_id, owner_entry_id, filter_list_type_id, filter_entry_id)
+       VALUES ('cost_centre', 'cc-de', 'company_code', 'DE01')`
+    ).run();
     const result = await handleListCostCentresDetailed(env.DB, null, null, null, { company_code: "UK01" });
     expect((result.body as { costCentres: unknown[] }).costCentres).toEqual([]);
   });

@@ -1,9 +1,16 @@
 import type { RouteResult } from "./org-route.js";
 import { isKnownField, type InvoiceFacts } from "@vibefinance/shared";
 import { handleUpsertInvoice } from "./invoice-facts-route.js";
-import { validateInvoiceFacts } from "./validation.js";
+import { validateInvoiceFacts, accountCodingFailures } from "./validation.js";
 import { resolveFieldVisibility } from "./field-visibility-route.js";
 import { mergePoMatchFacts } from "./po-matching.js";
+import {
+  CODING_FIELD_LISTS,
+  CodingLookupCache,
+  checkLineCoding,
+  mergeCodingValidityFacts,
+  type CodingProblem,
+} from "./coding-validation.js";
 
 /**
  * Keying — a person producing facts extraction could not.
@@ -329,6 +336,91 @@ export async function handleKeyInvoiceFields(
 
   const before = new Map(existingLines.results.map((l) => [l.line_number, l]));
 
+  /**
+   * **A coding value must be one Account Coding actually holds** —
+   * decision 0511. Refused, not flagged: the operator's own choice, and
+   * the same "refused, not ignored" discipline decision 0144 applies to
+   * a field this stage does not permit.
+   *
+   * **Only what this save changes.** The viewer sends every editable
+   * line field on every save (decision 0109), so an untouched value is
+   * resent as a matter of course — including a supplier's own BT-133
+   * that arrived invalid and is already flagged by
+   * `coding.line_invalid`. Refusing that would block somebody saving an
+   * unrelated correction on the same line. General Ledger Code is
+   * re-checked when the line's Commodity Code changes too, since that
+   * is what it is linked to.
+   *
+   * Checked before anything is written: no `keyed_fields` row, no
+   * upsert, for a save that is going to be refused.
+   */
+  {
+    const cache = new CodingLookupCache(db);
+    const invalid: (CodingProblem & { line: number | null })[] = [];
+
+    const changedCodingFields = (
+      previous: Record<string, unknown>,
+      next: Record<string, unknown>
+    ): Set<string> => {
+      const changed = new Set<string>();
+      for (const field of Object.keys(CODING_FIELD_LISTS)) {
+        if (next[field] === undefined) continue;
+        if (String(next[field] ?? "") !== String(previous[field] ?? "")) changed.add(field);
+      }
+      if (changed.has("coding.commodity_code")) changed.add("coding.gl_code");
+      return changed;
+    };
+
+    // Header-level coding reaches every line — per-line evaluation
+    // merges header facts beneath each line's own (decision 0027).
+    const headerNext = Object.fromEntries(entries);
+    const headerChanged = changedCodingFields(existingFacts as Record<string, unknown>, headerNext);
+    if (headerChanged.size > 0) {
+      const headerMerged = { ...(existingFacts as Record<string, unknown>), ...headerNext };
+      for (const problem of await checkLineCoding(db, invoiceUnitId, headerMerged, headerChanged, cache)) {
+        invalid.push({ ...problem, line: null });
+      }
+    }
+
+    if (Array.isArray(body.lines)) {
+      for (const line of body.lines as Record<string, unknown>[]) {
+        const lineNumber = Number(line.lineNumber);
+        if (!Number.isInteger(lineNumber) || lineNumber < 1) continue;
+        let previousFacts: Record<string, unknown> = {};
+        try {
+          previousFacts = JSON.parse(before.get(lineNumber)?.facts_json ?? "{}") as Record<string, unknown>;
+        } catch {
+          // Unparseable stored facts count as none, as below.
+        }
+        const nextFacts = (line.facts ?? {}) as Record<string, unknown>;
+        const changed = changedCodingFields(previousFacts, nextFacts);
+        if (changed.size === 0) continue;
+        const mergedLine = { ...previousFacts, ...nextFacts };
+        for (const problem of await checkLineCoding(db, invoiceUnitId, mergedLine, changed, cache)) {
+          invalid.push({ ...problem, line: lineNumber });
+        }
+      }
+    }
+
+    if (invalid.length > 0) {
+      const WHY: Record<CodingProblem["reason"], string> = {
+        not_on_list: "is not on the Account Coding list",
+        wrong_company: "does not belong to this invoice's company code",
+        wrong_commodity: "is not linked to the line's Commodity Code",
+      };
+      return {
+        status: 422,
+        body: {
+          error: `Account Coding values not accepted: ${invalid
+            .map((p) => `${p.line === null ? "" : `line ${p.line} `}${p.field} "${p.value}" ${WHY[p.reason]}`)
+            .join("; ")}`,
+          reason: "invalid_coding",
+          invalid,
+        },
+      };
+    }
+  }
+
   if (Array.isArray(body.lines)) {
     for (const line of body.lines as Record<string, unknown>[]) {
       // **From the line itself, not from its position.** The writer
@@ -492,6 +584,35 @@ export async function handleKeyInvoiceFields(
     // visit, under the channel's own settings (decision 0057).
     undefined
   );
+
+  /**
+   * The `account_coding` check, added here rather than inside the call
+   * above — decision 0511. `lines.results` is raw rows (see above), so
+   * it is parsed for this one check only, rather than changing what
+   * every other check on this path reads. Without it a line still
+   * carrying a supplier's invalid BT-133 would lose its marker the
+   * moment somebody saved an unrelated change.
+   */
+  const codingLines = await mergeCodingValidityFacts(
+    db,
+    invoiceUnitId,
+    lines.results.map((row) => {
+      let facts: Record<string, unknown> = {};
+      try {
+        facts = JSON.parse(String(row.facts_json ?? "{}")) as Record<string, unknown>;
+      } catch {
+        // No facts to check.
+      }
+      return { ...facts, lineNumber: Number(row.line_number) } as InvoiceFacts & { lineNumber: number };
+    })
+  );
+  const coding = accountCodingFailures(codingLines);
+  if (coding.checked) verdict.checked.push("account_coding");
+  if (coding.failures.length > 0) {
+    verdict.failures.push("account_coding");
+    verdict.passed = false;
+    verdict.involves = [...(verdict.involves ?? []), ...coding.failures];
+  }
 
   return {
     status: 200,

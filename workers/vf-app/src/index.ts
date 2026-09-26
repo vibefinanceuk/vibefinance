@@ -110,6 +110,7 @@ import {
 } from "./team-route.js";
 import { handleUpsertInvoice, mergeStructuredInvoiceFacts , handleGetInvoice, loadStoredInvoiceLines, loadLiveInvoiceFacts } from "./invoice-facts-route.js";
 import { mergePoMatchFacts } from "./po-matching.js";
+import { mergeCodingValidityForInvoice } from "./coding-validation.js";
 import { handleUpsertExpenseReport } from "./expense-facts-route.js";
 import {
   handleCreateProcess,
@@ -5316,7 +5317,9 @@ export default {
         }
         const poMerged = await mergePoMatchFacts(db, visitFacts, visitLines ?? []);
         visitFacts = poMerged.headerFacts;
-        visitLines = visitLines ? poMerged.lines : undefined;
+        visitLines = visitLines
+          ? await mergeCodingValidityForInvoice(db, instanceRow.subject_id, poMerged.lines)
+          : undefined;
       }
 
       const result = await visitCurrentStage(db, visitMatch[1], visitFacts, visitLines);

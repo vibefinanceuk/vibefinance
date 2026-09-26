@@ -730,6 +730,12 @@ const KEYS_THE_INTERFACE_USES = [
   "viewer.coding.suggested",
   // The Coding pop-out's shared results area — decision 0458.
   "viewer.coding.resultsfor",
+  // Decision 0511 — a refused coding save, and the new check's label.
+  "check.account_coding",
+  "viewer.coding.invalid",
+  "viewer.coding.invalid.not_on_list",
+  "viewer.coding.invalid.wrong_company",
+  "viewer.coding.invalid.wrong_commodity",
   // A filtered field's own empty result names what narrowed it —
   // decision 0459.
   "viewer.coding.nomatchesscoped",

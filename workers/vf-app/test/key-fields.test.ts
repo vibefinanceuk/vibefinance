@@ -36,6 +36,20 @@ async function seedInvoice(id: string, facts: Record<string, unknown> = {}) {
     .run();
 }
 
+/** The Account Coding entries the 0451 tests key — decision 0511. */
+async function seedCodingEntries() {
+  await env.DB.prepare(
+    `INSERT OR IGNORE INTO coding_list_entries (list_type_id, id, name) VALUES
+       ('project', 'PRJ-100', 'Warehouse fit-out'),
+       ('commodity_code', 'CC-42', 'Stationery'),
+       ('gl_code', 'GL-6000', 'Office supplies')`
+  ).run();
+  await env.DB.prepare(
+    `INSERT OR IGNORE INTO coding_list_entry_filters (owner_list_type_id, owner_entry_id, filter_list_type_id, filter_entry_id)
+     VALUES ('gl_code', 'GL-6000', 'commodity_code', 'CC-42')`
+  ).run();
+}
+
 beforeEach(async () => {
   await applyTestSchema();
   await env.DB.prepare("INSERT INTO org_users (id, email, name) VALUES ('u-dan', 'dan@acme.com', 'Dan Y.')").run();
@@ -588,6 +602,10 @@ describe("Line Level Account Coding — keying a line to something other than a 
       ],
     });
     await seedInvoice("inv-coding", {});
+    // Decision 0511: a coded value must be on Account Coding's own
+    // list — and General Ledger Code linked to the Commodity Code
+    // chosen beside it.
+    await seedCodingEntries();
     const result = await handleKeyInvoiceFields(
       env.DB,
       "inv-coding",
@@ -618,6 +636,7 @@ describe("Line Level Account Coding — keying a line to something other than a 
       fields: [{ field: "coding.project", visibility: "edit" }],
     });
     await seedInvoice("inv-coding-trail", {});
+    await seedCodingEntries();
     await handleKeyInvoiceFields(
       env.DB,
       "inv-coding-trail",

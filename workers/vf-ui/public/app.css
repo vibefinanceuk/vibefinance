@@ -2209,7 +2209,9 @@
   */
   .notealert-icon.success { background: var(--bg-success); color: var(--text-success); }
   .notealert-icon svg { width: 28px; height: 28px; }
-  .notealert-message { font-size: var(--text-lg); color: var(--text-primary); line-height: 1.4; margin: 0; }
+  /* `pre-line` — decision 0511: a refused coding save lists one line per
+     problem; a message with no line breaks renders exactly as before. */
+  .notealert-message { font-size: var(--text-lg); color: var(--text-primary); line-height: 1.4; margin: 0; white-space: pre-line; }
   .notealert-ok {
     padding: 8px 28px;
     border-radius: 999px;
@@ -3537,6 +3539,16 @@
     color: var(--severity-value-text);
   }
   .kf.danger label { color: var(--severity-danger-text); }
+  /*
+    **A line's Coding button, when its coding is not on Account
+    Coding's own lists** — decision 0511. The coding fields live in the
+    pop-out, so the button that opens it is what carries the mark.
+  */
+  .lineactions .codingbtn.danger {
+    color: var(--severity-danger-text);
+    background: var(--severity-danger-bg);
+    border-color: var(--border-danger);
+  }
 
   .kf.warning input,
   .kf.warning select,
