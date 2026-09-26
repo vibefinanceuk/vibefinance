@@ -135,6 +135,46 @@ describe("what the list shows", () => {
     expect(body.documents[0].status).toBe("outside");
     expect(body.documents[0].stageName).toBeNull();
   });
+
+  /**
+   * **`returned_manually` and `archived` — decision 0501.** Reported
+   * live: "I placed the Return to Supplier button... the item...
+   * appears to still be in the matching Matching stage." Both statuses
+   * predate this fix at the data layer (decision 0055/0498) — only
+   * `statusOf()` itself, which predates both by many decisions, had
+   * never been taught them, so a returned or archived instance fell
+   * through to "waiting"/"moving" exactly as though nothing had
+   * happened. `current_stage_id` is deliberately left set to wherever
+   * the instance was returned from (0055's own design), so the stage
+   * name still shows — only the status itself needed to stop lying
+   * about what that stage name means.
+   */
+  it("says 'returned' for an instance sent back to its supplier, not 'waiting' or 'moving'", async () => {
+    await seedDocument("inv-1", { "BT-1": "A" }, "validation");
+    await env.DB.prepare("UPDATE process_instances SET status = 'returned_manually' WHERE id = 'pi-inv-1'").run();
+
+    const doc = (await list()).documents[0];
+    expect(doc.status).toBe("returned");
+    // Still names the stage it was returned from — decision 0055's own
+    // "instance status, not process structure," unchanged by this fix.
+    expect(doc.stageName).toBe("Validation");
+  });
+
+  it("says 'archived' for an instance nobody needs to look at again", async () => {
+    await seedDocument("inv-1", { "BT-1": "A" }, "validation");
+    await env.DB.prepare("UPDATE process_instances SET status = 'archived' WHERE id = 'pi-inv-1'").run();
+
+    expect((await list()).documents[0].status).toBe("archived");
+  });
+
+  it("still calls a genuinely completed instance 'done', not 'returned' or 'archived'", async () => {
+    // The one existing terminal status this fix must leave alone —
+    // checked directly, not assumed.
+    await seedDocument("inv-1", { "BT-1": "A" }, "payment");
+    await env.DB.prepare("UPDATE process_instances SET status = 'completed' WHERE id = 'pi-inv-1'").run();
+
+    expect((await list()).documents[0].status).toBe("done");
+  });
 });
 
 describe("'since', decision 0430's second addendum", () => {

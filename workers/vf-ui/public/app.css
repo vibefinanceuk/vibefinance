@@ -759,6 +759,17 @@
   .status.waiting { color: var(--text-warning); font-weight: 600; font-size: var(--text-sm); }
   .status.moving, .status.outside { color: var(--text-secondary); font-size: var(--text-sm); }
   .status.unreadable { color: var(--text-warning); font-weight: 600; font-size: var(--text-sm); }
+  /*
+    **`returned` and `archived` — decision 0501.** Both terminal, like
+    `done`, but neither is a success the way `done` is, so neither
+    borrows its green. `returned` (a person just took a real action on
+    this) gets the same accent colour Reassign/Return To Supplier's own
+    action icons already use elsewhere; `archived` (nothing further
+    needed, ever) is quieter than even `moving`/`outside` — the same
+    "closed, not merely idle" `--text-muted` gives a disabled `<select>`.
+  */
+  .status.returned { color: var(--text-accent); font-weight: 600; font-size: var(--text-sm); }
+  .status.archived { color: var(--text-muted); font-size: var(--text-sm); }
 
   .unread { color: var(--text-warning); }
   .hands.none { color: var(--text-success); font-size: var(--text-sm); }

@@ -595,6 +595,8 @@ const KEYS_THE_INTERFACE_USES = [
   "docstatus.done",
   "docstatus.unreadable",
   "docstatus.outside",
+  "docstatus.returned",
+  "docstatus.archived",
   "doctype.380",
   "doctype.381",
   "doctype.389",

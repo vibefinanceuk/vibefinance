@@ -84,6 +84,8 @@ const STRINGS = {
     "docstatus.done": "Finished",
     "docstatus.unreadable": "Needs keying",
     "docstatus.outside": "Not in a process",
+    "docstatus.returned": "Returned to supplier",
+    "docstatus.archived": "Archived",
     "doctype.380": "Invoice",
     "doctype.unknown": "Unknown",
     "viewer.title": "Invoice",
@@ -197,6 +199,31 @@ describe("what the list shows", () => {
   it("invites action when nothing has arrived", async () => {
     await openDocuments([]);
     expect(document.body.textContent).toContain("Nothing has arrived yet");
+  });
+
+  /**
+   * **`returned`/`archived` — decision 0501.** Reported live: "I
+   * placed the Return to Supplier button... the item... appears to
+   * still be in the matching Matching stage." Fixed server-side
+   * (`statusOf()` in `documents-route.ts`) so these two instance
+   * statuses stop reading as "Waiting"/"In progress"; this only checks
+   * that this screen renders whatever the server now sends, and — per
+   * decision 0055's own design — still names the stage the instance
+   * was returned from, since only the status column was ever wrong.
+   */
+  it("says 'Returned to supplier', not 'Waiting' or 'In progress', for a returned instance", async () => {
+    await openDocuments([{ ...DOC, status: "returned", stageName: "Validation" }]);
+    const row = document.querySelector("tbody tr") as HTMLElement;
+    expect(row.textContent).toContain("Returned to supplier");
+    expect(row.textContent).toContain("Validation");
+    expect(row.textContent).not.toContain("Waiting");
+    expect(row.textContent).not.toContain("In progress");
+  });
+
+  it("says 'Archived' for an archived instance", async () => {
+    await openDocuments([{ ...DOC, status: "archived", stageName: "Validation" }]);
+    const row = document.querySelector("tbody tr") as HTMLElement;
+    expect(row.textContent).toContain("Archived");
   });
 });
 

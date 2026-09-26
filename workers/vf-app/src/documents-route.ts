@@ -36,10 +36,26 @@ interface DocumentRow {
  * **Not a column.** `process_instances.status`, a stage's position and
  * whether anything could be read are three facts; *"where does this
  * stand"* is one question.
+ *
+ * **`returned_manually` and `archived` fell through to "waiting"/
+ * "moving" until decision 0501.** This function predates decision 0055's
+ * two terminal statuses by many decisions and was never taught about
+ * them — `current_stage_id` is deliberately left set to wherever the
+ * instance was returned from (0055's own "instance status, not process
+ * structure"), which is correct for the record but meant this list kept
+ * showing a returned invoice as though it were still actively moving
+ * through that stage. Reported live: "I placed the Return to Supplier
+ * button... the item... appears to still be in the matching Matching
+ * stage." Checked before fixing: `done` (`completed`) was deliberately
+ * unaffected — a completed instance genuinely finished at its own final
+ * stage, so showing that stage stands; only the two statuses that leave
+ * an instance sitting at a stage it no longer belongs to needed a case.
  */
 function statusOf(row: DocumentRow, facts: Record<string, unknown>): string {
   if (facts["intake.structure"] === "") return "unreadable";
   if (row.instance_status === "completed") return "done";
+  if (row.instance_status === "returned_manually") return "returned";
+  if (row.instance_status === "archived") return "archived";
   if (row.current_stage_id === null) return "outside";
   return row.hands > 0 ? "waiting" : "moving";
 }

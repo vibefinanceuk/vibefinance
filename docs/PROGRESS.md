@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 26 September 2026 (decision 0500). A living document: what
+Last updated 26 September 2026 (decision 0501). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,25 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### The Documents list learns `returned_manually` and `archived` (0501)
+- Reported live, first real use of decision 0498: "I placed the Return
+  to Supplier button... the item... appears to still be in the
+  matching Matching stage." The task ending and the instance moving to
+  `returned_manually` were both correct — `documents-route.ts`'s own
+  `statusOf()`, which predates decision 0055's two terminal statuses by
+  many decisions, had simply never been taught them, so a returned or
+  archived instance fell straight through to "waiting"/"moving" exactly
+  as though nothing had happened. Untested before this: no case in
+  `documents.test.ts` covered "waiting," "moving," or "done" at all.
+- Two new cases added ahead of the stage-based fallback, checked
+  directly against a real "still says done for a genuinely completed
+  instance" test so the existing case wasn't quietly widened by
+  accident. `current_stage_id` is left exactly as it was — decision
+  0055's own reasoning for keeping it stands — so the stage still shows
+  as history; only the status word itself needed to stop claiming the
+  document was still actively there.
+- Full reasoning and verification counts in decision 0501.
 
 ### Return Reasons' own row, given a layout built for it (0500)
 - Follow-up to 0499, reported live from screenshots: "do you have any
