@@ -3986,6 +3986,36 @@ above it, and three later edits claimed to add rows to a table that was
 no longer there — a scripted `replace` finds nothing and changes
 nothing, silently. Rebuilt here.
 
+**A connected folder can carry real push credentials — check before
+defaulting to bundles.** Every session before decision 0510 assumed
+its own cloud sandbox clone was the only option, and its `origin` has
+never had push access — so every delivery was `git bundle create` +
+`SendUserFile`, asking the operator to `git pull ... && git push` by
+hand, decision after decision. Discovered live, decision 0510: the
+operator's own device-bridge connected folder (`get_device_info`'s
+`connectedFolders`) is a real local clone of this same repo, and its
+`origin` remote already carries a working credential. From there, a
+bundle can be fetched and merged and pushed directly with `device_bash`
+— no manual pull-and-push left for the operator at all. **Check for a
+connected folder with real push access before defaulting to a
+bundle-and-ask workflow.**
+
+**A connected browser can read the live deployed screen directly —
+don't verify only through the operator's own screenshots.** Three
+consecutive rounds on one UI change (decisions 0507, 0508, 0509) each
+shipped on the strength of local tests alone and asked the operator to
+confirm by screenshot, and each of the first two turned out wrong in a
+way local tests couldn't catch (real per-org data shapes; a design
+trade-off that only reads as wrong once actually seen). The
+`Claude_Browser__*` device-bridge tools, once the operator signs in to
+that pane once, let a session read the real live page itself —
+`get_page_text`/`read_page`/`computer{screenshot}`, at a real desktop
+viewport width, not jsdom's layout-free approximation. Decision 0510
+was verified both ways before being called done: a throwaway local
+harness (the real render code and real CSS, screenshotted with
+Playwright) before shipping, and the actual deployed screen, read
+directly, after.
+
 **Applying a migration is never part of deploying a worker here, and
 that gap has been fallen into three times with the identical
 signature** — migration `0075` (decision 0439/0441), `0146` (decision
