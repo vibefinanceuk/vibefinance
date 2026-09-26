@@ -5208,6 +5208,43 @@ describe("the document/timeline tabs (decision 0269)", () => {
     expect(rule).not.toContain("--text-warning");
   });
 
+  it("gives the Timeline / Chat pane its own class, bounded to the card's real height (decision 0504)", async () => {
+    /**
+     * **Reported live, against two screenshots**: the reply box sat
+     * hard against the card's bottom edge, and opening "Add person"
+     * pushed the whole feed — reply box included — down into the
+     * Invoice Lines card beneath it. `timelinePane` had no class of
+     * its own until this decision, so none of `.c-document`'s own
+     * height rules (the same ones `.vpreview` already relies on,
+     * decision 0391) ever reached it — checked directly here, since
+     * jsdom applies no CSS at all and a missing selector would
+     * otherwise pass silently.
+     */
+    stubFetch({ ...BASE_ROUTES, "/api/documents/inv-1/activity": { items: [] } });
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    await openViewer(TASK, () => {});
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(document.querySelector(".vtimeline")).not.toBeNull();
+
+    const css = (await import("virtual:stylesheets")).default["app.css"];
+    const heightRule = css.slice(css.indexOf(".c-document .vtimeline {"), css.indexOf(".c-document .vtimeline {") + 200);
+    expect(heightRule).toContain("height: 100%");
+    expect(heightRule).toContain("display: flex");
+    expect(heightRule).toContain("flex-direction: column");
+
+    // The reply box's own row keeps its natural height — it is the
+    // feed above it that gives way, not the other way around.
+    const inputRule = css.slice(css.indexOf(".activityinput {"), css.indexOf(".activityinput {") + 200);
+    expect(inputRule).toContain("flex: 0 0 auto");
+
+    const feedRule = css.slice(css.indexOf(".activityfeed {"), css.indexOf(".activityfeed {") + 200);
+    expect(feedRule).not.toContain("max-height: 300px");
+    expect(feedRule).toContain("min-height: 0");
+  });
+
   it("shows no unreadable note anywhere when the document was read fine", async () => {
     stubFetch({
       ...BASE_ROUTES,

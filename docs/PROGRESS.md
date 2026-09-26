@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 26 September 2026 (decision 0503). A living document: what
+Last updated 26 September 2026 (decision 0504). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,22 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### The Timeline / Chat pane keeps its own height (0504)
+- Reported live, against two screenshots: the reply box sat low
+  against the card's bottom edge, and opening "Add person" pushed the
+  whole feed — reply box included — down into the Invoice Lines card
+  beneath it.
+- `timelinePane` had no class of its own, so it never reached
+  `.c-document`'s existing height chain (`.vpreview` already had,
+  decision 0391) — it just grew with its own content, unbounded.
+- Gave it one (`.vtimeline`) and the same `height: 100%` flex chain,
+  with the collaborator bar and System Alert keeping their natural
+  size and the feed taking what's left; `.activityfeed` changed from
+  a flat `max-height: 300px` to `flex: 1`, so the entries scroll and
+  the reply box (`flex: 0 0 auto`) stays pinned at the bottom of the
+  card, exactly as asked.
+- Full reasoning and verification counts in decision 0504.
 
 ### The activity panel drops its "Internal only" footer (0503)
 - Removed on request: the sentence at the foot of the Timeline/Chat

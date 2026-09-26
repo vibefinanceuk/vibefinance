@@ -2247,10 +2247,21 @@ export function buildDocTabs(invoiceId) {
    * (about the document) and the feed (what happened in it).
    * `collaborators.js` owns and updates it the same self-contained way
    * `activity.js` owns `timelineContent`.
+   *
+   * **`.vtimeline` — decision 0504.** Without a class of its own this
+   * was a plain, unstyled block, so nothing in `app.css` bounded its
+   * height to the card's — `.c-document .vpreview { height: 100% }`
+   * (decision 0391) only ever reached the Document/XML panes.
+   * Reported live, against two screenshots: the reply box sat hard
+   * against the card's own bottom edge, and opening "Add person"
+   * pushed it — and the whole feed below — down into the Invoice
+   * Lines card underneath, the exact overlay decision 0391 already
+   * fixed once for this same grid cell, just not reachable from here
+   * until now.
    */
   const timelinePane = el(
     "div",
-    {},
+    { class: "vtimeline" },
     [
       collaboratorsContent,
       !stored.intake || stored.intake.readable

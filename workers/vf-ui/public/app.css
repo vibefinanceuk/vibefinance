@@ -2767,6 +2767,38 @@
    */
   .c-document .vpreview { height: 100%; min-height: 0; }
 
+  /**
+   * **The Timeline / Chat pane gets the same real height `.vpreview`
+   * already has — decision 0504.** `normalBody`'s own `> *:not(.cardhead)`
+   * rule (above) already gives every tab pane a definite, flex-computed
+   * height to size against; `.vpreview` claims its own share of that
+   * with `height: 100%`, but `.vtimeline` (`viewer.js`'s `timelinePane`)
+   * had no class at all until this decision, so it fell back to plain
+   * block flow — natural, content-based height, free to grow past
+   * whatever the card actually had left. Reported live: the reply box
+   * sat hard against the card's bottom edge with nothing below it, and
+   * opening "Add person" pushed the whole feed down into the Invoice
+   * Lines card beneath — the exact overflow-into-the-next-row bug
+   * decision 0391 already fixed once for `.vpreview`, just never wired
+   * up for this pane.
+   *
+   * **A flex column, not a bare height** — `.vtimeline` stacks three
+   * pieces (`collaborators.js`'s own `.collabtabcontent`, an optional
+   * `.systemalert`, and `activity.js`'s `.activitytabcontent`), and
+   * only the last should ever grow: the collaborator bar and the
+   * system alert keep whatever size their own content needs, `flex: 0
+   * 0 auto`, and `.activitytabcontent` takes whatever the card has
+   * left, `flex: 1 1 auto; min-height: 0`, the same "last one grows"
+   * shape decision 0478's own `.c-process` fix already established for
+   * a stack of unequal-height panels sharing one row.
+   */
+  .c-document .vtimeline { height: 100%; min-height: 0; display: flex; flex-direction: column; }
+  .c-document .vtimeline > .collabtabcontent,
+  .c-document .vtimeline > .systemalert {
+    flex: 0 0 auto;
+  }
+  .c-document .vtimeline > .activitytabcontent { flex: 1 1 auto; min-height: 0; }
+
   /*
     Each of these is now the only thing in its own named row, spaced
     by `.columns`'s own `gap` (16px) rather than by the margins
@@ -2911,6 +2943,11 @@
        strange one once everything is single-column already. */
     .c-document > .panel:not(.exceptions) { height: auto; }
     .c-document .vpreview { height: calc(100vh - 300px); }
+    /* Same reasoning as `.vpreview` just above, for the Timeline / Chat
+       pane — decision 0504. Without this, `.vtimeline`'s own wide-screen
+       `height: 100%` would resolve against the now-`auto` panel above it,
+       which is exactly nothing to be 100% of. */
+    .c-document .vtimeline { height: calc(100vh - 300px); }
     /**
      * **`position: static` again — decision 0391.** The wide layout's
      * `position: absolute` (below) only works because "document"
@@ -3007,8 +3044,23 @@
     document image, and also within the Timeline / Chat tab."
   */
   .activitytabcontent[hidden] { display: none; }
+  /**
+   * **`flex: 1`, not a fixed `max-height: 300px` — decision 0504.** A
+   * flat 300px read fine on its own but had nothing to do with how
+   * tall the card around it actually was — too short to use the space
+   * a wide window's Timeline / Chat card really has, and, paired with
+   * `.activitytabcontent` previously having no real height of its own
+   * either, no floor stopping the reply box below it from drifting off
+   * the bottom of a short card. Now that `.activitytabcontent` is
+   * itself given a real height by its own parent (`.vtimeline`/
+   * `.docwindowtimeline`, both `flex: 1; min-height: 0`), the feed can
+   * take exactly what is left after the reply box's own natural
+   * height, and `.activityinput` (below) keeps a fixed spot at the
+   * bottom of the card regardless of how many entries are above it —
+   * the operator's own request, verbatim.
+   */
   .activityfeed {
-    max-height: 300px; overflow-y: auto; margin-bottom: 8px;
+    flex: 1 1 auto; min-height: 0; overflow-y: auto; margin-bottom: 8px;
     display: flex; flex-direction: column; gap: 10px;
   }
   .activitysysline {
@@ -3047,7 +3099,11 @@
   .activitybubble { background: var(--surface-1); border-radius: 10px; padding: 8px 11px; flex: 1 1 auto; min-width: 0; }
   .activitywho { font-size: var(--text-sm); font-weight: 600; display: flex; justify-content: space-between; gap: 8px; }
   .activitybody { font-size: var(--text-sm); color: var(--text-primary); margin-top: 2px; line-height: 1.45; }
-  .activityinput { display: flex; gap: 8px; padding: 10px 14px; border-top: 0.5px solid var(--border); }
+  /* `flex: 0 0 auto` — decision 0504: pinned to its own natural height,
+     never the thing that shrinks. `.activityfeed`'s own `min-height: 0`
+     (above) is what absorbs the squeeze when the card is short, so this
+     never has to give up any of its own room to stay on screen. */
+  .activityinput { display: flex; gap: 8px; padding: 10px 14px; border-top: 0.5px solid var(--border); flex: 0 0 auto; }
   .activityinput textarea {
     flex: 1 1 auto; resize: none; min-height: 38px; max-height: 100px;
     border: 0.5px solid var(--border); border-radius: 8px; background: var(--surface-0, var(--surface-2));
