@@ -3870,10 +3870,35 @@
     inherits them by default (nothing scopes them to index.html).
     `#shell`/`#viewer` override the same way, just above.
   */
+  /**
+   * **`height`, not `min-height` — decision 0505.** `min-height: 100vh`
+   * is a floor: it stops the window looking short, but sets no
+   * ceiling, so once the page's own content wanted more room than the
+   * viewport had, the *page* grew to fit it rather than clipping
+   * anywhere. Reported live: "I add several new messages and the
+   * height of the page grows and grows... please add a scroll bar in
+   * the Timeline / Chat, rather than continue to add and expand the
+   * page size." `overflow: hidden` is the other half — `height` alone
+   * fixes this box's own size but does not stop a child that still
+   * wants more room from spilling out of it; every level below this
+   * one already resolves down to a genuine `overflow-y: auto`
+   * (`.docwindowsplitright`, and, as of decision 0504,
+   * `.activityfeed` itself) *once given a real ceiling to bound
+   * against* — that fix already built the internal scrollbar this
+   * decision asked for, it just had nothing to compute its own height
+   * against, since this box, its outermost ancestor, was never
+   * actually bounded either. The same `.activityfeed` change is very
+   * likely what surfaced this: before it, the feed's own flat
+   * `max-height: 300px` capped growth on its own regardless of how
+   * tall the page around it was ever allowed to get, which is exactly
+   * why a long conversation growing the window past the screen was
+   * never reported until now.
+   */
   body.docwindowbody {
     display: flex;
     place-items: initial;
-    min-height: 100vh;
+    height: 100vh;
+    overflow: hidden;
     background: var(--surface-0);
   }
   #docwindow-root {
@@ -3885,6 +3910,17 @@
     margin: 0;
     padding: 20px 24px;
     box-sizing: border-box;
+    /**
+     * **The other half of the same bug.** A flex item's default
+     * minimum height is its own content's intrinsic height, not 0 — so
+     * even with `body` now genuinely capped at `height: 100vh`, this
+     * box would still refuse to shrink below whatever the document
+     * image and Timeline / Chat wanted, pushing `body` past its own
+     * fixed height exactly as before. The same reasoning
+     * `.docwindowbody .panel` and every pane below it already carries
+     * its own `min-height: 0` for.
+     */
+    min-height: 0;
   }
 
   /*

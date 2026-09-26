@@ -206,6 +206,32 @@ describe("initDocumentWindow — the same panel the embedded card shows, mounted
     expect(labels).not.toContain("Expand");
     expect(root.querySelector(".vpoppedout")).toBeNull();
   });
+
+  it("is genuinely capped to the window's own height, not just given a floor (decision 0505)", async () => {
+    /**
+     * **Reported live**: "I add several new messages and the height
+     * of the page grows and grows... please add a scroll bar in the
+     * Timeline / Chat, rather than continue to add and expand the
+     * page size." `min-height: 100vh` on `body.docwindowbody` was a
+     * floor, not a ceiling — the page grew past it rather than
+     * clipping anywhere, and `#docwindow-root` had no `min-height: 0`
+     * either, so even a genuinely fixed `height` on `body` would not
+     * have stopped it refusing to shrink below its own content's
+     * natural size. Checked against the real stylesheet, the same
+     * pattern this file's neighbours already use — jsdom applies no
+     * CSS at all, so a missing or reverted rule would otherwise pass
+     * silently.
+     */
+    const css = (await import("virtual:stylesheets")).default["app.css"];
+
+    const bodyRule = css.slice(css.indexOf("body.docwindowbody {"), css.indexOf("body.docwindowbody {") + 300);
+    expect(bodyRule).toContain("height: 100vh");
+    expect(bodyRule).not.toContain("min-height: 100vh");
+    expect(bodyRule).toContain("overflow: hidden");
+
+    const rootRule = css.slice(css.indexOf("#docwindow-root {"), css.indexOf("#docwindow-root {") + 1000);
+    expect(rootRule).toContain("min-height: 0");
+  });
 });
 
 describe("document-window.js's own bootstrap", () => {

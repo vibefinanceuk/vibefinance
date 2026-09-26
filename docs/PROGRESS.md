@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 26 September 2026 (decision 0504). A living document: what
+Last updated 26 September 2026 (decision 0505). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,25 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### The pop-out window stops growing past the screen (0505)
+- Reported live: in the expanded document viewer, adding several
+  messages made "the height of the page grows and grows" instead of
+  scrolling the Timeline / Chat internally.
+- `body.docwindowbody` had `min-height: 100vh` — a floor, not a
+  ceiling — and `#docwindow-root` had no `min-height: 0`, so the
+  page's own outermost chrome had nothing to bound itself to. The
+  internal chain below it (`.docwindowsplit`, `.docwindowtimeline`,
+  `.activityfeed`) was already correct, several decisions deep — it
+  just had no real ceiling to compute against.
+- Very likely surfaced by decision 0504, moments earlier: before that,
+  `.activityfeed`'s own flat `max-height: 300px` masked this defect by
+  capping the feed on its own regardless of the page around it.
+- Fixed at the outer chrome: `height: 100vh; overflow: hidden` on
+  `body.docwindowbody`, `min-height: 0` on `#docwindow-root`. The
+  reply box now stays fixed at the bottom, entries scroll internally,
+  the window stops growing.
+- Full reasoning and verification counts in decision 0505.
 
 ### The Timeline / Chat pane keeps its own height (0504)
 - Reported live, against two screenshots: the reply box sat low
