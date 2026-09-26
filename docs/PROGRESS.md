@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 26 September 2026 (decision 0505). A living document: what
+Last updated 26 September 2026 (decision 0506). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,21 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### `.vtimeline` respects `hidden` again (0506)
+- A regression from decision 0504, minutes earlier: giving
+  `.vtimeline` its own `display: flex` (needed for a real height) also
+  overrode the browser's default `[hidden] { display: none }` —
+  exactly the bug class decision 0271 already fixed once for
+  `.backdrop`, and `.activitytabcontent[hidden]` for a different
+  element.
+- Reported live: with Document selected, the System Alert stayed
+  visible, floating over the Invoice Lines card beneath it — the
+  Timeline / Chat pane was marked `hidden` correctly, but nothing in
+  the CSS honoured it any more.
+- Fixed with the same established pattern: `.c-document
+  .vtimeline[hidden] { display: none; }`.
+- Full reasoning and verification counts in decision 0506.
 
 ### The pop-out window stops growing past the screen (0505)
 - Reported live: in the expanded document viewer, adding several

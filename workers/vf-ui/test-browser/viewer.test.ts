@@ -5157,6 +5157,24 @@ describe("the document/timeline tabs (decision 0269)", () => {
     expect(rule).toContain("display: none");
   });
 
+  it("actually hides the whole Timeline / Chat pane, not only .activitytabcontent inside it (decision 0506)", async () => {
+    /**
+     * **The same bug, reintroduced by decision 0504.** `timelinePane`
+     * (`.vtimeline`) had no class, and so no `display` of its own,
+     * until 0504 gave it `display: flex` — which is exactly what
+     * stopped the browser's own default `[hidden] { display: none }`
+     * from taking effect once `select()` sets `hidden` on it for the
+     * Document/XML tabs. Reported live, against screenshots: with
+     * Document selected, the System Alert still showed, floating over
+     * the Invoice Lines card beneath it. Read from the stylesheet's
+     * own text, the same reason the `.activitytabcontent[hidden]` test
+     * just above does — jsdom applies no CSS at all.
+     */
+    const css = (await import("virtual:stylesheets")).default["app.css"];
+    const rule = css.slice(css.indexOf(".c-document .vtimeline[hidden]"), css.indexOf(".c-document .vtimeline[hidden]") + 60);
+    expect(rule).toContain("display: none");
+  });
+
   it("shows the unreadable-document note in Timeline / Chat, not under the image, as a System Alert", async () => {
     /**
      * **Reported live**: "I would rather this information appeared in

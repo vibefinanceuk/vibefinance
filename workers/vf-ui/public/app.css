@@ -2798,6 +2798,20 @@
     flex: 0 0 auto;
   }
   .c-document .vtimeline > .activitytabcontent { flex: 1 1 auto; min-height: 0; }
+  /**
+   * **The same `display` beats `[hidden]` pattern decision 0271 and
+   * `.activitytabcontent`'s own rule already fixed twice, now here a
+   * third time — decision 0506.** `timelinePane`/`.vtimeline` had no
+   * class, and so no `display` rule of its own, until decision 0504
+   * gave it `display: flex` — which is exactly what stopped the
+   * browser's own default `[hidden] { display: none }` from taking
+   * effect the moment `select()` (`viewer.js`) set `hidden` on it for
+   * the Document/XML tabs. Reported live, against two screenshots:
+   * with Document selected, the System Alert still showed, floating
+   * over the Invoice Lines card beneath it — `.vtimeline` was never
+   * actually hidden at all, only marked as such.
+   */
+  .c-document .vtimeline[hidden] { display: none; }
 
   /*
     Each of these is now the only thing in its own named row, spaced
