@@ -350,35 +350,50 @@ async function loadReturnReasonsTab() {
   }
 }
 
-function returnReasonsTab(problem) {
-  const rows = returnReasons.map((reason) => {
-    const labelInput = el("input", { type: "text", value: reason.label });
-    const activeCheckbox = el("input", {
-      type: "checkbox",
-      id: `returnreasonactive-${reason.id}`,
-      ...(reason.active ? { checked: "checked" } : {}),
+/**
+ * One reason's own row — decision 0499's own layout pass. Was a
+ * two-column `.editgrid` asked to hold four unrelated controls (a
+ * text input, a label, a checkbox, an action), which is a pairing
+ * grid, not a row: with four children in two columns, the label
+ * input and "Active" text landed on one visual line and the checkbox
+ * and Save link dropped to a second, mostly-empty one beneath it.
+ * Reported live, right after 0499's own checkbox-sizing fix landed:
+ * "do you have any capacity for interface design?" — `.returnreasonrow`
+ * is a plain flex row instead, the same shape `.assignmentrow` already
+ * gives a label-on-the-left/action-on-the-right list elsewhere in this
+ * screen, widened to fit the extra checkbox in the middle.
+ *
+ * **The checkbox and its own "Active" text are one `<label>`**, not
+ * two elements joined by `for`/`id` — the same shape the Return To
+ * Supplier picker's own AP-team checkbox already uses (`viewer.js`),
+ * so clicking the word toggles the box here too.
+ */
+function returnReasonRow(reason, problem) {
+  const labelInput = el("input", { type: "text", value: reason.label });
+  const activeCheckbox = el("input", { type: "checkbox", ...(reason.active ? { checked: "checked" } : {}) });
+  const save = async () => {
+    problem.textContent = "";
+    const response = await fetch(`/api/admin/return-reasons/${encodeURIComponent(reason.id)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ label: labelInput.value.trim(), active: activeCheckbox.checked }),
     });
-    const save = async () => {
-      problem.textContent = "";
-      const response = await fetch(`/api/admin/return-reasons/${encodeURIComponent(reason.id)}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ label: labelInput.value.trim(), active: activeCheckbox.checked }),
-      });
-      if (!response.ok) {
-        problem.textContent = (await response.json().catch(() => ({}))).error ?? t("apsetup.returnreasons.savefailed");
-        return;
-      }
-      await loadReturnReasonsTab();
-      render();
-    };
-    return el("div", { class: "editgrid" }, [
-      labelInput,
-      el("label", { for: `returnreasonactive-${reason.id}`, class: "sm muted", text: t("apsetup.returnreasons.active") }),
-      activeCheckbox,
-      actionLink("save", { onclick: save }),
-    ]);
-  });
+    if (!response.ok) {
+      problem.textContent = (await response.json().catch(() => ({}))).error ?? t("apsetup.returnreasons.savefailed");
+      return;
+    }
+    await loadReturnReasonsTab();
+    render();
+  };
+  return el("div", { class: "returnreasonrow" }, [
+    labelInput,
+    el("label", { class: "returnreasonactive" }, [activeCheckbox, el("span", { text: t("apsetup.returnreasons.active") })]),
+    actionLink("save", { onclick: save }),
+  ]);
+}
+
+function returnReasonsTab(problem) {
+  const rows = returnReasons.map((reason) => returnReasonRow(reason, problem));
 
   const newId = el("input", { type: "text", placeholder: t("apsetup.returnreasons.newid") });
   const newLabel = el("input", { type: "text", placeholder: t("apsetup.returnreasons.newlabel") });
@@ -422,8 +437,8 @@ function returnReasonsTab(problem) {
     el("div", { class: "panel" }, [
       el("div", { class: "cardhead" }, [el("h3", { text: t("apsetup.returnreasons") })]),
       el("p", { class: "muted sm", text: t("apsetup.returnreasons.sub") }),
-      ...rows,
-      el("div", { class: "editgrid" }, [
+      el("div", { class: "returnreasonlist" }, rows),
+      el("div", { class: "returnreasonrow returnreasonnew" }, [
         newId,
         newLabel,
         actionLink("create", { label: t("apsetup.add"), onclick: addReason }),

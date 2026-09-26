@@ -1193,6 +1193,56 @@
     margin: 0 8px 0 0;
     vertical-align: middle;
   }
+
+  /*
+    **Return Reasons' own row — decision 0499's own layout pass.**
+    `.editgrid`'s two columns are for label-above-value *pairs*; asked
+    to hold four unrelated controls (a text input, a label, a
+    checkbox, an action) it split them across two visual lines
+    instead — the label input and "Active" text on one, the checkbox
+    and Save link dropped beneath. Reported live: "do you have any
+    capacity for interface design?" A plain flex row instead, the
+    same shape `.assignmentrow` already gives a label-on-the-left/
+    action-on-the-right list elsewhere on this screen, widened for the
+    extra checkbox in the middle.
+  */
+  .returnreasonlist { margin: 6px 0 10px; }
+  .returnreasonrow {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 8px 0;
+    border-bottom: 0.5px solid var(--border);
+  }
+  .returnreasonrow:last-child { border-bottom: none; }
+  .returnreasonrow > input[type="text"] { flex: 1; min-width: 0; }
+  /*
+    **The checkbox and its own "Active" text are one `<label>`**, not
+    two elements joined by `for`/`id` — the same shape the Return To
+    Supplier picker's own AP-team checkbox already uses (`viewer.js`),
+    so clicking the word toggles the box here too. Sized the same
+    14px as `.editgrid`'s own checkbox fix immediately above, for the
+    same reason: a deliberate size, not whatever the browser renders.
+  */
+  .returnreasonactive {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--text-muted);
+    font-size: var(--text-sm);
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  .returnreasonactive input[type="checkbox"] {
+    width: 14px;
+    height: 14px;
+    margin: 0;
+  }
+  /* The "add a new reason" row's own ID field — narrower and fixed,
+     since a reason id is a short slug next to a full-sentence label
+     that wants the room. */
+  .returnreasonnew > input[type="text"]:first-child { flex: 0 0 160px; }
+
   /*
     **Selects, not just inputs — decision 0341.** `orgPicker`,
     `managerPicker`, `costCentrePicker`, and now the currency dropdown

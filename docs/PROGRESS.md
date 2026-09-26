@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 26 September 2026 (decision 0499). A living document: what
+Last updated 26 September 2026 (decision 0500). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,21 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Return Reasons' own row, given a layout built for it (0500)
+- Follow-up to 0499, reported live from screenshots: "do you have any
+  capacity for interface design?", then "yes, please" to a concrete
+  offer. The checkbox-size fix alone wasn't enough — each reason's row
+  put four controls inside `.editgrid`, a two-column grid built for
+  label-above-value pairs, and four items in two columns wrapped onto
+  two visual lines regardless of the checkbox's own size.
+- New `.returnreasonrow` (a plain flex row, the same shape
+  `.assignmentrow` already gives elsewhere on this screen) replaces
+  `.editgrid` for both the reason rows and the add-new-reason row; the
+  checkbox and its "Active" text are now one clickable `<label>`,
+  matching the Return To Supplier picker's own AP-team checkbox.
+- First browser test coverage for this tab at all — 7 new tests.
+- Full reasoning and verification counts in decision 0500.
 
 ### Return Reasons' own "Active" checkbox, stretched by `.editgrid`'s own width rule (0499)
 - Reported live from screenshots, right after 0498 went live: "The

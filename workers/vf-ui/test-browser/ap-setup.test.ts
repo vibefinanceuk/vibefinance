@@ -125,6 +125,16 @@ const STRINGS = {
     "field.coding.commodity_code": "Commodity code",
     "field.coding.gl_code": "General ledger code",
     "processes.automatic": "Automatic",
+    "apsetup.returnreasons": "Return Reasons",
+    "apsetup.returnreasons.sub": "The reasons available when returning an invoice to its supplier.",
+    "apsetup.returnreasons.active": "Active",
+    "apsetup.returnreasons.newid": "ID",
+    "apsetup.returnreasons.newlabel": "Label",
+    "apsetup.returnreasons.idandlabelrequired": "An ID and a label are both required.",
+    "apsetup.returnreasons.savefailed": "Could not save that. Try again.",
+    "apsetup.returnreasons.apteamemail": "AP team email",
+    "apsetup.returnreasons.apteamemailsub": "Copied in on a Return To Supplier email when the sender ticks the box.",
+    "apsetup.returnreasons.apteamemailplaceholder": "ap-team@example.com",
   },
 };
 
@@ -1539,5 +1549,157 @@ describe("Stage Restrictions (decision 0483)", () => {
 
       expect(document.body.textContent).toContain("no return target rt1");
     });
+  });
+});
+
+/**
+ * **Return Reasons — decision 0498, its own row layout in 0499.**
+ * Never covered here before now: decision 0498 built the tab, this
+ * segment gave it its own dedicated flex row (`.returnreasonrow`)
+ * after the original `.editgrid`-based layout put a reason's checkbox
+ * and Save link on their own line beneath the label input and
+ * "Active" text — reported live from a screenshot, right after a
+ * first, narrower fix (0499's own `.editgrid` checkbox sizing) had
+ * already landed.
+ */
+describe("the Return Reasons tab (decision 0498, row layout in 0499)", () => {
+  const REASONS = {
+    reasons: [
+      { id: "duplicate_invoice", label: "Duplicate invoice", active: true, sortOrder: 0 },
+      { id: "misdirected", label: "Not our invoice / misdirected", active: false, sortOrder: 1 },
+    ],
+  };
+
+  function returnReasonsRoutes(reasons: unknown = REASONS, apTeamEmail: unknown = { apTeamEmail: null }, extra: Record<string, unknown> = {}) {
+    return {
+      "/api/admin/return-reasons": reasons,
+      "/api/admin/ap-team-email": apTeamEmail,
+      ...extra,
+    };
+  }
+
+  it("renders one row per reason, each a single line — not split across two", async () => {
+    await openApSetupAs(["Admin.Configure"], EMPTY_OVERVIEW, EMPTY_CONFIG, returnReasonsRoutes());
+    switchTab("Return Reasons");
+
+    const rows = [...document.querySelectorAll(".returnreasonrow")].filter((r) => !r.classList.contains("returnreasonnew"));
+    expect(rows).toHaveLength(2);
+
+    const first = rows[0];
+    // The label input, the Active checkbox+text, and Save all sit as
+    // direct children of the same row — the fact that broke under the
+    // old `.editgrid` layout (four items, two columns, wrapped).
+    expect((first.querySelector("input[type=text]") as HTMLInputElement)?.value).toBe("Duplicate invoice");
+    expect(first.querySelector(".returnreasonactive")).not.toBeNull();
+    expect((first.querySelector(".returnreasonactive input[type=checkbox]") as HTMLInputElement)?.checked).toBe(true);
+    expect([...first.querySelectorAll(".actionlink")].map((a) => a.textContent)).toContain("Save");
+  });
+
+  it("reflects each reason's own active state on its own checkbox", async () => {
+    await openApSetupAs(["Admin.Configure"], EMPTY_OVERVIEW, EMPTY_CONFIG, returnReasonsRoutes());
+    switchTab("Return Reasons");
+
+    const checkboxes = [...document.querySelectorAll(".returnreasonrow:not(.returnreasonnew) input[type=checkbox]")] as HTMLInputElement[];
+    expect(checkboxes.map((c) => c.checked)).toEqual([true, false]);
+  });
+
+  it("the label and its checkbox are one clickable label — clicking the word 'Active' toggles it", async () => {
+    await openApSetupAs(["Admin.Configure"], EMPTY_OVERVIEW, EMPTY_CONFIG, returnReasonsRoutes());
+    switchTab("Return Reasons");
+
+    const row = document.querySelectorAll(".returnreasonrow:not(.returnreasonnew)")[1];
+    const checkbox = row.querySelector("input[type=checkbox]") as HTMLInputElement;
+    expect(checkbox.checked).toBe(false);
+
+    (row.querySelector(".returnreasonactive") as HTMLLabelElement).click();
+    expect(checkbox.checked).toBe(true);
+  });
+
+  it("saves the edited label and active flag for the reason whose row it is, not any other", async () => {
+    const bodies: unknown[] = [];
+    await openApSetupAs(["Admin.Configure"], EMPTY_OVERVIEW, EMPTY_CONFIG, {
+      ...returnReasonsRoutes(),
+      "PATCH /api/admin/return-reasons/misdirected": { ok: true, json: async () => ({}) },
+    });
+    switchTab("Return Reasons");
+
+    // Wrap the already-stubbed fetch so the PATCH body can be captured
+    // — everything else (the reload after saving) still resolves
+    // through the same routes `openApSetupAs` set up.
+    const alreadyStubbed = globalThis.fetch;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        if (init?.method === "PATCH") bodies.push(JSON.parse(String(init.body)));
+        return alreadyStubbed(url, init as RequestInit);
+      })
+    );
+
+    const row = document.querySelectorAll(".returnreasonrow:not(.returnreasonnew)")[1];
+    (row.querySelector("input[type=text]") as HTMLInputElement).value = "Wrong supplier entirely";
+    (row.querySelector(".returnreasonactive") as HTMLLabelElement).click();
+    (row.querySelector(".actionlink") as HTMLButtonElement).click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(bodies).toContainEqual({ label: "Wrong supplier entirely", active: true });
+  });
+
+  it("the add-a-reason row is its own single line too, with a narrower ID field beside the full-width label", async () => {
+    await openApSetupAs(["Admin.Configure"], EMPTY_OVERVIEW, EMPTY_CONFIG, returnReasonsRoutes());
+    switchTab("Return Reasons");
+
+    const newRow = document.querySelector(".returnreasonrow.returnreasonnew");
+    expect(newRow).not.toBeNull();
+    const textInputs = [...newRow!.querySelectorAll("input[type=text]")];
+    expect(textInputs).toHaveLength(2);
+    expect([...newRow!.querySelectorAll(".actionlink")].map((a) => a.textContent)).toContain("Add");
+  });
+
+  it("posts a new reason from the add row and reloads the list", async () => {
+    const created: unknown[] = [];
+    let listedAfterCreate = false;
+    await openApSetupAs(["Admin.Configure"], EMPTY_OVERVIEW, EMPTY_CONFIG, returnReasonsRoutes());
+    switchTab("Return Reasons");
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        const path = String(url).split("?")[0];
+        if (init?.method === "POST" && path === "/api/admin/return-reasons") {
+          created.push(JSON.parse(String(init.body)));
+          return { ok: true, json: async () => ({}) } as Response;
+        }
+        if (path === "/api/admin/return-reasons") {
+          listedAfterCreate = true;
+          return { ok: true, json: async () => REASONS } as Response;
+        }
+        if (path === "/api/admin/ap-team-email") return { ok: true, json: async () => ({ apTeamEmail: null }) } as Response;
+        throw new Error(`no stub for ${path}`);
+      })
+    );
+
+    const newRow = document.querySelector(".returnreasonrow.returnreasonnew")!;
+    const [idInput, labelInput] = [...newRow.querySelectorAll("input[type=text]")] as HTMLInputElement[];
+    idInput.value = "wrong_currency";
+    labelInput.value = "Wrong currency charged";
+    (newRow.querySelector(".actionlink") as HTMLButtonElement).click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(created).toContainEqual({ id: "wrong_currency", label: "Wrong currency charged" });
+    expect(listedAfterCreate).toBe(true);
+  });
+
+  it("shows the AP team email in its own panel, unaffected by the row layout above", async () => {
+    await openApSetupAs(
+      ["Admin.Configure"],
+      EMPTY_OVERVIEW,
+      EMPTY_CONFIG,
+      returnReasonsRoutes(REASONS, { apTeamEmail: "ap@acme.example" })
+    );
+    switchTab("Return Reasons");
+
+    const panel = [...document.querySelectorAll(".panel")].find((p) => p.querySelector("h3")?.textContent === "AP team email");
+    expect(panel).not.toBeUndefined();
+    expect((panel!.querySelector("input[type=text]") as HTMLInputElement)?.value).toBe("ap@acme.example");
   });
 });
