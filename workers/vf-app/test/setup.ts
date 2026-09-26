@@ -95,6 +95,7 @@ import supplierReturnReasonsSql from "../../../migrations/0087_supplier_return_r
 import returnToSupplierReasonAndCommentSql from "../../../migrations/0088_return_to_supplier_reason_and_comment.sql?raw";
 import orgSettingsApTeamEmailSql from "../../../migrations/0089_org_settings_ap_team_email.sql?raw";
 import supplierReturnEmailsSql from "../../../migrations/0090_supplier_return_emails.sql?raw";
+import stageActionsDiscardAllowedSql from "../../../migrations/0091_stage_actions_discard_allowed.sql?raw";
 
 // Another known divergence from production, on top of the one below:
 // D1's exec() splits its input by newline and executes each non-empty
@@ -369,6 +370,7 @@ export async function applyTestSchema(): Promise<void> {
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(returnToSupplierReasonAndCommentSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(orgSettingsApTeamEmailSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(supplierReturnEmailsSql)));
+  await env.DB.exec(toOneStatementPerLine(stripSqlComments(stageActionsDiscardAllowedSql)));
 }
 
 /**

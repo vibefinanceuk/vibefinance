@@ -113,6 +113,7 @@ const STRINGS = {
     "apsetup.stagerestrictions.offerhere": "Offer Account Coding restrictions for this stage",
     "apsetup.stagerestrictions.notoffered": "Not configurable here.",
     "apsetup.stagerestrictions.reverifyoncomplete": "Re-check the rule before Complete",
+    "apsetup.stagerestrictions.discardallowed": "Allow Discard at this stage",
     "apsetup.stagerestrictions.returntargetsheading": "Return targets",
     "apsetup.stagerestrictions.returntargetshint": "Where Return can send a document from this stage, and which team receives it. Only stages a document has actually visited are ever offered when returning it.",
     "apsetup.stagerestrictions.notargetsyet": "No return targets configured for this stage yet.",
@@ -1330,6 +1331,121 @@ describe("Stage Restrictions (decision 0483)", () => {
 
       expect(toggle.checked).toBe(true);
       expect(document.body.textContent).toContain("offer (true or false) is required");
+    });
+  });
+
+  /**
+   * **Discard allowed at this stage — decision 0502.** Sits outside
+   * the `offered` branch, the same reason `reverifyToggleRow` and the
+   * return-targets section do: an Approval stage with no Account
+   * Coding fields to restrict can still want Discard switched off,
+   * once a document is that far through. Checked means allowed, the
+   * default every stage already has, so unchecking is the
+   * restriction — reported live: nothing stopped Discard past
+   * Validation until this existed.
+   */
+  describe("Discard allowed at this stage — decision 0502", () => {
+    it("is checked by default — every stage already allows Discard", async () => {
+      await openApSetupAs(
+        ["Admin.Configure"],
+        EMPTY_OVERVIEW,
+        EMPTY_CONFIG,
+        stageRestrictionsRoutes([], {
+          "/api/processes/ap": { ...ONE_STAGE_DETAIL, stages: [{ ...ONE_STAGE_DETAIL.stages[0], discardAllowed: true }] },
+        })
+      );
+      switchTab("Stage Restrictions");
+
+      const toggle = stagePanel().querySelector(`input[id^="stagediscard-"]`) as HTMLInputElement;
+      expect(toggle.checked).toBe(true);
+    });
+
+    it("is unchecked once the stage has turned Discard off", async () => {
+      await openApSetupAs(
+        ["Admin.Configure"],
+        EMPTY_OVERVIEW,
+        EMPTY_CONFIG,
+        stageRestrictionsRoutes([], {
+          "/api/processes/ap": { ...ONE_STAGE_DETAIL, stages: [{ ...ONE_STAGE_DETAIL.stages[0], discardAllowed: false }] },
+        })
+      );
+      switchTab("Stage Restrictions");
+
+      const toggle = stagePanel().querySelector(`input[id^="stagediscard-"]`) as HTMLInputElement;
+      expect(toggle.checked).toBe(false);
+    });
+
+    it("unchecking it PUTs discardAllowed: false to this stage's own action route", async () => {
+      await openApSetupAs(
+        ["Admin.Configure"],
+        EMPTY_OVERVIEW,
+        EMPTY_CONFIG,
+        stageRestrictionsRoutes([], {
+          "/api/processes/ap": { ...ONE_STAGE_DETAIL, stages: [{ ...ONE_STAGE_DETAIL.stages[0], discardAllowed: true }] },
+          "PUT /api/processes/stages/validation/actions/discard": {
+            ok: true,
+            json: async () => ({ stageId: "validation", action: "discard", discardAllowed: false }),
+          },
+        })
+      );
+      switchTab("Stage Restrictions");
+
+      const toggle = stagePanel().querySelector(`input[id^="stagediscard-"]`) as HTMLInputElement;
+      toggle.checked = false;
+      toggle.dispatchEvent(new Event("change"));
+      await new Promise((r) => setTimeout(r, 0));
+
+      const calls = (fetch as unknown as { mock: { calls: [string, RequestInit][] } }).mock.calls;
+      const put = calls.find(
+        ([url, init]) => url === "/api/processes/stages/validation/actions/discard" && init?.method === "PUT"
+      );
+      expect(put).toBeTruthy();
+      expect(JSON.parse(put![1].body as string)).toEqual({ discardAllowed: false });
+    });
+
+    it("reverts the checkbox and shows the server's error when the save fails", async () => {
+      await openApSetupAs(
+        ["Admin.Configure"],
+        EMPTY_OVERVIEW,
+        EMPTY_CONFIG,
+        stageRestrictionsRoutes([], {
+          "/api/processes/ap": { ...ONE_STAGE_DETAIL, stages: [{ ...ONE_STAGE_DETAIL.stages[0], discardAllowed: true }] },
+          "PUT /api/processes/stages/validation/actions/discard": {
+            ok: false,
+            json: async () => ({ error: "discardAllowed (true or false) is required" }),
+          },
+        })
+      );
+      switchTab("Stage Restrictions");
+
+      const toggle = stagePanel().querySelector(`input[id^="stagediscard-"]`) as HTMLInputElement;
+      toggle.checked = false;
+      toggle.dispatchEvent(new Event("change"));
+      await new Promise((r) => setTimeout(r, 0));
+
+      expect(toggle.checked).toBe(true);
+      expect(document.body.textContent).toContain("discardAllowed (true or false) is required");
+    });
+
+    it("does not disturb the reverify-on-complete toggle sitting in the same panel", async () => {
+      await openApSetupAs(
+        ["Admin.Configure"],
+        EMPTY_OVERVIEW,
+        EMPTY_CONFIG,
+        stageRestrictionsRoutes([], {
+          "/api/processes/ap": {
+            ...ONE_STAGE_DETAIL,
+            stages: [{ ...ONE_STAGE_DETAIL.stages[0], reverifyRuleOnComplete: true, discardAllowed: true }],
+          },
+        })
+      );
+      switchTab("Stage Restrictions");
+
+      const panel = stagePanel();
+      const reverifyToggle = panel.querySelector(`input[id^="stagereverify-"]`) as HTMLInputElement;
+      const discardToggle = panel.querySelector(`input[id^="stagediscard-"]`) as HTMLInputElement;
+      expect(reverifyToggle.checked).toBe(true);
+      expect(discardToggle.checked).toBe(true);
     });
   });
 

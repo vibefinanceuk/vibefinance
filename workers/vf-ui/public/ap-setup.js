@@ -304,6 +304,21 @@ async function setStageReverifiesRuleOnComplete(stageId, reverify) {
 }
 
 /**
+ * Whether Discard is even offered at this stage — decision 0502.
+ * Same per-(stage, action) route as `setStageReverifiesRuleOnComplete`
+ * above, its own body field rather than a shared one, since the two
+ * flags govern unrelated actions and have nothing to say about each
+ * other's stage.
+ */
+async function setStageDiscardAllowed(stageId, allowed) {
+  return fetch(`/api/processes/stages/${encodeURIComponent(stageId)}/actions/discard`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ discardAllowed: allowed }),
+  });
+}
+
+/**
  * Where Return can send a document from this stage, and who receives
  * it — decision 0490. See migrations/0085_stage_return_targets.sql
  * for why this is its own small table (a list per stage) rather than
@@ -560,6 +575,44 @@ function stageRestrictionsTab(problem) {
     ]);
 
     /**
+     * **Whether Discard is even offered at this stage — decision
+     * 0502.** Independent of the Account Coding checkboxes above, the
+     * same reason `reverifyToggleRow` sits outside the `offered`
+     * branch: an Approval stage with no fields to restrict can still
+     * want Discard switched off, once a document is that far through.
+     * Checked means allowed — the default every stage already has —
+     * so unchecking is the restriction, read the same direction the
+     * Account Coding checkboxes above already use.
+     */
+    const discardToggleId = `stagediscard-${stage.id}`;
+    const discardToggle = el("input", {
+      type: "checkbox",
+      id: discardToggleId,
+      ...(stage.discardAllowed ? { checked: "checked" } : {}),
+    });
+    discardToggle.onchange = async () => {
+      problem.textContent = "";
+      const allowed = discardToggle.checked;
+      try {
+        const response = await setStageDiscardAllowed(stage.id, allowed);
+        if (!response.ok) {
+          problem.textContent = (await response.json()).error ?? t("apsetup.stagerestrictions.savefailed");
+          discardToggle.checked = !discardToggle.checked;
+          return;
+        }
+        await loadStageRestrictions(stageRestrictionsProcessId);
+        render();
+      } catch {
+        problem.textContent = t("apsetup.stagerestrictions.savefailed");
+        discardToggle.checked = !discardToggle.checked;
+      }
+    };
+    const discardToggleRow = el("div", { class: "assignmentrow" }, [
+      el("label", { for: discardToggleId, text: t("apsetup.stagerestrictions.discardallowed") }),
+      discardToggle,
+    ]);
+
+    /**
      * **Where Return can send a document from this stage, and who
      * receives it — decision 0490.** Independent of the Account
      * Coding checkboxes above, the same reason `reverifyToggleRow`
@@ -653,6 +706,7 @@ function stageRestrictionsTab(problem) {
           el("p", { class: "muted sm", text: t("apsetup.stagerestrictions.notoffered") }),
           offerToggleRow,
           reverifyToggleRow,
+          discardToggleRow,
           ...returnTargetsSection,
         ]
       : (() => {
@@ -707,6 +761,7 @@ function stageRestrictionsTab(problem) {
             el("p", { class: "muted sm", text: t("apsetup.stagerestrictions.fieldshint") }),
             offerToggleRow,
             reverifyToggleRow,
+            discardToggleRow,
             ...returnTargetsSection,
           ];
         })();

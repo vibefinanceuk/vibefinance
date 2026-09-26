@@ -2,6 +2,7 @@ import { env } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
 import { applyTestSchema } from "./setup.js";
 import { handleListMyTasks, type TaskRow } from "../src/task-list-route.js";
+import { handleSetStageAction } from "../src/stage-actions-route.js";
 
 /** Alice and Sarah are both in the AP team; Mo is not. */
 async function seedPeople() {
@@ -332,6 +333,66 @@ describe("what a person may do with a task (decision 0103)", () => {
     expect(actions).toContain("key");
     expect(actions).toContain("return");
     expect(actions).toContain("discard");
+  });
+
+  /**
+   * **Decision 0502.** `AP.Discard` used to be the whole gate; now the
+   * stage itself can also say no — `handleDiscard`'s own server-side
+   * refusal is `return-route.test.ts`'s coverage, this is the button.
+   */
+  describe("discard, restricted per stage (decision 0502)", () => {
+    it("is unaffected while nothing has configured the stage — every test above still holds", async () => {
+      await grant("alice", ["AP.Validate", "AP.Discard"]);
+      await seedInstance("inv-1", "validation", "v-1");
+      await seedTask("t-1", "validation", "v-1", { user: "alice" });
+
+      expect((await list("alice"))[0].actions).toContain("discard");
+    });
+
+    it("is hidden once the stage has turned Discard off", async () => {
+      await handleSetStageAction(env.DB, "validation", "discard", { discardAllowed: false });
+      await grant("alice", ["AP.Validate", "AP.Discard"]);
+      await seedInstance("inv-1", "validation", "v-1");
+      await seedTask("t-1", "validation", "v-1", { user: "alice" });
+
+      expect((await list("alice"))[0].actions).not.toContain("discard");
+    });
+
+    it("leaves every other action untouched at the same stage", async () => {
+      await handleSetStageAction(env.DB, "validation", "discard", { discardAllowed: false });
+      await grant("alice", ["AP.Validate", "AP.Return", "AP.Discard"]);
+      await seedInstance("inv-1", "validation", "v-1");
+      await seedTask("t-1", "validation", "v-1", { user: "alice" });
+
+      const actions = (await list("alice"))[0].actions;
+      expect(actions).toContain("key");
+      expect(actions).toContain("return");
+      expect(actions).not.toContain("discard");
+    });
+
+    it("does not restrict a different stage", async () => {
+      // seedTask hardcodes 'AP.Validate' as every task's own
+      // required_permission regardless of stage, so AP.Validate (not
+      // AP.Approve) is what a task at "approval" needs here too.
+      await handleSetStageAction(env.DB, "validation", "discard", { discardAllowed: false });
+      await grant("alice", ["AP.Validate", "AP.Discard"]);
+      await seedInstance("inv-2", "approval", "v-2");
+      await seedTask("t-2", "approval", "v-2", { user: "alice" });
+
+      expect((await list("alice"))[0].actions).toContain("discard");
+    });
+
+    it("is never even queried for somebody without AP.Discard — the button was never going to show anyway", async () => {
+      // Not directly observable from the route's own output, but the
+      // action list itself already proves the point: no AP.Discard,
+      // no 'discard' in the list, on an unrestricted stage exactly
+      // like every other permission-only test above.
+      await grant("alice", ["AP.Validate"]);
+      await seedInstance("inv-1", "validation", "v-1");
+      await seedTask("t-1", "validation", "v-1", { user: "alice" });
+
+      expect((await list("alice"))[0].actions).not.toContain("discard");
+    });
   });
 
   it("omits an action whose permission the person lacks", async () => {

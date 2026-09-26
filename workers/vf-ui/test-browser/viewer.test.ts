@@ -156,6 +156,7 @@ const STRINGS = {
     "action.approve": "Approve",
     "action.release": "Release",
     "action.discard": "Discard",
+    "action.discard.reasonlabel": "Reason",
     "action.reassign": "Reassign",
     "action.reassign.wholabel": "Reassign to",
     "action.reassign.commentlabel": "Comment (optional)",
@@ -1321,54 +1322,107 @@ describe("the actions do something (decision 0138)", () => {
     expect(posted).toContain("/api/tasks/t-1/return-to-supplier");
   });
 
-  it("asks for a reason before returning or discarding", async () => {
-    // **Decision 0075 made that a requirement.** A document that comes
-    // back with no explanation is one the next person cannot act on.
+  /**
+   * **Discard moved off `window.prompt()` onto its own picker —
+   * decision 0502.** Reported live: the native browser dialog read as
+   * out of place next to every other action here, which had each
+   * already been moved to a real `.backdrop`/`.popout` (Reassign,
+   * Return, Route To Approver, Return To Supplier — decisions 0489,
+   * 0490, 0495, 0498). `ACTIONS_NEEDING_A_REASON` is empty now; this
+   * is the last of those to go.
+   */
+  it("opens a styled picker, not the native browser prompt", async () => {
     let asked = false;
     vi.stubGlobal("prompt", () => {
       asked = true;
-      return "Duplicate";
+      return "should never be called";
     });
 
+    await openTaskWith(["key", "discard"], {});
+    click("Discard");
+    await settle();
+
+    expect(asked).toBe(false);
+    expect(document.querySelector(".backdrop .popout")).not.toBeNull();
+    expect(document.querySelector(".popout .cardhead h3")?.textContent).toBe("Discard");
+  });
+
+  it("refuses an empty reason inline, without a round trip", async () => {
+    // The server refuses one too (decision 0075) — caught here first
+    // so the most common way to get this wrong costs no fetch at all.
+    const posted: string[] = [];
+    await openTaskWith(["key", "discard"], {}, posted);
+    click("Discard");
+    await settle();
+
+    (document.querySelector(".popout .actionlink") as HTMLButtonElement).click();
+    await settle();
+
+    expect(posted.filter((p) => p.includes("/tasks/"))).toHaveLength(0);
+    expect(document.querySelector(".popout .warn")?.hidden).toBe(false);
+  });
+
+  it("closes without posting anything on Close", async () => {
+    const posted: string[] = [];
+    await openTaskWith(["key", "discard"], {}, posted);
+    click("Discard");
+    await settle();
+
+    const closeButton = [...document.querySelectorAll(".popout .actionlink")].find(
+      (b) => b.querySelector("span")?.textContent === "Close"
+    ) as HTMLButtonElement;
+    closeButton.click();
+    await settle();
+
+    expect(posted.filter((p) => p.includes("/tasks/"))).toHaveLength(0);
+    expect(document.querySelector(".backdrop")).toBeNull();
+  });
+
+  it("posts the typed reason to the discard route", async () => {
     const posted: string[] = [];
     await openTaskWith(["key", "discard"], { "/api/tasks/t-1/discard": {} }, posted);
     click("Discard");
     await settle();
 
-    expect(asked).toBe(true);
+    (document.querySelector(".popout textarea") as HTMLTextAreaElement).value = "Duplicate of inv-0";
+    (document.querySelector(".popout .actionlink") as HTMLButtonElement).click();
+    await settle();
+
     expect(posted).toContain("/api/tasks/t-1/discard");
+    expect(document.querySelector(".backdrop")).toBeNull();
   });
 
-  it("does nothing when the reason is cancelled", async () => {
-    vi.stubGlobal("prompt", () => null);
-    const posted: string[] = [];
-    await openTaskWith(["key", "discard"], {}, posted);
-
+  it("shows the server's own refusal inline, without closing the picker", async () => {
+    // **Decision 0502's own stage restriction refuses server-side
+    // too** (`handleDiscard`, `return-route.ts`) — this is what a
+    // click looks like when the button was shown (a stale task list)
+    // but the stage has since turned Discard off. `stubFetch`'s own
+    // `routes` map always wraps a value as `ok: true`, so a failing
+    // response is simulated by overriding `fetch` outright, the same
+    // move the Return picker's own equivalent test makes.
+    await openTaskWith(["key", "discard"], {});
     click("Discard");
     await settle();
-    // **Task posts only.** Opening the viewer POSTs for a document URL
-    // (decision 0123), so an empty list was never the right claim.
-    expect(posted.filter((p) => p.includes("/tasks/"))).toHaveLength(0);
-  });
 
-  it("treats an empty reason as no reason", async () => {
-    // The server refuses one too, so sending it would be a round trip
-    // to be told what the screen already knows.
-    //
-    // **`discard`, not `return` or `return_to_supplier`** — decision
-    // 0490 moved Return to its own dedicated picker, and decision 0498
-    // did the same for Return To Supplier (see the describe blocks
-    // below for both), so neither is `ACTIONS_NEEDING_A_REASON` any
-    // more and neither goes through `prompt()` at all. This test still
-    // covers the shared "blank prompt input treated as no reason"
-    // behaviour through the one action left on that list.
-    vi.stubGlobal("prompt", () => "   ");
-    const posted: string[] = [];
-    await openTaskWith(["key", "discard"], {}, posted);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        const path = String(url).split("?")[0];
+        if (path === "/api/tasks/t-1/discard") {
+          return { ok: false, json: async () => ({ error: "discard is not available at this stage" }) } as Response;
+        }
+        throw new Error(`no stub for ${path} in the failure override`);
+      })
+    );
 
-    click("Discard");
+    (document.querySelector(".popout textarea") as HTMLTextAreaElement).value = "Duplicate";
+    (document.querySelector(".popout .actionlink") as HTMLButtonElement).click();
     await settle();
-    expect(posted.filter((p) => p.includes("/tasks/"))).toHaveLength(0);
+
+    const errorBox = document.querySelector(".popout .warn") as HTMLElement;
+    expect(errorBox.hidden).toBe(false);
+    expect(errorBox.textContent).toBe("discard is not available at this stage");
+    expect(document.querySelector(".backdrop")).not.toBeNull();
   });
 
   it("asks for nothing before completing", async () => {
@@ -4967,6 +5021,43 @@ describe("the document/timeline tabs (decision 0269)", () => {
 
     expect(document.body.textContent).toContain("Priya Patel discarded this task");
     expect(document.querySelector(".activityactioncomment")).toBeNull();
+  });
+
+  /**
+   * **Decision 0502.** A closed loop, checked rather than assumed: the
+   * reason a discard's own picker now collects (`openDiscardPicker`,
+   * posted as `reason`) is the same `end_reason` `activity-route.ts`'s
+   * own `taskEndedEvents` already reads back as `comment` — the same
+   * generic rendering `release`'s own comment test above already
+   * covers, exercised here for `discard` specifically since nothing
+   * had, until now.
+   */
+  it("shows a discard's own reason underneath the message line", async () => {
+    stubFetch({
+      ...BASE_ROUTES,
+      "/api/documents/inv-1/activity": {
+        items: [
+          {
+            kind: "action_taken",
+            at: "2026-09-01 09:20:00",
+            action: "discard",
+            userName: "Priya Patel",
+            comment: "Duplicate of inv-0",
+          },
+        ],
+      },
+    });
+
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    await openViewer(TASK, () => {});
+    await new Promise((r) => setTimeout(r, 0));
+
+    (timelineTabButton() as HTMLButtonElement).click();
+
+    expect(document.body.textContent).toContain("Priya Patel discarded this task");
+    expect(document.querySelector(".activityactioncomment")?.textContent).toBe("Duplicate of inv-0");
   });
 
   it("shows a comment with an avatar, not as a system line", async () => {

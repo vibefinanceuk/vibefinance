@@ -1,6 +1,7 @@
 import { unitsBeneath } from "./enforce.js";
 import type { RouteResult } from "./org-route.js";
 import { nextStageInSequence } from "./workflow-engine.js";
+import { stageAllowsDiscard } from "./stage-actions-route.js";
 import { loadApprovalConfig } from "./approval-hierarchy.js";
 
 /**
@@ -201,7 +202,16 @@ function actionsFor(
    * stage, version) rather than re-derived per row. Swaps `complete`
    * for `route_to_approver`; every other action is unaffected.
    */
-  offerRouteToApprover = false
+  offerRouteToApprover = false,
+  /**
+   * **Decision 0502.** Whether the current stage even offers Discard
+   * — computed by `stageAllowsDiscard` below, once per distinct
+   * `stage_id` rather than re-derived per row, the same caching shape
+   * `offerRouteToApprover` above already established. Defaults `true`
+   * so every existing caller (every test that built this list before
+   * decision 0502 existed) keeps seeing exactly what it saw before.
+   */
+  discardAllowed = true
 ): TaskAction[] {
   // Locked by somebody else, or belonging to a team but not yet taken:
   // nothing can be acted on until it is this person's.
@@ -242,7 +252,7 @@ function actionsFor(
   if (permissions.has("AP.Validate")) actions.push("key");
   if (permissions.has("AP.Return")) actions.push("return");
   if (permissions.has("AP.ReturnToSupplier")) actions.push("return_to_supplier");
-  if (permissions.has("AP.Discard")) actions.push("discard");
+  if (permissions.has("AP.Discard") && discardAllowed) actions.push("discard");
   return actions;
 }
 
@@ -662,6 +672,12 @@ export async function handleListMyTasks(
   const anyMine = rows.results.some((row) => ownershipOf(row, userId) === "mine");
   const approvalMode = anyMine ? (await loadApprovalConfig(db)).mode : null;
   const routeToApproverCache = new Map<string, boolean>();
+  // Decision 0502. Only ever consulted for a task this person could
+  // otherwise discard — `permissions.has("AP.Discard")` below skips
+  // the lookup entirely for anyone who never sees the button anyway,
+  // the same "pay no extra query unless it could matter" discipline
+  // `approvalMode`'s own guard above already applies.
+  const discardAllowedCache = new Map<string, boolean>();
 
   const tasks: TaskRow[] = [];
   for (const row of rows.results) {
@@ -679,6 +695,14 @@ export async function handleListMyTasks(
       offerRouteToApprover = routeToApproverCache.get(cacheKey) ?? false;
     }
 
+    let discardAllowed = true;
+    if (ownership === "mine" && permissions.has("AP.Discard")) {
+      if (!discardAllowedCache.has(row.stage_id)) {
+        discardAllowedCache.set(row.stage_id, await stageAllowsDiscard(db, row.stage_id));
+      }
+      discardAllowed = discardAllowedCache.get(row.stage_id) ?? true;
+    }
+
     const task: TaskRow = {
       id: row.id,
       stageId: row.stage_id,
@@ -687,7 +711,7 @@ export async function handleListMyTasks(
       requiredPermission: row.required_permission,
       orgUnitId: row.org_unit_id,
       ownership,
-      actions: actionsFor(row, ownership, permissions, offerRouteToApprover),
+      actions: actionsFor(row, ownership, permissions, offerRouteToApprover, discardAllowed),
       createdAt: row.created_at,
       instanceId: row.instance_id,
       /**

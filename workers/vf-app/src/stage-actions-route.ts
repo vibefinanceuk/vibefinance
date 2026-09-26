@@ -31,10 +31,13 @@ const KNOWN_ACTIONS = new Set([
 /**
  * Configuring one (stage, action) row.
  *
- * **Only one flag exists today** (`reverifyRuleOnComplete`), so the
- * body carries exactly one optional field — set up so a second flag
- * added later (some future per-action behaviour) is a new optional
- * field on the same body and the same route, not a new URL.
+ * **Two flags exist now** (`reverifyRuleOnComplete`, and — decision
+ * 0502 — `discardAllowed`), each meaningful for exactly one action and
+ * each its own named column, the shape decision 0487's own migration
+ * comment anticipated ("the next per-action behaviour lands here as a
+ * new column on the same row"). Which field the body must carry
+ * depends on `action`, the same way `field-visibility-route.ts`'s own
+ * `INVOICE_FIELDS` branches on a closed key.
  */
 export async function handleSetStageAction(
   db: D1Database,
@@ -51,19 +54,49 @@ export async function handleSetStageAction(
     return { status: 404, body: { error: `stage ${stageId} does not exist` } };
   }
 
+  /**
+   * **`discard` reads and writes its own column, not
+   * `reverifyRuleOnComplete`** — decision 0502. Whether Discard is
+   * even offered at this stage has nothing to do with re-checking a
+   * rule on Complete; giving it a differently-named body field, rather
+   * than overloading the existing one, is what lets a future third
+   * flag land the same way without either of the first two changing
+   * shape.
+   */
+  if (action === "discard") {
+    const { discardAllowed } = body;
+    if (typeof discardAllowed !== "boolean") {
+      return { status: 400, body: { error: "discardAllowed (true or false) is required" } };
+    }
+
+    await db
+      .prepare(
+        `INSERT INTO stage_actions (stage_id, action, discard_allowed, updated_at)
+         VALUES (?, ?, ?, ?)
+         ON CONFLICT (stage_id, action) DO UPDATE SET
+           discard_allowed = excluded.discard_allowed,
+           updated_at = excluded.updated_at`
+      )
+      .bind(stageId, action, discardAllowed ? 1 : 0, new Date().toISOString())
+      .run();
+
+    return { status: 200, body: { stageId, action, discardAllowed } };
+  }
+
   const { reverifyRuleOnComplete } = body;
   if (typeof reverifyRuleOnComplete !== "boolean") {
     return { status: 400, body: { error: "reverifyRuleOnComplete (true or false) is required" } };
   }
 
   /**
-   * **Only meaningful for `complete`, accepted for any action.**
-   * Refusing it on the other six would make this route reject a
-   * caller who simply hasn't been told yet that only Complete does
-   * anything with it — storing a value nothing reads is harmless, and
-   * matches how `reverify_rule_on_complete` already carries its own
-   * name rather than a generic one, since it is not yet clear a
-   * second action will ever want the identical behaviour.
+   * **Only meaningful for `complete`, accepted for any other
+   * non-`discard` action.** Refusing it on the other five would make
+   * this route reject a caller who simply hasn't been told yet that
+   * only Complete does anything with it — storing a value nothing
+   * reads is harmless, and matches how `reverify_rule_on_complete`
+   * already carries its own name rather than a generic one, since it
+   * is not yet clear a second action will ever want the identical
+   * behaviour.
    */
   await db
     .prepare(
@@ -77,6 +110,22 @@ export async function handleSetStageAction(
     .run();
 
   return { status: 200, body: { stageId, action, reverifyRuleOnComplete } };
+}
+
+/**
+ * Whether Discard is offered at this stage at all — decision 0502.
+ * Absence of a row means allowed, the same "was on for everyone,
+ * cannot silently go dark" default `offer_field_restrictions` (0081)
+ * chose — not `reverify_rule_on_complete`'s own opposite default,
+ * which was introducing a brand new refusal rather than restricting
+ * one already relied on.
+ */
+export async function stageAllowsDiscard(db: D1Database, stageId: string): Promise<boolean> {
+  const row = await db
+    .prepare("SELECT discard_allowed FROM stage_actions WHERE stage_id = ? AND action = 'discard'")
+    .bind(stageId)
+    .first<{ discard_allowed: number }>();
+  return row?.discard_allowed !== 0;
 }
 
 /**

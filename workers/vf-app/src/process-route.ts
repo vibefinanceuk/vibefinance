@@ -174,6 +174,13 @@ interface StageDetail {
    */
   reverifyRuleOnComplete: boolean;
   /**
+   * Whether Discard is even offered at this stage — decision 0502.
+   * `true` reads both "explicitly allowed" and "never configured,"
+   * the same absence-means-default reasoning `offerFieldRestrictions`
+   * above already established for its own opposite direction.
+   */
+  discardAllowed: boolean;
+  /**
    * Where Return can send a document from this stage, and which team
    * receives it — decision 0490. A list, not a single value: unlike
    * `reverifyRuleOnComplete`, a stage can reasonably configure more
@@ -188,11 +195,12 @@ async function stagesAtVersion(db: D1Database, processId: string, version: numbe
   const rows = await db
     .prepare(
       `SELECT s.id, s.name, v.sequence, s.rule_set_id, r.name AS rule_set_name, s.evaluation_scope,
-              s.offer_field_restrictions, sa.reverify_rule_on_complete
+              s.offer_field_restrictions, sa.reverify_rule_on_complete, sd.discard_allowed
        FROM process_stage_versions v
        JOIN process_stages s ON s.id = v.stage_id
        LEFT JOIN rule_sets r ON r.id = s.rule_set_id
        LEFT JOIN stage_actions sa ON sa.stage_id = s.id AND sa.action = 'complete'
+       LEFT JOIN stage_actions sd ON sd.stage_id = s.id AND sd.action = 'discard'
        WHERE v.process_id = ? AND v.version = ?
        ORDER BY v.sequence ASC`
     )
@@ -206,6 +214,7 @@ async function stagesAtVersion(db: D1Database, processId: string, version: numbe
       evaluation_scope: string;
       offer_field_restrictions: number;
       reverify_rule_on_complete: number | null;
+      discard_allowed: number | null;
     }>();
 
   // **Fetched once for every stage in this version, not once per
@@ -255,6 +264,12 @@ async function stagesAtVersion(db: D1Database, processId: string, version: numbe
     evaluationScope: r.evaluation_scope,
     offerFieldRestrictions: r.offer_field_restrictions === 1,
     reverifyRuleOnComplete: r.reverify_rule_on_complete === 1,
+    // Absence of a row (r.discard_allowed is null, nothing configured
+    // yet) reads as allowed — the same default stageAllowsDiscard
+    // itself applies server-side, kept in sync deliberately rather
+    // than left for this read and that enforcement to silently agree
+    // by coincidence.
+    discardAllowed: r.discard_allowed !== 0,
     returnTargets: returnTargetsByStage.get(r.id) ?? [],
   }));
 }

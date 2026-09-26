@@ -5,6 +5,7 @@ import { handleCreateProcess, handleCreateStage } from "../src/process-route.js"
 import {
   handleSetStageAction,
   stageReverifiesRuleOnComplete,
+  stageAllowsDiscard,
   ruleStillFiresForTask,
 } from "../src/stage-actions-route.js";
 
@@ -60,6 +61,68 @@ describe("stageReverifiesRuleOnComplete — decision 0487", () => {
   it("is false for a stage nobody has configured — the sparse table's own default", async () => {
     const stageId = await seedStage();
     expect(await stageReverifiesRuleOnComplete(env.DB, stageId)).toBe(false);
+  });
+});
+
+/**
+ * `action === "discard"` reads and writes its own column
+ * (`discard_allowed`), not `reverifyRuleOnComplete` — decision 0502.
+ * Written the same way as the `handleSetStageAction`/
+ * `stageReverifiesRuleOnComplete` pair above, mirrored rather than
+ * merged, since the two flags default in opposite directions (see
+ * `stageAllowsDiscard`'s own doc comment) and a shared test would
+ * obscure that.
+ */
+describe("handleSetStageAction — action='discard' (decision 0502)", () => {
+  it("400s when discardAllowed is missing or not a boolean", async () => {
+    const stageId = await seedStage();
+    const missing = await handleSetStageAction(env.DB, stageId, "discard", {});
+    expect(missing.status).toBe(400);
+    const wrongType = await handleSetStageAction(env.DB, stageId, "discard", { discardAllowed: "no" });
+    expect(wrongType.status).toBe(400);
+  });
+
+  it("turns it off, then on again — an UPSERT, not an INSERT that fails the second time", async () => {
+    const stageId = await seedStage();
+    const off = await handleSetStageAction(env.DB, stageId, "discard", { discardAllowed: false });
+    expect(off.status).toBe(200);
+    expect(await stageAllowsDiscard(env.DB, stageId)).toBe(false);
+
+    const on = await handleSetStageAction(env.DB, stageId, "discard", { discardAllowed: true });
+    expect(on.status).toBe(200);
+    expect(await stageAllowsDiscard(env.DB, stageId)).toBe(true);
+  });
+
+  it("does not disturb a 'complete' row's own reverifyRuleOnComplete flag at the same stage", async () => {
+    // Two rows, same stage, different actions — the table's own
+    // (stage_id, action) primary key is what makes this possible;
+    // checked directly rather than assumed.
+    const stageId = await seedStage();
+    await handleSetStageAction(env.DB, stageId, "complete", { reverifyRuleOnComplete: true });
+    await handleSetStageAction(env.DB, stageId, "discard", { discardAllowed: false });
+
+    expect(await stageReverifiesRuleOnComplete(env.DB, stageId)).toBe(true);
+    expect(await stageAllowsDiscard(env.DB, stageId)).toBe(false);
+  });
+});
+
+describe("stageAllowsDiscard — decision 0502", () => {
+  it("is true for a stage nobody has configured — nothing changes for anyone until an operator opts a stage out", async () => {
+    const stageId = await seedStage();
+    expect(await stageAllowsDiscard(env.DB, stageId)).toBe(true);
+  });
+
+  it("is false once a stage has explicitly turned it off", async () => {
+    const stageId = await seedStage();
+    await handleSetStageAction(env.DB, stageId, "discard", { discardAllowed: false });
+    expect(await stageAllowsDiscard(env.DB, stageId)).toBe(false);
+  });
+
+  it("is true again once explicitly turned back on", async () => {
+    const stageId = await seedStage();
+    await handleSetStageAction(env.DB, stageId, "discard", { discardAllowed: false });
+    await handleSetStageAction(env.DB, stageId, "discard", { discardAllowed: true });
+    expect(await stageAllowsDiscard(env.DB, stageId)).toBe(true);
   });
 });
 

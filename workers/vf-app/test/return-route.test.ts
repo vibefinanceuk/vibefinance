@@ -2,6 +2,7 @@ import { env } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
 import { applyTestSchema } from "./setup.js";
 import { handleReturnToStage, handleReturnToSupplier, handleDiscard, handleReturnTargets } from "../src/return-route.js";
+import { handleSetStageAction } from "../src/stage-actions-route.js";
 import type { AuthenticatedUser } from "../src/user-auth.js";
 
 const DAN: AuthenticatedUser = { id: "u-dan", email: "dan@acme.com", name: "Dan Y." };
@@ -606,5 +607,81 @@ describe("discarding — the third outcome (decision 0078)", () => {
     expect(row?.status).toBe("discarded");
     expect(row?.completed_by).toBeNull();
     expect(row?.ended_by).toBe("u-dan");
+  });
+
+  /**
+   * **Decision 0502.** `AP.Discard` plus the stage's own permission
+   * used to be the whole gate — a person holding it could discard a
+   * document already at Approval, three stages past the first real
+   * look it was meant for. This is the stage half of the fix; the
+   * client-side button hiding it is `task-list-route.test.ts`'s own
+   * coverage.
+   */
+  describe("restricted per stage (decision 0502)", () => {
+    it("is unaffected while nothing has configured the stage — every existing discard test above still holds", async () => {
+      const { taskId } = await atApproval();
+      await grant("u-dan", ["AP.Approve", "AP.Discard"]);
+      const result = await handleDiscard(env.DB, taskId, { reason: "duplicate" }, DAN);
+      expect(result.status).toBe(200);
+    });
+
+    it("refuses once the stage has explicitly turned Discard off", async () => {
+      // `atApproval()` is what creates 's-approval' — `handleSetStageAction`
+      // 404s a stage that does not exist yet, so it has to run after.
+      const { taskId } = await atApproval();
+      await handleSetStageAction(env.DB, "s-approval", "discard", { discardAllowed: false });
+      await grant("u-dan", ["AP.Approve", "AP.Discard"]);
+
+      const result = await handleDiscard(env.DB, taskId, { reason: "duplicate" }, DAN);
+      expect(result.status).toBe(409);
+      expect((result.body as { reason: string }).reason).toBe("discard_not_allowed_here");
+    });
+
+    it("checked ahead of the reason requirement — the stage refusal wins even with no reason typed at all", async () => {
+      // Order matters for what a person sees first: a stage that has
+      // never allowed Discard should say so, not "give a reason" for
+      // an action that was never going to succeed either way.
+      const { taskId } = await atApproval();
+      await handleSetStageAction(env.DB, "s-approval", "discard", { discardAllowed: false });
+      await grant("u-dan", ["AP.Approve", "AP.Discard"]);
+
+      const result = await handleDiscard(env.DB, taskId, {}, DAN);
+      expect(result.status).toBe(409);
+      expect((result.body as { reason: string }).reason).toBe("discard_not_allowed_here");
+    });
+
+    it("succeeds again once explicitly turned back on", async () => {
+      const { taskId } = await atApproval();
+      await handleSetStageAction(env.DB, "s-approval", "discard", { discardAllowed: false });
+      await handleSetStageAction(env.DB, "s-approval", "discard", { discardAllowed: true });
+      await grant("u-dan", ["AP.Approve", "AP.Discard"]);
+
+      const result = await handleDiscard(env.DB, taskId, { reason: "duplicate" }, DAN);
+      expect(result.status).toBe(200);
+    });
+
+    it("does not affect a different stage's own discard permission", async () => {
+      // A second, unrelated stage — restricting s-approval must not
+      // silently restrict every other one. atApproval() is what
+      // creates s-approval in the first place, so it runs first even
+      // though its own task is unused here.
+      await atApproval();
+      await handleSetStageAction(env.DB, "s-approval", "discard", { discardAllowed: false });
+      await env.DB.prepare("INSERT INTO processes (id, name) VALUES ('p-other', 'Other')").run();
+      await env.DB.prepare("INSERT INTO process_stages (id, process_id, name, sequence) VALUES ('s-other', 'p-other', 'Other', 1)").run();
+      await env.DB.prepare(
+        "INSERT INTO process_instances (id, process_id, subject_type, subject_id, current_stage_id, status) VALUES ('inst-2', 'p-other', 'invoice', 'inv-2', 's-other', 'in_progress')"
+      ).run();
+      await env.DB.prepare(
+        "INSERT INTO stage_visits (id, process_instance_id, stage_id, outcome) VALUES ('v-other', 'inst-2', 's-other', 'matched')"
+      ).run();
+      await env.DB.prepare(
+        "INSERT INTO tasks (id, stage_id, stage_visit_id, owner_user_id, required_permission) VALUES ('task-other', 's-other', 'v-other', 'u-dan', 'AP.Approve')"
+      ).run();
+      await grant("u-dan", ["AP.Approve", "AP.Discard"]);
+
+      const result = await handleDiscard(env.DB, "task-other", { reason: "duplicate" }, DAN);
+      expect(result.status).toBe(200);
+    });
   });
 });

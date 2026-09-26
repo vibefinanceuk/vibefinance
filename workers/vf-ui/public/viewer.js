@@ -1494,10 +1494,13 @@ function linePanel() {
  * with no explanation is one the next person cannot act on.
  *
  * Discarding needs one too (0078) — *"nothing goes back"*, so the
- * record of why is all there is. **Still a bare prompt, deliberately**
- * — the operator was asked directly whether this pass should upgrade
- * Discard's identical prompt() alongside Return To Supplier's own, and
- * chose to keep this scoped to the button actually reported on.
+ * record of why is all there is. **Moved to its own picker at last —
+ * decision 0502.** Left as a bare prompt() when Return To Supplier and
+ * Return-to-stage were each upgraded (0490, 0498), scoped deliberately
+ * to the button actually reported on at the time; reported live once
+ * it was the one native-looking control left on this screen.
+ * `openDiscardPicker` below collects the same reason, styled the same
+ * way as every other action on this screen.
  *
  * **Returning to a stage moved to its own picker — decision 0490.**
  * It needs a real target stage and a real team, neither of which a
@@ -1512,7 +1515,7 @@ function linePanel() {
  * separate supplier-facing comment, or the CC choice — `open
  * ReturnToSupplierPicker` below.
  */
-const ACTIONS_NEEDING_A_REASON = ["discard"];
+const ACTIONS_NEEDING_A_REASON = [];
 
 /**
  * Do something to this task.
@@ -1594,6 +1597,73 @@ async function runAction(name, task, onClose) {
   // The task is finished or moved, so the viewer has nothing left to
   // show. Closing returns to the list, which is where the answer is.
   onClose();
+}
+
+/**
+ * Discard — decision 0078, given its own dedicated picker at last —
+ * decision 0502. The same minimal `.backdrop`/`.popout` shape
+ * `openReturnPicker` below uses for its own required reason, just
+ * with no target stage or team to choose: discarding leaves the
+ * process entirely rather than moving anywhere, so a reason is the
+ * whole form. Reported live: the old `window.prompt()` read as a
+ * native browser control rather than this site's own, the one action
+ * left that way once Return To Supplier and Return-to-stage were each
+ * upgraded (decisions 0490, 0498).
+ *
+ * **The reason is required, the same server-enforced rule Return
+ * already leaves to its own 400** (decision 0075) — checked here too,
+ * before ever calling the server, since an empty reason is refused
+ * identically whether or not this picker catches it first, and
+ * catching it first means no round trip for the most common way to
+ * get this wrong.
+ */
+async function openDiscardPicker(task, onClose) {
+  const close = () => backdrop.remove();
+  const reasonBox = el("textarea", { placeholder: t("activity.placeholder") });
+  const errorBox = el("div", { class: "warn sm", hidden: "hidden" });
+
+  const doDiscard = async () => {
+    errorBox.hidden = true;
+    const reason = reasonBox.value.trim();
+    if (reason === "") {
+      errorBox.hidden = false;
+      errorBox.textContent = t("action.whyreason");
+      return;
+    }
+    const response = await fetch(`/api/tasks/${encodeURIComponent(task.id)}/discard`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reason }),
+    });
+    if (!response.ok) {
+      const failure = await response.json().catch(() => ({}));
+      errorBox.hidden = false;
+      errorBox.textContent = failure.error ?? t("viewer.actionfailed");
+      return;
+    }
+    close();
+    // Discarding is terminal — this screen has nothing left to show,
+    // the same "finished or moved" close every other action already
+    // takes at the end of runAction() above.
+    onClose();
+  };
+
+  const stateButtons = el("div", { class: "statebuttons" }, [
+    actionLink("discard", { onclick: doDiscard, primary: true }),
+    actionLink("close", { onclick: close }),
+  ]);
+
+  const box = el("div", { class: "popout" }, [
+    el("div", { class: "cardhead" }, [el("h3", { text: t("action.discard") }), stateButtons]),
+    el("div", { class: "kf" }, [el("label", { text: t("action.discard.reasonlabel") }), reasonBox]),
+    errorBox,
+  ]);
+
+  const backdrop = el("div", { class: "backdrop" }, [box]);
+  backdrop.onclick = (e) => {
+    if (e.target === backdrop) close();
+  };
+  document.body.append(backdrop);
 }
 
 /**
@@ -2072,15 +2142,17 @@ function taskActionButtons(task, onClose) {
       .filter((a) => a !== "key")
       .map((a, index) =>
         actionLink(a, {
-          // **Reassign, Return and Route To Approver each open their
-          // own small picker instead of `runAction`'s plain-text-
-          // reason prompt — decisions 0489, 0490 and 0495.** Each
-          // needs something a bare prompt cannot collect (a real
-          // person, a real stage and team, or a real approver — all
-          // chosen from a real list) rather than a free-text string;
-          // the generic comment-and-OK/Cancel modal that would
-          // eventually replace these dedicated pickers is its own,
-          // later decision.
+          // **Every action but `complete`/`key`/`release`/`claim` now
+          // opens its own small picker instead of `runAction`'s old
+          // plain-text-reason prompt — decisions 0489, 0490, 0495,
+          // 0498 and, last, 0502's own Discard.** Each needs something
+          // a bare prompt could not collect (a real person, a real
+          // stage and team, a real approver, a real reason id and
+          // supplier comment — or, for Discard, simply this site's own
+          // styled reason field rather than the browser's native one)
+          // rather than a free-text string; the generic comment-and-
+          // OK/Cancel modal that would eventually replace these
+          // dedicated pickers is its own, later decision.
           onclick: () =>
             a === "reassign"
               ? openReassignPicker(task, onClose)
@@ -2090,7 +2162,9 @@ function taskActionButtons(task, onClose) {
                   ? openRouteToApproverPicker(task, onClose)
                   : a === "return_to_supplier"
                     ? openReturnToSupplierPicker(task, onClose)
-                    : runAction(a, task, onClose),
+                    : a === "discard"
+                      ? openDiscardPicker(task, onClose)
+                      : runAction(a, task, onClose),
           // With nothing to save, the first thing the task offers is
           // what somebody came to do.
           primary: !canEditAnything && index === 0,

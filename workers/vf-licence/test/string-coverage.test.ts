@@ -597,6 +597,8 @@ const KEYS_THE_INTERFACE_USES = [
   "docstatus.outside",
   "docstatus.returned",
   "docstatus.archived",
+  "action.discard.reasonlabel",
+  "apsetup.stagerestrictions.discardallowed",
   "doctype.380",
   "doctype.381",
   "doctype.389",

@@ -3,6 +3,7 @@ import type { AuthenticatedUser } from "./user-auth.js";
 import { hasPermission } from "./enforce.js";
 import type { Permission } from "./permissions.js";
 import { sendEmailViaResend } from "./resend-client.js";
+import { stageAllowsDiscard } from "./stage-actions-route.js";
 
 /**
  * Returning a document — decision 0075.
@@ -667,6 +668,19 @@ export async function handleDiscard(
   // ownership only.
   const standing = await checkStanding(db, user, task, "AP.Discard");
   if (!standing.ok) return { status: standing.status, body: { error: standing.error } };
+
+  /**
+   * **Decision 0502.** `AP.Discard` plus the stage's own permission
+   * says somebody may act on this kind of task; it says nothing about
+   * *which* stage discarding is meant for. A stage that has never
+   * configured this (every stage, until an operator opts one out via
+   * decision 0487's own `stage_actions` table) reads as allowed —
+   * `stageAllowsDiscard`'s own default matches what every existing
+   * Discard click already did before this decision existed.
+   */
+  if (!(await stageAllowsDiscard(db, task.stage_id))) {
+    return { status: 409, body: { error: "discard is not available at this stage", reason: "discard_not_allowed_here" } };
+  }
 
   const { reason } = body;
   if (typeof reason !== "string" || reason.trim() === "") {

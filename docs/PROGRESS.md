@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 26 September 2026 (decision 0501). A living document: what
+Last updated 26 September 2026 (decision 0502). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,31 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Discard gets a real picker, a stage restriction, and a Timeline check (0502)
+- Four questions reported live, once decision 0501's own fix was
+  confirmed: the reason prompt still read as a native browser dialog,
+  not this site's own; whether a discard was actually tracked in
+  Timeline/Chat; whether Discard could be restricted to the Validation
+  queue only, since nothing stopped it once a document had been coded,
+  matched, or approved; and what discarding does to the instance's own
+  status.
+- Investigated before building: the Timeline mechanism (decision 0488)
+  was already correct and tested — a real gap, but in *test coverage*
+  (no case exercised a discard's own reason rendering), not behaviour.
+  The stage restriction, though, was genuinely missing: `AP.Discard`
+  plus the task's own stage permission was the whole gate, with no
+  notion of *which* stage at all.
+- `window.prompt()` retired for Discard — its own dedicated
+  `.backdrop`/`.popout` picker, the same shape Return's own already
+  uses, just with a single required reason and no target to choose.
+- A new `discard_allowed` column on `stage_actions` (decision 0487's
+  own table, `'discard'` already reserved there with no column of its
+  own until now), defaulting to allowed everywhere so nothing changes
+  on deploy — surfaced as a new checkbox on the Stage Restrictions tab,
+  enforced both server-side (`handleDiscard` itself refuses) and
+  client-side (the button is not offered).
+- Full reasoning and verification counts in decision 0502.
 
 ### The Documents list learns `returned_manually` and `archived` (0501)
 - Reported live, first real use of decision 0498: "I placed the Return

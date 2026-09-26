@@ -1,0 +1,32 @@
+-- 0091_stage_actions_discard_allowed.sql
+-- Decision 0502 — Discard, restricted to the stages it is allowed at.
+--
+-- Reported live, testing decision 0498's own Return To Supplier
+-- button: today Discard is offered purely by permission —
+-- `AP.Discard` plus the task's own stage `required_permission`, with
+-- no notion of *which* stage at all. A document already validated,
+-- coded, matched, or approved could still be discarded by anyone
+-- holding that one permission, which is the opposite of the intended
+-- rule: discard belongs to the first real look at a document, not to
+-- one already most of the way through.
+--
+-- **Reuses `stage_actions` (migration 0082) rather than a new
+-- table.** 'discard' was already reserved in its own KNOWN_ACTIONS
+-- list, with no column of its own yet — exactly the extension point
+-- decision 0487 built this table for: "the next per-action behaviour
+-- lands here as a new column on the same row."
+--
+-- **Defaults to allowed — the `offer_field_restrictions` (0081)
+-- direction, not the `reverify_rule_on_complete` (0082) one.**
+-- Turning this off silently removes a button already available
+-- today, the same "was visible, must not vanish on deploy" reasoning
+-- 0081's own migration comment gives for its own opposite default —
+-- unlike 0082's flag, which was a brand new refusal nothing had ever
+-- enforced before. Absence of a row (true for every stage right now)
+-- reads as allowed, matching live behaviour exactly.
+ALTER TABLE stage_actions ADD COLUMN discard_allowed INTEGER NOT NULL DEFAULT 1
+  CHECK (discard_allowed IN (0, 1));
+
+-- Point-in-time: nothing has ever configured a 'discard' row, so this
+-- column exists everywhere already reading its own default.
+-- ASSERT: SELECT count(*) FROM stage_actions WHERE action = 'discard' == 0

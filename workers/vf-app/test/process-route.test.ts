@@ -194,6 +194,30 @@ describe("handleGetProcess — decision 0349", () => {
     expect(body.stages[0]).toEqual(expect.objectContaining({ reverifyRuleOnComplete: true }));
   });
 
+  it("defaults a new stage to allowing Discard — decision 0502, the opposite default from reverifyRuleOnComplete since this restricts something already on", async () => {
+    await handleCreateProcess(env.DB, { id: "p1", name: "Standard AP" });
+    await handleCreateStage(env.DB, "p1", { id: "s1", name: "Approval", sequence: 1 });
+
+    const result = await handleGetProcess(env.DB, "p1");
+    const body = result.body as { stages: { id: string; discardAllowed: boolean }[] };
+    expect(body.stages[0]).toEqual(expect.objectContaining({ discardAllowed: true }));
+  });
+
+  it("carries a stage turned off through to the read — decision 0502", async () => {
+    // Reads the same table `handleSetStageAction` writes to, the same
+    // end-to-end check `reverifyRuleOnComplete`'s own equivalent above
+    // already makes for its own column on the same table.
+    await handleCreateProcess(env.DB, { id: "p1", name: "Standard AP" });
+    await handleCreateStage(env.DB, "p1", { id: "s1", name: "Approval", sequence: 1 });
+    await env.DB
+      .prepare(`INSERT INTO stage_actions (stage_id, action, discard_allowed) VALUES ('s1', 'discard', 0)`)
+      .run();
+
+    const result = await handleGetProcess(env.DB, "p1");
+    const body = result.body as { stages: { id: string; discardAllowed: boolean }[] };
+    expect(body.stages[0]).toEqual(expect.objectContaining({ discardAllowed: false }));
+  });
+
   it("defaults a new stage to no configured return targets — decision 0490, sparse", async () => {
     await handleCreateProcess(env.DB, { id: "p1", name: "Standard AP" });
     await handleCreateStage(env.DB, "p1", { id: "s1", name: "Approval", sequence: 1 });
