@@ -172,6 +172,19 @@
   --chart-4: #c06a2a;
   --chart-5: #3d7a96;
 
+  /*
+    **The side menu's icon colours — decision 0527.** The operator chose
+    the "Vivid" set over the chart palette above: the chart colours are
+    deliberately quiet, and on the pale menu they read almost as grey.
+    Used only for a nav icon that is hovered or selected, never for data,
+    so they carry no meaning beyond telling the icons apart.
+  */
+  --nav-1: #2563eb;
+  --nav-2: #0d9488;
+  --nav-3: #7c3aed;
+  --nav-4: #ea580c;
+  --nav-5: #db2777;
+
   --border-success: #639922;
   /*
     Not redefined below, decision 0395 — the same choice this file
@@ -337,6 +350,13 @@
     --chart-4: #ffb057;
     --chart-5: #6fd0e8;
 
+    /* And the side menu's icon colours (decision 0527). */
+    --nav-1: #60a5fa;
+    --nav-2: #2dd4bf;
+    --nav-3: #a78bfa;
+    --nav-4: #fb923c;
+    --nav-5: #f472b6;
+
   /*
     **Lifted and saturated for the night surface** — decisions 0242 and
     0247.
@@ -351,6 +371,13 @@
   --chart-3: #b08bff;
   --chart-4: #ffb057;
   --chart-5: #6fd0e8;
+
+  /* And the side menu's icon colours (decision 0527). */
+  --nav-1: #60a5fa;
+  --nav-2: #2dd4bf;
+  --nav-3: #a78bfa;
+  --nav-4: #fb923c;
+  --nav-5: #f472b6;
 
   }
 }

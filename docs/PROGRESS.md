@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 27 September 2026 (decision 0526). A living document: what
+Last updated 27 September 2026 (decision 0527). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,12 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Side menu: coloured icons (0527)
+- Option D from the mock-up: on hover, or for the open screen, each
+  icon takes its own colour on a soft tinted tile, and the open screen
+  gets a coloured bar. Grey at rest, as before. Five new `--nav-N`
+  tokens (the "Vivid" set), with Night values. `vf-ui` only.
 
 ### Document window: card sits higher (0526)
 - The expanded document window no longer inherits the page padding

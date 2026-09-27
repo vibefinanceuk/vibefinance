@@ -844,16 +844,24 @@ const NAV_PERMISSIONS = {
   apsetup: "Admin.Configure",
 };
 
-/** One nav entry: an icon, a label, and which screen it opens. */
-function navLink(screen, iconName) {
+/**
+ * One nav entry: an icon, a label, and which screen it opens.
+ *
+ * **Its own colour — decision 0527**, option D from the mock-up the
+ * operator chose ("D please"). `hue` (1–5) names one of the five
+ * `--nav-N` colours. The icon sits in `.navicon`, which app.css tints
+ * and colours only on hover or when the screen is open; otherwise it
+ * looks exactly as it did.
+ */
+function navLink(screen, iconName, hue) {
   return el(
     "a",
     {
-      class: `navitem${current === screen ? " on" : ""}`,
+      class: `navitem navhue${hue}${current === screen ? " on" : ""}`,
       title: t(`nav.${screen}`),
       onclick: () => go(screen),
     },
-    [icon(iconName), el("span", { class: "navlabel", text: t(`nav.${screen}`) })]
+    [el("span", { class: "navicon" }, [icon(iconName)]), el("span", { class: "navlabel", text: t(`nav.${screen}`) })]
   );
 }
 
@@ -921,6 +929,14 @@ export function frame(main) {
     return names.some((p) => me?.permissions?.includes(p));
   }
 
+  /**
+   * **A fixed colour per screen — decision 0527.** Numbered by each
+   * screen's place in the full menu, cycling through the five, not by
+   * its place among the screens this person can see. So Rules is the
+   * same colour for everyone, whatever else they are missing.
+   */
+  const HUES = new Map(NAV_GROUPS.flatMap(({ screens }) => screens).map(([screen], i) => [screen, (i % 5) + 1]));
+
   const navItems = NAV_GROUPS.flatMap(({ heading, screens }) => {
     const unlockedScreens = screens.filter(([screen]) => unlocked(screen));
     if (unlockedScreens.length === 0) return [];
@@ -940,7 +956,7 @@ export function frame(main) {
         el("span", { class: "navgrouplong", text: t(`nav.group.${heading}`) }),
         el("span", { class: "navgroupshort", "aria-hidden": "true", text: t(`nav.groupshort.${heading}`) }),
       ]),
-      ...unlockedScreens.map(([screen, iconName]) => navLink(screen, iconName)),
+      ...unlockedScreens.map(([screen, iconName]) => navLink(screen, iconName, HUES.get(screen))),
     ];
   });
 

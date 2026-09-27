@@ -1,7 +1,6 @@
 # 0526 — The document window's card sits higher, with its bottom on screen
 
-**Status: built and tested locally, not yet pushed or deployed.** This
-session has no push access, so it is delivered as a git bundle. It
+**Status: pushed (`c49c39c`) and `vf-ui` deployed, as confirmed by the operator on 27 September.** It
 changes `vf-ui` only (`app.css`), with no migration and no string
 change.
 

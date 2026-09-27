@@ -496,6 +496,67 @@ describe("the flat nav, permission-filtered (decisions 0274 and 0276)", () => {
     expect(css).not.toContain(".frame.collapsed .navgroup { display: none; }");
   });
 
+  it("gives each nav item its own fixed colour, whatever else the person can see — decision 0527", async () => {
+    /**
+     * Option D from the mock-up, the operator's choice: "D please".
+     * The colour belongs to the screen, so Rules is the same colour
+     * for someone who lacks Suppliers as for someone who has it.
+     */
+    await openList([APPROVAL_TASK]);
+    const hueOf = (label: string) =>
+      [...document.querySelectorAll(".navitem")]
+        .find((a) => a.textContent === label)
+        ?.className.match(/navhue(\d)/)?.[1];
+    expect(hueOf("Dashboard")).toBe("1");
+    expect(hueOf("Documents")).toBe("4");
+    expect(hueOf("Suppliers")).toBe("5");
+    expect(hueOf("Access")).toBe("1");
+    expect(hueOf("Rules")).toBe("5");
+    // The icon sits in its own tile, and the label is unchanged.
+    for (const item of document.querySelectorAll(".navitem")) {
+      expect(item.querySelector(".navicon > svg")).not.toBeNull();
+    }
+
+    stubFetch({
+      "/api/ui-strings": STRINGS,
+      "/api/whoami": { id: "u-dan", name: "Dan", permissions: ALL_NAV_PERMISSIONS.filter((p) => p !== "AP.Supplier") },
+      "/api/tasks": { tasks: [APPROVAL_TASK], counts: {} },
+      "/api/sources": { sources: [] },
+      "/api/processes": { processes: [] },
+      "/api/rules": { rules: [] },
+      "/api/rules/stages": { stages: [] },
+      "/api/dashboard": { cards: [], usingDefault: true },
+    });
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { start } = await import("/tasks.js");
+    await start();
+    expect(hueOf("Suppliers")).toBeUndefined();
+    expect(hueOf("Rules")).toBe("5");
+  });
+
+  it("colours an icon only on hover or when its screen is open, with a tile and a bar — decision 0527", async () => {
+    const css = (await import("virtual:stylesheets")).default["app.css"];
+    const ruleFor = (selector: string) => {
+      const at = css.indexOf(`${selector} {`);
+      expect(at).toBeGreaterThan(-1);
+      return css.slice(at, css.indexOf("}", at));
+    };
+    const coloured = ruleFor(".nav .navitem:hover .navicon,\n  .nav .navitem.on .navicon");
+    expect(coloured).toContain("color: var(--hue)");
+    expect(coloured).toContain("color-mix(in srgb, var(--hue) 16%, transparent)");
+    // At rest, no colour and no background of its own.
+    const rest = ruleFor(".navicon");
+    expect(rest).not.toContain("color: var(--hue)");
+    expect(rest).not.toContain("background:");
+    expect(ruleFor(".nav .navitem.on::before")).toContain("background: var(--hue)");
+    for (let n = 1; n <= 5; n++) expect(ruleFor(`.navhue${n}`)).toContain(`--hue: var(--nav-${n})`);
+
+    // Each colour is defined for Day and for both ways of reaching Night.
+    const tokens = (await import("virtual:stylesheets")).default["tokens.css"];
+    for (let n = 1; n <= 5; n++) expect(tokens.match(new RegExp(`--nav-${n}:`, "g"))).toHaveLength(3);
+  });
+
   it("gives every real nav item an icon", async () => {
     await openList([APPROVAL_TASK]);
 
