@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 27 September 2026 (decision 0525). A living document: what
+Last updated 27 September 2026 (decision 0526). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,11 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Document window: card sits higher (0526)
+- The expanded document window no longer inherits the page padding
+  that pushed its card down and off the bottom of the screen. The card
+  now sits 12px from the top and 20px from the bottom. `vf-ui` only.
 
 ### Folded side menu: short group headings (0525)
 - When the side menu is folded, each group heading shows a short form

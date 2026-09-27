@@ -4170,10 +4170,24 @@
    * why a long conversation growing the window past the screen was
    * never reported until now.
    */
+  /*
+    **No page padding, and less above the card than below — decision
+    0526.** Reported live, with a screenshot: "reduce the space at the
+    top, and move any reclaimed space to the bottom of the screen. Right
+    now the card sits a little low." The cause: `tokens.css`'s bare
+    `body` rule gives every page `padding: 2rem 1rem`, and nothing here
+    reset it. With `height: 100vh` that padding sat *outside* the
+    height, so the card started 32px lower than `#docwindow-root`
+    asked for and its bottom ran 64px past the window, clipped by
+    `overflow: hidden`. `padding: 0` makes the window exactly one
+    screen, and `#docwindow-root`'s own padding is now the only space
+    around the card: 12px above, 20px below.
+  */
   body.docwindowbody {
     display: flex;
     place-items: initial;
     height: 100vh;
+    padding: 0;
     overflow: hidden;
     background: var(--surface-0);
   }
@@ -4184,7 +4198,7 @@
     width: auto;
     max-width: none;
     margin: 0;
-    padding: 20px 24px;
+    padding: 12px 24px 20px;
     box-sizing: border-box;
     /**
      * **The other half of the same bug.** A flex item's default

@@ -232,6 +232,24 @@ describe("initDocumentWindow — the same panel the embedded card shows, mounted
     const rootRule = css.slice(css.indexOf("#docwindow-root {"), css.indexOf("#docwindow-root {") + 1000);
     expect(rootRule).toContain("min-height: 0");
   });
+
+  it("resets the page padding, and sits the card higher than it sits from the bottom (decision 0526)", async () => {
+    /**
+     * Reported live: "reduce the space at the top, and move any
+     * reclaimed space to the bottom of the screen. Right now the card
+     * sits a little low." `tokens.css` gives every `body` `padding:
+     * 2rem 1rem`; outside `height: 100vh`, it pushed the card down 32px
+     * and ran its bottom 64px past the window.
+     */
+    const css = (await import("virtual:stylesheets")).default["app.css"];
+    const at = css.indexOf("body.docwindowbody {");
+    const bodyRule = css.slice(at, css.indexOf("}", at));
+    expect(bodyRule).toContain("padding: 0;");
+
+    const rootAt = css.indexOf("#docwindow-root {");
+    const rootRule = css.slice(rootAt, css.indexOf("}", rootAt));
+    expect(rootRule).toContain("padding: 12px 24px 20px;");
+  });
 });
 
 describe("document-window.js's own bootstrap", () => {

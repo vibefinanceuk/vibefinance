@@ -1,9 +1,7 @@
 # 0525 — The folded side menu shows short group headings
 
-**Status: built and tested locally, not yet pushed or deployed.** This
-session has no push access, so it is delivered as a git bundle. It
-changes `vf-ui` and `vf-licence`, and needs `vf-licence` migration
-`0187` applied separately.
+**Status: pushed (`bf124e6`), deployed, and migration `0187` applied, as confirmed by the operator on 27 September.** It
+changes `vf-ui` and `vf-licence`.
 
 ## What was asked
 
