@@ -1,7 +1,6 @@
 # 0522 — The Tasks list: the stage as a coloured pill
 
-**Status: built and tested locally, not yet pushed or deployed.** It is
-delivered with 0521.
+**Status: pushed (`f631f3a`), deployed, and migration `0186` applied, as confirmed by the operator on 27 September.**
 
 ## What was asked
 

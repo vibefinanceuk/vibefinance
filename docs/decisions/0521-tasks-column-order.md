@@ -1,9 +1,6 @@
 # 0521 — The Tasks list: the operator's column order
 
-**Status: built and tested locally, not yet pushed or deployed.** This
-session has no push access, so it is delivered as a git bundle,
-together with 0522. It touches `vf-app`, `vf-ui` and `vf-licence`, and
-needs `vf-licence` migration `0186` applied as its own step.
+**Status: pushed (`f631f3a`), deployed, and migration `0186` applied, as confirmed by the operator on 27 September.**
 
 ## What was asked
 

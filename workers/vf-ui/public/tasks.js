@@ -286,6 +286,9 @@ function problem(message) {
   if (node) node.textContent = message;
 }
 
+/** The actions the Tasks list itself offers — decision 0523. */
+const LIST_ACTIONS = ["claim", "release"];
+
 function taskRow(task) {
   /**
    * **"Key" is redundant now, decision 0288** — matching decision
@@ -295,8 +298,17 @@ function taskRow(task) {
    * action (Claim, Release, Complete, Return) stays, since each does
    * something the row's own click does not.
    */
+  /**
+   * **Only Claim and Release in the list — decision 0523**, the
+   * operator's own request: *"other actions to be only actioned from
+   * within the document viewer itself. This keeps the task list
+   * clean."* Taking and giving back a task are about the queue. Every
+   * other action (Complete, Route To Approver, Return, Reassign…) acts
+   * on the document, so it happens where the document can be seen. The
+   * task keeps its full `actions`, which the viewer still offers.
+   */
   const actions = task.actions
-    .filter((action) => action !== "key")
+    .filter((action) => LIST_ACTIONS.includes(action))
     .map((action) =>
       el("button", {
         class: "act",

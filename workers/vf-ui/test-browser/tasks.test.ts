@@ -82,6 +82,7 @@ const STRINGS = {
     "action.return": "Return",
     "action.key": "Key",
     "action.claim": "Claim",
+    "action.release": "Release",
     "mood.label": "Mood",
     "mood.day": "Day",
     "mood.night": "Night",
@@ -240,12 +241,12 @@ describe("opening a task that cannot be keyed (decision 0142)", () => {
   });
 
   it("never shows Key as its own button — the row already opens it (decision 0288)", async () => {
-    const keyable = { ...APPROVAL_TASK, id: "t-key", stageId: "validation", actions: ["key", "complete"] };
+    const keyable = { ...APPROVAL_TASK, id: "t-key", stageId: "validation", actions: ["key", "complete", "release"] };
     await openList([keyable]);
 
     const labels = [...document.querySelectorAll("button.act")].map((b) => b.textContent);
     expect(labels).not.toContain("Key");
-    expect(labels).toContain("Complete");
+    expect(labels).toContain("Release");
   });
 
   it("keeps Claim as its own button, since the row's own click does not claim anything (decision 0288)", async () => {
@@ -264,7 +265,10 @@ describe("opening a task that cannot be keyed (decision 0142)", () => {
      * the document at the same moment the action is still in flight,
      * using whatever stale ownership the row was rendered with.
      */
-    await openList([APPROVAL_TASK]);
+    // Decision 0523: only Claim and Release sit in the list, so this
+    // uses Claim.
+    const claimable = { ...APPROVAL_TASK, ownership: "available", actions: ["claim"] };
+    await openList([claimable]);
 
     const posted: string[] = [];
     vi.stubGlobal(
@@ -275,18 +279,18 @@ describe("opening a task that cannot be keyed (decision 0142)", () => {
         const routes: Record<string, unknown> = {
           "/api/ui-strings": STRINGS,
           "/api/whoami": { id: "u-dan", name: "Dan", permissions: ALL_NAV_PERMISSIONS },
-          "/api/tasks": { tasks: [APPROVAL_TASK], counts: {} },
-          "/api/tasks/t-approve/complete": {},
+          "/api/tasks": { tasks: [claimable], counts: {} },
+          "/api/tasks/t-approve/claim": {},
         };
         if (!(path in routes)) throw new Error(`no stub for ${path}`);
         return { ok: true, json: async () => routes[path] } as Response;
       })
     );
 
-    const complete = [...document.querySelectorAll("button.act")].find(
-      (b) => b.textContent === "Complete"
+    const claim = [...document.querySelectorAll("button.act")].find(
+      (b) => b.textContent === "Claim"
     ) as HTMLButtonElement;
-    complete.click();
+    claim.click();
 
     // **Waits for the real outcome, not a guessed duration** — decision
     // 0249's own lesson, found again while probing this very test: a
@@ -295,7 +299,7 @@ describe("opening a task that cannot be keyed (decision 0142)", () => {
     // way in that short a wait. The action's own POST completing is
     // the real signal to wait for.
     for (let i = 0; i < 100; i++) {
-      if (posted.includes("/api/tasks/t-approve/complete")) break;
+      if (posted.includes("/api/tasks/t-approve/claim")) break;
       await new Promise((r) => setTimeout(r, 10));
     }
 
@@ -312,10 +316,19 @@ describe("opening a task that cannot be keyed (decision 0142)", () => {
     expect(disabled).toHaveLength(0);
   });
 
-  it("shows the actions the task reports, and no others", async () => {
+  it("shows only Claim and Release; every other action stays in the viewer (decision 0523)", async () => {
+    const claimed = { ...APPROVAL_TASK, actions: ["complete", "release", "reassign", "return", "route_to_approver"] };
+    await openList([claimed, { ...APPROVAL_TASK, id: "t-2", ownership: "available", actions: ["claim", "reassign"] }]);
+    const rows = [...document.querySelectorAll("tbody tr")];
+    expect([...rows[0].querySelectorAll("button.act")].map((b) => b.textContent)).toEqual(["Release"]);
+    expect([...rows[1].querySelectorAll("button.act")].map((b) => b.textContent)).toEqual(["Claim"]);
+  });
+
+  it("shows a dash where the only actions are ones the viewer offers (decision 0523)", async () => {
     await openList([APPROVAL_TASK]);
-    const labels = [...document.querySelectorAll("button.act")].map((b) => b.textContent);
-    expect(labels).toEqual(["Complete", "Return"]);
+    const cell = document.querySelector("tbody tr td:last-child") as HTMLElement;
+    expect(cell.querySelector("button")).toBeNull();
+    expect(cell.textContent).toBe("—");
   });
 
   it("does not offer a link for a task with no document", async () => {
