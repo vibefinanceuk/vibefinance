@@ -123,7 +123,10 @@ export async function handleRouteToApproverCandidates(
    * org since decision 0512** — "could complete" was always the test,
    * and completing checks the org (see `approverCandidates`).
    */
-  const candidates = await approverCandidates(db, next.required_permission, task.org_unit_id);
+  const excluded = await excludedApprovers(db, taskId, config);
+  const candidates = (await approverCandidates(db, next.required_permission, task.org_unit_id)).filter(
+    (c) => !excluded.has(c.id)
+  );
 
   return { status: 200, body: { candidates } };
 }
@@ -204,8 +207,17 @@ export async function checkChosenApprover(
 
   const next = await nextStageInSequence(db, task.process_id, task.sequence, task.process_version);
   if (!next || !next.uses_approval_hierarchy || !next.required_permission) return { ok: true };
-  if ((await loadApprovalConfig(db)).mode !== "manual") return { ok: true };
+  const config = await loadApprovalConfig(db);
+  if (config.mode !== "manual") return { ok: true };
 
+  const excluded = await excludedApprovers(db, taskId, config);
+  if (excluded.has(targetUserId)) {
+    return {
+      status: 422,
+      ok: false,
+      error: `${targetUserId} cannot approve this invoice: AP Setup excludes the person who validated or coded it`,
+    };
+  }
   const candidates = await approverCandidates(db, next.required_permission, task.org_unit_id);
   if (candidates.some((c) => c.id === targetUserId)) return { ok: true };
   return {
@@ -213,4 +225,58 @@ export async function checkChosenApprover(
     ok: false,
     error: `${targetUserId} cannot approve this invoice: they do not hold ${next.required_permission} for its org`,
   };
+}
+
+/**
+ * **Who AP Setup excludes from approving this invoice — decision 0513.**
+ *
+ * The operator's own two options, *"Exclude Validation User from
+ * Approval of Invoices"* and *"Exclude Coding User from Approval of
+ * Invoices"*. Reported live: the person who coded an invoice picked
+ * themselves as its approver.
+ *
+ * A **Validation user** is anyone who completed a task needing
+ * `AP.Validate` on this invoice. A **Coding user** is the same for
+ * `AP.Code`. The task being completed right now counts too, through
+ * its owner or claimer, because Route To Approver *is* its completion.
+ * A stage is recognised by the permission its tasks carry (decision
+ * 0200), not by its id, since stage ids are the customer's own
+ * choice.
+ */
+async function excludedApprovers(
+  db: D1Database,
+  taskId: string,
+  config: { excludeValidationUserFromApproval: boolean; excludeCodingUserFromApproval: boolean }
+): Promise<Set<string>> {
+  const permissions = [
+    ...(config.excludeValidationUserFromApproval ? ["AP.Validate"] : []),
+    ...(config.excludeCodingUserFromApproval ? ["AP.Code"] : []),
+  ];
+  if (permissions.length === 0) return new Set();
+
+  const rows = await db
+    .prepare(
+      `WITH subject AS (
+         SELECT pi.subject_type, pi.subject_id
+         FROM tasks t
+         JOIN stage_visits v ON v.id = t.stage_visit_id
+         JOIN process_instances pi ON pi.id = v.process_instance_id
+         WHERE t.id = ?1
+       )
+       SELECT t.completed_by AS user_id
+       FROM tasks t
+       JOIN stage_visits v ON v.id = t.stage_visit_id
+       JOIN process_instances pi ON pi.id = v.process_instance_id
+       JOIN subject s ON s.subject_type = pi.subject_type AND s.subject_id = pi.subject_id
+       WHERE t.completed_by IS NOT NULL
+         AND t.required_permission IN (SELECT value FROM json_each(?2))
+       UNION
+       SELECT COALESCE(t.claimed_by, t.owner_user_id) AS user_id
+       FROM tasks t
+       WHERE t.id = ?1
+         AND t.required_permission IN (SELECT value FROM json_each(?2))`
+    )
+    .bind(taskId, JSON.stringify(permissions))
+    .all<{ user_id: string | null }>();
+  return new Set(rows.results.map((r) => r.user_id).filter((id): id is string => !!id));
 }

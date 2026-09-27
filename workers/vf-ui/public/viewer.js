@@ -1539,6 +1539,28 @@ const ACTIONS_NEEDING_A_REASON = [];
  * asks. A refusal is shown rather than swallowed, because a button that
  * appears to work and does not is worse than one that is absent.
  */
+/**
+ * **Complete refused because Account Coding isn't done — decision
+ * 0513**, in the reader's own language, from the route's structured
+ * `gaps` list, one line per gap: the same shape `codingRefusalText`
+ * (decision 0511) gives a refused save, and the same reason phrases for
+ * a value that is present but not on the lists. `null` for any other
+ * refusal.
+ */
+function codingGapsText(failure) {
+  if (failure?.reason !== "coding_incomplete" || !Array.isArray(failure.gaps) || failure.gaps.length === 0) return null;
+  return [
+    t("viewer.coding.incomplete"),
+    ...failure.gaps.map((g) =>
+      [
+        `${t("viewer.online")} ${g.line}`,
+        t(`field.${String(g.field).toLowerCase()}`),
+        g.reason === "missing" ? t("viewer.coding.missing") : t(`viewer.coding.invalid.${g.reason}`),
+      ].join(" · ")
+    ),
+  ].join("\n");
+}
+
 async function runAction(name, task, onClose) {
   let body = {};
 
@@ -1559,7 +1581,7 @@ async function runAction(name, task, onClose) {
 
   if (!response.ok) {
     const failure = await response.json().catch(() => ({}));
-    note(failure.error ?? t("viewer.actionfailed"));
+    note(codingGapsText(failure) ?? failure.error ?? t("viewer.actionfailed"));
     /**
      * **Decision 0487 — refused because the "here because" reason
      * hasn't changed.** The banner (`reasonLinePanel()`) is already on
@@ -2017,7 +2039,8 @@ async function openRouteToApproverPicker(task, onClose) {
     candidates.map((c) => el("option", { value: c.id, text: c.email ? `${c.name} (${c.email})` : c.name }))
   );
   const commentBox = el("textarea", { placeholder: t("activity.placeholder") });
-  const errorBox = el("div", { class: "warn sm", hidden: "hidden" });
+  // `pre-line` — decision 0513: a coding refusal lists one line per gap.
+  const errorBox = el("div", { class: "warn sm prelines", hidden: "hidden" });
 
   const doRoute = async () => {
     errorBox.hidden = true;
@@ -2029,7 +2052,7 @@ async function openRouteToApproverPicker(task, onClose) {
     if (!response.ok) {
       const failure = await response.json().catch(() => ({}));
       errorBox.hidden = false;
-      errorBox.textContent = failure.error ?? t("viewer.actionfailed");
+      errorBox.textContent = codingGapsText(failure) ?? failure.error ?? t("viewer.actionfailed");
       return;
     }
     close();

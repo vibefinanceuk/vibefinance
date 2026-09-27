@@ -1983,6 +1983,59 @@ describe("the actions do something (decision 0138)", () => {
       expect(errorBox.textContent).toBe("task is already completed");
       expect(document.querySelector(".popout")).not.toBeNull();
     });
+
+    it("tells a Complete refused for incomplete Account Coding in the reader's own strings, one line per gap (decision 0513)", async () => {
+      await openWithRouteToApprover({
+        "/api/tasks/t-1/route-to-approver-candidates": CANDIDATES,
+        "/api/ui-strings": {
+          locale: "en",
+          strings: {
+            ...STRINGS.strings,
+            "viewer.online": "line",
+            "field.bt-133": "Cost centre",
+            "field.coding.project": "Project",
+            "viewer.coding.incomplete": "Account Coding is not complete. Code every line before completing:",
+            "viewer.coding.missing": "is missing",
+            "viewer.coding.invalid.not_on_list": "is not on the list",
+          },
+        },
+      });
+      click("Route To Approver");
+      await settle();
+
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (url: string) => {
+          const path = String(url).split("?")[0];
+          if (path === "/api/tasks/t-1/complete") {
+            return {
+              ok: false,
+              json: async () => ({
+                error: "Account Coding is not complete: …",
+                reason: "coding_incomplete",
+                gaps: [
+                  { line: 1, field: "BT-133", reason: "missing" },
+                  { line: 2, field: "coding.project", reason: "not_on_list" },
+                ],
+              }),
+            } as Response;
+          }
+          throw new Error(`no stub for ${path} in the failure override`);
+        })
+      );
+
+      (document.querySelector(".popout .actionlink") as HTMLButtonElement).click();
+      await settle();
+
+      const errorBox = document.querySelector(".popout .warn") as HTMLElement;
+      expect(errorBox.hidden).toBe(false);
+      expect(errorBox.classList.contains("prelines")).toBe(true);
+      expect(errorBox.textContent).toBe(
+        "Account Coding is not complete. Code every line before completing:\n" +
+          "line 1 · Cost centre · is missing\n" +
+          "line 2 · Project · is not on the list"
+      );
+    });
   });
 
   describe("returning to the supplier from the picker (decision 0498)", () => {

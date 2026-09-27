@@ -32,6 +32,9 @@ type Mode = (typeof MODES)[number];
 interface ApprovalConfigRow {
   mode: Mode;
   default_approver_user_id: string | null;
+  // Decision 0513, migration 0092.
+  exclude_validation_user_from_approval?: number | null;
+  exclude_coding_user_from_approval?: number | null;
 }
 
 interface SupervisorOverrideRow {
@@ -78,7 +81,11 @@ interface DimensionRow {
  */
 export async function handleGetApprovalConfig(db: D1Database): Promise<RouteResult> {
   const config = await db
-    .prepare("SELECT mode, default_approver_user_id FROM org_approval_config WHERE id = 1")
+    .prepare(
+      `SELECT mode, default_approver_user_id,
+              exclude_validation_user_from_approval, exclude_coding_user_from_approval
+       FROM org_approval_config WHERE id = 1`
+    )
     .first<ApprovalConfigRow>();
 
   // The singleton row is inserted by its own migration (0075) and
@@ -135,6 +142,8 @@ export async function handleGetApprovalConfig(db: D1Database): Promise<RouteResu
       mode: config?.mode ?? "employee_supervisor",
       defaultApproverUserId: config?.default_approver_user_id ?? null,
       defaultApproverName,
+      excludeValidationUserFromApproval: config?.exclude_validation_user_from_approval === 1,
+      excludeCodingUserFromApproval: config?.exclude_coding_user_from_approval === 1,
       supervisorOverrides: supervisorOverrides.results.map((r) => ({
         userId: r.user_id,
         userName: r.user_name,
@@ -227,13 +236,24 @@ export async function handleSetCostObjectDimensions(
 interface UpdateApprovalConfigBody {
   mode?: unknown;
   defaultApproverUserId?: unknown;
+  /** Decision 0513 — optional; omitted leaves the stored value unchanged. */
+  excludeValidationUserFromApproval?: unknown;
+  excludeCodingUserFromApproval?: unknown;
 }
 
 export async function handleUpdateApprovalConfig(
   db: D1Database,
   body: UpdateApprovalConfigBody
 ): Promise<RouteResult> {
-  const { mode, defaultApproverUserId } = body;
+  const { mode, defaultApproverUserId, excludeValidationUserFromApproval, excludeCodingUserFromApproval } = body;
+  for (const [name, value] of [
+    ["excludeValidationUserFromApproval", excludeValidationUserFromApproval],
+    ["excludeCodingUserFromApproval", excludeCodingUserFromApproval],
+  ] as const) {
+    if (value !== undefined && typeof value !== "boolean") {
+      return { status: 400, body: { error: `${name}, if provided, must be a boolean` } };
+    }
+  }
   if (typeof mode !== "string" || !MODES.includes(mode as Mode)) {
     return { status: 422, body: { error: `mode must be one of ${MODES.join(", ")}` } };
   }
@@ -249,14 +269,37 @@ export async function handleUpdateApprovalConfig(
     }
   }
 
+  /**
+   * **The two exclusion options — decision 0513.** Optional, so every
+   * existing caller (and every test) that sends only mode and Default
+   * Approver leaves them exactly as stored. `COALESCE` over a NULL bind
+   * is that "unchanged".
+   */
+  const asFlag = (value: unknown) => (value === undefined ? null : value ? 1 : 0);
   await db
     .prepare(
-      "UPDATE org_approval_config SET mode = ?, default_approver_user_id = ?, updated_at = ? WHERE id = 1"
+      `UPDATE org_approval_config
+       SET mode = ?, default_approver_user_id = ?,
+           exclude_validation_user_from_approval = COALESCE(?, exclude_validation_user_from_approval),
+           exclude_coding_user_from_approval = COALESCE(?, exclude_coding_user_from_approval),
+           updated_at = ?
+       WHERE id = 1`
     )
-    .bind(mode, approverId, new Date().toISOString())
+    .bind(mode, approverId, asFlag(excludeValidationUserFromApproval), asFlag(excludeCodingUserFromApproval), new Date().toISOString())
     .run();
 
-  return { status: 200, body: { mode, defaultApproverUserId: approverId } };
+  const stored = await db
+    .prepare("SELECT exclude_validation_user_from_approval, exclude_coding_user_from_approval FROM org_approval_config WHERE id = 1")
+    .first<{ exclude_validation_user_from_approval: number; exclude_coding_user_from_approval: number }>();
+  return {
+    status: 200,
+    body: {
+      mode,
+      defaultApproverUserId: approverId,
+      excludeValidationUserFromApproval: stored?.exclude_validation_user_from_approval === 1,
+      excludeCodingUserFromApproval: stored?.exclude_coding_user_from_approval === 1,
+    },
+  };
 }
 
 interface SetSupervisorOverrideBody {

@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 27 September 2026 (decision 0512). A living document: what
+Last updated 27 September 2026 (decision 0513). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,28 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### A chosen approver stops the invoice; Coding must be complete; approval exclusions (0513)
+- Reported live, testing 0512: Route To Approver with no coding keyed,
+  the operator chose themselves, and the invoice skipped Approval
+  entirely and landed at AP Review.
+- **A chosen approver always gets the Approval task** (the operator's
+  answer). Previously the choice only reached a task a stage rule had
+  already raised — an Approval stage whose rules didn't fire, or with
+  no rule set at all (walked past by `onTaskCompleted`), dropped it.
+- **Coding must be complete**: Complete (and so Route To Approver) is
+  refused with a 422 `coding_incomplete` while any coding field the
+  stage lets a person edit is empty — or not on the Account Coding
+  lists (0511) — on any line. Nothing new to configure; Stage
+  Restrictions (0483) decides which fields.
+- **AP Setup → Approval Hierarchy**: "Exclude Validation User from
+  Approval of Invoices" and "Exclude Coding User from Approval of
+  Invoices" (the operator's wording; both off by default). Applied to
+  Route To Approver's picker and its server check.
+- Migrations: `vf-app` `0092`, `vf-licence` `0180` — **each applied
+  separately**. Check Stage Restrictions after deploy: coding left
+  editable at any stage is now required there.
+- Full reasoning in decision 0513.
 
 ### Route To Approver, scoped to the invoice's own org (0512)
 - Asked to look at Manual approval: it was already built (0495/0497);

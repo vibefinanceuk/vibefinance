@@ -736,6 +736,12 @@ const KEYS_THE_INTERFACE_USES = [
   "viewer.coding.invalid.not_on_list",
   "viewer.coding.invalid.wrong_company",
   "viewer.coding.invalid.wrong_commodity",
+  // Decision 0513 — AP Setup's approval exclusions, and a Complete
+  // refused for incomplete coding.
+  "apsetup.excludevalidationuser",
+  "apsetup.excludecodinguser",
+  "viewer.coding.incomplete",
+  "viewer.coding.missing",
   // A filtered field's own empty result names what narrowed it —
   // decision 0459.
   "viewer.coding.nomatchesscoped",

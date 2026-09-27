@@ -110,7 +110,7 @@ import {
 } from "./team-route.js";
 import { handleUpsertInvoice, mergeStructuredInvoiceFacts , handleGetInvoice, loadStoredInvoiceLines, loadLiveInvoiceFacts } from "./invoice-facts-route.js";
 import { mergePoMatchFacts } from "./po-matching.js";
-import { mergeCodingValidityForInvoice } from "./coding-validation.js";
+import { mergeCodingValidityForInvoice, codingGapsForTask } from "./coding-validation.js";
 import { handleUpsertExpenseReport } from "./expense-facts-route.js";
 import {
   handleCreateProcess,
@@ -5165,6 +5165,28 @@ export default {
         }
       }
 
+      /**
+       * **Coding must be done before Complete — decision 0513.** Every
+       * coding field this stage lets a person edit must hold a valid
+       * value on every line. See `codingGapsForTask`. Checked before
+       * the task is completed, so nothing cascades from a refusal.
+       */
+      if (completeTaskMatch) {
+        const gaps = await codingGapsForTask(db, taskId);
+        if (gaps.length > 0) {
+          return json(
+            {
+              error: `Account Coding is not complete: ${gaps
+                .map((g) => `line ${g.line} ${g.field} ${g.reason === "missing" ? "is missing" : `(${g.reason})`}`)
+                .join("; ")}`,
+              reason: "coding_incomplete",
+              gaps,
+            },
+            422
+          );
+        }
+      }
+
       // decision 0488: an optional `comment` — every existing caller
       // (viewer.js's own runAction, and this suite's own tests) posts
       // with no body at all, so a missing or unparsable body is not an
@@ -5211,7 +5233,10 @@ export default {
       // task-route.ts and workflow-engine.ts (the engine already
       // imports handleCreateTask the other way).
       if (completeTaskMatch && result.status === 200) {
-        const cascade = await onTaskCompleted(db, taskId);
+        // decision 0513: a chosen approver stops the cascade at an
+        // Approval stage with no rule set, so the follow-up below can
+        // raise their task there — see onTaskCompleted's own comment.
+        const cascade = await onTaskCompleted(db, taskId, { approverChosen: targetUserId !== undefined });
         if (cascade.needsEvaluationAt) {
           // `targetUserId` only ever changes anything when the stage
           // this cascades into resolves through Approval Hierarchy AND

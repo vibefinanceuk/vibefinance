@@ -1069,11 +1069,30 @@ function modeForm(problem) {
     ),
   ]);
 
+  /**
+   * **Who may not approve an invoice they worked on — decision 0513.**
+   * The operator's own two options, asked for after they picked
+   * themselves as the approver of an invoice they had just coded. They
+   * narrow Route To Approver's picker, and the server check behind it.
+   */
+  const excludeValidation = el("input", {
+    type: "checkbox",
+    ...(config.excludeValidationUserFromApproval ? { checked: "checked" } : {}),
+  });
+  const excludeCoding = el("input", {
+    type: "checkbox",
+    ...(config.excludeCodingUserFromApproval ? { checked: "checked" } : {}),
+  });
+
   const form = el("div", { class: "editgrid" }, [
     el("label", { text: t("apsetup.mode") }),
     modePicker,
     el("label", { text: t("apsetup.defaultapprover") }),
     approverPicker,
+    el("label", { text: t("apsetup.excludevalidationuser") }),
+    excludeValidation,
+    el("label", { text: t("apsetup.excludecodinguser") }),
+    excludeCoding,
   ]);
 
   const save = actionLink("save", {
@@ -1084,7 +1103,12 @@ function modeForm(problem) {
         const response = await fetch("/api/approval-config", {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ mode: modePicker.value, defaultApproverUserId: approverPicker.value || null }),
+          body: JSON.stringify({
+            mode: modePicker.value,
+            defaultApproverUserId: approverPicker.value || null,
+            excludeValidationUserFromApproval: excludeValidation.checked,
+            excludeCodingUserFromApproval: excludeCoding.checked,
+          }),
         });
         if (!response.ok) {
           problem.textContent = (await response.json()).error ?? t("apsetup.savemodefailed");

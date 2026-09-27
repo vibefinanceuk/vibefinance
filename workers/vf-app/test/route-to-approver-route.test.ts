@@ -194,3 +194,48 @@ describe("Route To Approver, scoped to the invoice's own org (decision 0512)", (
     expect(await checkChosenApprover(env.DB, "t", "de-only")).toEqual({ ok: true });
   });
 });
+
+describe("AP Setup's approval exclusions (decision 0513)", () => {
+  async function seedWithApprovers(): Promise<void> {
+    await seedCodingTask({ usesHierarchy: true, owner: "alice" });
+    await env.DB.prepare("UPDATE org_approval_config SET mode = 'manual' WHERE id = 1").run();
+    await env.DB.prepare("UPDATE tasks SET required_permission = 'AP.Code' WHERE id = 't'").run();
+    for (const id of ["alice", "vic", "zoe"]) {
+      if (id !== "alice") await handleCreateUser(env.DB, { id, email: `${id}@x.com`, name: id });
+      await grant(id, ["AP.Approve"]);
+    }
+    // Vic validated this invoice: a completed AP.Validate task on the
+    // same instance.
+    const visit = await env.DB.prepare("SELECT stage_visit_id FROM tasks WHERE id = 't'").first<{ stage_visit_id: string }>();
+    await handleCreateTask(env.DB, { id: "t-val", stageId: "coding", userId: "vic", requiredPermission: "AP.Validate" });
+    await env.DB.prepare("UPDATE tasks SET stage_visit_id = ?, completed_by = 'vic', status = 'completed' WHERE id = 't-val'")
+      .bind(visit!.stage_visit_id)
+      .run();
+  }
+
+  const ids = async () =>
+    ((await handleRouteToApproverCandidates(env.DB, "t", asUser("alice"))).body as { candidates: { id: string }[] }).candidates
+      .map((c) => c.id)
+      .sort();
+
+  it("excludes nobody while both options are off", async () => {
+    await seedWithApprovers();
+    expect(await ids()).toEqual(["alice", "vic", "zoe"]);
+  });
+
+  it("'Exclude Coding User' removes the person completing the Coding task", async () => {
+    await seedWithApprovers();
+    await env.DB.prepare("UPDATE org_approval_config SET exclude_coding_user_from_approval = 1 WHERE id = 1").run();
+    expect(await ids()).toEqual(["vic", "zoe"]);
+    expect(await checkChosenApprover(env.DB, "t", "alice")).toMatchObject({ ok: false, status: 422 });
+  });
+
+  it("'Exclude Validation User' removes whoever completed Validation on this invoice", async () => {
+    await seedWithApprovers();
+    await env.DB.prepare("UPDATE org_approval_config SET exclude_validation_user_from_approval = 1 WHERE id = 1").run();
+    expect(await ids()).toEqual(["alice", "zoe"]);
+    expect(await checkChosenApprover(env.DB, "t", "vic")).toMatchObject({ ok: false, status: 422 });
+    expect(await checkChosenApprover(env.DB, "t", "zoe")).toEqual({ ok: true });
+  });
+});
+

@@ -106,6 +106,33 @@ describe("handleUpdateApprovalConfig", () => {
   });
 });
 
+describe("the two approval exclusions (decision 0513)", () => {
+  it("both read off by default", async () => {
+    const result = await handleGetApprovalConfig(env.DB);
+    expect(result.body).toMatchObject({ excludeValidationUserFromApproval: false, excludeCodingUserFromApproval: false });
+  });
+
+  it("persist when sent, and stay as stored when a later save omits them", async () => {
+    const set = await handleUpdateApprovalConfig(env.DB, {
+      mode: "manual",
+      defaultApproverUserId: null,
+      excludeValidationUserFromApproval: true,
+      excludeCodingUserFromApproval: false,
+    });
+    expect(set.body).toMatchObject({ excludeValidationUserFromApproval: true, excludeCodingUserFromApproval: false });
+
+    // A caller predating 0513 sends only mode and Default Approver.
+    await handleUpdateApprovalConfig(env.DB, { mode: "manual", defaultApproverUserId: null });
+    const read = await handleGetApprovalConfig(env.DB);
+    expect(read.body).toMatchObject({ excludeValidationUserFromApproval: true, excludeCodingUserFromApproval: false });
+  });
+
+  it("400s on a value that is not a boolean", async () => {
+    const result = await handleUpdateApprovalConfig(env.DB, { mode: "manual", excludeCodingUserFromApproval: "yes" });
+    expect(result.status).toBe(400);
+  });
+});
+
 describe("handleSetSupervisorOverride", () => {
   it("400s when a required field is missing", async () => {
     const result = await handleSetSupervisorOverride(env.DB, { userId: "alice", unitId: "acme-fr" });

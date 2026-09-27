@@ -2211,6 +2211,8 @@
   .notealert-icon svg { width: 28px; height: 28px; }
   /* `pre-line` — decision 0511: a refused coding save lists one line per
      problem; a message with no line breaks renders exactly as before. */
+  /* Decision 0513 — a message listing one line per problem. */
+  .prelines { white-space: pre-line; }
   .notealert-message { font-size: var(--text-lg); color: var(--text-primary); line-height: 1.4; margin: 0; white-space: pre-line; }
   .notealert-ok {
     padding: 8px 28px;

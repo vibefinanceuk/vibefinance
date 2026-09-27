@@ -10,7 +10,7 @@ import { applySetFieldActions, type FieldOverride } from "./set-field.js";
 import { resolveRuleSetForStage } from "./unit-config.js";
 import { loadActiveRuleSet } from "./rule-set-loader.js";
 import { handleCreateTask } from "./task-route.js";
-import { resolveApprovalTargets, type ApprovalResolution } from "./approval-hierarchy.js";
+import { resolveApprovalTargets, loadApprovalConfig, type ApprovalResolution } from "./approval-hierarchy.js";
 import type { RouteResult } from "./org-route.js";
 
 /**
@@ -596,6 +596,22 @@ export async function visitCurrentStage(
         .bind(visitId, currentInstanceId, stage.id)
         .run();
 
+      /**
+       * **A chosen approver stops the invoice here — decision 0513.**
+       * An Approval stage with no rule set of its own used to pass
+       * straight through, silently dropping the person Route To
+       * Approver had just named — reported live, the invoice going on
+       * to AP Review instead. The operator's answer: a chosen
+       * approver always gets the Approval task.
+       */
+      if (await chosenApproverApplies(db, stage, manualApproverConsumed ? undefined : manualApproverUserId)) {
+        manualApproverConsumed = true;
+        const failed = await raiseChosenApproverTask(db, stage, visitId, manualApproverUserId!);
+        if (failed) return failed;
+        visitsThisCall.push({ stageId: stage.id, outcome: "automatic", tasksCreated: 1 });
+        return { status: 200, body: { instanceId: currentInstanceId, status: "in_progress", currentStageId: stage.id, visits: visitsThisCall, correctedFacts } };
+      }
+
       const next = await nextStageInSequence(db, stage.process_id, stage.sequence, instance.process_version);
 
       // decision 0480 — same hand-off guard as the rule-bearing branch
@@ -1024,6 +1040,20 @@ export async function visitCurrentStage(
       }
     }
 
+    /**
+     * **The same, for an Approval stage whose rules raised nothing —
+     * decision 0513.** When a rule does fire here, the chosen approver
+     * already reached `resolveApprovalTargets` above and got that task;
+     * `manualApproverConsumed` says so. When none fired, the choice
+     * would otherwise have been dropped and the invoice advanced.
+     */
+    if (await chosenApproverApplies(db, stage, manualApproverConsumed ? undefined : manualApproverUserId)) {
+      manualApproverConsumed = true;
+      const failed = await raiseChosenApproverTask(db, stage, visitId, manualApproverUserId!);
+      if (failed) return failed;
+      tasksCreated++;
+    }
+
     if (tasksCreated > 0) {
       visitsThisCall.push({ stageId: stage.id, outcome: anyMatched ? "matched" : "no_match", tasksCreated });
       // Blocked — real, open tasks now exist for this visit. The
@@ -1123,7 +1153,20 @@ export interface TaskCompletionCascadeResult {
  * `visitCurrentStage`, which does load real facts. Only the ones that
  * needed a person to clear a task anywhere upstream were at risk.
  */
-export async function onTaskCompleted(db: D1Database, taskId: string): Promise<TaskCompletionCascadeResult> {
+export async function onTaskCompleted(
+  db: D1Database,
+  taskId: string,
+  /**
+   * **Route To Approver chose somebody — decision 0513.** This cascade
+   * walks automatic stages itself without loading facts or knowing who
+   * was chosen, so an Approval stage with no rule set of its own was
+   * passed straight through here, before `visitCurrentStage` (which
+   * does know) ever saw it. When a choice was made, such a stage is
+   * handed back as `needsEvaluationAt`, the same way a rule-bearing one
+   * is, so the follow-up raises the chosen approver's task there.
+   */
+  options: { approverChosen?: boolean } = {}
+): Promise<TaskCompletionCascadeResult> {
   const task = await db
     .prepare("SELECT stage_visit_id FROM tasks WHERE id = ?")
     .bind(taskId)
@@ -1172,7 +1215,7 @@ export async function onTaskCompleted(db: D1Database, taskId: string): Promise<T
       .prepare("UPDATE process_instances SET current_stage_id = ?, updated_at = ? WHERE id = ?")
       .bind(next.id, new Date().toISOString(), instance.id)
       .run();
-    if (next.rule_set_id) {
+    if (next.rule_set_id || (options.approverChosen && next.uses_approval_hierarchy)) {
       // Stop here — this function never loads facts for a subject, so
       // it cannot evaluate a real rule set itself. Reported, not
       // silently swallowed (decision 0454) — see the caller in
@@ -1186,4 +1229,50 @@ export async function onTaskCompleted(db: D1Database, taskId: string): Promise<T
       .run();
   }
   return {};
+}
+
+/**
+ * Whether Route To Approver's own choice must raise a task at this
+ * stage — decision 0513. Only a stage that resolves through Approval
+ * Hierarchy, only while the org is on Manual (the same condition
+ * `resolveApprovalHierarchy` reads it under), and only a choice not
+ * already used earlier in this cascade.
+ */
+async function chosenApproverApplies(
+  db: D1Database,
+  stage: StageRow,
+  chosen: string | undefined
+): Promise<boolean> {
+  // A stage declaring no permission has nothing to raise the task
+  // under — Route To Approver is never offered for one either.
+  if (!chosen || !stage.uses_approval_hierarchy || !stage.required_permission) return false;
+  return (await loadApprovalConfig(db)).mode === "manual";
+}
+
+/**
+ * The chosen approver's own task — decision 0513. The stage's declared
+ * permission, owned by that one person, tied to this visit. No rule
+ * raised it, so `rule_id` stays null (decision 0478's banner then has
+ * no rule to name, which is the truth).
+ */
+async function raiseChosenApproverTask(
+  db: D1Database,
+  stage: StageRow,
+  visitId: string,
+  userId: string
+): Promise<RouteResult | null> {
+  const created = await handleCreateTask(db, {
+    id: crypto.randomUUID(),
+    stageId: stage.id,
+    userId,
+    requiredPermission: stage.required_permission ?? undefined,
+  });
+  if (created.status !== 201) {
+    return { status: 500, body: { error: `could not raise the chosen approver's task: ${JSON.stringify(created.body)}` } };
+  }
+  await db
+    .prepare("UPDATE tasks SET stage_visit_id = ? WHERE id = ?")
+    .bind(visitId, (created.body as { id: string }).id)
+    .run();
+  return null;
 }

@@ -1,5 +1,6 @@
 import type { InvoiceFacts } from "@vibefinance/shared";
 import { declaredFiltersFor } from "./coding-list-route.js";
+import { resolveFieldVisibility } from "./field-visibility-route.js";
 
 /**
  * Coding values checked against Account Coding's own lists — decision
@@ -224,4 +225,76 @@ export async function mergeCodingValidityForInvoice<L extends InvoiceFacts>(
     .bind(invoiceId)
     .first<{ org_unit_id: string | null }>();
   return mergeCodingValidityFacts(db, row?.org_unit_id ?? null, lines);
+}
+
+export interface CodingGap {
+  line: number;
+  field: string;
+  /** `missing`, or one of `checkLineCoding`'s own reasons. */
+  reason: "missing" | CodingProblemReason;
+}
+
+/**
+ * **Coding must be done before the task completes — decision 0513.**
+ *
+ * Reported live: an invoice left Coding by Route To Approver with no
+ * Account Coding keyed on its line, and nothing stopped it. Stage
+ * Restrictions (decision 0483) only said which coding fields a stage
+ * may *edit*. The operator's answer: **every coding field a stage lets
+ * a person edit must hold a value on every line** before Complete (and
+ * so Route To Approver, which is Complete) is allowed. There is nothing
+ * new to configure. Each value must also pass `checkLineCoding`, so a
+ * supplier's own invalid BT-133 (decision 0511) has to be corrected
+ * here too, not carried past the stage built to fix it.
+ *
+ * A stage where no coding field is editable (Validation, once
+ * restricted as 0483 intends; Approval) is never affected. Neither is a
+ * task about no invoice, or an invoice with no lines, because there is
+ * nothing to code.
+ */
+export async function codingGapsForTask(db: D1Database, taskId: string): Promise<CodingGap[]> {
+  const task = await db
+    .prepare(
+      `SELECT t.stage_id, pi.subject_id, h.org_unit_id
+       FROM tasks t
+       JOIN stage_visits v ON v.id = t.stage_visit_id
+       JOIN process_instances pi ON pi.id = v.process_instance_id
+       JOIN invoice_headers h ON pi.subject_type = 'invoice' AND h.id = pi.subject_id
+       WHERE t.id = ?`
+    )
+    .bind(taskId)
+    .first<{ stage_id: string; subject_id: string; org_unit_id: string | null }>();
+  if (!task) return [];
+
+  const visibility = await resolveFieldVisibility(db, task.stage_id, task.org_unit_id);
+  const required = visibility
+    .filter((f) => f.visibility === "edit" && f.field in CODING_FIELD_LISTS)
+    .map((f) => f.field);
+  if (required.length === 0) return [];
+
+  const lines = await db
+    .prepare("SELECT line_number, facts_json FROM invoice_lines WHERE invoice_id = ? ORDER BY line_number")
+    .bind(task.subject_id)
+    .all<{ line_number: number; facts_json: string | null }>();
+
+  const cache = new CodingLookupCache(db);
+  const gaps: CodingGap[] = [];
+  for (const row of lines.results) {
+    let facts: Record<string, unknown> = {};
+    try {
+      facts = JSON.parse(row.facts_json || "{}") as Record<string, unknown>;
+    } catch {
+      // Unparseable facts are treated as no coding at all.
+    }
+    for (const field of required) {
+      const value = facts[field];
+      if (value === undefined || value === null || String(value).trim() === "") {
+        gaps.push({ line: row.line_number, field, reason: "missing" });
+      }
+    }
+    for (const problem of await checkLineCoding(db, task.org_unit_id, facts, new Set(required), cache)) {
+      gaps.push({ line: row.line_number, field: problem.field, reason: problem.reason });
+    }
+  }
+  return gaps;
 }

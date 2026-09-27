@@ -571,6 +571,40 @@ describe("Approval Hierarchy — the mode and Default Approver form", () => {
   });
 });
 
+describe("Approval Hierarchy — the two approval exclusions (decision 0513)", () => {
+  it("shows both options with their stored state, and sends both with the mode on Save", async () => {
+    await openApSetupAs(
+      ["Admin.Configure"],
+      EMPTY_OVERVIEW,
+      { ...EMPTY_CONFIG, mode: "manual", excludeValidationUserFromApproval: true, excludeCodingUserFromApproval: false },
+      {
+        "PUT /api/approval-config": {
+          ok: true,
+          json: async () => ({ mode: "manual", defaultApproverUserId: null }),
+        },
+      }
+    );
+    switchTab("Approval Hierarchy");
+
+    const boxes = [...document.querySelectorAll('.editgrid input[type="checkbox"]')] as HTMLInputElement[];
+    expect(boxes.map((b) => b.checked)).toEqual([true, false]);
+    boxes[1].checked = true;
+
+    const saveButton = [...document.querySelectorAll("button")].find((b) => b.textContent?.includes("Save")) as HTMLButtonElement;
+    saveButton.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    const put = (fetch as unknown as { mock: { calls: [string, RequestInit?][] } }).mock.calls.find(
+      ([url, init]) => String(url).startsWith("/api/approval-config") && init?.method === "PUT"
+    );
+    expect(JSON.parse(String(put?.[1]?.body))).toMatchObject({
+      mode: "manual",
+      excludeValidationUserFromApproval: true,
+      excludeCodingUserFromApproval: true,
+    });
+  });
+});
+
 /**
  * **Cost-Object Priority — decision 0452.** Turns decision 0450's own
  * mock-up into the real panel: shown only in Cost-Object mode, a

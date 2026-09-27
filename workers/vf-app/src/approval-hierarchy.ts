@@ -66,13 +66,31 @@ interface ApprovalConfig {
    * until this is turned on deliberately.
    */
   routeNonPoToRequester: boolean;
+  /**
+   * Decision 0513, migration 0092 — the operator's own two options.
+   * Whoever completed (or is completing) Validation or Coding work on
+   * an invoice may not be chosen as its approver. Read by Route To
+   * Approver's picker and its server check (`route-to-approver-route.ts`).
+   */
+  excludeValidationUserFromApproval: boolean;
+  excludeCodingUserFromApproval: boolean;
 }
 
 /** The one, customer-wide setting — decision 0439's own answer to "where does the choice live." */
 export async function loadApprovalConfig(db: D1Database): Promise<ApprovalConfig> {
   const row = await db
-    .prepare("SELECT mode, default_approver_user_id, route_non_po_to_requester FROM org_approval_config WHERE id = 1")
-    .first<{ mode: ApprovalMode; default_approver_user_id: string | null; route_non_po_to_requester: number | null }>();
+    .prepare(
+      `SELECT mode, default_approver_user_id, route_non_po_to_requester,
+              exclude_validation_user_from_approval, exclude_coding_user_from_approval
+       FROM org_approval_config WHERE id = 1`
+    )
+    .first<{
+      mode: ApprovalMode;
+      default_approver_user_id: string | null;
+      route_non_po_to_requester: number | null;
+      exclude_validation_user_from_approval: number | null;
+      exclude_coding_user_from_approval: number | null;
+    }>();
   // The row is inserted by its own migration and never deleted (the
   // CHECK (id = 1) primary key forbids a second one) — this fallback
   // is belt-and-braces for a database this resolver's own tests build
@@ -81,6 +99,8 @@ export async function loadApprovalConfig(db: D1Database): Promise<ApprovalConfig
     mode: row?.mode ?? "employee_supervisor",
     defaultApproverUserId: row?.default_approver_user_id ?? null,
     routeNonPoToRequester: row?.route_non_po_to_requester === 1,
+    excludeValidationUserFromApproval: row?.exclude_validation_user_from_approval === 1,
+    excludeCodingUserFromApproval: row?.exclude_coding_user_from_approval === 1,
   };
 }
 
