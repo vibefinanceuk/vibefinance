@@ -75,6 +75,12 @@ export interface TaskRow {
   id: string;
   stageId: string;
   stageName: string | null;
+  /**
+   * The stage's place in its process — decision 0522. The Tasks list
+   * colours each stage's pill by it, so a stage keeps its colour
+   * wherever it appears.
+   */
+  stageSequence: number | null;
   processId: string | null;
   requiredPermission: string;
   /** The unit of the document this is about — decision 0202. */
@@ -110,6 +116,10 @@ export interface TaskRow {
     currency: string | null;
     issueDate: string | null;
     totalWithVat: number | null;
+    /** BT-1 — decision 0521. */
+    invoiceNumber: string | null;
+    /** When the invoice arrived — decision 0521. */
+    receivedAt: string | null;
   };
 }
 
@@ -148,6 +158,19 @@ interface Raw {
   currency: string | null;
   issue_date: string | null;
   total_with_vat: number | null;
+  /** When the invoice arrived — decision 0521, the Tasks list's Received Date. */
+  received_at?: string | null;
+}
+
+/** BT-1, the invoice number, from the stored facts — decision 0521. */
+function invoiceNumberOf(factsJson: string | null): string | null {
+  if (!factsJson) return null;
+  try {
+    const value = (JSON.parse(factsJson) as Record<string, unknown>)["BT-1"];
+    return typeof value === "string" && value.trim() ? value : null;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -649,7 +672,7 @@ export async function handleListMyTasks(
          v.process_instance_id AS instance_id,
          pi.subject_type, pi.subject_id, pi.process_version,
          h.supplier_vat_id, h.currency, h.issue_date, h.total_with_vat, h.facts_json,
-         h.org_unit_id
+         h.org_unit_id, h.created_at AS received_at
        ${joins}
        ${baseWhereClause}${ownershipClause}
        ORDER BY t.created_at ASC
@@ -716,6 +739,7 @@ export async function handleListMyTasks(
       id: row.id,
       stageId: row.stage_id,
       stageName: row.stage_name,
+      stageSequence: row.stage_sequence,
       processId: row.process_id,
       requiredPermission: row.required_permission,
       orgUnitId: row.org_unit_id,
@@ -807,6 +831,14 @@ export async function handleListMyTasks(
         currency: row.currency,
         issueDate: row.issue_date,
         totalWithVat: row.total_with_vat,
+        /**
+         * **Decision 0521**, the Tasks list's own Document Number and
+         * Received Date columns. BT-1 is read from the facts the same way
+         * Documents reads it (`documents-route.ts`), and "received" is the
+         * header's own `created_at`, the same value Documents shows.
+         */
+        invoiceNumber: invoiceNumberOf(row.facts_json),
+        receivedAt: row.received_at ?? null,
       };
     }
 

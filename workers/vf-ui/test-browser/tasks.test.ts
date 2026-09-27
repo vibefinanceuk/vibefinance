@@ -46,6 +46,9 @@ const STRINGS = {
     "nav.collapse": "Collapse the menu",
     "nav.expand": "Expand the menu",
     "tasks.stage": "Stage",
+    "tasks.document": "Document Number",
+    "tasks.received": "Received Date",
+    "tasks.action": "Action",
     "tasks.line": "line",
     "tasks.supplier": "Supplier",
     "tasks.amount": "Amount",
@@ -1608,6 +1611,39 @@ describe("a task about one line (decision 0183)", () => {
   it("says nothing where a task is about the whole document", async () => {
     await openList([APPROVAL_TASK]);
     expect(document.body.textContent).not.toContain("line ");
+  });
+});
+
+describe("the Tasks list's columns and stage pills (decisions 0521, 0522)", () => {
+  const NUMBERED = {
+    ...APPROVAL_TASK,
+    stageSequence: 5,
+    subject: { ...APPROVAL_TASK.subject, invoiceNumber: "INV-1042", receivedAt: "2026-09-25 08:14:00", currency: "EUR" },
+  };
+
+  it("reads Document Number, Stage, Amount, Received Date, Waiting, Supplier Name, Owner, Action", async () => {
+    await openList([NUMBERED]);
+    const headings = [...document.querySelectorAll("thead th")].map((h) => h.textContent);
+    expect(headings).toEqual(["Document Number", "Stage", "Amount", "Received Date", "Waiting", "Supplier", "Owner", "Action"]);
+
+    const cells = [...document.querySelectorAll("tbody tr:first-child td")].map((c) => c.textContent);
+    expect(cells[0]).toBe("INV-1042");
+    expect(cells[1]).toBe("Approval");
+    expect(cells[3]).toBe("2026-09-25");
+    expect(cells[5]).toBe("Munch GmbH");
+  });
+
+  it("shows the stage as a pill, toned by its place in the process", async () => {
+    await openList([NUMBERED, { ...NUMBERED, id: "t-2", stageId: "coding", stageName: "Coding", stageSequence: 4 }]);
+    const pills = [...document.querySelectorAll("tbody .stagepill")] as HTMLElement[];
+    expect(pills.map((p) => p.textContent)).toEqual(["Approval", "Coding"]);
+    expect(pills[0].classList.contains("tone5")).toBe(true);
+    expect(pills[1].classList.contains("tone4")).toBe(true);
+  });
+
+  it("keeps a line-level task's line beside its number", async () => {
+    await openList([{ ...NUMBERED, lineNumber: 3 }]);
+    expect(document.querySelector("tbody tr:first-child td")?.textContent).toBe("INV-1042 · line 3");
   });
 });
 

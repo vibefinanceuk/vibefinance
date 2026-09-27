@@ -131,13 +131,26 @@ function money(subject) {
  * the same supplier, the same amount and the same stage.
  *
  * **Eight identical rows teach somebody the list is broken.** The line
- * is what tells them apart, and what they work through in order.
+ * is what tells them apart, and what they work through in order. Since
+ * decision 0521 the line sits beside the Document Number (`taskRow`);
+ * this names the supplier alone, in its own column.
  */
-function describeTask(task) {
-  const who = describe(task.subject);
-  return task.lineNumber
-    ? `${who} · ${t("tasks.line")} ${task.lineNumber}`
-    : who;
+/**
+ * **The stage as a coloured pill — decision 0522**, the operator's own
+ * request, alongside Documents' status pills (0520). Stages are the
+ * customer's own, so no colour is hardcoded to any stage name: the
+ * colour comes from the stage's place in its process, cycling through
+ * the five-colour chart palette (decision 0242). Validation, Matching,
+ * Coding and Approval are all different, and each stage keeps its
+ * colour on every row and after every reload.
+ */
+function stagePill(task) {
+  const seq = Number(task.stageSequence);
+  const tone = Number.isFinite(seq) && seq > 0 ? ((seq - 1) % 5) + 1 : 0;
+  return el("span", {
+    class: `stagepill${tone ? ` tone${tone}` : ""}`,
+    text: task.stageName ?? task.stageId,
+  });
 }
 
 function describe(subject) {
@@ -313,21 +326,34 @@ function taskRow(task) {
        */
       onclick: () => openTask(task.id),
     },
+    /**
+     * **The operator's own column order — decision 0521:** *"Document
+     * Number, Stage, Amount, Received Date, Waiting, Supplier Name,
+     * Owner, Action (I.e. Claim)."* The number and the supplier used
+     * to share one cell; they are two columns now. A line-level task
+     * names its line beside the number, since that is what identifies
+     * which part of the document the task is about.
+     */
     [
-      el("td", { text: task.stageName ?? task.stageId }),
+      el("td", {}, [
+        el("span", {
+          class: task.subject?.invoiceNumber ? "" : "muted",
+          text:
+            (task.subject?.invoiceNumber ?? (task.subject ? t("tasks.notkeyed") : t("tasks.nodocument"))) +
+            (task.lineNumber ? ` · ${t("tasks.line")} ${task.lineNumber}` : ""),
+        }),
+      ]),
+      el("td", {}, [stagePill(task)]),
+      el("td", { class: "num", text: money(task.subject) }),
+      el("td", { text: (task.subject?.receivedAt ?? "").slice(0, 10) || "—" }),
+      el("td", { text: waitedFor(task.createdAt) }),
       // **Plain text, not its own button, decision 0288.** The row
-      // itself is what opens the document now; a second clickable
-      // element inside a clickable row would fire twice on a click
-      // here — its own handler, then the row's again once the click
-      // bubbles up to it. The same fix decision 0287 already made for
-      // the Documents list's own number cell.
+      // itself opens the document.
       el("td", {}, [
         task.subject
-          ? el("span", { text: describeTask(task) })
-          : el("span", { class: "muted", text: describeTask(task) }),
+          ? el("span", { text: describe(task.subject) })
+          : el("span", { class: "muted", text: describe(task.subject) }),
       ]),
-      el("td", { class: "num", text: money(task.subject) }),
-      el("td", { text: waitedFor(task.createdAt) }),
       el("td", { text: ownershipLabel(task) }),
       el("td", {}, actions.length ? actions : [el("span", { class: "muted", text: "—" })]),
     ]
@@ -1131,12 +1157,15 @@ function render() {
           el("table", {}, [
             el("thead", {}, [
               el("tr", {}, [
+                // Decision 0521 — the operator's own order.
+                el("th", { text: t("tasks.document") }),
                 el("th", { text: t("tasks.stage") }),
-                el("th", { text: t("tasks.supplier") }),
                 el("th", { class: "num", text: t("tasks.amount") }),
+                el("th", { text: t("tasks.received") }),
                 el("th", { text: t("tasks.waiting") }),
+                el("th", { text: t("tasks.supplier") }),
                 el("th", { text: t("tasks.owner") }),
-                el("th", { text: "" }),
+                el("th", { text: t("tasks.action") }),
               ]),
             ]),
             el(
@@ -1147,7 +1176,7 @@ function render() {
                 : [
                     el("tr", {}, [
                       el("td", {
-                        colspan: "6",
+                        colspan: "8",
                         class: "muted",
                         text: query ? t("tasks.nomatch") : t("tasks.empty"),
                       }),

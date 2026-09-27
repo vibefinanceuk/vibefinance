@@ -173,6 +173,7 @@ import routeToApproverLimitNoteSql from "../migrations/0182_route_to_approver_li
 import inAppHelpStringsSql from "../migrations/0183_in_app_help_strings.sql?raw";
 import askPanelStringsSql from "../migrations/0184_ask_panel_strings.sql?raw";
 import documentsColumnLabelsSql from "../migrations/0185_documents_column_labels.sql?raw";
+import tasksColumnLabelsSql from "../migrations/0186_tasks_column_labels.sql?raw";
 
 function stripSqlComments(sql: string): string {
   return sql
@@ -378,5 +379,6 @@ export async function applyTestSchema(): Promise<void> {
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(inAppHelpStringsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(askPanelStringsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(documentsColumnLabelsSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(tasksColumnLabelsSql)));
 
 }

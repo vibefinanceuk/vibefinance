@@ -1,9 +1,6 @@
 # 0520 — The Documents list: the operator's column order, and status pills
 
-**Status: built and tested locally, not yet pushed or deployed.** This
-session has no push access, so it is delivered as a git bundle. It
-touches `vf-ui` and `vf-licence`, and needs `vf-licence` migration
-`0185` applied as its own step.
+**Status: pushed (`7c1d41f`), deployed, and migration `0185` applied, as confirmed by the operator on 27 September.**
 
 ## What was asked
 

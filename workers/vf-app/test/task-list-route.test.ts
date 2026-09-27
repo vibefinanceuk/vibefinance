@@ -220,6 +220,19 @@ describe("the subject", () => {
     expect((await list("alice"))[0].subject?.supplierName).toBe("Skelettbau Munch GmbH");
   });
 
+  it("carries the invoice number, when it was received, and the stage's place in its process (decisions 0521, 0522)", async () => {
+    await seedInstance("inv-1", "validation", "v-1");
+    await env.DB.prepare("UPDATE invoice_headers SET facts_json = ?, created_at = '2026-09-25 08:14:00' WHERE id = ?")
+      .bind(JSON.stringify({ "BT-1": "INV-1042" }), "inv-1")
+      .run();
+    await seedTask("t-1", "validation", "v-1", { user: "alice" });
+
+    const [task] = await list("alice");
+    expect(task.subject?.invoiceNumber).toBe("INV-1042");
+    expect(task.subject?.receivedAt).toBe("2026-09-25 08:14:00");
+    expect(typeof task.stageSequence).toBe("number");
+  });
+
   it("falls back to the identifier when the document gave no name", async () => {
     await seedInstance("inv-1", "validation", "v-1");
     await seedTask("t-1", "validation", "v-1", { user: "alice" });

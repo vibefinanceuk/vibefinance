@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 27 September 2026 (decision 0520). A living document: what
+Last updated 27 September 2026 (decision 0522). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,16 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Tasks list: column order and stage pills (0521, 0522)
+- Columns in the operator's order: Document Number, Stage, Amount,
+  Received Date, Waiting, Supplier Name, Owner, Action. Number and
+  supplier are separate columns now (a line task shows its line beside
+  the number); Received Date is new, and each task now carries
+  `invoiceNumber` and `receivedAt`.
+- The stage is a coloured pill, its colour from the stage's place in
+  its process (the five-colour chart palette), never its name.
+- `vf-licence` migration `0186` — apply separately.
 
 ### Documents list: column order and status pills (0520)
 - Columns in the operator's order, all on by default: Document Number,
