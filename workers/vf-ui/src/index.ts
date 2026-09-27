@@ -189,6 +189,9 @@ const PROXIED_TO_INSTANCE: RegExp[] = [
   // Routing an Approval task on when the approver's limit does not
   // cover it — decision 0517. Added with the route itself.
   /^\/tasks\/[^/]+\/route-to-approver$/,
+  // In-app Help — decision 0518. Added with the routes themselves.
+  /^\/help\/tasks\/[^/]+$/,
+  /^\/help\/ask$/,
   /**
    * **Return To Supplier's own reason list and settings — decision
    * 0498.** Added at the same time as the routes themselves this

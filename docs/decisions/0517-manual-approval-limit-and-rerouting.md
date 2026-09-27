@@ -1,10 +1,6 @@
 # 0517 — Manual approval: the approver needs a covering limit, or routes it on
 
-**Status: built and tested locally, not yet pushed or deployed.** This
-session has no push access, so it is delivered as a git bundle. It
-touches `vf-app`, `vf-ui` and `vf-licence`, and needs `vf-licence`
-migration `0182` applied as its own step. There is no `vf-app`
-migration.
+**Status: pushed (`f064eea`), deployed, and migration `0182` applied, as confirmed by the operator on 27 September.**
 
 ## What was asked
 

@@ -25,6 +25,7 @@ import { handlePossibleDuplicates } from "./fraud-duplicates-route.js";
 import { handleUnapprovedSuppliers } from "./fraud-unapproved-suppliers-route.js";
 import { handleFraudExceptionTrends } from "./fraud-exception-trends-route.js";
 import { handleAskApAssistant } from "./ap-assistant.js";
+import { handleHelpContext, handleHelpAsk } from "./help-route.js";
 import { handleInvoiceLookup } from "./invoice-lookup-route.js";
 import { handleInvoiceCount } from "./invoice-count-route.js";
 import { handleStatisticalOutliers } from "./fraud-statistical-outliers-route.js";
@@ -1817,6 +1818,35 @@ export default {
      * narrow (raw text in, raw text out), so reusing it here for an
      * unrelated prompt is exactly what it was built swappable for.
      */
+    /**
+     * **In-app Help — decision 0518.** Any signed-in person: help is
+     * for everyone, and each route checks what it reveals (a task's
+     * facts only to someone who could act on it). `/help/ask` uses the
+     * same `env.AI` binding and wrapper as `/ap-assistant/ask` below.
+     */
+    const helpContextMatch = pathname.match(/^\/help\/tasks\/([^/]+)$/);
+    if (helpContextMatch && request.method === "GET") {
+      const { db } = resolveTenant(request, env);
+      const auth = await authenticatePerson(db, request, env);
+      if (!auth.user) return json({ error: auth.reason }, 401);
+      const result = await handleHelpContext(db, decodeURIComponent(helpContextMatch[1]), auth.user);
+      return json(result.body, result.status);
+    }
+    if (pathname === "/help/ask" && request.method === "POST") {
+      const { db } = resolveTenant(request, env);
+      const auth = await authenticatePerson(db, request, env);
+      if (!auth.user) return json({ error: auth.reason }, 401);
+      if (!env.AI) return json({ error: "AI binding not configured" }, 500);
+      let body: Record<string, unknown> = {};
+      try {
+        body = ((await request.json()) as Record<string, unknown> | null) ?? {};
+      } catch {
+        return json({ error: "a JSON body is required" }, 400);
+      }
+      const result = await handleHelpAsk(db, createWorkersAiCompilerModel(env.AI), auth.user, body);
+      return json(result.body, result.status);
+    }
+
     if (pathname === "/ap-assistant/ask" && request.method === "POST") {
       const { db } = resolveTenant(request, env);
       const locale = resolveLocale(env.LOCALE);

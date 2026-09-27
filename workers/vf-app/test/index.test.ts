@@ -2335,6 +2335,58 @@ describe("process instances and stage visits, through the real router (decision 
   });
 
   /**
+   * **Decision 0518** — in-app Help's live reasons: why this person sees
+   * the buttons they see, from the same functions that decided them.
+   */
+  const helpFor = async (taskId: string) => {
+    const res = await SELF.fetch(`https://example.com/help/tasks/${taskId}`, { headers: authHeaders() });
+    return { status: res.status, body: (await res.json()) as { stage: { name: string }; approvalMode: string; reasons: { action: string | null; code: string; params: Record<string, unknown> }[] } };
+  };
+
+  it("Help — decision 0518: at Coding, explains Route To Approver as choosing the next stage's approver", async () => {
+    const { codingTaskId } = await seedManualCodingToApproval("no-rule-set");
+    await env.DB.prepare("UPDATE tasks SET claimed_by = 'test-user' WHERE id = ?").bind(codingTaskId).run();
+    const { status, body } = await helpFor(codingTaskId);
+    expect(status).toBe(200);
+    expect(body.stage.name).toBe("Coding");
+    expect(body.approvalMode).toBe("manual");
+    expect(body.reasons).toContainEqual({ action: "route_to_approver", code: "choose_next_approver", params: { stage: "Approval" } });
+  });
+
+  it("Help — decision 0518: at Approval over the limit, explains why, with the limit and amount", async () => {
+    const { approvalTaskId } = await atApprovalWithTestUser();
+    await env.DB.prepare("INSERT INTO org_authority_limits (user_id, currency, max_amount) VALUES ('test-user', 'EUR', 1000)").run();
+    const { body } = await helpFor(approvalTaskId);
+    expect(body.reasons).toContainEqual({
+      action: "route_to_approver",
+      code: "limit_insufficient",
+      params: { limit: 1000, amount: 3000, currency: "EUR" },
+    });
+  });
+
+  it("Help — decision 0518: at Approval within the limit, explains Complete", async () => {
+    const { approvalTaskId } = await atApprovalWithTestUser();
+    await env.DB.prepare("INSERT INTO org_authority_limits (user_id, currency, max_amount) VALUES ('test-user', 'EUR', 5000)").run();
+    const { body } = await helpFor(approvalTaskId);
+    expect(body.reasons).toContainEqual({
+      action: "complete",
+      code: "limit_covers",
+      params: { limit: 5000, amount: 3000, currency: "EUR" },
+    });
+  });
+
+  it("Help — decision 0518: says when coding is unfinished, and refuses someone who could never act on the task", async () => {
+    const { codingTaskId } = await seedUncodedLineWithCodingEditable();
+    await env.DB.prepare("UPDATE tasks SET claimed_by = 'test-user' WHERE id = ?").bind(codingTaskId).run();
+    const { body } = await helpFor(codingTaskId);
+    expect(body.reasons).toContainEqual({ action: "route_to_approver", code: "coding_incomplete", params: { lines: 1 } });
+
+    const stranger = await seedUserWithPermissions(["AP.Approve"]);
+    const res = await SELF.fetch(`https://example.com/help/tasks/${codingTaskId}`, { headers: { Authorization: `Bearer ${stranger}` } });
+    expect(res.status).toBe(403);
+  });
+
+  /**
    * **Decision 0514** — reported live: a PO invoice at Validation was
    * asked for Account Coding, at a stage not offered Account Coding
    * restrictions at all.

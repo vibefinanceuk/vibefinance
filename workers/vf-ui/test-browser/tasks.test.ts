@@ -52,6 +52,7 @@ const STRINGS = {
     "tasks.waiting": "Waiting",
     "tasks.owner": "Owner",
     "tasks.signout": "Sign out",
+    "help.button": "Help",
     "tasks.allstages": "All stages",
     "tasks.everything": "Everything",
     "tasks.mine": "Mine",
@@ -1045,6 +1046,18 @@ describe("the language toggle, between Night/Day and Sign out (decision 0302)", 
     expect(signOutIndex).toBeGreaterThan(-1);
     expect(langIndex).toBeGreaterThan(moodIndex);
     expect(signOutIndex).toBeGreaterThan(langIndex);
+  });
+
+  it("Help sits between the language button and Sign out (decision 0518)", async () => {
+    await openList([APPROVAL_TASK]);
+
+    const titles = rightButtons().map((b) => b.getAttribute("title"));
+    const langIndex = titles.findIndex((t) => t === "English" || t === "Deutsch");
+    const helpIndex = titles.findIndex((t) => t === "Help");
+    const signOutIndex = titles.findIndex((t) => t === "Sign out");
+    expect(helpIndex).toBe(langIndex + 1);
+    expect(signOutIndex).toBe(helpIndex + 1);
+    expect(rightButtons()[helpIndex].querySelector("svg")).not.toBeNull();
   });
 
   it("defaults to English, showing the EN badge, when nobody has chosen", async () => {

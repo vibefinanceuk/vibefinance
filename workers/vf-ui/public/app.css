@@ -2232,6 +2232,44 @@
     color: var(--text-primary);
   }
 
+  /*
+    **Help — decision 0518.** A side panel, the operator's choice, so
+    the document and its buttons stay visible while reading. Below the
+    pop-out backdrop (50), so a picker opened from the page still sits
+    on top of it. Full width on a phone.
+  */
+  .helppanel {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: min(400px, 100vw);
+    z-index: 40;
+    display: flex;
+    flex-direction: column;
+    background: var(--surface-2);
+    border-left: 0.5px solid var(--border);
+    box-shadow: -8px 0 24px rgba(0, 0, 0, 0.18);
+    padding: 16px 18px;
+  }
+  .helppanel .helpbody { overflow-y: auto; min-height: 0; flex: 1; }
+  .helpsection { margin-top: 14px; }
+  .helpsection h4 { margin: 0 0 6px; }
+  .helpactions { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 10px; }
+  .helpaction { border: 0.5px solid var(--border); border-radius: 6px; padding: 8px 10px; }
+  .helpactiontitle { display: flex; align-items: center; gap: 6px; font-weight: 600; }
+  .helpactiontitle svg { width: 16px; height: 16px; }
+  .helpaction p { margin: 4px 0 0; }
+  .helpwhy {
+    margin: 6px 0 0;
+    padding: 6px 8px;
+    border-left: 3px solid var(--border-accent);
+    background: var(--bg-accent);
+    color: var(--text-primary);
+  }
+  .helpask textarea { width: 100%; min-height: 64px; margin: 4px 0 8px; box-sizing: border-box; }
+  .helpanswer { white-space: pre-line; }
+
   /* Decision 0513 — a message listing one line per problem. */
   .prelines { white-space: pre-line; }
   .notealert-message { font-size: var(--text-lg); color: var(--text-primary); line-height: 1.4; margin: 0; white-space: pre-line; }

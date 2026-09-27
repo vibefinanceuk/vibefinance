@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 27 September 2026 (decision 0517). A living document: what
+Last updated 27 September 2026 (decision 0518). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,18 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### In-app Help (0518)
+- A Help button (question-mark icon) between Language and Sign out on
+  every screen, opening a side panel: a summary of the current page;
+  with a task open, each of the person's own actions with written help
+  and the live reason it is there (why Route To Approver rather than
+  Complete, which stages Return can go to, unfinished coding, …),
+  computed by `GET /help/tasks/:id` from the same functions that decide
+  the buttons; and an AI question box (`POST /help/ask`) grounded only
+  in that text and those facts.
+- `vf-licence` migration `0183` (44 keys × en/de) — apply separately.
+  Full reasoning in decision 0518.
 
 ### Manual approval: a covering limit, or route it on (0517)
 - The operator's Manual definition, built: at an Approval task, a

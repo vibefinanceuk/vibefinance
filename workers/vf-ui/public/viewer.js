@@ -11,7 +11,7 @@
  */
 
 import { t, currentLocale } from "/strings.js";
-import { el, frame, topbar, refreshTask } from "/tasks.js";
+import { el, frame, topbar, refreshTask, setHelpTask } from "/tasks.js";
 import { icon } from "/icons.js";
 import { processRow } from "/process-row.js";
 import { buildActivityTab } from "/activity.js";
@@ -2761,6 +2761,8 @@ export function currentTask() {
 
 export async function openViewer(task, onClose) {
   docPanelTab = "doc";
+  // Decision 0518: Help explains this task's own stage and buttons.
+  setHelpTask(task?.id && task?.stageId ? task : null);
 
   /**
    * **Retarget an already-open pop-out before anything else renders**

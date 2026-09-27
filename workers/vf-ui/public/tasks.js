@@ -12,6 +12,7 @@
  */
 
 import { t, languagePicker, loadStrings } from "/strings.js";
+import { toggleHelp } from "/help.js";
 import { moodPicker } from "/mood.js";
 import { orgPicker, currentOrgId } from "/orgs.js";
 import { icon } from "/icons.js";
@@ -567,6 +568,20 @@ let current = "tasks";
  */
 export function setCurrentScreen(screen) {
   current = screen;
+  // Decision 0518: a new screen means no task is open for Help to
+  // explain — the viewer sets one again when it opens.
+  helpTask = null;
+}
+
+/**
+ * **What Help should explain — decision 0518.** The screen is
+ * `current`, already tracked above. The task is set by the viewer when
+ * it opens one, so Help can be stage-aware; any screen change clears
+ * it.
+ */
+let helpTask = null;
+export function setHelpTask(task) {
+  helpTask = task ?? null;
 }
 
 /**
@@ -1029,6 +1044,20 @@ export function topbar(title, subtitle, right = [], extra = []) {
        * and Sign out... add a Language button."
        */
       languagePicker(relaunchAfterLanguageChange),
+      /**
+       * **Help, between Language and Sign out — decision 0518**, the
+       * operator's own placement. Opens a side panel for the screen
+       * showing now, and for the task open in it, if any.
+       */
+      el(
+        "button",
+        {
+          class: "actionlink",
+          title: t("help.button"),
+          onclick: () => toggleHelp({ screen: current, task: helpTask }),
+        },
+        [icon("help"), el("span", { text: t("help.button") })]
+      ),
       el(
         "button",
         {

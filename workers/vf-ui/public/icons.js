@@ -553,6 +553,11 @@ Object.assign(ICONS, {
   // not originality.
   signout: '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/>',
 
+  // A question mark in a circle — decision 0518, the Help button. The
+  // conventional shape for "help", for instant recognition, the same
+  // reasoning `signout` gave itself.
+  help: '<circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6v.6"/><circle cx="12" cy="17" r=".6" fill="currentColor"/>',
+
   // A plain left arrow — decision 0284. Not `return` (a document sent
   // backward through the workflow) or `restoredefault` (settings
   // undone) — this is neither; it is only "go back to the list,"
