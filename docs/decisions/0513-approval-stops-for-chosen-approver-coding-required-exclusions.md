@@ -1,9 +1,6 @@
 # 0513 — A chosen approver stops the invoice, Coding must be complete, and AP Setup can exclude who validated or coded it
 
-**Status: built and tested locally, not yet pushed or deployed.** This
-session has no push access, so it is delivered as a git bundle. It
-needs **two migrations, each applied as its own step**: `vf-app`
-`0092`, and `vf-licence` `0180`.
+**Status: pushed (`893d854`), deployed, and both migrations (`vf-app` `0092`, `vf-licence` `0180`) applied, as confirmed by the operator on 27 September.**
 
 ## What was asked
 
