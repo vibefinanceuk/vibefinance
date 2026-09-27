@@ -1,9 +1,6 @@
 # 0511 — Coding values checked against Account Coding's own lists
 
-**Status: built and tested locally. Not yet pushed or deployed.** This
-session's clone has no push access, so it is delivered as a git bundle.
-It needs one `vf-licence` migration (`0179`), applied as its own step,
-and no `vf-app` migration.
+**Status: pushed (`42fcd84`), deployed, and migration `0179` applied — confirmed by the operator on 27 September.** The deployed screen was not checked directly: this session's network can't reach `app.vibefinance-ai.com`.
 
 ## What was asked
 
