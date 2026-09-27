@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 27 September 2026 (decision 0513). A living document: what
+Last updated 27 September 2026 (decision 0514). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,16 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Coding required only at coding stages, never on a PO invoice (0514)
+- Reported live: a PO invoice at Validation was asked for Account
+  Coding, though Validation is not offered Account Coding restrictions.
+- 0513's check read the customer-wide `edit` default as "required" at
+  every stage Stage Restrictions couldn't narrow. Now a stage with
+  "Offer Account Coding restrictions" off (0485) requires nothing, and
+  neither does an invoice carrying an order reference (BT-13 — the
+  same test Non-PO routing uses).
+- `vf-app` only. Full reasoning in decision 0514.
 
 ### A chosen approver stops the invoice; Coding must be complete; approval exclusions (0513)
 - Reported live, testing 0512: Route To Approver with no coding keyed,

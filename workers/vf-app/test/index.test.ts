@@ -2244,6 +2244,45 @@ describe("process instances and stage visits, through the real router (decision 
     expect(res.status).toBe(200);
   });
 
+  /**
+   * **Decision 0514** — reported live: a PO invoice at Validation was
+   * asked for Account Coding, at a stage not offered Account Coding
+   * restrictions at all.
+   */
+  async function seedUncodedLineWithCodingEditable(): Promise<{ codingTaskId: string }> {
+    const seeded = await seedManualCodingToApproval("no-rule-set");
+    await env.DB.prepare("INSERT INTO field_visibility (field, visibility, sort_order) VALUES ('BT-133', 'edit', 0)").run();
+    await env.DB.prepare("INSERT INTO invoice_lines (invoice_id, line_number, facts_json) VALUES ('real-inv-manual', 1, ?)")
+      .bind(JSON.stringify({ "BT-131": 3000 }))
+      .run();
+    return seeded;
+  }
+  const completeAsTestUser = (taskId: string) =>
+    SELF.fetch(`https://example.com/tasks/${taskId}/complete`, {
+      method: "POST",
+      headers: { ...authHeaders(), "Content-Type": "application/json" },
+      body: JSON.stringify({ targetUserId: "test-user" }),
+    });
+
+  it("Complete — decision 0514: a stage not offered Account Coding restrictions demands no coding", async () => {
+    const { codingTaskId } = await seedUncodedLineWithCodingEditable();
+    await env.DB.prepare("UPDATE process_stages SET offer_field_restrictions = 0 WHERE id = 'coding'").run();
+    expect((await completeAsTestUser(codingTaskId)).status).toBe(200);
+  });
+
+  it("Complete — decision 0514: a PO invoice (one carrying BT-13) demands no coding", async () => {
+    const { codingTaskId } = await seedUncodedLineWithCodingEditable();
+    await env.DB.prepare(
+      `UPDATE invoice_headers SET facts_json = json_set(facts_json, '$."BT-13"', 'PO-123') WHERE id = 'real-inv-manual'`
+    ).run();
+    expect((await completeAsTestUser(codingTaskId)).status).toBe(200);
+  });
+
+  it("Complete — decision 0514: a non-PO invoice at an offered stage is still refused, as 0513 set", async () => {
+    const { codingTaskId } = await seedUncodedLineWithCodingEditable();
+    expect((await completeAsTestUser(codingTaskId)).status).toBe(422);
+  });
+
   it("Route To Approver — decision 0513: 'Exclude Coding User from Approval' refuses the person completing the Coding task", async () => {
     const { codingTaskId } = await seedManualCodingToApproval("no-rule-set");
     await env.DB.prepare("UPDATE process_stages SET required_permission = 'AP.Code' WHERE id = 'coding'").run();

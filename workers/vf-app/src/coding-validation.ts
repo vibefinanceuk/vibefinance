@@ -255,16 +255,53 @@ export interface CodingGap {
 export async function codingGapsForTask(db: D1Database, taskId: string): Promise<CodingGap[]> {
   const task = await db
     .prepare(
-      `SELECT t.stage_id, pi.subject_id, h.org_unit_id
+      `SELECT t.stage_id, pi.subject_id, h.org_unit_id, h.facts_json, s.offer_field_restrictions
        FROM tasks t
+       JOIN process_stages s ON s.id = t.stage_id
        JOIN stage_visits v ON v.id = t.stage_visit_id
        JOIN process_instances pi ON pi.id = v.process_instance_id
        JOIN invoice_headers h ON pi.subject_type = 'invoice' AND h.id = pi.subject_id
        WHERE t.id = ?`
     )
     .bind(taskId)
-    .first<{ stage_id: string; subject_id: string; org_unit_id: string | null }>();
+    .first<{
+      stage_id: string;
+      subject_id: string;
+      org_unit_id: string | null;
+      facts_json: string | null;
+      offer_field_restrictions: number | null;
+    }>();
   if (!task) return [];
+
+  /**
+   * **Only at a stage offered Account Coding restrictions — decision
+   * 0514.** Reported live: Validation demanded coding although it is
+   * not configured to "Offer Account Coding restrictions for this
+   * stage". That flag (decision 0485) marks the stages where coding is
+   * configured at all. A stage without it is not a coding stage, and
+   * its fields fall back to the customer-wide default, which is
+   * usually `edit`. 0513 read that default as "required", so a stage
+   * nobody could restrict demanded coding nobody meant to do there.
+   * `NULL` reads as offered, the column's own default.
+   */
+  if (task.offer_field_restrictions === 0) return [];
+
+  /**
+   * **Never on a PO invoice — decision 0514.** Reported live: a PO
+   * invoice was asked for Account Coding. Its lines are charged through
+   * the order it references, so there is nothing for a person to code.
+   * "PO invoice" means one carrying an order reference (BT-13), the
+   * same test Non-PO approval routing already uses (`poReferenced`,
+   * decisions 0469/0471), so the two can never disagree about which
+   * invoices are PO ones.
+   */
+  let header: Record<string, unknown> = {};
+  try {
+    header = JSON.parse(task.facts_json || "{}") as Record<string, unknown>;
+  } catch {
+    // Unparseable header facts carry no order reference.
+  }
+  if (typeof header["BT-13"] === "string" && header["BT-13"].trim() !== "") return [];
 
   const visibility = await resolveFieldVisibility(db, task.stage_id, task.org_unit_id);
   const required = visibility
