@@ -1627,6 +1627,22 @@ describe("a task about one line (decision 0183)", () => {
   });
 });
 
+describe("the Stage and Owner filters sit between Search and Rows (decision 0524)", () => {
+  it("orders the search row: search box, Stage, Owner, then Rows", async () => {
+    await openList([APPROVAL_TASK]);
+    const row = document.querySelector(".searchrow") as HTMLElement;
+    const children = [...row.children];
+    const searchIndex = children.findIndex((c) => c.id === "tasksearch");
+    const filtersIndex = children.findIndex((c) => c.classList.contains("filters"));
+    const rowsIndex = children.findIndex((c) => c.tagName === "LABEL");
+    expect(filtersIndex).toBe(searchIndex + 1);
+    expect(rowsIndex).toBe(filtersIndex + 1);
+    expect(row.querySelectorAll(".filters select")).toHaveLength(2);
+    // Only once on the page.
+    expect(document.querySelectorAll(".filters")).toHaveLength(1);
+  });
+});
+
 describe("the Tasks list's columns and stage pills (decisions 0521, 0522)", () => {
   const NUMBERED = {
     ...APPROVAL_TASK,

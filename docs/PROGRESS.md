@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 27 September 2026 (decision 0523). A living document: what
+Last updated 27 September 2026 (decision 0524). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,10 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Tasks filters between Search and Rows (0524)
+- The Stage and Owner drop-downs moved from the end of the search row to
+  directly after the search box, before Rows. `vf-ui` only.
 
 ### Tasks list offers only Claim and Release (0523)
 - The operator's request, to keep the list clean: the Action column

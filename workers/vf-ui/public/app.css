@@ -3434,6 +3434,8 @@
 
   .filters { display: flex; gap: 10px; margin-bottom: 14px; }
   .filters select { width: auto; min-width: 150px; }
+  /* Inside the search row since decision 0524: the row sets the spacing. */
+  .searchrow .filters { margin-bottom: 0; }
 
   .counts {
     margin: 0 0 12px;

@@ -494,6 +494,13 @@ function searchAndPaginationRow() {
 
   return [
     search,
+    /**
+     * **Stage and Owner, between Search and Rows — decision 0524**, the
+     * operator's own placement: they narrow the list, as the search box
+     * does, so they sit beside it rather than after the paging
+     * controls.
+     */
+    filterBar(),
     el("label", { class: "sm muted", text: t("purchaseorders.rows") }),
     sizePicker,
     navButton("chevronsleft", t("purchaseorders.firstpage"), atFirst, async () => {
@@ -1140,7 +1147,7 @@ function render() {
         topbar(t("nav.tasks"), `${me.name} · ${me.environmentId ?? ""}`),
 
         el("div", { class: "panel" }, [
-          el("div", { class: "searchrow" }, [...searchAndPaginationRow(), filterBar()]),
+          el("div", { class: "searchrow" }, searchAndPaginationRow()),
         ]),
 
         /**
