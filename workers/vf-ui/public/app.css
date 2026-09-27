@@ -462,7 +462,29 @@
     margin: 16px 0 4px;
   }
   .nav .navgroup:first-of-type { margin-top: 0; }
-  .frame.collapsed .navgroup { display: none; }
+  /*
+    **Abbreviated when folded — decision 0525**, the operator's own
+    request: "include some abbreviated separators in when retracted...
+    AP, SM, CONF, AR and EXP." Until then a folded nav hid its headings
+    outright, leaving one unbroken column of icons. The full name stays
+    in the page, visually hidden (not `display: none`), so a screen
+    reader still announces it; the short form is `aria-hidden`.
+  */
+  .nav .navgroupshort { display: none; }
+  .frame.collapsed .navgroup {
+    padding: 0;
+    text-align: center;
+    letter-spacing: 0.02em;
+  }
+  .frame.collapsed .navgroupshort { display: inline; }
+  .frame.collapsed .navgrouplong {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
 
   /*
     The whole nav folded to icons — decision 0274, the operator's own

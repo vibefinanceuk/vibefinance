@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 27 September 2026 (decision 0524). A living document: what
+Last updated 27 September 2026 (decision 0525). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,12 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Folded side menu: short group headings (0525)
+- When the side menu is folded, each group heading shows a short form
+  above its icons: AP, SM, CONF. AR and EXP are ready for when those
+  groups exist. Screen readers still hear the full name.
+- `vf-licence` migration `0187` — apply separately.
 
 ### Tasks filters between Search and Rows (0524)
 - The Stage and Owner drop-downs moved from the end of the search row to

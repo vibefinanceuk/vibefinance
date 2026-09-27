@@ -42,6 +42,9 @@ const STRINGS = {
     "nav.group.accountspayable": "Accounts payable",
     "nav.group.suppliermanagement": "Supplier management",
     "nav.group.configuration": "Configuration",
+    "nav.groupshort.accountspayable": "AP",
+    "nav.groupshort.suppliermanagement": "SM",
+    "nav.groupshort.configuration": "CONF",
     "nav.vibeap": "Vibe AP",
     "nav.collapse": "Collapse the menu",
     "nav.expand": "Expand the menu",
@@ -413,7 +416,7 @@ describe("the flat nav, permission-filtered (decisions 0274 and 0276)", () => {
      */
     await openList([APPROVAL_TASK]);
 
-    const headings = [...document.querySelectorAll(".navgroup")].map((h) => h.textContent);
+    const headings = [...document.querySelectorAll(".navgroup .navgrouplong")].map((h) => h.textContent);
     expect(headings).toEqual(["Accounts payable", "Supplier management", "Configuration"]);
 
     const labels = [...document.querySelectorAll(".navitem")].map((a) => a.textContent);
@@ -457,9 +460,40 @@ describe("the flat nav, permission-filtered (decisions 0274 and 0276)", () => {
     const { start } = await import("/tasks.js");
     await start();
 
-    const headings = [...document.querySelectorAll(".navgroup")].map((h) => h.textContent);
+    const headings = [...document.querySelectorAll(".navgroup .navgrouplong")].map((h) => h.textContent);
     expect(headings).not.toContain("Supplier management");
+    // Its short form goes with it — decision 0525.
+    expect([...document.querySelectorAll(".navgroupshort")].map((h) => h.textContent)).not.toContain("SM");
     expect([...document.querySelectorAll(".navitem")].map((a) => a.textContent)).not.toContain("Suppliers");
+  });
+
+  it("gives every heading a short form for the folded nav, hidden from screen readers — decision 0525", async () => {
+    /**
+     * The operator's own request: "include some abbreviated separators
+     * in when retracted. This would be AP, SM, CONF, AR and EXP."
+     */
+    await openList([APPROVAL_TASK]);
+
+    const shorts = [...document.querySelectorAll(".navgroup .navgroupshort")];
+    expect(shorts.map((h) => h.textContent)).toEqual(["AP", "SM", "CONF"]);
+    for (const short of shorts) expect(short.getAttribute("aria-hidden")).toBe("true");
+  });
+
+  it("shows the short headings only when folded, keeping the full name for screen readers — decision 0525", async () => {
+    const css = (await import("virtual:stylesheets")).default["app.css"];
+    const ruleFor = (selector: string) => {
+      const at = css.indexOf(`${selector} {`);
+      expect(at).toBeGreaterThan(-1);
+      return css.slice(at, css.indexOf("}", at));
+    };
+    expect(ruleFor(".nav .navgroupshort")).toContain("display: none");
+    expect(ruleFor(".frame.collapsed .navgroupshort")).toContain("display: inline");
+    // Visually hidden, not `display: none`, so it is still announced.
+    const long = ruleFor(".frame.collapsed .navgrouplong");
+    expect(long).toContain("position: absolute");
+    expect(long).not.toContain("display: none");
+    // The old rule that hid every heading when folded is gone.
+    expect(css).not.toContain(".frame.collapsed .navgroup { display: none; }");
   });
 
   it("gives every real nav item an icon", async () => {

@@ -1,7 +1,6 @@
 # 0523 — The Tasks list offers only Claim and Release
 
-**Status: built and tested locally, not yet pushed or deployed.** This
-session has no push access, so it is delivered as a git bundle. It
+**Status: pushed (`a818252`) and `vf-ui` deployed, as confirmed by the operator on 27 September.** It
 changes `vf-ui` only, with no migration and no string change.
 
 ## What was asked

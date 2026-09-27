@@ -749,6 +749,10 @@ const KEYS_THE_INTERFACE_USES = [
   "apsetup.modedef.api",
   // Decision 0517 — re-routing an Approval task over the approver's limit.
   "action.route_to_approver.limitnote",
+  // Decision 0525 — the folded nav's short group headings.
+  "nav.groupshort.accountspayable",
+  "nav.groupshort.suppliermanagement",
+  "nav.groupshort.configuration",
   // Decision 0521 — the Tasks list's new headings.
   "tasks.document",
   "tasks.received",

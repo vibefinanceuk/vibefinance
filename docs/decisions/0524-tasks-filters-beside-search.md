@@ -1,7 +1,6 @@
 # 0524 — The Tasks list's Stage and Owner filters sit between Search and Rows
 
-**Status: built and tested locally, not yet pushed or deployed.** This
-session has no push access, so it is delivered as a git bundle. It
+**Status: pushed (`2b81aee`) and `vf-ui` deployed, as confirmed by the operator on 27 September.** It
 changes `vf-ui` only, with no migration and no string change.
 
 ## What was asked

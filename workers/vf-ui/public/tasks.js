@@ -925,7 +925,21 @@ export function frame(main) {
     const unlockedScreens = screens.filter(([screen]) => unlocked(screen));
     if (unlockedScreens.length === 0) return [];
     return [
-      el("div", { class: "navgroup", text: t(`nav.group.${heading}`) }),
+      /**
+       * **A short form for the folded nav — decision 0525.** The
+       * operator's own request: "when the side menu is retracted we
+       * have none. I wondered if you could include some abbreviated
+       * separators in when retracted. This would be AP, SM, CONF, AR
+       * and EXP." Both forms are always in the heading; app.css shows
+       * one or the other by `.frame.collapsed`, so folding needs no
+       * re-render. The short form is `aria-hidden`: when folded the
+       * full name stays in the page, visually hidden, for a screen
+       * reader to announce instead of an abbreviation.
+       */
+      el("div", { class: "navgroup" }, [
+        el("span", { class: "navgrouplong", text: t(`nav.group.${heading}`) }),
+        el("span", { class: "navgroupshort", "aria-hidden": "true", text: t(`nav.groupshort.${heading}`) }),
+      ]),
       ...unlockedScreens.map(([screen, iconName]) => navLink(screen, iconName)),
     ];
   });
