@@ -1,9 +1,6 @@
 # 0516 — Each approval mode's definition, shown in AP Setup
 
-**Status: built and tested locally, not yet pushed or deployed.** This
-session has no push access, so it is delivered as a git bundle. It
-touches `vf-ui` and `vf-licence`, and needs `vf-licence` migration
-`0181` applied as its own step. There is no `vf-app` change.
+**Status: pushed (`f4efc55`) and deployed, as confirmed by the operator on 27 September.**
 
 ## What was asked
 
@@ -46,7 +43,7 @@ hidden.
   - It starts from the person who coded the line, so a coder whose
     limit covers the amount gets the task themselves. 0513's exclusions
     don't reach this mode.
-- **Manual: partly true.** The submitter chooses from the users who
+- **Manual: partly true** *(the limit check and re-routing were built in 0517)*. The submitter chooses from the users who
   hold the permission at the invoice's org (0512/0513). **The chosen
   user's approval limit is not checked**, and the chosen user cannot
   route it on.

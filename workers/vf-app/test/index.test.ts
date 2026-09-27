@@ -2245,6 +2245,96 @@ describe("process instances and stage visits, through the real router (decision 
   });
 
   /**
+   * **Decision 0517** — Manual mode's own definition: the chosen
+   * approver needs an approval limit covering the invoice, and if not,
+   * they choose somebody else.
+   */
+  async function atApprovalWithTestUser(): Promise<{ approvalTaskId: string }> {
+    const { codingTaskId } = await seedManualCodingToApproval("no-rule-set");
+    await env.DB.prepare("UPDATE invoice_headers SET currency = 'EUR', total_with_vat = 3000 WHERE id = 'real-inv-manual'").run();
+    const routed = await SELF.fetch(`https://example.com/tasks/${codingTaskId}/complete`, {
+      method: "POST",
+      headers: { ...authHeaders(), "Content-Type": "application/json" },
+      body: JSON.stringify({ targetUserId: "test-user" }),
+    });
+    expect(routed.status).toBe(200);
+    const approval = await env.DB.prepare("SELECT id FROM tasks WHERE stage_id = 'approval'").first<{ id: string }>();
+    // Dana can approve, with a role holding AP.Approve and a covering limit.
+    await env.DB.prepare("INSERT INTO org_roles (id, name, permissions_json) VALUES ('r-dana', 'Approver', ?)")
+      .bind(JSON.stringify(["AP.Approve"]))
+      .run();
+    await env.DB.prepare("INSERT INTO org_user_roles (user_id, role_id) VALUES ('dana', 'r-dana')").run();
+    return { approvalTaskId: approval!.id };
+  }
+
+  it("Manual — decision 0517: an approver whose limit does not cover the invoice cannot Complete, and is offered Route To Approver instead", async () => {
+    const { approvalTaskId } = await atApprovalWithTestUser();
+    await env.DB.prepare("INSERT INTO org_authority_limits (user_id, currency, max_amount) VALUES ('test-user', 'EUR', 1000)").run();
+
+    const refused = await SELF.fetch(`https://example.com/tasks/${approvalTaskId}/complete`, { method: "POST", headers: authHeaders() });
+    expect(refused.status).toBe(422);
+    expect(((await refused.json()) as { reason: string }).reason).toBe("approval_limit_insufficient");
+
+    const list = await SELF.fetch("https://example.com/tasks?stage=approval", { headers: authHeaders() });
+    const row = ((await list.json()) as { tasks: { id: string; actions: string[] }[] }).tasks.find((t) => t.id === approvalTaskId);
+    expect(row?.actions).toContain("route_to_approver");
+    expect(row?.actions).not.toContain("complete");
+
+    const offer = await SELF.fetch(`https://example.com/tasks/${approvalTaskId}/route-to-approver-candidates`, { headers: authHeaders() });
+    const body = (await offer.json()) as { reroute: boolean; candidates: { id: string }[] };
+    expect(body.reroute).toBe(true);
+    // Never themselves.
+    expect(body.candidates.map((c) => c.id)).toEqual(["dana"]);
+  });
+
+  it("Manual — decision 0517: routing on hands the same Approval task to the new approver, and the invoice stays at Approval", async () => {
+    const { approvalTaskId } = await atApprovalWithTestUser();
+    const res = await SELF.fetch(`https://example.com/tasks/${approvalTaskId}/route-to-approver`, {
+      method: "POST",
+      headers: { ...authHeaders(), "Content-Type": "application/json" },
+      body: JSON.stringify({ targetUserId: "dana", comment: "Over my limit." }),
+    });
+    expect(res.status).toBe(200);
+
+    const task = await env.DB.prepare("SELECT owner_user_id, status FROM tasks WHERE id = ?").bind(approvalTaskId).first();
+    expect(task).toEqual({ owner_user_id: "dana", status: "open" });
+    const instance = await env.DB.prepare("SELECT current_stage_id, status FROM process_instances WHERE subject_id = 'real-inv-manual'").first();
+    expect(instance).toEqual({ current_stage_id: "approval", status: "in_progress" });
+    const event = await env.DB
+      .prepare("SELECT action, target_user_id, comment FROM task_action_events WHERE task_id = ? ORDER BY at DESC LIMIT 1")
+      .bind(approvalTaskId)
+      .first();
+    expect(event).toEqual({ action: "route_to_approver", target_user_id: "dana", comment: "Over my limit." });
+  });
+
+  it("Manual — decision 0517: an approver whose limit covers the invoice completes as normal, and cannot route it on", async () => {
+    const { approvalTaskId } = await atApprovalWithTestUser();
+    await env.DB.prepare("INSERT INTO org_authority_limits (user_id, currency, max_amount) VALUES ('test-user', 'EUR', 5000)").run();
+
+    const reroute = await SELF.fetch(`https://example.com/tasks/${approvalTaskId}/route-to-approver`, {
+      method: "POST",
+      headers: { ...authHeaders(), "Content-Type": "application/json" },
+      body: JSON.stringify({ targetUserId: "dana" }),
+    });
+    expect(reroute.status).toBe(409);
+    const done = await SELF.fetch(`https://example.com/tasks/${approvalTaskId}/complete`, { method: "POST", headers: authHeaders() });
+    expect(done.status).toBe(200);
+  });
+
+  it("Manual — decision 0517: routing on refuses someone who cannot approve at the invoice's org", async () => {
+    const { approvalTaskId } = await atApprovalWithTestUser();
+    await env.DB.prepare("INSERT INTO org_users (id, email, name) VALUES ('ed', 'ed@example.com', 'Ed')").run();
+    const res = await SELF.fetch(`https://example.com/tasks/${approvalTaskId}/route-to-approver`, {
+      method: "POST",
+      headers: { ...authHeaders(), "Content-Type": "application/json" },
+      body: JSON.stringify({ targetUserId: "ed" }),
+    });
+    expect(res.status).toBe(422);
+    const task = await env.DB.prepare("SELECT owner_user_id FROM tasks WHERE id = ?").bind(approvalTaskId).first();
+    expect(task).toEqual({ owner_user_id: "test-user" });
+  });
+
+  /**
    * **Decision 0514** — reported live: a PO invoice at Validation was
    * asked for Account Coding, at a stage not offered Account Coding
    * restrictions at all.

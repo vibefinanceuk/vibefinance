@@ -1984,6 +1984,39 @@ describe("the actions do something (decision 0138)", () => {
       expect(document.querySelector(".popout")).not.toBeNull();
     });
 
+    it("re-routes from the Approval task when the server says so: explains why, and posts to route-to-approver, not /complete (decision 0517)", async () => {
+      const posted: string[] = [];
+      const bodies: { path: string; body: unknown }[] = [];
+      await openWithRouteToApprover(
+        {
+          "/api/tasks/t-1/route-to-approver-candidates": { ...CANDIDATES, reroute: true, limit: 1000, amount: 3000, currency: "EUR" },
+          "/api/tasks/t-1/route-to-approver": { id: "t-1", ownerUserId: "u-3" },
+          "/api/ui-strings": {
+            locale: "en",
+            strings: {
+              ...STRINGS.strings,
+              "action.route_to_approver.limitnote": "Your approval limit does not cover this invoice. Choose who should approve it instead.",
+            },
+          },
+        },
+        posted,
+        bodies
+      );
+      click("Route To Approver");
+      await settle();
+
+      expect(document.querySelector(".popout p.muted")?.textContent).toBe(
+        "Your approval limit does not cover this invoice. Choose who should approve it instead."
+      );
+      (document.querySelector(".popout select") as HTMLSelectElement).value = "u-3";
+      (document.querySelector(".popout .actionlink") as HTMLButtonElement).click();
+      await settle();
+
+      expect(posted).toEqual(["/api/tasks/t-1/route-to-approver"]);
+      expect(bodies).toContainEqual({ path: "/api/tasks/t-1/route-to-approver", body: { targetUserId: "u-3" } });
+      expect(document.querySelector(".popout")).toBeNull();
+    });
+
     it("tells a Complete refused for incomplete Account Coding in the reader's own strings, one line per gap (decision 0513)", async () => {
       await openWithRouteToApprover({
         "/api/tasks/t-1/route-to-approver-candidates": CANDIDATES,

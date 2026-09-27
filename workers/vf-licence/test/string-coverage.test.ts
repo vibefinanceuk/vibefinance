@@ -747,6 +747,8 @@ const KEYS_THE_INTERFACE_USES = [
   "apsetup.modedef.cost_object",
   "apsetup.modedef.employee_supervisor",
   "apsetup.modedef.api",
+  // Decision 0517 — re-routing an Approval task over the approver's limit.
+  "action.route_to_approver.limitnote",
   // A filtered field's own empty result names what narrowed it —
   // decision 0459.
   "viewer.coding.nomatchesscoped",

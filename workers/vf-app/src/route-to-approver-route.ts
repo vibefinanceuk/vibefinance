@@ -1,5 +1,5 @@
 import { nextStageInSequence } from "./workflow-engine.js";
-import { loadApprovalConfig } from "./approval-hierarchy.js";
+import { loadApprovalConfig, resolveApprovalLimit } from "./approval-hierarchy.js";
 import { unitLineage } from "./unit-config.js";
 import type { RouteResult } from "./org-route.js";
 import type { AuthenticatedUser } from "./user-auth.js";
@@ -94,6 +94,35 @@ export async function handleRouteToApproverCandidates(
 
   if (task.process_id === null || task.sequence === null || task.process_version === null) {
     return { status: 400, body: { error: "this task is not part of a running process instance" } };
+  }
+
+  /**
+   * **Re-routing from the Approval task itself — decision 0517.** The
+   * operator's Manual definition: *"The selected user needs approval
+   * limit to approve the document, and if that is not the case the
+   * selected user needs to select freely among the users in the
+   * company."* When this task *is* the Approval task, and its person's
+   * limit does not cover the invoice, the picker lists who they can hand
+   * it on to. It is the same list (0512 org scoping, 0513 exclusions),
+   * minus themselves. `reroute: true` tells the screen to post to the
+   * re-route route rather than `/complete`.
+   */
+  const reroute = await rerouteContext(db, taskId, user.id);
+  if (reroute) {
+    const excluded = await excludedApprovers(db, taskId, await loadApprovalConfig(db));
+    const candidates = (await approverCandidates(db, reroute.permission, reroute.orgUnitId)).filter(
+      (c) => !excluded.has(c.id) && c.id !== user.id
+    );
+    return {
+      status: 200,
+      body: {
+        candidates,
+        reroute: true,
+        limit: reroute.limit,
+        amount: reroute.amount,
+        currency: reroute.currency,
+      },
+    };
   }
 
   const next = await nextStageInSequence(db, task.process_id, task.sequence, task.process_version);
@@ -279,4 +308,135 @@ async function excludedApprovers(
     .bind(taskId, JSON.stringify(permissions))
     .all<{ user_id: string | null }>();
   return new Set(rows.results.map((r) => r.user_id).filter((id): id is string => !!id));
+}
+
+interface RerouteContext {
+  permission: string;
+  orgUnitId: string | null;
+  limit: number | null;
+  amount: number | null;
+  currency: string | null;
+}
+
+/**
+ * **Is this an Approval task whose own person may not approve it —
+ * decision 0517.** `null` unless all of these hold:
+ *
+ * - the task's own stage resolves through Approval Hierarchy and
+ *   declares a permission;
+ * - the org is on Manual;
+ * - this person's approval limit, at the invoice's unit and in its
+ *   currency, does not cover the invoice total.
+ *
+ * "Covers" is read exactly as Employee-Supervisor reads it
+ * (`resolveEmployeeSupervisor`, decision 0439). No limit recorded means
+ * no authority. An invoice with no total is covered by any limit at
+ * all. The total is the header's (`total_with_vat`, BT-112), because a
+ * Manual approval is of the document, not of one line.
+ */
+export async function rerouteContext(db: D1Database, taskId: string, userId: string): Promise<RerouteContext | null> {
+  const task = await db
+    .prepare(
+      `SELECT s.uses_approval_hierarchy, s.required_permission, h.org_unit_id, h.currency, h.total_with_vat
+       FROM tasks t
+       JOIN process_stages s ON s.id = t.stage_id
+       JOIN stage_visits v ON v.id = t.stage_visit_id
+       JOIN process_instances pi ON pi.id = v.process_instance_id
+       JOIN invoice_headers h ON pi.subject_type = 'invoice' AND h.id = pi.subject_id
+       WHERE t.id = ? AND t.status = 'open'`
+    )
+    .bind(taskId)
+    .first<{
+      uses_approval_hierarchy: number | null;
+      required_permission: string | null;
+      org_unit_id: string | null;
+      currency: string | null;
+      total_with_vat: number | null;
+    }>();
+  if (!task || !task.uses_approval_hierarchy || !task.required_permission) return null;
+  if ((await loadApprovalConfig(db)).mode !== "manual") return null;
+
+  const limit = task.currency ? await resolveApprovalLimit(db, userId, task.org_unit_id, task.currency) : null;
+  const covered = limit !== null && (task.total_with_vat === null || task.total_with_vat <= limit);
+  if (covered) return null;
+  return {
+    permission: task.required_permission,
+    orgUnitId: task.org_unit_id,
+    limit,
+    amount: task.total_with_vat,
+    currency: task.currency,
+  };
+}
+
+/**
+ * **Hand an Approval task on to somebody else — decision 0517.**
+ *
+ * Only allowed for the task's own person, and only when
+ * `rerouteContext` says their limit does not cover the invoice. The
+ * target must be someone the picker would offer. The **same task**
+ * changes hands: `owner_user_id` becomes the target, and any team or
+ * claim is cleared. The stage visit, and so the invoice's place at
+ * Approval, is untouched, which is why nothing cascades. A new task
+ * would have meant completing this one, and completing the last open
+ * task at a stage advances the invoice.
+ *
+ * It is recorded as a `route_to_approver` task action event, the same
+ * row the first Route To Approver writes (decisions 0488, 0497), so the
+ * Timeline shows every hand-off with its comment.
+ */
+export async function handleRerouteApprover(
+  db: D1Database,
+  taskId: string,
+  user: AuthenticatedUser,
+  body: { targetUserId?: unknown; comment?: unknown }
+): Promise<RouteResult> {
+  const task = await db
+    .prepare("SELECT owner_user_id, claimed_by, status FROM tasks WHERE id = ?")
+    .bind(taskId)
+    .first<{ owner_user_id: string | null; claimed_by: string | null; status: string }>();
+  if (!task) return { status: 404, body: { error: `task ${taskId} does not exist` } };
+  if (task.status !== "open") return { status: 409, body: { error: `task ${taskId} is already ${task.status}` } };
+  if (task.owner_user_id !== user.id && task.claimed_by !== user.id) {
+    return { status: 403, body: { error: "only the person this task belongs to may route it on" } };
+  }
+
+  const { targetUserId, comment } = body;
+  if (typeof targetUserId !== "string" || !targetUserId) {
+    return { status: 400, body: { error: "targetUserId (a string) is required" } };
+  }
+  if (comment !== undefined && comment !== null && typeof comment !== "string") {
+    return { status: 400, body: { error: "comment, if provided, must be a string" } };
+  }
+
+  const reroute = await rerouteContext(db, taskId, user.id);
+  if (!reroute) {
+    return {
+      status: 409,
+      body: { error: "this task is not an Approval task you need to route on", reason: "reroute_not_applicable" },
+    };
+  }
+
+  const excluded = await excludedApprovers(db, taskId, await loadApprovalConfig(db));
+  const candidates = await approverCandidates(db, reroute.permission, reroute.orgUnitId);
+  if (targetUserId === user.id || excluded.has(targetUserId) || !candidates.some((c) => c.id === targetUserId)) {
+    return {
+      status: 422,
+      body: { error: `${targetUserId} cannot approve this invoice`, reason: "approver_not_eligible" },
+    };
+  }
+
+  const now = new Date().toISOString();
+  const trimmed = typeof comment === "string" && comment.trim() ? comment.trim() : null;
+  await db.batch([
+    db
+      .prepare("UPDATE tasks SET owner_user_id = ?, owner_team_id = NULL, claimed_by = NULL, claimed_at = NULL WHERE id = ? AND status = 'open'")
+      .bind(targetUserId, taskId),
+    db
+      .prepare(
+        "INSERT INTO task_action_events (id, task_id, action, actor_id, at, comment, target_user_id) VALUES (?, ?, 'route_to_approver', ?, ?, ?, ?)"
+      )
+      .bind(crypto.randomUUID(), taskId, user.id, now, trimmed, targetUserId),
+  ]);
+
+  return { status: 200, body: { id: taskId, ownerUserId: targetUserId } };
 }

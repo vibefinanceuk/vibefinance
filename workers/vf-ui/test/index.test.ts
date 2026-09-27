@@ -606,6 +606,7 @@ describe("the proxy carries every path a screen calls (decision 0131)", () => {
      * operator hits it.
      */
     ["GET", "/api/tasks/t-1/route-to-approver-candidates"],
+    ["POST", "/api/tasks/t-1/route-to-approver"],
     /**
      * Return To Supplier's own reason list and settings — decision
      * 0498. Added at the same time as the routes themselves this time

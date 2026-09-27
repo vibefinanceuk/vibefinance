@@ -2024,7 +2024,16 @@ async function openRouteToApproverPicker(task, onClose) {
     note(t("viewer.actionfailed"));
     return;
   }
-  const candidates = (await response.json()).candidates ?? [];
+  const offer = await response.json();
+  const candidates = offer.candidates ?? [];
+  /**
+   * **Re-routing from the Approval task itself — decision 0517.** The
+   * server says so (`reroute: true`) when this person's own approval
+   * limit does not cover the invoice. The picker then posts to the
+   * re-route route, which hands this same task on, rather than to
+   * `/complete`. It also says why, above the list.
+   */
+  const reroute = offer.reroute === true;
   if (candidates.length === 0) {
     note(t("action.route_to_approver.nonefound"));
     return;
@@ -2044,7 +2053,7 @@ async function openRouteToApproverPicker(task, onClose) {
 
   const doRoute = async () => {
     errorBox.hidden = true;
-    const response = await fetch(`/api/tasks/${encodeURIComponent(task.id)}/complete`, {
+    const response = await fetch(`/api/tasks/${encodeURIComponent(task.id)}/${reroute ? "route-to-approver" : "complete"}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ targetUserId: select.value, comment: commentBox.value.trim() || undefined }),
@@ -2069,6 +2078,7 @@ async function openRouteToApproverPicker(task, onClose) {
 
   const box = el("div", { class: "popout" }, [
     el("div", { class: "cardhead" }, [el("h3", { text: t("action.route_to_approver") }), stateButtons]),
+    ...(reroute ? [el("p", { class: "muted sm", text: t("action.route_to_approver.limitnote") })] : []),
     labeled("action.route_to_approver.wholabel", select),
     labeled("action.route_to_approver.commentlabel", commentBox),
     errorBox,

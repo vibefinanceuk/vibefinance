@@ -186,6 +186,9 @@ const PROXIED_TO_INSTANCE: RegExp[] = [
    * to, needed no new entry — it already existed on this list.
    */
   /^\/tasks\/[^/]+\/route-to-approver-candidates$/,
+  // Routing an Approval task on when the approver's limit does not
+  // cover it — decision 0517. Added with the route itself.
+  /^\/tasks\/[^/]+\/route-to-approver$/,
   /**
    * **Return To Supplier's own reason list and settings — decision
    * 0498.** Added at the same time as the routes themselves this

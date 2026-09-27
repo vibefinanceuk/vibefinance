@@ -1,4 +1,5 @@
 import { unitsBeneath } from "./enforce.js";
+import { rerouteContext } from "./route-to-approver-route.js";
 import type { RouteResult } from "./org-route.js";
 import { nextStageInSequence } from "./workflow-engine.js";
 import { stageAllowsDiscard } from "./stage-actions-route.js";
@@ -693,6 +694,14 @@ export async function handleListMyTasks(
         );
       }
       offerRouteToApprover = routeToApproverCache.get(cacheKey) ?? false;
+      /**
+       * **Decision 0517.** The Approval task itself, when this person's
+       * limit does not cover the invoice: Route To Approver replaces
+       * Complete here too, so they hand it on rather than approve.
+       */
+      if (!offerRouteToApprover) {
+        offerRouteToApprover = (await rerouteContext(db, row.id, userId)) !== null;
+      }
     }
 
     let discardAllowed = true;

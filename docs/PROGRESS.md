@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 27 September 2026 (decision 0516). A living document: what
+Last updated 27 September 2026 (decision 0517). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,17 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Manual approval: a covering limit, or route it on (0517)
+- The operator's Manual definition, built: at an Approval task, a
+  person whose approval limit (at the invoice's unit, in its currency)
+  does not cover the invoice total cannot Complete; Route To Approver
+  replaces it and hands the same task to someone else, who is tested
+  the same way. The invoice stays at Approval throughout.
+- No limit recorded means no authority — approvers need limits before
+  this deploys.
+- `vf-licence` migration `0182` — apply separately. Full reasoning in
+  decision 0517.
 
 ### Approval mode definitions in AP Setup (0516)
 - The operator's own definition of each mode — Manual, Cost Object,

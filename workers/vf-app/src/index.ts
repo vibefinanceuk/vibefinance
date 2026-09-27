@@ -225,7 +225,12 @@ import { handleCreateCustomField, handleListCustomFields, loadCustomFields } fro
 import { handleUploadDocument, handleRetrieveDocument, handleMintDocumentUrl } from "./document-route.js";
 import { handleCreateProcessInstance, onTaskCompleted, visitCurrentStage } from "./workflow-engine.js";
 import { handleClaimTask, handleCompleteTask, handleCreateTask, handleReleaseTask, handleReassignTask, handleReassignCandidates } from "./task-route.js";
-import { handleRouteToApproverCandidates, checkChosenApprover } from "./route-to-approver-route.js";
+import {
+  handleRouteToApproverCandidates,
+  checkChosenApprover,
+  handleRerouteApprover,
+  rerouteContext,
+} from "./route-to-approver-route.js";
 import type { Permission } from "./permissions.js";
 import { handleRotateUserKey } from "./user-rotate-key-route.js";
 
@@ -5039,6 +5044,24 @@ export default {
       return json(result.body, result.status);
     }
 
+    // Route an Approval task on — decision 0517. Manual mode, when the
+    // task's own person's limit does not cover the invoice: they hand it
+    // to someone else. See `handleRerouteApprover`.
+    const rerouteApproverMatch = pathname.match(/^\/tasks\/([^/]+)\/route-to-approver$/);
+    if (rerouteApproverMatch && request.method === "POST") {
+      const { db } = resolveTenant(request, env);
+      const auth = await authenticatePerson(db, request, env);
+      if (!auth.user) return json({ error: auth.reason }, 401);
+      let body: { targetUserId?: unknown; comment?: unknown } = {};
+      try {
+        body = (await request.json()) as typeof body;
+      } catch {
+        return json({ error: "a JSON body with targetUserId is required" }, 400);
+      }
+      const result = await handleRerouteApprover(db, rerouteApproverMatch[1], auth.user, body ?? {});
+      return json(result.body, result.status);
+    }
+
     // Reassign — decision 0489. `targetUserId` is mandatory, so this
     // follows /return's own strict-body shape rather than /claim's and
     // /release's lenient one (a missing or unparsable body is a real
@@ -5212,6 +5235,28 @@ export default {
         }
       } catch {
         // No body, or not JSON — comment/targetUserId stay unset.
+      }
+
+      /**
+       * **An approver whose limit does not cover the invoice may not
+       * approve it — decision 0517.** In Manual mode they route it on
+       * instead (`POST /tasks/:id/route-to-approver`). Refused before
+       * anything completes.
+       */
+      if (completeTaskMatch) {
+        const reroute = await rerouteContext(db, taskId, auth.user.id);
+        if (reroute) {
+          return json(
+            {
+              error: `your approval limit${reroute.limit === null ? "" : ` (${reroute.currency} ${reroute.limit})`} does not cover this invoice${reroute.amount === null ? "" : ` (${reroute.currency} ${reroute.amount})`}; route it to someone who can approve it`,
+              reason: "approval_limit_insufficient",
+              limit: reroute.limit,
+              amount: reroute.amount,
+              currency: reroute.currency,
+            },
+            422
+          );
+        }
       }
 
       // decision 0512: a chosen approver is checked here, before the
