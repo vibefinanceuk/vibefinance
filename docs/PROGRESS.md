@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 27 September 2026 (decision 0527). A living document: what
+Last updated 27 September 2026 (decision 0528). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,12 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### "Here because" card in amber (0528)
+- The card at the top of the document view is now amber, with a solid
+  amber sleeve, a warning icon and the label in amber (option B). It
+  keeps Day's colours in Night mode too, as the operator asked. The
+  refusal flash (0487) now pulses to a deeper amber. `vf-ui` only.
 
 ### Side menu: coloured icons (0527)
 - Option D from the mock-up: on hover, or for the open screen, each

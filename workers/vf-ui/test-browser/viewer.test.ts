@@ -4035,6 +4035,37 @@ describe("why this task is here (decision 0478)", () => {
     // warning styling — it names an ordinary outcome, not a fault.
     expect(document.querySelector(".panel.reasonline.needsattention")).toBeNull();
   });
+  it("stands out in amber, with an icon and a solid sleeve — decision 0528", async () => {
+    await open({
+      openTaskReason: { ruleId: "rule-supplier", standardKey: null, name: "Supplier Not Matching in ERP", sourceText: null },
+    });
+    const icon = document.querySelector(".panel.reasonline .reasonline-row .reasonline-icon svg");
+    expect(icon).not.toBeNull();
+    expect(icon?.getAttribute("aria-hidden")).toBe("true");
+    // The icon comes first, then the label.
+    const row = document.querySelector(".reasonline-row") as HTMLElement;
+    expect(row.children[0].classList.contains("reasonline-icon")).toBe(true);
+    expect(row.children[1].textContent).toBe("Here because:");
+
+    const css = (await import("virtual:stylesheets")).default["app.css"];
+    const at = css.indexOf(".panel.reasonline {");
+    const card = css.slice(at, css.indexOf("}", at));
+    expect(card).toContain("background: var(--bg-warning)");
+    expect(card).toContain("border-left: 6px solid var(--border-warning)");
+    // Day's own values, re-declared on the card, so Night keeps them.
+    expect(card).toContain("--bg-warning: #faeeda");
+    expect(card).toContain("--text-primary: #121a26");
+    const label = css.slice(css.indexOf(".reasonline-label {"), css.indexOf("}", css.indexOf(".reasonline-label {")));
+    expect(label).toContain("color: var(--text-warning)");
+  });
+
+  it("still flashes visibly on an amber card, never through transparent — decision 0528", async () => {
+    const css = (await import("virtual:stylesheets")).default["app.css"];
+    const at = css.indexOf("@keyframes reasonline-flash-pulse");
+    const frames = css.slice(at, css.indexOf("}\n  }", at));
+    expect(frames).not.toContain("transparent");
+    expect(frames).toContain("color-mix(in srgb, var(--border-warning) 45%, var(--bg-warning))");
+  });
 });
 
 describe("the manual supplier search ranks by the invoice's own org (decision 0433)", () => {

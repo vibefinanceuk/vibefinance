@@ -1,7 +1,6 @@
 # 0527 — Side menu icons take their own colour on hover and selection
 
-**Status: built and tested locally, not yet pushed or deployed.** This
-session has no push access, so it is delivered as a git bundle. It
+**Status: pushed (`1fcf0f5`, seen on `origin/main`); deployment not yet confirmed by the operator.** It
 changes `vf-ui` only (`tasks.js`, `app.css`, `tokens.css`), with no
 migration and no string change.
 

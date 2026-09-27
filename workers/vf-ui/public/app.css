@@ -2186,31 +2186,53 @@
   }
 
   /*
-    "Here because" — decision 0478. A slim card, not a warning: this
-    names an ordinary, working rule outcome, so it deliberately does
-    NOT borrow .needsattention's warning-colored left border — that
-    border means "something broke," and this is the opposite claim.
+    "Here because" — decision 0478 made it a slim, neutral card, on the
+    grounds that it names an ordinary rule outcome, not a fault.
+
+    **Amber now, and in Day's colours in both moods — decision 0528.**
+    The operator's own request: "please can that card be highlighted in
+    amber, with a solid amber sleeve to the left. I would like this
+    field to stand out." From the mock-up they chose option B (an icon,
+    the label in amber, a 6px sleeve), then: "please can you use the
+    amber and palette used on the day card for both?" So the card
+    re-declares the Day values of every token it uses, on itself: on a
+    Night page it stays a pale amber card with dark text. It still
+    does not borrow `.needsattention` (0478's point stands: that class
+    means something broke).
   */
   .panel.reasonline {
-    padding: 10px 18px;
+    --bg-warning: #faeeda;
+    --text-warning: #854f0b;
+    --text-primary: #121a26;
+    --text-secondary: #4a5768;
+    --text-accent: #185fa5;
+    --surface-2: #ffffff;
+    padding: 10px 18px 10px 16px;
     display: flex;
     flex-direction: column;
     gap: 6px;
+    color: var(--text-primary);
+    background: var(--bg-warning);
+    border-color: color-mix(in srgb, var(--border-warning) 45%, transparent);
+    border-left: 6px solid var(--border-warning);
+    border-radius: 0 var(--radius) var(--radius) 0;
   }
   .reasonline-row {
     display: flex;
-    align-items: baseline;
+    align-items: center;
     flex-wrap: wrap;
     gap: 6px;
     font-size: var(--text-base);
     color: var(--text-primary);
   }
-  .reasonline-label { color: var(--text-secondary); }
+  .reasonline-icon { display: inline-flex; color: var(--text-warning); }
+  .reasonline-icon svg { width: 18px; height: 18px; }
+  .reasonline-label { color: var(--text-warning); font-weight: 600; }
   .reasonline-row .linky { font-size: var(--text-sm); }
   .reasonline-detail {
     font-size: var(--text-sm);
     color: var(--text-secondary);
-    background: var(--surface-1);
+    background: color-mix(in srgb, var(--surface-2) 60%, transparent);
     border-radius: var(--radius);
     padding: 8px 10px;
   }
@@ -2218,16 +2240,19 @@
 
   /**
    * Decision 0487 — Complete refused because the reason above still
-   * holds. A couple of soft pulses using `--bg-warning` (tokens.css) —
-   * this project's own "look at this" tier (decision 0395), not
-   * `--bg-danger`: nothing failed, a person just needs to look again.
+   * holds. A couple of pulses in the "look at this" tier (0395).
+   *
+   * **To a deeper amber, not from transparent — decision 0528.** The
+   * card is amber at rest now, so pulsing to `--bg-warning` would
+   * barely show, and pulsing through transparent would blank it. It
+   * pulses from its own amber to a stronger mix of the sleeve colour.
    */
   .reasonline-flash {
     animation: reasonline-flash-pulse 0.5s ease-in-out 2;
   }
   @keyframes reasonline-flash-pulse {
-    0%, 100% { background: transparent; }
-    50% { background: var(--bg-warning); }
+    0%, 100% { background: var(--bg-warning); }
+    50% { background: color-mix(in srgb, var(--border-warning) 45%, var(--bg-warning)); }
   }
 
   /* A button that reads as a link, because it opens rather than acts. */

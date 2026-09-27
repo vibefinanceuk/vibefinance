@@ -168,7 +168,15 @@ function reasonLinePanel() {
       ? t(`workflow.systemreason.${reason.systemReason}.name`)
       : reason.name;
 
+  /**
+   * **Amber, with an icon — decision 0528**, option B from the mock-up
+   * the operator chose: "I would like this field to stand out." The
+   * icon is decoration beside the label, so it is `aria-hidden`.
+   */
+  const alertIcon = icon("systemalert");
+  alertIcon.setAttribute("aria-hidden", "true");
   const row = el("div", { class: "reasonline-row" }, [
+    el("span", { class: "reasonline-icon" }, [alertIcon]),
     el("span", { class: "reasonline-label", text: t("invoice.reasonline.label") }),
     el("b", { text: name }),
   ]);
