@@ -319,8 +319,15 @@ export async function handleReturnTargets(
        FROM stage_return_targets rt
        JOIN process_stages ts ON ts.id = rt.target_stage_id
        JOIN org_teams tm ON tm.id = rt.team_id
-       JOIN stage_visits v ON v.process_instance_id = ? AND v.stage_id = rt.target_stage_id
-       WHERE rt.source_stage_id = ?
+       -- EXISTS, not a JOIN — decision 0515. "Has this invoice been at
+       -- that stage" is a yes/no question; a JOIN answered it once per
+       -- visit, so an invoice that had been through Coding three times
+       -- (returned, re-coded, resubmitted) offered Coding three times.
+       WHERE EXISTS (
+               SELECT 1 FROM stage_visits v
+               WHERE v.process_instance_id = ? AND v.stage_id = rt.target_stage_id
+             )
+         AND rt.source_stage_id = ?
        ORDER BY ts.name`
     )
     .bind(instance.id, task.stage_id)

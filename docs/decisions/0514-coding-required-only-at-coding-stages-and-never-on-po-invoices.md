@@ -1,8 +1,6 @@
 # 0514 — Coding is required only at stages offered Account Coding, and never on a PO invoice
 
-**Status: built and tested locally, not yet pushed or deployed.** This
-session has no push access, so it is delivered as a git bundle. It
-changes `vf-app` only. There is no migration and no string change.
+**Status: pushed (`63cb262`) and `vf-app` deployed, as confirmed by the operator on 27 September.**
 
 ## What was asked
 

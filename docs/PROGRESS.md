@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 27 September 2026 (decision 0514). A living document: what
+Last updated 27 September 2026 (decision 0515). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,12 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Return offers each stage once (0515)
+- Reported live from Approval: the "Return to" list showed Coding three
+  times and Validation twice — one per earlier visit, since
+  `handleReturnTargets` joined `stage_visits`. Now an `EXISTS` check:
+  each configured, visited stage once. `vf-app` only.
 
 ### Coding required only at coding stages, never on a PO invoice (0514)
 - Reported live: a PO invoice at Validation was asked for Account

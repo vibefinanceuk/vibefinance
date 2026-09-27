@@ -262,6 +262,25 @@ describe("where a task can be returned to (decision 0490)", () => {
     ]);
   });
 
+  it("offers a stage once, however many times the document visited it (decision 0515)", async () => {
+    // Reported live from Approval: Coding offered three times and
+    // Validation twice, one per earlier visit — an invoice returned and
+    // resubmitted revisits the same stages.
+    const { taskId, instanceId } = await atApproval();
+    await configureTarget("s-approval", "s-coding");
+    await grant("u-dan", ["AP.Approve", "AP.Return"]);
+    for (const n of [2, 3]) {
+      await env.DB.prepare(
+        "INSERT INTO stage_visits (id, process_instance_id, stage_id, outcome) VALUES (?, ?, 's-coding', 'matched')"
+      )
+        .bind(`v-coding-again-${n}`, instanceId)
+        .run();
+    }
+
+    const result = await handleReturnTargets(env.DB, taskId, DAN);
+    expect((result.body as { targets: { stageId: string }[] }).targets.map((t) => t.stageId)).toEqual(["s-coding"]);
+  });
+
   it("does not offer a configured target this document has never visited", async () => {
     // s-review is defined for the process but this instance never
     // passed through it — the same visited-only invariant
