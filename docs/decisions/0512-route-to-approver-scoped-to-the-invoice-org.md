@@ -1,8 +1,6 @@
 # 0512 — Route To Approver, scoped to the invoice's own org and checked by the server
 
-**Status: built and tested locally, not yet pushed or deployed.** This
-session has no push access, so it is delivered as a git bundle. The
-change is to `vf-app` only. There is no migration and no string change.
+**Status: pushed (`f56685d`) and `vf-app` deployed, as confirmed by the operator on 27 September.** There was no migration and no string change.
 
 ## What was asked
 
