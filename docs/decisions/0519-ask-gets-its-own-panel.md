@@ -1,9 +1,6 @@
 # 0519 — Ask gets its own button and side panel
 
-**Status: built and tested locally, not yet pushed or deployed.** This
-session has no push access, so it is delivered as a git bundle. It
-touches `vf-ui` and `vf-licence`, and needs `vf-licence` migration
-`0184` applied as its own step. There is no `vf-app` change.
+**Status: pushed (`b5c271b`), deployed, and migration `0184` applied, as confirmed by the operator on 27 September.**
 
 ## What was asked
 

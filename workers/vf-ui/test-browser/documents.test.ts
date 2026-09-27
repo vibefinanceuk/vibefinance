@@ -215,7 +215,6 @@ describe("what the list shows", () => {
     await openDocuments([{ ...DOC, status: "returned", stageName: "Validation" }]);
     const row = document.querySelector("tbody tr") as HTMLElement;
     expect(row.textContent).toContain("Returned to supplier");
-    expect(row.textContent).toContain("Validation");
     expect(row.textContent).not.toContain("Waiting");
     expect(row.textContent).not.toContain("In progress");
   });
@@ -228,12 +227,21 @@ describe("what the list shows", () => {
 });
 
 describe("which columns to show", () => {
-  it("shows the defaults", async () => {
+  it("shows the operator's own defaults, in the operator's own order (decision 0520)", async () => {
     await openDocuments([DOC]);
     const headings = [...document.querySelectorAll("th")].map((h) => h.textContent);
-    expect(headings).toContain("Sender");
-    // Off by default, available.
-    expect(headings).not.toContain("Due");
+    expect(headings).toEqual(["Document", "Status", "Amount", "Received", "Due", "Sender", "Business unit", "Hands"]);
+    // Off by default, still available in the picker.
+    const offered = [...document.querySelectorAll(".columnlist label")].map((l) => l.textContent?.trim());
+    expect(offered.slice(-3)).toEqual(["Type", "Recipient", "Stage"]);
+  });
+
+  it("shows Status as a pill carrying the status's own class (decision 0520)", async () => {
+    await openDocuments([{ ...DOC, status: "waiting" }]);
+    const pill = document.querySelector("tbody .statuspill") as HTMLElement;
+    expect(pill).not.toBeNull();
+    expect(pill.classList.contains("status")).toBe(true);
+    expect(pill.classList.contains("waiting")).toBe(true);
   });
 
   it("turns one on and keeps it", async () => {
@@ -242,13 +250,14 @@ describe("which columns to show", () => {
     await openDocuments([DOC]);
 
     const boxes = [...document.querySelectorAll(".columnlist input")] as HTMLInputElement[];
-    const due = boxes[7];
-    due.checked = true;
-    due.dispatchEvent(new Event("change"));
+    // Stage — off by default since decision 0520, last in the picker.
+    const stage = boxes[10];
+    stage.checked = true;
+    stage.dispatchEvent(new Event("change"));
     await new Promise((r) => setTimeout(r, 0));
 
-    expect([...document.querySelectorAll("th")].map((h) => h.textContent)).toContain("Due");
-    expect(window.localStorage.getItem("vf.documents.columns")).toContain("due");
+    expect([...document.querySelectorAll("th")].map((h) => h.textContent)).toContain("Stage");
+    expect(window.localStorage.getItem("vf.documents.columns.v2")).toContain("stage");
   });
 
   it("will not let somebody hide the document number", async () => {

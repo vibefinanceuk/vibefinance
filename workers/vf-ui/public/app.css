@@ -770,6 +770,29 @@
   */
   .status.returned { color: var(--text-accent); font-weight: 600; font-size: var(--text-sm); }
   .status.archived { color: var(--text-muted); font-size: var(--text-sm); }
+  /*
+    **Status as a pill — decision 0520.** The Documents list's own
+    status, shaped as a pill in the colour each status already had
+    (above): the text keeps that colour, the fill is the same family's
+    background tint, and the edge its border. Only `.statuspill` gets
+    the shape, so any other `.status` elsewhere is unchanged.
+  */
+  .status.statuspill {
+    display: inline-block;
+    padding: 2px 10px;
+    border-radius: 999px;
+    border: 0.5px solid var(--border);
+    background: var(--surface-1);
+    line-height: 1.5;
+    white-space: nowrap;
+  }
+  .statuspill.done { background: var(--bg-success); border-color: var(--border-success); }
+  .statuspill.waiting,
+  .statuspill.unreadable { background: var(--bg-warning); border-color: var(--border-warning); }
+  .statuspill.returned { background: var(--bg-accent); border-color: var(--border-accent); }
+  .statuspill.moving,
+  .statuspill.outside { background: var(--surface-1); border-color: var(--border-strong); }
+  .statuspill.archived { background: transparent; border-color: var(--border); }
 
   .unread { color: var(--text-warning); }
   .hands.none { color: var(--text-success); font-size: var(--text-sm); }

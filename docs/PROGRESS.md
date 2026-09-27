@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 27 September 2026 (decision 0519). A living document: what
+Last updated 27 September 2026 (decision 0520). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,16 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Documents list: column order and status pills (0520)
+- Columns in the operator's order, all on by default: Document Number,
+  Status, Amount, Received Date, Due Date, Supplier Name, Business
+  Unit, Hands (Type, Recipient, Stage still in the picker, off). Saved
+  choices move to a new key so everyone sees the new defaults once.
+- Status as a pill in its existing colour family (green, amber, blue,
+  neutral, outlined).
+- `vf-licence` migration `0185` renames four headings — apply
+  separately.
 
 ### Ask, its own button and panel (0519)
 - Moved out of the bottom of Help, at the operator's request: an Ask

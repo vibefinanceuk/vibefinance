@@ -100,15 +100,19 @@ let units = [];
  * no longer needs a column, since the row itself does that now.
  */
 const COLUMNS = [
+  /**
+   * **The operator's own order and defaults — decision 0520:**
+   * *"Document Number (i.e. Invoice Number), Status, Amount, Received
+   * Date, Due Date, Supplier Name, Business Unit, Hands."* Those eight
+   * are on. Type, Recipient and Stage stay available in the column
+   * picker, off by default, after them.
+   */
   { key: "number", always: true },
-  { key: "type", on: true },
   { key: "status", on: true },
   { key: "amount", on: true },
-  { key: "sender", on: true },
-  { key: "recipient", on: false },
   { key: "received", on: true },
-  { key: "due", on: false },
-  { key: "stage", on: true },
+  { key: "due", on: true },
+  { key: "sender", on: true },
   /**
    * Which part of the business — decision 0193.
    *
@@ -118,7 +122,10 @@ const COLUMNS = [
    * list.
    */
   { key: "unit", on: true },
-  { key: "hands", on: false },
+  { key: "hands", on: true },
+  { key: "type", on: false },
+  { key: "recipient", on: false },
+  { key: "stage", on: false },
 ];
 
 /**
@@ -128,7 +135,13 @@ const COLUMNS = [
  * something worth a column on `org_users` — and decision 0139's mood
  * control settled the same question the same way.
  */
-const STORAGE_KEY = "vf.documents.columns";
+/**
+ * **`.v2` since decision 0520.** A choice saved under the old defaults
+ * would hide Due Date and Hands, which the new defaults show. A fresh
+ * key gives everyone the new set once, after which their own choices
+ * are kept as before.
+ */
+const STORAGE_KEY = "vf.documents.columns.v2";
 
 function loadColumns() {
   try {
@@ -261,7 +274,8 @@ function cell(doc, key) {
 
     case "status":
       return el("td", {}, [
-        el("span", { class: `status ${doc.status}`, text: t(`docstatus.${doc.status}`) }),
+        // A pill, in the status's own colour — decision 0520.
+        el("span", { class: `status statuspill ${doc.status}`, text: t(`docstatus.${doc.status}`) }),
       ]);
 
     case "amount":
