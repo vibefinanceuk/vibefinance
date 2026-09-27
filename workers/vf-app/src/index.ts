@@ -225,7 +225,7 @@ import { handleCreateCustomField, handleListCustomFields, loadCustomFields } fro
 import { handleUploadDocument, handleRetrieveDocument, handleMintDocumentUrl } from "./document-route.js";
 import { handleCreateProcessInstance, onTaskCompleted, visitCurrentStage } from "./workflow-engine.js";
 import { handleClaimTask, handleCompleteTask, handleCreateTask, handleReleaseTask, handleReassignTask, handleReassignCandidates } from "./task-route.js";
-import { handleRouteToApproverCandidates } from "./route-to-approver-route.js";
+import { handleRouteToApproverCandidates, checkChosenApprover } from "./route-to-approver-route.js";
 import type { Permission } from "./permissions.js";
 import { handleRotateUserKey } from "./user-rotate-key-route.js";
 
@@ -5190,6 +5190,16 @@ export default {
         }
       } catch {
         // No body, or not JSON — comment/targetUserId stay unset.
+      }
+
+      // decision 0512: a chosen approver is checked here, before the
+      // task is completed, rather than trusted because the picker only
+      // offered the right people — see `checkChosenApprover`.
+      if (completeTaskMatch && targetUserId !== undefined) {
+        const chosen = await checkChosenApprover(db, taskId, targetUserId);
+        if (!chosen.ok) {
+          return json({ error: chosen.error, reason: "approver_not_eligible" }, chosen.status);
+        }
       }
 
       const result = claimTaskMatch

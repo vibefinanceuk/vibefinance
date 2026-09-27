@@ -2007,6 +2007,82 @@ describe("process instances and stage visits, through the real router (decision 
     });
   });
 
+  it("Route To Approver — decision 0512: a targetUserId the candidates route would never offer is refused before anything completes", async () => {
+    await seedActivatedRuleSet("rs-coding-manual", {
+      conditions: { field: "BT-112", operator: "greater_than", value: -1 },
+      actions: [{ type: "assign_task", params: { team: "coding-team", permission: "AP.Code" } }],
+    });
+    await seedActivatedRuleSet("rs-approval-manual", {
+      conditions: { field: "BT-112", operator: "greater_than", value: -1 },
+      actions: [{ type: "assign_task", params: { team: "decoy-team", permission: "AP.Approve" } }],
+    });
+    await env.DB.prepare("INSERT INTO org_units (id, name) VALUES ('u-manual', 'Acme France') ON CONFLICT(id) DO NOTHING").run();
+    await SELF.fetch("https://example.com/org/teams", { method: "POST", headers: authHeaders(), body: JSON.stringify({ id: "coding-team", name: "Coding team", unitId: "u-manual" }) });
+    await SELF.fetch("https://example.com/org/teams/coding-team/members", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ userId: "test-user" }),
+    });
+    await SELF.fetch("https://example.com/processes", { method: "POST", headers: authHeaders(), body: JSON.stringify({ id: "p-manual", name: "Manual AP" }) });
+    await SELF.fetch("https://example.com/processes/p-manual/stages", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ id: "coding", name: "Coding", sequence: 1, ruleSetId: "rs-coding-manual" }),
+    });
+    await SELF.fetch("https://example.com/processes/p-manual/stages", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ id: "approval", name: "Approval", sequence: 2, ruleSetId: "rs-approval-manual" }),
+    });
+    await env.DB.prepare("UPDATE process_stages SET uses_approval_hierarchy = 1, required_permission = 'AP.Approve' WHERE id = 'approval'").run();
+    await env.DB.prepare("UPDATE org_approval_config SET mode = 'manual' WHERE id = 1").run();
+    await env.DB.prepare(
+      "INSERT INTO org_users (id, email, name) VALUES ('dana', 'dana@example.com', 'Dana')"
+    ).run();
+    // followUpAfterTaskCompletion (the cascade /complete triggers)
+    // loads the invoice's own real, stored facts — unlike the
+    // explicit /process-instances/:id/visit call below, which takes
+    // facts inline. A real /invoices row is required for the cascade
+    // this test's own /complete call triggers to find anything at all.
+    await SELF.fetch("https://example.com/invoices", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ id: "real-inv-manual", facts: { "BT-112": 3000 } }),
+    });
+
+    const createRes = await SELF.fetch("https://example.com/processes/p-manual/instances", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ subjectType: "invoice", subjectId: "real-inv-manual" }),
+    });
+    const instanceId = (await createRes.json() as { id: string }).id;
+    await SELF.fetch(`https://example.com/process-instances/${instanceId}/visit`, {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ facts: { "BT-112": 3000 } }),
+    });
+
+    const codingTask = await env.DB.prepare("SELECT id FROM tasks WHERE stage_id = 'coding'").first<{ id: string }>();
+    await SELF.fetch(`https://example.com/tasks/${codingTask!.id}/claim`, { method: "POST", headers: authHeaders() });
+
+    // Dana exists but holds no AP.Approve anywhere — the picker never
+    // offers her, and 0495 alone would still have routed to her.
+    const completeRes = await SELF.fetch(`https://example.com/tasks/${codingTask!.id}/complete`, {
+      method: "POST",
+      headers: { ...authHeaders(), "Content-Type": "application/json" },
+      body: JSON.stringify({ targetUserId: "dana" }),
+    });
+    expect(completeRes.status).toBe(422);
+    expect(((await completeRes.json()) as { reason: string }).reason).toBe("approver_not_eligible");
+
+    // Nothing half-done: the Coding task is still open, and no Approval
+    // task exists for anybody.
+    const coding = await env.DB.prepare("SELECT completed_by FROM tasks WHERE id = ?").bind(codingTask!.id).first<{ completed_by: string | null }>();
+    expect(coding?.completed_by).toBeNull();
+    const approval = await env.DB.prepare("SELECT count(*) AS n FROM tasks WHERE stage_id = 'approval'").first<{ n: number }>();
+    expect(approval?.n).toBe(0);
+  });
+
   it("a targetUserId posted for an ordinary complete (no Approval Hierarchy stage ahead) is silently ignored, same as any other stray field", async () => {
     await seedActivatedRuleSet("rs-received-plain", {
       conditions: { field: "BT-112", operator: "greater_than", value: -1 },
@@ -3805,6 +3881,8 @@ describe("GET /invoices/:id/coding-suggestions, through the real router (decisio
       headers: authHeaders(),
       body: JSON.stringify({ id: "inv-0457-target", supplierVatId: "DE-0457", facts: {} }),
     });
+    // Decision 0511: a suggestion must be a real Account Coding entry.
+    await env.DB.prepare("INSERT INTO cost_centres (id, name) VALUES ('cc-0457', 'Marketing')").run();
     const key = await seedUserWithPermissions(["AP.Code"]);
     const res = await SELF.fetch("https://example.com/invoices/inv-0457-target/coding-suggestions", {
       headers: { Authorization: `Bearer ${key}` },

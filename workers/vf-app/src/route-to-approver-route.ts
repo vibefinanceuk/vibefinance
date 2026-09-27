@@ -1,5 +1,6 @@
 import { nextStageInSequence } from "./workflow-engine.js";
 import { loadApprovalConfig } from "./approval-hierarchy.js";
+import { unitLineage } from "./unit-config.js";
 import type { RouteResult } from "./org-route.js";
 import type { AuthenticatedUser } from "./user-auth.js";
 
@@ -50,11 +51,13 @@ export async function handleRouteToApproverCandidates(
   const task = await db
     .prepare(
       `SELECT t.owner_user_id, t.claimed_by, t.completed_by,
-              s.process_id, s.sequence, pi.process_version
+              s.process_id, s.sequence, pi.process_version, h.org_unit_id
        FROM tasks t
        JOIN process_stages s ON s.id = t.stage_id
        LEFT JOIN stage_visits v ON v.id = t.stage_visit_id
        LEFT JOIN process_instances pi ON pi.id = v.process_instance_id
+       LEFT JOIN invoice_headers h
+         ON pi.subject_type = 'invoice' AND h.id = pi.subject_id
        WHERE t.id = ?`
     )
     .bind(taskId)
@@ -65,6 +68,7 @@ export async function handleRouteToApproverCandidates(
       process_id: string | null;
       sequence: number | null;
       process_version: number | null;
+      org_unit_id: string | null;
     }>();
   if (!task) return { status: 404, body: { error: `task ${taskId} does not exist` } };
   if (task.completed_by) {
@@ -113,32 +117,100 @@ export async function handleRouteToApproverCandidates(
   }
 
   /**
-   * **Every org-wide holder of the next stage's own permission, not
-   * team-scoped** — decided directly with the operator: Manual mode
-   * has no hierarchy or unit to scope a walk by (that is the whole
-   * reason a human is choosing at all), so the candidate list is
-   * everyone who could complete the resulting task, the same answer a
-   * customer relying on a single Default Approver already gets today,
-   * just let a person choose which one this time.
-   *
-   * **One `json_each` membership test, not per-user `hasPermission`
-   * calls** — `enforce.ts`'s own `hasPermission` walks unit-scoped
-   * overrides that do not apply here (no unit is named), so reusing it
-   * would mean discarding most of what it computes. This is the same
-   * `IN (SELECT value FROM json_each(?))` shape `task-list-route.ts`
-   * already uses for matching a precomputed set.
+   * **Not team-scoped** — decided directly with the operator at 0495:
+   * Manual mode has no hierarchy to walk, so the list is everyone who
+   * could complete the resulting task. **Scoped to the invoice's own
+   * org since decision 0512** — "could complete" was always the test,
+   * and completing checks the org (see `approverCandidates`).
    */
-  const candidates = await db
+  const candidates = await approverCandidates(db, next.required_permission, task.org_unit_id);
+
+  return { status: 200, body: { candidates } };
+}
+
+/**
+ * **Who may approve this invoice, not who may approve anywhere** —
+ * decision 0512.
+ *
+ * 0495's own query took every holder of the permission org-wide and
+ * ignored *where* they hold it. But a role is held at a unit (decision
+ * 0199, migration 0047), and completing a task checks the permission at
+ * the invoice's own unit (decision 0203, `index.ts`'s complete route).
+ * So somebody who is an approver only at Acme DE was offered for an
+ * Acme UK invoice, and the Approval task then sat with a person who
+ * could never complete it.
+ *
+ * **The same answer `hasPermission` gives, for everyone at once**: a
+ * role held with no unit counts everywhere; a role held at the
+ * invoice's unit or anything above it counts; and an invoice not placed
+ * in any unit asks "at all", exactly as `hasPermission(…, null)` does.
+ * One query rather than a `hasPermission` call per person.
+ */
+export async function approverCandidates(
+  db: D1Database,
+  permission: string,
+  invoiceUnitId: string | null
+): Promise<{ id: string; name: string; email: string }[]> {
+  const lineage = invoiceUnitId ? await unitLineage(db, invoiceUnitId) : null;
+  const rows = await db
     .prepare(
       `SELECT DISTINCT u.id, u.name, u.email
        FROM org_users u
        JOIN org_user_roles ur ON ur.user_id = u.id
        JOIN org_roles r ON r.id = ur.role_id
-       WHERE EXISTS (SELECT 1 FROM json_each(r.permissions_json) je WHERE je.value = ?)
+       WHERE EXISTS (SELECT 1 FROM json_each(r.permissions_json) je WHERE je.value = ?1)
+         AND (?2 IS NULL OR ur.unit_id IS NULL OR ur.unit_id IN (SELECT value FROM json_each(?2)))
        ORDER BY u.name`
     )
-    .bind(next.required_permission)
+    .bind(permission, lineage ? JSON.stringify(lineage) : null)
     .all<{ id: string; name: string; email: string }>();
+  return rows.results;
+}
 
-  return { status: 200, body: { candidates: candidates.results } };
+/**
+ * **The server's own check on a chosen approver** — decision 0512.
+ *
+ * `POST /tasks/:id/complete` accepted any `targetUserId` that existed
+ * (0495's resolver checked existence and nothing else), so the picker
+ * was the only thing standing between a request and routing an
+ * approval to anybody at all — the screen-not-route gap decision 0144
+ * names. Called before the task is completed, so a refused choice
+ * leaves nothing half-done.
+ *
+ * **Only where Route To Approver actually applies** — the next stage
+ * resolves through Approval Hierarchy and the org is on Manual. Anywhere
+ * else a stray `targetUserId` stays exactly as 0495 left it: never read,
+ * never refused.
+ */
+export async function checkChosenApprover(
+  db: D1Database,
+  taskId: string,
+  targetUserId: string
+): Promise<{ ok: true } | { ok: false; status: number; error: string }> {
+  const task = await db
+    .prepare(
+      `SELECT s.process_id, s.sequence, pi.process_version, h.org_unit_id
+       FROM tasks t
+       JOIN process_stages s ON s.id = t.stage_id
+       LEFT JOIN stage_visits v ON v.id = t.stage_visit_id
+       LEFT JOIN process_instances pi ON pi.id = v.process_instance_id
+       LEFT JOIN invoice_headers h
+         ON pi.subject_type = 'invoice' AND h.id = pi.subject_id
+       WHERE t.id = ?`
+    )
+    .bind(taskId)
+    .first<{ process_id: string | null; sequence: number | null; process_version: number | null; org_unit_id: string | null }>();
+  if (!task || task.process_id === null || task.sequence === null || task.process_version === null) return { ok: true };
+
+  const next = await nextStageInSequence(db, task.process_id, task.sequence, task.process_version);
+  if (!next || !next.uses_approval_hierarchy || !next.required_permission) return { ok: true };
+  if ((await loadApprovalConfig(db)).mode !== "manual") return { ok: true };
+
+  const candidates = await approverCandidates(db, next.required_permission, task.org_unit_id);
+  if (candidates.some((c) => c.id === targetUserId)) return { ok: true };
+  return {
+    status: 422,
+    ok: false,
+    error: `${targetUserId} cannot approve this invoice: they do not hold ${next.required_permission} for its org`,
+  };
 }

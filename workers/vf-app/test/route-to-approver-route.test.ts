@@ -1,7 +1,7 @@
 import { env } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
 import { applyTestSchema } from "./setup.js";
-import { handleRouteToApproverCandidates } from "../src/route-to-approver-route.js";
+import { handleRouteToApproverCandidates, checkChosenApprover } from "../src/route-to-approver-route.js";
 import { handleCreateTask } from "../src/task-route.js";
 import { handleCreateUser } from "../src/org-route.js";
 import { handleCreateProcess, handleCreateStage } from "../src/process-route.js";
@@ -123,7 +123,7 @@ describe("handleRouteToApproverCandidates", () => {
     expect((result.body as { candidates: unknown[] }).candidates).toEqual([]);
   });
 
-  it("a unit-scoped grant still counts — this list is org-wide, not filtered by unit", async () => {
+  it("a unit-scoped grant counts when the invoice has not been placed in any org — the same \"at all\" answer hasPermission gives", async () => {
     await seedCodingTask({ usesHierarchy: true, owner: "alice" });
     await env.DB.prepare("UPDATE org_approval_config SET mode = 'manual' WHERE id = 1").run();
     await handleCreateUser(env.DB, { id: "erin", email: "erin@x.com", name: "Erin" });
@@ -136,5 +136,61 @@ describe("handleRouteToApproverCandidates", () => {
     const result = await handleRouteToApproverCandidates(env.DB, "t", asUser("alice"));
     expect(result.status).toBe(200);
     expect((result.body as { candidates: { id: string }[] }).candidates.map((c) => c.id)).toEqual(["erin"]);
+  });
+});
+
+/**
+ * Decision 0512 — candidates are the people who could actually complete
+ * the resulting task, which means holding the permission *for this
+ * invoice's org* (decision 0203), not merely somewhere.
+ */
+describe("Route To Approver, scoped to the invoice's own org (decision 0512)", () => {
+  async function seedUkInvoiceAndPeople(): Promise<void> {
+    await seedCodingTask({ usesHierarchy: true, owner: "alice" });
+    await env.DB.prepare("UPDATE org_approval_config SET mode = 'manual' WHERE id = 1").run();
+    await env.DB.prepare(
+      `INSERT INTO org_units (id, name, kind, parent_unit_id) VALUES
+         ('acme-uk', 'Acme UK', 'legal_entity', NULL),
+         ('ap-uk', 'AP UK', 'operating_unit', 'acme-uk'),
+         ('acme-de', 'Acme DE', 'legal_entity', NULL)`
+    ).run();
+    await env.DB.prepare("INSERT INTO invoice_headers (id, facts_json, org_unit_id) VALUES ('inv-1', '{}', 'ap-uk')").run();
+    await env.DB.prepare("INSERT INTO org_roles (id, name, permissions_json) VALUES ('approver', 'Approver', ?)")
+      .bind(JSON.stringify(["AP.Approve"]))
+      .run();
+    for (const [id, unit] of [
+      ["uk-entity", "acme-uk"],
+      ["uk-unit", "ap-uk"],
+      ["de-only", "acme-de"],
+      ["everywhere", null],
+    ] as const) {
+      await handleCreateUser(env.DB, { id, email: `${id}@x.com`, name: id });
+      await env.DB.prepare("INSERT INTO org_user_roles (user_id, role_id, unit_id) VALUES (?, 'approver', ?)").bind(id, unit).run();
+    }
+  }
+
+  it("offers people holding the permission at the invoice's unit, above it, or everywhere — never only somewhere else", async () => {
+    await seedUkInvoiceAndPeople();
+    const result = await handleRouteToApproverCandidates(env.DB, "t", asUser("alice"));
+    expect(result.status).toBe(200);
+    expect((result.body as { candidates: { id: string }[] }).candidates.map((c) => c.id).sort()).toEqual([
+      "everywhere",
+      "uk-entity",
+      "uk-unit",
+    ]);
+  });
+
+  it("checkChosenApprover refuses somebody the picker would not offer, and accepts somebody it would", async () => {
+    await seedUkInvoiceAndPeople();
+    const refused = await checkChosenApprover(env.DB, "t", "de-only");
+    expect(refused).toMatchObject({ ok: false, status: 422 });
+    expect(await checkChosenApprover(env.DB, "t", "uk-entity")).toEqual({ ok: true });
+    expect(await checkChosenApprover(env.DB, "t", "nobody-at-all")).toMatchObject({ ok: false });
+  });
+
+  it("checkChosenApprover never refuses where Route To Approver does not apply — 0495's silent no-op, unchanged", async () => {
+    await seedUkInvoiceAndPeople();
+    await env.DB.prepare("UPDATE org_approval_config SET mode = 'employee_supervisor' WHERE id = 1").run();
+    expect(await checkChosenApprover(env.DB, "t", "de-only")).toEqual({ ok: true });
   });
 });

@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 26 September 2026 (decision 0511). A living document: what
+Last updated 27 September 2026 (decision 0512). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2987,6 +2987,25 @@ section for the full reasoning and tests.
   untouched here.
 - Full reasoning and verification counts in decision 0469.
 
+### Route To Approver, scoped to the invoice's own org (0512)
+- Asked to look at Manual approval: it was already built (0495/0497);
+  the Handover's "no resolver" line was stale.
+- **The picker offered people who could not approve this invoice** —
+  every holder of the permission anywhere, though roles are held per
+  org (0199) and completing checks the invoice's org (0203). A
+  DE-only approver could be chosen for a UK invoice and then never
+  complete it. Candidates are now exactly who `hasPermission` would
+  pass at the invoice's unit (held there, above it, or everywhere).
+- **The server trusted the picker** — `POST /tasks/:id/complete`
+  accepted any existing `targetUserId`. Now checked against the same
+  list before anything completes: 422 `approver_not_eligible`. Only
+  where Route To Approver applies; a stray id elsewhere is still
+  ignored, as 0495 set.
+- `vf-app` only — no migration, no strings.
+- **Still open for Manual**: approval limits, a screen for
+  `uses_approval_hierarchy`, choosing at Approval itself. Full
+  reasoning in decision 0512.
+
 ### Coding values checked against Account Coding's own lists (0511)
 - The Handover's first "Suggested next piece": a keyed coding value
   was free text as far as the server knew. The pop-out only ever
@@ -3345,7 +3364,8 @@ section for the full reasoning and tests.
   cascade.
 - Candidates are every org-wide holder of the next stage's own
   `required_permission` — settled directly with the operator, since
-  Manual mode has no unit or hierarchy to scope a picker by. One
+  Manual mode has no unit or hierarchy to scope a picker by.
+  *(Narrowed to the invoice's own org by 0512 — see above.)* One
   `json_each` query against role permissions, not a per-user
   `hasPermission` loop.
 - No comment field (`handleCompleteTask` doesn't store one today,
