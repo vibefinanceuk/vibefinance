@@ -742,6 +742,11 @@ const KEYS_THE_INTERFACE_USES = [
   "apsetup.excludecodinguser",
   "viewer.coding.incomplete",
   "viewer.coding.missing",
+  // Decision 0516 — each Approval Hierarchy mode's own definition.
+  "apsetup.modedef.manual",
+  "apsetup.modedef.cost_object",
+  "apsetup.modedef.employee_supervisor",
+  "apsetup.modedef.api",
   // A filtered field's own empty result names what narrowed it —
   // decision 0459.
   "viewer.coding.nomatchesscoped",

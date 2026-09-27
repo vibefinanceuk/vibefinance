@@ -1,8 +1,6 @@
 # 0515 — Each Return stage is offered once, however often the invoice visited it
 
-**Status: built and tested locally, not yet pushed or deployed.** This
-session has no push access, so it is delivered as a git bundle. It
-changes `vf-app` only. There is no migration and no string change.
+**Status: pushed (`d11ae2c`) and `vf-app` deployed, as confirmed by the operator on 27 September.**
 
 ## What was asked
 

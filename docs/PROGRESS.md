@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 27 September 2026 (decision 0515). A living document: what
+Last updated 27 September 2026 (decision 0516). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,15 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Approval mode definitions in AP Setup (0516)
+- The operator's own definition of each mode — Manual, Cost Object,
+  Organisational Approval (Employee Supervisor), API — listed under the
+  mode picker, the selected one highlighted and following the picker.
+- Display only. Gaps against the definitions, recorded in 0516: Manual
+  doesn't check the chosen approver's limit or let them re-route; API
+  isn't built; Organisational jumps straight to the covering person.
+- `vf-licence` migration `0181` — apply separately.
 
 ### Return offers each stage once (0515)
 - Reported live from Approval: the "Return to" list showed Coding three

@@ -168,6 +168,7 @@ import docstatusReturnedArchivedSql from "../migrations/0177_docstatus_returned_
 import discardPickerAndStageRestrictionStringsSql from "../migrations/0178_discard_picker_and_stage_restriction_strings.sql?raw";
 import accountCodingValidityStringsSql from "../migrations/0179_account_coding_validity_strings.sql?raw";
 import approvalExclusionsAndCodingGapsStringsSql from "../migrations/0180_approval_exclusions_and_coding_gaps_strings.sql?raw";
+import approvalModeDefinitionsSql from "../migrations/0181_approval_mode_definitions.sql?raw";
 
 function stripSqlComments(sql: string): string {
   return sql
@@ -368,5 +369,6 @@ export async function applyTestSchema(): Promise<void> {
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(discardPickerAndStageRestrictionStringsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(accountCodingValidityStringsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(approvalExclusionsAndCodingGapsStringsSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(approvalModeDefinitionsSql)));
 
 }

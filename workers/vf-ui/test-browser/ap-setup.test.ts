@@ -571,6 +571,23 @@ describe("Approval Hierarchy — the mode and Default Approver form", () => {
   });
 });
 
+describe("Approval Hierarchy — each mode's own definition (decision 0516)", () => {
+  it("lists all four definitions and highlights the configured one, following the picker as it changes", async () => {
+    await openApSetupAs(["Admin.Configure"], EMPTY_OVERVIEW, { ...EMPTY_CONFIG, mode: "cost_object" });
+    switchTab("Approval Hierarchy");
+
+    const defs = [...document.querySelectorAll(".modedefs .modedef")] as HTMLElement[];
+    expect(defs.map((d) => d.getAttribute("data-mode"))).toEqual(["employee_supervisor", "cost_object", "manual", "api"]);
+    expect(defs.filter((d) => d.classList.contains("selected")).map((d) => d.getAttribute("data-mode"))).toEqual(["cost_object"]);
+    expect(defs[1].querySelector(".modedef-title")?.textContent).toBe("Cost-Object");
+
+    const select = document.querySelector(".editgrid select") as HTMLSelectElement;
+    select.value = "manual";
+    select.dispatchEvent(new Event("change"));
+    expect(defs.filter((d) => d.classList.contains("selected")).map((d) => d.getAttribute("data-mode"))).toEqual(["manual"]);
+  });
+});
+
 describe("Approval Hierarchy — the two approval exclusions (decision 0513)", () => {
   it("shows both options with their stored state, and sends both with the mode on Save", async () => {
     await openApSetupAs(

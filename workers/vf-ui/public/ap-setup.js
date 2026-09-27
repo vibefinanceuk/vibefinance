@@ -1122,10 +1122,35 @@ function modeForm(problem) {
     },
   });
 
+  /**
+   * **What each mode means, in the operator's own words — decision
+   * 0516.** All four are listed, so the choice is made knowing the
+   * alternatives, and the one selected is highlighted. The highlight
+   * follows the picker as it changes, before anything is saved.
+   */
+  const definitions = el(
+    "div",
+    { class: "modedefs" },
+    MODES.map((mode) =>
+      el("div", { class: "modedef", "data-mode": mode }, [
+        el("div", { class: "modedef-title", text: t(`apsetup.mode.${mode}`) }),
+        el("p", { class: "sm", text: t(`apsetup.modedef.${mode}`) }),
+      ])
+    )
+  );
+  const highlight = () => {
+    for (const node of definitions.querySelectorAll(".modedef")) {
+      node.classList.toggle("selected", node.getAttribute("data-mode") === modePicker.value);
+    }
+  };
+  modePicker.addEventListener("change", highlight);
+  highlight();
+
   return el("div", { class: "panel" }, [
     el("div", { class: "cardhead" }, [el("h3", { text: t("apsetup.approvalhierarchy") }), el("div", { class: "statebuttons" }, [save])]),
     el("p", { class: "muted sm", text: t("apsetup.modesub") }),
     form,
+    definitions,
     problem,
   ]);
 }
