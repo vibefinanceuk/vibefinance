@@ -1,10 +1,6 @@
 # 0518 — In-app Help: a stage-aware side panel, with live reasons and an AI answer
 
-**Status: built and tested locally, not yet pushed or deployed.** This
-session has no push access, so it is delivered as a git bundle. It
-touches `vf-app`, `vf-ui` and `vf-licence`, and needs `vf-licence`
-migration `0183` applied as its own step. There is no `vf-app`
-migration.
+**Status: pushed (`57c88e3`), deployed, and migration `0183` applied, as confirmed by the operator on 27 September.** The question box later moved to its own Ask panel (0519).
 
 ## What was asked
 

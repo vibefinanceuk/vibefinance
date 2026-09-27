@@ -22,14 +22,22 @@ import { icon } from "/icons.js";
  *    `GET /help/tasks/:id` gives for why it is there
  *    (`help.reason.<code>`, `{placeholders}` filled from the reason's
  *    own params).
- * 3. *Ask a question*: an AI answer grounded in the text above and the
- *    same live facts (`POST /help/ask`).
+ *
+ * **Ask has its own button and panel — decision 0519**, the operator's
+ * own request: *"the Ask option is a little lost at the bottom of the
+ * help side menu... create it's owns side menu, exactly the same size
+ * and behaviour as the Help side menu."* The two share one panel slot,
+ * so opening either closes the other. Ask's answers are still grounded
+ * in exactly what Help would show for the same screen and task: it
+ * builds those sections off-screen when a question is asked.
  *
  * Builds its own nodes rather than importing `el` from `tasks.js`,
  * which imports this module: no circular import to reason about.
  */
 
+/** The one side panel open, Help or Ask, and which it is. */
 let panel = null;
+let panelKind = null;
 
 function node(tag, props = {}, children = []) {
   const n = document.createElement(tag);
@@ -53,18 +61,23 @@ export function fill(template, params = {}) {
   });
 }
 
-/** Opens Help, or closes it if it is already open. */
+/** Opens Help, or closes it if Help is already open. */
 export function toggleHelp(context) {
-  if (panel) {
-    closeHelp();
-    return;
-  }
+  if (panel && panelKind === "help") return closeHelp();
   openHelp(context);
 }
 
+/** Opens Ask, or closes it if Ask is already open — decision 0519. */
+export function toggleAsk(context) {
+  if (panel && panelKind === "ask") return closeHelp();
+  openAsk(context);
+}
+
+/** Closes whichever side panel is open. */
 export function closeHelp() {
   panel?.remove();
   panel = null;
+  panelKind = null;
   document.removeEventListener("keydown", onKey);
 }
 
@@ -72,32 +85,103 @@ function onKey(event) {
   if (event.key === "Escape") closeHelp();
 }
 
-export async function openHelp({ screen, task } = {}) {
+/** The shared frame: same size, same place, same close and Escape. */
+function openPanel(kind, titleKey, body) {
   closeHelp();
-  const body = node("div", { class: "helpbody" });
-  panel = node("aside", { class: "helppanel", role: "complementary", "aria-label": t("help.title") }, [
+  panel = node("aside", { class: `helppanel ${kind}panel`, role: "complementary", "aria-label": t(titleKey) }, [
     node("div", { class: "cardhead" }, [
-      node("h3", { text: t("help.title") }),
+      node("h3", { text: t(titleKey) }),
       node("button", { class: "rm", title: t("action.close"), onclick: closeHelp }, [icon("close")]),
     ]),
     body,
   ]);
+  panelKind = kind;
   document.body.append(panel);
   document.addEventListener("keydown", onKey);
+}
 
-  const sections = [];
-  sections.push(
+/** What Help shows for this screen and task, as section nodes. */
+async function helpSections({ screen, task }) {
+  const sections = [
     node("section", { class: "helpsection" }, [
       node("h4", { text: t("help.aboutpage") }),
       node("p", { class: "sm", text: t(`help.screen.${task ? "viewer" : screen}`) }),
+    ]),
+  ];
+  if (task) sections.push(await stageSection(task));
+  return sections;
+}
+
+export async function openHelp({ screen, task } = {}) {
+  const body = node("div", { class: "helpbody" });
+  openPanel("help", "help.title", body);
+  const mine = panel;
+  const sections = await helpSections({ screen, task });
+  // Closed, or switched to Ask, while the reasons were loading.
+  if (panel !== mine) return;
+  body.replaceChildren(...sections);
+}
+
+/**
+ * **Ask — decision 0519.** A question box and its answers, in a panel
+ * of its own. Each answer stays on screen under its question, so a
+ * follow-up can be read against the one before.
+ */
+export function openAsk({ screen, task } = {}) {
+  const thread = node("div", { class: "askthread" });
+  const question = node("textarea", { placeholder: t("help.ask.placeholder"), maxlength: "500" });
+  const askButton = node("button", { class: "actionlink primary" }, [icon("ask"), node("span", { text: t("help.ask.button") })]);
+
+  const ask = async () => {
+    const text = question.value.trim();
+    if (!text) return;
+    question.value = "";
+    const answer = node("p", { class: "sm helpanswer", text: t("help.ask.thinking") });
+    thread.append(node("div", { class: "askturn" }, [node("p", { class: "sm askquestion", text }), answer]));
+    try {
+      // Grounded in what Help would show here, built off-screen.
+      const sections = await helpSections({ screen, task });
+      const helpText = sections
+        .flatMap((section) => [...section.querySelectorAll("h4, p, .helpactiontitle")])
+        .map((n) => n.textContent)
+        .join("\n");
+      const response = await fetch("/api/help/ask", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          question: text,
+          screen: task ? "viewer" : screen,
+          taskId: task?.id,
+          helpText,
+          locale: currentLocale(),
+        }),
+      });
+      const result = await response.json().catch(() => ({}));
+      answer.textContent = response.ok && result.answer ? result.answer : t("help.ask.failed");
+    } catch {
+      answer.textContent = t("help.ask.failed");
+    }
+  };
+  askButton.addEventListener("click", ask);
+  question.addEventListener("keydown", (event) => {
+    // Enter asks; Shift+Enter is a new line.
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      ask();
+    }
+  });
+
+  openPanel(
+    "ask",
+    "ask.title",
+    node("div", { class: "helpbody" }, [
+      node("p", { class: "sm", text: t("ask.intro") }),
+      thread,
+      node("section", { class: "helpsection helpask" }, [question, askButton]),
+      node("p", { class: "sm muted", text: t("help.ask.disclaimer") }),
     ])
   );
-
-  if (task) {
-    sections.push(await stageSection(task));
-  }
-  sections.push(askSection(screen, task, body));
-  body.replaceChildren(...sections);
+  question.focus();
 }
 
 async function stageSection(task) {
@@ -132,44 +216,5 @@ async function stageSection(task) {
     ...reasons
       .filter((r) => r.action !== null && !actions.includes(r.action))
       .map((r) => node("p", { class: "sm helpwhy", text: fill(t(`help.reason.${r.code}`), r.params) })),
-  ]);
-}
-
-function askSection(screen, task, body) {
-  const question = node("textarea", { placeholder: t("help.ask.placeholder"), maxlength: "500" });
-  const answer = node("p", { class: "sm helpanswer", hidden: "hidden" });
-  const ask = async () => {
-    const text = question.value.trim();
-    if (!text) return;
-    answer.hidden = false;
-    answer.textContent = t("help.ask.thinking");
-    try {
-      const response = await fetch("/api/help/ask", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          question: text,
-          screen: task ? "viewer" : screen,
-          taskId: task?.id,
-          // What the panel is showing, minus this section — the model
-          // answers from what the person is already reading.
-          helpText: [...body.querySelectorAll(".helpsection:not(.helpask) :is(h4, p, .helpactiontitle)")]
-            .map((n) => n.textContent)
-            .join("\n"),
-          locale: currentLocale(),
-        }),
-      });
-      const result = await response.json().catch(() => ({}));
-      answer.textContent = response.ok && result.answer ? result.answer : t("help.ask.failed");
-    } catch {
-      answer.textContent = t("help.ask.failed");
-    }
-  };
-  return node("section", { class: "helpsection helpask" }, [
-    node("h4", { text: t("help.ask.heading") }),
-    question,
-    node("button", { class: "actionlink primary", onclick: ask }, [icon("help"), node("span", { text: t("help.ask.button") })]),
-    answer,
-    node("p", { class: "sm muted", text: t("help.ask.disclaimer") }),
   ]);
 }

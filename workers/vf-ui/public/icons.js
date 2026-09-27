@@ -558,6 +558,10 @@ Object.assign(ICONS, {
   // reasoning `signout` gave itself.
   help: '<circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6v.6"/><circle cx="12" cy="17" r=".6" fill="currentColor"/>',
 
+  // A speech bubble — decision 0519, the Ask button: a question put in
+  // words, answered in words. Conventional, for instant recognition.
+  ask: '<path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/><path d="M8.5 11h.01M12 11h.01M15.5 11h.01"/>',
+
   // A plain left arrow — decision 0284. Not `return` (a document sent
   // backward through the workflow) or `restoredefault` (settings
   // undone) — this is neither; it is only "go back to the list,"

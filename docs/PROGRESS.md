@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 27 September 2026 (decision 0518). A living document: what
+Last updated 27 September 2026 (decision 0519). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,14 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Ask, its own button and panel (0519)
+- Moved out of the bottom of Help, at the operator's request: an Ask
+  button (speech-bubble icon) beside Help, opening a side panel of the
+  same size and behaviour — a conversation of questions and AI answers,
+  a comment box and an Ask button. Help and Ask share one slot. Answers
+  are grounded in exactly what Help would show for that screen and task.
+- `vf-licence` migration `0184` — apply separately.
 
 ### In-app Help (0518)
 - A Help button (question-mark icon) between Language and Sign out on

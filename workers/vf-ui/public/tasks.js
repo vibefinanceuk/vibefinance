@@ -12,7 +12,7 @@
  */
 
 import { t, languagePicker, loadStrings } from "/strings.js";
-import { toggleHelp } from "/help.js";
+import { toggleHelp, toggleAsk } from "/help.js";
 import { moodPicker } from "/mood.js";
 import { orgPicker, currentOrgId } from "/orgs.js";
 import { icon } from "/icons.js";
@@ -1057,6 +1057,20 @@ export function topbar(title, subtitle, right = [], extra = []) {
           onclick: () => toggleHelp({ screen: current, task: helpTask }),
         },
         [icon("help"), el("span", { text: t("help.button") })]
+      ),
+      /**
+       * **Ask, beside Help — decision 0519**, the operator's own
+       * request: its own button and its own side panel, the same size
+       * and behaviour as Help's, rather than a box at the bottom of it.
+       */
+      el(
+        "button",
+        {
+          class: "actionlink",
+          title: t("ask.button"),
+          onclick: () => toggleAsk({ screen: current, task: helpTask }),
+        },
+        [icon("ask"), el("span", { text: t("ask.button") })]
       ),
       el(
         "button",

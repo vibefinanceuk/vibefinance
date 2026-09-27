@@ -749,13 +749,16 @@ const KEYS_THE_INTERFACE_USES = [
   "apsetup.modedef.api",
   // Decision 0517 — re-routing an Approval task over the approver's limit.
   "action.route_to_approver.limitnote",
+  // Decision 0519 — Ask, its own panel.
+  "ask.button",
+  "ask.title",
+  "ask.intro",
   // Decision 0518 — in-app Help.
   "help.button",
   "help.title",
   "help.aboutpage",
   "help.atstage",
   "help.noactions",
-  "help.ask.heading",
   "help.ask.placeholder",
   "help.ask.button",
   "help.ask.thinking",

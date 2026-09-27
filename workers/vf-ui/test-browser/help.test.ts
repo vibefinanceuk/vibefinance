@@ -30,6 +30,8 @@ const STRINGS = {
     "action.route_to_approver": "Route To Approver",
     "action.return": "Return",
     "action.close": "Close",
+    "ask.title": "Ask",
+    "ask.intro": "Ask anything about this page.",
   },
 };
 
@@ -61,7 +63,7 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("the Help panel (decision 0518)", () => {
-  it("without a task, shows only the current page's help and the question box", async () => {
+  it("without a task, shows only the current page's help — and no question box, which moved to Ask (decision 0519)", async () => {
     stub({ "/api/ui-strings": STRINGS });
     await loadStrings();
     const { openHelp } = await import("/help.js");
@@ -71,7 +73,7 @@ describe("the Help panel (decision 0518)", () => {
     expect(panel).not.toBeNull();
     expect(panel.textContent).toContain("Every task you can see.");
     expect(panel.querySelector(".helpactions")).toBeNull();
-    expect(panel.querySelector(".helpask textarea")).not.toBeNull();
+    expect(panel.querySelector("textarea")).toBeNull();
   });
 
   it("with a task, lists the person's own actions and the live reason for each, placeholders filled", async () => {
@@ -104,7 +106,7 @@ describe("the Help panel (decision 0518)", () => {
     expect(items[1].querySelector(".helpwhy")?.textContent).toBe("You can return this invoice to: Coding, Validation.");
   });
 
-  it("asks /api/help/ask with the question, the task, the locale and the help text on screen, and shows the answer", async () => {
+  it("Ask is its own panel: posts the question, task, locale and Help's own text for this task, and shows the answer under the question (decision 0519)", async () => {
     const bodies: { path: string; body: unknown }[] = [];
     stub(
       {
@@ -115,13 +117,17 @@ describe("the Help panel (decision 0518)", () => {
       bodies
     );
     await loadStrings();
-    const { openHelp } = await import("/help.js");
-    await openHelp({ screen: "tasks", task: TASK });
+    const { openAsk } = await import("/help.js");
+    openAsk({ screen: "tasks", task: TASK });
 
-    (document.querySelector(".helpask textarea") as HTMLTextAreaElement).value = "Why can't I complete?";
-    (document.querySelector(".helpask button") as HTMLButtonElement).click();
-    await settle();
-    await settle();
+    const panel = document.querySelector(".helppanel.askpanel") as HTMLElement;
+    expect(panel).not.toBeNull();
+    expect(panel.querySelector("h3")?.textContent).toBe("Ask");
+    expect(panel.querySelector(".helpactions")).toBeNull();
+
+    (panel.querySelector("textarea") as HTMLTextAreaElement).value = "Why can't I complete?";
+    (panel.querySelector(".helpask button") as HTMLButtonElement).click();
+    for (let i = 0; i < 4; i++) await settle();
 
     const posted = bodies.find((b) => b.path === "/api/help/ask")?.body as Record<string, string>;
     expect(posted.question).toBe("Why can't I complete?");
@@ -129,7 +135,22 @@ describe("the Help panel (decision 0518)", () => {
     expect(posted.screen).toBe("viewer");
     expect(posted.locale).toBe("en");
     expect(posted.helpText).toContain("Choose who should approve this invoice.");
-    expect(document.querySelector(".helpanswer")?.textContent).toBe("Because your limit is too low.");
+    expect(panel.querySelector(".askquestion")?.textContent).toBe("Why can't I complete?");
+    expect(panel.querySelector(".helpanswer")?.textContent).toBe("Because your limit is too low.");
+    expect((panel.querySelector("textarea") as HTMLTextAreaElement).value).toBe("");
+  });
+
+  it("Help and Ask share one slot: opening one closes the other, and each toggles itself (decision 0519)", async () => {
+    stub({ "/api/ui-strings": STRINGS });
+    await loadStrings();
+    const { toggleHelp, toggleAsk } = await import("/help.js");
+    toggleHelp({ screen: "tasks", task: null });
+    await settle();
+    toggleAsk({ screen: "tasks", task: null });
+    expect(document.querySelectorAll(".helppanel")).toHaveLength(1);
+    expect(document.querySelector(".askpanel")).not.toBeNull();
+    toggleAsk({ screen: "tasks", task: null });
+    expect(document.querySelector(".helppanel")).toBeNull();
   });
 
   it("toggles closed from the same button, and closes on Escape", async () => {
