@@ -1,4 +1,5 @@
 import type { InvoiceFacts } from "@vibefinance/shared";
+import { mergeProjectBudgetFacts } from "./project-budget.js";
 import { getCostObjectRule } from "./coding-config-route.js";
 import { isPoInvoice, nonPoLines } from "./po-pairings.js";
 import { declaredFiltersFor } from "./coding-list-route.js";
@@ -60,7 +61,12 @@ export const CODING_FIELD_LISTS: Readonly<Record<string, string>> = {
   "coding.gl_code": "gl_code",
 };
 
-export type CodingProblemReason = "not_on_list" | "wrong_company" | "wrong_commodity";
+/**
+ * `closed` — decision 0542: the entry is on its list but no longer in use.
+ * `wrong_cost_centre` — decision 0543: a GL code the line's cost centre
+ * is not linked to, where that cost centre has links.
+ */
+export type CodingProblemReason = "not_on_list" | "wrong_company" | "wrong_commodity" | "closed" | "wrong_cost_centre";
 
 export interface CodingProblem {
   field: string;
@@ -102,6 +108,22 @@ export async function checkLineCoding(
     if (!(await cache.exists(listType, value))) {
       problems.push({ field, value, reason: "not_on_list" });
       continue;
+    }
+    // Decision 0542 — a closed entry (a finished project) takes no new cost.
+    if ((await cache.status(listType, value)) === "closed") {
+      problems.push({ field, value, reason: "closed" });
+      continue;
+    }
+    // Decision 0543 — a GL code the line's cost centre may be charged with, where it has links.
+    if (listType === "gl_code") {
+      const cc = String(lineFacts["BT-133"] ?? "").trim();
+      if (cc) {
+        const allowed = await cache.glCodesFor(cc);
+        if (allowed.length > 0 && !allowed.includes(value)) {
+          problems.push({ field, value, reason: "wrong_cost_centre" });
+          continue;
+        }
+      }
     }
 
     for (const filterType of await cache.declaredFilters(listType)) {
@@ -158,6 +180,22 @@ export async function mergeCodingValidityFacts<L extends InvoiceFacts>(
  */
 export class CodingLookupCache {
   private readonly existsMemo = new Map<string, Promise<boolean>>();
+  private readonly statusMemo = new Map<string, Promise<string | null>>();
+  private readonly glMemo = new Map<string, Promise<string[]>>();
+
+  /** The GL codes a cost centre is linked to — decision 0543. Empty: it takes any. */
+  glCodesFor(costCentreId: string): Promise<string[]> {
+    let hit = this.glMemo.get(costCentreId);
+    if (!hit) {
+      hit = this.db
+        .prepare("SELECT gl_code_id FROM cost_centre_gl_codes WHERE cost_centre_id = ?")
+        .bind(costCentreId)
+        .all<{ gl_code_id: string }>()
+        .then((r) => r.results.map((x) => x.gl_code_id));
+      this.glMemo.set(costCentreId, hit);
+    }
+    return hit;
+  }
   private readonly declaredMemo = new Map<string, Promise<string[]>>();
   private readonly filterMemo = new Map<string, Promise<boolean>>();
 
@@ -177,6 +215,22 @@ export class CodingLookupCache {
               .bind(listType, id);
       hit = query.first().then((row) => !!row);
       this.existsMemo.set(key, hit);
+    }
+    return hit;
+  }
+
+  /** An entry's status — decision 0542. Cost Centres have none, so always `active`. */
+  status(listType: string, id: string): Promise<string | null> {
+    if (listType === "cost_centre") return Promise.resolve("active");
+    const key = `${listType}\u0000${id}`;
+    let hit = this.statusMemo.get(key);
+    if (!hit) {
+      hit = this.db
+        .prepare("SELECT status FROM coding_list_entries WHERE list_type_id = ? AND id = ?")
+        .bind(listType, id)
+        .first<{ status: string }>()
+        .then((row) => row?.status ?? null);
+      this.statusMemo.set(key, hit);
     }
     return hit;
   }
@@ -240,7 +294,9 @@ export async function mergeCodingValidityForInvoice<L extends InvoiceFacts>(
   } catch {
     // Unparseable header facts carry no order reference.
   }
-  return mergeCodingValidityFacts(db, row?.org_unit_id ?? null, lines, { poInvoice: isPoInvoice(header) });
+  const merged = await mergeCodingValidityFacts(db, row?.org_unit_id ?? null, lines, { poInvoice: isPoInvoice(header) });
+  // Decision 0542 — a project's budget, for rules (project.over_budget, project.budget_used_pct).
+  return mergeProjectBudgetFacts(db, invoiceId, merged);
 }
 
 export interface CodingGap {

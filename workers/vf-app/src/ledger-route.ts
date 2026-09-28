@@ -247,7 +247,24 @@ export async function handleUpdateCostCentre(
     if (!filtersResult.ok) return { status: filtersResult.status, body: { error: filtersResult.error } };
   }
 
-  if (sets.length === 0 && !filtersResult) return { status: 400, body: { error: "nothing to change" } };
+  /**
+   * **The GL codes this cost centre may be charged with — decision
+   * 0543.** A list of GL code ids, replacing whatever was there; an
+   * empty list removes every link, so any GL code is accepted again.
+   */
+  let glCodes: string[] | undefined;
+  if ("glCodes" in body) {
+    if (!Array.isArray(body.glCodes) || !body.glCodes.every((g) => typeof g === "string" && g.trim() !== "")) {
+      return { status: 400, body: { error: "glCodes must be a list of General Ledger Code ids" } };
+    }
+    glCodes = [...new Set((body.glCodes as string[]).map((g) => g.trim()))];
+    for (const gl of glCodes) {
+      const found = await db.prepare("SELECT 1 FROM coding_list_entries WHERE list_type_id = 'gl_code' AND id = ?").bind(gl).first();
+      if (!found) return { status: 404, body: { error: `General Ledger Code ${gl} does not exist` } };
+    }
+  }
+
+  if (sets.length === 0 && !filtersResult && !glCodes) return { status: 400, body: { error: "nothing to change" } };
 
   if (sets.length > 0) {
     await db
@@ -267,6 +284,15 @@ export async function handleUpdateCostCentre(
    */
   if (filtersResult) {
     await replaceFilters(db, "cost_centre", costCentreId, filtersResult.value);
+  }
+
+  if (glCodes) {
+    await db.batch([
+      db.prepare("DELETE FROM cost_centre_gl_codes WHERE cost_centre_id = ?").bind(costCentreId),
+      ...glCodes.map((gl) =>
+        db.prepare("INSERT INTO cost_centre_gl_codes (cost_centre_id, gl_code_id) VALUES (?, ?)").bind(costCentreId, gl)
+      ),
+    ]);
   }
 
   return { status: 200, body: { id: costCentreId } };
@@ -433,6 +459,17 @@ export async function handleListCostCentresDetailed(
       ownerName: r.owner_name,
       approvalLimit: r.approval_limit,
       filters: await entryFiltersFor(db, "cost_centre", r.id),
+      // Decision 0543 — the GL codes it may be charged with; none means any.
+      glCodes: (
+        await db
+          .prepare(
+            `SELECT l.gl_code_id AS id, e.name FROM cost_centre_gl_codes l
+             LEFT JOIN coding_list_entries e ON e.list_type_id = 'gl_code' AND e.id = l.gl_code_id
+             WHERE l.cost_centre_id = ? ORDER BY e.name, l.gl_code_id`
+          )
+          .bind(r.id)
+          .all<{ id: string; name: string | null }>()
+      ).results.map((g) => ({ id: g.id, name: g.name ?? g.id })),
     }))
   );
 

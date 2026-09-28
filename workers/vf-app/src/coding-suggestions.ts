@@ -62,13 +62,34 @@ export interface LineCodingSuggestion {
   values: Record<string, string>;
   /** Field → the entry's name, for showing it. */
   labels: Record<string, string>;
-  basis: "similar" | "supplier";
+  /** `invoice` — decision 0543: the invoice's own project reference (BT-11) names a project. */
+  basis: "similar" | "supplier" | "invoice";
   /** Lines with this set, and lines drawn on (similar ones, or all the supplier's coded lines). */
   count: number;
   total: number;
   confidence: number;
   /** One or two of those lines' descriptions. */
   examples: string[];
+  /** Decision 0543 — what the invoice printed as its project reference, when that is the basis. */
+  projectReference?: string;
+}
+
+/**
+ * **The project the invoice names — decision 0543.** Its project
+ * reference (BT-11) matched against Account Coding's projects by id,
+ * then by name, ignoring case; only a project still in use.
+ */
+async function projectNamedByInvoice(db: D1Database, reference: string | null): Promise<string | null> {
+  if (!reference) return null;
+  const row = await db
+    .prepare(
+      `SELECT id FROM coding_list_entries
+       WHERE list_type_id = 'project' AND status = 'active' AND (lower(id) = lower(?1) OR lower(name) = lower(?1))
+       ORDER BY lower(id) = lower(?1) DESC LIMIT 1`
+    )
+    .bind(reference)
+    .first<{ id: string }>();
+  return row?.id ?? null;
 }
 
 export interface HistoryLine {
@@ -219,9 +240,6 @@ export async function handleCodingSuggestions(db: D1Database, invoiceId: string)
   if (!header) {
     return { status: 404, body: { error: `invoice ${invoiceId} does not exist` } };
   }
-  // No identified supplier: no history to draw on. Not an error.
-  if (!header.supplier_vat_id) return { status: 200, body: { lines: {} } };
-
   let headerFacts: Record<string, unknown> = {};
   try {
     headerFacts = JSON.parse(header.facts_json || "{}") as Record<string, unknown>;
@@ -233,10 +251,15 @@ export async function handleCodingSuggestions(db: D1Database, invoiceId: string)
 
   // Decision 0540 — with the either/or rule on, a line that held both is no example to follow.
   const eitherOr = (await getCostObjectRule(db)) === "exclusive";
-  const history = (await supplierHistory(db, header.supplier_vat_id, invoiceId)).filter(
-    (h) => !eitherOr || !(h.values["BT-133"] && h.values["coding.project"])
-  );
-  if (history.length === 0) return { status: 200, body: { lines: {} } };
+  // No identified supplier: no history to draw on. Not an error.
+  const history = header.supplier_vat_id
+    ? (await supplierHistory(db, header.supplier_vat_id, invoiceId)).filter(
+        (h) => !eitherOr || !(h.values["BT-133"] && h.values["coding.project"])
+      )
+    : [];
+  const projectReference = text(headerFacts["BT-11"]);
+  const namedProject = await projectNamedByInvoice(db, projectReference);
+  if (history.length === 0 && !namedProject) return { status: 200, body: { lines: {} } };
 
   const lines = (
     await db
@@ -254,7 +277,27 @@ export async function handleCodingSuggestions(db: D1Database, invoiceId: string)
     } catch {
       // A line whose facts will not parse is matched on its description column alone.
     }
-    const found = suggestFromHistory(describe(facts, line.description), text(facts["BT-154"]), history);
+    let found = history.length > 0 ? suggestFromHistory(describe(facts, line.description), text(facts["BT-154"]), history) : null;
+    /**
+     * **The invoice names its project — decision 0543.** That project
+     * wins over whatever project history would pick, and under the
+     * either/or rule (0540) replaces a suggested cost centre. The rest of
+     * the history's set (commodity, GL code) is kept when there is one.
+     */
+    if (namedProject) {
+      const values = { ...(found?.values ?? {}) };
+      if (eitherOr) delete values["BT-133"];
+      values["coding.project"] = namedProject;
+      found = {
+        values,
+        basis: "invoice",
+        count: found?.count ?? 0,
+        total: found?.total ?? 0,
+        confidence: 1,
+        examples: found?.examples ?? [],
+        projectReference: projectReference ?? undefined,
+      };
+    }
     if (!found) continue;
 
     /**

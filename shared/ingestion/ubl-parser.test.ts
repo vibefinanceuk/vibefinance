@@ -291,7 +291,8 @@ describe("parseUblInvoice — the reference fields", () => {
     `<cbc:IssueDate>2026-08-01</cbc:IssueDate>
   <cbc:InvoiceTypeCode>380</cbc:InvoiceTypeCode>
   <cbc:BuyerReference>abs1234</cbc:BuyerReference>
-  <cac:OrderReference><cbc:ID>98776</cbc:ID></cac:OrderReference>`
+  <cac:OrderReference><cbc:ID>98776</cbc:ID></cac:OrderReference>
+  <cac:ProjectReference><cbc:ID>PRJ-FITOUT</cbc:ID></cac:ProjectReference>`
   );
 
   it("extracts BT-3, the invoice type code", () => {
@@ -300,6 +301,11 @@ describe("parseUblInvoice — the reference fields", () => {
 
   it("extracts BT-10, the buyer reference", () => {
     expect(parseUblInvoice(withReferences).facts["BT-10"]).toBe("abs1234");
+  });
+
+  it("extracts BT-11, the project reference, from inside cac:ProjectReference (decision 0543)", () => {
+    expect(parseUblInvoice(withReferences).facts["BT-11"]).toBe("PRJ-FITOUT");
+    expect(parseUblInvoice(SAMPLE_UBL_INVOICE).facts["BT-11"]).toBeUndefined();
   });
 
   it("extracts BT-13 from inside cac:OrderReference, not the document root", () => {

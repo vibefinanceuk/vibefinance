@@ -79,6 +79,7 @@ import {
 import { handleGetCodingListCsvFormat, handleLoadCodingListCsv } from "./coding-list-csv-route.js";
 import { handleCodingSuggestions } from "./coding-suggestions.js";
 import { handleGetCodingConfig, handleUpdateCodingConfig } from "./coding-config-route.js";
+import { handleProjectUsage } from "./project-budget.js";
 import {
   handleGetApprovalConfig,
   handleUpdateApprovalConfig,
@@ -2523,7 +2524,8 @@ export default {
           url.searchParams.get("page"),
           url.searchParams.get("pageSize"),
           url.searchParams.get("all") === "1",
-          filtersFromQuery(url)
+          filtersFromQuery(url),
+          url.searchParams.get("activeOnly") === "1"
         );
         return json(result.body, result.status);
       }
@@ -4528,6 +4530,21 @@ export default {
      * 0453/0455/0456): this is a person keying a line, asking for a
      * default, not configuring anything.
      */
+    /**
+     * **A project's budget, for the Coding pop-out — decision 0542.**
+     * The same gate as suggestions: a person coding a line.
+     */
+    const projectUsageMatch = pathname.match(/^\/invoices\/([^/]+)\/project-usage$/);
+    if (projectUsageMatch && request.method === "GET") {
+      const { db } = resolveTenant(request, env);
+      const auth = await requireAnyPermission(db, request, ["Admin.Configure", "AP.Validate", "AP.Code"], sessionContext(env));
+      if (!auth.authorized) {
+        return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
+      }
+      const result = await handleProjectUsage(db, decodeURIComponent(projectUsageMatch[1]), url.searchParams.get("project"));
+      return json(result.body, result.status);
+    }
+
     const codingSuggestionsMatch = pathname.match(/^\/invoices\/([^/]+)\/coding-suggestions$/);
     if (codingSuggestionsMatch && request.method === "GET") {
       const { db } = resolveTenant(request, env);

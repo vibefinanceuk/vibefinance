@@ -532,6 +532,9 @@ describe("the proxy carries every path a screen calls (decision 0131)", () => {
     ["GET", "/api/org/cost-centres"],
     ["POST", "/api/org/cost-centres"],
     ["PUT", "/api/cost-centres/cc-1"],
+    /** Coding suggestions (0457, only proxied since 0542) and a project's budget (0542). */
+    ["GET", "/api/invoices/inv-1/coding-suggestions"],
+    ["GET", "/api/invoices/inv-1/project-usage"],
     ["GET", "/api/coding-lists/project"],
     ["POST", "/api/coding-lists/project"],
     ["PUT", "/api/coding-lists/project/p-1"],

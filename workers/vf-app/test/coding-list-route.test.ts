@@ -238,6 +238,9 @@ describe("handleCreateCodingListEntry", () => {
       parentEntryId: null,
       parentName: null,
       approvalLimit: null,
+      // Decision 0542.
+      status: "active",
+      budgetAmount: null,
       filters: [],
     }]);
   });
@@ -469,5 +472,41 @@ describe("filters param — narrowing a read to matching entries only, decision 
     await handleCreateCodingListEntry(env.DB, "gl_code", { id: "g1", name: "Unscoped" });
     const result = await handleListCodingListEntries(env.DB, "gl_code", null, null, null, false, { company_code: "UK01" });
     expect((result.body as { entries: unknown[] }).entries).toEqual([]);
+  });
+});
+
+describe("a project's status and budget (decision 0542)", () => {
+  type Entry = { id: string; status: string; budgetAmount: number | null };
+  const list = async (activeOnly = false) =>
+    ((await handleListCodingListEntries(env.DB, "project", null, null, null, true, null, activeOnly)).body as { entries: Entry[] }).entries;
+
+  it("creates a project with a budget, active unless said otherwise, and lists both", async () => {
+    expect((await handleCreateCodingListEntry(env.DB, "project", { id: "PRJ-1", name: "Fit-out", budgetAmount: 50000 })).status).toBe(201);
+    expect((await handleCreateCodingListEntry(env.DB, "project", { id: "PRJ-2", name: "Old", status: "closed" })).status).toBe(201);
+    expect(await list()).toEqual([
+      expect.objectContaining({ id: "PRJ-1", status: "active", budgetAmount: 50000 }),
+      expect.objectContaining({ id: "PRJ-2", status: "closed", budgetAmount: null }),
+    ]);
+  });
+
+  it("closes a project and changes its budget, and the Coding pop-out's search offers only active ones", async () => {
+    await handleCreateCodingListEntry(env.DB, "project", { id: "PRJ-1", name: "Fit-out" });
+    await handleCreateCodingListEntry(env.DB, "project", { id: "PRJ-2", name: "Launch" });
+    expect((await handleUpdateCodingListEntry(env.DB, "project", "PRJ-2", { status: "closed", budgetAmount: 1200 })).status).toBe(200);
+    expect(await list()).toEqual([
+      expect.objectContaining({ id: "PRJ-1", status: "active" }),
+      expect.objectContaining({ id: "PRJ-2", status: "closed", budgetAmount: 1200 }),
+    ]);
+    expect((await list(true)).map((e) => e.id)).toEqual(["PRJ-1"]);
+    // A budget can be taken away again.
+    await handleUpdateCodingListEntry(env.DB, "project", "PRJ-2", { budgetAmount: null });
+    expect((await list()).find((e) => e.id === "PRJ-2")?.budgetAmount).toBeNull();
+  });
+
+  it("refuses a status that isn't active or closed, a negative budget, and a budget on anything but a project", async () => {
+    expect((await handleCreateCodingListEntry(env.DB, "project", { id: "P", name: "P", status: "paused" })).status).toBe(400);
+    expect((await handleCreateCodingListEntry(env.DB, "project", { id: "P", name: "P", budgetAmount: -1 })).status).toBe(400);
+    expect((await handleCreateCodingListEntry(env.DB, "gl_code", { id: "G", name: "G", budgetAmount: 10 })).status).toBe(400);
+    expect((await handleCreateCodingListEntry(env.DB, "gl_code", { id: "G", name: "G", status: "closed" })).status).toBe(201);
   });
 });

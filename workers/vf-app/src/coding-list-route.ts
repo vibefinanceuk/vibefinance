@@ -40,6 +40,8 @@ interface EntryRow {
   parent_entry_id: string | null;
   parent_name: string | null;
   approval_limit: number | null;
+  status: string;
+  budget_amount: number | null;
 }
 
 /**
@@ -291,7 +293,9 @@ export async function handleListCodingListEntries(
   pageParam: string | null = null,
   pageSizeParam: string | null = null,
   all = false,
-  filters: Record<string, string> | null = null
+  filters: Record<string, string> | null = null,
+  /** Decision 0542 — the Coding pop-out's pickers offer only entries still in use. */
+  activeOnly = false
 ): Promise<RouteResult> {
   if (!isCodingListType(listType)) {
     return { status: 404, body: { error: `unknown coding list ${listType}` } };
@@ -300,6 +304,17 @@ export async function handleListCodingListEntries(
   const declared = await declaredFiltersFor(db, listType);
   const search_ = codingListSearchClause(search);
   const filter_ = codingListFilterClause(declared, filters);
+  if (activeOnly) filter_.sql += " AND e.status = 'active'";
+  /**
+   * **A GL code allowed for the line's cost centre — decision 0543.**
+   * Only where that cost centre has links; one with none takes any.
+   */
+  const costCentre = listType === "gl_code" ? filters?.cost_centre?.trim() : undefined;
+  if (costCentre) {
+    filter_.sql += ` AND (NOT EXISTS (SELECT 1 FROM cost_centre_gl_codes WHERE cost_centre_id = ?)
+                     OR e.id IN (SELECT gl_code_id FROM cost_centre_gl_codes WHERE cost_centre_id = ?))`;
+    filter_.binds.push(costCentre, costCentre);
+  }
   const page = normalizePage(pageParam);
   const pageSize = normalizePageSize(pageSizeParam);
   const offset = (page - 1) * pageSize;
@@ -318,7 +333,7 @@ export async function handleListCodingListEntries(
   const rows = await db
     .prepare(
       `SELECT e.id, e.name, e.is_default, e.approver_user_id, a.name AS approver_name,
-              e.parent_entry_id, p.name AS parent_name, e.approval_limit
+              e.parent_entry_id, p.name AS parent_name, e.approval_limit, e.status, e.budget_amount
        ${joins}
        WHERE e.list_type_id = ? ${search_.sql} ${filter_.sql}
        ORDER BY e.name
@@ -337,6 +352,9 @@ export async function handleListCodingListEntries(
       parentEntryId: r.parent_entry_id,
       parentName: r.parent_name,
       approvalLimit: r.approval_limit,
+      // Decision 0542.
+      status: r.status === "closed" ? "closed" : "active",
+      budgetAmount: r.budget_amount,
       filters: await entryFiltersFor(db, listType, r.id),
     }))
   );
@@ -364,6 +382,27 @@ interface EntryBody {
   approverUserId?: unknown;
   approvalLimit?: unknown;
   filters?: unknown;
+  status?: unknown;
+  budgetAmount?: unknown;
+}
+
+/**
+ * **Status and budget — decision 0542.** Status is `active` or
+ * `closed` on any list; a budget only on a Project, a number of 0 or
+ * more, or null for none. `null` means "not valid" here only for the
+ * error; an absent field is simply not being set.
+ */
+function checkStatusAndBudget(listType: string, body: EntryBody): string | null {
+  if ("status" in body && body.status !== undefined && body.status !== "active" && body.status !== "closed") {
+    return 'status must be "active" or "closed"';
+  }
+  if ("budgetAmount" in body && body.budgetAmount !== undefined && body.budgetAmount !== null) {
+    if (listType !== "project") return "only a project has a budget";
+    if (typeof body.budgetAmount !== "number" || !Number.isFinite(body.budgetAmount) || body.budgetAmount < 0) {
+      return "budgetAmount must be a number of 0 or more, or null";
+    }
+  }
+  return null;
 }
 
 /**
@@ -445,11 +484,13 @@ export async function handleCreateCodingListEntry(db: D1Database, listType: stri
 
   const filtersResult = await validateFilters(db, listType, body.filters);
   if (!filtersResult.ok) return { status: filtersResult.status, body: { error: filtersResult.error } };
+  const statusProblem = checkStatusAndBudget(listType, body);
+  if (statusProblem) return { status: 400, body: { error: statusProblem } };
 
   await db
     .prepare(
-      `INSERT INTO coding_list_entries (list_type_id, id, name, is_default, approver_user_id, parent_entry_id, approval_limit)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO coding_list_entries (list_type_id, id, name, is_default, approver_user_id, parent_entry_id, approval_limit, status, budget_amount)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .bind(
       listType,
@@ -458,7 +499,9 @@ export async function handleCreateCodingListEntry(db: D1Database, listType: stri
       body.isDefault ? 1 : 0,
       (approverUserId as string) || null,
       (parentEntryId as string) || null,
-      (approvalLimit as number | null | undefined) ?? null
+      (approvalLimit as number | null | undefined) ?? null,
+      body.status === "closed" ? "closed" : "active",
+      (body.budgetAmount as number | null | undefined) ?? null
     )
     .run();
 
@@ -485,7 +528,7 @@ export async function handleUpdateCodingListEntry(
 
   const hasAnyField =
     "name" in body || "parentEntryId" in body || "approverUserId" in body || "isDefault" in body ||
-    "approvalLimit" in body || "filters" in body;
+    "approvalLimit" in body || "filters" in body || "status" in body || "budgetAmount" in body;
   if (!hasAnyField) return { status: 400, body: { error: "nothing to change" } };
 
   const name = "name" in body ? body.name : undefined;
@@ -536,6 +579,8 @@ export async function handleUpdateCodingListEntry(
   }
 
   const isDefault = "isDefault" in body ? body.isDefault : undefined;
+  const statusProblem = checkStatusAndBudget(listType, body);
+  if (statusProblem) return { status: 400, body: { error: statusProblem } };
 
   const sets: string[] = [];
   const values: unknown[] = [];
@@ -558,6 +603,14 @@ export async function handleUpdateCodingListEntry(
   if (approvalLimit !== undefined) {
     sets.push("approval_limit = ?");
     values.push(approvalLimit);
+  }
+  if ("status" in body && body.status !== undefined) {
+    sets.push("status = ?");
+    values.push(body.status);
+  }
+  if ("budgetAmount" in body && body.budgetAmount !== undefined) {
+    sets.push("budget_amount = ?");
+    values.push(body.budgetAmount);
   }
 
   if (sets.length > 0) {

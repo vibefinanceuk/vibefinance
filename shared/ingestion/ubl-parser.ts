@@ -272,6 +272,11 @@ export function parseUblInvoice(xml: string): ParsedUblInvoice {
   const buyerReference = getText(invoice.BuyerReference);
   if (buyerReference !== undefined) facts["BT-10"] = buyerReference;
 
+  // BT-11, the project reference — decision 0543: the buyer's project the
+  // invoice is for, used to suggest a Project for its lines.
+  const projectReference = getText((invoice.ProjectReference as Record<string, unknown> | undefined)?.ID);
+  if (projectReference !== undefined) facts["BT-11"] = projectReference;
+
   const orderReference = getText((invoice.OrderReference as Record<string, unknown> | undefined)?.ID);
   if (orderReference !== undefined) facts["BT-13"] = orderReference;
 

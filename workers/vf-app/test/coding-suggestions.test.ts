@@ -228,6 +228,51 @@ describe("a suggestion per line, from this supplier's lines like it (decision 05
     expect((await suggest("inv-t")).lines["1"]).toMatchObject({ count: 1, total: 2 });
   });
 
+  describe("the project the invoice names (BT-11) — decision 0543", () => {
+    beforeEach(async () => {
+      await env.DB.prepare(
+        `INSERT INTO coding_list_entries (list_type_id, id, name, status) VALUES
+           ('project', 'PRJ-FIT', 'Leeds fit-out', 'active'), ('project', 'PRJ-OLD', 'Old launch', 'closed')`
+      ).run();
+    });
+
+    it("suggests the project named by id or by name, for every line, even with no supplier history", async () => {
+      await target("inv-t", "GB-NEW", ["Carpet tiles", "Paint"], { "BT-11": "prj-fit" });
+      const body = await suggest("inv-t");
+      expect(body.lines["1"]).toEqual({
+        values: { "coding.project": "PRJ-FIT" },
+        labels: { "coding.project": "Leeds fit-out" },
+        basis: "invoice",
+        count: 0,
+        total: 0,
+        confidence: 1,
+        examples: [],
+        projectReference: "prj-fit",
+      });
+      expect(body.lines["2"]).toMatchObject({ values: { "coding.project": "PRJ-FIT" } });
+
+      await target("inv-n", null, ["Carpet tiles"], { "BT-11": "Leeds Fit-Out" });
+      expect((await suggest("inv-n")).lines["1"]).toMatchObject({ values: { "coding.project": "PRJ-FIT" }, basis: "invoice" });
+    });
+
+    it("keeps the rest of what history suggests, but the named project replaces its cost centre (either/or)", async () => {
+      await northwind();
+      await target("inv-t", "GB-NW", ["Pallet delivery, Leeds depot"], { "BT-11": "PRJ-FIT" });
+      expect((await suggest("inv-t")).lines["1"]).toMatchObject({
+        values: { "coding.commodity_code": "cm-frt", "coding.gl_code": "gl-5410", "coding.project": "PRJ-FIT" },
+        basis: "invoice",
+        count: 2,
+      });
+    });
+
+    it("never suggests a closed project, or one Account Coding doesn't hold", async () => {
+      await target("inv-t", "GB-NEW", ["Carpet tiles"], { "BT-11": "PRJ-OLD" });
+      expect((await suggest("inv-t")).lines).toEqual({});
+      await target("inv-u", "GB-NEW", ["Carpet tiles"], { "BT-11": "PRJ-NOWHERE" });
+      expect((await suggest("inv-u")).lines).toEqual({});
+    });
+  });
+
   it("404s an invoice that does not exist, and suggests nothing for one with no identified supplier", async () => {
     expect((await handleCodingSuggestions(env.DB, "no-such-invoice")).status).toBe(404);
     await target("inv-anon", null, ["Pallet delivery"]);

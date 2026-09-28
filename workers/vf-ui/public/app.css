@@ -2694,6 +2694,19 @@
     flex: none; display: flex; justify-content: space-between; align-items: center; gap: 12px;
     margin-top: 10px; padding-top: 10px; border-top: 0.5px solid var(--border); font-size: var(--text-sm); color: var(--text-secondary);
   }
+  /* Decision 0542 — the chosen project's budget bar, legible on a set card's fixed pale green in both moods. */
+  .codingbudget { display: grid; gap: 3px; margin-top: 6px; }
+  .codingbudget:empty { display: none; }
+  .codingfield.set .codingbudget .muted { color: color-mix(in srgb, var(--severity-value-text) 62%, transparent); }
+  .codingfield.set .codingbudget .pmover { color: var(--severity-danger-text); }
+  .codingfield.set .codingbudget .pmbar { background: #ffffff; border-color: color-mix(in srgb, var(--severity-value-text) 20%, transparent); }
+  .codingfield.set .codingbudget .pmseg.others { background: #7b8798; }
+  .codingfield.set .codingbudget .pmseg.mine { background: #185fa5; }
+  .codingfield.set .codingbudget .pmseg.mine.over { background: var(--severity-danger-text); }
+  /* Decision 0542 — a project's status in the Account Coding list. */
+  .codingstatus { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: var(--text-sm); font-weight: 600; }
+  .codingstatus.active { background: var(--bg-success); color: var(--text-success); }
+  .codingstatus.closed { background: var(--surface-1); color: var(--text-muted); }
   /* Decision 0540 — AP Setup's either/or choice: two stacked radio options with a line of help each. */
   .radiochoices { display: grid; gap: 8px; margin: 6px 0; }
   .radiochoice { display: flex; gap: 10px; align-items: flex-start; cursor: pointer; }

@@ -514,7 +514,9 @@ function companyCodeTab(units) {
  * (parent, approver, approval limit, company code) is set by editing
  * the cost centre afterwards, through `handleUpdateCostCentre`.
  */
-function openCostCentreForm(existing, { costCentres, units, users, onSaved }) {
+async function openCostCentreForm(existing, { costCentres, units, users, onSaved }) {
+  // Decision 0543 — every GL code, for the "may be charged with" list; fetched as the form opens.
+  const glFull = existing ? await loadFullEntries("gl_code").catch(() => null) : null;
   const problem = el("div", { class: "warn" });
   const idInput = existing
     ? el("input", { type: "text", value: existing.id, disabled: "disabled" })
@@ -530,7 +532,7 @@ function openCostCentreForm(existing, { costCentres, units, users, onSaved }) {
     nameInput,
   ];
 
-  let parentPicker, approverPicker, limitInput, companyCodePicker;
+  let parentPicker, approverPicker, limitInput, companyCodePicker, glPicker;
   if (existing) {
     parentPicker = el("select", {}, [
       el("option", { value: "", text: t("roles.none") }),
@@ -548,6 +550,17 @@ function openCostCentreForm(existing, { costCentres, units, users, onSaved }) {
       el("option", { value: "", text: t("roles.none") }),
       ...units.map((u) => el("option", { value: u.id, text: u.name, ...(u.id === currentCompanyCode ? { selected: "selected" } : {}) })),
     ]);
+    /**
+     * **The GL codes this cost centre may be charged with — decision
+     * 0543.** None chosen means any GL code; once some are, only those
+     * are offered and saved on a line coded to this cost centre.
+     */
+    const linked = new Set((existing.glCodes ?? []).map((g) => g.id));
+    glPicker = el(
+      "select",
+      { multiple: "multiple", size: "6", class: "glcodepicker", "aria-label": t("apsetup.codingglcodes") },
+      (glFull?.entries ?? []).map((g) => el("option", { value: g.id, text: `${g.name} (${g.id})`, ...(linked.has(g.id) ? { selected: "selected" } : {}) }))
+    );
     formRows.push(
       el("label", { text: t("apsetup.codingparent") }),
       parentPicker,
@@ -556,7 +569,9 @@ function openCostCentreForm(existing, { costCentres, units, users, onSaved }) {
       el("label", { text: t("apsetup.codingapprovallimit") }),
       limitInput,
       el("label", { text: t("apsetup.codingtab.companycode") }),
-      companyCodePicker
+      companyCodePicker,
+      el("label", { text: t("apsetup.codingglcodes") }),
+      el("div", {}, [glPicker, el("div", { class: "muted sm", text: t("apsetup.codingglcodes.help") })])
     );
   }
 
@@ -589,6 +604,7 @@ function openCostCentreForm(existing, { costCentres, units, users, onSaved }) {
               ownerUserId: approverPicker.value || null,
               approvalLimit: limit === "" ? null : Number(limit),
               filters: { company_code: companyCodePicker.value || null },
+              glCodes: [...glPicker.selectedOptions].map((o) => o.value),
             }),
           });
         }
@@ -630,12 +646,15 @@ function costCentreRow(costCentre, onClick) {
   // would silently miss it.
   const parentName = costCentre.parentName ?? "—";
   const companyCode = costCentre.filters.find((f) => f.filterListTypeId === "company_code")?.filterEntryName ?? "—";
+  // Decision 0543 — "Any" until the cost centre is linked to some GL codes.
+  const glCodes = costCentre.glCodes?.length ? costCentre.glCodes.map((g) => g.name).join(", ") : t("apsetup.codingglcodes.any");
   const row = el("tr", { class: "clickable" }, [
     el("td", { text: costCentre.name }),
     el("td", { class: "muted", text: parentName }),
     el("td", { class: "muted", text: costCentre.ownerName ?? "—" }),
     el("td", { class: "muted", text: costCentre.approvalLimit ?? "—" }),
     el("td", { class: "muted", text: companyCode }),
+    el("td", { class: "muted", text: glCodes }),
   ]);
   row.onclick = onClick;
   return row;
@@ -656,7 +675,7 @@ function costCentreTab(costCentreNames) {
       "apsetup.codingtab.costcentre",
       "apsetup.codingcostcentresub",
       state.search ? "apsetup.codingnomatches" : "apsetup.nocostcentres",
-      ["apsetup.codingname", "apsetup.codingparent", "apsetup.codingapprover", "apsetup.codingapprovallimit", "apsetup.codingtab.companycode"],
+      ["apsetup.codingname", "apsetup.codingparent", "apsetup.codingapprover", "apsetup.codingapprovallimit", "apsetup.codingtab.companycode", "apsetup.codingglcodes"],
       state.rows.map((c) =>
         costCentreRow(c, () => openCostCentreForm(c, { costCentres: costCentreNames, units: cachedUnits, users: cachedUsers, onSaved }))
       ),
@@ -701,6 +720,23 @@ function openCodingEntryForm(listType, listLabelKey, existing, { entries, declar
   // both) — `coding-list-route.ts` refuses a limit with no owner in
   // the same call, and this form always sends both together.
   const limitInput = el("input", { type: "number", min: "0", value: existing?.approvalLimit ?? "" });
+  /**
+   * **A project's status and budget — decision 0542.** A closed project
+   * is no longer offered on invoice lines, and a save coding a line to
+   * it is refused; the budget drives the Coding pop-out's bar and the
+   * `project.over_budget` fact rules can act on.
+   */
+  const isProject = listType === "project";
+  const statusPicker = isProject
+    ? el(
+        "select",
+        {},
+        ["active", "closed"].map((v) =>
+          el("option", { value: v, text: t(`apsetup.codingstatus.${v}`), ...((existing?.status ?? "active") === v ? { selected: "selected" } : {}) })
+        )
+      )
+    : null;
+  const budgetInput = isProject ? el("input", { type: "number", min: "0", step: "0.01", value: existing?.budgetAmount ?? "" }) : null;
 
   const formRows = [
     el("label", { text: t("apsetup.codingid") }),
@@ -715,6 +751,9 @@ function openCodingEntryForm(listType, listLabelKey, existing, { entries, declar
     approverPicker,
     el("label", { text: t("apsetup.codingapprovallimit") }),
     limitInput,
+    ...(isProject
+      ? [el("label", { text: t("apsetup.codingstatus") }), statusPicker, el("label", { text: t("apsetup.codingbudget") }), budgetInput]
+      : []),
   ];
 
   const filterPickers = {};
@@ -741,6 +780,8 @@ function openCodingEntryForm(listType, listLabelKey, existing, { entries, declar
       }
       const limit = limitInput.value.trim();
       const approvalLimit = limit === "" ? null : Number(limit);
+      const budget = budgetInput?.value.trim() ?? "";
+      const projectFields = isProject ? { status: statusPicker.value, budgetAmount: budget === "" ? null : Number(budget) } : {};
       try {
         const response = existing
           ? await fetch(`/api/coding-lists/${encodeURIComponent(listType)}/${encodeURIComponent(existing.id)}`, {
@@ -753,6 +794,7 @@ function openCodingEntryForm(listType, listLabelKey, existing, { entries, declar
                 approverUserId: approverPicker.value || null,
                 approvalLimit,
                 filters,
+                ...projectFields,
               }),
             })
           : await fetch(`/api/coding-lists/${encodeURIComponent(listType)}`, {
@@ -766,6 +808,7 @@ function openCodingEntryForm(listType, listLabelKey, existing, { entries, declar
                 approverUserId: approverPicker.value || null,
                 approvalLimit,
                 filters,
+                ...projectFields,
               }),
             });
         if (!response.ok) {
@@ -797,7 +840,7 @@ function openCodingEntryForm(listType, listLabelKey, existing, { entries, declar
   (existing ? nameInput : idInput).focus();
 }
 
-function codingEntryRow(entry, declaredFilters, onClick) {
+function codingEntryRow(entry, declaredFilters, onClick, listType) {
   const cells = [
     el("td", { text: entry.name }),
     el("td", { class: "muted", text: entry.parentName ?? "—" }),
@@ -805,6 +848,13 @@ function codingEntryRow(entry, declaredFilters, onClick) {
     el("td", { class: "muted", text: entry.approvalLimit ?? "—" }),
     el("td", { class: "muted", text: entry.isDefault ? t("roles.yes") : "—" }),
   ];
+  // Decision 0542 — a project's status and budget.
+  if (listType === "project") {
+    cells.push(
+      el("td", {}, [el("span", { class: `codingstatus ${entry.status === "closed" ? "closed" : "active"}`, text: t(`apsetup.codingstatus.${entry.status === "closed" ? "closed" : "active"}`) })]),
+      el("td", { class: "muted num", text: entry.budgetAmount ?? "—" })
+    );
+  }
   for (const filterListTypeId of declaredFilters) {
     cells.push(el("td", { class: "muted", text: entry.filters.find((f) => f.filterListTypeId === filterListTypeId)?.filterEntryName ?? "—" }));
   }
@@ -845,6 +895,7 @@ async function openCodingEntryEditor(listType, titleKey, existing) {
 function codingListTab(listType, titleKey, subKey, emptyKey) {
   const state = tableState[listType];
   const headers = ["apsetup.codingname", "apsetup.codingparent", "apsetup.codingapprover", "apsetup.codingapprovallimit", "apsetup.codingdefault"];
+  if (listType === "project") headers.push("apsetup.codingstatus", "apsetup.codingbudget");
   for (const filterListTypeId of state.declaredFilters) {
     headers.push(`apsetup.codingtab.${filterListTypeId === "company_code" ? "companycode" : "commoditycode"}`);
   }
@@ -856,7 +907,7 @@ function codingListTab(listType, titleKey, subKey, emptyKey) {
       state.search ? "apsetup.codingnomatches" : emptyKey,
       headers,
       state.rows.map((entry) =>
-        codingEntryRow(entry, state.declaredFilters, () => openCodingEntryEditor(listType, titleKey, entry))
+        codingEntryRow(entry, state.declaredFilters, () => openCodingEntryEditor(listType, titleKey, entry), listType)
       ),
       actionLink("create", {
         primary: true,

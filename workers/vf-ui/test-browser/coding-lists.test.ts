@@ -94,6 +94,12 @@ const STRINGS = {
     "apsetup.codingname": "Name",
     "apsetup.codingparent": "Parent",
     "apsetup.codingdefault": "Default",
+    "apsetup.codingstatus": "Status",
+    "apsetup.codingstatus.active": "Active",
+    "apsetup.codingstatus.closed": "Closed",
+    "apsetup.codingbudget": "Budget",
+    "apsetup.codingglcodes": "GL codes",
+    "apsetup.codingglcodes.any": "Any",
     "apsetup.codingapprover": "Approver",
     "apsetup.codingapprovallimit": "Approval limit",
     "apsetup.codingentrysavefailed": "Could not save that.",
@@ -334,6 +340,8 @@ describe("Cost Centre — decision 0444", () => {
     switchCodingSubTab("Cost Centre");
     const editListPanel = [...document.querySelectorAll(".panel")].at(-1);
     editListPanel?.querySelector("tbody tr")?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    // Decision 0543: the form fetches every GL code before it opens.
+    await new Promise((r) => setTimeout(r, 0));
 
     const selects = document.querySelectorAll<HTMLSelectElement>(".editgrid select");
     // parent, approver, company code — no cost centres to be a parent of itself.
@@ -352,7 +360,59 @@ describe("Cost Centre — decision 0444", () => {
       ownerUserId: "u1",
       approvalLimit: 9000,
       filters: { company_code: "UK01" },
+      // Decision 0543 — the GL codes it may be charged with; none chosen here.
+      glCodes: [],
     });
+  });
+});
+
+describe("Cost Centre — the GL codes it may be charged with (decision 0543)", () => {
+  it("shows them in the list ('Any' until linked), and saves the ones chosen", async () => {
+    await openApSetupAs(
+      EMPTY_OVERVIEW,
+      {
+        costCentres: [
+          { id: "cc1", name: "Marketing", ledgerId: null, ledgerName: null, parentCostCentreId: null, parentName: null, ownerUserId: null, ownerName: null, approvalLimit: null, filters: [], glCodes: [{ id: "6100", name: "Advertising" }] },
+          { id: "cc2", name: "IT", ledgerId: null, ledgerName: null, parentCostCentreId: null, parentName: null, ownerUserId: null, ownerName: null, approvalLimit: null, filters: [], glCodes: [] },
+        ],
+        total: 2,
+        page: 1,
+        pageSize: 50,
+      },
+      {
+        "/api/coding-lists/gl_code": {
+          declaredFilters: ["company_code", "commodity_code"],
+          entries: [
+            { id: "6100", name: "Advertising", filters: [] },
+            { id: "6200", name: "Events", filters: [] },
+          ],
+          total: 2,
+          page: 1,
+          pageSize: 50,
+        },
+      },
+      { "PUT /api/cost-centres/cc1": { ok: true, json: async () => ({}) } }
+    );
+    switchCodingSubTab("Cost Centre");
+    const listPanel = [...document.querySelectorAll(".panel")].at(-1)!;
+    expect([...listPanel.querySelectorAll("th")].at(-1)?.textContent).toBe("GL codes");
+    const rows = [...listPanel.querySelectorAll("tbody tr")];
+    expect(rows[0].lastElementChild?.textContent).toBe("Advertising");
+    expect(rows[1].lastElementChild?.textContent).toBe("Any");
+
+    rows[0].dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await new Promise((r) => setTimeout(r, 0));
+    const picker = document.querySelector<HTMLSelectElement>(".popout select.glcodepicker")!;
+    expect([...picker.options].map((o) => [o.value, o.selected])).toEqual([
+      ["6100", true],
+      ["6200", false],
+    ]);
+    picker.options[1].selected = true;
+    const submit = [...document.querySelectorAll(".popout .cardhead button")].find((b) => b.textContent?.includes("Save"));
+    await submit?.click();
+    await new Promise((r) => setTimeout(r, 0));
+    const putCall = fetchCalls().find(([url, init]) => url === "/api/cost-centres/cc1" && (init as RequestInit)?.method === "PUT");
+    expect(JSON.parse((putCall?.[1] as RequestInit).body as string).glCodes).toEqual(["6100", "6200"]);
   });
 });
 
@@ -437,7 +497,50 @@ describe("Project — a real hierarchy, decision 0444", () => {
       approverUserId: null,
       approvalLimit: null,
       filters: {},
+      // Decision 0542 — a project's status and budget go with it.
+      status: "active",
+      budgetAmount: null,
     });
+  });
+
+  it("shows a project's status and budget, and saves a change to both (decision 0542)", async () => {
+    await openApSetupAs(
+      EMPTY_OVERVIEW,
+      EMPTY_COST_CENTRES,
+      {
+        "/api/coding-lists/project": {
+          declaredFilters: [],
+          entries: [
+            { id: "p1", name: "Fit-out", isDefault: false, approverUserId: null, approverName: null, parentEntryId: null, parentName: null, approvalLimit: null, status: "active", budgetAmount: 50000, filters: [] },
+            { id: "p2", name: "Old launch", isDefault: false, approverUserId: null, approverName: null, parentEntryId: null, parentName: null, approvalLimit: null, status: "closed", budgetAmount: null, filters: [] },
+          ],
+        },
+      },
+      { "PUT /api/coding-lists/project/p1": { ok: true, json: async () => ({}) } }
+    );
+    switchCodingSubTab("Project");
+    const listPanel = [...document.querySelectorAll(".panel")].at(-1)!;
+    const heads = [...listPanel.querySelectorAll("th")].map((h) => h.textContent);
+    expect(heads.slice(-2)).toEqual(["Status", "Budget"]);
+    const rows = [...listPanel.querySelectorAll("tbody tr")];
+    expect(rows[0].querySelector(".codingstatus")?.textContent).toBe("Active");
+    expect(rows[0].textContent).toContain("50000");
+    expect(rows[1].querySelector(".codingstatus.closed")?.textContent).toBe("Closed");
+
+    rows[0].dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await new Promise((r) => setTimeout(r, 0));
+    const selects = [...document.querySelectorAll<HTMLSelectElement>(".popout .editgrid select")];
+    const statusSelect = selects.find((sel) => [...sel.options].some((o) => o.value === "closed"))!;
+    expect(statusSelect.value).toBe("active");
+    statusSelect.value = "closed";
+    const numbers = document.querySelectorAll<HTMLInputElement>(".popout .editgrid input[type=number]");
+    expect(numbers[1].value).toBe("50000");
+    numbers[1].value = "65000";
+    const submit = [...document.querySelectorAll(".popout .cardhead button")].find((b) => b.textContent?.includes("Save"));
+    await submit?.click();
+    await new Promise((r) => setTimeout(r, 0));
+    const putCall = fetchCalls().find(([url, init]) => url === "/api/coding-lists/project/p1" && (init as RequestInit)?.method === "PUT");
+    expect(JSON.parse((putCall?.[1] as RequestInit).body as string)).toMatchObject({ status: "closed", budgetAmount: 65000 });
   });
 
   it("sets an approval limit alongside the approver, in the same request — decision 0452", async () => {
@@ -774,6 +877,8 @@ describe("a create/edit form's own pickers see every entry, not just the current
     switchCodingSubTab("Cost Centre");
     const listPanel = [...document.querySelectorAll(".panel")].at(-1);
     listPanel?.querySelector("tbody tr")?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    // Decision 0543: the form fetches every GL code before it opens.
+    await new Promise((r) => setTimeout(r, 0));
 
     const parentSelect = document.querySelector<HTMLSelectElement>(".editgrid select");
     const options = [...(parentSelect?.options ?? [])].map((o) => o.textContent);

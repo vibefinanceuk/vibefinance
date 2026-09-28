@@ -5949,6 +5949,7 @@ describe("the invoice-line Coding pop-out (decision 0453)", () => {
     "viewer.coding.sug.accept": "Accept all",
     "viewer.coding.sug.similar": "{pct}% · {count} of {total} earlier {supplier} lines like this one were coded this way",
     "viewer.coding.sug.supplier": "{pct}% · {count} of {total} coded {supplier} lines use this coding",
+    "viewer.coding.sug.invoice": "The invoice names project “{reference}”: {project}",
     "viewer.coding.sug.examples": "For example {examples}",
     "viewer.coding.sug.accepted": "Suggestion accepted. Save the invoice to keep it.",
     "viewer.coding.applyothers": "Also apply this coding to the other uncoded lines ({lines})",
@@ -6188,6 +6189,8 @@ describe("the invoice-line Coding pop-out (decision 0453)", () => {
     const afterCommodity = calls.find((c) => c.startsWith("/api/coding-lists/gl_code?") && c.includes("search=plant2"));
     expect(afterCommodity).toContain("filter.company_code=UK01");
     expect(afterCommodity).toContain("filter.commodity_code=com-1");
+    // Decision 0543 — and by the line's cost centre (cc1), where it is linked to GL codes.
+    expect(afterCommodity).toContain("filter.cost_centre=cc1");
   });
 
   /**
@@ -6368,6 +6371,32 @@ describe("the invoice-line Coding pop-out (decision 0453)", () => {
     const line = (bodies.find((b) => b.path === "/api/invoices/inv-1/key")?.body as { lines: { facts: Record<string, unknown> }[] }).lines[0];
     expect(line.facts["BT-133"]).toBe("cc1");
     expect(line.facts["coding.project"]).toBeUndefined();
+  });
+
+  it("says when the suggestion comes from the project the invoice names (decision 0543)", async () => {
+    stub(
+      suggestionStub({
+        "/api/invoices/inv-1/coding-suggestions": {
+          lines: {
+            "1": {
+              values: { "coding.project": "proj-9" },
+              labels: { "coding.project": "Mjolner Refit" },
+              basis: "invoice",
+              count: 0,
+              total: 0,
+              confidence: 1,
+              examples: [],
+              projectReference: "MJ-REFIT",
+            },
+          },
+        },
+      })
+    );
+    await openAndClickCoding();
+    await new Promise((r) => setTimeout(r, 0));
+    const box = document.querySelector(".popout .codingsuggest") as HTMLElement;
+    expect(box.querySelector(".codingsuggestwhy")?.textContent).toBe("The invoice names project “MJ-REFIT”: Mjolner Refit");
+    expect(box.querySelector(".codingmeter")).toBeNull();
   });
 
   it("offers no suggestion to somebody who may not change the fields, or when it would change nothing", async () => {
@@ -7271,5 +7300,109 @@ describe("the Coding button shows a line is coded — decision 0541", () => {
     });
     expect(buttons()[0].classList.contains("locked")).toBe(true);
     expect(buttons()[0].classList.contains("coded")).toBe(false);
+  });
+});
+
+describe("a project's budget and status in the Coding pop-out — decision 0542", () => {
+  const STR = {
+    ...STRINGS,
+    strings: {
+      ...STRINGS.strings,
+      "action.coding": "Coding",
+      "viewer.coding.linetitle": "Line {n} coding",
+      "viewer.coding.searchhint": "Type to search",
+      "viewer.coding.resultsfor": "Results for",
+      "field.coding.project": "Project",
+      "viewer.coding.budget": "Budget {budget} · other invoices {others} · this invoice {mine} · left {left}",
+      "viewer.coding.overbudget": "Over budget by {amount}",
+    },
+  };
+  const FIELDS_P = {
+    fields: [
+      { field: "BT-131", visibility: "edit", type: "number", line: true, description: "line net" },
+      { field: "coding.project", visibility: "edit", type: "text", line: true, description: "project" },
+    ],
+  };
+  function stubP(calls: string[], usage: unknown) {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        calls.push(String(url));
+        const path = String(url).split("?")[0];
+        const routes: Record<string, unknown> = {
+          "/api/ui-strings": STR,
+          "/api/code-lists": { fields: {} },
+          "/api/field-visibility": FIELDS_P,
+          "/api/invoices/inv-1": {
+            facts: {},
+            lines: [
+              { lineNumber: 1, facts: { "BT-131": 400, "coding.project": "PRJ-1" } },
+              { lineNumber: 2, facts: { "BT-131": "200", "coding.project": "PRJ-1" } },
+              { lineNumber: 3, facts: { "BT-131": 50 } },
+            ],
+            validation: { passed: true, checked: [], failures: [] },
+            orgUnitId: "UK01",
+          },
+          "/api/invoices/inv-1/document-url": { url: null },
+          "/api/invoices/inv-1/progress": { inProcess: false, stages: [] },
+          "/api/invoices/inv-1/pages": { pages: [] },
+          "/api/documents/inv-1/activity": { items: [] },
+          "/api/invoices/inv-1/coding-suggestions": { lines: {} },
+          "/api/invoices/inv-1/project-usage": usage,
+          "/api/coding-lists/project": { entries: [{ id: "PRJ-1", name: "Fit-out", filters: [] }], declaredFilters: [], total: 1, page: 1, pageSize: 25 },
+        };
+        if (path in routes) return { ok: true, json: async () => routes[path] } as Response;
+        throw new Error(`no stub for ${path}`);
+      })
+    );
+  }
+  async function openLine(n: number) {
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    await openViewer(TASK, () => {});
+    await new Promise((r) => setTimeout(r, 0));
+    ([...document.querySelectorAll("#lines .codingbtn")][n - 1] as HTMLButtonElement).click();
+    for (let i = 0; i < 4; i++) await new Promise((r) => setTimeout(r, 0));
+  }
+
+  it("shows the project's budget: other invoices, this invoice's lines on it, and what is left — red and warned when over", async () => {
+    stubP([], { projectId: "PRJ-1", name: "Fit-out", status: "active", budget: 1000, usedByOthers: 500 });
+    await openLine(1);
+    const bar = document.querySelector(".popout .codingbudget") as HTMLElement;
+    expect(bar.textContent).toContain("Budget 1,000.00 · other invoices 500.00 · this invoice 600.00 · left -100.00");
+    expect(bar.querySelector(".codingoverbudget")?.textContent).toBe("Over budget by 100.00");
+    expect(bar.querySelector(".pmseg.mine.over")).not.toBeNull();
+  });
+
+  it("is not warned while within the budget, and shows nothing for a project with no budget", async () => {
+    stubP([], { projectId: "PRJ-1", name: "Fit-out", status: "active", budget: 5000, usedByOthers: 500 });
+    await openLine(1);
+    const bar = document.querySelector(".popout .codingbudget") as HTMLElement;
+    expect(bar.textContent).toContain("left 3,900.00");
+    expect(bar.querySelector(".codingoverbudget")).toBeNull();
+    document.querySelector(".backdrop")?.remove();
+
+    stubP([], { projectId: "PRJ-1", name: "Fit-out", status: "active", budget: null, usedByOthers: null });
+    await openLine(1);
+    expect(document.querySelector(".popout .codingbudget")?.textContent).toBe("");
+  });
+
+  it("searches only projects still in use, while still finding a closed one's name", async () => {
+    const calls: string[] = [];
+    stubP(calls, { projectId: "PRJ-1", name: "Fit-out", status: "active", budget: null, usedByOthers: null });
+    await openLine(3);
+    const box = document.querySelector(".popout .codingfield[data-field='coding.project'] .searchbox") as HTMLInputElement;
+    box.value = "fit";
+    box.oninput?.(new Event("input"));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(calls.some((c) => c.startsWith("/api/coding-lists/project?") && c.includes("search=fit") && c.includes("activeOnly=1"))).toBe(true);
+
+    calls.length = 0;
+    document.querySelector(".backdrop")?.remove();
+    await openLine(1);
+    const resolve = calls.find((c) => c.startsWith("/api/coding-lists/project?") && c.includes("search=PRJ-1"));
+    expect(resolve).toBeDefined();
+    expect(resolve).not.toContain("activeOnly");
   });
 });

@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 28 September 2026 (decision 0541). A living document: what
+Last updated 28 September 2026 (decision 0543). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,19 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### GL codes per cost centre, and the invoice's project reference (0543)
+- A cost centre may be linked to the GL codes it can be charged with
+  (none linked: any), enforced in the Coding pop-out's search and on
+  save. The invoice's project reference (BT-11, now parsed from UBL)
+  suggests a project. `vf-app` migration `0100`, `vf-licence` `0198`.
+
+### Project status and budget (0542)
+- Projects can be closed (not offered, refused on save, flagged) and
+  given a budget, shown as a usage bar in the Coding pop-out and exposed
+  to rules as `project.over_budget`/`project.budget_used_pct` (warn,
+  never block). Coding suggestions are now proxied by vf-ui (missing
+  since 0457). `vf-app` migration `0099`, `vf-licence` `0197`.
 
 ### Coded: pale green in both moods, and a green Coding icon (0541)
 - Set Coding fields use Day's pale green at Night too; a fully coded

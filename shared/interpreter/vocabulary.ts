@@ -19,6 +19,7 @@ export const INVOICE_FIELDS = [
   "BT-2", // issue date
   "BT-9", // due date
   "BT-10", // buyer reference
+  "BT-11", // project reference — decision 0543
   "BT-13", // purchase order ref
   // New — payment terms, decision 0296. Not mandatory under BIS
   // Billing 3.0 (unlike everything else in this file marked
@@ -141,6 +142,14 @@ export const DERIVED_FIELDS = [
    */
   "po.line_non_po",
   /**
+   * **Decision 0542.** A project's budget, on each line coded to a
+   * project that has one: over it, and how much of it is used. Absent on
+   * every other line. Warn-only by the operator's choice; a rule decides
+   * what happens (for example, route to the project's approver).
+   */
+  "project.over_budget",
+  "project.budget_used_pct",
+  /**
    * **Decision 0511.** Which of this line's coding fields (BT-133,
    * coding.project, coding.commodity_code, coding.gl_code) hold a
    * value Account Coding does not have — or has for a different
@@ -228,6 +237,7 @@ export const INVOICE_FIELD_TYPES: Record<string, FieldType> = {
   "BT-2": "date",
   "BT-9": "date",
   "BT-10": "text",
+  "BT-11": "text",
   "BT-13": "text",
   "BT-20": "text", // free-text note, per the standard's own definition
   "BT-31": "text",
@@ -272,6 +282,8 @@ export const INVOICE_FIELD_TYPES: Record<string, FieldType> = {
   "po.line_quantity_matched": "boolean",
   "po.line_unit_mismatch": "boolean",
   "po.line_non_po": "boolean",
+  "project.over_budget": "boolean",
+  "project.budget_used_pct": "number",
   "coding.line_invalid": "text",
   "mandate.channel": "text",
   "validation.passed": "boolean",
@@ -408,6 +420,7 @@ export const FIELD_DESCRIPTIONS: Record<InvoiceField, string> = {
   "BT-2": "issue date",
   "BT-9": "due date",
   "BT-10": "buyer reference",
+  "BT-11": "project reference: the buyer's project this invoice is for, as the supplier printed it (UBL cac:ProjectReference/cbc:ID). Matched against Account Coding's projects to suggest one for the invoice's lines.",
   "BT-13": "purchase order reference",
   "BT-20": "payment terms — free text as the invoice itself states them, e.g. \"Net 30\". Distinct from supplier.paymentTerms: this is what the document says, that is what was agreed with the supplier in the customer's own ERP.",
   "BT-31": "seller VAT id",
@@ -467,6 +480,10 @@ export const DERIVED_FIELD_DESCRIPTIONS: Record<DerivedField, string> = {
     "true if both the invoice line and the purchase order line carry a unit code (BT-130 and its PO-line counterpart) and they disagree. This is the gap decision 0466 named directly: today a unit mismatch makes the quantity check simply skip, reading identically to 'quantity agreed' to any rule testing po.line_quantity_matched. False, not absent, whenever both sides carry a unit — so a rule can act on it without also having to test for absence.",
   "po.line_non_po":
     "true if a person marked this line of a purchase order invoice as a Non-PO line at Matching: a charge the order never covered, such as freight or carriage, which is coded by hand instead of matched. Absent on every other line. On such a line every other po.line_* fact is absent, so line matching rules leave it alone; test this to route those lines deliberately, for example to approval above an amount.",
+  "project.over_budget":
+    "true if this line is coded to a project whose budget is exceeded once this invoice is counted: the net amounts of every other invoice's lines coded to the project (not discarded or returned ones), plus this invoice's lines on it, are more than the project's budget. Absent on a line with no project, or whose project has no budget.",
+  "project.budget_used_pct":
+    "how much of this line's project budget is used once this invoice is counted, as a percentage: 100 is exactly the budget, over 100 is over it. Absent on a line with no project, or whose project has no budget.",
   "coding.line_invalid":
     "a comma-separated list of this line's coding fields (BT-133, coding.project, coding.commodity_code, coding.gl_code) whose value is not on Account Coding's own configured list, or is on it for a different company code or Commodity Code; empty when every coded value is valid. Most often a supplier's own BT-133 that does not match the buyer's cost centres. Test it with contains: 'coding.line_invalid contains BT-133'.",
   // Enriched with real example values, per decision 0023's "Intake"

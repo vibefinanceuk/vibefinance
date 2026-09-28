@@ -1055,7 +1055,8 @@ const CODING_PICKER_FIELDS = [
   { field: "BT-133", listType: "cost_centre", filterKeys: ["company_code"] },
   { field: "coding.project", listType: "project", filterKeys: [] },
   { field: "coding.commodity_code", listType: "commodity_code", filterKeys: [] },
-  { field: "coding.gl_code", listType: "gl_code", filterKeys: ["company_code", "commodity_code"] },
+  // Decision 0543: and by the line's cost centre, where it is linked to GL codes.
+  { field: "coding.gl_code", listType: "gl_code", filterKeys: ["company_code", "commodity_code", "cost_centre"] },
 ];
 
 /**
@@ -1068,6 +1069,7 @@ const CODING_PICKER_FIELDS = [
 const FILTER_FIELD_LABEL_KEYS = {
   company_code: "apsetup.codingtab.companycode",
   commodity_code: "apsetup.codingtab.commoditycode",
+  cost_centre: "field.bt-133",
 };
 
 /**
@@ -1083,8 +1085,10 @@ const FILTER_FIELD_LABEL_KEYS = {
  * person keying a line, not configuring Account Coding, so it never
  * calls either route's own `Admin.Configure`-only write side.
  */
-async function fetchCodingEntries(listType, search, filters = {}) {
+async function fetchCodingEntries(listType, search, filters = {}, { activeOnly = false } = {}) {
   const params = new URLSearchParams({ search, pageSize: "25" });
+  // Decision 0542 — a picker offers only entries still in use; a name lookup finds a closed one too.
+  if (activeOnly) params.set("activeOnly", "1");
   for (const [key, value] of Object.entries(filters)) {
     if (value) params.set(`filter.${key}`, value);
   }
@@ -1366,6 +1370,57 @@ async function openLineCodingPopout(line, { lockedNote = null } = {}) {
   // Decision 0459: Cost Centre is focused on open, and so pre-loads its first page.
   let costCentreInput = null;
 
+  /**
+   * **The chosen project's budget — decision 0542**: what other invoices
+   * have used, this invoice's lines on it (as they stand on screen,
+   * saved or not), and what is left, in the PO usage bar's own colours
+   * (0533). Over budget turns it red and says by how much: a warning,
+   * never a block (the operator's choice). Nothing for a project with
+   * no budget.
+   */
+  const budgetSlot = el("div", { class: "codingbudget" });
+  let budgetSeq = 0;
+  const money2 = (v) => Number(v).toLocaleString(currentLocale(), { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  async function showProjectBudget(projectId) {
+    const seq = ++budgetSeq;
+    budgetSlot.replaceChildren();
+    if (!projectId || !current?.subject?.id) return;
+    let usage = null;
+    try {
+      const response = await fetch(
+        `/api/invoices/${encodeURIComponent(current.subject.id)}/project-usage?project=${encodeURIComponent(projectId)}`
+      );
+      usage = response.ok ? await response.json() : null;
+    } catch {
+      usage = null;
+    }
+    if (seq !== budgetSeq || !usage || usage.budget === null || usage.budget === undefined) return;
+    const mine = lines.reduce(
+      (sum, l) => sum + ((l === line ? chosen["coding.project"] : l["coding.project"]) === projectId ? Number(l["BT-131"]) || 0 : 0),
+      0
+    );
+    const others = Number(usage.usedByOthers) || 0;
+    const budget = Number(usage.budget);
+    const left = budget - others - mine;
+    const over = left < 0;
+    const share = (v) => (budget > 0 ? Math.max(0, Math.min(100, (v / budget) * 100)) : v > 0 ? 100 : 0);
+    budgetSlot.replaceChildren(
+      el("span", { class: "pmbar" }, [
+        el("span", { class: "pmseg others", style: `width:${share(others)}%` }),
+        el("span", { class: `pmseg mine${over ? " over" : ""}`, style: `width:${share(mine)}%` }),
+      ]),
+      el("div", {
+        class: over ? "sm pmover" : "muted sm",
+        text: t("viewer.coding.budget")
+          .replace("{budget}", money2(budget))
+          .replace("{others}", money2(others))
+          .replace("{mine}", money2(mine))
+          .replace("{left}", money2(left)),
+      }),
+      ...(over ? [el("div", { class: "sm pmover codingoverbudget", text: t("viewer.coding.overbudget").replace("{amount}", money2(-left)) })] : [])
+    );
+  }
+
   const card = (spec) => {
     const fieldLabel = t(`field.${spec.field.toLowerCase()}`);
     const resolved = fieldSpec(spec.field);
@@ -1399,7 +1454,12 @@ async function openLineCodingPopout(line, { lockedNote = null } = {}) {
 
     // Read live, at fetch time: a Commodity Code chosen later still narrows General Ledger Code.
     const filters = () =>
-      Object.fromEntries(spec.filterKeys.map((key) => [key, key === "company_code" ? stored.orgUnitId : chosen["coding.commodity_code"]]));
+      Object.fromEntries(
+        spec.filterKeys.map((key) => [
+          key,
+          key === "company_code" ? stored.orgUnitId : key === "cost_centre" ? chosen["BT-133"] : chosen["coding.commodity_code"],
+        ])
+      );
     const picker = searchableEntryPicker({
       current: chosen[spec.field],
       hint: t("viewer.coding.searchhint"),
@@ -1410,7 +1470,7 @@ async function openLineCodingPopout(line, { lockedNote = null } = {}) {
             return found.find((e) => e.id === chosen[spec.field]) ?? null;
           }
         : null,
-      fetchResults: (q) => fetchCodingEntries(spec.listType, q, filters()),
+      fetchResults: (q) => fetchCodingEntries(spec.listType, q, filters(), { activeOnly: true }),
       fieldLabel,
       results,
       scopeNote: () => spec.filterKeys.filter((key) => filters()[key]).map((key) => t(FILTER_FIELD_LABEL_KEYS[key] ?? key)),
@@ -1421,12 +1481,17 @@ async function openLineCodingPopout(line, { lockedNote = null } = {}) {
           names[spec.field] = item;
           clearOtherObject(spec.field);
         }
+        if (spec.field === "coding.project") showProjectBudget(chosen["coding.project"]);
         box.classList.toggle("set", !!item);
         status.textContent = item ? "✓" : "";
       },
     });
     if (spec.field === "BT-133") costCentreInput = picker.querySelector(".searchbox");
     box.append(picker);
+    if (spec.field === "coding.project") {
+      box.append(budgetSlot);
+      showProjectBudget(chosen["coding.project"]);
+    }
     return box;
   };
 
@@ -1511,16 +1576,24 @@ async function openLineCodingPopout(line, { lockedNote = null } = {}) {
               ])
             )
           ),
-          el("div", { class: "codingsuggestwhy" }, [
-            el("span", { class: "codingmeter", "aria-hidden": "true" }, [
-              el("i", { style: `width:${Math.round(suggestion.confidence * 100)}%` }),
-            ]),
-            t(suggestion.basis === "similar" ? "viewer.coding.sug.similar" : "viewer.coding.sug.supplier")
-              .replace("{pct}", String(Math.round(suggestion.confidence * 100)))
-              .replace("{count}", String(suggestion.count))
-              .replace("{total}", String(suggestion.total))
-              .replace("{supplier}", supplierName),
-          ]),
+          // Decision 0543 — the invoice's own project reference needs no meter: it says so.
+          suggestion.basis === "invoice"
+            ? el("div", {
+                class: "codingsuggestwhy",
+                text: t("viewer.coding.sug.invoice")
+                  .replace("{reference}", suggestion.projectReference ?? "")
+                  .replace("{project}", suggestion.labels?.["coding.project"] ?? suggestion.values["coding.project"] ?? ""),
+              })
+            : el("div", { class: "codingsuggestwhy" }, [
+                el("span", { class: "codingmeter", "aria-hidden": "true" }, [
+                  el("i", { style: `width:${Math.round(suggestion.confidence * 100)}%` }),
+                ]),
+                t(suggestion.basis === "similar" ? "viewer.coding.sug.similar" : "viewer.coding.sug.supplier")
+                  .replace("{pct}", String(Math.round(suggestion.confidence * 100)))
+                  .replace("{count}", String(suggestion.count))
+                  .replace("{total}", String(suggestion.total))
+                  .replace("{supplier}", supplierName),
+              ]),
           ...(suggestion.examples?.length
             ? [el("div", { class: "codingsuggestex", text: t("viewer.coding.sug.examples").replace("{examples}", suggestion.examples.map((e) => `“${e}”`).join(", ")) })]
             : []),

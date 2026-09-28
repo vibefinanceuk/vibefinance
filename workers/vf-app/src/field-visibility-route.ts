@@ -95,6 +95,8 @@ const DEFAULT_VISIBILITY: Record<string, Visibility> = {
   "BT-49": "read",
   "BT-55": "read",
   "BT-10": "read",
+  // Decision 0543 — the invoice's own project reference, from the document.
+  "BT-11": "read",
 };
 
 /**

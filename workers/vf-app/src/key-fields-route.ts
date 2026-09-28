@@ -436,6 +436,8 @@ export async function handleKeyInvoiceFields(
         if (String(next[field] ?? "") !== String(previous[field] ?? "")) changed.add(field);
       }
       if (changed.has("coding.commodity_code")) changed.add("coding.gl_code");
+      // Decision 0543 — a GL code is re-checked when the cost centre it is allowed for changes.
+      if (changed.has("BT-133")) changed.add("coding.gl_code");
       return changed;
     };
 
@@ -498,6 +500,8 @@ export async function handleKeyInvoiceFields(
         not_on_list: "is not on the Account Coding list",
         wrong_company: "does not belong to this invoice's company code",
         wrong_commodity: "is not linked to the line's Commodity Code",
+        closed: "is closed",
+        wrong_cost_centre: "is not allowed for the line's Cost Centre",
       };
       return {
         status: 422,

@@ -184,6 +184,8 @@ import nonPoLineStringsSql from "../migrations/0193_non_po_line_strings.sql?raw"
 import codingPopoutStringsSql from "../migrations/0194_coding_popout_strings.sql?raw";
 import costObjectRuleStringsSql from "../migrations/0195_cost_object_rule_strings.sql?raw";
 import codingCompleteStringSql from "../migrations/0196_coding_complete_string.sql?raw";
+import projectStatusBudgetStringsSql from "../migrations/0197_project_status_budget_strings.sql?raw";
+import glLinksProjectRefStringsSql from "../migrations/0198_gl_links_project_reference_strings.sql?raw";
 
 function stripSqlComments(sql: string): string {
   return sql
@@ -400,5 +402,7 @@ export async function applyTestSchema(): Promise<void> {
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(codingPopoutStringsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(costObjectRuleStringsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(codingCompleteStringSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(projectStatusBudgetStringsSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(glLinksProjectRefStringsSql)));
 
 }

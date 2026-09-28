@@ -222,6 +222,15 @@ const PROXIED_TO_INSTANCE: RegExp[] = [
   /^\/invoices\/[^/]+\/po-link$/,
   // Saving a line pairing — decision 0532.
   /^\/invoices\/[^/]+\/po-pairing$/,
+  /**
+   * **Coding suggestions — missing since decision 0457**, found while
+   * adding 0542's budget route beside it: real and tested in vf-app,
+   * never proxied, so the Coding pop-out's fetch was answered "not
+   * found" and it quietly showed no suggestion on the live site.
+   * **A project's budget — decision 0542**, added with its route.
+   */
+  /^\/invoices\/[^/]+\/coding-suggestions$/,
+  /^\/invoices\/[^/]+\/project-usage$/,
   /^\/invoices\/[^/]+\/document-url$/,
   // The pages behind a multi-page scan (decision 0381) — the same
   // shape as document-url immediately above, and the exact gap this
