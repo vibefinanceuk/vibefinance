@@ -98,9 +98,21 @@ export async function handleKeyInvoiceFields(
     : new Set<string>();
 
   const invoice = await db
-    .prepare("SELECT id, facts_json FROM invoice_headers WHERE id = ?")
+    .prepare(
+      `SELECT id, facts_json, supplier_vat_id, currency, issue_date, total_with_vat, mandate_channel, invoice_number
+       FROM invoice_headers WHERE id = ?`
+    )
     .bind(invoiceId)
-    .first<{ id: string; facts_json: string }>();
+    .first<{
+      id: string;
+      facts_json: string;
+      supplier_vat_id: string | null;
+      currency: string | null;
+      issue_date: string | null;
+      total_with_vat: number | null;
+      mandate_channel: string | null;
+      invoice_number: string | null;
+    }>();
   if (!invoice) {
     return { status: 404, body: { error: `invoice ${invoiceId} does not exist` } };
   }
@@ -601,8 +613,38 @@ export async function handleKeyInvoiceFields(
 
   // Reuses the ordinary writer, so the structured columns stay in step
   // with facts_json exactly as they do on every other path.
+  /**
+   * **The structured columns go back with the facts — decision 0539.**
+   * `handleUpsertInvoice` writes every column it is not given as NULL,
+   * and keying gave it none, so since 0071 every save in the viewer
+   * blanked the invoice's `supplier_vat_id`, `invoice_number`,
+   * `currency`, `issue_date`, `total_with_vat` and `mandate_channel` —
+   * which duplicate checks, supplier history, reports and coding
+   * suggestions all read. Found when suggestions drew on no history at
+   * all. What a person keyed wins (BT-31, BT-1, BT-5, BT-2, BT-112, the
+   * same pairs `mergeStructuredInvoiceFacts` reads the other way);
+   * otherwise the column keeps what it held.
+   */
+  const fact = (code: string): unknown => {
+    const v = merged[code];
+    return v === undefined || v === null || v === "" ? undefined : v;
+  };
+  const keyedHere = new Set(entries.map(([field]) => field));
+  const pick = <T,>(code: string, column: T | null, cast: (v: unknown) => T | null): T | null =>
+    keyedHere.has(code) ? cast(fact(code)) : (column ?? cast(fact(code)));
+  const asText = (v: unknown) => (v === undefined || v === null ? null : String(v));
+  const asNumber = (v: unknown) => {
+    const n = typeof v === "number" ? v : typeof v === "string" && v.trim() !== "" ? Number(v) : NaN;
+    return Number.isFinite(n) ? n : null;
+  };
   const upsert = await handleUpsertInvoice(db, {
     id: invoiceId,
+    supplierVatId: pick("BT-31", invoice.supplier_vat_id, asText),
+    invoiceNumber: pick("BT-1", invoice.invoice_number, asText),
+    currency: pick("BT-5", invoice.currency, asText),
+    issueDate: pick("BT-2", invoice.issue_date, asText),
+    totalWithVat: pick("BT-112", invoice.total_with_vat, asNumber),
+    mandateChannel: pick("mandate.channel", invoice.mandate_channel, asText),
     facts: merged,
     lines: body.lines === undefined ? preservedLines : mergedLines,
   } as Parameters<typeof handleUpsertInvoice>[1]);

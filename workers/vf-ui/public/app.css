@@ -2601,11 +2601,7 @@
     `.readonly`'s own 32px as 38px — `.readonly` is shared far too
     widely to touch its own default for one popout.
   */
-  .popout.codingpopout .codingcompanycode {
-    box-sizing: border-box;
-    min-height: 38px;
-    width: 100%;
-  }
+  /* Decision 0539: Org / Company Code is a context chip now (`.codingchip.codingcompanycode`), no longer a box to match. */
 
   /*
     **The Coding pop-out is a fixed size, and its search results are
@@ -2638,17 +2634,61 @@
     someone has to keep matching by hand. Chosen live, from the
     mock-up's own slider: 190px / 320px.
   */
+  /*
+    **Redesigned as a card — decision 0539**, the operator's choice (A)
+    from two mock-ups, in the Match pop-out's style. Still a fixed
+    height with one shared results area that scrolls (0458), so nothing
+    reflows as somebody types. The label/box column widths of
+    0460–0462 are gone with the label column itself: each field is a
+    card with its own label.
+  */
   .popout.codingpopout {
-    --codingfield-label-w: 190px;
-    --codingfield-w: 320px;
-    width: min(calc(16px + var(--codingfield-label-w) + 14px + var(--codingfield-w) + 16px), 100%);
-    height: min(640px, 85vh);
+    width: min(620px, 100%);
+    height: min(780px, 90vh);
     display: flex;
     flex-direction: column;
   }
-  .popout.codingpopout .editgrid {
-    flex: none;
-    grid-template-columns: var(--codingfield-label-w) 1fr;
+  .codingsub { margin: 2px 0 0; color: var(--text-secondary); font-size: var(--text-sm); }
+  .codingctx { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 12px; flex: none; }
+  .codingchip {
+    display: inline-flex; align-items: baseline; gap: 6px; padding: 3px 10px; border-radius: 999px;
+    background: var(--surface-1); border: 0.5px solid var(--border); font-size: var(--text-sm); color: var(--text-secondary);
+  }
+  .codingchip b { color: var(--text-primary); font-weight: 600; }
+  .codingid { margin-left: 6px; font-size: var(--text-sm); color: var(--text-muted); font-weight: 400; }
+  .codingchip .codingid { margin-left: 0; }
+  .popout.codingpopout .codinglocked { flex: none; }
+  .codingsuggest {
+    flex: none; margin-bottom: 12px; padding: 10px 12px; border-radius: var(--radius);
+    background: color-mix(in srgb, var(--text-accent) 9%, transparent);
+    border: 0.5px solid color-mix(in srgb, var(--text-accent) 35%, transparent);
+  }
+  .codingsuggesthead { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+  .codingsuggestvalues { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 6px; }
+  .codingsuggestwhy, .codingsuggestex, .codingsuggestdone { font-size: var(--text-sm); color: var(--text-secondary); }
+  .codingsuggestex { margin-top: 3px; color: var(--text-muted); font-style: italic; }
+  .codingmeter {
+    display: inline-block; width: 56px; height: 6px; margin-right: 6px; vertical-align: middle; overflow: hidden;
+    border-radius: 999px; background: var(--surface-2); border: 0.5px solid var(--border);
+  }
+  .codingmeter i { display: block; height: 100%; background: var(--chart-1); }
+  .codingfields { flex: none; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .codingfield {
+    min-width: 0; padding: 8px 10px; border-radius: var(--radius);
+    background: var(--surface-1); border: 0.5px solid var(--border);
+  }
+  .codingfield.set { background: var(--bg-success); border-color: color-mix(in srgb, var(--text-success) 30%, transparent); }
+  .codingfieldhead { display: flex; justify-content: space-between; margin-bottom: 5px; font-size: var(--text-sm); color: var(--text-muted); }
+  .codingfieldstatus { color: var(--text-success); font-weight: 700; }
+  .codingfield .readonly { box-sizing: border-box; width: 100%; min-height: 34px; }
+  .codingfoot {
+    flex: none; display: flex; justify-content: space-between; align-items: center; gap: 12px;
+    margin-top: 10px; padding-top: 10px; border-top: 0.5px solid var(--border); font-size: var(--text-sm); color: var(--text-secondary);
+  }
+  @media (max-width: 560px) { .codingfields { grid-template-columns: 1fr; } }
+  /* The one filled action in each pop-out, as the viewer's own footer draws it (`.vfoot .primary`). */
+  .popout.codingpopout button.primary, .popout.pmlinepop button.primary {
+    background: var(--brand-fill); color: #fff; border: none; min-height: 34px; padding: 0 16px; font-weight: 500;
   }
   .codingresults {
     flex: 1;

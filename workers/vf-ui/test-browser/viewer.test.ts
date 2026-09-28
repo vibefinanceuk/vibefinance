@@ -5935,7 +5935,18 @@ describe("the invoice-line Coding pop-out (decision 0453)", () => {
     "viewer.coding.searchfailed": "We could not reach the service to search.",
     "viewer.coding.clear": "Clear",
     "viewer.coding.noteditable": "Not editable at this stage",
-    "viewer.coding.suggested": "Suggested from this supplier's own history — review before saving.",
+    "viewer.coding.linetitle": "Line {n} coding",
+    "viewer.coding.ctx.company": "Company",
+    "viewer.coding.ctx.supplier": "Supplier",
+    "viewer.coding.sug.title": "Suggested coding",
+    "viewer.coding.sug.accept": "Accept all",
+    "viewer.coding.sug.similar": "{pct}% · {count} of {total} earlier {supplier} lines like this one were coded this way",
+    "viewer.coding.sug.supplier": "{pct}% · {count} of {total} coded {supplier} lines use this coding",
+    "viewer.coding.sug.examples": "For example {examples}",
+    "viewer.coding.sug.accepted": "Suggestion accepted. Save the invoice to keep it.",
+    "viewer.coding.applyothers": "Also apply this coding to the other uncoded lines ({lines})",
+    "viewer.coding.savehint": "Coding is kept when you save the invoice.",
+    "viewer.coding.done": "Done",
     "viewer.coding.resultsfor": "Results for",
     "viewer.coding.nomatchesscoped": "Narrowed by:",
     "apsetup.codingtab.companycode": "Org / Company Code",
@@ -6010,23 +6021,28 @@ describe("the invoice-line Coding pop-out (decision 0453)", () => {
     await new Promise((r) => setTimeout(r, 0));
   }
 
+  /** One field's card — decision 0539 — by its label. */
+  const card = (label: string) =>
+    [...document.querySelectorAll(".popout .codingfield")].find((c) => c.querySelector(".codingfieldlabel")?.textContent === label) as
+      | HTMLElement
+      | undefined;
+
   it("shows a Coding icon on the line regardless of edit permission — viewing is not editing", async () => {
     stub({});
     await openAndClickCoding();
     // Opened at all: the click above found the button and the
     // pop-out it opens is on the page.
     expect(document.querySelector(".popout")).not.toBeNull();
-    expect(document.querySelector(".popout h3")?.textContent).toBe("Line coding");
+    // Decision 0539 — titled with the line it codes.
+    expect(document.querySelector(".popout h3")?.textContent).toBe("Line 1 coding");
   });
 
   it("shows the invoice's own Company Code, read-only", async () => {
     stub({});
     await openAndClickCoding();
 
-    const rows = [...document.querySelectorAll(".popout .editgrid > *")];
-    const labelIndex = rows.findIndex((r) => r.textContent === "Org / Company Code");
-    expect(labelIndex).toBeGreaterThanOrEqual(0);
-    expect(rows[labelIndex + 1]?.textContent).toBe("Acme UK");
+    // Decision 0539 — a context chip at the top, no longer a box among the fields.
+    expect(document.querySelector(".popout .codingcompanycode")?.textContent).toBe("Company Acme UK");
   });
 
   it("resolves the line's own already-keyed Cost Centre to its name", async () => {
@@ -6044,7 +6060,7 @@ describe("the invoice-line Coding pop-out (decision 0453)", () => {
     stub({});
     await openAndClickCoding();
 
-    const rowsText = document.querySelector(".popout .editgrid")?.textContent ?? "";
+    const rowsText = document.querySelector(".popout .codingfields")?.textContent ?? "";
     // General Ledger Code — absent from field-visibility entirely.
     expect(rowsText).toContain("Not editable at this stage");
   });
@@ -6053,10 +6069,7 @@ describe("the invoice-line Coding pop-out (decision 0453)", () => {
     stub({});
     await openAndClickCoding();
 
-    const rows = [...document.querySelectorAll(".popout .editgrid > *")];
-    const commodityLabelIndex = rows.findIndex((r) => r.textContent === "Commodity code");
-    const commodityValueBlock = rows[commodityLabelIndex + 1];
-    expect(commodityValueBlock?.textContent).not.toContain("Not editable at this stage");
+    expect(card("Commodity code")?.textContent).not.toContain("Not editable at this stage");
   });
 
   it("searches Project as the operator types, and choosing one reaches the Save payload", async () => {
@@ -6273,111 +6286,130 @@ describe("the invoice-line Coding pop-out (decision 0453)", () => {
   });
 
   /**
-   * **Account Coding suggestions — decision 0457.** A field with no
-   * existing value is pre-filled from `/coding-suggestions` and shown
-   * with a visible "suggested" note, so the person sees a default
-   * without having to have already trusted it.
+   * **Account Coding suggestions, per line, with Accept all — decision
+   * 0539**, replacing 0457's pre-fill. Nothing is filled in until a
+   * person presses Accept all.
    */
-  it("pre-fills a field that has no existing value from a coding suggestion, with a visible note", async () => {
-    stub({
-      "/api/invoices/inv-1/coding-suggestions": {
-        suggestions: { "coding.project": { value: "proj-9", confidence: 0.8, sampleSize: 5 } },
+  const LINE_SUGGESTION = {
+    lines: {
+      "1": {
+        values: { "BT-133": "cc-log", "coding.project": "proj-9" },
+        labels: { "BT-133": "Logistics UK", "coding.project": "Mjolner Refit" },
+        basis: "similar",
+        count: 4,
+        total: 5,
+        confidence: 0.8,
+        examples: ["Pallet delivery, York", "2 pallets - Hull"],
       },
-      "/api/coding-lists/project": {
-        entries: [{ id: "proj-9", name: "Mjolner Refit", filters: [] }],
-        declaredFilters: [],
-        total: 1,
-        page: 1,
-        pageSize: 50,
-      },
-    });
-    await openAndClickCoding();
-    await new Promise((r) => setTimeout(r, 0));
-
-    const searchBoxes = [...document.querySelectorAll(".popout .searchbox")] as HTMLInputElement[];
-    const projectBox = searchBoxes[1]; // Cost Centre, then Project, per CODING_PICKER_FIELDS' own order
-    expect(projectBox.value).toBe("Mjolner Refit");
-
-    const note = document.getElementById("codingsuggested-coding.project");
-    expect(note?.textContent).toBe("Suggested from this supplier's own history — review before saving.");
+    },
+  };
+  const suggestionStub = (extra: Record<string, unknown> = {}) => ({
+    "/api/invoices/inv-1/coding-suggestions": LINE_SUGGESTION,
+    "/api/org/cost-centres": { costCentres: [{ id: "cc1", name: "Marketing", filters: [] }], total: 1, page: 1, pageSize: 50 },
+    "/api/coding-lists/project": { entries: [{ id: "proj-9", name: "Mjolner Refit", filters: [] }], declaredFilters: [], total: 1, page: 1, pageSize: 50 },
+    ...extra,
   });
 
-  it("Save persists a pre-filled suggestion even without an explicit click, the same as any other keyed value", async () => {
+  it("shows this line's suggestion — the values, how sure, why, and examples — and fills in nothing yet", async () => {
+    stub(suggestionStub());
+    await openAndClickCoding({ ...TASK, subject: { ...TASK.subject, supplierName: "Northwind" } });
+    await new Promise((r) => setTimeout(r, 0));
+
+    const box = document.querySelector(".popout .codingsuggest") as HTMLElement;
+    expect([...box.querySelectorAll(".codingchip b")].map((b) => b.textContent)).toEqual(["Logistics UK", "Mjolner Refit"]);
+    expect(box.querySelector(".codingsuggestwhy")?.textContent).toBe("80% · 4 of 5 earlier Northwind lines like this one were coded this way");
+    expect(box.querySelector(".codingsuggestex")?.textContent).toBe("For example “Pallet delivery, York”, “2 pallets - Hull”");
+    // Not pre-filled: the line still holds its own Cost Centre, Project is empty.
+    const boxes = [...document.querySelectorAll(".popout .searchbox")] as HTMLInputElement[];
+    expect(boxes[1].value).toBe("");
+    expect(card("Project")?.classList.contains("set")).toBe(false);
+  });
+
+  it("Accept all fills every suggested field it may change, marks the cards set, and Save sends them", async () => {
     const bodies: { path: string; body: unknown }[] = [];
-    stub(
-      {
-        "/api/invoices/inv-1/coding-suggestions": {
-          suggestions: { "coding.project": { value: "proj-9", confidence: 0.8, sampleSize: 5 } },
-        },
-        "/api/coding-lists/project": {
-          entries: [{ id: "proj-9", name: "Mjolner Refit", filters: [] }],
-          declaredFilters: [],
-          total: 1,
-          page: 1,
-          pageSize: 50,
-        },
-      },
-      [],
-      bodies
-    );
+    stub(suggestionStub(), [], bodies);
     await openAndClickCoding();
     await new Promise((r) => setTimeout(r, 0));
+
+    (document.querySelector(".popout .codingaccept") as HTMLButtonElement).click();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(document.querySelector(".popout .codingsuggest")?.textContent).toBe("Suggestion accepted. Save the invoice to keep it.");
+    const boxes = [...document.querySelectorAll(".popout .searchbox")] as HTMLInputElement[];
+    expect(boxes[0].value).toBe("Logistics UK");
+    expect(boxes[1].value).toBe("Mjolner Refit");
+    expect(card("Cost centre")?.classList.contains("set")).toBe(true);
+    expect(card("Project")?.classList.contains("set")).toBe(true);
 
     (document.querySelector(".popout .actionlink") as HTMLButtonElement).click();
     const saveButton = [...document.querySelectorAll(".actionlink span")].find((s) => s.textContent === "Save")?.closest("button");
     (saveButton as HTMLButtonElement).click();
     await new Promise((r) => setTimeout(r, 0));
-
-    const keyPost = bodies.find((b) => b.path === "/api/invoices/inv-1/key");
-    const line = (keyPost?.body as { lines: { facts: Record<string, unknown> }[] })?.lines?.[0];
-    expect(line?.facts["coding.project"]).toBe("proj-9");
+    const line = (bodies.find((b) => b.path === "/api/invoices/inv-1/key")?.body as { lines: { facts: Record<string, unknown> }[] }).lines[0];
+    expect(line.facts["BT-133"]).toBe("cc-log");
+    expect(line.facts["coding.project"]).toBe("proj-9");
   });
 
-  it("choosing a value for a suggested field — even the same one — clears the suggested note, since it's now the person's own choice", async () => {
-    stub({
-      "/api/invoices/inv-1/coding-suggestions": {
-        suggestions: { "coding.project": { value: "proj-9", confidence: 0.8, sampleSize: 5 } },
-      },
-      "/api/coding-lists/project": {
-        entries: [{ id: "proj-9", name: "Mjolner Refit", filters: [] }],
-        declaredFilters: [],
-        total: 1,
-        page: 1,
-        pageSize: 50,
-      },
-    });
+  it("Save sends nothing suggested when nobody pressed Accept all", async () => {
+    const bodies: { path: string; body: unknown }[] = [];
+    stub(suggestionStub(), [], bodies);
+    await openAndClickCoding();
+    await new Promise((r) => setTimeout(r, 0));
+    (document.querySelector(".popout .actionlink") as HTMLButtonElement).click();
+    const saveButton = [...document.querySelectorAll(".actionlink span")].find((s) => s.textContent === "Save")?.closest("button");
+    (saveButton as HTMLButtonElement).click();
+    await new Promise((r) => setTimeout(r, 0));
+    const line = (bodies.find((b) => b.path === "/api/invoices/inv-1/key")?.body as { lines: { facts: Record<string, unknown> }[] }).lines[0];
+    expect(line.facts["BT-133"]).toBe("cc1");
+    expect(line.facts["coding.project"]).toBeUndefined();
+  });
+
+  it("offers no suggestion to somebody who may not change the fields, or when it would change nothing", async () => {
+    stub(suggestionStub());
+    await openAndClickCoding({ ...TASK, ownership: "locked", actions: [] });
+    expect(document.querySelector(".popout .codingsuggest")).toBeNull();
+    document.querySelector(".backdrop")?.remove();
+
+    stub(
+      suggestionStub({
+        "/api/invoices/inv-1/coding-suggestions": { lines: { "1": { ...LINE_SUGGESTION.lines["1"], values: { "BT-133": "cc1" }, labels: {} } } },
+      })
+    );
+    await openAndClickCoding();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(document.querySelector(".popout .codingsuggest")).toBeNull();
+  });
+
+  it("applies this line's coding to the other uncoded lines only when ticked, and never to a coded one", async () => {
+    const invoice = {
+      facts: {},
+      lines: [
+        { lineNumber: 1, facts: { "BT-131": 100 } },
+        { lineNumber: 2, facts: { "BT-131": 50 } },
+        { lineNumber: 3, facts: { "BT-131": 25, "BT-133": "cc-kept" } },
+      ],
+      validation: { passed: true, checked: [], failures: [] },
+      supplier: null,
+      buyer: { unitId: "UK01", unitName: "Acme UK", entityName: "Acme UK", vatId: "GB1" },
+      orgUnitId: "UK01",
+    };
+    const bodies: { path: string; body: unknown }[] = [];
+    stub(suggestionStub({ "/api/invoices/inv-1": invoice }), [], bodies);
     await openAndClickCoding();
     await new Promise((r) => setTimeout(r, 0));
 
-    expect(document.getElementById("codingsuggested-coding.project")).not.toBeNull();
+    const tick = document.querySelector(".popout .codingapplyothers") as HTMLInputElement;
+    expect(tick.checked).toBe(false);
+    expect(tick.closest("label")?.textContent).toBe(" Also apply this coding to the other uncoded lines (2)");
+    (document.querySelector(".popout .codingaccept") as HTMLButtonElement).click();
+    tick.checked = true;
+    ([...document.querySelectorAll(".popout .codingfoot button")].at(-1) as HTMLButtonElement).click();
 
-    const searchBoxes = [...document.querySelectorAll(".popout .searchbox")] as HTMLInputElement[];
-    const projectBox = searchBoxes[1];
-    projectBox.value = "mjol";
-    projectBox.oninput?.(new Event("input"));
+    const saveButton = [...document.querySelectorAll(".actionlink span")].find((s) => s.textContent === "Save")?.closest("button");
+    (saveButton as HTMLButtonElement).click();
     await new Promise((r) => setTimeout(r, 0));
-
-    const result = [...document.querySelectorAll(".popout .searchresult")].find((r) => r.textContent?.includes("Mjolner Refit"));
-    (result as HTMLButtonElement).click();
-
-    expect(document.getElementById("codingsuggested-coding.project")).toBeNull();
-  });
-
-  it("a field that already has a value on the line is never overwritten by a suggestion", async () => {
-    // Cost Centre (BT-133) already has "cc1" on the stubbed line — a
-    // suggestion for it must not replace or flag that existing value.
-    stub({
-      "/api/invoices/inv-1/coding-suggestions": {
-        suggestions: { "BT-133": { value: "cc-other", confidence: 0.9, sampleSize: 10 } },
-      },
-    });
-    await openAndClickCoding();
-    await new Promise((r) => setTimeout(r, 0));
-
-    const searchBoxes = [...document.querySelectorAll(".popout .searchbox")] as HTMLInputElement[];
-    const costCentreBox = searchBoxes[0];
-    expect(costCentreBox.value).toBe("cc1");
-    expect(document.getElementById("codingsuggested-BT-133")).toBeNull();
+    const sent = (bodies.find((b) => b.path === "/api/invoices/inv-1/key")?.body as { lines: { facts: Record<string, unknown> }[] }).lines;
+    expect(sent.map((l) => l.facts["BT-133"])).toEqual(["cc-log", "cc-log", "cc-kept"]);
+    expect(sent.map((l) => l.facts["coding.project"])).toEqual(["proj-9", "proj-9", undefined]);
   });
 
   /**
@@ -6392,7 +6424,7 @@ describe("the invoice-line Coding pop-out (decision 0453)", () => {
 
       const popout = document.querySelector(".popout");
       expect(popout?.classList.contains("codingpopout")).toBe(true);
-      expect(document.querySelector(".popout.codingpopout > .editgrid")).not.toBeNull();
+      expect(document.querySelector(".popout.codingpopout > .codingfields")).not.toBeNull();
       expect(document.querySelector(".popout.codingpopout > .codingresults")).not.toBeNull();
     });
 
@@ -6749,21 +6781,16 @@ describe("the invoice-line Coding pop-out (decision 0453)", () => {
       stub({});
       await openAndClickCoding({ ...TASK, ownership: "locked", actions: [] });
 
-      const rows = [...document.querySelectorAll(".popout .editgrid > *")];
-      const labelIndex = rows.findIndex((r) => r.textContent === "Project");
-      expect(labelIndex).toBeGreaterThanOrEqual(0);
       // A readonly value box, not a live searchable picker.
-      expect(rows[labelIndex + 1]?.querySelector(".readonly")).not.toBeNull();
-      expect(rows[labelIndex + 1]?.querySelector(".searchbox")).toBeNull();
+      expect(card("Project")?.querySelector(".readonly")).not.toBeNull();
+      expect(card("Project")?.querySelector(".searchbox")).toBeNull();
     });
 
     it("shows the same field as read-only when the task sits unclaimed, available to anyone", async () => {
       stub({});
       await openAndClickCoding({ ...TASK, ownership: "available", actions: ["claim"] });
 
-      const rows = [...document.querySelectorAll(".popout .editgrid > *")];
-      const labelIndex = rows.findIndex((r) => r.textContent === "Project");
-      expect(rows[labelIndex + 1]?.querySelector(".searchbox")).toBeNull();
+      expect(card("Project")?.querySelector(".searchbox")).toBeNull();
     });
 
     it("does not show the not-editable-here note for a field that is only unclaimed, not stage-restricted", async () => {
@@ -6774,9 +6801,7 @@ describe("the invoice-line Coding pop-out (decision 0453)", () => {
       stub({});
       await openAndClickCoding({ ...TASK, ownership: "locked", actions: [] });
 
-      const rows = [...document.querySelectorAll(".popout .editgrid > *")];
-      const labelIndex = rows.findIndex((r) => r.textContent === "Project");
-      expect(rows[labelIndex + 1]?.textContent).not.toContain("Not editable at this stage");
+      expect(card("Project")?.textContent).not.toContain("Not editable at this stage");
     });
 
     it("still shows the Coding button and opens the pop-out — looking is not editing", async () => {
@@ -6793,9 +6818,7 @@ describe("the invoice-line Coding pop-out (decision 0453)", () => {
       stub({});
       await openAndClickCoding({ ...TASK, ownership: "locked", actions: [] });
 
-      const rows = [...document.querySelectorAll(".popout .editgrid > *")];
-      const commodityLabelIndex = rows.findIndex((r) => r.textContent === "Commodity code");
-      expect(rows[commodityLabelIndex + 1]?.textContent).not.toContain("Not editable at this stage");
+      expect(card("Commodity code")?.textContent).not.toContain("Not editable at this stage");
     });
 
     it("allows the live picker once the task is claimed by the caller — unchanged, pre-existing behaviour", async () => {
@@ -6804,9 +6827,7 @@ describe("the invoice-line Coding pop-out (decision 0453)", () => {
       });
       await openAndClickCoding({ ...TASK, ownership: "mine" });
 
-      const rows = [...document.querySelectorAll(".popout .editgrid > *")];
-      const labelIndex = rows.findIndex((r) => r.textContent === "Project");
-      expect(rows[labelIndex + 1]?.querySelector(".searchbox")).not.toBeNull();
+      expect(card("Project")?.querySelector(".searchbox")).not.toBeNull();
     });
   });
 });

@@ -4252,8 +4252,12 @@ describe("GET /invoices/:id/coding-suggestions, through the real router (decisio
         headers: authHeaders(),
         body: JSON.stringify({ id: invoiceId, supplierVatId: "DE-0457", facts: {} }),
       });
+      // Decision 0539 — keying's real shape: the line's facts, and the field as "line.<n>.<field>".
+      await env.DB.prepare("INSERT INTO invoice_lines (id, invoice_id, line_number, facts_json) VALUES (?, ?, 1, ?)")
+        .bind(crypto.randomUUID(), invoiceId, JSON.stringify({ "BT-153": "Toner", "BT-133": "cc-0457" }))
+        .run();
       await env.DB.prepare(
-        "INSERT INTO keyed_fields (id, invoice_id, field, new_value, keyed_by, line_number) VALUES (?, ?, 'BT-133', ?, 'u-0457', 1)"
+        "INSERT INTO keyed_fields (id, invoice_id, field, new_value, keyed_by, line_number) VALUES (?, ?, 'line.1.BT-133', ?, 'u-0457', 1)"
       )
         .bind(crypto.randomUUID(), invoiceId, JSON.stringify("cc-0457"))
         .run();
@@ -4263,6 +4267,9 @@ describe("GET /invoices/:id/coding-suggestions, through the real router (decisio
       headers: authHeaders(),
       body: JSON.stringify({ id: "inv-0457-target", supplierVatId: "DE-0457", facts: {} }),
     });
+    await env.DB.prepare("INSERT INTO invoice_lines (id, invoice_id, line_number, facts_json) VALUES (?, 'inv-0457-target', 1, ?)")
+      .bind(crypto.randomUUID(), JSON.stringify({ "BT-153": "Toner" }))
+      .run();
     // Decision 0511: a suggestion must be a real Account Coding entry.
     await env.DB.prepare("INSERT INTO cost_centres (id, name) VALUES ('cc-0457', 'Marketing')").run();
     const key = await seedUserWithPermissions(["AP.Code"]);
@@ -4270,9 +4277,10 @@ describe("GET /invoices/:id/coding-suggestions, through the real router (decisio
       headers: { Authorization: `Bearer ${key}` },
     });
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { suggestions: Record<string, { value: string; sampleSize: number }> };
-    expect(body.suggestions["BT-133"]?.value).toBe("cc-0457");
-    expect(body.suggestions["BT-133"]?.sampleSize).toBe(3);
+    // Decision 0539: per line, the whole set, drawn from the three similar lines.
+    const body = (await res.json()) as { lines: Record<string, { values: Record<string, string>; count: number }> };
+    expect(body.lines["1"]?.values).toEqual({ "BT-133": "cc-0457" });
+    expect(body.lines["1"]?.count).toBe(3);
   });
 });
 

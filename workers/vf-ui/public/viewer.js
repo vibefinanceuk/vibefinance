@@ -1101,7 +1101,8 @@ async function fetchCodingSuggestions() {
     const response = await fetch(`/api/invoices/${encodeURIComponent(current.subject.id)}/coding-suggestions`);
     if (!response.ok) return {};
     const body = await response.json();
-    return body.suggestions ?? {};
+    // Decision 0539 — one suggestion per line, keyed by line number.
+    return body.lines ?? {};
   } catch {
     return {};
   }
@@ -1301,6 +1302,13 @@ function searchableEntryPicker({ current, hint, fetchResults, resolveCurrent, on
  * — this pop-out has no route of its own into a field's own
  * visibility, only into its value.
  *
+ * **Redesigned as a card — decision 0539**, in the Match pop-out's
+ * own style (option A of the operator's mock-ups): the line and its
+ * company and supplier at the top, a suggestion with Accept all, one
+ * card per field that turns green once set, and "Also apply to the
+ * other uncoded lines" at the foot, unticked. Suggestions are no
+ * longer pre-filled (0457 did); nothing is filled until Accept all.
+ *
  * **`Save` reads `line[spec.field]` the moment it runs, from
  * anywhere** — this pop-out never calls `/key` itself. Choosing a
  * value here sets the same in-memory field the inline cell already
@@ -1308,103 +1316,68 @@ function searchableEntryPicker({ current, hint, fetchResults, resolveCurrent, on
  * exactly the way it already persists every other line field.
  */
 async function openLineCodingPopout(line, { lockedNote = null } = {}) {
-  const suggestions = lockedNote ? {} : await fetchCodingSuggestions();
+  const index = lines.indexOf(line);
+  const lineNumber = lineNumberOf.get(line) ?? index + 1;
+  const fieldSpec = (field) => lineFields.find((f) => f.field === field);
+  // What this person may change here: the stage's own `edit` fields,
+  // only on a task that is theirs (0486), never on a PO-matched line (0537).
+  const editable = new Set(
+    CODING_PICKER_FIELDS.filter((spec) => fieldSpec(spec.field)?.visibility === "edit" && canEditAnything && !lockedNote).map((s) => s.field)
+  );
+  const suggestion = editable.size > 0 ? (await fetchCodingSuggestions())[String(lineNumber)] ?? null : null;
 
-  const chosen = {};
-  // Which fields are showing a suggestion nobody has confirmed yet —
-  // cleared the moment a person actually chooses anything for that
-  // field, whether that turns out to be the same value or a
-  // different one. Never silently promoted to a real choice: the
-  // person still has to act, the same "advisory, not automatic"
-  // posture every other automated thing in this product already
-  // takes (a compiled rule needs activation, a stage error is
-  // surfaced rather than acted on).
-  const stillSuggested = {};
-  for (const spec of CODING_PICKER_FIELDS) {
-    const existing = line[spec.field] || null;
-    const suggestion = suggestions[spec.field];
-    if (existing) {
-      chosen[spec.field] = existing;
-    } else if (suggestion) {
-      chosen[spec.field] = suggestion.value;
-      stillSuggested[spec.field] = true;
-    } else {
-      chosen[spec.field] = null;
-    }
-  }
+  const chosen = Object.fromEntries(CODING_PICKER_FIELDS.map((spec) => [spec.field, line[spec.field] || null]));
+  // Names already known (from a suggestion's own labels), so a card never waits to show them.
+  const names = {};
 
-  const companyCodeRow = [
-    el("label", { text: t("apsetup.codingtab.companycode") }),
-    // `codingcompanycode`, decision 0460 — matched in `app.css` to the
-    // same height and width as the four searchable fields beneath it,
-    // reported live as visibly inconsistent otherwise (a plain
-    // `.readonly` box is both shorter, decision 0402's own 32px vs. a
-    // real input's 38px, and full column width where the search boxes
-    // below are now only 2/3 of it).
-    el("div", { class: "readonly codingcompanycode", text: stored.buyer?.entityName ?? "—" }),
-  ];
-
-  // One shared results area for all four pickers — decision 0458. See
-  // `codingResultsController`'s own doc comment for why a shared area
-  // needs a generation token rather than each field's own guard.
+  // One shared results area for all four pickers — decision 0458.
   const resultsLabel = el("div", { class: "codingresultslabel muted sm" });
   const resultsList = el("div", { class: "codingresultslist" });
   const results = codingResultsController(resultsLabel, resultsList);
 
-  // The box a person lands in the moment the pop-out opens — decision
-  // 0459: *"Could we auto-focus on the Cost Center and pre-load the
-  // screen with values for that field."* Cost Centre is always the
-  // first editable field when it is shown at all, so it is filled in
-  // once the field loop below finds it, and focused once the pop-out
-  // is actually in the document (a detached element cannot take focus).
+  // Decision 0459: Cost Centre is focused on open, and so pre-loads its first page.
   let costCentreInput = null;
 
-  const fieldRows = CODING_PICKER_FIELDS.flatMap((spec) => {
+  const card = (spec) => {
     const fieldLabel = t(`field.${spec.field.toLowerCase()}`);
-    const label = el("label", { text: fieldLabel });
-    const resolved = lineFields.find((f) => f.field === spec.field);
+    const resolved = fieldSpec(spec.field);
+    const set = !!chosen[spec.field];
+    const status = el("span", { class: "codingfieldstatus", "aria-hidden": "true", text: set ? "✓" : "" });
+    const head = el("div", { class: "codingfieldhead" }, [el("span", { class: "codingfieldlabel", text: fieldLabel }), status]);
+    const box = el("div", { class: `codingfield${set ? " set" : ""}`, "data-field": spec.field }, [head]);
 
-    /**
-     * **`canEditAnything` joins the field's own visibility here too** —
-     * decision 0486, the same join `cell()` (the line table proper)
-     * already makes and this pop-out never did. Reported live: Account
-     * Coding on an unclaimed Coding-queue invoice saved successfully.
-     * This pop-out's own trigger button stays visible regardless
-     * (decision 0453 — opening the lookup is harmless), but every
-     * field inside it now renders exactly as read-only as the rest of
-     * the line table does when the task is not the caller's.
-     */
-    // Decision 0537 — a PO invoice's line is coded here only when marked Non-PO at Matching.
-    if (!resolved || resolved.visibility !== "edit" || !canEditAnything || lockedNote) {
-      return [
-        label,
-        el("div", {}, [
-          el("div", { class: "readonly", text: line[spec.field] || "—" }),
-          ...(lockedNote || resolved?.visibility === "read" || (resolved?.visibility === "edit" && !canEditAnything)
-            ? []
-            : [el("div", { class: "muted sm", text: t("viewer.coding.noteditable") })]),
-        ]),
-      ];
+    if (!editable.has(spec.field)) {
+      /**
+       * Read-only: not `edit` at this stage, a task that is not this
+       * person's (0486), or a PO invoice's line not marked Non-PO (0537).
+       * The note about the stage is only for the stage's own reason.
+       */
+      const value = el("div", { class: "readonly", text: line[spec.field] || "—" });
+      box.append(value);
+      if (line[spec.field]) {
+        fetchCodingEntries(spec.listType, line[spec.field])
+          .then((found) => {
+            const match = found.find((e) => e.id === line[spec.field]);
+            if (match) value.replaceChildren(match.name, el("span", { class: "codingid", text: match.id }));
+          })
+          .catch(() => {
+            // The id stays — shown, not silently dropped.
+          });
+      }
+      const stageSaysNo = !lockedNote && !(resolved?.visibility === "read" || (resolved?.visibility === "edit" && !canEditAnything));
+      if (stageSaysNo) box.append(el("div", { class: "muted sm", text: t("viewer.coding.noteditable") }));
+      return box;
     }
 
-    // Read live, at fetch time, not captured once — a later field's
-    // own choice (Commodity Code) has to reach General Ledger Code's
-    // own filter even though it is chosen after this closure is
-    // built.
+    // Read live, at fetch time: a Commodity Code chosen later still narrows General Ledger Code.
     const filters = () =>
-      Object.fromEntries(
-        spec.filterKeys.map((key) => [key, key === "company_code" ? stored.orgUnitId : chosen["coding.commodity_code"]])
-      );
-
-    const suggestedNote = stillSuggested[spec.field]
-      ? el("div", { class: "muted sm", id: `codingsuggested-${spec.field}`, text: t("viewer.coding.suggested") })
-      : null;
-
+      Object.fromEntries(spec.filterKeys.map((key) => [key, key === "company_code" ? stored.orgUnitId : chosen["coding.commodity_code"]]));
     const picker = searchableEntryPicker({
       current: chosen[spec.field],
       hint: t("viewer.coding.searchhint"),
       resolveCurrent: chosen[spec.field]
         ? async () => {
+            if (names[spec.field]?.id === chosen[spec.field]) return names[spec.field];
             const found = await fetchCodingEntries(spec.listType, chosen[spec.field]);
             return found.find((e) => e.id === chosen[spec.field]) ?? null;
           }
@@ -1412,61 +1385,145 @@ async function openLineCodingPopout(line, { lockedNote = null } = {}) {
       fetchResults: (q) => fetchCodingEntries(spec.listType, q, filters()),
       fieldLabel,
       results,
-      // Read live, same reason `filters()` above is — which of this
-      // field's own declared filters is actually set right now.
       scopeNote: () => spec.filterKeys.filter((key) => filters()[key]).map((key) => t(FILTER_FIELD_LABEL_KEYS[key] ?? key)),
       onChoose: (item) => {
         chosen[spec.field] = item?.id ?? null;
         line[spec.field] = item?.id ?? "";
-        // A real choice, so the suggestion note no longer applies —
-        // even re-choosing the same value is now the person's own
-        // decision, not the default they hadn't looked at yet.
-        if (stillSuggested[spec.field]) {
-          delete stillSuggested[spec.field];
-          document.getElementById(`codingsuggested-${spec.field}`)?.remove();
-        }
+        if (item) names[spec.field] = item;
+        box.classList.toggle("set", !!item);
+        status.textContent = item ? "✓" : "";
       },
     });
     if (spec.field === "BT-133") costCentreInput = picker.querySelector(".searchbox");
-    return suggestedNote ? [label, el("div", {}, [picker, suggestedNote])] : [label, picker];
-  });
+    box.append(picker);
+    return box;
+  };
 
-  // A pre-filled suggestion is written into `line` immediately, the
-  // same way an already-keyed value already was — Save persists
-  // whatever `line[spec.field]` holds regardless of how it got there
-  // (this function's own doc comment). Written here rather than
-  // inside the loop above so it happens exactly once, after every
-  // field's own current-vs-suggested state is settled.
-  for (const field of Object.keys(stillSuggested)) {
-    line[field] = chosen[field];
-  }
+  const fieldsGrid = el("div", { class: "codingfields" });
+  const renderFields = () => fieldsGrid.replaceChildren(...CODING_PICKER_FIELDS.map(card));
+  renderFields();
+
+  /**
+   * **The suggestion — decision 0539.** Shown only when it would change
+   * something this person may change; nothing is filled in until they
+   * press Accept all (the operator's choice, as for PO line
+   * suggestions, 0534).
+   */
+  const suggestedFields = suggestion ? Object.keys(suggestion.values).filter((f) => editable.has(f)) : [];
+  const differs = suggestedFields.some((f) => suggestion.values[f] !== (chosen[f] ?? null));
+  const supplierName = current?.subject?.supplierName ?? stored.supplier?.name ?? stored.facts?.["BT-27"] ?? "";
+  const suggestionBox =
+    suggestion && differs
+      ? el("div", { class: "codingsuggest", role: "group", "aria-label": t("viewer.coding.sug.title") }, [
+          el("div", { class: "codingsuggesthead" }, [
+            el("b", { text: t("viewer.coding.sug.title") }),
+            el("button", {
+              type: "button",
+              class: "primary codingaccept",
+              text: t("viewer.coding.sug.accept"),
+              onclick: () => {
+                for (const field of suggestedFields) {
+                  chosen[field] = suggestion.values[field];
+                  line[field] = suggestion.values[field];
+                  if (suggestion.labels?.[field]) names[field] = { id: suggestion.values[field], name: suggestion.labels[field] };
+                }
+                renderFields();
+                suggestionBox.replaceChildren(el("div", { class: "codingsuggestdone", text: t("viewer.coding.sug.accepted") }));
+              },
+            }),
+          ]),
+          el(
+            "div",
+            { class: "codingsuggestvalues" },
+            suggestedFields.map((field) =>
+              el("span", { class: "codingchip", title: t(`field.${field.toLowerCase()}`) }, [
+                el("b", { text: suggestion.labels?.[field] ?? suggestion.values[field] }),
+                el("span", { class: "codingid", text: suggestion.values[field] }),
+              ])
+            )
+          ),
+          el("div", { class: "codingsuggestwhy" }, [
+            el("span", { class: "codingmeter", "aria-hidden": "true" }, [
+              el("i", { style: `width:${Math.round(suggestion.confidence * 100)}%` }),
+            ]),
+            t(suggestion.basis === "similar" ? "viewer.coding.sug.similar" : "viewer.coding.sug.supplier")
+              .replace("{pct}", String(Math.round(suggestion.confidence * 100)))
+              .replace("{count}", String(suggestion.count))
+              .replace("{total}", String(suggestion.total))
+              .replace("{supplier}", supplierName),
+          ]),
+          ...(suggestion.examples?.length
+            ? [el("div", { class: "codingsuggestex", text: t("viewer.coding.sug.examples").replace("{examples}", suggestion.examples.map((e) => `“${e}”`).join(", ")) })]
+            : []),
+        ])
+      : null;
+
+  /**
+   * **Also apply to the other uncoded lines — decision 0539**, unticked
+   * to start with. Only lines that can be coded here (0537) and carry
+   * no coding at all: a line somebody already coded is never changed.
+   */
+  const others = lines
+    .map((l, i) => ({ l, n: lineNumberOf.get(l) ?? i + 1 }))
+    .filter(({ l }) => l !== line && codingLockedNote(l) === null && CODING_PICKER_FIELDS.every((spec) => !l[spec.field]));
+  const applyOthers =
+    editable.size > 0 && others.length > 0 ? el("input", { type: "checkbox", class: "codingapplyothers" }) : null;
 
   const close = () => {
     backdrop.remove();
-    // So the line table's own inline cell (if this same field is also
-    // shown there) reflects what was just chosen here — both read and
-    // write the identical `line[spec.field]`, per this function's own
-    // doc comment.
+    if (applyOthers?.checked) {
+      for (const { l } of others) for (const field of editable) if (chosen[field]) l[field] = chosen[field];
+    }
+    // The line table reads the same `line[field]` this pop-out writes.
     renderLines();
   };
+
+  const bits = [
+    el("span", { class: "codingchip codingcompanycode" }, [`${t("viewer.coding.ctx.company")} `, el("b", { text: stored.buyer?.entityName ?? "—" })]),
+    ...(supplierName ? [el("span", { class: "codingchip" }, [`${t("viewer.coding.ctx.supplier")} `, el("b", { text: supplierName })])] : []),
+    ...(stored.poMatch && !lockedNote ? [el("span", { class: "codingchip", text: t("viewer.coding.ctx.nonpo") })] : []),
+  ];
+  // What the line is, as the Match pop-out says it: its name, then quantity × price = amount.
+  const amounts = [
+    line["BT-129"] ? `${line["BT-129"]}${line["BT-130"] ? ` ${line["BT-130"]}` : ""}` : null,
+    line["BT-146"] ? `× ${line["BT-146"]}` : null,
+    line["BT-131"] ? `= ${line["BT-131"]}` : null,
+  ]
+    .filter(Boolean)
+    .join(" ");
+  const describeLine = [line["BT-153"] || null, amounts || null].filter(Boolean).join(" · ");
+
   const backdrop = el("div", { class: "backdrop" }, [
-    el("div", { class: "popout codingpopout" }, [
+    el("div", { class: "popout codingpopout", role: "dialog", "aria-label": t("viewer.coding.linetitle").replace("{n}", String(lineNumber)) }, [
       el("div", { class: "cardhead" }, [
-        el("h3", { text: t("viewer.coding.heading") }),
+        el("div", {}, [
+          el("h3", { text: t("viewer.coding.linetitle").replace("{n}", String(lineNumber)) }),
+          ...(describeLine ? [el("p", { class: "codingsub", text: describeLine })] : []),
+        ]),
         actionLink("close", { onclick: close }),
       ]),
+      el("div", { class: "codingctx" }, bits),
       // Spread, not `: null` — `el()` appends a null child as the text "null".
       ...(lockedNote ? [el("p", { class: "codinglocked", text: lockedNote })] : []),
-      el("div", { class: "editgrid" }, [...companyCodeRow, ...fieldRows]),
+      ...(suggestionBox ? [suggestionBox] : []),
+      fieldsGrid,
       el("div", { class: "codingresults" }, [resultsLabel, resultsList]),
+      el("div", { class: "codingfoot" }, [
+        applyOthers
+          ? el("label", {}, [
+              applyOthers,
+              ` ${t("viewer.coding.applyothers").replace("{lines}", others.map((o) => o.n).join(", "))}`,
+            ])
+          : el("span", { class: "muted sm", text: editable.size > 0 ? t("viewer.coding.savehint") : "" }),
+        el("button", { type: "button", class: "primary", text: t("viewer.coding.done"), onclick: close }),
+      ]),
     ]),
   ]);
   backdrop.onclick = (e) => {
     if (e.target === backdrop) close();
   };
   document.body.append(backdrop);
-  // Only takes effect once the element is actually in the document —
-  // decision 0459.
+  // Only takes effect once the element is actually in the document — decision 0459.
   costCentreInput?.focus();
 }
 

@@ -73,7 +73,7 @@ export function words(...texts: (string | null)[]): Set<string> {
   return out;
 }
 
-function dice(a: Set<string>, b: Set<string>): number {
+export function dice(a: Set<string>, b: Set<string>): number {
   if (a.size === 0 || b.size === 0) return 0;
   let shared = 0;
   for (const w of a) if (b.has(w)) shared++;

@@ -1392,3 +1392,50 @@ describe("a header-only edit keeps the lines — decision 0532", () => {
     expect(lines.results[1]).toMatchObject({ description: "Paper", amount: 90, cost_centre: null });
   });
 });
+
+/**
+ * **Keying keeps the invoice's structured columns — decision 0539.**
+ * Since 0071 every save wrote `supplier_vat_id`, `invoice_number`,
+ * `currency`, `issue_date`, `total_with_vat` and `mandate_channel` back
+ * as NULL. Found when coding suggestions drew on no history at all.
+ */
+describe("keying keeps the invoice's structured columns (decision 0539)", () => {
+  const columns = () =>
+    env.DB.prepare(
+      "SELECT supplier_vat_id, invoice_number, currency, issue_date, total_with_vat, mandate_channel FROM invoice_headers WHERE id = 'inv-cols'"
+    ).first();
+
+  beforeEach(async () => {
+    await handleSetFieldVisibility(env.DB, {
+      fields: [
+        { field: "BT-131", visibility: "edit" },
+        { field: "BT-1", visibility: "edit" },
+        { field: "BT-112", visibility: "edit" },
+      ],
+    });
+    await seedInvoice("inv-cols", { "BT-31": "GB111", "BT-1": "INV-9", "BT-5": "GBP", "BT-2": "2026-09-01", "BT-112": 120 });
+    await env.DB.prepare(
+      `UPDATE invoice_headers SET supplier_vat_id = 'GB111', invoice_number = 'INV-9', currency = 'GBP', issue_date = '2026-09-01',
+         total_with_vat = 120, mandate_channel = 'peppol' WHERE id = 'inv-cols'`
+    ).run();
+  });
+
+  it("leaves every column as it was when a save keys none of them", async () => {
+    const result = await handleKeyInvoiceFields(env.DB, "inv-cols", { facts: {}, lines: [{ lineNumber: 1, facts: { "BT-131": 100 } }] } as never, "u-dan");
+    expect(result.status).toBe(200);
+    expect(await columns()).toEqual({
+      supplier_vat_id: "GB111",
+      invoice_number: "INV-9",
+      currency: "GBP",
+      issue_date: "2026-09-01",
+      total_with_vat: 120,
+      mandate_channel: "peppol",
+    });
+  });
+
+  it("takes what a person keyed, for the fields that have a column", async () => {
+    const result = await handleKeyInvoiceFields(env.DB, "inv-cols", { facts: { "BT-1": "INV-9A", "BT-112": "150.50" } }, "u-dan");
+    expect(result.status).toBe(200);
+    expect(await columns()).toMatchObject({ supplier_vat_id: "GB111", invoice_number: "INV-9A", total_with_vat: 150.5, currency: "GBP" });
+  });
+});

@@ -1,166 +1,268 @@
+import type { InvoiceFacts } from "@vibefinance/shared";
 import type { RouteResult } from "./org-route.js";
-import { checkLineCoding } from "./coding-validation.js";
+import { CODING_FIELD_LISTS, checkLineCoding } from "./coding-validation.js";
+import { isPoInvoice, nonPoLines } from "./po-pairings.js";
+import { dice, words } from "./po-suggest.js";
 
 /**
- * Frequency-based Account Coding defaults — decision 0456, Phase 1 of
- * the autocode idea the operator raised.
+ * **Account Coding suggestions, per line — decision 0539**, replacing
+ * the per-supplier defaults of decisions 0456/0457.
  *
- * **The training data already exists.** `keyed_fields` (decision
- * 0071/0109) has recorded every person-keyed value, per invoice and
- * line, since Account Coding's own fields became keyable (decision
- * 0451). This is that history read back, not a new capture mechanism —
- * a customer who has been coding invoices for a month already has a
- * suggestion engine's worth of data sitting in a table nobody built
- * for this purpose.
+ * **Why it was replaced.** 0457 read `keyed_fields` for rows whose
+ * `field` was `BT-133` (and the other three coding fields) on a line.
+ * Keying has always recorded a line's field as `line.<n>.<field>`
+ * (`key-fields-route.ts`, since 0109), so on real data it never found a
+ * single row and never suggested anything. Its tests seeded the same
+ * wrong name, which is how it passed. It also suggested the same coding
+ * for every line of an invoice, so a supplier's freight line and goods
+ * line got the same answer.
  *
- * **Frequency, not a model.** Deliberately the simpler of the two
- * phases discussed with the operator: "what did this supplier's own
- * lines usually get coded to" is a GROUP BY, fully explainable, and
- * useful from the first handful of examples — where a trained model
- * needs volume a new customer will not have yet. A real learned model
- * (predicting from a line's own description or amount, not just
- * supplier identity) is Phase 2, deferred until there's evidence
- * frequency alone is missing real patterns.
+ * **What a suggestion is now:** for one line, the whole coding set (the
+ * four fields together, so a General Ledger Code stays consistent with
+ * its Commodity Code) that this supplier's earlier lines were coded to
+ * by a person:
+ *  1. **Similar lines first.** Earlier lines whose description shares
+ *     enough words with this one (the PO line suggester's own Dice
+ *     measure, `po-suggest.ts`, at 0.5 or more). The set most of them
+ *     got is offered when at least half of them agree.
+ *  2. **Otherwise the supplier's usual coding**: the set most of its
+ *     coded lines got, once there are at least `MIN_SUPPLIER_LINES` of
+ *     them and at least half agree.
+ * Each comes with how many lines it is drawn from and one or two of
+ * their descriptions, so a person can see why before accepting.
  *
- * **Advisory only, by design — the same posture every other automated
- * thing in this product already takes** (a compiled rule needs a
- * person to activate it, a stage error is surfaced rather than acted
- * on, a duplicate is flagged rather than blocked). This module never
- * writes a fact; it returns a suggestion for the caller to pre-fill,
- * and a person still keys the real value — which is also what keeps
- * `keyed_fields` recording genuine confirmations rather than the
- * suggestion engine quietly grading its own homework.
+ * **"Coded by a person"** means a line with a coding field in
+ * `keyed_fields` (under its real `line.<n>.<field>` name, never the
+ * value 0537 writes when it clears coding), read from the line's own
+ * facts as they stand now: the coding it ended with, not every value
+ * typed on the way.
+ *
+ * **Advisory only.** Nothing is written here or pre-filled on screen:
+ * the pop-out shows the suggestion and a person presses Accept all
+ * (the operator's choice, the same as PO line suggestions, 0534).
+ * Never suggested: a value the save would refuse (decision 0511's
+ * checks, run as one line), or a line on a PO invoice that is not
+ * marked Non-PO (0537: its coding comes from the PO).
  */
 
-/** The four Account Coding fields decision 0453's pop-out already keys — line-scope, none parsed from the document. */
-export const CODING_SUGGESTION_FIELDS = ["BT-133", "coding.project", "coding.commodity_code", "coding.gl_code"] as const;
-export type CodingSuggestionField = (typeof CODING_SUGGESTION_FIELDS)[number];
+/** Below this many coded lines, a supplier has no "usual" coding yet. */
+const MIN_SUPPLIER_LINES = 3;
+/** The share of the lines drawn on that must agree. */
+const MIN_AGREEMENT = 0.5;
+/** Description similarity for "a line like this one" — the PO line suggester's own bar. */
+const SIMILAR = 0.5;
+/** How far back to look: the supplier's most recent coded lines. */
+const HISTORY_LIMIT = 500;
 
-/**
- * Below this many prior keyed examples for this supplier and field, no
- * suggestion is offered at all — a "pattern" built from one or two
- * invoices is noise wearing a confident face, and offering nothing is
- * more honest than offering a coin flip.
- */
-const MIN_SAMPLE_SIZE = 3;
+const CODING_FIELDS = Object.keys(CODING_FIELD_LISTS);
 
-/**
- * Below this share of the sample, the most common value isn't common
- * enough to call a pattern — three different Cost Centres appearing
- * once each is three data points and zero signal.
- */
-const MIN_CONFIDENCE = 0.5;
-
-export interface CodingSuggestion {
-  value: string;
-  /** topCount / sampleSize — how much of this supplier's own history agrees with this value. */
+export interface LineCodingSuggestion {
+  /** Field → id, only the fields the set carries. */
+  values: Record<string, string>;
+  /** Field → the entry's name, for showing it. */
+  labels: Record<string, string>;
+  basis: "similar" | "supplier";
+  /** Lines with this set, and lines drawn on (similar ones, or all the supplier's coded lines). */
+  count: number;
+  total: number;
   confidence: number;
-  /** How many prior keyed values for this field/supplier this suggestion is drawn from. */
-  sampleSize: number;
+  /** One or two of those lines' descriptions. */
+  examples: string[];
 }
 
-interface FrequencyRow {
-  new_value: string;
-  cnt: number;
+export interface HistoryLine {
+  description: string | null;
+  words: Set<string>;
+  key: string;
+  values: Record<string, string>;
+}
+
+function text(v: unknown): string | null {
+  if (typeof v === "string" && v.trim() !== "") return v.trim();
+  if (typeof v === "number") return String(v);
+  return null;
+}
+
+function codingOf(facts: Record<string, unknown>): Record<string, string> {
+  const values: Record<string, string> = {};
+  for (const field of CODING_FIELDS) {
+    const v = text(facts[field]);
+    if (v) values[field] = v;
+  }
+  return values;
+}
+
+function describe(facts: Record<string, unknown>, column: string | null): string | null {
+  return text(facts["BT-153"]) ?? column ?? text(facts["BT-154"]);
+}
+
+async function supplierHistory(db: D1Database, supplierVatId: string, invoiceId: string): Promise<HistoryLine[]> {
+  const rows = (
+    await db
+      .prepare(
+        `SELECT il.line_number, il.description, il.facts_json
+         FROM invoice_lines il
+         JOIN invoice_headers ih ON ih.id = il.invoice_id
+         WHERE ih.supplier_vat_id = ? AND ih.id != ?
+           AND EXISTS (
+             SELECT 1 FROM keyed_fields kf
+             WHERE kf.invoice_id = il.invoice_id AND kf.line_number = il.line_number
+               AND kf.field IN (${CODING_FIELDS.map(() => "'line.' || il.line_number || '.' || ?").join(", ")})
+               AND kf.new_value != 'null'
+           )
+         ORDER BY ih.created_at DESC, il.line_number
+         LIMIT ${HISTORY_LIMIT}`
+      )
+      .bind(supplierVatId, invoiceId, ...CODING_FIELDS)
+      .all<{ line_number: number; description: string | null; facts_json: string | null }>()
+  ).results;
+
+  const history: HistoryLine[] = [];
+  for (const row of rows) {
+    let facts: Record<string, unknown> = {};
+    try {
+      facts = JSON.parse(row.facts_json || "{}") as Record<string, unknown>;
+    } catch {
+      continue;
+    }
+    const values = codingOf(facts);
+    if (Object.keys(values).length === 0) continue;
+    const description = describe(facts, row.description);
+    history.push({
+      description,
+      words: words(description, text(facts["BT-154"])),
+      key: JSON.stringify(CODING_FIELDS.map((f) => values[f] ?? null)),
+      values,
+    });
+  }
+  return history;
+}
+
+/** The coding set most of `lines` got, or null when fewer than half agree. */
+function mostAgreed(lines: HistoryLine[]): { set: HistoryLine; count: number; members: HistoryLine[] } | null {
+  const groups = new Map<string, HistoryLine[]>();
+  for (const l of lines) groups.set(l.key, [...(groups.get(l.key) ?? []), l]);
+  let best: HistoryLine[] | null = null;
+  for (const g of groups.values()) if (!best || g.length > best.length) best = g;
+  if (!best || best.length / lines.length < MIN_AGREEMENT) return null;
+  return { set: best[0], count: best.length, members: best };
+}
+
+/** One line's suggestion from the supplier's history, before the 0511 checks. */
+export function suggestFromHistory(
+  description: string | null,
+  extra: string | null,
+  history: HistoryLine[]
+): Omit<LineCodingSuggestion, "labels"> | null {
+  const mine = words(description, extra);
+  const scored = history.map((h) => ({ h, sim: dice(mine, h.words) }));
+  const similar = scored.filter((s) => s.sim >= SIMILAR).sort((a, b) => b.sim - a.sim);
+
+  if (similar.length > 0) {
+    const agreed = mostAgreed(similar.map((s) => s.h));
+    if (agreed) {
+      return {
+        values: agreed.set.values,
+        basis: "similar",
+        count: agreed.count,
+        total: similar.length,
+        confidence: agreed.count / similar.length,
+        examples: examplesOf(agreed.members),
+      };
+    }
+  }
+
+  if (history.length < MIN_SUPPLIER_LINES) return null;
+  const agreed = mostAgreed(history);
+  if (!agreed) return null;
+  return {
+    values: agreed.set.values,
+    basis: "supplier",
+    count: agreed.count,
+    total: history.length,
+    confidence: agreed.count / history.length,
+    examples: examplesOf(agreed.members),
+  };
+}
+
+function examplesOf(members: HistoryLine[]): string[] {
+  return [...new Set(members.map((m) => m.description).filter((d): d is string => !!d))].slice(0, 2);
+}
+
+/** Each suggested value's own name, for showing it. */
+async function labelsFor(db: D1Database, values: Record<string, string>): Promise<Record<string, string>> {
+  const labels: Record<string, string> = {};
+  for (const [field, id] of Object.entries(values)) {
+    const listType = CODING_FIELD_LISTS[field];
+    const row =
+      listType === "cost_centre"
+        ? await db.prepare("SELECT name FROM cost_centres WHERE id = ?").bind(id).first<{ name: string }>()
+        : await db
+            .prepare("SELECT name FROM coding_list_entries WHERE list_type_id = ? AND id = ?")
+            .bind(listType, id)
+            .first<{ name: string }>();
+    if (row?.name) labels[field] = row.name;
+  }
+  return labels;
 }
 
 /**
- * One field's suggestion, or none if there isn't enough agreement in
- * this supplier's own history to offer one.
- *
- * `new_value` is stored `JSON.stringify`-encoded (key-fields-route.ts)
- * so a string and a number never collide as text — parsed back here,
- * with a row that fails to parse simply excluded rather than crashing
- * a suggestion for every other row.
+ * `GET /invoices/:id/coding-suggestions` → `{ lines: { "<n>": LineCodingSuggestion } }`,
+ * one entry per line that has a suggestion.
  */
-async function suggestOneField(
-  db: D1Database,
-  field: CodingSuggestionField,
-  supplierVatId: string
-): Promise<CodingSuggestion | undefined> {
-  const rows = await db
-    .prepare(
-      `SELECT kf.new_value AS new_value, COUNT(*) AS cnt
-       FROM keyed_fields kf
-       JOIN invoice_headers ih ON ih.id = kf.invoice_id
-       WHERE kf.field = ?
-         AND kf.line_number IS NOT NULL
-         -- A removal (decision 0537's coding cleared on PO matching) is no coding choice.
-         AND kf.new_value != 'null'
-         AND ih.supplier_vat_id = ?
-       GROUP BY kf.new_value
-       ORDER BY cnt DESC`
-    )
-    .bind(field, supplierVatId)
-    .all<FrequencyRow>();
-
-  if (rows.results.length === 0) return undefined;
-
-  const sampleSize = rows.results.reduce((sum, row) => sum + row.cnt, 0);
-  if (sampleSize < MIN_SAMPLE_SIZE) return undefined;
-
-  const top = rows.results[0];
-  const confidence = top.cnt / sampleSize;
-  if (confidence < MIN_CONFIDENCE) return undefined;
-
-  let value: unknown;
-  try {
-    value = JSON.parse(top.new_value);
-  } catch {
-    return undefined; // a row that can't be read back suggests nothing, rather than a raw JSON string
-  }
-  if (typeof value !== "string" || value.trim() === "") return undefined;
-
-  return { value, confidence, sampleSize };
-}
-
-/**
- * Suggestions for all four fields at once, for one supplier — the
- * shape the pop-out needs in a single call rather than four.
- */
-export async function suggestCodingValues(
-  db: D1Database,
-  supplierVatId: string
-): Promise<Partial<Record<CodingSuggestionField, CodingSuggestion>>> {
-  const entries = await Promise.all(
-    CODING_SUGGESTION_FIELDS.map(async (field) => [field, await suggestOneField(db, field, supplierVatId)] as const)
-  );
-  const result: Partial<Record<CodingSuggestionField, CodingSuggestion>> = {};
-  for (const [field, suggestion] of entries) {
-    if (suggestion) result[field] = suggestion;
-  }
-  return result;
-}
-
 export async function handleCodingSuggestions(db: D1Database, invoiceId: string): Promise<RouteResult> {
   const header = await db
-    .prepare("SELECT supplier_vat_id, org_unit_id FROM invoice_headers WHERE id = ?")
+    .prepare("SELECT supplier_vat_id, org_unit_id, facts_json FROM invoice_headers WHERE id = ?")
     .bind(invoiceId)
-    .first<{ supplier_vat_id: string | null; org_unit_id: string | null }>();
+    .first<{ supplier_vat_id: string | null; org_unit_id: string | null; facts_json: string | null }>();
   if (!header) {
     return { status: 404, body: { error: `invoice ${invoiceId} does not exist` } };
   }
-  if (!header.supplier_vat_id) {
-    // No identified supplier — no history to compare against. Not an
-    // error; there is simply nothing to suggest yet, the same "empty
-    // is a real, valid state" precedent an empty rule set already set.
-    return { status: 200, body: { suggestions: {} } };
-  }
+  // No identified supplier: no history to draw on. Not an error.
+  if (!header.supplier_vat_id) return { status: 200, body: { lines: {} } };
 
-  const suggestions = await suggestCodingValues(db, header.supplier_vat_id);
-
-  /**
-   * **Never suggest what the save would refuse — decision 0511.** A
-   * suggestion is pre-filled and saved with no further click (0457), so
-   * a value keyed before Account Coding was enforced — or since removed
-   * from a list, or linked to another company — would otherwise block
-   * the whole save it was meant to speed up. Checked as one line, so a
-   * suggested General Ledger Code is tested against the Commodity Code
-   * suggested beside it.
-   */
-  const asLine = Object.fromEntries(Object.entries(suggestions).map(([field, s]) => [field, s!.value]));
-  for (const problem of await checkLineCoding(db, header.org_unit_id, asLine)) {
-    delete suggestions[problem.field as CodingSuggestionField];
+  let headerFacts: Record<string, unknown> = {};
+  try {
+    headerFacts = JSON.parse(header.facts_json || "{}") as Record<string, unknown>;
+  } catch {
+    // Unparseable header facts carry no order reference.
   }
-  return { status: 200, body: { suggestions } };
+  // Decision 0537 — on a PO invoice only a Non-PO line is coded by hand.
+  const onlyLines = isPoInvoice(headerFacts) ? await nonPoLines(db, invoiceId, headerFacts as InvoiceFacts) : null;
+
+  const history = await supplierHistory(db, header.supplier_vat_id, invoiceId);
+  if (history.length === 0) return { status: 200, body: { lines: {} } };
+
+  const lines = (
+    await db
+      .prepare("SELECT line_number, description, facts_json FROM invoice_lines WHERE invoice_id = ? ORDER BY line_number")
+      .bind(invoiceId)
+      .all<{ line_number: number; description: string | null; facts_json: string | null }>()
+  ).results;
+
+  const out: Record<string, LineCodingSuggestion> = {};
+  for (const line of lines) {
+    if (onlyLines && !onlyLines.has(line.line_number)) continue;
+    let facts: Record<string, unknown> = {};
+    try {
+      facts = JSON.parse(line.facts_json || "{}") as Record<string, unknown>;
+    } catch {
+      // A line whose facts will not parse is matched on its description column alone.
+    }
+    const found = suggestFromHistory(describe(facts, line.description), text(facts["BT-154"]), history);
+    if (!found) continue;
+
+    /**
+     * **Never suggest what the save would refuse — decision 0511.**
+     * Checked as one line, so a General Ledger Code is tested against
+     * the Commodity Code beside it; a value no longer on a list, or
+     * linked to another company, is dropped rather than offered.
+     */
+    const values = { ...found.values };
+    for (const problem of await checkLineCoding(db, header.org_unit_id, values)) delete values[problem.field];
+    if (Object.keys(values).length === 0) continue;
+
+    out[String(line.line_number)] = { ...found, values, labels: await labelsFor(db, values) };
+  }
+  return { status: 200, body: { lines: out } };
 }

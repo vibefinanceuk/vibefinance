@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 28 September 2026 (decision 0538). A living document: what
+Last updated 28 September 2026 (decision 0539). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,16 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Coding pop-out redesign and per-line suggestions (0539)
+- The Coding pop-out is a card like the Match pop-out, with a per-line
+  coding suggestion (similar earlier lines from the supplier, then its
+  usual coding) accepted with Accept all, and "also apply to the other
+  uncoded lines".
+- Suggestions had never worked (wrong `keyed_fields` name), and every
+  keying save blanked the invoice's structured columns since 0071;
+  both fixed. `vf-app` migration `0097` repairs existing rows;
+  `vf-licence` migration `0194`.
 
 ### Coding pop-out: stray "null" removed (0538)
 - 0537's read-only note printed "null" on every codable line. `vf-ui`
