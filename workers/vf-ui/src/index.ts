@@ -541,6 +541,8 @@ const PROXIED_TO_INSTANCE: RegExp[] = [
    * does not match the longer path, so this needs its own entry.
    */
   /^\/matching-config\/standard-rules$/,
+  /** AP Setup's Account Coding settings — decision 0540, added with the screen that calls it. */
+  /^\/coding-config$/,
   /**
    * **CSV Template and Load — decision 0445.** `GET .../csv-format`
    * and `POST .../csv-load` both have the same two-segment shape as

@@ -1,4 +1,5 @@
 import type { InvoiceFacts } from "@vibefinance/shared";
+import { getCostObjectRule } from "./coding-config-route.js";
 import { isPoInvoice, nonPoLines } from "./po-pairings.js";
 import { declaredFiltersFor } from "./coding-list-route.js";
 import { resolveFieldVisibility } from "./field-visibility-route.js";
@@ -245,8 +246,12 @@ export async function mergeCodingValidityForInvoice<L extends InvoiceFacts>(
 export interface CodingGap {
   line: number;
   field: string;
-  /** `missing`, or one of `checkLineCoding`'s own reasons. */
-  reason: "missing" | CodingProblemReason;
+  /**
+   * `missing`, or one of `checkLineCoding`'s own reasons. Decision 0540:
+   * `field` is `cost_object` ("cost centre or project") when the
+   * either/or rule is on, and `both` says a line holds the two together.
+   */
+  reason: "missing" | "both" | CodingProblemReason;
 }
 
 /**
@@ -325,10 +330,21 @@ export async function codingGapsForTask(db: D1Database, taskId: string): Promise
   if (onlyLines && onlyLines.size === 0) return [];
 
   const visibility = await resolveFieldVisibility(db, task.stage_id, task.org_unit_id);
-  const required = visibility
+  let required = visibility
     .filter((f) => f.visibility === "edit" && f.field in CODING_FIELD_LISTS)
     .map((f) => f.field);
   if (required.length === 0) return [];
+
+  /**
+   * **Cost Centre OR Project — decision 0540.** With AP Setup's
+   * either/or rule on, the two count as one requirement wherever either
+   * is editable here: one of them, never both. Each is still checked
+   * against its list (0511) when present.
+   */
+  const COST_OBJECTS = ["BT-133", "coding.project"];
+  const eitherOr =
+    (await getCostObjectRule(db)) === "exclusive" && required.some((f) => COST_OBJECTS.includes(f));
+  if (eitherOr) required = required.filter((f) => !COST_OBJECTS.includes(f));
 
   const lines = await db
     .prepare("SELECT line_number, facts_json FROM invoice_lines WHERE invoice_id = ? ORDER BY line_number")
@@ -345,13 +361,21 @@ export async function codingGapsForTask(db: D1Database, taskId: string): Promise
     } catch {
       // Unparseable facts are treated as no coding at all.
     }
-    for (const field of required) {
+    const blank = (field: string) => {
       const value = facts[field];
-      if (value === undefined || value === null || String(value).trim() === "") {
-        gaps.push({ line: row.line_number, field, reason: "missing" });
-      }
+      return value === undefined || value === null || String(value).trim() === "";
+    };
+    for (const field of required) {
+      if (blank(field)) gaps.push({ line: row.line_number, field, reason: "missing" });
     }
-    for (const problem of await checkLineCoding(db, task.org_unit_id, facts, new Set(required), cache)) {
+    const checked = new Set(required);
+    if (eitherOr) {
+      const held = COST_OBJECTS.filter((f) => !blank(f));
+      if (held.length === 0) gaps.push({ line: row.line_number, field: "cost_object", reason: "missing" });
+      if (held.length === 2) gaps.push({ line: row.line_number, field: "cost_object", reason: "both" });
+      for (const f of held) checked.add(f);
+    }
+    for (const problem of await checkLineCoding(db, task.org_unit_id, facts, checked, cache)) {
       gaps.push({ line: row.line_number, field: problem.field, reason: problem.reason });
     }
   }

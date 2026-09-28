@@ -2061,6 +2061,8 @@ describe("the actions do something (decision 0138)", () => {
             "viewer.coding.incomplete": "Account Coding is not complete. Code every line before completing:",
             "viewer.coding.missing": "is missing",
             "viewer.coding.invalid.not_on_list": "is not on the list",
+            "field.cost_object": "Cost centre or project",
+            "viewer.coding.invalid.both": "has both a cost centre and a project. Keep one",
           },
         },
       });
@@ -2080,6 +2082,9 @@ describe("the actions do something (decision 0138)", () => {
                 gaps: [
                   { line: 1, field: "BT-133", reason: "missing" },
                   { line: 2, field: "coding.project", reason: "not_on_list" },
+                  // Decision 0540 — AP Setup's either/or rule.
+                  { line: 3, field: "cost_object", reason: "missing" },
+                  { line: 4, field: "cost_object", reason: "both" },
                 ],
               }),
             } as Response;
@@ -2097,7 +2102,9 @@ describe("the actions do something (decision 0138)", () => {
       expect(errorBox.textContent).toBe(
         "Account Coding is not complete. Code every line before completing:\n" +
           "line 1 · Cost centre · is missing\n" +
-          "line 2 · Project · is not on the list"
+          "line 2 · Project · is not on the list\n" +
+          "line 3 · Cost centre or project · is missing\n" +
+          "line 4 · Cost centre or project · has both a cost centre and a project. Keep one"
       );
     });
   });
@@ -7021,5 +7028,166 @@ describe("the Coding column, and coding only a Non-PO line — decision 0537", (
     expect(codingButtons().every((b) => !b.classList.contains("locked"))).toBe(true);
     const heads = [...document.querySelectorAll(".linetable thead th")].map((th) => th.textContent);
     expect(heads.slice(-2)).toEqual(["Coding", ""]);
+  });
+});
+
+describe("Cost centre OR project in the Coding pop-out — decision 0540", () => {
+  const STR = {
+    ...STRINGS,
+    strings: {
+      ...STRINGS.strings,
+      "action.coding": "Coding",
+      "viewer.coding.linetitle": "Line {n} coding",
+      "viewer.coding.searchhint": "Type to search",
+      "viewer.coding.resultsfor": "Results for",
+      "viewer.coding.sug.title": "Suggested coding",
+      "viewer.coding.sug.accept": "Accept all",
+      "viewer.coding.bothrefused": "Not saved. A line carries a cost centre or a project, not both (line {lines}).",
+      "field.bt-133": "Cost centre",
+      "field.coding.project": "Project",
+      "field.coding.commodity_code": "Commodity code",
+      "field.coding.gl_code": "General ledger code",
+      "field.cost_object": "Cost centre or project",
+    },
+  };
+  const FIELDS_ALL = {
+    fields: [
+      { field: "BT-131", visibility: "edit", type: "number", line: true, description: "line net" },
+      { field: "BT-133", visibility: "edit", type: "text", line: true, description: "cost centre" },
+      { field: "coding.project", visibility: "edit", type: "text", line: true, description: "project" },
+      { field: "coding.commodity_code", visibility: "edit", type: "text", line: true, description: "commodity" },
+    ],
+  };
+  function stubAll(lineFacts: Record<string, unknown>, extra: Record<string, unknown> = {}, bodies: { path: string; body: unknown }[] = []) {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        const path = String(url).split("?")[0];
+        if (init?.body) bodies.push({ path, body: JSON.parse(String(init.body)) });
+        const routes: Record<string, unknown> = {
+          "/api/ui-strings": STR,
+          "/api/code-lists": { fields: {} },
+          "/api/field-visibility": FIELDS_ALL,
+          "/api/invoices/inv-1": {
+            facts: {},
+            lines: [{ lineNumber: 1, facts: { "BT-131": 100, ...lineFacts } }],
+            validation: { passed: true, checked: [], failures: [] },
+            buyer: { unitId: "UK01", unitName: "Acme UK", entityName: "Acme UK", vatId: "GB1" },
+            orgUnitId: "UK01",
+            costObjectRule: "exclusive",
+          },
+          "/api/invoices/inv-1/document-url": { url: null },
+          "/api/invoices/inv-1/progress": { inProcess: false, stages: [] },
+          "/api/invoices/inv-1/pages": { pages: [] },
+          "/api/documents/inv-1/activity": { items: [] },
+          "/api/invoices/inv-1/key": { ok: true },
+          "/api/invoices/inv-1/coding-suggestions": { lines: {} },
+          "/api/org/cost-centres": { costCentres: [{ id: "cc1", name: "Marketing", filters: [] }], total: 1, page: 1, pageSize: 50 },
+          "/api/coding-lists/project": { entries: [{ id: "PRJ-1", name: "Fit-out", filters: [] }], declaredFilters: [], total: 1, page: 1, pageSize: 50 },
+          ...extra,
+        };
+        const value = routes[path];
+        if (value && typeof value === "object" && "__notOk" in value) return { ok: false, json: async () => (value as { __notOk: unknown }).__notOk } as Response;
+        if (path in routes) return { ok: true, json: async () => value } as Response;
+        throw new Error(`no stub for ${path}`);
+      })
+    );
+  }
+  async function openCoding() {
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    await openViewer(TASK, () => {});
+    await new Promise((r) => setTimeout(r, 0));
+    (document.querySelector('button[title="Coding"]') as HTMLButtonElement).click();
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
+  }
+  const switchButtons = () => [...document.querySelectorAll(".popout .codingswitch button")] as HTMLButtonElement[];
+  const save = async () => {
+    (document.querySelector(".popout .actionlink") as HTMLButtonElement).click();
+    const saveButton = [...document.querySelectorAll(".actionlink span")].find((s) => s.textContent === "Save")?.closest("button");
+    (saveButton as HTMLButtonElement).click();
+    await new Promise((r) => setTimeout(r, 0));
+  };
+
+  it("shows one full-width card with a Cost centre | Project switch, on the cost centre when the line has one", async () => {
+    stubAll({ "BT-133": "cc1" });
+    await openCoding();
+    const object = document.querySelector(".popout .codingfield.codingobject") as HTMLElement;
+    expect(switchButtons().map((b) => [b.textContent, b.getAttribute("aria-pressed")])).toEqual([
+      ["Cost centre", "true"],
+      ["Project", "false"],
+    ]);
+    expect((object.querySelector(".searchbox") as HTMLInputElement).value).toBe("Marketing");
+    // No separate Cost centre or Project cards; the other fields keep theirs.
+    const labels = [...document.querySelectorAll(".popout .codingfieldlabel")].map((l) => l.textContent);
+    expect(labels).toEqual(["Commodity code", "General ledger code"]);
+  });
+
+  it("opens on Project for a line coded to a project", async () => {
+    stubAll({ "coding.project": "PRJ-1" });
+    await openCoding();
+    expect(switchButtons().find((b) => b.classList.contains("on"))?.textContent).toBe("Project");
+  });
+
+  it("choosing a project clears the cost centre, so Save sends the project alone", async () => {
+    const bodies: { path: string; body: unknown }[] = [];
+    stubAll({ "BT-133": "cc1" }, {}, bodies);
+    await openCoding();
+    switchButtons()[1].click();
+    const box = document.querySelector(".popout .codingobject .searchbox") as HTMLInputElement;
+    box.value = "fit";
+    box.oninput?.(new Event("input"));
+    await new Promise((r) => setTimeout(r, 0));
+    ([...document.querySelectorAll(".popout .searchresult")].find((r) => r.textContent?.includes("Fit-out")) as HTMLButtonElement).click();
+    await save();
+    const line = (bodies.find((b) => b.path === "/api/invoices/inv-1/key")?.body as { lines: { facts: Record<string, unknown> }[] }).lines[0];
+    expect(line.facts["coding.project"]).toBe("PRJ-1");
+    expect(line.facts["BT-133"]).toBeUndefined();
+  });
+
+  it("switching alone changes nothing: the cost centre stays until a project is chosen", async () => {
+    const bodies: { path: string; body: unknown }[] = [];
+    stubAll({ "BT-133": "cc1" }, {}, bodies);
+    await openCoding();
+    switchButtons()[1].click();
+    await save();
+    const line = (bodies.find((b) => b.path === "/api/invoices/inv-1/key")?.body as { lines: { facts: Record<string, unknown> }[] }).lines[0];
+    expect(line.facts["BT-133"]).toBe("cc1");
+  });
+
+  it("accepting a suggested project replaces the cost centre and turns the switch", async () => {
+    const bodies: { path: string; body: unknown }[] = [];
+    stubAll(
+      { "BT-133": "cc1" },
+      {
+        "/api/invoices/inv-1/coding-suggestions": {
+          lines: { "1": { values: { "coding.project": "PRJ-1" }, labels: { "coding.project": "Fit-out" }, basis: "similar", count: 2, total: 2, confidence: 1, examples: [] } },
+        },
+      },
+      bodies
+    );
+    await openCoding();
+    (document.querySelector(".popout .codingaccept") as HTMLButtonElement).click();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(switchButtons().find((b) => b.classList.contains("on"))?.textContent).toBe("Project");
+    await save();
+    const line = (bodies.find((b) => b.path === "/api/invoices/inv-1/key")?.body as { lines: { facts: Record<string, unknown> }[] }).lines[0];
+    expect(line.facts).toMatchObject({ "coding.project": "PRJ-1" });
+    expect(line.facts["BT-133"]).toBeUndefined();
+  });
+
+  it("says why a save keying both was refused, in the reader's words", async () => {
+    stubAll({}, { "/api/invoices/inv-1/key": { __notOk: { error: "…", reason: "cost_centre_and_project", lines: [1] } } });
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    await openViewer(TASK, () => {});
+    await new Promise((r) => setTimeout(r, 0));
+    const saveButton = [...document.querySelectorAll(".actionlink")].find((a) => a.querySelector("span")?.textContent === "Save") as HTMLButtonElement;
+    saveButton.click();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(document.getElementById("viewer-note")?.textContent).toBe("Not saved. A line carries a cost centre or a project, not both (line 1).");
   });
 });

@@ -1,4 +1,5 @@
 import type { InvoiceFacts } from "@vibefinance/shared";
+import { getCostObjectRule } from "./coding-config-route.js";
 import { lineMatchSummary } from "./po-line-summary.js";
 import { validateInvoiceFacts } from "./validation.js";
 import type { RouteResult } from "./org-route.js";
@@ -710,6 +711,8 @@ export async function handleGetInvoice(
        * viewer's Match column. `null` when the invoice names no PO.
        */
       poMatch: await lineMatchSummary(db, invoice.id, facts),
+      // Decision 0540 — so the Coding pop-out shows Cost centre and Project as one either/or card.
+      costObjectRule: await getCostObjectRule(db),
       /**
        * **Who we matched this to** — decision 0219.
        *

@@ -555,6 +555,9 @@ describe("the proxy carries every path a screen calls (decision 0131)", () => {
      * allowlist entry itself this time, not after a live report.
      */
     ["GET", "/api/matching-config/standard-rules"],
+    /** AP Setup's Account Coding settings — decision 0540. */
+    ["GET", "/api/coding-config"],
+    ["PUT", "/api/coding-config"],
     /**
      * The collaborators roster — decision 0470, `collaborators.js`'s
      * own "Add person to conversation" panel. Never added here at the

@@ -2685,6 +2685,18 @@
     flex: none; display: flex; justify-content: space-between; align-items: center; gap: 12px;
     margin-top: 10px; padding-top: 10px; border-top: 0.5px solid var(--border); font-size: var(--text-sm); color: var(--text-secondary);
   }
+  /* Decision 0540 — AP Setup's either/or choice: two stacked radio options with a line of help each. */
+  .radiochoices { display: grid; gap: 8px; margin: 6px 0; }
+  .radiochoice { display: flex; gap: 10px; align-items: flex-start; cursor: pointer; }
+  .radiochoice input { margin-top: 3px; }
+  .radiochoice > span { display: grid; gap: 2px; }
+  /* Decision 0540 — Cost centre OR Project: one full-width card, a two-way switch at its head. */
+  .codingfield.codingobject { grid-column: 1 / -1; }
+  .codingswitch { display: inline-flex; border: 0.5px solid var(--border); border-radius: 999px; overflow: hidden; background: var(--surface-0); }
+  .codingswitch button {
+    border: none; background: transparent; padding: 3px 12px; font: inherit; font-size: var(--text-sm); color: var(--text-secondary); cursor: pointer;
+  }
+  .codingswitch button.on { background: var(--brand-fill); color: #fff; font-weight: 600; }
   @media (max-width: 560px) { .codingfields { grid-template-columns: 1fr; } }
   /* The one filled action in each pop-out, as the viewer's own footer draws it (`.vfoot .primary`). */
   .popout.codingpopout button.primary, .popout.pmlinepop button.primary {

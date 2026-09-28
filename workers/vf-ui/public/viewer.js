@@ -298,6 +298,12 @@ export async function loadInvoice(invoiceId) {
       orgUnitId: body.orgUnitId ?? null,
       // How each line matches its PO line — decision 0536. Null for a non-PO invoice.
       poMatch: body.poMatch ?? null,
+      /**
+       * Decision 0540 — AP Setup's Cost Centre / Project rule. Absent (an
+       * older server, a test) reads as "both", so nothing is hidden that
+       * the server would accept; the server enforces the rule either way.
+       */
+      costObjectRule: body.costObjectRule === "exclusive" ? "exclusive" : "both",
     };
     // **What is wrong on arrival**, not only after saving. Somebody
     // opening a document with three failures should be told, rather
@@ -1327,6 +1333,23 @@ async function openLineCodingPopout(line, { lockedNote = null } = {}) {
   const suggestion = editable.size > 0 ? (await fetchCodingSuggestions())[String(lineNumber)] ?? null : null;
 
   const chosen = Object.fromEntries(CODING_PICKER_FIELDS.map((spec) => [spec.field, line[spec.field] || null]));
+
+  /**
+   * **Cost Centre OR Project — decision 0540**, AP Setup's either/or
+   * rule. The two share one card with a switch; choosing a value for
+   * one clears the other (the save route does the same, and refuses
+   * both at once). `objectKind` is the one showing: the project if the
+   * line has one, otherwise the cost centre.
+   */
+  const COST_OBJECTS = { cost_centre: "BT-133", project: "coding.project" };
+  const eitherOr = stored.costObjectRule === "exclusive";
+  let objectKind = chosen["coding.project"] && !chosen["BT-133"] ? "project" : "cost_centre";
+  const clearOtherObject = (field) => {
+    if (!eitherOr || !Object.values(COST_OBJECTS).includes(field)) return;
+    const other = field === "BT-133" ? "coding.project" : "BT-133";
+    chosen[other] = null;
+    line[other] = "";
+  };
   // Names already known (from a suggestion's own labels), so a card never waits to show them.
   const names = {};
 
@@ -1389,7 +1412,10 @@ async function openLineCodingPopout(line, { lockedNote = null } = {}) {
       onChoose: (item) => {
         chosen[spec.field] = item?.id ?? null;
         line[spec.field] = item?.id ?? "";
-        if (item) names[spec.field] = item;
+        if (item) {
+          names[spec.field] = item;
+          clearOtherObject(spec.field);
+        }
         box.classList.toggle("set", !!item);
         status.textContent = item ? "✓" : "";
       },
@@ -1399,8 +1425,41 @@ async function openLineCodingPopout(line, { lockedNote = null } = {}) {
     return box;
   };
 
+  // The either/or card: the chosen kind's own card, headed by the switch between the two.
+  const objectCard = () => {
+    const spec = CODING_PICKER_FIELDS.find((s) => s.field === COST_OBJECTS[objectKind]);
+    const box = card(spec);
+    box.classList.add("codingobject");
+    const status = box.querySelector(".codingfieldstatus");
+    const toggle = el(
+      "div",
+      { class: "codingswitch", role: "group", "aria-label": t("field.cost_object") },
+      Object.entries(COST_OBJECTS).map(([kind, field]) =>
+        el("button", {
+          type: "button",
+          class: kind === objectKind ? "on" : "",
+          "aria-pressed": String(kind === objectKind),
+          text: t(`field.${field.toLowerCase()}`),
+          onclick: () => {
+            if (kind === objectKind) return;
+            objectKind = kind;
+            renderFields();
+            fieldsGrid.querySelector(".codingobject .searchbox")?.focus();
+          },
+        })
+      )
+    );
+    box.firstChild.replaceChildren(toggle, status);
+    return box;
+  };
+
   const fieldsGrid = el("div", { class: "codingfields" });
-  const renderFields = () => fieldsGrid.replaceChildren(...CODING_PICKER_FIELDS.map(card));
+  const renderFields = () =>
+    fieldsGrid.replaceChildren(
+      ...(eitherOr
+        ? [objectCard(), ...CODING_PICKER_FIELDS.filter((spec) => !Object.values(COST_OBJECTS).includes(spec.field)).map(card)]
+        : CODING_PICKER_FIELDS.map(card))
+    );
   renderFields();
 
   /**
@@ -1426,6 +1485,11 @@ async function openLineCodingPopout(line, { lockedNote = null } = {}) {
                   chosen[field] = suggestion.values[field];
                   line[field] = suggestion.values[field];
                   if (suggestion.labels?.[field]) names[field] = { id: suggestion.values[field], name: suggestion.labels[field] };
+                  // Decision 0540 — a suggested cost centre or project replaces the other.
+                  if (eitherOr && Object.values(COST_OBJECTS).includes(field)) {
+                    clearOtherObject(field);
+                    objectKind = field === "coding.project" ? "project" : "cost_centre";
+                  }
                 }
                 renderFields();
                 suggestionBox.replaceChildren(el("div", { class: "codingsuggestdone", text: t("viewer.coding.sug.accepted") }));
@@ -1682,6 +1746,7 @@ function codingGapsText(failure) {
     ...failure.gaps.map((g) =>
       [
         `${t("viewer.online")} ${g.line}`,
+        // Decision 0540: "cost_object" is "cost centre or project", and "both" a line holding the two.
         t(`field.${String(g.field).toLowerCase()}`),
         g.reason === "missing" ? t("viewer.coding.missing") : t(`viewer.coding.invalid.${g.reason}`),
       ].join(" · ")
@@ -2735,6 +2800,10 @@ function renderExceptions() {
  * any other refusal, which keeps its existing message.
  */
 function codingRefusalText(body) {
+  // Decision 0540 — a cost centre and a project keyed on one line together.
+  if (body?.reason === "cost_centre_and_project" && Array.isArray(body.lines)) {
+    return t("viewer.coding.bothrefused").replace("{lines}", body.lines.join(", "));
+  }
   if (body?.reason !== "invalid_coding" || !Array.isArray(body.invalid) || body.invalid.length === 0) return null;
   return [
     t("viewer.coding.invalid"),

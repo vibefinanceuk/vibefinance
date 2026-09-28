@@ -78,6 +78,11 @@ let units = [];
 let users = [];
 let config = null;
 let matchingConfig = null;
+/**
+ * AP Setup's Account Coding settings — decision 0540. Loaded on its own
+ * and never fails the screen: unreadable, the panel shows the default.
+ */
+let codingConfig = { costObjectRule: "exclusive" };
 let standardRules = [];
 let activeTab = null;
 let costCentreNames = [];
@@ -166,6 +171,7 @@ async function load() {
       // its own empty state rather than taking down every other tab.
       loadStageRestrictions(),
       loadReturnReasonsTab(),
+      loadCodingConfig(),
     ]);
     if (!overviewResponse.ok || !configResponse.ok || !matchingConfigResponse.ok || !standardRulesResponse.ok) {
       console.error(
@@ -198,6 +204,67 @@ async function load() {
  * several, so this tab offers the same picker rather than assuming
  * there is only one, without building a second copy of that screen.
  */
+async function loadCodingConfig() {
+  try {
+    const response = await fetch("/api/coding-config");
+    if (response.ok) codingConfig = await response.json();
+  } catch {
+    // Its own corner: the default stays, and the panel still saves.
+  }
+}
+
+/**
+ * **Cost centre and project — decision 0540.** The operator: "a line
+ * item cost is either related to a cost centre OR a project", made an
+ * option because some organisations book a project line against its
+ * owning department too. Either/or is the default.
+ */
+function codingRulePanel() {
+  const problem = el("div", { class: "warn" });
+  const choice = (value) => {
+    const input = el("input", {
+      type: "radio",
+      name: "costobjectrule",
+      value,
+      id: `costobjectrule-${value}`,
+      ...(codingConfig.costObjectRule === value ? { checked: "checked" } : {}),
+    });
+    return el("label", { class: "radiochoice", for: `costobjectrule-${value}` }, [
+      input,
+      el("span", {}, [el("b", { text: t(`apsetup.costobject.${value}`) }), el("span", { class: "muted sm", text: t(`apsetup.costobject.${value}.help`) })]),
+    ]);
+  };
+  const options = el("div", { class: "radiochoices" }, [choice("exclusive"), choice("both")]);
+  const save = actionLink("save", {
+    primary: true,
+    onclick: async () => {
+      problem.textContent = "";
+      const picked = options.querySelector("input:checked")?.value;
+      try {
+        const response = await fetch("/api/coding-config", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ costObjectRule: picked }),
+        });
+        if (!response.ok) {
+          problem.textContent = (await response.json().catch(() => ({}))).error ?? t("apsetup.costobject.savefailed");
+          return;
+        }
+        codingConfig = await response.json();
+        render();
+      } catch {
+        problem.textContent = t("apsetup.costobject.savefailed");
+      }
+    },
+  });
+  return el("div", { class: "panel codingrulepanel" }, [
+    el("div", { class: "cardhead" }, [el("h3", { text: t("apsetup.costobject.title") }), el("div", { class: "statebuttons" }, [save])]),
+    el("p", { class: "muted sm", text: t("apsetup.costobject.sub") }),
+    options,
+    problem,
+  ]);
+}
+
 async function loadStageRestrictions(processId) {
   try {
     const listResponse = await fetch("/api/processes");
@@ -1553,12 +1620,16 @@ function render() {
         standardMatchingRulesPanel(el("div", { class: "warn" })),
       ]),
     coding: () =>
-      accountCodingTab({
-        units,
-        users,
-        costCentreNames,
-        rerender: render,
-      }),
+      el("div", {}, [
+        // Decision 0540 — the Cost centre / Project rule, above the lists themselves.
+        codingRulePanel(),
+        accountCodingTab({
+          units,
+          users,
+          costCentreNames,
+          rerender: render,
+        }),
+      ]),
     approvalhierarchy: () => approvalHierarchyTab(),
     stagerestrictions: () => stageRestrictionsTab(el("div", { class: "warn" })),
     returnreasons: () => returnReasonsTab(el("div", { class: "warn" })),

@@ -78,6 +78,7 @@ import {
 } from "./coding-list-route.js";
 import { handleGetCodingListCsvFormat, handleLoadCodingListCsv } from "./coding-list-csv-route.js";
 import { handleCodingSuggestions } from "./coding-suggestions.js";
+import { handleGetCodingConfig, handleUpdateCodingConfig } from "./coding-config-route.js";
 import {
   handleGetApprovalConfig,
   handleUpdateApprovalConfig,
@@ -2219,6 +2220,36 @@ export default {
      * "singleton, read whole, written whole" shape `/approval-config`
      * above already established.
      */
+    /**
+     * **AP Setup's Account Coding settings — decision 0540.** The same
+     * `Admin.Configure` gate and singleton shape as `/matching-config`.
+     */
+    if (pathname === "/coding-config" && request.method === "GET") {
+      const { db } = resolveTenant(request, env);
+      const auth = await requirePermission(db, request, "Admin.Configure", sessionContext(env));
+      if (!auth.authorized) {
+        return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
+      }
+      const result = await handleGetCodingConfig(db);
+      return json(result.body, result.status);
+    }
+
+    if (pathname === "/coding-config" && request.method === "PUT") {
+      const { db } = resolveTenant(request, env);
+      const auth = await requirePermission(db, request, "Admin.Configure", sessionContext(env));
+      if (!auth.authorized) {
+        return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
+      }
+      let body: unknown;
+      try {
+        body = await request.json();
+      } catch {
+        return json({ error: t("invalidJsonBody", resolveLocale(env.LOCALE)) }, 400);
+      }
+      const result = await handleUpdateCodingConfig(db, body as Record<string, unknown>);
+      return json(result.body, result.status);
+    }
+
     if (pathname === "/matching-config" && request.method === "GET") {
       const { db } = resolveTenant(request, env);
       const auth = await requirePermission(db, request, "Admin.Configure", sessionContext(env));

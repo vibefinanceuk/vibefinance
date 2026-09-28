@@ -101,6 +101,7 @@ import taskActionEventsPoLinkSql from "../../../migrations/0093_task_action_even
 import invoiceLinePoPairingsSql from "../../../migrations/0094_invoice_line_po_pairings.sql?raw";
 import poPairingSourceSql from "../../../migrations/0095_po_pairing_source.sql?raw";
 import poPairingNonPoSql from "../../../migrations/0096_po_pairing_non_po.sql?raw";
+import orgCodingConfigSql from "../../../migrations/0098_org_coding_config.sql?raw";
 
 // Another known divergence from production, on top of the one below:
 // D1's exec() splits its input by newline and executes each non-empty
@@ -152,7 +153,7 @@ const TABLES_IN_DROP_ORDER = ["invoice_line_po_pairings", "document_comments",
   // that reason. org_matching_config carries no foreign key at all, so
   // its own drop order genuinely does not matter; kept alongside its
   // own migration's sibling table for a reader's sake, not correctness.
-  "invoice_collaborators", "org_matching_config", "process_stage_versions", "inbound_email_events", "stage_field_visibility", "field_visibility",
+  "invoice_collaborators", "org_matching_config", "org_coding_config", "process_stage_versions", "inbound_email_events", "stage_field_visibility", "field_visibility",
   "purchase_order_lines",
   "purchase_orders",
   "org_settings",
@@ -381,6 +382,7 @@ export async function applyTestSchema(): Promise<void> {
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(invoiceLinePoPairingsSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(poPairingSourceSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(poPairingNonPoSql)));
+  await env.DB.exec(toOneStatementPerLine(stripSqlComments(orgCodingConfigSql)));
 }
 
 /**

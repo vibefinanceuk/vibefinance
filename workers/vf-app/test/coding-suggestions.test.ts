@@ -196,6 +196,8 @@ describe("a suggestion per line, from this supplier's lines like it (decision 05
   });
 
   it("drops a value the save would refuse, keeping the rest of the set (decision 0511)", async () => {
+    // A set with both a cost centre and a project: AP Setup's "both allowed" (decision 0540).
+    await env.DB.prepare("UPDATE org_coding_config SET cost_object_rule = 'both'").run();
     await codedLine("GB-J", "Pallet delivery, York", { ...FREIGHT, "coding.project": "PRJ-GONE" });
     await target("inv-t", "GB-J", ["Pallet delivery, Leeds"]);
     expect((await suggest("inv-t")).lines["1"].values).toEqual(FREIGHT);
@@ -213,6 +215,17 @@ describe("a suggestion per line, from this supplier's lines like it (decision 05
     await env.DB.prepare("UPDATE invoice_headers SET org_unit_id = 'DE01' WHERE id = 'inv-de'").run();
     expect((await suggest("inv-uk")).lines).toEqual({});
     expect((await suggest("inv-de")).lines["1"].values).toEqual({ "BT-133": "cc-log" });
+  });
+
+  it("draws only on lines holding one of cost centre and project while the either/or rule is on (decision 0540)", async () => {
+    await codedLine("GB-E", "Pallet delivery, York", { "BT-133": "cc-log", "coding.project": "PRJ-1" });
+    await codedLine("GB-E", "Pallet delivery, Hull", { "BT-133": "cc-off" });
+    await env.DB.prepare("INSERT INTO coding_list_entries (list_type_id, id, name) VALUES ('project', 'PRJ-1', 'Fit-out')").run();
+    await target("inv-t", "GB-E", ["Pallet delivery, Leeds"]);
+    expect((await suggest("inv-t")).lines["1"]).toMatchObject({ values: { "BT-133": "cc-off" }, count: 1, total: 1 });
+
+    await env.DB.prepare("UPDATE org_coding_config SET cost_object_rule = 'both'").run();
+    expect((await suggest("inv-t")).lines["1"]).toMatchObject({ count: 1, total: 2 });
   });
 
   it("404s an invoice that does not exist, and suggests nothing for one with no identified supplier", async () => {

@@ -1,4 +1,5 @@
 import type { RouteResult } from "./org-route.js";
+import { getCostObjectRule } from "./coding-config-route.js";
 import { isPoInvoice, nonPoLines } from "./po-pairings.js";
 import { isKnownField, type InvoiceFacts } from "@vibefinance/shared";
 import { handleUpsertInvoice } from "./invoice-facts-route.js";
@@ -349,6 +350,54 @@ export async function handleKeyInvoiceFields(
     }>();
 
   const before = new Map(existingLines.results.map((l) => [l.line_number, l]));
+
+  /**
+   * **Cost Centre OR Project on a line — decision 0540**, when AP
+   * Setup's either/or rule is on. A save that keys one of the two on a
+   * line already holding the other clears the other — a supplier's own
+   * BT-133 included — so switching a line from a cost centre to a
+   * project is one save; the cleared value is recorded like any keyed
+   * change. A save keying both at once is refused rather than guessed
+   * at. A line that held both before this rule, and is saved for some
+   * other reason, is left alone: only what this save changes.
+   */
+  if (Array.isArray(body.lines) && (await getCostObjectRule(db)) === "exclusive") {
+    const blank = (v: unknown) => v === undefined || v === null || String(v).trim() === "";
+    const both: number[] = [];
+    for (const line of body.lines as Record<string, unknown>[]) {
+      const lineNumber = Number(line.lineNumber);
+      if (!Number.isInteger(lineNumber) || lineNumber < 1) continue;
+      let previousFacts: Record<string, unknown> = {};
+      try {
+        previousFacts = JSON.parse(before.get(lineNumber)?.facts_json ?? "{}") as Record<string, unknown>;
+      } catch {
+        // Unparseable stored facts count as none.
+      }
+      const next = (line.facts ?? {}) as Record<string, unknown>;
+      const keyedNow = (field: string) => !blank(next[field]) && String(next[field]) !== String(previousFacts[field] ?? "");
+      const heldAfter = (field: string) => !blank(next[field] !== undefined ? next[field] : previousFacts[field]);
+      if (!heldAfter("BT-133") || !heldAfter("coding.project")) continue;
+      const cc = keyedNow("BT-133");
+      const project = keyedNow("coding.project");
+      if (cc && project) both.push(lineNumber);
+      else if (cc) line.facts = { ...next, "coding.project": "" };
+      else if (project) {
+        line.facts = { ...next, "BT-133": "" };
+        // The line's own cost_centre column follows BT-133 (0016).
+        line.costCentre = undefined;
+      }
+    }
+    if (both.length > 0) {
+      return {
+        status: 422,
+        body: {
+          error: `A line carries a cost centre or a project, not both (line ${both.join(", ")}).`,
+          reason: "cost_centre_and_project",
+          lines: both,
+        },
+      };
+    }
+  }
 
   /**
    * **A coding value must be one Account Coding actually holds** —

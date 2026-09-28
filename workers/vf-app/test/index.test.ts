@@ -2178,6 +2178,8 @@ describe("process instances and stage visits, through the real router (decision 
 
   it("Complete — decision 0513: refused while an editable coding field is empty on a line, allowed once it is filled", async () => {
     const { codingTaskId } = await seedManualCodingToApproval("no-rule-set");
+    // Each field on its own, as 0513 set it: AP Setup's "both allowed" (decision 0540).
+    await env.DB.prepare("UPDATE org_coding_config SET cost_object_rule = 'both'").run();
     // Coding fields editable customer-wide, as Stage Restrictions
     // (decision 0483) assumes before restricting any one stage.
     await env.DB.prepare(
@@ -2435,10 +2437,30 @@ describe("process instances and stage visits, through the real router (decision 
     ).run();
     const refused = await completeAsTestUser(codingTaskId);
     expect(refused.status).toBe(422);
-    expect(((await refused.json()) as { gaps: unknown[] }).gaps).toEqual([{ line: 2, field: "BT-133", reason: "missing" }]);
+    // Decision 0540's default: Cost Centre or Project, one requirement.
+    expect(((await refused.json()) as { gaps: unknown[] }).gaps).toEqual([{ line: 2, field: "cost_object", reason: "missing" }]);
 
     // A marker made against a different PO is inert: nothing to code again.
     await env.DB.prepare("UPDATE invoice_line_po_pairings SET order_number = 'PO-OTHER'").run();
+    expect((await completeAsTestUser(codingTaskId)).status).toBe(200);
+  });
+
+  it("Complete — decision 0540: Cost Centre or Project is one requirement, and a line holding both is refused", async () => {
+    const { codingTaskId } = await seedUncodedLineWithCodingEditable();
+    await env.DB.prepare("INSERT INTO field_visibility (field, visibility, sort_order) VALUES ('coding.project', 'edit', 1)").run();
+    await env.DB.prepare("INSERT INTO cost_centres (id, name) VALUES ('cc1', 'Marketing')").run();
+    await env.DB.prepare("INSERT INTO coding_list_entries (list_type_id, id, name) VALUES ('project', 'PRJ-1', 'Fit-out')").run();
+    const setLine = (facts: Record<string, unknown>) =>
+      env.DB.prepare("UPDATE invoice_lines SET facts_json = ? WHERE invoice_id = 'real-inv-manual'").bind(JSON.stringify({ "BT-131": 3000, ...facts })).run();
+    const gaps = async () => ((await (await completeAsTestUser(codingTaskId)).json()) as { gaps?: unknown[] }).gaps;
+
+    expect(await gaps()).toEqual([{ line: 1, field: "cost_object", reason: "missing" }]);
+    await setLine({ "BT-133": "cc1", "coding.project": "PRJ-1" });
+    expect(await gaps()).toEqual([{ line: 1, field: "cost_object", reason: "both" }]);
+    // Whichever one is present is still checked against its list (0511).
+    await setLine({ "coding.project": "PRJ-TYPO" });
+    expect(await gaps()).toEqual([{ line: 1, field: "coding.project", reason: "not_on_list" }]);
+    await setLine({ "coding.project": "PRJ-1" });
     expect((await completeAsTestUser(codingTaskId)).status).toBe(200);
   });
 
@@ -4707,5 +4729,23 @@ describe("GET /purchase-orders/csv-format — decision 0373", () => {
   it("is not swallowed by the single-order lookup — a real request for the format never becomes a 404 for an order literally named csv-format", async () => {
     const res = await SELF.fetch("https://example.com/purchase-orders/csv-format", { headers: authHeaders() });
     expect(res.status).not.toBe(404);
+  });
+});
+
+describe("/coding-config, through the real router (decision 0540)", () => {
+  it("is AP Setup's: Admin.Configure reads and writes it, anybody else is refused", async () => {
+    expect((await SELF.fetch("https://example.com/coding-config")).status).toBe(401);
+    const coder = await seedUserWithPermissions(["AP.Code"]);
+    expect((await SELF.fetch("https://example.com/coding-config", { headers: { Authorization: `Bearer ${coder}` } })).status).toBe(403);
+
+    const admin = await seedUserWithPermissions(["Admin.Configure"]);
+    const put = await SELF.fetch("https://example.com/coding-config", {
+      method: "PUT",
+      headers: { Authorization: `Bearer ${admin}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ costObjectRule: "both" }),
+    });
+    expect(put.status).toBe(200);
+    const got = await SELF.fetch("https://example.com/coding-config", { headers: { Authorization: `Bearer ${admin}` } });
+    expect(await got.json()).toEqual({ costObjectRule: "both" });
   });
 });

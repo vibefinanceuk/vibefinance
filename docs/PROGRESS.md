@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 28 September 2026 (decision 0539). A living document: what
+Last updated 28 September 2026 (decision 0540). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,13 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Cost centre OR project on a line (0540)
+- AP Setup option, default "one or the other": the Coding pop-out shows
+  a Cost centre | Project switch, Save clears the other (and refuses
+  both at once), and Complete needs one of the two. "Both allowed"
+  keeps the earlier behaviour. `vf-app` migration `0098`, `vf-licence`
+  migration `0195`.
 
 ### Coding pop-out redesign and per-line suggestions (0539)
 - The Coding pop-out is a card like the Match pop-out, with a per-line

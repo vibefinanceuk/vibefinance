@@ -256,7 +256,7 @@ describe("Org / Company Code — read-only, decision 0444", () => {
   it("lists the org units already managed under Access, with no Add button", async () => {
     await openApSetupAs({ ...EMPTY_OVERVIEW, units: [{ id: "UK01", name: "Acme UK" }] });
     switchCodingSubTab("Org / Company Code");
-    const panelText = document.querySelector(".panel")?.textContent ?? "";
+    const panelText = document.querySelector("#codingactivetab .panel")?.textContent ?? "";
     expect(panelText).toContain("Acme UK");
     expect(panelText).toContain("Managed under Access → Org Units");
     expect([...document.querySelectorAll(".cardhead button")].some((b) => b.textContent?.includes("Add"))).toBe(false);
@@ -342,7 +342,7 @@ describe("Cost Centre — decision 0444", () => {
     const limitInput = document.querySelector<HTMLInputElement>(".editgrid input[type=number]");
     limitInput!.value = "9000";
 
-    const submit = [...document.querySelectorAll(".cardhead button")].find((b) => b.textContent?.includes("Save"));
+    const submit = [...document.querySelectorAll(".popout .cardhead button")].find((b) => b.textContent?.includes("Save"));
     await submit?.click();
     await new Promise((r) => setTimeout(r, 0));
 
@@ -465,7 +465,7 @@ describe("Project — a real hierarchy, decision 0444", () => {
     const limitInput = document.querySelector<HTMLInputElement>(".editgrid input[type=number]");
     limitInput!.value = "7500";
 
-    const submit = [...document.querySelectorAll(".cardhead button")].find((b) => b.textContent?.includes("Save"));
+    const submit = [...document.querySelectorAll(".popout .cardhead button")].find((b) => b.textContent?.includes("Save"));
     await submit?.click();
     await new Promise((r) => setTimeout(r, 0));
 
@@ -1055,6 +1055,6 @@ describe("saving fails", () => {
     await new Promise((r) => setTimeout(r, 0));
 
     expect(document.querySelector(".popout")).not.toBeNull();
-    expect(document.querySelector(".warn")?.textContent).toContain("Could not save that.");
+    expect(document.querySelector(".popout .warn")?.textContent).toContain("Could not save that.");
   });
 });

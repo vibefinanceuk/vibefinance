@@ -182,6 +182,7 @@ import poSuggestionStringsSql from "../migrations/0191_po_suggestion_strings.sql
 import poMatchColumnStringsSql from "../migrations/0192_po_match_column_strings.sql?raw";
 import nonPoLineStringsSql from "../migrations/0193_non_po_line_strings.sql?raw";
 import codingPopoutStringsSql from "../migrations/0194_coding_popout_strings.sql?raw";
+import costObjectRuleStringsSql from "../migrations/0195_cost_object_rule_strings.sql?raw";
 
 function stripSqlComments(sql: string): string {
   return sql
@@ -396,5 +397,6 @@ export async function applyTestSchema(): Promise<void> {
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(poMatchColumnStringsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(nonPoLineStringsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(codingPopoutStringsSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(costObjectRuleStringsSql)));
 
 }

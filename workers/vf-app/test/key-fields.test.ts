@@ -1439,3 +1439,67 @@ describe("keying keeps the invoice's structured columns (decision 0539)", () => 
     expect(await columns()).toMatchObject({ supplier_vat_id: "GB111", invoice_number: "INV-9A", total_with_vat: 150.5, currency: "GBP" });
   });
 });
+
+/**
+ * **Cost Centre OR Project on a line — decision 0540**, AP Setup's
+ * either/or rule (on by default).
+ */
+describe("a line carries a cost centre or a project (decision 0540)", () => {
+  const lineFacts = async () =>
+    JSON.parse(
+      (await env.DB.prepare("SELECT facts_json FROM invoice_lines WHERE invoice_id = 'inv-co'").first<{ facts_json: string }>())!.facts_json
+    ) as Record<string, unknown>;
+  const key = (facts: Record<string, unknown>) =>
+    handleKeyInvoiceFields(env.DB, "inv-co", { facts: {}, lines: [{ lineNumber: 1, facts }] } as never, "u-dan");
+
+  beforeEach(async () => {
+    await handleSetFieldVisibility(env.DB, {
+      fields: [
+        { field: "BT-131", visibility: "edit" },
+        { field: "BT-133", visibility: "edit" },
+        { field: "coding.project", visibility: "edit" },
+      ],
+    });
+    await env.DB.prepare("INSERT INTO cost_centres (id, name) VALUES ('cc1', 'Marketing'), ('SUPP-CC', 'Supplier said')").run();
+    await env.DB.prepare("INSERT INTO coding_list_entries (list_type_id, id, name) VALUES ('project', 'PRJ-1', 'Fit-out')").run();
+    await seedInvoice("inv-co");
+    await env.DB.prepare("INSERT INTO invoice_lines (invoice_id, line_number, cost_centre, facts_json) VALUES ('inv-co', 1, 'SUPP-CC', ?)")
+      .bind(JSON.stringify({ "BT-131": 10, "BT-133": "SUPP-CC" }))
+      .run();
+  });
+
+  it("keying a project on a line with a cost centre clears the cost centre — a supplier's own included — and records it", async () => {
+    expect((await key({ "coding.project": "PRJ-1" })).status).toBe(200);
+    const facts = await lineFacts();
+    expect(facts["coding.project"]).toBe("PRJ-1");
+    expect(facts["BT-133"]).toBe("");
+    const column = await env.DB.prepare("SELECT cost_centre FROM invoice_lines WHERE invoice_id = 'inv-co'").first();
+    expect(column).toEqual({ cost_centre: null });
+    const trail = await env.DB.prepare("SELECT previous_value, new_value FROM keyed_fields WHERE field = 'line.1.BT-133'").first();
+    expect(trail).toEqual({ previous_value: JSON.stringify("SUPP-CC"), new_value: JSON.stringify("") });
+
+    // And back: a cost centre clears the project.
+    expect((await key({ "BT-133": "cc1" })).status).toBe(200);
+    expect(await lineFacts()).toMatchObject({ "BT-133": "cc1", "coding.project": "" });
+  });
+
+  it("refuses a save keying both at once", async () => {
+    const refused = await key({ "BT-133": "cc1", "coding.project": "PRJ-1" });
+    expect(refused).toMatchObject({ status: 422, body: { reason: "cost_centre_and_project", lines: [1] } });
+    expect((await lineFacts())["coding.project"]).toBeUndefined();
+  });
+
+  it("leaves a line that already held both alone when a save changes something else", async () => {
+    await env.DB.prepare("UPDATE invoice_lines SET facts_json = ? WHERE invoice_id = 'inv-co'")
+      .bind(JSON.stringify({ "BT-131": 10, "BT-133": "cc1", "coding.project": "PRJ-1" }))
+      .run();
+    expect((await key({ "BT-131": 12 })).status).toBe(200);
+    expect(await lineFacts()).toMatchObject({ "BT-131": 12, "BT-133": "cc1", "coding.project": "PRJ-1" });
+  });
+
+  it("keeps both when AP Setup allows both", async () => {
+    await env.DB.prepare("UPDATE org_coding_config SET cost_object_rule = 'both'").run();
+    expect((await key({ "coding.project": "PRJ-1" })).status).toBe(200);
+    expect(await lineFacts()).toMatchObject({ "BT-133": "SUPP-CC", "coding.project": "PRJ-1" });
+  });
+});

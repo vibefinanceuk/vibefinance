@@ -527,7 +527,8 @@ describe("Account Coding — decision 0444", () => {
     expect(subTabs).toContain("Project");
     expect(subTabs).toContain("Commodity Code");
     expect(subTabs).toContain("General Ledger Code");
-    expect(document.querySelector(".panel")?.textContent).toContain("No company codes configured yet.");
+    // The lists' own panel: decision 0540 put the Cost centre / project setting above it.
+    expect(document.querySelector("#codingactivetab .panel")?.textContent).toContain("No company codes configured yet.");
   });
 });
 
@@ -2060,5 +2061,63 @@ describe("the Return Reasons tab (decision 0498, row layout in 0499)", () => {
     const panel = [...document.querySelectorAll(".panel")].find((p) => p.querySelector("h3")?.textContent === "AP team email");
     expect(panel).not.toBeUndefined();
     expect((panel!.querySelector("input[type=text]") as HTMLInputElement)?.value).toBe("ap@acme.example");
+  });
+});
+
+/**
+ * **Cost centre and project — decision 0540.** One or the other (the
+ * default), or both allowed, on the Account Coding tab.
+ */
+describe("the Cost centre and project setting (decision 0540)", () => {
+  const RULE_STRINGS = {
+    ...STRINGS,
+    strings: {
+      ...STRINGS.strings,
+      "apsetup.costobject.title": "Cost centre and project",
+      "apsetup.costobject.exclusive": "One or the other (recommended)",
+      "apsetup.costobject.both": "Both allowed",
+    },
+  };
+
+  it("shows the setting in force on the Account Coding tab, and saves a change", async () => {
+    const puts: unknown[] = [];
+    await openApSetupAs(["Admin.Configure"], EMPTY_OVERVIEW, EMPTY_CONFIG, {
+      "/api/ui-strings": RULE_STRINGS,
+      "/api/coding-config": { costObjectRule: "exclusive" },
+    });
+    const originalFetch = globalThis.fetch as unknown as (u: string, i?: RequestInit) => Promise<Response>;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        if (String(url) === "/api/coding-config" && init?.method === "PUT") {
+          puts.push(JSON.parse(String(init.body)));
+          return { ok: true, json: async () => ({ costObjectRule: "both" }) } as Response;
+        }
+        return originalFetch(url, init);
+      })
+    );
+    switchTab("Account Coding");
+
+    const panel = document.querySelector(".codingrulepanel") as HTMLElement;
+    expect(panel.querySelector("h3")?.textContent).toBe("Cost centre and project");
+    const radios = [...panel.querySelectorAll<HTMLInputElement>('input[type="radio"]')];
+    expect(radios.map((r) => [r.value, r.checked])).toEqual([
+      ["exclusive", true],
+      ["both", false],
+    ]);
+    expect(panel.textContent).toContain("One or the other (recommended)");
+
+    radios[1].checked = true;
+    (panel.querySelector(".actionlink") as HTMLButtonElement).click();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(puts).toEqual([{ costObjectRule: "both" }]);
+    const after = [...document.querySelectorAll<HTMLInputElement>('.codingrulepanel input[type="radio"]')];
+    expect(after.find((r) => r.checked)?.value).toBe("both");
+  });
+
+  it("still opens, showing the default, when the setting cannot be read", async () => {
+    await openApSetupAs(["Admin.Configure"], EMPTY_OVERVIEW, EMPTY_CONFIG, { "/api/ui-strings": RULE_STRINGS });
+    switchTab("Account Coding");
+    expect(document.querySelector<HTMLInputElement>('.codingrulepanel input[value="exclusive"]')?.checked).toBe(true);
   });
 });

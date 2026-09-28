@@ -1,4 +1,5 @@
 import type { InvoiceFacts } from "@vibefinance/shared";
+import { getCostObjectRule } from "./coding-config-route.js";
 import type { RouteResult } from "./org-route.js";
 import { CODING_FIELD_LISTS, checkLineCoding } from "./coding-validation.js";
 import { isPoInvoice, nonPoLines } from "./po-pairings.js";
@@ -230,7 +231,11 @@ export async function handleCodingSuggestions(db: D1Database, invoiceId: string)
   // Decision 0537 — on a PO invoice only a Non-PO line is coded by hand.
   const onlyLines = isPoInvoice(headerFacts) ? await nonPoLines(db, invoiceId, headerFacts as InvoiceFacts) : null;
 
-  const history = await supplierHistory(db, header.supplier_vat_id, invoiceId);
+  // Decision 0540 — with the either/or rule on, a line that held both is no example to follow.
+  const eitherOr = (await getCostObjectRule(db)) === "exclusive";
+  const history = (await supplierHistory(db, header.supplier_vat_id, invoiceId)).filter(
+    (h) => !eitherOr || !(h.values["BT-133"] && h.values["coding.project"])
+  );
   if (history.length === 0) return { status: 200, body: { lines: {} } };
 
   const lines = (
