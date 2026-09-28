@@ -154,6 +154,8 @@ const STRINGS = {
     "action.claim": "Claim",
     "action.complete": "Complete",
     "action.approve": "Approve",
+    "action.po_matching": "PO matching",
+    "activity.polinked": "{who} linked this to purchase order {po}",
     "action.release": "Release",
     "action.discard": "Discard",
     "action.discard.reasonlabel": "Reason",
@@ -735,6 +737,20 @@ describe("the action row (decision 0122)", () => {
     const labels = [...document.querySelectorAll(".actionlink span")].map((n) => n.textContent);
     expect(labels).toContain("Approve");
     expect(labels).not.toContain("Complete");
+  });
+
+  it("offers PO matching on a Matching-stage task, and only there (decision 0530)", async () => {
+    stubFetch(OPEN);
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    await openViewer({ ...TASK, actions: ["complete"], requiredPermission: "AP.Match" }, () => {});
+    let labels = [...document.querySelectorAll(".actionlink span")].map((n) => n.textContent);
+    expect(labels).toContain("PO matching");
+
+    await openViewer({ ...TASK, actions: ["complete"], requiredPermission: "AP.Validate" }, () => {});
+    labels = [...document.querySelectorAll(".actionlink span")].map((n) => n.textContent);
+    expect(labels).not.toContain("PO matching");
   });
 
   it("keeps the generic 'Complete' label for every task that isn't a Business Approver's", async () => {
@@ -5035,6 +5051,25 @@ describe("the document/timeline tabs (decision 0269)", () => {
     expect(document.body.textContent).toContain("Priya Patel claimed this task");
     expect(document.querySelector(".activityaction .activityactionicon svg")).not.toBeNull();
     expect(document.querySelectorAll(".activitysysline .activitydot")).toHaveLength(0);
+  });
+
+  it("shows a PO re-link with the order number in the line, not repeated underneath (decision 0530)", async () => {
+    stubFetch({
+      ...BASE_ROUTES,
+      "/api/documents/inv-1/activity": {
+        items: [{ kind: "action_taken", at: "2026-09-01 09:06:00", action: "po_link", userName: "Priya Patel", comment: "PO-B" }],
+      },
+    });
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    await openViewer(TASK, () => {});
+    await new Promise((r) => setTimeout(r, 0));
+    (timelineTabButton() as HTMLButtonElement).click();
+
+    expect(document.body.textContent).toContain("Priya Patel linked this to purchase order PO-B");
+    expect(document.querySelector(".activityaction .activityactionicon svg")).not.toBeNull();
+    expect(document.querySelector(".activityactioncomment")).toBeNull();
   });
 
   it("shows a release's own comment underneath the message line", async () => {

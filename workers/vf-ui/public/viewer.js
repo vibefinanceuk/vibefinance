@@ -17,6 +17,7 @@ import { processRow } from "/process-row.js";
 import { buildActivityTab } from "/activity.js";
 import { buildCollaboratorsControl } from "/collaborators.js";
 import { pageViewer } from "/page-renderer.js";
+import { openPoMatchingPanel } from "/po-match.js";
 
 let current = null;
 /** The line table's working state — decision 0109. */
@@ -2239,6 +2240,20 @@ function taskActionButtons(task, onClose) {
           label: a === "complete" && task.requiredPermission === "Procurement.Approve" ? t("action.approve") : undefined,
         })
       ),
+    /**
+     * **PO matching — decision 0530.** Offered on a Matching-stage task,
+     * which is one carrying `AP.Match` (the permission every standard
+     * matching rule's task requires, 0474). Not a server action: it
+     * opens a panel, and what the panel may change is decided by its
+     * own routes. A re-link redraws the document with its new BT-13.
+     */
+    ...(task.requiredPermission === "AP.Match" && task.subject?.id
+      ? [
+          actionLink("po_matching", {
+            onclick: () => openPoMatchingPanel(task.subject.id, { onRelinked: () => openViewer(task, onClose) }),
+          }),
+        ]
+      : []),
   ];
 }
 

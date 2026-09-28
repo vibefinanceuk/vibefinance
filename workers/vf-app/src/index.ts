@@ -1,3 +1,4 @@
+import { handleGetPoMatchView, handlePoCandidates, handleLinkPo, PO_PANEL_PERMISSIONS } from "./po-match-panel-route.js";
 import { resolveTenant } from "@vibefinance/shared";
 import { searchOrgUnits, setInvoiceOrgUnit } from "./derive-org.js";
 import {
@@ -4381,6 +4382,54 @@ export default {
       );
     }
 
+
+    /**
+     * **The Matching stage's PO matching panel — decision 0530.**
+     * `AP.Match` (the Matching stage's own permission) or `AP.Validate`
+     * may read it and search; re-linking goes through keying, which
+     * adds its own claimed-task and editable-field checks.
+     */
+    const poMatchViewMatch = pathname.match(/^\/invoices\/([^/]+)\/po-match$/);
+    const poCandidatesMatch = pathname.match(/^\/invoices\/([^/]+)\/po-candidates$/);
+    const poLinkMatch = pathname.match(/^\/invoices\/([^/]+)\/po-link$/);
+    if (
+      (poMatchViewMatch && request.method === "GET") ||
+      (poCandidatesMatch && request.method === "GET") ||
+      (poLinkMatch && request.method === "POST")
+    ) {
+      const { db } = resolveTenant(request, env);
+      const auth = await requireAnyPermission(db, request, [...PO_PANEL_PERMISSIONS], sessionContext(env));
+      if (!auth.authorized) {
+        return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
+      }
+      if (poMatchViewMatch) {
+        const result = await handleGetPoMatchView(db, decodeURIComponent(poMatchViewMatch[1]), auth.user.id);
+        return json(result.body, result.status);
+      }
+      if (poCandidatesMatch) {
+        const flag = (name: string) => url.searchParams.get(name) === "1";
+        const result = await handlePoCandidates(db, decodeURIComponent(poCandidatesMatch[1]), auth.user.id, {
+          search: url.searchParams.get("search"),
+          supplierOnly: flag("supplierOnly"),
+          activeOnly: flag("activeOnly"),
+          coversInvoice: flag("coversInvoice"),
+        });
+        return json(result.body, result.status);
+      }
+      let body: unknown;
+      try {
+        body = await request.json();
+      } catch {
+        return json({ error: t("invalidJsonBody", resolveLocale(env.LOCALE)) }, 400);
+      }
+      const result = await handleLinkPo(
+        db,
+        decodeURIComponent(poLinkMatch![1]),
+        auth.user.id,
+        (body ?? {}) as { orderNumber?: unknown }
+      );
+      return json(result.body, result.status);
+    }
 
     const keyMatch = pathname.match(/^\/invoices\/([^/]+)\/key$/);
     if (keyMatch && request.method === "POST") {

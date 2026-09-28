@@ -215,6 +215,11 @@ const PROXIED_TO_INSTANCE: RegExp[] = [
   // (decision 0120).
   /^\/invoices\/[^/]+$/,
   /^\/invoices\/[^/]+\/key$/,
+  // The Matching stage's PO matching panel — decision 0530. Added with
+  // the routes themselves.
+  /^\/invoices\/[^/]+\/po-match$/,
+  /^\/invoices\/[^/]+\/po-candidates$/,
+  /^\/invoices\/[^/]+\/po-link$/,
   /^\/invoices\/[^/]+\/document-url$/,
   // The pages behind a multi-page scan (decision 0381) — the same
   // shape as document-url immediately above, and the exact gap this

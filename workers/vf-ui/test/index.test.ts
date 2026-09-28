@@ -233,6 +233,10 @@ describe("the Validation viewer's routes (decision 0106)", () => {
     // Refused for want of a session, not for want of a route.
     for (const [method, path] of [
       ["POST", "/api/invoices/inv-1/key"],
+    // The Matching stage's PO matching panel — decision 0530.
+    ["GET", "/api/invoices/inv-1/po-match"],
+    ["GET", "/api/invoices/inv-1/po-candidates"],
+    ["POST", "/api/invoices/inv-1/po-link"],
       ["POST", "/api/invoices/inv-1/document-url"],
     // The rest of what a task can offer (decision 0138).
     ["POST", "/api/tasks/t-1/complete"],

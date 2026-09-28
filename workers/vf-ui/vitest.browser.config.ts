@@ -146,6 +146,7 @@ export default defineConfig({
       "/page-renderer.js": resolve(__dirname, "public/page-renderer.js"),
       "/document-window.js": resolve(__dirname, "public/document-window.js"),
       "/help.js": resolve(__dirname, "public/help.js"),
+      "/po-match.js": resolve(__dirname, "public/po-match.js"),
       // Resolved so Vite's static import analysis is satisfied, not so
       // it runs: nothing in this suite calls `loadPdfDocument`, the
       // only function that ever imports it (decision 0382).

@@ -1,7 +1,6 @@
 # 0529 — Night's chart and menu colours apply when Night is chosen, not only when the computer is dark
 
-**Status: built and tested locally, not yet pushed or deployed.** This
-session has no push access, so it is delivered as a git bundle. It
+**Status: pushed (`f32ed70`) and `vf-ui` deployed, as confirmed by the operator on 28 September.** It
 changes `vf-ui` only (`tokens.css`), with no migration and no string
 change.
 

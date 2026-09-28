@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 28 September 2026 (decision 0529). A living document: what
+Last updated 28 September 2026 (decision 0530). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,18 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### PO matching panel, phase 1 (0530)
+- A **PO matching** button on Matching-stage tasks opens a panel: the
+  linked PO and how much of it is used (other invoices in grey, this
+  one in blue), each invoice line against the PO line it names with the
+  rules' own verdict, and a search of held POs with **Use this PO**,
+  which re-links the invoice's BT-13 through keying and records it in
+  the Timeline.
+- `vf-app` migration `0093` and `vf-licence` migration `0188` — apply
+  separately, `0093` before deploying `vf-app`.
+- Found: line matching compares against the whole PO line, so a
+  part-invoiced line reads as a mismatch. Phase 3 addresses it.
 
 ### Night's chart and menu colours when Night is chosen (0529)
 - Choosing Night on a computer set to light mode kept Day's chart and

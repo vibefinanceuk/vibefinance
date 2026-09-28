@@ -132,6 +132,9 @@ function actionTakenLine(item) {
       return t("activity.reassigned").replace("{who}", who).replace("{target}", item.targetUserName ?? "");
     case "route_to_approver":
       return t("activity.routedtoapprover").replace("{who}", who).replace("{target}", item.targetUserName ?? "");
+    // Decision 0530 — `comment` carries the order number linked to.
+    case "po_link":
+      return t("activity.polinked").replace("{who}", who).replace("{po}", item.comment ?? "");
     default:
       return "";
   }
@@ -197,7 +200,8 @@ function itemRow(item) {
             el("span", { class: "activitymsg", text: systemMessage(item) }),
             el("span", { class: "activitywhen", text: item.at }),
           ]),
-          item.comment ? el("div", { class: "activityactioncomment", text: item.comment }) : null,
+          // A po_link's comment is the order number, already in the line above.
+          item.comment && item.action !== "po_link" ? el("div", { class: "activityactioncomment", text: item.comment }) : null,
           // Decision 0498 — the supplier-facing comment (separate from
           // the reason above) and what happened to the email, both
           // only ever present on a return_to_supplier item.

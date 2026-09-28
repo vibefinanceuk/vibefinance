@@ -2312,6 +2312,60 @@
    */
   .popout.wide { width: min(900px, 100%); }
 
+  /*
+    **The Matching stage's PO matching panel — decision 0530**, built
+    from the agreed mock-up. The used-up bar keeps the mock-up's one
+    change: "Already invoiced" in a quiet grey and "This invoice" in
+    blue, with a hairline between, because two blues read as one. Over
+    100% turns red.
+  */
+  .popout.pompanel { width: min(1120px, 100%); max-height: 88vh; padding: 18px 20px; }
+  .pompanel .pmsub { margin: 2px 0 0; color: var(--text-secondary); font-size: var(--text-sm); }
+  .pmblock { border-top: 0.5px solid var(--border); padding-top: 14px; margin-top: 14px; }
+  .pmhead { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+  .pmhead h4 { margin: 0; font-size: var(--text-lg); }
+  .pmempty { background: var(--bg-warning); color: var(--text-warning); border-radius: var(--radius); padding: 12px 14px; }
+  .pmcard { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); gap: 20px; background: var(--surface-1); border-radius: var(--radius); padding: 14px 16px; }
+  .pmmeta { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px 16px; align-content: start; }
+  .pmlabel { display: block; font-size: var(--text-sm); color: var(--text-muted); }
+  .pmusagehead { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; font-size: var(--text-sm); }
+  .pmbar { display: flex; height: 8px; border-radius: 999px; background: var(--surface-2); border: 0.5px solid var(--border); overflow: hidden; }
+  .pmbar.big { height: 16px; }
+  .pmbar.mini { display: inline-flex; width: 70px; height: 6px; vertical-align: middle; margin-right: 6px; }
+  .pmseg.others { background: var(--text-muted); opacity: 0.55; }
+  .pmseg.mine { background: var(--chart-1); }
+  .pmseg.mine.over { background: var(--text-danger); }
+  .pmseg.others + .pmseg.mine { box-shadow: -2px 0 0 var(--surface-2); }
+  .pmlegend { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 8px; font-size: var(--text-sm); color: var(--text-secondary); }
+  .pmlegend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
+  .pmlegend i.others { background: var(--text-muted); opacity: 0.55; }
+  .pmlegend i.mine { background: var(--chart-1); }
+  .pmlegend i.left { background: var(--surface-2); border: 0.5px solid var(--border); }
+  .pmlegend em { font-style: normal; color: var(--text-muted); }
+  .pmover { color: var(--text-danger); font-weight: 600; }
+  .pmwarntext { color: var(--text-warning); }
+  .pmtable { width: 100%; border-collapse: collapse; }
+  .pmtable th { text-align: left; font-size: var(--text-sm); font-weight: 500; color: var(--text-muted); padding: 6px 8px; border-bottom: 0.5px solid var(--border); }
+  .pmtable td { padding: 10px 8px; border-bottom: 0.5px solid var(--border); vertical-align: top; }
+  .pmtable .num { text-align: right; font-variant-numeric: tabular-nums; }
+  .pmtable td.pmarrow { color: var(--text-muted); width: 24px; }
+  .pmresults tr.current td { background: color-mix(in srgb, var(--text-accent) 7%, transparent); }
+  .pmtablewrap { overflow-x: auto; }
+  .pmunused { margin: 8px 0 0; color: var(--text-secondary); }
+  .pmpill { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: var(--text-sm); font-weight: 600; white-space: nowrap; }
+  .pmpill.ok { background: var(--bg-success); color: var(--text-success); }
+  .pmpill.warn { background: var(--bg-warning); color: var(--text-warning); }
+  .pmpill.bad { background: var(--bg-danger); color: var(--text-danger); }
+  .pmpill.muted { background: var(--surface-1); color: var(--text-muted); }
+  .pmsearchbar { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; margin-bottom: 8px; font-size: var(--text-sm); color: var(--text-secondary); }
+  .pmsearchbar input[type="search"] { flex: 1 1 280px; }
+  .pmuse { white-space: nowrap; }
+  .pmfoot { margin: 14px 0 0; border-top: 0.5px solid var(--border); padding-top: 12px; }
+  @media (max-width: 800px) {
+    .pmcard { grid-template-columns: 1fr; }
+    .pmmeta { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+
   /**
    * **`note()`'s own pop-out alert — decision 0493.** Reported live
    * against the first version (`.cardhead`/`.statebuttons`/

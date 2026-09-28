@@ -381,6 +381,15 @@ export const ICONS = {
     '<path d="M3 12 12 3h6a3 3 0 0 1 3 3v6l-9 9-9-9z"/><path d="M10.5 12.5l2 2 4-4"/>',
 };
 
+/**
+ * **PO matching — decision 0530.** Three lines of an invoice pointing
+ * across to an order: the panel pairs one with the other. `po_link` is
+ * the same shape, so the Timeline's re-link line shows the button that
+ * made it (the Timeline looks icons up by action name, 0488).
+ */
+ICONS.po_matching = '<path d="M4 6h7M4 12h7M4 18h7"/><path d="M15 6l5 6-5 6"/>';
+ICONS.po_link = ICONS.po_matching;
+
 export function icon(name) {
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   svg.setAttribute("viewBox", "0 0 24 24");
