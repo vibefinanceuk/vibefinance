@@ -600,7 +600,7 @@ export async function handleKeyInvoiceFields(
   // into, so line-level po_mismatch is not wired in on this path; it
   // already is on the read-on-arrival path (invoice-facts-route.ts)
   // and every real stage visit, both of which hold genuine line facts.
-  const poMerged = await mergePoMatchFacts(db, merged as InvoiceFacts, []);
+  const poMerged = await mergePoMatchFacts(db, merged as InvoiceFacts, [], { invoiceId });
   const verdict = validateInvoiceFacts(
     poMerged.headerFacts,
     lines.results as never,

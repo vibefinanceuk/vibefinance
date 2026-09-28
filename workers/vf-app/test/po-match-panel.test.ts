@@ -297,3 +297,39 @@ describe("pairing a line by hand — decision 0532", () => {
   });
 });
 
+
+describe("how much of each PO line is used — decision 0533", () => {
+  type UseView = View & {
+    lines: (View["lines"][number] & { poLine: { use: Record<string, number | null> } | null })[];
+    unusedPoLines: { lineNumber: number; use: Record<string, number | null> }[];
+  };
+  const view = async () => (await handleGetPoMatchView(env.DB, "inv-1", "u-dan")).body as unknown as UseView;
+
+  it("shows ordered, taken by other invoices, taken by this one, and left, per PO line", async () => {
+    // inv-0 takes 4 of paper (PO line 2) as well as its header total.
+    await env.DB.prepare("INSERT INTO invoice_lines (id, invoice_id, line_number, amount, facts_json) VALUES ('l0', 'inv-0', 1, 94, ?)")
+      .bind(JSON.stringify({ "BT-132": "2", "BT-129": 4, "BT-131": 94 }))
+      .run();
+    const v = await view();
+    expect(v.lines[1].poLine?.use).toEqual({
+      orderedQuantity: 60,
+      orderedAmount: 1410,
+      beforeQuantity: 4,
+      beforeAmount: 94,
+      thisQuantity: 50,
+      thisAmount: 1225,
+      leftQuantity: 6,
+      leftAmount: 91,
+    });
+    expect(v.unusedPoLines.find((l) => l.lineNumber === 3)?.use).toMatchObject({ beforeQuantity: 0, leftQuantity: 6 });
+  });
+
+  it("no longer counts a discarded or returned invoice as having used the PO", async () => {
+    await env.DB.prepare(
+      "INSERT INTO process_instances (id, process_id, subject_type, subject_id, current_stage_id, status) VALUES ('pi-0', 'ap', 'invoice', 'inv-0', 'matching', 'archived')"
+    ).run();
+    const v = await view();
+    expect(v.usage).toMatchObject({ invoicedByOthers: 0, left: 2484 - 1735 });
+    expect(v.usage?.otherInvoices).toEqual([]);
+  });
+});

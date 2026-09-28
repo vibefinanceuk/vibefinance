@@ -911,6 +911,18 @@ describe("Invoiced (Part) / Invoiced (Full), derived from real invoices — deci
     expect((result.body as { order: { effective_status: string } }).order.effective_status).toBe("invoiced_part");
   });
 
+  it("does not count a discarded or returned invoice as having used the order (decision 0533)", async () => {
+    await handleIngestPurchaseOrder(env.DB, ORDER()); // payable_amount 864
+    await seedInvoice("inv-1", "PO-34500", 400);
+    await env.DB.prepare("INSERT OR IGNORE INTO processes (id, name) VALUES ('p', 'P')").run();
+    await env.DB.prepare("INSERT OR IGNORE INTO process_stages (id, process_id, name, sequence) VALUES ('s', 'p', 'S', 1)").run();
+    await env.DB.prepare(
+      "INSERT INTO process_instances (id, process_id, subject_type, subject_id, current_stage_id, status) VALUES ('pi-1', 'p', 'invoice', 'inv-1', 's', 'archived')"
+    ).run();
+    const result = await handleGetPurchaseOrder(env.DB, "PO-34500");
+    expect((result.body as { order: { effective_status: string } }).order.effective_status).toBe("active");
+  });
+
   it("an order whose matching invoices reach its own total is Invoiced (Full)", async () => {
     await handleIngestPurchaseOrder(env.DB, ORDER()); // payable_amount 864
     await seedInvoice("inv-1", "PO-34500", 500);

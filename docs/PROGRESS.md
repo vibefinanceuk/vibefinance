@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 28 September 2026 (decision 0532). A living document: what
+Last updated 28 September 2026 (decision 0533). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,16 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### PO matching, phase 3: against what is left (0533)
+- Matching now flags only over-billing: a line's quantity and amount
+  against what is left on its PO line after other invoices, and its
+  unit price against the PO's. A partial invoice matches. The same for
+  the invoice total. Discarded and returned invoices never count.
+- The panel shows, per PO line, ordered · invoiced before · this
+  invoice · left, with a bar. The Purchase Orders screen's
+  Invoiced (Part/Full) follows the same counting.
+- `vf-licence` migration `0190`.
 
 ### PO matching panel, phase 2: saved line pairings (0532)
 - Each invoice line in the panel has a PO line picker. A choice is saved

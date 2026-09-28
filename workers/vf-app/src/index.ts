@@ -654,7 +654,7 @@ async function handleEvaluate(request: Request, env: Env): Promise<Response> {
     // purchase order data exists right now, the same reasoning
     // intake-capture-route.ts's own call gives. This route evaluates
     // header facts only, so po.line_matched does not apply here.
-    facts = (await mergePoMatchFacts(db, facts, [])).headerFacts;
+    facts = (await mergePoMatchFacts(db, facts, [], { invoiceId })).headerFacts;
   }
 
   let ruleSet: CompiledRuleSet;
@@ -5489,7 +5489,7 @@ export default {
         }
         // Saved line pairings (decision 0532) count as each line's order line reference.
         const pairedLines = visitLines ? await applySavedPairings(db, instanceRow.subject_id, visitFacts, visitLines) : [];
-        const poMerged = await mergePoMatchFacts(db, visitFacts, pairedLines);
+        const poMerged = await mergePoMatchFacts(db, visitFacts, pairedLines, { invoiceId: instanceRow.subject_id });
         visitFacts = poMerged.headerFacts;
         visitLines = visitLines
           ? await mergeCodingValidityForInvoice(db, instanceRow.subject_id, poMerged.lines)

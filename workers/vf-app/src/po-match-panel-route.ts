@@ -1,6 +1,6 @@
 import type { InvoiceFacts } from "@vibefinance/shared";
 import type { RouteResult } from "./org-route.js";
-import { computePoLineMatch, computePoMatch, getOrgMatchingConfig } from "./po-matching.js";
+import { computePoLineMatch, computePoMatch, getOrgMatchingConfig, loadPoConsumption, type PoConsumption } from "./po-matching.js";
 import { unitsWherePermitted, isWithinScope, unitClause } from "./enforce.js";
 import { handleKeyInvoiceFields } from "./key-fields-route.js";
 import { activePairings, loadPairings } from "./po-pairings.js";
@@ -130,23 +130,54 @@ const PO_SELECT = `
   LEFT JOIN org_users b ON b.id = po.buyer_user_id`;
 
 /**
- * **Invoiced by other invoices** — the same sum as decision 0377's
- * `INVOICED_AMOUNTS_JOIN` (BT-112 over every invoice whose BT-13 names
- * the order), minus this invoice, so "already invoiced" and "this
- * invoice" never count the same money twice.
+ * **Invoiced by other invoices** — BT-112 over every other invoice whose
+ * BT-13 names the order, never this one, so "already invoiced" and
+ * "this invoice" never count the same money twice. **Decision 0533**:
+ * a discarded or returned invoice no longer counts (it will never be
+ * paid), the same rule `loadPoConsumption` and the Purchase Orders
+ * screen's status now follow.
  */
 async function invoicedByOthers(db: D1Database, orderNumber: string, invoiceId: string) {
   const rows = await db
     .prepare(
-      `SELECT id, json_extract(facts_json, '$."BT-1"') AS number,
-              CAST(json_extract(facts_json, '$."BT-112"') AS REAL) AS amount
-       FROM invoice_headers
-       WHERE json_extract(facts_json, '$."BT-13"') = ? AND id != ?
-       ORDER BY created_at`
+      `SELECT h.id, json_extract(h.facts_json, '$."BT-1"') AS number,
+              CAST(json_extract(h.facts_json, '$."BT-112"') AS REAL) AS amount
+       FROM invoice_headers h
+       WHERE json_extract(h.facts_json, '$."BT-13"') = ? AND h.id != ?
+         AND NOT EXISTS (
+           SELECT 1 FROM process_instances pi
+           WHERE pi.subject_type = 'invoice' AND pi.subject_id = h.id AND pi.status IN ('archived', 'returned_manually')
+         )
+       ORDER BY h.created_at`
     )
     .bind(orderNumber, invoiceId)
     .all<{ id: string; number: string | null; amount: number | null }>();
   return rows.results.map((r) => ({ id: r.id, number: r.number, amount: r.amount ?? 0 }));
+}
+
+/**
+ * **How much of one PO line is used — decision 0533.** Ordered, taken
+ * by other invoices (`consumption`), taken by this one, and what is
+ * left after both. Quantities and amounts both, since a service line
+ * may carry only an amount.
+ */
+function lineUse(
+  poLine: { line_number: number; quantity: number | null; line_extension_amount: number | null },
+  consumption: PoConsumption,
+  thisInvoice: { quantity: number; amount: number } | undefined
+) {
+  const before = consumption.byLine.get(poLine.line_number) ?? { quantity: 0, amount: 0 };
+  const mine = thisInvoice ?? { quantity: 0, amount: 0 };
+  return {
+    orderedQuantity: poLine.quantity,
+    orderedAmount: poLine.line_extension_amount,
+    beforeQuantity: before.quantity,
+    beforeAmount: before.amount,
+    thisQuantity: mine.quantity,
+    thisAmount: mine.amount,
+    leftQuantity: poLine.quantity === null ? null : poLine.quantity - before.quantity - mine.quantity,
+    leftAmount: poLine.line_extension_amount === null ? null : poLine.line_extension_amount - before.amount - mine.amount,
+  };
 }
 
 function poStatus(row: PoRow, used: number): string {
@@ -226,6 +257,20 @@ export async function handleGetPoMatchView(db: D1Database, invoiceId: string, us
   // BT-132, exactly as it does at evaluation (`applySavedPairings`).
   const pairings = po ? activePairings(await loadPairings(db, invoiceId), facts) : new Map();
 
+  // What other invoices have taken, counted exactly as the rules count it (decision 0533).
+  const consumption = po ? await loadPoConsumption(db, po.order_number, invoiceId) : null;
+  // What this invoice's own lines take from each PO line, by the reference in force.
+  const thisByLine = new Map<number, { quantity: number; amount: number }>();
+  for (const l of invoiceLines) {
+    const stored = JSON.parse(l.facts_json || "{}") as InvoiceFacts;
+    const ref = Number(pairings.get(l.line_number)?.poLineNumber ?? text(stored["BT-132"]));
+    if (!Number.isFinite(ref)) continue;
+    const t = thisByLine.get(ref) ?? { quantity: 0, amount: 0 };
+    t.quantity += num(stored["BT-129"]) ?? 0;
+    t.amount += num(stored["BT-131"]) ?? 0;
+    thisByLine.set(ref, t);
+  }
+
   const lines = await Promise.all(
     invoiceLines.map(async (l) => {
       const stored = JSON.parse(l.facts_json || "{}") as InvoiceFacts;
@@ -234,7 +279,7 @@ export async function handleGetPoMatchView(db: D1Database, invoiceId: string, us
       const lf = pairing ? ({ ...stored, "BT-132": String(pairing.poLineNumber) } as InvoiceFacts) : stored;
       const ref = text(lf["BT-132"]);
       const poLine = ref ? poLines.find((p) => String(p.line_number) === ref) ?? null : null;
-      const match = await computePoLineMatch(db, headerFacts, lf, orgConfig);
+      const match = await computePoLineMatch(db, headerFacts, lf, orgConfig, consumption ?? undefined);
       return {
         lineNumber: l.line_number,
         name: text(lf["BT-153"]) ?? l.description,
@@ -254,6 +299,7 @@ export async function handleGetPoMatchView(db: D1Database, invoiceId: string, us
               unit: poLine.unit_code,
               price: poLine.price_amount,
               amount: poLine.line_extension_amount,
+              use: consumption ? lineUse(poLine, consumption, thisByLine.get(poLine.line_number)) : null,
             }
           : null,
         result: {
@@ -270,9 +316,9 @@ export async function handleGetPoMatchView(db: D1Database, invoiceId: string, us
   );
 
   const referenced = new Set(lines.map((l) => l.poLine?.lineNumber).filter((n) => n !== undefined));
-  const header = po ? await computePoMatch(db, headerFacts, orgConfig) : { matched: false, variancePct: undefined };
-  const others = po ? await invoicedByOthers(db, po.order_number, invoiceId) : [];
-  const byOthers = others.reduce((s, o) => s + o.amount, 0);
+  const header = po && consumption ? await computePoMatch(db, headerFacts, orgConfig, consumption) : { matched: false, variancePct: undefined };
+  const others = consumption?.invoices ?? [];
+  const byOthers = consumption?.headerAmount ?? 0;
   const thisInvoice = num(facts["BT-112"]) ?? 0;
 
   return {
@@ -338,6 +384,7 @@ export async function handleGetPoMatchView(db: D1Database, invoiceId: string, us
           unit: p.unit_code,
           price: p.price_amount,
           amount: p.line_extension_amount,
+          use: consumption ? lineUse(p, consumption, undefined) : null,
         })),
       canRelink: (await ownOpenTask(db, invoiceId, userId)) !== null,
     },

@@ -229,7 +229,7 @@ export async function loadLiveInvoiceFacts(
   // A person's saved line pairings (decision 0532) count as the line's
   // order line reference for evaluation; the stored facts are unchanged.
   const storedLines = await applySavedPairings(db, invoiceId, facts, await loadStoredInvoiceLines(db, invoiceId));
-  const poMerged = await mergePoMatchFacts(db, facts, storedLines);
+  const poMerged = await mergePoMatchFacts(db, facts, storedLines, { invoiceId });
   // coding.line_invalid — decision 0511, live for the same reason po.*
   // is: every re-evaluation after a task completes comes through here.
   const codingMerged = await mergeCodingValidityForInvoice(db, invoiceId, poMerged.lines);
@@ -687,7 +687,8 @@ export async function handleGetInvoice(
       invoice.id,
       facts as InvoiceFacts,
       lines.map((line) => ({ ...(line.facts as InvoiceFacts), lineNumber: line.lineNumber }))
-    )
+    ),
+    { invoiceId: invoice.id }
   );
   // Decision 0511 — the screen marks a line whose coding is not on
   // Account Coding's lists on arrival, not only after a save.

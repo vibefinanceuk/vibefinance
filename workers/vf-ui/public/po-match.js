@@ -74,6 +74,35 @@ function lineVerdict(line) {
   return { tone: "warn", text: t("pomatch.r.nocompare") };
 }
 
+/**
+ * **How much of one PO line is used — decision 0533.** Quantities when
+ * the PO line has one, otherwise amounts (a service line). A small bar
+ * in the same colours as the PO's own (already invoiced grey, this
+ * invoice blue, red once over), then the four figures in words.
+ */
+function lineUseRow(use) {
+  if (!use) return null;
+  const byQty = use.orderedQuantity !== null && use.orderedQuantity > 0;
+  const ordered = byQty ? use.orderedQuantity : use.orderedAmount;
+  if (ordered === null || ordered <= 0) return null;
+  const before = byQty ? use.beforeQuantity : use.beforeAmount;
+  const mine = byQty ? use.thisQuantity : use.thisAmount;
+  const left = byQty ? use.leftQuantity : use.leftAmount;
+  const over = left !== null && left < 0;
+  const share = (v) => Math.max(0, Math.min(100, (v / ordered) * 100));
+  const show = (v) => (byQty ? Number(v).toLocaleString(currentLocale(), { maximumFractionDigits: 3 }) : money(v));
+  return node("div", { class: "pmlineuse" }, [
+    node("span", { class: "pmbar" }, [
+      node("span", { class: "pmseg others", style: `width:${share(before)}%` }),
+      node("span", { class: `pmseg mine${over ? " over" : ""}`, style: `width:${share(mine)}%` }),
+    ]),
+    node("span", {
+      class: over ? "sm pmover" : "muted sm",
+      text: fill("pomatch.lineuse", { ordered: show(ordered), before: show(before), mine: show(mine), left: show(left) }),
+    }),
+  ]);
+}
+
 function lineSummary(l) {
   const parts = [];
   if (l.quantity !== null) parts.push(`${l.quantity}${l.unit ? ` ${l.unit}` : ""}`);
@@ -206,6 +235,7 @@ function linesSection(view, onPair) {
             })
           : null,
         node("div", { class: "sm" }, [how]),
+        lineUseRow(l.poLine?.use),
       ]),
       node("td", {}, [node("span", { class: `pmpill ${verdict.tone}`, text: verdict.text })]),
     ]);
@@ -233,7 +263,13 @@ function linesSection(view, onPair) {
     view.unusedPoLines.length
       ? node("p", { class: "pmunused sm" }, [
           node("b", { text: `${t("pomatch.unused")} ` }),
-          view.unusedPoLines.map((p) => `${p.lineNumber} ${p.name ?? ""} (${lineSummary(p)})`).join("; "),
+          view.unusedPoLines
+            .map((p) => {
+              // What is still open on it, when other invoices have taken some (decision 0533).
+              const left = p.use && p.use.leftQuantity !== null && p.use.beforeQuantity > 0 ? ` · ${fill("pomatch.unusedleft", { n: p.use.leftQuantity })}` : "";
+              return `${p.lineNumber} ${p.name ?? ""} (${lineSummary(p)}${left})`;
+            })
+            .join("; "),
         ])
       : null,
   ]);

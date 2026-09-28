@@ -45,6 +45,107 @@ interface PurchaseOrderLineRow {
   line_extension_amount: number | null;
   quantity: number | null;
   unit_code: string | null;
+  price_amount: number | null;
+  base_quantity: number | null;
+}
+
+/**
+ * **What other invoices have already taken from a PO — decision 0533,
+ * phase 3 of the PO matching panel.**
+ *
+ * Every other invoice whose BT-13 names the order, **except** one whose
+ * process ended without being paid: discarded (`archived`, decision
+ * 0078) or returned to the supplier (`returned_manually`). Their BT-112
+ * sums to `headerAmount`; their lines, each counted against the PO line
+ * it points at (a saved pairing, decision 0532, before the supplier's
+ * own BT-132), sum per PO line into `byLine`.
+ */
+export interface PoConsumption {
+  headerAmount: number;
+  invoices: { id: string; number: string | null; amount: number }[];
+  byLine: Map<number, { quantity: number; amount: number }>;
+}
+
+/** The instance states whose invoice will never be paid, so never counts as having used a PO. */
+const UNPAID_INSTANCE_STATUSES = ["archived", "returned_manually"];
+
+export async function loadPoConsumption(
+  db: D1Database,
+  orderNumber: string,
+  excludeInvoiceId: string | null
+): Promise<PoConsumption> {
+  const invoices = (
+    await db
+      .prepare(
+        `SELECT h.id, json_extract(h.facts_json, '$."BT-1"') AS number,
+                CAST(json_extract(h.facts_json, '$."BT-112"') AS REAL) AS amount
+         FROM invoice_headers h
+         WHERE json_extract(h.facts_json, '$."BT-13"') = ? AND h.id != ?
+           AND NOT EXISTS (
+             SELECT 1 FROM process_instances pi
+             WHERE pi.subject_type = 'invoice' AND pi.subject_id = h.id
+               AND pi.status IN (${UNPAID_INSTANCE_STATUSES.map(() => "?").join(", ")})
+           )
+         ORDER BY h.created_at, h.id`
+      )
+      .bind(orderNumber, excludeInvoiceId ?? "", ...UNPAID_INSTANCE_STATUSES)
+      .all<{ id: string; number: string | null; amount: number | null }>()
+  ).results;
+
+  const byLine = new Map<number, { quantity: number; amount: number }>();
+  if (invoices.length > 0) {
+    const ids = invoices.map((i) => i.id);
+    const marks = ids.map(() => "?").join(", ");
+    const lines = (
+      await db
+        .prepare(`SELECT invoice_id, line_number, facts_json FROM invoice_lines WHERE invoice_id IN (${marks})`)
+        .bind(...ids)
+        .all<{ invoice_id: string; line_number: number; facts_json: string | null }>()
+    ).results;
+    const pairings = (
+      await db
+        .prepare(
+          `SELECT invoice_id, line_number, po_line_number FROM invoice_line_po_pairings
+           WHERE order_number = ? AND invoice_id IN (${marks})`
+        )
+        .bind(orderNumber, ...ids)
+        .all<{ invoice_id: string; line_number: number; po_line_number: number }>()
+    ).results;
+    const paired = new Map(pairings.map((p) => [`${p.invoice_id}|${p.line_number}`, p.po_line_number]));
+    for (const line of lines) {
+      let facts: InvoiceFacts = {};
+      try {
+        facts = JSON.parse(line.facts_json || "{}") as InvoiceFacts;
+      } catch {
+        // A line whose facts will not parse has used nothing we can count.
+      }
+      const ref = paired.get(`${line.invoice_id}|${line.line_number}`) ?? Number(toText(facts["BT-132"]));
+      if (!Number.isFinite(ref)) continue;
+      const used = byLine.get(ref) ?? { quantity: 0, amount: 0 };
+      used.quantity += toNumber(facts["BT-129"]) ?? 0;
+      used.amount += toNumber(facts["BT-131"]) ?? 0;
+      byLine.set(ref, used);
+    }
+  }
+
+  return {
+    headerAmount: invoices.reduce((s, i) => s + (i.amount ?? 0), 0),
+    invoices: invoices.map((i) => ({ id: i.id, number: i.number, amount: i.amount ?? 0 })),
+    byLine,
+  };
+}
+
+const NO_CONSUMPTION: PoConsumption = { headerAmount: 0, invoices: [], byLine: new Map() };
+
+/**
+ * How far `actual` goes **over** `allowed`, as a percentage of `base` —
+ * decision 0533. 0 at or under; undefined when there is nothing to
+ * measure against. Only over-billing is a mismatch: an invoice for part
+ * of what is left is a partial delivery, not a disagreement.
+ */
+function excessPct(actual: number | undefined, allowed: number | undefined, base: number | undefined): number | undefined {
+  if (actual === undefined || allowed === undefined || base === undefined || base === 0) return undefined;
+  return (Math.max(0, actual - allowed) / Math.abs(base)) * 100;
 }
 
 export interface OrgMatchingConfig {
@@ -107,11 +208,6 @@ function toText(value: unknown): string | undefined {
   return undefined;
 }
 
-/** Percentage variance of `actual` from `expected`, undefined if `expected` is 0 or absent. */
-function variancePct(actual: number | undefined, expected: number | undefined): number | undefined {
-  if (actual === undefined || expected === undefined || expected === 0) return undefined;
-  return (Math.abs(actual - expected) / Math.abs(expected)) * 100;
-}
 
 export interface PoHeaderMatch {
   matched: boolean;
@@ -152,7 +248,8 @@ export interface PoLineMatch {
 export async function computePoMatch(
   db: D1Database,
   headerFacts: InvoiceFacts,
-  orgConfig: OrgMatchingConfig = DEFAULT_ORG_MATCHING_CONFIG
+  orgConfig: OrgMatchingConfig = DEFAULT_ORG_MATCHING_CONFIG,
+  consumption: PoConsumption = NO_CONSUMPTION
 ): Promise<PoHeaderMatch> {
   const orderNumber = toText(headerFacts["BT-13"]);
   if (!orderNumber) return { matched: false, variancePct: undefined };
@@ -163,8 +260,16 @@ export async function computePoMatch(
     .first<PurchaseOrderRow>();
   if (!order) return { matched: false, variancePct: undefined };
 
+  /**
+   * **Against what is left, and only over — decision 0533.** Before, the
+   * invoice total had to equal the PO total, so an invoice for part of
+   * an order never matched. Now it may not exceed the PO's total less
+   * what other invoices have already taken (`consumption`), by more
+   * than the tolerance; less is a partial invoice, not a mismatch.
+   */
   const invoiceTotal = toNumber(headerFacts["BT-112"]);
-  const variance = variancePct(invoiceTotal, order.payable_amount ?? undefined);
+  const payable = order.payable_amount ?? undefined;
+  const variance = excessPct(invoiceTotal, payable === undefined ? undefined : payable - consumption.headerAmount, payable);
   if (variance === undefined) return { matched: false, variancePct: undefined };
 
   const tolerance = toNumber(headerFacts["supplier.amountTolerancePct"]) ?? orgConfig.amountTolerancePct;
@@ -197,7 +302,8 @@ export async function computePoLineMatch(
   db: D1Database,
   headerFacts: InvoiceFacts,
   lineFacts: InvoiceFacts,
-  orgConfig: OrgMatchingConfig = DEFAULT_ORG_MATCHING_CONFIG
+  orgConfig: OrgMatchingConfig = DEFAULT_ORG_MATCHING_CONFIG,
+  consumption: PoConsumption = NO_CONSUMPTION
 ): Promise<PoLineMatch> {
   const orderNumber = toText(headerFacts["BT-13"]);
   const lineRef = toText(lineFacts["BT-132"]);
@@ -223,7 +329,7 @@ export async function computePoLineMatch(
 
   const poLine = await db
     .prepare(
-      "SELECT line_extension_amount, quantity, unit_code FROM purchase_order_lines WHERE purchase_order_id = ? AND line_number = ?"
+      "SELECT line_extension_amount, quantity, unit_code, price_amount, base_quantity FROM purchase_order_lines WHERE purchase_order_id = ? AND line_number = ?"
     )
     .bind(order.id, lineNumber)
     .first<PurchaseOrderLineRow>();
@@ -231,8 +337,49 @@ export async function computePoLineMatch(
 
   // From here on, a real order line was found — po.line_reference_found
   // is true regardless of how the amount/quantity comparison goes.
+  const used = consumption.byLine.get(lineNumber) ?? { quantity: 0, amount: 0 };
+
+  // Units first: a price per EA and a price per BOX are not comparable.
+  const invoiceUnitEarly = toText(lineFacts["BT-130"]);
+  const poUnitEarly = toText(poLine.unit_code ?? undefined);
+  const unitsAgree = !invoiceUnitEarly || !poUnitEarly || invoiceUnitEarly === poUnitEarly;
+
+  /**
+   * **Price: never over what is left, never over the PO's unit price —
+   * decision 0533.** Before, the line's amount had to equal the whole PO
+   * line's amount, so a line invoicing 10 of 20 read as a 50% price
+   * difference. Now two checks, both only against over-billing:
+   *  - the line's amount may not exceed the PO line's amount less what
+   *    other invoices have already taken from it;
+   *  - where both sides give a unit price (BT-146, or amount ÷ quantity;
+   *    the PO's price, or its amount ÷ quantity) and the units agree,
+   *    the invoice's may not exceed the PO's.
+   * `variancePct` is the larger of the two excesses; 0 means neither.
+   */
   const invoiceLineAmount = toNumber(lineFacts["BT-131"]);
-  const amountVariance = variancePct(invoiceLineAmount, poLine.line_extension_amount ?? undefined);
+  const poLineAmount = poLine.line_extension_amount ?? undefined;
+  const amountExcess = excessPct(
+    invoiceLineAmount,
+    poLineAmount === undefined ? undefined : poLineAmount - used.amount,
+    poLineAmount
+  );
+  const invoiceQuantityEarly = toNumber(lineFacts["BT-129"]);
+  const invoiceBase = toNumber(lineFacts["BT-149"]) ?? 1;
+  const invoiceUnitPrice =
+    toNumber(lineFacts["BT-146"]) !== undefined
+      ? (toNumber(lineFacts["BT-146"]) as number) / (invoiceBase || 1)
+      : invoiceLineAmount !== undefined && invoiceQuantityEarly
+        ? invoiceLineAmount / invoiceQuantityEarly
+        : undefined;
+  const poUnitPrice =
+    poLine.price_amount !== null
+      ? poLine.price_amount / (poLine.base_quantity || 1)
+      : poLineAmount !== undefined && poLine.quantity
+        ? poLineAmount / poLine.quantity
+        : undefined;
+  const priceExcess = unitsAgree ? excessPct(invoiceUnitPrice, poUnitPrice, poUnitPrice) : undefined;
+  const amountVariance =
+    amountExcess === undefined && priceExcess === undefined ? undefined : Math.max(amountExcess ?? 0, priceExcess ?? 0);
   if (amountVariance === undefined) {
     return {
       matched: false,
@@ -263,7 +410,9 @@ export async function computePoLineMatch(
   let quantityVariance: number | undefined;
   let quantityOk = true;
   if (orgConfig.quantityMatchingEnabled && unitsComparable) {
-    quantityVariance = variancePct(invoiceQuantity, poLine.quantity ?? undefined);
+    // Never over what is left on the line — decision 0533. Less is a partial delivery.
+    const ordered = poLine.quantity ?? undefined;
+    quantityVariance = excessPct(invoiceQuantity, ordered === undefined ? undefined : ordered - used.quantity, ordered);
     if (quantityVariance !== undefined) {
       const quantityTolerance = toNumber(headerFacts["supplier.quantityTolerancePct"]) ?? orgConfig.quantityTolerancePct;
       quantityOk = quantityVariance <= quantityTolerance;
@@ -294,14 +443,24 @@ export async function computePoLineMatch(
 export async function mergePoMatchFacts(
   db: D1Database,
   headerFacts: InvoiceFacts,
-  lines: (InvoiceFacts & { lineNumber: number })[]
+  lines: (InvoiceFacts & { lineNumber: number })[],
+  /**
+   * **Which invoice this is — decision 0533.** Lets matching count what
+   * *other* invoices have already taken from the PO. Every caller that
+   * knows it passes it; without it nothing is counted as taken, which
+   * is only right for an invoice not yet stored.
+   */
+  options: { invoiceId?: string } = {}
 ): Promise<{ headerFacts: InvoiceFacts; lines: (InvoiceFacts & { lineNumber: number })[] }> {
   // Fetched once per call, not once per line — the same "read once,
   // thread through" shape the header facts this function also builds
   // already get from their own caller.
   const orgConfig = await getOrgMatchingConfig(db);
+  const orderNumber = toText(headerFacts["BT-13"]);
+  const consumption =
+    orderNumber && options.invoiceId ? await loadPoConsumption(db, orderNumber, options.invoiceId) : NO_CONSUMPTION;
 
-  const header = await computePoMatch(db, headerFacts, orgConfig);
+  const header = await computePoMatch(db, headerFacts, orgConfig, consumption);
   const mergedHeaderFacts: InvoiceFacts = {
     ...headerFacts,
     "po.matched": header.matched,
@@ -310,7 +469,7 @@ export async function mergePoMatchFacts(
 
   const mergedLines = await Promise.all(
     lines.map(async (line) => {
-      const lineMatch = await computePoLineMatch(db, mergedHeaderFacts, line, orgConfig);
+      const lineMatch = await computePoLineMatch(db, mergedHeaderFacts, line, orgConfig, consumption);
       return {
         ...line,
         "po.line_matched": lineMatch.matched,

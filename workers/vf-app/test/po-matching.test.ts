@@ -364,3 +364,88 @@ describe("mergePoMatchFacts — the single entry point every caller uses", () =>
     expect(result.lines[0]["po.line_matched"]).toBe(true);
   });
 });
+
+describe("against what is left, and only over — decision 0533", () => {
+  // PO-500: line 1 is 100 EA for 600 (6.00 each); line 2 is 50 EA for 400. Payable 1000.
+  async function storeInvoice(id: string, header: Record<string, unknown>, lines: Record<string, unknown>[], instanceStatus?: string) {
+    await env.DB.prepare("INSERT INTO invoice_headers (id, facts_json) VALUES (?, ?)").bind(id, JSON.stringify(header)).run();
+    for (const [i, l] of lines.entries()) {
+      await env.DB.prepare("INSERT INTO invoice_lines (id, invoice_id, line_number, facts_json) VALUES (?, ?, ?, ?)")
+        .bind(crypto.randomUUID(), id, i + 1, JSON.stringify(l))
+        .run();
+    }
+    if (instanceStatus) {
+      await env.DB.prepare("INSERT OR IGNORE INTO processes (id, name) VALUES ('p', 'P')").run();
+      await env.DB.prepare("INSERT OR IGNORE INTO process_stages (id, process_id, name, sequence) VALUES ('s', 'p', 'S', 1)").run();
+      await env.DB.prepare(
+        "INSERT INTO process_instances (id, process_id, subject_type, subject_id, current_stage_id, status) VALUES (?, 'p', 'invoice', ?, 's', ?)"
+      )
+        .bind(`pi-${id}`, id, instanceStatus)
+        .run();
+    }
+  }
+  const merge = (lines: Record<string, unknown>[], header: Record<string, unknown> = {}) =>
+    mergePoMatchFacts(
+      env.DB,
+      { "BT-13": "PO-500", ...header },
+      lines.map((l, i) => ({ lineNumber: i + 1, ...l })),
+      { invoiceId: "inv-this" }
+    );
+
+  it("matches an invoice for part of a line, which used to read as a 50% difference", async () => {
+    const result = await merge([{ "BT-132": "1", "BT-129": 50, "BT-130": "EA", "BT-131": 300 }], { "BT-112": 500 });
+    expect(result.lines[0]["po.line_matched"]).toBe(true);
+    expect(result.lines[0]["po.line_variance_pct"]).toBe(0);
+    expect(result.lines[0]["po.line_quantity_variance_pct"]).toBe(0);
+    // And the invoice total is a partial of the PO total, not a mismatch.
+    expect(result.headerFacts["po.matched"]).toBe(true);
+  });
+
+  it("still catches a higher unit price on a partial invoice", async () => {
+    // 50 at 7.00 = 350: inside what is left, but 16.7% over the PO's 6.00.
+    const result = await merge([{ "BT-132": "1", "BT-129": 50, "BT-130": "EA", "BT-131": 350 }]);
+    expect(result.lines[0]["po.line_price_matched"]).toBe(false);
+    expect(result.lines[0]["po.line_variance_pct"] as number).toBeCloseTo(16.67, 1);
+    expect(result.lines[0]["po.line_quantity_matched"]).toBe(true);
+  });
+
+  it("counts what other invoices have already taken from the line and the PO", async () => {
+    await storeInvoice("inv-before", { "BT-13": "PO-500", "BT-112": 600 }, [{ "BT-132": "1", "BT-129": 60, "BT-131": 360 }]);
+    // 50 more of the 40 left: 10 over (10% of 100); 300 against 240 left: 60 over (10% of 600).
+    const result = await merge([{ "BT-132": "1", "BT-129": 50, "BT-130": "EA", "BT-131": 300 }], { "BT-112": 500 });
+    expect(result.lines[0]["po.line_quantity_matched"]).toBe(false);
+    expect(result.lines[0]["po.line_quantity_variance_pct"] as number).toBeCloseTo(10);
+    expect(result.lines[0]["po.line_price_matched"]).toBe(false);
+    expect(result.lines[0]["po.line_variance_pct"] as number).toBeCloseTo(10);
+    // 500 against 400 left of 1000.
+    expect(result.headerFacts["po.matched"]).toBe(false);
+    expect(result.headerFacts["po.variance_pct"] as number).toBeCloseTo(10);
+  });
+
+  it("never counts a discarded or returned invoice, or this invoice itself", async () => {
+    await storeInvoice("inv-discarded", { "BT-13": "PO-500", "BT-112": 600 }, [{ "BT-132": "1", "BT-129": 60, "BT-131": 360 }], "archived");
+    await storeInvoice("inv-returned", { "BT-13": "PO-500", "BT-112": 600 }, [{ "BT-132": "1", "BT-129": 60, "BT-131": 360 }], "returned_manually");
+    await storeInvoice("inv-this", { "BT-13": "PO-500", "BT-112": 600 }, [{ "BT-132": "1", "BT-129": 100, "BT-131": 600 }]);
+    const result = await merge([{ "BT-132": "1", "BT-129": 100, "BT-130": "EA", "BT-131": 600 }], { "BT-112": 600 });
+    expect(result.lines[0]["po.line_matched"]).toBe(true);
+    expect(result.headerFacts["po.matched"]).toBe(true);
+  });
+
+  it("counts another invoice's line by its saved pairing, not only its BT-132", async () => {
+    await storeInvoice("inv-before", { "BT-13": "PO-500", "BT-112": 360 }, [{ "BT-129": 60, "BT-131": 360 }]);
+    await env.DB.prepare("INSERT INTO org_users (id, email, name) VALUES ('u', 'u@x.com', 'U')").run();
+    await env.DB.prepare(
+      "INSERT INTO invoice_line_po_pairings (invoice_id, line_number, order_number, po_line_number, paired_by, paired_at) VALUES ('inv-before', 1, 'PO-500', 1, 'u', 'x')"
+    ).run();
+    const result = await merge([{ "BT-132": "1", "BT-129": 50, "BT-130": "EA", "BT-131": 300 }]);
+    expect(result.lines[0]["po.line_quantity_matched"]).toBe(false);
+  });
+
+  it("counts nothing as taken when the caller does not say which invoice this is", async () => {
+    await storeInvoice("inv-before", { "BT-13": "PO-500", "BT-112": 600 }, [{ "BT-132": "1", "BT-129": 60, "BT-131": 360 }]);
+    const result = await mergePoMatchFacts(env.DB, { "BT-13": "PO-500" }, [
+      { lineNumber: 1, "BT-132": "1", "BT-129": 50, "BT-130": "EA", "BT-131": 300 },
+    ]);
+    expect(result.lines[0]["po.line_matched"]).toBe(true);
+  });
+});

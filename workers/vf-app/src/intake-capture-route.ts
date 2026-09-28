@@ -198,7 +198,8 @@ export async function handleCaptureIntake(db: D1Database, channelId: string, bod
   // not read from anywhere stored: a purchase order can arrive after
   // this invoice, and a rule at the Matching stage needs today's
   // answer, not the one true at capture.
-  const poMerged = await mergePoMatchFacts(db, structuredFacts, canonicalLines ?? []);
+  // Decision 0533: what other invoices have already taken from the PO counts, never this one.
+  const poMerged = await mergePoMatchFacts(db, structuredFacts, canonicalLines ?? [], { invoiceId: id });
   let mergedFacts = poMerged.headerFacts;
   let lines = canonicalLines ? poMerged.lines : undefined;
   // Org placement / supplier matching / anything else a caller can only

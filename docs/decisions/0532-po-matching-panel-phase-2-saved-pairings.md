@@ -1,10 +1,6 @@
 # 0532 — The PO matching panel, phase 2: a line paired by hand is kept, and header-only keying no longer deletes lines
 
-**Status: built and tested locally, not yet pushed or deployed.** This
-session has no push access, so it is delivered as a git bundle. It
-touches `vf-app`, `vf-ui` and `vf-licence`, and needs **two migrations,
-each applied as its own step**: `vf-app` `0094` (apply before deploying
-`vf-app`) and `vf-licence` `0189`.
+**Status: pushed (`6b151a2`), deployed, and both migrations (`vf-app` `0094`, `vf-licence` `0189`) applied, as confirmed by the operator on 28 September.**
 
 ## What was asked
 

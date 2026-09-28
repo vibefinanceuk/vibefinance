@@ -177,6 +177,7 @@ import tasksColumnLabelsSql from "../migrations/0186_tasks_column_labels.sql?raw
 import navGroupShortHeadingsSql from "../migrations/0187_nav_group_short_headings.sql?raw";
 import poMatchingPanelStringsSql from "../migrations/0188_po_matching_panel_strings.sql?raw";
 import poPairingStringsSql from "../migrations/0189_po_pairing_strings.sql?raw";
+import poLineUseStringsSql from "../migrations/0190_po_line_use_strings.sql?raw";
 
 function stripSqlComments(sql: string): string {
   return sql
@@ -386,5 +387,6 @@ export async function applyTestSchema(): Promise<void> {
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(navGroupShortHeadingsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(poMatchingPanelStringsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(poPairingStringsSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(poLineUseStringsSql)));
 
 }

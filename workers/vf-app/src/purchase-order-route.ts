@@ -630,8 +630,14 @@ const INVOICED_AMOUNTS_JOIN = `
   LEFT JOIN (
     SELECT json_extract(facts_json, '$."BT-13"') AS order_number,
            SUM(CAST(json_extract(facts_json, '$."BT-112"') AS REAL)) AS invoiced_amount
-    FROM invoice_headers
+    FROM invoice_headers h
     WHERE json_extract(facts_json, '$."BT-13"') IS NOT NULL
+      -- Decision 0533: a discarded or returned invoice will never be paid,
+      -- so it has not used the order (the same rule matching follows).
+      AND NOT EXISTS (
+        SELECT 1 FROM process_instances pi
+        WHERE pi.subject_type = 'invoice' AND pi.subject_id = h.id AND pi.status IN ('archived', 'returned_manually')
+      )
     GROUP BY json_extract(facts_json, '$."BT-13"')
   ) inv ON inv.order_number = po.order_number
 `;

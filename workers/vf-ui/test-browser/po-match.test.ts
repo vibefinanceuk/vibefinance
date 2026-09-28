@@ -75,6 +75,8 @@ const STRINGS = {
     "pomatch.pairedby": "Paired by {who}",
     "pomatch.supplierref": "the invoice says line {ref}",
     "pomatch.pairfailed": "Could not pair.",
+    "pomatch.lineuse": "Ordered {ordered} · invoiced before {before} · this invoice {mine} · left {left}",
+    "pomatch.unusedleft": "{n} left",
     "purchaseorders.status.active": "Active",
     "purchaseorders.status.invoicedpart": "Invoiced (Part)",
     "purchaseorders.status.closed": "Closed",
@@ -322,6 +324,39 @@ describe("pairing a line by hand — decision 0532", () => {
   it("shows no picker to somebody whose task it is not", async () => {
     await open({ ...VIEW, canRelink: false });
     expect(panel().querySelector("select.pmpair")).toBeNull();
+  });
+});
+
+describe("how much of each PO line is used — decision 0533", () => {
+  const use = (o: Record<string, number | null>) => ({
+    orderedQuantity: 60, orderedAmount: 1410, beforeQuantity: 4, beforeAmount: 94,
+    thisQuantity: 50, thisAmount: 1225, leftQuantity: 6, leftAmount: 91, ...o,
+  });
+  const withUse = (u: ReturnType<typeof use>) => ({
+    ...VIEW,
+    lines: VIEW.lines.map((l) => (l.lineNumber === 2 && l.poLine ? { ...l, poLine: { ...l.poLine, use: u } } : l)),
+  });
+
+  it("shows ordered, invoiced before, this invoice and left under the PO line, with a bar", async () => {
+    await open(withUse(use({})));
+    const row = panel().querySelector('tr[data-line="2"] .pmlineuse') as HTMLElement;
+    expect(row.textContent).toContain("Ordered 60 · invoiced before 4 · this invoice 50 · left 6");
+    const [before, mine] = [...row.querySelectorAll(".pmseg")] as HTMLElement[];
+    expect(parseFloat(before.style.width)).toBeCloseTo((4 / 60) * 100, 1);
+    expect(parseFloat(mine.style.width)).toBeCloseTo((50 / 60) * 100, 1);
+    expect(mine.classList.contains("over")).toBe(false);
+  });
+
+  it("turns red when this invoice takes the line past what was ordered", async () => {
+    await open(withUse(use({ beforeQuantity: 20, leftQuantity: -10 })));
+    const row = panel().querySelector('tr[data-line="2"] .pmlineuse') as HTMLElement;
+    expect(row.querySelector(".pmseg.mine")?.classList.contains("over")).toBe(true);
+    expect(row.textContent).toContain("left -10");
+  });
+
+  it("falls back to amounts for a PO line with no quantity", async () => {
+    await open(withUse(use({ orderedQuantity: null, leftQuantity: null })));
+    expect(panel().querySelector('tr[data-line="2"] .pmlineuse')?.textContent).toContain("Ordered 1,410.00");
   });
 });
 
