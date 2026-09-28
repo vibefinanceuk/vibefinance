@@ -1,8 +1,6 @@
 # 0531 — The PO matching button follows the stage, and a returned task keeps the stage's own kind of permission
 
-**Status: built and tested locally, not yet pushed or deployed.** This
-session has no push access, so it is delivered as a git bundle. It
-changes `vf-app` and `vf-ui`, with no migration and no string change.
+**Status: pushed (`2140322`) and deployed, as confirmed by the operator on 28 September, who then saw the PO matching button and the linked PO-TEST-9920 on the live Matching task.** It changes `vf-app` and `vf-ui`, with no migration and no string change.
 
 ## What was asked
 

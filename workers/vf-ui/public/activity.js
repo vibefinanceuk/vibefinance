@@ -135,6 +135,13 @@ function actionTakenLine(item) {
     // Decision 0530 — `comment` carries the order number linked to.
     case "po_link":
       return t("activity.polinked").replace("{who}", who).replace("{po}", item.comment ?? "");
+    // Decision 0532 — `comment` is "<invoice line>:<PO line>", the PO line empty when cleared.
+    case "po_pair": {
+      const [line, poLine] = String(item.comment ?? "").split(":");
+      return (poLine ? t("activity.popaired").replace("{poline}", poLine) : t("activity.pocleared"))
+        .replace("{who}", who)
+        .replace("{line}", line ?? "");
+    }
     default:
       return "";
   }
@@ -201,7 +208,7 @@ function itemRow(item) {
             el("span", { class: "activitywhen", text: item.at }),
           ]),
           // A po_link's comment is the order number, already in the line above.
-          item.comment && item.action !== "po_link" ? el("div", { class: "activityactioncomment", text: item.comment }) : null,
+          item.comment && item.action !== "po_link" && item.action !== "po_pair" ? el("div", { class: "activityactioncomment", text: item.comment }) : null,
           // Decision 0498 — the supplier-facing comment (separate from
           // the reason above) and what happened to the email, both
           // only ever present on a return_to_supplier item.

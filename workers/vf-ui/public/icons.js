@@ -389,6 +389,8 @@ export const ICONS = {
  */
 ICONS.po_matching = '<path d="M4 6h7M4 12h7M4 18h7"/><path d="M15 6l5 6-5 6"/>';
 ICONS.po_link = ICONS.po_matching;
+// A saved line pairing (decision 0532) — the same shape, as it is the same panel's work.
+ICONS.po_pair = ICONS.po_matching;
 
 export function icon(name) {
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");

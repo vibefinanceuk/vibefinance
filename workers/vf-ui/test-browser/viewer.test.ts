@@ -156,6 +156,8 @@ const STRINGS = {
     "action.approve": "Approve",
     "action.po_matching": "PO matching",
     "activity.polinked": "{who} linked this to purchase order {po}",
+    "activity.popaired": "{who} paired invoice line {line} with PO line {poline}",
+    "activity.pocleared": "{who} cleared the pairing for invoice line {line}",
     "action.release": "Release",
     "action.discard": "Discard",
     "action.discard.reasonlabel": "Reason",
@@ -5080,6 +5082,28 @@ describe("the document/timeline tabs (decision 0269)", () => {
 
     expect(document.body.textContent).toContain("Priya Patel linked this to purchase order PO-B");
     expect(document.querySelector(".activityaction .activityactionicon svg")).not.toBeNull();
+    expect(document.querySelector(".activityactioncomment")).toBeNull();
+  });
+
+  it("shows a line pairing, and a cleared one, in words (decision 0532)", async () => {
+    stubFetch({
+      ...BASE_ROUTES,
+      "/api/documents/inv-1/activity": {
+        items: [
+          { kind: "action_taken", at: "2026-09-01 09:06:00", action: "po_pair", userName: "Priya Patel", comment: "3:4" },
+          { kind: "action_taken", at: "2026-09-01 09:07:00", action: "po_pair", userName: "Priya Patel", comment: "2:" },
+        ],
+      },
+    });
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    await openViewer(TASK, () => {});
+    await new Promise((r) => setTimeout(r, 0));
+    (timelineTabButton() as HTMLButtonElement).click();
+
+    expect(document.body.textContent).toContain("Priya Patel paired invoice line 3 with PO line 4");
+    expect(document.body.textContent).toContain("Priya Patel cleared the pairing for invoice line 2");
     expect(document.querySelector(".activityactioncomment")).toBeNull();
   });
 

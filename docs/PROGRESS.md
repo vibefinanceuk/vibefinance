@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 28 September 2026 (decision 0531). A living document: what
+Last updated 28 September 2026 (decision 0532). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,16 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### PO matching panel, phase 2: saved line pairings (0532)
+- Each invoice line in the panel has a PO line picker. A choice is saved
+  (`invoice_line_po_pairings`) and applied as the line's order line
+  reference wherever the rules evaluate, while the invoice still names
+  that PO. Recorded in the Timeline.
+- Fixed: keying a header field without sending lines deleted every
+  line. 0530's "Use this PO" did exactly that.
+- `vf-app` migration `0094` (before deploying `vf-app`) and
+  `vf-licence` migration `0189`.
 
 ### PO matching button follows the stage (0531)
 - The button now shows on any task at a stage whose rules test PO

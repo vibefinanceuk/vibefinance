@@ -3,6 +3,7 @@ import type { RouteResult } from "./org-route.js";
 import { computePoLineMatch, computePoMatch, getOrgMatchingConfig } from "./po-matching.js";
 import { unitsWherePermitted, isWithinScope, unitClause } from "./enforce.js";
 import { handleKeyInvoiceFields } from "./key-fields-route.js";
+import { activePairings, loadPairings } from "./po-pairings.js";
 
 /**
  * The Matching stage's PO matching panel, phase 1 — decision 0530.
@@ -221,9 +222,16 @@ export async function handleGetPoMatchView(db: D1Database, invoiceId: string, us
       .all<{ line_number: number; description: string | null; amount: number | null; facts_json: string | null }>()
   ).results;
 
+  // Decision 0532 — a person's saved pairing wins over the supplier's
+  // BT-132, exactly as it does at evaluation (`applySavedPairings`).
+  const pairings = po ? activePairings(await loadPairings(db, invoiceId), facts) : new Map();
+
   const lines = await Promise.all(
     invoiceLines.map(async (l) => {
-      const lf = JSON.parse(l.facts_json || "{}") as InvoiceFacts;
+      const stored = JSON.parse(l.facts_json || "{}") as InvoiceFacts;
+      const supplierReference = text(stored["BT-132"]);
+      const pairing = pairings.get(l.line_number) ?? null;
+      const lf = pairing ? ({ ...stored, "BT-132": String(pairing.poLineNumber) } as InvoiceFacts) : stored;
       const ref = text(lf["BT-132"]);
       const poLine = ref ? poLines.find((p) => String(p.line_number) === ref) ?? null : null;
       const match = await computePoLineMatch(db, headerFacts, lf, orgConfig);
@@ -234,7 +242,10 @@ export async function handleGetPoMatchView(db: D1Database, invoiceId: string, us
         unit: text(lf["BT-130"]),
         price: num(lf["BT-146"]),
         amount: num(lf["BT-131"]) ?? l.amount,
-        orderLineReference: ref,
+        orderLineReference: supplierReference,
+        pairing: pairing
+          ? { poLineNumber: pairing.poLineNumber, pairedByName: pairing.pairedByName, pairedAt: pairing.pairedAt }
+          : null,
         poLine: poLine
           ? {
               lineNumber: poLine.line_number,
@@ -310,6 +321,14 @@ export async function handleGetPoMatchView(db: D1Database, invoiceId: string, us
           }
         : null,
       lines,
+      // Every PO line, for the panel's per-line picker (decision 0532).
+      poLineOptions: poLines.map((p) => ({
+        lineNumber: p.line_number,
+        name: p.item_name ?? p.item_description,
+        quantity: p.quantity,
+        unit: p.unit_code,
+        price: p.price_amount,
+      })),
       unusedPoLines: poLines
         .filter((p) => !referenced.has(p.line_number))
         .map((p) => ({
@@ -457,4 +476,79 @@ export async function handleLinkPo(
     .bind(crypto.randomUUID(), taskId, userId, new Date().toISOString(), orderNumber)
     .run();
   return { status: 200, body: { orderNumber } };
+}
+
+/**
+ * **Pair an invoice line with a PO line by hand — decision 0532.**
+ *
+ * `poLineNumber: null` clears the pairing, so the line falls back to
+ * the supplier's own BT-132. Needs the same things re-linking does: an
+ * open task at the current stage that is the caller's, and an invoice
+ * linked to a PO held here. The pairing is recorded against that PO's
+ * order number (see `po-pairings.ts`) and in the Timeline as `po_pair`.
+ */
+export async function handlePairLine(
+  db: D1Database,
+  invoiceId: string,
+  userId: string,
+  body: { lineNumber?: unknown; poLineNumber?: unknown }
+): Promise<RouteResult> {
+  const lineNumber = num(body.lineNumber);
+  const clearing = body.poLineNumber === null;
+  const poLineNumber = clearing ? null : num(body.poLineNumber);
+  if (lineNumber === null || (!clearing && poLineNumber === null)) {
+    return { status: 400, body: { error: "lineNumber and poLineNumber (or null) are required", reason: "bad_request" } };
+  }
+
+  const invoice = await loadInvoice(db, invoiceId);
+  if (!invoice) return { status: 404, body: { error: `invoice ${invoiceId} does not exist` } };
+
+  const taskId = await ownOpenTask(db, invoiceId, userId);
+  if (!taskId) return { status: 403, body: { error: "this task is not claimed by you", reason: "not_claimed" } };
+
+  const line = await db
+    .prepare("SELECT 1 FROM invoice_lines WHERE invoice_id = ? AND line_number = ?")
+    .bind(invoiceId, lineNumber)
+    .first();
+  if (!line) return { status: 404, body: { error: `invoice line ${lineNumber} does not exist`, reason: "line_not_found" } };
+
+  const orderNumber = text(invoice.facts["BT-13"]);
+  const scope = await panelScope(db, userId);
+  const po = orderNumber
+    ? await db
+        .prepare("SELECT id, org_unit_id FROM purchase_orders WHERE order_number = ?")
+        .bind(orderNumber)
+        .first<{ id: string; org_unit_id: string | null }>()
+    : null;
+  if (!orderNumber || !po || !isWithinScope({ units: scope }, po.org_unit_id)) {
+    return { status: 422, body: { error: "the invoice is not linked to a purchase order held here", reason: "no_po" } };
+  }
+
+  if (clearing) {
+    await db.prepare("DELETE FROM invoice_line_po_pairings WHERE invoice_id = ? AND line_number = ?").bind(invoiceId, lineNumber).run();
+  } else {
+    const poLine = await db
+      .prepare("SELECT 1 FROM purchase_order_lines WHERE purchase_order_id = ? AND line_number = ?")
+      .bind(po.id, poLineNumber)
+      .first();
+    if (!poLine) {
+      return { status: 404, body: { error: `purchase order ${orderNumber} has no line ${poLineNumber}`, reason: "po_line_not_found" } };
+    }
+    await db
+      .prepare(
+        `INSERT INTO invoice_line_po_pairings (invoice_id, line_number, order_number, po_line_number, paired_by, paired_at)
+         VALUES (?, ?, ?, ?, ?, ?)
+         ON CONFLICT (invoice_id, line_number) DO UPDATE SET
+           order_number = excluded.order_number, po_line_number = excluded.po_line_number,
+           paired_by = excluded.paired_by, paired_at = excluded.paired_at`
+      )
+      .bind(invoiceId, lineNumber, orderNumber, poLineNumber, userId, new Date().toISOString())
+      .run();
+  }
+
+  await db
+    .prepare("INSERT INTO task_action_events (id, task_id, action, actor_id, at, comment) VALUES (?, ?, 'po_pair', ?, ?, ?)")
+    .bind(crypto.randomUUID(), taskId, userId, new Date().toISOString(), `${lineNumber}:${poLineNumber ?? ""}`)
+    .run();
+  return { status: 200, body: { lineNumber, poLineNumber } };
 }

@@ -1370,3 +1370,25 @@ describe("a line keeps the facts nobody sent (decision 0174)", () => {
     expect(JSON.parse(row?.facts_json ?? "{}").description).toBeUndefined();
   });
 });
+
+describe("a header-only edit keeps the lines — decision 0532", () => {
+  it("writes the stored lines back unchanged when no lines are sent", async () => {
+    await seedInvoice("inv-1");
+    await env.DB.prepare(
+      "INSERT INTO invoice_lines (id, invoice_id, line_number, description, amount, cost_centre, facts_json) VALUES ('l-1', 'inv-1', 1, 'Toner', 420, 'CC1', ?), ('l-2', 'inv-1', 2, 'Paper', 90, NULL, ?)"
+    )
+      .bind(JSON.stringify({ "BT-131": 420, "BT-132": "1" }), JSON.stringify({ "BT-131": 90 }))
+      .run();
+
+    const result = await handleKeyInvoiceFields(env.DB, "inv-1", { facts: { "BT-13": "PO-B" } } as never, "u-dan");
+    expect(result.status).toBe(200);
+
+    const lines = await env.DB.prepare(
+      "SELECT line_number, description, amount, cost_centre, facts_json FROM invoice_lines WHERE invoice_id = 'inv-1' ORDER BY line_number"
+    ).all<{ line_number: number; description: string; amount: number; cost_centre: string | null; facts_json: string }>();
+    expect(lines.results).toHaveLength(2);
+    expect(lines.results[0]).toMatchObject({ description: "Toner", amount: 420, cost_centre: "CC1" });
+    expect(JSON.parse(lines.results[0].facts_json)).toEqual({ "BT-131": 420, "BT-132": "1" });
+    expect(lines.results[1]).toMatchObject({ description: "Paper", amount: 90, cost_centre: null });
+  });
+});

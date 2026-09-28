@@ -68,6 +68,13 @@ const STRINGS = {
     "pomatch.relinkhint": "Only the person whose task this is can link a different purchase order.",
     "pomatch.linkfailed": "Could not link.",
     "pomatch.foot": "Recorded in the Timeline.",
+    "pomatch.pair.own": "The invoice's own reference (line {ref})",
+    "pomatch.pair.choose": "Choose a PO line…",
+    "pomatch.pair.option": "Line {n}: {name}",
+    "pomatch.pair.label": "PO line for invoice line {n}",
+    "pomatch.pairedby": "Paired by {who}",
+    "pomatch.supplierref": "the invoice says line {ref}",
+    "pomatch.pairfailed": "Could not pair.",
     "purchaseorders.status.active": "Active",
     "purchaseorders.status.invoicedpart": "Invoiced (Part)",
     "purchaseorders.status.closed": "Closed",
@@ -92,21 +99,26 @@ const VIEW = {
   usage: { poTotal: 2484, invoicedByOthers: 420, otherInvoices: [{ id: "inv-0", number: "INV-0", amount: 420 }], thisInvoice: 1735, left: 329 },
   lines: [
     {
-      lineNumber: 1, name: "Toner", quantity: 10, unit: "EA", price: 42, amount: 420, orderLineReference: "1",
+      lineNumber: 1, name: "Toner", quantity: 10, unit: "EA", price: 42, amount: 420, orderLineReference: "1", pairing: null,
       poLine: { lineNumber: 1, name: "Toner cartridge", quantity: 10, unit: "EA", price: 42, amount: 420 },
       result: { matched: true, referenceFound: true, priceMatched: true, quantityMatched: true, unitMismatch: false, variancePct: 0, quantityVariancePct: 0 },
     },
     {
-      lineNumber: 2, name: "Paper", quantity: 50, unit: "EA", price: 24.5, amount: 1225, orderLineReference: "2",
+      lineNumber: 2, name: "Paper", quantity: 50, unit: "EA", price: 24.5, amount: 1225, orderLineReference: "2", pairing: null,
       poLine: { lineNumber: 2, name: "A4 paper", quantity: 60, unit: "EA", price: 23.5, amount: 1410 },
       result: { matched: false, referenceFound: true, priceMatched: false, quantityMatched: true, unitMismatch: false, variancePct: 13.1, quantityVariancePct: 16.7 },
     },
     {
-      lineNumber: 3, name: "Organiser", quantity: 5, unit: "EA", price: 18, amount: 90, orderLineReference: null, poLine: null,
+      lineNumber: 3, name: "Organiser", quantity: 5, unit: "EA", price: 18, amount: 90, orderLineReference: null, pairing: null, poLine: null,
       result: { matched: false, referenceFound: false, priceMatched: null, quantityMatched: null, unitMismatch: false, variancePct: null, quantityVariancePct: null },
     },
   ],
   unusedPoLines: [{ lineNumber: 3, name: "Stapler", quantity: 6, unit: "EA", price: 15, amount: 90 }],
+  poLineOptions: [
+    { lineNumber: 1, name: "Toner cartridge", quantity: 10, unit: "EA", price: 42 },
+    { lineNumber: 2, name: "A4 paper", quantity: 60, unit: "EA", price: 23.5 },
+    { lineNumber: 3, name: "Stapler", quantity: 6, unit: "EA", price: 15 },
+  ],
   canRelink: true,
 };
 
@@ -246,3 +258,70 @@ describe("the PO matching panel — decision 0530", () => {
     expect(panel().textContent).toContain("Only the person whose task this is");
   });
 });
+
+describe("pairing a line by hand — decision 0532", () => {
+  it("offers every PO line on each invoice line, starting from what is in force now", async () => {
+    await open();
+    const picker = (n: number) => panel().querySelector(`tr[data-line="${n}"] select.pmpair`) as HTMLSelectElement;
+    expect([...picker(1).options].map((o) => o.textContent)).toEqual([
+      "The invoice's own reference (line 1)",
+      "Line 1: Toner cartridge (10 EA × 42.00)",
+      "Line 2: A4 paper (60 EA × 23.50)",
+      "Line 3: Stapler (6 EA × 15.00)",
+    ]);
+    expect(picker(1).value).toBe("");
+    expect(picker(3).options[0].textContent).toBe("Choose a PO line…");
+  });
+
+  it("saves a choice, reloads, and tells the viewer to redraw when closed", async () => {
+    const calls: Call[] = [];
+    const paired = {
+      ...VIEW,
+      lines: VIEW.lines.map((l) =>
+        l.lineNumber === 3
+          ? { ...l, pairing: { poLineNumber: 3, pairedByName: "Dan", pairedAt: "2026-09-28" }, poLine: { lineNumber: 3, name: "Stapler", quantity: 6, unit: "EA", price: 15, amount: 90 } }
+          : l
+      ),
+    };
+    let served = 0;
+    const { onRelinked } = await open(VIEW, calls, {
+      "/api/invoices/inv-1/po-pairing": { lineNumber: 3, poLineNumber: 3 },
+      "/api/invoices/inv-1/po-match": () => (served++ === 0 ? VIEW : paired),
+    });
+    const picker = panel().querySelector('tr[data-line="3"] select.pmpair') as HTMLSelectElement;
+    picker.value = "3";
+    picker.dispatchEvent(new Event("change"));
+    await new Promise((r) => setTimeout(r, 20));
+
+    expect(calls.find((c) => c.path === "/api/invoices/inv-1/po-pairing")?.body).toEqual({ lineNumber: 3, poLineNumber: 3 });
+    const row = panel().querySelector('tr[data-line="3"]') as HTMLElement;
+    expect(row.querySelector(".pmpaired")?.textContent).toBe("Paired by Dan");
+    expect((row.querySelector("select.pmpair") as HTMLSelectElement).value).toBe("3");
+
+    (panel().querySelector(".cardhead .actionlink") as HTMLButtonElement).click();
+    expect(onRelinked).toHaveBeenCalledOnce();
+  });
+
+  it("clears a pairing by choosing the invoice's own reference", async () => {
+    const calls: Call[] = [];
+    const withPairing = {
+      ...VIEW,
+      lines: VIEW.lines.map((l) => (l.lineNumber === 2 ? { ...l, pairing: { poLineNumber: 3, pairedByName: "Dan", pairedAt: "x" } } : l)),
+    };
+    await open(withPairing, calls, { "/api/invoices/inv-1/po-pairing": { lineNumber: 2, poLineNumber: null } });
+    const row = panel().querySelector('tr[data-line="2"]') as HTMLElement;
+    expect(row.querySelector(".pmpaired")?.textContent).toBe("Paired by Dan · the invoice says line 2");
+    const picker = row.querySelector("select.pmpair") as HTMLSelectElement;
+    expect(picker.value).toBe("3");
+    picker.value = "";
+    picker.dispatchEvent(new Event("change"));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(calls.find((c) => c.path === "/api/invoices/inv-1/po-pairing")?.body).toEqual({ lineNumber: 2, poLineNumber: null });
+  });
+
+  it("shows no picker to somebody whose task it is not", async () => {
+    await open({ ...VIEW, canRelink: false });
+    expect(panel().querySelector("select.pmpair")).toBeNull();
+  });
+});
+

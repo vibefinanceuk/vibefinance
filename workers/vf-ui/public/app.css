@@ -2360,6 +2360,9 @@
   .pmsearchbar { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; margin-bottom: 8px; font-size: var(--text-sm); color: var(--text-secondary); }
   .pmsearchbar input[type="search"] { flex: 1 1 280px; }
   .pmuse { white-space: nowrap; }
+  /* Decision 0532 — the per-line PO line picker, and who paired it. */
+  .pmpair { width: 100%; margin-bottom: 4px; }
+  .pmpaired { color: var(--text-accent); }
   .pmfoot { margin: 14px 0 0; border-top: 0.5px solid var(--border); padding-top: 12px; }
   @media (max-width: 800px) {
     .pmcard { grid-template-columns: 1fr; }

@@ -1,7 +1,8 @@
 import { env } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
 import { applyTestSchema } from "./setup.js";
-import { handleGetPoMatchView, handlePoCandidates, handleLinkPo } from "../src/po-match-panel-route.js";
+import { handleGetPoMatchView, handlePoCandidates, handleLinkPo, handlePairLine } from "../src/po-match-panel-route.js";
+import { loadLiveInvoiceFacts } from "../src/invoice-facts-route.js";
 
 /**
  * The Matching stage's PO matching panel, phase 1 — decision 0530.
@@ -222,3 +223,77 @@ describe("re-linking to a different PO — decision 0530", () => {
     expect(events?.n).toBe(0);
   });
 });
+
+describe("pairing a line by hand — decision 0532", () => {
+  type PairView = View & {
+    lines: (View["lines"][number] & { pairing: { poLineNumber: number; pairedByName: string } | null })[];
+    poLineOptions: { lineNumber: number }[];
+  };
+  const view = async () => (await handleGetPoMatchView(env.DB, "inv-1", "u-dan")).body as unknown as PairView;
+
+  it("pairs a line with no reference, and the panel and the rules' own facts both see it", async () => {
+    expect((await view()).poLineOptions.map((o) => o.lineNumber)).toEqual([1, 2, 3, 4]);
+
+    const result = await handlePairLine(env.DB, "inv-1", "u-dan", { lineNumber: 3, poLineNumber: 4 });
+    expect(result.status).toBe(200);
+
+    const organiser = (await view()).lines[2];
+    expect(organiser.pairing).toMatchObject({ poLineNumber: 4, pairedByName: "Dan" });
+    expect(organiser.poLine?.lineNumber).toBe(4);
+    // 90 against 144 (8 × 18): found now, and compared.
+    expect(organiser.result.referenceFound).toBe(true);
+    // The supplier's own reference is still what the supplier sent.
+    expect(organiser.orderLineReference).toBeNull();
+
+    // What every re-evaluation after a task completes reads.
+    const live = await loadLiveInvoiceFacts(env.DB, "inv-1");
+    const line3 = live!.lines.find((l) => l.lineNumber === 3)!;
+    expect(line3["BT-132"]).toBe("4");
+    expect(line3["po.line_reference_found"]).toBe(true);
+
+    // Stored facts are untouched.
+    const stored = await env.DB.prepare("SELECT facts_json FROM invoice_lines WHERE invoice_id = 'inv-1' AND line_number = 3").first<{ facts_json: string }>();
+    expect(JSON.parse(stored!.facts_json)["BT-132"]).toBeUndefined();
+
+    const event = await env.DB.prepare("SELECT action, comment FROM task_action_events WHERE action = 'po_pair'").first();
+    expect(event).toMatchObject({ action: "po_pair", comment: "3:4" });
+  });
+
+  it("overrides the supplier's own reference, and clearing puts it back", async () => {
+    await handlePairLine(env.DB, "inv-1", "u-dan", { lineNumber: 2, poLineNumber: 3 });
+    expect((await view()).lines[1].poLine?.lineNumber).toBe(3);
+
+    await handlePairLine(env.DB, "inv-1", "u-dan", { lineNumber: 2, poLineNumber: null });
+    const paper = (await view()).lines[1];
+    expect(paper.pairing).toBeNull();
+    expect(paper.poLine?.lineNumber).toBe(2);
+    const cleared = await env.DB.prepare("SELECT comment FROM task_action_events WHERE action = 'po_pair' ORDER BY at DESC, rowid DESC").first<{ comment: string }>();
+    expect(cleared?.comment).toBe("2:");
+  });
+
+  it("applies only while the invoice still names the PO it was made against", async () => {
+    await handlePairLine(env.DB, "inv-1", "u-dan", { lineNumber: 3, poLineNumber: 4 });
+    await handleLinkPo(env.DB, "inv-1", "u-dan", { orderNumber: "PO-B" });
+    const live = await loadLiveInvoiceFacts(env.DB, "inv-1");
+    expect(live!.lines.find((l) => l.lineNumber === 3)!["BT-132"]).toBeUndefined();
+
+    await handleLinkPo(env.DB, "inv-1", "u-dan", { orderNumber: "PO-A" });
+    const back = await loadLiveInvoiceFacts(env.DB, "inv-1");
+    expect(back!.lines.find((l) => l.lineNumber === 3)!["BT-132"]).toBe("4");
+  });
+
+  it("refuses somebody whose task it is not, a PO line that does not exist, and an invoice line that does not", async () => {
+    expect((await handlePairLine(env.DB, "inv-1", "u-sam", { lineNumber: 3, poLineNumber: 4 })).status).toBe(403);
+    expect((await handlePairLine(env.DB, "inv-1", "u-dan", { lineNumber: 3, poLineNumber: 9 })).body).toMatchObject({ reason: "po_line_not_found" });
+    expect((await handlePairLine(env.DB, "inv-1", "u-dan", { lineNumber: 7, poLineNumber: 1 })).body).toMatchObject({ reason: "line_not_found" });
+    expect((await handlePairLine(env.DB, "inv-1", "u-dan", { lineNumber: 3 })).status).toBe(400);
+    const saved = await env.DB.prepare("SELECT count(*) AS n FROM invoice_line_po_pairings").first<{ n: number }>();
+    expect(saved?.n).toBe(0);
+  });
+
+  it("refuses when the invoice names no PO held here", async () => {
+    await env.DB.prepare(`UPDATE invoice_headers SET facts_json = json_set(facts_json, '$."BT-13"', 'PO-NOPE') WHERE id = 'inv-1'`).run();
+    expect((await handlePairLine(env.DB, "inv-1", "u-dan", { lineNumber: 3, poLineNumber: 4 })).body).toMatchObject({ reason: "no_po" });
+  });
+});
+

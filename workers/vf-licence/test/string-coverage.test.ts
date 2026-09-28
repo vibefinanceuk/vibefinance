@@ -749,6 +749,16 @@ const KEYS_THE_INTERFACE_USES = [
   "apsetup.modedef.api",
   // Decision 0517 — re-routing an Approval task over the approver's limit.
   "action.route_to_approver.limitnote",
+  // Decision 0532 — pairing a line by hand.
+  "pomatch.pair.own",
+  "pomatch.pair.choose",
+  "pomatch.pair.option",
+  "pomatch.pair.label",
+  "pomatch.pairedby",
+  "pomatch.supplierref",
+  "pomatch.pairfailed",
+  "activity.popaired",
+  "activity.pocleared",
   // Decision 0530 — the Matching stage's PO matching panel.
   "action.po_matching",
   "activity.polinked",

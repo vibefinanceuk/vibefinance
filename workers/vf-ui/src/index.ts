@@ -220,6 +220,8 @@ const PROXIED_TO_INSTANCE: RegExp[] = [
   /^\/invoices\/[^/]+\/po-match$/,
   /^\/invoices\/[^/]+\/po-candidates$/,
   /^\/invoices\/[^/]+\/po-link$/,
+  // Saving a line pairing — decision 0532.
+  /^\/invoices\/[^/]+\/po-pairing$/,
   /^\/invoices\/[^/]+\/document-url$/,
   // The pages behind a multi-page scan (decision 0381) — the same
   // shape as document-url immediately above, and the exact gap this

@@ -98,6 +98,7 @@ import supplierReturnEmailsSql from "../../../migrations/0090_supplier_return_em
 import stageActionsDiscardAllowedSql from "../../../migrations/0091_stage_actions_discard_allowed.sql?raw";
 import approvalExclusionsSql from "../../../migrations/0092_approval_exclusions.sql?raw";
 import taskActionEventsPoLinkSql from "../../../migrations/0093_task_action_events_po_link.sql?raw";
+import invoiceLinePoPairingsSql from "../../../migrations/0094_invoice_line_po_pairings.sql?raw";
 
 // Another known divergence from production, on top of the one below:
 // D1's exec() splits its input by newline and executes each non-empty
@@ -142,7 +143,7 @@ function toOneStatementPerLine(sql: string): string {
 // first (children before parents, for the foreign keys) so each test
 // gets a genuinely clean schema regardless of what the pool does or
 // does not reset.
-const TABLES_IN_DROP_ORDER = ["document_comments",
+const TABLES_IN_DROP_ORDER = ["invoice_line_po_pairings", "document_comments",
   // Matching Exceptions and Business User (decision 0468/migration
   // 0078) — references invoice_headers and org_users, so it sits here
   // with document_comments, the other table dropped early for exactly
@@ -375,6 +376,7 @@ export async function applyTestSchema(): Promise<void> {
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(stageActionsDiscardAllowedSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(approvalExclusionsSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(taskActionEventsPoLinkSql)));
+  await env.DB.exec(toOneStatementPerLine(stripSqlComments(invoiceLinePoPairingsSql)));
 }
 
 /**

@@ -1,4 +1,4 @@
-import { handleGetPoMatchView, handlePoCandidates, handleLinkPo, PO_PANEL_PERMISSIONS } from "./po-match-panel-route.js";
+import { handleGetPoMatchView, handlePoCandidates, handleLinkPo, handlePairLine, PO_PANEL_PERMISSIONS } from "./po-match-panel-route.js";
 import { resolveTenant } from "@vibefinance/shared";
 import { searchOrgUnits, setInvoiceOrgUnit } from "./derive-org.js";
 import {
@@ -112,6 +112,7 @@ import {
 } from "./team-route.js";
 import { handleUpsertInvoice, mergeStructuredInvoiceFacts , handleGetInvoice, loadStoredInvoiceLines, loadLiveInvoiceFacts } from "./invoice-facts-route.js";
 import { mergePoMatchFacts } from "./po-matching.js";
+import { applySavedPairings } from "./po-pairings.js";
 import { mergeCodingValidityForInvoice, codingGapsForTask } from "./coding-validation.js";
 import { handleUpsertExpenseReport } from "./expense-facts-route.js";
 import {
@@ -4392,10 +4393,13 @@ export default {
     const poMatchViewMatch = pathname.match(/^\/invoices\/([^/]+)\/po-match$/);
     const poCandidatesMatch = pathname.match(/^\/invoices\/([^/]+)\/po-candidates$/);
     const poLinkMatch = pathname.match(/^\/invoices\/([^/]+)\/po-link$/);
+    // Saving a line pairing — decision 0532.
+    const poPairingMatch = pathname.match(/^\/invoices\/([^/]+)\/po-pairing$/);
     if (
       (poMatchViewMatch && request.method === "GET") ||
       (poCandidatesMatch && request.method === "GET") ||
-      (poLinkMatch && request.method === "POST")
+      (poLinkMatch && request.method === "POST") ||
+      (poPairingMatch && request.method === "POST")
     ) {
       const { db } = resolveTenant(request, env);
       const auth = await requireAnyPermission(db, request, [...PO_PANEL_PERMISSIONS], sessionContext(env));
@@ -4421,6 +4425,15 @@ export default {
         body = await request.json();
       } catch {
         return json({ error: t("invalidJsonBody", resolveLocale(env.LOCALE)) }, 400);
+      }
+      if (poPairingMatch) {
+        const paired = await handlePairLine(
+          db,
+          decodeURIComponent(poPairingMatch[1]),
+          auth.user.id,
+          (body ?? {}) as { lineNumber?: unknown; poLineNumber?: unknown }
+        );
+        return json(paired.body, paired.status);
       }
       const result = await handleLinkPo(
         db,
@@ -5474,7 +5487,9 @@ export default {
           visitFacts = { ...(JSON.parse(headerRow.facts_json) as InvoiceFacts), ...visitFacts };
           visitFacts = mergeStructuredInvoiceFacts(visitFacts, headerRow);
         }
-        const poMerged = await mergePoMatchFacts(db, visitFacts, visitLines ?? []);
+        // Saved line pairings (decision 0532) count as each line's order line reference.
+        const pairedLines = visitLines ? await applySavedPairings(db, instanceRow.subject_id, visitFacts, visitLines) : [];
+        const poMerged = await mergePoMatchFacts(db, visitFacts, pairedLines);
         visitFacts = poMerged.headerFacts;
         visitLines = visitLines
           ? await mergeCodingValidityForInvoice(db, instanceRow.subject_id, poMerged.lines)

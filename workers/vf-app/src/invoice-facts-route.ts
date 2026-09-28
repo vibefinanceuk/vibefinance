@@ -6,6 +6,7 @@ import { unitLineage } from "./unit-config.js";
 import { findSimilarInvoices } from "./invoice-history.js";
 import { preferredDocumentType, documentTypeInfo } from "./document-storage.js";
 import { mergePoMatchFacts } from "./po-matching.js";
+import { applySavedPairings } from "./po-pairings.js";
 import { mergeCodingValidityFacts, mergeCodingValidityForInvoice } from "./coding-validation.js";
 import { STANDARD_MATCHING_RULES } from "./matching-config-route.js";
 import type { Locale } from "./i18n.js";
@@ -225,7 +226,9 @@ export async function loadLiveInvoiceFacts(
 
   let facts = JSON.parse(headerRow.facts_json) as InvoiceFacts;
   facts = mergeStructuredInvoiceFacts(facts, headerRow);
-  const storedLines = await loadStoredInvoiceLines(db, invoiceId);
+  // A person's saved line pairings (decision 0532) count as the line's
+  // order line reference for evaluation; the stored facts are unchanged.
+  const storedLines = await applySavedPairings(db, invoiceId, facts, await loadStoredInvoiceLines(db, invoiceId));
   const poMerged = await mergePoMatchFacts(db, facts, storedLines);
   // coding.line_invalid — decision 0511, live for the same reason po.*
   // is: every re-evaluation after a task completes comes through here.
@@ -678,7 +681,13 @@ export async function handleGetInvoice(
   const poMerged = await mergePoMatchFacts(
     db,
     facts as InvoiceFacts,
-    lines.map((line) => ({ ...(line.facts as InvoiceFacts), lineNumber: line.lineNumber }))
+    // Saved line pairings (decision 0532), for the verdict only.
+    await applySavedPairings(
+      db,
+      invoice.id,
+      facts as InvoiceFacts,
+      lines.map((line) => ({ ...(line.facts as InvoiceFacts), lineNumber: line.lineNumber }))
+    )
   );
   // Decision 0511 — the screen marks a line whose coding is not on
   // Account Coding's lists on arrival, not only after a save.

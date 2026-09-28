@@ -142,16 +142,50 @@ function poSection(view) {
   ]);
 }
 
-function linesSection(view) {
+/**
+ * **The PO line a person can pick — decision 0532.** The first option
+ * is the invoice's own reference (choosing it clears a saved pairing);
+ * then every line of the linked PO.
+ */
+function pairingPicker(l, view, onPair) {
+  const current = l.pairing ? String(l.pairing.poLineNumber) : "";
+  const first = node("option", {
+    value: "",
+    text: l.orderLineReference ? fill("pomatch.pair.own", { ref: l.orderLineReference }) : t("pomatch.pair.choose"),
+  });
+  const options = view.poLineOptions.map((o) =>
+    node("option", {
+      value: String(o.lineNumber),
+      text: `${fill("pomatch.pair.option", { n: o.lineNumber, name: o.name ?? "" })} (${lineSummary({ ...o, amount: null }).replace(/ = —$/, "")})`,
+    })
+  );
+  const select = node("select", { class: "pmpair", "aria-label": fill("pomatch.pair.label", { n: l.lineNumber }) }, [first, ...options]);
+  select.value = current;
+  select.addEventListener("change", () => onPair(l.lineNumber, select.value === "" ? null : Number(select.value)));
+  return select;
+}
+
+function linesSection(view, onPair) {
   if (!view.po) return null;
   const clear = view.lines.filter((l) => l.result.matched).length;
   const rows = view.lines.map((l) => {
     const verdict = lineVerdict(l);
-    const how = !l.orderLineReference
-      ? node("span", { class: "pmwarntext", text: t("pomatch.noref") })
-      : l.poLine
-        ? node("span", { text: fill("pomatch.byref", { ref: l.orderLineReference }) })
-        : node("span", { class: "pmwarntext", text: fill("pomatch.refnotfound", { ref: l.orderLineReference }) });
+    // A saved pairing says who made it, and what the invoice itself said (0532).
+    const how = l.pairing
+      ? node("span", {
+          class: "pmpaired",
+          text: [
+            fill("pomatch.pairedby", { who: l.pairing.pairedByName ?? "" }),
+            l.orderLineReference ? fill("pomatch.supplierref", { ref: l.orderLineReference }) : null,
+          ]
+            .filter(Boolean)
+            .join(" · "),
+        })
+      : !l.orderLineReference
+        ? node("span", { class: "pmwarntext", text: t("pomatch.noref") })
+        : l.poLine
+          ? node("span", { text: fill("pomatch.byref", { ref: l.orderLineReference }) })
+          : node("span", { class: "pmwarntext", text: fill("pomatch.refnotfound", { ref: l.orderLineReference }) });
     return node("tr", { "data-line": String(l.lineNumber) }, [
       node("td", {}, [
         node("div", {}, [node("b", { text: `${l.lineNumber} ` }), l.name ?? ""]),
@@ -159,10 +193,18 @@ function linesSection(view) {
       ]),
       node("td", { class: "pmarrow", text: "→" }),
       node("td", {}, [
+        view.canRelink && onPair
+          ? pairingPicker(l, view, onPair)
+          : l.poLine
+            ? node("div", {}, [node("b", { text: `${l.poLine.lineNumber} ` }), l.poLine.name ?? ""])
+            : node("div", { class: "muted", text: "—" }),
         l.poLine
-          ? node("div", {}, [node("b", { text: `${l.poLine.lineNumber} ` }), l.poLine.name ?? ""])
-          : node("div", { class: "muted", text: "—" }),
-        l.poLine ? node("div", { class: "muted sm", text: lineSummary(l.poLine) }) : null,
+          ? node("div", {
+              class: "muted sm",
+              // With the picker showing "the invoice's own reference", say which PO line that is.
+              text: view.canRelink && onPair ? `${l.poLine.lineNumber} ${l.poLine.name ?? ""} · ${lineSummary(l.poLine)}` : lineSummary(l.poLine),
+            })
+          : null,
         node("div", { class: "sm" }, [how]),
       ]),
       node("td", {}, [node("span", { class: `pmpill ${verdict.tone}`, text: verdict.text })]),
@@ -204,7 +246,8 @@ function linesSection(view) {
  */
 export async function openPoMatchingPanel(invoiceId, { onRelinked } = {}) {
   const base = `/api/invoices/${encodeURIComponent(invoiceId)}`;
-  let relinked = false;
+  // Anything saved (a re-link, 0530, or a pairing, 0532) redraws the document on close.
+  let changed = false;
   let view = null;
 
   const errorBox = node("div", { class: "warn sm", hidden: true });
@@ -214,7 +257,7 @@ export async function openPoMatchingPanel(invoiceId, { onRelinked } = {}) {
   const close = () => {
     backdrop.remove();
     document.removeEventListener("keydown", onKey);
-    if (relinked) onRelinked?.();
+    if (changed) onRelinked?.();
   };
   const onKey = (event) => {
     if (event.key === "Escape") close();
@@ -308,10 +351,32 @@ export async function openPoMatchingPanel(invoiceId, { onRelinked } = {}) {
         errorBox.hidden = false;
         return;
       }
-      relinked = true;
+      changed = true;
       await load();
     } catch {
       errorBox.textContent = t("pomatch.linkfailed");
+      errorBox.hidden = false;
+    }
+  }
+
+  async function pair(lineNumber, poLineNumber) {
+    errorBox.hidden = true;
+    try {
+      const response = await fetch(`${base}/po-pairing`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ lineNumber, poLineNumber }),
+      });
+      if (!response.ok) {
+        const failure = await response.json().catch(() => ({}));
+        errorBox.textContent = failure.error ?? t("pomatch.pairfailed");
+        errorBox.hidden = false;
+        return;
+      }
+      changed = true;
+      await load();
+    } catch {
+      errorBox.textContent = t("pomatch.pairfailed");
       errorBox.hidden = false;
     }
   }
@@ -332,7 +397,7 @@ export async function openPoMatchingPanel(invoiceId, { onRelinked } = {}) {
     searchTitle.textContent = t(view.po ? "pomatch.search.title" : "pomatch.search.titlenone");
     body.replaceChildren(
       poSection(view),
-      linesSection(view) ?? "",
+      linesSection(view, pair) ?? "",
       node("section", { class: "pmblock" }, [
         node("div", { class: "pmhead" }, [searchTitle]),
         node("div", { class: "pmsearchbar" }, [searchBox, fSupplier.label, fActive.label, fCovers.label]),

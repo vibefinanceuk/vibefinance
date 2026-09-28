@@ -325,12 +325,13 @@ export async function handleKeyInvoiceFields(
    * as header fields, so a rule testing it with `contains` sees both.
    */
   const existingLines = await db
-    .prepare("SELECT line_number, description, amount, facts_json FROM invoice_lines WHERE invoice_id = ?")
+    .prepare("SELECT line_number, description, amount, cost_centre, facts_json FROM invoice_lines WHERE invoice_id = ?")
     .bind(invoiceId)
     .all<{
       line_number: number;
       description: string | null;
       amount: number | null;
+      cost_centre: string | null;
       facts_json: string;
     }>();
 
@@ -544,12 +545,37 @@ export async function handleKeyInvoiceFields(
       })
     : body.lines;
 
+  /**
+   * **A header-only edit keeps the lines — decision 0532.** The writer
+   * replaces the whole line set, and an absent `lines` reached it as an
+   * empty one: keying a header field without sending lines deleted every
+   * line. The viewer always sends every line, so nothing on screen hit
+   * it; decision 0530's "Use this PO" keys BT-13 alone and did. Found
+   * while testing 0532's pairings. Now an absent `lines` means "leave
+   * them as they are": the stored lines are written back unchanged.
+   */
+  const preservedLines = existingLines.results.map((row) => {
+    let facts: Record<string, unknown> = {};
+    try {
+      facts = JSON.parse(row.facts_json || "{}");
+    } catch {
+      // Kept as none, exactly as the other readers here do.
+    }
+    return {
+      lineNumber: row.line_number,
+      description: row.description ?? undefined,
+      amount: row.amount ?? undefined,
+      costCentre: row.cost_centre ?? undefined,
+      facts,
+    };
+  });
+
   // Reuses the ordinary writer, so the structured columns stay in step
   // with facts_json exactly as they do on every other path.
   const upsert = await handleUpsertInvoice(db, {
     id: invoiceId,
     facts: merged,
-    ...(body.lines === undefined ? {} : { lines: mergedLines }),
+    lines: body.lines === undefined ? preservedLines : mergedLines,
   } as Parameters<typeof handleUpsertInvoice>[1]);
   if (upsert.status >= 400) return upsert;
 

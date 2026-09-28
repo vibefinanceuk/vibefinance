@@ -237,6 +237,7 @@ describe("the Validation viewer's routes (decision 0106)", () => {
     ["GET", "/api/invoices/inv-1/po-match"],
     ["GET", "/api/invoices/inv-1/po-candidates"],
     ["POST", "/api/invoices/inv-1/po-link"],
+    ["POST", "/api/invoices/inv-1/po-pairing"],
       ["POST", "/api/invoices/inv-1/document-url"],
     // The rest of what a task can offer (decision 0138).
     ["POST", "/api/tasks/t-1/complete"],
