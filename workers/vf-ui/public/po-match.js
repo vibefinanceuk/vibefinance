@@ -194,6 +194,27 @@ function pairingPicker(l, view, onPair) {
   return select;
 }
 
+/**
+ * **A suggested PO line — decision 0534.** The line, how sure (the
+ * score), and why, in words. Accept saves it as an ordinary pairing
+ * (0532); only the person whose task it is sees the button.
+ */
+function suggestionBox(l, view, onPair) {
+  const s = l.suggestion;
+  if (!s) return null;
+  const option = view.poLineOptions.find((o) => o.lineNumber === s.poLineNumber);
+  const why = s.reasons.map((r) => t(`pomatch.suggest.why.${r}`)).join(" · ");
+  return node("div", { class: "pmsuggest sm" }, [
+    node("span", {}, [
+      `${fill("pomatch.suggest", { n: s.poLineNumber, name: option?.name ?? "" })} `,
+      node("span", { class: "muted", text: `(${fill("pomatch.suggest.score", { pct: s.score })}${why ? `: ${why}` : ""})` }),
+    ]),
+    view.canRelink && onPair
+      ? node("button", { class: "pmaccept", onclick: () => onPair(l.lineNumber, s.poLineNumber) }, [t("pomatch.suggest.accept")])
+      : null,
+  ]);
+}
+
 function linesSection(view, onPair) {
   if (!view.po) return null;
   const clear = view.lines.filter((l) => l.result.matched).length;
@@ -235,6 +256,7 @@ function linesSection(view, onPair) {
             })
           : null,
         node("div", { class: "sm" }, [how]),
+        suggestionBox(l, view, onPair),
         lineUseRow(l.poLine?.use),
       ]),
       node("td", {}, [node("span", { class: `pmpill ${verdict.tone}`, text: verdict.text })]),
@@ -351,6 +373,8 @@ export async function openPoMatchingPanel(invoiceId, { onRelinked } = {}) {
       c.reasons.sameSupplier ? t("pomatch.why.supplier") : null,
       c.reasons.coversInvoice ? t("pomatch.why.covers") : null,
       c.reasons.sameCurrency ? t("pomatch.why.currency") : null,
+      // Decision 0534 — how many of this invoice's lines look like one of this PO's.
+      c.reasons.linesAlike ? fill("pomatch.why.lines", { n: c.reasons.linesAlike, total: c.reasons.lineCount }) : null,
     ].filter(Boolean);
     let action;
     if (c.current) action = node("span", { class: "muted sm", text: t("pomatch.current") });

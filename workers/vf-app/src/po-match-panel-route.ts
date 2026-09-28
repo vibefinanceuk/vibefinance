@@ -4,6 +4,7 @@ import { computePoLineMatch, computePoMatch, getOrgMatchingConfig, loadPoConsump
 import { unitsWherePermitted, isWithinScope, unitClause } from "./enforce.js";
 import { handleKeyInvoiceFields } from "./key-fields-route.js";
 import { activePairings, loadPairings } from "./po-pairings.js";
+import { bestSuggestion, type SuggestInvoiceLine, type SuggestPoLine } from "./po-suggest.js";
 
 /**
  * The Matching stage's PO matching panel, phase 1 — decision 0530.
@@ -155,6 +156,21 @@ async function invoicedByOthers(db: D1Database, orderNumber: string, invoiceId: 
   return rows.results.map((r) => ({ id: r.id, number: r.number, amount: r.amount ?? 0 }));
 }
 
+/** An invoice line as the suggester reads it (decision 0534). */
+function suggestInput(facts: InvoiceFacts, row: { description: string | null; amount: number | null }): SuggestInvoiceLine {
+  const f = facts as Record<string, unknown>;
+  return {
+    name: text(f["BT-153"]) ?? row.description,
+    description: text(f["BT-154"]),
+    sellerItemId: text(f["BT-155"]),
+    standardItemId: text(f["BT-157"]),
+    quantity: num(f["BT-129"]),
+    unit: text(f["BT-130"]),
+    amount: num(f["BT-131"]) ?? row.amount,
+    price: num(f["BT-146"]),
+  };
+}
+
 /**
  * **How much of one PO line is used — decision 0533.** Ordered, taken
  * by other invoices (`consumption`), taken by this one, and what is
@@ -230,7 +246,8 @@ export async function handleGetPoMatchView(db: D1Database, invoiceId: string, us
     ? (
         await db
           .prepare(
-            `SELECT line_number, item_name, item_description, quantity, unit_code, price_amount, line_extension_amount
+            `SELECT line_number, item_name, item_description, sellers_item_id, standard_item_id,
+                    quantity, unit_code, price_amount, line_extension_amount
              FROM purchase_order_lines WHERE purchase_order_id = ? ORDER BY line_number`
           )
           .bind(po.id)
@@ -238,6 +255,8 @@ export async function handleGetPoMatchView(db: D1Database, invoiceId: string, us
             line_number: number;
             item_name: string | null;
             item_description: string | null;
+            sellers_item_id: string | null;
+            standard_item_id: string | null;
             quantity: number | null;
             unit_code: string | null;
             price_amount: number | null;
@@ -271,6 +290,20 @@ export async function handleGetPoMatchView(db: D1Database, invoiceId: string, us
     thisByLine.set(ref, t);
   }
 
+  // Decision 0534 — every PO line, as the suggester reads it, with what is left after other invoices.
+  const suggestPoLines: SuggestPoLine[] = poLines.map((p) => ({
+    lineNumber: p.line_number,
+    name: p.item_name,
+    description: p.item_description,
+    sellerItemId: p.sellers_item_id,
+    standardItemId: p.standard_item_id,
+    quantity: p.quantity,
+    unit: p.unit_code,
+    amount: p.line_extension_amount,
+    price: p.price_amount,
+    leftQuantity: p.quantity === null ? null : p.quantity - (consumption?.byLine.get(p.line_number)?.quantity ?? 0),
+  }));
+
   const lines = await Promise.all(
     invoiceLines.map(async (l) => {
       const stored = JSON.parse(l.facts_json || "{}") as InvoiceFacts;
@@ -302,6 +335,13 @@ export async function handleGetPoMatchView(db: D1Database, invoiceId: string, us
               use: consumption ? lineUse(poLine, consumption, thisByLine.get(poLine.line_number)) : null,
             }
           : null,
+        /**
+         * **A suggested PO line — decision 0534.** Only for a line with no
+         * PO line in force (no reference, or one the PO does not have)
+         * and no saved pairing: a line already paired, or matched by its
+         * own reference, needs none.
+         */
+        suggestion: !poLine && !pairing ? bestSuggestion(suggestInput(stored, l), suggestPoLines) : null,
         result: {
           matched: match.matched,
           referenceFound: match.referenceFound,
@@ -447,6 +487,14 @@ export async function handlePoCandidates(
       .all<PoRow>()
   ).results;
 
+  // Decision 0534 — how many of this invoice's lines look like a line of each candidate PO.
+  const invoiceLineInputs = (
+    await db
+      .prepare("SELECT description, amount, facts_json FROM invoice_lines WHERE invoice_id = ? ORDER BY line_number")
+      .bind(invoiceId)
+      .all<{ description: string | null; amount: number | null; facts_json: string | null }>()
+  ).results.map((r) => suggestInput(JSON.parse(r.facts_json || "{}") as InvoiceFacts, r));
+
   const candidates = [];
   for (const po of rows) {
     const others = await invoicedByOthers(db, po.order_number, invoiceId);
@@ -469,11 +517,53 @@ export async function handlePoCandidates(
         sameSupplier: !!sellerVat && po.seller_party_id === sellerVat,
         coversInvoice,
         sameCurrency: !!currency && po.currency === currency,
+        linesAlike: 0,
+        lineCount: invoiceLineInputs.length,
       },
+      id: po.id,
     });
     if (candidates.length >= CANDIDATE_LIMIT) break;
   }
-  return { status: 200, body: { candidates } };
+
+  // Scored only for the POs actually returned, one query each.
+  for (const c of candidates) {
+    if (invoiceLineInputs.length === 0) break;
+    const poLines = (
+      await db
+        .prepare(
+          `SELECT line_number, item_name, item_description, sellers_item_id, standard_item_id,
+                  quantity, unit_code, price_amount, line_extension_amount
+           FROM purchase_order_lines WHERE purchase_order_id = ?`
+        )
+        .bind(c.id)
+        .all<{
+          line_number: number;
+          item_name: string | null;
+          item_description: string | null;
+          sellers_item_id: string | null;
+          standard_item_id: string | null;
+          quantity: number | null;
+          unit_code: string | null;
+          price_amount: number | null;
+          line_extension_amount: number | null;
+        }>()
+    ).results.map(
+      (p): SuggestPoLine => ({
+        lineNumber: p.line_number,
+        name: p.item_name,
+        description: p.item_description,
+        sellerItemId: p.sellers_item_id,
+        standardItemId: p.standard_item_id,
+        quantity: p.quantity,
+        unit: p.unit_code,
+        amount: p.line_extension_amount,
+        price: p.price_amount,
+        leftQuantity: null,
+      })
+    );
+    c.reasons.linesAlike = invoiceLineInputs.filter((inv) => bestSuggestion(inv, poLines) !== null).length;
+  }
+  return { status: 200, body: { candidates: candidates.map(({ id: _id, ...c }) => c) } };
 }
 
 /**

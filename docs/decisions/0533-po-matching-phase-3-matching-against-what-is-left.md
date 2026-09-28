@@ -1,10 +1,6 @@
 # 0533 — PO matching, phase 3: matching against what is left, and how much of each PO line is used
 
-**Status: built and tested locally, not yet pushed or deployed.** This
-session has no push access, so it is delivered as a git bundle. It
-touches `vf-app`, `vf-ui`, `vf-licence` and `shared` (fact
-descriptions only). It needs **`vf-licence` migration `0190`** applied
-separately. There is no `vf-app` migration.
+**Status: pushed (`388bfa0`), deployed, and migration `vf-licence` `0190` applied, as confirmed by the operator on 28 September.**
 
 ## What was asked
 

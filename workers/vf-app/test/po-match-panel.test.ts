@@ -333,3 +333,31 @@ describe("how much of each PO line is used — decision 0533", () => {
     expect(v.usage?.otherInvoices).toEqual([]);
   });
 });
+
+describe("suggesting a PO line — decision 0534", () => {
+  type SugView = View & { lines: (View["lines"][number] & { suggestion: { poLineNumber: number; score: number; reasons: string[] } | null })[] };
+  const view = async () => (await handleGetPoMatchView(env.DB, "inv-1", "u-dan")).body as unknown as SugView;
+
+  it("suggests a PO line for a line with no reference, and none for a line already matched or paired", async () => {
+    const v = await view();
+    expect(v.lines[2].suggestion).toMatchObject({ poLineNumber: 4, reasons: ["description", "price", "fits"] });
+    expect(v.lines[0].suggestion).toBeNull();
+    expect(v.lines[1].suggestion).toBeNull();
+
+    await handlePairLine(env.DB, "inv-1", "u-dan", { lineNumber: 3, poLineNumber: 4 });
+    expect((await view()).lines[2].suggestion).toBeNull();
+  });
+
+  it("counts, per PO in the search, how many of this invoice's lines look like one of its lines", async () => {
+    await env.DB.prepare(
+      "INSERT INTO purchase_order_lines (id, purchase_order_id, line_number, quantity, unit_code, line_extension_amount, item_name, price_amount) VALUES ('b1', 'po-b', 1, 5, 'EA', 90, 'Mesh organiser', 18)"
+    ).run();
+    const body = (await handlePoCandidates(env.DB, "inv-1", "u-dan", { search: null, supplierOnly: true, activeOnly: true, coversInvoice: false }))
+      .body as { candidates: { orderNumber: string; reasons: { linesAlike: number; lineCount: number } }[] };
+    const byNumber = Object.fromEntries(body.candidates.map((c) => [c.orderNumber, c.reasons]));
+    expect(byNumber["PO-A"]).toMatchObject({ lineCount: 3 });
+    expect(byNumber["PO-A"].linesAlike).toBeGreaterThanOrEqual(2);
+    expect(byNumber["PO-B"]).toMatchObject({ linesAlike: 1, lineCount: 3 });
+  });
+});
+

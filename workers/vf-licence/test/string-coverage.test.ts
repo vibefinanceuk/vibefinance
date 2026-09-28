@@ -749,6 +749,15 @@ const KEYS_THE_INTERFACE_USES = [
   "apsetup.modedef.api",
   // Decision 0517 — re-routing an Approval task over the approver's limit.
   "action.route_to_approver.limitnote",
+  // Decision 0534 — suggesting a PO line.
+  "pomatch.suggest",
+  "pomatch.suggest.score",
+  "pomatch.suggest.accept",
+  "pomatch.suggest.why.itemcode",
+  "pomatch.suggest.why.description",
+  "pomatch.suggest.why.price",
+  "pomatch.suggest.why.fits",
+  "pomatch.why.lines",
   // Decision 0533 — how much of each PO line is used.
   "pomatch.lineuse",
   "pomatch.unusedleft",

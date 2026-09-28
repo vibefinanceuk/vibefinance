@@ -178,6 +178,7 @@ import navGroupShortHeadingsSql from "../migrations/0187_nav_group_short_heading
 import poMatchingPanelStringsSql from "../migrations/0188_po_matching_panel_strings.sql?raw";
 import poPairingStringsSql from "../migrations/0189_po_pairing_strings.sql?raw";
 import poLineUseStringsSql from "../migrations/0190_po_line_use_strings.sql?raw";
+import poSuggestionStringsSql from "../migrations/0191_po_suggestion_strings.sql?raw";
 
 function stripSqlComments(sql: string): string {
   return sql
@@ -388,5 +389,6 @@ export async function applyTestSchema(): Promise<void> {
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(poMatchingPanelStringsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(poPairingStringsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(poLineUseStringsSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(poSuggestionStringsSql)));
 
 }

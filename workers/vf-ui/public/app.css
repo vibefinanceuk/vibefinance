@@ -2366,6 +2366,9 @@
   /* Decision 0533 — how much of one PO line is used. */
   .pmlineuse { display: grid; gap: 3px; margin-top: 6px; }
   .pmlineuse .pmbar { height: 6px; }
+  /* Decision 0534 — a suggested PO line, and its Accept. */
+  .pmsuggest { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 10px; margin-top: 6px; padding: 6px 8px; border-radius: var(--radius); background: color-mix(in srgb, var(--text-accent) 10%, transparent); }
+  .pmaccept { white-space: nowrap; }
   .pmfoot { margin: 14px 0 0; border-top: 0.5px solid var(--border); padding-top: 12px; }
   @media (max-width: 800px) {
     .pmcard { grid-template-columns: 1fr; }

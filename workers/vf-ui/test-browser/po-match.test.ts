@@ -77,6 +77,13 @@ const STRINGS = {
     "pomatch.pairfailed": "Could not pair.",
     "pomatch.lineuse": "Ordered {ordered} · invoiced before {before} · this invoice {mine} · left {left}",
     "pomatch.unusedleft": "{n} left",
+    "pomatch.suggest": "Suggested: line {n}, {name}",
+    "pomatch.suggest.score": "{pct}% match",
+    "pomatch.suggest.accept": "Accept",
+    "pomatch.suggest.why.description": "similar description",
+    "pomatch.suggest.why.price": "same price",
+    "pomatch.suggest.why.fits": "fits what is left",
+    "pomatch.why.lines": "{n} of {total} lines look alike",
     "purchaseorders.status.active": "Active",
     "purchaseorders.status.invoicedpart": "Invoiced (Part)",
     "purchaseorders.status.closed": "Closed",
@@ -357,6 +364,47 @@ describe("how much of each PO line is used — decision 0533", () => {
   it("falls back to amounts for a PO line with no quantity", async () => {
     await open(withUse(use({ orderedQuantity: null, leftQuantity: null })));
     expect(panel().querySelector('tr[data-line="2"] .pmlineuse')?.textContent).toContain("Ordered 1,410.00");
+  });
+});
+
+describe("suggesting a PO line — decision 0534", () => {
+  const withSuggestion = {
+    ...VIEW,
+    lines: VIEW.lines.map((l) =>
+      l.lineNumber === 3 ? { ...l, suggestion: { poLineNumber: 3, score: 80, reasons: ["description", "price", "fits"] } } : l
+    ),
+  };
+
+  it("shows the suggested line, how sure, and why", async () => {
+    await open(withSuggestion);
+    const box = panel().querySelector('tr[data-line="3"] .pmsuggest') as HTMLElement;
+    expect(box.textContent).toContain("Suggested: line 3, Stapler");
+    expect(box.textContent).toContain("(80% match: similar description · same price · fits what is left)");
+    expect(panel().querySelector('tr[data-line="1"] .pmsuggest')).toBeNull();
+  });
+
+  it("Accept saves the suggestion as a pairing", async () => {
+    const calls: Call[] = [];
+    await open(withSuggestion, calls, { "/api/invoices/inv-1/po-pairing": { lineNumber: 3, poLineNumber: 3 } });
+    (panel().querySelector('tr[data-line="3"] .pmaccept') as HTMLButtonElement).click();
+    await new Promise((r) => setTimeout(r, 20));
+    expect(calls.find((c) => c.path === "/api/invoices/inv-1/po-pairing")?.body).toEqual({ lineNumber: 3, poLineNumber: 3 });
+  });
+
+  it("offers no Accept to somebody whose task it is not", async () => {
+    await open({ ...withSuggestion, canRelink: false });
+    expect(panel().querySelector(".pmsuggest")).not.toBeNull();
+    expect(panel().querySelector(".pmaccept")).toBeNull();
+  });
+
+  it("says in the search how many lines look alike", async () => {
+    const calls: Call[] = [];
+    await open(VIEW, calls, {
+      "/api/invoices/inv-1/po-candidates": {
+        candidates: CANDIDATES.candidates.map((c) => ({ ...c, reasons: { ...c.reasons, linesAlike: 2, lineCount: 3 } })),
+      },
+    });
+    expect(panel().querySelector('tr[data-po="PO-B"]')?.textContent).toContain("2 of 3 lines look alike");
   });
 });
 

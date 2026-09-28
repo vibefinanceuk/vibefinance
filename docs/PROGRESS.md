@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 28 September 2026 (decision 0533). A living document: what
+Last updated 28 September 2026 (decision 0534). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,14 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### PO matching, phase 4: suggested PO lines (0534)
+- A line with no PO line in force gets a scored suggestion (item code,
+  description, unit price, fit, unit) with its reasons. Accept saves it
+  as an ordinary pairing (0532). The PO search says how many lines look
+  alike. No AI model: deterministic and checkable.
+- `vf-licence` migration `0191`. This completes the four phases agreed
+  at 0530.
 
 ### PO matching, phase 3: against what is left (0533)
 - Matching now flags only over-billing: a line's quantity and amount
