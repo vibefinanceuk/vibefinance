@@ -79,7 +79,7 @@ interface InvoiceRow {
   org_unit_id: string | null;
 }
 
-async function loadInvoice(db: D1Database, invoiceId: string) {
+export async function loadInvoice(db: D1Database, invoiceId: string) {
   const row = await db
     .prepare("SELECT id, facts_json, supplier_id, org_unit_id FROM invoice_headers WHERE id = ?")
     .bind(invoiceId)
@@ -177,7 +177,7 @@ function suggestInput(facts: InvoiceFacts, row: { description: string | null; am
  * left after both. Quantities and amounts both, since a service line
  * may carry only an amount.
  */
-function lineUse(
+export function lineUse(
   poLine: { line_number: number; quantity: number | null; line_extension_amount: number | null },
   consumption: PoConsumption,
   thisInvoice: { quantity: number; amount: number } | undefined
@@ -322,7 +322,7 @@ export async function handleGetPoMatchView(db: D1Database, invoiceId: string, us
         amount: num(lf["BT-131"]) ?? l.amount,
         orderLineReference: supplierReference,
         pairing: pairing
-          ? { poLineNumber: pairing.poLineNumber, pairedByName: pairing.pairedByName, pairedAt: pairing.pairedAt }
+          ? { poLineNumber: pairing.poLineNumber, pairedByName: pairing.pairedByName, pairedAt: pairing.pairedAt, source: pairing.source }
           : null,
         poLine: poLine
           ? {
@@ -628,9 +628,11 @@ export async function handlePairLine(
   db: D1Database,
   invoiceId: string,
   userId: string,
-  body: { lineNumber?: unknown; poLineNumber?: unknown }
+  body: { lineNumber?: unknown; poLineNumber?: unknown; source?: unknown }
 ): Promise<RouteResult> {
   const lineNumber = num(body.lineNumber);
+  // Decision 0536 — an accepted suggestion says so; anything else is a hand-picked pairing.
+  const source = body.source === "suggestion" ? "suggestion" : "manual";
   const clearing = body.poLineNumber === null;
   const poLineNumber = clearing ? null : num(body.poLineNumber);
   if (lineNumber === null || (!clearing && poLineNumber === null)) {
@@ -673,13 +675,13 @@ export async function handlePairLine(
     }
     await db
       .prepare(
-        `INSERT INTO invoice_line_po_pairings (invoice_id, line_number, order_number, po_line_number, paired_by, paired_at)
-         VALUES (?, ?, ?, ?, ?, ?)
+        `INSERT INTO invoice_line_po_pairings (invoice_id, line_number, order_number, po_line_number, paired_by, paired_at, source)
+         VALUES (?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (invoice_id, line_number) DO UPDATE SET
            order_number = excluded.order_number, po_line_number = excluded.po_line_number,
-           paired_by = excluded.paired_by, paired_at = excluded.paired_at`
+           paired_by = excluded.paired_by, paired_at = excluded.paired_at, source = excluded.source`
       )
-      .bind(invoiceId, lineNumber, orderNumber, poLineNumber, userId, new Date().toISOString())
+      .bind(invoiceId, lineNumber, orderNumber, poLineNumber, userId, new Date().toISOString(), source)
       .run();
   }
 

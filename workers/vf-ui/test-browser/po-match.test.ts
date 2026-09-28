@@ -84,6 +84,23 @@ const STRINGS = {
     "pomatch.suggest.why.price": "same price",
     "pomatch.suggest.why.fits": "fits what is left",
     "pomatch.why.lines": "{n} of {total} lines look alike",
+    "pomatch.col.match": "Match",
+    "pomatch.legend.ok": "Green: matches its PO line",
+    "pomatch.legend.warn": "Amber: PO line found, but outside tolerance",
+    "pomatch.legend.bad": "Red: no PO line for this invoice line",
+    "pomatch.legend.dot": "Dot: paired by a person, not by the supplier's reference",
+    "pomatch.chip.matched": "L{n} ✓",
+    "pomatch.chip.over": "L{n} · {pct}",
+    "pomatch.chip.unit": "L{n} · unit",
+    "pomatch.chip.check": "L{n} · check",
+    "pomatch.chip.nopoline": "No PO line",
+    "pomatch.suggestedby": "Suggestion accepted by {who}",
+    "pomatch.pop.title": "Line {n} against the PO",
+    "pomatch.pop.sub": "Purchase order {po}",
+    "pomatch.pop.invoice": "Invoice line",
+    "pomatch.pop.po": "PO line",
+    "pomatch.pop.open": "Open PO matching",
+    "pomatch.pop.readonly": "Read-only here. To change the matching, return the invoice to the Matching stage.",
     "purchaseorders.status.active": "Active",
     "purchaseorders.status.invoicedpart": "Invoiced (Part)",
     "purchaseorders.status.closed": "Closed",
@@ -302,7 +319,7 @@ describe("pairing a line by hand — decision 0532", () => {
     picker.dispatchEvent(new Event("change"));
     await new Promise((r) => setTimeout(r, 20));
 
-    expect(calls.find((c) => c.path === "/api/invoices/inv-1/po-pairing")?.body).toEqual({ lineNumber: 3, poLineNumber: 3 });
+    expect(calls.find((c) => c.path === "/api/invoices/inv-1/po-pairing")?.body).toEqual({ lineNumber: 3, poLineNumber: 3, source: "manual" });
     const row = panel().querySelector('tr[data-line="3"]') as HTMLElement;
     expect(row.querySelector(".pmpaired")?.textContent).toBe("Paired by Dan");
     expect((row.querySelector("select.pmpair") as HTMLSelectElement).value).toBe("3");
@@ -325,7 +342,7 @@ describe("pairing a line by hand — decision 0532", () => {
     picker.value = "";
     picker.dispatchEvent(new Event("change"));
     await new Promise((r) => setTimeout(r, 20));
-    expect(calls.find((c) => c.path === "/api/invoices/inv-1/po-pairing")?.body).toEqual({ lineNumber: 2, poLineNumber: null });
+    expect(calls.find((c) => c.path === "/api/invoices/inv-1/po-pairing")?.body).toEqual({ lineNumber: 2, poLineNumber: null, source: "manual" });
   });
 
   it("shows no picker to somebody whose task it is not", async () => {
@@ -383,12 +400,12 @@ describe("suggesting a PO line — decision 0534", () => {
     expect(panel().querySelector('tr[data-line="1"] .pmsuggest')).toBeNull();
   });
 
-  it("Accept saves the suggestion as a pairing", async () => {
+  it("Accept saves the suggestion as a pairing, recorded as an accepted suggestion (0536)", async () => {
     const calls: Call[] = [];
     await open(withSuggestion, calls, { "/api/invoices/inv-1/po-pairing": { lineNumber: 3, poLineNumber: 3 } });
     (panel().querySelector('tr[data-line="3"] .pmaccept') as HTMLButtonElement).click();
     await new Promise((r) => setTimeout(r, 20));
-    expect(calls.find((c) => c.path === "/api/invoices/inv-1/po-pairing")?.body).toEqual({ lineNumber: 3, poLineNumber: 3 });
+    expect(calls.find((c) => c.path === "/api/invoices/inv-1/po-pairing")?.body).toEqual({ lineNumber: 3, poLineNumber: 3, source: "suggestion" });
   });
 
   it("offers no Accept to somebody whose task it is not", async () => {
@@ -408,3 +425,85 @@ describe("suggesting a PO line — decision 0534", () => {
   });
 });
 
+
+describe("the invoice line Match column — decision 0536", () => {
+  const result = (over: Record<string, unknown> = {}) => ({
+    matched: false, referenceFound: true, priceMatched: true, quantityMatched: true, unitMismatch: false, variancePct: 0, quantityVariancePct: 0, ...over,
+  });
+  const use = { orderedQuantity: 10, orderedAmount: 420, beforeQuantity: 0, beforeAmount: 0, thisQuantity: 10, thisAmount: 420, leftQuantity: 0, leftAmount: 0 };
+  const LINES = [
+    { lineNumber: 1, state: "matched", supplierReference: "1", poLine: { lineNumber: 1, name: "Toner cartridge", quantity: 10, unit: "EA", price: 42, amount: 420 }, use, result: result({ matched: true }), pairing: null },
+    { lineNumber: 2, state: "over", supplierReference: "2", poLine: { lineNumber: 2, name: "A4 paper", quantity: 60, unit: "EA", price: 23.5, amount: 1410 }, use, result: result({ priceMatched: false, variancePct: 4.3 }), pairing: null },
+    { lineNumber: 3, state: "unit", supplierReference: null, poLine: { lineNumber: 4, name: "Desk organiser", quantity: 8, unit: "BX", price: 18, amount: 144 }, use, result: result({ unitMismatch: true }), pairing: { source: "suggestion", pairedByName: "Dan", pairedAt: "2026-09-28 10:15:00" } },
+    { lineNumber: 4, state: "nopoline", supplierReference: "9", poLine: null, use: null, result: result({ referenceFound: false, priceMatched: null, quantityMatched: null }), pairing: null },
+  ];
+  const SUMMARY = { orderNumber: "PO-A", held: true, lines: LINES };
+
+  async function chips() {
+    stub({ "/api/ui-strings": STRINGS });
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    return await import("/po-match.js");
+  }
+
+  it("colours each chip by the server's verdict: green matched, amber outside tolerance or unit, red no PO line", async () => {
+    const { matchChip } = await chips();
+    const made = LINES.map((l) => matchChip(l, () => {}));
+    expect(made.map((c) => [c.className, c.textContent])).toEqual([
+      ["pmchip ok", "L1 ✓"],
+      ["pmchip warn", "L2 · +4.3%"],
+      ["pmchip warn", "L4 · unit"],
+      ["pmchip bad", "No PO line"],
+    ]);
+    // The dot marks a pairing a person made; the supplier's own reference has none.
+    expect(made.map((c) => c.querySelector(".pmdot") !== null)).toEqual([false, false, true, false]);
+  });
+
+  it("explains itself on hover: this line's verdict first, then what every colour means", async () => {
+    const { matchChip, matchLegend } = await chips();
+    const title = matchChip(LINES[2], () => {}).title;
+    expect(title.split("\n")[0]).toBe("Unit differs · Suggestion accepted by Dan");
+    expect(title).toContain("Green: matches its PO line");
+    expect(title).toContain("Amber: PO line found, but outside tolerance");
+    expect(title).toContain("Red: no PO line for this invoice line");
+    expect(title).toContain("Dot: paired by a person");
+    expect(matchLegend().split("\n")).toHaveLength(4);
+  });
+
+  it("opens a read-only pop-out: the invoice line against its PO line, how they were paired, and how much is used", async () => {
+    const { openLineMatchPopout } = await chips();
+    openLineMatchPopout(SUMMARY, LINES[2], { invoiceLine: { "BT-153": "Organiser", "BT-129": "5", "BT-130": "EA", "BT-146": "18", "BT-131": "90" } });
+    const pop = document.querySelector(".pmlinepop") as HTMLElement;
+    expect(pop.querySelector("h3")?.textContent).toBe("Line 3 against the PO");
+    expect(pop.textContent).toContain("Purchase order PO-A");
+    expect(pop.querySelector(".pmcompare")?.textContent).toContain("Organiser");
+    expect(pop.querySelector(".pmcompare")?.textContent).toContain("5 EA × 18.00 = 90.00");
+    expect(pop.querySelector(".pmcompare")?.textContent).toContain("4 Desk organiser");
+    expect(pop.querySelector(".pmpill")?.textContent).toBe("Unit differs");
+    expect(pop.textContent).toContain("Suggestion accepted by Dan");
+    expect(pop.querySelector(".pmlineuse")).not.toBeNull();
+    // Nothing to change here: no picker, no Accept, no Open PO matching.
+    expect(pop.querySelector("select, .pmaccept, button.primary")).toBeNull();
+    expect(pop.textContent).toContain("return the invoice to the Matching stage");
+  });
+
+  it("offers Open PO matching when the viewer passes it (Matching, this person's own task), and closes itself first", async () => {
+    const { openLineMatchPopout } = await chips();
+    const onOpenPanel = vi.fn();
+    openLineMatchPopout(SUMMARY, LINES[3], { onOpenPanel });
+    const button = document.querySelector(".pmlinepop button.primary") as HTMLButtonElement;
+    expect(button.textContent).toBe("Open PO matching");
+    expect(document.querySelector(".pmlinepop")?.textContent).not.toContain("return the invoice");
+    button.click();
+    expect(onOpenPanel).toHaveBeenCalledOnce();
+    expect(document.querySelector(".pmlinepop")).toBeNull();
+  });
+
+  it("the panel says a pairing came from an accepted suggestion", async () => {
+    await open({
+      ...VIEW,
+      lines: VIEW.lines.map((l) => (l.lineNumber === 3 ? { ...l, pairing: { poLineNumber: 3, pairedByName: "Dan", pairedAt: "2026-09-28", source: "suggestion" } } : l)),
+    });
+    expect(panel().querySelector('tr[data-line="3"] .pmpaired')?.textContent).toBe("Suggestion accepted by Dan");
+  });
+});

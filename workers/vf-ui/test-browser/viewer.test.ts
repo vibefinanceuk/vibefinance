@@ -6803,3 +6803,98 @@ describe("the invoice-line Coding pop-out (decision 0453)", () => {
     });
   });
 });
+
+describe("the invoice line Match column — decision 0536", () => {
+  const MATCH_STRINGS = {
+    ...STRINGS,
+    strings: {
+      ...STRINGS.strings,
+      "pomatch.col.match": "Match",
+      "pomatch.legend.ok": "Green: matches its PO line",
+      "pomatch.legend.warn": "Amber: PO line found, but outside tolerance",
+      "pomatch.legend.bad": "Red: no PO line for this invoice line",
+      "pomatch.legend.dot": "Dot: paired by a person",
+      "pomatch.chip.matched": "L{n} ✓",
+      "pomatch.chip.nopoline": "No PO line",
+      "pomatch.r.matched": "Matched",
+      "pomatch.r.nopoline": "No PO line",
+      "pomatch.pop.title": "Line {n} against the PO",
+      "pomatch.pop.open": "Open PO matching",
+      "pomatch.pop.readonly": "Read-only here.",
+    },
+  };
+  const result = { matched: true, referenceFound: true, priceMatched: true, quantityMatched: true, unitMismatch: false, variancePct: 0, quantityVariancePct: 0 };
+  const POMATCH = {
+    orderNumber: "PO-A",
+    held: true,
+    lines: [
+      { lineNumber: 1, state: "matched", supplierReference: "1", poLine: { lineNumber: 1, name: "Toner", quantity: 10, unit: "EA", price: 42, amount: 420 }, use: null, result, pairing: null },
+      { lineNumber: 2, state: "nopoline", supplierReference: null, poLine: null, use: null, result: { ...result, matched: false, referenceFound: false }, pairing: null },
+    ],
+  };
+  const invoice = (poMatch: unknown) => ({
+    "/api/code-lists": { fields: {} },
+    "/api/ui-strings": MATCH_STRINGS,
+    "/api/field-visibility": FIELDS,
+    "/api/invoices/inv-1": {
+      facts: { "BT-13": "PO-A" },
+      lines: [
+        { lineNumber: 1, facts: { "BT-131": "420" } },
+        { lineNumber: 2, facts: { "BT-131": "90" } },
+      ],
+      poMatch,
+      validation: { passed: true, checked: [], failures: [] },
+    },
+    "/api/invoices/inv-1/document-url": { url: null },
+    "/api/documents/inv-1/activity": { items: [] },
+  });
+  async function openAs(task: Record<string, unknown>, poMatch: unknown = POMATCH) {
+    mountShell();
+    stubFetch(invoice(poMatch));
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    await openViewer({ ...TASK, ...task }, () => {});
+  }
+  const headings = () => [...document.querySelectorAll(".linetable thead th")].map((th) => th.textContent);
+
+  it("adds a Match column, with the colour legend on its heading, and a chip per line", async () => {
+    await openAs({});
+    expect(headings()).toContain("Match");
+    expect((document.querySelector(".linetable th.matchcol") as HTMLElement).title).toContain("Green: matches its PO line");
+    const chips = [...document.querySelectorAll("#lines .pmchip")].map((c) => [c.className, c.textContent]);
+    expect(chips).toEqual([
+      ["pmchip ok", "L1 ✓"],
+      ["pmchip bad", "No PO line"],
+    ]);
+    // After every line field and before the actions, so exception marking by field position still lands (0400).
+    const row = document.querySelector("#lines tr") as HTMLElement;
+    expect(row.children[FIELDS.fields.filter((f) => f.line).length].classList.contains("matchcol")).toBe(true);
+  });
+
+  it("has no Match column for an invoice that names no PO", async () => {
+    await openAs({}, null);
+    expect(headings()).not.toContain("Match");
+    expect(document.querySelector("#lines .pmchip")).toBeNull();
+  });
+
+  it("opens the line's pop-out read-only outside Matching", async () => {
+    await openAs({ requiredPermission: "AP.Review" });
+    (document.querySelector("#lines .pmchip") as HTMLButtonElement).click();
+    const pop = document.querySelector(".pmlinepop") as HTMLElement;
+    expect(pop.querySelector("h3")?.textContent).toBe("Line 1 against the PO");
+    expect(pop.querySelector("button.primary")).toBeNull();
+    expect(pop.textContent).toContain("Read-only here.");
+  });
+
+  it("offers Open PO matching from the pop-out only at Matching, on this person's own task", async () => {
+    await openAs({ requiredPermission: "AP.Match" });
+    (document.querySelector("#lines .pmchip") as HTMLButtonElement).click();
+    expect(document.querySelector(".pmlinepop button.primary")?.textContent).toBe("Open PO matching");
+    document.querySelector(".backdrop")?.remove();
+
+    await openAs({ requiredPermission: "AP.Match", ownership: "others" });
+    (document.querySelector("#lines .pmchip") as HTMLButtonElement).click();
+    expect(document.querySelector(".pmlinepop button.primary")).toBeNull();
+  });
+});

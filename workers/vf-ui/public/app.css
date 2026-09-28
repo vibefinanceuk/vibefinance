@@ -2320,7 +2320,7 @@
     100% turns red.
   */
   .popout.pompanel { width: min(1120px, 100%); max-height: 88vh; padding: 18px 20px; }
-  .pompanel .pmsub { margin: 2px 0 0; color: var(--text-secondary); font-size: var(--text-sm); }
+  .pompanel .pmsub, .pmlinepop .pmsub { margin: 2px 0 0; color: var(--text-secondary); font-size: var(--text-sm); }
   .pmblock { border-top: 0.5px solid var(--border); padding-top: 14px; margin-top: 14px; }
   .pmhead { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
   .pmhead h4 { margin: 0; font-size: var(--text-lg); }
@@ -2369,6 +2369,22 @@
   /* Decision 0534 — a suggested PO line, and its Accept. */
   .pmsuggest { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 10px; margin-top: 6px; padding: 6px 8px; border-radius: var(--radius); background: color-mix(in srgb, var(--text-accent) 10%, transparent); }
   .pmaccept { white-space: nowrap; }
+  /* Decision 0536 — the invoice line Match column's chip, and its read-only pop-out. */
+  .linetable th.matchcol, .linetable td.matchcol { width: 1%; white-space: nowrap; }
+  .pmchip { display: inline-flex; align-items: center; gap: 5px; padding: 2px 9px; border-radius: 999px; border: none; font: inherit; font-size: var(--text-sm); font-weight: 600; white-space: nowrap; cursor: pointer; }
+  .pmchip.ok { background: var(--bg-success); color: var(--text-success); }
+  .pmchip.warn { background: var(--bg-warning); color: var(--text-warning); }
+  .pmchip.bad { background: var(--bg-danger); color: var(--text-danger); }
+  .pmchip:hover { filter: brightness(0.96); }
+  .pmchip:focus-visible { outline: 2px solid var(--text-accent); outline-offset: 1px; }
+  .pmdot { width: 6px; height: 6px; border-radius: 50%; background: var(--text-accent); display: inline-block; }
+  .popout.pmlinepop { max-width: 560px; }
+  .pmcompare { display: grid; grid-template-columns: 1fr auto 1fr; gap: 10px; align-items: start; margin: 6px 0 12px; }
+  .pmside { display: grid; gap: 3px; padding: 8px 10px; border-radius: var(--radius); background: var(--surface-1); border: 0.5px solid var(--border); }
+  .pmcompare .pmarrow { align-self: center; color: var(--text-muted); }
+  .pmverdictrow { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-bottom: 8px; }
+  .pmpopfoot { margin: 14px 0 0; border-top: 0.5px solid var(--border); padding-top: 12px; display: flex; justify-content: flex-end; }
+  p.pmpopfoot { display: block; }
   .pmfoot { margin: 14px 0 0; border-top: 0.5px solid var(--border); padding-top: 12px; }
   @media (max-width: 800px) {
     .pmcard { grid-template-columns: 1fr; }

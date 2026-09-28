@@ -1,4 +1,5 @@
 import type { InvoiceFacts } from "@vibefinance/shared";
+import { lineMatchSummary } from "./po-line-summary.js";
 import { validateInvoiceFacts } from "./validation.js";
 import type { RouteResult } from "./org-route.js";
 import { CODE_LISTS } from "./peppol-render-data.js";
@@ -702,6 +703,11 @@ export async function handleGetInvoice(
       facts,
       lines,
       orgUnitId: invoice.org_unit_id,
+      /**
+       * **How each line matches its PO line** — decision 0536, the
+       * viewer's Match column. `null` when the invoice names no PO.
+       */
+      poMatch: await lineMatchSummary(db, invoice.id, facts),
       /**
        * **Who we matched this to** — decision 0219.
        *

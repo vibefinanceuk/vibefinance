@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 28 September 2026 (decision 0535). A living document: what
+Last updated 28 September 2026 (decision 0536). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,14 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Invoice lines: Match column (0536)
+- A Match column on a PO invoice's line table: a chip per line (green
+  matched, amber outside tolerance or unit, red no PO line, a dot when
+  a person paired it), a hover legend, and a read-only pop-out. Open PO
+  matching is offered only at Matching, on the person's own task.
+- Accepted suggestions are recorded as such. `vf-app` migration `0095`,
+  `vf-licence` migration `0192`.
 
 ### Documents: stage pill (0535)
 - The Documents screen's Stage column shows the same coloured pill as

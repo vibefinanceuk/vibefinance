@@ -28,12 +28,14 @@ export interface SavedPairing {
   pairedBy: string;
   pairedByName: string | null;
   pairedAt: string;
+  /** How the pairing was made — decision 0536: picked by hand, or an accepted suggestion (0534). */
+  source: "manual" | "suggestion";
 }
 
 export async function loadPairings(db: D1Database, invoiceId: string): Promise<SavedPairing[]> {
   const rows = await db
     .prepare(
-      `SELECT p.line_number, p.order_number, p.po_line_number, p.paired_by, u.name AS paired_by_name, p.paired_at
+      `SELECT p.line_number, p.order_number, p.po_line_number, p.paired_by, u.name AS paired_by_name, p.paired_at, p.source
        FROM invoice_line_po_pairings p LEFT JOIN org_users u ON u.id = p.paired_by
        WHERE p.invoice_id = ?`
     )
@@ -45,6 +47,7 @@ export async function loadPairings(db: D1Database, invoiceId: string): Promise<S
       paired_by: string;
       paired_by_name: string | null;
       paired_at: string;
+      source: string | null;
     }>();
   return rows.results.map((r) => ({
     lineNumber: r.line_number,
@@ -53,6 +56,7 @@ export async function loadPairings(db: D1Database, invoiceId: string): Promise<S
     pairedBy: r.paired_by,
     pairedByName: r.paired_by_name,
     pairedAt: r.paired_at,
+    source: r.source === "suggestion" ? "suggestion" : "manual",
   }));
 }
 

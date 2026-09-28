@@ -4431,7 +4431,7 @@ export default {
           db,
           decodeURIComponent(poPairingMatch[1]),
           auth.user.id,
-          (body ?? {}) as { lineNumber?: unknown; poLineNumber?: unknown }
+          (body ?? {}) as { lineNumber?: unknown; poLineNumber?: unknown; source?: unknown }
         );
         return json(paired.body, paired.status);
       }

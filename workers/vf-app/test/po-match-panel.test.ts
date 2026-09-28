@@ -2,7 +2,7 @@ import { env } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
 import { applyTestSchema } from "./setup.js";
 import { handleGetPoMatchView, handlePoCandidates, handleLinkPo, handlePairLine } from "../src/po-match-panel-route.js";
-import { loadLiveInvoiceFacts } from "../src/invoice-facts-route.js";
+import { handleGetInvoice, loadLiveInvoiceFacts } from "../src/invoice-facts-route.js";
 
 /**
  * The Matching stage's PO matching panel, phase 1 — decision 0530.
@@ -361,3 +361,57 @@ describe("suggesting a PO line — decision 0534", () => {
   });
 });
 
+
+describe("the invoice line Match column — decision 0536", () => {
+  type Summary = {
+    orderNumber: string;
+    held: boolean;
+    lines: {
+      lineNumber: number;
+      state: string;
+      poLine: { lineNumber: number; name: string } | null;
+      use: { thisQuantity: number; leftQuantity: number | null } | null;
+      pairing: { source: string; pairedByName: string } | null;
+    }[];
+  };
+  const summary = async () => ((await handleGetInvoice(env.DB, "inv-1")).body as { poMatch: Summary | null }).poMatch;
+
+  it("rides on the invoice itself: each line's state against its PO line, the same verdict as the panel", async () => {
+    const s = await summary();
+    expect(s).toMatchObject({ orderNumber: "PO-A", held: true });
+    const panel = (await handleGetPoMatchView(env.DB, "inv-1", "u-dan")).body as unknown as View;
+    expect(s!.lines.map((l) => [l.lineNumber, l.state, l.poLine?.lineNumber ?? null])).toEqual([
+      [1, panel.lines[0].result.matched ? "matched" : "over", 1],
+      [2, panel.lines[1].result.matched ? "matched" : "over", 2],
+      [3, "nopoline", null],
+    ]);
+    expect(s!.lines[0].state).toBe("matched");
+    expect(s!.lines[0].use).toMatchObject({ thisQuantity: 10, leftQuantity: 0 });
+  });
+
+  it("says how a line was paired: by hand, or a suggestion accepted", async () => {
+    await handlePairLine(env.DB, "inv-1", "u-dan", { lineNumber: 3, poLineNumber: 4, source: "suggestion" });
+    let line3 = (await summary())!.lines[2];
+    expect(line3.poLine?.lineNumber).toBe(4);
+    expect(line3.state).not.toBe("nopoline");
+    expect(line3.pairing).toMatchObject({ source: "suggestion", pairedByName: "Dan" });
+
+    // Re-pairing by hand replaces the record of how it was made.
+    await handlePairLine(env.DB, "inv-1", "u-dan", { lineNumber: 3, poLineNumber: 4 });
+    line3 = (await summary())!.lines[2];
+    expect(line3.pairing?.source).toBe("manual");
+
+    // Anything else sent as the source is read as by hand.
+    await handlePairLine(env.DB, "inv-1", "u-dan", { lineNumber: 3, poLineNumber: 4, source: "robot" });
+    expect((await summary())!.lines[2].pairing?.source).toBe("manual");
+  });
+
+  it("is null for an invoice that names no PO, and marks every line when the PO is not held here", async () => {
+    await env.DB.prepare(`UPDATE invoice_headers SET facts_json = json_remove(facts_json, '$."BT-13"') WHERE id = 'inv-1'`).run();
+    expect(await summary()).toBeNull();
+    await env.DB.prepare(`UPDATE invoice_headers SET facts_json = json_set(facts_json, '$."BT-13"', 'PO-NOPE') WHERE id = 'inv-1'`).run();
+    const s = await summary();
+    expect(s).toMatchObject({ orderNumber: "PO-NOPE", held: false });
+    expect(s!.lines.map((l) => l.state)).toEqual(["nopoline", "nopoline", "nopoline"]);
+  });
+});

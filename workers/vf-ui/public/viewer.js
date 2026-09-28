@@ -17,11 +17,15 @@ import { processRow } from "/process-row.js";
 import { buildActivityTab } from "/activity.js";
 import { buildCollaboratorsControl } from "/collaborators.js";
 import { pageViewer } from "/page-renderer.js";
-import { openPoMatchingPanel } from "/po-match.js";
+import { openPoMatchingPanel, matchChip, matchLegend, openLineMatchPopout } from "/po-match.js";
 
 let current = null;
 /** The line table's working state — decision 0109. */
 let lines = [];
+/** Decision 0536 — the stored line number behind each entry of `lines`. */
+let lineNumberOf = new WeakMap();
+/** Decision 0536 — redraws the open document after the PO matching panel changes it. */
+let reopenViewer = null;
 
 /**
  * The current exceptions — decision 0119.
@@ -292,6 +296,8 @@ export async function loadInvoice(invoiceId) {
        * nothing until now.
        */
       orgUnitId: body.orgUnitId ?? null,
+      // How each line matches its PO line — decision 0536. Null for a non-PO invoice.
+      poMatch: body.poMatch ?? null,
     };
     // **What is wrong on arrival**, not only after saving. Somebody
     // opening a document with three failures should be told, rather
@@ -955,6 +961,7 @@ function lineRow(line, index) {
 
   return el("tr", {}, [
     ...lineFields.map(cell),
+    ...(stored.poMatch ? [matchCell(line)] : []),
     el("td", { class: "lineactions" }, [
       /**
        * **Always shown, not gated on `canEditAnything`** — decision
@@ -1455,6 +1462,32 @@ async function openLineCodingPopout(line) {
   costCentreInput?.focus();
 }
 
+/**
+ * **The Match column — decision 0536.** One chip per line, from the
+ * server's own verdict (`poMatch`); clicking opens the line's pop-out.
+ * Read-only everywhere: "Open PO matching" is offered only on a task
+ * that offers PO matching and is this person's own, the same test the
+ * topbar's own PO matching button makes (0530/0531), and the panel's own
+ * routes still decide what may change.
+ */
+function matchCell(line) {
+  const n = lineNumberOf.get(line);
+  const summary = n === undefined ? null : stored.poMatch.lines.find((l) => l.lineNumber === n);
+  if (!summary) return el("td", { class: "matchcol" }, [el("span", { class: "muted", text: "—" })]);
+  const task = current;
+  const canOpenPanel =
+    task && task.ownership === "mine" && (task.offersPoMatching || task.requiredPermission === "AP.Match") && task.subject?.id;
+  const chip = matchChip(summary, () =>
+    openLineMatchPopout(stored.poMatch, summary, {
+      invoiceLine: line,
+      onOpenPanel: canOpenPanel
+        ? () => openPoMatchingPanel(task.subject.id, { onRelinked: () => reopenViewer?.() })
+        : null,
+    })
+  );
+  return el("td", { class: "matchcol" }, [chip]);
+}
+
 function renderLines() {
   const body = document.getElementById("lines");
   if (!body) return;
@@ -1478,6 +1511,8 @@ function linePanel() {
               text: t(`field.${spec.field.toLowerCase()}`),
             })
           ),
+          // Decision 0536 — only for an invoice that names a PO.
+          ...(stored.poMatch ? [el("th", { class: "matchcol", title: matchLegend(), text: t("pomatch.col.match") })] : []),
           el("th", { text: "" }),
         ]),
       ]),
@@ -2786,6 +2821,7 @@ export function currentTask() {
 
 export async function openViewer(task, onClose) {
   docPanelTab = "doc";
+  reopenViewer = () => openViewer(task, onClose);
   // Decision 0518: Help explains this task's own stage and buttons.
   setHelpTask(task?.id && task?.stageId ? task : null);
 
@@ -2854,6 +2890,10 @@ export async function openViewer(task, onClose) {
   // The lines as stored, so keyed ones come back. Held by field code,
   // which is what the table edits.
   lines = stored.lines.map((line) => ({ ...line.facts }));
+  // Decision 0536 — each line's stored number, so the Match column finds
+  // its own summary even after a line above it is removed. A line added
+  // here has none until it is saved.
+  lineNumberOf = new WeakMap(lines.map((line, i) => [line, stored.lines[i]?.lineNumber]));
 
   const shell = document.getElementById("viewer");
 

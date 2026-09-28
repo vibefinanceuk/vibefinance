@@ -210,7 +210,7 @@ function suggestionBox(l, view, onPair) {
       node("span", { class: "muted", text: `(${fill("pomatch.suggest.score", { pct: s.score })}${why ? `: ${why}` : ""})` }),
     ]),
     view.canRelink && onPair
-      ? node("button", { class: "pmaccept", onclick: () => onPair(l.lineNumber, s.poLineNumber) }, [t("pomatch.suggest.accept")])
+      ? node("button", { class: "pmaccept", onclick: () => onPair(l.lineNumber, s.poLineNumber, "suggestion") }, [t("pomatch.suggest.accept")])
       : null,
   ]);
 }
@@ -225,7 +225,7 @@ function linesSection(view, onPair) {
       ? node("span", {
           class: "pmpaired",
           text: [
-            fill("pomatch.pairedby", { who: l.pairing.pairedByName ?? "" }),
+            fill(l.pairing.source === "suggestion" ? "pomatch.suggestedby" : "pomatch.pairedby", { who: l.pairing.pairedByName ?? "" }),
             l.orderLineReference ? fill("pomatch.supplierref", { ref: l.orderLineReference }) : null,
           ]
             .filter(Boolean)
@@ -419,13 +419,14 @@ export async function openPoMatchingPanel(invoiceId, { onRelinked } = {}) {
     }
   }
 
-  async function pair(lineNumber, poLineNumber) {
+  // Decision 0536 — an accepted suggestion is recorded as one, so the Match column can say so.
+  async function pair(lineNumber, poLineNumber, source = "manual") {
     errorBox.hidden = true;
     try {
       const response = await fetch(`${base}/po-pairing`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ lineNumber, poLineNumber }),
+        body: JSON.stringify({ lineNumber, poLineNumber, source }),
       });
       if (!response.ok) {
         const failure = await response.json().catch(() => ({}));
@@ -494,5 +495,147 @@ export async function openPoMatchingPanel(invoiceId, { onRelinked } = {}) {
   document.body.append(backdrop);
   document.addEventListener("keydown", onKey);
   await load();
+  return { close };
+}
+
+/**
+ * **The invoice line Match column — decision 0536.** The operator,
+ * after pairing lines on a live invoice: "once matched, the line items
+ * at the bottom do not indicate that the matching has taken place."
+ * Agreed: a chip in its own column headed **Match**, hover text for the
+ * colours, and a pop-out for the line — read-only outside the Matching
+ * stage, since "If changes are needed, the user can 'Return' to
+ * matching later in the process."
+ *
+ * Every verdict is the server's (`poMatch` on `GET /invoices/:id`, the
+ * same `computePoLineMatch` the rules read), said in the panel's own
+ * words through `lineVerdict`.
+ */
+
+/** The hover legend: what each colour means. */
+export function matchLegend() {
+  return [t("pomatch.legend.ok"), t("pomatch.legend.warn"), t("pomatch.legend.bad"), t("pomatch.legend.dot")].join("\n");
+}
+
+function chipTone(line) {
+  return line.state === "matched" ? "ok" : line.state === "nopoline" ? "bad" : "warn";
+}
+
+function chipText(line) {
+  const n = line.poLine?.lineNumber;
+  if (line.state === "nopoline") return t("pomatch.chip.nopoline");
+  if (line.state === "matched") return fill("pomatch.chip.matched", { n });
+  if (line.state === "unit") return fill("pomatch.chip.unit", { n });
+  const r = line.result;
+  const v = r.priceMatched === false ? r.variancePct : r.quantityMatched === false ? r.quantityVariancePct : null;
+  if (v === null || v === undefined) return fill("pomatch.chip.check", { n });
+  return fill("pomatch.chip.over", { n, pct: `${v > 0 ? "+" : ""}${pct(v)}` });
+}
+
+function pairedText(pairing) {
+  return fill(pairing.source === "suggestion" ? "pomatch.suggestedby" : "pomatch.pairedby", { who: pairing.pairedByName ?? "" });
+}
+
+/**
+ * One line's chip. `line` is one of `poMatch.lines`; `onOpen` opens its
+ * pop-out. The dot marks a pairing a person made (by hand or by
+ * accepting a suggestion), as against the supplier's own reference.
+ */
+export function matchChip(line, onOpen) {
+  const tone = chipTone(line);
+  const verdict = lineVerdict(line);
+  const title = [verdict.text, line.pairing ? pairedText(line.pairing) : null].filter(Boolean).join(" · ");
+  return node(
+    "button",
+    {
+      type: "button",
+      class: `pmchip ${tone}`,
+      "data-state": line.state,
+      title: `${title}\n\n${matchLegend()}`,
+      "aria-label": title,
+      onclick: onOpen,
+    },
+    [chipText(line), line.pairing ? node("i", { class: "pmdot", "aria-hidden": "true" }) : null]
+  );
+}
+
+/**
+ * The line's pop-out: the invoice line against its PO line, how the two
+ * were paired, and how much of the PO line is used. Changes nothing.
+ * `onOpenPanel` is passed only at Matching, to the person whose task it
+ * is; everyone else is told how to get the line changed.
+ */
+export function openLineMatchPopout(summary, line, { invoiceLine = null, onOpenPanel = null } = {}) {
+  const close = () => {
+    backdrop.remove();
+    document.removeEventListener("keydown", onKey);
+  };
+  const onKey = (event) => {
+    if (event.key === "Escape") close();
+  };
+  const verdict = lineVerdict(line);
+  const f = invoiceLine ?? {};
+  const numOrNull = (v) => (v === undefined || v === null || v === "" ? null : Number(v));
+  const inv = {
+    quantity: numOrNull(f["BT-129"]),
+    unit: f["BT-130"] || null,
+    price: numOrNull(f["BT-146"]),
+    amount: numOrNull(f["BT-131"]),
+  };
+
+  const how = line.pairing
+    ? node("span", { class: "pmpaired", text: [pairedText(line.pairing), line.pairing.pairedAt?.slice(0, 16).replace("T", " ")].filter(Boolean).join(" · ") })
+    : !line.supplierReference
+      ? node("span", { class: "pmwarntext", text: t("pomatch.noref") })
+      : line.poLine
+        ? node("span", { text: fill("pomatch.byref", { ref: line.supplierReference }) })
+        : node("span", { class: "pmwarntext", text: fill("pomatch.refnotfound", { ref: line.supplierReference }) });
+
+  const side = (labelKey, headline, detail) =>
+    node("div", { class: "pmside" }, [
+      node("span", { class: "pmlabel", text: t(labelKey) }),
+      node("div", {}, [headline]),
+      detail ? node("div", { class: "muted sm", text: detail }) : null,
+    ]);
+
+  const box = node("div", { class: "popout pmlinepop", role: "dialog", "aria-label": fill("pomatch.pop.title", { n: line.lineNumber }) }, [
+    node("div", { class: "cardhead" }, [
+      node("div", {}, [
+        node("h3", { text: fill("pomatch.pop.title", { n: line.lineNumber }) }),
+        node("p", { class: "pmsub", text: summary.held ? fill("pomatch.pop.sub", { po: summary.orderNumber }) : fill("pomatch.notheld", { po: summary.orderNumber }) }),
+      ]),
+      node("button", { class: "actionlink", title: t("action.close"), onclick: close }, [icon("close"), node("span", { text: t("action.close") })]),
+    ]),
+    node("div", { class: "pmcompare" }, [
+      side("pomatch.pop.invoice", node("b", { text: f["BT-153"] || `${line.lineNumber}` }), lineSummary(inv)),
+      node("span", { class: "pmarrow", text: "→" }),
+      line.poLine
+        ? side("pomatch.pop.po", node("span", {}, [node("b", { text: `${line.poLine.lineNumber} ` }), line.poLine.name ?? ""]), lineSummary(line.poLine))
+        : side("pomatch.pop.po", node("span", { class: "muted", text: "—" }), null),
+    ]),
+    node("div", { class: "pmverdictrow" }, [node("span", { class: `pmpill ${verdict.tone}`, text: verdict.text }), node("span", { class: "sm" }, [how])]),
+    lineUseRow(line.use),
+    onOpenPanel
+      ? node("div", { class: "pmpopfoot" }, [
+          node(
+            "button",
+            {
+              class: "primary",
+              onclick: () => {
+                close();
+                onOpenPanel();
+              },
+            },
+            [t("pomatch.pop.open")]
+          ),
+        ])
+      : node("p", { class: "muted sm pmpopfoot", text: t("pomatch.pop.readonly") }),
+  ]);
+  const backdrop = node("div", { class: "backdrop" }, [box]);
+  backdrop.addEventListener("click", (e) => {
+    if (e.target === backdrop) close();
+  });
+  document.body.append(backdrop);
+  document.addEventListener("keydown", onKey);
   return { close };
 }
