@@ -136,11 +136,13 @@ function actionTakenLine(item) {
     case "po_link":
       return t("activity.polinked").replace("{who}", who).replace("{po}", item.comment ?? "");
     // Decision 0532 — `comment` is "<invoice line>:<PO line>", the PO line empty when cleared.
+    // Decision 0537 — "non-po" in place of the PO line, and ":coding-cleared" when manual coding went.
     case "po_pair": {
-      const [line, poLine] = String(item.comment ?? "").split(":");
-      return (poLine ? t("activity.popaired").replace("{poline}", poLine) : t("activity.pocleared"))
+      const [line, poLine, extra] = String(item.comment ?? "").split(":");
+      const said = (poLine === "non-po" ? t("activity.ponpo") : poLine ? t("activity.popaired").replace("{poline}", poLine) : t("activity.pocleared"))
         .replace("{who}", who)
         .replace("{line}", line ?? "");
+      return extra === "coding-cleared" ? `${said} ${t("activity.pocodingcleared")}` : said;
     }
     default:
       return "";

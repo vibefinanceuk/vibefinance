@@ -28,7 +28,8 @@ import { lineUse, loadInvoice } from "./po-match-panel-route.js";
  * column at all.
  */
 
-export type LineMatchState = "matched" | "over" | "unit" | "nopoline";
+/** `nonpo` — decision 0537: marked at Matching as not on the order, and coded by hand. */
+export type LineMatchState = "matched" | "over" | "unit" | "nopoline" | "nonpo";
 
 export interface LineMatchSummary {
   orderNumber: string;
@@ -66,7 +67,7 @@ export interface LineMatchSummary {
       variancePct: number | null;
       quantityVariancePct: number | null;
     };
-    pairing: { source: "manual" | "suggestion"; pairedByName: string | null; pairedAt: string } | null;
+    pairing: { source: "manual" | "suggestion"; kind: "po_line" | "non_po"; pairedByName: string | null; pairedAt: string } | null;
   }[];
 }
 
@@ -153,7 +154,12 @@ export async function lineMatchSummary(
   const parsed = invoiceLines.map((l) => {
     const stored = JSON.parse(l.facts_json || "{}") as InvoiceFacts;
     const pairing = pairings.get(l.line_number) ?? null;
-    const effective = pairing ? ({ ...stored, "BT-132": String(pairing.poLineNumber) } as InvoiceFacts) : stored;
+    const effective =
+      pairing?.kind === "non_po"
+        ? (Object.fromEntries(Object.entries(stored).filter(([k]) => k !== "BT-132")) as InvoiceFacts)
+        : pairing
+          ? ({ ...stored, "BT-132": String(pairing.poLineNumber) } as InvoiceFacts)
+          : stored;
     return { l, stored, pairing, effective, ref: num(text(effective["BT-132"])) };
   });
 
@@ -171,7 +177,9 @@ export async function lineMatchSummary(
     parsed.map(async ({ l, stored, pairing, effective, ref }) => {
       const match = await computePoLineMatch(db, headerFacts, effective, orgConfig, consumption);
       const poLine = ref === null ? undefined : poLines.find((p) => p.line_number === ref);
-      const state: LineMatchState = !match.referenceFound || !poLine
+      const state: LineMatchState = pairing?.kind === "non_po"
+        ? "nonpo"
+        : !match.referenceFound || !poLine
         ? "nopoline"
         : match.matched
           ? "matched"
@@ -202,7 +210,9 @@ export async function lineMatchSummary(
           variancePct: match.variancePct ?? null,
           quantityVariancePct: match.quantityVariancePct ?? null,
         },
-        pairing: pairing ? { source: pairing.source, pairedByName: pairing.pairedByName, pairedAt: pairing.pairedAt } : null,
+        pairing: pairing
+          ? { source: pairing.source, kind: pairing.kind, pairedByName: pairing.pairedByName, pairedAt: pairing.pairedAt }
+          : null,
       };
     })
   );

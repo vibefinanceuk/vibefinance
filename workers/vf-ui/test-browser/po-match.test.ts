@@ -101,6 +101,13 @@ const STRINGS = {
     "pomatch.pop.po": "PO line",
     "pomatch.pop.open": "Open PO matching",
     "pomatch.pop.readonly": "Read-only here. To change the matching, return the invoice to the Matching stage.",
+    "pomatch.pair.nonpo": "Non-PO line (code manually)",
+    "pomatch.nonpoby": "Marked Non-PO by {who}",
+    "pomatch.r.nonpo": "Non-PO line",
+    "pomatch.chip.nonpo": "Non-PO",
+    "pomatch.legend.nonpo": "Grey: Non-PO line, not on the order and coded by hand",
+    "pomatch.codingcleared": "Line {n} now has a PO line, so the coding keyed on it was removed.",
+    "pomatch.pop.nonpo": "Not on the order. Coded by hand in the Coding column, like a Non-PO invoice line.",
     "purchaseorders.status.active": "Active",
     "purchaseorders.status.invoicedpart": "Invoiced (Part)",
     "purchaseorders.status.closed": "Closed",
@@ -294,6 +301,8 @@ describe("pairing a line by hand — decision 0532", () => {
       "Line 1: Toner cartridge (10 EA × 42.00)",
       "Line 2: A4 paper (60 EA × 23.50)",
       "Line 3: Stapler (6 EA × 15.00)",
+      // Decision 0537 — last, as the one choice that is not a PO line.
+      "Non-PO line (code manually)",
     ]);
     expect(picker(1).value).toBe("");
     expect(picker(3).options[0].textContent).toBe("Choose a PO line…");
@@ -467,7 +476,7 @@ describe("the invoice line Match column — decision 0536", () => {
     expect(title).toContain("Amber: PO line found, but outside tolerance");
     expect(title).toContain("Red: no PO line for this invoice line");
     expect(title).toContain("Dot: paired by a person");
-    expect(matchLegend().split("\n")).toHaveLength(4);
+    expect(matchLegend().split("\n")).toHaveLength(5);
   });
 
   it("opens a read-only pop-out: the invoice line against its PO line, how they were paired, and how much is used", async () => {
@@ -505,5 +514,66 @@ describe("the invoice line Match column — decision 0536", () => {
       lines: VIEW.lines.map((l) => (l.lineNumber === 3 ? { ...l, pairing: { poLineNumber: 3, pairedByName: "Dan", pairedAt: "2026-09-28", source: "suggestion" } } : l)),
     });
     expect(panel().querySelector('tr[data-line="3"] .pmpaired')?.textContent).toBe("Suggestion accepted by Dan");
+  });
+});
+
+describe("a Non-PO line — decision 0537", () => {
+  const withNonPo = {
+    ...VIEW,
+    lines: VIEW.lines.map((l) =>
+      l.lineNumber === 3
+        ? { ...l, nonPo: true, pairing: { poLineNumber: null, pairedByName: "Dan", pairedAt: "2026-09-28", source: "manual", kind: "non_po" } }
+        : l
+    ),
+  };
+
+  it("offers Non-PO in every line's picker, and marking posts it as such", async () => {
+    const calls: Call[] = [];
+    await open(VIEW, calls, { "/api/invoices/inv-1/po-pairing": { lineNumber: 3, poLineNumber: null, nonPo: true, codingCleared: false } });
+    const select = panel().querySelector('tr[data-line="3"] select.pmpair') as HTMLSelectElement;
+    expect([...select.options].at(-1)?.textContent).toBe("Non-PO line (code manually)");
+    select.value = "non_po";
+    select.dispatchEvent(new Event("change"));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(calls.find((c) => c.path === "/api/invoices/inv-1/po-pairing")?.body).toEqual({ lineNumber: 3, nonPo: true });
+  });
+
+  it("shows a Non-PO line as resolved: the choice selected, a grey verdict, and who marked it", async () => {
+    await open(withNonPo);
+    const row = panel().querySelector('tr[data-line="3"]') as HTMLElement;
+    expect((row.querySelector("select.pmpair") as HTMLSelectElement).value).toBe("non_po");
+    expect(row.querySelector(".pmpill")?.className).toBe("pmpill muted");
+    expect(row.querySelector(".pmpill")?.textContent).toBe("Non-PO line");
+    expect(row.querySelector(".pmpaired")?.textContent).toBe("Marked Non-PO by Dan");
+  });
+
+  it("says when pairing a line removed the coding somebody keyed on it", async () => {
+    await open(withNonPo, [], { "/api/invoices/inv-1/po-pairing": { lineNumber: 3, poLineNumber: 3, codingCleared: true } });
+    const select = panel().querySelector('tr[data-line="3"] select.pmpair') as HTMLSelectElement;
+    select.value = "3";
+    select.dispatchEvent(new Event("change"));
+    await new Promise((r) => setTimeout(r, 20));
+    const notice = panel().querySelector(".pmnotice") as HTMLElement;
+    expect(notice.hidden).toBe(false);
+    expect(notice.textContent).toBe("Line 3 now has a PO line, so the coding keyed on it was removed.");
+  });
+
+  it("chips a Non-PO line grey with no dot, and the pop-out says it is coded by hand", async () => {
+    stub({ "/api/ui-strings": STRINGS });
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { matchChip, openLineMatchPopout, matchLegend } = await import("/po-match.js");
+    const line = {
+      lineNumber: 5, state: "nonpo", supplierReference: "2", poLine: null, use: null,
+      result: { matched: false, referenceFound: false, priceMatched: null, quantityMatched: null, unitMismatch: false, variancePct: null, quantityVariancePct: null },
+      pairing: { kind: "non_po", source: "manual", pairedByName: "Dan", pairedAt: "2026-09-28 10:00:00" },
+    };
+    const chip = matchChip(line, () => {});
+    expect([chip.className, chip.textContent]).toEqual(["pmchip muted", "Non-PO"]);
+    expect(chip.querySelector(".pmdot")).toBeNull();
+    expect(chip.title.split("\n")[0]).toBe("Non-PO line · Marked Non-PO by Dan");
+    expect(matchLegend()).toContain("Grey: Non-PO line");
+    openLineMatchPopout({ orderNumber: "PO-A", held: true, lines: [line] }, line);
+    expect(document.querySelector(".pmlinepop")?.textContent).toContain("Coded by hand in the Coding column");
   });
 });

@@ -962,7 +962,8 @@ function lineRow(line, index) {
   return el("tr", {}, [
     ...lineFields.map(cell),
     ...(stored.poMatch ? [matchCell(line)] : []),
-    el("td", { class: "lineactions" }, [
+    // Its own column — decision 0537. Sharing a cell with the × let it ride over the Match chip.
+    el("td", { class: "codingcol" }, [
       /**
        * **Always shown, not gated on `canEditAnything`** — decision
        * 0453, the same reasoning `headerSummary()`'s own "Header
@@ -975,17 +976,21 @@ function lineRow(line, index) {
        * `openLineCodingPopout`).
        */
       (() => {
+        // Decision 0537 — on a PO invoice only a Non-PO line is coded by hand.
+        const lockedNote = codingLockedNote(line);
         const button = el("button", {
           // `codingbtn` — decision 0511: what `markOne` marks when this
           // line's coding is not on Account Coding's own lists, since
           // the coding fields themselves live in the pop-out, not here.
-          class: "rm codingbtn",
-          title: t("action.coding"),
-          onclick: () => openLineCodingPopout(line),
+          class: `rm codingbtn${lockedNote ? " locked" : ""}`,
+          title: lockedNote ? `${t("action.coding")} — ${lockedNote}` : t("action.coding"),
+          onclick: () => openLineCodingPopout(line, { lockedNote }),
         });
         button.append(icon("coding"));
         return button;
       })(),
+    ]),
+    el("td", { class: "lineactions" }, [
       /**
        * **Structure, not a field** — decision 0144.
        *
@@ -1302,8 +1307,8 @@ function searchableEntryPicker({ current, hint, fetchResults, resolveCurrent, on
  * writes to, so the page's own existing Save button persists it,
  * exactly the way it already persists every other line field.
  */
-async function openLineCodingPopout(line) {
-  const suggestions = await fetchCodingSuggestions();
+async function openLineCodingPopout(line, { lockedNote = null } = {}) {
+  const suggestions = lockedNote ? {} : await fetchCodingSuggestions();
 
   const chosen = {};
   // Which fields are showing a suggestion nobody has confirmed yet —
@@ -1369,12 +1374,13 @@ async function openLineCodingPopout(line) {
      * field inside it now renders exactly as read-only as the rest of
      * the line table does when the task is not the caller's.
      */
-    if (!resolved || resolved.visibility !== "edit" || !canEditAnything) {
+    // Decision 0537 — a PO invoice's line is coded here only when marked Non-PO at Matching.
+    if (!resolved || resolved.visibility !== "edit" || !canEditAnything || lockedNote) {
       return [
         label,
         el("div", {}, [
           el("div", { class: "readonly", text: line[spec.field] || "—" }),
-          ...(resolved?.visibility === "read" || (resolved?.visibility === "edit" && !canEditAnything)
+          ...(lockedNote || resolved?.visibility === "read" || (resolved?.visibility === "edit" && !canEditAnything)
             ? []
             : [el("div", { class: "muted sm", text: t("viewer.coding.noteditable") })]),
         ]),
@@ -1449,6 +1455,7 @@ async function openLineCodingPopout(line) {
         el("h3", { text: t("viewer.coding.heading") }),
         actionLink("close", { onclick: close }),
       ]),
+      lockedNote ? el("p", { class: "codinglocked", text: lockedNote }) : null,
       el("div", { class: "editgrid" }, [...companyCodeRow, ...fieldRows]),
       el("div", { class: "codingresults" }, [resultsLabel, resultsList]),
     ]),
@@ -1488,6 +1495,23 @@ function matchCell(line) {
   return el("td", { class: "matchcol" }, [chip]);
 }
 
+/**
+ * **Why this line's coding is not keyed here — decision 0537**, or null
+ * when it is. On a PO invoice a line matched to a PO line takes its
+ * coding from the PO, so it is never coded by hand; a line that is on
+ * no PO line is coded only once somebody marks it Non-PO at Matching
+ * (freight, carriage). A Non-PO invoice codes every line, as ever. The
+ * server refuses the same thing (`coding_on_po_line`).
+ */
+function codingLockedNote(line) {
+  if (!stored.poMatch) return null;
+  const n = lineNumberOf.get(line);
+  const summary = n === undefined ? null : stored.poMatch.lines.find((l) => l.lineNumber === n);
+  if (summary?.state === "nonpo") return null;
+  if (summary?.poLine) return t("viewer.coding.frompo").replace("{n}", String(summary.poLine.lineNumber));
+  return t("viewer.coding.needsnonpo");
+}
+
 function renderLines() {
   const body = document.getElementById("lines");
   if (!body) return;
@@ -1513,6 +1537,8 @@ function linePanel() {
           ),
           // Decision 0536 — only for an invoice that names a PO.
           ...(stored.poMatch ? [el("th", { class: "matchcol", title: matchLegend(), text: t("pomatch.col.match") })] : []),
+          // Decision 0537 — Coding in its own column.
+          el("th", { class: "codingcol", text: t("action.coding") }),
           el("th", { text: "" }),
         ]),
       ]),

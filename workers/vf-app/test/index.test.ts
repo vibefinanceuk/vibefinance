@@ -2420,6 +2420,28 @@ describe("process instances and stage visits, through the real router (decision 
     expect((await completeAsTestUser(codingTaskId)).status).toBe(200);
   });
 
+  it("Complete — decision 0537: a PO invoice's Non-PO line must be coded; its PO lines never are", async () => {
+    const { codingTaskId } = await seedUncodedLineWithCodingEditable();
+    await env.DB.prepare(
+      `UPDATE invoice_headers SET facts_json = json_set(facts_json, '$."BT-13"', 'PO-123') WHERE id = 'real-inv-manual'`
+    ).run();
+    await env.DB.prepare("INSERT INTO invoice_lines (invoice_id, line_number, facts_json) VALUES ('real-inv-manual', 2, ?)")
+      .bind(JSON.stringify({ "BT-131": 40, "BT-153": "Freight" }))
+      .run();
+    // Line 2 marked Non-PO at Matching, against the PO the invoice names.
+    await env.DB.prepare(
+      `INSERT INTO invoice_line_po_pairings (invoice_id, line_number, order_number, po_line_number, paired_by, paired_at, kind)
+       VALUES ('real-inv-manual', 2, 'PO-123', NULL, 'test-user', '2026-09-28', 'non_po')`
+    ).run();
+    const refused = await completeAsTestUser(codingTaskId);
+    expect(refused.status).toBe(422);
+    expect(((await refused.json()) as { gaps: unknown[] }).gaps).toEqual([{ line: 2, field: "BT-133", reason: "missing" }]);
+
+    // A marker made against a different PO is inert: nothing to code again.
+    await env.DB.prepare("UPDATE invoice_line_po_pairings SET order_number = 'PO-OTHER'").run();
+    expect((await completeAsTestUser(codingTaskId)).status).toBe(200);
+  });
+
   it("Complete — decision 0514: a non-PO invoice at an offered stage is still refused, as 0513 set", async () => {
     const { codingTaskId } = await seedUncodedLineWithCodingEditable();
     expect((await completeAsTestUser(codingTaskId)).status).toBe(422);

@@ -2370,11 +2370,22 @@
   .pmsuggest { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 10px; margin-top: 6px; padding: 6px 8px; border-radius: var(--radius); background: color-mix(in srgb, var(--text-accent) 10%, transparent); }
   .pmaccept { white-space: nowrap; }
   /* Decision 0536 — the invoice line Match column's chip, and its read-only pop-out. */
-  .linetable th.matchcol, .linetable td.matchcol { width: 1%; white-space: nowrap; }
+  /*
+    Fixed widths — decision 0537. `.linetable` is `table-layout: fixed`, so
+    0536's `width: 1%` made this column a few pixels wide and the chip
+    spilled over the next column (reported live, beside the Coding icon).
+    A long translation is cut with an ellipsis; the chip's hover text
+    carries it in full.
+  */
+  .linetable th.matchcol, .linetable td.matchcol { width: 116px; white-space: nowrap; text-align: center; }
+  .linetable td.matchcol .pmchip { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
   .pmchip { display: inline-flex; align-items: center; gap: 5px; padding: 2px 9px; border-radius: 999px; border: none; font: inherit; font-size: var(--text-sm); font-weight: 600; white-space: nowrap; cursor: pointer; }
   .pmchip.ok { background: var(--bg-success); color: var(--text-success); }
   .pmchip.warn { background: var(--bg-warning); color: var(--text-warning); }
   .pmchip.bad { background: var(--bg-danger); color: var(--text-danger); }
+  /* Decision 0537 — a Non-PO line: resolved, not on the order, coded by hand. */
+  .pmchip.muted { background: var(--surface-1); color: var(--text-secondary); border: 0.5px solid var(--border); }
+  .pmnotice { margin: 0 0 10px; padding: 6px 10px; border-radius: var(--radius); background: color-mix(in srgb, var(--text-accent) 10%, transparent); color: var(--text-primary); }
   .pmchip:hover { filter: brightness(0.96); }
   .pmchip:focus-visible { outline: 2px solid var(--text-accent); outline-offset: 1px; }
   .pmdot { width: 6px; height: 6px; border-radius: 50%; background: var(--text-accent); display: inline-block; }
@@ -3712,14 +3723,19 @@
     only the "×" remove button; it now also holds the new Coding icon
     button beside it, always shown (see `lineRow`'s own comment on
     why), so the column needs room for two 28px buttons rather than
-    one.
+    one. **Back to one button — decision 0537**: Coding has its own
+    column now.
   */
-  .linetable th:last-child, .linetable td:last-child { width: 62px; }
+  .linetable th:last-child, .linetable td:last-child { width: 36px; }
   /* BT-130 is a three-character UN/ECE code, so its column is narrow. */
   .linetable td.short { width: 70px; }
   .linetable th:nth-child(4) { width: 70px; }
 
-  .lineactions { display: flex; gap: 4px; justify-content: flex-end; }
+  /* Decision 0537 — Coding has its own column; the × keeps this one. */
+  .lineactions { text-align: right; white-space: nowrap; }
+  .linetable th.codingcol, .linetable td.codingcol { width: 64px; white-space: nowrap; text-align: center; }
+  .codingcol .codingbtn.locked { opacity: 0.55; }
+  .codinglocked { margin: 0 0 12px; padding: 8px 10px; border-radius: var(--radius); background: var(--surface-1); border: 0.5px solid var(--border); color: var(--text-secondary); font-size: var(--text-sm); }
 
   button.rm {
     min-height: 28px;
@@ -3841,7 +3857,7 @@
     Coding's own lists** — decision 0511. The coding fields live in the
     pop-out, so the button that opens it is what carries the mark.
   */
-  .lineactions .codingbtn.danger {
+  .codingcol .codingbtn.danger {
     color: var(--severity-danger-text);
     background: var(--severity-danger-bg);
     border-color: var(--border-danger);

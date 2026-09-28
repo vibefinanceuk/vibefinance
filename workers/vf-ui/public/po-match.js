@@ -65,6 +65,8 @@ function statusPill(status) {
 
 /** A line's verdict, in words. Mirrors `computePoLineMatch` exactly, never re-deciding it. */
 function lineVerdict(line) {
+  // Decision 0537 — marked at Matching as not on the order: resolved, coded by hand.
+  if (line.nonPo || line.state === "nonpo") return { tone: "muted", text: t("pomatch.r.nonpo") };
   const r = line.result;
   if (!r.referenceFound) return { tone: "bad", text: t("pomatch.r.nopoline") };
   if (r.matched) return { tone: "ok", text: t("pomatch.r.matched") };
@@ -177,7 +179,7 @@ function poSection(view) {
  * then every line of the linked PO.
  */
 function pairingPicker(l, view, onPair) {
-  const current = l.pairing ? String(l.pairing.poLineNumber) : "";
+  const current = l.nonPo ? "non_po" : l.pairing ? String(l.pairing.poLineNumber) : "";
   const first = node("option", {
     value: "",
     text: l.orderLineReference ? fill("pomatch.pair.own", { ref: l.orderLineReference }) : t("pomatch.pair.choose"),
@@ -188,9 +190,17 @@ function pairingPicker(l, view, onPair) {
       text: `${fill("pomatch.pair.option", { n: o.lineNumber, name: o.name ?? "" })} (${lineSummary({ ...o, amount: null }).replace(/ = —$/, "")})`,
     })
   );
-  const select = node("select", { class: "pmpair", "aria-label": fill("pomatch.pair.label", { n: l.lineNumber }) }, [first, ...options]);
+  // Decision 0537 — not on the order at all (freight, carriage): coded by hand instead.
+  const nonPo = node("option", { value: "non_po", text: t("pomatch.pair.nonpo") });
+  const select = node("select", { class: "pmpair", "aria-label": fill("pomatch.pair.label", { n: l.lineNumber }) }, [
+    first,
+    ...options,
+    nonPo,
+  ]);
   select.value = current;
-  select.addEventListener("change", () => onPair(l.lineNumber, select.value === "" ? null : Number(select.value)));
+  select.addEventListener("change", () =>
+    onPair(l.lineNumber, select.value === "" ? null : select.value === "non_po" ? "non_po" : Number(select.value))
+  );
   return select;
 }
 
@@ -221,7 +231,9 @@ function linesSection(view, onPair) {
   const rows = view.lines.map((l) => {
     const verdict = lineVerdict(l);
     // A saved pairing says who made it, and what the invoice itself said (0532).
-    const how = l.pairing
+    const how = l.nonPo
+      ? node("span", { class: "pmpaired", text: fill("pomatch.nonpoby", { who: l.pairing?.pairedByName ?? "" }) })
+      : l.pairing
       ? node("span", {
           class: "pmpaired",
           text: [
@@ -309,6 +321,8 @@ export async function openPoMatchingPanel(invoiceId, { onRelinked } = {}) {
   let view = null;
 
   const errorBox = node("div", { class: "warn sm", hidden: true });
+  // Decision 0537 — says when pairing a line removed the coding a person had keyed on it.
+  const notice = node("div", { class: "pmnotice sm", role: "status", hidden: true });
   const body = node("div", { class: "pmbody" }, [node("p", { class: "muted", text: t("pomatch.loading") })]);
   const sub = node("p", { class: "pmsub" });
 
@@ -422,11 +436,13 @@ export async function openPoMatchingPanel(invoiceId, { onRelinked } = {}) {
   // Decision 0536 — an accepted suggestion is recorded as one, so the Match column can say so.
   async function pair(lineNumber, poLineNumber, source = "manual") {
     errorBox.hidden = true;
+    notice.hidden = true;
     try {
       const response = await fetch(`${base}/po-pairing`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ lineNumber, poLineNumber, source }),
+        // Decision 0537 — "non_po" marks the line as not on the order.
+        body: JSON.stringify(poLineNumber === "non_po" ? { lineNumber, nonPo: true } : { lineNumber, poLineNumber, source }),
       });
       if (!response.ok) {
         const failure = await response.json().catch(() => ({}));
@@ -434,8 +450,13 @@ export async function openPoMatchingPanel(invoiceId, { onRelinked } = {}) {
         errorBox.hidden = false;
         return;
       }
+      const result = await response.json().catch(() => ({}));
       changed = true;
       await load();
+      if (result?.codingCleared) {
+        notice.textContent = fill("pomatch.codingcleared", { n: lineNumber });
+        notice.hidden = false;
+      }
     } catch {
       errorBox.textContent = t("pomatch.pairfailed");
       errorBox.hidden = false;
@@ -458,6 +479,7 @@ export async function openPoMatchingPanel(invoiceId, { onRelinked } = {}) {
     searchTitle.textContent = t(view.po ? "pomatch.search.title" : "pomatch.search.titlenone");
     body.replaceChildren(
       poSection(view),
+      notice,
       linesSection(view, pair) ?? "",
       node("section", { class: "pmblock" }, [
         node("div", { class: "pmhead" }, [searchTitle]),
@@ -514,16 +536,18 @@ export async function openPoMatchingPanel(invoiceId, { onRelinked } = {}) {
 
 /** The hover legend: what each colour means. */
 export function matchLegend() {
-  return [t("pomatch.legend.ok"), t("pomatch.legend.warn"), t("pomatch.legend.bad"), t("pomatch.legend.dot")].join("\n");
+  return [t("pomatch.legend.ok"), t("pomatch.legend.warn"), t("pomatch.legend.bad"), t("pomatch.legend.nonpo"), t("pomatch.legend.dot")].join("\n");
 }
 
 function chipTone(line) {
+  if (line.state === "nonpo") return "muted";
   return line.state === "matched" ? "ok" : line.state === "nopoline" ? "bad" : "warn";
 }
 
 function chipText(line) {
   const n = line.poLine?.lineNumber;
   if (line.state === "nopoline") return t("pomatch.chip.nopoline");
+  if (line.state === "nonpo") return t("pomatch.chip.nonpo");
   if (line.state === "matched") return fill("pomatch.chip.matched", { n });
   if (line.state === "unit") return fill("pomatch.chip.unit", { n });
   const r = line.result;
@@ -533,6 +557,7 @@ function chipText(line) {
 }
 
 function pairedText(pairing) {
+  if (pairing.kind === "non_po") return fill("pomatch.nonpoby", { who: pairing.pairedByName ?? "" });
   return fill(pairing.source === "suggestion" ? "pomatch.suggestedby" : "pomatch.pairedby", { who: pairing.pairedByName ?? "" });
 }
 
@@ -555,7 +580,8 @@ export function matchChip(line, onOpen) {
       "aria-label": title,
       onclick: onOpen,
     },
-    [chipText(line), line.pairing ? node("i", { class: "pmdot", "aria-hidden": "true" }) : null]
+    // A Non-PO line is always a person's choice, and its grey says so: no dot.
+    [chipText(line), line.pairing && line.pairing.kind !== "non_po" ? node("i", { class: "pmdot", "aria-hidden": "true" }) : null]
   );
 }
 
@@ -614,6 +640,7 @@ export function openLineMatchPopout(summary, line, { invoiceLine = null, onOpenP
         : side("pomatch.pop.po", node("span", { class: "muted", text: "—" }), null),
     ]),
     node("div", { class: "pmverdictrow" }, [node("span", { class: `pmpill ${verdict.tone}`, text: verdict.text }), node("span", { class: "sm" }, [how])]),
+    line.state === "nonpo" ? node("p", { class: "muted sm", text: t("pomatch.pop.nonpo") }) : null,
     lineUseRow(line.use),
     onOpenPanel
       ? node("div", { class: "pmpopfoot" }, [

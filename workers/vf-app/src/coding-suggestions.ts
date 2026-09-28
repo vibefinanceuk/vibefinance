@@ -85,6 +85,8 @@ async function suggestOneField(
        JOIN invoice_headers ih ON ih.id = kf.invoice_id
        WHERE kf.field = ?
          AND kf.line_number IS NOT NULL
+         -- A removal (decision 0537's coding cleared on PO matching) is no coding choice.
+         AND kf.new_value != 'null'
          AND ih.supplier_vat_id = ?
        GROUP BY kf.new_value
        ORDER BY cnt DESC`

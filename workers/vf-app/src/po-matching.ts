@@ -105,13 +105,16 @@ export async function loadPoConsumption(
     const pairings = (
       await db
         .prepare(
-          `SELECT invoice_id, line_number, po_line_number FROM invoice_line_po_pairings
+          `SELECT invoice_id, line_number, po_line_number, kind FROM invoice_line_po_pairings
            WHERE order_number = ? AND invoice_id IN (${marks})`
         )
         .bind(orderNumber, ...ids)
-        .all<{ invoice_id: string; line_number: number; po_line_number: number }>()
+        .all<{ invoice_id: string; line_number: number; po_line_number: number | null; kind: string }>()
     ).results;
-    const paired = new Map(pairings.map((p) => [`${p.invoice_id}|${p.line_number}`, p.po_line_number]));
+    // A Non-PO line (decision 0537) takes nothing from the PO, whatever its BT-132 says: NaN below skips it.
+    const paired = new Map(
+      pairings.map((p) => [`${p.invoice_id}|${p.line_number}`, p.kind === "non_po" ? Number.NaN : (p.po_line_number as number)])
+    );
     for (const line of lines) {
       let facts: InvoiceFacts = {};
       try {
@@ -469,6 +472,8 @@ export async function mergePoMatchFacts(
 
   const mergedLines = await Promise.all(
     lines.map(async (line) => {
+      // Decision 0537 — a Non-PO line is resolved, not a matching failure: no po.line_* fact but its own.
+      if (line["po.line_non_po"] === true) return { ...line };
       const lineMatch = await computePoLineMatch(db, mergedHeaderFacts, line, orgConfig, consumption);
       return {
         ...line,

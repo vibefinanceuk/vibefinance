@@ -158,6 +158,8 @@ const STRINGS = {
     "activity.polinked": "{who} linked this to purchase order {po}",
     "activity.popaired": "{who} paired invoice line {line} with PO line {poline}",
     "activity.pocleared": "{who} cleared the pairing for invoice line {line}",
+    "activity.ponpo": "{who} marked invoice line {line} as a Non-PO line",
+    "activity.pocodingcleared": "(manual coding removed)",
     "action.release": "Release",
     "action.discard": "Discard",
     "action.discard.reasonlabel": "Reason",
@@ -5092,6 +5094,8 @@ describe("the document/timeline tabs (decision 0269)", () => {
         items: [
           { kind: "action_taken", at: "2026-09-01 09:06:00", action: "po_pair", userName: "Priya Patel", comment: "3:4" },
           { kind: "action_taken", at: "2026-09-01 09:07:00", action: "po_pair", userName: "Priya Patel", comment: "2:" },
+          { kind: "action_taken", at: "2026-09-01 09:08:00", action: "po_pair", userName: "Priya Patel", comment: "5:non-po" },
+          { kind: "action_taken", at: "2026-09-01 09:09:00", action: "po_pair", userName: "Priya Patel", comment: "5:2:coding-cleared" },
         ],
       },
     });
@@ -5104,6 +5108,9 @@ describe("the document/timeline tabs (decision 0269)", () => {
 
     expect(document.body.textContent).toContain("Priya Patel paired invoice line 3 with PO line 4");
     expect(document.body.textContent).toContain("Priya Patel cleared the pairing for invoice line 2");
+    // Decision 0537.
+    expect(document.body.textContent).toContain("Priya Patel marked invoice line 5 as a Non-PO line");
+    expect(document.body.textContent).toContain("Priya Patel paired invoice line 5 with PO line 2 (manual coding removed)");
     expect(document.querySelector(".activityactioncomment")).toBeNull();
   });
 
@@ -6821,6 +6828,11 @@ describe("the invoice line Match column — decision 0536", () => {
       "pomatch.pop.title": "Line {n} against the PO",
       "pomatch.pop.open": "Open PO matching",
       "pomatch.pop.readonly": "Read-only here.",
+      "pomatch.chip.nonpo": "Non-PO",
+      "action.coding": "Coding",
+      "viewer.coding.heading": "Account Coding",
+      "viewer.coding.frompo": "Matched to PO line {n}. Its coding comes from the purchase order.",
+      "viewer.coding.needsnonpo": "This line has no PO line. To code it, mark it as a Non-PO line at Matching.",
     },
   };
   const result = { matched: true, referenceFound: true, priceMatched: true, quantityMatched: true, unitMismatch: false, variancePct: 0, quantityVariancePct: 0 };
@@ -6896,5 +6908,88 @@ describe("the invoice line Match column — decision 0536", () => {
     await openAs({ requiredPermission: "AP.Match", ownership: "others" });
     (document.querySelector("#lines .pmchip") as HTMLButtonElement).click();
     expect(document.querySelector(".pmlinepop button.primary")).toBeNull();
+  });
+});
+
+describe("the Coding column, and coding only a Non-PO line — decision 0537", () => {
+  const STR = {
+    ...STRINGS,
+    strings: {
+      ...STRINGS.strings,
+      "pomatch.col.match": "Match",
+      "pomatch.chip.matched": "L{n} ✓",
+      "pomatch.chip.nonpo": "Non-PO",
+      "pomatch.chip.nopoline": "No PO line",
+      "action.coding": "Coding",
+      "viewer.coding.heading": "Account Coding",
+      "viewer.coding.frompo": "Matched to PO line {n}. Its coding comes from the purchase order.",
+      "viewer.coding.needsnonpo": "This line has no PO line. To code it, mark it as a Non-PO line at Matching.",
+    },
+  };
+  const FIELDS_WITH_CODING = { fields: [...FIELDS.fields, { field: "BT-133", visibility: "edit", type: "text", line: true, description: "cost centre" }] };
+  const r = { matched: true, referenceFound: true, priceMatched: true, quantityMatched: true, unitMismatch: false, variancePct: 0, quantityVariancePct: 0 };
+  const POMATCH = {
+    orderNumber: "PO-A",
+    held: true,
+    lines: [
+      { lineNumber: 1, state: "matched", supplierReference: "1", poLine: { lineNumber: 1, name: "Toner", quantity: 10, unit: "EA", price: 42, amount: 420 }, use: null, result: r, pairing: null },
+      { lineNumber: 2, state: "nonpo", supplierReference: null, poLine: null, use: null, result: { ...r, matched: false, referenceFound: false }, pairing: { kind: "non_po", source: "manual", pairedByName: "Dan", pairedAt: "2026-09-28" } },
+      { lineNumber: 3, state: "nopoline", supplierReference: null, poLine: null, use: null, result: { ...r, matched: false, referenceFound: false }, pairing: null },
+    ],
+  };
+  async function openWith(poMatch: unknown) {
+    mountShell();
+    stubFetch({
+      "/api/code-lists": { fields: {} },
+      "/api/ui-strings": STR,
+      "/api/field-visibility": FIELDS_WITH_CODING,
+      "/api/invoices/inv-1": {
+        facts: poMatch ? { "BT-13": "PO-A" } : {},
+        lines: [1, 2, 3].map((n) => ({ lineNumber: n, facts: { "BT-131": "10" } })),
+        poMatch,
+        validation: { passed: true, checked: [], failures: [] },
+      },
+      "/api/invoices/inv-1/document-url": { url: null },
+      "/api/documents/inv-1/activity": { items: [] },
+      "/api/coding-suggestions": { suggestions: {} },
+    });
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    await openViewer({ ...TASK }, () => {});
+  }
+  const codingButtons = () => [...document.querySelectorAll("#lines .codingbtn")] as HTMLButtonElement[];
+
+  it("gives Coding its own column, apart from the remove button", async () => {
+    await openWith(POMATCH);
+    const heads = [...document.querySelectorAll(".linetable thead th")].map((th) => th.textContent);
+    expect(heads.slice(-3)).toEqual(["Match", "Coding", ""]);
+    const row = document.querySelector("#lines tr") as HTMLElement;
+    expect(row.querySelector("td.codingcol .codingbtn")).not.toBeNull();
+    expect(row.querySelector("td.lineactions .codingbtn")).toBeNull();
+    expect(row.querySelector("td.matchcol .codingbtn")).toBeNull();
+  });
+
+  it("makes coding read-only on a PO invoice's line unless it is marked Non-PO, and says why", async () => {
+    await openWith(POMATCH);
+    const [matched, nonPo, noPoLine] = codingButtons();
+    expect(matched.classList.contains("locked")).toBe(true);
+    expect(matched.title).toContain("Matched to PO line 1");
+    expect(nonPo.classList.contains("locked")).toBe(false);
+    expect(noPoLine.classList.contains("locked")).toBe(true);
+    expect(noPoLine.title).toContain("mark it as a Non-PO line at Matching");
+
+    matched.click();
+    await new Promise((r) => setTimeout(r, 10));
+    const pop = document.querySelector(".codingpopout") as HTMLElement;
+    expect(pop.querySelector(".codinglocked")?.textContent).toContain("Its coding comes from the purchase order.");
+    expect(pop.querySelector("input")).toBeNull();
+  });
+
+  it("leaves a Non-PO invoice's lines codable, as ever", async () => {
+    await openWith(null);
+    expect(codingButtons().every((b) => !b.classList.contains("locked"))).toBe(true);
+    const heads = [...document.querySelectorAll(".linetable thead th")].map((th) => th.textContent);
+    expect(heads.slice(-2)).toEqual(["Coding", ""]);
   });
 });

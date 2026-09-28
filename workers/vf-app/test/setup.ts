@@ -100,6 +100,7 @@ import approvalExclusionsSql from "../../../migrations/0092_approval_exclusions.
 import taskActionEventsPoLinkSql from "../../../migrations/0093_task_action_events_po_link.sql?raw";
 import invoiceLinePoPairingsSql from "../../../migrations/0094_invoice_line_po_pairings.sql?raw";
 import poPairingSourceSql from "../../../migrations/0095_po_pairing_source.sql?raw";
+import poPairingNonPoSql from "../../../migrations/0096_po_pairing_non_po.sql?raw";
 
 // Another known divergence from production, on top of the one below:
 // D1's exec() splits its input by newline and executes each non-empty
@@ -379,6 +380,7 @@ export async function applyTestSchema(): Promise<void> {
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(taskActionEventsPoLinkSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(invoiceLinePoPairingsSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(poPairingSourceSql)));
+  await env.DB.exec(toOneStatementPerLine(stripSqlComments(poPairingNonPoSql)));
 }
 
 /**

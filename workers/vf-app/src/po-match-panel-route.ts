@@ -1,4 +1,5 @@
 import type { InvoiceFacts } from "@vibefinance/shared";
+import { CODING_FIELD_LISTS } from "./coding-validation.js";
 import type { RouteResult } from "./org-route.js";
 import { computePoLineMatch, computePoMatch, getOrgMatchingConfig, loadPoConsumption, type PoConsumption } from "./po-matching.js";
 import { unitsWherePermitted, isWithinScope, unitClause } from "./enforce.js";
@@ -282,7 +283,10 @@ export async function handleGetPoMatchView(db: D1Database, invoiceId: string, us
   const thisByLine = new Map<number, { quantity: number; amount: number }>();
   for (const l of invoiceLines) {
     const stored = JSON.parse(l.facts_json || "{}") as InvoiceFacts;
-    const ref = Number(pairings.get(l.line_number)?.poLineNumber ?? text(stored["BT-132"]));
+    const p = pairings.get(l.line_number);
+    // A Non-PO line (decision 0537) takes nothing from the PO.
+    if (p?.kind === "non_po") continue;
+    const ref = Number(p?.poLineNumber ?? text(stored["BT-132"]));
     if (!Number.isFinite(ref)) continue;
     const t = thisByLine.get(ref) ?? { quantity: 0, amount: 0 };
     t.quantity += num(stored["BT-129"]) ?? 0;
@@ -309,7 +313,12 @@ export async function handleGetPoMatchView(db: D1Database, invoiceId: string, us
       const stored = JSON.parse(l.facts_json || "{}") as InvoiceFacts;
       const supplierReference = text(stored["BT-132"]);
       const pairing = pairings.get(l.line_number) ?? null;
-      const lf = pairing ? ({ ...stored, "BT-132": String(pairing.poLineNumber) } as InvoiceFacts) : stored;
+      const nonPo = pairing?.kind === "non_po";
+      const lf = nonPo
+        ? (Object.fromEntries(Object.entries(stored).filter(([k]) => k !== "BT-132")) as InvoiceFacts)
+        : pairing
+          ? ({ ...stored, "BT-132": String(pairing.poLineNumber) } as InvoiceFacts)
+          : stored;
       const ref = text(lf["BT-132"]);
       const poLine = ref ? poLines.find((p) => String(p.line_number) === ref) ?? null : null;
       const match = await computePoLineMatch(db, headerFacts, lf, orgConfig, consumption ?? undefined);
@@ -322,8 +331,16 @@ export async function handleGetPoMatchView(db: D1Database, invoiceId: string, us
         amount: num(lf["BT-131"]) ?? l.amount,
         orderLineReference: supplierReference,
         pairing: pairing
-          ? { poLineNumber: pairing.poLineNumber, pairedByName: pairing.pairedByName, pairedAt: pairing.pairedAt, source: pairing.source }
+          ? {
+              poLineNumber: pairing.poLineNumber,
+              pairedByName: pairing.pairedByName,
+              pairedAt: pairing.pairedAt,
+              source: pairing.source,
+              kind: pairing.kind,
+            }
           : null,
+        // Decision 0537 — marked at Matching as not on the order; coded by hand, left out of line matching.
+        nonPo,
         poLine: poLine
           ? {
               lineNumber: poLine.line_number,
@@ -628,14 +645,16 @@ export async function handlePairLine(
   db: D1Database,
   invoiceId: string,
   userId: string,
-  body: { lineNumber?: unknown; poLineNumber?: unknown; source?: unknown }
+  body: { lineNumber?: unknown; poLineNumber?: unknown; source?: unknown; nonPo?: unknown }
 ): Promise<RouteResult> {
   const lineNumber = num(body.lineNumber);
+  // Decision 0537 — `nonPo: true` marks the line as not on the order, to be coded by hand.
+  const markNonPo = body.nonPo === true;
   // Decision 0536 — an accepted suggestion says so; anything else is a hand-picked pairing.
-  const source = body.source === "suggestion" ? "suggestion" : "manual";
-  const clearing = body.poLineNumber === null;
-  const poLineNumber = clearing ? null : num(body.poLineNumber);
-  if (lineNumber === null || (!clearing && poLineNumber === null)) {
+  const source = !markNonPo && body.source === "suggestion" ? "suggestion" : "manual";
+  const clearing = !markNonPo && body.poLineNumber === null;
+  const poLineNumber = clearing || markNonPo ? null : num(body.poLineNumber);
+  if (lineNumber === null || (!clearing && !markNonPo && poLineNumber === null)) {
     return { status: 400, body: { error: "lineNumber and poLineNumber (or null) are required", reason: "bad_request" } };
   }
 
@@ -663,8 +682,21 @@ export async function handlePairLine(
     return { status: 422, body: { error: "the invoice is not linked to a purchase order held here", reason: "no_po" } };
   }
 
-  if (clearing) {
+  let codingCleared = false;
+  if (markNonPo) {
+    await db
+      .prepare(
+        `INSERT INTO invoice_line_po_pairings (invoice_id, line_number, order_number, po_line_number, paired_by, paired_at, source, kind)
+         VALUES (?, ?, ?, NULL, ?, ?, 'manual', 'non_po')
+         ON CONFLICT (invoice_id, line_number) DO UPDATE SET
+           order_number = excluded.order_number, po_line_number = NULL, paired_by = excluded.paired_by,
+           paired_at = excluded.paired_at, source = 'manual', kind = 'non_po'`
+      )
+      .bind(invoiceId, lineNumber, orderNumber, userId, new Date().toISOString())
+      .run();
+  } else if (clearing) {
     await db.prepare("DELETE FROM invoice_line_po_pairings WHERE invoice_id = ? AND line_number = ?").bind(invoiceId, lineNumber).run();
+    codingCleared = await clearManualCoding(db, invoiceId, lineNumber, userId);
   } else {
     const poLine = await db
       .prepare("SELECT 1 FROM purchase_order_lines WHERE purchase_order_id = ? AND line_number = ?")
@@ -679,15 +711,107 @@ export async function handlePairLine(
          VALUES (?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (invoice_id, line_number) DO UPDATE SET
            order_number = excluded.order_number, po_line_number = excluded.po_line_number,
-           paired_by = excluded.paired_by, paired_at = excluded.paired_at, source = excluded.source`
+           paired_by = excluded.paired_by, paired_at = excluded.paired_at, source = excluded.source, kind = 'po_line'`
       )
       .bind(invoiceId, lineNumber, orderNumber, poLineNumber, userId, new Date().toISOString(), source)
       .run();
+    codingCleared = await clearManualCoding(db, invoiceId, lineNumber, userId);
   }
 
   await db
     .prepare("INSERT INTO task_action_events (id, task_id, action, actor_id, at, comment) VALUES (?, ?, 'po_pair', ?, ?, ?)")
-    .bind(crypto.randomUUID(), taskId, userId, new Date().toISOString(), `${lineNumber}:${poLineNumber ?? ""}`)
+    .bind(
+      crypto.randomUUID(),
+      taskId,
+      userId,
+      new Date().toISOString(),
+      // "<line>:<PO line>", "<line>:" when cleared, "<line>:non-po" when marked Non-PO (0537),
+      // with ":coding-cleared" when manual coding was removed.
+      `${lineNumber}:${markNonPo ? "non-po" : (poLineNumber ?? "")}${codingCleared ? ":coding-cleared" : ""}`
+    )
     .run();
-  return { status: 200, body: { lineNumber, poLineNumber } };
+  return { status: 200, body: { lineNumber, poLineNumber, nonPo: markNonPo, codingCleared } };
+}
+
+/**
+ * **Manual coding goes when a line leaves Non-PO — decision 0537.** A
+ * PO line and manual coding are mutually exclusive, so pairing a line
+ * with a PO line (or clearing a pairing, which puts the supplier's own
+ * reference back) removes whatever coding a person keyed on it. Each
+ * field goes back to what it held before anybody keyed it (the
+ * supplier's own BT-133, or nothing), read from `keyed_fields`, and the
+ * change is recorded there too. Coding nobody keyed is the document's
+ * own and is left: on a PO-matched line it is never checked anyway.
+ * True when anything was removed.
+ */
+async function clearManualCoding(db: D1Database, invoiceId: string, lineNumber: number, userId: string): Promise<boolean> {
+  const row = await db
+    .prepare("SELECT facts_json FROM invoice_lines WHERE invoice_id = ? AND line_number = ?")
+    .bind(invoiceId, lineNumber)
+    .first<{ facts_json: string | null }>();
+  if (!row) return false;
+  let facts: Record<string, unknown> = {};
+  try {
+    facts = JSON.parse(row.facts_json || "{}") as Record<string, unknown>;
+  } catch {
+    return false;
+  }
+  const fields = Object.keys(CODING_FIELD_LISTS);
+  // Keying records a line's field as "line.<n>.<field>" (key-fields-route.ts).
+  const keyedName = (field: string) => `line.${lineNumber}.${field}`;
+  const marks = fields.map(() => "?").join(", ");
+  const keyed = (
+    await db
+      .prepare(
+        `SELECT field, previous_value FROM keyed_fields
+         WHERE invoice_id = ? AND line_number = ? AND field IN (${marks})
+         ORDER BY keyed_at, rowid`
+      )
+      .bind(invoiceId, lineNumber, ...fields.map(keyedName))
+      .all<{ field: string; previous_value: string | null }>()
+  ).results;
+  // The earliest keying of each field says what the document itself held.
+  const original = new Map<string, string | null>();
+  for (const k of keyed) {
+    const field = k.field.slice(`line.${lineNumber}.`.length);
+    if (!original.has(field)) original.set(field, k.previous_value);
+  }
+
+  const now = new Date().toISOString();
+  const statements: D1PreparedStatement[] = [];
+  let changed = false;
+  for (const [field, previous] of original) {
+    const restored = previous === null ? undefined : (JSON.parse(previous) as unknown);
+    const current = facts[field];
+    if (JSON.stringify(current ?? null) === JSON.stringify(restored ?? null)) continue;
+    if (restored === undefined) delete facts[field];
+    else facts[field] = restored;
+    changed = true;
+    statements.push(
+      db
+        .prepare(
+          "INSERT INTO keyed_fields (id, invoice_id, field, previous_value, new_value, keyed_by, keyed_at, line_number) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+        )
+        // Previous as keying writes it (SQL NULL for no value); "null" as new marks a removal.
+        .bind(
+          crypto.randomUUID(),
+          invoiceId,
+          keyedName(field),
+          current === undefined || current === null ? null : JSON.stringify(current),
+          JSON.stringify(restored ?? null),
+          userId,
+          now,
+          lineNumber
+        )
+    );
+  }
+  if (!changed) return false;
+  const costCentre = facts["BT-133"];
+  statements.push(
+    db
+      .prepare("UPDATE invoice_lines SET facts_json = ?, cost_centre = ? WHERE invoice_id = ? AND line_number = ?")
+      .bind(JSON.stringify(facts), costCentre === undefined || costCentre === null ? null : String(costCentre), invoiceId, lineNumber)
+  );
+  await db.batch(statements);
+  return true;
 }

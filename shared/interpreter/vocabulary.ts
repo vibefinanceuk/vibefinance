@@ -134,6 +134,13 @@ export const DERIVED_FIELDS = [
    */
   "po.line_unit_mismatch",
   /**
+   * **Decision 0537.** A line on a PO invoice that a person marked at
+   * Matching as not on the order (freight, carriage…). Every other
+   * po.line_* fact is left absent on it, so no line matching rule fires
+   * for it; this one lets a rule route such lines on purpose.
+   */
+  "po.line_non_po",
+  /**
    * **Decision 0511.** Which of this line's coding fields (BT-133,
    * coding.project, coding.commodity_code, coding.gl_code) hold a
    * value Account Coding does not have — or has for a different
@@ -264,6 +271,7 @@ export const INVOICE_FIELD_TYPES: Record<string, FieldType> = {
   "po.line_price_matched": "boolean",
   "po.line_quantity_matched": "boolean",
   "po.line_unit_mismatch": "boolean",
+  "po.line_non_po": "boolean",
   "coding.line_invalid": "text",
   "mandate.channel": "text",
   "validation.passed": "boolean",
@@ -457,6 +465,8 @@ export const DERIVED_FIELD_DESCRIPTIONS: Record<DerivedField, string> = {
     "true if this line's quantity does not go over what is left on the purchase order line BT-132 references, beyond tolerance — or if quantity matching is disabled org-wide, or either side has no quantity recorded, since there is nothing to disagree about. This is the same 'nothing to compare, so no failure' reading po.line_matched itself already gives quantity today; po.line_unit_mismatch is what this quietly used to hide.",
   "po.line_unit_mismatch":
     "true if both the invoice line and the purchase order line carry a unit code (BT-130 and its PO-line counterpart) and they disagree. This is the gap decision 0466 named directly: today a unit mismatch makes the quantity check simply skip, reading identically to 'quantity agreed' to any rule testing po.line_quantity_matched. False, not absent, whenever both sides carry a unit — so a rule can act on it without also having to test for absence.",
+  "po.line_non_po":
+    "true if a person marked this line of a purchase order invoice as a Non-PO line at Matching: a charge the order never covered, such as freight or carriage, which is coded by hand instead of matched. Absent on every other line. On such a line every other po.line_* fact is absent, so line matching rules leave it alone; test this to route those lines deliberately, for example to approval above an amount.",
   "coding.line_invalid":
     "a comma-separated list of this line's coding fields (BT-133, coding.project, coding.commodity_code, coding.gl_code) whose value is not on Account Coding's own configured list, or is on it for a different company code or Commodity Code; empty when every coded value is valid. Most often a supplier's own BT-133 that does not match the buyer's cost centres. Test it with contains: 'coding.line_invalid contains BT-133'.",
   // Enriched with real example values, per decision 0023's "Intake"

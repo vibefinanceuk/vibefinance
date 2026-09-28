@@ -1,4 +1,5 @@
 import type { RouteResult } from "./org-route.js";
+import { isPoInvoice, nonPoLines } from "./po-pairings.js";
 import { isKnownField, type InvoiceFacts } from "@vibefinance/shared";
 import { handleUpsertInvoice } from "./invoice-facts-route.js";
 import { validateInvoiceFacts, accountCodingFailures } from "./validation.js";
@@ -355,9 +356,14 @@ export async function handleKeyInvoiceFields(
    * Checked before anything is written: no `keyed_fields` row, no
    * upsert, for a save that is going to be refused.
    */
+  // Decision 0537 — on a PO invoice only a line marked Non-PO at Matching is coded by hand.
+  const headerAfter = { ...(existingFacts as Record<string, unknown>), ...Object.fromEntries(entries) };
+  const poInvoice = isPoInvoice(headerAfter);
+  const nonPo = poInvoice ? await nonPoLines(db, invoiceId, headerAfter as InvoiceFacts) : new Set<number>();
   {
     const cache = new CodingLookupCache(db);
     const invalid: (CodingProblem & { line: number | null })[] = [];
+    const poMatchedCoding: { line: number; field: string }[] = [];
 
     const changedCodingFields = (
       previous: Record<string, unknown>,
@@ -396,11 +402,34 @@ export async function handleKeyInvoiceFields(
         const nextFacts = (line.facts ?? {}) as Record<string, unknown>;
         const changed = changedCodingFields(previousFacts, nextFacts);
         if (changed.size === 0) continue;
+        /**
+         * **Refused on a PO invoice's line unless it is marked Non-PO —
+         * decision 0537.** A PO line and manual coding are mutually
+         * exclusive: a matched line takes its coding from the PO. Only
+         * what this save changes, as above, so a supplier's own BT-133
+         * resent untouched never blocks a save.
+         */
+        if (poInvoice && !nonPo.has(lineNumber)) {
+          for (const field of changed) if (nextFacts[field] !== undefined) poMatchedCoding.push({ line: lineNumber, field });
+          continue;
+        }
         const mergedLine = { ...previousFacts, ...nextFacts };
         for (const problem of await checkLineCoding(db, invoiceUnitId, mergedLine, changed, cache)) {
           invalid.push({ ...problem, line: lineNumber });
         }
       }
+    }
+
+    if (poMatchedCoding.length > 0) {
+      const lineList = [...new Set(poMatchedCoding.map((p) => p.line))].join(", ");
+      return {
+        status: 422,
+        body: {
+          error: `Account Coding can only be keyed on a Non-PO line of a purchase order invoice (line ${lineList}). Mark the line as a Non-PO line at Matching to code it.`,
+          reason: "coding_on_po_line",
+          lines: poMatchedCoding,
+        },
+      };
     }
 
     if (invalid.length > 0) {
@@ -629,8 +658,14 @@ export async function handleKeyInvoiceFields(
       } catch {
         // No facts to check.
       }
-      return { ...facts, lineNumber: Number(row.line_number) } as InvoiceFacts & { lineNumber: number };
-    })
+      const lineNumber = Number(row.line_number);
+      return {
+        ...facts,
+        lineNumber,
+        ...(nonPo.has(lineNumber) ? { "po.line_non_po": true } : {}),
+      } as InvoiceFacts & { lineNumber: number };
+    }),
+    { poInvoice }
   );
   const coding = accountCodingFailures(codingLines);
   if (coding.checked) verdict.checked.push("account_coding");

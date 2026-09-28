@@ -7,7 +7,7 @@ import { unitLineage } from "./unit-config.js";
 import { findSimilarInvoices } from "./invoice-history.js";
 import { preferredDocumentType, documentTypeInfo } from "./document-storage.js";
 import { mergePoMatchFacts } from "./po-matching.js";
-import { applySavedPairings } from "./po-pairings.js";
+import { applySavedPairings, isPoInvoice } from "./po-pairings.js";
 import { mergeCodingValidityFacts, mergeCodingValidityForInvoice } from "./coding-validation.js";
 import { STANDARD_MATCHING_RULES } from "./matching-config-route.js";
 import type { Locale } from "./i18n.js";
@@ -693,7 +693,9 @@ export async function handleGetInvoice(
   );
   // Decision 0511 — the screen marks a line whose coding is not on
   // Account Coding's lists on arrival, not only after a save.
-  const codingLines = await mergeCodingValidityFacts(db, invoice.org_unit_id ?? null, poMerged.lines);
+  const codingLines = await mergeCodingValidityFacts(db, invoice.org_unit_id ?? null, poMerged.lines, {
+    poInvoice: isPoInvoice(facts),
+  });
   const verdict = validateInvoiceFacts(poMerged.headerFacts, codingLines);
 
   return {

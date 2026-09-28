@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 28 September 2026 (decision 0536). A living document: what
+Last updated 28 September 2026 (decision 0537). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,15 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Invoice lines: Coding column and Non-PO lines (0537)
+- Coding has its own column (fixing the Match chip overlap). On a PO
+  invoice, a line is either PO-matched (coding read-only, taken from
+  the PO) or marked Non-PO at Matching (freight, carriage) and coded by
+  hand, which Complete then requires. A Non-PO line no longer fails
+  line matching (`po.line_non_po`). Pairing a line clears its manual
+  coding.
+- `vf-app` migration `0096`, `vf-licence` migration `0193`.
 
 ### Invoice lines: Match column (0536)
 - A Match column on a PO invoice's line table: a chip per line (green

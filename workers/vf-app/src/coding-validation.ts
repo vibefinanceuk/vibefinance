@@ -1,4 +1,5 @@
 import type { InvoiceFacts } from "@vibefinance/shared";
+import { isPoInvoice, nonPoLines } from "./po-pairings.js";
 import { declaredFiltersFor } from "./coding-list-route.js";
 import { resolveFieldVisibility } from "./field-visibility-route.js";
 
@@ -130,11 +131,19 @@ export async function checkLineCoding(
 export async function mergeCodingValidityFacts<L extends InvoiceFacts>(
   db: D1Database,
   orgUnitId: string | null,
-  lines: L[]
+  lines: L[],
+  /**
+   * **Decision 0537.** On a PO invoice only a Non-PO line is coded by
+   * hand; every other line takes its coding from the PO line it matches,
+   * so whatever coding it carries (a supplier's own BT-133 included) is
+   * never checked and never flagged.
+   */
+  options: { poInvoice?: boolean } = {}
 ): Promise<(L & { "coding.line_invalid": string })[]> {
   const cache = new CodingLookupCache(db);
   return Promise.all(
     lines.map(async (line) => {
+      if (options.poInvoice && line["po.line_non_po"] !== true) return { ...line, "coding.line_invalid": "" };
       const problems = await checkLineCoding(db, orgUnitId, line as Record<string, unknown>, undefined, cache);
       return { ...line, "coding.line_invalid": problems.map((p) => p.field).join(",") };
     })
@@ -221,10 +230,16 @@ export async function mergeCodingValidityForInvoice<L extends InvoiceFacts>(
 ): Promise<(L & { "coding.line_invalid": string })[]> {
   if (lines.length === 0) return [];
   const row = await db
-    .prepare("SELECT org_unit_id FROM invoice_headers WHERE id = ?")
+    .prepare("SELECT org_unit_id, facts_json FROM invoice_headers WHERE id = ?")
     .bind(invoiceId)
-    .first<{ org_unit_id: string | null }>();
-  return mergeCodingValidityFacts(db, row?.org_unit_id ?? null, lines);
+    .first<{ org_unit_id: string | null; facts_json: string | null }>();
+  let header: Record<string, unknown> = {};
+  try {
+    header = JSON.parse(row?.facts_json || "{}") as Record<string, unknown>;
+  } catch {
+    // Unparseable header facts carry no order reference.
+  }
+  return mergeCodingValidityFacts(db, row?.org_unit_id ?? null, lines, { poInvoice: isPoInvoice(header) });
 }
 
 export interface CodingGap {
@@ -287,6 +302,11 @@ export async function codingGapsForTask(db: D1Database, taskId: string): Promise
   if (task.offer_field_restrictions === 0) return [];
 
   /**
+   * **On a PO invoice, only its Non-PO lines — decision 0537**, which
+   * narrows 0514 below. A line matched to a PO line takes its coding
+   * from the PO; a line marked Non-PO at Matching (freight, carriage)
+   * has none to take, so it is coded here like any Non-PO line.
+   *
    * **Never on a PO invoice — decision 0514.** Reported live: a PO
    * invoice was asked for Account Coding. Its lines are charged through
    * the order it references, so there is nothing for a person to code.
@@ -301,7 +321,8 @@ export async function codingGapsForTask(db: D1Database, taskId: string): Promise
   } catch {
     // Unparseable header facts carry no order reference.
   }
-  if (typeof header["BT-13"] === "string" && header["BT-13"].trim() !== "") return [];
+  const onlyLines = isPoInvoice(header) ? await nonPoLines(db, task.subject_id, header as InvoiceFacts) : null;
+  if (onlyLines && onlyLines.size === 0) return [];
 
   const visibility = await resolveFieldVisibility(db, task.stage_id, task.org_unit_id);
   const required = visibility
@@ -317,6 +338,7 @@ export async function codingGapsForTask(db: D1Database, taskId: string): Promise
   const cache = new CodingLookupCache(db);
   const gaps: CodingGap[] = [];
   for (const row of lines.results) {
+    if (onlyLines && !onlyLines.has(row.line_number)) continue;
     let facts: Record<string, unknown> = {};
     try {
       facts = JSON.parse(row.facts_json || "{}") as Record<string, unknown>;

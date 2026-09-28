@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { applyTestSchema } from "./setup.js";
 import { handleGetPoMatchView, handlePoCandidates, handleLinkPo, handlePairLine } from "../src/po-match-panel-route.js";
 import { handleGetInvoice, loadLiveInvoiceFacts } from "../src/invoice-facts-route.js";
+import { handleKeyInvoiceFields } from "../src/key-fields-route.js";
+import { handleSetFieldVisibility } from "../src/field-visibility-route.js";
 
 /**
  * The Matching stage's PO matching panel, phase 1 — decision 0530.
@@ -413,5 +415,108 @@ describe("the invoice line Match column — decision 0536", () => {
     const s = await summary();
     expect(s).toMatchObject({ orderNumber: "PO-NOPE", held: false });
     expect(s!.lines.map((l) => l.state)).toEqual(["nopoline", "nopoline", "nopoline"]);
+  });
+});
+
+describe("a Non-PO line on a PO invoice — decision 0537", () => {
+  type LiveLine = Record<string, unknown> & { lineNumber: number };
+  const live = async () => (await loadLiveInvoiceFacts(env.DB, "inv-1"))!.lines as LiveLine[];
+  const lineFacts = async (n: number) =>
+    JSON.parse(
+      (await env.DB.prepare("SELECT facts_json FROM invoice_lines WHERE invoice_id = 'inv-1' AND line_number = ?").bind(n).first<{ facts_json: string }>())!
+        .facts_json
+    ) as Record<string, unknown>;
+  const keyCoding = (n: number, costCentre: string) =>
+    handleKeyInvoiceFields(env.DB, "inv-1", { facts: {}, lines: [{ lineNumber: n, facts: { "BT-133": costCentre } }] } as never, "u-dan");
+  const comments = async () =>
+    (await env.DB.prepare("SELECT comment FROM task_action_events WHERE action = 'po_pair' ORDER BY at, rowid").all<{ comment: string }>()).results.map(
+      (r) => r.comment
+    );
+
+  beforeEach(async () => {
+    await handleSetFieldVisibility(env.DB, { fields: [{ field: "BT-133", visibility: "edit" }, { field: "BT-131", visibility: "edit" }] });
+    await env.DB.prepare("INSERT INTO cost_centres (id, name) VALUES ('cc-freight', 'Freight'), ('cc-supplier', 'Supplier said')").run();
+  });
+
+  it("is marked at Matching, left out of line matching, and shown as Non-PO — even over the supplier's own reference", async () => {
+    // Line 2 carries the supplier's BT-132 "2", a real PO line.
+    const result = await handlePairLine(env.DB, "inv-1", "u-dan", { lineNumber: 2, nonPo: true });
+    expect(result).toMatchObject({ status: 200, body: { lineNumber: 2, poLineNumber: null, nonPo: true } });
+
+    const line2 = (await live()).find((l) => l.lineNumber === 2)!;
+    expect(line2["po.line_non_po"]).toBe(true);
+    // No po.line_* verdict at all, so no matching rule fires for it; BT-132 has no PO line in force.
+    expect(Object.keys(line2).filter((k) => k.startsWith("po.line_"))).toEqual(["po.line_non_po"]);
+    expect(line2["BT-132"]).toBeUndefined();
+    // The supplier's own reference is still stored as sent.
+    expect((await lineFacts(2))["BT-132"]).toBe("2");
+
+    const summary = ((await handleGetInvoice(env.DB, "inv-1")).body as { poMatch: { lines: { lineNumber: number; state: string; poLine: unknown; pairing: { kind: string } }[] } }).poMatch;
+    expect(summary.lines[1]).toMatchObject({ state: "nonpo", poLine: null, pairing: { kind: "non_po" } });
+
+    const panel = (await handleGetPoMatchView(env.DB, "inv-1", "u-dan")).body as { lines: { nonPo: boolean; poLine: unknown; suggestion: unknown }[] };
+    expect(panel.lines[1]).toMatchObject({ nonPo: true, poLine: null, suggestion: null });
+    expect(await comments()).toEqual(["2:non-po"]);
+  });
+
+  it("takes nothing from the PO line its BT-132 names, for another invoice either", async () => {
+    await handlePairLine(env.DB, "inv-1", "u-dan", { lineNumber: 2, nonPo: true });
+    const panel = (await handleGetPoMatchView(env.DB, "inv-1", "u-dan")).body as { unusedPoLines: { lineNumber: number }[] };
+    expect(panel.unusedPoLines.map((l) => l.lineNumber)).toContain(2);
+    const { loadPoConsumption } = await import("../src/po-matching.js");
+    expect((await loadPoConsumption(env.DB, "PO-A", "inv-other")).byLine.get(2)).toBeUndefined();
+  });
+
+  it("refuses coding keyed on a PO invoice's line unless it is marked Non-PO", async () => {
+    const refused = await keyCoding(3, "cc-freight");
+    expect(refused.status).toBe(422);
+    expect(refused.body).toMatchObject({ reason: "coding_on_po_line", lines: [{ line: 3, field: "BT-133" }] });
+    expect((await lineFacts(3))["BT-133"]).toBeUndefined();
+
+    await handlePairLine(env.DB, "inv-1", "u-dan", { lineNumber: 3, nonPo: true });
+    expect((await keyCoding(3, "cc-freight")).status).toBe(200);
+    expect((await lineFacts(3))["BT-133"]).toBe("cc-freight");
+  });
+
+  it("checks coding only on Non-PO lines: a supplier's invalid BT-133 on a PO line is never flagged", async () => {
+    await env.DB.prepare(
+      `UPDATE invoice_lines SET facts_json = json_set(facts_json, '$."BT-133"', 'NOT-A-CC') WHERE invoice_id = 'inv-1' AND line_number IN (1, 3)`
+    ).run();
+    let lines = await live();
+    expect(lines.map((l) => l["coding.line_invalid"])).toEqual(["", "", ""]);
+
+    await handlePairLine(env.DB, "inv-1", "u-dan", { lineNumber: 3, nonPo: true });
+    lines = await live();
+    expect(lines.map((l) => l["coding.line_invalid"])).toEqual(["", "", "BT-133"]);
+  });
+
+  it("pairing a coded Non-PO line with a PO line clears the keyed coding back to what the supplier sent, and says so", async () => {
+    await env.DB.prepare(
+      `UPDATE invoice_lines SET facts_json = json_set(facts_json, '$."BT-133"', 'cc-supplier') WHERE invoice_id = 'inv-1' AND line_number = 3`
+    ).run();
+    await handlePairLine(env.DB, "inv-1", "u-dan", { lineNumber: 3, nonPo: true });
+    expect((await keyCoding(3, "cc-freight")).status).toBe(200);
+
+    const paired = await handlePairLine(env.DB, "inv-1", "u-dan", { lineNumber: 3, poLineNumber: 4 });
+    expect(paired.body).toMatchObject({ codingCleared: true });
+    expect((await lineFacts(3))["BT-133"]).toBe("cc-supplier");
+    const line = await env.DB.prepare("SELECT cost_centre FROM invoice_lines WHERE invoice_id = 'inv-1' AND line_number = 3").first();
+    expect(line).toEqual({ cost_centre: "cc-supplier" });
+    expect(await comments()).toEqual(["3:non-po", "3:4:coding-cleared"]);
+    const trail = await env.DB
+      .prepare("SELECT previous_value, new_value FROM keyed_fields WHERE invoice_id = 'inv-1' AND line_number = 3 ORDER BY keyed_at, rowid")
+      .all();
+    expect(trail.results.at(-1)).toEqual({ previous_value: JSON.stringify("cc-freight"), new_value: JSON.stringify("cc-supplier") });
+
+    // Nothing keyed any more: a second pairing clears nothing.
+    expect((await handlePairLine(env.DB, "inv-1", "u-dan", { lineNumber: 3, poLineNumber: 3 })).body).toMatchObject({ codingCleared: false });
+  });
+
+  it("clearing a Non-PO line removes coding nobody but a person put there", async () => {
+    await handlePairLine(env.DB, "inv-1", "u-dan", { lineNumber: 3, nonPo: true });
+    expect((await keyCoding(3, "cc-freight")).status).toBe(200);
+    const cleared = await handlePairLine(env.DB, "inv-1", "u-dan", { lineNumber: 3, poLineNumber: null });
+    expect(cleared.body).toMatchObject({ codingCleared: true });
+    expect((await lineFacts(3))["BT-133"]).toBeUndefined();
   });
 });
