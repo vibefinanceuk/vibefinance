@@ -1,9 +1,6 @@
 # 0528 — The "Here because" card is amber, in Day's colours in both moods
 
-**Status: built and tested locally, not yet pushed or deployed.** This
-session has no push access, so it is delivered as a git bundle. It
-changes `vf-ui` only (`viewer.js`, `app.css`), with no migration and no
-string change.
+**Status: pushed (`bba9de7`) and `vf-ui` deployed, as confirmed by the operator on 28 September.** It changes `vf-ui` only, with no migration.
 
 ## What was asked
 

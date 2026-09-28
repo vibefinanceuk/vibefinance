@@ -200,9 +200,14 @@ describe("the palettes", () => {
       // above: here it is Night's own value ("none") that needs
       // stating, not just Day's.
       "--tab-active-shadow",
+      // Decision 0529 — the chart palette (0242, 0247) and the side
+      // menu's colours (0527) were missing from the chosen block.
+      "--chart-1", "--chart-2", "--chart-3", "--chart-4", "--chart-5",
+      "--nav-1", "--nav-2", "--nav-3", "--nav-4", "--nav-5",
     ]) {
       const inMedia = media.match(new RegExp(`${token}: ([^;]+);`))?.[1];
       const inChosen = chosen.match(new RegExp(`${token}: ([^;]+);`))?.[1];
+      expect(inMedia, token).toBeDefined();
       expect(inChosen, token).toBe(inMedia);
     }
   });

@@ -356,29 +356,6 @@
     --nav-3: #a78bfa;
     --nav-4: #fb923c;
     --nav-5: #f472b6;
-
-  /*
-    **Lifted and saturated for the night surface** — decisions 0242 and
-    0247.
-    
-    The first version was muted in both moods, which on a dark ground
-    read as grey. A colour on black needs more saturation than the same
-    colour on white to carry the same weight — and these still refuse a
-    verdict, which is what keeps them apart from warning and success.
-  */
-  --chart-1: #4da3f0;
-  --chart-2: #35c9a3;
-  --chart-3: #b08bff;
-  --chart-4: #ffb057;
-  --chart-5: #6fd0e8;
-
-  /* And the side menu's icon colours (decision 0527). */
-  --nav-1: #60a5fa;
-  --nav-2: #2dd4bf;
-  --nav-3: #a78bfa;
-  --nav-4: #fb923c;
-  --nav-5: #f472b6;
-
   }
 }
 
@@ -409,6 +386,24 @@
   --bg-danger: #3d140f;
   --text-danger: #f2a99a;
   --tab-active-shadow: none;
+
+  /*
+    **The chart palette and the side menu's colours belong here too —
+    decision 0529.** They were written only into the media query above
+    (and, from decision 0247, a second time inside it, where this block
+    was meant to be), so choosing Night on a machine set to light mode
+    kept Day's chart and menu colours. The parity test now checks them.
+  */
+  --chart-1: #4da3f0;
+  --chart-2: #35c9a3;
+  --chart-3: #b08bff;
+  --chart-4: #ffb057;
+  --chart-5: #6fd0e8;
+  --nav-1: #60a5fa;
+  --nav-2: #2dd4bf;
+  --nav-3: #a78bfa;
+  --nav-4: #fb923c;
+  --nav-5: #f472b6;
 }
 
 body {

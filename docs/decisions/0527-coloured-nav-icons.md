@@ -1,8 +1,6 @@
 # 0527 — Side menu icons take their own colour on hover and selection
 
-**Status: pushed (`1fcf0f5`, seen on `origin/main`); deployment not yet confirmed by the operator.** It
-changes `vf-ui` only (`tasks.js`, `app.css`, `tokens.css`), with no
-migration and no string change.
+**Status: pushed (`1fcf0f5`) and `vf-ui` deployed, as confirmed by the operator on 28 September.** It changes `vf-ui` only, with no migration.
 
 ## What was asked
 
@@ -26,7 +24,8 @@ five-line token change.
 ## What was decided
 
 - **Five new tokens, `--nav-1` to `--nav-5`,** in `tokens.css`, with
-  Night values in both Night blocks (the media query and the chosen
+  Night values meant for both Night blocks (**corrected by 0529**: they
+  landed twice in the media query and not in the chosen-Night block) (the media query and the chosen
   `data-mood="night"`), as the chart palette does. They are used only
   by the side menu.
 
