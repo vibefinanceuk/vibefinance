@@ -1,9 +1,6 @@
 # 0534 — PO matching, phase 4: a suggested PO line for an invoice line with none
 
-**Status: built and tested locally, not yet pushed or deployed.** This
-session has no push access, so it is delivered as a git bundle. It
-touches `vf-app`, `vf-ui` and `vf-licence`, and needs **`vf-licence`
-migration `0191`** applied separately. There is no `vf-app` migration.
+**Status: pushed (`71e7e14`), deployed, and migration `vf-licence` `0191` applied, as confirmed by the operator on 28 September.**
 
 ## What was asked
 

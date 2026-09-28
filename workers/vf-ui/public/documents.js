@@ -1,5 +1,5 @@
 import { t } from "/strings.js";
-import { el, frame, topbar, setCurrentScreen } from "/tasks.js";
+import { el, frame, topbar, setCurrentScreen, stagePill } from "/tasks.js";
 import { currentOrgId } from "/orgs.js";
 import { icon } from "/icons.js";
 
@@ -304,8 +304,15 @@ function cell(doc, key) {
 
     case "stage":
       return el("td", { class: "stage-cell" }, [
+        /**
+         * **The same coloured pill as the Tasks list — decision 0535**, the
+         * operator's own request: "replicate the pill-box colour for the
+         * stage, also in the Document screen". One function
+         * (`stagePill`, tasks.js), so a stage is the same colour here and
+         * there: its place in its process, never its name (0522).
+         */
         doc.stageName
-          ? el("span", { class: doc.status, text: doc.stageName })
+          ? stagePill(doc)
           : el("span", { class: "muted", text: t("documents.noprocess") }),
       ]);
 

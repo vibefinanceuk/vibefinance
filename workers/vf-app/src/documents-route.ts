@@ -22,6 +22,7 @@ interface DocumentRow {
   created_at: string;
   current_stage_id: string | null;
   stage_name: string | null;
+  stage_sequence: number | null;
   org_unit_id: string | null;
   org_unit_name: string | null;
   instance_status: string | null;
@@ -464,7 +465,7 @@ export async function handleListDocuments(
     .prepare(
       `SELECT h.id, h.facts_json, h.created_at,
               i.current_stage_id, i.status AS instance_status,
-              s.name AS stage_name,
+              s.name AS stage_name, s.sequence AS stage_sequence,
               h.org_unit_id, ou.name AS org_unit_name,
               e.sender, e.recipient,
               (SELECT count(*) FROM tasks t
@@ -517,6 +518,8 @@ export async function handleListDocuments(
       orgUnitName: row.org_unit_name,
       stageId: row.current_stage_id,
       stageName: row.stage_name,
+      // The stage's place in its process, for its coloured pill — decision 0535.
+      stageSequence: row.stage_sequence,
       status: statusOf(row, facts),
       /**
        * **How many people touched it.** *"Straight through"* is the

@@ -144,7 +144,9 @@ function money(subject) {
  * Coding and Approval are all different, and each stage keeps its
  * colour on every row and after every reload.
  */
-function stagePill(task) {
+export function stagePill(task) {
+  // Decision 0535: shared with the Documents screen's Stage column, so a
+  // stage is the same colour on both screens.
   const seq = Number(task.stageSequence);
   const tone = Number.isFinite(seq) && seq > 0 ? ((seq - 1) % 5) + 1 : 0;
   return el("span", {

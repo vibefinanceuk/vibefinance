@@ -127,6 +127,12 @@ describe("what the list shows", () => {
     expect((await list()).documents[0].stageName).toBe("Validation");
   });
 
+  it("gives the stage's place in its process, for its coloured pill (decision 0535)", async () => {
+    await seedDocument("inv-1", { "BT-1": "A" }, "validation");
+    const doc = (await list()).documents[0] as unknown as { stageSequence: number | null };
+    expect(typeof doc.stageSequence).toBe("number");
+  });
+
   it("shows an invoice that never entered a process", async () => {
     // An inline test document, or one captured outside a process
     // (decision 0071). It exists, so it is listed.

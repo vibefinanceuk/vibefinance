@@ -260,6 +260,19 @@ describe("which columns to show", () => {
     expect(window.localStorage.getItem("vf.documents.columns.v2")).toContain("stage");
   });
 
+  it("shows the stage as the same coloured pill as the Tasks list (decision 0535)", async () => {
+    await openDocuments([{ ...DOC, stageId: "matching", stageName: "Matching", stageSequence: 3, status: "waiting" }]);
+    const boxes = [...document.querySelectorAll(".columnlist input")] as HTMLInputElement[];
+    boxes[10].checked = true;
+    boxes[10].dispatchEvent(new Event("change"));
+    await new Promise((r) => setTimeout(r, 0));
+
+    const pill = document.querySelector("tbody .stage-cell .stagepill") as HTMLElement;
+    expect(pill.textContent).toBe("Matching");
+    // Sequence 3 → the third of the five chart colours, exactly as Tasks gives it.
+    expect(pill.classList.contains("tone3")).toBe(true);
+  });
+
   it("will not let somebody hide the document number", async () => {
     // **A row that cannot be identified or opened is not a row**, and
     // the disabled box shows the rule rather than hiding it.
